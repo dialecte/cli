@@ -1,0 +1,47 @@
+{
+	"name": "@dialecte/cli",
+	"version": "0.0.1",
+	"description": "Dialecte CLI",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dialecte/cli.git"
+	},
+	"bin": {
+		"dialecte": "./dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"type": "module",
+	"scripts": {
+		"build": "tsup",
+		"dev": "tsup --watch",
+		"type-check": "tsc --noEmit",
+		"lint:check": "oxlint",
+		"lint:fix": "oxlint . --fix -D correctness --ignore-path .gitignore",
+		"format:check": "oxfmt --check",
+		"format:fix": "oxfmt",
+		"test": "vitest",
+		"test:run": "vitest run",
+		"check": "npm run type-check && npm run lint:check && npm run format:check && npm run test:run",
+		"prepublishOnly": "npm run build"
+	},
+	"dependencies": {
+		"oxfmt": "^0.53.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"oxlint": "^1.68.0",
+		"tsup": "^8.5.1",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.8"
+	},
+	"peerDependencies": {
+		"typescript": ">=5.4"
+	},
+	"engines": {
+		"node": ">=20"
+	}
+}
