@@ -1,6 +1,6 @@
 {
 	"name": "@dialecte/cli",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Dialecte CLI",
 	"license": "MIT",
 	"repository": {
@@ -33,9 +33,10 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.0.0",
+		"@typescript/native": "npm:typescript@^7.0.2",
 		"oxlint": "^1.68.0",
 		"tsup": "^8.5.1",
-		"typescript": "^6.0.3",
+		"typescript": "npm:@typescript/typescript6@^6.0.2",
 		"vitest": "^4.1.8"
 	},
 	"peerDependencies": {
