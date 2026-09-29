@@ -1,9 +1,11 @@
 import {
 	aggregateRuns,
 	checkRegression,
+	isolatedTsconfig,
 	parseTscMetrics,
 	STABLE_METRICS,
 	stableResults,
+	wholeProgramArgs,
 } from './bench.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -63,5 +65,25 @@ describe('stableResults', () => {
 		expect(Object.keys(stable.s)).toEqual([...STABLE_METRICS])
 		expect(stable.s['Check time']).toBeUndefined()
 		expect(stable.s['Memory used']).toBeUndefined()
+	})
+})
+
+// The bench measures what a dialecte's own types cost. The declaration files of its libraries
+// (core, dexie, sax, whatever comes next) are skipped, so a library's own typing - or a library
+// error that stops the check early - never moves the numbers.
+describe('library declarations are not measured', () => {
+	it('skips them in the per-file configuration, whatever the project configuration says', () => {
+		const config = isolatedTsconfig({ tsconfig: 'tsconfig.build.json', file: 'bench/a.ts' })
+		expect(config.compilerOptions.skipLibCheck).toBe(true)
+		expect(config.extends).toBe('./tsconfig.build.json')
+		expect(config.include).toEqual(['bench/a.ts'])
+	})
+	it('skips them in both whole-program runs', () => {
+		expect(wholeProgramArgs({ tsconfig: 'tsconfig.build.json', mode: 'check' })).toContain(
+			'--skipLibCheck',
+		)
+		expect(wholeProgramArgs({ tsconfig: 'tsconfig.build.json', mode: 'emit' })).toContain(
+			'--skipLibCheck',
+		)
 	})
 })

@@ -19,7 +19,7 @@ npm i -D @dialecte/cli   # provides the `dialecte` binary
 
 ```
 dialecte coverage          # generate complete, schema-driven type-coverage probes
-dialecte bench [--check]   # measure type-instantiation cost (tsc --extendedDiagnostics); --check gates CI
+dialecte bench [--check]   # measure the type-instantiation cost of your own types (library .d.ts skipped); --check gates CI
 dialecte audit             # render the public type surface and flag readability issues (C1–C6)
 dialecte --help
 ```

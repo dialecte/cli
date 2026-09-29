@@ -3,6 +3,7 @@
  * PER discovered version. Scenarios per version (under benchmarks/types/<version>/):
  *   whole-program check + emit (package-level, measured once), the generated baseline/surface/calls,
  *   and any hand-written consumer *.ts (e.g. kitchen-sink.ts; excluding *.test-d.ts).
+ * Library declaration files are never measured (`skipLibCheck`): only the dialecte's own types count.
  * Writes/【--check】compares benchmarks/types/<version>/baseline.json. RUNS env (default 3); MIN kept.
  */
 import { spawnSync } from 'node:child_process'
@@ -27,6 +28,39 @@ export const METRICS = [
 // the baseline on every `bench`; the --check gate compares Instantiations regardless.
 export const STABLE_METRICS = ['Instantiations', 'Types', 'Symbols']
 export const THRESHOLD = 0.05
+
+/**
+ * The configuration a single bench file is compiled with: the project's, for that file alone.
+ *
+ * `skipLibCheck` whatever the project says: the bench measures what the dialecte's own types cost.
+ * Every declaration file is skipped - core, dexie, sax and any library added later - so neither a
+ * library's own typing nor a library error that stops the check early moves the numbers. Types a
+ * dialecte uses from a library are still instantiated, and counted, where the dialecte uses them.
+ */
+export function isolatedTsconfig(params: { tsconfig: string; file: string }) {
+	const { tsconfig, file } = params
+	return {
+		extends: `./${tsconfig}`,
+		compilerOptions: {
+			noEmit: true,
+			skipLibCheck: true,
+			rootDir: '.',
+			declaration: false,
+			declarationMap: false,
+			emitDeclarationOnly: false,
+		},
+		include: [file],
+	}
+}
+
+/** The `tsc` arguments of a whole-program run, type-check only or with declaration emit; library
+ * declarations skipped as in `isolatedTsconfig`. */
+export function wholeProgramArgs(params: { tsconfig: string; mode: 'check' | 'emit' }): string[] {
+	const { tsconfig, mode } = params
+	const output =
+		mode === 'check' ? ['--noEmit'] : ['--emitDeclarationOnly', '--outDir', '.bench-dts']
+	return ['-p', tsconfig, ...output, '--skipLibCheck', '--extendedDiagnostics']
+}
 
 /** Parse a `tsc --extendedDiagnostics` dump into the metrics we track. Missing metrics are omitted. */
 export function parseTscMetrics(output: string): Metrics {
@@ -95,20 +129,7 @@ export async function run(argv: string[]): Promise<void> {
 		aggregateRuns(Array.from({ length: RUNS }, () => runTsc(args)))
 	const isolated = (file: string): string => {
 		const name = `.bench-${file.replace(/[/.]/g, '_')}.tsconfig.json`
-		writeFileSync(
-			join(ROOT, name),
-			JSON.stringify({
-				extends: `./${tsconfig}`,
-				compilerOptions: {
-					noEmit: true,
-					rootDir: '.',
-					declaration: false,
-					declarationMap: false,
-					emitDeclarationOnly: false,
-				},
-				include: [file],
-			}),
-		)
+		writeFileSync(join(ROOT, name), JSON.stringify(isolatedTsconfig({ tsconfig, file })))
 		return name
 	}
 	const measureFile = (file: string): Metrics => {
@@ -123,15 +144,8 @@ export async function run(argv: string[]): Promise<void> {
 
 	// Whole-program is package-level → measure once, share across versions.
 	console.log(`bench — ${RUNS} runs (min) — whole program …`)
-	const wholeCheck = measure(['-p', tsconfig, '--noEmit', '--extendedDiagnostics'])
-	const wholeEmit = measure([
-		'-p',
-		tsconfig,
-		'--emitDeclarationOnly',
-		'--outDir',
-		'.bench-dts',
-		'--extendedDiagnostics',
-	])
+	const wholeCheck = measure(wholeProgramArgs({ tsconfig, mode: 'check' }))
+	const wholeEmit = measure(wholeProgramArgs({ tsconfig, mode: 'emit' }))
 	rmSync(join(ROOT, '.bench-dts'), { recursive: true, force: true })
 
 	let failed = false
