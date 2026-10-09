@@ -14,10 +14,17 @@ import { resolveTargets, tsconfigOf, type Binding } from '../lib/config.ts'
 import { discoverMethodPaths } from '../lib/discover.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 
+/** A value's datatype as the definition writes it: a built-in, a list, a union, with the facets restrictions add. */
+type DataTypeDetail = {
+	builtin?: string
+	list?: DataTypeDetail
+	union?: readonly DataTypeDetail[]
+	facets?: { enumeration?: readonly string[] }
+}
 type AttrDetail = {
 	required?: boolean
 	fixed?: string
-	facets?: { enumeration?: readonly string[] }
+	type?: DataTypeDetail
 }
 type ElementDef = { attributes?: { details?: Record<string, AttrDetail> } }
 export type DialecteSchema = {
@@ -73,8 +80,25 @@ export function refsOf(b: Binding) {
 
 export const attrValue = (d: AttrDetail | undefined): string => {
 	if (d?.fixed) return d.fixed
-	const enums = d?.facets?.enumeration?.filter((v) => v !== '')
+	const enums = enumerated(d?.type)?.filter((v) => v !== '')
 	return enums?.length ? enums[0] : 'x'
+}
+
+/**
+ * The values a datatype enumerates - its own, else its union members' -, as the generated attribute types list
+ * them. A qualified name's values are written `{uri}local`, never what a document holds: none.
+ */
+function enumerated(datatype: DataTypeDetail | undefined): readonly string[] | undefined {
+	if (datatype === undefined || holdsQualifiedNames(datatype)) return undefined
+	if (datatype.facets?.enumeration !== undefined) return datatype.facets.enumeration
+	const members = (datatype.union ?? []).flatMap((member) => enumerated(member) ?? [])
+	return members.length > 0 ? [...new Set(members)] : undefined
+}
+
+function holdsQualifiedNames(datatype: DataTypeDetail): boolean {
+	if (datatype.builtin === 'QName' || datatype.builtin === 'NOTATION') return true
+	if (datatype.list !== undefined) return holdsQualifiedNames(datatype.list)
+	return (datatype.union ?? []).some(holdsQualifiedNames)
 }
 
 export function genSurface(b: Binding): string {

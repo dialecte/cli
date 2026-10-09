@@ -32,7 +32,10 @@ const SCHEMA: DialecteSchema = {
 		Root: {},
 		Item: {
 			attributes: {
-				details: { name: { required: true }, kind: { facets: { enumeration: ['', 'a', 'b'] } } },
+				details: {
+					name: { required: true },
+					kind: { type: { builtin: 'token', facets: { enumeration: ['', 'a', 'b'] } } },
+				},
 			},
 		},
 	},
@@ -55,7 +58,20 @@ describe('refsOf', () => {
 describe('attrValue', () => {
 	it('prefers fixed, then the first non-empty enum, else "x"', () => {
 		expect(attrValue({ fixed: '1.0' })).toBe('1.0')
-		expect(attrValue({ facets: { enumeration: ['', 'a', 'b'] } })).toBe('a')
+		expect(attrValue({ type: { builtin: 'token', facets: { enumeration: ['', 'a', 'b'] } } })).toBe(
+			'a',
+		)
+		// a union's members enumerate it; qualified names are not written as a document holds them
+		expect(
+			attrValue({
+				type: {
+					union: [{ builtin: 'int' }, { builtin: 'token', facets: { enumeration: ['none'] } }],
+				},
+			}),
+		).toBe('none')
+		expect(attrValue({ type: { builtin: 'QName', facets: { enumeration: ['{urn:t}x'] } } })).toBe(
+			'x',
+		)
 		expect(attrValue(undefined)).toBe('x')
 		expect(attrValue({})).toBe('x')
 	})

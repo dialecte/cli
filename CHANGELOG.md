@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `coverage` reads the definition `@dialecte/create` writes from 0.1 on: an attribute's enumeration sits in its datatype (`type.facets`), a union's members included. Regenerate your dialecte, then your coverage files.
+
 ## [0.0.3] - 2026-09-29
 
 ### Fixed
