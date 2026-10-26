@@ -1,0 +1,258 @@
+/**
+ * `dialecte skills` — agent skills shipped with the code they describe (`skills/<name>/SKILL.md` in each
+ * package).
+ *
+ *   sync      install the skills of the app's dependencies (or of a local workspace) for the agents
+ *   generate  rewrite the generated blocks of the package's skills from its source
+ *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
+ *             has invalid frontmatter or a stale block, or when a method has no JSDoc summary / @intent
+ */
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
+
+import { getArg, hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
+import { discoverMethods } from '../lib/discover.ts'
+import { discoveryEntry } from '../lib/discovery-entry.ts'
+import { formatFiles, formatOptsFromArgv, type FormatOpts } from '../lib/format.ts'
+import {
+	findQuotedSentences,
+	findUndocumentedMethods,
+	renderApiIndex,
+	renderIntentIndex,
+} from '../lib/skills/api-index.ts'
+import { checkSkillPage } from '../lib/skills/check-skill-page.ts'
+import {
+	findStaleGeneratedKinds,
+	findUnclosedGeneratedBlocks,
+	renderCoreMethods,
+	renderExtensionsTable,
+	renderHooksTable,
+	replaceGeneratedBlocks,
+} from '../lib/skills/generated-blocks.ts'
+import {
+	listHookConcernFiles,
+	listRepositoryPaths,
+	readNpmScripts,
+	readWorkspaceFacts,
+} from '../lib/skills/package-facts.ts'
+import { AGENT_SKILL_FOLDERS, DEFAULT_AGENTS } from '../lib/skills/sync-skills.constants.ts'
+import { discoverSkillSources, syncSkills } from '../lib/skills/sync-skills.ts'
+import { METHOD_DISCOVERY_DEPTH, SKILLS_FOLDER, SUBCOMMAND_NAMES } from './skills.constants.ts'
+
+import type { MethodEntry } from '../lib/discover.types.ts'
+import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
+import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
+
+export async function run(argv: string[]): Promise<void> {
+	const [subcommand, ...rest] = argv
+	if (!isSubcommand(subcommand))
+		throw new Error(
+			`skills: expected one of ${SUBCOMMAND_NAMES.join(', ')} (got "${subcommand ?? ''}")`,
+		)
+	const cwd = process.cwd()
+	if (subcommand === 'sync') {
+		runSync({ argv: rest, cwd })
+		return
+	}
+	const methods = collectMethods({ argv: rest, cwd })
+	const exitCode =
+		subcommand === 'generate'
+			? generatePages({ cwd, methods, formatOptions: formatOptsFromArgv(rest) })
+			: checkPages({ cwd, methods, workspace: getArg(rest, 'workspace') })
+	if (exitCode !== 0) process.exit(exitCode)
+}
+
+function isSubcommand(value: string | undefined): value is SkillsSubcommand {
+	return SUBCOMMAND_NAMES.includes(value as SkillsSubcommand)
+}
+
+/** Installs the skills for the agents; throws on an unknown `--agent`. */
+export function runSync(params: { argv: string[]; cwd: string }): void {
+	const { argv, cwd } = params
+	const agents = getArg(argv, 'agent')?.split(',') ?? [...DEFAULT_AGENTS]
+	const unknownAgents = agents.filter((agent) => !AGENT_SKILL_FOLDERS[agent])
+	if (unknownAgents.length)
+		throw new Error(
+			`skills sync: unknown agent ${unknownAgents.join(', ')} (known: ${Object.keys(AGENT_SKILL_FOLDERS).join(', ')})`,
+		)
+
+	const { sources, missingDependencies } = discoverSkillSources({ cwd, from: getArg(argv, 'from') })
+	const report = syncSkills({
+		sources,
+		targetFolders: agents.map((agent) => join(cwd, AGENT_SKILL_FOLDERS[agent])),
+		mode: hasFlag(argv, 'copy') ? 'copy' : 'link',
+		keepUnshipped: missingDependencies.length > 0,
+	})
+
+	for (const source of sources) console.log(`✅ ${source.name}  (${source.origin})`)
+	for (const name of report.removed) console.log(`🗑  ${name}  (no longer shipped)`)
+	for (const path of report.conflicts)
+		console.warn(`⚠️  ${path} exists and was not installed by sync: left untouched`)
+	if (missingDependencies.length)
+		console.warn(
+			`⚠️  not installed, skipped (nothing removed): ${missingDependencies.join(', ')} - run npm install, then sync again`,
+		)
+	if (sources.length === 0 && missingDependencies.length === 0)
+		console.log('No dependency ships skills (look for skills/<name>/SKILL.md).')
+}
+
+/** Rewrites the stale generated blocks and formats the pages written; 1 on an unknown or unclosed block. */
+export function generatePages(params: {
+	cwd: string
+	methods: MethodEntry[]
+	formatOptions: FormatOpts
+}): number {
+	const { cwd } = params
+	const blocks = renderBlocks({ cwd, methods: params.methods })
+	let failed = false
+	const written: string[] = []
+	for (const page of listSkillPages(cwd)) {
+		const markdown = readPage({ cwd, page })
+		const unclosed = findUnclosedGeneratedBlocks(markdown)
+		for (const kind of unclosed)
+			console.error(`❌ ${page.file}: generated block "${kind}" has no end marker`)
+		if (unclosed.length) {
+			failed = true
+			continue
+		}
+		const result = replaceGeneratedBlocks({ markdown, blocks })
+		for (const kind of result.unknownKinds) {
+			failed = true
+			console.error(`❌ ${page.file}: unknown generated block "${kind}"`)
+		}
+		if (findStaleGeneratedKinds({ markdown, blocks }).length === 0) continue
+		writeFileSync(join(cwd, page.file), result.markdown)
+		written.push(page.file)
+		console.log(`✏️  ${page.file}`)
+	}
+	formatFiles(cwd, written, params.formatOptions)
+	return failed ? 1 : 0
+}
+
+/** Prints every finding; 1 when one of them is an error. */
+export function checkPages(params: {
+	cwd: string
+	methods: MethodEntry[]
+	/** The workspace folder holding the sibling repositories (`--workspace`). */
+	workspace: string | undefined
+}): number {
+	const { cwd, methods, workspace } = params
+	const blocks = renderBlocks({ cwd, methods })
+	const facts = {
+		methodPaths: new Set(methods.map((method) => method.path)),
+		repositoryPaths: listRepositoryPaths(cwd),
+		npmScripts: readNpmScripts(cwd),
+	}
+	const workspaceFacts = workspace ? readWorkspaceFacts(workspace) : undefined
+
+	const findings: SkillFinding[] = [
+		...findUndocumentedMethods(methods).map(
+			(message): SkillFinding => ({
+				file: 'src',
+				severity: 'error',
+				message: `${message} (the skills' API index is built from the JSDoc)`,
+			}),
+		),
+		...findQuotedSentences(methods).map(
+			(message): SkillFinding => ({ file: 'src', severity: 'warning', message }),
+		),
+	]
+	const pages = listSkillPages(cwd)
+	for (const page of pages) {
+		const markdown = readPage({ cwd, page })
+		findings.push(
+			...checkSkillPage({
+				file: page.file,
+				markdown,
+				folderName: page.isSkillFile ? page.skillName : undefined,
+				siblingFiles: siblingFilesOf({ cwd, page: page.file, skillName: page.skillName }),
+				facts,
+				workspaceFacts,
+			}),
+		)
+		for (const kind of findUnclosedGeneratedBlocks(markdown))
+			findings.push({
+				file: page.file,
+				severity: 'error',
+				message: `generated block "${kind}" has no end marker`,
+			})
+		for (const kind of findStaleGeneratedKinds({ markdown, blocks }))
+			findings.push({
+				file: page.file,
+				severity: 'error',
+				message: `generated block "${kind}" is stale: run \`dialecte skills generate\``,
+			})
+	}
+
+	for (const finding of findings)
+		(finding.severity === 'error' ? console.error : console.warn)(
+			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}: ${finding.message}`,
+		)
+	const errors = findings.filter((finding) => finding.severity === 'error').length
+	console.log(
+		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methods.length} method(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)`,
+	)
+	return errors ? 1 : 0
+}
+
+function collectMethods(params: { argv: string[]; cwd: string }): MethodEntry[] {
+	const tsconfig = tsconfigOf(params.argv, params.cwd)
+	const methodsByPath = new Map<string, MethodEntry>()
+	for (const target of resolveTargets(params.argv, params.cwd))
+		for (const method of discoverMethods({
+			entrySource: discoveryEntry(target.binding),
+			tsconfig,
+			root: params.cwd,
+			maxDepth: METHOD_DISCOVERY_DEPTH,
+		}))
+			methodsByPath.set(method.path, method)
+	return [...methodsByPath.values()]
+}
+
+function renderBlocks(params: { cwd: string; methods: MethodEntry[] }): Record<string, string> {
+	const methodPaths = params.methods.map((method) => method.path)
+	return {
+		extensions: renderExtensionsTable(methodPaths),
+		'core-methods': renderCoreMethods(methodPaths),
+		hooks: renderHooksTable(listHookConcernFiles(params.cwd)),
+		api: renderApiIndex(params.methods),
+		intents: renderIntentIndex(params.methods),
+	}
+}
+
+function readPage(params: { cwd: string; page: SkillPage }): string {
+	return readFileSync(join(params.cwd, params.page.file), 'utf8').replace(/\r\n/g, '\n')
+}
+
+/** `skills/<name>/SKILL.md` and the markdown pages under it, evals left out. */
+function listSkillPages(cwd: string): SkillPage[] {
+	const skillsRoot = join(cwd, SKILLS_FOLDER)
+	let skillNames: string[]
+	try {
+		skillNames = readdirSync(skillsRoot, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+	} catch {
+		return []
+	}
+	return skillNames.flatMap((skillName) =>
+		listRepositoryPaths(join(skillsRoot, skillName))
+			.filter((path) => path.endsWith('.md') && !path.startsWith('evals/'))
+			.map((path) => ({
+				file: `${SKILLS_FOLDER}/${skillName}/${path}`,
+				skillName,
+				isSkillFile: path === 'SKILL.md',
+			})),
+	)
+}
+
+/** The skill's files as a link from `page` would write them (`/`-separated on every platform). */
+function siblingFilesOf(params: { cwd: string; page: string; skillName: string }): Set<string> {
+	const skillFolder = join(params.cwd, SKILLS_FOLDER, params.skillName)
+	const pageFolder = dirname(join(params.cwd, params.page))
+	return new Set(
+		listRepositoryPaths(skillFolder).map((path) =>
+			relative(pageFolder, join(skillFolder, path)).split(sep).join('/'),
+		),
+	)
+}

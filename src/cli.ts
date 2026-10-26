@@ -8,12 +8,15 @@ import { run as bench } from './commands/bench.ts'
  */
 import { run as coverage } from './commands/coverage.ts'
 import { run as narrowing } from './commands/narrowing.ts'
+import { run as skills } from './commands/skills.ts'
+import { parseInvocation } from './lib/parse-invocation.ts'
 
 const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	coverage,
 	bench,
 	narrowing,
 	audit,
+	skills,
 }
 
 const HELP = `
@@ -27,6 +30,7 @@ Commands:
   bench      Measure type-instantiation cost (tsc --extendedDiagnostics); --check to gate CI
   narrowing  Gate: assert schema-derived type narrowing still holds (IntelliSense safety net)
   audit      Render the public type surface and flag readability issues (C1–C6)
+  skills     Agent skills shipped in skills/<name>/: sync | generate | check
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
 Core is detected by package name and benched via a built-in test dialect. Override per package.json
@@ -43,22 +47,31 @@ Examples:
   dialecte bench --check       # CI gate: fail on >5% instantiation regression
   dialecte audit               # write benchmarks/types/readability-audit.md
 
+Skills:
+  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>]
+                             # install the skills of your dependencies (or of local checkouts) for your agents
+  dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
+  dialecte skills check [--workspace <dir>]
+                             # fail on a cited API / path / npm script that does not exist, or a stale block
+
 Env: RUNS=5 dialecte bench   (repetitions for the min); COVERAGE_CHILD_CAP=N (cap edges)
 `
 
 async function main(): Promise<void> {
-	const [cmd, ...rest] = process.argv.slice(2)
-	if (!cmd || cmd === '--help' || cmd === '-h') {
+	const invocation = parseInvocation({
+		argv: process.argv.slice(2),
+		commandNames: Object.keys(COMMANDS),
+	})
+	if (invocation.kind === 'help') {
 		console.log(HELP.trim())
 		return
 	}
-	const fn = COMMANDS[cmd]
-	if (!fn) {
-		console.error(`dialecte: unknown command "${cmd}"\n`)
+	if (invocation.kind === 'unknown') {
+		console.error(`dialecte: unknown command "${invocation.command}"\n`)
 		console.log(HELP.trim())
 		process.exit(1)
 	}
-	await fn(rest)
+	await COMMANDS[invocation.command](invocation.argv)
 }
 
 main().catch((e) => {
