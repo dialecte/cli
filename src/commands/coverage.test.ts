@@ -2,13 +2,11 @@ import {
 	attrValue,
 	deepestPath,
 	type DialecteSchema,
-	discoveryEntry,
 	genApiProbe,
 	genCalls,
 	genDeepProbe,
 	genNarrowing,
 	genSurface,
-	refsOf,
 } from './coverage.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -40,20 +38,6 @@ const SCHEMA: DialecteSchema = {
 		},
 	},
 }
-
-describe('refsOf', () => {
-	it('namespace binding renders by namespace name', () => {
-		const r = refsOf(NS)
-		expect(r.imports).toContain("import type { Scl } from '@/v1'")
-		expect(r.elementsOf).toBe('Scl.ElementsOf')
-		expect(r.generic('Ref', 'E')).toBe('Scl.Ref<E>')
-	})
-	it('core binding threads the config type into every generic', () => {
-		const r = refsOf(CORE)
-		expect(r.elementsOf).toBe('Core.ElementsOf<Cfg>')
-		expect(r.generic('Ref', 'E')).toBe('Core.Ref<Cfg, E>')
-	})
-})
 
 describe('attrValue', () => {
 	it('prefers fixed, then the first non-empty enum, else "x"', () => {
@@ -151,16 +135,6 @@ describe('genNarrowing', () => {
 		const core = genNarrowing(SCHEMA, CORE)
 		expect(core).toContain('Core.Ref<Cfg, E>')
 		expect(core).toContain("Core.ChildrenOf<Cfg, 'Root'>")
-	})
-})
-
-describe('discoveryEntry', () => {
-	it('declares q/tx/doc/project and exports them for the compiler-API walk', () => {
-		const out = discoveryEntry(NS)
-		expect(out).toContain("import type { Scl } from '@/v1'")
-		expect(out).toContain('declare const q: Scl.Query')
-		expect(out).toContain('declare const project: Scl.Project')
-		expect(out).toContain('export { q, tx, doc, project }')
 	})
 })
 

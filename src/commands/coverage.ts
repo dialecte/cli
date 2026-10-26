@@ -10,8 +10,10 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { refsOf } from '../lib/binding-refs.ts'
 import { resolveTargets, tsconfigOf, type Binding } from '../lib/config.ts'
 import { discoverMethodPaths } from '../lib/discover.ts'
+import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 
 /** A value's datatype as the definition writes it: a built-in, a list, a union, with the facets restrictions add. */
@@ -53,30 +55,6 @@ const ELEMENT_GENERICS = [
 	'Attribute',
 	'QualifiedAttribute',
 ] as const
-
-export function refsOf(b: Binding) {
-	if (b.kind === 'namespace') {
-		return {
-			imports: [`import type { ${b.name} } from '${b.import}'`],
-			elementsOf: `${b.name}.ElementsOf`,
-			query: `${b.name}.Query`,
-			transaction: `${b.name}.Transaction`,
-			generic: (g: string, e: string) => `${b.name}.${g}<${e}>`,
-			nullary: (t: string) => `${b.name}.${t}`,
-		}
-	}
-	return {
-		imports: [
-			`import type * as ${b.coreAlias} from '${b.coreImport}'`,
-			`import type { ${b.configType} } from '${b.configImport}'`,
-		],
-		elementsOf: `${b.coreAlias}.ElementsOf<${b.configType}>`,
-		query: `${b.coreAlias}.Query<${b.configType}>`,
-		transaction: `${b.coreAlias}.Transaction<${b.configType}>`,
-		generic: (g: string, e: string) => `${b.coreAlias}.${g}<${b.configType}, ${e}>`,
-		nullary: (t: string) => `${b.coreAlias}.${t}<${b.configType}>`,
-	}
-}
 
 export const attrValue = (d: AttrDetail | undefined): string => {
 	if (d?.fixed) return d.fixed
@@ -221,20 +199,6 @@ export function genDeepProbe(schema: DialecteSchema, b: Binding): string {
 	return L.join('\n')
 }
 
-/** A self-contained entry that declares q/tx/doc/project — fed to `discoverMethodPaths`. */
-export function discoveryEntry(b: Binding): string {
-	const r = refsOf(b)
-	return [
-		...r.imports,
-		`declare const q: ${r.query}`,
-		`declare const tx: ${r.transaction}`,
-		`declare const doc: ${r.nullary('Document')}`,
-		`declare const project: ${r.nullary('Project')}`,
-		`export { q, tx, doc, project }`,
-		'',
-	].join('\n')
-}
-
 /**
  * Full public method-surface probe — instantiates params + return of EVERY discovered method (core verbs
  * AND the extension/domain groups: history, reference, dataModel, template, cleanUp, presentation, …).
@@ -375,7 +339,11 @@ export async function run(argv: string[]): Promise<void> {
 		// Discover the full method surface (incl. extension/domain groups) → the coverage.api probe.
 		let methodPaths: string[] | undefined
 		try {
-			methodPaths = discoverMethodPaths(discoveryEntry(t.binding), tsconfig, process.cwd())
+			methodPaths = discoverMethodPaths({
+				entrySource: discoveryEntry(t.binding),
+				tsconfig,
+				root: process.cwd(),
+			})
 		} catch {
 			console.warn(
 				`  ⚠ [${t.version}] method-surface discovery failed — skipping coverage.api probe`,
