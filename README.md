@@ -21,6 +21,9 @@ npm i -D @dialecte/cli   # provides the `dialecte` binary
 dialecte coverage          # generate complete, schema-driven type-coverage probes
 dialecte bench [--check]   # measure the type-instantiation cost of your own types (library .d.ts skipped); --check gates CI
 dialecte audit             # render the public type surface and flag readability issues (C1–C6)
+dialecte skills sync       # install the agent skills your dependencies ship, for your agents
+dialecte skills generate   # refresh the generated blocks of this package's skills
+dialecte skills check      # fail on a skill citing what the code no longer has
 dialecte --help
 ```
 
@@ -39,6 +42,24 @@ Everything is overridable per `package.json` `"dialecte"` field (odd layouts) or
 ```
 
 Env: `RUNS=5 dialecte bench` (repetitions kept as the min); `COVERAGE_CHILD_CAP=N` (cap child edges).
+
+## Agent skills
+
+Every Dialecte package ships the agent skills that describe it in `skills/<name>/SKILL.md` (open
+[Agent Skills](https://agentskills.io) format), versioned with its code.
+
+- **In an app**: `npx dialecte skills sync` links the skills of your `@dialecte/*` (and any other)
+  dependencies into `.claude/skills` and `.agents/skills` (Codex, Cursor, Gemini CLI, Copilot read the
+  latter; add `--agent copilot` for `.github/skills`). Links follow your installed versions; rerun after
+  adding a dependency. `--copy` writes copies instead of links.
+- **Working on Dialecte**: `npx dialecte skills sync --from ../` takes them from your local checkouts.
+- **In a package**: `dialecte skills generate` rewrites the `<!-- dialecte-skills:generated <kind> -->`
+  blocks (`extensions`, `core-methods`, `hooks`, `api`, `intents`) from the source.
+  `dialecte skills check` verifies every API, path and npm script a page cites, and that every public
+  method the package defines has a JSDoc summary and an `@intent` tag; it warns when a summary or an
+  intent quotes a sentence, since the generated pages republish the JSDoc. A page about several
+  repositories declares `<!-- dialecte-skills workspace -->` and is fully verified with
+  `--workspace <folder>`; a deliberate outside mention goes in `<!-- dialecte-skills ignore: token -->`.
 
 ## How it fits the ecosystem
 
