@@ -10,8 +10,9 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { PassThrough } from 'node:stream'
 
-import { checkPages, generatePages, runSync } from './skills.ts'
+import { chooseVendor, checkPages, generatePages, runSync, runSyncCommand } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -224,5 +225,136 @@ describe('checkPages, JSDoc quoting a sentence', () => {
 		expect(console.warn).toHaveBeenCalledWith(
 			'⚠️  src: `doc.query.bay.name` summary quotes a sentence: rephrase it, generated pages republish JSDoc',
 		)
+	})
+})
+
+describe('runSync vendor', () => {
+	it('--vendor openai -> manifest vendor openai, kept by a later sync without it', () => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'openai' })
+		runSync({ argv: ['--agent', 'claude'], cwd: root })
+
+		expect(JSON.parse(read('.claude/skills/.dialecte-skills.json')).vendor).toBe('openai')
+	})
+
+	it('a manifest without vendor keeps working (read as unknown)', () => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+		write('.claude/skills/.dialecte-skills.json', JSON.stringify({ installed: [] }))
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root })
+
+		expect(JSON.parse(read('.claude/skills/.dialecte-skills.json'))).toEqual({ installed: [] })
+	})
+})
+
+const NO_TERMINAL = { interactive: false, input: new PassThrough(), output: new PassThrough() }
+
+function syncCommand(argv: string[]) {
+	return runSyncCommand({ argv, cwd: root, ...NO_TERMINAL })
+}
+
+function manifestOf(folder: string): { installed: string[]; vendor?: string } {
+	return JSON.parse(read(`${folder}/.dialecte-skills.json`))
+}
+
+describe('chooseVendor', () => {
+	it('a multi-vendor host on a terminal, answer "2" -> the second vendor, remembered by the sync', async () => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+		write('.github/copilot-instructions.md', '')
+		const input = new PassThrough()
+		input.write('2\n')
+
+		const choice = await chooseVendor({
+			argv: ['--agent', 'claude'],
+			cwd: root,
+			interactive: true,
+			input,
+			output: new PassThrough(),
+		})
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: choice.vendor })
+
+		expect(manifestOf('.claude/skills').vendor).toBe('openai')
+	})
+
+	it('a manifest vendor that is no known id -> warned and ignored, detection decides', async () => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+		write('.gemini/settings.json', '{}')
+		write('.agents/skills/.dialecte-skills.json', JSON.stringify({ installed: [], vendor: 'acme' }))
+
+		const choice = await chooseVendor({ argv: [], cwd: root, ...NO_TERMINAL })
+
+		expect(choice.vendor).toBe('google')
+		expect(choice.output).toContain('unknown vendor "acme" ignored')
+	})
+})
+
+describe('runSyncCommand', () => {
+	beforeEach(() => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+	})
+
+	it('--vendor given while manifests disagree -> no disagreement warning, the vendor written everywhere', async () => {
+		write(
+			'.claude/skills/.dialecte-skills.json',
+			JSON.stringify({ installed: [], vendor: 'anthropic' }),
+		)
+		write(
+			'.agents/skills/.dialecte-skills.json',
+			JSON.stringify({ installed: [], vendor: 'google' }),
+		)
+
+		const result = await syncCommand(['--vendor', 'openai'])
+
+		expect(result.output).not.toContain('disagree')
+		expect(manifestOf('.claude/skills').vendor).toBe('openai')
+		expect(manifestOf('.agents/skills').vendor).toBe('openai')
+	})
+
+	it('first sync, no terminal, nothing detected, no manifest -> exit 2 naming --vendor, nothing installed', async () => {
+		const result = await syncCommand([])
+
+		expect(result.exitCode).toBe(2)
+		expect(result.output).toContain('--vendor')
+		expect(existsSync(join(root, '.claude'))).toBe(false)
+		expect(existsSync(join(root, '.agents'))).toBe(false)
+	})
+
+	it('a manifest without vendor (older sync), no terminal -> goes on without a vendor and says how to set it', async () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root })
+
+		const result = await syncCommand(['--agent', 'claude'])
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toContain('--vendor')
+		expect(manifestOf('.claude/skills').vendor).toBeUndefined()
+	})
+
+	it('a Codex project whose .claude/skills only holds a sync manifest -> no vendor, never anthropic', async () => {
+		write('AGENTS.md', '')
+		runSync({ argv: ['--agent', 'claude,agents'], cwd: root })
+
+		const result = await syncCommand([])
+
+		expect(result.exitCode).toBe(0)
+		expect(manifestOf('.claude/skills').vendor).toBeUndefined()
+	})
+
+	it('a project synced only with --agent copilot -> its own .github/skills does not make the next sync exit 2', async () => {
+		runSync({ argv: ['--agent', 'copilot'], cwd: root })
+
+		const result = await syncCommand(['--agent', 'copilot'])
+
+		expect(result.exitCode).toBe(0)
+		expect(manifestOf('.github/skills').vendor).toBeUndefined()
+	})
+
+	it('a vendor set -> written to every manifest of the project, the --agent targets or not', async () => {
+		runSync({ argv: ['--agent', 'claude,agents'], cwd: root })
+
+		await syncCommand(['--agent', 'claude', '--vendor', 'openai'])
+
+		expect(manifestOf('.claude/skills').vendor).toBe('openai')
+		expect(manifestOf('.agents/skills').vendor).toBe('openai')
 	})
 })

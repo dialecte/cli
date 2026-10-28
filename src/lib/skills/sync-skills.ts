@@ -117,6 +117,8 @@ export function syncSkills(params: {
 	mode: SyncMode
 	/** Keep previously installed skills no source ships now (some dependency could not be found). */
 	keepUnshipped?: boolean
+	/** The model vendor to remember; the one already in a manifest stays when not given. */
+	vendor?: string
 }): SyncReport {
 	const report: SyncReport = { installed: [], removed: [], conflicts: [] }
 	const shipped = new Set(params.sources.map((source) => source.name))
@@ -165,10 +167,13 @@ export function syncSkills(params: {
 				addOnce({ list: report.installed, value: source.name })
 			}
 		} finally {
-			writeFileSync(
-				join(targetFolder, MANIFEST_FILE),
-				`${JSON.stringify(Object.keys(versions).length ? { installed, versions } : { installed }, null, '\t')}\n`,
-			)
+			const vendor = params.vendor ?? previous.vendor
+			const manifest: Omit<SyncManifest, 'versions'> & Partial<Pick<SyncManifest, 'versions'>> = {
+				installed,
+				...(Object.keys(versions).length ? { versions } : {}),
+				...(vendor === undefined ? {} : { vendor }),
+			}
+			writeFileSync(join(targetFolder, MANIFEST_FILE), `${JSON.stringify(manifest, null, '\t')}\n`)
 		}
 	}
 	return report
@@ -222,7 +227,7 @@ function install(params: { source: SkillSource; destination: string; mode: SyncM
 export function readSyncManifest(targetFolder: string): SyncManifest {
 	const path = join(targetFolder, MANIFEST_FILE)
 	if (!existsSync(path)) return { installed: [], versions: {} }
-	const manifest: { installed?: unknown; versions?: unknown } = JSON.parse(
+	const manifest: { installed?: unknown; versions?: unknown; vendor?: unknown } = JSON.parse(
 		readFileSync(path, 'utf8'),
 	)
 	const installed = Array.isArray(manifest.installed)
@@ -234,7 +239,21 @@ export function readSyncManifest(targetFolder: string): SyncManifest {
 	if (typeof manifest.versions === 'object' && manifest.versions !== null)
 		for (const [name, entry] of Object.entries(manifest.versions))
 			if (isSyncedVersion(entry)) versions[name] = entry
-	return { installed, versions }
+	return {
+		installed,
+		versions,
+		...(typeof manifest.vendor === 'string' ? { vendor: manifest.vendor } : {}),
+	}
+}
+
+/** Writes the vendor into the manifest of a skills folder, leaving the rest of it as it is. */
+export function rememberVendor(params: { folder: string; vendor: string }): void {
+	const manifest = readSyncManifest(params.folder)
+	const { versions, ...rest } = manifest
+	writeFileSync(
+		join(params.folder, MANIFEST_FILE),
+		`${JSON.stringify({ ...rest, ...(Object.keys(versions).length ? { versions } : {}), vendor: params.vendor }, null, '\t')}\n`,
+	)
 }
 
 function isSyncedVersion(value: unknown): value is { package: string; version: string } {

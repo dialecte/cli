@@ -16,6 +16,9 @@ import { getArg, hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { discoverMethods } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
+import { askVendor } from '../lib/models/ask-vendor.ts'
+import { listManifestFolders, readRememberedVendor } from '../lib/models/remembered-vendor.ts'
+import { resolveSyncVendor } from '../lib/models/resolve-sync-vendor.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
@@ -40,11 +43,13 @@ import {
 } from '../lib/skills/package-facts.ts'
 import { SKILLS_FOLDER } from '../lib/skills/skill-file.constants.ts'
 import { AGENT_SKILL_FOLDERS, DEFAULT_AGENTS } from '../lib/skills/sync-skills.constants.ts'
-import { discoverSkillSources, syncSkills } from '../lib/skills/sync-skills.ts'
+import { discoverSkillSources, rememberVendor, syncSkills } from '../lib/skills/sync-skills.ts'
 import { METHOD_DISCOVERY_DEPTH, SUBCOMMAND_NAMES } from './skills.constants.ts'
 
+import type { CommandOutput } from '../lib/command-output.types.ts'
 import type { MethodEntry } from '../lib/discover.types.ts'
 import type { FormatOpts } from '../lib/format.types.ts'
+import type { VendorChoice, VendorId } from '../lib/models/model-tiers.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
 import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
 
@@ -56,7 +61,15 @@ export async function run(argv: string[]): Promise<void> {
 		)
 	const cwd = process.cwd()
 	if (subcommand === 'sync') {
-		runSync({ argv: rest, cwd })
+		const result = await runSyncCommand({
+			argv: rest,
+			cwd,
+			interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+			input: process.stdin,
+			output: process.stdout,
+		})
+		process.stderr.write(result.output)
+		process.exitCode = result.exitCode
 		return
 	}
 	const methods = collectMethods({ argv: rest, cwd })
@@ -71,8 +84,58 @@ function isSubcommand(value: string | undefined): value is SkillsSubcommand {
 	return SUBCOMMAND_NAMES.includes(value as SkillsSubcommand)
 }
 
+/** The vendor first, then the sync; what it has to say on stderr, and 2 when nothing was installed. */
+export async function runSyncCommand(params: {
+	argv: string[]
+	cwd: string
+	/** Whether a person can answer on `input`/`output` (a terminal). */
+	interactive: boolean
+	input: NodeJS.ReadableStream
+	output: NodeJS.WritableStream
+}): Promise<CommandOutput> {
+	const choice = await chooseVendor(params)
+	if (choice.exitCode === 2) return { output: choice.output, exitCode: 2 }
+	runSync({ argv: params.argv, cwd: params.cwd, vendor: choice.vendor })
+	return { output: choice.output, exitCode: 0 }
+}
+
+/**
+ * The model vendor to remember: `--vendor`, the one the manifests remember, the one the project folder says,
+ * or the one the person picks. Without one: the sync goes on when a manifest already exists, stops (exit code 2)
+ * on a first sync nobody can answer.
+ */
+export async function chooseVendor(params: {
+	argv: string[]
+	cwd: string
+	interactive: boolean
+	input: NodeJS.ReadableStream
+	output: NodeJS.WritableStream
+}): Promise<VendorChoice> {
+	const remembered = readRememberedVendor(params.cwd)
+	// an explicit --vendor wins and is written everywhere: what the manifests said no longer matters
+	const given = getArg(params.argv, 'vendor') !== undefined
+	const warnings = (given ? [] : remembered.warnings).map((warning) => `⚠️  ${warning}\n`).join('')
+	const resolution = resolveSyncVendor({
+		given: getArg(params.argv, 'vendor'),
+		remembered: remembered.vendor,
+		cwd: params.cwd,
+		interactive: params.interactive,
+	})
+	if (resolution.kind === 'set') return { vendor: resolution.vendor, output: warnings, exitCode: 0 }
+	if (resolution.kind === 'unset')
+		return { vendor: undefined, output: warnings + resolution.notice, exitCode: 0 }
+	if (resolution.kind === 'fail')
+		return { vendor: undefined, output: warnings + resolution.output, exitCode: 2 }
+	const vendor = await askVendor({
+		candidates: resolution.candidates,
+		input: params.input,
+		output: params.output,
+	})
+	return { vendor, output: warnings, exitCode: 0 }
+}
+
 /** Installs the skills for the agents; throws on an unknown `--agent`. */
-export function runSync(params: { argv: string[]; cwd: string }): void {
+export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId }): void {
 	const { argv, cwd } = params
 	const agents = getArg(argv, 'agent')?.split(',') ?? [...DEFAULT_AGENTS]
 	const unknownAgents = agents.filter((agent) => !AGENT_SKILL_FOLDERS[agent])
@@ -81,12 +144,18 @@ export function runSync(params: { argv: string[]; cwd: string }): void {
 			`skills sync: unknown agent ${unknownAgents.join(', ')} (known: ${Object.keys(AGENT_SKILL_FOLDERS).join(', ')})`,
 		)
 
+	// every manifest of the project says the same vendor, the folders of this sync or not
+	if (params.vendor !== undefined)
+		for (const folder of listManifestFolders(cwd))
+			rememberVendor({ folder: join(cwd, folder), vendor: params.vendor })
+
 	const { sources, missingDependencies } = discoverSkillSources({ cwd, from: getArg(argv, 'from') })
 	const report = syncSkills({
 		sources,
 		targetFolders: agents.map((agent) => join(cwd, AGENT_SKILL_FOLDERS[agent])),
 		mode: hasFlag(argv, 'copy') ? 'copy' : 'link',
 		keepUnshipped: missingDependencies.length > 0,
+		vendor: params.vendor,
 	})
 
 	for (const source of sources) console.log(`✅ ${source.name}  (${source.origin})`)

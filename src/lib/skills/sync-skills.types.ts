@@ -16,6 +16,8 @@ export type SyncedVersions = Record<string, { package: string; version: string }
 export type SyncManifest = {
 	installed: string[]
 	versions: SyncedVersions
+	/** The model vendor of the project (`dialecte models`); unknown for a manifest written before it existed. */
+	vendor?: string
 }
 
 export type SyncMode = 'link' | 'copy'

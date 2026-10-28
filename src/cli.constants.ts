@@ -8,6 +8,7 @@ import { explain } from './commands/explain.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
 import { run as members } from './commands/members.ts'
+import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
 import { run as rules } from './commands/rules.ts'
@@ -24,6 +25,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	api,
 	schema,
 	members,
+	models,
 	doctor,
 	run: runScript,
 	explain,
@@ -48,6 +50,7 @@ Commands:
   api        Find a method by what you need (find), read its contract (show)
   members    The members of an expression of the live types (doc.query, tx.lifecycle)
   schema     What an element may hold and where: parents, children, attributes
+  models     Which model each tier (fast, standard, strong, frontier) means for the project's vendor
   doctor     Installed versions, core API generation, skills in sync, local checkouts
   run        Run a script against an in-memory project of the installed dialecte; one structured outcome
   explain    What an error or diagnostic code means, when it is raised, the usual fix
@@ -72,8 +75,9 @@ Examples:
   dialecte audit               # write benchmarks/types/readability-audit.md
 
 Skills:
-  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>]
-                             # install the skills of your dependencies (or of local checkouts) for your agents
+  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--vendor <id>]
+                             # install the skills of your dependencies (or of local checkouts) for your agents;
+                             # remembers the model vendor (detected, asked on a terminal, or --vendor) for models
   dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
   dialecte skills check [--workspace <dir>]
                              # fail on a cited API / path / npm script that does not exist, or a stale block
@@ -86,6 +90,8 @@ Lookups (the same with or without the repositories; --json on each):
                              # one line per member of doc.query, doc.query.reference, tx.lifecycle.extract...
   dialecte schema <Tag> [--package <name>]
                              # parents, children with how often, attributes; an unknown tag answers the closest
+  dialecte models [--vendor <anthropic|openai|google>] [--json]
+                             # the model each tier means for the vendor (exit 2: no vendor known, 1: unknown vendor)
   dialecte doctor            # what to fix before trusting what you read; exit 1 on a warning
 
 Run:
