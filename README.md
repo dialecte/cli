@@ -29,6 +29,10 @@ dialecte api show <path>   # read one method's contract
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte doctor            # versions, core API generation, skills in sync, local checkouts
+dialecte rules             # code-rules self-check of the changed files
+dialecte gate [--full]     # the package's Definition of Done, with the real counts
+dialecte new verb <namespace> <query|transaction> <name>
+dialecte handover <lots.json>   # the guarded commit-by-lots script a human runs
 dialecte --help
 ```
 
@@ -102,6 +106,77 @@ The `schema` tests drive `@dialecte/core`'s own test dialecte through core's own
 from the `@dialecte/core` devDependency, or from the built core checkout `DIALECTE_CORE_DIR` names
 (`DIALECTE_CORE_DIR=../core npm run test:run`); with neither they fail. The lockfile gains that
 devDependency at the release, once core 0.8.0 is published.
+
+## Contributing to a Dialecte package
+
+Four commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
+the answer.
+
+- `dialecte rules [<files...>] [--json]` checks the code rules on the syntax tree of the changed files
+  (or the files given): exported types outside a `*.types.ts` file, module constants outside a
+  `*.constants.ts` file, functions declared as `const`, an `await` inside an argument, plan tags and
+  standard citations are errors; positional parameters (beyond a leading `query` / `tx`, a symmetric
+  pair aside) and abbreviated names are warnings.
+- `dialecte gate [--fast | --full] [--json]` runs the Definition of Done: `--fast` (default) `check`,
+  `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
+  file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered and is judged on its exit
+  code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
+  counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
+  step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
+  while a hand-over script holds the repository.
+- `dialecte new verb <namespace> <query|transaction> <name> [--version <v>]` writes a verb of a dialecte
+  package in the house style: the function (query or transaction first, one params object), its
+  `.types.ts`, a table-driven test with one red case marked `only`, its barrel export and, for a new
+  namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
+  `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
+- `dialecte handover <lots.json> [--out <dir>] [--rehash]` writes the commit-by-lots script a human
+  runs. The lots file names the repository, the branch and HEAD expected, and the lots (paths, message):
+
+  ```json
+  {
+  	"repository": "/path/to/the/repository",
+  	"branch": "feat/names",
+  	"head": "d4b1c04",
+  	"gates": "npm run check (217 tests), build",
+  	"lots": [
+  		{ "paths": ["src/names/"], "message": "feat(names): names stay unique among siblings" },
+  		{ "paths": ["CHANGELOG.md"], "message": "docs(changelog): unique names" }
+  	]
+  }
+  ```
+
+  It refuses (and writes nothing) when the branch or HEAD differ, something is staged, a changed file
+  is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
+  citation. It prints each lot with its size and snapshot hash, and writes `commit.sh` (bash, also run
+  with `sh`), which checks all of it again when it runs, plus the files against the snapshot. Edited
+  a file after the review? `--rehash`. The repository stays locked for `dialecte gate` until the script
+  has committed; the script never pushes.
+
+A package tunes them in its package.json:
+
+```json
+"dialecte": {
+	"gate": {
+		"fast": [
+			{
+				"name": "tests",
+				"run": "npx vitest run --project unit --changed",
+				"counts": "tests",
+				"changedOnly": true
+			}
+		]
+	},
+	"generatedDocs": [".vitepress/data/elements-catalog.json"],
+	"referencePatterns": ["SPEC-[0-9]+"]
+}
+```
+
+`gate.fast` / `gate.full` replace the default steps of that mode (`counts: "tests"` makes a step fail
+when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
+so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
+it); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
+tags and citations `rules` and `handover` refuse.
 
 ## How it fits the ecosystem
 
