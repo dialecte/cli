@@ -13,23 +13,26 @@ import { spawnSync } from 'node:child_process'
 import { resolveBin } from './bin.ts'
 import { getArg, hasFlag } from './config.ts'
 
-export type FormatOpts = { config?: string; skip?: boolean }
+import type { FormatOpts } from './format.types.ts'
 
-export const formatOptsFromArgv = (argv: string[]): FormatOpts => ({
-	config: getArg(argv, 'format-config'),
-	skip: hasFlag(argv, 'no-format'),
-})
+export function formatOptsFromArgv(argv: string[]): FormatOpts {
+	return { config: getArg(argv, 'format-config'), skip: hasFlag(argv, 'no-format') }
+}
 
-/** Run oxfmt over `files` (absolute or root-relative). No-op on skip / when no oxfmt is available. */
-export function formatFiles(root: string, files: string[], opts: FormatOpts = {}): void {
-	if (opts.skip || !files.length) return
+/**
+ * Run oxfmt over `files` (absolute or root-relative). No-op on skip / when no oxfmt is available.
+ * Answers false when oxfmt ran and failed, so a caller that must not leave unformatted files can say so.
+ */
+export function formatFiles(root: string, files: string[], opts: FormatOpts = {}): boolean {
+	if (opts.skip || !files.length) return true
 	const oxfmt = resolveBin('oxfmt', 'oxfmt', root)
 	if (!oxfmt) {
 		console.warn('  ⚠ oxfmt not found (project nor @dialecte/cli) — emitted files left unformatted')
-		return
+		return true
 	}
 	const args = [...(opts.config ? ['--config', opts.config] : []), ...files]
 	const res = spawnSync(oxfmt.path, args, { cwd: root, encoding: 'utf8' })
-	if (res.status !== 0)
-		console.warn(`  ⚠ oxfmt exited ${res.status ?? '?'} — emitted files may be unformatted`)
+	if (res.status === 0) return true
+	console.warn(`  ⚠ oxfmt exited ${res.status ?? '?'} — emitted files may be unformatted`)
+	return false
 }

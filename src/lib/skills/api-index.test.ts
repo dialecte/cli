@@ -1,3 +1,4 @@
+import { PLACEHOLDER_MARKER } from './api-index.constants.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
@@ -116,6 +117,19 @@ describe('findUndocumentedMethods', () => {
 		'documented methods → nothing': {
 			entries: ENTRIES.filter((method) => method.intents.length > 0),
 			expected: [],
+		},
+		'a summary and an intent still holding the new-verb placeholder → both reported': {
+			entries: [
+				entry({
+					path: 'q.cleanUp.findOrphans',
+					summary: `${PLACEHOLDER_MARKER} what it answers, in one sentence.`,
+					intents: [`${PLACEHOLDER_MARKER} what a caller is trying to do`],
+				}),
+			],
+			expected: [
+				'`doc.query.cleanUp.findOrphans` JSDoc summary is still a placeholder: write it',
+				'`doc.query.cleanUp.findOrphans` @intent is still a placeholder: write it',
+			],
 		},
 		'a method of this package without summary → reported': {
 			entries: [entry({ path: 'tx.lifecycle.extract.fsd', summary: undefined })],

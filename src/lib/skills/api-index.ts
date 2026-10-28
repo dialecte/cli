@@ -8,6 +8,7 @@
  * under its canonical route.
  */
 import {
+	PLACEHOLDER_MARKER,
 	QUOTED_SENTENCE_MIN_WORDS,
 	QUOTED_TEXT_PATTERN,
 	ROOT_PRIORITY,
@@ -48,13 +49,20 @@ export function renderIntentIndex(entries: readonly MethodEntry[]): string {
 	return ['| When you need to... | Use |', '|---|---|', ...rows].join('\n')
 }
 
-/** Every method a package defines explains itself and says when to reach for it. */
+/**
+ * Every method a package defines explains itself and says when to reach for it, in words of its own: a
+ * placeholder `dialecte new verb` wrote counts as missing.
+ */
 export function findUndocumentedMethods(entries: readonly MethodEntry[]): string[] {
 	return indexedMethods(entries).flatMap(({ entry }) => {
 		const path = displayPath(entry.path)
 		const messages: string[] = []
 		if (!entry.summary) messages.push(`\`${path}\` has no JSDoc summary`)
+		else if (entry.summary.includes(PLACEHOLDER_MARKER))
+			messages.push(`\`${path}\` JSDoc summary is still a placeholder: write it`)
 		if (entry.intents.length === 0) messages.push(`\`${path}\` has no @intent tag`)
+		else if (entry.intents.some((intent) => intent.includes(PLACEHOLDER_MARKER)))
+			messages.push(`\`${path}\` @intent is still a placeholder: write it`)
 		return messages
 	})
 }

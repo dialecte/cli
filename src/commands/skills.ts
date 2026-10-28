@@ -15,7 +15,7 @@ import { buildApiJson, renderApiJson } from '../lib/api/api-json.ts'
 import { getArg, hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { discoverMethods } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
-import { formatFiles, formatOptsFromArgv, type FormatOpts } from '../lib/format.ts'
+import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
@@ -44,6 +44,7 @@ import { discoverSkillSources, syncSkills } from '../lib/skills/sync-skills.ts'
 import { METHOD_DISCOVERY_DEPTH, SUBCOMMAND_NAMES } from './skills.constants.ts'
 
 import type { MethodEntry } from '../lib/discover.types.ts'
+import type { FormatOpts } from '../lib/format.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
 import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
 

@@ -12,3 +12,9 @@ export const QUOTED_TEXT_PATTERN = /"([^"\n]+)"|“([^”\n]+)”/g
 
 /** From this many words, quoted text is a quoted sentence, not a quoted token like `"name"`. */
 export const QUOTED_SENTENCE_MIN_WORDS = 4
+
+/**
+ * What `dialecte new verb` writes where a contributor has a sentence to write (the JSDoc summary, the
+ * `@intent`, the test case): `skills check` refuses a method whose summary or intent still holds it.
+ */
+export const PLACEHOLDER_MARKER = 'FILL:'
