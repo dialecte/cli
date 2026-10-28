@@ -1,9 +1,9 @@
+import { STABLE_METRICS } from './bench.constants.ts'
 import {
 	aggregateRuns,
 	checkRegression,
 	isolatedTsconfig,
 	parseTscMetrics,
-	STABLE_METRICS,
 	stableResults,
 	wholeProgramArgs,
 } from './bench.ts'
@@ -22,38 +22,38 @@ Total time:       1.32s
 
 describe('parseTscMetrics', () => {
 	it('extracts every tracked metric from a --extendedDiagnostics dump', () => {
-		const m = parseTscMetrics(SAMPLE)
-		expect(m.Instantiations).toBe(115109)
-		expect(m.Types).toBe(99123)
-		expect(m.Symbols).toBe(327797)
-		expect(m['Check time']).toBe(1.02)
+		const metrics = parseTscMetrics(SAMPLE)
+		expect(metrics.Instantiations).toBe(115109)
+		expect(metrics.Types).toBe(99123)
+		expect(metrics.Symbols).toBe(327797)
+		expect(metrics['Check time']).toBe(1.02)
 	})
 	it('omits metrics absent from the output', () => {
-		const m = parseTscMetrics('Instantiations: 10\n')
-		expect(m.Instantiations).toBe(10)
-		expect(m.Types).toBeUndefined()
+		const metrics = parseTscMetrics('Instantiations: 10\n')
+		expect(metrics.Instantiations).toBe(10)
+		expect(metrics.Types).toBeUndefined()
 	})
 })
 
 describe('aggregateRuns', () => {
 	it('keeps the minimum value per metric across runs', () => {
-		const m = aggregateRuns([
+		const best = aggregateRuns([
 			{ Instantiations: 1000 },
 			{ Instantiations: 800 },
 			{ Instantiations: 900 },
 		])
-		expect(m.Instantiations).toBe(800)
+		expect(best.Instantiations).toBe(800)
 	})
 })
 
 describe('checkRegression', () => {
 	it('passes at exactly the threshold and fails just beyond it', () => {
-		expect(checkRegression(1050, 1000, 0.05)).toBe(false)
-		expect(checkRegression(1051, 1000, 0.05)).toBe(true)
+		expect(checkRegression({ current: 1050, baseline: 1000, threshold: 0.05 })).toBe(false)
+		expect(checkRegression({ current: 1051, baseline: 1000, threshold: 0.05 })).toBe(true)
 	})
 	it('never reports a regression when a value is missing', () => {
-		expect(checkRegression(undefined, 1000)).toBe(false)
-		expect(checkRegression(1000, undefined)).toBe(false)
+		expect(checkRegression({ current: undefined, baseline: 1000 })).toBe(false)
+		expect(checkRegression({ current: 1000, baseline: undefined })).toBe(false)
 	})
 })
 

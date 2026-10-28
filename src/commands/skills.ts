@@ -204,7 +204,7 @@ export function generatePages(params: {
 		written.push(apiJson.file)
 		console.log(`✏️  ${apiJson.file}`)
 	}
-	formatFiles(cwd, written, params.formatOptions)
+	formatFiles({ root: cwd, files: written, options: params.formatOptions })
 	return failed ? 1 : 0
 }
 

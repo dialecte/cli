@@ -55,11 +55,11 @@ export function runNewVerb(params: { cwd: string; argv: string[] }): CommandResu
 	})
 	if (typeof result === 'string')
 		return { exitCode: 1, output: `new verb: ${result}, nothing written` }
-	const formatted = formatFiles(
-		cwd,
-		[...result.written, ...result.edited].map((path) => join(cwd, path)),
-		formatOptsFromArgv(argv),
-	)
+	const formatted = formatFiles({
+		root: cwd,
+		files: [...result.written, ...result.edited].map((path) => join(cwd, path)),
+		options: formatOptsFromArgv(argv),
+	})
 	if (!formatted)
 		return {
 			exitCode: 1,

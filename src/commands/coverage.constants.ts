@@ -1,0 +1,17 @@
+export const ELEMENT_GENERICS = [
+	'Ref',
+	'RawRecord',
+	'TrackedRecord',
+	'TreeRecord',
+	'AttributesOf',
+	'AttributesValueObjectOf',
+	'FullAttributeObjectOf',
+	'ChildrenOf',
+	'ParentsOf',
+	'DescendantsOf',
+	'AncestorsOf',
+	'ParentRelationship',
+	'ChildRelationship',
+	'Attribute',
+	'QualifiedAttribute',
+] as const

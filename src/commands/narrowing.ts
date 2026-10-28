@@ -27,20 +27,20 @@ export async function run(argv: string[]): Promise<void> {
 		)
 
 	let failed = false
-	for (const t of targets) {
-		const schema = await loadSchema(resolve(ROOT, t.constantsDir))
-		mkdirSync(resolve(ROOT, t.outDir), { recursive: true })
-		const relFile = `${t.outDir}/narrowing.generated.test-d.ts`
-		writeFileSync(join(ROOT, relFile), genNarrowing(schema, t.binding))
+	for (const target of targets) {
+		const schema = await loadSchema(resolve(ROOT, target.constantsDir))
+		mkdirSync(resolve(ROOT, target.outDir), { recursive: true })
+		const relFile = `${target.outDir}/narrowing.generated.test-d.ts`
+		writeFileSync(join(ROOT, relFile), genNarrowing({ schema, binding: target.binding }))
 
 		// Also type-check the full method-surface probe (core verbs + extension/domain groups) when
 		// `coverage` has generated it — so a structurally-broken extension surface fails the gate too.
-		const apiFile = `${t.outDir}/coverage.api.generated.ts`
+		const apiFile = `${target.outDir}/coverage.api.generated.ts`
 		const include = existsSync(join(ROOT, apiFile)) ? [relFile, apiFile] : [relFile]
 
 		// Isolated config: extend the project's tsconfig but force noEmit + skipLibCheck (so only a
 		// failed assertion in our file — not pre-existing lib .d.ts errors — can fail the check).
-		const tmp = `.narrow-${t.version}.tsconfig.json`
+		const tmp = `.narrow-${target.version}.tsconfig.json`
 		writeFileSync(
 			join(ROOT, tmp),
 			JSON.stringify({
@@ -64,11 +64,13 @@ export async function run(argv: string[]): Promise<void> {
 		rmSync(join(ROOT, tmp), { force: true })
 
 		if (res.status === 0) {
-			console.log(`✅ [${t.version}] narrowing holds — ${schema.elements.length} elements asserted`)
+			console.log(
+				`✅ [${target.version}] narrowing holds — ${schema.elements.length} elements asserted`,
+			)
 		} else {
 			failed = true
 			console.error(
-				`❌ [${t.version}] narrowing assertion(s) failed:\n${res.stdout || ''}${res.stderr || ''}`,
+				`❌ [${target.version}] narrowing assertion(s) failed:\n${res.stdout || ''}${res.stderr || ''}`,
 			)
 		}
 	}

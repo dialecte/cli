@@ -1,5 +1,5 @@
 import { writeFileSync, rmSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 
 import { resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
@@ -12,34 +12,42 @@ import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
  */
 import ts from 'typescript'
 
-type Row = { name: string; len: number; members: number | string; flags: string[] }
+import type { Row } from './audit.types.ts'
 
 /** Bucket a rendered type string into the C1–C6 readability root causes (pure; the audit's verdict). */
-export function classify(s: string): string[] {
-	const f: string[] = []
-	if (s.includes('import(')) f.push('C1 module-noise')
-	const tn = (s.match(/tagName/g) || []).length
-	if (tn > 8) f.push(`C2/C4 element-union×${tn}`)
-	if ((s.match(/\|\s*\{/g) || []).length > 6) f.push('C3 wide-input-union')
-	if (s.includes('status:') && s.includes('attributes:')) f.push('C5 record-seam')
-	if (s.includes('TreeRecord<') || s.includes('TreeSelect<')) f.push('C6 recursive')
-	return f
+export function classify(rendered: string): string[] {
+	const causes: string[] = []
+	if (rendered.includes('import(')) causes.push('C1 module-noise')
+	const tagNameCount = (rendered.match(/tagName/g) || []).length
+	if (tagNameCount > 8) causes.push(`C2/C4 element-union×${tagNameCount}`)
+	if ((rendered.match(/\|\s*\{/g) || []).length > 6) causes.push('C3 wide-input-union')
+	if (rendered.includes('status:') && rendered.includes('attributes:'))
+		causes.push('C5 record-seam')
+	if (rendered.includes('TreeRecord<') || rendered.includes('TreeSelect<'))
+		causes.push('C6 recursive')
+	return causes
 }
 
-function auditTarget(NS: string, ENTRY: string, tsconfig: string, outMd: string): void {
-	const ROOT = process.cwd()
-	const ENTRY_FILE = join(ROOT, 'benchmarks/types/.audit-entry.ts')
+function auditTarget(params: {
+	namespace: string
+	entry: string
+	tsconfig: string
+	outputPath: string
+}): void {
+	const { namespace, entry, tsconfig, outputPath } = params
+	const root = process.cwd()
+	const entryFile = join(root, 'benchmarks/types/.audit-entry.ts')
 	const parsed = ts.parseJsonConfigFileContent(
-		ts.readConfigFile(join(ROOT, tsconfig), ts.sys.readFile).config,
+		ts.readConfigFile(join(root, tsconfig), ts.sys.readFile).config,
 		ts.sys,
-		ROOT,
+		root,
 	)
-	const compilerOptions: ts.CompilerOptions = { ...parsed.options, noEmit: true, rootDir: ROOT }
-	const FLAGS =
+	const compilerOptions: ts.CompilerOptions = { ...parsed.options, noEmit: true, rootDir: root }
+	const formatFlags =
 		ts.TypeFormatFlags.NoTruncation |
 		ts.TypeFormatFlags.WriteArrowStyleSignature |
 		ts.TypeFormatFlags.MultilineObjectLiterals
-	const PRIMITIVEISH =
+	const primitiveFlags =
 		ts.TypeFlags.StringLike |
 		ts.TypeFlags.NumberLike |
 		ts.TypeFlags.BooleanLike |
@@ -47,167 +55,213 @@ function auditTarget(NS: string, ENTRY: string, tsconfig: string, outMd: string)
 		ts.TypeFlags.VoidLike |
 		ts.TypeFlags.Null |
 		ts.TypeFlags.BigIntLike
-	const declOf = (p: ts.Symbol) => p.valueDeclaration ?? p.declarations?.[0]
+	function declOf(symbol: ts.Symbol) {
+		return symbol.valueDeclaration ?? symbol.declarations?.[0]
+	}
 
 	// Pass 1: discover method paths + namespace members.
 	writeFileSync(
-		ENTRY_FILE,
+		entryFile,
 		[
-			`import type { ${NS} } from '${ENTRY}'`,
-			`declare const q: ${NS}.Query`,
-			`declare const tx: ${NS}.Transaction`,
-			`declare const doc: ${NS}.Document`,
-			`declare const project: ${NS}.Project`,
+			`import type { ${namespace} } from '${entry}'`,
+			`declare const q: ${namespace}.Query`,
+			`declare const tx: ${namespace}.Transaction`,
+			`declare const doc: ${namespace}.Document`,
+			`declare const project: ${namespace}.Project`,
 			`export { q, tx, doc, project }`,
 			'',
 		].join('\n'),
 	)
-	const d1 = ts.createProgram([ENTRY_FILE], compilerOptions)
-	const c1 = d1.getTypeChecker()
-	const sf1 = d1.getSourceFile(ENTRY_FILE)!
-	const isPublic1 = (p: ts.Symbol) => {
-		const d = declOf(p)
+	const firstProgram = ts.createProgram([entryFile], compilerOptions)
+	const firstChecker = firstProgram.getTypeChecker()
+	const firstSourceFile = firstProgram.getSourceFile(entryFile)!
+	function isPublic(symbol: ts.Symbol) {
+		const declaration = declOf(symbol)
 		return (
-			!d ||
-			!(ts.getCombinedModifierFlags(d) & (ts.ModifierFlags.Private | ts.ModifierFlags.Protected))
+			!declaration ||
+			!(
+				ts.getCombinedModifierFlags(declaration) &
+				(ts.ModifierFlags.Private | ts.ModifierFlags.Protected)
+			)
 		)
 	}
-	const inRepo1 = (p: ts.Symbol) =>
-		!(declOf(p)?.getSourceFile()?.fileName ?? '').includes('/node_modules/typescript/')
-	const callable1 = (p: ts.Symbol) =>
-		c1.getTypeOfSymbolAtLocation(p, declOf(p) ?? sf1).getCallSignatures().length > 0
-	const walk = (type: ts.Type, path: string, depth: number, acc: string[]) => {
+	function isInRepo(symbol: ts.Symbol) {
+		return !(declOf(symbol)?.getSourceFile()?.fileName ?? '').includes('/node_modules/typescript/')
+	}
+	function isCallable(symbol: ts.Symbol) {
+		return (
+			firstChecker
+				.getTypeOfSymbolAtLocation(symbol, declOf(symbol) ?? firstSourceFile)
+				.getCallSignatures().length > 0
+		)
+	}
+	function walk(params: { type: ts.Type; path: string; depth: number; acc: string[] }) {
+		const { type, path, depth, acc } = params
 		for (const prop of type.getProperties()) {
-			if (!isPublic1(prop)) continue
-			const pt = c1.getTypeOfSymbolAtLocation(prop, declOf(prop) ?? sf1)
-			if (pt.getCallSignatures().length > 0) acc.push(`${path}.${prop.getName()}`)
+			if (!isPublic(prop)) continue
+			const propertyType = firstChecker.getTypeOfSymbolAtLocation(
+				prop,
+				declOf(prop) ?? firstSourceFile,
+			)
+			if (propertyType.getCallSignatures().length > 0) acc.push(`${path}.${prop.getName()}`)
 			else if (
 				depth < 1 &&
-				!(pt.flags & PRIMITIVEISH) &&
-				pt.getProperties().some((p) => isPublic1(p) && inRepo1(p) && callable1(p))
+				!(propertyType.flags & primitiveFlags) &&
+				propertyType
+					.getProperties()
+					.some((member) => isPublic(member) && isInRepo(member) && isCallable(member))
 			)
-				walk(pt, `${path}.${prop.getName()}`, depth + 1, acc)
+				walk({ type: propertyType, path: `${path}.${prop.getName()}`, depth: depth + 1, acc })
 		}
 	}
-	const ex1 = Object.fromEntries(
-		c1.getExportsOfModule(c1.getSymbolAtLocation(sf1)!).map((s) => [s.getName(), s]),
+	const firstExports = Object.fromEntries(
+		firstChecker
+			.getExportsOfModule(firstChecker.getSymbolAtLocation(firstSourceFile)!)
+			.map((exported) => [exported.getName(), exported]),
 	)
 	const methodPaths: string[] = []
-	for (const v of ['q', 'tx', 'doc', 'project'])
-		if (ex1[v]) walk(c1.getTypeOfSymbolAtLocation(ex1[v], sf1), v, 0, methodPaths)
-	const imp = sf1.statements.find(ts.isImportDeclaration)?.importClause?.namedBindings as
-		| ts.NamedImports
-		| undefined
-	let nsSym = imp ? c1.getSymbolAtLocation(imp.elements[0].name) : undefined
-	if (nsSym && nsSym.flags & ts.SymbolFlags.Alias) nsSym = c1.getAliasedSymbol(nsSym)
-	const nsMembers: { name: string; arity: number }[] = []
-	nsSym?.exports?.forEach((m, name) => {
-		const decl = m.declarations?.[0]
-		const tp = decl && ts.isTypeAliasDeclaration(decl) ? (decl.typeParameters ?? []) : []
-		nsMembers.push({ name: String(name), arity: tp.filter((t) => !t.default).length })
+	for (const variable of ['q', 'tx', 'doc', 'project'])
+		if (firstExports[variable])
+			walk({
+				type: firstChecker.getTypeOfSymbolAtLocation(firstExports[variable], firstSourceFile),
+				path: variable,
+				depth: 0,
+				acc: methodPaths,
+			})
+	const namedImports = firstSourceFile.statements.find(ts.isImportDeclaration)?.importClause
+		?.namedBindings as ts.NamedImports | undefined
+	let namespaceSymbol = namedImports
+		? firstChecker.getSymbolAtLocation(namedImports.elements[0].name)
+		: undefined
+	if (namespaceSymbol && namespaceSymbol.flags & ts.SymbolFlags.Alias)
+		namespaceSymbol = firstChecker.getAliasedSymbol(namespaceSymbol)
+	const namespaceMembers: { name: string; arity: number }[] = []
+	namespaceSymbol?.exports?.forEach((member, name) => {
+		const declaration = member.declarations?.[0]
+		const typeParameters =
+			declaration && ts.isTypeAliasDeclaration(declaration)
+				? (declaration.typeParameters ?? [])
+				: []
+		namespaceMembers.push({
+			name: String(name),
+			arity: typeParameters.filter((typeParameter) => !typeParameter.default).length,
+		})
 	})
-	nsMembers.sort((a, b) => a.name.localeCompare(b.name))
+	namespaceMembers.sort((left, right) => left.name.localeCompare(right.name))
 
 	// Pass 2: probe entry — resolved param+return per method + every type alias.
 	const lines = [
-		`import type { ${NS} } from '${ENTRY}'`,
-		`declare const q: ${NS}.Query`,
-		`declare const tx: ${NS}.Transaction`,
-		`declare const doc: ${NS}.Document`,
-		`declare const project: ${NS}.Project`,
+		`import type { ${namespace} } from '${entry}'`,
+		`declare const q: ${namespace}.Query`,
+		`declare const tx: ${namespace}.Transaction`,
+		`declare const doc: ${namespace}.Document`,
+		`declare const project: ${namespace}.Project`,
 		`export { q, tx, doc, project }`,
 	]
-	methodPaths.forEach((p, i) => {
+	methodPaths.forEach((methodPath, index) => {
 		lines.push(
-			`export type MP_${i} = Parameters<typeof ${p}>[0]`,
-			`export type MR_${i} = Awaited<ReturnType<typeof ${p}>>`,
+			`export type MP_${index} = Parameters<typeof ${methodPath}>[0]`,
+			`export type MR_${index} = Awaited<ReturnType<typeof ${methodPath}>>`,
 		)
 	})
-	for (const m of nsMembers) {
+	for (const member of namespaceMembers) {
 		lines.push(
-			`export type NS_${m.name} = ${NS}.${m.name}${m.arity ? `<${Array(m.arity).fill(`'LNode'`).join(', ')}>` : ''}`,
+			`export type NS_${member.name} = ${namespace}.${member.name}${member.arity ? `<${Array(member.arity).fill(`'LNode'`).join(', ')}>` : ''}`,
 		)
-		if (m.arity >= 1)
+		if (member.arity >= 1)
 			lines.push(
-				`export type NSW_${m.name} = ${NS}.${m.name}<${[`${NS}.ElementsOf`, ...Array(m.arity - 1).fill(`'LNode'`)].join(', ')}>`,
+				`export type NSW_${member.name} = ${namespace}.${member.name}<${[`${namespace}.ElementsOf`, ...Array(member.arity - 1).fill(`'LNode'`)].join(', ')}>`,
 			)
 	}
-	writeFileSync(ENTRY_FILE, `${lines.join('\n')}\n`)
-	const program = ts.createProgram([ENTRY_FILE], compilerOptions)
+	writeFileSync(entryFile, `${lines.join('\n')}\n`)
+	const program = ts.createProgram([entryFile], compilerOptions)
 	const checker = program.getTypeChecker()
-	const sf = program.getSourceFile(ENTRY_FILE)!
-	const render = (type: ts.Type, node: ts.Node) => {
+	const sourceFile = program.getSourceFile(entryFile)!
+	function render(params: { type: ts.Type; node: ts.Node }) {
+		const { type, node } = params
 		try {
-			return checker.typeToString(type, node, FLAGS)
+			return checker.typeToString(type, node, formatFlags)
 		} catch {
 			return '<render-error>'
 		}
 	}
-	const tagCount = (s: string) => (s.match(/readonly tagName|tagName:/g) || []).length
-	const sym2 = Object.fromEntries(
-		checker.getExportsOfModule(checker.getSymbolAtLocation(sf)!).map((s) => [s.getName(), s]),
+	function tagCount(rendered: string) {
+		return (rendered.match(/readonly tagName|tagName:/g) || []).length
+	}
+	const exportsByName = Object.fromEntries(
+		checker
+			.getExportsOfModule(checker.getSymbolAtLocation(sourceFile)!)
+			.map((exported) => [exported.getName(), exported]),
 	)
-	const renderExport = (name: string) => {
-		const s = sym2[name]
-		return s ? render(checker.getDeclaredTypeOfSymbol(s), s.declarations?.[0] ?? sf) : ''
+	function renderExport(name: string) {
+		const symbol = exportsByName[name]
+		return symbol
+			? render({
+					type: checker.getDeclaredTypeOfSymbol(symbol),
+					node: symbol.declarations?.[0] ?? sourceFile,
+				})
+			: ''
 	}
 
 	const methodRows: Row[] = []
 	const typeRows: Row[] = []
-	for (const [label, v] of [
-		[`${NS}.Query`, 'q'],
-		[`${NS}.Transaction`, 'tx'],
-		[`${NS}.Document`, 'doc'],
-		[`${NS}.Project`, 'project'],
+	for (const [label, variable] of [
+		[`${namespace}.Query`, 'q'],
+		[`${namespace}.Transaction`, 'tx'],
+		[`${namespace}.Document`, 'doc'],
+		[`${namespace}.Project`, 'project'],
 	] as const) {
-		if (!sym2[v]) continue
-		const str = render(checker.getTypeOfSymbolAtLocation(sym2[v], sf), sf)
+		if (!exportsByName[variable]) continue
+		const renderedContainer = render({
+			type: checker.getTypeOfSymbolAtLocation(exportsByName[variable], sourceFile),
+			node: sourceFile,
+		})
 		methodRows.push({
 			name: `${label} (container)`,
-			len: str.length,
+			len: renderedContainer.length,
 			members: '-',
-			flags: classify(str),
+			flags: classify(renderedContainer),
 		})
 	}
-	methodPaths.forEach((p, i) => {
-		const param = renderExport(`MP_${i}`)
-		const ret = renderExport(`MR_${i}`)
+	methodPaths.forEach((methodPath, index) => {
+		const param = renderExport(`MP_${index}`)
+		const ret = renderExport(`MR_${index}`)
 		methodRows.push({
-			name: `${p}(…) param`,
+			name: `${methodPath}(…) param`,
 			len: param.length,
 			members: tagCount(param),
 			flags: classify(param),
 		})
 		methodRows.push({
-			name: `${p}(…) → return`,
+			name: `${methodPath}(…) → return`,
 			len: ret.length,
 			members: tagCount(ret),
 			flags: classify(ret),
 		})
 	})
-	for (const m of nsMembers) {
-		const concrete = renderExport(`NS_${m.name}`)
+	for (const member of namespaceMembers) {
+		const concrete = renderExport(`NS_${member.name}`)
 		typeRows.push({
-			name: `${NS}.${m.name}`,
+			name: `${namespace}.${member.name}`,
 			len: concrete.length,
 			members: tagCount(concrete),
 			flags: classify(concrete),
 		})
-		if (m.arity >= 1) {
-			const wide = renderExport(`NSW_${m.name}`)
+		if (member.arity >= 1) {
+			const wide = renderExport(`NSW_${member.name}`)
 			typeRows.push({
-				name: `${NS}.${m.name}<ElementsOf>`,
+				name: `${namespace}.${member.name}<ElementsOf>`,
 				len: wide.length,
 				members: tagCount(wide),
 				flags: classify(wide),
 			})
 		}
 	}
-	methodRows.sort((a, b) => b.len - a.len)
-	typeRows.sort((a, b) => b.len - a.len)
+	methodRows.sort((left, right) => right.len - left.len)
+	typeRows.sort((left, right) => right.len - left.len)
 
-	const md = [
-		`# ${NS} public-type readability audit`,
+	const markdownLines = [
+		`# ${namespace} public-type readability audit`,
 		'',
 		`Every public method (resolved param + return — the form an editor shows when you hover a call)`,
 		`and every namespace type is rendered with NoTruncation, then measured. Methods are discovered`,
@@ -225,46 +279,63 @@ function auditTarget(NS: string, ENTRY: string, tsconfig: string, outMd: string)
 		'- **C6 recursive** — self-referential `TreeRecord`/`TreeSelect`.',
 		'',
 	]
-	const table = (rows: Row[], head: string) => {
-		md.push(
+	function table(params: { rows: Row[]; head: string }) {
+		const { rows, head } = params
+		markdownLines.push(
 			`## ${head}`,
 			'',
 			'| Member | len | members | causes |',
 			'|--------|-----|---------|--------|',
 		)
-		for (const r of rows)
-			md.push(
-				`| ${r.name} | ${r.len.toLocaleString('en-US')} | ${r.members} | ${r.flags.join(', ') || '—'} |`,
+		for (const row of rows)
+			markdownLines.push(
+				`| ${row.name} | ${row.len.toLocaleString('en-US')} | ${row.members} | ${row.flags.join(', ') || '—'} |`,
 			)
-		md.push('')
+		markdownLines.push('')
 	}
-	table(methodRows, `Methods — resolved param/return (${methodPaths.length} methods discovered)`)
-	table(typeRows, 'Namespace type aliases (concrete `LNode` + wide `ElementsOf`)')
+	table({
+		rows: methodRows,
+		head: `Methods — resolved param/return (${methodPaths.length} methods discovered)`,
+	})
+	table({
+		rows: typeRows,
+		head: 'Namespace type aliases (concrete `LNode` + wide `ElementsOf`)',
+	})
 	const all = [...methodRows, ...typeRows]
-	md.push(
-		`**Summary:** ${methodPaths.length} methods, ${nsMembers.length} namespace types, ${all.filter((r) => r.flags.length).length}/${all.length} rows flagged. Total ${all.reduce((a, r) => a + r.len, 0).toLocaleString('en-US')} chars.`,
+	markdownLines.push(
+		`**Summary:** ${methodPaths.length} methods, ${namespaceMembers.length} namespace types, ${all.filter((row) => row.flags.length).length}/${all.length} rows flagged. Total ${all.reduce((total, row) => total + row.len, 0).toLocaleString('en-US')} chars.`,
 	)
 
-	mkdirSync(dirname(join(ROOT, outMd)), { recursive: true })
-	writeFileSync(join(ROOT, outMd), `${md.join('\n')}\n`)
-	rmSync(ENTRY_FILE, { force: true })
+	mkdirSync(dirname(outputPath), { recursive: true })
+	writeFileSync(outputPath, `${markdownLines.join('\n')}\n`)
+	rmSync(entryFile, { force: true })
 	console.log(
-		`  [${NS}] ${methodPaths.length} methods, ${nsMembers.length} types, ${all.filter((r) => r.flags.length).length} flagged → ${outMd}`,
+		`  [${namespace}] ${methodPaths.length} methods, ${namespaceMembers.length} types, ${all.filter((row) => row.flags.length).length} flagged → ${outputPath}`,
 	)
+}
+
+/** Where a target's audit is written: next to its version directory; an absolute `--out` is used as is. */
+export function auditOutputPath(params: { root: string; outDir: string }): string {
+	return resolve(params.root, dirname(params.outDir), 'readability-audit.md')
 }
 
 export async function run(argv: string[]): Promise<void> {
 	const tsconfig = tsconfigOf(argv)
-	const targets = resolveTargets(argv).filter((t) => t.binding.kind === 'namespace')
+	const targets = resolveTargets(argv).filter((target) => target.binding.kind === 'namespace')
 	if (!targets.length)
 		throw new Error(
 			'audit: no namespace-binding versions discovered (the audit needs a hydrated namespace).',
 		)
-	const fmt = formatOptsFromArgv(argv)
-	for (const t of targets) {
-		if (t.binding.kind !== 'namespace') continue
-		const outMd = `${dirname(t.outDir)}/readability-audit.md`
-		auditTarget(t.binding.name, t.binding.import, tsconfig, outMd)
-		formatFiles(process.cwd(), [join(process.cwd(), outMd)], fmt)
+	const formatOptions = formatOptsFromArgv(argv)
+	for (const target of targets) {
+		if (target.binding.kind !== 'namespace') continue
+		const outputPath = auditOutputPath({ root: process.cwd(), outDir: target.outDir })
+		auditTarget({
+			namespace: target.binding.name,
+			entry: target.binding.import,
+			tsconfig,
+			outputPath,
+		})
+		formatFiles({ root: process.cwd(), files: [outputPath], options: formatOptions })
 	}
 }

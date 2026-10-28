@@ -15,11 +15,13 @@ describe('formatOptsFromArgv', () => {
 
 describe('formatFiles', () => {
 	it('is a no-op when skip is set or no files given', () => {
-		expect(() => formatFiles('/nonexistent', ['/x.json'], { skip: true })).not.toThrow()
-		expect(() => formatFiles('/nonexistent', [])).not.toThrow()
+		expect(() =>
+			formatFiles({ root: '/nonexistent', files: ['/x.json'], options: { skip: true } }),
+		).not.toThrow()
+		expect(() => formatFiles({ root: '/nonexistent', files: [] })).not.toThrow()
 	})
 	it('warns but never throws when oxfmt is absent from the project', () => {
 		// /tmp has no node_modules/.bin/oxfmt — must degrade gracefully, never crash a command.
-		expect(() => formatFiles('/tmp', ['/x.json'])).not.toThrow()
+		expect(() => formatFiles({ root: '/tmp', files: ['/x.json'] })).not.toThrow()
 	})
 })
