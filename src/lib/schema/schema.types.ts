@@ -8,7 +8,42 @@ export type SchemaDataType = {
 	readonly builtin?: string
 	readonly list?: SchemaDataType
 	readonly union?: readonly SchemaDataType[]
-	readonly facets?: { readonly enumeration?: readonly string[] }
+	readonly facets?: SchemaFacets
+}
+
+/** The facets a restriction adds, as the generated definition writes them (ranges as written in the schema). */
+export type SchemaFacets = {
+	readonly enumeration?: readonly string[]
+	/** One list per restriction level, as the definition writes them: a value matches one of each level. */
+	readonly pattern?: readonly (readonly string[])[]
+	readonly length?: number
+	readonly minLength?: number
+	readonly maxLength?: number
+	readonly minInclusive?: string
+	readonly maxInclusive?: string
+	readonly minExclusive?: string
+	readonly maxExclusive?: string
+}
+
+/** A name test of a selector or field step: an absent name is any element (`*`). */
+export type SchemaNameTest = { readonly name?: string; readonly namespace?: string }
+
+/** One alternative of a selector: the steps from the element the constraint is declared on (`[]` = itself). */
+export type SchemaSelectorPath = { readonly deep?: true; readonly steps: readonly SchemaNameTest[] }
+
+/** One alternative of a field: the attribute it reads, or without one the text of the element its steps reach. */
+export type SchemaFieldPath = SchemaSelectorPath & { readonly attribute?: SchemaNameTest }
+
+/** A unique, key or keyref constraint, as the generated definition writes it on the element declaring it. */
+export type SchemaIdentityConstraint = {
+	readonly kind: 'unique' | 'key' | 'keyref'
+	readonly name: string
+	readonly namespace: string
+	/** The key or unique a keyref refers to. */
+	readonly refer?: { readonly name: string; readonly namespace: string }
+	readonly selector: readonly SchemaSelectorPath[]
+	/** Each field is a union of paths. */
+	readonly fields: readonly (readonly SchemaFieldPath[])[]
 }
 
 export type SchemaElementDefinition = {
@@ -20,7 +55,15 @@ export type SchemaElementDefinition = {
 		readonly details: Readonly<Record<string, { readonly type?: SchemaDataType }>>
 	}
 	readonly children: { readonly sequence: readonly string[]; readonly any?: true }
-	readonly textContent?: { readonly type?: SchemaDataType }
+	readonly textContent?: {
+		readonly type?: SchemaDataType
+		readonly default?: string
+		readonly fixed?: string
+	}
+	/** The element's declared type is abstract: a written element names one of its variants with xsi:type. */
+	readonly abstractType?: boolean
+	/** The unique, key and keyref constraints declared on the element. */
+	readonly constraints?: readonly SchemaIdentityConstraint[]
 }
 
 /** A dialecte's config, found by its shape: an export holding `rootElementName` and `definition`. */
@@ -31,11 +74,18 @@ export type SchemaConfig = {
 	readonly definition: Readonly<Record<string, SchemaElementDefinition>>
 }
 
-/** The record core's readers resolve a definition for: a tag at the top, no parent, no attribute. */
+/** The record core's readers resolve a definition for: a tag at the top, no parent, and its xsi:type when it names one. */
 export type SchemaRecord = {
 	readonly tagName: string
 	readonly parent: null
-	readonly attributes: readonly []
+	readonly attributes: readonly SchemaRecordAttribute[]
+}
+
+/** An attribute of a record the readers resolve: xsi:type, for the definition of the variant it names. */
+export type SchemaRecordAttribute = {
+	readonly name: string
+	readonly value: string
+	readonly namespace: { readonly prefix: string; readonly uri: string }
 }
 
 /** Core's own definition readers (`@dialecte/core/utils`), as the dialecte's core exports them. */

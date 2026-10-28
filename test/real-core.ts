@@ -8,11 +8,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { isCoreReaders, isDialecteConfig } from '../src/lib/schema/load-dialectes.ts'
+import { MISSING_CORE } from './real-core.constants.ts'
 
 import type { LoadedDialecte } from '../src/lib/schema/schema.types.ts'
-
-const MISSING_CORE =
-	'run tests: no @dialecte/core to run on - install the devDependency (npm install) or set DIALECTE_CORE_DIR to a built core checkout'
 
 /** The built files of the core the tests run on: its test entry and its utils. */
 export function coreEntries(): { testEntry: string; utilsEntry: string; folder: string } {
@@ -42,4 +40,16 @@ export async function loadCoreTestDialecte(): Promise<LoadedDialecte> {
 	if (!isDialecteConfig(config) || !isCoreReaders(readers))
 		throw new Error(`the core at ${folder} lacks its test dialecte or a reader: rebuild it`)
 	return { packageName: '@dialecte/core-test', config, readers }
+}
+
+/** The XSD of core's test dialecte, as the core the tests run on ships it (`@dialecte/core/test/xsd/test.xsd`). */
+export function coreTestSchema(): string {
+	const { folder } = coreEntries()
+	try {
+		return createRequire(join(folder, 'package.json')).resolve('@dialecte/core/test/xsd/test.xsd')
+	} catch {
+		throw new Error(
+			`the core at ${folder} ships no @dialecte/core/test/xsd/test.xsd: build a core that ships its test XSDs`,
+		)
+	}
 }

@@ -12,6 +12,7 @@ import { formatRunOutcome } from '../lib/run/format-run-outcome.ts'
 import { loadRunEnvironment } from '../lib/run/load-run-environment.ts'
 import { runScript } from '../lib/run/run-script.ts'
 import { DEFAULT_RUN_SEED, DEFAULT_RUN_TIMEOUT_IN_MILLISECONDS } from '../lib/run/run.constants.ts'
+import { splitArguments } from '../lib/split-arguments.ts'
 import {
 	EXIT_FAILED,
 	EXIT_OK,
@@ -97,26 +98,13 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 
 /** The options, or what is wrong with the command line. */
 export function parseRunOptions(params: { argv: string[] }): RunOptions | string {
-	const values = new Map<string, string>()
-	const flags = new Set<string>()
-	const positionals: string[] = []
-
-	const { argv } = params
-	for (let index = 0; index < argv.length; index++) {
-		const argument = argv[index]
-		if (!argument.startsWith('--')) {
-			positionals.push(argument)
-			continue
-		}
-		const name = argument.slice(2)
-		if (RUN_BOOLEAN_FLAGS.has(name)) flags.add(name)
-		else if (RUN_VALUE_FLAGS.has(name)) {
-			const value = argv[index + 1]
-			if (value === undefined || value.startsWith('--')) return `--${name} needs a value`
-			values.set(name, value)
-			index++
-		} else return `unknown option --${name}`
-	}
+	const split = splitArguments({
+		argv: params.argv,
+		valueFlags: RUN_VALUE_FLAGS,
+		booleanFlags: RUN_BOOLEAN_FLAGS,
+	})
+	if (typeof split === 'string') return split
+	const { positionals, values, flags } = split
 
 	if (positionals.length !== 1) return 'name one script'
 	const seed = Number(values.get('seed') ?? DEFAULT_RUN_SEED)
