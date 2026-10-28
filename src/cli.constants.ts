@@ -5,8 +5,10 @@ import { run as bench } from './commands/bench.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
 import { explain } from './commands/explain.ts'
+import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
+import { run as mcp } from './commands/mcp.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
@@ -25,9 +27,11 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	api,
 	schema,
 	members,
+	mcp,
 	models,
 	doctor,
 	run: runScript,
+	fixture,
 	explain,
 	rules,
 	gate,
@@ -50,9 +54,11 @@ Commands:
   api        Find a method by what you need (find), read its contract (show)
   members    The members of an expression of the live types (doc.query, tx.lifecycle)
   schema     What an element may hold and where: parents, children, attributes
+  mcp        Serve the read-only lookups as the tools of a stdio MCP server
   models     Which model each tier (fast, standard, strong, frontier) means for the project's vendor
   doctor     Installed versions, core API generation, skills in sync, local checkouts
   run        Run a script against an in-memory project of the installed dialecte; one structured outcome
+  fixture    The smallest valid XML document holding an element, built by the installed dialecte's engine
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
@@ -94,12 +100,20 @@ Lookups (the same with or without the repositories; --json on each):
                              # the model each tier means for the vendor (exit 2: no vendor known, 1: unknown vendor)
   dialecte doctor            # what to fix before trusting what you read; exit 1 on a warning
 
+MCP:
+  dialecte mcp               # stdio MCP server in the folder it starts in: tools api_find, api_show, schema,
+                             # members, doctor, models (JSON answers, a cwd argument per call); no write tool
+                             # configure it in your agent host: npx @dialecte/cli mcp (see the README)
+
 Run:
   dialecte run <script.ts> [--in <file>] [--out <file>] [--prepare] [--expect <file>]
                [--seed <n>] [--now <iso>] [--package <name>] [--timeout <ms>] [--json]
                              # the script's default export gets { project, doc, documentId, dialecte, helpers, utils };
                              # ids seeded, --prepare stages the first transaction and commits nothing,
                              # --expect checks a JSON array of { tag, where?, under?, count? }; exit 1 on failure
+  dialecte fixture <Tag> [--under A/B] [--package <name>] [--out <file>] [--json]
+                             # the chain from the root (or --under), required children and attributes, hooks applied;
+                             # the same bytes every time; an unknown tag answers the closest (exit 1)
   dialecte explain <code | key> [--package <name>] [--json]
   Node 22.18+: .ts scripts run through Node's built-in type stripping.
 

@@ -30,11 +30,13 @@ dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
 dialecte doctor            # versions, core API generation, skills in sync, local checkouts
+dialecte mcp               # the lookups as the tools of a stdio MCP server
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots script a human runs
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
+dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
 dialecte --help
 ```
@@ -114,6 +116,47 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   `--vendor`, 2 when no vendor is known.
 
 Run outside a package (no `package.json`), each answers a usage error.
+
+## MCP server
+
+`dialecte mcp` serves the read-only lookups as the tools of a stdio MCP server, for an agent host that
+prefers tools to a shell. The tools are `api_find {need, package?, limit?}`, `api_show {path}`,
+`schema {tag, package?}`, `members {expression}`, `doctor {}` and `models {vendor?}`; each answers what the
+command answers with `--json`, by the same answer function. A call that finds nothing, names an unknown tag
+(the result lists the closest) or gives a `cwd` that is not a folder is an error result, never a crash.
+The server reads the folder it starts in; every tool also takes an optional `cwd` (a package folder) for a
+workspace with several. There is no write tool: `run`, `gate`, `handover`, `skills` stay on the command line.
+
+Add it to your agent host, one snippet each (the command is always `npx @dialecte/cli mcp`):
+
+Claude Code (`.mcp.json`, or `claude mcp add dialecte -- npx @dialecte/cli mcp`):
+
+```json
+{ "mcpServers": { "dialecte": { "command": "npx", "args": ["@dialecte/cli", "mcp"] } } }
+```
+
+Copilot in VS Code (`.vscode/mcp.json`):
+
+```json
+{
+	"servers": { "dialecte": { "type": "stdio", "command": "npx", "args": ["@dialecte/cli", "mcp"] } }
+}
+```
+
+Codex (`~/.codex/config.toml`). Codex starts the server in the folder it was launched from, and that is the
+folder the tools read: pass the `cwd` argument of a tool to read another package.
+
+```toml
+[mcp_servers.dialecte]
+command = "npx"
+args = ["@dialecte/cli", "mcp"]
+```
+
+Gemini CLI (`.gemini/settings.json`):
+
+```json
+{ "mcpServers": { "dialecte": { "command": "npx", "args": ["@dialecte/cli", "mcp"] } } }
+```
 
 ## Contributing to a Dialecte package
 
@@ -250,12 +293,87 @@ expectations: 0 passed, 1 failed
 diagnostic catalogues the dialecte exports: the message, when it is raised, the usual fix, the docs
 page. `--json` for the entries as data; exit 1 when no catalogue knows the code.
 
+## A fixture from the engine
+
+`dialecte fixture <Tag>` answers the smallest XML document holding `<Tag>` that is valid against the
+dialecte's full schema, built by the engine of the dialecte your project installs - never written by hand.
+It is a `dialecte run` of a script the command writes from the definition, read through core's readers:
+
+- the chain of parents from the root down to the element: the shortest one (among chains as short, the
+  first in sequence order), or the one `--under A/B` names (the root may be named first or left out);
+- every child an element on the way requires, as many times as it is required, and the first branch of
+  each choice it requires (unless a child already takes one), each with what it requires in turn; an
+  element declared with an abstract type names its first variant with `xsi:type`;
+- a value for every required attribute, and text for an element whose type an empty text does not
+  satisfy: the fixed value, else the default, else the first value the type takes - an enumerated value,
+  a string its patterns match, a number counting up from the lowest its range allows, free text from the
+  tag name - checked against every facet (enumeration, pattern, length, range). Each sampled value is new
+  in the document, so unique and key fields never repeat one;
+- every element a key selects holds its key fields, and every reference a keyref checks points at an
+  element of the key: one already planned when the values can meet (the element itself, for a reference to
+  its own key), else one planted along the key's selector, with what it requires in turn (its own
+  references included).
+
+```
+dialecte fixture AAA_1 --package @dialecte/core/test
+<?xml version="1.0" encoding="UTF-8"?>
+<Root xmlns="http://dialecte.dev/XML/DEFAULT">
+    <A aA="A">
+        <AA_1 aAA_1="AA_1">
+            <AAA_1 aAAA_1="aaa">
+                <AAAA_1 aAAAA_1="AAAA_1"/>
+            </AAA_1>
+        </AA_1>
+    </A>
+</Root>
+```
+
+What is guaranteed, and how it is proven: the document is valid against the dialecte's full XSD -
+structure, values, identity (unique and key) and references (keyref). The tests build the fixture of every
+element of core's test dialecte and of scl and judge each with `xmllint --schema` on the real XSD.
+
+What is not:
+
+- The hooks have the last word on what they fill: an attribute a hook already set when the element was
+  added (an id, a derived name) keeps the hook's value. A dialecte whose hooks fill a key or reference
+  field differently from the plan could break a reference the plan made good; the tests catch it for the
+  dialectes they cover.
+- Only the first branch of a required choice, and the first variant of an abstract type, are taken; the
+  fixture holds no optional content.
+- A reference whose key is declared on another element than the keyref, a key reached only through `.//`
+  or through any element, and a field reaching past the selected element are not planted: the command
+  exits 1 naming the constraint, never with a document that breaks it.
+- The document carries no record-id marks (`dev:db-id`): it is the plain export, as a user would get it.
+
+- Ids are seeded and the clock is frozen: the same command and the same installed versions give the same
+  bytes.
+- `--out <file>` writes the document and prints one line (the path of the element, the bytes); `--json`
+  answers `{ ok, packageName, tag, path, bytes, xml }` (`out` in place of `xml` with `--out`).
+- Exit 1 with the reason when there is no fixture: an unknown tag (the closest tags named), a `--under`
+  step its parent does not hold, an element only an endless chain of required children could hold, a
+  value the fixture cannot make (the attribute named: a pattern construct it does not read, facets no
+  value satisfies), a reference it cannot plant (the constraint named), or a write the engine refuses
+  (its outcome, as `dialecte run` prints it). Exit 2: usage.
+- The command does not run a schema validator itself: no XSD ships with it.
+
 ## Developing the cli
 
-The `schema`, `run` and `explain` tests drive `@dialecte/core`'s own test dialecte: they resolve core from the
+The `schema`, `run`, `fixture` and `explain` tests drive `@dialecte/core`'s own test dialecte: they resolve core from the
 `@dialecte/core` devDependency, or from the built core checkout `DIALECTE_CORE_DIR` names
 (`DIALECTE_CORE_DIR=../core npm run test:run`); with neither they fail. The lockfile gains that
 devDependency at the release, once core 0.8.0 is published.
+
+The `fixture` tests judge every document twice:
+
+- with core's `assertValidXml` (and scl's validator), which parse with the browser's `DOMParser`: in Node
+  they borrow the cli's `@xmldom/xmldom` development dependency;
+- with `xmllint --noout --schema` (libxml2; the test fails when it is not installed - CI installs
+  `libxml2-utils`), on the fixture of every element: core's test dialecte against the XSD core ships,
+  `@dialecte/core/test/xsd/test.xsd` of the core the tests run on, always.
+
+The scl cases run when `DIALECTE_SCL_DIR` names a built scl checkout; the scl validity case also needs
+`DIALECTE_SCL_XSD`, the path of the scl schema's entry XSD on your machine (the schema does not ship with any
+package). Both are skipped, by their name, otherwise, and are not run in CI.
 
 ## How it fits the ecosystem
 
