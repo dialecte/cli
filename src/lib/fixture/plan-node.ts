@@ -2,8 +2,8 @@ import { allocateValue } from './allocate-value.ts'
 import { XSI_NAMESPACE, XSI_TYPE_ATTRIBUTE } from './fixture.constants.ts'
 import { attributeValues, textValues } from './sample-attribute.ts'
 
-import type { SchemaRecord } from '../schema/schema.types.ts'
-import type { FixtureDialecte, PlanContext, PlanNode, RequiredChoice } from './fixture.types.ts'
+import type { FixtureDialecte, PlanContext, PlanNode } from './fixture.types.ts'
+import type { RequiredChoice, ResolvableRecord } from '@dialecte/core/utils'
 
 /**
  * An element of the plan: its required attributes and text, then its children in sequence order - each it
@@ -140,10 +140,10 @@ function takeRequiredChoices(params: {
 function typedRecord(params: {
 	dialecte: FixtureDialecte
 	tagName: string
-}): { record: SchemaRecord; xsiType?: string } | { problem: string } {
+}): { record: ResolvableRecord; xsiType?: string } | { problem: string } {
 	const { dialecte, tagName } = params
 	const { config, readers } = dialecte
-	const declared: SchemaRecord = { tagName, parent: null, attributes: [] }
+	const declared: ResolvableRecord = { tagName, parent: null, attributes: [] }
 	const definition = readers.resolveDefinition({ dialecteConfig: config, record: declared })
 	if (!definition?.abstractType) return { record: declared }
 	const [xsiType] = readers.admittedXsiTypes({ dialecteConfig: config, record: declared })

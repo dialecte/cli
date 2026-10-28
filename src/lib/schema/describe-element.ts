@@ -3,20 +3,16 @@
  * dialecte's config - parents, children in sequence order with how often each may appear, attributes
  * (required, default, fixed, enumeration, pattern), text, xsi:type variants.
  */
-import type {
-	AttributeDescription,
-	ElementDescription,
-	LoadedDialecte,
-	SchemaDataType,
-	SchemaRecord,
-} from './schema.types.ts'
+import type { AttributeDescription, ElementDescription, LoadedDialecte } from './schema.types.ts'
+import type { DataType } from '@dialecte/core'
+import type { ResolvableRecord } from '@dialecte/core/utils'
 
 export function describeElement(params: {
 	dialecte: LoadedDialecte
 	tagName: string
 }): ElementDescription | undefined {
 	const { config, readers, packageName } = params.dialecte
-	const record: SchemaRecord = { tagName: params.tagName, parent: null, attributes: [] }
+	const record: ResolvableRecord = { tagName: params.tagName, parent: null, attributes: [] }
 	const definition = config.elements.includes(params.tagName)
 		? readers.resolveDefinition({ dialecteConfig: config, record })
 		: undefined
@@ -61,8 +57,8 @@ export function describeElement(params: {
 }
 
 /** The built-in a datatype restricts, `list` or `union`; undefined for an untyped (plain string) value. */
-function typeName(datatype: SchemaDataType | undefined): string | undefined {
+function typeName(datatype: DataType | undefined): string | undefined {
 	if (datatype === undefined) return undefined
-	if (datatype.builtin !== undefined) return datatype.builtin
-	return datatype.list !== undefined ? 'list' : 'union'
+	if ('builtin' in datatype) return datatype.builtin
+	return 'list' in datatype ? 'list' : 'union'
 }

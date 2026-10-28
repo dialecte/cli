@@ -4,12 +4,9 @@ import { acceptsValue, datatypeValues } from './sample-datatype.ts'
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import type {
-	LoadedDialecte,
-	SchemaDataType,
-	SchemaElementDefinition,
-} from '../schema/schema.types.ts'
+import type { LoadedDialecte } from '../schema/schema.types.ts'
 import type { SampleResult, ValuesResult } from './fixture.types.ts'
+import type { DataType, ResolvedDefinition } from '@dialecte/core'
 
 let dialecte: LoadedDialecte
 
@@ -19,7 +16,7 @@ beforeAll(async () => {
 
 describe('datatypeValues (core readers)', () => {
 	type TestCase = {
-		datatype: SchemaDataType | undefined
+		datatype: DataType | undefined
 		limit?: number
 		expected: ValuesResult
 		only?: boolean
@@ -110,7 +107,7 @@ describe('datatypeValues (core readers)', () => {
 })
 
 describe('acceptsValue (core readers)', () => {
-	type TestCase = { datatype: SchemaDataType; value: string; expected: boolean; only?: boolean }
+	type TestCase = { datatype: DataType; value: string; expected: boolean; only?: boolean }
 
 	const testCases: Record<string, TestCase> = {
 		'empty decimal → refused': { datatype: { builtin: 'decimal' }, value: '', expected: false },
@@ -150,7 +147,7 @@ describe('sampleAttributeValue (core test dialecte, core readers)', () => {
 	type TestCase = {
 		tagName: string
 		attributeName: string
-		datatype: SchemaDataType | undefined
+		datatype: DataType | undefined
 		expected: SampleResult
 		only?: boolean
 	}
@@ -209,7 +206,7 @@ describe('sampleAttributeValue (core test dialecte, core readers)', () => {
 
 describe('textValues (core readers)', () => {
 	type TestCase = {
-		textContent: SchemaElementDefinition['textContent']
+		textContent: ResolvedDefinition['textContent']
 		expected: ValuesResult | undefined
 		only?: boolean
 	}
@@ -241,7 +238,7 @@ describe('textValues (core readers)', () => {
 					parents: [],
 					namespace: { prefix: '', uri: 'urn:test' },
 					attributes: { sequence: [], details: {} },
-					children: { sequence: [] },
+					children: { sequence: [], details: {} },
 					textContent: testCase.textContent,
 				},
 			})

@@ -12,8 +12,9 @@ import {
 } from './fixture.constants.ts'
 import { patternValues } from './sample-pattern.ts'
 
-import type { CoreReaders, SchemaDataType, SchemaFacets } from '../schema/schema.types.ts'
+import type { CoreReaders } from '../schema/schema.types.ts'
 import type { ValuesResult } from './fixture.types.ts'
+import type { DataType, Facets } from '@dialecte/core'
 
 /**
  * Up to `limit` distinct values of the type, best first: its enumerated values, else strings its patterns
@@ -23,7 +24,7 @@ import type { ValuesResult } from './fixture.types.ts'
  */
 export function datatypeValues(params: {
 	readers: CoreReaders
-	datatype: SchemaDataType | undefined
+	datatype: DataType | undefined
 	tagName: string
 	limit: number
 }): ValuesResult {
@@ -51,18 +52,18 @@ export function datatypeValues(params: {
 		if ('problem' in matched) problems.push(matched.problem)
 		else matched.values.forEach(offer)
 	}
-	for (const member of datatype.union ?? []) {
+	for (const member of 'union' in datatype ? datatype.union : []) {
 		if (values.length >= limit) break
 		const offered = datatypeValues({ readers, datatype: member, tagName, limit })
 		if ('problem' in offered) problems.push(offered.problem)
 		else offered.values.forEach(offer)
 	}
-	if (datatype.list && values.length < limit) {
+	if ('list' in datatype && values.length < limit) {
 		const items = datatypeValues({ readers, datatype: datatype.list, tagName, limit })
 		if ('problem' in items) problems.push(items.problem)
 		else items.values.forEach(offer)
 	}
-	const { builtin } = datatype
+	const builtin = 'builtin' in datatype ? datatype.builtin : undefined
 	if (builtin !== undefined && values.length < limit) {
 		if (NUMERIC_BUILTINS.has(builtin))
 			numberValues({ builtin, facets: datatype.facets, limit: limit * 4 }).forEach(offer)
@@ -83,7 +84,7 @@ export function datatypeValues(params: {
 /** Whether the type takes the value: its enumeration, its patterns, its lengths and range, its members or items, its built-in form. */
 export function acceptsValue(params: {
 	readers: CoreReaders
-	datatype: SchemaDataType | undefined
+	datatype: DataType | undefined
 	value: string
 }): boolean {
 	const { readers, datatype, value } = params
@@ -92,18 +93,19 @@ export function acceptsValue(params: {
 	if (facets.enumeration && !facets.enumeration.includes(value)) return false
 	if (!readers.valuePatterns(datatype).every((pattern) => pattern.test(value))) return false
 
-	if (datatype.list) {
+	if ('list' in datatype) {
+		const itemType = datatype.list
 		const items = value.trim() === '' ? [] : value.trim().split(/\s+/u)
 		return (
 			fitsLength({ length: items.length, facets }) &&
-			items.every((item) => acceptsValue({ readers, datatype: datatype.list, value: item }))
+			items.every((item) => acceptsValue({ readers, datatype: itemType, value: item }))
 		)
 	}
 	if (!fitsLength({ length: [...value].length, facets })) return false
-	if (datatype.union)
+	if ('union' in datatype)
 		return datatype.union.some((member) => acceptsValue({ readers, datatype: member, value }))
 
-	const { builtin } = datatype
+	const builtin = 'builtin' in datatype ? datatype.builtin : undefined
 	if (builtin === undefined) return true
 	if (value === '' && NON_EMPTY_BUILTINS.has(builtin)) return false
 	if (builtin === 'boolean') return BOOLEAN_VALUES.has(value)
@@ -111,7 +113,7 @@ export function acceptsValue(params: {
 	return true
 }
 
-function fitsLength(params: { length: number; facets: SchemaFacets }): boolean {
+function fitsLength(params: { length: number; facets: Facets }): boolean {
 	const { length, facets } = params
 	return (
 		(facets.length === undefined || length === facets.length) &&
@@ -121,7 +123,7 @@ function fitsLength(params: { length: number; facets: SchemaFacets }): boolean {
 }
 
 /** A number in the built-in type's lexical form, its own sign rule and the facets' range. */
-function isNumberOf(params: { builtin: string; value: string; facets: SchemaFacets }): boolean {
+function isNumberOf(params: { builtin: string; value: string; facets: Facets }): boolean {
 	const { builtin, value, facets } = params
 	const form = INTEGER_BUILTINS.has(builtin) ? /^[+-]?\d+$/u : /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/u
 	if (!form.test(value)) return false
@@ -143,7 +145,7 @@ function isNumberOf(params: { builtin: string; value: string; facets: SchemaFace
 /** Whole numbers from the lowest the built-in type and the range allow, counting away from zero's side of it. */
 function numberValues(params: {
 	builtin: string
-	facets: SchemaFacets | undefined
+	facets: Facets | undefined
 	limit: number
 }): string[] {
 	const { builtin, facets, limit } = params
@@ -159,7 +161,7 @@ function numberValues(params: {
 /** The tag name, then the tag name numbered, each cut or padded to the lengths the facets allow. */
 function textValues(params: {
 	tagName: string
-	facets: SchemaFacets | undefined
+	facets: Facets | undefined
 	limit: number
 }): string[] {
 	const { tagName, facets, limit } = params

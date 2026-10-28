@@ -5,31 +5,26 @@ import { plantReferences } from './plant-references.ts'
 import { describe, expect, it } from 'vitest'
 
 import type {
-	Occurrences,
-	SchemaConfig,
-	SchemaElementDefinition,
-	SchemaIdentityConstraint,
-} from '../schema/schema.types.ts'
-import type {
 	FixtureDialecte,
 	FixtureElement,
 	FixturePlanResult,
 	FixtureReaders,
-	RequiredChoice,
 } from './fixture.types.ts'
+import type { AnyDialecteConfig, IdentityConstraint, ResolvedDefinition } from '@dialecte/core'
+import type { ChildOccurrences, RequiredChoice } from '@dialecte/core/utils'
 
 type Shape = {
-	children?: Record<string, Occurrences>
+	children?: Record<string, ChildOccurrences>
 	required?: Record<string, { builtin: string }>
 	choices?: RequiredChoice[]
-	constraints?: SchemaIdentityConstraint[]
+	constraints?: IdentityConstraint[]
 }
 
 /** A small dialecte read by stand-in readers: each element's children with their occurrences, its required attributes. */
 function shapedDialecte(params: { shapes: Record<string, Shape> }): FixtureDialecte {
 	const { shapes } = params
 	const tags = Object.keys(shapes)
-	function definitionOf(tag: string): SchemaElementDefinition {
+	function definitionOf(tag: string): ResolvedDefinition {
 		const shape = shapes[tag]
 		return {
 			tag,
@@ -41,19 +36,43 @@ function shapedDialecte(params: { shapes: Record<string, Shape> }): FixtureDiale
 					Object.entries(shape.required ?? {}).map(([name, type]) => [name, { type }]),
 				),
 			},
-			children: { sequence: Object.keys(shape.children ?? {}) },
+			children: { sequence: Object.keys(shape.children ?? {}), details: {} },
 			...(shape.constraints && { constraints: shape.constraints }),
 		}
 	}
-	const config: SchemaConfig = {
+	// the shape of each definition handed out: the readers are given the definition they resolved
+	const shapeOfDefinition = new Map<object, Shape>()
+	const definition: Record<string, ResolvedDefinition> = {}
+	for (const tag of tags) {
+		definition[tag] = definitionOf(tag)
+		shapeOfDefinition.set(definition[tag], shapes[tag])
+	}
+	const config: AnyDialecteConfig = {
 		rootElementName: tags[0],
 		elements: tags,
 		children: Object.fromEntries(tags.map((tag) => [tag, Object.keys(shapes[tag].children ?? {})])),
-		definition: Object.fromEntries(tags.map((tag) => [tag, definitionOf(tag)])),
+		definition,
+		namespaces: { default: { prefix: '', uri: 'urn:shapes' } },
+		attributes: { byTag: {}, byParent: {} },
+		parents: {},
+		descendants: {},
+		ancestors: {},
+		database: {
+			recordSchema: {
+				primaryKey: 'id',
+				indexes: [],
+				compoundIndexes: [],
+				arrayIndexes: [],
+			},
+		},
+		io: { supportedFileExtensions: [] },
+		types: {},
 	}
 	const readers: FixtureReaders = {
 		resolveDefinition: ({ record }) => config.definition[record.tagName],
 		getAttributeRules: ({ record, attributeName }) => ({
+			isKnownElement: true,
+			isDefined: true,
 			isRequired: attributeName in (shapes[record.tagName].required ?? {}),
 			isIdentityField: false,
 			fixed: undefined,
@@ -63,14 +82,14 @@ function shapedDialecte(params: { shapes: Record<string, Shape> }): FixtureDiale
 		enumeratedValues: () => [],
 		valuePatterns: () => [],
 		admittedXsiTypes: () => [],
-		childOccurrences: ({ definition }) => shapes[definition.tag].children ?? {},
+		childOccurrences: ({ definition: given }) => shapeOfDefinition.get(given)?.children ?? {},
 		orderByConfigSequence: ({ parentTagName, children }) =>
 			[...children].sort(
 				(left, right) =>
 					config.children[parentTagName].indexOf(left.tagName) -
 					config.children[parentTagName].indexOf(right.tagName),
 			),
-		requiredChoices: ({ definition }) => shapes[definition.tag].choices ?? [],
+		requiredChoices: ({ definition: given }) => shapeOfDefinition.get(given)?.choices ?? [],
 	}
 	return { packageName: '@acme/shapes', config, readers }
 }

@@ -19,8 +19,8 @@ import type {
 	LoadedDialecte,
 	LoadedDialectes,
 	PackageManifest,
-	SchemaConfig,
 } from './schema.types.ts'
+import type { AnyDialecteConfig } from '@dialecte/core'
 
 export async function loadDialectes(params: { cwd: string }): Promise<LoadedDialectes> {
 	const folders = [
@@ -52,7 +52,7 @@ async function loadDialecte(params: {
 	manifest: PackageManifest
 	packageName: string
 }): Promise<LoadedDialecte | undefined> {
-	let config: SchemaConfig | undefined
+	let config: AnyDialecteConfig | undefined
 	for (const file of entryFiles(params)) {
 		const exported: Record<string, unknown> = await import(pathToFileURL(file).href)
 		config = Object.values(exported).find(isDialecteConfig)
@@ -114,7 +114,7 @@ function fileOf(target: ExportTarget): string | undefined {
 	return typeof file === 'string' ? file : undefined
 }
 
-export function isDialecteConfig(value: unknown): value is SchemaConfig {
+export function isDialecteConfig(value: unknown): value is AnyDialecteConfig {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

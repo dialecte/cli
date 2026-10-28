@@ -22,8 +22,9 @@ import {
 	RUN_VALUE_FLAGS,
 } from './run.constants.ts'
 
-import type { RunExpectation, RunScript } from '../lib/run/run.types.ts'
+import type { RunScript } from '../lib/run/run.types.ts'
 import type { CommandOutput, RunCommandParams, RunOptions } from './run.types.ts'
+import type { Expectation } from '@dialecte/core/helpers'
 
 export async function run(argv: string[]): Promise<void> {
 	const exitCode = await runCommand({
@@ -47,7 +48,7 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 	}
 	const options = parsed
 
-	let expectations: RunExpectation[] | undefined
+	let expectations: Expectation[] | undefined
 	let environment: Awaited<ReturnType<typeof loadRunEnvironment>>
 	try {
 		expectations = options.expectPath
@@ -143,7 +144,7 @@ async function loadScript(params: { path: string }): Promise<RunScript> {
 }
 
 /** A JSON array of expectations: `[{ "tag": "Part", "under": { "tag": "Assembly" }, "count": 2 }]`. */
-function readExpectations(params: { path: string }): RunExpectation[] {
+function readExpectations(params: { path: string }): Expectation[] {
 	const parsed: unknown = JSON.parse(readFileSync(params.path, 'utf8'))
 	const isExpectationList =
 		Array.isArray(parsed) &&
@@ -154,7 +155,7 @@ function readExpectations(params: { path: string }): RunExpectation[] {
 		throw new Error(
 			`run: ${params.path} is not a JSON array of expectations ({ "tag", "where"?, "under"?, "count"? })`,
 		)
-	return parsed as RunExpectation[]
+	return parsed as Expectation[]
 }
 
 function readInput(params: { path: string }): File {

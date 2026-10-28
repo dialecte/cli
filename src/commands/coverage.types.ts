@@ -1,15 +1,8 @@
-/** A value's datatype as the definition writes it: a built-in, a list, a union, with the facets restrictions add. */
-export type DataTypeDetail = {
-	builtin?: string
-	list?: DataTypeDetail
-	union?: readonly DataTypeDetail[]
-	facets?: { enumeration?: readonly string[] }
-}
-export type AttributeDetail = {
-	required?: boolean
-	fixed?: string
-	type?: DataTypeDetail
-}
+import type { AttributeDefinition } from '@dialecte/core'
+
+/** An attribute's definition, as core's generated definition writes it. */
+export type AttributeDetail = AttributeDefinition
+/** The part of an element's definition coverage reads; loose (every member optional) so a dialecte on another core still reads. */
 export type ElementDef = { attributes?: { details?: Record<string, AttributeDetail> } }
 export type DialecteSchema = {
 	elements: readonly string[]

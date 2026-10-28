@@ -4,13 +4,9 @@
  * readers; the engine builds it.
  */
 import type { ElementRef } from '../run/run.types.ts'
-import type {
-	CoreReaders,
-	LoadedDialecte,
-	Occurrences,
-	SchemaElementDefinition,
-	SchemaRecord,
-} from '../schema/schema.types.ts'
+import type { CoreReaders, LoadedDialecte } from '../schema/schema.types.ts'
+import type { ResolvedDefinition } from '@dialecte/core'
+import type { ResolvableRecord, requiredChoices } from '@dialecte/core/utils'
 
 /** A required attribute and the valid value the fixture gives it when the engine and the hooks left it empty. */
 export type FixtureAttribute = { name: string; value: string }
@@ -46,21 +42,9 @@ export type SampleResult = { value: string } | { problem: string }
 /** The valid values of a type, best first, or why there is none. */
 export type ValuesResult = { values: string[] } | { problem: string }
 
-/** A choice a content model requires, as core's `requiredChoices` reads it. */
-export type RequiredChoice = {
-	readonly min: number
-	readonly branches: readonly ChoiceBranch[]
-}
-
-/** One branch of a required choice: how often it holds each child, and the choices it requires in turn. */
-export type ChoiceBranch = {
-	readonly children: Readonly<Record<string, Occurrences>>
-	readonly choices: readonly RequiredChoice[]
-}
-
 /** Core's readers the fixture plans with: the schema readers and the required choices of a content model. */
 export type FixtureReaders = CoreReaders & {
-	requiredChoices(params: { definition: SchemaElementDefinition }): readonly RequiredChoice[]
+	requiredChoices: typeof requiredChoices
 }
 
 /** A dialecte as the fixture plans it: its config and its core's readers. */
@@ -70,8 +54,8 @@ export type FixtureDialecte = Omit<LoadedDialecte, 'readers'> & { readers: Fixtu
 export type PlanNode = {
 	tagName: string
 	xsiType?: string
-	record: SchemaRecord
-	definition: SchemaElementDefinition
+	record: ResolvableRecord
+	definition: ResolvedDefinition
 	/** Planned attribute values by name, in the order they were planned. */
 	attributes: Map<string, string>
 	text?: string

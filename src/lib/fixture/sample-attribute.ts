@@ -1,14 +1,10 @@
 import { VALUE_CHOICE_LIMIT } from './fixture.constants.ts'
 import { acceptsValue, datatypeValues } from './sample-datatype.ts'
 
-import type {
-	CoreReaders,
-	SchemaConfig,
-	SchemaDataType,
-	SchemaElementDefinition,
-	SchemaRecord,
-} from '../schema/schema.types.ts'
+import type { CoreReaders } from '../schema/schema.types.ts'
 import type { SampleResult, ValuesResult } from './fixture.types.ts'
+import type { AnyDialecteConfig, DataType, ResolvedDefinition } from '@dialecte/core'
+import type { ResolvableRecord } from '@dialecte/core/utils'
 
 /**
  * The valid values of an attribute of the record, read through core's readers for the record as it is typed
@@ -16,11 +12,11 @@ import type { SampleResult, ValuesResult } from './fixture.types.ts'
  * the values its type admits (`datatypeValues`). The problem names the attribute.
  */
 export function attributeValues(params: {
-	config: SchemaConfig
+	config: AnyDialecteConfig
 	readers: CoreReaders
-	record: SchemaRecord
+	record: ResolvableRecord
 	attributeName: string
-	datatype: SchemaDataType | undefined
+	datatype: DataType | undefined
 }): ValuesResult {
 	const { config, readers, record, attributeName, datatype } = params
 	const rules = readers.getAttributeRules({ dialecteConfig: config, record, attributeName })
@@ -39,11 +35,11 @@ export function attributeValues(params: {
 
 /** The first valid value of an attribute (`attributeValues`). */
 export function sampleAttributeValue(params: {
-	config: SchemaConfig
+	config: AnyDialecteConfig
 	readers: CoreReaders
-	record: SchemaRecord
+	record: ResolvableRecord
 	attributeName: string
-	datatype: SchemaDataType | undefined
+	datatype: DataType | undefined
 }): SampleResult {
 	const offered = attributeValues(params)
 	return 'problem' in offered ? offered : { value: offered.values[0] }
@@ -56,7 +52,7 @@ export function sampleAttributeValue(params: {
  */
 export function textValues(params: {
 	readers: CoreReaders
-	definition: SchemaElementDefinition
+	definition: ResolvedDefinition
 }): ValuesResult | undefined {
 	const { readers, definition } = params
 	const { textContent } = definition

@@ -3,8 +3,16 @@ import {
 	RUNNER_ONLY_TRANSACTION_METHODS,
 } from './run.constants.ts'
 
-import type { CreateRunGuardParams, RunGuard, StagedTransaction } from './run-guard.types.ts'
-import type { OperationCounts, RunDocument, RunPreparedTransaction } from './run.types.ts'
+import type {
+	CreateRunGuardParams,
+	GetTrapParams,
+	RunGuard,
+	StagedTransaction,
+	TransactionArguments,
+	TransactionCallback,
+} from './run-guard.types.ts'
+import type { RunDocument, RunPreparedTransaction } from './run.types.ts'
+import type { OperationCounts } from '@dialecte/core'
 
 /**
  * Thrown on purpose once a `prepare` run has staged its transaction, to stop the script there: what
@@ -28,8 +36,23 @@ export class RunRefusal extends Error {
 	}
 }
 
-type TransactionCallback = (transaction: unknown) => Promise<unknown>
-type TransactionOptions = { label?: string }
+/**
+ * A proxy's `get` trap, written with one params object: the engine calls a trap with positional arguments, taken
+ * here as one rest list.
+ */
+function getTrap<GenericTarget extends object>(
+	read: (params: GetTrapParams<GenericTarget>) => unknown,
+): ProxyHandler<GenericTarget> {
+	return {
+		get: function trap(...trapArguments: [GenericTarget, string | symbol, unknown]): unknown {
+			return read({
+				target: trapArguments[0],
+				propertyName: trapArguments[1],
+				receiver: trapArguments[2],
+			})
+		},
+	}
+}
 
 /**
  * The project and document a script runs against, unchanged but for their writes. Every
@@ -73,8 +96,9 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 	 * call - committing it, finishing its staging, dropping what it staged.
 	 */
 	function guardTransaction(transaction: unknown): unknown {
-		return new Proxy(transaction as object, {
-			get(target, propertyName, receiver) {
+		return new Proxy(
+			transaction as object,
+			getTrap(({ target, propertyName, receiver }) => {
 				if (typeof propertyName === 'string' && RUNNER_ONLY_TRANSACTION_METHODS.has(propertyName))
 					return function refuseRunnerOnly() {
 						refuseWith(
@@ -83,8 +107,8 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 					}
 				const value: unknown = Reflect.get(target, propertyName, receiver)
 				return typeof value === 'function' ? value.bind(target) : value
-			},
-		})
+			}),
+		)
 	}
 
 	/** The script's callback, run on the guarded transaction. */
@@ -96,8 +120,9 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 
 	/** A prepared transaction whose `commit()` is counted, or refused in `prepare` mode. */
 	function guardPrepared(prepared: RunPreparedTransaction): RunPreparedTransaction {
-		return new Proxy(prepared, {
-			get(target, propertyName, receiver) {
+		return new Proxy(
+			prepared,
+			getTrap(({ target, propertyName, receiver }) => {
 				if (propertyName === 'commit')
 					return async function commitCounted(): Promise<void> {
 						if (mode === 'prepare') refuse('committing a prepared transaction')
@@ -105,25 +130,21 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 						count(target)
 					}
 				return Reflect.get(target, propertyName, receiver)
-			},
-		})
+			}),
+		)
 	}
 
 	function guardDocument(guarded: { document: RunDocument; isRunDocument: boolean }): RunDocument {
 		const { document, isRunDocument } = guarded
 
 		async function prepareGuarded(
-			callback: TransactionCallback,
-			options?: TransactionOptions,
+			...[callback, options]: TransactionArguments
 		): Promise<RunPreparedTransaction> {
 			const prepared = await document.prepare(onGuardedTransaction(callback), options)
 			return guardPrepared(prepared)
 		}
 
-		async function transactCounted(
-			callback: TransactionCallback,
-			options?: TransactionOptions,
-		): Promise<unknown> {
+		async function transactCounted(...[callback, options]: TransactionArguments): Promise<unknown> {
 			let result: unknown
 			const prepared = await document.prepare(async function keepResult(transaction) {
 				result = await onGuardedTransaction(callback)(transaction)
@@ -133,10 +154,7 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 			return result
 		}
 
-		async function stageAndHalt(
-			callback: TransactionCallback,
-			options?: TransactionOptions,
-		): Promise<never> {
+		async function stageAndHalt(...[callback, options]: TransactionArguments): Promise<never> {
 			if (!isRunDocument) refuse('a transaction on a document opened through the project')
 			if (staged) refuse('a second transaction once the first is staged')
 			let report: unknown
@@ -148,8 +166,9 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 			throw new StagedHalt()
 		}
 
-		return new Proxy(document, {
-			get(target, propertyName, receiver) {
+		return new Proxy(
+			document,
+			getTrap(({ target, propertyName, receiver }) => {
 				if (propertyName === 'transaction')
 					return mode === 'commit' ? transactCounted : stageAndHalt
 				if (propertyName === 'prepare') return prepareGuarded
@@ -159,16 +178,17 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 					}
 				const value: unknown = Reflect.get(target, propertyName, receiver)
 				return typeof value === 'function' ? value.bind(target) : value
-			},
-		})
+			}),
+		)
 	}
 
 	const document = guardDocument({ document: params.document, isRunDocument: true })
 	const project =
 		mode === 'commit'
 			? params.project
-			: new Proxy(params.project, {
-					get(target, propertyName, receiver) {
+			: new Proxy(
+					params.project,
+					getTrap(({ target, propertyName, receiver }) => {
 						if (propertyName === 'openDocument')
 							return function openGuarded(documentId: string): RunDocument {
 								return guardDocument({
@@ -185,8 +205,8 @@ export function createRunGuard(params: CreateRunGuardParams): RunGuard {
 							}
 						const value: unknown = Reflect.get(target, propertyName, receiver)
 						return typeof value === 'function' ? value.bind(target) : value
-					},
-				})
+					}),
+				)
 
 	return {
 		project,

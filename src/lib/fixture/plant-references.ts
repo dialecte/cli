@@ -13,8 +13,8 @@ import { attributeValues } from './sample-attribute.ts'
 import { acceptsValue } from './sample-datatype.ts'
 import { descendantsAndSelf, selectNodes } from './select-nodes.ts'
 
-import type { SchemaIdentityConstraint } from '../schema/schema.types.ts'
 import type { FieldReader, PlanContext, PlanNode } from './fixture.types.ts'
+import type { IdentityConstraint } from '@dialecte/core'
 
 /** Undefined once every reference holds; the problem names the constraint the fixture cannot satisfy. */
 export function plantReferences(params: {
@@ -68,7 +68,7 @@ function walkReferences(params: {
 function fillKeyFields(params: {
 	context: PlanContext
 	scope: PlanNode
-	constraint: SchemaIdentityConstraint
+	constraint: IdentityConstraint
 	fields: readonly FieldReader[]
 }): { changed: boolean } | { problem: string } {
 	const { context, scope, constraint, fields } = params
@@ -101,9 +101,9 @@ function pointReferences(params: {
 	context: PlanContext
 	root: PlanNode
 	scope: PlanNode
-	constraint: SchemaIdentityConstraint
+	constraint: IdentityConstraint
 	fields: readonly FieldReader[]
-	constraints: readonly SchemaIdentityConstraint[]
+	constraints: readonly IdentityConstraint[]
 }): { changed: boolean } | { problem: string } {
 	const { context, scope, constraint, fields, constraints } = params
 	const key = constraints.find(
@@ -298,7 +298,7 @@ function takesValue(params: {
 function plantTarget(params: {
 	context: PlanContext
 	scope: PlanNode
-	key: SchemaIdentityConstraint
+	key: IdentityConstraint
 }): { parent: PlanNode; tagName: string } | { problem: string } {
 	const { context, scope, key } = params
 	const { config } = context.dialecte
@@ -393,7 +393,7 @@ function matchFields(params: {
 
 /** What each field reads: an attribute of the selected element, or its text; a field reaching further is not planted. */
 function fieldReaders(params: {
-	constraint: SchemaIdentityConstraint
+	constraint: IdentityConstraint
 }): { readers: FieldReader[] } | { problem: string } {
 	const { constraint } = params
 	const readers: FieldReader[] = []

@@ -1,10 +1,5 @@
-import type {
-	OperationCounts,
-	RunDocument,
-	RunMode,
-	RunPreparedTransaction,
-	RunProject,
-} from './run.types.ts'
+import type { RunDocument, RunMode, RunPreparedTransaction, RunProject } from './run.types.ts'
+import type { OperationCounts } from '@dialecte/core'
 
 /** The staged transaction of a `prepare` run, held until the run reads and discards it. */
 export type StagedTransaction = {
@@ -30,4 +25,19 @@ export type CreateRunGuardParams = {
 	project: RunProject
 	document: RunDocument
 	mode: RunMode
+}
+
+/** The script's callback of a transaction: it gets the transaction. */
+export type TransactionCallback = (transaction: unknown) => Promise<unknown>
+
+export type TransactionOptions = { label?: string }
+
+/** What `doc.transaction` and `doc.prepare` take, in order. */
+export type TransactionArguments = [callback: TransactionCallback, options?: TransactionOptions]
+
+/** What a proxy's `get` trap reads: the target, the property asked for, and the receiver. */
+export type GetTrapParams<GenericTarget extends object> = {
+	target: GenericTarget
+	propertyName: string | symbol
+	receiver: unknown
 }

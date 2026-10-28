@@ -1,5 +1,5 @@
-import type { SchemaSelectorPath } from '../schema/schema.types.ts'
 import type { PlanNode } from './fixture.types.ts'
+import type { SelectorPath } from '@dialecte/core'
 
 /**
  * The planned elements a constraint's selector reaches from the element declaring it, in document order:
@@ -8,7 +8,7 @@ import type { PlanNode } from './fixture.types.ts'
  */
 export function selectNodes(params: {
 	scope: PlanNode
-	paths: readonly SchemaSelectorPath[]
+	paths: readonly SelectorPath[]
 }): PlanNode[] {
 	const { scope, paths } = params
 	const selected = new Set<PlanNode>()

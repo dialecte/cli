@@ -17,7 +17,8 @@ import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { ELEMENT_GENERICS } from './coverage.constants.ts'
 
-import type { AttributeDetail, DataTypeDetail, DialecteSchema } from './coverage.types.ts'
+import type { AttributeDetail, DialecteSchema } from './coverage.types.ts'
+import type { DataType } from '@dialecte/core'
 
 export function attributeValue(detail: AttributeDetail | undefined): string {
 	if (detail?.fixed) return detail.fixed
@@ -29,17 +30,19 @@ export function attributeValue(detail: AttributeDetail | undefined): string {
  * The values a datatype enumerates - its own, else its union members' -, as the generated attribute types list
  * them. A qualified name's values are written `{uri}local`, never what a document holds: none.
  */
-function enumerated(datatype: DataTypeDetail | undefined): readonly string[] | undefined {
+function enumerated(datatype: DataType | undefined): readonly string[] | undefined {
 	if (datatype === undefined || holdsQualifiedNames(datatype)) return undefined
 	if (datatype.facets?.enumeration !== undefined) return datatype.facets.enumeration
-	const members = (datatype.union ?? []).flatMap((member) => enumerated(member) ?? [])
+	const members = ('union' in datatype ? datatype.union : []).flatMap(
+		(member) => enumerated(member) ?? [],
+	)
 	return members.length > 0 ? [...new Set(members)] : undefined
 }
 
-function holdsQualifiedNames(datatype: DataTypeDetail): boolean {
-	if (datatype.builtin === 'QName' || datatype.builtin === 'NOTATION') return true
-	if (datatype.list !== undefined) return holdsQualifiedNames(datatype.list)
-	return (datatype.union ?? []).some(holdsQualifiedNames)
+function holdsQualifiedNames(datatype: DataType): boolean {
+	if ('builtin' in datatype) return datatype.builtin === 'QName' || datatype.builtin === 'NOTATION'
+	if ('list' in datatype) return holdsQualifiedNames(datatype.list)
+	return datatype.union.some(holdsQualifiedNames)
 }
 
 export function genSurface(binding: Binding): string {

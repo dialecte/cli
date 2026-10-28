@@ -1,8 +1,11 @@
 /**
- * The shapes `dialecte run` reads from the installed packages and answers. The cli does not depend
- * on `@dialecte/core`: it loads the core and the dialecte the project has installed, so these types
- * name only the members the runner calls.
+ * The shapes `dialecte run` reads from the installed packages and answers. Core's own shapes (diagnostics,
+ * errors, expectations, operation counts) are type-only imports from the `@dialecte/core` devDependency; the
+ * runner loads at run time the core and the dialecte the project has installed, so the types of the members
+ * it calls into (project, document, query) name only what it uses.
  */
+import type { Diagnostic, DialecteError, OperationCounts } from '@dialecte/core'
+import type { Expectation, ExpectationFailure } from '@dialecte/core/helpers'
 
 /** An element as a ref: what records, errors and diagnostics point at. */
 export type ElementRef = { tagName: string; id: string }
@@ -52,55 +55,21 @@ export type RunDocument = {
 export type RunProject = {
 	open(name: string): Promise<RunProject>
 	initEmptyDocument(): Promise<string>
-	importFile(file: File): Promise<{ documentId: string; diagnostics: RunDiagnostic[] }>
+	importFile(file: File): Promise<{ documentId: string; diagnostics: Diagnostic[] }>
 	openDocument(documentId: string): RunDocument
 	export(params: { documentId: string }): Promise<{ file: Blob }>
 	/** Deletes the project: an in-memory run leaves nothing behind for the next one. */
 	destroy(): Promise<void>
 }
 
-/** A diagnostic as core shapes it: plain data, printed as it comes. */
-export type RunDiagnostic = {
-	code: string
-	severity: string
-	source: string
-	message: string
-	ref: ElementRef & { attribute?: string }
-	meta?: Record<string, unknown>
-}
-
-/** A structured error as core's `toDialecteError` answers it. */
-export type CarriedDialecteError = {
-	code: string
-	key: string
-	message: string
-	detail: string
-	ref?: { tagName: string; id?: string }
-	meta?: Record<string, unknown>
-}
-
-/** An expectation, in the shape core's `evaluateExpectations` reads. */
-export type RunExpectation = {
-	tag: string
-	where?: Record<string, string | string[]>
-	under?: { tag: string; where?: Record<string, string | string[]> }
-	count?: number
-}
-
-export type RunExpectationFailure = {
-	expectation: RunExpectation
-	actualCount: number
-	message: string
-}
-
 /** The modules of the installed core the runner calls into. */
 export type CoreModules = {
-	toDialecteError(thrown: unknown): CarriedDialecteError | undefined
+	toDialecteError(thrown: unknown): DialecteError | undefined
 	createSeededRandomUuid(params: { seed: number }): () => string
 	evaluateExpectations(
 		query: RunQuery,
-		params: { expectations: readonly RunExpectation[] },
-	): Promise<{ passed: RunExpectation[]; failed: RunExpectationFailure[] }>
+		params: { expectations: readonly Expectation[] },
+	): Promise<{ passed: Expectation[]; failed: ExpectationFailure[] }>
 	/** `@dialecte/core/helpers`, handed to the script as `helpers`. */
 	helpers: Record<string, unknown>
 	/** `@dialecte/core/utils`, handed to the script as `utils`. */
@@ -162,7 +131,7 @@ export type RunScriptParams = {
 	now?: Date
 	/** A file imported first; an empty document otherwise. */
 	input?: File
-	expectations?: readonly RunExpectation[]
+	expectations?: readonly Expectation[]
 	/** Export the document once the script ran (not in `prepare` mode). */
 	exportDocument?: boolean
 }
@@ -181,18 +150,16 @@ export type RunError = {
 	meta?: Record<string, unknown>
 }
 
-export type OperationCounts = { created: number; updated: number; deleted: number }
-
 /** What a run answers: one structured outcome, never prose. */
 export type RunOutcome = {
 	ok: boolean
 	error?: RunError
-	diagnostics: RunDiagnostic[]
+	diagnostics: Diagnostic[]
 	/** Staged writes, per tag, in tag order: committed ones, or the prepared transaction's. */
 	operations: Record<string, OperationCounts>
 	/** In `prepare` mode: the staged transaction, nothing committed. */
 	prepared?: { label: string | null; report?: unknown; reportNote?: string }
-	expectations?: { passed: number; failed: RunExpectationFailure[] }
+	expectations?: { passed: number; failed: ExpectationFailure[] }
 	/** What the script returned. */
 	result?: unknown
 	/** Why `result` is given as text: it was not JSON. */
