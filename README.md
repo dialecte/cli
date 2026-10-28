@@ -28,6 +28,7 @@ dialecte api find "<need>" # find a method by what you need
 dialecte api show <path>   # read one method's contract
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
+dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
 dialecte doctor            # versions, core API generation, skills in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
@@ -99,6 +100,18 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   the core it resolves; a dialecte on another core than your app's is a warning), whether the synced skills match node_modules (a skill missing; a copied skill of
   another version than the one installed - linked skills follow node_modules), local checkouts (siblings,
   `$DIALECTE_ROOT`); each warning with the one command that fixes it.
+
+- `dialecte models [--vendor <id>] [--json]`: the model each tier means for the vendor the project uses
+  (`anthropic`, `openai`, `google`), one line per tier, the date the rows were checked and what each tier
+  is for. Agents name a tier (`standard`) and ask this command which model that is. The vendor is the one
+  `dialecte skills sync` remembered as `vendor` in `.dialecte-skills.json`, in every skill folder of the
+  project. Sync detects it from the project (`.claude/`, `AGENTS.md` + `.codex/`, `.gemini/`; a folder holding
+  only the skills a sync wrote is no evidence) and asks on a terminal when several agents, a multi-vendor host
+  (Copilot, Cursor) or none are found. Without a terminal, a first sync that cannot tell (no manifest, nothing detected) exits 2 naming
+  `--vendor <id>`, which also sets it without asking; a project that already has a manifest and an ambiguous
+  or empty detection keeps syncing without a vendor and is told how to set it. When manifests disagree, `models` warns on stderr, naming them, and uses the
+  most recently written; an unknown vendor id in a manifest is ignored with a warning. Exit 1 for an unknown
+  `--vendor`, 2 when no vendor is known.
 
 Run outside a package (no `package.json`), each answers a usage error.
 
