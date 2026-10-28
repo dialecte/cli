@@ -30,7 +30,6 @@ dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
 dialecte doctor            # versions, core API generation, skills in sync, local checkouts
-dialecte mcp               # the lookups as the tools of a stdio MCP server
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte new verb <namespace> <query|transaction> <name>
@@ -119,44 +118,7 @@ Run outside a package (no `package.json`), each answers a usage error.
 
 ## MCP server
 
-`dialecte mcp` serves the read-only lookups as the tools of a stdio MCP server, for an agent host that
-prefers tools to a shell. The tools are `api_find {need, package?, limit?}`, `api_show {path}`,
-`schema {tag, package?}`, `members {expression}`, `doctor {}` and `models {vendor?}`; each answers what the
-command answers with `--json`, by the same answer function. A call that finds nothing, names an unknown tag
-(the result lists the closest) or gives a `cwd` that is not a folder is an error result, never a crash.
-The server reads the folder it starts in; every tool also takes an optional `cwd` (a package folder) for a
-workspace with several. There is no write tool: `run`, `gate`, `handover`, `skills` stay on the command line.
-
-Add it to your agent host, one snippet each (the command is always `npx @dialecte/cli mcp`):
-
-Claude Code (`.mcp.json`, or `claude mcp add dialecte -- npx @dialecte/cli mcp`):
-
-```json
-{ "mcpServers": { "dialecte": { "command": "npx", "args": ["@dialecte/cli", "mcp"] } } }
-```
-
-Copilot in VS Code (`.vscode/mcp.json`):
-
-```json
-{
-	"servers": { "dialecte": { "type": "stdio", "command": "npx", "args": ["@dialecte/cli", "mcp"] } }
-}
-```
-
-Codex (`~/.codex/config.toml`). Codex starts the server in the folder it was launched from, and that is the
-folder the tools read: pass the `cwd` argument of a tool to read another package.
-
-```toml
-[mcp_servers.dialecte]
-command = "npx"
-args = ["@dialecte/cli", "mcp"]
-```
-
-Gemini CLI (`.gemini/settings.json`):
-
-```json
-{ "mcpServers": { "dialecte": { "command": "npx", "args": ["@dialecte/cli", "mcp"] } } }
-```
+The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](https://github.com/dialecte/mcp) (`npx @dialecte/mcp`). It builds on the pure answer functions this package exports at `@dialecte/cli/lookups`.
 
 ## Contributing to a Dialecte package
 
@@ -362,6 +324,22 @@ The `schema`, `run`, `fixture` and `explain` tests drive `@dialecte/core`'s own 
 `@dialecte/core` devDependency, or from the built core checkout `DIALECTE_CORE_DIR` names
 (`DIALECTE_CORE_DIR=../core npm run test:run`); with neither they fail. The lockfile gains that
 devDependency at the release, once core 0.8.0 is published.
+
+The cli does not re-declare core's types: the definition, record, diagnostic, error, expectation and reader shapes
+(`ResolvedDefinition`, `DataType`, `AttributeDefinition`, `AnyDialecteConfig`, `ChildOccurrences`, `Diagnostic`,
+`DialecteError`, `Expectation`, the readers of `@dialecte/core/utils`...) are `import type` from the `@dialecte/core`
+devDependency, which is erased from the build (the bin loads at run time the core each dialecte resolves, and
+`isCoreReaders` checks it holds the readers). Until core 0.8.0 is published, link a core build:
+`ln -s <core checkout> node_modules/@dialecte/core` (built: `npm run build` there). Types the cli narrows, because a
+dialecte may run on an older core: the config found by shape (`isDialecteConfig` checks `rootElementName` and
+`definition` only, typed as `AnyDialecteConfig`), `CoreReaders` (typed from the core the cli is built against;
+`isCoreReaders` and the `requiredChoices` check report a reader an older core lacks), and `ElementDef` in
+`coverage` (every member optional). What `run` reads of a project and a document (`RunProject`, `RunDocument`,
+`RunQuery`) names only the members the runner calls.
+
+`@dialecte/cli/lookups` (`src/lookups.ts`, built with declaration files) is the library entry of the lookup
+answers. Its declaration files import types from `@dialecte/core` (a loaded dialecte is typed by them): type-checking
+a program that uses the entry needs those types (`@dialecte/core` installed) or `skipLibCheck`.
 
 The `fixture` tests judge every document twice:
 
