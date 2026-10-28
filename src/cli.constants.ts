@@ -8,7 +8,6 @@ import { explain } from './commands/explain.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
-import { run as mcp } from './commands/mcp.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
@@ -27,7 +26,6 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	api,
 	schema,
 	members,
-	mcp,
 	models,
 	doctor,
 	run: runScript,
@@ -54,7 +52,6 @@ Commands:
   api        Find a method by what you need (find), read its contract (show)
   members    The members of an expression of the live types (doc.query, tx.lifecycle)
   schema     What an element may hold and where: parents, children, attributes
-  mcp        Serve the read-only lookups as the tools of a stdio MCP server
   models     Which model each tier (fast, standard, strong, frontier) means for the project's vendor
   doctor     Installed versions, core API generation, skills in sync, local checkouts
   run        Run a script against an in-memory project of the installed dialecte; one structured outcome
@@ -100,10 +97,7 @@ Lookups (the same with or without the repositories; --json on each):
                              # the model each tier means for the vendor (exit 2: no vendor known, 1: unknown vendor)
   dialecte doctor            # what to fix before trusting what you read; exit 1 on a warning
 
-MCP:
-  dialecte mcp               # stdio MCP server in the folder it starts in: tools api_find, api_show, schema,
-                             # members, doctor, models (JSON answers, a cwd argument per call); no write tool
-                             # configure it in your agent host: npx @dialecte/cli mcp (see the README)
+MCP server: see @dialecte/mcp (npx @dialecte/mcp)
 
 Run:
   dialecte run <script.ts> [--in <file>] [--out <file>] [--prepare] [--expect <file>]
