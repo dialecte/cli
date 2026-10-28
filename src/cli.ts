@@ -1,7 +1,8 @@
 /**
  * `dialecte` — the Dialecte dialect dev CLI (`@dialecte/cli`). Type-performance benchmarking,
  * coverage probes, and readability audits for any Dialecte dialect (and core itself); the agent skills;
- * the lookups (api, members, schema, doctor); the contributor tools (rules, gate, new verb, handover).
+ * the lookups (api, members, schema, doctor); scripts (run, explain); the contributor tools (rules, gate,
+ * new verb, handover).
  * Subcommands live in ./commands/* (registered in ./cli.constants.ts); shared zero-config discovery in
  * ./lib/config.ts.
  * Bundled with tsup; the shebang is injected by the tsup banner.

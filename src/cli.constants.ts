@@ -4,12 +4,14 @@ import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
+import { explain } from './commands/explain.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
 import { run as members } from './commands/members.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
 import { run as rules } from './commands/rules.ts'
+import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
 import { run as skills } from './commands/skills.ts'
 
@@ -23,6 +25,8 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	schema,
 	members,
 	doctor,
+	run: runScript,
+	explain,
 	rules,
 	gate,
 	new: newVerb,
@@ -45,6 +49,8 @@ Commands:
   members    The members of an expression of the live types (doc.query, tx.lifecycle)
   schema     What an element may hold and where: parents, children, attributes
   doctor     Installed versions, core API generation, skills in sync, local checkouts
+  run        Run a script against an in-memory project of the installed dialecte; one structured outcome
+  explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
@@ -81,6 +87,15 @@ Lookups (the same with or without the repositories; --json on each):
   dialecte schema <Tag> [--package <name>]
                              # parents, children with how often, attributes; an unknown tag answers the closest
   dialecte doctor            # what to fix before trusting what you read; exit 1 on a warning
+
+Run:
+  dialecte run <script.ts> [--in <file>] [--out <file>] [--prepare] [--expect <file>]
+               [--seed <n>] [--now <iso>] [--package <name>] [--timeout <ms>] [--json]
+                             # the script's default export gets { project, doc, documentId, dialecte, helpers, utils };
+                             # ids seeded, --prepare stages the first transaction and commits nothing,
+                             # --expect checks a JSON array of { tag, where?, under?, count? }; exit 1 on failure
+  dialecte explain <code | key> [--package <name>] [--json]
+  Node 22.18+: .ts scripts run through Node's built-in type stripping.
 
 Contributing (inside a dialecte repository):
   dialecte rules [<files...>] [--json]

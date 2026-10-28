@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Root xmlns="http://dialecte.dev/XML/DEFAULT">
+	<A aA="A">
+		<AA_1 aAA_1="one"><AAA_1 aAAA_1="abc"/></AA_1>
+		<AA_2 aAA_2="5"/>
+	</A>
+</Root>
