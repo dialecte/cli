@@ -10,6 +10,7 @@ import { loadDialectes } from '../lib/schema/load-dialectes.ts'
 import { SCHEMA_USAGE, SCHEMA_VALUE_OPTIONS } from './schema.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { SchemaDialectesRead } from './schema.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = await runSchema({ argv, cwd: process.cwd() })
@@ -18,20 +19,36 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 export async function runSchema(params: { argv: string[]; cwd: string }): Promise<CommandOutput> {
+	const read = await readSchemaDialectes(params)
+	if (read.kind === 'output') return read.output
+	return answerSchema({
+		loaded: read.loaded,
+		tagName: read.tagName,
+		json: hasFlag(params.argv, 'json'),
+	})
+}
+
+/** The dialectes (filtered by `--package`) the tag is looked up in, or the answer that says why not. */
+export async function readSchemaDialectes(params: {
+	argv: string[]
+	cwd: string
+}): Promise<SchemaDialectesRead> {
 	const missing = missingPackage({ cwd: params.cwd })
-	if (missing) return missing
+	if (missing) return { kind: 'output', output: missing }
 	const [tagName] = positionalArguments({ argv: params.argv, valueOptions: SCHEMA_VALUE_OPTIONS })
-	if (!tagName) return { output: `${SCHEMA_USAGE}\n`, exitCode: 2 }
+	if (!tagName) return { kind: 'output', output: { output: `${SCHEMA_USAGE}\n`, exitCode: 2 } }
 	const packageName = getArg(params.argv, 'package')
 	const loaded = await loadDialectes({ cwd: params.cwd })
-	return answerSchema({
+	return {
+		kind: 'dialectes',
+		tagName,
+		packageName,
+		installed: loaded.dialectes.map((dialecte) => dialecte.packageName),
 		loaded: {
 			dialectes: loaded.dialectes.filter(
 				(dialecte) => packageName === undefined || dialecte.packageName === packageName,
 			),
 			skipped: loaded.skipped,
 		},
-		tagName,
-		json: hasFlag(params.argv, 'json'),
-	})
+	}
 }

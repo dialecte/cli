@@ -13,6 +13,7 @@ import { MEMBERS_USAGE, MEMBERS_VALUE_OPTIONS } from './members.constants.ts'
 import { METHOD_DISCOVERY_DEPTH } from './skills.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { MemberEntriesRead } from './members.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runMembers({ argv, cwd: process.cwd() })
@@ -21,12 +22,24 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 export function runMembers(params: { argv: string[]; cwd: string }): CommandOutput {
+	const read = readMemberEntries(params)
+	if (read.kind === 'output') return read.output
+	return answerMembers({
+		entries: read.entries,
+		expression: read.expression,
+		json: hasFlag(params.argv, 'json'),
+	})
+}
+
+/** The method entries of the live types the expression is read from, or the answer that says why not. */
+export function readMemberEntries(params: { argv: string[]; cwd: string }): MemberEntriesRead {
 	const missing = missingPackage({ cwd: params.cwd })
-	if (missing) return missing
+	if (missing) return { kind: 'output', output: missing }
 	const { argv, cwd } = params
 	const [expression] = positionalArguments({ argv, valueOptions: MEMBERS_VALUE_OPTIONS })
 	const [target] = resolveTargets(argv, cwd)
-	if (!expression || !target) return { output: `${MEMBERS_USAGE}\n`, exitCode: 2 }
+	if (!expression || !target)
+		return { kind: 'output', output: { output: `${MEMBERS_USAGE}\n`, exitCode: 2 } }
 	const entries = discoverMethods({
 		entrySource: discoveryEntry(target.binding),
 		tsconfig: tsconfigOf(argv, cwd),
@@ -34,5 +47,5 @@ export function runMembers(params: { argv: string[]; cwd: string }): CommandOutp
 		// one level below the expression, so each group it holds is counted
 		maxDepth: Math.max(METHOD_DISCOVERY_DEPTH, discoveryPath(expression).split('.').length),
 	})
-	return answerMembers({ entries, expression, json: hasFlag(argv, 'json') })
+	return { kind: 'entries', entries, expression }
 }

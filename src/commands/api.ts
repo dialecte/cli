@@ -78,7 +78,7 @@ function show(params: { indexes: ApiJson[]; path: string; json: boolean }): Comm
 	return { output: renderShown({ methods, json: params.json }), exitCode: methods.length ? 0 : 1 }
 }
 
-function packagesText(indexes: readonly ApiJson[]): string {
+export function packagesText(indexes: readonly ApiJson[]): string {
 	return indexes.length
 		? indexes.map((index) => index.package).join(', ')
 		: 'no installed package (none ships skills/<name>/references/api.json)'
