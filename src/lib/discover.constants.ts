@@ -6,7 +6,8 @@ import ts from 'typescript'
  */
 export const ENTRY_FOLDER = 'node_modules/.cache/dialecte'
 
-export const ROOTS: readonly string[] = ['q', 'tx', 'doc', 'project']
+/** The roots a method hangs from: a read on `q` (`doc.query`), a write on `tx`, the document, the project. */
+export const ROOTS = ['q', 'tx', 'doc', 'project'] as const
 
 export const PRIMITIVE_LIKE =
 	ts.TypeFlags.StringLike |
@@ -16,3 +17,14 @@ export const PRIMITIVE_LIKE =
 	ts.TypeFlags.VoidLike |
 	ts.TypeFlags.Null |
 	ts.TypeFlags.BigIntLike
+
+/** Signatures as a reader writes them: arrow style, aliases kept, long types cut by the checker's own limit. */
+export const SIGNATURE_FORMAT =
+	ts.TypeFormatFlags.WriteArrowStyleSignature |
+	ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope
+
+/** The first markdown code block of an `@example`: group 1 is its code. */
+export const FENCED_CODE_PATTERN = /^[ \t]*```[a-z]*[ \t]*\n([\s\S]*?)^[ \t]*```/m
+
+/** Prints the types a signature writes, without their comments. */
+export const SIGNATURE_PRINTER = ts.createPrinter({ removeComments: true })

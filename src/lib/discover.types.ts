@@ -6,6 +6,10 @@ export type MethodEntry = {
 	summary: string | undefined
 	/** `@intent` tags, one entry per comma-separated phrase: what a caller is trying to do. */
 	intents: string[]
+	/** The call signature a caller sees (`(params: { id: string }) => string`), one line per overload. */
+	signature: string
+	/** The first `@example` of the JSDoc, when it has one. */
+	example: string | undefined
 	/** Declared in the package being inspected (not in a dependency such as core). */
 	definedInPackage: boolean
 	/** Tagged `@internal`: public for TypeScript, not meant for callers (left out of the index). */

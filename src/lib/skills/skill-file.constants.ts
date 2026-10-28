@@ -1,3 +1,6 @@
+/** Where a package keeps the skills it ships: `skills/<name>/SKILL.md`. */
+export const SKILLS_FOLDER = 'skills'
+
 /** Agent Skills spec: lowercase letters, digits and single hyphens, 1-64 characters. */
 export const SKILL_NAME_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(-[a-z0-9]+)*$/
 

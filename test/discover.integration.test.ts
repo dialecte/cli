@@ -52,6 +52,10 @@ beforeEach(() => {
 			'type BoundExtensionMap<M> = { [Name in keyof M]: BoundGroup<M[Name]> }',
 			"type Merged<Modules extends Record<string, { query?: Group }>> = { query: { [K in keyof Modules as Modules[K]['query'] extends Group ? K : never]: Modules[K]['query'] extends Group ? Modules[K]['query'] : never } }",
 			"export type QueryExtensions<Modules extends Record<string, { query?: Group }>> = BoundExtensionMap<Merged<Modules>['query']>",
+			'export declare class Box<Config extends string> {',
+			'  /** Reads one tag. @intent read a tag */',
+			'  read<Tag extends Config>(tag: Tag): Tag',
+			'}',
 			'',
 		].join('\n'),
 	)
@@ -102,6 +106,33 @@ beforeEach(() => {
 			'',
 		].join('\n'),
 	)
+	// a verb whose JSDoc carries an example in a code fence
+	write(
+		'src/labels/sample.ts',
+		[
+			"import type { Query } from 'engine'",
+			'/**',
+			' * A sample.',
+			' *',
+			' * @intent sample',
+			' * @example',
+			' * ```ts',
+			' * const title = await doc.query.labels.sample()',
+			' * ```',
+			' * The title is the element name when it has no label.',
+			' */',
+			'export function sample(',
+			'	query: Query,',
+			'	ref: string,',
+			'	options?: {',
+			'		/** The long form. */',
+			'		long: boolean',
+			'		depth?: number // how deep',
+			'	},',
+			'): void {}',
+			'',
+		].join('\n'),
+	)
 	// a barrel re-exporting each verb, as the extensions of a dialecte do
 	write(
 		'src/labels/query.ts',
@@ -110,6 +141,7 @@ beforeEach(() => {
 			"export { undocumented } from './undocumented'",
 			"export { countOf, silent } from './arrows'",
 			"export { linked } from './linked'",
+			"export { sample } from './sample'",
 			'',
 		].join('\n'),
 	)
@@ -149,6 +181,38 @@ function discoverFixture(): Map<string, MethodEntry> {
 }
 
 describe('discoverMethods (integration)', () => {
+	it('an @example in a code fence followed by prose → the code only, without the fence', () => {
+		expect(discoverFixture().get('q.labels.sample')?.example).toBe(
+			'const title = await doc.query.labels.sample()',
+		)
+	})
+
+	it('a method of a class instantiated with tag names → its signature as declared, generic', () => {
+		const [method] = discoverMethods({
+			entrySource: [
+				"import type { Box } from 'engine'",
+				"declare const q: Box<'A' | 'B'>",
+				'export { q }',
+				'',
+			].join('\n'),
+			tsconfig: 'tsconfig.json',
+			root,
+		})
+		expect(method.signature).toBe('<Tag extends Config>(tag: Tag) => Tag')
+	})
+
+	it('a bound verb of several parameters, one a multi-line object with comments → every parameter but the query, members separated, no comment', () => {
+		expect(discoverFixture().get('q.labels.sample')?.signature).toBe(
+			'(ref: string, options?: { long: boolean; depth?: number; }) => void',
+		)
+	})
+
+	it('a bound verb → its signature as a caller writes it, the query parameter dropped', () => {
+		expect(discoverFixture().get('q.labels.titleOf')?.signature).toBe(
+			'(params: { id: string; }) => string',
+		)
+	})
+
 	it('JSDoc links in a summary and an @intent → a label as text, a bare name or linkcode as code', () => {
 		expect(discoverFixture().get('q.labels.linked')).toMatchObject({
 			summary: 'Reads the title, then `titleOf` and `titleOf`.',

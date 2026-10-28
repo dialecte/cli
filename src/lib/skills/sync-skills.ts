@@ -24,12 +24,14 @@ import {
 } from 'node:fs'
 import { dirname, join, parse, relative, resolve } from 'node:path'
 
-import { SKILL_NAME_PATTERN } from './skill-file.constants.ts'
+import { SKILL_NAME_PATTERN, SKILLS_FOLDER } from './skill-file.constants.ts'
 import { COPY_EXCLUDED_FOLDERS, COPY_MARKER_FILE, MANIFEST_FILE } from './sync-skills.constants.ts'
 
 import type {
 	DiscoveredSkillSources,
 	SkillSource,
+	SyncedVersions,
+	SyncManifest,
 	SyncMode,
 	SyncReport,
 } from './sync-skills.types.ts'
@@ -62,7 +64,8 @@ export function discoverSkillSources(params: {
 	return { sources, missingDependencies }
 }
 
-function dependencyNames(cwd: string): string[] {
+/** The packages `cwd`'s package.json depends on (dependencies, dev and peer), each once. */
+export function dependencyNames(cwd: string): string[] {
 	const manifest = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))
 	return [
 		...new Set([
@@ -74,7 +77,7 @@ function dependencyNames(cwd: string): string[] {
 }
 
 /** Node's lookup: `node_modules/<name>` in the folder or any parent (hoisted by workspaces). */
-function findInstalledPackage(params: { cwd: string; name: string }): string | undefined {
+export function findInstalledPackage(params: { cwd: string; name: string }): string | undefined {
 	let folder = params.cwd
 	const { root } = parse(folder)
 	for (;;) {
@@ -86,8 +89,9 @@ function findInstalledPackage(params: { cwd: string; name: string }): string | u
 }
 
 function skillsOf(params: { origin: string; folder: string }): SkillSource[] {
-	const skillsFolder = join(params.folder, 'skills')
+	const skillsFolder = join(params.folder, SKILLS_FOLDER)
 	if (!existsSync(skillsFolder)) return []
+	const version = packageVersion(params.folder)
 	return readdirSync(skillsFolder, { withFileTypes: true })
 		.filter(
 			(entry) => entry.isDirectory() && existsSync(join(skillsFolder, entry.name, 'SKILL.md')),
@@ -96,7 +100,15 @@ function skillsOf(params: { origin: string; folder: string }): SkillSource[] {
 			name: entry.name,
 			path: join(skillsFolder, entry.name),
 			origin: params.origin,
+			...(version === undefined ? {} : { version }),
 		}))
+}
+
+function packageVersion(folder: string): string | undefined {
+	const path = join(folder, 'package.json')
+	if (!existsSync(path)) return undefined
+	const version: unknown = JSON.parse(readFileSync(path, 'utf8')).version
+	return typeof version === 'string' ? version : undefined
 }
 
 export function syncSkills(params: {
@@ -111,8 +123,10 @@ export function syncSkills(params: {
 
 	for (const targetFolder of params.targetFolders) {
 		mkdirSync(targetFolder, { recursive: true })
-		const previouslyInstalled = readManifest(targetFolder)
+		const previous = readSyncManifest(targetFolder)
+		const previouslyInstalled = previous.installed
 		const installed: string[] = []
+		const versions: SyncedVersions = {}
 		try {
 			for (const name of previouslyInstalled.filter((name) => !shipped.has(name))) {
 				const entry = join(targetFolder, name)
@@ -120,6 +134,7 @@ export function syncSkills(params: {
 					continue
 				if (params.keepUnshipped) {
 					installed.push(name)
+					if (previous.versions[name]) versions[name] = previous.versions[name]
 					continue
 				}
 				removeEntry(entry)
@@ -145,12 +160,14 @@ export function syncSkills(params: {
 				}
 				install({ source, destination, mode: params.mode })
 				installed.push(source.name)
+				if (source.version !== undefined)
+					versions[source.name] = { package: source.origin, version: source.version }
 				addOnce({ list: report.installed, value: source.name })
 			}
 		} finally {
 			writeFileSync(
 				join(targetFolder, MANIFEST_FILE),
-				`${JSON.stringify({ installed }, null, '\t')}\n`,
+				`${JSON.stringify(Object.keys(versions).length ? { installed, versions } : { installed }, null, '\t')}\n`,
 			)
 		}
 	}
@@ -201,15 +218,34 @@ function install(params: { source: SkillSource; destination: string; mode: SyncM
 	writeFileSync(join(params.destination, COPY_MARKER_FILE), `${params.source.origin}\n`)
 }
 
-function readManifest(targetFolder: string): string[] {
+/** The manifest a sync wrote in a target folder; empty when there is none. */
+export function readSyncManifest(targetFolder: string): SyncManifest {
 	const path = join(targetFolder, MANIFEST_FILE)
-	if (!existsSync(path)) return []
-	const installed: unknown = JSON.parse(readFileSync(path, 'utf8')).installed
-	return Array.isArray(installed)
-		? installed.filter(
+	if (!existsSync(path)) return { installed: [], versions: {} }
+	const manifest: { installed?: unknown; versions?: unknown } = JSON.parse(
+		readFileSync(path, 'utf8'),
+	)
+	const installed = Array.isArray(manifest.installed)
+		? manifest.installed.filter(
 				(name): name is string => typeof name === 'string' && SKILL_NAME_PATTERN.test(name),
 			)
 		: []
+	const versions: SyncedVersions = {}
+	if (typeof manifest.versions === 'object' && manifest.versions !== null)
+		for (const [name, entry] of Object.entries(manifest.versions))
+			if (isSyncedVersion(entry)) versions[name] = entry
+	return { installed, versions }
+}
+
+function isSyncedVersion(value: unknown): value is { package: string; version: string } {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'package' in value &&
+		typeof value.package === 'string' &&
+		'version' in value &&
+		typeof value.version === 'string'
+	)
 }
 
 function existsOrIsLink(path: string): boolean {

@@ -5,6 +5,17 @@ export type SkillSource = {
 	path: string
 	/** Package (or local repository folder) that ships it. */
 	origin: string
+	/** The version in the origin's package.json, when it has one. */
+	version?: string
+}
+
+/** Per installed skill, the package and the version a sync took it from. */
+export type SyncedVersions = Record<string, { package: string; version: string }>
+
+/** What a sync leaves in each target folder: what it installed, and from which version. */
+export type SyncManifest = {
+	installed: string[]
+	versions: SyncedVersions
 }
 
 export type SyncMode = 'link' | 'copy'

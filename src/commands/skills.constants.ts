@@ -1,6 +1,3 @@
-/** Where a package keeps the skills it ships: `skills/<name>/SKILL.md`. */
-export const SKILLS_FOLDER = 'skills'
-
 /** Groups below q/tx/doc/project walked for skills: deep enough for `tx.lifecycle.transplant.deep`. */
 export const METHOD_DISCOVERY_DEPTH = 3
 

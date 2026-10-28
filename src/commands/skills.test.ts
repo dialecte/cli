@@ -27,6 +27,17 @@ function read(path: string): string {
 }
 
 const FRONTMATTER = '---\nname: demo\ndescription: Use it.\n---\n'
+const API_START = '<!-- dialecte-skills:generated api -->'
+const API_METHOD = {
+	path: 'q.bay.name',
+	summary: 'Name of a bay.',
+	intents: ['name of a bay'],
+	signature: '() => string',
+	example: undefined,
+	definedInPackage: true,
+	internal: false,
+	declaredAt: 'src/bay.ts:0',
+}
 const HOOKS_START = '<!-- dialecte-skills:generated hooks -->'
 const END = '<!-- /dialecte-skills:generated -->'
 /** What the hooks block renders to in a package without hooks. */
@@ -96,6 +107,28 @@ describe('generatePages', () => {
 		expect(read('skills/demo/references/fresh.md')).toBe(fresh)
 	})
 
+	it('page holding the api block → api.json written next to it, with the package name', () => {
+		write('package.json', JSON.stringify({ name: '@acme/widget' }))
+		write('skills/demo/references/api.md', `${FRONTMATTER}${API_START}\nold\n${END}\n`)
+
+		generatePages({ cwd: root, methods: [API_METHOD], formatOptions: { skip: true } })
+
+		expect(JSON.parse(read('skills/demo/references/api.json'))).toEqual({
+			package: '@acme/widget',
+			methods: [
+				{
+					path: 'doc.query.bay.name',
+					root: 'q',
+					otherRoutes: [],
+					signature: '() => string',
+					summary: 'Name of a bay.',
+					intents: ['name of a bay'],
+					declaredAt: 'src/bay.ts',
+				},
+			],
+		})
+	})
+
 	const failures = {
 		'unknown block kind → exit 1': `${FRONTMATTER}<!-- dialecte-skills:generated verbs -->\nx\n${END}\n`,
 		'unclosed block → exit 1, page not written': `${FRONTMATTER}${HOOKS_START}\nold\n`,
@@ -137,6 +170,42 @@ describe('checkPages', () => {
 	}
 })
 
+describe('checkPages, api.json', () => {
+	it('api.json older than the methods next to the api block → error, exit 1; regenerated → exit 0', () => {
+		write('package.json', JSON.stringify({ name: '@acme/widget' }))
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Index.\n`)
+		write('skills/demo/references/api.md', `${API_START}\nold\n${END}\n`)
+		generatePages({ cwd: root, methods: [API_METHOD], formatOptions: { skip: true } })
+		const renamed = { ...API_METHOD, summary: 'The name of a bay.' }
+
+		expect(checkPages({ cwd: root, methods: [renamed], workspace: undefined })).toBe(1)
+		expect(console.error).toHaveBeenCalledWith(
+			'❌ skills/demo/references/api.json: missing or stale: run `dialecte skills generate`',
+		)
+		generatePages({ cwd: root, methods: [renamed], formatOptions: { skip: true } })
+		expect(checkPages({ cwd: root, methods: [renamed], workspace: undefined })).toBe(0)
+	})
+})
+
+describe('checkPages, api.json laid out by a formatter', () => {
+	it('api.json reformatted (short arrays on one line) → still fresh, exit 0', () => {
+		write('package.json', JSON.stringify({ name: '@acme/widget' }))
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Index.\n`)
+		write('skills/demo/references/api.md', `${API_START}\nold\n${END}\n`)
+		generatePages({ cwd: root, methods: [API_METHOD], formatOptions: { skip: true } })
+		write(
+			'skills/demo/references/api.json',
+			read('skills/demo/references/api.json').replace(
+				/"intents": \[\s+"name of a bay"\s+\]/,
+				'"intents": ["name of a bay"]',
+			),
+		)
+		expect(read('skills/demo/references/api.json')).toContain('"intents": ["name of a bay"]')
+
+		expect(checkPages({ cwd: root, methods: [API_METHOD], workspace: undefined })).toBe(0)
+	})
+})
+
 describe('checkPages, JSDoc quoting a sentence', () => {
 	it('a method summary quoting a sentence → a warning, exit 0', () => {
 		write('package.json', JSON.stringify({ scripts: {} }))
@@ -144,6 +213,8 @@ describe('checkPages, JSDoc quoting a sentence', () => {
 			path: 'q.bay.name',
 			summary: 'Returns "the name of the bay" as given.',
 			intents: ['name of a bay'],
+			signature: '() => string',
+			example: undefined,
 			definedInPackage: true,
 			internal: false,
 			declaredAt: 'src/bay.ts:0',

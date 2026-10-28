@@ -38,6 +38,21 @@ export const getArg = (argv: string[], name: string): string | undefined => {
 }
 export const hasFlag = (argv: string[], name: string): boolean => argv.includes(`--${name}`)
 
+/** The words of a command line that are neither options nor the value of an option taking one. */
+export function positionalArguments(params: {
+	argv: readonly string[]
+	/** Options followed by their value (`--limit 3`), without the dashes. */
+	valueOptions: readonly string[]
+}): string[] {
+	const words: string[] = []
+	for (let index = 0; index < params.argv.length; index++) {
+		const argument = params.argv[index]
+		if (!argument.startsWith('--')) words.push(argument)
+		else if (params.valueOptions.includes(argument.slice(2))) index++
+	}
+	return words
+}
+
 export const tsconfigOf = (argv: string[], cwd: string = process.cwd()): string =>
 	getArg(argv, 'tsconfig') ?? pkgConfig(cwd).tsconfig ?? 'tsconfig.build.json'
 

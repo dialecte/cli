@@ -87,7 +87,7 @@ function quotesSentence(text: string): boolean {
 }
 
 /** The package's own public methods, one per declaration, sorted by canonical path. */
-function indexedMethods(entries: readonly MethodEntry[]): IndexedMethod[] {
+export function indexedMethods(entries: readonly MethodEntry[]): IndexedMethod[] {
 	const routesByDeclaration = new Map<string, MethodEntry[]>()
 	for (const entry of entries) {
 		if (!entry.definedInPackage || entry.internal) continue
@@ -121,7 +121,8 @@ function rootRank(path: string): number {
 	return rank === -1 ? ROOT_PRIORITY.length : rank
 }
 
-function displayPath(path: string): string {
+/** A route as a caller writes it: a read on `doc.query`. */
+export function displayPath(path: string): string {
 	return path.startsWith('q.') ? `doc.query.${path.slice(2)}` : path
 }
 

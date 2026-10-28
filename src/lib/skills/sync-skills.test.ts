@@ -326,4 +326,30 @@ describe('syncSkills', () => {
 		})
 		expect(lstatSync(join(root, '.claude/skills/dialecte')).isSymbolicLink()).toBe(true)
 	})
+
+	it('sync → the manifest records each installed skill with the package and version it came from', () => {
+		const targetFolder = join(root, '.claude/skills')
+		const [source] = coreSkill()
+
+		syncSkills({
+			sources: [{ ...source, version: '0.8.0' }],
+			targetFolders: [targetFolder],
+			mode: 'copy',
+		})
+
+		expect(JSON.parse(readFileSync(join(targetFolder, '.dialecte-skills.json'), 'utf8'))).toEqual({
+			installed: ['dialecte'],
+			versions: { dialecte: { package: '@dialecte/core', version: '0.8.0' } },
+		})
+	})
+})
+
+describe('discoverSkillSources, versions', () => {
+	it('an installed dependency → its skills carry the version of its package.json', () => {
+		writePackage({ folder: root, json: { dependencies: { '@dialecte/core': '1' } } })
+		writePackage({ folder: join(root, 'node_modules/@dialecte/core'), json: { version: '0.8.0' } })
+		writeSkill({ folder: join(root, 'node_modules/@dialecte/core/skills'), name: 'dialecte' })
+
+		expect(discoverSkillSources({ cwd: root }).sources[0].version).toBe('0.8.0')
+	})
 })

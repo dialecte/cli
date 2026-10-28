@@ -13,6 +13,8 @@ function entry(params: Partial<MethodEntry> & { path: string }): MethodEntry {
 	return {
 		summary: 'Does it.',
 		intents: ['do it'],
+		signature: '() => void',
+		example: undefined,
 		definedInPackage: true,
 		internal: false,
 		...params,

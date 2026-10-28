@@ -7,9 +7,11 @@
  *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
  *             has invalid frontmatter or a stale block, or when a method has no JSDoc summary / @intent
  */
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
+import { API_JSON_FILE } from '../lib/api/api-json.constants.ts'
+import { buildApiJson, renderApiJson } from '../lib/api/api-json.ts'
 import { getArg, hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { discoverMethods } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
@@ -21,6 +23,7 @@ import {
 	renderIntentIndex,
 } from '../lib/skills/api-index.ts'
 import { checkSkillPage } from '../lib/skills/check-skill-page.ts'
+import { GENERATED_MARKER_PATTERN } from '../lib/skills/generated-blocks.constants.ts'
 import {
 	findStaleGeneratedKinds,
 	findUnclosedGeneratedBlocks,
@@ -35,9 +38,10 @@ import {
 	readNpmScripts,
 	readWorkspaceFacts,
 } from '../lib/skills/package-facts.ts'
+import { SKILLS_FOLDER } from '../lib/skills/skill-file.constants.ts'
 import { AGENT_SKILL_FOLDERS, DEFAULT_AGENTS } from '../lib/skills/sync-skills.constants.ts'
 import { discoverSkillSources, syncSkills } from '../lib/skills/sync-skills.ts'
-import { METHOD_DISCOVERY_DEPTH, SKILLS_FOLDER, SUBCOMMAND_NAMES } from './skills.constants.ts'
+import { METHOD_DISCOVERY_DEPTH, SUBCOMMAND_NAMES } from './skills.constants.ts'
 
 import type { MethodEntry } from '../lib/discover.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
@@ -125,6 +129,11 @@ export function generatePages(params: {
 		written.push(page.file)
 		console.log(`✏️  ${page.file}`)
 	}
+	for (const apiJson of staleApiJsonFiles({ cwd, methods: params.methods })) {
+		writeFileSync(join(cwd, apiJson.file), apiJson.content)
+		written.push(apiJson.file)
+		console.log(`✏️  ${apiJson.file}`)
+	}
 	formatFiles(cwd, written, params.formatOptions)
 	return failed ? 1 : 0
 }
@@ -184,6 +193,13 @@ export function checkPages(params: {
 			})
 	}
 
+	for (const apiJson of staleApiJsonFiles({ cwd, methods }))
+		findings.push({
+			file: apiJson.file,
+			severity: 'error',
+			message: 'missing or stale: run `dialecte skills generate`',
+		})
+
 	for (const finding of findings)
 		(finding.severity === 'error' ? console.error : console.warn)(
 			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}: ${finding.message}`,
@@ -207,6 +223,52 @@ function collectMethods(params: { argv: string[]; cwd: string }): MethodEntry[] 
 		}))
 			methodsByPath.set(method.path, method)
 	return [...methodsByPath.values()]
+}
+
+/**
+ * `api.json` beside every page holding the generated `api` block, whose data differs from what the methods
+ * render to now (or that does not exist). Compared as data: the package's formatter lays the file out.
+ */
+function staleApiJsonFiles(params: {
+	cwd: string
+	methods: readonly MethodEntry[]
+}): { file: string; content: string }[] {
+	const { cwd } = params
+	const pagesWithIndex = listSkillPages(cwd).filter((page) =>
+		holdsGeneratedBlock({ markdown: readPage({ cwd, page }), kind: 'api' }),
+	)
+	if (pagesWithIndex.length === 0) return []
+	const content = renderApiJson(
+		buildApiJson({ packageName: readPackageName(cwd), methods: params.methods, root: cwd }),
+	)
+	return pagesWithIndex
+		.map((page) => ({ file: `${dirname(page.file)}/${API_JSON_FILE}`, content }))
+		.filter(
+			(apiJson) => !holdsSameJson({ path: join(cwd, apiJson.file), content: apiJson.content }),
+		)
+}
+
+function holdsGeneratedBlock(params: { markdown: string; kind: string }): boolean {
+	return [...params.markdown.matchAll(GENERATED_MARKER_PATTERN)].some(
+		(marker) => marker[1] === params.kind,
+	)
+}
+
+function readPackageName(cwd: string): string {
+	const manifest: { name?: unknown } = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))
+	return typeof manifest.name === 'string' ? manifest.name : ''
+}
+
+function holdsSameJson(params: { path: string; content: string }): boolean {
+	if (!existsSync(params.path)) return false
+	try {
+		return (
+			JSON.stringify(JSON.parse(readFileSync(params.path, 'utf8'))) ===
+			JSON.stringify(JSON.parse(params.content))
+		)
+	} catch {
+		return false
+	}
 }
 
 function renderBlocks(params: { cwd: string; methods: MethodEntry[] }): Record<string, string> {

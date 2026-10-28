@@ -14,7 +14,14 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
-import { ENTRY_FOLDER, PRIMITIVE_LIKE, ROOTS } from './discover.constants.ts'
+import {
+	ENTRY_FOLDER,
+	FENCED_CODE_PATTERN,
+	PRIMITIVE_LIKE,
+	ROOTS,
+	SIGNATURE_FORMAT,
+	SIGNATURE_PRINTER,
+} from './discover.constants.ts'
 import { renderJsDocText } from './render-jsdoc-text.ts'
 
 import ts from 'typescript'
@@ -90,9 +97,15 @@ function walkMembers(params: {
 		)
 		const propertyPath = `${path}.${property.getName()}`
 		if (propertyType.getCallSignatures().length > 0) {
+			const { documentation, declaringSymbol } = documentationOf({
+				checker,
+				symbol: property,
+				root: params.root,
+			})
 			params.entries.push({
 				path: propertyPath,
-				...documentationOf({ checker, symbol: property, root: params.root }),
+				signature: signatureOf({ checker, boundType: propertyType, declaringSymbol }),
+				...documentation,
 			})
 		} else if (
 			depth < maxDepth &&
@@ -113,15 +126,123 @@ function walkMembers(params: {
 }
 
 /**
+ * The signatures as declared (generic, not instantiated with one dialecte's tag names), one per line, the
+ * leading query or transaction left out when the binding took it away: what a caller writes.
+ */
+function signatureOf(params: {
+	checker: ts.TypeChecker
+	boundType: ts.Type
+	declaringSymbol: ts.Symbol | undefined
+}): string {
+	const { checker } = params
+	const boundSignatures = params.boundType.getCallSignatures()
+	const declarations = callableDeclarations(params.declaringSymbol)
+	if (declarations.length === 0)
+		return boundSignatures
+			.map((signature) =>
+				checker.signatureToString(signature, undefined, SIGNATURE_FORMAT, ts.SignatureKind.Call),
+			)
+			.join('\n')
+	const boundParameterCount = Math.max(
+		...boundSignatures.map((signature) => parameterCount({ checker, signature })),
+	)
+	return declarations
+		.map((declaration) => declaredSignatureText({ checker, declaration, boundParameterCount }))
+		.join('\n')
+}
+
+/**
+ * How many parameters a signature takes: a binding that drops the first parameter writes the rest as one
+ * rest parameter of a tuple type (`(...args: [ref: string, options?: Options])`), counted element by element.
+ */
+function parameterCount(params: { checker: ts.TypeChecker; signature: ts.Signature }): number {
+	const { checker } = params
+	const parameters = params.signature.getParameters()
+	const last = parameters.at(-1)
+	if (!last) return 0
+	const lastType = checker.getTypeOfSymbol(last)
+	return checker.isTupleType(lastType)
+		? parameters.length - 1 + checker.getTypeArguments(lastType as ts.TypeReference).length
+		: parameters.length
+}
+
+/** The function-like declarations behind a symbol: its overloads when it has some, else its implementation. */
+function callableDeclarations(symbol: ts.Symbol | undefined): ts.SignatureDeclaration[] {
+	const declarations = (symbol?.declarations ?? []).flatMap(
+		(declaration): ts.SignatureDeclaration[] => {
+			if (ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration))
+				return [declaration]
+			if (
+				ts.isVariableDeclaration(declaration) &&
+				declaration.initializer &&
+				(ts.isArrowFunction(declaration.initializer) ||
+					ts.isFunctionExpression(declaration.initializer))
+			)
+				return [declaration.initializer]
+			return []
+		},
+	)
+	const overloads = declarations.filter((declaration) => !hasBody(declaration))
+	return overloads.length > 0 ? overloads : declarations
+}
+
+function hasBody(declaration: ts.SignatureDeclaration): boolean {
+	return 'body' in declaration && declaration.body !== undefined
+}
+
+function declaredSignatureText(params: {
+	checker: ts.TypeChecker
+	declaration: ts.SignatureDeclaration
+	boundParameterCount: number
+}): string {
+	const { checker, declaration } = params
+	const sourceFile = declaration.getSourceFile()
+	const signature = checker.getSignatureFromDeclaration(declaration)
+	const parameters = declaration.parameters
+	const skipped = Math.max(0, parameters.length - params.boundParameterCount)
+	const typeParameters = declaration.typeParameters?.length
+		? `<${declaration.typeParameters.map((typeParameter) => printed({ node: typeParameter, sourceFile })).join(', ')}>`
+		: ''
+	const parameterTexts = parameters.slice(skipped).map(function parameterText(
+		parameter: ts.ParameterDeclaration,
+	): string {
+		const optional = parameter.questionToken || parameter.initializer ? '?' : ''
+		const rest = parameter.dotDotDotToken ? '...' : ''
+		// the type as written (an alias stays an alias); inferred only when the source writes none
+		const type = parameter.type
+			? printed({ node: parameter.type, sourceFile })
+			: checker.typeToString(checker.getTypeAtLocation(parameter), declaration, SIGNATURE_FORMAT)
+		return `${rest}${printed({ node: parameter.name, sourceFile })}${optional}: ${type}`
+	})
+	const returnType = declaration.type
+		? printed({ node: declaration.type, sourceFile })
+		: signature
+			? checker.typeToString(signature.getReturnType(), declaration, SIGNATURE_FORMAT)
+			: 'unknown'
+	return `${typeParameters}(${parameterTexts.join(', ')}) => ${returnType}`
+}
+
+/**
+ * A node as the compiler prints it, on one line: comments dropped, object members ending with `;` - the
+ * layout of the source (line breaks, comments, separators left out) does not reach the signature.
+ */
+function printed(params: { node: ts.Node; sourceFile: ts.SourceFile }): string {
+	return SIGNATURE_PRINTER.printNode(
+		ts.EmitHint.Unspecified,
+		params.node,
+		params.sourceFile,
+	).replace(/\s*\n\s*/g, ' ')
+}
+
+/**
  * The JSDoc of the function behind a member: a bound extension method is a mapped property whose
  * declaration is a shorthand (`{ of }`), a property, a barrel's re-export or an alias (`import * as`),
  * so follow those to the function. Public compiler API only.
  */
-function documentationOf(params: {
-	checker: ts.TypeChecker
-	symbol: ts.Symbol
-	root: string
-}): Omit<MethodEntry, 'path'> {
+function documentationOf(params: { checker: ts.TypeChecker; symbol: ts.Symbol; root: string }): {
+	documentation: Omit<MethodEntry, 'path' | 'signature'>
+	declaringSymbol: ts.Symbol | undefined
+} {
 	const { checker } = params
 	const visited = new Set<ts.Symbol>()
 	const queue: (ts.Symbol | undefined)[] = [params.symbol]
@@ -139,11 +260,15 @@ function documentationOf(params: {
 		if (comment) {
 			const tags = symbol.getJsDocTags(checker)
 			return {
-				summary: firstParagraph(comment),
-				intents: intentsOf(tags),
-				definedInPackage: isDeclaredInPackage({ symbol, root: params.root }),
-				internal: tags.some((tag) => tag.name === 'internal'),
-				declaredAt: declarationKey({ symbol, root: params.root }),
+				documentation: {
+					summary: firstParagraph(comment),
+					intents: intentsOf(tags),
+					example: exampleOf(tags),
+					definedInPackage: isDeclaredInPackage({ symbol, root: params.root }),
+					internal: tags.some((tag) => tag.name === 'internal'),
+					declaredAt: declarationKey({ symbol, root: params.root }),
+				},
+				declaringSymbol: symbol,
 			}
 		}
 		for (const declaration of symbol.declarations ?? []) {
@@ -159,11 +284,15 @@ function documentationOf(params: {
 	}
 	const declaringFunction = lastDeclared(visited) ?? declaringSymbol
 	return {
-		summary: undefined,
-		intents: [],
-		internal: false,
-		definedInPackage: isDeclaredInPackage({ symbol: declaringFunction, root: params.root }),
-		declaredAt: declarationKey({ symbol: declaringFunction, root: params.root }),
+		documentation: {
+			summary: undefined,
+			intents: [],
+			example: undefined,
+			internal: false,
+			definedInPackage: isDeclaredInPackage({ symbol: declaringFunction, root: params.root }),
+			declaredAt: declarationKey({ symbol: declaringFunction, root: params.root }),
+		},
+		declaringSymbol: declaringFunction,
 	}
 }
 
@@ -178,6 +307,17 @@ function intentsOf(tags: readonly ts.JSDocTagInfo[]): string[] {
 	return tags
 		.filter((tag) => tag.name === 'intent')
 		.flatMap((tag) => parseIntentText(renderJsDocText(tag.text)))
+}
+
+/** The first `@example` of the JSDoc, without its code fence. */
+function exampleOf(tags: readonly ts.JSDocTagInfo[]): string | undefined {
+	const tag = tags.find((candidate) => candidate.name === 'example')
+	if (!tag) return undefined
+	// the tag's text runs to the next tag: a fenced block is the code, what follows it is prose
+	const text = renderJsDocText(tag.text)
+	const fenced = text.match(FENCED_CODE_PATTERN)
+	const code = (fenced ? fenced[1] : text).trim()
+	return code || undefined
 }
 
 /**
