@@ -20,3 +20,12 @@ export const IGNORED_FILES_SHOWN = 3
 
 /** A stash entry's subject names the branch it was pushed on: `WIP on <branch>: …` or `On <branch>: …`. */
 export const STASH_SUBJECT_PATTERN = /^(?:WIP on|On) (.+?): /
+
+/**
+ * The lot declaration the orchestrator writes at the package root (`.dialecte/lot.json`); never committed,
+ * never in a lot, wherever the package sits in its repository.
+ */
+export const LOT_FILE = '.dialecte/lot.json'
+
+/** The lot declaration as a path relative to a repository or a package root. */
+export const LOT_FILE_PATTERN = /(^|\/)\.dialecte\/lot\.json$/

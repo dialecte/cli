@@ -16,6 +16,7 @@ import { run as rules } from './commands/rules.ts'
 import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
 import { run as skills } from './commands/skills.ts'
+import { run as tdd } from './commands/tdd.ts'
 import { run as worktree } from './commands/worktree.ts'
 
 export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
@@ -34,6 +35,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	explain,
 	rules,
 	gate,
+	tdd,
 	new: newVerb,
 	handover,
 	worktree,
@@ -61,6 +63,7 @@ Commands:
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
+  tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
   worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
@@ -126,6 +129,18 @@ Contributing (inside a dialecte repository):
                              # refuses while a hand-over script holds the repository; --fast starts with the
                              # worktree's hygiene (nothing staged, no stash on its branch, new files declared);
                              # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait)
+  dialecte tdd red [<test file>]... [--no-wait] [--json]
+                             # every case of the changed test files: a failure on an assertion (or a stub's
+                             # 'not implemented', a TypeError of existing code, inside an asserting expect) is a
+                             # red; a new or changed case that passes, a missing export, a type or syntax error, a
+                             # timeout, a .only is refused; one refusal records no red of its file; the files
+                             # without a refusal and the changed helpers, fixtures, snapshots are frozen
+  dialecte tdd green [<test file> | <test file>::<case name>]...
+                             # each case with a red receipt, its test code as frozen, production changed since
+                             # its red, passes; records a green receipt
+  dialecte tdd status [--json]
+                             # per case: red, green, unchanged, missing receipt, test edited after red, flags;
+                             # test code changed outside tdd red; cases the change deletes
   dialecte new verb <namespace> <query|transaction> <name> [--version <v>]
                              # verb, types, red test (only: true), barrel export, namespace registration
   dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]

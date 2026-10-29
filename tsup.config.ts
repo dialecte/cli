@@ -32,4 +32,10 @@ export default defineConfig([
 		// tsup's declaration build sets `baseUrl`, which TypeScript 6 deprecates
 		dts: { compilerOptions: { ignoreDeprecations: '6.0' } },
 	},
+	{
+		...SHARED,
+		// the vitest reporter `dialecte tdd` hands the package's vitest, next to the bin
+		entry: { 'tdd-reporter': 'src/lib/tdd/tdd-reporter.ts' },
+		clean: false,
+	},
 ])
