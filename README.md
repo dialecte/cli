@@ -29,7 +29,7 @@ dialecte api show <path>   # read one method's contract
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
-dialecte doctor            # versions, core API generation, skills in sync, local checkouts
+dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte new verb <namespace> <query|transaction> <name>
@@ -65,6 +65,27 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
   dependencies into `.claude/skills` and `.agents/skills` (Codex, Cursor, Gemini CLI, Copilot read the
   latter; add `--agent copilot` for `.github/skills`). Links follow your installed versions; rerun after
   adding a dependency. `--copy` writes copies instead of links.
+- **Station agents (Claude Code)**: when Claude Code is a target (the default) and the project's model vendor
+  is anthropic, `skills sync` also writes one agent per station of `dialecte-lot` into
+  `.claude/agents/dialecte-<station>.md`: `implementer` and `fixer` (standard tier), `implementer-strong` and
+  `reviewer` (strong), `eval-runner` and `standard-reader` (standard), `grader` and `searcher` (fast). Each file
+  sets the model (from the `dialecte models` map, as the alias Claude Code accepts: `sonnet`, `opus`,
+  `haiku`) and the tools: the reviewer holds the read tools and Bash (it runs the tests) and no Write or Edit,
+  the searcher and the grader hold read tools only. The body is a few lines naming the station, the skills to
+  load and the never-list; it never copies a skill. The files are owned through the manifest: replaced on
+  every sync, removed when no longer produced, and a file of your own with the same name is reported, never
+  overwritten. `dialecte doctor` warns about a stale or missing one. Other hosts (Copilot / VS Code, Codex,
+  Gemini) get no agent files from this command yet: the tier of each station comes from `dialecte models`
+  there, as the `Tier:` line of a brief says.
+- **Session-start check (Claude Code)**: `skills sync` adds a `SessionStart` hook running
+  `npx --no-install @dialecte/cli doctor --brief` (the installed cli: no download at a session start) to
+  `.claude/settings.json`, inserted by a minimal text edit (the rest of your file stays byte for byte), never
+  duplicated, removed when you drop the claude target. If you edited the hook's text since, removal cuts only
+  our handler (a comment right next to it may go with it) and writes nothing when anything else would change. Agents and hook are written only when `dialecte-lot`
+  is installed for Claude Code. `doctor --brief` prints nothing when the skills, the
+  versions and the station agents are in sync, otherwise one line per problem with its fix, and always exits 0.
+  `--no-session-check` leaves the hook out (and removes the one a sync added). Elsewhere, the `dialecte` skill
+  tells the agent to run `doctor` first.
 - **Working on Dialecte**: `npx @dialecte/cli skills sync --from ../` takes them from your local checkouts.
 - **In a package**: `dialecte skills generate` rewrites the `<!-- dialecte-skills:generated <kind> -->`
   blocks (`extensions`, `core-methods`, `hooks`, `api`, `intents`) from the source.
