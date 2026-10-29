@@ -26,6 +26,8 @@ export type StepResult = {
 	note?: string
 	/** The last lines of the output of a failed step. */
 	tail?: string
+	/** Lines shown under the step's line, for the review (the tdd step's flags and deleted cases). */
+	details?: string[]
 }
 
 /** Takes the machine lock for a heavy step: a release, or why the step cannot run. */

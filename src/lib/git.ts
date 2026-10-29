@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
+import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
+
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
 export function readGit(params: { root: string; args: string[] }): string {
 	// paths as they are (`été.ts`), not octal-quoted
@@ -18,7 +20,8 @@ export function readGit(params: { root: string; args: string[] }): string {
 
 /**
  * Files changed against HEAD, staged or not, and new files git does not ignore; deleted files left out
- * unless asked. Relative to the repository root, sorted.
+ * unless asked. Relative to the repository root, sorted. The lot declaration (`.dialecte/lot.json`) is
+ * never part of a change: the orchestrator writes it for the gate, nobody commits it.
  */
 export function listChangedFiles(params: { root: string; withDeleted?: boolean }): string[] {
 	const filter = params.withDeleted ? [] : ['--diff-filter=d']
@@ -30,7 +33,9 @@ export function listChangedFiles(params: { root: string; withDeleted?: boolean }
 		root: params.root,
 		args: ['ls-files', '--others', '--exclude-standard'],
 	})
-	return [...new Set(`${changed}\n${untracked}`.split('\n').filter(Boolean))].sort()
+	return [...new Set(`${changed}\n${untracked}`.split('\n').filter(Boolean))]
+		.filter((file) => !LOT_FILE_PATTERN.test(file))
+		.sort()
 }
 
 /** Files under `folder` git tracks or would add (ignored ones left out), relative to `root`, sorted. */

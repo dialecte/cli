@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
 
 import { hasFlag } from '../lib/config.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
-import { runGateSteps } from '../lib/gate/run-gate.ts'
+import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { renderStepCounts } from '../lib/gate/step-counts.ts'
 import { handoverLockPath, readHandoverLock } from '../lib/handover/handover-lock.ts'
 import {
@@ -24,12 +24,15 @@ import {
 } from '../lib/machine-lock/machine-lock.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
+import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
+import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepLock, StepResult } from '../lib/gate/gate.types.ts'
 import type { WriteLine } from '../lib/handover/handover.types.ts'
+import type { PackageJson } from '../lib/package-json.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -93,6 +96,18 @@ export function runGate(params: {
 			reason: gateLock.refusal,
 		})
 	try {
+		if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
+		else
+			results.push(
+				tddStep({
+					cwd,
+					packageJson,
+					lock: () =>
+						runsTestsInABrowser({ root: cwd, packageJson })
+							? lockFor(`dialecte gate --${mode} (tdd) in ${resolve(cwd)}`)
+							: { release: () => undefined },
+				}),
+			)
 		if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
 		else results.push(...runGateSteps({ root: cwd, steps, packageJson, lockStep }))
 	} finally {
@@ -109,7 +124,10 @@ export function runGate(params: {
 	return {
 		exitCode,
 		output: [
-			...results.map(renderStepLine),
+			...results.flatMap((result) => [
+				renderStepLine(result),
+				...(result.details ?? []).map((line) => `        ${line}`),
+			]),
 			failed ? `gate --${mode}: failed at ${failed.step.name}` : `gate --${mode}: green`,
 			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
 		].join('\n'),
@@ -134,6 +152,29 @@ function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 			...(note && { note }),
 		}
 	return { step, status: 'passed', counts: {}, restored: [], ...(note && { note }) }
+}
+
+/** The receipts of the change's test cases, after the hygiene. */
+function tddStep(params: {
+	cwd: string
+	packageJson: PackageJson
+	lock: () => { release(): void } | { refusal: string }
+}): StepResult {
+	const check = checkTddReceipts({
+		root: params.cwd,
+		packageJson: params.packageJson,
+		lock: params.lock,
+	})
+	return {
+		step: TDD_STEP,
+		status: check.status,
+		counts: {},
+		restored: [],
+		...(check.reason && { reason: check.reason }),
+		...(check.note && { note: check.note }),
+		...(check.lines?.length && { tail: check.lines.join('\n') }),
+		...(check.details?.length && { details: check.details }),
+	}
 }
 
 /** Every `--declare <path>` of the command line. */

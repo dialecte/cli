@@ -250,6 +250,141 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(lines.at(-1)).toBe(`cd '${out}' && bash commit.sh`)
 	})
 
+	it('the lot file .dialecte/lot.json in no lot → not refused; a lot declared exempt from the receipts → on the card', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: { '.dialecte/lot.json': JSON.stringify({ tdd: 'exempt: a rename only' }) },
+		})
+
+		const result = writeHandover({ lotsPath })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^│ tdd {9}exempt: a rename only \(2 production file\(s\), 0 test file\(s\) changed\) +│$/,
+				),
+			]),
+		)
+	})
+
+	it('receipts carrying flags in the worktree → the card lists them for the reviewer', () => {
+		const { root, lotsPath } = prepare()
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			JSON.stringify({
+				version: 2,
+				entries: [
+					{
+						kind: 'red',
+						file: 'src/read.test.ts',
+						name: 'read > answers one',
+						project: '',
+						testFileHash: 'h',
+						caseHash: 'c',
+						productionHash: 'p',
+						flags: ['rollback', 'red after green'],
+						at: '2026-10-29T12:00:00.000Z',
+					},
+				],
+			}),
+		)
+
+		const result = writeHandover({ lotsPath })
+
+		expect(result.output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^│ tdd {9}flag: src\/read\.test\.ts::read > answers one \(rollback, red after green\) +│$/,
+				),
+			]),
+		)
+	})
+
+	it('a case the lot accepts and a red run accepted → on the card with its reason', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [
+						{ case: 'src/read.test.ts::read > answers one', reason: 'pins existing behaviour' },
+					],
+				}),
+			},
+		})
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			JSON.stringify({
+				version: 2,
+				entries: [
+					{
+						kind: 'accepted',
+						file: 'src/read.test.ts',
+						name: 'read > answers one',
+						project: '',
+						testFileHash: 'h',
+						caseHash: 'c',
+						productionHash: 'p',
+						reason: 'pins existing behaviour',
+						at: '2026-10-29T12:00:00.000Z',
+					},
+				],
+			}),
+		)
+
+		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^│ tdd {9}accepted: src\/read\.test\.ts::read > answers one \(pins existing behaviour\) +│$/,
+				),
+			]),
+		)
+	})
+
+	it('an accepted receipt whose acceptance left the lot file, and an acceptance no receipt used → both on the card', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [{ case: 'src/read.test.ts::read > unused', reason: 'never run' }],
+				}),
+			},
+		})
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			JSON.stringify({
+				version: 2,
+				entries: [
+					{
+						kind: 'accepted',
+						file: 'src/read.test.ts',
+						name: 'read > answers one',
+						project: '',
+						testFileHash: 'h',
+						caseHash: 'c',
+						productionHash: 'p',
+						reason: 'pins existing behaviour',
+						at: '2026-10-29T12:00:00.000Z',
+					},
+				],
+			}),
+		)
+
+		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^│ tdd {9}accepted: src\/read\.test\.ts::read > answers one \(pins existing behaviour\) - no longer in the lot file +│$/,
+				),
+				expect.stringMatching(
+					/^│ {13}accept unused: src\/read\.test\.ts::read > unused \(never run\): no receipt of that case +│$/,
+				),
+			]),
+		)
+	})
+
 	it('--json → the same content as data', () => {
 		const { root, lotsPath, out } = prepare()
 

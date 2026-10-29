@@ -1,9 +1,16 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
-import { createScratchRepository, git, temporaryFolder } from '../../test/scratch-repository.ts'
+import {
+	createScratchRepository,
+	git,
+	temporaryFolder,
+	writeFiles,
+} from '../../test/scratch-repository.ts'
+import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { runGate } from './gate.ts'
+import { runTdd } from './tdd.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -50,6 +57,9 @@ function gate(params: {
 	})
 }
 
+/** The tdd line of a package that does not test with vitest. */
+const NO_VITEST_LINE = 'skip  tdd  the package does not test with vitest'
+
 /** The hygiene note of a scratch repository made without `worktree add`. */
 const NO_BASELINE_LINE =
 	'ok    hygiene  no hygiene baseline (worktree not made by `dialecte worktree add`): the stash is not compared'
@@ -66,8 +76,9 @@ describe('runGate', { timeout: 30_000 }, () => {
 		const result = gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
-		expect(result.output.split('\n').slice(0, 4)).toEqual([
+		expect(result.output.split('\n').slice(0, 5)).toEqual([
 			NO_BASELINE_LINE,
+			NO_VITEST_LINE,
 			'FAIL  check  exit 3  tests 4 passed / 4',
 			'--    tests  not run: an earlier step failed',
 			'gate --fast: failed at check',
@@ -92,7 +103,10 @@ describe('runGate', { timeout: 30_000 }, () => {
 		const result = gate({ cwd: root, argv: ['--full'] })
 
 		expect(readFileSync(join(root, 'doc/data/catalog.json')).equals(original)).toBe(true)
-		expect(result.output.split('\n')[0]).toBe('FAIL  docs  exit 1  restored doc/data/catalog.json')
+		expect(result.output.split('\n').slice(0, 2)).toEqual([
+			NO_VITEST_LINE,
+			'FAIL  docs  exit 1  restored doc/data/catalog.json',
+		])
 	})
 
 	it('a test step that counts no test, or exits 0 with a failed test → failed', () => {
@@ -109,10 +123,10 @@ describe('runGate', { timeout: 30_000 }, () => {
 			fast: [{ name: 'tests', run: `printf ' Tests  1 failed | 3 passed (4)\n'`, counts: 'tests' }],
 		})
 
-		expect(gate({ cwd: silent, argv: [] }).output.split('\n')[1]).toBe(
+		expect(gate({ cwd: silent, argv: [] }).output.split('\n')[2]).toBe(
 			'FAIL  tests  exit 0  no test ran',
 		)
-		expect(gate({ cwd: failing, argv: [] }).output.split('\n')[1]).toBe(
+		expect(gate({ cwd: failing, argv: [] }).output.split('\n')[2]).toBe(
 			'FAIL  tests  exit 0  tests 3 passed, 1 failed / 4  1 test(s) failed',
 		)
 	})
@@ -130,6 +144,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 			exitCode: 0,
 			output: [
 				NO_BASELINE_LINE,
+				NO_VITEST_LINE,
 				'ok    check  exit 0  0 error(s), 0 warning(s)',
 				'skip  skills  no npm script "skills:check"',
 				'gate --fast: green',
@@ -161,6 +176,7 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
 			expect.stringMatching(/^FAIL  hygiene  1 file\(s\) staged: README\.md  no hygiene baseline/),
+			'--    tdd  not run: an earlier step failed',
 			'--    check  not run: an earlier step failed',
 			'gate --fast: failed at hygiene',
 			'--- last lines of hygiene ---',
@@ -201,7 +217,7 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n').slice(0, 2)).toEqual([
 			'FAIL  machine lock  the machine lock is held (--no-wait): pid 1111 runs "dialecte gate --full in /elsewhere" since 2026-10-29T10:00:00.000Z',
-			'--    build  not run: an earlier step failed',
+			'--    tdd  not run: an earlier step failed',
 		])
 		expect(existsSync(join(root, 'ran'))).toBe(false)
 	})
@@ -276,5 +292,221 @@ describe('runGate: a package whose tests run in a browser', { timeout: 30_000 },
 
 		expect(readFileSync(join(browser, 'tests.txt'), 'utf8').trim()).toBe('held')
 		expect(readFileSync(join(node, 'tests.txt'), 'utf8').trim()).toBe('free')
+	})
+})
+
+describe('runGate: the tdd step', { timeout: 240_000 }, () => {
+	const STUB =
+		"export function add(left: number, right: number): number {\n\tthrow new Error('not implemented: add')\n}\n"
+	const IMPLEMENTED =
+		'export function add(left: number, right: number): number {\n\treturn left + right\n}\n'
+	const ADD_TEST = [
+		"import { add } from './add.ts'",
+		"import { expect, it } from 'vitest'",
+		"it('one plus two → three', () => { expect(add(1, 2)).toBe(3) })",
+		'',
+	].join('\n')
+
+	/** A vitest package whose fast gate runs one light step after the tdd step. */
+	function tddPackage(files: Record<string, string> = {}): string {
+		return createVitestPackage({
+			files,
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+	}
+
+	function tdd(params: { root: string; argv: string[] }) {
+		return runTdd({
+			cwd: params.root,
+			argv: params.argv,
+			now: () => new Date('2026-10-29T12:00:00.000Z'),
+		})
+	}
+
+	/** A package where the test station proved the test red and the implement station made it green. */
+	function redThenGreen(): string {
+		const root = tddPackage()
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		tdd({ root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		tdd({ root, argv: ['green'] })
+		return root
+	}
+
+	it('a new test file never proven red → fails: test code changed outside tdd red, the cases listed', () => {
+		const root = tddPackage()
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+
+		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output.split('\n')).toEqual([
+			NO_BASELINE_LINE,
+			'FAIL  tdd  test code changed outside tdd red: src/add.test.ts',
+			'--    check  not run: an earlier step failed',
+			'gate --fast: failed at tdd',
+			'--- last lines of tdd ---',
+			'missing receipt  src/add.test.ts::one plus two → three',
+			'the test station runs `dialecte tdd red`, the implement station `dialecte tdd green`',
+		])
+	})
+
+	it('red then green → ok with the count; the test file edited since, or a helper added → fails naming it', () => {
+		const green = redThenGreen()
+		const edited = redThenGreen()
+		writeFileSync(join(edited, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(3) '))
+		const helper = redThenGreen()
+		writeFiles({ root: helper, files: { 'test/expected.ts': 'export const EXPECTED = 3\n' } })
+
+		const passed = gate({ cwd: green, argv: ['--declare', 'src/'] })
+
+		expect(passed.exitCode).toBe(0)
+		expect(passed.output.split('\n')[1]).toBe(
+			'ok    tdd  1 case(s) of the change: 1 red then green',
+		)
+		expect(gate({ cwd: edited, argv: ['--declare', 'src/'] }).output.split('\n')[1]).toBe(
+			'FAIL  tdd  test code changed outside tdd red: src/add.test.ts',
+		)
+		expect(
+			gate({ cwd: helper, argv: ['--declare', 'src/', '--declare', 'test/'] }).output.split(
+				'\n',
+			)[1],
+		).toBe('FAIL  tdd  test code changed outside tdd red: test/expected.ts')
+	})
+
+	it('a test call of the base deleted → passes, the finding shown under the step', () => {
+		const root = tddPackage({
+			'src/add.ts': IMPLEMENTED,
+			'src/add.test.ts': ADD_TEST.replace(
+				/\n$/,
+				"\nit('zero plus zero → zero', () => { expect(add(0, 0)).toBe(0) })\n",
+			),
+		})
+		writeFileSync(join(root, 'src/add.test.ts'), ADD_TEST)
+		tdd({ root, argv: ['red'] })
+
+		const result = gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n').slice(1, 3)).toEqual([
+			'ok    tdd  1 case(s) of the change: 1 unchanged',
+			'        deleted  src/add.test.ts  the test "zero plus zero → zero" of the base is gone',
+		])
+	})
+
+	it('a node-only package, the machine lock held by another live process → the tdd step does not take it', () => {
+		const root = redThenGreen()
+		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
+		writeFileSync(
+			lockPath,
+			JSON.stringify({ pid: 1111, command: 'elsewhere', startedAt: '2026-10-29T10:00:00.000Z' }),
+		)
+
+		const result = gate({
+			cwd: root,
+			argv: ['--declare', 'src/', '--no-wait'],
+			lockPath,
+			isAlive: () => true,
+		})
+
+		expect(result.output.split('\n')[1]).toBe(
+			'ok    tdd  1 case(s) of the change: 1 red then green',
+		)
+	})
+
+	it('a case the lot accepts → counted and shown with its reason under the step', () => {
+		const root = tddPackage({ 'src/add.ts': IMPLEMENTED })
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': ADD_TEST,
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [
+						{
+							case: 'src/add.test.ts::one plus two → three',
+							reason: 'pins behaviour that already exists',
+						},
+					],
+				}),
+			},
+		})
+		tdd({ root, argv: ['red'] })
+
+		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n').slice(1, 3)).toEqual([
+			'ok    tdd  1 case(s) of the change: 1 accepted',
+			'        accepted  src/add.test.ts::one plus two → three  pins behaviour that already exists',
+		])
+	})
+
+	it('an acceptance naming no case of the change → reported as unused under the step', () => {
+		const root = redThenGreen()
+		mkdirSync(join(root, '.dialecte'))
+		writeFileSync(
+			join(root, '.dialecte/lot.json'),
+			JSON.stringify({ accept: [{ case: 'src/add.test.ts::nope', reason: 'a typo' }] }),
+		)
+
+		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+		expect(result.output.split('\n').slice(1, 3)).toEqual([
+			'ok    tdd  1 case(s) of the change: 1 red then green',
+			'        unused accept  src/add.test.ts::nope  no case of the change has that name (a typo)',
+		])
+	})
+
+	it('an acceptance that is not { case, reason } → fails naming the expected shape', () => {
+		const root = tddPackage()
+		mkdirSync(join(root, '.dialecte'))
+		writeFileSync(join(root, '.dialecte/lot.json'), JSON.stringify({ accept: [{ case: 'x' }] }))
+
+		expect(gate({ cwd: root, argv: [] }).output.split('\n')[1]).toBe(
+			'FAIL  tdd  .dialecte/lot.json: each "accept" entry must be { "case": "<file>::<name>", "reason": "<why>" }',
+		)
+	})
+
+	it('no test file changed → ok with a note; --full runs the step too, first', () => {
+		const root = tddPackage()
+
+		const fast = gate({ cwd: root, argv: [] })
+		const full = gate({ cwd: root, argv: ['--full'] })
+
+		expect(fast.output.split('\n')[1]).toBe('ok    tdd  no test code new or changed since the base')
+		expect(full.output.split('\n')[0]).toBe('ok    tdd  no test code new or changed since the base')
+	})
+
+	it('the lot declared exempt → ok with the reason and what the change touches; the lot file not a new file to declare', () => {
+		const root = tddPackage({ 'src/add.ts': IMPLEMENTED })
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': IMPLEMENTED.replace('left + right', 'right + left'),
+				'src/add.test.ts': ADD_TEST,
+				'.dialecte/lot.json': JSON.stringify({ tdd: 'exempt: a rename only' }),
+			},
+		})
+
+		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n').slice(0, 2)).toEqual([
+			NO_BASELINE_LINE,
+			'ok    tdd  exempt: a rename only (1 production file(s), 1 test file(s) changed)',
+		])
+	})
+
+	it('a lot file whose tdd is not "exempt: <reason>" → fails naming the expected shape', () => {
+		const root = tddPackage()
+		mkdirSync(join(root, '.dialecte'))
+		writeFileSync(join(root, '.dialecte/lot.json'), JSON.stringify({ tdd: 'skip' }))
+
+		const result = gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output.split('\n')[1]).toBe(
+			'FAIL  tdd  .dialecte/lot.json: "tdd" must be "exempt: <reason>", not "skip"',
+		)
 	})
 })

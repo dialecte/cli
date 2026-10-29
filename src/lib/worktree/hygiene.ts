@@ -2,7 +2,7 @@
  * The git state agents must leave alone, checked after the fact whatever wrote it: the index stays empty
  * (nothing staged), no stash entry is pushed on this worktree's branch (one stash is shared by every
  * worktree and session: entries of other branches are only noted), and every new file is one the change
- * declares. A worktree made without `dialecte worktree add` has no baseline: the stash is then not compared.
+ * declares (the lot declaration `.dialecte/lot.json` aside). A worktree made without `dialecte worktree add` has no baseline: the stash is then not compared.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,7 +10,11 @@ import { join } from 'node:path'
 import { gitFolderOf, listStagedFiles, readGit } from '../git.ts'
 import { lotPathCovers } from '../handover/read-lots-file.ts'
 import { shellQuote } from '../shell-quote.ts'
-import { HYGIENE_BASELINE_FILE, STASH_SUBJECT_PATTERN } from './worktree.constants.ts'
+import {
+	HYGIENE_BASELINE_FILE,
+	LOT_FILE_PATTERN,
+	STASH_SUBJECT_PATTERN,
+} from './worktree.constants.ts'
 
 import type { HygieneBaseline, HygieneReport, StashEntry } from './worktree.types.ts'
 
@@ -72,7 +76,9 @@ export function checkHygiene(params: {
 		.split('\n')
 		.filter(Boolean)
 	const undeclared = untracked.filter(
-		(file) => !params.declared.some((path) => lotPathCovers({ path, file })),
+		(file) =>
+			!LOT_FILE_PATTERN.test(file) &&
+			!params.declared.some((path) => lotPathCovers({ path, file })),
 	)
 	if (undeclared.length)
 		report.warnings.push(

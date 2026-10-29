@@ -90,6 +90,8 @@ export type HandoverCard = {
 	branch: string
 	head: string
 	gates: string
+	/** The test receipts for the reviewer: the lot's exemption, the flags receipts carry (one per line). */
+	tdd?: string
 	lots: CardLot[]
 	/** The command that runs the hand-over, with its absolute `cd`. */
 	command: string
