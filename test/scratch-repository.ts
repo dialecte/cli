@@ -17,7 +17,17 @@ export function temporaryFolder(prefix: string): string {
 
 /** A repository on `main` with one commit holding `files`, removed when the current test ends. */
 export function createScratchRepository(files: Record<string, string> = {}): string {
-	const root = temporaryFolder('dialecte-scratch-')
+	return initializeRepository({ root: temporaryFolder('dialecte-scratch-'), files })
+}
+
+/** A repository on `main` with one commit holding `files`, made in `root` (a folder of the test's own). */
+export function initializeRepository(params: {
+	root: string
+	files?: Record<string, string>
+}): string {
+	const { root } = params
+	const files = params.files ?? {}
+	mkdirSync(root, { recursive: true })
 	git({ root, args: ['init', '-q', '-b', 'main'] })
 	git({ root, args: ['config', 'user.email', 'scratch@example.com'] })
 	git({ root, args: ['config', 'user.name', 'Scratch'] })

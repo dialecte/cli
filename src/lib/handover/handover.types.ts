@@ -50,3 +50,78 @@ export type PlannedHandover = { plan: HandoverPlan; refusals: string[] }
 
 /** Lines a lot adds and removes against HEAD. */
 export type DiffSize = { insertions: number; deletions: number }
+
+/** A hand-over folder as `handover run` reads it back: the lots file and the snapshot written next to it. */
+export type HandoverFolder = {
+	/** Absolute path of the folder. */
+	folder: string
+	lotsFile: LotsFile
+	/** Each lot with the files of `files.txt` its paths cover. */
+	lots: ResolvedLot[]
+	/** `<sha256>  <path>` lines of `files.sha256`. */
+	snapshotLines: string[]
+	/** sha256 of `lots.json` when the hand-over was written. */
+	lotsHash: string
+}
+
+/** Lots already committed on top of the recorded HEAD, in order; or what else is there. */
+export type CommittedLots = {
+	/** The commit of each lot found, the first lot first. */
+	commits: string[]
+	/** What sits on top of the recorded HEAD that is not the next lot (a refusal), if anything. */
+	foreign?: string
+}
+
+/** One lot on the card. */
+export type CardLot = DiffSize & {
+	index: number
+	fileCount: number
+	subject: string
+	/** The lot's commit, once committed. */
+	commit?: string
+}
+
+/** What a person reviews before running a hand-over, and sees again at its end. */
+export type HandoverCard = {
+	/** The main checkout of the repository. */
+	repository: string
+	/** Where the lots are committed (the main checkout, or a linked worktree of it). */
+	worktree: string
+	branch: string
+	head: string
+	gates: string
+	lots: CardLot[]
+	/** The command that runs the hand-over, with its absolute `cd`. */
+	command: string
+}
+
+/** Where a hand-over stands, from the branch it commits on. */
+export type HandoverState =
+	| 'pending'
+	| 'partly committed'
+	| 'committed'
+	| 'stale: HEAD moved by something else'
+	| 'repository missing'
+	| 'legacy script, state unknown'
+
+/** One line of `handover list`. */
+export type HandoverListing = {
+	folder: string
+	repository: string
+	worktree: string
+	branch: string
+	/** Undefined for a legacy folder (no lots file). */
+	lots: number | undefined
+	/** Milliseconds since the hand-over was written. */
+	age: number
+	state: HandoverState
+}
+
+/** Prints one progress line of a running hand-over. */
+export type WriteLine = (line: string) => void
+
+/** A guard's verdict: a short detail on its line, and the lines that explain a refusal. */
+export type GuardVerdict = { ok: boolean; detail: string; lines?: string[] }
+
+/** Where the guards leave a run: the full recorded HEAD and the lots committed already. */
+export type GuardedRun = { head: string; commits: string[] }

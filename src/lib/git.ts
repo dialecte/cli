@@ -1,6 +1,7 @@
 /** Read-only git questions the contributor commands ask about the repository they run in. */
 import { spawnSync } from 'node:child_process'
-import { isAbsolute, join } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
 export function readGit(params: { root: string; args: string[] }): string {
@@ -47,4 +48,32 @@ export function listRepositoryFiles(params: { root: string; folder: string }): s
 export function gitFolderOf(root: string): string {
 	const folder = readGit({ root, args: ['rev-parse', '--git-dir'] }).trim()
 	return isAbsolute(folder) ? folder : join(root, folder)
+}
+
+/** The main checkout of the repository `root` belongs to (itself when it is not a linked worktree). */
+export function mainCheckoutOf(root: string): string {
+	const common = readGit({
+		root,
+		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+	}).trim()
+	const main = basename(common) === '.git' ? dirname(common) : common
+	// git answers the real path (`/private/var` for `/var` on macOS): keep the caller's spelling of itself
+	return realpathSync(main) === realpathSync(root) ? root : main
+}
+
+/** The value of a git config key in `root`, or undefined when it is not set. */
+export function readGitConfig(params: { root: string; key: string }): string | undefined {
+	const result = spawnSync('git', ['config', '--get', params.key], {
+		cwd: params.root,
+		encoding: 'utf8',
+	})
+	return result.status === 0 ? result.stdout.trim() : undefined
+}
+
+/** Files staged in the index of `root`, sorted. */
+export function listStagedFiles(root: string): string[] {
+	return readGit({ root, args: ['diff', '--cached', '--name-only', '--no-renames'] })
+		.split('\n')
+		.filter(Boolean)
+		.sort()
 }
