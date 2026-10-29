@@ -11,9 +11,11 @@ function planFiles(): StationAgentFile[] {
 }
 
 function fileOf(station: string): string {
-	const file = planFiles().find((candidate) => candidate.name === `dialecte-${station}.md`)
-	if (!file) throw new Error(`no agent file for ${station}`)
-	return file.content
+	const content = planFiles().find(
+		(candidate) => candidate.name === `dialecte-${station}.md`,
+	)?.content
+	expect(content, `no agent file for ${station}`).toBeTypeOf('string')
+	return content ?? ''
 }
 
 function frontmatterLine(params: { content: string; key: string }): string | undefined {
@@ -50,6 +52,8 @@ describe('planStationAgents', () => {
 	it('every station -> a file named dialecte-<station>.md whose name field matches', () => {
 		const files = planFiles()
 		expect(files.map((file) => file.name)).toEqual([
+			'dialecte-test-writer.md',
+			'dialecte-test-reviewer.md',
 			'dialecte-implementer.md',
 			'dialecte-implementer-strong.md',
 			'dialecte-reviewer.md',
@@ -80,6 +84,21 @@ describe('planStationAgents', () => {
 		for (const station of ['grader', 'searcher'])
 			for (const forbidden of ['Bash', 'Write', 'Edit'])
 				expect(toolsOf(station)).not.toContain(forbidden)
+	})
+
+	it('test-writer -> standard, the edit tools; test-reviewer -> strong, read-only (Bash to run tdd status, no Write, no Edit)', () => {
+		expect(frontmatterLine({ content: fileOf('test-writer'), key: 'model' })).toBe('sonnet')
+		for (const needed of ['Write', 'Edit', 'Bash']) expect(toolsOf('test-writer')).toContain(needed)
+		expect(frontmatterLine({ content: fileOf('test-reviewer'), key: 'model' })).toBe('opus')
+		expect(toolsOf('test-reviewer')).toContain('Bash')
+		expect(toolsOf('test-reviewer')).not.toContain('Write')
+		expect(toolsOf('test-reviewer')).not.toContain('Edit')
+	})
+
+	it('test-writer -> its body names tdd red and the stubs; implementer -> tdd green', () => {
+		expect(fileOf('test-writer')).toContain('`dialecte tdd red`')
+		expect(fileOf('test-writer')).toContain('not implemented')
+		expect(fileOf('implementer')).toContain('`dialecte tdd green`')
 	})
 
 	it('implementer and fixer -> the edit tools', () => {

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { readSyncManifest } from '../skills/sync-skills.ts'
 import { planStationAgents } from './render-station-agent.ts'
+import { STATION_NAMES } from './station-agents.constants.ts'
 import { syncStationAgents } from './sync-station-agents.ts'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -39,7 +40,7 @@ describe('syncStationAgents', () => {
 	it('anthropic plan -> every agent file written and listed in the manifest', () => {
 		const report = syncStationAgents({ cwd: root, plan: anthropicPlan() })
 
-		expect(report.written).toHaveLength(8)
+		expect(report.written).toHaveLength(STATION_NAMES.length)
 		expect(read('.claude/agents/dialecte-reviewer.md')).toContain('model: opus')
 		expect(readSyncManifest(join(root, '.claude/skills')).stationAgents).toContain(
 			'dialecte-reviewer.md',
@@ -94,7 +95,7 @@ describe('syncStationAgents', () => {
 
 		const report = syncStationAgents({ cwd: root, plan: planStationAgents({ vendor: 'openai' }) })
 
-		expect(report.removed).toHaveLength(8)
+		expect(report.removed).toHaveLength(STATION_NAMES.length)
 		expect(report.skippedReason).toMatch(/openai/)
 		expect(existsSync(join(root, '.claude/agents/dialecte-reviewer.md'))).toBe(false)
 		expect(readSyncManifest(join(root, '.claude/skills')).stationAgents).toBeUndefined()

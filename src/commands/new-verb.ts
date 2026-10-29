@@ -2,7 +2,7 @@
  * `dialecte new verb <namespace> <query|transaction> <name> [--version <v>]` - inside a dialecte package,
  * writes a verb in the house style (named function, query or transaction first, one params object,
  * types in their own file, a JSDoc summary and `@intent` that `skills check` refuses until filled, a
- * table-driven test with one red case marked `only`), its barrel export and, for a new namespace, its
+ * table-driven test with one red case), its barrel export and, for a new namespace, its
  * registration. Prints every placeholder left to fill.
  */
 import { join } from 'node:path'
@@ -71,7 +71,7 @@ export function runNewVerb(params: { cwd: string; argv: string[] }): CommandResu
 			...result.written.map((path) => `written  ${path}`),
 			...result.edited.map((path) => `edited   ${path}`),
 			...findPlaceholders({ root: cwd, paths: result.written }).map((place) => `fill     ${place}`),
-			`Then: run the red case (npx vitest run ${result.written.find((path) => path.endsWith('.test.ts'))}), implement, remove \`only\`, and \`dialecte gate\`.`,
+			`Then: fill the case, prove it red (npx dialecte tdd red ${result.written.find((path) => path.endsWith('.test.ts'))}; while iterating, npx vitest run <file> -t "<case>"), implement until npx dialecte tdd green, and \`dialecte gate\`.`,
 		].join('\n'),
 	}
 }

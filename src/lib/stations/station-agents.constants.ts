@@ -2,6 +2,8 @@ import type { StationDefinition } from './station-agents.types.ts'
 
 /** The stations of `dialecte-lot` that spawn an agent. Gates and the hand-over are commands, not agents. */
 export const STATION_NAMES = [
+	'test-writer',
+	'test-reviewer',
 	'implementer',
 	'implementer-strong',
 	'reviewer',
@@ -37,14 +39,37 @@ export const GENERATED_NOTE =
 
 export const STATIONS: readonly StationDefinition[] = [
 	{
+		name: 'test-writer',
+		tier: 'standard',
+		tools: EDIT_TOOLS,
+		description:
+			'Dialecte lot, test station of one brief step: writes the tests (and stubs) from the brief and the existing code, then proves them red with `dialecte tdd red`. Give it the brief step.',
+		role: [
+			'You are the test station of a Dialecte lot (`dialecte-lot`): you write the tests of one brief step from the spec, never the production code.',
+			'You may add stubs whose body throws `not implemented: <name>` so the tests compile; call them inside `expect(...)`.',
+			'Run `dialecte tdd red` until every case is red on an assertion, and answer with its output.',
+		],
+	},
+	{
+		name: 'test-reviewer',
+		tier: 'strong',
+		tools: REVIEW_TOOLS,
+		description:
+			'Dialecte lot, test review before any code: reads only the tests against the brief (does each pin a behaviour, would a plausible wrong implementation fail it). Read-only.',
+		role: [
+			'You are the test review of a Dialecte lot (`dialecte-lot`): you read the tests of the step against the brief, before any production code.',
+			'You modify nothing (`dialecte tdd status` is the one command to run). Answer per test: the behaviour it pins, a plausible wrong implementation it lets through, a verdict.',
+		],
+	},
+	{
 		name: 'implementer',
 		tier: 'standard',
 		tools: EDIT_TOOLS,
 		description:
-			'Dialecte lot, Station 1 (implement) on a mechanical or fully specified lot: red first, one behaviour at a time, then the fast gate. Give it the brief.',
+			'Dialecte lot, Station 1 (implement) on a mechanical or fully specified lot: production code only until `dialecte tdd green`, then the fast gate. Give it the brief.',
 		role: [
 			'You are the implementer of a Dialecte lot: Station 1 of `dialecte-lot`, step mode.',
-			'Work red first, one behaviour at a time, run the fast gate, and answer with the implement report shape of the skill.',
+			'The tests are written and red: change production code only until `dialecte tdd green` passes; a test you find wrong goes back to the test station with the reason. Run the fast gate, and answer with the implement report shape of the skill.',
 		],
 	},
 	{
@@ -52,10 +77,10 @@ export const STATIONS: readonly StationDefinition[] = [
 		tier: 'strong',
 		tools: EDIT_TOOLS,
 		description:
-			'Dialecte lot, Station 1 (implement) on a design-heavy lot: red first, one behaviour at a time, then the fast gate. Give it the brief.',
+			'Dialecte lot, Station 1 (implement) on a design-heavy lot: production code only until `dialecte tdd green`, then the fast gate. Give it the brief.',
 		role: [
 			'You are the implementer of a design-heavy Dialecte lot: Station 1 of `dialecte-lot`, step mode.',
-			'Work red first, one behaviour at a time, run the fast gate, and answer with the implement report shape of the skill.',
+			'The tests are written and red: change production code only until `dialecte tdd green` passes; a test you find wrong goes back to the test station with the reason. Run the fast gate, and answer with the implement report shape of the skill.',
 		],
 	},
 	{

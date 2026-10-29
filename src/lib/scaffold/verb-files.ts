@@ -1,7 +1,7 @@
 /**
  * The three files of a new verb, in the house style of a generated dialecte: the function (named, the
  * query or transaction first, one params object, a JSDoc summary and `@intent` left to fill), its types,
- * and its table-driven test with one red case marked `only`.
+ * and its table-driven test with one red case (no `only`: `dialecte tdd red` refuses a focus marker).
  */
 import { PLACEHOLDER_MARKER } from '../skills/api-index.constants.ts'
 import { KIND_SHAPES } from './new-verb.constants.ts'
@@ -95,7 +95,6 @@ export function renderTestFile(names: VerbNames): string {
 		'',
 		`\tconst testCases: ${testNamespace}.TestCases<TestCase> = {`,
 		`\t\t'${PLACEHOLDER_MARKER} the situation → what ${isQuery ? 'it answers' : 'it writes'}': {`,
-		'\t\t\tonly: true,',
 		'\t\t\tsourceXml: /* xml */ `',
 		`\t\t\t\t<${rootElement} \${ns} \${id}="root">`,
 		`\t\t\t\t\t<!-- ${PLACEHOLDER_MARKER} the elements the case needs -->`,

@@ -32,6 +32,7 @@ dialecte models            # which model each tier (fast, standard, strong, fron
 dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
+dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
 dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
@@ -144,7 +145,7 @@ The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](ht
 
 ## Contributing to a Dialecte package
 
-Six commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Seven commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
@@ -163,9 +164,48 @@ the answer.
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
   step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
   while a hand-over script holds the repository.
+- `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--no-wait] [--json]` makes
+  the order of the work visible: tests written from the spec before any code, red for a real reason, then
+  made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,
+  never in the tree. Runs use the package's own vitest (each project's run of a case is a case of its own;
+  a package whose tests run in a browser takes the machine lock), with snapshots never written
+  (`--update=none`, CI): a snapshot test's snapshot is written by the test station before the red.
+  - `red` runs every case of the changed test files (or of the files named). A case that fails on an
+    assertion (a snapshot mismatch included), on a stub's error (a message starting with
+    `not implemented`) or on an error existing code throws, inside an `expect(...)` a matcher completes,
+    gets a red. Refused, each with its reason: a passing case that is new or changed ("it ran green: this
+    test proves nothing yet"); a passing case with a receipt whose own test call changed; a passing case
+    still waiting for its green whose test file, or test code it imports, changed since its red ("test
+    code changed since its red and it passes"); a failure on a missing export, a type or syntax error, a
+    timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
+    case the same as at the base is marked unchanged; a case the lot accepts is marked accepted; a green
+    case whose test code changed around it is kept and flagged `test code changed around it` (the next
+    step adding a case to a green file). One refusal records no red of its file, only the refusals,
+    kept as evidence.
+  - A red records the case (file, full name, project), the hashes of its test file, of its own test call
+    and of the production files, the failing message and the time. It is flagged `rollback` at a
+    production state the case had already left, `red after green` when the case's own last receipt is a
+    green at the same production state.
+  - The run freezes each test file without a refusal, and a changed helper, fixture or snapshot only when
+    a case of a file depending on it went red in that run: what it imports (relative, tsconfig `paths`
+    or vite alias, barrels and re-exports followed through test code; a package name is a dependency,
+    not test code), a changed file whose name it or its helpers mention, its own snapshot. A helper no
+    red covers stays unfrozen, and the gate fails on it. An import that looks local (`@/`, `~/`, `#`, a
+    `paths` or alias prefix) and resolves nowhere refuses its file, naming the import.
+  - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
+    test code as frozen, production changed since its red ("nothing in production changed since red"),
+    and a pass.
+  - `status` prints each case (red, green, unchanged, accepted, missing receipt, test edited after red,
+    with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A ledger
+    that cannot be read is refused with its path.
+  - What it cannot see: the receipts can be written by an agent with a shell; a deliberate throw in
+    production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
+    be told from an honest red (at the first step the red's production is the base's). The flags and the
+    refusals make the rest visible; the review reads the diff.
 - `dialecte new verb <namespace> <query|transaction> <name> [--version <v>]` writes a verb of a dialecte
   package in the house style: the function (query or transaction first, one params object), its
-  `.types.ts`, a table-driven test with one red case marked `only`, its barrel export and, for a new
+  `.types.ts`, a table-driven test with one red case (no `only`: `tdd red` refuses a focus marker; while
+  iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
 - `dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]` prepares the commit-by-lots
@@ -256,6 +296,21 @@ two shells with other languages or time zones agree; a `ps` that answers nothing
 look dead), is taken over under a short takeover lock (`<lock>.takeover`), so only one caller replaces
 it. A lock file still being written is left alone; one that stays unreadable, or a takeover lock, is
 cleared once it is a few seconds old.
+
+`gate --fast` and `--full` run a `tdd` step after the hygiene (first in `--full`): every test-code file
+changed since the base (test files, helpers, fixtures, snapshots) must be as the red run that last froze it
+("test code changed outside tdd red"), and every case of the change red then green, or unchanged; the
+others fail the gate with the list. The flags of the receipts and the deleted cases are printed under the
+step. The lot file may also accept cases without a red - a new test of behaviour that already exists, an honest
+cut of an assertion: `"accept": [{ "case": "<file>::<name> [project]", "reason": "..." }]`. An accepted
+case passes `tdd red` as accepted and does not block its file; the gate and the hand-over card list each
+acceptance with its reason, the card from the receipts (an accepted case whose entry left the file is
+marked), and both report an acceptance no case used. The file is strict: an unknown key, at the top or in
+an `accept` entry, and an exemption without a reason are refused, naming what is wrong. A lot the orchestrator declares exempt - a wording, rename or doc-only lot - passes with its reason
+and what the change touches: `{ "tdd": "exempt: <reason>" }` in `.dialecte/lot.json` at the package root
+prints "exempt: <reason> (n production file(s), m test file(s) changed)". The hygiene and the hand-over
+leave the file out (never committed); the hand-over card shows the exemption and the flags. A package that
+does not test with vitest skips the step; a node-only package's step never takes the machine lock.
 
 A package tunes them in its package.json:
 
