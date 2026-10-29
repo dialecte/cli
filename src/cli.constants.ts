@@ -78,9 +78,11 @@ Examples:
   dialecte audit               # write benchmarks/types/readability-audit.md
 
 Skills:
-  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--vendor <id>]
+  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--vendor <id>] [--no-session-check]
                              # install the skills of your dependencies (or of local checkouts) for your agents;
-                             # remembers the model vendor (detected, asked on a terminal, or --vendor) for models
+                             # remembers the model vendor (detected, asked on a terminal, or --vendor) for models;
+                             # for Claude Code also writes the station agents (.claude/agents/dialecte-*.md) and a
+                             # SessionStart hook running doctor --brief (--no-session-check leaves it out)
   dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
   dialecte skills check [--workspace <dir>]
                              # fail on a cited API / path / npm script that does not exist, or a stale block
@@ -96,6 +98,7 @@ Lookups (the same with or without the repositories; --json on each):
   dialecte models [--vendor <anthropic|openai|google>] [--json]
                              # the model each tier means for the vendor (exit 2: no vendor known, 1: unknown vendor)
   dialecte doctor            # what to fix before trusting what you read; exit 1 on a warning
+  dialecte doctor --brief    # the session-start form: nothing when in sync, one line per problem, always exit 0
 
 MCP server: see @dialecte/mcp (npx @dialecte/mcp)
 

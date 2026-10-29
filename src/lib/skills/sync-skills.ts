@@ -167,13 +167,18 @@ export function syncSkills(params: {
 				addOnce({ list: report.installed, value: source.name })
 			}
 		} finally {
-			const vendor = params.vendor ?? previous.vendor
-			const manifest: Omit<SyncManifest, 'versions'> & Partial<Pick<SyncManifest, 'versions'>> = {
-				installed,
-				...(Object.keys(versions).length ? { versions } : {}),
-				...(vendor === undefined ? {} : { vendor }),
-			}
-			writeFileSync(join(targetFolder, MANIFEST_FILE), `${JSON.stringify(manifest, null, '\t')}\n`)
+			writeSyncManifest({
+				folder: targetFolder,
+				manifest: {
+					installed,
+					versions,
+					vendor: params.vendor ?? previous.vendor,
+					stationAgents: previous.stationAgents,
+					sessionCheck: previous.sessionCheck,
+					settingsCreated: previous.settingsCreated,
+					sessionCheckInserted: previous.sessionCheckInserted,
+				},
+			})
 		}
 	}
 	return report
@@ -227,9 +232,15 @@ function install(params: { source: SkillSource; destination: string; mode: SyncM
 export function readSyncManifest(targetFolder: string): SyncManifest {
 	const path = join(targetFolder, MANIFEST_FILE)
 	if (!existsSync(path)) return { installed: [], versions: {} }
-	const manifest: { installed?: unknown; versions?: unknown; vendor?: unknown } = JSON.parse(
-		readFileSync(path, 'utf8'),
-	)
+	const manifest: {
+		installed?: unknown
+		versions?: unknown
+		vendor?: unknown
+		stationAgents?: unknown
+		sessionCheck?: unknown
+		settingsCreated?: unknown
+		sessionCheckInserted?: unknown
+	} = JSON.parse(readFileSync(path, 'utf8'))
 	const installed = Array.isArray(manifest.installed)
 		? manifest.installed.filter(
 				(name): name is string => typeof name === 'string' && SKILL_NAME_PATTERN.test(name),
@@ -239,21 +250,54 @@ export function readSyncManifest(targetFolder: string): SyncManifest {
 	if (typeof manifest.versions === 'object' && manifest.versions !== null)
 		for (const [name, entry] of Object.entries(manifest.versions))
 			if (isSyncedVersion(entry)) versions[name] = entry
+	const stationAgents = Array.isArray(manifest.stationAgents)
+		? manifest.stationAgents.filter((name): name is string => typeof name === 'string')
+		: undefined
 	return {
 		installed,
 		versions,
 		...(typeof manifest.vendor === 'string' ? { vendor: manifest.vendor } : {}),
+		...(stationAgents ? { stationAgents } : {}),
+		...(manifest.sessionCheck === true ? { sessionCheck: true as const } : {}),
+		...(manifest.settingsCreated === true ? { settingsCreated: true as const } : {}),
+		...(typeof manifest.sessionCheckInserted === 'string'
+			? { sessionCheckInserted: manifest.sessionCheckInserted }
+			: {}),
 	}
+}
+
+/** Writes the manifest of a skills folder; an empty `versions`, an unset or empty field is left out. */
+export function writeSyncManifest(params: {
+	folder: string
+	manifest: Omit<SyncManifest, 'versions'> & Partial<Pick<SyncManifest, 'versions'>>
+}): void {
+	const {
+		versions,
+		vendor,
+		stationAgents,
+		sessionCheck,
+		settingsCreated,
+		sessionCheckInserted,
+		installed,
+	} = params.manifest
+	const written = {
+		installed,
+		...(versions && Object.keys(versions).length ? { versions } : {}),
+		...(vendor === undefined ? {} : { vendor }),
+		...(stationAgents?.length ? { stationAgents } : {}),
+		...(sessionCheck ? { sessionCheck } : {}),
+		...(settingsCreated ? { settingsCreated } : {}),
+		...(sessionCheckInserted ? { sessionCheckInserted } : {}),
+	}
+	writeFileSync(join(params.folder, MANIFEST_FILE), `${JSON.stringify(written, null, '\t')}\n`)
 }
 
 /** Writes the vendor into the manifest of a skills folder, leaving the rest of it as it is. */
 export function rememberVendor(params: { folder: string; vendor: string }): void {
-	const manifest = readSyncManifest(params.folder)
-	const { versions, ...rest } = manifest
-	writeFileSync(
-		join(params.folder, MANIFEST_FILE),
-		`${JSON.stringify({ ...rest, ...(Object.keys(versions).length ? { versions } : {}), vendor: params.vendor }, null, '\t')}\n`,
-	)
+	writeSyncManifest({
+		folder: params.folder,
+		manifest: { ...readSyncManifest(params.folder), vendor: params.vendor },
+	})
 }
 
 function isSyncedVersion(value: unknown): value is { package: string; version: string } {

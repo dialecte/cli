@@ -1,9 +1,12 @@
 /** The vendor `skills sync` remembers: given, already remembered, detected, or still to ask. */
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { AGENT_SKILL_FOLDERS, MANIFEST_FILE } from '../skills/sync-skills.constants.ts'
 import { readSyncManifest } from '../skills/sync-skills.ts'
+import { CLAUDE_SETTINGS_FILE } from '../stations/session-check.constants.ts'
+import { holdsOnlyTheCheck } from '../stations/session-check.ts'
+import { CLAUDE_AGENTS_FOLDER } from '../stations/station-agents.constants.ts'
 import { detectVendor } from './detect-vendor.ts'
 import { VENDOR_HOSTS, VENDOR_IDS } from './model-tiers.constants.ts'
 import { listManifestFolders } from './remembered-vendor.ts'
@@ -75,12 +78,34 @@ function holdsOnlySyncedSkills(params: { cwd: string; path: string }): boolean {
 	const ownSkillFolders = skillFolders.filter((folder) => dirname(folder) === params.path)
 	return (
 		entries.length > 0 &&
-		entries.every((entry) =>
-			ownSkillFolders.some(
-				(folder) => basename(folder) === entry && isSyncedSkillsFolder(join(params.cwd, folder)),
-			),
+		entries.every(
+			(entry) =>
+				ownSkillFolders.some(
+					(folder) => basename(folder) === entry && isSyncedSkillsFolder(join(params.cwd, folder)),
+				) || isSyncedClaudeExtra({ cwd: params.cwd, folder: params.path, entry }),
 		)
 	)
+}
+
+/** `.claude/agents` holding only the station agents a sync wrote, `.claude/settings.json` only its check. */
+function isSyncedClaudeExtra(params: { cwd: string; folder: string; entry: string }): boolean {
+	if (params.folder !== dirname(AGENT_SKILL_FOLDERS.claude)) return false
+	const manifest = readManifestOrNothing(join(params.cwd, AGENT_SKILL_FOLDERS.claude))
+	const path = join(params.cwd, params.folder, params.entry)
+	if (path === join(params.cwd, CLAUDE_AGENTS_FOLDER))
+		return readdirSync(path).every((file) => manifest.stationAgents?.includes(file))
+	if (path === join(params.cwd, CLAUDE_SETTINGS_FILE))
+		return manifest.sessionCheck === true && holdsOnlyTheCheck(readFileSync(path, 'utf8'))
+	return false
+}
+
+/** A manifest that cannot be read owns nothing. */
+function readManifestOrNothing(folder: string): ReturnType<typeof readSyncManifest> {
+	try {
+		return readSyncManifest(folder)
+	} catch {
+		return { installed: [], versions: {} }
+	}
 }
 
 function isSyncedSkillsFolder(folder: string): boolean {

@@ -12,6 +12,20 @@ export function answerDoctor(params: {
 	return { output: params.lines.map(renderLine).join(''), exitCode }
 }
 
+/**
+ * What a session start reads: nothing when every line is ok, else one line per warning with its fix. Always exit
+ * 0, and `--json` is not offered: the output goes into the agent's context as text.
+ */
+export function answerDoctorBrief(lines: readonly DoctorLine[]): CommandOutput {
+	return {
+		output: lines
+			.filter((line) => line.status === 'warning')
+			.map(renderLine)
+			.join(''),
+		exitCode: 0,
+	}
+}
+
 function renderLine(line: DoctorLine): string {
 	return line.status === 'ok'
 		? `✅ ${line.subject}  ${line.detail}\n`

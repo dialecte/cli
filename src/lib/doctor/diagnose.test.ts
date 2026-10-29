@@ -1,7 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { planStationAgents } from '../stations/render-station-agent.ts'
+import { syncStationAgents } from '../stations/sync-station-agents.ts'
 import { answerDoctor } from './answer-doctor.ts'
 import { diagnose } from './diagnose.ts'
 
@@ -228,5 +230,91 @@ describe('diagnose', () => {
 			subject: 'checkouts',
 			detail: `${root}: scl-01, scl-02, scl-03, scl-04, scl-05, scl-06, scl-07, scl-08 and 2 more`,
 		})
+	})
+})
+
+describe('diagnose, station agents', () => {
+	const MANIFEST = 'app/.claude/skills/.dialecte-skills.json'
+
+	function syncAnthropicStationAgents(): void {
+		const manifest = JSON.parse(readFileSync(join(workspace, MANIFEST), 'utf8'))
+		write(MANIFEST, JSON.stringify({ ...manifest, vendor: 'anthropic' }))
+		syncStationAgents({ cwd: app, plan: planStationAgents({ vendor: 'anthropic' }) })
+	}
+
+	function stationLines(): ReturnType<typeof diagnose> {
+		return linesOf().filter((line) => line.subject === 'station agents')
+	}
+
+	it('in sync -> one ok line', () => {
+		syncAnthropicStationAgents()
+
+		expect(stationLines()).toEqual([
+			{ status: 'ok', subject: 'station agents', detail: '.claude/agents in sync' },
+		])
+	})
+
+	it('a station agent whose content differs from what sync writes now -> stale, with the fix command', () => {
+		syncAnthropicStationAgents()
+		write('app/.claude/agents/dialecte-reviewer.md', 'old text\n')
+
+		expect(stationLines()).toEqual([
+			{
+				status: 'warning',
+				subject: 'station agents',
+				detail: '.claude/agents holds stale dialecte-reviewer.md',
+				fix: 'npx @dialecte/cli skills sync',
+			},
+		])
+	})
+
+	it('a station agent file missing -> reported as missing', () => {
+		syncAnthropicStationAgents()
+		rmSync(join(app, '.claude/agents/dialecte-grader.md'))
+
+		expect(stationLines()).toEqual([
+			{
+				status: 'warning',
+				subject: 'station agents',
+				detail: '.claude/agents lacks dialecte-grader.md',
+				fix: 'npx @dialecte/cli skills sync',
+			},
+		])
+	})
+
+	it("a user's own file of that name (not listed by sync) -> not reported", () => {
+		syncAnthropicStationAgents()
+		const manifest = JSON.parse(readFileSync(join(workspace, MANIFEST), 'utf8'))
+		write(
+			MANIFEST,
+			JSON.stringify({
+				...manifest,
+				stationAgents: manifest.stationAgents.filter(
+					(name: string) => name !== 'dialecte-reviewer.md',
+				),
+			}),
+		)
+		write('app/.claude/agents/dialecte-reviewer.md', 'mine\n')
+
+		expect(stationLines()).toEqual([
+			{ status: 'ok', subject: 'station agents', detail: '.claude/agents in sync' },
+		])
+	})
+
+	it('a manifest recording no station agents (anthropic vendor) -> no station agent line', () => {
+		const manifest = JSON.parse(readFileSync(join(workspace, MANIFEST), 'utf8'))
+		write(MANIFEST, JSON.stringify({ ...manifest, vendor: 'anthropic' }))
+
+		expect(stationLines()).toEqual([])
+	})
+
+	it('brief -> no checkouts scan', () => {
+		const lines = diagnose({ cwd: app, dialecteRoot: undefined, cliVersion: '0.2.0', brief: true })
+
+		expect(lines.filter((line) => line.subject === 'checkouts')).toEqual([])
+	})
+
+	it('another vendor, or none known -> no station agent line', () => {
+		expect(stationLines()).toEqual([])
 	})
 })

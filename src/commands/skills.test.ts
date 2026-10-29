@@ -12,10 +12,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
+import { diagnose } from '../lib/doctor/diagnose.ts'
 import { chooseVendor, checkPages, generatePages, runSync, runSyncCommand } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+let parent: string
 let root: string
 
 function write(path: string, content: string): void {
@@ -45,7 +47,10 @@ const END = '<!-- /dialecte-skills:generated -->'
 const NO_HOOKS = 'This package has no hooks.'
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), 'dialecte-cli-skills-'))
+	// its own parent folder: the doctor's checkouts scan of the parent never meets other tests' folders
+	parent = mkdtempSync(join(tmpdir(), 'dialecte-cli-skills-'))
+	root = join(parent, 'project')
+	mkdirSync(root)
 	vi.spyOn(console, 'log').mockImplementation(() => undefined)
 	vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 	vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -53,7 +58,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks()
-	rmSync(root, { recursive: true, force: true })
+	rmSync(parent, { recursive: true, force: true })
 })
 
 describe('runSync', () => {
@@ -245,6 +250,123 @@ describe('runSync vendor', () => {
 		runSync({ argv: ['--agent', 'claude'], cwd: root })
 
 		expect(JSON.parse(read('.claude/skills/.dialecte-skills.json'))).toEqual({ installed: [] })
+	})
+})
+
+describe('runSync station agents and the session check', () => {
+	const SESSION_COMMAND = 'npx --no-install @dialecte/cli doctor --brief'
+
+	function sessionCommands(): string[] {
+		// a settings.json sync created is deleted with its hook
+		if (!existsSync(join(root, '.claude/settings.json'))) return []
+		const hooks = JSON.parse(read('.claude/settings.json')).hooks
+		return (hooks?.SessionStart ?? []).flatMap((group: { hooks: { command: string }[] }) =>
+			group.hooks.map((hook) => hook.command),
+		)
+	}
+
+	beforeEach(() => {
+		// core ships the dialecte-lot skill the agents point at
+		write('package.json', JSON.stringify({ dependencies: { '@dialecte/core': '1' } }))
+		write(
+			'node_modules/@dialecte/core/package.json',
+			JSON.stringify({ name: '@dialecte/core', version: '1.0.0' }),
+		)
+		write('node_modules/@dialecte/core/skills/dialecte-lot/SKILL.md', FRONTMATTER)
+	})
+
+	it('claude target, anthropic -> the reviewer agent on the strong model and the SessionStart hook', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(read('.claude/agents/dialecte-reviewer.md')).toContain('model: opus')
+		expect(sessionCommands()).toEqual([SESSION_COMMAND])
+	})
+
+	it('a second sync -> the hook is not duplicated', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+		runSync({ argv: ['--agent', 'claude'], cwd: root })
+
+		expect(sessionCommands()).toEqual([SESSION_COMMAND])
+	})
+
+	it('an existing settings.json -> the hook merged, the other keys unchanged', () => {
+		write('.claude/settings.json', JSON.stringify({ permissions: { allow: ['Bash(ls)'] } }))
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(JSON.parse(read('.claude/settings.json')).permissions).toEqual({ allow: ['Bash(ls)'] })
+		expect(sessionCommands()).toEqual([SESSION_COMMAND])
+	})
+
+	it('--no-session-check -> the hook a sync added is removed, the agents stay', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		runSync({ argv: ['--agent', 'claude', '--no-session-check'], cwd: root })
+
+		expect(sessionCommands()).toEqual([])
+		expect(existsSync(join(root, '.claude/agents/dialecte-reviewer.md'))).toBe(true)
+	})
+
+	it('the claude target removed -> the agents and the hook sync wrote are removed', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		expect(existsSync(join(root, '.claude/agents/dialecte-reviewer.md'))).toBe(false)
+		expect(sessionCommands()).toEqual([])
+	})
+
+	it('no dependency ships dialecte-lot -> no agent, no hook', () => {
+		write('package.json', JSON.stringify({ dependencies: {} }))
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
+		expect(existsSync(join(root, '.claude/settings.json'))).toBe(false)
+	})
+
+	it('dialecte-lot no longer installed -> the agents and the hook sync added are removed', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+		write('package.json', JSON.stringify({ dependencies: {} }))
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root })
+
+		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
+		expect(existsSync(join(root, '.claude/settings.json'))).toBe(false)
+	})
+
+	it('the claude target dropped -> doctor shows no station agent line', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		const lines = diagnose({ cwd: root, dialecteRoot: undefined, cliVersion: '0.2.0', brief: true })
+
+		expect(lines.filter((line) => line.subject === 'station agents')).toEqual([])
+	})
+
+	it('a settings.json whose hooks is not an object -> left as it is, one line says why', () => {
+		write('.claude/settings.json', '{"hooks": []}')
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(read('.claude/settings.json')).toBe('{"hooks": []}')
+		expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toMatch(/hooks/)
+	})
+
+	it('another vendor -> no Claude Code agent file, one line saying why', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'openai' })
+
+		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
+		expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toMatch(/openai/)
+	})
+
+	it("a user's own dialecte-reviewer.md -> warned, never overwritten", () => {
+		write('.claude/agents/dialecte-reviewer.md', 'mine\n')
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(read('.claude/agents/dialecte-reviewer.md')).toBe('mine\n')
+		expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toMatch(/dialecte-reviewer\.md/)
 	})
 })
 

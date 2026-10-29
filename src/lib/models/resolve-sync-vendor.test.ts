@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { SESSION_CHECK_COMMAND } from '../stations/session-check.constants.ts'
 import { detectProjectVendor, resolveSyncVendor } from './resolve-sync-vendor.ts'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -88,6 +89,25 @@ describe('resolveSyncVendor', () => {
 		touch('.claude/settings.json')
 
 		expect(resolve({})).toEqual({ kind: 'set', vendor: 'anthropic' })
+	})
+
+	it('.claude holding only what a sync wrote (skills, station agents, its session check) is no evidence; a key of the user in settings.json is', () => {
+		mkdirSync(join(root, '.claude/skills'), { recursive: true })
+		writeFileSync(
+			join(root, '.claude/skills/.dialecte-skills.json'),
+			'{"installed":[],"stationAgents":["dialecte-reviewer.md"],"sessionCheck":true}',
+		)
+		mkdirSync(join(root, '.claude/agents'), { recursive: true })
+		writeFileSync(join(root, '.claude/agents/dialecte-reviewer.md'), 'x')
+		const check = { hooks: { command: SESSION_CHECK_COMMAND } }
+		writeFileSync(
+			join(root, '.claude/settings.json'),
+			JSON.stringify({ hooks: { SessionStart: [{ hooks: [check.hooks] }] } }),
+		)
+		expect(detectProjectVendor(root)).toEqual({ kind: 'none' })
+
+		writeFileSync(join(root, '.claude/settings.json'), JSON.stringify({ permissions: {} }))
+		expect(detectProjectVendor(root)).toMatchObject({ kind: 'one', vendor: 'anthropic' })
 	})
 
 	it('.github/skills holding only synced skills is no evidence of Copilot; with its own skill it is', () => {

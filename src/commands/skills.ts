@@ -2,7 +2,8 @@
  * `dialecte skills` — agent skills shipped with the code they describe (`skills/<name>/SKILL.md` in each
  * package).
  *
- *   sync      install the skills of the app's dependencies (or of a local workspace) for the agents
+ *   sync      install the skills of the app's dependencies (or of a local workspace) for the agents, and for
+ *             Claude Code the station agents and the session-start check (`--no-session-check` leaves it out)
  *   generate  rewrite the generated blocks of the package's skills from its source
  *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
  *             has invalid frontmatter or a stale block, or when a method has no JSDoc summary / @intent
@@ -19,6 +20,7 @@ import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { askVendor } from '../lib/models/ask-vendor.ts'
 import { listManifestFolders, readRememberedVendor } from '../lib/models/remembered-vendor.ts'
 import { resolveSyncVendor } from '../lib/models/resolve-sync-vendor.ts'
+import { isVendorId } from '../lib/models/vendor-id.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
@@ -43,7 +45,20 @@ import {
 } from '../lib/skills/package-facts.ts'
 import { SKILLS_FOLDER } from '../lib/skills/skill-file.constants.ts'
 import { AGENT_SKILL_FOLDERS, DEFAULT_AGENTS } from '../lib/skills/sync-skills.constants.ts'
-import { discoverSkillSources, rememberVendor, syncSkills } from '../lib/skills/sync-skills.ts'
+import {
+	discoverSkillSources,
+	readSyncManifest,
+	rememberVendor,
+	syncSkills,
+} from '../lib/skills/sync-skills.ts'
+import { planStationAgents } from '../lib/stations/render-station-agent.ts'
+import {
+	CLAUDE_SETTINGS_FILE,
+	SESSION_CHECK_COMMAND,
+} from '../lib/stations/session-check.constants.ts'
+import { syncSessionCheck } from '../lib/stations/session-check.ts'
+import { CLAUDE_AGENTS_FOLDER, LOT_SKILL } from '../lib/stations/station-agents.constants.ts'
+import { syncStationAgents } from '../lib/stations/sync-station-agents.ts'
 import { METHOD_DISCOVERY_DEPTH, SUBCOMMAND_NAMES } from './skills.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
@@ -160,6 +175,12 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 
 	for (const source of sources) console.log(`✅ ${source.name}  (${source.origin})`)
 	for (const name of report.removed) console.log(`🗑  ${name}  (no longer shipped)`)
+	syncClaudeCodeExtras({
+		argv,
+		cwd,
+		claudeIsTarget: agents.includes('claude'),
+		vendor: params.vendor,
+	})
 	for (const path of report.conflicts)
 		console.warn(`⚠️  ${path} exists and was not installed by sync: left untouched`)
 	if (missingDependencies.length)
@@ -168,6 +189,55 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		)
 	if (sources.length === 0 && missingDependencies.length === 0)
 		console.log('No dependency ships skills (look for skills/<name>/SKILL.md).')
+}
+
+/**
+ * What `sync` adds for Claude Code next to the skills: the station agents and the session-start check, both
+ * owned through the claude skills manifest. Without the claude target, what an earlier sync wrote is removed.
+ */
+function syncClaudeCodeExtras(params: {
+	argv: string[]
+	cwd: string
+	claudeIsTarget: boolean
+	vendor: VendorId | undefined
+}): void {
+	const { argv, cwd, claudeIsTarget } = params
+	const manifest = readSyncManifest(join(cwd, AGENT_SKILL_FOLDERS.claude))
+	const vendor = params.vendor ?? manifest.vendor
+	// agents and hook point at the skills: without dialecte-lot installed for Claude Code there is nothing to point at
+	const hasLot = claudeIsTarget && manifest.installed.includes(LOT_SKILL)
+	const plan = hasLot
+		? planStationAgents({ vendor: vendor !== undefined && isVendorId(vendor) ? vendor : undefined })
+		: { kind: 'files' as const, files: [] }
+	const agents = syncStationAgents({ cwd, plan })
+	for (const name of agents.written) console.log(`✅ ${CLAUDE_AGENTS_FOLDER}/${name}`)
+	for (const name of agents.removed)
+		console.log(`🗑  ${CLAUDE_AGENTS_FOLDER}/${name}  (no longer produced)`)
+	for (const path of agents.conflicts)
+		console.warn(`⚠️  ${path} exists and was not written by sync: left untouched`)
+	if (claudeIsTarget && !hasLot)
+		console.log(`no station agents or session check: no dependency ships the ${LOT_SKILL} skill`)
+	if (hasLot && agents.skippedReason) console.log(agents.skippedReason)
+
+	const session = syncSessionCheck({
+		cwd,
+		enabled: hasLot && !hasFlag(argv, 'no-session-check'),
+	})
+	if (session === 'added')
+		console.log(`✅ ${CLAUDE_SETTINGS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
+	if (session === 'removed') console.log(`🗑  ${CLAUDE_SETTINGS_FILE}: session-start check removed`)
+	if (session === 'invalid')
+		console.warn(
+			`⚠️  ${CLAUDE_SETTINGS_FILE} is not valid JSON: session-start check not added or removed`,
+		)
+	if (session === 'not-removed')
+		console.warn(
+			`⚠️  ${CLAUDE_SETTINGS_FILE} was edited: the session-start check could not be removed cleanly, left as it is - remove its hook by hand`,
+		)
+	if (session === 'invalid-hooks')
+		console.warn(
+			`⚠️  ${CLAUDE_SETTINGS_FILE}: "hooks" is not an object or "hooks.SessionStart" is not a list: session-start check not added or removed`,
+		)
 }
 
 /** Rewrites the stale generated blocks and formats the pages written; 1 on an unknown or unclosed block. */

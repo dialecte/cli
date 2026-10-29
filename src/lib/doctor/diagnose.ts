@@ -24,6 +24,7 @@ import {
 	INSTALL_COMMAND,
 	SYNC_COMMAND,
 } from './doctor.constants.ts'
+import { stationAgentLines } from './station-agent-lines.ts'
 
 import type { DoctorContext, DoctorLine } from './doctor.types.ts'
 
@@ -33,7 +34,8 @@ export function diagnose(context: DoctorContext): DoctorLine[] {
 		...installedPackages(context.cwd),
 		...coreGenerations(context.cwd),
 		...skills(context.cwd),
-		...localCheckouts(context),
+		...stationAgentLines(context.cwd),
+		...(context.brief ? [] : localCheckouts(context)),
 	]
 }
 

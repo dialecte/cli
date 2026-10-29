@@ -13,4 +13,6 @@ export type DoctorContext = {
 	/** `$DIALECTE_ROOT`: a folder holding local Dialecte checkouts. */
 	dialecteRoot: string | undefined
 	cliVersion: string
+	/** The session-start form: nothing is scanned that only informs (the local checkouts). */
+	brief?: boolean
 }

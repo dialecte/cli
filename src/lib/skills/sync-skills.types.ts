@@ -18,6 +18,14 @@ export type SyncManifest = {
 	versions: SyncedVersions
 	/** The model vendor of the project (`dialecte models`); unknown for a manifest written before it existed. */
 	vendor?: string
+	/** The Claude Code station agent files (names in `.claude/agents`) a sync wrote: what a later sync may replace or remove. */
+	stationAgents?: string[]
+	/** A sync added the session-start check to `.claude/settings.json`. */
+	sessionCheck?: true
+	/** The session check created `.claude/settings.json`: removing the check removes the file when it ends up empty. */
+	settingsCreated?: true
+	/** The exact text the check added to `.claude/settings.json`: removing it gives the original bytes back. */
+	sessionCheckInserted?: string
 }
 
 export type SyncMode = 'link' | 'copy'

@@ -34,3 +34,6 @@ export const CORE_API_GENERATIONS: readonly {
 
 /** How many checkout folders one line names. */
 export const CHECKOUT_LIST_LIMIT = 8
+
+/** The subject of the station agents' line. */
+export const STATION_AGENTS_SUBJECT = 'station agents'
