@@ -18,6 +18,7 @@ export const RULE_NAMES = [
 	'positional-parameters',
 	'abbreviation',
 	'committed-text-reference',
+	'temporary-root-shared',
 ] as const
 
 /** A module constant by its name: `MAX_DEPTH`, `ROOTS`. */
@@ -41,3 +42,16 @@ export const ABBREVIATIONS: Readonly<Record<string, string>> = {
 
 /** Text files `rules` checks for references when it picks the changed files itself. */
 export const TEXT_FILE_PATTERN = /\.(ts|tsx|mts|cts|js|mjs|cjs|md|json|ya?ml)$/
+
+/**
+ * Calls that list, scan or remove the folder they are given: in a test, handed the system's temporary
+ * folder itself, they see (or delete) what every other test and process left there.
+ */
+export const SCANNING_CALL_PATTERN = /^(readdir|opendir|glob|scan|walk|list|find|watch|rm)/i
+
+/** Calls answering the same folder they are given, spelled another way. */
+export const PATH_PASS_THROUGH_PATTERN = /^(realpath|realpathSync|resolve|normalize)$/
+
+/** Option names that make a folder the root a test works in. */
+export const ROOT_OPTION_PATTERN =
+	/^(root|cwd|rootDir|rootFolder|projectRoot|workspace|folder|directory|dir|scratchRoot)$/

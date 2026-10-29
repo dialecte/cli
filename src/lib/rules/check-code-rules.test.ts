@@ -183,6 +183,93 @@ describe('checkCodeRules', () => {
 			text: "export const SOURCE = '<Root/>'\n",
 			expected: [],
 		},
+		'a test listing os.tmpdir() itself, or using it as a project root → reported': {
+			file: 'src/lib/doctor/diagnose.test.ts',
+			text: [
+				"import { tmpdir } from 'node:os'",
+				"import os from 'node:os'",
+				"it('finds the checkouts', () => {",
+				'\tconst root = tmpdir()',
+				'\tconst found = readdirSync(root)',
+				'\tdiagnose({ cwd: os.tmpdir() })',
+				'\tconst project = createProject({ root })',
+				'})',
+				'',
+			].join('\n'),
+			expected: [
+				{ rule: 'temporary-root-shared', line: 5 },
+				{ rule: 'temporary-root-shared', line: 6 },
+				{ rule: 'temporary-root-shared', line: 7 },
+			],
+		},
+		'a test making a folder of its own under os.tmpdir() → nothing': {
+			file: 'src/lib/doctor/diagnose.test.ts',
+			text: [
+				"import { tmpdir } from 'node:os'",
+				"it('finds the checkouts', () => {",
+				"\tconst root = mkdtempSync(join(tmpdir(), 'doctor-'))",
+				'\tconst found = readdirSync(root)',
+				"\tdiagnose({ cwd: join(tmpdir(), 'fixed') })",
+				'})',
+				'',
+			].join('\n'),
+			expected: [],
+		},
+		'the same name bound to tmpdir() in one test and to a folder of its own in another → only the first reported':
+			{
+				file: 'src/lib/doctor/diagnose.test.ts',
+				text: [
+					"it('a', () => {",
+					'\tconst root = tmpdir()',
+					'\treaddirSync(root)',
+					'})',
+					"it('b', () => {",
+					"\tconst root = mkdtempSync(join(tmpdir(), 'b-'))",
+					'\treaddirSync(root)',
+					'\tdiagnose({ root })',
+					'})',
+					'',
+				].join('\n'),
+				expected: [{ rule: 'temporary-root-shared', line: 3 }],
+			},
+		'tmpdir() through realpathSync or resolve, assigned later, or removed with rmSync → reported': {
+			file: 'src/lib/doctor/diagnose.test.ts',
+			text: [
+				"it('a', () => {",
+				'\tconst real = realpathSync(tmpdir())',
+				'\treaddirSync(real)',
+				'\tdiagnose({ cwd: resolve(tmpdir()) })',
+				'\tlet later: string',
+				'\tlater = os.tmpdir()',
+				'\tlistFiles(later)',
+				'\trmSync(tmpdir(), { recursive: true, force: true })',
+				'})',
+				'',
+			].join('\n'),
+			expected: [
+				{ rule: 'temporary-root-shared', line: 3 },
+				{ rule: 'temporary-root-shared', line: 4 },
+				{ rule: 'temporary-root-shared', line: 7 },
+				{ rule: 'temporary-root-shared', line: 8 },
+			],
+		},
+		'a parameter named like an outer tmpdir() variable → the parameter, not reported': {
+			file: 'src/lib/doctor/diagnose.test.ts',
+			text: [
+				'const root = tmpdir()',
+				'function scan(root: string) {',
+				'\treturn readdirSync(root)',
+				'}',
+				"it('a', () => [mkdtempSync(join(root, 'a-'))].map((root) => listFiles(root)))",
+				'',
+			].join('\n'),
+			expected: [],
+		},
+		'os.tmpdir() as a root in an implementation file → not a test matter, nothing': {
+			file: 'src/commands/run.ts',
+			text: "import { tmpdir } from 'node:os'\nexport function scratch() {\n\treturn readdirSync(tmpdir())\n}\n",
+			expected: [],
+		},
 	}
 
 	for (const [title, testCase] of Object.entries(testCases))

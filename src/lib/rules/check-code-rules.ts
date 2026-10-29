@@ -9,7 +9,10 @@ import {
 	CONSTANT_NAME_PATTERN,
 	CODE_VISITED_KINDS,
 	LEADING_POSITIONAL_PARAMETERS,
+	ROOT_OPTION_PATTERN,
 	RULE_NAMES,
+	PATH_PASS_THROUGH_PATTERN,
+	SCANNING_CALL_PATTERN,
 } from './check-code-rules.constants.ts'
 import { findReferences, isReferenceChecked } from './committed-text.ts'
 
@@ -100,6 +103,15 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 		ts.forEachChild(node, visit)
 	}
 	if (CODE_VISITED_KINDS.includes(kind)) visit(sourceFile)
+	if (kind === 'test')
+		for (const node of findSharedTemporaryRoots(sourceFile))
+			report({
+				node,
+				rule: 'temporary-root-shared',
+				severity: 'error',
+				message:
+					"the system's temporary folder itself as a root: other tests and processes share it - give the test a folder of its own (`mkdtempSync(join(tmpdir(), '<prefix>-'))`)",
+			})
 
 	if (kind !== 'generated' && isReferenceChecked(file))
 		for (const reference of findReferences({ text, patterns: params.referencePatterns }))
@@ -138,6 +150,99 @@ export function fileKindOf(file: string): FileKind {
 	if (/(^|\.)constants?\./.test(name) || folders.includes('constants')) return 'constants'
 	if (/\.config\.[cm]?tsx?$/.test(name)) return 'config'
 	return 'implementation'
+}
+
+/**
+ * Where a test uses the system's temporary folder itself as a root: an argument of a call that lists,
+ * scans or removes a folder, or the value of a root option (`root`, `cwd`, ...). The folder is `tmpdir()`,
+ * the same through `realpathSync` / `resolve`, or a name bound to one of them in the scope the use sees
+ * (declared or assigned there): two tests may bind the same name to different folders.
+ * `join(tmpdir(), name)` and `mkdtempSync(...)` are folders of their own: not reported.
+ */
+function findSharedTemporaryRoots(sourceFile: ts.SourceFile): ts.Node[] {
+	const bindings = new Map<ts.Node, Map<string, boolean>>()
+	const found: ts.Node[] = []
+	function scopesOf(node: ts.Node): ts.Node[] {
+		const scopes: ts.Node[] = []
+		for (let current = node.parent; current; current = current.parent)
+			if (ts.isBlock(current) || ts.isSourceFile(current) || ts.isFunctionLike(current))
+				scopes.push(current)
+		return scopes
+	}
+	function bindingScope(identifier: ts.Identifier): ts.Node | undefined {
+		return scopesOf(identifier).find((scope) => bindings.get(scope)?.has(identifier.text))
+	}
+	function isTemporaryRoot(node: ts.Node): boolean {
+		if (isTmpdirCall(node)) return true
+		if (ts.isParenthesizedExpression(node) || ts.isAwaitExpression(node))
+			return isTemporaryRoot(node.expression)
+		if (ts.isIdentifier(node)) {
+			const scope = bindingScope(node)
+			return scope ? (bindings.get(scope)?.get(node.text) ?? false) : false
+		}
+		return (
+			ts.isCallExpression(node) &&
+			PATH_PASS_THROUGH_PATTERN.test(calleeName(node.expression)) &&
+			node.arguments.length === 1 &&
+			isTemporaryRoot(node.arguments[0])
+		)
+	}
+	function visit(node: ts.Node): void {
+		// a variable binds in its block; a parameter in its function, with the value its caller gives
+		if ((ts.isVariableDeclaration(node) || ts.isParameter(node)) && ts.isIdentifier(node.name)) {
+			const [scope] = scopesOf(node)
+			const names = bindings.get(scope) ?? new Map<string, boolean>()
+			const value = ts.isVariableDeclaration(node) && node.initializer
+			names.set(node.name.text, value ? isTemporaryRoot(value) : false)
+			bindings.set(scope, names)
+		}
+		if (
+			ts.isBinaryExpression(node) &&
+			node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+			ts.isIdentifier(node.left)
+		) {
+			const scope = bindingScope(node.left)
+			if (scope) bindings.get(scope)?.set(node.left.text, isTemporaryRoot(node.right))
+		}
+		if (
+			ts.isCallExpression(node) &&
+			SCANNING_CALL_PATTERN.test(calleeName(node.expression)) &&
+			node.arguments.some(isTemporaryRoot)
+		)
+			found.push(node)
+		if (
+			ts.isPropertyAssignment(node) &&
+			ts.isIdentifier(node.name) &&
+			ROOT_OPTION_PATTERN.test(node.name.text) &&
+			isTemporaryRoot(node.initializer)
+		)
+			found.push(node)
+		if (
+			ts.isShorthandPropertyAssignment(node) &&
+			ROOT_OPTION_PATTERN.test(node.name.text) &&
+			isTemporaryRoot(node.name)
+		)
+			found.push(node)
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return found
+}
+
+/** `tmpdir()` or `os.tmpdir()`, without arguments. */
+function isTmpdirCall(node: ts.Node): boolean {
+	return (
+		ts.isCallExpression(node) &&
+		node.arguments.length === 0 &&
+		calleeName(node.expression) === 'tmpdir'
+	)
+}
+
+/** `readdirSync` for `readdirSync(...)` and `fs.readdirSync(...)`; empty for anything else. */
+function calleeName(expression: ts.Expression): string {
+	if (ts.isIdentifier(expression)) return expression.text
+	if (ts.isPropertyAccessExpression(expression)) return expression.name.text
+	return ''
 }
 
 /** A `let` given a function first and another one later: a variable, not a function declaration. */
