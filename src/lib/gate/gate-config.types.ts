@@ -13,4 +13,9 @@ export type GateStep = {
 	changedOnly?: boolean
 	/** The package's `generatedDocs` are restored byte for byte after this step, whatever its result. */
 	restoresGeneratedDocs?: boolean
+	/**
+	 * The step takes the machine-wide lock while it runs (one heavy run at a time on a machine). Default:
+	 * a command that runs a browser project (`--browser`, a `--project` named browser, playwright).
+	 */
+	heavy?: boolean
 }

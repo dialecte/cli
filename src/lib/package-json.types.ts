@@ -4,6 +4,8 @@ import type { GateStep } from './gate/gate-config.types.ts'
 export type PackageJson = {
 	name?: string
 	scripts?: Record<string, string>
+	dependencies?: Record<string, string>
+	devDependencies?: Record<string, string>
 	dialecte?: DialecteField
 }
 
@@ -13,6 +15,8 @@ export type DialecteField = {
 	referencePatterns?: string[]
 	/** Files a docs build rewrites that are restored byte for byte after `gate --full`. */
 	generatedDocs?: string[]
+	/** The branch work is merged into (`main` when not said): `worktree add` starts from it, `worktree prune` compares with it. */
+	baseBranch?: string
 	/** Steps that replace the default ones of `dialecte gate`. */
 	gate?: { fast?: GateStep[]; full?: GateStep[] }
 }

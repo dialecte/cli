@@ -1,5 +1,6 @@
 import { DEFAULT_GATE_STEPS } from './gate-config.constants.ts'
 import { resolveGateSteps } from './gate-config.ts'
+import { isHeavyStep } from './run-gate.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -22,5 +23,20 @@ describe('resolveGateSteps', () => {
 		expect(
 			resolveGateSteps({ packageJson: { dialecte: { gate: { fast } } }, mode: 'full' }),
 		).toEqual(DEFAULT_GATE_STEPS.full)
+	})
+})
+
+describe('isHeavyStep', () => {
+	it('a browser project, vitest browser mode or playwright → heavy; a type-check → not; a declared value wins', () => {
+		expect(
+			[
+				{ name: 'tests', run: 'npx vitest run --project browser' },
+				{ name: 'tests', run: 'npx vitest run --browser.headless' },
+				{ name: 'e2e', run: 'npx playwright test' },
+				{ name: 'check', run: 'npm run check' },
+				{ name: 'tests', run: 'npx vitest run --changed', heavy: true },
+				{ name: 'e2e', run: 'npx playwright test', heavy: false },
+			].map((step) => isHeavyStep({ step, browserTests: false })),
+		).toEqual([true, true, true, false, true, false])
 	})
 })

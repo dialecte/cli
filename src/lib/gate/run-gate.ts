@@ -11,6 +11,13 @@ import { join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 
 import {
+	BROWSER_COMMAND_PATTERN,
+	BROWSER_CONFIG_PATTERN,
+	BROWSER_TEST_DEPENDENCY_PATTERN,
+	TEST_CONFIG_FILES,
+	TEST_RUNNER_PATTERN,
+} from '../machine-lock/machine-lock.constants.ts'
+import {
 	FAILED_OUTPUT_TAIL_LINES,
 	NO_AFFECTED_TEST_NOTE,
 	NO_AFFECTED_TEST_PATTERN,
@@ -20,14 +27,17 @@ import { readStepCounts } from './step-counts.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { GateStep } from './gate-config.types.ts'
-import type { StepCounts, StepResult } from './gate.types.ts'
+import type { StepCounts, StepLock, StepResult } from './gate.types.ts'
 
 export function runGateSteps(params: {
 	root: string
 	steps: readonly GateStep[]
 	packageJson: PackageJson
+	/** Takes the machine lock around a heavy step; without it, no step waits for the lock. */
+	lockStep?: StepLock
 }): StepResult[] {
 	const { root, packageJson } = params
+	const browserTests = runsTestsInABrowser({ root, packageJson })
 	const results: StepResult[] = []
 	for (const step of params.steps) {
 		if (results.some((result) => result.status === 'failed')) {
@@ -45,9 +55,46 @@ export function runGateSteps(params: {
 			})
 			continue
 		}
-		results.push(runStep({ root, step, generatedDocs: packageJson.dialecte?.generatedDocs ?? [] }))
+		const lock =
+			params.lockStep && isHeavyStep({ step, browserTests }) ? params.lockStep(step) : undefined
+		if (lock && 'refusal' in lock) {
+			results.push({ step, status: 'failed', counts: {}, restored: [], reason: lock.refusal })
+			continue
+		}
+		try {
+			results.push(
+				runStep({ root, step, generatedDocs: packageJson.dialecte?.generatedDocs ?? [] }),
+			)
+		} finally {
+			lock?.release()
+		}
 	}
 	return results
+}
+
+/**
+ * A step that takes the machine lock: declared `heavy`; else a command naming a browser project; else, in
+ * a package whose tests run in a browser, a test step (it counts tests or runs vitest / playwright).
+ */
+export function isHeavyStep(params: { step: GateStep; browserTests: boolean }): boolean {
+	const { step } = params
+	if (step.heavy !== undefined) return step.heavy
+	if (BROWSER_COMMAND_PATTERN.test(step.run)) return true
+	return params.browserTests && (step.counts === 'tests' || TEST_RUNNER_PATTERN.test(step.run))
+}
+
+/** The package depends on a browser test runner, or its test config declares a browser project. */
+export function runsTestsInABrowser(params: { root: string; packageJson: PackageJson }): boolean {
+	const { packageJson } = params
+	const dependencies = Object.keys({
+		...packageJson.dependencies,
+		...packageJson.devDependencies,
+	})
+	if (dependencies.some((name) => BROWSER_TEST_DEPENDENCY_PATTERN.test(name))) return true
+	return TEST_CONFIG_FILES.some((file) => {
+		const path = join(params.root, file)
+		return existsSync(path) && BROWSER_CONFIG_PATTERN.test(readFileSync(path, 'utf8'))
+	})
 }
 
 function runStep(params: { root: string; step: GateStep; generatedDocs: string[] }): StepResult {

@@ -27,3 +27,6 @@ export type StepResult = {
 	/** The last lines of the output of a failed step. */
 	tail?: string
 }
+
+/** Takes the machine lock for a heavy step: a release, or why the step cannot run. */
+export type StepLock = (step: GateStep) => { release(): void } | { refusal: string }

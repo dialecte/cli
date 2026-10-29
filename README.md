@@ -33,7 +33,8 @@ dialecte doctor            # versions, core API generation, skills and station a
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte new verb <namespace> <query|transaction> <name>
-dialecte handover <lots.json>   # the guarded commit-by-lots script a human runs
+dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
+dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
@@ -143,16 +144,19 @@ The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](ht
 
 ## Contributing to a Dialecte package
 
-Four commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Six commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
 - `dialecte rules [<files...>] [--json]` checks the code rules on the syntax tree of the changed files
   (or the files given): exported types outside a `*.types.ts` file, module constants outside a
   `*.constants.ts` file, functions declared as `const`, an `await` inside an argument, plan tags and
-  standard citations are errors; positional parameters (beyond a leading `query` / `tx`, a symmetric
-  pair aside) and abbreviated names are warnings.
-- `dialecte gate [--fast | --full] [--json]` runs the Definition of Done: `--fast` (default) `check`,
+  standard citations are errors, and so is a test that takes the system's temporary folder itself as
+  its root (`tmpdir()` handed to a call that lists or scans a folder, or given as `root` / `cwd` /
+  `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
+  gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
+  symmetric pair aside) and abbreviated names are warnings.
+- `dialecte gate [--fast | --full] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
   file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
@@ -164,8 +168,9 @@ the answer.
   `.types.ts`, a table-driven test with one red case marked `only`, its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover <lots.json> [--out <dir>] [--rehash]` writes the commit-by-lots script a human
-  runs. The lots file names the repository, the branch and HEAD expected, and the lots (paths, message):
+- `dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]` prepares the commit-by-lots
+  hand-over a human runs. The lots file names the repository, the branch and HEAD expected, and the lots
+  (paths, message):
 
   ```json
   {
@@ -180,12 +185,77 @@ the answer.
   }
   ```
 
-  It refuses (and writes nothing) when the branch or HEAD differ, something is staged, a changed file
-  is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
-  citation. It prints each lot with its size and snapshot hash, and writes `commit.sh` (bash, also run
-  with `sh`), which checks all of it again when it runs, plus the files against the snapshot. Edited
-  a file after the review? `--rehash`. The repository stays locked for `dialecte gate` until the script
-  has committed; the script never pushes.
+  It refuses (and writes nothing) when the branch or HEAD differ, `core.hooksPath` names a folder that
+  does not exist (git would skip every hook; it says how to restore it), something is staged, a changed
+  file is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
+  citation. Otherwise it writes the hand-over folder - the lots file, the snapshot (`files.txt`,
+  `files.sha256`, `files.deleted`, and `lots.sha256`: the lots file as reviewed) and a one-line
+  `commit.sh` that runs
+  `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
+  installs no cli that can, it says so in one line with the fix) - and prints the card: repository,
+  worktree, branch, HEAD, gates, each lot with its files, lines added and removed and its subject, and the
+  command with its absolute `cd`; `--json` answers the same as data. Edited a file after the review?
+  `--rehash` (also after editing `lots.json`). The repository stays locked for `dialecte gate` until
+  every lot is committed.
+
+- `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
+  and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
+  folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
+  lots, plan tags and citations. When the staged files are exactly the next lot's (a run stopped after
+  staging it), the index guard prints the command that unstages them, with its `cd`.
+  Then `lot n/N` with its files and subject, the commit's hook output behind `│`, a heartbeat every 30 s
+  while the hook is silent (`… hook running 2 m 10 s`; after three silent beats it asks whether the hook
+  waits for input or runs in watch mode), the commit with its stat; the total time and the card at the
+  end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
+  finds the lots already committed on top of the recorded HEAD (same message, same paths, same content)
+  and resumes at the next one; anything else on top of HEAD is refused with what was found. It never
+  pushes. `--rehearse` runs the lots in a scratch clone that looks like your tree - the repository at
+  HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
+  run as they will for real; the clone is removed at the end (`--keep` keeps it), and on Ctrl-C or
+  SIGTERM, with the hook and every process it started stopped. The clone's git folder holds a marker
+  naming the process that made it (`dialecte-rehearsal.json`).
+- `dialecte handover list [--root <dir>] [--json]` lists every hand-over folder under the workspace's
+  `_commit-plan/` (or the folder given, or the current one): repository, worktree, branch, lots, age, and
+  its state - pending, partly committed, committed, or stale when something else moved the branch. A
+  folder holding a hand-written `commit*.sh` and no lots file shows as "legacy script, state unknown".
+- `dialecte worktree add <repository> <branch> [--from <ref>] [--json]` makes a worktree under the
+  workspace's `.worktrees/<repository>-<branch tail>` (the last segment of the branch: `core-depth` for
+  `feat/depth`; a new branch starts from `--from`, else the base
+  branch): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
+  plain worktree misses it), copies the main checkout's `node_modules` copy-on-write where the file system
+  can (links kept, a relative link to a sibling re-pointed so it still reaches it), and writes the hygiene
+  baseline `gate --fast` compares with; it prints a card.
+- `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
+  the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
+  lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
+  rehearsal clones whose process is gone, with the command that removes each (its absolute `cd` first).
+  `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
+  commands (or the `--yes` command) to a person. Kept, each with why: an unmerged branch; the branch the
+  main checkout is on; a worktree a hand-over is pending in, or with uncommitted changes; a branch whose
+  reflog still reaches commits the base does not hold (reset onto a newer base after commits of its own:
+  its reflog is the only way back to them); a worktree or branch with no commit of its own in its reflog
+  (just made); a worktree holding ignored files that removing it would delete (anything but
+  `node_modules`, `dist`, `.vitepress/cache`, `.vitepress/dist`, `.DS_Store` and the hooks folder; a long
+  list is counted, the first three named); a rehearsal clone whose process still runs, or without a
+  marker. It reads each worktree with `git --no-optional-locks`, so it never rewrites an index.
+
+`gate --fast` starts with the hygiene of the worktree: nothing staged; no stash entry pushed on this
+worktree's branch since `worktree add` made it (the baseline keeps every stash entry it saw, so another
+session dropping one changes nothing; one stash is shared by every worktree and session: a new entry of
+another branch is only noted, naming it; without a baseline the stash is not compared); and
+every new file one the change declares (`--declare <path>`, repeatable; an undeclared one is a warning).
+A failure says what changed and how to look at it with read-only commands. `gate --full`, and every
+heavy step, hold a machine-wide lock in your cache folder (`$DIALECTE_CACHE_DIR` overrides it) naming
+its holder. A step is heavy when it says so (`"heavy": true` / `false`); else when its command names a
+browser project (`--browser`, a `--project` named browser, playwright); else when the package runs its
+tests in a browser (it depends on `@vitest/browser*` or playwright, or its vitest / vite config declares
+a `browser`) and the step is a test step (it counts tests, or runs vitest or playwright). Another heavy
+run waits with a line every 30 s naming the holder, or refuses with `--no-wait`. A lock whose process is
+gone, or whose pid now belongs to a process started at another time (read in the C locale and UTC, so
+two shells with other languages or time zones agree; a `ps` that answers nothing never makes a holder
+look dead), is taken over under a short takeover lock (`<lock>.takeover`), so only one caller replaces
+it. A lock file still being written is left alone; one that stays unreadable, or a takeover lock, is
+cleared once it is a few seconds old.
 
 A package tunes them in its package.json:
 
@@ -202,14 +272,16 @@ A package tunes them in its package.json:
 		]
 	},
 	"generatedDocs": [".vitepress/data/elements-catalog.json"],
-	"referencePatterns": ["SPEC-[0-9]+"]
+	"referencePatterns": ["SPEC-[0-9]+"],
+	"baseBranch": "main"
 }
 ```
 
 `gate.fast` / `gate.full` replace the default steps of that mode (`counts: "tests"` makes a step fail
 when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
-it); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
+it; `heavy: true` / `false` says whether the step takes the machine lock); `baseBranch` is the branch
+`worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
 tags and citations `rules` and `handover` refuse.
 
 ## Run a script

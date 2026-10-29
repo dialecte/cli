@@ -16,6 +16,7 @@ import { run as rules } from './commands/rules.ts'
 import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
 import { run as skills } from './commands/skills.ts'
+import { run as worktree } from './commands/worktree.ts'
 
 export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	coverage,
@@ -35,6 +36,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	gate,
 	new: newVerb,
 	handover,
+	worktree,
 }
 
 export const HELP = `
@@ -60,7 +62,8 @@ Commands:
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
-  handover   Write the guarded commit-by-lots script a human runs, from a lots file
+  handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
+  worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
 Core is detected by package name and benched via a built-in test dialect. Override per package.json
@@ -118,13 +121,28 @@ Contributing (inside a dialecte repository):
   dialecte rules [<files...>] [--json]
                              # types / constants in their files, named functions, no await in an argument,
                              # object parameters, full words, no plan tag or standard citation
-  dialecte gate [--fast | --full] [--json]
+  dialecte gate [--fast | --full] [--no-wait] [--declare <path>]... [--json]
                              # steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults;
-                             # refuses while a hand-over script holds the repository
+                             # refuses while a hand-over script holds the repository; --fast starts with the
+                             # worktree's hygiene (nothing staged, no stash on its branch, new files declared);
+                             # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait)
   dialecte new verb <namespace> <query|transaction> <name> [--version <v>]
                              # verb, types, red test (only: true), barrel export, namespace registration
-  dialecte handover <lots.json> [--out <dir>] [--rehash]
-                             # commit.sh + snapshot hashes; refuses files in no lot, tags, citations
+  dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]
+                             # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
+                             # refuses files in no lot, tags, citations, a missing core.hooksPath folder
+  dialecte handover run <folder> [--rehearse [--keep]]
+                             # what commit.sh runs: each guard with its time, lot n/N, the hook streamed with a
+                             # heartbeat, the card; a rerun resumes; --rehearse commits in a scratch clone
+  dialecte handover list [--root <dir>] [--json]
+                             # every hand-over folder: repository, worktree, branch, lots, age, state
+  dialecte worktree add <repository> <branch> [--from <ref>] [--json]
+                             # under the workspace's .worktrees/: hooks folder, copy-on-write node_modules,
+                             # hygiene baseline
+  dialecte worktree prune [--root <workspace>] [--yes] [--json]
+                             # merged worktrees and branches, committed hand-overs, rehearsal clones: the
+                             # commands with their cd; --yes runs them after a confirmation on a terminal
+                             # (a fresh worktree, ignored files, an unmerged branch are kept)
 
 Env: RUNS=5 dialecte bench   (repetitions for the min); COVERAGE_CHILD_CAP=N (cap edges)
 `
