@@ -27,5 +27,8 @@ export const STASH_SUBJECT_PATTERN = /^(?:WIP on|On) (.+?): /
  */
 export const LOT_FILE = '.dialecte/lot.json'
 
+/** The line `worktree add` writes to the repository's exclude file: the lot declaration's folder. */
+export const LOT_FOLDER_EXCLUDE = '.dialecte/'
+
 /** The lot declaration as a path relative to a repository or a package root. */
 export const LOT_FILE_PATTERN = /(^|\/)\.dialecte\/lot\.json$/

@@ -29,6 +29,8 @@ import { rehearseHandover } from '../lib/handover/rehearse-handover.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
+import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
+import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
@@ -37,13 +39,16 @@ import { findWorkspace } from '../lib/workspace.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HandoverListing, WriteLine } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
+import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const colour = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR
 	if (argv[0] === 'run') {
+		const live = openProcessLiveOutput()
 		const exitCode = await runHandoverRun({
 			argv: argv.slice(1),
-			write: (line) => console.log(line),
+			write: live.writeLine,
+			live,
 			clock: createSystemClock(),
 			colour,
 			scratchRoot: tmpdir(),
@@ -54,7 +59,12 @@ export async function run(argv: string[]): Promise<void> {
 	const result =
 		argv[0] === 'list'
 			? runHandoverList({ argv: argv.slice(1), cwd: process.cwd(), now: Date.now() })
-			: runHandover({ argv, cliPath: realpathSync(process.argv[1]), colour })
+			: runHandover({
+					argv,
+					cliPath: realpathSync(process.argv[1]),
+					colour,
+					...(process.stdout.isTTY && { columns: process.stdout.columns }),
+				})
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
@@ -64,6 +74,10 @@ export function runHandover(params: {
 	/** The cli writing the hand-over: the script's fallback when the repository installs none that runs it. */
 	cliPath: string
 	colour?: boolean
+	/** The terminal's width: the card's values wrap to it. Default: not a terminal, no wrapping. */
+	columns?: number
+	/** The most the repository's own cli may take to answer the `handover run --probe` check, in milliseconds. */
+	probeTimeout?: number
 }): CommandResult {
 	const { argv } = params
 	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
@@ -95,13 +109,19 @@ export function runHandover(params: {
 		gates: plan.gates,
 		lots: plan.lots,
 		commits: [],
+		cliPath: params.cliPath,
+		probeTimeout: params.probeTimeout,
 	})
 	if (hasFlag(argv, 'json'))
 		return { exitCode: 0, output: JSON.stringify({ folder: out, ...card }, null, 2) }
 	return {
 		exitCode: 0,
 		output: [
-			renderCard({ card: handoverCardRows(card), colour: params.colour ?? false }),
+			renderCard({
+				card: handoverCardRows(card),
+				colour: params.colour ?? false,
+				width: params.columns,
+			}),
 			`Review the card, then run it (the repository stays locked for \`dialecte gate\` until every lot is committed):`,
 			card.command,
 		].join('\n'),
@@ -116,8 +136,15 @@ export async function runHandoverRun(params: {
 	colour: boolean
 	/** Where `--rehearse` makes its clone. */
 	scratchRoot: string
+	/** A terminal that redraws its last line (spinner), or lines only; default: lines through `write`. */
+	live?: LiveOutput
+	/** The cli running it, for the card's run line; default: this process's script. */
+	cliPath?: string
 }): Promise<number> {
 	const { argv, write } = params
+	const live = params.live ?? { tty: false, writeLine: write, rewriteLines: () => undefined }
+	const progress = createStepProgress({ live, clock: params.clock })
+	const cliPath = params.cliPath ?? realpathSync(process.argv[1])
 	if (hasFlag(argv, 'probe')) {
 		write('handover run')
 		return 0
@@ -141,8 +168,21 @@ export async function runHandoverRun(params: {
 			colour: params.colour,
 			scratchRoot: params.scratchRoot,
 			keep: hasFlag(argv, 'keep'),
+			progress,
+			tty: live.tty,
+			columns: live.columns,
+			cliPath,
 		})
-	return runHandoverFolder({ handover, write, clock: params.clock, colour: params.colour })
+	return runHandoverFolder({
+		handover,
+		write,
+		clock: params.clock,
+		colour: params.colour,
+		progress,
+		tty: live.tty,
+		columns: live.columns,
+		cliPath,
+	})
 }
 
 /** `handover list [--root <dir>] [--json]`: default root the workspace's `_commit-plan`, else the cwd. */

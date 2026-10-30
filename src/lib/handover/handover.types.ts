@@ -89,6 +89,8 @@ export type HandoverCard = {
 	worktree: string
 	branch: string
 	head: string
+	/** After a run: the new tip of the branch (the card shows `HEAD base → tip`). */
+	tip?: string
 	gates: string
 	/** The test receipts for the reviewer: the lot's exemption, the flags receipts carry (one per line). */
 	tdd?: string

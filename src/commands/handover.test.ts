@@ -12,6 +12,7 @@ import {
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
+import { createFakeTerminal } from '../../test/fake-terminal.ts'
 import {
 	createScratchRepository,
 	git,
@@ -21,9 +22,11 @@ import {
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 
 import type { LotsFile } from '../lib/handover/handover.types.ts'
+import type { Clock } from '../lib/progress/clock.types.ts'
+import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
 /**
  * Each case makes repositories and runs git (and npx, hooks, clones) dozens of times: on a loaded machine
@@ -94,8 +97,18 @@ function prepare(
 	return { root, lotsPath, out }
 }
 
-function writeHandover(params: { lotsPath: string; argv?: string[] }) {
-	return runHandover({ argv: [params.lotsPath, ...(params.argv ?? [])], cliPath: WRITER_CLI })
+function writeHandover(params: {
+	lotsPath: string
+	argv?: string[]
+	columns?: number
+	probeTimeout?: number
+}) {
+	return runHandover({
+		argv: [params.lotsPath, ...(params.argv ?? [])],
+		cliPath: WRITER_CLI,
+		columns: params.columns,
+		probeTimeout: params.probeTimeout,
+	})
 }
 
 /** `handover run` on the folder, every line it printed kept. */
@@ -247,7 +260,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(lines.filter((line) => line.startsWith('│')).map((line) => line.length)).toEqual(
 			Array(8).fill(lines[0].length),
 		)
-		expect(lines.at(-1)).toBe(`cd '${out}' && bash commit.sh`)
+		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
 	})
 
 	it('the lot file .dialecte/lot.json in no lot → not refused; a lot declared exempt from the receipts → on the card', () => {
@@ -447,7 +460,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				},
 				{ index: 2, fileCount: 1, insertions: 3, deletions: 0, subject: 'docs(changelog): read' },
 			],
-			command: `cd '${out}' && bash commit.sh`,
+			command: `node '${WRITER_CLI}' handover run '${out}'`,
 		})
 	})
 
@@ -586,8 +599,8 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			'✓ outside     no other file changed  0.0 s',
 			'✓ references  2 file(s), 2 message(s)  0.0 s',
 		])
-		expect(result.lines).toContain(`${LOT} 1/2  1 file(s)  feat(read): read answers one`)
-		expect(result.lines).toContain(`${LOT} 2/2  1 file(s)  docs(changelog): read`)
+		expect(result.lines).toContain(`▶ ${LOT} 1/2  1 file(s)  feat(read): read answers one`)
+		expect(result.lines).toContain(`▶ ${LOT} 2/2  1 file(s)  docs(changelog): read`)
 		expect(result.text).toMatch(/^✓ [0-9a-f]{12} feat\(read\): read answers one {2}0\.0 s$/m)
 		expect(result.text).toContain('src/read.ts | 4')
 		expect(result.text).toContain('done: 2 commit(s) on main in 0.0 s. Nothing pushed.')
@@ -702,7 +715,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runFolder({ out })
 
 		expect(result.exitCode).toBe(0)
-		const lotLine = result.lines.indexOf(`${LOT} 1/2  1 file(s)  feat(read): read answers one`)
+		const lotLine = result.lines.indexOf(`▶ ${LOT} 1/2  1 file(s)  feat(read): read answers one`)
 		expect(result.lines.slice(lotLine + 1, lotLine + 3).sort()).toEqual([
 			'  │ all good',
 			'  │ checking the staged files',
@@ -1028,3 +1041,555 @@ describe('handover list', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		)
 	})
 })
+
+/** A pre-commit hook script, a lot holding every changed file, the lots file rewritten at the hook commit. */
+function prepareWithHook(script: string): { root: string; out: string } {
+	const { root, lotsPath, out } = prepare({
+		lots: [{ paths: ['src/', 'CHANGELOG.md'], message: 'feat(read): read answers one' }],
+	})
+	installHook({ root, script })
+	writeFileSync(
+		lotsPath,
+		JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+	)
+	expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+	return { root, out }
+}
+
+const SPINNER_LINE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /
+
+describe(
+	'handover run: a running step looks running',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('off a terminal → the lot start line is written before its hook runs, and comes before its commit line', async () => {
+			const { root, out } = prepareWithHook('touch "$(git rev-parse --show-toplevel)/hook-ran"')
+			const lines: { line: string; hookBegan: boolean }[] = []
+			function record(line: string): void {
+				lines.push({ line, hookBegan: existsSync(join(root, 'hook-ran')) })
+			}
+
+			const exitCode = await runHandoverRun({
+				argv: [out],
+				write: record,
+				clock: createFakeClock(),
+				colour: false,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+			})
+
+			const texts = lines.map((entry) => entry.line)
+			const start = texts.indexOf(`▶ ${LOT} 1/1  2 file(s)  feat(read): read answers one`)
+			expect(exitCode).toBe(0)
+			expect(start).toBeGreaterThan(-1)
+			expect(lines[start].hookBegan).toBe(false)
+			expect(texts.findIndex((line) => /^✓ [0-9a-f]{12} feat\(read\)/.test(line))).toBeGreaterThan(
+				start,
+			)
+		})
+
+		it('on a terminal → a spinner line names the lot while its hook runs, the commit line replaces it, no start line, no spinner left', async () => {
+			const { out } = prepareWithHook('true')
+			const terminal = createFakeTerminal({ tty: true })
+
+			const exitCode = await runHandoverRun({
+				argv: [out],
+				write: terminal.output.writeLine,
+				clock: createFakeClock(),
+				colour: false,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				live: terminal.output,
+			})
+
+			expect(exitCode).toBe(0)
+			expect(terminal.rewrites.map((region) => region[0])).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(
+						new RegExp(`^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] ${LOT} 1/1 .*feat\\(read\\): read answers one - .* 0\\.0 s$`),
+					),
+				]),
+			)
+			expect(terminal.screen().some((line) => line.startsWith('▶'))).toBe(false)
+			expect(terminal.screen().some((line) => SPINNER_LINE.test(line))).toBe(false)
+			expect(terminal.screen().some((line) => /^✓ [0-9a-f]{12} feat\(read\)/.test(line))).toBe(true)
+		})
+
+		it('a rehearsal → the clone step is announced before the clone is prepared', async () => {
+			const { out } = prepareWithHook('true')
+
+			const result = await runFolder({ out, argv: ['--rehearse'] })
+
+			const start = result.lines.indexOf('▶ rehearsal clone')
+			expect(start).toBeGreaterThan(-1)
+			expect(start).toBeLessThan(
+				result.lines.findIndex((line) => line.startsWith('  working tree:')),
+			)
+		})
+	},
+)
+
+describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('the HEAD line shows the base and the new tip', async () => {
+		const { root, out } = prepareWithHook('true')
+		const base = headOf(root)
+
+		const result = await runFolder({ out })
+
+		const tip = headOf(root)
+		expect(result.text).toMatch(new RegExp(`│ HEAD +${base.slice(0, 12)} → ${tip.slice(0, 12)} +│`))
+	})
+
+	it('a repository whose own cli lacks handover run → the run line is node <this cli> handover run <dir>; one with it keeps bash commit.sh', () => {
+		const lacking = prepare()
+		const having = prepare()
+		const cli = join(having.root, 'node_modules/@dialecte/cli')
+		writeFiles({
+			root: having.root,
+			files: {
+				'.gitignore': 'node_modules\n',
+				'node_modules/@dialecte/cli/package.json': JSON.stringify({
+					name: '@dialecte/cli',
+					bin: { dialecte: 'cli.js' },
+				}),
+				'node_modules/@dialecte/cli/cli.js': `#!/usr/bin/env node\nconsole.log('handover run')\n`,
+			},
+		})
+		chmodSync(join(cli, 'cli.js'), 0o755)
+		mkdirSync(join(having.root, 'node_modules/.bin'))
+		spawnSync('ln', [
+			'-s',
+			'../@dialecte/cli/cli.js',
+			join(having.root, 'node_modules/.bin/dialecte'),
+		])
+		git({ root: having.root, args: ['add', '.gitignore'] })
+		git({ root: having.root, args: ['commit', '-q', '-m', 'chore: ignore'] })
+		writeFileSync(
+			having.lotsPath,
+			JSON.stringify({
+				...JSON.parse(readFileSync(having.lotsPath, 'utf8')),
+				head: headOf(having.root),
+			}),
+		)
+
+		const lackingCard = writeHandover({ lotsPath: lacking.lotsPath }).output.split('\n').at(-1)
+		const havingCard = writeHandover({ lotsPath: having.lotsPath }).output.split('\n').at(-1)
+
+		expect(lackingCard).toBe(`node '${WRITER_CLI}' handover run '${lacking.out}'`)
+		expect(havingCard).toBe(`cd '${having.out}' && bash commit.sh`)
+	})
+})
+
+const HOOK_LINES = Array.from({ length: 30 }, (_unused, index) => `line ${index + 1}`)
+const PRINT_30_LINES = 'i=1; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done'
+const SPINNER = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /
+
+/** `handover run` of the folder through the given live output (every line goes to its writeLine too). */
+function runLive(params: {
+	out: string
+	live: LiveOutput
+	write?: (line: string) => void
+	clock?: Clock
+}): Promise<number> {
+	return runHandoverRun({
+		argv: [params.out],
+		write: params.write ?? params.live.writeLine,
+		clock: params.clock ?? createFakeClock(),
+		colour: false,
+		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		live: params.live,
+	})
+}
+
+describe(
+	'handover run: hook output is never buffered',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('off a terminal, a hook succeeding → each line streams as it comes (the hook waits for the first one to be seen), then the full log path; the log holds every line', async () => {
+			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
+			const { out } = prepareWithHook(
+				`echo "line 1"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; i=2; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done`,
+			)
+			const written: string[] = []
+			function record(line: string): void {
+				written.push(line)
+				if (line === '  │ line 1') writeFileSync(flag, '1')
+			}
+
+			const exitCode = await runLive({
+				out,
+				write: record,
+				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+			})
+
+			const hookLines = written.filter((line) => /^ {2}│ line \d+$/.test(line))
+			const logLine = written.findIndex((line) => /full log: \//.test(line))
+			const logPath = /full log: (\/\S+)/.exec(written[logLine] ?? '')?.[1] ?? ''
+			expect(exitCode).toBe(0)
+			expect(hookLines).toEqual(HOOK_LINES.map((line) => `  │ ${line}`))
+			expect(logLine).toBeGreaterThan(written.indexOf('  │ line 30'))
+			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(expect.arrayContaining(HOOK_LINES))
+		})
+
+		it('on a terminal, a hook succeeding → its last 20 lines show live under the spinner; afterwards no hook line is kept, one collapsed line with the log path sits before the commit line', async () => {
+			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
+			const { out } = prepareWithHook(
+				`echo "line 1"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; i=2; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done`,
+			)
+			const terminal = createFakeTerminal({ tty: true })
+			const draw = terminal.output.rewriteLines
+			const live: LiveOutput = {
+				...terminal.output,
+				rewriteLines(lines) {
+					draw(lines)
+					if (lines.includes('  │ line 1')) writeFileSync(flag, '1')
+				},
+			}
+
+			const exitCode = await runLive({ out, live, write: terminal.output.writeLine })
+
+			const screen = terminal.screen()
+			const collapsed = screen.findIndex((line) =>
+				/30 line\(s\) of hook output; full log: \//.test(line),
+			)
+			const logPath = /full log: (\/\S+)/.exec(screen[collapsed] ?? '')?.[1] ?? ''
+			expect(exitCode).toBe(0)
+			expect(terminal.rewrites.some((region) => region.includes('  │ line 30'))).toBe(true)
+			expect(
+				terminal.rewrites.every((region) => region.length <= 21 && SPINNER.test(region[0])),
+			).toBe(true)
+			expect(terminal.written.filter((line) => /^ {2}│ line \d+$/.test(line))).toEqual([])
+			expect(screen[collapsed + 1]).toMatch(/^✓ [0-9a-f]{12} feat\(read\)/)
+			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(expect.arrayContaining(HOOK_LINES))
+		})
+
+		it('on a terminal, a hook failing → every line ends in the written lines, with the full log path', async () => {
+			const { out } = prepareWithHook(`${PRINT_30_LINES}; exit 1`)
+			const terminal = createFakeTerminal({ tty: true })
+
+			const exitCode = await runLive({ out, live: terminal.output })
+
+			expect(exitCode).toBe(1)
+			expect(terminal.written.filter((line) => /^ {2}│ line \d+$/.test(line))).toEqual(
+				HOOK_LINES.map((line) => `  │ ${line}`),
+			)
+			expect(terminal.written.some((line) => /full log: \//.test(line))).toBe(true)
+			expect(terminal.screen().some((line) => SPINNER.test(line))).toBe(false)
+		})
+
+		it('off a terminal, a hook failing → every line is shown, and the full log path too', async () => {
+			const { out } = prepareWithHook(`${PRINT_30_LINES}; exit 1`)
+			const written: string[] = []
+			function record(line: string): void {
+				written.push(line)
+			}
+
+			const exitCode = await runLive({
+				out,
+				write: record,
+				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+			})
+
+			expect(exitCode).toBe(1)
+			expect(written.filter((line) => /^ {2}│ line \d+$/.test(line))).toEqual(
+				HOOK_LINES.map((line) => `  │ ${line}`),
+			)
+			expect(written.some((line) => /full log: \//.test(line))).toBe(true)
+		})
+	},
+)
+
+describe('handover: the card width', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	const LONG_GATES =
+		'npm run type-check && npm run lint:check && npm run format:check && npm run test:run'
+
+	function cardLines(output: string): string[] {
+		return output.split('\n').filter((line) => /^[┌│└]/.test(line))
+	}
+
+	it('an injected width of 40 → no card line is wider; no width (not a terminal) → the card is not wrapped', () => {
+		const wrapped = prepare({ overrides: { gates: LONG_GATES } })
+		const plain = prepare({ overrides: { gates: LONG_GATES } })
+
+		const narrow = writeHandover({ lotsPath: wrapped.lotsPath, columns: 40 })
+		const unbounded = writeHandover({ lotsPath: plain.lotsPath })
+
+		expect(cardLines(narrow.output).filter((line) => line.length > 40)).toEqual([])
+		expect(cardLines(unbounded.output).some((line) => line.includes(LONG_GATES))).toBe(true)
+	})
+
+	for (const columns of [40, 100])
+		it(`a width of ${columns} → the run command stays whole on one line (copyable), outside the wrapped box`, () => {
+			const { lotsPath, out } = prepare({ overrides: { gates: LONG_GATES } })
+
+			const result = writeHandover({ lotsPath, columns })
+
+			const command = `node '${WRITER_CLI}' handover run '${out}'`
+			expect(command.length).toBeGreaterThan(columns)
+			expect(result.output.split('\n')).toContain(command)
+			expect(cardLines(result.output).filter((line) => line.length > columns)).toEqual([])
+		})
+})
+
+describe(
+	'handover run --rehearse: untracked files a hook could read',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('an untracked .dialecte/lot.json outside the exclude list → a warning naming it; excluded → none', async () => {
+			const ignored = { '.gitignore': 'node_modules\n' }
+			const open = prepare({ committed: ignored })
+			writeFiles({
+				root: open.root,
+				files: { '.dialecte/lot.json': '{}\n', 'node_modules/x': 'x\n' },
+			})
+			const excluded = prepare({ committed: ignored })
+			writeFiles({
+				root: excluded.root,
+				files: { '.dialecte/lot.json': '{}\n', 'node_modules/x': 'x\n' },
+			})
+			writeFileSync(join(excluded.root, '.git', 'info', 'exclude'), '.dialecte/\n')
+			expect(writeHandover({ lotsPath: open.lotsPath }).exitCode).toBe(0)
+			expect(writeHandover({ lotsPath: excluded.lotsPath }).exitCode).toBe(0)
+
+			const warned = await runFolder({ out: open.out, argv: ['--rehearse'] })
+			const quiet = await runFolder({ out: excluded.out, argv: ['--rehearse'] })
+
+			const warning = warned.lines.find((line) => line.startsWith('warning:')) ?? ''
+			expect(warning).toMatch(/^warning: .*\.dialecte\/lot\.json/)
+			expect(warning).not.toMatch(/CHANGELOG\.md|src\/read\.ts|node_modules/)
+			expect(quiet.lines.some((line) => line.startsWith('warning:'))).toBe(false)
+		})
+	},
+)
+
+describe(
+	'handover run: the card after a run on a narrow terminal',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('a width of 40 → the box wraps, and the run command stays whole on one line outside it', async () => {
+			const { out } = prepareWithHook('true')
+			const terminal = createFakeTerminal({ tty: true, columns: 40 })
+
+			const exitCode = await runLive({ out, live: terminal.output })
+
+			const lines = terminal.screen().flatMap((line) => line.split('\n'))
+			const box = lines.filter((line) => /^[┌│└]/.test(line))
+			expect(exitCode).toBe(0)
+			expect(box.filter((line) => line.length > 40)).toEqual([])
+			expect(lines.some((line) => line.includes("handover run '") && line.length > 40)).toBe(true)
+		})
+	},
+)
+
+describe(
+	'handover run: a silent hook off a terminal',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('after 90 s of silence on the clock → the running line carries the hint, once', async () => {
+			const flag = join(temporaryFolder('dialecte-flag-'), 'go')
+			const { out } = prepareWithHook(
+				`i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
+			)
+			const clock = createFakeClock()
+			const written: string[] = []
+			function record(line: string): void {
+				written.push(line)
+			}
+
+			const running = runLive({
+				out,
+				write: record,
+				clock,
+				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+			})
+			await clock.whenPending(1)
+			clock.advance(95_000)
+			clock.advance(120_000)
+			writeFileSync(flag, '1')
+			const exitCode = await running
+
+			expect(exitCode).toBe(0)
+			expect(
+				written.filter((line) => line.includes('silent for 1 m 30 s: is it waiting for input')),
+			).toHaveLength(1)
+		})
+	},
+)
+
+describe(
+	'handover run: a silent hook on a terminal',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('before the silence threshold the spinner has no hint; after it, the spinner carries the waiting-for-input / watch-mode hint', async () => {
+			const flag = join(temporaryFolder('dialecte-flag-'), 'go')
+			const { out } = prepareWithHook(
+				`i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
+			)
+			const clock = createFakeClock()
+			const terminal = createFakeTerminal({ tty: true })
+			const hint = /waiting for input|watch mode/
+
+			const running = runLive({ out, live: terminal.output, clock })
+			await clock.whenPending(1)
+			clock.advance(60_000)
+			const early = terminal.screen().find((line) => SPINNER.test(line))
+			clock.advance(35_000)
+			const late = terminal.screen().find((line) => SPINNER.test(line))
+			writeFileSync(flag, '1')
+			const exitCode = await running
+
+			expect(exitCode).toBe(0)
+			expect(early ?? '').not.toMatch(hint)
+			expect(late ?? '').toMatch(hint)
+		})
+	},
+)
+
+describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	/** The logs of hooks under `folder` (the temporary folder of this test) that hold `marker`. */
+	function logsHolding(params: { folder: string; marker: string }): string[] {
+		return readdirSync(params.folder)
+			.filter((name) => name.startsWith('dialecte-hook-'))
+			.map((name) => join(params.folder, name, `${LOT}-1.log`))
+			.filter((path) => existsSync(path) && readFileSync(path, 'utf8').includes(params.marker))
+	}
+
+	it('the log grows while the hook runs: readable when its first line has been shown, so a killed run still leaves it', async () => {
+		const hookTemporary = temporaryFolder('dialecte-hook-tmp-')
+		const previousTemporary = process.env.TMPDIR
+		onTestFinished(function restoreTemporary() {
+			if (previousTemporary === undefined) delete process.env.TMPDIR
+			else process.env.TMPDIR = previousTemporary
+		})
+		const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
+		const marker = `marker-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+		const { out } = prepareWithHook(
+			`echo "${marker}"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
+		)
+		process.env.TMPDIR = hookTemporary
+		let logsMidRun: string[] = []
+		function record(line: string): void {
+			if (line === `  │ ${marker}`) {
+				logsMidRun = logsHolding({ folder: hookTemporary, marker })
+				writeFileSync(flag, '1')
+			}
+		}
+
+		const exitCode = await runLive({
+			out,
+			write: record,
+			live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+		})
+
+		expect(exitCode).toBe(0)
+		expect(logsMidRun).toHaveLength(1)
+	})
+
+	it('a multibyte character split across two chunks → intact on screen and in the log, no replacement character', async () => {
+		const { out } = prepareWithHook(String.raw`printf '\342\202'; sleep 0.3; printf '\254\n'`)
+		const written: string[] = []
+		function record(line: string): void {
+			written.push(line)
+		}
+
+		const exitCode = await runLive({
+			out,
+			write: record,
+			live: { tty: false, writeLine: record, rewriteLines: () => undefined },
+		})
+
+		const logPath =
+			/full log: (\/\S+)/.exec(written.find((line) => line.includes('full log:')) ?? '')?.[1] ?? ''
+		expect(exitCode).toBe(0)
+		expect(written).toContain('  │ €')
+		expect(written.some((line) => line.includes('�'))).toBe(false)
+		expect(readFileSync(logPath, 'utf8')).toBe('€\n')
+	})
+})
+
+describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('the command is once in full on its own line; inside the box the run row says see below', () => {
+		const { lotsPath, out } = prepare()
+
+		const result = writeHandover({ lotsPath })
+
+		const lines = result.output.split('\n')
+		const command = `node '${WRITER_CLI}' handover run '${out}'`
+		const box = lines.filter((line) => /^[┌│└]/.test(line))
+		expect(lines.filter((line) => line === command)).toHaveLength(1)
+		expect(box.find((line) => line.startsWith('│ run '))).toMatch(/^│ run {9}see below +│$/)
+		expect(box.some((line) => line.includes('handover run'))).toBe(false)
+	})
+
+	it('a repository cli that hangs on the probe → treated as no cli within the bound: the node command is printed', () => {
+		const { root, lotsPath, out } = prepare()
+		const cli = join(root, 'node_modules/@dialecte/cli')
+		writeFiles({
+			root,
+			files: {
+				'.gitignore': 'node_modules\n',
+				'node_modules/@dialecte/cli/package.json': JSON.stringify({
+					name: '@dialecte/cli',
+					bin: { dialecte: 'cli.js' },
+				}),
+				'node_modules/@dialecte/cli/cli.js': '#!/bin/sh\nsleep 8\n',
+			},
+		})
+		chmodSync(join(cli, 'cli.js'), 0o755)
+		mkdirSync(join(root, 'node_modules/.bin'))
+		spawnSync('ln', ['-s', '../@dialecte/cli/cli.js', join(root, 'node_modules/.bin/dialecte')])
+		git({ root, args: ['add', '.gitignore'] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: ignore'] })
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+
+		const startedAt = Date.now()
+		const result = writeHandover({ lotsPath, probeTimeout: 300 })
+		const elapsed = Date.now() - startedAt
+
+		expect(elapsed).toBeLessThan(5_000)
+		expect(result.output.split('\n')).toContain(`node '${WRITER_CLI}' handover run '${out}'`)
+	})
+})
+
+describe(
+	'handover run --rehearse: the untracked warning stays short',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		/** Untracked files appear after the hand-over was written: the warning comes before the guards refuse them. */
+		async function warningFor(files: Record<string, string>): Promise<string[]> {
+			const { root, lotsPath, out } = prepare()
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			writeFiles({ root, files })
+
+			const result = await runFolder({ out, argv: ['--rehearse'] })
+
+			return result.lines.filter((line) => line.startsWith('warning:'))
+		}
+
+		it('an untracked folder of 50 files → one warning line naming the folder, not its files', async () => {
+			const warnings = await warningFor(
+				Object.fromEntries(
+					Array.from({ length: 50 }, (_unused, index) => [`scratch/file-${index}.txt`, 'x\n']),
+				),
+			)
+
+			expect(warnings).toHaveLength(1)
+			expect(warnings[0]).toContain('scratch/')
+			expect(warnings[0]).not.toContain('file-7.txt')
+		})
+
+		it('30 loose untracked files → the list is capped: "and N more"', async () => {
+			const warnings = await warningFor(
+				Object.fromEntries(
+					Array.from({ length: 30 }, (_unused, index) => [`loose-${index}.txt`, 'x\n']),
+				),
+			)
+
+			expect(warnings).toHaveLength(1)
+			expect(warnings[0]).toMatch(/and \d+ more/)
+			expect(warnings[0].length).toBeLessThan(600)
+		})
+	},
+)

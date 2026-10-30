@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import { isWrittenAsString } from './case-of-change.ts'
 import { caseStatusOf, flagsOf, frozenHashOf } from './case-status.ts'
+import { createModuleResolver } from './module-resolver.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { readRunCases } from './select-cases.ts'
 import {
@@ -16,6 +17,7 @@ import {
 	listDeletedTestFiles,
 	readAtBase,
 } from './tdd-files.ts'
+import { listTestDependencies } from './test-dependencies.ts'
 import { listTestCalls } from './test-source.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -47,8 +49,24 @@ export async function readTddState(params: {
 		modules,
 		files: changed,
 	})
+	const resolveModule = createModuleResolver({ root })
+	const dependencies = new Map<string, string[]>()
+	/** The test code a test file depends on, read once per file. */
+	function dependenciesOf(file: string): string[] {
+		const known = dependencies.get(file)
+		if (known) return known
+		const found = listTestDependencies({
+			root,
+			file,
+			changedTestCode: [...testCode.keys()],
+			resolveModule,
+			packageJson: params.packageJson,
+		}).dependencies
+		dependencies.set(file, found)
+		return found
+	}
 	return {
-		cases: cases.map((testCase) => {
+		cases: cases.map(function statusLine(testCase) {
 			const id = { file: testCase.file, name: testCase.name, project: testCase.project }
 			return {
 				...id,
@@ -57,6 +75,7 @@ export async function readTddState(params: {
 					testCase: id,
 					testFileHash: testCode.get(testCase.file) ?? '',
 					caseHash: testCase.caseHash,
+					dependencies: dependenciesOf(testCase.file),
 				}),
 				flags: flagsOf({ ledger, testCase: id }),
 			}

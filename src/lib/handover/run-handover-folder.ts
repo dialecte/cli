@@ -14,6 +14,7 @@ import { handoverLockPath } from './handover-lock.ts'
 import { COMMIT_SCRIPT_FILE } from './handover.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
+import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { HandoverFolder, WriteLine } from './handover.types.ts'
 
 /** The exit code: 0 when every lot is committed, 1 when a guard or a commit refused. */
@@ -25,6 +26,14 @@ export async function runHandoverFolder(params: {
 	clock: Clock
 	colour: boolean
 	onProcessGroup?: (pid: number) => void
+	/** Where each lot announces itself; default: start and running lines through `write`. */
+	progress?: StepProgress
+	/** The progress draws on a terminal. */
+	tty?: boolean
+	/** The terminal's width: the card wraps to it. */
+	columns?: number
+	/** The cli running the hand-over: the card's run line names it when the repository's own cli cannot run it. */
+	cliPath?: string
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -39,6 +48,8 @@ export async function runHandoverFolder(params: {
 		write,
 		clock,
 		onProcessGroup: params.onProcessGroup,
+		progress: params.progress,
+		tty: params.tty,
 	})
 	if (!commits) return 1
 
@@ -57,8 +68,11 @@ export async function runHandoverFolder(params: {
 		gates: lotsFile.gates,
 		lots,
 		commits,
+		cliPath: params.cliPath,
 	})
-	write(renderCard({ card: handoverCardRows(card), colour: params.colour }))
+	write(renderCard({ card: handoverCardRows(card), colour: params.colour, width: params.columns }))
+	// whole on one line, whatever the width: a person copies it
+	write(card.command)
 	return 0
 }
 

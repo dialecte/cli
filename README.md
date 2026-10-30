@@ -164,6 +164,17 @@ the answer.
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
   step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
   while a hand-over script holds the repository.
+- A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
+  off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
+  terminal one spinner line `⠋ <step> - <what runs> <elapsed>` that the step's result line replaces (the
+  gate's summary then leaves out the lines already shown; off a terminal and with `--json` it keeps them).
+  A silent hook gets the waiting-for-input / watch-mode hint once, at 90 s of silence, on both. The
+  `handover` card wraps its values to the terminal's width; its `run` row says `see below` and the
+  command follows the box whole on one line, to copy: `cd <folder> && bash commit.sh`, or
+  `node <this cli> handover run <folder>` when the repository's own cli does not answer
+  `handover run --probe` within 10 s. "This cli" is the script that runs: when it is a temporary one
+  (`npx` from the registry, `tsx` on the sources), install `@dialecte/cli` in the repository so the
+  card names its own bin.
 - No runner hangs silently. Every child that `dialecte gate` (its steps), `tdd` (its vitest runs) and
   `handover run` (each commit and its hooks, `--rehearse` too) start runs in a process group of its own,
   with its stdin closed (a command that reads it, such as `grep` with no file, gets end-of-file at once),
@@ -278,13 +289,16 @@ the answer.
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
   lots, plan tags and citations. When the staged files are exactly the next lot's (a run stopped after
   staging it), the index guard prints the command that unstages them, with its `cd`.
-  Then `lot n/N` with its files and subject, the commit's hook output behind `│`, a heartbeat every 30 s
-  while the hook is silent (`… hook running 2 m 10 s`; after three silent beats it asks whether the hook
-  waits for input or runs in watch mode), the commit with its stat; the total time and the card at the
-  end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
+  Then each lot announced before its work: off a terminal `▶ lot n/N` with its files and subject, the
+  hook's lines streamed behind `│` as they come, a line every 30 s of silence (`… <lot> running 2 m 10 s`),
+  then `│ full log: <file>`; on a terminal one spinner line naming the lot, what runs and the
+  time, with the hook's last 20 lines live under it - collapsed to one line with the full log's path
+  when the hook passes, every line kept when it fails. Hook output is never buffered. Then the commit with
+  its stat; the total time and the card at the end (its HEAD line `base → new tip`). A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
   finds the lots already committed on top of the recorded HEAD (same message, same paths, same content)
   and resumes at the next one; anything else on top of HEAD is refused with what was found. It never
-  pushes. `--rehearse` runs the lots in a scratch clone that looks like your tree - the repository at
+  pushes. `--rehearse` announces the clone (`▶ rehearsal clone`), warns naming the untracked files outside
+  `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
   HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
   run as they will for real; the clone is removed at the end (`--keep` keeps it), and on Ctrl-C or
   SIGTERM, with the hook and every process it started stopped. The clone's git folder holds a marker
@@ -298,8 +312,13 @@ the answer.
   `feat/depth`; a new branch starts from `--from`, else the base
   branch): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
   plain worktree misses it), copies the main checkout's `node_modules` copy-on-write where the file system
-  can (links kept, a relative link to a sibling re-pointed so it still reaches it), and writes the hygiene
-  baseline `gate --fast` compares with; it prints a card.
+  can (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
+  has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
+  once in the exclude file of the repository's common git folder (so for the main checkout and every
+  worktree of it), and writes the hygiene baseline `gate --fast` compares with; it prints a card.
+- `dialecte lot exempt <reason>`, `lot accept <case> <reason>`, `lot revised <case> <reason>` write the lot
+  declaration `.dialecte/lot.json` at the package root (the nearest package.json above the current
+  folder) as tab-indented JSON, keeping what it holds; the same case again replaces its reason.
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the

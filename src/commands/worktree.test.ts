@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	readlinkSync,
+	rmSync,
 	realpathSync,
 	symlinkSync,
 	utimesSync,
@@ -100,6 +101,94 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 		expect(result).toMatchObject({ exitCode: 1 })
 		expect(result.output).toContain('exists already')
 		expect(git({ root: core, args: ['branch', '--list', 'feat/thing'] })).toBe('')
+	})
+
+	it('a new worktree → .dialecte/ is excluded: a hand-written lot file never shows as untracked', () => {
+		const { workspace, core } = createWorkspace()
+
+		const result = runWorktreeAdd({
+			argv: [core, 'feat/thing'],
+			cwd: workspace,
+			now: new Date('2026-10-30T10:00:00Z'),
+			colour: false,
+		})
+
+		const worktree = join(workspace, '.worktrees', 'core-thing')
+		writeFiles({ root: worktree, files: { '.dialecte/lot.json': '{}\n' } })
+		expect(result.exitCode).toBe(0)
+		expect(git({ root: worktree, args: ['status', '--porcelain'] })).toBe('')
+		expect(
+			git({ root: worktree, args: ['check-ignore', '--no-index', '.dialecte/lot.json'] }).trim(),
+		).toBe('.dialecte/lot.json')
+	})
+
+	it('two worktrees added in the same repository → .dialecte/ is listed once in the exclude file', () => {
+		const { workspace, core } = createWorkspace()
+		const now = new Date('2026-10-30T10:00:00Z')
+
+		const first = runWorktreeAdd({ argv: [core, 'feat/one'], cwd: workspace, now, colour: false })
+		const second = runWorktreeAdd({ argv: [core, 'feat/two'], cwd: workspace, now, colour: false })
+
+		const exclude = readFileSync(join(core, '.git', 'info', 'exclude'), 'utf8')
+		expect([first.exitCode, second.exitCode]).toEqual([0, 0])
+		expect(exclude.split('\n').filter((line) => line === '.dialecte/')).toEqual(['.dialecte/'])
+	})
+
+	for (const damage of ['has no node_modules', 'was deleted from disk (prunable)'])
+		it(`--from <branch> whose worktree ${damage} → node_modules copied from the main checkout`, () => {
+			const { workspace, core } = createWorkspace()
+			const base = join(workspace, '.worktrees', 'core-base')
+			git({ root: core, args: ['worktree', 'add', '--quiet', '-b', 'feat/base', base, 'main'] })
+			if (damage.startsWith('was')) rmSync(base, { recursive: true, force: true })
+
+			const result = runWorktreeAdd({
+				argv: [core, 'feat/child', '--from', 'feat/base'],
+				cwd: workspace,
+				now: new Date('2026-10-30T10:00:00Z'),
+				colour: false,
+			})
+
+			const copied = join(workspace, '.worktrees', 'core-child', 'node_modules/demo/index.js')
+			expect(result.exitCode).toBe(0)
+			expect(existsSync(copied) ? readFileSync(copied, 'utf8') : undefined).toBe(
+				'module.exports = 1\n',
+			)
+		})
+
+	it('--from <branch> checked out in a worktree → node_modules copied from that worktree; a branch with no worktree → from the main checkout', () => {
+		const { workspace, core } = createWorkspace()
+		const base = join(workspace, '.worktrees', 'core-base')
+		git({ root: core, args: ['worktree', 'add', '--quiet', '-b', 'feat/base', base, 'main'] })
+		writeFiles({ root: base, files: { 'node_modules/demo/index.js': 'module.exports = "base"\n' } })
+		git({ root: core, args: ['branch', 'feat/loose'] })
+
+		const fromWorktree = runWorktreeAdd({
+			argv: [core, 'feat/child', '--from', 'feat/base'],
+			cwd: workspace,
+			now: new Date('2026-10-30T10:00:00Z'),
+			colour: false,
+		})
+		const fromMain = runWorktreeAdd({
+			argv: [core, 'feat/other', '--from', 'feat/loose'],
+			cwd: workspace,
+			now: new Date('2026-10-30T10:00:00Z'),
+			colour: false,
+		})
+
+		expect(fromWorktree.exitCode).toBe(0)
+		expect(fromMain.exitCode).toBe(0)
+		expect(
+			readFileSync(
+				join(workspace, '.worktrees', 'core-child', 'node_modules/demo/index.js'),
+				'utf8',
+			),
+		).toBe('module.exports = "base"\n')
+		expect(
+			readFileSync(
+				join(workspace, '.worktrees', 'core-other', 'node_modules/demo/index.js'),
+				'utf8',
+			),
+		).toBe('module.exports = 1\n')
 	})
 })
 

@@ -32,7 +32,7 @@ import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { Watchdog } from '../progress/run-child.types.ts'
 import type { GateStep } from './gate-config.types.ts'
-import type { StepCounts, StepLock, StepResult } from './gate.types.ts'
+import type { StepAnnouncer, StepCounts, StepLock, StepResult } from './gate.types.ts'
 
 export async function runGateSteps(params: {
 	root: string
@@ -44,6 +44,8 @@ export async function runGateSteps(params: {
 	clock?: Clock
 	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
 	watchdog?: Watchdog
+	/** Told when a step starts and with its result (a start line or a spinner); default: nothing shown. */
+	announce?: StepAnnouncer
 }): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const browserTests = runsTestsInABrowser({ root, packageJson })
@@ -70,6 +72,7 @@ export async function runGateSteps(params: {
 			results.push({ step, status: 'failed', counts: {}, restored: [], reason: lock.refusal })
 			continue
 		}
+		const finished = params.announce?.(step)
 		try {
 			const result = await runStep({
 				root,
@@ -79,6 +82,7 @@ export async function runGateSteps(params: {
 				watchdog: params.watchdog,
 			})
 			results.push(result)
+			finished?.(result)
 		} finally {
 			lock?.release()
 		}

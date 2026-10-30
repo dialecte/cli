@@ -8,6 +8,7 @@ import { explain } from './commands/explain.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
+import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
@@ -38,6 +39,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	tdd,
 	new: newVerb,
 	handover,
+	lot,
 	worktree,
 }
 
@@ -66,6 +68,7 @@ Commands:
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
+  lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case>, each with a reason
   worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
@@ -147,10 +150,13 @@ Contributing (inside a dialecte repository):
                              # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
                              # refuses files in no lot, tags, citations, a missing core.hooksPath folder
   dialecte handover run <folder> [--rehearse [--keep]]
-                             # what commit.sh runs: each guard with its time, lot n/N, the hook streamed with a
-                             # heartbeat, the card; a rerun resumes; --rehearse commits in a scratch clone
+                             # what commit.sh runs: each guard with its time, each lot announced (a spinner on
+                             # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse
+                             # commits in a scratch clone
   dialecte handover list [--root <dir>] [--json]
                              # every hand-over folder: repository, worktree, branch, lots, age, state
+  dialecte lot exempt <reason> | lot accept <case> <reason> | lot revised <case> <reason>
+                             # writes .dialecte/lot.json at the package root (tab JSON), keeping the rest
   dialecte worktree add <repository> <branch> [--from <ref>] [--json]
                              # under the workspace's .worktrees/: hooks folder, copy-on-write node_modules,
                              # hygiene baseline

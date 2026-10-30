@@ -1,4 +1,5 @@
 import type { PackageJson } from '../package-json.types.ts'
+import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { TDD_SUBCOMMANDS } from './tdd.constants.ts'
 
 /**
@@ -169,6 +170,8 @@ export type TddContext = {
 	targets: TddTargets
 	ledger: TddLedger
 	base: string
+	/** Where a vitest run announces itself (a start line or a spinner); none when not given. */
+	progress?: StepProgress
 }
 
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */

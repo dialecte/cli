@@ -10,7 +10,7 @@
  * - green: a green receipt of this very case later than its red and than the last freeze of any test code;
  * - red: otherwise.
  */
-import { PROOF_KINDS } from './tdd.constants.ts'
+import { PROOF_KINDS, TEST_FILE_PATTERN } from './tdd.constants.ts'
 
 import type {
 	CaseStatus,
@@ -29,6 +29,8 @@ export function caseStatusOf(params: {
 	testFileHash: string
 	/** sha256 of the case's name and test call now. */
 	caseHash: string
+	/** The test code the case's file depends on (helpers, fixtures); unknown: any changed helper counts. */
+	dependencies?: readonly string[]
 }): CaseStatus {
 	const { entries } = params.ledger
 	const { testCase } = params
@@ -47,7 +49,11 @@ export function caseStatusOf(params: {
 	if (proofReceipt.kind === 'unchanged') return 'unchanged'
 	if (proofReceipt.kind === 'accepted') return 'accepted'
 	if (proofReceipt.kind === 'revised') return 'revised'
-	const lastFreeze = lastIndexOf({ entries, matches: (entry) => entry.kind === 'freeze' })
+	const lastFreeze = lastInvalidatingFreeze({
+		entries,
+		file: testCase.file,
+		dependencies: params.dependencies,
+	})
 	const lastGreen = lastIndexOf({
 		entries,
 		matches: (entry) =>
@@ -56,6 +62,35 @@ export function caseStatusOf(params: {
 			entry.caseHash === params.caseHash,
 	})
 	return lastGreen > proof && lastGreen > lastFreeze ? 'green' : 'red'
+}
+
+/**
+ * The last freeze that can change what a green of the case proved: it froze the case's own file or a
+ * helper the case depends on at a new hash. A freeze of another test file (the next step's), or of the
+ * same file at the same hash, does not.
+ */
+function lastInvalidatingFreeze(params: {
+	entries: readonly TddEntry[]
+	file: string
+	dependencies: readonly string[] | undefined
+}): number {
+	const { entries, dependencies } = params
+	const frozen = new Map<string, string>()
+	let last = -1
+	for (const [index, entry] of entries.entries()) {
+		if (entry.kind !== 'freeze') continue
+		// a re-freeze at the same hash (a red run that kept the file) changes nothing it proved
+		const invalidates = Object.entries(entry.files).some(
+			([file, hash]) =>
+				(file === params.file ||
+					(!TEST_FILE_PATTERN.test(file) &&
+						(dependencies === undefined || dependencies.includes(file)))) &&
+				frozen.get(file) !== hash,
+		)
+		if (invalidates) last = index
+		for (const [file, hash] of Object.entries(entry.files)) frozen.set(file, hash)
+	}
+	return last
 }
 
 /** The hash of a test-code file at the last red run that froze it; undefined before any. */

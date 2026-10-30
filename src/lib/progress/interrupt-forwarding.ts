@@ -14,6 +14,16 @@ import type { InterruptInFlight } from './run-child.types.ts'
 /** Each live group (its leader's pid) and the grace it gets between the signal and SIGKILL. */
 const liveGroups = new Map<number, number>()
 let interrupt: InterruptInFlight | undefined
+/** What runs just before this process ends by a forwarded signal (a live region left on its own line). */
+const signalExitHooks = new Set<() => void>()
+
+/** Runs `hook` just before this process ends by a forwarded signal; the answer removes it. */
+export function onSignalExit(hook: () => void): () => void {
+	signalExitHooks.add(hook)
+	return function remove() {
+		signalExitHooks.delete(hook)
+	}
+}
 
 /** Watches a child's process group until the returned release is called. */
 export function watchProcessGroup(params: { group: number; grace: number }): () => void {
@@ -50,6 +60,7 @@ function forward(signal: NodeJS.Signals): void {
 	const alone = process.listenerCount(signal) === 1
 	void stopLiveGroups(signal).then(function endLikeTheSignal() {
 		if (alone) {
+			for (const hook of signalExitHooks) hook()
 			for (const forwarded of FORWARDED_SIGNALS) process.off(forwarded, forward)
 			process.kill(process.pid, signal)
 			return

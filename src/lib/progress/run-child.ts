@@ -7,6 +7,7 @@
  */
 import { spawn } from 'node:child_process'
 import { constants } from 'node:os'
+import { StringDecoder } from 'node:string_decoder'
 
 import { formatDuration } from './format-duration.ts'
 import { isInterrupted, watchProcessGroup } from './interrupt-forwarding.ts'
@@ -30,8 +31,8 @@ export function runChild(params: {
 	environment?: Record<string, string>
 	/** Each line the child prints, on either stream, as it comes. */
 	onLine?: (line: string) => void
-	/** Each time the child prints anything, a line or a part of one (a progress `\r`). */
-	onOutput?: () => void
+	/** Each time the child prints anything, a line or a part of one (a progress `\r`), with that text. */
+	onOutput?: (text: string) => void
 	/** The child's pid, which is also its process group: the caller can stop the group on an interrupt. */
 	onProcessGroup?: (pid: number) => void
 	/** Default: the system clock. */
@@ -75,6 +76,8 @@ export function runChild(params: {
 		let previousCpu: Map<number, number> | undefined
 		let timer: ClockTimer | undefined
 		const pending = { stdout: '', stderr: '' }
+		// one decoder per stream: a character split across two chunks stays whole
+		const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
 
 		function settle(result: StreamedCommand): void {
 			if (settled) return
@@ -89,13 +92,18 @@ export function runChild(params: {
 			if (during) void during.handled.then(() => resolvePromise(result))
 			else resolvePromise(result)
 		}
-		function receive(received: { stream: 'stdout' | 'stderr'; chunk: Buffer }): void {
+		function receive(
+			received:
+				| { stream: 'stdout' | 'stderr'; chunk: Buffer }
+				| { stream: 'stdout' | 'stderr'; text: string },
+		): void {
 			if (settled || stopping) return
-			const { stream, chunk } = received
-			const text = chunk.toString('utf8')
-			output += text
+			const { stream } = received
+			const text = 'text' in received ? received.text : decoders[stream].write(received.chunk)
 			lastActivity = clock.now()
-			params.onOutput?.()
+			if (text === '') return
+			output += text
+			params.onOutput?.(text)
 			const lines = (pending[stream] + text).split(/\r?\n/)
 			pending[stream] = lines.pop() ?? ''
 			for (const line of lines) params.onLine?.(line)
@@ -165,6 +173,9 @@ export function runChild(params: {
 			settle({ exitCode: 127, output: `${output}${error.message}\n` })
 		})
 		child.on('close', function closed(code) {
+			// the bytes a decoder still holds (an incomplete character at the very end)
+			for (const stream of ['stdout', 'stderr'] as const)
+				receive({ stream, text: decoders[stream].end() })
 			if (!stopping) settle({ exitCode: code ?? 1, output })
 		})
 		// a closed stdin: a child that reads it gets the given text, then end-of-file - never a wait

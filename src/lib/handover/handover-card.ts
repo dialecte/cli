@@ -1,11 +1,22 @@
 /** The hand-over card: what is committed where, the gates run, and the command, before and after the run. */
+import { spawnSync } from 'node:child_process'
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { readAcceptances, readRevisions, readTddExemption } from '../tdd/lot-declaration.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
 import { countChangedFiles, readLedger, resolveBase } from '../tdd/tdd-files.ts'
-import { COMMIT_SCRIPT_FILE } from './handover.constants.ts'
+import {
+	COMMIT_SCRIPT_FILE,
+	HANDOVER_PROBE_ANSWER,
+	HANDOVER_PROBE_COMMAND,
+	HANDOVER_PROBE_FOLDER_PREFIX,
+	HANDOVER_PROBE_TIMEOUT_MILLISECONDS,
+} from './handover.constants.ts'
 import { commitSizeOf, workingTreeSizeOf } from './lot-size.ts'
 
 import type { Card } from '../card/card.types.ts'
@@ -24,9 +35,19 @@ export function buildHandoverCard(params: {
 	lots: readonly ResolvedLot[]
 	/** The commits of the lots committed already, the first lot first. */
 	commits: readonly string[]
+	/**
+	 * The cli writing the card: its run line when the repository's own cli cannot run hand-overs
+	 * (`handover run --probe`, as `commit.sh` asks). Without it, the run line is `commit.sh`.
+	 */
+	cliPath?: string
+	/** How long the repository's cli gets to answer the probe; past it, it counts as none. Default 10 s. */
+	probeTimeout?: number
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
+	const ownCli =
+		params.cliPath === undefined ||
+		runsHandovers({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
@@ -47,7 +68,32 @@ export function buildHandoverCard(params: {
 				...(commit && { commit }),
 			}
 		}),
-		command: `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`,
+		...(params.commits.length && { tip: params.commits.at(-1) }),
+		command: ownCli
+			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
+			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
+	}
+}
+
+/** The repository installs a cli that runs hand-overs: it answers the probe `commit.sh` sends. */
+function runsHandovers(params: { root: string; timeout: number }): boolean {
+	const [command, ...args] = HANDOVER_PROBE_COMMAND
+	// the answer goes to a file, not a pipe: a process the probe left behind cannot hold the wait open
+	const folder = mkdtempSync(join(tmpdir(), HANDOVER_PROBE_FOLDER_PREFIX))
+	const answerPath = join(folder, 'answer.txt')
+	const answer = openSync(answerPath, 'w')
+	try {
+		const probe = spawnSync(command, args, {
+			cwd: params.root,
+			stdio: ['ignore', answer, 'ignore'],
+			timeout: params.timeout,
+			killSignal: 'SIGKILL',
+		})
+		// a probe that times out is a cli that cannot be trusted to run the hand-over
+		return probe.status === 0 && readFileSync(answerPath, 'utf8').includes(HANDOVER_PROBE_ANSWER)
+	} finally {
+		closeSync(answer)
+		rmSync(folder, { recursive: true, force: true })
 	}
 }
 
@@ -156,7 +202,14 @@ export function handoverCardRows(card: HandoverCard): Card {
 			{ label: 'repository', lines: [card.repository] },
 			{ label: 'worktree', lines: [card.worktree] },
 			{ label: 'branch', lines: [card.branch] },
-			{ label: 'HEAD', lines: [card.head.slice(0, 12)] },
+			{
+				label: 'HEAD',
+				lines: [
+					card.tip && card.tip !== card.head
+						? `${card.head.slice(0, 12)} → ${card.tip.slice(0, 12)}`
+						: card.head.slice(0, 12),
+				],
+			},
 			{ label: 'gates', lines: card.gates.split(/\r?\n/) },
 			...(card.tdd ? [{ label: 'tdd', lines: card.tdd.split('\n') }] : []),
 			{
@@ -165,7 +218,8 @@ export function handoverCardRows(card: HandoverCard): Card {
 					cells.map((cell, column) => (column < 4 ? cell.padEnd(widths[column]) : cell)).join('  '),
 				),
 			},
-			{ label: 'run', lines: [card.command] },
+			// the command is printed whole under the box: a wrapped one cannot be copied
+			{ label: 'run', lines: ['see below'] },
 		],
 	}
 }

@@ -30,5 +30,8 @@ export type StepResult = {
 	details?: string[]
 }
 
+/** Announces a step about to run (after its lock); answers what to call with its result once it ran. */
+export type StepAnnouncer = (step: GateStep) => (result: StepResult) => void
+
 /** Takes the machine lock for a heavy step: a release, or why the step cannot run. */
 export type StepLock = (step: GateStep) => { release(): void } | { refusal: string }

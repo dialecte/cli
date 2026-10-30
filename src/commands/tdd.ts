@@ -24,6 +24,9 @@ import {
 	machineLockPath,
 } from '../lib/machine-lock/machine-lock.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { formatDuration } from '../lib/progress/format-duration.ts'
+import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
+import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { frozenHashOf, receiptsOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
@@ -66,6 +69,7 @@ import { findOnlyMarkers } from '../lib/tdd/test-source.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { WriteLine } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
+import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
 	CaseFailure,
@@ -79,7 +83,12 @@ import type {
 } from '../lib/tdd/tdd.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = await runTdd({ cwd: process.cwd(), argv, now: () => new Date() })
+	const result = await runTdd({
+		cwd: process.cwd(),
+		argv,
+		now: () => new Date(),
+		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
+	})
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
@@ -87,6 +96,8 @@ export async function run(argv: string[]): Promise<void> {
 export async function runTdd(params: {
 	cwd: string
 	argv: string[]
+	/** Where the start line (or spinner) of the vitest run goes while it runs. */
+	live?: LiveOutput
 	/** The time a receipt records. */
 	now: () => Date
 	/** The machine lock a browser package's runs take: its file, the clock it waits with, where its lines go. */
@@ -127,6 +138,9 @@ export async function runTdd(params: {
 			targets: parseTargets(words),
 			ledger,
 			base,
+			...(params.live && {
+				progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
+			}),
 		}
 		if (subcommand === 'red') return await runRed(context)
 		if (subcommand === 'green') return await runGreen(context)
@@ -173,7 +187,11 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	if ('failure' in revisions) return { exitCode: 1, output: `tdd red: ${revisions.failure}` }
 	const runnable = files.filter((file) => !focused.includes(file))
 	const modules = runnable.length
-		? await runTestCases({ root, files: runnable.map((file) => file.file), filter: 'all' })
+		? await announcedRun({
+				context,
+				subcommand: 'red',
+				files: runnable.map((file) => file.file),
+			})
 		: []
 	if ('failure' in modules) return { exitCode: 1, output: `tdd red: ${modules.failure}` }
 	const { cases, unlisted } = readRunCases({
@@ -420,7 +438,11 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 			exitCode: 1,
 			output: 'tdd green: no test file new or changed since the base (or among the files named)',
 		}
-	const modules = await runTestCases({ root, files: files.map((file) => file.file), filter: 'all' })
+	const modules = await announcedRun({
+		context,
+		subcommand: 'green',
+		files: files.map((file) => file.file),
+	})
 	if ('failure' in modules) return { exitCode: 1, output: `tdd green: ${modules.failure}` }
 	const { cases, unlisted } = readRunCases({
 		root,
@@ -530,6 +552,26 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 			? lines.join('\n')
 			: 'tdd status: no test code new or changed since the base',
 	}
+}
+
+/** Every case of the files, run by vitest, the run announced first (a start line or a spinner). */
+async function announcedRun(params: {
+	context: TddContext
+	subcommand: TddSubcommand
+	files: string[]
+}): Promise<Awaited<ReturnType<typeof runTestCases>>> {
+	const { context, files } = params
+	const clock = createSystemClock()
+	const startedAt = clock.now()
+	const running = context.progress?.start({
+		name: `tdd ${params.subcommand}: vitest`,
+		detail: `${files.length} test file(s)`,
+	})
+	const modules = await runTestCases({ root: context.root, files, filter: 'all' })
+	running?.finish(
+		`${'failure' in modules ? '✗' : '✓'} tdd ${params.subcommand}: vitest ran ${files.length} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
+	)
+	return modules
 }
 
 /** A refusal of a whole file (it cannot run, or holds a focus marker), kept in the ledger. */

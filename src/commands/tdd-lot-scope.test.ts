@@ -731,3 +731,69 @@ describe('tdd on what cannot be measured', { timeout: 240_000 }, () => {
 		expect(status.output).toMatch(/^tdd status: .*commit/i)
 	})
 })
+
+describe('a green case after the next file is red', { timeout: 240_000 }, () => {
+	async function statusLines(root: string): Promise<string[]> {
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		return (JSON.parse(status.output) as { cases: { name: string; status: string }[] }).cases.map(
+			(line) => `${line.status}  ${line.name}`,
+		)
+	}
+
+	it('add green, then sub red → add stays green; its helper edited then add re-red → add is red again', async () => {
+		const root = createVitestPackage({
+			files: { 'test/expected.ts': 'export const EXPECTED = 3\n' },
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': ADD_STUB,
+				'src/add.test.ts': ADD_TEST.replace(
+					"import { add } from './add.ts'",
+					"import { add } from './add.ts'\nimport { EXPECTED } from '../test/expected.ts'",
+				).replace('toBe(3)', 'toBe(EXPECTED)'),
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), ADD)
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+
+		await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+		const afterSub = await statusLines(root)
+		writeFileSync(join(root, 'test/expected.ts'), 'export const EXPECTED = 4\n')
+		await tdd({ cwd: root, argv: ['red', 'src/add.test.ts'] })
+		const afterHelper = await statusLines(root)
+
+		expect(afterSub).toEqual([
+			'green  add > one plus two → three',
+			'red  sub > three minus one → two',
+		])
+		expect(afterHelper[0]).toBe('red  add > one plus two → three')
+	})
+
+	it('add green, then `tdd red` with no arguments (add kept, sub red) → add stays green; its assertion edited, red then green → add goes through red again', async () => {
+		const root = createVitestPackage({})
+		writeFiles({ root, files: { 'src/add.ts': ADD_STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), ADD)
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+
+		await tdd({ cwd: root, argv: ['red'] })
+		const afterSub = await statusLines(root)
+		writeFileSync(join(root, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(5)'))
+		await tdd({ cwd: root, argv: ['red'] })
+		const afterEdit = await statusLines(root)
+		writeFileSync(join(root, 'src/add.ts'), ADD.replace('left + right', 'left + right + 2'))
+		await tdd({ cwd: root, argv: ['green'] })
+		const afterFix = await statusLines(root)
+
+		expect(afterSub).toEqual([
+			'green  add > one plus two → three',
+			'red  sub > three minus one → two',
+		])
+		expect(afterEdit[0]).toBe('red  add > one plus two → three')
+		expect(afterFix[0]).toBe('green  add > one plus two → three')
+	})
+})

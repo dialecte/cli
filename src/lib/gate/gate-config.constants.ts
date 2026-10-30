@@ -31,3 +31,6 @@ export const FAILED_OUTPUT_TAIL_LINES = 30
 export const NO_AFFECTED_TEST_PATTERN = /^No test files found/m
 
 export const NO_AFFECTED_TEST_NOTE = 'no test file is affected by the change'
+
+/** Before each line shown under a step's line (the tdd step's flags, deleted cases). */
+export const STEP_DETAIL_INDENT = '        '

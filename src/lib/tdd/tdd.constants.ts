@@ -163,3 +163,9 @@ export const HOLE_TOKEN = '<hole>'
 
 /** Comments a tool reads, compared like code: a test environment, a bundler hint. */
 export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
+
+/** What `dialecte lot` writes. */
+export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised']
+
+export const LOT_USAGE =
+	'exempt <reason> | accept <case> <reason> | revised <case> <reason> (writes .dialecte/lot.json at the package root)'

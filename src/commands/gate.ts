@@ -14,6 +14,7 @@
 import { resolve } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
+import { STEP_DETAIL_INDENT } from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { renderStepCounts } from '../lib/gate/step-counts.ts'
@@ -24,6 +25,8 @@ import {
 	machineLockPath,
 } from '../lib/machine-lock/machine-lock.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
+import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
@@ -35,9 +38,14 @@ import type { GateMode, StepLock, StepResult } from '../lib/gate/gate.types.ts'
 import type { WriteLine } from '../lib/handover/handover.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
+import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = await runGate({ cwd: process.cwd(), argv })
+	const result = await runGate({
+		cwd: process.cwd(),
+		argv,
+		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
+	})
 	console.log(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
@@ -45,6 +53,8 @@ export async function run(argv: string[]): Promise<void> {
 export async function runGate(params: {
 	cwd: string
 	argv: string[]
+	/** Where each step's start line (or spinner) goes while it runs; the result is returned at the end. */
+	live?: LiveOutput
 	/** The machine lock: its file, the clock it waits with, where its waiting lines go. */
 	machineLock?: { path: string; clock: Clock; write: WriteLine; isAlive?: (pid: number) => boolean }
 }): Promise<CommandResult> {
@@ -85,8 +95,27 @@ export async function runGate(params: {
 		return lockFor(`dialecte gate --${mode} (${step.name}) in ${resolve(cwd)}`)
 	}
 
+	const shownLive = new Set<StepResult>()
+	const progress = params.live
+		? createStepProgress({ live: params.live, clock: createSystemClock() })
+		: undefined
+	const { live } = params
+	/** The step's line (and the lines under it), live, in run order. */
+	function showLive(shown: { result: StepResult; running?: RunningStep }): void {
+		const lines = [
+			renderStepLine(shown.result),
+			...(shown.result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+		]
+		if (shown.running) shown.running.finish(...lines)
+		else for (const line of lines) live?.writeLine(line)
+		shownLive.add(shown.result)
+	}
 	const results: StepResult[] = []
-	if (mode === 'fast') results.push(hygieneStep({ cwd, declared: declaredPaths(argv) }))
+	if (mode === 'fast') {
+		const hygiene = hygieneStep({ cwd, declared: declaredPaths(argv) })
+		results.push(hygiene)
+		if (progress) showLive({ result: hygiene })
+	}
 	const gateLock = mode === 'full' ? lockFor(`dialecte gate --full in ${resolve(cwd)}`) : undefined
 	if (gateLock && 'refusal' in gateLock)
 		results.push({
@@ -99,6 +128,7 @@ export async function runGate(params: {
 	try {
 		if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
 		else {
+			const running = progress?.start({ name: TDD_STEP.name, detail: 'the receipts of the change' })
 			const tdd = await tddStep({
 				cwd,
 				packageJson,
@@ -110,10 +140,24 @@ export async function runGate(params: {
 						: { release: () => undefined },
 			})
 			results.push(tdd)
+			if (running) showLive({ result: tdd, running })
 		}
 		if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
 		else {
-			const stepResults = await runGateSteps({ root: cwd, steps, packageJson, lockStep })
+			const stepResults = await runGateSteps({
+				root: cwd,
+				steps,
+				packageJson,
+				lockStep,
+				...(progress && {
+					announce: function announce(step) {
+						const running = progress.start({ name: step.name, detail: step.run })
+						return function finished(result) {
+							showLive({ result, running })
+						}
+					},
+				}),
+			})
 			results.push(...stepResults)
 		}
 	} finally {
@@ -130,10 +174,13 @@ export async function runGate(params: {
 	return {
 		exitCode,
 		output: [
-			...results.flatMap((result) => [
-				renderStepLine(result),
-				...(result.details ?? []).map((line) => `        ${line}`),
-			]),
+			// on a terminal a step's line is on the screen already: the summary does not repeat it
+			...results
+				.filter((result) => !(params.live?.tty && shownLive.has(result)))
+				.flatMap((result) => [
+					renderStepLine(result),
+					...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+				]),
 			failed ? `gate --${mode}: failed at ${failed.step.name}` : `gate --${mode}: green`,
 			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
 		].join('\n'),
