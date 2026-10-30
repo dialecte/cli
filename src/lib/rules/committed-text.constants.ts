@@ -11,8 +11,13 @@ import type { ReferencePattern } from './committed-text.types.ts'
 export const GENERIC_REFERENCE_PATTERNS: readonly ReferencePattern[] = [
 	{ label: 'plan tag', source: '\\blot [A-Z0-9]' },
 	{ label: 'acceptance criterion', source: '\\bAC[0-9]' },
-	// digits up to a word boundary: `#1234ab`, a colour, is not a ticket
-	{ label: 'ticket number', source: '#[0-9]{3,}\\b' },
+	// digits up to a word boundary: `#1234ab`, a colour, is not a ticket; nor a hash glued to a word
+	// (`abc#123`) or ending a character reference (`&#160;`)
+	{
+		label: 'ticket number',
+		source: '(^|[^&A-Za-z0-9_])#[0-9]{3,}\\b',
+		leadingBoundary: true,
+	},
 	{ label: 'section citation', source: '§ ?[0-9]' },
 	{ label: 'table citation', source: 'Tables? [0-9]' },
 	{ label: 'annex citation', source: 'Annex [A-Z]' },

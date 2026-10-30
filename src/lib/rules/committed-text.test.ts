@@ -51,6 +51,45 @@ describe('findReferences', () => {
 	})
 })
 
+describe('the ticket number pattern', () => {
+	const HASH = '#'
+	const TICKET = GENERIC_REFERENCE_PATTERNS.filter((pattern) => pattern.label === 'ticket number')
+
+	// built from parts, so this file never matches the pattern it tests
+	const ROWS: Record<string, { text: string; finding: boolean }> = {
+		'an XML decimal character reference → no finding': { text: `&${HASH}160;`, finding: false },
+		'an XML hexadecimal character reference → no finding': {
+			text: `&${HASH}x00A0;`,
+			finding: false,
+		},
+		'a character reference inside a word → no finding': {
+			text: `a&${HASH}8203;b`,
+			finding: false,
+		},
+		'a ticket after a space → a finding': { text: `see ${HASH}160`, finding: true },
+		'a ticket in parentheses → a finding': { text: `(${HASH}3253)`, finding: true },
+		'a ticket before a full stop → a finding': { text: `fixes ${HASH}1234.`, finding: true },
+		'a number glued to a word (no boundary before the hash) → no finding': {
+			text: `abc${HASH}123`,
+			finding: false,
+		},
+	}
+
+	for (const [name, row] of Object.entries(ROWS))
+		it(`${name}, read the same by grep -E`, () => {
+			const sample = join(temporaryFolder('dialecte-references-'), 'sample.txt')
+			writeFileSync(sample, `${row.text}\n`)
+
+			const found = findReferences({ text: row.text, patterns: TICKET }).length > 0
+			const grep = spawnSync('grep', ['-E', TICKET[0].source, sample], { encoding: 'utf8' })
+
+			expect({ found, grepFound: grep.status === 0 }).toEqual({
+				found: row.finding,
+				grepFound: row.finding,
+			})
+		})
+})
+
 describe('readReferencePatterns', () => {
 	it('a package declaring patterns → the generic ones, then its own', () => {
 		const root = temporaryFolder('dialecte-references-')

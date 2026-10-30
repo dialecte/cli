@@ -4,6 +4,11 @@ export type ReferencePattern = {
 	label: string
 	/** An extended regular expression both JavaScript and `grep -E` read the same way. */
 	source: string
+	/**
+	 * Its first group is the boundary before the reference (`grep -E` has no lookbehind): a match is
+	 * reported from the end of that group.
+	 */
+	leadingBoundary?: boolean
 }
 
 export type ReferenceMatch = {

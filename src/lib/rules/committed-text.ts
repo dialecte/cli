@@ -14,12 +14,21 @@ export function findReferences(params: {
 	const expressions = params.patterns.map((pattern) => ({
 		label: pattern.label,
 		expression: new RegExp(pattern.source, 'g'),
+		leadingBoundary: pattern.leadingBoundary ?? false,
 	}))
 	const matches: ReferenceMatch[] = []
 	for (const [index, line] of params.text.split(/\r?\n/).entries())
-		for (const { label, expression } of expressions)
-			for (const match of line.matchAll(expression))
-				matches.push({ line: index + 1, column: match.index + 1, text: match[0], label })
+		for (const { label, expression, leadingBoundary } of expressions)
+			for (const match of line.matchAll(expression)) {
+				// the boundary character before the reference is not part of it
+				const skipped = leadingBoundary ? (match[1]?.length ?? 0) : 0
+				matches.push({
+					line: index + 1,
+					column: match.index + skipped + 1,
+					text: match[0].slice(skipped),
+					label,
+				})
+			}
 	return matches.sort((left, right) => left.line - right.line || left.column - right.column)
 }
 
