@@ -282,37 +282,56 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		)
 	})
 
-	it('receipts carrying flags in the worktree → the card lists them for the reviewer', () => {
+	/** A ledger of `count` red receipts of distinct cases, each carrying `flags`. */
+	function flaggedLedger(params: { count: number; flags: string[] }): string {
+		return JSON.stringify({
+			version: 3,
+			entries: Array.from({ length: params.count }, (_unused, index) => ({
+				kind: 'red',
+				file: 'src/read.test.ts',
+				name: `read > answers ${index}`,
+				project: '',
+				testFileHash: 'h',
+				caseHash: 'c',
+				productionHash: 'p',
+				flags: params.flags,
+				at: '2026-10-29T12:00:00.000Z',
+			})),
+		})
+	}
+
+	it('57 cases flagged with one kind → the card says the count and where the list is, no line per case', () => {
 		const { root, lotsPath } = prepare()
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
-			JSON.stringify({
-				version: 3,
-				entries: [
-					{
-						kind: 'red',
-						file: 'src/read.test.ts',
-						name: 'read > answers one',
-						project: '',
-						testFileHash: 'h',
-						caseHash: 'c',
-						productionHash: 'p',
-						flags: ['rollback', 'red after green'],
-						at: '2026-10-29T12:00:00.000Z',
-					},
-				],
-			}),
+			flaggedLedger({ count: 57, flags: ['test code changed around it'] }),
 		)
 
-		const result = writeHandover({ lotsPath })
+		const lines = writeHandover({ lotsPath }).output.split('\n')
 
-		expect(result.output.split('\n')).toEqual(
+		expect(lines).toEqual(
 			expect.arrayContaining([
 				expect.stringMatching(
-					/^│ tdd {9}flag: src\/read\.test\.ts::read > answers one \(rollback, red after green\) +│$/,
+					/^│ tdd {9}57 flags: test code changed around it - dialecte tdd status --flags for the list +│$/,
 				),
 			]),
 		)
+		expect(lines.filter((line) => line.includes('flag: src/'))).toEqual([])
+	})
+
+	it('flags of two kinds → each kind with its count in the tdd row, still no line per case', () => {
+		const { root, lotsPath } = prepare()
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			flaggedLedger({ count: 3, flags: ['rollback', 'red after green'] }),
+		)
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(output).toMatch(/rollback[^\n]*3|3[^\n]*rollback/)
+		expect(output).toMatch(/red after green[^\n]*3|3[^\n]*red after green/)
+		expect(output).toContain('dialecte tdd status --flags')
+		expect(output.split('\n').filter((line) => line.includes('flag: src/'))).toEqual([])
 	})
 
 	it('a case the lot accepts and a red run accepted → on the card with its reason', () => {
@@ -1366,14 +1385,23 @@ describe(
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
 		it('a width of 40 → the box wraps, and the run command stays whole on one line outside it', async () => {
-			const { out } = prepareWithHook('true')
+			const { root, lotsPath, out } = prepare()
+			installHook({
+				root,
+				script: 'git diff --cached --name-only | grep -q CHANGELOG.md && exit 1\nexit 0',
+			})
+			writeFileSync(
+				lotsPath,
+				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+			)
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 			const terminal = createFakeTerminal({ tty: true, columns: 40 })
 
 			const exitCode = await runLive({ out, live: terminal.output })
 
 			const lines = terminal.screen().flatMap((line) => line.split('\n'))
 			const box = lines.filter((line) => /^[┌│└]/.test(line))
-			expect(exitCode).toBe(0)
+			expect(exitCode).toBe(1)
 			expect(box.filter((line) => line.length > 40)).toEqual([])
 			expect(lines.some((line) => line.includes("handover run '") && line.length > 40)).toBe(true)
 		})
@@ -1590,6 +1618,58 @@ describe(
 			expect(warnings).toHaveLength(1)
 			expect(warnings[0]).toMatch(/and \d+ more/)
 			expect(warnings[0].length).toBeLessThan(600)
+		})
+	},
+)
+
+describe(
+	'handover run: the card after every lot is committed',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('the run row says done and the command is not repeated; a hand-over not run yet still shows the command', async () => {
+			const { lotsPath, out } = prepare()
+
+			const pending = writeHandover({ lotsPath })
+			const ran = await runFolder({ out })
+
+			expect(pending.output).toMatch(/handover run '|bash commit\.sh/)
+			expect(ran.exitCode).toBe(0)
+			expect(ran.lines.find((line) => line.startsWith('│ run ')) ?? '').toMatch(
+				/^│ run {9}done +│$/,
+			)
+			expect(ran.lines.some((line) => /handover run '|bash commit\.sh/.test(line))).toBe(false)
+		})
+
+		it('a hook refusing the second of two lots → the hand-over is partly committed: the card still shows the run command, not done', async () => {
+			const { root, lotsPath, out } = prepare()
+			installHook({
+				root,
+				script: 'git diff --cached --name-only | grep -q CHANGELOG.md && exit 1\nexit 0',
+			})
+			writeFileSync(
+				lotsPath,
+				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+			)
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+			const ran = await runFolder({ out })
+
+			expect(ran.exitCode).toBe(1)
+			expect(ran.lines.find((line) => line.startsWith('│ run ')) ?? '').not.toMatch(/done/)
+			expect(ran.lines.some((line) => /handover run '|bash commit\.sh/.test(line))).toBe(true)
+		})
+
+		it('run again when every lot is committed already → the card still says done', async () => {
+			const { lotsPath, out } = prepare()
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			await runFolder({ out })
+
+			const again = await runFolder({ out })
+
+			expect(again.exitCode).toBe(0)
+			expect(again.lines.find((line) => line.startsWith('│ run ')) ?? '').toMatch(
+				/^│ run {9}done +│$/,
+			)
 		})
 	},
 )

@@ -403,6 +403,29 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
+	it('status --flags → only the flagged cases, one line each with their flags', async () => {
+		const root = createVitestPackage({})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFileSync(join(root, 'src/add.ts'), STUB)
+		writeFileSync(
+			join(root, 'src/add.test.ts'),
+			ADD_TEST.replace(
+				/\}\)\n$/,
+				"\tit('two plus two → four', () => { expect(add(2, 2)).toBe(4) })\n})\n",
+			),
+		)
+		await tdd({ cwd: root, argv: ['red'] })
+
+		const flagged = await tdd({ cwd: root, argv: ['status', '--flags'] })
+
+		expect(flagged.output.split('\n')).toEqual([
+			'red  src/add.test.ts::add > one plus two → three  flags: rollback',
+		])
+	})
+
 	it('a green case made red again by its own test, production as at its green → flagged red after green', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })

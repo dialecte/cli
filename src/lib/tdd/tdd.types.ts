@@ -166,6 +166,8 @@ export type TddContext = {
 	root: string
 	packageJson: PackageJson
 	json: boolean
+	/** `status --flags`: only the cases whose receipts carry a flag. */
+	flagsOnly: boolean
 	now: () => Date
 	targets: TddTargets
 	ledger: TddLedger

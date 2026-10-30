@@ -1,7 +1,8 @@
 /**
  * The guards `handover run` checks before its first commit, each announced on one line with its result
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
- * an empty index, the files against the reviewed snapshot, the deleted files, files outside the lots,
+ * the merge lots (none in progress, trees recorded, resolutions as reviewed), an empty index, the files
+ * against the reviewed snapshot, the deleted files, files outside the lots,
  * and plan tags or standard citations in the lots' files and messages.
  */
 import { spawnSync } from 'node:child_process'
@@ -16,16 +17,29 @@ import { shellQuote } from '../shell-quote.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import { GUARD_NAME_WIDTH, HANDOVER_FILES } from './handover.constants.ts'
+import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
+import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { hashFile } from './write-handover.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
-import type { GuardedRun, GuardVerdict, HandoverFolder, WriteLine } from './handover.types.ts'
+import type {
+	GuardedRun,
+	GuardVerdict,
+	HandoverFolder,
+	MergeLot,
+	ResolvedLot,
+	WriteLine,
+} from './handover.types.ts'
 
 /** The run's HEAD and the lots committed already; undefined when a guard refused (its lines written). */
 export function checkHandoverGuards(params: {
 	handover: HandoverFolder
 	write: WriteLine
 	clock: Clock
+	/** A rehearsal: a merge lot may lack its tree (the rehearsal prints it). */
+	rehearsal?: boolean
+	/** `--resume-merge`: a merge of the next lot's tip in progress, even someone else's, is aborted and redone. */
+	resumeMerge?: boolean
 }): GuardedRun | undefined {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -44,6 +58,19 @@ export function checkHandoverGuards(params: {
 		{
 			name: 'lots',
 			check: function lotsAsReviewed() {
+				if (lots.some((lot) => lot.merge) && handover.mergesHash === undefined)
+					return {
+						ok: false,
+						detail: `${HANDOVER_FILES.mergesHash} is missing: write it again with --rehash after a review`,
+					}
+				const mergesAsReviewed =
+					handover.mergesHash === undefined ||
+					hashFile(join(handover.folder, HANDOVER_FILES.merges)) === handover.mergesHash
+				if (!mergesAsReviewed)
+					return {
+						ok: false,
+						detail: `${HANDOVER_FILES.merges} changed since the hand-over was written: \`dialecte handover --rehash <lots.json>\` after a review`,
+					}
 				return hashFile(join(handover.folder, HANDOVER_FILES.lots)) === handover.lotsHash
 					? { ok: true, detail: `${lots.length} lot(s) as reviewed` }
 					: {
@@ -105,6 +132,22 @@ export function checkHandoverGuards(params: {
 				}
 			},
 		},
+		...(lots.some((lot) => lot.merge)
+			? [
+					{
+						name: 'merges',
+						check: function mergesAsReviewed(): GuardVerdict {
+							return checkMerges({
+								root,
+								lots,
+								committed: run.commits.length,
+								rehearsal: params.rehearsal ?? false,
+								resumeMerge: params.resumeMerge ?? false,
+							})
+						},
+					},
+				]
+			: []),
 		{
 			name: 'index',
 			check: function nothingStaged() {
@@ -181,6 +224,12 @@ export function checkHandoverGuards(params: {
 			},
 		},
 	]
+	// an install a signal or a crash interrupted left the working package files in a backup
+	const leftover = existsSync(root) ? restoreLeftoverBackup(root) : undefined
+	if (leftover) {
+		write(`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`)
+		if (!leftover.ok) return undefined
+	}
 	for (const { name, check } of guards) {
 		const startedAt = clock.now()
 		const verdict = check()
@@ -191,6 +240,74 @@ export function checkHandoverGuards(params: {
 		if (!verdict.ok) return undefined
 	}
 	return run
+}
+
+/**
+ * The merge lots still to commit: no merge of something else in progress (one of the next lot's own tip,
+ * left by a stopped run, is aborted to be redone), each one's tree recorded (a real run), each resolution
+ * as reviewed; a branch moved since its tip was reviewed is a note: the recorded tip is merged.
+ */
+function checkMerges(params: {
+	root: string
+	lots: readonly ResolvedLot[]
+	committed: number
+	rehearsal: boolean
+	resumeMerge: boolean
+}): GuardVerdict {
+	const { root, lots } = params
+	const pending = lots
+		.map((lot, index) => ({ merge: lot.merge, number: index + 1 }))
+		.slice(params.committed)
+		.filter((entry): entry is { merge: MergeLot; number: number } => entry.merge !== undefined)
+	const notes: string[] = []
+	const inProgress = commitOf({ root, revision: 'MERGE_HEAD' })
+	// a marker without a merge (a crash before git merge) must not vouch for a later merge by hand
+	if (!inProgress) removeMergeMarker(root)
+	if (inProgress) {
+		const ours = readMergeMarker(root) === inProgress
+		const nextTip = lots[params.committed]?.merge?.tip
+		// only a merge of the next lot's tip that this cli started (or `--resume-merge`) is redone
+		if (inProgress !== nextTip || !(ours || params.resumeMerge))
+			return {
+				ok: false,
+				detail: `a merge of ${inProgress.slice(0, 12)} is in progress${inProgress === nextTip ? ', not started by this cli' : ''}: left as it is; finish it, or abort it (git merge --abort) and run again${inProgress === nextTip ? ', or run again with --resume-merge to abort and redo it' : ''}`,
+			}
+		readGit({ root, args: ['merge', '--abort'] })
+		removeMergeMarker(root)
+		notes.push(
+			`the merge of lot ${params.committed + 1} left in progress (${ours ? 'by an earlier run' : '--resume-merge'}): aborted, redone`,
+		)
+	}
+	for (const { merge, number } of pending) {
+		if (!merge.tree && !params.rehearsal)
+			return {
+				ok: false,
+				detail: `lot ${number}: tree not recorded: rehearse first (\`--rehearse\` prints it), add it as "tree" to the lot, then \`dialecte handover --rehash\``,
+			}
+		const changed = merge.resolutions.filter(
+			(resolution) =>
+				!('removed' in resolution) &&
+				(!existsSync(resolution.file) || hashFile(resolution.file) !== resolution.sha256),
+		)
+		if (changed.length)
+			return {
+				ok: false,
+				detail: `lot ${number}: ${changed.length} resolution(s) changed since the hand-over was written: \`dialecte handover --rehash <lots.json>\` after a review`,
+				lines: changed.map(
+					(resolution) => `${resolution.path}: ${'file' in resolution ? resolution.file : ''}`,
+				),
+			}
+		const branchTip = commitOf({ root, revision: merge.branch })
+		if (branchTip !== merge.tip)
+			notes.push(
+				`lot ${number}: ${merge.branch} moved since the review (now ${branchTip?.slice(0, 12) ?? 'gone'}): the recorded tip ${merge.tip.slice(0, 12)} is merged`,
+			)
+	}
+	return {
+		ok: true,
+		detail: `${pending.length} merge(s) to commit, resolutions as reviewed`,
+		...(notes.length && { lines: notes }),
+	}
 }
 
 /** The full sha of a revision, or undefined when the repository has no such commit. */

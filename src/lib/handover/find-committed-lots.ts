@@ -1,13 +1,13 @@
 /**
  * Which lots are already committed on top of the recorded HEAD: commit after commit, each must carry the
  * next lot's message and exactly that lot's paths with the content of the working tree (the reviewed
- * snapshot). The first commit that does not is reported as foreign.
+ * snapshot); a merge lot, its subject, the recorded tip as second parent and the recorded tree. The first commit that does not is reported as foreign.
  */
 import { spawnSync } from 'node:child_process'
 
 import { readGit } from '../git.ts'
 
-import type { CommittedLots, ResolvedLot } from './handover.types.ts'
+import type { CommittedLots, MergeLot, ResolvedLot } from './handover.types.ts'
 
 export function findCommittedLots(params: {
 	root: string
@@ -52,6 +52,27 @@ export function findCommittedLots(params: {
 	return { commits: found }
 }
 
+/** A done merge: the lot's subject, the recorded tip as its second parent, the recorded tree. */
+function describeMergeMismatch(params: {
+	root: string
+	commit: string
+	lot: ResolvedLot
+	merge: MergeLot
+}): string | undefined {
+	const { root, commit, merge } = params
+	const [subject, parents, tree] = readGit({
+		root,
+		args: ['log', '-1', '--format=%s%n%P%n%T', commit],
+	}).split('\n')
+	if (subject !== params.lot.message.trim().split('\n')[0]) return 'another subject'
+	const [, second, third] = parents.split(' ')
+	if (second !== merge.tip || third !== undefined)
+		return `not a merge of the recorded tip ${merge.tip.slice(0, 12)}`
+	if (merge.tree && tree !== merge.tree)
+		return `it holds another tree than recorded: ${tree.slice(0, 12)}, recorded ${merge.tree.slice(0, 12)}`
+	return undefined
+}
+
 /** Why the commit is not the lot, or undefined when it is. */
 function describeMismatch(params: {
 	root: string
@@ -60,6 +81,7 @@ function describeMismatch(params: {
 	compareContent: boolean
 }): string | undefined {
 	const { root, commit, lot } = params
+	if (lot.merge) return describeMergeMismatch({ root, commit, lot, merge: lot.merge })
 	const message = readGit({ root, args: ['log', '-1', '--format=%B', commit] }).trim()
 	if (message !== lot.message.trim()) return 'another message'
 	const changed = readGit({

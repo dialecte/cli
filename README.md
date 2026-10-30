@@ -225,6 +225,7 @@ the answer.
   - `status` prints each case (red, green, unchanged, accepted, missing receipt, test edited after red,
     with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A ledger
     that cannot be read is refused with its path.
+  - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
   - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
     committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
     whole-branch view; `gate --full` measures from where the branch left its base branch.
@@ -303,6 +304,32 @@ the answer.
   run as they will for real; the clone is removed at the end (`--keep` keeps it), and on Ctrl-C or
   SIGTERM, with the hook and every process it started stopped. The clone's git folder holds a marker
   naming the process that made it (`dialecte-rehearsal.json`).
+- A lot of `lots.json` can be a merge (git 2.38 or later, for its trial merge):
+  `{ "kind": "merge", "branch": "<branch or tag>", "tip": "<sha>", "resolved": { "<path>": "<file>" | null }, "message": "...", "tree": "<sha>" }`
+  (`null`: the merge removes the file). The write refuses a branch that is gone or moved since its tip
+  was reviewed, a missing resolution file, a resolution holding conflict markers, a conflict of the
+  trial merge without a resolution or on a symlink or a submodule, and a file the merge changes that
+  has working-tree changes outside the resolutions. It records the conflicts and each resolution's hash
+  in `merges.json`, under the review hash like `lots.json` (`--rehash` after a review). A resolution may
+  cover a file that merges cleanly (the lot changes it on top of the merge). Rehearse first:
+  `--rehearse` prints the merge's `tree <sha>`, which goes into the lot as `tree`; a real run requires it
+  ("tree not recorded: rehearse first"). The run merges the recorded tip (`git merge --no-ff
+--no-commit`; a branch moved since is a note) and refuses a merge in progress, leaving it - except one
+  of the lot's own tip that this cli started (its marker in the git folder) or with `--resume-merge`,
+  aborted and redone. It checks the conflicts against the recorded ones, copies the resolutions
+  (hash-checked), refuses conflict markers in the result, and checks the staged tree against the recorded
+  one before the commit (else the merge is aborted) and the commit's tree after it (a hook may stage
+  files). A merge whose hook refuses it is aborted, for a clean rerun. A rerun recognises a done merge by
+  its subject, the tip as its second parent and its tree. Before any commit whose staged
+  `package-lock.json` differs from HEAD's, `node_modules` are brought to it: the staged lock and
+  `package.json` written over the working copies (the working ones saved first in the git folder's
+  `dialecte-install-backup`, put back after the install, on an interrupt too; a backup a crash left is
+  restored by the next run when the files still hold the staged bytes, else refused naming it), `npm ci`,
+  the working copies put back byte for byte;
+  refused when the install changed the staged files or the versions still differ (dev, peer and optional
+  packages an install leaves out aside). The card counts the tdd flags per kind
+  (`dialecte tdd status --flags` lists the cases), and its run row says `done` once every lot is
+  committed (the command stays for a pending or partly committed hand-over).
 - `dialecte handover list [--root <dir>] [--json]` lists every hand-over folder under the workspace's
   `_commit-plan/` (or the folder given, or the current one): repository, worktree, branch, lots, age, and
   its state - pending, partly committed, committed, or stale when something else moved the branch. A

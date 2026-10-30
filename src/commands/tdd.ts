@@ -134,6 +134,7 @@ export async function runTdd(params: {
 			root,
 			packageJson,
 			json: hasFlag(argv, 'json'),
+			flagsOnly: hasFlag(argv, 'flags'),
 			now: params.now,
 			targets: parseTargets(words),
 			ledger,
@@ -529,6 +530,17 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 	const state = await readTddState(context)
 	if ('failure' in state) return { exitCode: 1, output: `tdd status: ${state.failure}` }
 	if (context.json) return { exitCode: 0, output: JSON.stringify(state, null, 2) }
+	if (context.flagsOnly) {
+		const flagged = state.cases.filter((line) => line.flags.length)
+		return {
+			exitCode: 0,
+			output: flagged.length
+				? flagged
+						.map((line) => `${line.status}  ${caseLabel(line)}  flags: ${line.flags.join(', ')}`)
+						.join('\n')
+				: 'tdd status: no case of the change carries a flag',
+		}
+	}
 	// a test file with cases already says so on each case line
 	const listed = new Set(state.cases.map((line) => line.file))
 	const helpersUnfrozen = state.unfrozen.filter((file) => !listed.has(file))

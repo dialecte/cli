@@ -9,6 +9,7 @@ import { renderCard } from '../card/render-card.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
+import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard, handoverCardRows } from './handover-card.ts'
 import { handoverLockPath } from './handover-lock.ts'
 import { COMMIT_SCRIPT_FILE } from './handover.constants.ts'
@@ -34,14 +35,23 @@ export async function runHandoverFolder(params: {
 	columns?: number
 	/** The cli running the hand-over: the card's run line names it when the repository's own cli cannot run it. */
 	cliPath?: string
+	/** `--resume-merge`: a merge of the next lot's tip in progress, someone else's too, is aborted and redone. */
+	resumeMerge?: boolean
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
 	const startedAt = clock.now()
-	const guarded = checkHandoverGuards({ handover, write, clock })
-	if (!guarded) return 1
 	const commitRoot = params.commitRoot ?? lotsFile.repository
-	const commits = await commitLots({
+	const rehearsal = commitRoot !== lotsFile.repository
+	const guarded = checkHandoverGuards({
+		handover,
+		write,
+		clock,
+		rehearsal,
+		resumeMerge: params.resumeMerge,
+	})
+	if (!guarded) return 1
+	const committed = await commitLots({
 		root: commitRoot,
 		lots,
 		commits: guarded.commits,
@@ -51,14 +61,23 @@ export async function runHandoverFolder(params: {
 		progress: params.progress,
 		tty: params.tty,
 	})
-	if (!commits) return 1
-
-	const rehearsal = commitRoot !== lotsFile.repository
-	if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })
-	const made = commits.length - guarded.commits.length
-	write(
-		`${rehearsal ? 'rehearsed' : 'done'}: ${made} commit(s) on ${lotsFile.branch} in ${formatDuration(clock.now() - startedAt)}${rehearsal ? ' in the scratch clone' : ''}. Nothing pushed.`,
-	)
+	// a stopped run: the lots it did commit, for the card (the hand-over is partly committed)
+	const commits =
+		committed ??
+		findCommittedLots({
+			root: commitRoot,
+			head: guarded.head,
+			tip: 'HEAD',
+			lots,
+			compareContent: false,
+		}).commits
+	if (committed) {
+		if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })
+		const made = committed.length - guarded.commits.length
+		write(
+			`${rehearsal ? 'rehearsed' : 'done'}: ${made} commit(s) on ${lotsFile.branch} in ${formatDuration(clock.now() - startedAt)}${rehearsal ? ' in the scratch clone' : ''}. Nothing pushed.`,
+		)
+	}
 	const card = buildHandoverCard({
 		root: lotsFile.repository,
 		commitRoot,
@@ -69,11 +88,18 @@ export async function runHandoverFolder(params: {
 		lots,
 		commits,
 		cliPath: params.cliPath,
+		// the repository's hand-over is done only by a real run that committed every lot
+		done: !rehearsal && commits.length === lots.length,
 	})
-	write(renderCard({ card: handoverCardRows(card), colour: params.colour, width: params.columns }))
+	const box = renderCard({
+		card: handoverCardRows(card),
+		colour: params.colour,
+		width: params.columns,
+	})
+	for (const line of box.split('\n')) write(line)
 	// whole on one line, whatever the width: a person copies it
-	write(card.command)
-	return 0
+	if (!card.done) write(card.command)
+	return committed ? 0 : 1
 }
 
 /** The repository's hand-over lock goes when it names this folder's script. */

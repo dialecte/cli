@@ -52,6 +52,8 @@ export async function rehearseHandover(params: {
 	columns?: number
 	/** The cli running the rehearsal, named by the card's run line when the repository's own cannot run it. */
 	cliPath?: string
+	/** `--resume-merge`, passed on to the guards. */
+	resumeMerge?: boolean
 }): Promise<number> {
 	const { handover, write } = params
 	const progress =
@@ -101,6 +103,7 @@ export async function rehearseHandover(params: {
 			tty: params.tty,
 			columns: params.columns,
 			cliPath: params.cliPath,
+			resumeMerge: params.resumeMerge,
 		})
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)

@@ -141,7 +141,7 @@ Contributing (inside a dialecte repository):
   dialecte tdd green [<test file> | <test file>::<case name>]...
                              # each case with a red receipt, its test code as frozen, production changed since
                              # its red, passes; records a green receipt
-  dialecte tdd status [--json]
+  dialecte tdd status [--json] [--flags]
                              # per case: red, green, unchanged, missing receipt, test edited after red, flags;
                              # test code changed outside tdd red; cases the change deletes
   dialecte new verb <namespace> <query|transaction> <name> [--version <v>]
@@ -149,7 +149,7 @@ Contributing (inside a dialecte repository):
   dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]
                              # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
                              # refuses files in no lot, tags, citations, a missing core.hooksPath folder
-  dialecte handover run <folder> [--rehearse [--keep]]
+  dialecte handover run <folder> [--rehearse [--keep]] [--resume-merge]
                              # what commit.sh runs: each guard with its time, each lot announced (a spinner on
                              # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse
                              # commits in a scratch clone

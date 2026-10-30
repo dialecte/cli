@@ -1,7 +1,8 @@
 /**
  * Writes a hand-over folder: `lots.json` (the agent's, copied when the folder is elsewhere), the snapshot
  * (`files.txt`: every path the lots commit; `files.sha256`: the hash of each one that exists;
- * `files.deleted`) and the one-line `commit.sh`; then takes the repository's hand-over lock. Nothing is
+ * `files.deleted`; `merges.json`: each merge lot's conflicts and resolutions with their hashes) and the
+ * one-line `commit.sh`; then takes the repository's hand-over lock. Nothing is
  * written per lot: `handover run` reads the lots from `lots.json`.
  */
 import { createHash } from 'node:crypto'
@@ -43,6 +44,15 @@ export function writeHandover(params: {
 		join(out, HANDOVER_FILES.deleted),
 		linesOf(plan.lots.flatMap((lot) => lot.deletedFiles).sort()),
 	)
+	const merges = Object.fromEntries(
+		plan.lots.flatMap((lot, index) => (lot.merge ? [[String(index), lot.merge]] : [])),
+	)
+	if (Object.keys(merges).length) {
+		const mergesPath = join(out, HANDOVER_FILES.merges)
+		writeFileSync(mergesPath, `${JSON.stringify(merges, null, '\t')}\n`)
+		// under the review hash like lots.json: an edit after the review is refused
+		writeFileSync(join(out, HANDOVER_FILES.mergesHash), `${hashFile(mergesPath)}\n`)
+	}
 
 	const scriptPath = join(out, COMMIT_SCRIPT_FILE)
 	writeFileSync(scriptPath, renderCommitScript({ plan, folder: out, cliPath: params.cliPath }))

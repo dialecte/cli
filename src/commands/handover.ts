@@ -78,6 +78,8 @@ export function runHandover(params: {
 	columns?: number
 	/** The most the repository's own cli may take to answer the `handover run --probe` check, in milliseconds. */
 	probeTimeout?: number
+	/** The git version line (`git version 2.43.0`): merge lots need git 2.38 or later. Default: asks git. */
+	gitVersion?: () => string
 }): CommandResult {
 	const { argv } = params
 	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
@@ -97,7 +99,12 @@ export function runHandover(params: {
 		return refused([`the repository is held by ${heldBy}: run it, or delete it and its lock`])
 
 	const referencePatterns = readReferencePatterns(lotsFile.repository)
-	const { plan, refusals } = planHandover({ lotsFile, referencePatterns })
+	const { plan, refusals } = planHandover({
+		lotsFile,
+		lotsPath: absoluteLotsPath,
+		referencePatterns,
+		gitVersion: params.gitVersion,
+	})
 	if (refusals.length) return refused(refusals)
 
 	writeHandover({ plan, lotsFile, lotsPath: absoluteLotsPath, out, cliPath: params.cliPath })
@@ -172,6 +179,7 @@ export async function runHandoverRun(params: {
 			tty: live.tty,
 			columns: live.columns,
 			cliPath,
+			resumeMerge: hasFlag(argv, 'resume-merge'),
 		})
 	return runHandoverFolder({
 		handover,
@@ -182,6 +190,7 @@ export async function runHandoverRun(params: {
 		tty: live.tty,
 		columns: live.columns,
 		cliPath,
+		resumeMerge: hasFlag(argv, 'resume-merge'),
 	})
 }
 

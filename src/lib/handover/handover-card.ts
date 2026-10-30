@@ -12,6 +12,7 @@ import { caseLabel } from '../tdd/select-cases.ts'
 import { countChangedFiles, readLedger, resolveBase } from '../tdd/tdd-files.ts'
 import {
 	COMMIT_SCRIPT_FILE,
+	FLAGS_LIST_COMMAND,
 	HANDOVER_PROBE_ANSWER,
 	HANDOVER_PROBE_COMMAND,
 	HANDOVER_PROBE_FOLDER_PREFIX,
@@ -21,7 +22,7 @@ import { commitSizeOf, workingTreeSizeOf } from './lot-size.ts'
 
 import type { Card } from '../card/card.types.ts'
 import type { LotCaseEntry, LotCaseList, TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
-import type { HandoverCard, ResolvedLot } from './handover.types.ts'
+import type { HandoverCard, MergeLot, ResolvedLot } from './handover.types.ts'
 
 export function buildHandoverCard(params: {
 	/** Where the lots are committed. */
@@ -42,12 +43,18 @@ export function buildHandoverCard(params: {
 	cliPath?: string
 	/** How long the repository's cli gets to answer the probe; past it, it counts as none. Default 10 s. */
 	probeTimeout?: number
+	/** Every lot is committed in the repository: the card says done, no command. */
+	done?: boolean
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
 	const ownCli =
+		params.done ||
 		params.cliPath === undefined ||
 		runsHandovers({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
+	const merges = params.lots.flatMap((lot, index) =>
+		lot.merge ? [mergeLine({ merge: lot.merge, number: index + 1 })] : [],
+	)
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
@@ -62,17 +69,27 @@ export function buildHandoverCard(params: {
 				: workingTreeSizeOf({ root: commitRoot, files: lot.files, deletedFiles: lot.deletedFiles })
 			return {
 				index: index + 1,
-				fileCount: lot.files.length + lot.deletedFiles.length,
+				fileCount: lot.merge
+					? lot.merge.resolutions.length
+					: lot.files.length + lot.deletedFiles.length,
 				subject: lot.message.trim().split('\n')[0],
 				...size,
 				...(commit && { commit }),
 			}
 		}),
 		...(params.commits.length && { tip: params.commits.at(-1) }),
+		...(merges.length && { merges }),
+		...(params.done && { done: true }),
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
 	}
+}
+
+/** A merge lot on the card: what it merges, its conflicts, and the tree it must hold (or that it is not recorded). */
+function mergeLine(params: { merge: MergeLot; number: number }): string {
+	const { merge } = params
+	return `lot ${params.number}: merge ${merge.branch} at ${merge.tip.slice(0, 12)}, ${merge.conflicts.length} conflict(s), ${merge.resolutions.length} resolved file(s); ${merge.tree ? `tree ${merge.tree.slice(0, 12)}` : 'tree not recorded: rehearse first'}`
 }
 
 /** The repository installs a cli that runs hand-overs: it answers the probe `commit.sh` sends. */
@@ -99,8 +116,8 @@ function runsHandovers(params: { root: string; timeout: number }): boolean {
 
 /**
  * The test receipts as the reviewer of the hand-over needs them: the lot's exemption (with what the change
- * touches), the cases it accepts without a red or revised at review, and every flag a receipt of the
- * worktree carries (a rollback, a red after a green).
+ * touches), the cases it accepts without a red or revised at review, and how many cases each kind of flag
+ * marks (a rollback, a red after a green), with the command that lists them.
  */
 function tddRow(root: string): { tdd?: string } {
 	const lines: string[] = []
@@ -137,15 +154,17 @@ function tddRow(root: string): { tdd?: string } {
 				list: 'revised',
 			}),
 		)
-		const flagged = new Map<string, Set<string>>()
+		// the flags as a count per kind: the list is one command away
+		const casesByFlag = new Map<string, Set<string>>()
 		for (const entry of ledger.entries) {
-			if (entry.kind === 'freeze' || !entry.flags?.length) continue
-			const label = caseLabel(entry)
-			const flags = flagged.get(label) ?? new Set<string>()
-			for (const flag of entry.flags) flags.add(flag)
-			flagged.set(label, flags)
+			if (entry.kind === 'freeze') continue
+			for (const flag of entry.flags ?? [])
+				casesByFlag.set(flag, (casesByFlag.get(flag) ?? new Set()).add(caseLabel(entry)))
 		}
-		for (const [label, flags] of flagged) lines.push(`flag: ${label} (${[...flags].join(', ')})`)
+		if (casesByFlag.size)
+			lines.push(
+				`${[...casesByFlag].map(([flag, cases]) => `${cases.size} flags: ${flag}`).join('; ')} - ${FLAGS_LIST_COMMAND} for the list`,
+			)
 	}
 	return lines.length ? { tdd: lines.join('\n') } : {}
 }
@@ -211,6 +230,7 @@ export function handoverCardRows(card: HandoverCard): Card {
 				],
 			},
 			{ label: 'gates', lines: card.gates.split(/\r?\n/) },
+			...(card.merges ? [{ label: 'merges', lines: card.merges }] : []),
 			...(card.tdd ? [{ label: 'tdd', lines: card.tdd.split('\n') }] : []),
 			{
 				label: `lots (${card.lots.length})`,
@@ -219,7 +239,7 @@ export function handoverCardRows(card: HandoverCard): Card {
 				),
 			},
 			// the command is printed whole under the box: a wrapped one cannot be copied
-			{ label: 'run', lines: ['see below'] },
+			{ label: 'run', lines: [card.done ? 'done' : 'see below'] },
 		],
 	}
 }
