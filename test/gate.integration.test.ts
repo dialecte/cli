@@ -20,7 +20,7 @@ function scratchFolder(files: Record<string, string>): string {
 
 // each case spawns the real tools through npx: slower than a unit test when the suite runs in parallel
 describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
-	it('vitest: 2 passed and 1 skipped → passed with those counts; 1 failing → failed', () => {
+	it('vitest: 2 passed and 1 skipped → passed with those counts; 1 failing → failed', async () => {
 		const green = scratchFolder({
 			'demo.test.js': "test('a', () => {})\ntest('b', () => {})\ntest.skip('c', () => {})\n",
 		})
@@ -28,15 +28,23 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 			'demo.test.js': "test('a', () => {})\ntest('b', () => { expect(1).toBe(2) })\n",
 		})
 
-		const [greenResult, redResult] = [green, red].map(
-			(folder) =>
-				runGateSteps({
-					root: CLI_ROOT,
-					steps: [
-						{ name: 'tests', run: `npx vitest run --root ${folder} --globals`, counts: 'tests' },
-					],
-					packageJson: {},
-				})[0],
+		const [greenResult, redResult] = await Promise.all(
+			[green, red].map(
+				async (folder) =>
+					(
+						await runGateSteps({
+							root: CLI_ROOT,
+							steps: [
+								{
+									name: 'tests',
+									run: `npx vitest run --root ${folder} --globals`,
+									counts: 'tests',
+								},
+							],
+							packageJson: {},
+						})
+					)[0],
+			),
 		)
 
 		expect(greenResult).toMatchObject({
@@ -53,7 +61,7 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 		})
 	})
 
-	it('tsc and oxlint, piped as in npm run check: their errors and warnings are counted', () => {
+	it('tsc and oxlint, piped as in npm run check: their errors and warnings are counted', async () => {
 		const folder = scratchFolder({
 			'broken.ts': 'const value: number = "text"\nexport { value }\ndebugger\n',
 			'tsconfig.json': JSON.stringify({
@@ -62,16 +70,20 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 			}),
 		})
 
-		const [typeCheck, lint] = [
-			{ name: 'type-check', run: `npx tsc -p ${join(folder, 'tsconfig.json')}` },
-			{ name: 'lint', run: `npx oxlint ${join(folder, 'broken.ts')}` },
-		].map((step) => runGateSteps({ root: CLI_ROOT, steps: [step], packageJson: {} })[0])
+		const [typeCheck, lint] = await Promise.all(
+			[
+				{ name: 'type-check', run: `npx tsc -p ${join(folder, 'tsconfig.json')}` },
+				{ name: 'lint', run: `npx oxlint ${join(folder, 'broken.ts')}` },
+			].map(
+				async (step) => (await runGateSteps({ root: CLI_ROOT, steps: [step], packageJson: {} }))[0],
+			),
+		)
 
 		expect(typeCheck).toMatchObject({ status: 'failed', exitCode: 1, counts: { errors: 1 } })
 		expect(lint).toMatchObject({ status: 'passed', counts: { errors: 0, warnings: 1 } })
 	})
 
-	it('node --test (spec reporter, as create runs it): 1 passed, 1 failed, 1 skipped → failed with those counts', () => {
+	it('node --test (spec reporter, as create runs it): 1 passed, 1 failed, 1 skipped → failed with those counts', async () => {
 		const folder = scratchFolder({
 			'demo.test.mjs': [
 				"import test from 'node:test'",
@@ -82,7 +94,7 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 			].join('\n'),
 		})
 
-		const [result] = runGateSteps({
+		const [result] = await runGateSteps({
 			root: CLI_ROOT,
 			steps: [
 				{
@@ -100,7 +112,7 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 		})
 	})
 
-	it('vitest --changed on a change that touches no test (a doc edit) → passed with a note; the same output without changedOnly → failed', () => {
+	it('vitest --changed on a change that touches no test (a doc edit) → passed with a note; the same output without changedOnly → failed', async () => {
 		const folder = scratchRepository({
 			'demo.test.js': "test('a', () => {})\n",
 			'README.md': '# Demo\n',
@@ -108,13 +120,17 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 		writeFileSync(join(folder, 'README.md'), '# Demo\n\nMore words.\n')
 		const run = `npx vitest run --root ${folder} --globals --changed`
 
-		const [changedOnly, plain] = [true, false].map(
-			(flag) =>
-				runGateSteps({
-					root: CLI_ROOT,
-					steps: [{ name: 'tests', run, counts: 'tests', ...(flag && { changedOnly: true }) }],
-					packageJson: {},
-				})[0],
+		const [changedOnly, plain] = await Promise.all(
+			[true, false].map(
+				async (flag) =>
+					(
+						await runGateSteps({
+							root: CLI_ROOT,
+							steps: [{ name: 'tests', run, counts: 'tests', ...(flag && { changedOnly: true }) }],
+							packageJson: {},
+						})
+					)[0],
+			),
 		)
 
 		expect(changedOnly).toMatchObject({

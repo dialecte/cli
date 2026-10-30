@@ -36,17 +36,17 @@ import type { PackageJson } from '../lib/package-json.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = runGate({ cwd: process.cwd(), argv })
+	const result = await runGate({ cwd: process.cwd(), argv })
 	console.log(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runGate(params: {
+export async function runGate(params: {
 	cwd: string
 	argv: string[]
 	/** The machine lock: its file, the clock it waits with, where its waiting lines go. */
 	machineLock?: { path: string; clock: Clock; write: WriteLine; isAlive?: (pid: number) => boolean }
-}): CommandResult {
+}): Promise<CommandResult> {
 	const { cwd, argv } = params
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
 		return { exitCode: 2, output: 'gate: --fast or --full, not both' }
@@ -97,19 +97,22 @@ export function runGate(params: {
 		})
 	try {
 		if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
-		else
-			results.push(
-				tddStep({
-					cwd,
-					packageJson,
-					lock: () =>
-						runsTestsInABrowser({ root: cwd, packageJson })
-							? lockFor(`dialecte gate --${mode} (tdd) in ${resolve(cwd)}`)
-							: { release: () => undefined },
-				}),
-			)
+		else {
+			const tdd = await tddStep({
+				cwd,
+				packageJson,
+				lock: () =>
+					runsTestsInABrowser({ root: cwd, packageJson })
+						? lockFor(`dialecte gate --${mode} (tdd) in ${resolve(cwd)}`)
+						: { release: () => undefined },
+			})
+			results.push(tdd)
+		}
 		if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
-		else results.push(...runGateSteps({ root: cwd, steps, packageJson, lockStep }))
+		else {
+			const stepResults = await runGateSteps({ root: cwd, steps, packageJson, lockStep })
+			results.push(...stepResults)
+		}
 	} finally {
 		if (gateLock && !('refusal' in gateLock)) gateLock.release()
 	}
@@ -155,12 +158,12 @@ function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 }
 
 /** The receipts of the change's test cases, after the hygiene. */
-function tddStep(params: {
+async function tddStep(params: {
 	cwd: string
 	packageJson: PackageJson
 	lock: () => { release(): void } | { refusal: string }
-}): StepResult {
-	const check = checkTddReceipts({
+}): Promise<StepResult> {
+	const check = await checkTddReceipts({
 		root: params.cwd,
 		packageJson: params.packageJson,
 		lock: params.lock,

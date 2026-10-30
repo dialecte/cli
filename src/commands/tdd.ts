@@ -77,12 +77,12 @@ import type {
 } from '../lib/tdd/tdd.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = runTdd({ cwd: process.cwd(), argv, now: () => new Date() })
+	const result = await runTdd({ cwd: process.cwd(), argv, now: () => new Date() })
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runTdd(params: {
+export async function runTdd(params: {
 	cwd: string
 	argv: string[]
 	/** The time a receipt records. */
@@ -94,7 +94,7 @@ export function runTdd(params: {
 		write: WriteLine
 		isAlive?: (pid: number) => boolean
 	}
-}): CommandResult {
+}): Promise<CommandResult> {
 	const { cwd: root, argv } = params
 	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: [] })
 	if (!isSubcommand(subcommand))
@@ -121,15 +121,15 @@ export function runTdd(params: {
 			ledger,
 			base: resolveBase({ root, packageJson }),
 		}
-		if (subcommand === 'red') return runRed(context)
-		if (subcommand === 'green') return runGreen(context)
-		return runStatus(context)
+		if (subcommand === 'red') return await runRed(context)
+		if (subcommand === 'green') return await runGreen(context)
+		return await runStatus(context)
 	} finally {
 		if (lock && !('refusal' in lock)) lock.release()
 	}
 }
 
-function runRed(context: TddContext): CommandResult {
+async function runRed(context: TddContext): Promise<CommandResult> {
 	const { root } = context
 	const files = targetFiles({ changed: listChangedTestFiles(context), targets: context.targets })
 	if (files.length === 0)
@@ -157,7 +157,7 @@ function runRed(context: TddContext): CommandResult {
 	}
 	const runnable = files.filter((file) => !focused.includes(file))
 	const modules = runnable.length
-		? runTestCases({ root, files: runnable.map((file) => file.file), filter: 'all' })
+		? await runTestCases({ root, files: runnable.map((file) => file.file), filter: 'all' })
 		: []
 	if ('failure' in modules) return { exitCode: 1, output: `tdd red: ${modules.failure}` }
 	const { cases, unlisted } = readRunCases({
@@ -372,7 +372,7 @@ function isRolledBack(params: {
 	)
 }
 
-function runGreen(context: TddContext): CommandResult {
+async function runGreen(context: TddContext): Promise<CommandResult> {
 	const { root, ledger } = context
 	const testCode = hashChangedTestCode(context)
 	const changedHelpers = [...testCode]
@@ -391,7 +391,7 @@ function runGreen(context: TddContext): CommandResult {
 			exitCode: 1,
 			output: 'tdd green: no test file new or changed since the base (or among the files named)',
 		}
-	const modules = runTestCases({ root, files: files.map((file) => file.file), filter: 'all' })
+	const modules = await runTestCases({ root, files: files.map((file) => file.file), filter: 'all' })
 	if ('failure' in modules) return { exitCode: 1, output: `tdd green: ${modules.failure}` }
 	const { cases, unlisted } = readRunCases({
 		root,
@@ -472,8 +472,8 @@ function greenRefusal(params: {
 	return undefined
 }
 
-function runStatus(context: TddContext): CommandResult {
-	const state = readTddState(context)
+async function runStatus(context: TddContext): Promise<CommandResult> {
+	const state = await readTddState(context)
 	if ('failure' in state) return { exitCode: 1, output: `tdd status: ${state.failure}` }
 	if (context.json) return { exitCode: 0, output: JSON.stringify(state, null, 2) }
 	const lines = [

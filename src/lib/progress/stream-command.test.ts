@@ -1,10 +1,11 @@
 import { createFakeClock } from '../../../test/fake-clock.ts'
+import { createFakeTree } from '../../../test/fake-process-tree.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { streamCommand } from './stream-command.ts'
 
 import { describe, expect, it } from 'vitest'
 
-describe('streamCommand', () => {
+describe('streamCommand', { timeout: 20_000 }, () => {
 	it('a command printing on both streams then exiting 3 → every line behind the prefix, exit 3', async () => {
 		const lines: string[] = []
 
@@ -63,5 +64,38 @@ describe('streamCommand', () => {
 			'  … hook running 1 m 0 s',
 			'  … hook running 1 m 30 s - silent since it started: is it waiting for input, or running in watch mode (vitest without `run`)?',
 		])
+	})
+
+	it('a hook command silent with no CPU gained for stallAfter → stalled with its tree, then the heartbeat and the sampler stop', async () => {
+		const clock = createFakeClock()
+		const tree = createFakeTree()
+		const lines: string[] = []
+
+		const assertion = expect(
+			streamCommand({
+				command: 'sleep',
+				args: ['2'],
+				cwd: temporaryFolder('dialecte-stream-'),
+				prefix: '  │ ',
+				heartbeatLabel: '  … hook running',
+				write: (line) => lines.push(line),
+				clock,
+				every: 30_000,
+				watchdog: { stallAfter: 60_000, checkEvery: 10_000, ...tree },
+			}),
+		).resolves.toMatchObject({
+			stalled: { report: expect.stringContaining('node server.js') },
+		})
+		await clock.whenPending(2)
+		clock.advance(70_000)
+		await assertion
+		const sampled = tree.samples()
+		const printed = lines.length
+		clock.advance(200_000)
+
+		expect(tree.killed).toHaveLength(1)
+		expect(tree.samples()).toBe(sampled)
+		expect(lines).toHaveLength(printed)
+		expect(clock.pending()).toBe(0)
 	})
 })

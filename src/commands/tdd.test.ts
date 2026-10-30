@@ -108,11 +108,11 @@ const MUL_ROWS = [
 ]
 
 describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }, () => {
-	it('stub → red (receipt, freeze) → test edited after red refused at green → restored → implemented → green → status green', () => {
+	it('stub → red (receipt, freeze) → test edited after red refused at green → restored → implemented → green → status green', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.exitCode).toBe(0)
 		expect(caseLines(red.output)).toEqual([
@@ -137,7 +137,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			join(root, 'src/add.test.ts'),
 			ADD_TEST.replace('toBe(3)', 'toBeTypeOf("number")'),
 		)
-		const edited = tdd({ cwd: root, argv: ['green'] })
+		const edited = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(edited.exitCode).toBe(1)
 		expect(edited.output).toContain(
@@ -146,8 +146,8 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 
 		writeFileSync(join(root, 'src/add.test.ts'), ADD_TEST)
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		const green = tdd({ cwd: root, argv: ['green'] })
-		const status = tdd({ cwd: root, argv: ['status', '--json'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
 
 		expect(green.exitCode).toBe(0)
 		expect(caseLines(green.output)).toEqual([
@@ -168,11 +168,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		})
 	})
 
-	it('a test green before any code → refused at red: it proves nothing yet; the refusal is in the ledger, nothing frozen', () => {
+	it('a test green before any code → refused at red: it proves nothing yet; the refusal is in the ledger, nothing frozen', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/add.test.ts': ADD_TEST } })
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.exitCode).toBe(1)
 		expect(red.output).toContain(
@@ -181,7 +181,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(readLedger(root).entries.map((entry) => entry.kind)).toEqual(['refused'])
 	})
 
-	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; one refusal keeps the whole file unfrozen', () => {
+	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; one refusal keeps the whole file unfrozen', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -215,7 +215,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.exitCode).toBe(1)
 		expect(caseLines(red.output)).toEqual(
@@ -237,7 +237,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(readLedger(root).entries.filter((entry) => entry.kind === 'freeze')).toEqual([])
 	})
 
-	it('red runs every case of the changed files: a new failing case red, a base case unchanged; a named case of an unchanged file is not run', () => {
+	it('red runs every case of the changed files: a new failing case red, a base case unchanged; a named case of an unchanged file is not run', async () => {
 		const root = createVitestPackage({
 			files: { 'src/mul.ts': MUL, 'src/mul.test.ts': mulTest(MUL_ROWS) },
 		})
@@ -246,7 +246,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			mulTest([...MUL_ROWS, "{ title: 'two by two', left: 2, right: 2, expected: 5 }"]),
 		)
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.exitCode).toBe(0)
 		expect(caseLines(red.output)).toEqual([
@@ -261,22 +261,22 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the file stays unfrozen, green refused', () => {
+	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the file stays unfrozen, green refused', async () => {
 		const root = createVitestPackage({})
 		const both = addTest([
 			"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
 			"it('B two plus two', () => { expect(add(2, 2)).toBe(4) })",
 		])
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': both } })
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(
 			join(root, 'src/add.test.ts'),
 			both.replace('expect(add(1, 2)).toBe(3)', 'expect(1).toBe(1)'),
 		)
 
-		const reRed = tdd({ cwd: root, argv: ['red', 'src/add.test.ts'] })
+		const reRed = await tdd({ cwd: root, argv: ['red', 'src/add.test.ts'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(reRed.exitCode).toBe(1)
 		expect(caseLines(reRed.output)).toEqual([
@@ -296,7 +296,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a test helper (test/expected.ts) edited after red → green refused naming it', () => {
+	it('a test helper (test/expected.ts) edited after red → green refused naming it', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -309,11 +309,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				).replace('toBe(3)', 'toBe(EXPECTED)'),
 			},
 		})
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED.replace('left + right', 'left * right'))
 		writeFileSync(join(root, 'test/expected.ts'), 'export const EXPECTED = 2\n')
 
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(green.exitCode).toBe(1)
 		expect(green.output).toContain(
@@ -322,7 +322,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(receiptLines(root)).not.toContain('green add > one plus two → three')
 	})
 
-	it('a snapshot test: red on the stub, green never writes the snapshot', () => {
+	it('a snapshot test: red on the stub, green never writes the snapshot', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -332,9 +332,9 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(caseLines(red.output)).toEqual([
 			'red      src/add.test.ts::add > one plus two → three  assertion: Snapshot `add > one plus two → three 1` mismatched',
@@ -346,7 +346,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(existsSync(join(root, 'src/__snapshots__'))).toBe(false)
 	})
 
-	it('green with nothing changed in production since red → refused', () => {
+	it('green with nothing changed in production since red → refused', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -359,10 +359,10 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				].join('\n'),
 			},
 		})
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		process.env.DIALECTE_TDD_FLIP = 'on'
 
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(green.exitCode).toBe(1)
 		expect(green.output).toContain(
@@ -370,12 +370,12 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a red after a green on the same file, at a production rolled back → flagged in the receipt and in status', () => {
+	it('a red after a green on the same file, at a production rolled back → flagged in the receipt and in status', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		tdd({ cwd: root, argv: ['green'] })
+		await tdd({ cwd: root, argv: ['green'] })
 		writeFileSync(join(root, 'src/add.ts'), STUB)
 		writeFileSync(
 			join(root, 'src/add.test.ts'),
@@ -385,8 +385,8 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			),
 		)
 
-		const red = tdd({ cwd: root, argv: ['red'] })
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(caseLines(red.output)).toEqual([
 			'red      src/add.test.ts::add > one plus two → three  not-implemented: not implemented: add  flags: rollback',
@@ -397,22 +397,22 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a green case made red again by its own test, production as at its green → flagged red after green', () => {
+	it('a green case made red again by its own test, production as at its green → flagged red after green', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		tdd({ cwd: root, argv: ['green'] })
+		await tdd({ cwd: root, argv: ['green'] })
 		writeFileSync(join(root, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(4)'))
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(caseLines(red.output)).toEqual([
 			'red      src/add.test.ts::add > one plus two → three  assertion: expected 3 to be 4 // Object.is equality  flags: red after green',
 		])
 	})
 
-	it('a helper edited after a refused green, then a re-red where the case passes → refused, nothing frozen, green still refused', () => {
+	it('a helper edited after a refused green, then a re-red where the case passes → refused, nothing frozen, green still refused', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -425,13 +425,13 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				).replace('toBe(3)', 'toBe(EXPECTED)'),
 			},
 		})
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED.replace('left + right', 'left * right'))
-		tdd({ cwd: root, argv: ['green'] })
+		await tdd({ cwd: root, argv: ['green'] })
 		writeFileSync(join(root, 'test/expected.ts'), 'export const EXPECTED = 2\n')
 
-		const reRed = tdd({ cwd: root, argv: ['red'] })
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const reRed = await tdd({ cwd: root, argv: ['red'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(reRed.exitCode).toBe(1)
 		expect(caseLines(reRed.output)).toEqual([
@@ -441,18 +441,18 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(green.exitCode).toBe(1)
 	})
 
-	it('a const of the test file edited after red, then a re-red where the case passes → refused', () => {
+	it('a const of the test file edited after red, then a re-red where the case passes → refused', async () => {
 		const root = createVitestPackage({})
 		const withConst = ADD_TEST.replace(
 			"describe('add'",
 			"const EXPECTED = 3\ndescribe('add'",
 		).replace('toBe(3)', 'toBe(EXPECTED)')
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': withConst } })
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED.replace('left + right', 'left * right'))
 		writeFileSync(join(root, 'src/add.test.ts'), withConst.replace('EXPECTED = 3', 'EXPECTED = 2'))
 
-		const reRed = tdd({ cwd: root, argv: ['red'] })
+		const reRed = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(reRed.exitCode).toBe(1)
 		expect(caseLines(reRed.output)).toEqual([
@@ -460,7 +460,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a case added to a green file (the next step): the green case kept and flagged, the new one red; both green after', () => {
+	it('a case added to a green file (the next step): the green case kept and flagged, the new one red; both green after', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -474,13 +474,13 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				),
 			},
 		})
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(
 			join(root, 'src/add.ts'),
 			IMPLEMENTED +
 				"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n",
 		)
-		tdd({ cwd: root, argv: ['green'] })
+		await tdd({ cwd: root, argv: ['green'] })
 		writeFileSync(
 			join(root, 'src/add.test.ts'),
 			readFileSync(join(root, 'src/add.test.ts'), 'utf8').replace(
@@ -489,14 +489,14 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			),
 		)
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(
 			join(root, 'src/add.ts'),
 			IMPLEMENTED +
 				'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n',
 		)
-		const green = tdd({ cwd: root, argv: ['green'] })
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(red.exitCode).toBe(0)
 		expect(caseLines(red.output)).toEqual([
@@ -509,7 +509,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a helper no failing case of a red run imports → not frozen; one an imported failing file uses → frozen', () => {
+	it('a helper no failing case of a red run imports → not frozen; one an imported failing file uses → frozen', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -525,8 +525,8 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(red.output).toContain('frozen: src/add.test.ts, test/expected.ts, test/values.ts')
 		expect(status.output).toContain('test code changed outside tdd red: test/unused.ts')
@@ -560,7 +560,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		"import { add } from './add.ts'\nimport { FOUR, THREE } from '@/test'",
 	).replace(/\}\)\n$/, "\tit('two plus two → four', () => { expect(add(2, 2)).toBe(FOUR) })\n})\n")
 
-	it('a shared helper imported as @/test changed by the test station: red freezes it, green and status pass', () => {
+	it('a shared helper imported as @/test changed by the test station: red freezes it, green and status pass', async () => {
 		const root = aliasPackage({
 			'src/add.ts': IMPLEMENTED.replace('left + right', 'left + right + (left === 2 ? 1 : 0)'),
 			'src/add.test.ts': ADD_TEST,
@@ -573,17 +573,17 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		const green = tdd({ cwd: root, argv: ['green'] })
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(red.output).toContain('frozen: src/add.test.ts, src/test/values.ts')
 		expect(green.exitCode).toBe(0)
 		expect(status.output).not.toContain('test code changed outside tdd red')
 	})
 
-	it('the @/test helper edited after a refused green, then a re-red → refused', () => {
+	it('the @/test helper edited after a refused green, then a re-red → refused', async () => {
 		const root = aliasPackage({ 'src/add.ts': STUB })
 		writeFiles({
 			root,
@@ -592,15 +592,15 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				'src/add.test.ts': ALIAS_TEST.replace('toBe(3)', 'toBe(THREE)'),
 			},
 		})
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED.replace('left + right', 'left * right'))
-		tdd({ cwd: root, argv: ['green'] })
+		await tdd({ cwd: root, argv: ['green'] })
 		writeFileSync(
 			join(root, 'src/test/values.ts'),
 			'export const THREE = 2\nexport const FOUR = 4\n',
 		)
 
-		const reRed = tdd({ cwd: root, argv: ['red'] })
+		const reRed = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(reRed.exitCode).toBe(1)
 		expect(caseLines(reRed.output)).toContain(
@@ -608,7 +608,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('an alias vitest resolves but the cli cannot (no tsconfig paths, a computed vite alias) → the file refused, naming it', () => {
+	it('an alias vitest resolves but the cli cannot (no tsconfig paths, a computed vite alias) → the file refused, naming it', async () => {
 		const root = createVitestPackage({
 			files: {
 				'vite.config.ts': [
@@ -630,7 +630,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.exitCode).toBe(1)
 		expect(caseLines(red.output)).toEqual([
@@ -638,7 +638,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a case the lot accepts → accepted with its reason at red, its file frozen despite it passing', () => {
+	it('a case the lot accepts → accepted with its reason at red, its file frozen despite it passing', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -656,8 +656,8 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 
-		const red = tdd({ cwd: root, argv: ['red'] })
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(red.exitCode).toBe(0)
 		expect(caseLines(red.output)).toEqual([
@@ -666,7 +666,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(status.output).toContain('accepted  src/add.test.ts::add > one plus two → three')
 	})
 
-	it('a case run by two projects is two cases: one failing project refuses its own green', () => {
+	it('a case run by two projects is two cases: one failing project refuses its own green', async () => {
 		const root = createVitestPackage({
 			files: {
 				'vitest.config.ts': [
@@ -680,13 +680,13 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			},
 		})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		tdd({ cwd: root, argv: ['red'] })
+		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(
 			join(root, 'src/add.ts'),
 			"export function add(left: number, right: number): number {\n\treturn process.env.MODE === 'one' ? left + right : 0\n}\n",
 		)
 
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(green.exitCode).toBe(1)
 		expect(caseLines(green.output)).toEqual([
@@ -695,11 +695,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('green on a case without a red receipt → refused; status lists each case', () => {
+	it('green on a case without a red receipt → refused; status lists each case', async () => {
 		const root = createVitestPackage({})
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		const status = tdd({ cwd: root, argv: ['status'] })
-		const green = tdd({ cwd: root, argv: ['green'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
 
 		expect(status.output).toContain('missing receipt  src/add.test.ts::add > one plus two → three')
 		expect(green.exitCode).toBe(1)
@@ -708,11 +708,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a ledger that cannot be read → a refusal naming it, no stack trace', () => {
+	it('a ledger that cannot be read → a refusal naming it, no stack trace', async () => {
 		const root = createVitestPackage({})
 		writeFileSync(join(root, '.git', 'dialecte-tdd.json'), '{ not json')
 
-		const status = tdd({ cwd: root, argv: ['status'] })
+		const status = await tdd({ cwd: root, argv: ['status'] })
 
 		expect(status.exitCode).toBe(1)
 		expect(status.output).toMatch(
@@ -720,7 +720,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', () => {
+	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', async () => {
 		const root = createVitestPackage({
 			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },
 		})
@@ -735,7 +735,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			}),
 		)
 
-		const red = tdd({ cwd: root, argv: ['red', '--no-wait'], lockPath, isAlive: () => true })
+		const red = await tdd({ cwd: root, argv: ['red', '--no-wait'], lockPath, isAlive: () => true })
 
 		expect(red).toEqual({
 			exitCode: 1,

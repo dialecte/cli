@@ -35,6 +35,15 @@ export function createFakeClock(): FakeClock {
 			clock.onSleep?.(now)
 		},
 		advance,
+		pending() {
+			return timers.size
+		},
+		async whenPending(count) {
+			// bounded: code that never arms (not written yet) fails on its own assertions, not by hanging
+			const giveUpAt = Date.now() + 5_000
+			while (timers.size < count && Date.now() < giveUpAt)
+				await new Promise((resolve) => setImmediate(resolve))
+		},
 	}
 	return clock
 }

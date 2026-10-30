@@ -16,12 +16,12 @@ import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { TddCheck, TddState } from './tdd.types.ts'
 
-export function checkTddReceipts(params: {
+export async function checkTddReceipts(params: {
 	root: string
 	packageJson: PackageJson
 	/** Takes the machine lock before the run that lists the cases (a browser package). */
 	lock: () => { release(): void } | { refusal: string }
-}): TddCheck {
+}): Promise<TddCheck> {
 	const { root, packageJson } = params
 	const exemption = readTddExemption(root)
 	if (exemption.kind === 'invalid') return { status: 'failed', reason: exemption.reason }
@@ -49,7 +49,7 @@ export function checkTddReceipts(params: {
 	if ('refusal' in lock) return { status: 'failed', reason: lock.refusal }
 	let state: TddState | { failure: string }
 	try {
-		state = readTddState({ root, packageJson, ledger, base })
+		state = await readTddState({ root, packageJson, ledger, base })
 	} finally {
 		lock.release()
 	}

@@ -6,10 +6,13 @@
  */
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { constants } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, readGit, readGitConfig } from '../git.ts'
+import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
+import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { copyNodeModules } from '../worktree/copy-node-modules.ts'
 import { REHEARSAL_FOLDER_PREFIX, REHEARSAL_MARKER_FILE } from './handover.constants.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
@@ -30,15 +33,16 @@ export async function rehearseHandover(params: {
 	const repository = handover.lotsFile.repository
 	const clone = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
 	write(`rehearsal in ${clone}`)
-	let hookGroup: number | undefined
+	/** The hook's process group is stopped first (SIGKILL after its grace), then the clone goes. */
 	function interrupted(signal: NodeJS.Signals): void {
-		if (hookGroup !== undefined) stopProcessGroup(hookGroup)
-		rmSync(clone, { recursive: true, force: true })
-		write(`interrupted (${signal}): the hook stopped, the rehearsal clone removed`)
-		process.exit(signal === 'SIGINT' ? 130 : 143)
+		void stopLiveGroups(signal).then(function cleanUp() {
+			rmSync(clone, { recursive: true, force: true })
+			write(`interrupted (${signal}): the hook stopped, the rehearsal clone removed`)
+			process.exit(128 + constants.signals[signal])
+		})
 	}
-	process.once('SIGINT', interrupted)
-	process.once('SIGTERM', interrupted)
+	// `on`, not `once`: the child's forwarding sees this listener and leaves the exit to it
+	for (const signal of FORWARDED_SIGNALS) process.on(signal, interrupted)
 	try {
 		prepareClone({ repository, clone, branch: handover.lotsFile.branch, write })
 		return await runHandoverFolder({
@@ -47,27 +51,14 @@ export async function rehearseHandover(params: {
 			write,
 			clock: params.clock,
 			colour: params.colour,
-			onProcessGroup: (pid) => {
-				hookGroup = pid
-			},
 		})
 	} finally {
-		process.removeListener('SIGINT', interrupted)
-		process.removeListener('SIGTERM', interrupted)
+		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
 		if (params.keep) write(`kept the rehearsal clone: ${clone}`)
 		else {
 			rmSync(clone, { recursive: true, force: true })
 			write('removed the rehearsal clone')
 		}
-	}
-}
-
-/** Stops a process group (the commit and its hook's children); a group already gone is fine. */
-function stopProcessGroup(pid: number): void {
-	try {
-		process.kill(-pid, 'SIGTERM')
-	} catch {
-		// the group ended already
 	}
 }
 

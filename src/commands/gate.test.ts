@@ -65,7 +65,7 @@ const NO_BASELINE_LINE =
 	'ok    hygiene  no hygiene baseline (worktree not made by `dialecte worktree add`): the stash is not compared'
 
 describe('runGate', { timeout: 30_000 }, () => {
-	it('a step whose output says passed but exits non-zero → failed, the next step not run', () => {
+	it('a step whose output says passed but exits non-zero → failed, the next step not run', async () => {
 		const root = packageWith({
 			fast: [
 				{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'; exit 3` },
@@ -73,7 +73,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 			],
 		})
 
-		const result = gate({ cwd: root, argv: [] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n').slice(0, 5)).toEqual([
@@ -85,7 +85,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 		])
 	})
 
-	it('a docs build rewrote a declared generated file → restored byte-exact, even when the step fails', () => {
+	it('a docs build rewrote a declared generated file → restored byte-exact, even when the step fails', async () => {
 		const original = Buffer.from([0x7b, 0x0a, 0x09, 0x22, 0xe2, 0x9c, 0x93, 0x22, 0x0d, 0x0a, 0x7d])
 		const root = packageWith({
 			full: [
@@ -100,7 +100,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 		})
 		writeFileSync(join(root, 'doc/data/catalog.json'), original)
 
-		const result = gate({ cwd: root, argv: ['--full'] })
+		const result = await gate({ cwd: root, argv: ['--full'] })
 
 		expect(readFileSync(join(root, 'doc/data/catalog.json')).equals(original)).toBe(true)
 		expect(result.output.split('\n').slice(0, 2)).toEqual([
@@ -109,7 +109,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 		])
 	})
 
-	it('a test step that counts no test, or exits 0 with a failed test → failed', () => {
+	it('a test step that counts no test, or exits 0 with a failed test → failed', async () => {
 		const silent = packageWith({
 			fast: [
 				{
@@ -123,15 +123,15 @@ describe('runGate', { timeout: 30_000 }, () => {
 			fast: [{ name: 'tests', run: `printf ' Tests  1 failed | 3 passed (4)\n'`, counts: 'tests' }],
 		})
 
-		expect(gate({ cwd: silent, argv: [] }).output.split('\n')[2]).toBe(
-			'FAIL  tests  exit 0  no test ran',
-		)
-		expect(gate({ cwd: failing, argv: [] }).output.split('\n')[2]).toBe(
+		const silentResult = await gate({ cwd: silent, argv: [] })
+		expect(silentResult.output.split('\n')[2]).toBe('FAIL  tests  exit 0  no test ran')
+		const failingResult = await gate({ cwd: failing, argv: [] })
+		expect(failingResult.output.split('\n')[2]).toBe(
 			'FAIL  tests  exit 0  tests 3 passed, 1 failed / 4  1 test(s) failed',
 		)
 	})
 
-	it('an npm script the package lacks → skipped; the rest green → exit 0 with the counts', () => {
+	it('an npm script the package lacks → skipped; the rest green → exit 0 with the counts', async () => {
 		const root = packageWith({
 			scripts: { check: `printf 'Found 0 warnings and 0 errors.\n'` },
 			fast: [
@@ -140,7 +140,8 @@ describe('runGate', { timeout: 30_000 }, () => {
 			],
 		})
 
-		expect(gate({ cwd: root, argv: [] })).toEqual({
+		const result = await gate({ cwd: root, argv: [] })
+		expect(result).toEqual({
 			exitCode: 0,
 			output: [
 				NO_BASELINE_LINE,
@@ -152,11 +153,11 @@ describe('runGate', { timeout: 30_000 }, () => {
 		})
 	})
 
-	it('a hand-over script holds the repository → refused, no step run', () => {
+	it('a hand-over script holds the repository → refused, no step run', async () => {
 		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
 		writeFileSync(join(root, '.git/dialecte-handover.lock'), '/plans/commit.sh\n')
 
-		const result = gate({ cwd: root, argv: [] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toContain('held by the hand-over /plans/commit.sh')
@@ -166,12 +167,12 @@ describe('runGate', { timeout: 30_000 }, () => {
 })
 
 describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
-	it('--fast with a staged file → hygiene fails first with how to look, no step run', () => {
+	it('--fast with a staged file → hygiene fails first with how to look, no step run', async () => {
 		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
 		writeFileSync(join(root, 'README.md'), 'changed\n')
 		git({ root, args: ['add', 'README.md'] })
 
-		const result = gate({ cwd: root, argv: [] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
@@ -186,12 +187,12 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(existsSync(join(root, 'ran'))).toBe(false)
 	})
 
-	it('--fast with a new file declared → no warning; not declared → a warning, still green', () => {
+	it('--fast with a new file declared → no warning; not declared → a warning, still green', async () => {
 		const root = packageWith({ fast: [{ name: 'check', run: 'true' }] })
 		writeFileSync(join(root, 'new.ts'), 'export {}\n')
 
-		const declared = gate({ cwd: root, argv: ['--declare', 'new.ts'] })
-		const undeclared = gate({ cwd: root, argv: [] })
+		const declared = await gate({ cwd: root, argv: ['--declare', 'new.ts'] })
+		const undeclared = await gate({ cwd: root, argv: [] })
 
 		expect(declared.output.split('\n')[0]).toBe(NO_BASELINE_LINE)
 		expect(undeclared.exitCode).toBe(0)
@@ -200,7 +201,7 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		)
 	})
 
-	it('--full while another live process holds the machine lock, --no-wait → refused naming it, no step run', () => {
+	it('--full while another live process holds the machine lock, --no-wait → refused naming it, no step run', async () => {
 		const root = packageWith({ full: [{ name: 'build', run: 'touch ran' }] })
 		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
 		writeFileSync(
@@ -212,7 +213,12 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 			}),
 		)
 
-		const result = gate({ cwd: root, argv: ['--full', '--no-wait'], lockPath, isAlive: () => true })
+		const result = await gate({
+			cwd: root,
+			argv: ['--full', '--no-wait'],
+			lockPath,
+			isAlive: () => true,
+		})
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n').slice(0, 2)).toEqual([
@@ -222,13 +228,14 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(existsSync(join(root, 'ran'))).toBe(false)
 	})
 
-	it('--full → the lock held while the steps run (with this gate as holder), released after', () => {
+	it('--full → the lock held while the steps run (with this gate as holder), released after', async () => {
 		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
 		const root = packageWith({
 			full: [{ name: 'build', run: `cat ${JSON.stringify(lockPath)} > seen.json` }],
 		})
 
-		expect(gate({ cwd: root, argv: ['--full'], lockPath }).exitCode).toBe(0)
+		const result = await gate({ cwd: root, argv: ['--full'], lockPath })
+		expect(result.exitCode).toBe(0)
 
 		expect(JSON.parse(readFileSync(join(root, 'seen.json'), 'utf8'))).toMatchObject({
 			pid: process.pid,
@@ -237,7 +244,7 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(existsSync(lockPath)).toBe(false)
 	})
 
-	it('--fast: a heavy step takes the lock, a light one does not', () => {
+	it('--fast: a heavy step takes the lock, a light one does not', async () => {
 		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
 		const probe = `test -f ${JSON.stringify(lockPath)} && echo held || echo free`
 		const root = packageWith({
@@ -247,7 +254,8 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 			],
 		})
 
-		expect(gate({ cwd: root, argv: [], lockPath }).exitCode).toBe(0)
+		const result = await gate({ cwd: root, argv: [], lockPath })
+		expect(result.exitCode).toBe(0)
 
 		expect(readFileSync(join(root, 'light.txt'), 'utf8').trim()).toBe('free')
 		expect(readFileSync(join(root, 'browser.txt'), 'utf8').trim()).toBe('held')
@@ -282,13 +290,15 @@ describe('runGate: a package whose tests run in a browser', { timeout: 30_000 },
 		})
 	}
 
-	it('the test step of a package running its tests in a browser → holds the machine lock; a node-only package → does not', () => {
+	it('the test step of a package running its tests in a browser → holds the machine lock; a node-only package → does not', async () => {
 		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
 		const browser = browserPackage({ lockPath, browser: true })
 		const node = browserPackage({ lockPath, browser: false })
 
-		expect(gate({ cwd: browser, argv: [], lockPath }).exitCode).toBe(0)
-		expect(gate({ cwd: node, argv: [], lockPath }).exitCode).toBe(0)
+		const browserResult = await gate({ cwd: browser, argv: [], lockPath })
+		expect(browserResult.exitCode).toBe(0)
+		const nodeResult = await gate({ cwd: node, argv: [], lockPath })
+		expect(nodeResult.exitCode).toBe(0)
 
 		expect(readFileSync(join(browser, 'tests.txt'), 'utf8').trim()).toBe('held')
 		expect(readFileSync(join(node, 'tests.txt'), 'utf8').trim()).toBe('free')
@@ -324,20 +334,20 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 	}
 
 	/** A package where the test station proved the test red and the implement station made it green. */
-	function redThenGreen(): string {
+	async function redThenGreen(): Promise<string> {
 		const root = tddPackage()
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		tdd({ root, argv: ['red'] })
+		await tdd({ root, argv: ['red'] })
 		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
-		tdd({ root, argv: ['green'] })
+		await tdd({ root, argv: ['green'] })
 		return root
 	}
 
-	it('a new test file never proven red → fails: test code changed outside tdd red, the cases listed', () => {
+	it('a new test file never proven red → fails: test code changed outside tdd red, the cases listed', async () => {
 		const root = tddPackage()
 		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
 
-		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
@@ -351,30 +361,33 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		])
 	})
 
-	it('red then green → ok with the count; the test file edited since, or a helper added → fails naming it', () => {
-		const green = redThenGreen()
-		const edited = redThenGreen()
+	it('red then green → ok with the count; the test file edited since, or a helper added → fails naming it', async () => {
+		const green = await redThenGreen()
+		const edited = await redThenGreen()
 		writeFileSync(join(edited, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(3) '))
-		const helper = redThenGreen()
+		const helper = await redThenGreen()
 		writeFiles({ root: helper, files: { 'test/expected.ts': 'export const EXPECTED = 3\n' } })
 
-		const passed = gate({ cwd: green, argv: ['--declare', 'src/'] })
+		const passed = await gate({ cwd: green, argv: ['--declare', 'src/'] })
 
 		expect(passed.exitCode).toBe(0)
 		expect(passed.output.split('\n')[1]).toBe(
 			'ok    tdd  1 case(s) of the change: 1 red then green',
 		)
-		expect(gate({ cwd: edited, argv: ['--declare', 'src/'] }).output.split('\n')[1]).toBe(
+		const editedResult = await gate({ cwd: edited, argv: ['--declare', 'src/'] })
+		expect(editedResult.output.split('\n')[1]).toBe(
 			'FAIL  tdd  test code changed outside tdd red: src/add.test.ts',
 		)
-		expect(
-			gate({ cwd: helper, argv: ['--declare', 'src/', '--declare', 'test/'] }).output.split(
-				'\n',
-			)[1],
-		).toBe('FAIL  tdd  test code changed outside tdd red: test/expected.ts')
+		const helperResult = await gate({
+			cwd: helper,
+			argv: ['--declare', 'src/', '--declare', 'test/'],
+		})
+		expect(helperResult.output.split('\n')[1]).toBe(
+			'FAIL  tdd  test code changed outside tdd red: test/expected.ts',
+		)
 	})
 
-	it('a test call of the base deleted → passes, the finding shown under the step', () => {
+	it('a test call of the base deleted → passes, the finding shown under the step', async () => {
 		const root = tddPackage({
 			'src/add.ts': IMPLEMENTED,
 			'src/add.test.ts': ADD_TEST.replace(
@@ -383,9 +396,9 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 			),
 		})
 		writeFileSync(join(root, 'src/add.test.ts'), ADD_TEST)
-		tdd({ root, argv: ['red'] })
+		await tdd({ root, argv: ['red'] })
 
-		const result = gate({ cwd: root, argv: [] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output.split('\n').slice(1, 3)).toEqual([
@@ -394,15 +407,15 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		])
 	})
 
-	it('a node-only package, the machine lock held by another live process → the tdd step does not take it', () => {
-		const root = redThenGreen()
+	it('a node-only package, the machine lock held by another live process → the tdd step does not take it', async () => {
+		const root = await redThenGreen()
 		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
 		writeFileSync(
 			lockPath,
 			JSON.stringify({ pid: 1111, command: 'elsewhere', startedAt: '2026-10-29T10:00:00.000Z' }),
 		)
 
-		const result = gate({
+		const result = await gate({
 			cwd: root,
 			argv: ['--declare', 'src/', '--no-wait'],
 			lockPath,
@@ -414,7 +427,7 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		)
 	})
 
-	it('a case the lot accepts → counted and shown with its reason under the step', () => {
+	it('a case the lot accepts → counted and shown with its reason under the step', async () => {
 		const root = tddPackage({ 'src/add.ts': IMPLEMENTED })
 		writeFiles({
 			root,
@@ -430,9 +443,9 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 				}),
 			},
 		})
-		tdd({ root, argv: ['red'] })
+		await tdd({ root, argv: ['red'] })
 
-		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output.split('\n').slice(1, 3)).toEqual([
@@ -441,15 +454,15 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		])
 	})
 
-	it('an acceptance naming no case of the change → reported as unused under the step', () => {
-		const root = redThenGreen()
+	it('an acceptance naming no case of the change → reported as unused under the step', async () => {
+		const root = await redThenGreen()
 		mkdirSync(join(root, '.dialecte'))
 		writeFileSync(
 			join(root, '.dialecte/lot.json'),
 			JSON.stringify({ accept: [{ case: 'src/add.test.ts::nope', reason: 'a typo' }] }),
 		)
 
-		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
 
 		expect(result.output.split('\n').slice(1, 3)).toEqual([
 			'ok    tdd  1 case(s) of the change: 1 red then green',
@@ -457,27 +470,28 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		])
 	})
 
-	it('an acceptance that is not { case, reason } → fails naming the expected shape', () => {
+	it('an acceptance that is not { case, reason } → fails naming the expected shape', async () => {
 		const root = tddPackage()
 		mkdirSync(join(root, '.dialecte'))
 		writeFileSync(join(root, '.dialecte/lot.json'), JSON.stringify({ accept: [{ case: 'x' }] }))
 
-		expect(gate({ cwd: root, argv: [] }).output.split('\n')[1]).toBe(
+		const result = await gate({ cwd: root, argv: [] })
+		expect(result.output.split('\n')[1]).toBe(
 			'FAIL  tdd  .dialecte/lot.json: each "accept" entry must be { "case": "<file>::<name>", "reason": "<why>" }',
 		)
 	})
 
-	it('no test file changed → ok with a note; --full runs the step too, first', () => {
+	it('no test file changed → ok with a note; --full runs the step too, first', async () => {
 		const root = tddPackage()
 
-		const fast = gate({ cwd: root, argv: [] })
-		const full = gate({ cwd: root, argv: ['--full'] })
+		const fast = await gate({ cwd: root, argv: [] })
+		const full = await gate({ cwd: root, argv: ['--full'] })
 
 		expect(fast.output.split('\n')[1]).toBe('ok    tdd  no test code new or changed since the base')
 		expect(full.output.split('\n')[0]).toBe('ok    tdd  no test code new or changed since the base')
 	})
 
-	it('the lot declared exempt → ok with the reason and what the change touches; the lot file not a new file to declare', () => {
+	it('the lot declared exempt → ok with the reason and what the change touches; the lot file not a new file to declare', async () => {
 		const root = tddPackage({ 'src/add.ts': IMPLEMENTED })
 		writeFiles({
 			root,
@@ -488,7 +502,7 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 			},
 		})
 
-		const result = gate({ cwd: root, argv: ['--declare', 'src/'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output.split('\n').slice(0, 2)).toEqual([
@@ -497,12 +511,12 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		])
 	})
 
-	it('a lot file whose tdd is not "exempt: <reason>" → fails naming the expected shape', () => {
+	it('a lot file whose tdd is not "exempt: <reason>" → fails naming the expected shape', async () => {
 		const root = tddPackage()
 		mkdirSync(join(root, '.dialecte'))
 		writeFileSync(join(root, '.dialecte/lot.json'), JSON.stringify({ tdd: 'skip' }))
 
-		const result = gate({ cwd: root, argv: [] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')[1]).toBe(

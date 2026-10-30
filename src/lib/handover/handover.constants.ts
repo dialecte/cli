@@ -56,3 +56,9 @@ cd __REPOSITORY__
 npx --no-install @dialecte/cli handover run --probe >/dev/null 2>&1 || { echo ">> no @dialecte/cli with \\\`handover run\\\` installed in "__REPOSITORY__": npm install --save-dev @dialecte/cli@latest there, or run: "__FALLBACK__ >&2; exit 1; }
 exec npx --no-install @dialecte/cli handover run "$HERE" "$@"
 `
+
+/** How long a lot's unstaging waits for a stopped git to remove its `index.lock`. */
+export const INDEX_LOCK_WAIT_MILLISECONDS = 5_000
+
+/** How often the unstaging tries again while `index.lock` is there. */
+export const INDEX_LOCK_RETRY_MILLISECONDS = 100

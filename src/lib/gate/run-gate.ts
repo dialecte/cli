@@ -4,11 +4,11 @@
  * whatever it says, a test step that counts no test fails, a failed test in the counts fails. The first
  * failure stops the gate. A step that runs only the tests a change affects passes, with a note, when
  * its runner finds none (a doc-only change). Generated docs a step rewrites are restored byte for byte, whatever its result.
+ * Each step runs through `runChild`: stdin closed, and stopped as stalled when it prints nothing and its
+ * processes gain no CPU for `stallAfter`, its process tree in the tail.
  */
-import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { stripVTControlCharacters } from 'node:util'
 
 import {
 	BROWSER_COMMAND_PATTERN,
@@ -17,6 +17,9 @@ import {
 	TEST_CONFIG_FILES,
 	TEST_RUNNER_PATTERN,
 } from '../machine-lock/machine-lock.constants.ts'
+import { runChild } from '../progress/run-child.ts'
+import { stallReason } from '../progress/stall-reason.ts'
+import { tailOf } from '../progress/tail-of.ts'
 import {
 	FAILED_OUTPUT_TAIL_LINES,
 	NO_AFFECTED_TEST_NOTE,
@@ -26,16 +29,22 @@ import {
 import { readStepCounts } from './step-counts.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
+import type { Clock } from '../progress/clock.types.ts'
+import type { Watchdog } from '../progress/run-child.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 import type { StepCounts, StepLock, StepResult } from './gate.types.ts'
 
-export function runGateSteps(params: {
+export async function runGateSteps(params: {
 	root: string
 	steps: readonly GateStep[]
 	packageJson: PackageJson
 	/** Takes the machine lock around a heavy step; without it, no step waits for the lock. */
 	lockStep?: StepLock
-}): StepResult[] {
+	/** Default: the system clock. */
+	clock?: Clock
+	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
+	watchdog?: Watchdog
+}): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const browserTests = runsTestsInABrowser({ root, packageJson })
 	const results: StepResult[] = []
@@ -62,9 +71,14 @@ export function runGateSteps(params: {
 			continue
 		}
 		try {
-			results.push(
-				runStep({ root, step, generatedDocs: packageJson.dialecte?.generatedDocs ?? [] }),
-			)
+			const result = await runStep({
+				root,
+				step,
+				generatedDocs: packageJson.dialecte?.generatedDocs ?? [],
+				clock: params.clock,
+				watchdog: params.watchdog,
+			})
+			results.push(result)
 		} finally {
 			lock?.release()
 		}
@@ -97,21 +111,44 @@ export function runsTestsInABrowser(params: { root: string; packageJson: Package
 	})
 }
 
-function runStep(params: { root: string; step: GateStep; generatedDocs: string[] }): StepResult {
+async function runStep(params: {
+	root: string
+	step: GateStep
+	generatedDocs: string[]
+	clock?: Clock
+	watchdog?: Watchdog
+}): Promise<StepResult> {
 	const { root, step } = params
 	const snapshot = step.restoresGeneratedDocs
 		? snapshotFiles({ root, files: params.generatedDocs })
 		: new Map<string, Buffer | undefined>()
-	const execution = spawnSync('sh', ['-c', step.run], {
+	const execution = await runChild({
+		command: 'sh',
+		args: ['-c', step.run],
 		cwd: root,
-		encoding: 'utf8',
-		maxBuffer: 1e9,
-		env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+		environment: { FORCE_COLOR: '0', NO_COLOR: '1' },
+		clock: params.clock,
+		watchdog: params.watchdog,
 	})
 	const restored = restoreFiles({ root, snapshot })
-	const output = `${execution.stdout ?? ''}${execution.stderr ?? ''}`
+	const { output, stalled } = execution
 	const counts = readStepCounts(output)
-	const exitCode = execution.status ?? 1
+	if (stalled)
+		return {
+			step,
+			status: 'failed',
+			counts,
+			restored,
+			reason: stallReason({ watchdog: params.watchdog }),
+			tail: [
+				tailOf({ output, lines: FAILED_OUTPUT_TAIL_LINES }),
+				'its processes, killed:',
+				stalled.report,
+			]
+				.filter(Boolean)
+				.join('\n'),
+		}
+	const exitCode = execution.exitCode ?? 1
 	if (exitCode === 0 && !counts.tests && step.changedOnly && NO_AFFECTED_TEST_PATTERN.test(output))
 		return { step, status: 'passed', exitCode, counts, restored, note: NO_AFFECTED_TEST_NOTE }
 	const reason = failureOf({ step, exitCode, counts })
@@ -121,7 +158,7 @@ function runStep(params: { root: string; step: GateStep; generatedDocs: string[]
 		exitCode,
 		counts,
 		restored,
-		...(reason && { reason, tail: tailOf(output) }),
+		...(reason && { reason, tail: tailOf({ output, lines: FAILED_OUTPUT_TAIL_LINES }) }),
 	}
 }
 
@@ -164,12 +201,4 @@ function restoreFiles(params: {
 		restored.push(file)
 	}
 	return restored
-}
-
-function tailOf(output: string): string {
-	return stripVTControlCharacters(output)
-		.trimEnd()
-		.split('\n')
-		.slice(-FAILED_OUTPUT_TAIL_LINES)
-		.join('\n')
 }

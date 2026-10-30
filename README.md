@@ -164,6 +164,21 @@ the answer.
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
   step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
   while a hand-over script holds the repository.
+- No runner hangs silently. Every child that `dialecte gate` (its steps), `tdd` (its vitest runs) and
+  `handover run` (each commit and its hooks, `--rehearse` too) start runs in a process group of its own,
+  with its stdin closed (a command that reads it, such as `grep` with no file, gets end-of-file at once),
+  and under a stall watchdog. Any output, a part of a line included, counts as activity; so does CPU time
+  gained by any process of the child's tree (its descendants and its process group, sampled with `ps`
+  every 5 s, macOS and Linux). After 10 minutes with neither, the tree is printed one line per process
+  (pid, state, CPU time, command), stopped (SIGTERM to the group and every pid, SIGKILL to what is left
+  after 2 s) and the run ends only once its processes are gone, as `stalled`: the gate's step fails with
+  `stalled: no output, no CPU for 10 m 0 s` and the tree in its tail, `tdd`'s run fails with the tree, a
+  hand-over lot is not committed and its files are unstaged (waiting a few seconds for a stopped git's
+  `index.lock`; when the lock stays, the run says the files are still staged and names the lock). A
+  `ps` that fails or times out gives no verdict on that sample; failing for the whole 10 minutes is a
+  stall of its own. Ctrl-C, SIGTERM or SIGHUP received by the cli is passed on to every running child's group.
+  A child that asks the terminal (a gpg or ssh passphrase prompt) runs in a background group: it
+  stops (state `T`) and is reported as stalled.
 - `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--no-wait] [--json]` makes
   the order of the work visible: tests written from the spec before any code, red for a real reason, then
   made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,

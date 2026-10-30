@@ -869,6 +869,50 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 	})
 })
 
+describe(
+	'handover run --rehearse, interrupted, a hook ignoring TERM',
+	{
+		timeout: SCRATCH_REPOSITORY_TIMEOUT,
+	},
+	() => {
+		it('SIGINT while the hook runs → every hook process is dead afterwards and the clone is removed', async () => {
+			const { root, lotsPath, out } = prepare()
+			const signals = temporaryFolder('dialecte-signals-')
+			const pidFile = join(signals, 'sleep.pid')
+			installHook({
+				root,
+				script: `trap "" TERM; echo $$ > '${pidFile}.hook'; sleep 60 & echo $! > '${pidFile}'; wait`,
+			})
+			writeFileSync(
+				lotsPath,
+				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+			)
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+
+			const run = spawn(process.execPath, [CLI_SOURCE, 'handover', 'run', out, '--rehearse'], {
+				env: { ...process.env, TMPDIR: scratchRoot },
+				stdio: 'ignore',
+			})
+			const exited = new Promise<number | null>((resolveExit) => run.on('exit', resolveExit))
+			await waitFor({ check: () => existsSync(pidFile), bound: 30_000 })
+			const pids = [pidFile, `${pidFile}.hook`].map((file) =>
+				Number(readFileSync(file, 'utf8').trim()),
+			)
+			run.kill('SIGINT')
+			await exited
+			await new Promise((resolve) => setTimeout(resolve, 3_000))
+			const alive = pids.filter(isProcessAlive)
+			for (const pid of alive) process.kill(pid, 'SIGKILL')
+
+			expect(alive).toEqual([])
+			expect(
+				readdirSync(scratchRoot).filter((name) => name.startsWith('dialecte-rehearse-')),
+			).toEqual([])
+		})
+	},
+)
+
 describe('handover list', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('four hand-overs → pending, partly committed, committed and stale, one line each', async () => {
 		const root = temporaryFolder('dialecte-plans-')

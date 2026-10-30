@@ -4,6 +4,10 @@ import type { Clock } from '../src/lib/progress/clock.types.ts'
 export type FakeClock = Clock & {
 	/** Moves the time forward, firing every timer due on the way, in order. */
 	advance(milliseconds: number): void
+	/** How many timers wait to fire. */
+	pending(): number
+	/** Resolves once at least `count` timers wait: the code under test is armed, the test may advance. */
+	whenPending(count: number): Promise<void>
 	/** Called after each `sleep`, with the time it reached. */
 	onSleep?: (now: number) => void
 }

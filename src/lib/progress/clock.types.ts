@@ -11,14 +11,11 @@ export type Clock = {
 /** What `setTimeout` answered, handed back to `clearTimeout`. */
 export type ClockTimer = unknown
 
-/** Prints a heartbeat while a command is silent; `touch` on every line it prints. */
+/** Prints a heartbeat while a command is silent; `touch` on everything it prints. */
 export type Heartbeat = {
 	touch(): void
 	stop(): void
 }
-
-/** How a command ended, with everything it printed (both streams, in the order they came). */
-export type StreamedCommand = { exitCode: number; output: string }
 
 /** One heartbeat: the time since the start, and how many beats in a row came without a line. */
 export type HeartbeatBeat = { elapsed: number; silentBeats: number }

@@ -1,17 +1,18 @@
 /**
  * Runs a command and prints each line it writes (standard output and error) as it comes, behind a
  * prefix; while it stays silent, a heartbeat line every `every` milliseconds says how long it has run.
- * Nothing is read from a terminal: its input is the given text, or nothing.
+ * Nothing is read from a terminal: its input is the given text, then end-of-file. It runs through
+ * `runChild`: a command silent with no CPU gained by its processes for `stallAfter` is stopped as stalled.
  */
-import { spawn } from 'node:child_process'
-
 import { formatDuration } from './format-duration.ts'
 import { startHeartbeat } from './heartbeat.ts'
 import { HEARTBEAT_HINT_AFTER_BEATS } from './progress.constants.ts'
+import { runChild } from './run-child.ts'
 
-import type { Clock, StreamedCommand } from './clock.types.ts'
+import type { Clock } from './clock.types.ts'
+import type { StreamedCommand, Watchdog } from './run-child.types.ts'
 
-export function streamCommand(params: {
+export async function streamCommand(params: {
 	command: string
 	args: string[]
 	cwd: string
@@ -24,58 +25,47 @@ export function streamCommand(params: {
 	clock: Clock
 	every: number
 	/**
-	 * Run it in a process group of its own and say its pid: the caller can then stop it and every process
-	 * it started (a hook's test runner) on an interrupt.
+	 * Says the pid of its process group (it always runs in one of its own): the caller can then stop it
+	 * and every process it started (a hook's test runner) on an interrupt.
 	 */
 	onProcessGroup?: (pid: number) => void
+	/** Stops it when it prints nothing and its tree gains no CPU for `stallAfter`; the result then says `stalled`. */
+	watchdog?: Watchdog
 }): Promise<StreamedCommand> {
 	const { clock, write } = params
-	return new Promise(function run(resolvePromise) {
-		const child = spawn(params.command, params.args, {
-			cwd: params.cwd,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, FORCE_COLOR: '0' },
-			detached: params.onProcessGroup !== undefined,
-		})
-		if (params.onProcessGroup && child.pid !== undefined) params.onProcessGroup(child.pid)
-		let output = ''
-		const heartbeat = startHeartbeat({
-			clock,
-			every: params.every,
-			startedAt: clock.now(),
-			onBeat: function beat(beat) {
-				const silence = output
-					? `silent for ${formatDuration(beat.silentBeats * params.every)}`
-					: 'silent since it started'
-				const hint =
-					beat.silentBeats === HEARTBEAT_HINT_AFTER_BEATS
-						? ` - ${silence}: is it waiting for input, or running in watch mode (vitest without \`run\`)?`
-						: ''
-				write(`${params.heartbeatLabel} ${formatDuration(beat.elapsed)}${hint}`)
-			},
-		})
-		const pending = { stdout: '', stderr: '' }
-		function receive(received: { stream: 'stdout' | 'stderr'; chunk: Buffer }): void {
-			const { stream, chunk } = received
-			const text = chunk.toString('utf8')
-			output += text
-			heartbeat.touch()
-			const lines = (pending[stream] + text).split(/\r?\n/)
-			pending[stream] = lines.pop() ?? ''
-			for (const line of lines) write(`${params.prefix}${line}`)
-		}
-		child.stdout.on('data', (chunk: Buffer) => receive({ stream: 'stdout', chunk }))
-		child.stderr.on('data', (chunk: Buffer) => receive({ stream: 'stderr', chunk }))
-		child.on('error', function failed(error) {
-			heartbeat.stop()
-			resolvePromise({ exitCode: 127, output: `${output}${error.message}\n` })
-		})
-		child.on('close', function closed(code) {
-			heartbeat.stop()
-			for (const rest of [pending.stdout, pending.stderr])
-				if (rest) write(`${params.prefix}${rest}`)
-			resolvePromise({ exitCode: code ?? 1, output })
-		})
-		child.stdin.end(params.input ?? '')
+	let printed = false
+	const heartbeat = startHeartbeat({
+		clock,
+		every: params.every,
+		startedAt: clock.now(),
+		onBeat: function beat(beat) {
+			const silence = printed
+				? `silent for ${formatDuration(beat.silentBeats * params.every)}`
+				: 'silent since it started'
+			const hint =
+				beat.silentBeats === HEARTBEAT_HINT_AFTER_BEATS
+					? ` - ${silence}: is it waiting for input, or running in watch mode (vitest without \`run\`)?`
+					: ''
+			write(`${params.heartbeatLabel} ${formatDuration(beat.elapsed)}${hint}`)
+		},
 	})
+	try {
+		return await runChild({
+			command: params.command,
+			args: params.args,
+			cwd: params.cwd,
+			input: params.input,
+			environment: { FORCE_COLOR: '0' },
+			onLine: (line) => write(`${params.prefix}${line}`),
+			onOutput: function heard() {
+				printed = true
+				heartbeat.touch()
+			},
+			onProcessGroup: params.onProcessGroup,
+			clock,
+			watchdog: params.watchdog,
+		})
+	} finally {
+		heartbeat.stop()
+	}
 }

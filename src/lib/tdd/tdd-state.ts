@@ -21,12 +21,12 @@ import { listTestCalls } from './test-source.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { ChangedTestFile, TddFinding, TddLedger, TddState } from './tdd.types.ts'
 
-export function readTddState(params: {
+export async function readTddState(params: {
 	root: string
 	packageJson: PackageJson
 	ledger: TddLedger
 	base: string
-}): TddState | { failure: string } {
+}): Promise<TddState | { failure: string }> {
 	const { root, ledger, base } = params
 	const testCode = hashChangedTestCode({ root, base })
 	const unfrozen = [...testCode]
@@ -35,7 +35,11 @@ export function readTddState(params: {
 	const changed = listChangedTestFiles({ root, base })
 	const findings = findDeletedCases({ root, base, ledger, changed })
 	if (changed.length === 0) return { cases: [], unfrozen, findings, unlisted: [] }
-	const modules = runTestCases({ root, files: changed.map((file) => file.file), filter: 'collect' })
+	const modules = await runTestCases({
+		root,
+		files: changed.map((file) => file.file),
+		filter: 'collect',
+	})
 	if ('failure' in modules) return modules
 	const { cases, unlisted } = readRunCases({
 		root,
