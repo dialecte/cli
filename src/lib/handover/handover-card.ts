@@ -2,14 +2,14 @@
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { shellQuote } from '../shell-quote.ts'
-import { readAcceptances, readTddExemption } from '../tdd/lot-declaration.ts'
+import { readAcceptances, readRevisions, readTddExemption } from '../tdd/lot-declaration.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
 import { countChangedFiles, readLedger, resolveBase } from '../tdd/tdd-files.ts'
 import { COMMIT_SCRIPT_FILE } from './handover.constants.ts'
 import { commitSizeOf, workingTreeSizeOf } from './lot-size.ts'
 
 import type { Card } from '../card/card.types.ts'
-import type { CaseAcceptance, TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
+import type { LotCaseEntry, LotCaseList, TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
 import type { HandoverCard, ResolvedLot } from './handover.types.ts'
 
 export function buildHandoverCard(params: {
@@ -53,29 +53,44 @@ export function buildHandoverCard(params: {
 
 /**
  * The test receipts as the reviewer of the hand-over needs them: the lot's exemption (with what the change
- * touches), the cases it accepts without a red, and every flag a receipt of the worktree carries (a rollback, a red after a green).
+ * touches), the cases it accepts without a red or revised at review, and every flag a receipt of the
+ * worktree carries (a rollback, a red after a green).
  */
 function tddRow(root: string): { tdd?: string } {
 	const lines: string[] = []
 	const exemption = readTddExemption(root)
 	if (exemption.kind === 'exempt') {
 		const packageJson = readPackageJson(root)
-		const changed = countChangedFiles({
-			root,
-			base: resolveBase({ root, packageJson }),
-			packageJson,
-		})
-		lines.push(
-			`exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
-		)
+		const base = resolveBase({ root, packageJson })
+		if (typeof base !== 'string') lines.push(`exempt: ${exemption.reason} (${base.failure})`)
+		else {
+			const changed = countChangedFiles({ root, base, packageJson })
+			lines.push(
+				`exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
+			)
+		}
 	}
 	const acceptances = readAcceptances(root)
 	if ('failure' in acceptances) lines.push(acceptances.failure)
-	const declared = 'failure' in acceptances ? [] : acceptances
+	const revisions = readRevisions(root)
+	if ('failure' in revisions) lines.push(revisions.failure)
 	const ledger = readLedger(root)
 	if ('failure' in ledger) lines.push(ledger.failure)
 	else {
-		lines.push(...acceptanceLines({ ledger, declared }))
+		lines.push(
+			...caseEntryLines({
+				ledger,
+				declared: 'failure' in acceptances ? [] : acceptances,
+				kind: 'accepted',
+				list: 'accept',
+			}),
+			...caseEntryLines({
+				ledger,
+				declared: 'failure' in revisions ? [] : revisions,
+				kind: 'revised',
+				list: 'revised',
+			}),
+		)
 		const flagged = new Map<string, Set<string>>()
 		for (const entry of ledger.entries) {
 			if (entry.kind === 'freeze' || !entry.flags?.length) continue
@@ -90,31 +105,33 @@ function tddRow(root: string): { tdd?: string } {
 }
 
 /**
- * The accepted receipts of the ledger, each with the reason the lot file gives (or marked when its entry
- * left the file), then the acceptances of the file no red run used.
+ * The accepted (or revised) receipts of the ledger, each with the reason the lot file gives (or marked
+ * when its entry left the file), then the entries of the file no red run used.
  */
-function acceptanceLines(params: {
+function caseEntryLines(params: {
 	ledger: TddLedger
-	declared: readonly CaseAcceptance[]
+	declared: readonly LotCaseEntry[]
+	kind: 'accepted' | 'revised'
+	list: LotCaseList
 }): string[] {
 	const receipts = params.ledger.entries.filter(
 		(entry): entry is TddReceipt => entry.kind !== 'freeze',
 	)
-	const accepted = new Map<string, string>()
+	const recorded = new Map<string, string>()
 	for (const receipt of receipts)
-		if (receipt.kind === 'accepted') accepted.set(caseLabel(receipt), receipt.reason ?? '')
-	const lines = [...accepted].map(([label, reason]) => {
-		const declared = params.declared.find((acceptance) => acceptance.case === label)
+		if (receipt.kind === params.kind) recorded.set(caseLabel(receipt), receipt.reason ?? '')
+	const lines = [...recorded].map(([label, reason]) => {
+		const declared = params.declared.find((entry) => entry.case === label)
 		return declared
-			? `accepted: ${label} (${declared.reason})`
-			: `accepted: ${label} (${reason}) - no longer in the lot file`
+			? `${params.kind}: ${label} (${declared.reason})`
+			: `${params.kind}: ${label} (${reason}) - no longer in the lot file`
 	})
-	for (const acceptance of params.declared)
-		if (!accepted.has(acceptance.case))
+	for (const entry of params.declared)
+		if (!recorded.has(entry.case))
 			lines.push(
-				`accept unused: ${acceptance.case} (${acceptance.reason}): ${
-					receipts.some((receipt) => caseLabel(receipt) === acceptance.case)
-						? 'not accepted at a red run'
+				`${params.list} unused: ${entry.case} (${entry.reason}): ${
+					receipts.some((receipt) => caseLabel(receipt) === entry.case)
+						? `not ${params.kind} at a red run`
 						: 'no receipt of that case'
 				}`,
 			)

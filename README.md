@@ -157,7 +157,7 @@ the answer.
   `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings.
-- `dialecte gate [--fast | --full] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
+- `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
   file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
@@ -179,7 +179,7 @@ the answer.
   stall of its own. Ctrl-C, SIGTERM or SIGHUP received by the cli is passed on to every running child's group.
   A child that asks the terminal (a gpg or ssh passphrase prompt) runs in a background group: it
   stops (state `T`) and is reported as stalled.
-- `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--no-wait] [--json]` makes
+- `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--no-wait] [--json]` makes
   the order of the work visible: tests written from the spec before any code, red for a real reason, then
   made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,
   never in the tree. Runs use the package's own vitest (each project's run of a case is a case of its own;
@@ -195,8 +195,9 @@ the answer.
     timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
     case the same as at the base is marked unchanged; a case the lot accepts is marked accepted; a green
     case whose test code changed around it is kept and flagged `test code changed around it` (the next
-    step adding a case to a green file). One refusal records no red of its file, only the refusals,
-    kept as evidence.
+    step adding a case to a green file). A file with a refusal still records its other cases'
+    receipts, the refusals kept as evidence, but is not frozen: the gate fails on it until no case of
+    it is refused.
   - A red records the case (file, full name, project), the hashes of its test file, of its own test call
     and of the production files, the failing message and the time. It is flagged `rollback` at a
     production state the case had already left, `red after green` when the case's own last receipt is a
@@ -213,6 +214,25 @@ the answer.
   - `status` prints each case (red, green, unchanged, accepted, missing receipt, test edited after red,
     with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A ledger
     that cannot be read is refused with its path.
+  - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
+    committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
+    whole-branch view; `gate --full` measures from where the branch left its base branch.
+  - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
+    (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
+    `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,
+    trailing commas after an element and the order of import statements between side-effect imports
+    are formatting (a formatter pass needs no new red); template literals count by their raw text; any
+    other edit is a change. The receipts are a version-3 ledger: an older one is refused, to be moved
+    aside. A repository without a commit is refused in one line.
+  - A package whose test entry is production code declares it:
+    `"dialecte": { "tdd": { "production": ["src/test"] } }`; the test files, fixtures, snapshots and
+    `*.script.ts` under such a folder stay test code. `testCase.only ? it.only : it` is no focus marker.
+  - A case edited at review after it was proven is declared in `.dialecte/lot.json`
+    (`"revised": [{ "case": "<file>::<name>", "reason": "<why>" }]`). It needs an earlier receipt of
+    the case (a red, an unchanged, an accepted one), not necessarily a red. The next `tdd red` records
+    it as revised when it passes (a red when it fails) and freezes its file again. Without that red run the
+    gate fails on the edit; the gate, `status` and the hand-over card list the revisions with their
+    reason, an entry no red run used as a note.
   - What it cannot see: the receipts can be written by an agent with a shell; a deliberate throw in
     production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
     be told from an honest red (at the first step the red's production is the base's). The flags and the

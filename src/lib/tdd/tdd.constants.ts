@@ -104,23 +104,21 @@ export const TDD_NEXT_STEPS =
 	'the test station runs `dialecte tdd red`, the implement station `dialecte tdd green`'
 
 /** The ledger's format: a ledger of another format is refused, never read wrongly. */
-export const LEDGER_VERSION = 2
+export const LEDGER_VERSION = 3
 
 export const NOTHING_CHANGED_SINCE_RED = 'nothing in production changed since red'
 
 export const CHANGED_AND_PASSES =
 	'its test changed since its receipt and it passes: this test proves nothing yet'
 
-export const NOT_RECORDED = '(not recorded: the file has a refusal)'
-
 export const ONLY_REFUSAL =
 	'remove the focus markers first (.only, only: true), line {lines}: vitest skips the other cases'
 
 export const TEST_CODE_CHANGED_SINCE_RED = 'test code changed since its red and it passes'
 
-/** What `"accept"` of the lot file must hold. */
-export const ACCEPT_SHAPE =
-	'each "accept" entry must be { "case": "<file>::<name>", "reason": "<why>" }'
+/** What `"accept"` or `"revised"` of the lot file must hold, `{list}` the list's name. */
+export const CASE_LIST_SHAPE =
+	'each "{list}" entry must be { "case": "<file>::<name>", "reason": "<why>" }'
 
 /** The extensions a relative import may leave out. */
 export const MODULE_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.mts', '.js', '.mjs', '.json']
@@ -134,7 +132,34 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
 /** The keys a lot file may hold; any other is a typo, refused. */
-export const LOT_KEYS: readonly string[] = ['tdd', 'accept']
+export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised']
 
-/** The keys of an `accept` entry. */
-export const ACCEPT_ENTRY_KEYS: readonly string[] = ['case', 'reason']
+/** The keys of an `accept` or `revised` entry. */
+export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
+
+/** The receipts that prove a case before its code: a red, or a pass needing no red. */
+export const PROOF_KINDS: readonly string[] = ['red', 'unchanged', 'accepted', 'revised']
+
+/** Test code under a declared production folder: fixtures and snapshots by their folder. */
+export const FIXTURE_FOLDER_PATTERN = /(^|\/)(__fixtures__|fixtures|__snapshots__)\//
+
+/** A script beside the code (`tool.script.ts`): test code, also under a declared production folder. */
+export const SCRIPT_FILE_PATTERN = /\.script\.[cm]?[jt]sx?$/
+
+/** Source compared by its tokens (format-insensitive); any other file by its bytes. */
+export const SOURCE_FILE_PATTERN = /\.[cm]?[jt]sx?$/
+
+/** Closing brackets: a comma right before one is a trailing comma, formatting only. */
+export const CLOSING_TOKENS: readonly string[] = [')', ']', '}', '>']
+
+/** Before a comma, these mean no element came first (`[,]`, `[1,,]`): the comma is a hole, kept. */
+export const OPENING_ELEMENT_TOKENS: readonly string[] = ['[', ',', '(', '{', '<']
+
+/** A comment in trivia: a block or a line comment. */
+export const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g
+
+/** The token of an array hole (`[,]`): it has no text of its own. */
+export const HOLE_TOKEN = '<hole>'
+
+/** Comments a tool reads, compared like code: a test environment, a bundler hint. */
+export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/

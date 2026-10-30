@@ -1,7 +1,8 @@
 /**
- * The files `dialecte tdd` reasons about: the hashes a receipt records (a test file; the production files,
- * everything not test code and not generated), the test code of the change since the worktree's base
- * (test files, helpers, fixtures, snapshots) and the ledger in the worktree's git folder.
+ * The files `dialecte tdd` reasons about: the hashes a receipt records (a test file by its tokens, so a
+ * formatter pass changes nothing; the production files, everything not test code and not generated, by
+ * their bytes), the test code of the change since its base (test files, helpers, fixtures, snapshots)
+ * and the ledger in the worktree's git folder.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -11,13 +12,17 @@ import { gitFolderOf, listRepositoryFiles, readGit } from '../git.ts'
 import { readHygieneBaseline } from '../worktree/hygiene.ts'
 import { DEFAULT_BASE_BRANCH, LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import {
+	FIXTURE_FOLDER_PATTERN,
 	GENERATED_FILE_PATTERN,
 	LEDGER_VERSION,
+	SCRIPT_FILE_PATTERN,
 	SNAPSHOT_FILE_PATTERN,
+	SOURCE_FILE_PATTERN,
 	TDD_LEDGER_FILE,
 	TEST_FILE_PATTERN,
 	TEST_FOLDER_PATTERN,
 } from './tdd.constants.ts'
+import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { ChangedTestFile, TddEntry, TddLedger } from './tdd.types.ts'
@@ -28,6 +33,14 @@ export function hashFile(path: string): string {
 
 export function hashText(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
+}
+
+/** sha256 of a test-code file: of its tokens for a source file, of its bytes for any other. */
+export function hashTestCode(params: { root: string; file: string }): string {
+	const text = readFileSync(join(params.root, params.file), 'utf8')
+	return hashText(
+		SOURCE_FILE_PATTERN.test(params.file) ? testCodeTokens({ text, file: params.file }) : text,
+	)
 }
 
 /** sha256 over the production files of the package: each path with the hash of its content, sorted. */
@@ -50,12 +63,33 @@ export function isTestCode(file: string): boolean {
 	)
 }
 
+/**
+ * Test code of the package: as `isTestCode`, except under a folder the package declares production
+ * (`"dialecte": { "tdd": { "production": ["src/test"] } }`), where only the test files, fixtures,
+ * snapshots and `*.script.ts` are.
+ */
+export function isPackageTestCode(params: { file: string; packageJson: PackageJson }): boolean {
+	const { file } = params
+	// `./src/test`, `src/test/` and `src/test` name the same folder
+	const declared = (params.packageJson.dialecte?.tdd?.production ?? [])
+		.map((folder) => folder.replace(/^(\.\/)+/, '').replace(/\/+$/, ''))
+		.find((folder) => folder !== '' && file.startsWith(`${folder}/`))
+	if (declared !== undefined)
+		return (
+			TEST_FILE_PATTERN.test(file) ||
+			FIXTURE_FOLDER_PATTERN.test(file.slice(declared.length)) ||
+			SNAPSHOT_FILE_PATTERN.test(file) ||
+			SCRIPT_FILE_PATTERN.test(file)
+		)
+	return isTestCode(file)
+}
+
 /** A file of the package that is production: not test code, not generated, not the lot declaration. */
 export function isProductionPath(params: { file: string; packageJson: PackageJson }): boolean {
 	const { file } = params
 	const generated = params.packageJson.dialecte?.generatedDocs ?? []
 	return (
-		!isTestCode(file) &&
+		!isPackageTestCode(params) &&
 		!GENERATED_FILE_PATTERN.test(file) &&
 		!generated.includes(file) &&
 		!LOT_FILE_PATTERN.test(file) &&
@@ -95,18 +129,35 @@ function ledgerPath(root: string): string {
 }
 
 /**
- * The commit the change is measured from: the HEAD `worktree add` recorded, else where HEAD left the
- * package's base branch, else HEAD.
+ * The commit the change is measured from. By default HEAD: the lot is the uncommitted work, whatever
+ * earlier lots the branch holds. `ref` (`--base <ref>`): where HEAD left that ref, the whole-branch view.
+ * `wholeBranch` (the gate's `--full`, before a merge): the HEAD `worktree add` recorded, else where HEAD
+ * left the package's base branch, else HEAD. Why there is none: a repository without a commit, an
+ * unknown ref.
  */
-export function resolveBase(params: { root: string; packageJson: PackageJson }): string {
+export function resolveBase(params: {
+	root: string
+	packageJson: PackageJson
+	ref?: string
+	wholeBranch?: boolean
+}): string | { failure: string } {
 	const { root } = params
+	const head = tryGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD'] })?.trim()
+	if (!head)
+		return {
+			failure: `the repository at ${root} has no commit yet: the lot is measured from HEAD, commit a base first`,
+		}
+	if (params.ref !== undefined) {
+		const base =
+			tryGit({ root, args: ['merge-base', 'HEAD', params.ref] }) ??
+			tryGit({ root, args: ['rev-parse', '--verify', '--quiet', params.ref] })
+		return base ? base.trim() : { failure: `--base ${params.ref}: no such commit` }
+	}
+	if (!params.wholeBranch) return head
 	const recorded = readHygieneBaseline(root)?.head
 	if (recorded) return recorded
 	const baseBranch = params.packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
-	return (
-		tryGit({ root, args: ['merge-base', 'HEAD', baseBranch] }) ??
-		readGit({ root, args: ['rev-parse', 'HEAD'] })
-	).trim()
+	return tryGit({ root, args: ['merge-base', 'HEAD', baseBranch] })?.trim() ?? head
 }
 
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */
@@ -122,12 +173,19 @@ export function listChangedSince(params: { root: string; base: string }): string
 		.sort()
 }
 
-/** Every test-code file changed since the base (test files, helpers, fixtures, snapshots) with its hash. */
-export function hashChangedTestCode(params: { root: string; base: string }): Map<string, string> {
+/**
+ * Every test-code file changed since the base (test files, helpers, fixtures, snapshots) with its hash
+ * (a source file's by its tokens).
+ */
+export function hashChangedTestCode(params: {
+	root: string
+	base: string
+	packageJson: PackageJson
+}): Map<string, string> {
 	return new Map(
 		listChangedSince(params)
-			.filter(isTestCode)
-			.map((file) => [file, hashFile(join(params.root, file))]),
+			.filter((file) => isPackageTestCode({ file, packageJson: params.packageJson }))
+			.map((file) => [file, hashTestCode({ root: params.root, file })]),
 	)
 }
 
@@ -179,7 +237,9 @@ export function countChangedFiles(params: {
 	const files = [...new Set(`${changed}\n${untracked}`.split('\n').filter(Boolean))].filter(
 		(file) => !LOT_FILE_PATTERN.test(file),
 	)
-	const test = files.filter(isTestCode).length
+	const test = files.filter((file) =>
+		isPackageTestCode({ file, packageJson: params.packageJson }),
+	).length
 	const production = files.filter((file) =>
 		isProductionPath({ file, packageJson: params.packageJson }),
 	).length

@@ -5,7 +5,16 @@
  * committed in the clone, which is removed at the end unless kept.
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	rmdirSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs'
 import { constants } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 
@@ -91,7 +100,10 @@ function prepareClone(params: {
 		if (existsSync(source)) {
 			mkdirSync(dirname(target), { recursive: true })
 			cpSync(source, target)
-		} else rmSync(target, { force: true })
+		} else {
+			rmSync(target, { force: true })
+			removeEmptiedFolders({ clone, folder: dirname(target) })
+		}
 	}
 	write(`  working tree: ${changed.length} changed file(s) on top of ${head.slice(0, 12)}`)
 
@@ -114,4 +126,16 @@ function prepareClone(params: {
 		)
 	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
+}
+
+/** A deleted file's folder, and each parent up to the clone, removed while empty: as git leaves the tree. */
+function removeEmptiedFolders(params: { clone: string; folder: string }): void {
+	for (
+		let folder = params.folder;
+		folder !== params.clone && folder.startsWith(params.clone) && existsSync(folder);
+		folder = dirname(folder)
+	) {
+		if (readdirSync(folder).length) return
+		rmdirSync(folder)
+	}
 }

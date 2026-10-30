@@ -10,12 +10,14 @@ import { isCaseOfChange } from './case-of-change.ts'
 import { classifyFailure } from './classify-failure.ts'
 import { hashText, isProductionPath } from './tdd-files.ts'
 import { CASE_ARGUMENT_SEPARATOR } from './tdd.constants.ts'
+import { testCodeTokens } from './test-code-tokens.ts'
 import { testCallTextAt } from './test-source.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type {
 	CaseFailure,
 	ChangedTestFile,
+	SourceLocation,
 	ReportedCase,
 	ReportedModule,
 	RunCase,
@@ -89,14 +91,31 @@ export function readRunCases(params: {
 				project: reported.project,
 				state: reported.state,
 				...(failure && { failure }),
-				caseHash: hashText(
-					`${reported.name}\0${reported.location ? (testCallTextAt({ text: file.text, location: reported.location }) ?? '') : ''}`,
-				),
+				caseHash: caseHashOf({
+					name: reported.name,
+					file: file.file,
+					text: file.text,
+					location: reported.location,
+				}),
 				ofChange: isCaseOfChange({ file, name: reported.name, location: reported.location }),
 			})
 		}
 	}
 	return { cases, unlisted }
+}
+
+/** sha256 of a case's name and the tokens of its test call: a formatter pass keeps it, an edit does not. */
+function caseHashOf(params: {
+	name: string
+	/** The test file, relative: its extension says how to parse the call. */
+	file: string
+	text: string
+	location: SourceLocation | undefined
+}): string {
+	const call = params.location
+		? (testCallTextAt({ text: params.text, file: params.file, location: params.location }) ?? '')
+		: ''
+	return hashText(`${params.name}\0${testCodeTokens({ text: call, file: params.file })}`)
 }
 
 /** The case is one the command line names (every case when it names none). */

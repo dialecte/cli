@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { hashTestCode } from '../lib/tdd/tdd-files.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -37,7 +37,7 @@ function readLedger(root: string): TddLedger {
 	const path = join(root, '.git', 'dialecte-tdd.json')
 	return existsSync(path)
 		? (JSON.parse(readFileSync(path, 'utf8')) as TddLedger)
-		: { version: 2, entries: [] }
+		: { version: 3, entries: [] }
 }
 
 /** The receipts of the ledger (its freezes left out), as `<kind> <name>`. */
@@ -54,8 +54,9 @@ function caseLines(output: string): string[] {
 		.filter((line) => /^(red|refused|green|unchanged|kept|accepted) /.test(line))
 }
 
-function sha256(text: string): string {
-	return createHash('sha256').update(text).digest('hex')
+/** The hash a receipt records for the add test file: the cli's own, of its tokens. */
+function testHash(root: string): string {
+	return hashTestCode({ root, file: 'src/add.test.ts' })
 }
 
 const STUB =
@@ -124,13 +125,13 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				file: 'src/add.test.ts',
 				name: 'add > one plus two → three',
 				project: '',
-				testFileHash: sha256(ADD_TEST),
+				testFileHash: testHash(root),
 				caseHash: expect.stringMatching(/^[0-9a-f]{64}$/),
 				productionHash: expect.stringMatching(/^[0-9a-f]{64}$/),
 				message: 'not implemented: add',
 				at: NOW.toISOString(),
 			},
-			{ kind: 'freeze', files: { 'src/add.test.ts': sha256(ADD_TEST) }, at: NOW.toISOString() },
+			{ kind: 'freeze', files: { 'src/add.test.ts': testHash(root) }, at: NOW.toISOString() },
 		])
 
 		writeFileSync(
@@ -181,7 +182,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(readLedger(root).entries.map((entry) => entry.kind)).toEqual(['refused'])
 	})
 
-	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; one refusal keeps the whole file unfrozen', async () => {
+	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; the red case of a file with refusals is recorded, nothing frozen', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -220,7 +221,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(red.exitCode).toBe(1)
 		expect(caseLines(red.output)).toEqual(
 			expect.arrayContaining([
-				'red      src/add.test.ts::add > asserts  assertion: expected 2 to be 3 // Object.is equality  (not recorded: the file has a refusal)',
+				'red      src/add.test.ts::add > asserts  assertion: expected 2 to be 3 // Object.is equality',
 				'refused  src/add.test.ts::add > calls a missing export  missing-export (not a red): multiply is not a function',
 				'refused  src/add.test.ts::add > calls the stub before asserting  not-implemented-outside-assertion (not a red): not implemented: add',
 				'refused  src/add.test.ts::add > has no matcher  not-implemented-outside-assertion (not a red): not implemented: add',
@@ -233,7 +234,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				'refused  src/focused.test.ts  remove the focus markers first (.only, only: true), line 3: vitest skips the other cases',
 			]),
 		)
-		expect(readLedger(root).entries.filter((entry) => entry.kind === 'red')).toEqual([])
+		expect(
+			readLedger(root)
+				.entries.filter((entry) => entry.kind === 'red')
+				.map((entry) => (entry as TddReceipt).name),
+		).toEqual(['add > asserts'])
 		expect(readLedger(root).entries.filter((entry) => entry.kind === 'freeze')).toEqual([])
 	})
 
@@ -261,7 +266,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the file stays unfrozen, green refused', async () => {
+	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the other case red again, recorded; the file stays unfrozen, green refused', async () => {
 		const root = createVitestPackage({})
 		const both = addTest([
 			"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
@@ -281,7 +286,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(reRed.exitCode).toBe(1)
 		expect(caseLines(reRed.output)).toEqual([
 			'refused  src/add.test.ts::add > A one plus two  its test changed since its receipt and it passes: this test proves nothing yet',
-			'red      src/add.test.ts::add > B two plus two  not-implemented: not implemented: add  (not recorded: the file has a refusal)',
+			'red      src/add.test.ts::add > B two plus two  not-implemented: not implemented: add',
 		])
 		expect(green.exitCode).toBe(1)
 		expect(green.output).toContain(
@@ -291,6 +296,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			'red add > A one plus two',
 			'red add > B two plus two',
 			'refused add > A one plus two',
+			'red add > B two plus two',
 			'refused add > A one plus two',
 			'refused add > B two plus two',
 		])

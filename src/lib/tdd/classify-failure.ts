@@ -46,7 +46,11 @@ function kindOf(params: {
 	const inAssertion = Boolean(
 		testFrame &&
 		[testFrame.column, testFrame.column + 1].some((column) =>
-			isInsideAssertion({ text: testFile.text, location: { line: testFrame.line, column } }),
+			isInsideAssertion({
+				text: testFile.text,
+				file: testFile.path,
+				location: { line: testFrame.line, column },
+			}),
 		),
 	)
 	if (NOT_IMPLEMENTED_PATTERN.test(message)) {
@@ -58,7 +62,9 @@ function kindOf(params: {
 	if (MISSING_EXPORT_PATTERN.test(message)) return 'missing-export'
 	const notCallable = NOT_CALLABLE_PATTERN.exec(message)
 	if (error.name === 'TypeError' && notCallable)
-		return importedNames(testFile.text).has(notCallable[1]) ? 'missing-export' : 'type-error'
+		return importedNames({ text: testFile.text, file: testFile.path }).has(notCallable[1])
+			? 'missing-export'
+			: 'type-error'
 	// existing code throws inside an asserting expect: a bug the test pins, whatever the error's class (a
 	// deliberate throw in production looks the same, like a stub would: the review reads the diff)
 	const thrower = frames[0]

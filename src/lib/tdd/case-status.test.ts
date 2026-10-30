@@ -151,7 +151,7 @@ describe('caseStatusOf', () => {
 		it(name, () => {
 			expect(
 				caseStatusOf({
-					ledger: { version: 2, entries: testCase.entries },
+					ledger: { version: 3, entries: testCase.entries },
 					testCase: { file: FILE, name: testCase.name, project: '' },
 					testFileHash: testCase.hash,
 					caseHash: testCase.text,

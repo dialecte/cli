@@ -1,5 +1,5 @@
 /**
- * `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--json] [--no-wait]` - the
+ * `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait]` - the
  * receipts that make the order of a lot's work visible: each new or changed test case failed for a real
  * reason before the code (red), then passed with the test code untouched (green). Receipts live in the
  * worktree's git folder; a package whose tests run in a browser runs them under the machine lock.
@@ -8,13 +8,15 @@
  *   assertion (or on a stub's `not implemented`, or on a TypeError of existing code, inside an asserting
  *   `expect(...)`) gets a red receipt; a passing case that is new or changed is refused (it proves
  *   nothing), one the same as at the base is marked unchanged, one with a receipt and the same test call is
- *   kept. One refusal in a file records no receipt of that file: only its refusals. The files without a
- *   refusal are frozen, and the changed helpers, fixtures and snapshots with them when nothing was refused.
+ *   kept, one the lot declares revised at review is recorded revised. A file with a refusal still records
+ *   its other cases' receipts but is not frozen; the files without a refusal are frozen, and the changed
+ *   helpers, fixtures and snapshots a red of theirs depends on. The change is measured from HEAD (the
+ *   uncommitted lot), or from where HEAD left `--base <ref>`.
  * - `green`: every case of the changed test files (or those named) must hold a red receipt, its file and
  *   its test call as frozen, the helpers untouched, production changed since its red, and pass.
  * - `status`: each case of the change, the test code changed since it was frozen, the deleted cases.
  */
-import { hasFlag, positionalArguments } from '../lib/config.ts'
+import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import {
 	acquireMachineLock,
@@ -25,7 +27,7 @@ import { readPackageJson } from '../lib/package-json.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { frozenHashOf, receiptsOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
-import { readAcceptances } from '../lib/tdd/lot-declaration.ts'
+import { readAcceptances, readRevisions } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
@@ -48,9 +50,9 @@ import {
 	CHANGED_AND_PASSES,
 	FROZEN_AFTER_RED,
 	NO_RED_RECEIPT,
-	NOT_RECORDED,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
+	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
 	TEST_CODE_CHANGED_SINCE_RED,
@@ -65,7 +67,7 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { WriteLine } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type {
-	CaseAcceptance,
+	LotCaseEntry,
 	CaseFailure,
 	ReceiptFlag,
 	RunCase,
@@ -96,12 +98,12 @@ export async function runTdd(params: {
 	}
 }): Promise<CommandResult> {
 	const { cwd: root, argv } = params
-	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: [] })
+	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: ['base'] })
 	if (!isSubcommand(subcommand))
 		return {
 			exitCode: 2,
 			output:
-				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--json] [--no-wait]',
+				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait]',
 		}
 	const packageJson = readPackageJson(root)
 	const ledger = readLedger(root)
@@ -111,6 +113,11 @@ export async function runTdd(params: {
 		: undefined
 	if (lock && 'refusal' in lock)
 		return { exitCode: 1, output: `tdd ${subcommand}: ${lock.refusal}` }
+	const base = resolveBase({ root, packageJson, ref: getArg(argv, 'base') })
+	if (typeof base !== 'string') {
+		if (lock && !('refusal' in lock)) lock.release()
+		return { exitCode: 1, output: `tdd ${subcommand}: ${base.failure}` }
+	}
 	try {
 		const context: TddContext = {
 			root,
@@ -119,7 +126,7 @@ export async function runTdd(params: {
 			now: params.now,
 			targets: parseTargets(words),
 			ledger,
-			base: resolveBase({ root, packageJson }),
+			base,
 		}
 		if (subcommand === 'red') return await runRed(context)
 		if (subcommand === 'green') return await runGreen(context)
@@ -142,19 +149,28 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	const at = context.now().toISOString()
 	const productionHash = hashProduction(context)
 	const testCode = hashChangedTestCode(context)
-	const focused = files.filter((file) => findOnlyMarkers(file.text).length > 0)
+	const focused = files.filter(
+		(file) => findOnlyMarkers({ text: file.text, file: file.file }).length > 0,
+	)
 	for (const file of focused) {
 		lines.push(
 			statusLine({
 				label: 'refused',
 				id: file.file,
-				detail: ONLY_REFUSAL.replace('{lines}', findOnlyMarkers(file.text).join(', ')),
+				detail: ONLY_REFUSAL.replace(
+					'{lines}',
+					findOnlyMarkers({ text: file.text, file: file.file }).join(', '),
+				),
 			}),
 		)
 		entries.push(
 			fileRefusal({ file: file.file, reason: 'focus markers', productionHash, testCode, at }),
 		)
 	}
+	const acceptances = readAcceptances(root)
+	if ('failure' in acceptances) return { exitCode: 1, output: `tdd red: ${acceptances.failure}` }
+	const revisions = readRevisions(root)
+	if ('failure' in revisions) return { exitCode: 1, output: `tdd red: ${revisions.failure}` }
 	const runnable = files.filter((file) => !focused.includes(file))
 	const modules = runnable.length
 		? await runTestCases({ root, files: runnable.map((file) => file.file), filter: 'all' })
@@ -178,8 +194,6 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 			fileRefusal({ file: file.file, reason: notARed(file.failure), productionHash, testCode, at }),
 		)
 	}
-	const acceptances = readAcceptances(root)
-	if ('failure' in acceptances) return { exitCode: 1, output: `tdd red: ${acceptances.failure}` }
 	const changedTestCode = [...testCode.keys()]
 	const resolveModule = createModuleResolver({ root })
 	const frozen: Record<string, string> = {}
@@ -191,6 +205,7 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 			file: file.file,
 			changedTestCode,
 			resolveModule,
+			packageJson: context.packageJson,
 		})
 		if (unresolvedImports.length) {
 			const reason = `cannot resolve the import ${unresolvedImports.map((specifier) => `"${specifier}"`).join(', ')}: ${UNRESOLVED_IMPORT_HINT}`
@@ -206,7 +221,7 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 		const judged = cases
 			.filter((testCase) => testCase.file === file.file && testCase.state !== 'skipped')
 			.map((testCase) =>
-				judgeRed({ testCase, context, productionHash, testCodeChanged, acceptances }),
+				judgeRed({ testCase, context, productionHash, testCodeChanged, acceptances, revisions }),
 			)
 		const refused = judged.some((judgement) => judgement.kind === 'refused')
 		for (const judgement of judged) {
@@ -224,7 +239,8 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 						at,
 					}
 				: undefined
-			if (receipt && (!refused || receipt.kind === 'refused')) entries.push(receipt)
+			// a refusal keeps the file unfrozen, not the other cases' receipts
+			if (receipt) entries.push(receipt)
 			lines.push(
 				statusLine({
 					label: judgement.kind,
@@ -232,7 +248,6 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 					detail: [
 						judgement.detail,
 						judgement.flags.length ? `flags: ${judgement.flags.join(', ')}` : '',
-						refused && judgement.kind !== 'refused' && recordable ? NOT_RECORDED : '',
 					]
 						.filter(Boolean)
 						.join('  '),
@@ -248,7 +263,7 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	}
 	if (Object.keys(frozen).length) entries.push({ kind: 'freeze', files: frozen, at })
 	appendEntries({ root, entries })
-	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'refused' })} refused; ${
+	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'revised' })} revised, ${countLines({ lines, label: 'refused' })} refused; ${
 		Object.keys(frozen).length ? `frozen: ${Object.keys(frozen).join(', ')}` : 'nothing frozen'
 	}`
 	return finish({ context, lines, summary, refused: countLines({ lines, label: 'refused' }) })
@@ -261,10 +276,12 @@ function judgeRed(params: {
 	productionHash: string
 	/** The case's test file, or test code it depends on, differs from its last freeze. */
 	testCodeChanged: boolean
-	acceptances: readonly CaseAcceptance[]
+	acceptances: readonly LotCaseEntry[]
+	/** The cases the lot declares revised at review. */
+	revisions: readonly LotCaseEntry[]
 }): {
 	testCase: RunCase
-	kind: 'red' | 'unchanged' | 'accepted' | 'kept' | 'refused'
+	kind: 'red' | 'unchanged' | 'accepted' | 'kept' | 'revised' | 'refused'
 	detail: string
 	message?: string
 	reason?: string
@@ -284,7 +301,9 @@ function judgeRed(params: {
 		}
 		const flags: ReceiptFlag[] = []
 		if (isRolledBack({ receipts, productionHash })) flags.push('rollback')
-		if (prior?.kind === 'green' && prior.productionHash === productionHash)
+		// a case the lot declares revised at review is made red again on purpose
+		const revised = params.revisions.some((revision) => revision.case === caseLabel(testCase))
+		if (prior?.kind === 'green' && prior.productionHash === productionHash && !revised)
 			flags.push('red after green')
 		return {
 			testCase,
@@ -309,6 +328,16 @@ function judgeRed(params: {
 			kind: 'accepted',
 			detail: acceptance.reason,
 			reason: acceptance.reason,
+			flags: [],
+		}
+	const revision = params.revisions.find((revised) => revised.case === caseLabel(testCase))
+	// a proven case edited at review passes: the lot's reason stands for a new red
+	if (revision && prior && (prior.caseHash !== testCase.caseHash || params.testCodeChanged))
+		return {
+			testCase,
+			kind: 'revised',
+			detail: revision.reason,
+			reason: revision.reason,
 			flags: [],
 		}
 	if (prior && prior.caseHash === testCase.caseHash) {
@@ -415,10 +444,7 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 		if (testCase.state === 'skipped' || !isTargeted({ testCase, targets: context.targets }))
 			continue
 		const proof = receiptsOf({ ledger, testCase: idOf(testCase) })
-			.filter(
-				(receipt) =>
-					receipt.kind === 'red' || receipt.kind === 'unchanged' || receipt.kind === 'accepted',
-			)
+			.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
 			.at(-1)
 		const base = {
 			...idOf(testCase),
@@ -431,7 +457,11 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 		if (refusal) {
 			entries.push({ ...base, kind: 'refused', reason: refusal })
 			lines.push(statusLine({ label: 'refused', id: caseLabel(testCase), detail: refusal }))
-		} else if (proof?.kind === 'unchanged' || proof?.kind === 'accepted')
+		} else if (
+			proof?.kind === 'unchanged' ||
+			proof?.kind === 'accepted' ||
+			proof?.kind === 'revised'
+		)
 			lines.push(statusLine({ label: proof.kind, id: caseLabel(testCase), detail: '' }))
 		else {
 			entries.push({ ...base, kind: 'green' })
@@ -457,13 +487,14 @@ function greenRefusal(params: {
 }): string | undefined {
 	const { testCase, proof } = params
 	if (!proof) return NO_RED_RECEIPT
-	if (
-		frozenHashOf({ ledger: params.ledger, file: testCase.file }) !==
-			params.testCode.get(testCase.file) ||
-		proof.caseHash !== testCase.caseHash
-	)
-		return FROZEN_AFTER_RED
-	if (proof.kind === 'unchanged' || proof.kind === 'accepted') return undefined
+	const testFileHash = params.testCode.get(testCase.file)
+	const frozen = frozenHashOf({ ledger: params.ledger, file: testCase.file })
+	// as frozen; a file never frozen (a case of it refused) as its red saw it
+	const fileUntouched =
+		frozen === testFileHash || (frozen === undefined && proof.testFileHash === testFileHash)
+	if (!fileUntouched || proof.caseHash !== testCase.caseHash) return FROZEN_AFTER_RED
+	if (proof.kind === 'unchanged' || proof.kind === 'accepted' || proof.kind === 'revised')
+		return undefined
 	if (testCase.state !== 'passed')
 		return testCase.failure
 			? `still fails: ${testCase.failure.kind}: ${firstLine(testCase.failure.message)}`
@@ -476,13 +507,16 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 	const state = await readTddState(context)
 	if ('failure' in state) return { exitCode: 1, output: `tdd status: ${state.failure}` }
 	if (context.json) return { exitCode: 0, output: JSON.stringify(state, null, 2) }
+	// a test file with cases already says so on each case line
+	const listed = new Set(state.cases.map((line) => line.file))
+	const helpersUnfrozen = state.unfrozen.filter((file) => !listed.has(file))
 	const lines = [
 		...state.cases.map(
 			(line) =>
 				`${line.status}  ${caseLabel(line)}${line.flags.length ? `  flags: ${line.flags.join(', ')}` : ''}`,
 		),
-		...(state.unfrozen.length
-			? [`test code changed outside tdd red: ${state.unfrozen.join(', ')}`]
+		...(helpersUnfrozen.length
+			? [`test code changed outside tdd red: ${helpersUnfrozen.join(', ')}`]
 			: []),
 		...state.findings.map((finding) => `deleted  ${finding.file}  ${finding.detail}`),
 		...state.unlisted.map(

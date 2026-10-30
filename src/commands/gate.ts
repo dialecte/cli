@@ -1,5 +1,5 @@
 /**
- * `dialecte gate [--fast | --full] [--no-wait] [--declare <path>]... [--json]` - the Definition of Done
+ * `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` - the Definition of Done
  * of the package, inside its repository: `--fast` (default) while iterating, `--full` once per lot. Steps
  * come from `"dialecte": { "gate": { "fast", "full" } }` in package.json, or the defaults. One line per
  * step with the counts the step itself printed; refuses to run while a hand-over script holds the
@@ -8,11 +8,12 @@
  * `--fast` starts with the hygiene of the worktree (nothing staged, the stash as it was when the worktree
  * was made, new files declared). `--full`, and every heavy step, hold the machine-wide lock: one heavy run
  * at a time on a machine; a second one waits (a line every 30 s naming the holder) or, with `--no-wait`,
- * refuses.
+ * refuses. The `tdd` step measures the lot from HEAD (the uncommitted work); `--base <ref>` and `--full`
+ * (before a merge) measure the whole branch.
  */
 import { resolve } from 'node:path'
 
-import { hasFlag } from '../lib/config.ts'
+import { getArg, hasFlag } from '../lib/config.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { renderStepCounts } from '../lib/gate/step-counts.ts'
@@ -101,6 +102,8 @@ export async function runGate(params: {
 			const tdd = await tddStep({
 				cwd,
 				packageJson,
+				ref: getArg(argv, 'base'),
+				wholeBranch: mode === 'full',
 				lock: () =>
 					runsTestsInABrowser({ root: cwd, packageJson })
 						? lockFor(`dialecte gate --${mode} (tdd) in ${resolve(cwd)}`)
@@ -162,11 +165,15 @@ async function tddStep(params: {
 	cwd: string
 	packageJson: PackageJson
 	lock: () => { release(): void } | { refusal: string }
+	ref: string | undefined
+	wholeBranch: boolean
 }): Promise<StepResult> {
 	const check = await checkTddReceipts({
 		root: params.cwd,
 		packageJson: params.packageJson,
 		lock: params.lock,
+		ref: params.ref,
+		wholeBranch: params.wholeBranch,
 	})
 	return {
 		step: TDD_STEP,

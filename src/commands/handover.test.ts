@@ -274,7 +274,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
 			JSON.stringify({
-				version: 2,
+				version: 3,
 				entries: [
 					{
 						kind: 'red',
@@ -317,7 +317,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
 			JSON.stringify({
-				version: 2,
+				version: 3,
 				entries: [
 					{
 						kind: 'accepted',
@@ -343,6 +343,47 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		)
 	})
 
+	it('a case revised at review and a red run recorded it → on the card with its reason', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					revised: [
+						{ case: 'src/read.test.ts::read > answers one', reason: 'the review asked for it' },
+					],
+				}),
+			},
+		})
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			JSON.stringify({
+				version: 3,
+				entries: [
+					{
+						kind: 'revised',
+						file: 'src/read.test.ts',
+						name: 'read > answers one',
+						project: '',
+						testFileHash: 'h',
+						caseHash: 'c',
+						productionHash: 'p',
+						reason: 'the review asked for it',
+						at: '2026-10-30T12:00:00.000Z',
+					},
+				],
+			}),
+		)
+
+		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^│ tdd {9}revised: src\/read\.test\.ts::read > answers one \(the review asked for it\) +│$/,
+				),
+			]),
+		)
+	})
+
 	it('an accepted receipt whose acceptance left the lot file, and an acceptance no receipt used → both on the card', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
@@ -356,7 +397,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
 			JSON.stringify({
-				version: 2,
+				version: 3,
 				entries: [
 					{
 						kind: 'accepted',
@@ -797,6 +838,29 @@ describe('handover run --rehearse', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () 
 		).toEqual([' M src/read.ts', '?? CHANGELOG.md'])
 		expect(existsSync(join(root, '.git', 'dialecte-handover.lock'))).toBe(true)
 		expect(readdirSync(scratchRoot)).toEqual([])
+	})
+
+	it('a lot deleting every file of a folder → the folder is gone in the clone too, a hook asserting its absence commits', async () => {
+		const { root, lotsPath, out } = prepare({
+			committed: {
+				'src/legacy/a.ts': 'export const A = 1\n',
+				'src/legacy/deep/b.ts': 'export const B = 1\n',
+			},
+			files: { 'src/read.ts': 'export function read() {\n\treturn 1\n}\n' },
+			lots: [{ paths: ['src/'], message: 'refactor(read): drop the legacy folder' }],
+		})
+		rmSync(join(root, 'src/legacy'), { recursive: true })
+		installHook({ root, script: 'test ! -e src/legacy' })
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out, argv: ['--rehearse'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.text).toContain('rehearsed: 1 commit(s) on main')
 	})
 
 	it('--keep → the clone stays, with its node_modules copied (not linked) and both commits', async () => {

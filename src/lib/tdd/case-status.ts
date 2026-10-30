@@ -1,13 +1,17 @@
 /**
  * Where a test case stands, from the ledger of its worktree, its test file and its own test call now:
- * - missing receipt: no red (nor unchanged) receipt;
+ * - missing receipt: no red (nor unchanged, accepted, revised) receipt;
  * - test edited after red: its file differs from the last red run that froze it (or none froze it), or
- *   its own test call differs from its receipt's;
+ *   its own test call differs from its receipt's (both compared by their tokens: a formatter pass is no
+ *   edit);
  * - unchanged: it passed at a red run and is the same case as at the base;
  * - accepted: it passed at a red run and the lot accepts it;
+ * - revised: edited at review, it passed at a red run and the lot declares the revision;
  * - green: a green receipt of this very case later than its red and than the last freeze of any test code;
  * - red: otherwise.
  */
+import { PROOF_KINDS } from './tdd.constants.ts'
+
 import type {
 	CaseStatus,
 	ReceiptFlag,
@@ -32,7 +36,8 @@ export function caseStatusOf(params: {
 		entries,
 		matches: (entry) =>
 			isReceiptOf({ entry, testCase }) &&
-			(entry.kind === 'red' || entry.kind === 'unchanged' || entry.kind === 'accepted'),
+			entry.kind !== 'freeze' &&
+			PROOF_KINDS.includes(entry.kind),
 	})
 	if (proof < 0) return 'missing receipt'
 	const proofReceipt = entries[proof] as TddReceipt
@@ -41,6 +46,7 @@ export function caseStatusOf(params: {
 	if (proofReceipt.caseHash !== params.caseHash) return 'test edited after red'
 	if (proofReceipt.kind === 'unchanged') return 'unchanged'
 	if (proofReceipt.kind === 'accepted') return 'accepted'
+	if (proofReceipt.kind === 'revised') return 'revised'
 	const lastFreeze = lastIndexOf({ entries, matches: (entry) => entry.kind === 'freeze' })
 	const lastGreen = lastIndexOf({
 		entries,

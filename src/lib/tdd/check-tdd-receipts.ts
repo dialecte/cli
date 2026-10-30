@@ -1,9 +1,10 @@
 import { shortMessage } from './classify-failure.ts'
-import { readAcceptances, readTddExemption } from './lot-declaration.ts'
+import { readAcceptances, readRevisions, readTddExemption } from './lot-declaration.ts'
 /**
- * The `tdd` step of `dialecte gate`: every test-code file changed since the base (test files, helpers,
- * fixtures, snapshots) is as the red run that last froze it left it, and every case of the change holds a
- * red receipt and a later green one (or passed at a red run as the same case as at the base). The flags
+ * The `tdd` step of `dialecte gate`: every test-code file changed since the base (HEAD: the uncommitted
+ * lot; a `--base` ref or `--full`: the whole branch) is as the red run that last froze it left it, and
+ * every case of the change holds a red receipt and a later green one (or passed at a red run as the same
+ * case as at the base, accepted or revised by the lot file, each with its reason shown). The flags
  * of the receipts and the cases the change deletes are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
  * that does not test with vitest skips the step.
@@ -21,16 +22,23 @@ export async function checkTddReceipts(params: {
 	packageJson: PackageJson
 	/** Takes the machine lock before the run that lists the cases (a browser package). */
 	lock: () => { release(): void } | { refusal: string }
+	/** `--base <ref>`: measured from where HEAD left it. */
+	ref?: string
+	/** `--full`: the whole branch, before a merge. Default: HEAD, the uncommitted lot. */
+	wholeBranch?: boolean
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
+	const base = resolveBase({
+		root,
+		packageJson,
+		ref: params.ref,
+		wholeBranch: params.wholeBranch,
+	})
+	if (typeof base !== 'string') return { status: 'failed', reason: base.failure }
 	const exemption = readTddExemption(root)
 	if (exemption.kind === 'invalid') return { status: 'failed', reason: exemption.reason }
 	if (exemption.kind === 'exempt') {
-		const changed = countChangedFiles({
-			root,
-			base: resolveBase({ root, packageJson }),
-			packageJson,
-		})
+		const changed = countChangedFiles({ root, base, packageJson })
 		return {
 			status: 'passed',
 			note: `exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
@@ -42,8 +50,9 @@ export async function checkTddReceipts(params: {
 	if ('failure' in ledger) return { status: 'failed', reason: ledger.failure }
 	const acceptances = readAcceptances(root)
 	if ('failure' in acceptances) return { status: 'failed', reason: acceptances.failure }
-	const base = resolveBase({ root, packageJson })
-	if (hashChangedTestCode({ root, base }).size === 0)
+	const revisions = readRevisions(root)
+	if ('failure' in revisions) return { status: 'failed', reason: revisions.failure }
+	if (hashChangedTestCode({ root, base, packageJson }).size === 0)
 		return { status: 'passed', note: 'no test code new or changed since the base' }
 	const lock = params.lock()
 	if ('refusal' in lock) return { status: 'failed', reason: lock.refusal }
@@ -55,9 +64,19 @@ export async function checkTddReceipts(params: {
 	}
 	if ('failure' in state) return { status: 'failed', reason: state.failure }
 	const open = state.cases.filter(
-		(line) => line.status !== 'green' && line.status !== 'unchanged' && line.status !== 'accepted',
+		(line) =>
+			line.status !== 'green' &&
+			line.status !== 'unchanged' &&
+			line.status !== 'accepted' &&
+			line.status !== 'revised',
 	)
 	const evidence = [
+		...state.cases
+			.filter((line) => line.status === 'revised')
+			.map(
+				(line) =>
+					`revised  ${caseLabel(line)}  ${revisions.find((revised) => revised.case === caseLabel(line))?.reason ?? '(no longer in the lot file)'}`,
+			),
 		...state.cases
 			.filter((line) => line.status === 'accepted')
 			.map(
@@ -76,6 +95,17 @@ export async function checkTddReceipts(params: {
 			.map(
 				(acceptance) =>
 					`unused accept  ${acceptance.case}  no case of the change has that name (${acceptance.reason})`,
+			),
+	)
+	const revisedLabels = new Set(
+		state.cases.filter((line) => line.status === 'revised').map((line) => caseLabel(line)),
+	)
+	evidence.push(
+		...revisions
+			.filter((revision) => !revisedLabels.has(revision.case))
+			.map(
+				(revision) =>
+					`unused revised entry  ${revision.case}  no case of the change stands revised by a red run (${revision.reason})`,
 			),
 	)
 	const unlisted = state.unlisted.map(
@@ -104,6 +134,9 @@ export async function checkTddReceipts(params: {
 			: '',
 		countStatus({ state, status: 'accepted' })
 			? `${countStatus({ state, status: 'accepted' })} accepted`
+			: '',
+		countStatus({ state, status: 'revised' })
+			? `${countStatus({ state, status: 'revised' })} revised`
 			: '',
 	].filter(Boolean)
 	return {

@@ -19,4 +19,10 @@ export type DialecteField = {
 	baseBranch?: string
 	/** Steps that replace the default ones of `dialecte gate`. */
 	gate?: { fast?: GateStep[]; full?: GateStep[] }
+	/**
+	 * `dialecte tdd`: `production` lists folders (`src/test`) whose files are production code although
+	 * their name says test (a package's test entry): only the test files, fixtures, snapshots and
+	 * `*.script.ts` under them stay test code.
+	 */
+	tdd?: { production?: string[] }
 }

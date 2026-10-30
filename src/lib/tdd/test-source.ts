@@ -10,8 +10,12 @@ import type { SourceLocation, TestCall } from './tdd.types.ts'
  * object of a matcher call (`expect(x).toBe(1)`, `expect(x).not.toBe(1)`, `expect(p).resolves.toBe(1)`).
  * An `expect(x)` without a matcher asserts nothing.
  */
-export function isInsideAssertion(params: { text: string; location: SourceLocation }): boolean {
-	const source = parseTestSource(params.text)
+export function isInsideAssertion(params: {
+	text: string
+	file: string
+	location: SourceLocation
+}): boolean {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
 	const position = positionOf({ source, location: params.location })
 	if (position === undefined) return false
 	let node: ts.Node | undefined = innermostNodeAt({ source, position })
@@ -29,9 +33,10 @@ export function isInsideAssertion(params: { text: string; location: SourceLocati
 }
 
 /** The names the file imports (default, named and namespace bindings). */
-export function importedNames(text: string): Set<string> {
+export function importedNames(params: { text: string; file: string }): Set<string> {
+	const { text } = params
 	const names = new Set<string>()
-	for (const statement of parseTestSource(text).statements) {
+	for (const statement of parseTestSource({ text, kind: scriptKindOf(params.file) }).statements) {
 		if (!ts.isImportDeclaration(statement) || !statement.importClause) continue
 		const clause = statement.importClause
 		if (clause.name) names.add(clause.name.text)
@@ -50,9 +55,11 @@ export function importedNames(text: string): Set<string> {
  */
 export function testCallTextAt(params: {
 	text: string
+	/** The file's path: its extension decides how it is parsed (a `.ts` file is not TSX). */
+	file: string
 	location: SourceLocation
 }): string | undefined {
-	const source = parseTestSource(params.text)
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
 	const start = positionOf({ source, location: params.location })
 	if (start === undefined) return undefined
 	const position: number = start
@@ -69,8 +76,17 @@ export function testCallTextAt(params: {
 	return (starting ?? holding)?.getText(source)
 }
 
-function parseTestSource(text: string): ts.SourceFile {
-	return ts.createSourceFile('test.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+/** The file's syntax tree, parsed as its extension says (`scriptKindOf`). */
+function parseTestSource(params: { text: string; kind: ts.ScriptKind }): ts.SourceFile {
+	return ts.createSourceFile('test.tsx', params.text, ts.ScriptTarget.Latest, true, params.kind)
+}
+
+/** How a source file parses, by its extension: `.ts` as TypeScript without JSX, `.tsx` with it, `.js`... */
+export function scriptKindOf(file: string): ts.ScriptKind {
+	if (file.endsWith('.tsx')) return ts.ScriptKind.TSX
+	if (file.endsWith('.jsx')) return ts.ScriptKind.JSX
+	if (/\.[cm]?js$/.test(file)) return ts.ScriptKind.JS
+	return ts.ScriptKind.TS
 }
 
 function positionOf(params: {
@@ -78,8 +94,12 @@ function positionOf(params: {
 	location: SourceLocation
 }): number | undefined {
 	const { source, location } = params
-	if (location.line < 1 || location.line > source.getLineStarts().length) return undefined
-	return source.getPositionOfLineAndCharacter(location.line - 1, Math.max(location.column - 1, 0))
+	const lineStarts = source.getLineStarts()
+	if (location.line < 1 || location.line > lineStarts.length) return undefined
+	const position = lineStarts[location.line - 1] + Math.max(location.column - 1, 0)
+	const lineEnd = lineStarts[location.line] ?? source.text.length
+	// a column past its line's end is no position (the parser would throw on it)
+	return position <= lineEnd ? position : undefined
 }
 
 function innermostNodeAt(params: { source: ts.SourceFile; position: number }): ts.Node {
@@ -104,15 +124,21 @@ function isAssertionCallee(callee: ts.Expression): boolean {
 	)
 }
 
-/** The lines holding a focus marker: `it.only`, `describe.only`, `test.only.each`, a table case `only: true`. */
-export function findOnlyMarkers(text: string): number[] {
-	const source = parseTestSource(text)
+/**
+ * The lines holding a focus marker: a call through `.only` (`it.only(...)`, `describe.only(...)`,
+ * `test.only.each(table)(...)`), a table case `only: true`. A reference that is not called
+ * (`testCase.only ? it.only : it`, a runner picking per row) is not one.
+ */
+export function findOnlyMarkers(params: { text: string; file: string }): number[] {
+	const { text } = params
+	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
 	const lines = new Set<number>()
 	function visit(node: ts.Node): void {
 		const isOnlyAccess =
 			ts.isPropertyAccessExpression(node) &&
 			node.name.text === ONLY_MARKER &&
-			TEST_FUNCTIONS.includes(rootIdentifierOf(node.expression) ?? '')
+			TEST_FUNCTIONS.includes(rootIdentifierOf(node.expression) ?? '') &&
+			isCalled(node)
 		const isOnlyField =
 			ts.isPropertyAssignment(node) &&
 			ts.isIdentifier(node.name) &&
@@ -126,9 +152,18 @@ export function findOnlyMarkers(text: string): number[] {
 	return [...lines].sort((left, right) => left - right)
 }
 
+/** The access is the callee of a call, through further accesses (`it.only.each(...)`). */
+function isCalled(access: ts.PropertyAccessExpression): boolean {
+	let node: ts.Expression = access
+	while (ts.isPropertyAccessExpression(node.parent) && node.parent.expression === node)
+		node = node.parent
+	return ts.isCallExpression(node.parent) && node.parent.expression === node
+}
+
 /** Every `it` / `test` call of the file, with its title when it is written as a string. */
-export function listTestCalls(text: string): TestCall[] {
-	const source = parseTestSource(text)
+export function listTestCalls(params: { text: string; file: string }): TestCall[] {
+	const { text } = params
+	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
 	const calls: TestCall[] = []
 	function visit(node: ts.Node): void {
 		const takesTitleLater =
@@ -178,8 +213,9 @@ function hasMatcher(expectCall: ts.CallExpression): boolean {
 }
 
 /** The modules a file names: static imports and re-exports, `import('...')`, `require('...')`, `vi.mock('...')`. */
-export function moduleSpecifiers(text: string): string[] {
-	const source = parseTestSource(text)
+export function moduleSpecifiers(params: { text: string; file: string }): string[] {
+	const { text } = params
+	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
 	const specifiers: string[] = []
 	function visit(node: ts.Node): void {
 		if (

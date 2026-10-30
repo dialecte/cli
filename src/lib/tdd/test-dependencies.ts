@@ -7,9 +7,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
-import { isTestCode } from './tdd-files.ts'
+import { isPackageTestCode } from './tdd-files.ts'
 import { moduleSpecifiers } from './test-source.ts'
 
+import type { PackageJson } from '../package-json.types.ts'
 import type { ModuleResolver } from './tdd.types.ts'
 
 export function listTestDependencies(params: {
@@ -19,6 +20,8 @@ export function listTestDependencies(params: {
 	/** The test-code files of the change, relative to the root. */
 	changedTestCode: readonly string[]
 	resolveModule: ModuleResolver
+	/** Its declared production folders; none when not given. */
+	packageJson?: PackageJson
 }): { dependencies: string[]; unresolved: string[] } {
 	const { root } = params
 	const found = new Set<string>()
@@ -29,7 +32,7 @@ export function listTestDependencies(params: {
 		const current = queue.shift() ?? ''
 		const text = readFileSync(join(root, current), 'utf8')
 		texts.push(text)
-		for (const specifier of moduleSpecifiers(text)) {
+		for (const specifier of moduleSpecifiers({ text, file: current })) {
 			const resolution = params.resolveModule({ specifier, from: current })
 			if (resolution.kind === 'unresolved') {
 				unresolved.add(specifier)
@@ -37,7 +40,12 @@ export function listTestDependencies(params: {
 			}
 			if (resolution.kind !== 'local') continue
 			const resolved = resolution.file
-			if (resolved === params.file || found.has(resolved) || !isTestCode(resolved)) continue
+			if (
+				resolved === params.file ||
+				found.has(resolved) ||
+				!isPackageTestCode({ file: resolved, packageJson: params.packageJson ?? {} })
+			)
+				continue
 			found.add(resolved)
 			queue.push(resolved)
 		}

@@ -17,7 +17,7 @@ export function isCaseOfChange(params: {
 	const { text, baseText } = params.file
 	if (baseText === undefined) return true
 	if (!params.location) return text !== baseText
-	const call = testCallTextAt({ text, location: params.location })
+	const call = testCallTextAt({ text, file: params.file.file, location: params.location })
 	if (call === undefined || !baseText.includes(call)) return true
 	return params.name
 		.split(CASE_NAME_SEPARATOR)

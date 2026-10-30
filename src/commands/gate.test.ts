@@ -364,7 +364,7 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 	it('red then green → ok with the count; the test file edited since, or a helper added → fails naming it', async () => {
 		const green = await redThenGreen()
 		const edited = await redThenGreen()
-		writeFileSync(join(edited, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(3) '))
+		writeFileSync(join(edited, 'src/add.test.ts'), ADD_TEST.replace('toBe(3)', 'toBe(4)'))
 		const helper = await redThenGreen()
 		writeFiles({ root: helper, files: { 'test/expected.ts': 'export const EXPECTED = 3\n' } })
 

@@ -17,11 +17,11 @@ function rootWith(declaration: unknown): string {
 describe('the lot file is strict', () => {
 	it('an unknown top-level key ("acept") → refused, naming it', () => {
 		expect(readAcceptances(rootWith({ acept: [] }))).toEqual({
-			failure: '.dialecte/lot.json: unknown key "acept" (known: tdd, accept)',
+			failure: '.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised)',
 		})
 		expect(readTddExemption(rootWith({ tdd: 'exempt: a rename', acept: [] }))).toEqual({
 			kind: 'invalid',
-			reason: '.dialecte/lot.json: unknown key "acept" (known: tdd, accept)',
+			reason: '.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised)',
 		})
 	})
 

@@ -28,7 +28,7 @@ export async function readTddState(params: {
 	base: string
 }): Promise<TddState | { failure: string }> {
 	const { root, ledger, base } = params
-	const testCode = hashChangedTestCode({ root, base })
+	const testCode = hashChangedTestCode({ root, base, packageJson: params.packageJson })
 	const unfrozen = [...testCode]
 		.filter(([file, hash]) => frozenHashOf({ ledger, file }) !== hash)
 		.map(([file]) => file)
@@ -80,7 +80,7 @@ function findDeletedCases(params: {
 	const findings: TddFinding[] = []
 	for (const file of params.changed) {
 		if (file.baseText === undefined) continue
-		for (const call of listTestCalls(file.baseText)) {
+		for (const call of listTestCalls({ text: file.baseText, file: file.file })) {
 			if (file.text.includes(call.text)) continue
 			if (call.title !== undefined && isWrittenAsString({ text: file.text, title: call.title }))
 				continue

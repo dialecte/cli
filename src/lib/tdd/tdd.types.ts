@@ -72,9 +72,18 @@ export type ReceiptFlag =
  * - `green`: it passed after its red, its test untouched;
  * - `accepted`: it passed at a red run and the lot accepts it (`.dialecte/lot.json`), with a reason;
  * - `kept`: a green case that passed at a red run which froze test code it depends on at a new state;
+ * - `revised`: a proven case edited at review, passing at a red run, the lot declaring the revision with
+ *   a reason (`.dialecte/lot.json` `"revised"`);
  * - `refused`: a red or a green the cli refused, kept as evidence.
  */
-export type ReceiptKind = 'red' | 'green' | 'unchanged' | 'accepted' | 'kept' | 'refused'
+export type ReceiptKind =
+	| 'red'
+	| 'green'
+	| 'unchanged'
+	| 'accepted'
+	| 'kept'
+	| 'revised'
+	| 'refused'
 
 /** The proof of what a case did at a given state of its test and of the production files. */
 export type TddReceipt = TestCaseId & {
@@ -100,13 +109,14 @@ export type TddFreeze = { kind: 'freeze'; files: Record<string, string>; at: str
 export type TddEntry = TddReceipt | TddFreeze
 
 /** Everything a worktree's `tdd` commands recorded, oldest first: the order decides what "later" means. */
-export type TddLedger = { version: 2; entries: TddEntry[] }
+export type TddLedger = { version: 3; entries: TddEntry[] }
 
 export type CaseStatus =
 	| 'red'
 	| 'green'
 	| 'unchanged'
 	| 'accepted'
+	| 'revised'
 	| 'missing receipt'
 	| 'test edited after red'
 
@@ -116,10 +126,16 @@ export type CaseStatusLine = TestCaseId & { status: CaseStatus; flags: ReceiptFl
 export type ChangedTestFile = { file: string; text: string; baseText: string | undefined }
 
 /** The tdd state of a lot, as `.dialecte/lot.json` declares it. */
-export type LotDeclaration = { tdd?: string; accept?: unknown }
+export type LotDeclaration = { tdd?: string; accept?: unknown; revised?: unknown }
 
-/** A case the orchestrator accepts without a red: `<file>::<name>` (` [project]` when a project runs it). */
-export type CaseAcceptance = { case: string; reason: string }
+/**
+ * A case the lot file names with a reason: accepted without a red, or revised at review.
+ * `<file>::<name>` (` [project]` when a project runs it).
+ */
+export type LotCaseEntry = { case: string; reason: string }
+
+/** The lists of cases a lot file may hold. */
+export type LotCaseList = 'accept' | 'revised'
 
 /** What the command line names: cases (`<file>::<name>`) and files. */
 export type TddTargets = { cases: Array<{ file: string; name: string }>; files: string[] }
