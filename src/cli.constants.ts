@@ -13,6 +13,8 @@ import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
+import { run as record } from './commands/record.ts'
+import { run as review } from './commands/review.ts'
 import { run as rules } from './commands/rules.ts'
 import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
@@ -41,6 +43,8 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	handover,
 	lot,
 	worktree,
+	record,
+	review,
 }
 
 export const HELP = `
@@ -70,6 +74,8 @@ Commands:
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
   lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason
   worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
+  record     A lot's review rounds in its hand-over folder: review | decision | snapshot
+  review     The fix diff since the previous round's snapshot: delta
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
 Core is detected by package name and benched via a built-in test dialect. Override per package.json
@@ -170,6 +176,17 @@ Contributing (inside a dialecte repository):
                              # merged worktrees and branches, committed hand-overs, rehearsal clones: the
                              # commands with their cd; --yes runs them after a confirmation on a terminal
                              # (a fresh worktree, ignored files, an unmerged branch are kept)
+  dialecte record review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>
+                             # appends R<n>-<k> open to <folder>/findings-ledger.md (made when absent)
+  dialecte record decision <folder> <id> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>
+                             # rewrites that finding's state cell, every other byte kept
+  dialecte record snapshot <folder> --round <n>
+                             # copies what git status lists to round-<n>/, the deletions to round-<n>.deleted,
+                             # HEAD to round-<n>.base; the hand-over folder stays outside every repository;
+                             # a nested repository or a submodule is refused; -- ends the options of each
+  dialecte review delta <folder> --round <n> [--worktree] [--json]
+                             # per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a
+                             # throwaway worktree holding round n-1 and prints its removal command
 
 Env: RUNS=5 dialecte bench   (repetitions for the min); COVERAGE_CHILD_CAP=N (cap edges)
 `
