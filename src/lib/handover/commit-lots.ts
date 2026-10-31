@@ -1,9 +1,12 @@
 /**
  * Commits the lots not committed yet, one after the other: each lot announced before its work (`▶ lot
- * n/N` with its files and subject, or on a terminal a spinner naming it), the commit's hook output never
- * buffered - streamed behind a prefix off a terminal, its last lines live under the spinner on one - then
- * the path of the hook's full log (on a terminal, on success, the hook lines collapse to that one line;
- * on failure every line is kept), the commit's sha and stat. A lot whose commit fails is unstaged again
+ * n/N` with its files and subject, or on a terminal a spinner naming it), the commit's hook output read
+ * as steps (npm's script headers) while it runs: off a terminal a `▶ <step>` line per step and each
+ * warning or error line behind a prefix, on a terminal the current step with its elapsed time and those
+ * lines under the spinner; every byte goes to the hook's full log as it comes. Once the hook ended, one
+ * summary line of its steps with their counts, then its warning lines (passed) or its error lines and the
+ * failing step's last lines (failed), then the full log's path; then the commit's sha and stat. A
+ * repository with no commit hook prints none of it. A lot whose commit fails is unstaged again
  * (a merge lot's merge aborted), so the same command resumes at it once the cause is fixed. A merge lot
  * merges its recorded tip with its resolutions, checked against what was reviewed and rehearsed. Before
  * any commit that stages a change of the lock, `node_modules` are brought to it. A commit whose hook
@@ -14,6 +17,7 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { HEARTBEAT_INTERVAL_MILLISECONDS } from '../progress/progress.constants.ts'
@@ -25,6 +29,8 @@ import {
 	HOOK_LOG_FOLDER_PREFIX,
 	HOOK_OUTPUT_PREFIX,
 } from './handover.constants.ts'
+import { createHookLiveView } from './hook-live-view.ts'
+import { hookOutcomeLines } from './hook-output.ts'
 import { removeMergeMarker, runMergeLot, undoMerge } from './merge-lot.ts'
 import { syncNodeModules } from './sync-node-modules.ts'
 import { unstageLot } from './unstage-lot.ts'
@@ -113,6 +119,7 @@ export async function commitLots(params: {
 		if (synced.note) write(`  ${synced.note}`)
 		// the hook's log grows as it prints: a run killed midway still leaves it
 		const hookLog = createHookLog({ lot: number })
+		const hookView = createHookLiveView({ running, tty, write, clock })
 		const commit = await streamCommand({
 			command: 'git',
 			args: ['commit', '-q', '-F', '-'],
@@ -126,17 +133,20 @@ export async function commitLots(params: {
 			onProcessGroup: params.onProcessGroup,
 			step: { running, tty },
 			onText: (text) => appendFileSync(hookLog, text),
+			onLine: hookView.read,
 		})
-		const hookLines = commit.output.split(/\r?\n/)
-		if (hookLines.at(-1) === '') hookLines.pop()
-		const log = hookLines.length ? hookLog : undefined
-		if (!log) rmSync(dirname(hookLog), { recursive: true, force: true })
+		// a repository with no commit hook stays silent
+		const hookRan = commit.output !== '' || hasCommitHook(root)
+		if (!hookRan) rmSync(dirname(hookLog), { recursive: true, force: true })
+		const hookOutcome = hookRan
+			? hookOutcomeLines({
+					output: commit.output,
+					passed: commit.exitCode === 0,
+					logPath: hookLog,
+				}).map((line) => `${HOOK_OUTPUT_PREFIX}${line}`)
+			: []
 		if (commit.exitCode !== 0) {
-			// every hook line stays: on a terminal they were only shown live
-			running.finish(
-				...(tty ? hookLines.map((line) => `${HOOK_OUTPUT_PREFIX}${line}`) : []),
-				...(log ? [`${HOOK_OUTPUT_PREFIX.trimEnd()} full log: ${log}`] : []),
-			)
+			running.finish(...hookOutcome)
 			// the commit's processes are gone by now (a stalled run settles once its tree is killed)
 			const undone = undo()
 			const elapsed = formatDuration(clock.now() - startedAt)
@@ -154,13 +164,8 @@ export async function commitLots(params: {
 		}
 		const sha = readGit({ root, args: ['rev-parse', 'HEAD'] }).trim()
 		commits.push(sha)
-		const logLine = log
-			? tty
-				? `${HOOK_OUTPUT_PREFIX}… ${hookLines.length} line(s) of hook output; full log: ${log}`
-				: `${HOOK_OUTPUT_PREFIX.trimEnd()} full log: ${log}`
-			: undefined
 		running.finish(
-			...(logLine ? [logLine] : []),
+			...hookOutcome,
 			`✓ ${sha.slice(0, 12)} ${subject}  ${formatDuration(clock.now() - startedAt)}`,
 		)
 		// a merge commit's own diff is empty: its stat is against its first parent
@@ -192,7 +197,7 @@ export async function commitLots(params: {
 	return commits
 }
 
-/** An empty file, in a folder of its own, for the hook's whole output: read once its lines are folded. */
+/** An empty file, in a folder of its own, for the hook's whole output, its bytes as they came. */
 function createHookLog(params: { lot: number }): string {
 	const path = join(mkdtempSync(join(tmpdir(), HOOK_LOG_FOLDER_PREFIX)), `lot-${params.lot}.log`)
 	writeFileSync(path, '')

@@ -1,9 +1,13 @@
 import { join } from 'node:path'
 
-import { createScratchRepository, writeFiles } from '../../test/scratch-repository.ts'
+import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
+import { readRecordFile } from '../../test/gate-records.ts'
+import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
 import { runRules } from './rules.ts'
 
 import { describe, expect, it } from 'vitest'
+
+import type { RulesRecord } from '../lib/gate-records/gate-records.types.ts'
 
 describe('runRules', () => {
 	it('no file given → the changed and new files are checked, unchanged ones and binaries are not', () => {
@@ -102,5 +106,64 @@ describe('runRules', () => {
 			'src/nested/c.md',
 		])
 		expect(result.exitCode).toBe(1)
+	})
+})
+
+describe('runRules: the record in the git folder', () => {
+	/** The rules record as the last run left it; undefined when there is none. */
+	function readRecord(root: string): RulesRecord | undefined {
+		return readRecordFile<RulesRecord>({ root, name: 'dialecte-rules.json' })
+	}
+
+	it('no file given → dialecte-rules.json: when, HEAD, the state hash, the files, errors and warnings; a later run on named files → the record left as it was', () => {
+		const root = createScratchRepository({
+			'src/kept.ts': 'export function keep() {}\n',
+			'src/join.ts': 'export function join(first: string, count: number) {}\n',
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/kept.ts': 'export function keep() {\n\tconst write = () => 2\n}\n',
+				'src/new.ts': 'export type Name = string\n',
+			},
+		})
+
+		runRules({ cwd: root, argv: [] })
+		const recorded = readRecord(root)
+		const named = runRules({ cwd: root, argv: ['src/join.ts'] })
+
+		expect(recorded).toEqual({
+			at: expect.stringMatching(ISO_TIME_PATTERN),
+			head: git({ root, args: ['rev-parse', 'HEAD'] }).trim(),
+			stateHash: expect.stringMatching(SHA256_PATTERN),
+			files: ['src/kept.ts', 'src/new.ts'],
+			errors: 2,
+			warnings: 0,
+		})
+		expect(named.exitCode).toBe(0)
+		expect(readRecord(root)).toEqual(recorded)
+	})
+
+	it('the state hash builds a tree only: no commit object is left in the repository by a record', () => {
+		const root = createScratchRepository({ 'src/kept.ts': 'export function keep() {}\n' })
+		writeFiles({ root, files: { 'src/new.ts': 'export function make() {}\n' } })
+		/** The commit objects the repository holds, reachable or not. */
+		function commitObjects(): string[] {
+			return git({
+				root,
+				args: ['cat-file', '--batch-all-objects', '--batch-check=%(objecttype) %(objectname)'],
+			})
+				.split('\n')
+				.filter((line) => line.startsWith('commit '))
+				.sort()
+		}
+		const before = commitObjects()
+
+		runRules({ cwd: root, argv: [] })
+
+		expect({ recorded: readRecord(root) !== undefined, commits: commitObjects() }).toEqual({
+			recorded: true,
+			commits: before,
+		})
 	})
 })

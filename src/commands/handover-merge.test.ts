@@ -28,7 +28,7 @@ import { runHandover, runHandoverRun } from './handover.ts'
 
 import { describe, expect, it, onTestFinished } from 'vitest'
 
-import type { MergeLotPlan } from '../lib/handover/handover.types.ts'
+import type { LotPlan, MergeLot, MergeLotPlan } from '../lib/handover/handover.types.ts'
 
 const SCRATCH_REPOSITORY_TIMEOUT = 60_000
 const WRITER_CLI = '/opt/dialecte/dist/cli.js'
@@ -1225,6 +1225,26 @@ describe(
 			expect(result.text).toContain('write it again with --rehash after a review')
 			expect(untouched(scenario.root)).toEqual(cleanAt(scenario))
 		})
+
+		it('merges.json without the tree each merge was trial-merged on (an earlier cli wrote it) → refused at the read, saying so and the next step; nothing changed', async () => {
+			const scenario = await recordedScenario()
+			expect(writeHandover(scenario.lotsPath).exitCode).toBe(0)
+			const mergesPath = join(scenario.out, HANDOVER_FILES.merges)
+			const merges = readMerges(scenario.out) as Record<string, Partial<MergeLot>>
+			for (const merge of Object.values(merges)) delete merge.onTree
+			writeFileSync(mergesPath, `${JSON.stringify(merges, null, '\t')}\n`)
+
+			const result = await runFolder({ out: scenario.out })
+
+			// a folder the run cannot read is a usage error, as a missing file of it
+			expect({ exitCode: result.exitCode, after: untouched(scenario.root) }).toEqual({
+				exitCode: 2,
+				after: cleanAt(scenario),
+			})
+			expect(result.text).toContain(
+				'written by an earlier cli: write the hand-over again, then --rehash after a review',
+			)
+		})
 	},
 )
 
@@ -1252,3 +1272,444 @@ describe('a stale merge marker', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => 
 		expect(existsSync(join(scenario.root, '.git', 'MERGE_HEAD'))).toBe(true)
 	})
 })
+
+const CHANGELOG_BASE = '# Changelog\n\n## Unreleased\n\n- the base entry\n'
+const CHANGELOG_A = CHANGELOG_BASE.replace('- the base entry', '- entry a\n- the base entry')
+const CHANGELOG_B = CHANGELOG_BASE.replace('- the base entry', '- entry b\n- the base entry')
+const CHANGELOG_RESOLVED = CHANGELOG_BASE.replace(
+	'- the base entry',
+	'- entry a\n- entry b\n- the base entry',
+)
+const SIX_LINES = 'one\ntwo\nthree\nfour\nfive\nsix\n'
+
+/** A lot of a sequence: a merge of a branch (each resolution as its content, `null` removes the file), or a plain lot. */
+type SequenceLot = { merge: string; resolved?: Record<string, string | null> } | LotPlan
+
+type SequenceOptions = {
+	/** The files of the first commit on main. */
+	base: Record<string, string>
+	/** Each branch, made from the first commit, with the files it changes. */
+	branches: Record<string, Record<string, string>>
+	/** A branch made from another branch's tip (listed before it) instead of the first commit. */
+	stackedOn?: Record<string, string>
+	/** Working-tree edits on main once the branches are made. */
+	working?: Record<string, string>
+	/** Files of the first commit deleted in the working tree. */
+	deleted?: string[]
+	lots: SequenceLot[]
+}
+
+type SequenceScenario = {
+	root: string
+	out: string
+	lotsPath: string
+	head: string
+	/** The tip of each branch. */
+	tips: Record<string, string>
+}
+
+function mergeSubjectOf(branch: string): string {
+	return `merge: bring ${branch} in`
+}
+
+/** Branches made from main's first commit, then a lots file merging them (and plain lots) in the given order. */
+function sequenceScenario(options: SequenceOptions): SequenceScenario {
+	const root = createScratchRepository({ '.gitignore': 'node_modules\n', ...options.base })
+	const tips: Record<string, string> = {}
+	for (const [branch, files] of Object.entries(options.branches)) {
+		git({ root, args: ['checkout', '-q', '-b', branch, options.stackedOn?.[branch] ?? 'main'] })
+		writeFiles({ root, files })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', `feat: the work of ${branch}`] })
+		tips[branch] = head(root)
+	}
+	git({ root, args: ['checkout', '-q', 'main'] })
+	writeFiles({ root, files: options.working ?? {} })
+	for (const file of options.deleted ?? []) rmSync(join(root, file))
+	const out = temporaryFolder('dialecte-sequence-handover-')
+	const lots = options.lots.map(function lotOf(lot, index): MergeLotPlan | LotPlan {
+		if (!('merge' in lot)) return lot
+		const resolved: Record<string, string | null> = {}
+		for (const [path, content] of Object.entries(lot.resolved ?? {})) {
+			if (content === null) {
+				resolved[path] = null
+				continue
+			}
+			const relative = `resolved/${index + 1}/${path}`
+			writeFiles({ root: out, files: { [relative]: content } })
+			resolved[path] = relative
+		}
+		return {
+			kind: 'merge',
+			branch: lot.merge,
+			tip: tips[lot.merge],
+			resolved,
+			message: `${mergeSubjectOf(lot.merge)}\n\nThe body.`,
+		}
+	})
+	const lotsPath = join(out, 'lots.json')
+	writeFileSync(
+		lotsPath,
+		JSON.stringify({ repository: root, branch: 'main', head: head(root), lots }),
+	)
+	return { root, out, lotsPath, head: head(root), tips }
+}
+
+/** Two branches each adding their own line at the same place of the CHANGELOG list, merged as lots 1 and 2. */
+function changelogScenario(params: {
+	/** Lot 2 resolves CHANGELOG.md. */
+	resolveSecond: boolean
+	/** Branch a also adds `a.txt`, which the first lot resolves to other content (a resolution on a clean merge). */
+	resolveFirst?: boolean
+}): SequenceScenario {
+	return sequenceScenario({
+		base: { 'CHANGELOG.md': CHANGELOG_BASE },
+		branches: {
+			'feat/a': { 'CHANGELOG.md': CHANGELOG_A, ...(params.resolveFirst && { 'a.txt': 'a\n' }) },
+			'feat/b': { 'CHANGELOG.md': CHANGELOG_B },
+		},
+		lots: [
+			{ merge: 'feat/a', ...(params.resolveFirst && { resolved: { 'a.txt': 'a, resolved\n' } }) },
+			{
+				merge: 'feat/b',
+				...(params.resolveSecond && { resolved: { 'CHANGELOG.md': CHANGELOG_RESOLVED } }),
+			},
+		],
+	})
+}
+
+/** `merges.json` as written: each merge lot's record under its 0-based lot index. */
+function readMerges(out: string): Record<string, MergeLot> {
+	return JSON.parse(readFileSync(join(out, HANDOVER_FILES.merges), 'utf8')) as Record<
+		string,
+		MergeLot
+	>
+}
+
+/** The tree a git merge of `tip` into HEAD leaves, before any resolution. */
+function trialTreeOf(params: { root: string; tip: string }): string {
+	return git({ root: params.root, args: ['merge-tree', '--write-tree', 'HEAD', params.tip] })
+		.split('\n')[0]
+		.trim()
+}
+
+/** `tree` with each file set to its content, or removed (`null`), built in an index of its own. */
+function treeWithFiles(params: {
+	root: string
+	tree: string
+	files: Record<string, string | null>
+}): string {
+	const env = {
+		...process.env,
+		GIT_INDEX_FILE: join(temporaryFolder('dialecte-tree-index-'), 'index'),
+	}
+	function plumbing(call: { args: string[]; input?: string }): string {
+		const result = spawnSync('git', call.args, {
+			cwd: params.root,
+			encoding: 'utf8',
+			env,
+			...(call.input !== undefined && { input: call.input }),
+		})
+		if (result.status !== 0) throw new Error(`git ${call.args.join(' ')} failed: ${result.stderr}`)
+		return result.stdout.trim()
+	}
+	plumbing({ args: ['read-tree', params.tree] })
+	for (const [path, content] of Object.entries(params.files)) {
+		if (content === null) {
+			plumbing({ args: ['update-index', '--force-remove', '--', path] })
+			continue
+		}
+		const blob = plumbing({ args: ['hash-object', '-w', '--stdin'], input: content })
+		plumbing({ args: ['update-index', '--add', '--cacheinfo', `100644,${blob},${path}`] })
+	}
+	return plumbing({ args: ['write-tree'] })
+}
+
+/** Every tree a rehearsal printed, in order (one per merge lot committed). */
+function treesPrinted(text: string): string[] {
+	return [...text.matchAll(/tree ([0-9a-f]{40})/g)].map((match) => match[1])
+}
+
+describe(
+	'merge lots trial-merged in sequence, each on the tree the lots before it leave',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('two branches adding their own line at the same place of the CHANGELOG list, merged as the first and the second lot, the second without a resolution → refused: the conflict of the second merge lot in CHANGELOG.md has no resolution; the first has none', () => {
+			const scenario = changelogScenario({ resolveSecond: false })
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toMatch(/^handover refused/)
+			expect(result.output).toContain(
+				`merge lot ${2}: the conflict in CHANGELOG.md has no resolution`,
+			)
+			expect(result.output).not.toContain(`merge lot ${1}`)
+		})
+
+		it('the same two branches, the second lot resolving CHANGELOG.md → written; merges.json records no conflict for the first lot and CHANGELOG.md for the second', () => {
+			const scenario = changelogScenario({ resolveSecond: true })
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			const merges = readMerges(scenario.out)
+			expect(merges['0']?.conflicts).toEqual([])
+			expect(merges['1']?.conflicts).toEqual(['CHANGELOG.md'])
+		})
+
+		it('the same two branches, the second lot resolving CHANGELOG.md → the rehearsal prints a tree for each merge lot; both recorded, the run commits both merges in order, the second holding the resolution on top of the first', async () => {
+			const scenario = changelogScenario({ resolveSecond: true })
+			expect(writeHandover(scenario.lotsPath).exitCode).toBe(0)
+			const rehearsal = await runFolder({ out: scenario.out, argv: ['--rehearse'] })
+			const trees = treesPrinted(rehearsal.text)
+			const lotsFile = JSON.parse(readFileSync(scenario.lotsPath, 'utf8')) as {
+				lots: MergeLotPlan[]
+			}
+			for (const [index, lot] of lotsFile.lots.entries()) lot.tree = trees[index] ?? NOT_A_TREE
+			writeFileSync(scenario.lotsPath, JSON.stringify(lotsFile))
+			const rehashed = runHandover({ argv: [scenario.lotsPath, '--rehash'], cliPath: WRITER_CLI })
+
+			const ran = await runFolder({ out: scenario.out })
+
+			const { root } = scenario
+			expect(trees).toHaveLength(2)
+			expect(rehearsal.exitCode).toBe(0)
+			expect(rehashed.exitCode).toBe(0)
+			expect(ran.exitCode).toBe(0)
+			expect(
+				git({ root, args: ['log', '--format=%s', '-3', '--first-parent'] })
+					.trim()
+					.split('\n'),
+			).toEqual([mergeSubjectOf('feat/b'), mergeSubjectOf('feat/a'), 'chore: start'])
+			expect(git({ root, args: ['rev-parse', 'HEAD^2'] }).trim()).toBe(scenario.tips['feat/b'])
+			expect(git({ root, args: ['rev-parse', 'HEAD^1^2'] }).trim()).toBe(scenario.tips['feat/a'])
+			expect(git({ root, args: ['rev-parse', 'HEAD^1^1'] }).trim()).toBe(scenario.head)
+			expect(git({ root, args: ['show', 'HEAD:CHANGELOG.md'] })).toBe(CHANGELOG_RESOLVED)
+			expect(git({ root, args: ['rev-parse', 'HEAD^1^{tree}'] }).trim()).toBe(trees[0])
+			expect(git({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim()).toBe(trees[1])
+			expect(untouched(root).mergeInProgress).toBe(false)
+		})
+
+		it('a merge lot first in the hand-over → merges.json records the tree it was trial-merged on: HEAD tree', () => {
+			const scenario = mergeScenario({ noTree: true })
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			expect(readMerges(scenario.out)['0']?.onTree).toBe(
+				git({ root: scenario.root, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
+			)
+		})
+
+		it('a merge lot after a merge lot → the tree it was trial-merged on is the tree the first merge leaves, its resolutions applied', () => {
+			const scenario = changelogScenario({ resolveSecond: true, resolveFirst: true })
+			const firstLeaves = treeWithFiles({
+				root: scenario.root,
+				tree: trialTreeOf({ root: scenario.root, tip: scenario.tips['feat/a'] }),
+				files: { 'a.txt': 'a, resolved\n' },
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			const merges = readMerges(scenario.out)
+			expect(merges['0']?.onTree).toBe(
+				git({ root: scenario.root, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
+			)
+			expect(merges['1']?.onTree).toBe(firstLeaves)
+		})
+
+		it('a merge lot after a plain lot → the tree it was trial-merged on is HEAD tree with the plain lot files as in the working tree on top, its deletion included; a later plain lot left out', () => {
+			const scenario = sequenceScenario({
+				base: {
+					'CHANGELOG.md': CHANGELOG_BASE,
+					'notes.txt': 'notes\n',
+					'old.txt': 'old\n',
+					'later.txt': 'later\n',
+				},
+				branches: { 'feat/a': { 'CHANGELOG.md': CHANGELOG_A } },
+				working: { 'notes.txt': 'notes, edited\n', 'later.txt': 'later, edited\n' },
+				deleted: ['old.txt'],
+				lots: [
+					{ paths: ['notes.txt', 'old.txt'], message: 'docs(notes): edited, old removed' },
+					{ merge: 'feat/a' },
+					{ paths: ['later.txt'], message: 'docs(later): edited after the merge' },
+				],
+			})
+			const plainLeaves = treeWithFiles({
+				root: scenario.root,
+				tree: 'HEAD^{tree}',
+				files: { 'notes.txt': 'notes, edited\n', 'old.txt': null },
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			expect(readMerges(scenario.out)['1']?.onTree).toBe(plainLeaves)
+		})
+
+		it('a plain lot before a merge lot, editing another line of a file the merge changes → written, no longer refused: the merge is trial-merged on the plain lot file and merges cleanly', () => {
+			const scenario = sequenceScenario({
+				base: { 'clean.txt': SIX_LINES },
+				branches: { 'feat/a': { 'clean.txt': SIX_LINES.replace('one', 'ONE') } },
+				working: { 'clean.txt': SIX_LINES.replace('six', 'six, edited') },
+				lots: [{ paths: ['clean.txt'], message: 'docs(clean): edited' }, { merge: 'feat/a' }],
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.output).not.toContain('has working-tree changes')
+			expect(result.exitCode).toBe(0)
+			expect(readMerges(scenario.out)['1']?.conflicts).toEqual([])
+		})
+
+		it('a plain lot before a merge lot, editing the line the merge changes, the merge resolving it → written, the conflict git finds on the plain lot file recorded', () => {
+			const resolution = SIX_LINES.replace('one', 'ONE, edited')
+			const scenario = sequenceScenario({
+				base: { 'clean.txt': SIX_LINES },
+				branches: { 'feat/a': { 'clean.txt': SIX_LINES.replace('one', 'ONE') } },
+				working: { 'clean.txt': SIX_LINES.replace('one', 'one, edited') },
+				lots: [
+					{ paths: ['clean.txt'], message: 'docs(clean): edited' },
+					{ merge: 'feat/a', resolved: { 'clean.txt': resolution } },
+				],
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			expect(readMerges(scenario.out)['1']?.conflicts).toEqual(['clean.txt'])
+		})
+
+		it('a hook of the plain lot restaging a file, so HEAD tree is not the tree the merge lot was trial-merged on → the run refuses the merge lot before merging, naming both trees; the plain lot stays committed, nothing merged', async () => {
+			const scenario = await recordedScenario({ plainLot: true, hook: 'restage' })
+			expect(writeHandover(scenario.lotsPath).exitCode).toBe(0)
+			const onTree = readMerges(scenario.out)['1']?.onTree
+
+			const result = await runFolder({ out: scenario.out })
+
+			const { root } = scenario
+			const headTree = git({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim()
+			expect(onTree).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/))
+			expect(result.exitCode).toBe(1)
+			expect(git({ root, args: ['log', '-1', '--format=%s'] }).trim()).toBe('docs(notes): edited')
+			expect(git({ root, args: ['rev-parse', 'HEAD~1'] }).trim()).toBe(scenario.head)
+			expect(untouched(root)).toEqual({ mergeInProgress: false, status: '', head: head(root) })
+			expect(result.text).toContain(`lot ${2} not committed`)
+			expect(result.text).toContain(String(onTree).slice(0, 12))
+			expect(result.text).toContain(headTree.slice(0, 12))
+			expect(result.text).toContain(
+				'see what the lots before it committed (`git show --stat HEAD`), then write the hand-over again from this HEAD for the lots left',
+			)
+			expect(result.text).not.toContain('holds another tree than recorded')
+			expect(result.text).toContain('nothing changed')
+			expect(result.text).not.toContain('the merge is aborted')
+		})
+
+		it('a merge lot, then a plain lot, then a merge lot → the last one is trial-merged on the tree they leave together: the first merge with its resolutions, the plain lot files on top', () => {
+			const scenario = sequenceScenario({
+				base: { 'CHANGELOG.md': CHANGELOG_BASE, 'notes.txt': 'notes\n' },
+				branches: {
+					'feat/a': { 'CHANGELOG.md': CHANGELOG_A, 'a.txt': 'a\n' },
+					'feat/b': { 'CHANGELOG.md': CHANGELOG_B },
+				},
+				working: { 'notes.txt': 'notes, edited\n' },
+				lots: [
+					{ merge: 'feat/a', resolved: { 'a.txt': 'a, resolved\n' } },
+					{ paths: ['notes.txt'], message: 'docs(notes): edited' },
+					{ merge: 'feat/b', resolved: { 'CHANGELOG.md': CHANGELOG_RESOLVED } },
+				],
+			})
+			const bothLeave = treeWithFiles({
+				root: scenario.root,
+				tree: trialTreeOf({ root: scenario.root, tip: scenario.tips['feat/a'] }),
+				files: { 'a.txt': 'a, resolved\n', 'notes.txt': 'notes, edited\n' },
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			const merges = readMerges(scenario.out)
+			expect(merges['2']?.onTree).toBe(bothLeave)
+			expect(merges['2']?.conflicts).toEqual(['CHANGELOG.md'])
+		})
+
+		it('a second branch built on the first branch, merged after it → the trial base carries the first tip as a parent: the merge base is that tip, the line the second branch rewrites merges clean', () => {
+			const revisedA = CHANGELOG_A.replace('- entry a', '- entry a, revised')
+			const scenario = sequenceScenario({
+				base: { 'CHANGELOG.md': CHANGELOG_BASE },
+				branches: {
+					'feat/a': { 'CHANGELOG.md': CHANGELOG_A },
+					'feat/b': { 'CHANGELOG.md': revisedA },
+				},
+				stackedOn: { 'feat/b': 'feat/a' },
+				lots: [{ merge: 'feat/a' }, { merge: 'feat/b' }],
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect({
+				exitCode: result.exitCode,
+				unresolved: result.output.split('\n').filter((line) => line.includes('has no resolution')),
+			}).toEqual({ exitCode: 0, unresolved: [] })
+			expect(readMerges(scenario.out)['1']?.conflicts).toEqual([])
+		})
+
+		it('a merge lot whose resolution removes a file, then a merge lot → the second is trial-merged on a tree without that file', () => {
+			const scenario = sequenceScenario({
+				base: { 'CHANGELOG.md': CHANGELOG_BASE, 'old.txt': 'old\n' },
+				branches: {
+					'feat/a': { 'CHANGELOG.md': CHANGELOG_A },
+					'feat/b': { 'CHANGELOG.md': CHANGELOG_B },
+				},
+				lots: [
+					{ merge: 'feat/a', resolved: { 'old.txt': null } },
+					{ merge: 'feat/b', resolved: { 'CHANGELOG.md': CHANGELOG_RESOLVED } },
+				],
+			})
+			const firstLeaves = treeWithFiles({
+				root: scenario.root,
+				tree: trialTreeOf({ root: scenario.root, tip: scenario.tips['feat/a'] }),
+				files: { 'old.txt': null },
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(0)
+			const onTree = readMerges(scenario.out)['1']?.onTree ?? NOT_A_TREE
+			expect(onTree).toBe(firstLeaves)
+			expect(git({ root: scenario.root, args: ['ls-tree', '--name-only', onTree] })).not.toContain(
+				'old.txt',
+			)
+		})
+
+		it('a plain lot before and a plain lot after a merge lot, each editing a file the merge changes → refused at the write for the later one only: it has working-tree changes', () => {
+			const scenario = sequenceScenario({
+				base: { 'early.txt': SIX_LINES, 'late.txt': SIX_LINES },
+				branches: {
+					'feat/a': {
+						'early.txt': SIX_LINES.replace('one', 'ONE'),
+						'late.txt': SIX_LINES.replace('one', 'ONE'),
+					},
+				},
+				working: {
+					'early.txt': SIX_LINES.replace('six', 'six, edited'),
+					'late.txt': SIX_LINES.replace('six', 'six, edited'),
+				},
+				lots: [
+					{ paths: ['early.txt'], message: 'docs(early): edited' },
+					{ merge: 'feat/a' },
+					{ paths: ['late.txt'], message: 'docs(late): edited after the merge' },
+				],
+			})
+
+			const result = writeHandover(scenario.lotsPath)
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toMatch(/^handover refused/)
+			expect(result.output).toContain('late.txt has working-tree changes')
+			expect(result.output).not.toContain('early.txt has working-tree changes')
+		})
+	},
+)

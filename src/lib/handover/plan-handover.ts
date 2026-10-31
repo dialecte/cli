@@ -2,7 +2,9 @@
  * The guards a hand-over passes before its folder is written: the repository is where the lots file
  * says (branch, HEAD), its hooks folder exists, nothing is staged, every changed file is in exactly one
  * lot, no lot is empty, and no lot file (evals and fixtures included) nor message holds a plan tag or a
- * standard citation. A merge lot is checked by `planMergeLot` (its tip, conflicts and resolutions).
+ * standard citation. A merge lot is checked by `planMergeLot` (its tip, conflicts and resolutions),
+ * trial-merged on what the lots before it leave: HEAD, each earlier plain lot's files as they are in the
+ * working tree, each earlier merge with its resolutions.
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,9 +14,10 @@ import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import { planMergeLot, refuseOldGit } from './merge-lot.ts'
 import { isMergeLotPlan, lotPathCovers } from './read-lots-file.ts'
+import { addWorkingFiles, readHeadBase } from './trial-base.ts'
 
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
-import type { LotsFile, PlannedHandover, ResolvedLot } from './handover.types.ts'
+import type { LotsFile, PlannedHandover, ResolvedLot, TrialBase } from './handover.types.ts'
 
 /** The plan the folder is written from, or the reasons it is refused. */
 export function planHandover(params: {
@@ -46,12 +49,27 @@ export function planHandover(params: {
 		? refuseOldGit((params.gitVersion ?? readGitVersion)())
 		: undefined
 	if (tooOld) refusals.push(tooOld)
+	// what the lots walked so far leave: plain lots' files folded in only when a merge lot comes next
+	let base: TrialBase | undefined
+	const earlierFiles = new Set<string>()
+	let pendingFiles: string[] = []
 	const lots: ResolvedLot[] = lotsFile.lots.map(function resolveLot(lot, index): ResolvedLot {
 		if (!lot.message.trim()) refusals.push(`lot ${index + 1} has no message`)
 		if (isMergeLotPlan(lot)) {
 			if (tooOld) return { message: lot.message, files: [], deletedFiles: [] }
-			const planned = planMergeLot({ root, lot, number: index + 1, lotsPath: params.lotsPath })
+			base ??= readHeadBase(root)
+			if (pendingFiles.length) base = addWorkingFiles({ root, base, files: pendingFiles })
+			pendingFiles = []
+			const planned = planMergeLot({
+				root,
+				lot,
+				number: index + 1,
+				lotsPath: params.lotsPath,
+				base,
+				earlierFiles,
+			})
 			refusals.push(...planned.refusals)
+			if (planned.leaves) base = planned.leaves
 			return { message: lot.message, files: [], deletedFiles: [], merge: planned.merge }
 		}
 		const files = changedFiles.filter((file) =>
@@ -63,6 +81,8 @@ export function planHandover(params: {
 			else refusals.push(`${file} is in lot ${earlier + 1} and in lot ${index + 1}`)
 		}
 		if (files.length === 0) refusals.push(`lot ${index + 1} has no changed file`)
+		for (const file of files) earlierFiles.add(file)
+		pendingFiles.push(...files)
 		return {
 			message: lot.message,
 			files: files.filter((file) => existsSync(join(root, file))),

@@ -1,3 +1,5 @@
+import type { ReceiptFlag } from '../tdd/tdd.types.ts'
+
 /** Name of the lock file, in the repository's git folder, while a hand-over script waits or runs. */
 export const HANDOVER_LOCK_FILE = 'dialecte-handover.lock'
 
@@ -125,9 +127,6 @@ export const INDEX_LOCK_WAIT_MILLISECONDS = 5_000
 /** How often the unstaging tries again while `index.lock` is there. */
 export const INDEX_LOCK_RETRY_MILLISECONDS = 100
 
-/** Lists the flagged cases the card counts. */
-export const FLAGS_LIST_COMMAND = 'dialecte tdd status --flags'
-
 /**
  * The file a run leaves in the repository's git folder while it holds a merge in progress: JSON with the
  * `tip` it merges, its `pid` and `startedAt`. A merge of that tip left in progress with this file is the cli's
@@ -150,7 +149,51 @@ export const STAGED_SUFFIX = '.staged'
 export const ABSENT_SUFFIX = '.absent'
 
 /** The card's line for the accepted and revised receipts of earlier lots, `{counts}` a count per kind. */
+/**
+ * The tdd section's line when no gate run on this tree listed the cases of the change: the receipts are not
+ * counted, since the ledger alone also holds cases the change no longer has.
+ */
+export const TDD_COUNTS_FROM_GATE_LINE = 'counts from the last gate: run the gate on this tree'
+
 export const EARLIER_LOTS_LINE = 'earlier lots: {counts} (not in the lot file)'
+
+/** The words after each count of the tdd section's first line. */
+export const TDD_COUNT_WORDS = {
+	proven: 'proven red → green',
+	unchanged: 'unchanged',
+	kept: 'kept',
+} as const
+
+/** The mark at the right edge of the tdd section's head line of the entries to read. */
+export const TO_READ_MARK = 'to read ↓'
+
+/** The label of each kind of entry to read, in the head line and before each entry. */
+export const TO_READ_LABELS = { revised: 'revised', gone: 'gone', unused: 'unused' } as const
+
+/** The indent of an entry to read, before its label. */
+export const TO_READ_INDENT = '  '
+
+/** Before the count of an accepted reason's row, and between the count and the reason. */
+export const ACCEPTED_REASON_INDENT = '  '
+
+/** The width of an entry's label column, its gap included: the entries' texts start aligned. */
+export const TO_READ_LABEL_WIDTH = 9
+
+/** Between a revised case's test file and its title. */
+export const CASE_TITLE_SEPARATOR = ' › '
+
+/** The order the tdd section counts the kinds of flags in; a kind not named here comes after. */
+export const FLAG_ORDER: readonly string[] = [
+	'rollback',
+	'red after green',
+	'test code changed around it',
+] satisfies readonly ReceiptFlag[]
+
+/** The flag a change of helper code puts on unchanged cases too: on those, it is noise. */
+export const NOISE_PRONE_FLAG: ReceiptFlag = 'test code changed around it'
+
+/** The tdd section's name for the flag on cases whose receipts are otherwise only unchanged. */
+export const NOISE_FLAG_LINE = 'helper code changed near unchanged cases (noise)'
 
 /** Where `handover run` moves the lot file of a committed hand-over: in its folder. */
 export const ARCHIVED_LOT_FILE = 'lot.json'
@@ -160,3 +203,60 @@ export const LOT_FILE_ARCHIVED = 'lot file archived: {path}'
 
 /** What a lot file holds once archived: an empty declaration. */
 export const EMPTY_LOT_DECLARATION = '{}\n'
+
+/** The folder (in the system's temporary folder) holding the index of its own a trial base is built in. */
+export const TRIAL_INDEX_FOLDER_PREFIX = 'dialecte-trial-index-'
+
+/** The message of a trial base commit: an object no ref points to, only a merge-tree's side. */
+export const TRIAL_BASE_MESSAGE = 'dialecte: trial base of a hand-over'
+
+/** Who a trial base commit is by: the repository's own identity may be unset (it never reaches a ref). */
+export const TRIAL_BASE_IDENTITY = { name: 'dialecte', email: 'dialecte@localhost' } as const
+
+/** The counts of a `git diff --shortstat` line: files changed, insertions, deletions (each absent when 0). */
+export const SHORTSTAT_PATTERNS = {
+	files: /(\d+) files? changed/,
+	insertions: /(\d+) insertions?\(\+\)/,
+	deletions: /(\d+) deletions?\(-\)/,
+} as const
+
+/** The text of the card's closing rule: where its terms and the receipts are explained. */
+export const HANDOVER_CARD_FOOTER = 'dialecte handover --legend · details: dialecte tdd status'
+
+/** The card's title: `{repository}` the repository's folder name, `{branch}` the branch. */
+export const HANDOVER_CARD_TITLE = 'hand-over: {repository} {branch}'
+
+/** The card's sections, in order, each opened by its rule. */
+export const HANDOVER_CARD_SECTIONS = {
+	commit: 'commit',
+	gates: 'gates',
+	tdd: 'tdd',
+	notes: 'notes',
+} as const
+
+/** Between the parts of the verdict line and of a merge line. */
+export const CARD_PART_SEPARATOR = ' · '
+
+/** The verdict's tail when no gate line blocks it. */
+export const ALL_GATES_GREEN = 'all gates green'
+
+/** The verdict's tail for the lines recorded on another tree: `{names}` in card order. */
+export const OTHER_TREE_GATES = 'gates ran on another tree: {names}'
+
+/** A merge lot's size before a rehearsal recorded its tree. */
+export const MERGE_NOT_SIZED = 'size after rehearse'
+
+/** A pending lot's commit cell. */
+export const PENDING_COMMIT = 'pending'
+
+/** A merge lot's tree when no rehearsal recorded it. */
+export const TREE_NOT_RECORDED = 'tree not recorded: rehearse first'
+
+/** After the HEAD line once a run committed: the run never pushes. */
+export const NOTHING_PUSHED = 'nothing pushed'
+
+/** How many characters of a sha the card prints. */
+export const CARD_SHA_LENGTH = 7
+
+/** The minus sign of the card's line counts (not a hyphen). */
+export const MINUS_SIGN = '−'

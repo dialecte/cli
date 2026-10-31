@@ -1,9 +1,10 @@
 /**
- * A running step looks running. Off a terminal: a start line `▶ <step>` before the work, then a line every
- * `every` milliseconds of the step's silence (`  … <step> running 1 m 0 s`), then its result line. On a
- * terminal: one spinner line `⠋ <step> - <what runs> <elapsed>` redrawn every `tickEvery` milliseconds,
- * with what the step shows under it (a hook's last lines), replaced by the step's result line. The result
- * line is never the last visible line while work continues.
+ * A running step looks running. Off a terminal: a start line `▶ <step>` before the work, then a
+ * line every `every` milliseconds in which the step wrote no line (`  … <step> running 1 m 0 s`),
+ * then its result line. On a terminal: one spinner line `⠋ <step> - <what runs> <elapsed>` redrawn
+ * every `tickEvery` milliseconds, with what the step shows under it (a hook's current step and its
+ * warnings, rendered again at each redraw when they carry a time), replaced by the step's result
+ * line. The result line is never the last visible line while work continues.
  */
 import { formatDuration } from './format-duration.ts'
 import {
@@ -15,7 +16,7 @@ import {
 } from './progress.constants.ts'
 
 import type { Clock, ClockTimer } from './clock.types.ts'
-import type { LiveOutput, RunningStep, StepProgress } from './step-progress.types.ts'
+import type { LiveLines, LiveOutput, RunningStep, StepProgress } from './step-progress.types.ts'
 
 export function createStepProgress(params: {
 	live: LiveOutput
@@ -34,7 +35,7 @@ export function createStepProgress(params: {
 			const startedAt = clock.now()
 			let timer: ClockTimer | undefined
 			let frame = 0
-			let shown: string[] = []
+			let shown: LiveLines = []
 			let heardAt = startedAt
 			function draw(): void {
 				const now = clock.now()
@@ -46,7 +47,7 @@ export function createStepProgress(params: {
 						: ''
 				live.rewriteLines([
 					`${SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} ${label} ${formatDuration(now - startedAt)}${hint}`,
-					...shown,
+					...(typeof shown === 'function' ? shown(now) : shown),
 				])
 			}
 			function tick(): void {
@@ -54,15 +55,17 @@ export function createStepProgress(params: {
 				draw()
 				timer = clock.setTimeout({ callback: tick, milliseconds: tickEvery })
 			}
-			let silentBeats = 0
+			let hinted = false
 			function beat(): void {
-				silentBeats += 1
+				const now = clock.now()
+				const silence = now - heardAt
 				// once per silence: a silent hook is often waiting for input or watching files
 				const hint =
-					step.hintWhenSilent && silentBeats === HEARTBEAT_HINT_AFTER_BEATS
-						? ` - silent for ${formatDuration(silentBeats * every)}: ${SILENT_HOOK_HINT}`
+					step.hintWhenSilent && !hinted && silence >= every * HEARTBEAT_HINT_AFTER_BEATS
+						? ` - silent for ${formatDuration(silence)}: ${SILENT_HOOK_HINT}`
 						: ''
-				live.writeLine(`  … ${step.name} running ${formatDuration(clock.now() - startedAt)}${hint}`)
+				if (hint) hinted = true
+				live.writeLine(`  … ${step.name} running ${formatDuration(now - startedAt)}${hint}`)
 				timer = clock.setTimeout({ callback: beat, milliseconds: every })
 			}
 			function stop(): void {
@@ -88,7 +91,11 @@ export function createStepProgress(params: {
 				},
 				touch() {
 					heardAt = clock.now()
-					silentBeats = 0
+					hinted = false
+				},
+				wrote() {
+					// a line printed is what shows the step running: output heard but filtered out shows
+					// nothing
 					if (live.tty || timer === undefined) return
 					stop()
 					timer = clock.setTimeout({ callback: beat, milliseconds: every })

@@ -76,6 +76,6 @@ export async function loadTestDialecteValidator(): Promise<(xml: string) => void
 		schemaName: 'core test dialecte',
 	})
 	return function assertValidTestXml(xml: string): void {
-		assertValidXml(xml, 'fixture', { requireComplete: true })
+		assertValidXml({ xml, label: 'fixture', requireComplete: true })
 	}
 }

@@ -1,10 +1,14 @@
-/** Lines a lot adds and removes: against HEAD while it waits, from its commit once committed. */
+/**
+ * Lines a lot adds and removes: against HEAD while it waits, from its commit once committed; a merge lot
+ * between the tree it merges on and the tree it holds, or its commit against its first parent.
+ */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readGit } from '../git.ts'
+import { SHORTSTAT_PATTERNS } from './handover.constants.ts'
 
-import type { DiffSize } from './handover.types.ts'
+import type { DiffSize, TreeDiffSize } from './handover.types.ts'
 
 /** Lines added and removed by the lot's files against HEAD, a new file counted as all added. */
 export function workingTreeSizeOf(params: {
@@ -42,6 +46,22 @@ export function commitSizeOf(params: { root: string; commit: string }): DiffSize
 			args: ['show', '--numstat', '--no-renames', '--format=', params.commit],
 		}),
 	)
+}
+
+/** Files changed and lines added and removed between two trees (or commits), as `git diff --shortstat` counts them. */
+export function treeDiffSizeOf(params: { root: string; from: string; to: string }): TreeDiffSize {
+	const shortstat = readGit({
+		root: params.root,
+		args: ['diff', '--shortstat', '--no-renames', params.from, params.to],
+	})
+	function countOf(pattern: RegExp): number {
+		return Number(pattern.exec(shortstat)?.[1] ?? 0)
+	}
+	return {
+		fileCount: countOf(SHORTSTAT_PATTERNS.files),
+		insertions: countOf(SHORTSTAT_PATTERNS.insertions),
+		deletions: countOf(SHORTSTAT_PATTERNS.deletions),
+	}
 }
 
 function sumNumstat(numstat: string): DiffSize {

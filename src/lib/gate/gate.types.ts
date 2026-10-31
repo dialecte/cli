@@ -1,3 +1,4 @@
+import type { JudgedCase } from '../tdd/tdd.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 
 export type GateMode = 'fast' | 'full'
@@ -28,6 +29,8 @@ export type StepResult = {
 	tail?: string
 	/** Lines shown under the step's line, for the review (the tdd step's flags and deleted cases). */
 	details?: string[]
+	/** The tdd step: the cases of the change it judged (`TddCheck.cases`). */
+	cases?: JudgedCase[]
 }
 
 /** Announces a step about to run (after its lock); answers what to call with its result once it ran. */

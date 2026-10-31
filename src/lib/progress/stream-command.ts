@@ -1,7 +1,7 @@
 /**
  * Runs a command and prints each line it writes (standard output and error) as it comes, behind a
- * prefix; while it stays silent, a heartbeat line every `every` milliseconds says how long it has run.
- * Nothing is read from a terminal: its input is the given text, then end-of-file. It runs through
+ * prefix (or hands each to the caller); while it stays silent, a heartbeat line every `every`
+ * milliseconds says how long it has run. Nothing is read from a terminal: its input is the given text, then end-of-file. It runs through
  * `runChild`: a command silent with no CPU gained by its processes for `stallAfter` is stopped as stalled.
  */
 import { formatDuration } from './format-duration.ts'
@@ -43,13 +43,24 @@ export async function streamCommand(params: {
 	step?: { running: RunningStep; tty: boolean }
 	/** Each piece of text the command prints, as it comes (a log kept while it runs). */
 	onText?: (text: string) => void
+	/**
+	 * Each line the command prints, handed over instead of printed: the caller shows what it chooses (a
+	 * hook's steps and warnings), the prefix and the live tail unused; off a terminal it says what it wrote
+	 * to the step (`wrote`), so the step's running lines count the silence of what is shown.
+	 */
+	onLine?: (line: string) => void
 }): Promise<StreamedCommand> {
 	const { clock, write, step } = params
 	let printed = false
 	const tail: string[] = []
 	function print(line: string): void {
+		if (params.onLine) {
+			params.onLine(line)
+			return
+		}
 		if (!step?.tty) {
 			write(`${params.prefix}${line}`)
+			step?.running.wrote()
 			return
 		}
 		tail.push(`${params.prefix}${line}`)

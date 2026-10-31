@@ -7,13 +7,13 @@
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { renderCard } from '../card/render-card.ts'
+import { renderSectionCard } from '../card/render-section-card.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
-import { buildHandoverCard, handoverCardRows } from './handover-card.ts'
+import { buildHandoverCard, handoverCardSections } from './handover-card.ts'
 import { handoverLockPath } from './handover-lock.ts'
 import {
 	ARCHIVED_LOT_FILE,
@@ -39,7 +39,7 @@ export async function runHandoverFolder(params: {
 	progress?: StepProgress
 	/** The progress draws on a terminal. */
 	tty?: boolean
-	/** The terminal's width: the card wraps to it. */
+	/** The card's width: it is exactly that wide, every line wrapped to it. Default: no wrapping. */
 	columns?: number
 	/** The cli running the hand-over: the card's run line names it when the repository's own cli cannot run it. */
 	cliPath?: string
@@ -92,15 +92,15 @@ export async function runHandoverFolder(params: {
 		folder: handover.folder,
 		branch: lotsFile.branch,
 		head: guarded.head,
-		gates: lotsFile.gates,
+		notes: lotsFile.gates,
 		lots,
 		commits,
 		cliPath: params.cliPath,
 		// the repository's hand-over is done only by a real run that committed every lot
 		done: !rehearsal && commits.length === lots.length,
 	})
-	const box = renderCard({
-		card: handoverCardRows(card),
+	const box = renderSectionCard({
+		card: handoverCardSections(card),
 		colour: params.colour,
 		width: params.columns,
 	})

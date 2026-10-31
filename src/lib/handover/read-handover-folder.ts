@@ -28,6 +28,9 @@ export function readHandoverFolder(folder: string): HandoverFolder | string {
 		: {}
 	if (lotsFile.lots.some((lot, index) => isMergeLotPlan(lot) && !merges[index]))
 		return `${absoluteFolder} misses the merge records (${HANDOVER_FILES.merges}): write it again with \`dialecte handover --rehash <lots.json>\``
+	// the tree each merge was trial-merged on is recorded since the trial merges run in sequence
+	if (Object.values(merges).some((merge) => typeof merge.onTree !== 'string'))
+		return `${absoluteFolder}: its merge records (${HANDOVER_FILES.merges}) do not say the tree each merge was trial-merged on, written by an earlier cli: write the hand-over again, then --rehash after a review`
 	return {
 		folder: absoluteFolder,
 		lotsFile,

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -777,4 +778,47 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 
 afterEach(function forgetTheFlag() {
 	delete process.env.DIALECTE_TDD_FLIP
+})
+
+/** The cli's entry in the sources: Node runs it with its type stripping. */
+const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
+
+/** The cli run in `cwd` as a process whose output is a pipe, `$COLUMNS` set to `columns`. */
+function runCli(params: { argv: string[]; cwd: string; columns: number }): {
+	exitCode: number | null
+	lines: string[]
+} {
+	const result = spawnSync(process.execPath, [CLI_SOURCE, ...params.argv], {
+		cwd: params.cwd,
+		encoding: 'utf8',
+		env: { ...process.env, COLUMNS: String(params.columns) },
+	})
+	return {
+		exitCode: result.status,
+		lines: `${result.stdout}${result.stderr}`.trimEnd().split('\n'),
+	}
+}
+
+describe('tdd status --legend', { timeout: 60_000 }, () => {
+	it('tdd status --legend in a folder holding no package → exit 0, the tdd terms of the hand-over legend, line for line (from exempt to the noise flag)', () => {
+		const cwd = temporaryFolder('dialecte-tdd-legend-')
+
+		const legend = runCli({ argv: ['tdd', 'status', '--legend'], cwd, columns: 300 })
+		const handover = runCli({ argv: ['handover', '--legend'], cwd, columns: 300 })
+
+		const first = handover.lines.findIndex((line) => line.startsWith('exempt  '))
+		const last = handover.lines.findIndex((line) =>
+			line.startsWith('helper code changed near unchanged cases (noise)  '),
+		)
+		expect({
+			exitCodes: [legend.exitCode, handover.exitCode],
+			first: first >= 0,
+			terms: last - first,
+		}).toEqual({
+			exitCodes: [0, 0],
+			first: true,
+			terms: 24,
+		})
+		expect(legend.lines).toEqual(handover.lines.slice(first, last + 2))
+	})
 })

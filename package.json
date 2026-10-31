@@ -33,17 +33,19 @@
 		"test": "vitest",
 		"test:run": "vitest run",
 		"check": "npm run type-check && npm run lint:check && npm run format:check && npm run test:run",
-		"prepublishOnly": "npm run build"
+		"prepublishOnly": "node src/release-check.ts && npm run build",
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"jsonc-parser": "3.3.1",
 		"oxfmt": "^0.53.0"
 	},
 	"devDependencies": {
-		"@dialecte/core": "^0.8.0",
+		"@dialecte/core": "file:../core",
 		"@types/node": "^22.0.0",
 		"@typescript/native": "npm:typescript@^7.0.2",
 		"@xmldom/xmldom": "0.8.15",
+		"husky": "^9.1.7",
 		"oxlint": "^1.68.0",
 		"tsup": "^8.5.1",
 		"typescript": "npm:@typescript/typescript6@^6.0.2",

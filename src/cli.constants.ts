@@ -149,15 +149,17 @@ Contributing (inside a dialecte repository):
   dialecte tdd green [<test file> | <test file>::<case name>]...
                              # each case with a red receipt, its test code as frozen, production changed since
                              # its red, passes; records a green receipt
-  dialecte tdd status [--json] [--flags]
+  dialecte tdd status [--json] [--flags] | tdd status --legend
                              # per case: red, green, unchanged, missing receipt, test edited after red, flags;
                              # test code changed outside tdd red; cases the change deletes (an untitled test
-                             # call of the base in a file a "gone" entry names: gone, with its reason)
+                             # call of the base in a file a "gone" entry names: gone, with its reason);
+                             # --legend: the tdd terms of the hand-over card, what each means, whether to look
   dialecte new verb <namespace> <query|transaction> <name> [--version <v>]
                              # verb, types, red test (only: true), barrel export, namespace registration
-  dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]
+  dialecte handover <lots.json> [--out <dir>] [--rehash] [--json] | handover --legend
                              # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
-                             # refuses files in no lot, tags, citations, a missing core.hooksPath folder
+                             # refuses files in no lot, tags, citations, a missing core.hooksPath folder;
+                             # --legend: every term of the card, what it means, whether to look
   dialecte handover run <folder> [--rehearse [--keep]] [--resume-merge]
                              # what commit.sh runs: each guard with its time, each lot announced (a spinner on
                              # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse

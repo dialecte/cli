@@ -1,11 +1,13 @@
 /**
  * The hooks folder git runs a commit's hooks from. A `core.hooksPath` naming a folder that does not exist
  * makes git skip every hook without a word: a worktree made by hand misses `.husky/_`, which husky writes
- * at install time and git ignores.
+ * at install time and git ignores. A commit runs a hook when the folder holds an executable file named
+ * after one of a commit's hooks (husky's wrappers only when the package has that hook's script).
  */
-import { existsSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join } from 'node:path'
 
+import { COMMIT_HOOK_NAMES, HUSKY_RUNNER_FILE } from './git-hooks.constants.ts'
 import { mainCheckoutOf, readGit, readGitConfig } from './git.ts'
 import { shellQuote } from './shell-quote.ts'
 
@@ -36,4 +38,31 @@ export function describeMissingHooksFolder(root: string): string | undefined {
 			? `copy it from the main checkout: cp -R ${shellQuote(source)} ${shellQuote(folder)}`
 			: 'reinstall the package (npm install writes it when husky is a dependency)'
 	return `core.hooksPath is ${configured} but ${folder} does not exist: git would skip every hook. Restore it - ${restore}`
+}
+
+/**
+ * A commit in `root` runs a hook: the hooks folder holds an executable file named after a commit's hook. In
+ * husky's folder every hook name has a wrapper: a hook counts only when the package's script of that name
+ * exists in the folder above.
+ */
+export function hasCommitHook(root: string): boolean {
+	const { folder } = readHooksFolder(root)
+	const husky = isFile(join(folder, HUSKY_RUNNER_FILE))
+	return COMMIT_HOOK_NAMES.some(function runsHook(name) {
+		if (husky) return isFile(join(dirname(folder), name))
+		try {
+			const status = statSync(join(folder, name))
+			return status.isFile() && (status.mode & 0o111) !== 0
+		} catch {
+			return false
+		}
+	})
+}
+
+function isFile(path: string): boolean {
+	try {
+		return statSync(path).isFile()
+	} catch {
+		return false
+	}
 }

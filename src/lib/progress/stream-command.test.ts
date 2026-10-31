@@ -1,6 +1,10 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { createFakeClock } from '../../../test/fake-clock.ts'
 import { createFakeTree } from '../../../test/fake-process-tree.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { createStepProgress } from './step-progress.ts'
 import { streamCommand } from './stream-command.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -64,6 +68,53 @@ describe('streamCommand', { timeout: 20_000 }, () => {
 			'  … hook running 1 m 0 s',
 			'  … hook running 1 m 30 s - silent since it started: is it waiting for input, or running in watch mode (vitest without `run`)?',
 		])
+	})
+
+	it('off a terminal, lines handed to the caller and none written → the step keeps its running line every 30 s of the clock', async () => {
+		const clock = createFakeClock()
+		const folder = temporaryFolder('dialecte-stream-')
+		const go = join(folder, 'go')
+		const done = join(folder, 'done')
+		const written: string[] = []
+		const heard: string[] = []
+		const running = createStepProgress({
+			live: {
+				tty: false,
+				writeLine: (line) => written.push(line),
+				rewriteLines: () => undefined,
+			},
+			clock,
+			every: 30_000,
+		}).start({ name: 'hook' })
+
+		const streamed = streamCommand({
+			command: 'sh',
+			args: [
+				'-c',
+				`while [ ! -f '${go}' ]; do sleep 0.05; done; echo filtered; while [ ! -f '${done}' ]; do sleep 0.05; done`,
+			],
+			cwd: folder,
+			prefix: '  │ ',
+			heartbeatLabel: '  … hook running',
+			write: (line) => written.push(line),
+			clock,
+			every: 30_000,
+			step: { running, tty: false },
+			onLine: (line) => heard.push(line),
+		})
+		clock.advance(20_000)
+		writeFileSync(go, '1')
+		const deadline = Date.now() + 10_000
+		while (heard.length === 0 && Date.now() < deadline)
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+		clock.advance(15_000)
+		writeFileSync(done, '1')
+		await streamed
+
+		expect({ heard, written }).toEqual({
+			heard: ['filtered'],
+			written: ['▶ hook', '  … hook running 30 s'],
+		})
 	})
 
 	it('a hook command silent with no CPU gained for stallAfter → stalled with its tree, then the heartbeat and the sampler stop', async () => {

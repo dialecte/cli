@@ -35,6 +35,7 @@ dialecte gate [--full]     # the package's Definition of Done, with the real cou
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
+dialecte handover --legend      # every term of the hand-over card: what it means, whether to look
 dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
 dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
@@ -158,21 +159,30 @@ the answer.
   its root (`tmpdir()` handed to a call that lists or scans a folder, or given as `root` / `cwd` /
   `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
-  symmetric pair aside) and abbreviated names are warnings.
+  symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
+  in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
+  and warnings), which the hand-over card reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
   file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
   step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
-  while a hand-over script holds the repository.
+  while a hand-over script holds the repository. A run that reaches its steps records its result in the
+  worktree's git folder, `dialecte-gate-fast.json` or `dialecte-gate-full.json`: when it ran, HEAD, the
+  state hash and each step (the tdd step first) with its status, its counts and its note or reason, the
+  tdd step with the cases of the change it judged (`cases`: label and status); a run refused at the hygiene or at the machine lock records nothing. The state hash is that of the tree the
+  worktree would commit (HEAD's tree with the changed and untracked files on top, the deleted ones
+  removed, `.dialecte/` left out): committing the lots leaves it the same, any other edit changes it.
 - A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
   off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
   terminal one spinner line `⠋ <step> - <what runs> <elapsed>` that the step's result line replaces (the
   gate's summary then leaves out the lines already shown; off a terminal and with `--json` it keeps them).
   A silent hook gets the waiting-for-input / watch-mode hint once, at 90 s of silence, on both. The
-  `handover` card wraps its values to the terminal's width; its `run` row says `see below` and the
-  command follows the box whole on one line, to copy: `cd <folder> && bash commit.sh`, or
+  `handover` card is as wide as the terminal's columns, else `$COLUMNS`, else 80: the box is exactly that
+  wide and every line wraps inside it with a hanging indent under its text column. Colour only on a
+  terminal (and never with `NO_COLOR`); the `✓` `!` `✗` marks read the same without it. The command
+  follows the box whole on one line, to copy: `cd <folder> && bash commit.sh`, or
   `node <this cli> handover run <folder>` when the repository's own cli does not answer
   `handover run --probe` within 10 s. "This cli" is the script that runs: when it is a temporary one
   (`npx` from the registry, `tsx` on the sources), install `@dialecte/cli` in the repository so the
@@ -238,6 +248,8 @@ the answer.
     test gone and a deleted test file stay `deleted`. A ledger that cannot be read is refused with its
     path.
   - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
+  - `status --legend` prints the tdd terms of the hand-over card, each in two lines: what it means, and
+    whether to look. It needs no package: it works from any folder.
   - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
     committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
     whole-branch view; `gate --full` measures from where the branch left its base branch.
@@ -285,7 +297,7 @@ the answer.
   	"repository": "/path/to/the/repository",
   	"branch": "feat/names",
   	"head": "d4b1c04",
-  	"gates": "npm run check (217 tests), build",
+  	"gates": "the scl cases need DIALECTE_SCL_DIR: skipped here",
   	"lots": [
   		{ "paths": ["src/names/"], "message": "feat(names): names stay unique among siblings" },
   		{ "paths": ["CHANGELOG.md"], "message": "docs(changelog): unique names" }
@@ -293,6 +305,7 @@ the answer.
   }
   ```
 
+  `gates` is optional free text: the card prints it as its notes, and reads the gates from their records.
   It refuses (and writes nothing) when the branch or HEAD differ, `core.hooksPath` names a folder that
   does not exist (git would skip every hook; it says how to restore it), something is staged, a changed
   file is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
@@ -300,23 +313,78 @@ the answer.
   `files.sha256`, `files.deleted`, and `lots.sha256`: the lots file as reviewed) and a one-line
   `commit.sh` that runs
   `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
-  installs no cli that can, it says so in one line with the fix) - and prints the card: repository,
-  worktree, branch, HEAD, gates, each lot with its files, lines added and removed and its subject, and the
-  command with its absolute `cd`; `--json` answers the same as data. Edited a file after the review?
-  `--rehash` (also after editing `lots.json`). The repository stays locked for `dialecte gate` until
-  every lot is committed.
+  installs no cli that can, it says so in one line with the fix) - and prints the hand-over card, the
+  command with its absolute `cd` under it. `--json` answers the card as data: the verdict, `failedGates`,
+  `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name, status, detail),
+  `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, and each lot with
+  `pending` until it is committed. Edited a file after the review? `--rehash` (also after
+  editing `lots.json`). The repository stays locked for `dialecte gate` until every lot is committed.
+
+- The hand-over card is what a person reads before running the hand-over, and again at its end. Its title
+  is `hand-over: <repository folder> <branch>`; the repository and worktree paths are not in it. Its
+  first line is the verdict: `READY` when no gate line failed and none ran on another tree, `BLOCKED` with
+  `<n> gates failed: <names>` and `gates ran on another tree: <names>`, `DONE` once a real run committed
+  every lot; then the lots, files and `+<added> −<removed>` (`all gates green` when nothing blocks), and
+  `<n> declarations to read (below)` on a second line. Its sections:
+  - `commit`: one line per lot - its sha, or `pending`; its files, lines added and removed, and subject. A
+    merge lot's line follows (`merge <branch> at <tip> · <n> conflicts · tree <sha>`, or
+    `tree not recorded: rehearse first`); a merge lot is sized from the tree it was trial-merged on to
+    the tree a rehearsal recorded, else says `size after rehearse`. Then `HEAD <sha>`, after a run
+    `HEAD <base> → <tip> · nothing pushed`.
+  - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`
+    and `--full`), then `rules` from its record, then `review` from the hand-over folder's findings ledger
+    and `round-<n>/` snapshots. `✓` passed; `!` to look at (a step not run here, with its reason, or not
+    run after a failure; `rules` never run; no findings ledger, or one holding no row yet:
+    `no findings recorded`; only nits open); `✗` failed (a failed step,
+    a rules error, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
+    record). A record of another tree than the worktree's now ends with `(the tree changed since)`: its
+    line turns `!` and blocks the hand-over; a failed step stays `✗`.
+  - `tdd`: the lot's exemption; only the cases of the change count, those the gate's tdd step listed on
+    this tree (a retitled or removed case's receipts are not counted under the old title); without a gate
+    record of this tree that lists them, one line `counts from the last gate: run the gate on this tree`
+    replaces the counts, groups, entries and flags; each case counted once by the status the gate gave
+    it (red then green as proven, kept when its last receipt is a kept after a green; accepted and
+    revised only in their groups)
+    (`<n> proven red → green · <m> unchanged`, and `· <k> kept` when any); the accepted cases: a head
+    line `<n> accepted`, then one row per reason of the lot file (`<count>  <reason>`, the largest group
+    first, a tie in the lot file's order, each reason wrapped under itself); the accepted and revised receipts
+    of earlier lots, which the lot file no longer names, on one line
+    (`earlier lots: 410 accepted, 12 revised (not in the lot file)`); then
+    `<n> revised · <m> gone · <k> unused` with `to read ↓` at its right edge and one entry each: a revised case `<file> › <title>` (named by the lot file exactly, or by a file or glob entry)
+    with its reason under it, a `gone` entry with its reason (whether one covers a finding is the gate's
+    to say), an `accept` or `revised` entry no case used. Then one line per kind of flag with its count of
+    cases (`dialecte tdd status --flags` lists them); cases whose only flag is `test code changed around it`
+    and whose receipts are otherwise only unchanged are counted apart (a case flagged rollback or red after
+    green never is), as
+    `helper code changed near unchanged cases (noise)`.
+  - `notes`: the lots file's `gates` text, as written.
+
+  Its closing rule reads `dialecte handover --legend · details: dialecte tdd status` (in a box too narrow
+  for it, that text is printed inside, above a plain closing rule). The command stays
+  under the box until every lot is committed. `dialecte handover --legend` prints every term the card can
+  print, each in two lines: what it means, and whether to look.
 
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
   lots, plan tags and citations. When the staged files are exactly the next lot's (a run stopped after
   staging it), the index guard prints the command that unstages them, with its `cd`.
-  Then each lot announced before its work: off a terminal `▶ lot n/N` with its files and subject, the
-  hook's lines streamed behind `│` as they come, a line every 30 s of silence (`… <lot> running 2 m 10 s`),
-  then `│ full log: <file>`; on a terminal one spinner line naming the lot, what runs and the
-  time, with the hook's last 20 lines live under it - collapsed to one line with the full log's path
-  when the hook passes, every line kept when it fails. Hook output is never buffered. Then the commit with
-  its stat; the total time and the card at the end (its HEAD line `base → new tip`). A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
+  Then each lot announced before its work: off a terminal `▶ lot n/N` with its files and subject, and a
+  line every 30 s in which nothing of the lot was shown (`… <lot> running 2 m 10 s`: hook lines the view
+  leaves out do not count); on a terminal one spinner line naming the lot,
+  what runs and the time. The commit's hook output is read as steps, from npm's script headers: a script
+  that runs others (`npm run`, `run-p`, `run-s`, `npm-run-all`) is their parent, and the lines of the
+  scripts a parent runs in parallel stay the parent's. While the hook runs, only the current step and the
+  warning and error lines show (lint, format, type-check and build warnings and errors, failing tests): on
+  a terminal the step with its elapsed time and those lines live under the spinner, off one `│ ▶ <step>`
+  per step and those lines behind `│`. Every byte goes to the hook's full log as it comes. After a passing
+  hook, one summary line (`check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning`: the scripts the hook
+  runs, a script they run only when it printed counts or failed), the warning lines and
+  `full log: <path>`; after a failing hook, the summary with `✗`, the error lines not among the failing
+  step's last 30 lines, those 30 lines and the log's path. A hook that prints nothing gets `hook ✓` (or
+  `hook ✗`) and the log's path; a repository with no commit hook prints none of it (in husky's `.husky/_`,
+  which holds a wrapper for every hook name, a hook counts only when its script exists in `.husky/`). Then the commit with
+  its stat; the total time and the card at the end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
   finds the lots already committed on top of the recorded HEAD (same message, same paths, same content)
   and resumes at the next one; anything else on top of HEAD is refused with what was found. It never
   pushes. `--rehearse` announces the clone (`▶ rehearsal clone`), warns naming the untracked files outside
@@ -327,14 +395,22 @@ the answer.
   naming the process that made it (`dialecte-rehearsal.json`).
 - A lot of `lots.json` can be a merge (git 2.38 or later, for its trial merge):
   `{ "kind": "merge", "branch": "<branch or tag>", "tip": "<sha>", "resolved": { "<path>": "<file>" | null }, "message": "...", "tree": "<sha>" }`
-  (`null`: the merge removes the file). The write refuses a branch that is gone or moved since its tip
-  was reviewed, a missing resolution file, a resolution holding conflict markers, a conflict of the
-  trial merge without a resolution or on a symlink or a submodule, and a file the merge changes that
-  has working-tree changes outside the resolutions. It records the conflicts and each resolution's hash
-  in `merges.json`, under the review hash like `lots.json` (`--rehash` after a review). A resolution may
+  (`null`: the merge removes the file). Merge lots are trial-merged in sequence: each on the tree the lots
+  before it leave - HEAD's, each earlier plain lot's files as they are in the working tree, each earlier
+  merge's trial tree with its resolutions - so a conflict that appears only on top of an earlier merge is
+  found at the write and needs a resolution, instead of stopping the run. The write refuses a branch that
+  is gone or moved since its tip was reviewed, a missing resolution file, a resolution holding conflict
+  markers, a conflict of the trial merge without a resolution or on a symlink or a submodule, and a file
+  the merge changes that has working-tree changes outside the resolutions (a file an earlier lot commits
+  aside). It records the conflicts, each resolution's hash and the tree the merge was trial-merged on
+  (`onTree`) in `merges.json`, under the review hash like `lots.json` (`--rehash` after a review). A resolution may
   cover a file that merges cleanly (the lot changes it on top of the merge). Rehearse first:
   `--rehearse` prints the merge's `tree <sha>`, which goes into the lot as `tree`; a real run requires it
-  ("tree not recorded: rehearse first"). The run merges the recorded tip (`git merge --no-ff
+  ("tree not recorded: rehearse first"). Before merging, the run refuses the lot when HEAD's tree is
+  not its `onTree` - an earlier lot committed other content (a hook staged files of its own) - naming
+  both trees, with nothing merged, and the next step (see what the lots before it committed, then write
+  the hand-over again from this HEAD for the lots left). A `merges.json` without `onTree` (written by an
+  earlier cli) is refused at the read: write the hand-over again, then `--rehash` after a review. The run merges the recorded tip (`git merge --no-ff
 --no-commit`; a branch moved since is a note) and refuses a merge in progress, leaving it - except one
   of the lot's own tip that this cli started (its marker in the git folder) or with `--resume-merge`,
   aborted and redone. It checks the conflicts against the recorded ones, copies the resolutions
@@ -348,14 +424,7 @@ the answer.
   restored by the next run when the files still hold the staged bytes, else refused naming it), `npm ci`,
   the working copies put back byte for byte;
   refused when the install changed the staged files or the versions still differ (dev, peer and optional
-  packages an install leaves out aside). The card counts the tdd flags per kind
-  (`dialecte tdd status --flags` lists the cases), lists the accepted and revised receipts the current
-  lot file names (exactly, or by a file or glob `revised` entry) with the file's reason, folds the
-  receipts of earlier lots into one line (`earlier lots: 410 accepted, 12 revised (not in the lot
-  file)`), lists the unused `accept` and `revised` entries and every `gone` entry (`gone: <file>
-  (<reason>)`; whether one covers a finding is the gate's to say), and its run row
-  says `done` once every lot is committed (the command stays for a pending or partly committed
-  hand-over). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
+  packages an install leaves out aside). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
   into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration
   (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
   the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a
@@ -447,9 +516,9 @@ changed since the base (test files, helpers, fixtures, snapshots) must be as the
 others fail the gate with the list. The flags of the receipts and the deleted cases are printed under the
 step. The lot file may also accept cases without a red - a new test of behaviour that already exists, an honest
 cut of an assertion: `"accept": [{ "case": "<file>::<name> [project]", "reason": "..." }]`. An accepted
-case passes `tdd red` as accepted and does not block its file; the gate and the hand-over card list each
-acceptance with its reason, the card from the receipts (those of earlier lots, which the file no longer
-names, counted on one line), and both report an acceptance or a `revised` entry no case used. The card
+case passes `tdd red` as accepted and does not block its file; the gate lists each acceptance with its
+reason, the hand-over card counts them by reason from the receipts (those of earlier lots, which the file
+no longer names, counted on one line), and both report an acceptance or a `revised` entry no case used. The card
 lists every `gone` entry with its reason; only the gate reports a `gone` entry that covers no finding. The file is strict: an unknown key, at the top or in
 an `accept` entry, and an exemption without a reason are refused, naming what is wrong. A lot the orchestrator declares exempt - a wording, rename or doc-only lot - passes with its reason
 and what the change touches: `{ "tdd": "exempt: <reason>" }` in `.dialecte/lot.json` at the package root
@@ -615,15 +684,29 @@ What is not:
 
 The `schema`, `run`, `fixture` and `explain` tests drive `@dialecte/core`'s own test dialecte: they resolve core from the
 `@dialecte/core` devDependency, or from the built core checkout `DIALECTE_CORE_DIR` names
-(`DIALECTE_CORE_DIR=../core npm run test:run`); with neither they fail. The lockfile gains that
-devDependency at the release, once core 0.8.0 is published.
+(`DIALECTE_CORE_DIR=../core npm run test:run`); with neither they fail.
+
+While the cli follows core's 0.8 train, the devDependency is `"@dialecte/core": "file:../core"`, and the lockfile
+holds it: the cli's checkout sits next to core's (`Dialecte/cli` and `Dialecte/core`), and a worktree under
+`Dialecte/.worktrees/` needs a `core` link beside it (`Dialecte/.worktrees/core` → `../core`). Build core there
+(`npm run build`) before running the tests. A release pins a published core again: `prepublishOnly` runs
+`src/release-check.ts` before the build, which refuses a package.json naming any dependency by a local folder
+(`file:`, `link:`, `git+file:`, a bare `../x`, `./x`, `/x` or `~/x` path) in `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies`, one line
+per dependency (its field, name and spec), and says how to pin it
+(`npm install --save-exact <name>@<version>`).
+
+The cli has a commit hook: `.husky/pre-commit` runs `npm run check`, then `npm run build`. `npm install` in the
+cli checkout activates it (`"prepare": "husky"` sets `core.hooksPath` to `.husky/_`), and `dialecte worktree add`
+copies `.husky/_` into each new worktree, so `handover run` proves a cli lot again at its commit. A hook
+runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the suite's setup file
+(`test/git-environment.setup.ts`, vitest `setupFiles`) clears them before any test, so a test's git acts on
+its scratch repository only, and the cli clears git's repository variables at its start.
 
 The cli does not re-declare core's types: the definition, record, diagnostic, error, expectation and reader shapes
 (`ResolvedDefinition`, `DataType`, `AttributeDefinition`, `AnyDialecteConfig`, `ChildOccurrences`, `Diagnostic`,
 `DialecteError`, `Expectation`, the readers of `@dialecte/core/utils`...) are `import type` from the `@dialecte/core`
 devDependency, which is erased from the build (the bin loads at run time the core each dialecte resolves, and
-`isCoreReaders` checks it holds the readers). Until core 0.8.0 is published, link a core build:
-`ln -s <core checkout> node_modules/@dialecte/core` (built: `npm run build` there). Types the cli narrows, because a
+`isCoreReaders` checks it holds the readers). Types the cli narrows, because a
 dialecte may run on an older core: the config found by shape (`isDialecteConfig` checks `rootElementName` and
 `definition` only, typed as `AnyDialecteConfig`), `CoreReaders` (typed from the core the cli is built against;
 `isCoreReaders` and the `requiredChoices` check report a reader an older core lacks), and `ElementDef` in
