@@ -69,6 +69,36 @@ describe('createStepProgress off a terminal, a silent hook', () => {
 	})
 })
 
+describe('createStepProgress off a terminal, a step whose output is filtered', () => {
+	it('output heard but no line written → the running lines keep their 30 s; a written line starts them again; output heard keeps the silent hint away', () => {
+		const clock = createFakeClock()
+		const terminal = createFakeTerminal({ tty: false })
+		const step = createStepProgress({ live: terminal.output, clock, every: 30_000 }).start({
+			name: 'hook',
+			hintWhenSilent: true,
+		})
+
+		clock.advance(20_000)
+		step.touch()
+		clock.advance(20_000)
+		expect(terminal.written).toEqual(['▶ hook', '  … hook running 30 s'])
+		step.wrote()
+		clock.advance(25_000)
+		expect(terminal.written).toHaveLength(2)
+		for (let heard = 0; heard < 12; heard += 1) {
+			clock.advance(10_000)
+			step.touch()
+		}
+
+		expect(terminal.written.slice(2)).toEqual([
+			'  … hook running 1 m 10 s',
+			'  … hook running 1 m 40 s',
+			'  … hook running 2 m 10 s',
+			'  … hook running 2 m 40 s',
+		])
+	})
+})
+
 describe('createStepProgress on a terminal', () => {
 	it('start → one spinner line with the step, what runs and the elapsed time, redrawn with a moving frame; finish → the result replaces it', () => {
 		const clock = createFakeClock()

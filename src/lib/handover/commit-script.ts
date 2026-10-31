@@ -15,7 +15,7 @@ export function renderCommitScript(params: {
 	const count = plan.lots.length
 	const header = [
 		`${count} commit(s) on ${plan.branch} in ${plan.repository}, on top of ${plan.head.slice(0, 12)}.`,
-		`Gates before the hand-over: ${plan.gates ?? 'not stated'}.`,
+		...(plan.gates ? [`Notes: ${plan.gates}.`] : []),
 		'Runs `dialecte handover run` on this folder: it checks the branch, HEAD, an empty index, the files',
 		'against the reviewed snapshot and the references, then commits lot by lot. Commits only, never pushes.',
 		'Written by `dialecte handover`: run `dialecte handover --rehash <lots.json>` after an edit.',

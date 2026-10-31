@@ -1,3 +1,7 @@
+import type { CardLine } from '../card/card.types.ts'
+import type { CardGateLine } from '../gate-records/gate-records.types.ts'
+import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
+
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
 export type LotsFile = {
 	/** Absolute path of the repository (or worktree) the script commits in. */
@@ -53,6 +57,12 @@ export type MergeLot = {
 	/** The full sha of the reviewed tip. */
 	tip: string
 	tree?: string
+	/**
+	 * The full sha of the tree the merge was trial-merged on: HEAD's tree for the first lot, else the tree
+	 * the lots before it leave (an earlier merge's trial tree with its resolutions, a plain lot's files as
+	 * they are in the working tree on top). The run refuses the lot when HEAD's tree is another one.
+	 */
+	onTree: string
 	/** The conflicting files of the merge, sorted. */
 	conflicts: string[]
 	/** Every resolved file (a conflict, or a file the lot changes on top of a clean merge), sorted by path. */
@@ -66,6 +76,12 @@ export type MergeLot = {
 export type MergeResolution =
 	| { path: string; file: string; sha256: string }
 	| { path: string; removed: true }
+
+/**
+ * What the lots before a merge lot leave, as git objects no ref points to: a commit (for `git merge-tree`
+ * and its merge base) and its tree.
+ */
+export type TrialBase = { commit: string; tree: string }
 
 /** What a trial merge (`git merge-tree`) answers: the merged tree, the conflicting paths and their modes. */
 export type TrialMerge = { tree: string; conflicts: string[]; modes: Map<string, Set<string>> }
@@ -93,6 +109,9 @@ export type PlannedHandover = { plan: HandoverPlan; refusals: string[] }
 
 /** Lines a lot adds and removes against HEAD. */
 export type DiffSize = { insertions: number; deletions: number }
+
+/** Files changed and lines added and removed between two trees. */
+export type TreeDiffSize = DiffSize & { fileCount: number }
 
 /** A hand-over folder as `handover run` reads it back: the lots file and the snapshot written next to it. */
 export type HandoverFolder = {
@@ -124,7 +143,16 @@ export type CardLot = DiffSize & {
 	subject: string
 	/** The lot's commit, once committed. */
 	commit?: string
+	/** Not committed yet. */
+	pending?: true
+	/** A merge lot: what it merges, its conflicts, the tree it must hold (or that it is not recorded). */
+	merge?: string
+	/** A merge lot whose tree is not recorded yet: no size until a rehearsal records it. */
+	notSized?: true
 }
+
+/** The card's first word: every gate green, a gate blocking it, or every lot committed. */
+export type HandoverVerdict = 'READY' | 'BLOCKED' | 'DONE'
 
 /** What a person reviews before running a hand-over, and sees again at its end. */
 export type HandoverCard = {
@@ -136,9 +164,23 @@ export type HandoverCard = {
 	head: string
 	/** After a run: the new tip of the branch (the card shows `HEAD base → tip`). */
 	tip?: string
-	gates: string
-	/** The test receipts for the reviewer: the lot's exemption, the flags receipts carry (one per line). */
-	tdd?: string
+	/** `DONE` once every lot is committed, else `BLOCKED` when a gate failed or ran on another tree, else `READY`. */
+	verdict: HandoverVerdict
+	/** The gate lines that failed, by name, in card order. */
+	failedGates: string[]
+	/** The gate lines recorded on another tree than the worktree's now (not failed), by name, in card order. */
+	otherTreeGates: string[]
+	/** The entries a person must read: revised receipts, gone test files, unused lot file entries. */
+	declarations: number
+	/** The gate steps (the latest record of each), the rules and the review, one line each. */
+	gates: CardGateLine[]
+	/** The lots file's `gates` text: the agent's caveats; absent when the lots file has none. */
+	notes?: string
+	/**
+	 * The test receipts for the reviewer, as the card's tdd lines: the lot's exemption, the counts, the
+	 * accepted reasons, the entries to read, the flags.
+	 */
+	tdd?: CardLine[]
 	lots: CardLot[]
 	/** The merges of the hand-over, one line each: the tip merged, the conflicts resolved, the tree. */
 	merges?: string[]
@@ -147,6 +189,9 @@ export type HandoverCard = {
 	/** Every lot is committed: the card says done instead of the command. */
 	done?: boolean
 }
+
+/** The card as `--json` answers it: the tdd lines as plain text, every other field as the card holds it. */
+export type HandoverCardData = Omit<HandoverCard, 'tdd'> & { tdd?: string[] }
 
 /** Where a hand-over stands, from the branch it commits on. */
 export type HandoverState =
@@ -183,3 +228,9 @@ export type GuardedRun = { head: string; commits: string[] }
 export type Installer = (params: {
 	root: string
 }) => Promise<{ exitCode: number | undefined; output: string }>
+
+/** A case's last proof, as the card's tdd counts read it: still red, proven red → green, unchanged, kept. */
+export type TddProof = 'red' | 'proven' | 'unchanged' | 'kept'
+
+/** An accepted or revised receipt with the lot file entry that names its case. */
+export type DeclaredReceipt = { receipt: TddReceipt; entry: LotCaseEntry }

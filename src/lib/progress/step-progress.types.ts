@@ -29,16 +29,27 @@ export type RunningStep = {
 	 * or follow the start line.
 	 */
 	finish(...lines: string[]): void
-	/** On a terminal: the lines shown live under the spinner (a hook's last lines). Off a terminal: nothing. */
-	show(lines: string[]): void
 	/**
-	 * The step printed something: its silence starts again - the running lines off a terminal, the silent
-	 * hint on both.
+	 * On a terminal: the lines shown live under the spinner (a hook's step and warnings), or how to render
+	 * them at each redraw (a step's elapsed time). Off a terminal: nothing.
+	 */
+	show(lines: LiveLines): void
+	/**
+	 * The step printed something, shown or not: its silence starts again for the silent hint (on both); the
+	 * running lines off a terminal wait for a line written (`wrote`).
 	 */
 	touch(): void
+	/**
+	 * Off a terminal: a line of the step was written (a hook's step or warning), so its running lines start
+	 * again; output heard but filtered out does not count. On a terminal: nothing.
+	 */
+	wrote(): void
 }
 
 export type StepProgress = {
 	/** Announces the step before any of its work begins. */
 	start(step: StepDescription): RunningStep
 }
+
+/** Lines shown live under a spinner, or rendered at each redraw from the clock's time. */
+export type LiveLines = string[] | ((now: number) => string[])

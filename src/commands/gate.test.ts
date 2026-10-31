@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
+import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
+import { readRecordFile } from '../../test/gate-records.ts'
 import {
 	createScratchRepository,
 	git,
@@ -14,7 +16,9 @@ import { runTdd } from './tdd.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { GateRecord } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
+import type { GateMode } from '../lib/gate/gate.types.ts'
 
 /** A package whose gate runs the given steps. */
 function packageWith(params: {
@@ -522,5 +526,148 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		expect(result.output.split('\n')[1]).toBe(
 			'FAIL  tdd  .dialecte/lot.json: "tdd" must be "exempt: <reason>", not "skip"',
 		)
+	})
+})
+
+describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
+	/** The record of `mode` as the gate left it; undefined when there is none. */
+	function readRecord(params: { root: string; mode: GateMode }): GateRecord | undefined {
+		return readRecordFile<GateRecord>({
+			root: params.root,
+			name: `dialecte-gate-${params.mode}.json`,
+		})
+	}
+
+	it('--fast green → dialecte-gate-fast.json: when, HEAD, the state hash, each step with its status, counts and reason; no full record', async () => {
+		const root = packageWith({
+			fast: [
+				{ name: 'check', run: `printf ' Tests  1056 passed | 4 skipped (1060)\\n'` },
+				{ name: 'skills', run: 'npm run skills:check' },
+			],
+		})
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(readRecord({ root, mode: 'fast' })).toMatchObject({
+			mode: 'fast',
+			at: expect.stringMatching(ISO_TIME_PATTERN),
+			head: git({ root, args: ['rev-parse', 'HEAD'] }).trim(),
+			stateHash: expect.stringMatching(SHA256_PATTERN),
+			steps: [
+				{ name: 'tdd', status: 'skipped', reason: 'the package does not test with vitest' },
+				{
+					name: 'check',
+					status: 'passed',
+					counts: { tests: { passed: 1056, failed: 0, skipped: 4, total: 1060 } },
+				},
+				{ name: 'skills', status: 'skipped', reason: 'no npm script "skills:check"' },
+			],
+		})
+		expect(readRecord({ root, mode: 'full' })).toBeUndefined()
+	})
+
+	it("--full in a linked worktree → dialecte-gate-full.json in that worktree's git folder, none in the main checkout's", async () => {
+		const main = packageWith({ full: [{ name: 'build', run: 'true' }] })
+		const linked = join(temporaryFolder('dialecte-gate-linked-'), 'linked')
+		git({ root: main, args: ['worktree', 'add', '-q', '-b', 'feature', linked] })
+
+		const result = await gate({ cwd: linked, argv: ['--full'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(readRecord({ root: linked, mode: 'full' })).toMatchObject({
+			mode: 'full',
+			steps: [{ name: 'tdd' }, { name: 'build', status: 'passed' }],
+		})
+		expect(readRecord({ root: main, mode: 'full' })).toBeUndefined()
+	})
+
+	it('the state hash: the same tree → the same hash; a changed or an untracked file edited → another; only .dialecte/ changed → the same', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'true' }] })
+		writeFiles({ root, files: { 'README.md': 'changed\n', 'new.ts': 'export {}\n' } })
+		async function hashNow(): Promise<string | undefined> {
+			await gate({ cwd: root, argv: [] })
+			return readRecord({ root, mode: 'fast' })?.stateHash
+		}
+
+		const first = await hashNow()
+		const again = await hashNow()
+		writeFiles({ root, files: { 'README.md': 'changed again\n' } })
+		const changedEdited = await hashNow()
+		writeFiles({ root, files: { 'new.ts': 'export const edited = 1\n' } })
+		const untrackedEdited = await hashNow()
+		writeFiles({ root, files: { '.dialecte/lot.json': '{}\n' } })
+		const lotFileWritten = await hashNow()
+
+		expect(first).toEqual(expect.stringMatching(SHA256_PATTERN))
+		expect(again).toBe(first)
+		expect(new Set([first, changedEdited, untrackedEdited]).size).toBe(3)
+		expect(lotFileWritten).toBe(untrackedEdited)
+	})
+
+	it('the changes committed → the same state hash, HEAD moved; a tracked file deleted → another hash', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'true' }] })
+		writeFiles({ root, files: { 'README.md': 'changed\n', 'new.ts': 'export {}\n' } })
+		await gate({ cwd: root, argv: [] })
+		const uncommitted = readRecord({ root, mode: 'fast' })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: the changes'] })
+		await gate({ cwd: root, argv: [] })
+		const committed = readRecord({ root, mode: 'fast' })
+		rmSync(join(root, 'README.md'))
+		await gate({ cwd: root, argv: [] })
+		const deleted = readRecord({ root, mode: 'fast' })
+
+		expect(uncommitted?.stateHash).toEqual(expect.stringMatching(SHA256_PATTERN))
+		expect(committed?.head).not.toBe(uncommitted?.head)
+		expect(committed?.stateHash).toBe(uncommitted?.stateHash)
+		expect(deleted?.stateHash).not.toBe(committed?.stateHash)
+	})
+
+	it('a run refused at the hygiene or at the machine lock → nothing new recorded', async () => {
+		const root = packageWith({
+			fast: [{ name: 'check', run: 'true' }],
+			full: [{ name: 'build', run: 'true' }],
+		})
+		await gate({ cwd: root, argv: [] })
+		const recorded = readRecord({ root, mode: 'fast' })
+		writeFileSync(join(root, 'README.md'), 'changed\n')
+		git({ root, args: ['add', 'README.md'] })
+		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
+		writeFileSync(
+			lockPath,
+			JSON.stringify({ pid: 1111, command: 'elsewhere', startedAt: '2026-10-29T10:00:00.000Z' }),
+		)
+
+		const hygiene = await gate({ cwd: root, argv: [] })
+		const locked = await gate({
+			cwd: root,
+			argv: ['--full', '--no-wait'],
+			lockPath,
+			isAlive: () => true,
+		})
+
+		expect(recorded).toMatchObject({ mode: 'fast', steps: [{ name: 'tdd' }, { name: 'check' }] })
+		expect([hygiene.exitCode, locked.exitCode]).toEqual([1, 1])
+		expect(readRecord({ root, mode: 'fast' })).toEqual(recorded)
+		expect(readRecord({ root, mode: 'full' })).toBeUndefined()
+	})
+
+	it('a step failing → recorded failed with its reason, the steps after it not-run', async () => {
+		const root = packageWith({
+			fast: [
+				{ name: 'check', run: 'exit 3' },
+				{ name: 'tests', run: 'echo never', counts: 'tests' },
+			],
+		})
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(readRecord({ root, mode: 'fast' })?.steps).toMatchObject([
+			{ name: 'tdd', status: 'skipped' },
+			{ name: 'check', status: 'failed', reason: 'exit 3' },
+			{ name: 'tests', status: 'not-run' },
+		])
 	})
 })

@@ -2,12 +2,15 @@
  * A merge as a hand-over lot. At the write: git can make a trial merge (2.38 or later), the tip the lot
  * reviewed is still the branch's, every conflict of the trial merge (`git merge-tree`, which touches no
  * working tree) has a resolution and none is a symlink or a submodule, every resolution exists and holds no
- * conflict marker, and no file the merge changes has working-tree changes outside the resolutions; the
- * conflicts and each resolution's hash are recorded. A resolution may cover a file that merges cleanly (the
- * lot changes it on top of the merge), or be `null` (the merge removes the file).
+ * conflict marker, and no file the merge changes has working-tree changes outside the resolutions and the
+ * files earlier lots commit; the conflicts, each resolution's hash and the tree the merge was trial-merged
+ * on are recorded. The trial merge is made on what the lots before it leave (`trial-base.ts`), not on HEAD.
+ * A resolution may cover a file that merges cleanly (the lot changes it on top of the merge), or be `null`
+ * (the merge removes the file).
  *
- * At the run: the merge of the recorded tip with those resolutions, checked, ready to commit (`runMergeLot`);
- * a marker in the git folder says this cli holds the merge in progress.
+ * At the run: HEAD's tree is the one the merge was trial-merged on, then the merge of the recorded tip with
+ * those resolutions, checked, ready to commit (`runMergeLot`); a marker in the git folder says this cli holds
+ * the merge in progress.
  */
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -21,9 +24,16 @@ import {
 	MERGE_MARKER_FILE,
 	UNRESOLVABLE_MODES,
 } from './handover.constants.ts'
+import { addMerge } from './trial-base.ts'
 import { hashFile } from './write-handover.ts'
 
-import type { MergeLot, MergeLotPlan, MergeResolution, TrialMerge } from './handover.types.ts'
+import type {
+	MergeLot,
+	MergeLotPlan,
+	MergeResolution,
+	TrialBase,
+	TrialMerge,
+} from './handover.types.ts'
 
 /** Why git cannot make merge lots (a version before 2.38), or undefined when it can. */
 export function refuseOldGit(versionLine: string): string | undefined {
@@ -34,7 +44,10 @@ export function refuseOldGit(versionLine: string): string | undefined {
 		: `git ${needMajor}.${needMinor} or later needed for merge lots (the trial merge), found ${versionLine.trim()}`
 }
 
-/** The merge lot as recorded, and every reason the write is refused. */
+/**
+ * The merge lot as recorded, every reason the write is refused, and what it leaves for the lots after it
+ * (undefined when there is no trial merge: no such branch).
+ */
 export function planMergeLot(params: {
 	root: string
 	lot: MergeLotPlan
@@ -42,7 +55,11 @@ export function planMergeLot(params: {
 	number: number
 	/** The lots file: resolution files are relative to its folder. */
 	lotsPath: string
-}): { merge: MergeLot; refusals: string[] } {
+	/** What the lots before it leave: the merge is trial-merged on it. */
+	base: TrialBase
+	/** The files earlier plain lots commit: their working-tree changes are in `base` already. */
+	earlierFiles: ReadonlySet<string>
+}): { merge: MergeLot; refusals: string[]; leaves?: TrialBase } {
 	const { root, lot, number } = params
 	const refusals: string[] = []
 	const tip = commitOf({ root, revision: lot.tip }) ?? lot.tip
@@ -67,7 +84,7 @@ export function planMergeLot(params: {
 				)
 			return [{ path, file, sha256: hashFile(file) }]
 		})
-	const trial = branchTip ? trialMerge({ root, tip }) : undefined
+	const trial = branchTip ? trialMerge({ root, base: params.base.commit, tip }) : undefined
 	for (const conflict of trial?.conflicts ?? []) {
 		if (!(conflict in lot.resolved))
 			refusals.push(`merge lot ${number}: the conflict in ${conflict} has no resolution`)
@@ -78,12 +95,13 @@ export function planMergeLot(params: {
 				)
 	}
 	if (trial) {
-		// a working-tree change of a file the merge changes would be taken in by the merge commit
+		// a working-tree change of a file the merge changes would be taken in by the merge commit, unless an
+		// earlier lot commits it
 		const merged = new Set(
-			listNul({ root, args: ['diff', '--name-only', '-z', 'HEAD', trial.tree] }),
+			listNul({ root, args: ['diff', '--name-only', '-z', params.base.tree, trial.tree] }),
 		)
 		for (const file of listChangedFiles({ root, withDeleted: true }))
-			if (merged.has(file) && !(file in lot.resolved))
+			if (merged.has(file) && !(file in lot.resolved) && !params.earlierFiles.has(file))
 				refusals.push(
 					`merge lot ${number}: ${file} has working-tree changes and the merge changes it too: commit it in a lot after the merge's hand-over, or resolve it in the lot`,
 				)
@@ -93,18 +111,25 @@ export function planMergeLot(params: {
 			branch: lot.branch,
 			tip,
 			...(lot.tree && { tree: lot.tree }),
+			onTree: params.base.tree,
 			conflicts: [...new Set(trial?.conflicts ?? [])].sort(),
 			resolutions,
 		},
 		refusals,
+		...(trial && {
+			leaves: addMerge({ root, base: params.base, tip, tree: trial.tree, resolutions }),
+		}),
 	}
 }
 
-/** A merge of `tip` into HEAD made without a working tree: the tree, the conflicting paths and their modes. */
-export function trialMerge(params: { root: string; tip: string }): TrialMerge {
+/**
+ * A merge of `tip` into the commit `base` made without a working tree: the tree, the conflicting paths and
+ * their modes.
+ */
+export function trialMerge(params: { root: string; base: string; tip: string }): TrialMerge {
 	const trial = spawnSync(
 		'git',
-		['merge-tree', '--write-tree', '-z', '--no-messages', 'HEAD', params.tip],
+		['merge-tree', '--write-tree', '-z', '--no-messages', params.base, params.tip],
 		{ cwd: params.root, encoding: 'utf8' },
 	)
 	// exit 1: a merge with conflicts; the tree, then `<mode> <object> <stage>\t<path>` entries, NUL-separated
@@ -122,8 +147,8 @@ export function trialMerge(params: { root: string; tip: string }): TrialMerge {
 }
 
 /**
- * The merge of the recorded tip, made ready to commit: `git merge --no-ff --no-commit` (the marker written
- * first), its conflicts as recorded, every resolution copied (hash-checked) or removed and staged, no file
+ * The merge of the recorded tip, made ready to commit: refused before anything when HEAD's tree is not the
+ * one the merge was trial-merged on; then `git merge --no-ff --no-commit` (the marker written first), its conflicts as recorded, every resolution copied (hash-checked) or removed and staged, no file
  * left unmerged nor holding a conflict marker, and the staged tree the recorded one. A refusal leaves the
  * merge to `undoMerge`.
  */
@@ -132,6 +157,11 @@ export function runMergeLot(params: {
 	merge: MergeLot
 }): { tree: string } | { refusal: string; lines?: string[] } {
 	const { root, merge } = params
+	const headTree = readGit({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim()
+	if (headTree !== merge.onTree)
+		return {
+			refusal: `HEAD holds tree ${headTree.slice(0, 12)}, not ${merge.onTree.slice(0, 12)}, the tree the lots before it left when the merge was trial-merged: an earlier lot committed other content (a hook staged files of its own?), nothing merged: see what the lots before it committed (\`git show --stat HEAD\`), then write the hand-over again from this HEAD for the lots left`,
+		}
 	writeMergeMarker({ root, tip: merge.tip })
 	const merged = spawnSync('git', ['merge', '--no-ff', '--no-commit', merge.tip], {
 		cwd: root,

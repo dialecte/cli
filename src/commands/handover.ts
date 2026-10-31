@@ -10,15 +10,22 @@
  *
  * `dialecte handover list [--root <dir>] [--json]` - every hand-over folder and where it stands.
  *
+ * `dialecte handover --legend` - every term the card can print: what it means, whether to look.
+ *
  * The agent never commits; the run never pushes.
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
-import { renderCard } from '../lib/card/render-card.ts'
+import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
+import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
-import { buildHandoverCard, handoverCardRows } from '../lib/handover/handover-card.ts'
+import {
+	buildHandoverCard,
+	handoverCardData,
+	handoverCardSections,
+} from '../lib/handover/handover-card.ts'
 import { readHandoverLock } from '../lib/handover/handover-lock.ts'
 import { COMMIT_SCRIPT_FILE } from '../lib/handover/handover.constants.ts'
 import { listHandovers } from '../lib/handover/list-handovers.ts'
@@ -28,6 +35,8 @@ import { readLotsFile } from '../lib/handover/read-lots-file.ts'
 import { rehearseHandover } from '../lib/handover/rehearse-handover.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
+import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
+import { renderLegend } from '../lib/legend/render-legend.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
@@ -43,6 +52,11 @@ import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const colour = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR
+	// the card's width: the terminal's columns, else $COLUMNS, else 80
+	const columns = resolveCardColumns({
+		terminalColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
+		environmentColumns: process.env.COLUMNS,
+	})
 	if (argv[0] === 'run') {
 		const live = openProcessLiveOutput()
 		const exitCode = await runHandoverRun({
@@ -51,6 +65,7 @@ export async function run(argv: string[]): Promise<void> {
 			live,
 			clock: createSystemClock(),
 			colour,
+			columns,
 			scratchRoot: tmpdir(),
 		})
 		if (exitCode !== 0) process.exit(exitCode)
@@ -63,7 +78,7 @@ export async function run(argv: string[]): Promise<void> {
 					argv,
 					cliPath: realpathSync(process.argv[1]),
 					colour,
-					...(process.stdout.isTTY && { columns: process.stdout.columns }),
+					columns,
 				})
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
@@ -74,7 +89,7 @@ export function runHandover(params: {
 	/** The cli writing the hand-over: the script's fallback when the repository installs none that runs it. */
 	cliPath: string
 	colour?: boolean
-	/** The terminal's width: the card's values wrap to it. Default: not a terminal, no wrapping. */
+	/** The card's width: it is exactly that wide, every line wrapped to it. Default: no wrapping. */
 	columns?: number
 	/** The most the repository's own cli may take to answer the `handover run --probe` check, in milliseconds. */
 	probeTimeout?: number
@@ -82,6 +97,14 @@ export function runHandover(params: {
 	gitVersion?: () => string
 }): CommandResult {
 	const { argv } = params
+	if (hasFlag(argv, 'legend'))
+		return {
+			exitCode: 0,
+			output: renderLegend({
+				groups: HANDOVER_LEGEND,
+				width: params.columns ?? DEFAULT_CARD_COLUMNS,
+			}),
+		}
 	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
 	if (!lotsPath) return usage('handover: expected the path of a lots file')
 	const absoluteLotsPath = resolve(lotsPath)
@@ -113,19 +136,22 @@ export function runHandover(params: {
 		folder: out,
 		branch: plan.branch,
 		head: plan.head,
-		gates: plan.gates,
+		notes: plan.gates,
 		lots: plan.lots,
 		commits: [],
 		cliPath: params.cliPath,
 		probeTimeout: params.probeTimeout,
 	})
 	if (hasFlag(argv, 'json'))
-		return { exitCode: 0, output: JSON.stringify({ folder: out, ...card }, null, 2) }
+		return {
+			exitCode: 0,
+			output: JSON.stringify({ folder: out, ...handoverCardData(card) }, null, 2),
+		}
 	return {
 		exitCode: 0,
 		output: [
-			renderCard({
-				card: handoverCardRows(card),
+			renderSectionCard({
+				card: handoverCardSections(card),
 				colour: params.colour ?? false,
 				width: params.columns,
 			}),
@@ -147,6 +173,8 @@ export async function runHandoverRun(params: {
 	live?: LiveOutput
 	/** The cli running it, for the card's run line; default: this process's script. */
 	cliPath?: string
+	/** The card's width: it is exactly that wide, every line wrapped to it. Default: the live output's columns, else no wrapping. */
+	columns?: number
 }): Promise<number> {
 	const { argv, write } = params
 	const live = params.live ?? { tty: false, writeLine: write, rewriteLines: () => undefined }
@@ -177,7 +205,7 @@ export async function runHandoverRun(params: {
 			keep: hasFlag(argv, 'keep'),
 			progress,
 			tty: live.tty,
-			columns: live.columns,
+			columns: params.columns ?? live.columns,
 			cliPath,
 			resumeMerge: hasFlag(argv, 'resume-merge'),
 		})
@@ -188,7 +216,7 @@ export async function runHandoverRun(params: {
 		colour: params.colour,
 		progress,
 		tty: live.tty,
-		columns: live.columns,
+		columns: params.columns ?? live.columns,
 		cliPath,
 		resumeMerge: hasFlag(argv, 'resume-merge'),
 	})

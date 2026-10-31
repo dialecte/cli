@@ -153,8 +153,16 @@ export type UnlistedFile = { file: string; failure: CaseFailure }
 export type TddSubcommand = (typeof TDD_SUBCOMMANDS)[number]
 
 /** The gate's `tdd` step: passed with a note, skipped or failed with a reason, and the lines that show why. */
+/** A case the gate's tdd step judged: its label (`file::name [project]`) and its status there. */
+export type JudgedCase = { label: string; status: CaseStatus }
+
 export type TddCheck = {
 	status: 'passed' | 'failed' | 'skipped'
+	/**
+	 * The cases of the change the step judged; empty when it judged none (exempt, no test code changed);
+	 * absent when it stopped before listing them or skipped.
+	 */
+	cases?: JudgedCase[]
 	note?: string
 	reason?: string
 	lines?: string[]

@@ -9,7 +9,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
@@ -19,11 +19,17 @@ import {
 	writeFiles,
 	temporaryFolder,
 } from '../../test/scratch-repository.ts'
+import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
+import { runGate } from './gate.ts'
 import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
+import { runRules } from './rules.ts'
+import { runTdd } from './tdd.ts'
 
 import { describe, expect, it, onTestFinished } from 'vitest'
 
+import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { LotsFile } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
@@ -36,6 +42,25 @@ const SCRATCH_REPOSITORY_TIMEOUT = 60_000
 
 /** The cli's entry in the sources: Node runs it with its type stripping. */
 const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
+
+/**
+ * The cli run as a process whose output is a pipe, not a terminal; `$COLUMNS` set only when `columns` is
+ * given (the caller's own is left out).
+ */
+function runCli(params: { argv: string[]; columns?: number }): {
+	exitCode: number | null
+	output: string
+} {
+	const { COLUMNS: _callerColumns, ...environment } = process.env
+	const result = spawnSync(process.execPath, [CLI_SOURCE, ...params.argv], {
+		encoding: 'utf8',
+		env: {
+			...environment,
+			...(params.columns !== undefined && { COLUMNS: String(params.columns) }),
+		},
+	})
+	return { exitCode: result.status, output: `${result.stdout}${result.stderr}` }
+}
 
 /** Polls until `check` holds, failing after `bound` milliseconds (slack for a loaded machine). */
 async function waitFor(params: { check: () => boolean; bound: number }): Promise<void> {
@@ -146,22 +171,62 @@ function installHook(params: { root: string; script: string }): void {
 	git({ root, args: ['config', 'core.hooksPath', '.husky/_'] })
 }
 
-/** The lines of the card's tdd row, without the box and the label. */
-function tddRowLines(output: string): string[] {
-	const lines = output.split('\n')
-	const first = lines.findIndex((line) => line.startsWith('│ tdd '))
-	if (first < 0) return []
-	const rest = lines.slice(first + 1)
-	const end = rest.findIndex((line) => !/^│ {13}\S/.test(line))
-	return [lines[first], ...rest.slice(0, end < 0 ? rest.length : end)].map((line) =>
-		line.slice('│ tdd         '.length).replace(/ *│$/, ''),
-	)
+/** The lines of a card's box: the title, the rows, the section rules, the footer (hook lines start with spaces). */
+function boxLines(output: string): string[] {
+	return output.split('\n').filter((line) => /^[┌│├└]/.test(line))
 }
 
-/** A ledger of receipts of `src/read.test.ts`, each with its kind, name and reason. */
+/** A box row's text: the frame and the padding left out, the indent kept. */
+function rowText(line: string): string {
+	return line.slice('│ '.length).replace(/ *│$/, '')
+}
+
+/** The verdict rows of a card: its rows before the first section rule. */
+function verdictLines(output: string): string[] {
+	const box = boxLines(output)
+	const end = box.findIndex((line) => line.startsWith('├'))
+	return box.slice(1, end < 0 ? -1 : end).map(rowText)
+}
+
+/** The rows of the card's section `name` (opened by `├─ <name> ─…┤`), up to the next rule. */
+function sectionLines(params: { output: string; name: string }): string[] {
+	const box = boxLines(params.output)
+	const first = box.findIndex((line) => line.startsWith(`├─ ${params.name} ─`))
+	if (first < 0) return []
+	const rest = box.slice(first + 1)
+	const end = rest.findIndex((line) => !line.startsWith('│'))
+	return rest.slice(0, end < 0 ? rest.length : end).map(rowText)
+}
+
+/** The lines of the card's tdd section, without the box. */
+function tddRowLines(output: string): string[] {
+	return sectionLines({ output, name: 'tdd' })
+}
+
+/** The mark the head line of the entries to read ends with, at the right edge of the box. */
+const TO_READ = 'to read ↓'
+
+/** The head line of the entries to read in a box of `columns` (the frame's 4 columns left out). */
+function toReadLine(params: { head: string; columns: number }): string {
+	return `${params.head.padEnd(params.columns - 4 - TO_READ.length)}${TO_READ}`
+}
+
+/**
+ * A ledger of receipts of `src/read.test.ts`, oldest first, each with its kind, name, reason and flags; and
+ * a gate record of the tree as it is whose tdd step judged every case of those receipts.
+ */
 function writeLedger(params: {
 	root: string
-	receipts: Array<{ kind: string; name: string; reason: string }>
+	receipts: Array<{ kind: string; name: string; reason?: string; flags?: string[] }>
+}): void {
+	writeLedgerOnly(params)
+	recordJudgedCases(params.root)
+}
+
+/** The ledger of `writeLedger` alone: no gate judged its cases. */
+function writeLedgerOnly(params: {
+	root: string
+	receipts: Array<{ kind: string; name: string; reason?: string; flags?: string[] }>
 }): void {
 	writeFileSync(
 		join(params.root, '.git', 'dialecte-tdd.json'),
@@ -178,6 +243,171 @@ function writeLedger(params: {
 			})),
 		}),
 	)
+}
+
+/**
+ * A full gate record of the tree as it is, holding only its tdd step: the cases it judged are those of
+ * every receipt of the ledger, as a gate run on that tree would have listed them, each with the status of
+ * its last red, green, unchanged, accepted or revised receipt (a kept receipt changes none).
+ */
+function recordJudgedCases(root: string): void {
+	recordJudgedCasesWith({ root, statuses: {} })
+}
+
+/** `recordJudgedCases`, a case named in `statuses` (by its name) judged with the status given there. */
+function recordJudgedCasesWith(params: { root: string; statuses: Record<string, string> }): void {
+	const { root } = params
+	const ledger = JSON.parse(readFileSync(join(root, '.git', 'dialecte-tdd.json'), 'utf8')) as {
+		entries: Array<{ kind: string; file: string; name: string; project: string }>
+	}
+	const statusByLabel = new Map<string, string>()
+	for (const entry of ledger.entries) {
+		if (entry.kind === 'freeze') continue
+		const label = `${entry.file}::${entry.name}${entry.project ? ` [${entry.project}]` : ''}`
+		const known = statusByLabel.get(label)
+		statusByLabel.set(
+			label,
+			params.statuses[entry.name] ?? (entry.kind === 'kept' ? (known ?? 'green') : entry.kind),
+		)
+	}
+	writeFileSync(
+		join(root, '.git', 'dialecte-gate-full.json'),
+		JSON.stringify({
+			mode: 'full',
+			at: new Date().toISOString(),
+			head: headOf(root),
+			stateHash: computeStateHash(root),
+			steps: [
+				{
+					name: 'tdd',
+					status: 'passed',
+					counts: {},
+					cases: [...statusByLabel].map(([label, status]) => ({ label, status })),
+				},
+			],
+		}),
+	)
+}
+
+/** A committed package.json whose gate runs `fast` and `full`. */
+function gatedPackage(params: { fast?: GateStep[]; full?: GateStep[] }): Record<string, string> {
+	return {
+		'package.json': JSON.stringify({
+			name: 'demo',
+			scripts: {},
+			dialecte: { gate: { fast: params.fast, full: params.full } },
+		}),
+	}
+}
+
+/** The gate in `root`, its machine lock in a folder of the test's own. */
+async function runGateIn(params: { root: string; argv: string[] }): Promise<number> {
+	const result = await runGate({
+		cwd: params.root,
+		argv: params.argv,
+		machineLock: {
+			path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
+			clock: createFakeClock(),
+			write: () => undefined,
+		},
+	})
+	return result.exitCode
+}
+
+/** The subject of the merge lot of `fullCardScenario`. */
+const MERGE_SUBJECT = 'merge: bring feat/x in'
+
+/** The lots file's gates text of `fullCardScenario`: the card's notes. */
+const FULL_CARD_NOTES = 'Run it with the cli of this branch.'
+
+/**
+ * A hand-over holding every part of the card: a plain lot (`src/read.ts`), then a merge lot of `feat/x`
+ * (one conflict in `conflict.txt`, resolved, `tree` recorded when given); a fast gate run (`check` passing,
+ * `build` failing when `failingBuild`, the tdd step not run here), the rules run on the tree; a lot file
+ * accepting a case and revising one (and one entry of each no receipt used), declaring a test file gone, with the
+ * receipts of the two cases, of a case proven red then green, of an unchanged case and of an unchanged case kept
+ * at a later red run with the flag `test code changed around it`; notes. The hand-over is not written yet.
+ */
+async function fullCardScenario(params: { failingBuild: boolean; tree?: string }): Promise<{
+	root: string
+	out: string
+	lotsPath: string
+	/** HEAD as a full sha. */
+	head: string
+	/** The merged tip of `feat/x`, a full sha. */
+	tip: string
+}> {
+	const root = createScratchRepository({
+		'src/read.ts': 'export function read() {}\n',
+		'conflict.txt': 'base\n',
+		...gatedPackage({
+			fast: [
+				{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` },
+				{ name: 'build', run: params.failingBuild ? 'exit 1' : 'true' },
+			],
+		}),
+	})
+	git({ root, args: ['checkout', '-q', '-b', 'feat/x'] })
+	writeFiles({ root, files: { 'conflict.txt': 'feature\n' } })
+	git({ root, args: ['commit', '-q', '-am', 'feat: the branch work'] })
+	const tip = headOf(root)
+	git({ root, args: ['checkout', '-q', 'main'] })
+	writeFiles({ root, files: { 'conflict.txt': 'main\n' } })
+	git({ root, args: ['commit', '-q', '-am', 'feat: the main work'] })
+	const head = headOf(root)
+	writeFiles({
+		root,
+		files: {
+			'src/read.ts': 'export function read() {\n\treturn 1\n}\n',
+			'.dialecte/lot.json': JSON.stringify({
+				accept: [
+					{ case: 'src/read.test.ts::read > answers one', reason: 'pins existing behaviour' },
+					{ case: 'src/x.test.ts::x', reason: 'never run' },
+				],
+				revised: [
+					{ case: 'src/read.test.ts::read > answers two', reason: 'the review asked for it' },
+					{ case: 'src/y.test.ts::y', reason: 'never run' },
+				],
+				gone: [{ file: 'src/old.test.ts', reason: 'the table call was rewritten' }],
+			}),
+		},
+	})
+	writeLedger({
+		root,
+		receipts: [
+			{ kind: 'accepted', name: 'read > answers one', reason: 'pins existing behaviour' },
+			{ kind: 'revised', name: 'read > answers two', reason: 'the review asked for it' },
+			{ kind: 'red', name: 'read > answers three' },
+			{ kind: 'green', name: 'read > answers three' },
+			{ kind: 'unchanged', name: 'read > stays' },
+			{ kind: 'unchanged', name: 'read > stays too' },
+			{ kind: 'kept', name: 'read > stays too', flags: ['test code changed around it'] },
+		],
+	})
+	const out = temporaryFolder('dialecte-handover-')
+	writeFiles({ root: out, files: { 'resolved/conflict.txt': 'resolved\n' } })
+	const lotsPath = join(out, 'lots.json')
+	const lotsFile: LotsFile = {
+		repository: root,
+		branch: 'main',
+		head,
+		gates: FULL_CARD_NOTES,
+		lots: [
+			{ paths: ['src/'], message: 'feat(read): read answers one' },
+			{
+				kind: 'merge',
+				branch: 'feat/x',
+				tip,
+				resolved: { 'conflict.txt': 'resolved/conflict.txt' },
+				message: MERGE_SUBJECT,
+				...(params.tree && { tree: params.tree }),
+			},
+		],
+	}
+	writeFileSync(lotsPath, JSON.stringify(lotsFile))
+	await runGateIn({ root, argv: [] })
+	runRules({ cwd: root, argv: [] })
+	return { root, out, lotsPath, head, tip }
 }
 
 describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
@@ -270,50 +500,41 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(commands).toContain('if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi')
 	})
 
-	it('written → the card: repository, worktree, branch, HEAD, gates, each lot with files, +/- and subject, the cd and the command', () => {
+	it('written → the card: titled with the repository folder and the branch, the notes, a commit line per lot with files, +/− and subject, HEAD; no path in the box; the command under it', () => {
 		const { root, lotsPath, out } = prepare()
 
 		const result = writeHandover({ lotsPath })
 
 		expect(result.exitCode).toBe(0)
 		const lines = result.output.split('\n')
-		expect(lines[0]).toMatch(/^┌─ hand-over ─+┐$/)
-		expect(lines).toEqual(
-			expect.arrayContaining([
-				expect.stringMatching(new RegExp(`^│ repository  ${root} +│$`)),
-				expect.stringMatching(new RegExp(`^│ worktree    ${root} +│$`)),
-				expect.stringMatching(/^│ branch      main +│$/),
-				expect.stringMatching(/^│ HEAD        [0-9a-f]{12} +│$/),
-				expect.stringMatching(/^│ gates       npm run check +│$/),
-				expect.stringMatching(
-					/^│ lots \(2\)    1  1 file  \+3 -1  pending  feat\(read\): read answers one +│$/,
-				),
-				expect.stringMatching(/^│ {13}2  1 file  \+3 -0  pending  docs\(changelog\): read +│$/),
-			]),
-		)
-		expect(lines.filter((line) => line.startsWith('│')).map((line) => line.length)).toEqual(
-			Array(8).fill(lines[0].length),
-		)
+		expect(lines[0]).toMatch(new RegExp(`^┌─ hand-over: ${basename(root)} main ─+┐$`))
+		expect(sectionLines({ output: result.output, name: 'commit' })).toEqual([
+			'pending  1 file  +3 −1  feat(read): read answers one',
+			'pending  1 file  +3 −0  docs(changelog): read',
+			`HEAD ${headOf(root).slice(0, 7)}`,
+		])
+		expect(sectionLines({ output: result.output, name: 'notes' })).toEqual(['npm run check'])
+		const box = boxLines(result.output)
+		expect(box.filter((line) => line.includes(root))).toEqual([])
+		expect(box.map((line) => line.length)).toEqual(Array(box.length).fill(lines[0].length))
 		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
 	})
 
-	it('the lot file .dialecte/lot.json in no lot → not refused; a lot declared exempt from the receipts → on the card', () => {
+	it('the lot file .dialecte/lot.json in no lot → not refused; a lot declared exempt from the receipts → its line first in the tdd section, before the counts', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
 			files: { '.dialecte/lot.json': JSON.stringify({ tdd: 'exempt: a rename only' }) },
 		})
+		writeLedger({ root, receipts: [{ kind: 'unchanged', name: 'read > stays' }] })
 
-		const result = writeHandover({ lotsPath })
+		const result = writeHandover({ lotsPath, columns: 80 })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.output.split('\n')).toEqual(
-			expect.arrayContaining([
-				expect.stringMatching(
-					/^│ tdd {9}exempt: a rename only \(2 production file\(s\), 0 test file\(s\) changed\) +│$/,
-				),
-			]),
-		)
+		expect(tddRowLines(result.output)).toEqual([
+			'exempt: a rename only (2 production file(s), 0 test file(s) changed)',
+			'0 proven red → green · 1 unchanged',
+		])
 	})
 
 	/** A ledger of `count` red receipts of distinct cases, each carrying `flags`. */
@@ -334,41 +555,39 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 	}
 
-	it('57 cases flagged with one kind → the card says the count and where the list is, no line per case', () => {
+	it('57 cases flagged with one kind → one line with the count and the kind, no line per case', () => {
 		const { root, lotsPath } = prepare()
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
 			flaggedLedger({ count: 57, flags: ['test code changed around it'] }),
 		)
+		recordJudgedCases(root)
 
 		const lines = writeHandover({ lotsPath }).output.split('\n')
 
 		expect(lines).toEqual(
 			expect.arrayContaining([
-				expect.stringMatching(
-					/^│ tdd {9}57 flags: test code changed around it - dialecte tdd status --flags for the list +│$/,
-				),
+				expect.stringMatching(/^│ 57 flags: test code changed around it +│$/),
 			]),
 		)
 		expect(lines.filter((line) => line.includes('flag: src/'))).toEqual([])
 	})
 
-	it('flags of two kinds → each kind with its count in the tdd row, still no line per case', () => {
+	it('flags of two kinds on cases still red → one line per kind with its count, nothing counted above them, no line per case', () => {
 		const { root, lotsPath } = prepare()
 		writeFileSync(
 			join(root, '.git', 'dialecte-tdd.json'),
 			flaggedLedger({ count: 3, flags: ['rollback', 'red after green'] }),
 		)
+		recordJudgedCases(root)
 
-		const output = writeHandover({ lotsPath }).output
-
-		expect(output).toMatch(/rollback[^\n]*3|3[^\n]*rollback/)
-		expect(output).toMatch(/red after green[^\n]*3|3[^\n]*red after green/)
-		expect(output).toContain('dialecte tdd status --flags')
-		expect(output.split('\n').filter((line) => line.includes('flag: src/'))).toEqual([])
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			'3 flags: rollback',
+			'3 flags: red after green',
+		])
 	})
 
-	it('a case the lot accepts and a red run accepted → on the card with its reason', () => {
+	it('a case the lot accepts and a red run accepted → counted under its reason: 1 accepted, then a row 1 <reason>', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
@@ -399,17 +618,17 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				],
 			}),
 		)
+		recordJudgedCases(root)
 
 		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
 			expect.arrayContaining([
-				expect.stringMatching(
-					/^│ tdd {9}accepted: src\/read\.test\.ts::read > answers one \(pins existing behaviour\) +│$/,
-				),
+				expect.stringMatching(/^│ 1 accepted +│$/),
+				expect.stringMatching(/^│ {3}1 {2}pins existing behaviour +│$/),
 			]),
 		)
 	})
 
-	it('a case revised at review and a red run recorded it → on the card with its reason', () => {
+	it('a case revised at review and a red run recorded it → under the to-read line: revised <file> › <case title>, the reason on the next line', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
@@ -440,17 +659,16 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				],
 			}),
 		)
+		recordJudgedCases(root)
 
-		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
-			expect.arrayContaining([
-				expect.stringMatching(
-					/^│ tdd {9}revised: src\/read\.test\.ts::read > answers one \(the review asked for it\) +│$/,
-				),
-			]),
-		)
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			toReadLine({ head: '1 revised', columns: 80 }),
+			'  revised  src/read.test.ts › read > answers one',
+			'           the review asked for it',
+		])
 	})
 
-	it("receipts of earlier lots → folded into one count line per kind, a case counted once; a receipt the lot file names listed with the file's reason; an unused entry still listed", () => {
+	it("receipts of earlier lots → folded into one count line per kind under the accepted line, a case counted once; a receipt the lot file names counted under the file's reason; an unused entry to read, the only declaration (an earlier lot's revised receipt is none)", () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
@@ -474,13 +692,21 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			],
 		})
 
-		expect(tddRowLines(writeHandover({ lotsPath }).output).sort()).toEqual(
-			[
-				'accepted: src/read.test.ts::read > answers one (pins existing behaviour)',
-				'earlier lots: 2 accepted, 1 revised (not in the lot file)',
-				'accept unused: src/read.test.ts::read > unused (never run): no receipt of that case',
-			].sort(),
-		)
+		const output = writeHandover({ lotsPath, columns: 80 }).output
+
+		expect(
+			verdictLines(output)
+				.slice(1)
+				.map((line) => line.trim()),
+		).toEqual(['1 declaration to read (below)'])
+		expect(tddRowLines(output)).toEqual([
+			'1 accepted',
+			'  1  pins existing behaviour',
+			'earlier lots: 2 accepted, 1 revised (not in the lot file)',
+			toReadLine({ head: '1 unused', columns: 80 }),
+			'  unused   accept src/read.test.ts::read > unused (never run): no receipt of',
+			'           that case',
+		])
 	})
 
 	it("a revised receipt whose file a glob entry of the lot file matches → listed with the entry's reason, the entry not unused, nothing folded", () => {
@@ -500,12 +726,14 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			],
 		})
 
-		expect(tddRowLines(writeHandover({ lotsPath }).output)).toEqual([
-			'revised: src/read.test.ts::read > answers one (the loops were merged)',
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			toReadLine({ head: '1 revised', columns: 80 }),
+			'  revised  src/read.test.ts › read > answers one',
+			'           the loops were merged',
 		])
 	})
 
-	it('a gone entry of the lot file → on the card as gone: <file> (<reason>)', () => {
+	it('a gone entry of the lot file → under the to-read line: gone <file> (<reason>)', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
@@ -516,8 +744,9 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			},
 		})
 
-		expect(tddRowLines(writeHandover({ lotsPath }).output)).toEqual([
-			'gone: src/read.test.ts (the table call was rewritten)',
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			toReadLine({ head: '1 gone', columns: 80 }),
+			'  gone     src/read.test.ts (the table call was rewritten)',
 		])
 	})
 
@@ -531,7 +760,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			repository: root,
 			worktree: root,
 			branch: 'main',
-			gates: 'npm run check',
+			notes: 'npm run check',
 			lots: [
 				{
 					index: 1,
@@ -544,6 +773,45 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			],
 			command: `node '${WRITER_CLI}' handover run '${out}'`,
 		})
+		expect(JSON.parse(result.output).gates).toEqual([
+			{ name: 'gate', status: 'failed', detail: 'never run on this tree' },
+			{ name: 'rules', status: 'warning', detail: 'never run on this tree' },
+			{ name: 'review', status: 'warning', detail: 'no findings ledger' },
+		])
+	})
+
+	it('--json → the tdd lines without their layout (indent, label padding, to-read mark), the runs of spaces inside titles, reasons and paths kept', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [
+						{ case: 'src/read.test.ts::read > answers one', reason: 'pins  existing  behaviour' },
+					],
+					revised: [{ case: 'src/read.test.ts::read >  two  spaces', reason: 'asked  twice' }],
+					gone: [{ file: 'src/a  b.test.ts', reason: 'the  table call' }],
+				}),
+			},
+		})
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'accepted', name: 'read > answers one', reason: 'pins  existing  behaviour' },
+				{ kind: 'revised', name: 'read >  two  spaces', reason: 'asked  twice' },
+			],
+		})
+
+		const result = writeHandover({ lotsPath, argv: ['--json'] })
+
+		expect(JSON.parse(result.output).tdd).toEqual([
+			'1 accepted',
+			'1 pins  existing  behaviour',
+			'1 revised · 1 gone',
+			'revised src/read.test.ts › read >  two  spaces',
+			'asked  twice',
+			'gone src/a  b.test.ts (the  table call)',
+		])
 	})
 
 	it('written already → refused without --rehash; --rehash after an edit → the run commits the edit', async () => {
@@ -645,6 +913,21 @@ describe('commit.sh', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(result.stdout.trim().split('\n').at(-1)).toBe(`ARGS handover run ${out} --rehearse`)
 	})
 
+	it("its header comment carries the lots file's text as its notes: # Notes: <text>; none when the lots file has none", () => {
+		const noted = prepare()
+		const plain = prepare({ overrides: { gates: undefined } })
+		expect(writeHandover({ lotsPath: noted.lotsPath }).exitCode).toBe(0)
+		expect(writeHandover({ lotsPath: plain.lotsPath }).exitCode).toBe(0)
+
+		const notedHeader = readFileSync(join(noted.out, 'commit.sh'), 'utf8').split('\n')
+		const plainHeader = readFileSync(join(plain.out, 'commit.sh'), 'utf8').split('\n')
+
+		expect({
+			noted: notedHeader.filter((line) => /^# (Notes|Gates)\b/.test(line)),
+			plain: plainHeader.filter((line) => /^# (Notes|Gates)\b/.test(line)),
+		}).toEqual({ noted: ['# Notes: npm run check.'], plain: [] })
+	})
+
 	it('no cli installed in the repository → one line naming the repository and the fix, exit 1', () => {
 		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
@@ -686,7 +969,9 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(result.text).toMatch(/^✓ [0-9a-f]{12} feat\(read\): read answers one {2}0\.0 s$/m)
 		expect(result.text).toContain('src/read.ts | 4')
 		expect(result.text).toContain('done: 2 commit(s) on main in 0.0 s. Nothing pushed.')
-		expect(result.text).toMatch(/│ lots \(2\) +1 +1 file +\+3 -1 +[0-9a-f]{7} +feat\(read\)/)
+		expect(result.text).toMatch(
+			/^│ [0-9a-f]{7} {2}1 file {2}\+3 −1 {2}feat\(read\): read answers one +│$/m,
+		)
 		expect(subjectsOf({ root: root, count: 3 })).toEqual([
 			'docs(changelog): read',
 			'feat(read): read answers one',
@@ -785,7 +1070,66 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(result.text).toMatch(/^✗ hooks +core\.hooksPath is \.husky\/_ but .* does not exist/m)
 	})
 
-	it('a hook printing lines → each streamed behind the prefix during its lot', async () => {
+	it("husky's hooks folder, a wrapper for every hook name: no hook script of the package → silent, no hook line; its pre-commit script → hook ✓ and the log path", async () => {
+		/** Husky's layout: `.husky/_/h` runs `.husky/<name>` when it exists, each wrapper hands over to it. */
+		function installHusky(params: { root: string; preCommit?: string }): void {
+			const { root } = params
+			writeFiles({ root, files: { '.gitignore': '.husky/_\nnode_modules\n' } })
+			git({ root, args: ['add', '.gitignore'] })
+			git({ root, args: ['commit', '-q', '-m', 'chore: ignore the hooks folder'] })
+			const runner = [
+				'#!/usr/bin/env sh',
+				'n=$(basename "$0")',
+				's=$(dirname "$(dirname "$0")")/$n',
+				'[ ! -f "$s" ] && exit 0',
+				'sh -e "$s" "$@"',
+				'',
+			].join('\n')
+			writeFiles({ root, files: { '.husky/_/h': runner } })
+			for (const name of ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit']) {
+				writeFiles({
+					root,
+					files: { [`.husky/_/${name}`]: '#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n' },
+				})
+				chmodSync(join(root, '.husky/_', name), 0o755)
+			}
+			if (params.preCommit !== undefined) {
+				writeFiles({ root, files: { '.husky/pre-commit': `${params.preCommit}\n` } })
+				git({ root, args: ['add', '.husky/pre-commit'] })
+				git({ root, args: ['commit', '-q', '-m', 'chore: the pre-commit script'] })
+			}
+			git({ root, args: ['config', 'core.hooksPath', '.husky/_'] })
+		}
+		/** The hook lines printed between the first lot's start line and its commit line. */
+		async function hookLinesOfRun(preCommit: string | undefined): Promise<string[]> {
+			const { root, lotsPath, out } = prepare()
+			installHusky({ root, preCommit })
+			writeFileSync(
+				lotsPath,
+				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+			)
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			const result = await runFolder({ out })
+			expect(result.exitCode).toBe(0)
+			const lotLine = result.lines.indexOf(`▶ ${LOT} 1/2  1 file(s)  feat(read): read answers one`)
+			const commitLine = result.lines.findIndex(
+				(line, index) => index > lotLine && /^✓ [0-9a-f]{12} /.test(line),
+			)
+			return result.lines
+				.slice(lotLine + 1, commitLine)
+				.map((line) => line.replace(/\/\S+$/, '<log>'))
+		}
+
+		const without = await hookLinesOfRun(undefined)
+		const withScript = await hookLinesOfRun('true')
+
+		expect({ without, withScript }).toEqual({
+			without: [],
+			withScript: ['  │ hook ✓', '  │ full log: <log>'],
+		})
+	})
+
+	it('a hook printing lines and no npm header → one step hook: ▶ hook behind the prefix while it runs, then hook ✓ and the log path; its lines only in the log', async () => {
 		const { root, lotsPath, out } = prepare()
 		installHook({ root, script: 'echo "checking the staged files"; echo "all good" >&2' })
 		writeFileSync(
@@ -798,9 +1142,14 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		const lotLine = result.lines.indexOf(`▶ ${LOT} 1/2  1 file(s)  feat(read): read answers one`)
-		expect(result.lines.slice(lotLine + 1, lotLine + 3).sort()).toEqual([
-			'  │ all good',
-			'  │ checking the staged files',
+		const logPath = /full log: (\/\S+)/.exec(result.lines[lotLine + 3] ?? '')?.[1] ?? ''
+		expect(result.lines.slice(lotLine + 1, lotLine + 3)).toEqual(['  │ ▶ hook', '  │ hook ✓'])
+		expect(result.lines[lotLine + 3]).toBe(`  │ full log: ${logPath}`)
+		expect(result.lines.some((line) => /checking the staged files|all good/.test(line))).toBe(false)
+		expect(readFileSync(logPath, 'utf8').split('\n').sort()).toEqual([
+			'',
+			'all good',
+			'checking the staged files',
 		])
 	})
 
@@ -921,7 +1270,9 @@ describe('handover run --rehearse', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () 
 		const result = await runFolder({ out, argv: ['--rehearse'], scratchRoot })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.text).toMatch(/^ {2}│ hook in .*dialecte-rehearse-/m)
+		const logPath = /full log: (\/\S+)/.exec(result.text)?.[1] ?? ''
+		expect(result.text).not.toMatch(/^ {2}│ hook in /m)
+		expect(readFileSync(logPath, 'utf8')).toMatch(/^hook in .*dialecte-rehearse-/m)
 		expect(result.text).toContain('rehearsed: 2 commit(s) on main')
 		expect(result.text).toContain('removed the rehearsal clone')
 		expect(headOf(root)).toBe(head)
@@ -1211,14 +1562,16 @@ describe(
 )
 
 describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
-	it('the HEAD line shows the base and the new tip', async () => {
+	it('the HEAD line shows the base and the new tip, and that nothing is pushed', async () => {
 		const { root, out } = prepareWithHook('true')
 		const base = headOf(root)
 
 		const result = await runFolder({ out })
 
 		const tip = headOf(root)
-		expect(result.text).toMatch(new RegExp(`│ HEAD +${base.slice(0, 12)} → ${tip.slice(0, 12)} +│`))
+		expect(sectionLines({ output: result.text, name: 'commit' }).at(-1)).toBe(
+			`HEAD ${base.slice(0, 7)} → ${tip.slice(0, 7)} · nothing pushed`,
+		)
 	})
 
 	it('a repository whose own cli lacks handover run → the run line is node <this cli> handover run <dir>; one with it keeps bash commit.sh', () => {
@@ -1263,6 +1616,11 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 
 const HOOK_LINES = Array.from({ length: 30 }, (_unused, index) => `line ${index + 1}`)
 const PRINT_30_LINES = 'i=1; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done'
+/** A lint warning as oxlint prints it into a pipe. */
+const HOOK_WARNING =
+	'src/read.ts:1:7: warning eslint(no-unused-vars): Variable unused is declared but never used.'
+/** 30 ordinary lines, the lint warning after the fifteenth. */
+const PRINT_30_LINES_WITH_WARNING = `i=1; while [ $i -le 30 ]; do echo "line $i"; [ $i -eq 15 ] && echo "${HOOK_WARNING}"; i=$((i+1)); done`
 const SPINNER = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /
 
 /** `handover run` of the folder through the given live output (every line goes to its writeLine too). */
@@ -1286,15 +1644,15 @@ describe(
 	'handover run: hook output is never buffered',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('off a terminal, a hook succeeding → each line streams as it comes (the hook waits for the first one to be seen), then the full log path; the log holds every line', async () => {
+		it('off a terminal, a hook succeeding → its step line streams as it comes (the hook waits for it to be seen), then its warning line only; then the summary, the warning and the full log path; the log holds every line', async () => {
 			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 			const { out } = prepareWithHook(
-				`echo "line 1"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; i=2; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done`,
+				`echo ""; echo "> demo@1.0.0 test:run"; echo "> vitest run"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
 			)
 			const written: string[] = []
 			function record(line: string): void {
 				written.push(line)
-				if (line === '  │ line 1') writeFileSync(flag, '1')
+				if (line === '  │ ▶ test:run') writeFileSync(flag, '1')
 			}
 
 			const exitCode = await runLive({
@@ -1303,19 +1661,25 @@ describe(
 				live: { tty: false, writeLine: record, rewriteLines: () => undefined },
 			})
 
-			const hookLines = written.filter((line) => /^ {2}│ line \d+$/.test(line))
 			const logLine = written.findIndex((line) => /full log: \//.test(line))
 			const logPath = /full log: (\/\S+)/.exec(written[logLine] ?? '')?.[1] ?? ''
 			expect(exitCode).toBe(0)
-			expect(hookLines).toEqual(HOOK_LINES.map((line) => `  │ ${line}`))
-			expect(logLine).toBeGreaterThan(written.indexOf('  │ line 30'))
-			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(expect.arrayContaining(HOOK_LINES))
+			expect(written.filter((line) => line.startsWith('  │ '))).toEqual([
+				'  │ ▶ test:run',
+				`  │ ${HOOK_WARNING}`,
+				'  │ test:run ✓ · 1 lint warning',
+				`  │ ${HOOK_WARNING}`,
+				`  │ full log: ${logPath}`,
+			])
+			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(
+				expect.arrayContaining([...HOOK_LINES, HOOK_WARNING]),
+			)
 		})
 
-		it('on a terminal, a hook succeeding → its last 20 lines show live under the spinner; afterwards no hook line is kept, one collapsed line with the log path sits before the commit line', async () => {
+		it('on a terminal, a hook succeeding → under the spinner only its step and its warning line, never an ordinary line; afterwards the summary, the warning and the log path sit before the commit line, no other hook line', async () => {
 			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 			const { out } = prepareWithHook(
-				`echo "line 1"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; i=2; while [ $i -le 30 ]; do echo "line $i"; i=$((i+1)); done`,
+				`echo ""; echo "> demo@1.0.0 test:run"; echo "> vitest run"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
 			)
 			const terminal = createFakeTerminal({ tty: true })
 			const draw = terminal.output.rewriteLines
@@ -1323,25 +1687,30 @@ describe(
 				...terminal.output,
 				rewriteLines(lines) {
 					draw(lines)
-					if (lines.includes('  │ line 1')) writeFileSync(flag, '1')
+					if (lines.includes('  │ ▶ test:run 0.0 s')) writeFileSync(flag, '1')
 				},
 			}
 
 			const exitCode = await runLive({ out, live, write: terminal.output.writeLine })
 
 			const screen = terminal.screen()
-			const collapsed = screen.findIndex((line) =>
-				/30 line\(s\) of hook output; full log: \//.test(line),
-			)
-			const logPath = /full log: (\/\S+)/.exec(screen[collapsed] ?? '')?.[1] ?? ''
+			const summary = screen.indexOf('  │ test:run ✓ · 1 lint warning')
+			const logPath = /full log: (\/\S+)/.exec(screen[summary + 2] ?? '')?.[1] ?? ''
 			expect(exitCode).toBe(0)
-			expect(terminal.rewrites.some((region) => region.includes('  │ line 30'))).toBe(true)
+			expect(terminal.rewrites.some((region) => region.includes(`  │ ${HOOK_WARNING}`))).toBe(true)
 			expect(
-				terminal.rewrites.every((region) => region.length <= 21 && SPINNER.test(region[0])),
-			).toBe(true)
-			expect(terminal.written.filter((line) => /^ {2}│ line \d+$/.test(line))).toEqual([])
-			expect(screen[collapsed + 1]).toMatch(/^✓ [0-9a-f]{12} feat\(read\)/)
-			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(expect.arrayContaining(HOOK_LINES))
+				terminal.rewrites.some((region) => region.some((line) => /^ {2}│ line \d+$/.test(line))),
+			).toBe(false)
+			expect(terminal.rewrites.every((region) => SPINNER.test(region[0]))).toBe(true)
+			expect(terminal.written.filter((line) => line.startsWith('  │ '))).toEqual([
+				'  │ test:run ✓ · 1 lint warning',
+				`  │ ${HOOK_WARNING}`,
+				`  │ full log: ${logPath}`,
+			])
+			expect(screen[summary + 3]).toMatch(/^✓ [0-9a-f]{12} feat\(read\)/)
+			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(
+				expect.arrayContaining([...HOOK_LINES, HOOK_WARNING]),
+			)
 		})
 
 		it('on a terminal, a hook failing → every line ends in the written lines, with the full log path', async () => {
@@ -1388,15 +1757,42 @@ describe('handover: the card width', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, ()
 		return output.split('\n').filter((line) => /^[┌│└]/.test(line))
 	}
 
-	it('an injected width of 40 → no card line is wider; no width (not a terminal) → the card is not wrapped', () => {
+	it('an injected width of 40 → no card line is wider; the cli off a terminal without $COLUMNS → 80 columns, the long notes wrapped, no word lost', () => {
 		const wrapped = prepare({ overrides: { gates: LONG_GATES } })
 		const plain = prepare({ overrides: { gates: LONG_GATES } })
 
 		const narrow = writeHandover({ lotsPath: wrapped.lotsPath, columns: 40 })
-		const unbounded = writeHandover({ lotsPath: plain.lotsPath })
+		const offTerminal = runCli({ argv: ['handover', plain.lotsPath] })
 
 		expect(cardLines(narrow.output).filter((line) => line.length > 40)).toEqual([])
-		expect(cardLines(unbounded.output).some((line) => line.includes(LONG_GATES))).toBe(true)
+		expect(offTerminal.exitCode).toBe(0)
+		expect(cardLines(offTerminal.output).filter((line) => line.length > 80)).toEqual([])
+		expect(
+			sectionLines({ output: offTerminal.output, name: 'notes' })
+				.map((text) => text.trim())
+				.join(' '),
+		).toBe(LONG_GATES)
+	})
+
+	it("a width of 40 → the footer's text, too long for its rule, printed in the box above a plain bottom rule: the legend pointer kept", () => {
+		const { lotsPath } = prepare()
+
+		const box = writeHandover({ lotsPath, columns: 40 })
+			.output.split('\n')
+			.filter((line) => /^[┌├│└]/.test(line))
+
+		const bottom = box.length - 1
+		const plainRule = box.lastIndexOf(`├${'─'.repeat(38)}┤`)
+		expect({
+			bottom: box[bottom],
+			footer: box
+				.slice(plainRule + 1, bottom)
+				.map((line) => line.slice(2, -2).trim())
+				.join(' '),
+		}).toEqual({
+			bottom: `└${'─'.repeat(38)}┘`,
+			footer: 'dialecte handover --legend · details: dialecte tdd status',
+		})
 	})
 
 	for (const columns of [40, 100])
@@ -1554,12 +1950,12 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 		const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 		const marker = `marker-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
 		const { out } = prepareWithHook(
-			`echo "${marker}"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
+			`echo ""; echo "> demo@1.0.0 ${marker}"; echo "> true"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
 		)
 		process.env.TMPDIR = hookTemporary
 		let logsMidRun: string[] = []
 		function record(line: string): void {
-			if (line === `  │ ${marker}`) {
+			if (line === `  │ ▶ ${marker}`) {
 				logsMidRun = logsHolding({ folder: hookTemporary, marker })
 				writeFileSync(flag, '1')
 			}
@@ -1576,7 +1972,9 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 	})
 
 	it('a multibyte character split across two chunks → intact on screen and in the log, no replacement character', async () => {
-		const { out } = prepareWithHook(String.raw`printf '\342\202'; sleep 0.3; printf '\254\n'`)
+		const { out } = prepareWithHook(
+			String.raw`printf 'src/a.ts:1:1: warning eslint(no-console): \342\202'; sleep 0.3; printf '\254\n'`,
+		)
 		const written: string[] = []
 		function record(line: string): void {
 			written.push(line)
@@ -1591,14 +1989,17 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 		const logPath =
 			/full log: (\/\S+)/.exec(written.find((line) => line.includes('full log:')) ?? '')?.[1] ?? ''
 		expect(exitCode).toBe(0)
-		expect(written).toContain('  │ €')
+		expect(
+			written.filter((line) => line === '  │ src/a.ts:1:1: warning eslint(no-console): €'),
+		).toHaveLength(2)
+		expect(written).toContain('  │ hook ✓ · 1 lint warning')
 		expect(written.some((line) => line.includes('�'))).toBe(false)
-		expect(readFileSync(logPath, 'utf8')).toBe('€\n')
+		expect(readFileSync(logPath, 'utf8')).toBe('src/a.ts:1:1: warning eslint(no-console): €\n')
 	})
 })
 
 describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
-	it('the command is once in full on its own line; inside the box the run row says see below', () => {
+	it('the command is once in full on its own line, under the box; the box holds no run row', () => {
 		const { lotsPath, out } = prepare()
 
 		const result = writeHandover({ lotsPath })
@@ -1607,7 +2008,8 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 		const command = `node '${WRITER_CLI}' handover run '${out}'`
 		const box = lines.filter((line) => /^[┌│└]/.test(line))
 		expect(lines.filter((line) => line === command)).toHaveLength(1)
-		expect(box.find((line) => line.startsWith('│ run '))).toMatch(/^│ run {9}see below +│$/)
+		expect(box.filter((line) => /^│ (run|see below)\b/.test(line))).toEqual([])
+		expect(lines.indexOf(command)).toBeGreaterThan(lines.indexOf(box.at(-1) ?? ''))
 		expect(box.some((line) => line.includes('handover run'))).toBe(false)
 	})
 
@@ -1689,7 +2091,7 @@ describe(
 	'handover run: the card after every lot is committed',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('the run row says done and the command is not repeated; a hand-over not run yet still shows the command', async () => {
+		it('the verdict says DONE with the gates tail (no gate record: 1 gate failed) and the command is not repeated; a hand-over not run yet still shows the command', async () => {
 			const { lotsPath, out } = prepare()
 
 			const pending = writeHandover({ lotsPath })
@@ -1697,13 +2099,13 @@ describe(
 
 			expect(pending.output).toMatch(/handover run '|bash commit\.sh/)
 			expect(ran.exitCode).toBe(0)
-			expect(ran.lines.find((line) => line.startsWith('│ run ')) ?? '').toMatch(
-				/^│ run {9}done +│$/,
-			)
+			expect(verdictLines(ran.text)).toEqual([
+				'DONE  2 lots · 2 files · +6 −1 · 1 gate failed: gate',
+			])
 			expect(ran.lines.some((line) => /handover run '|bash commit\.sh/.test(line))).toBe(false)
 		})
 
-		it('a hook refusing the second of two lots → the hand-over is partly committed: the card still shows the run command, not done', async () => {
+		it('a hook refusing the second of two lots → the hand-over is partly committed: the first lot committed, the second pending, HEAD base → tip; the card still shows the run command', async () => {
 			const { root, lotsPath, out } = prepare()
 			installHook({
 				root,
@@ -1714,15 +2116,21 @@ describe(
 				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
 			)
 			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			const base = headOf(root)
 
 			const ran = await runFolder({ out })
 
 			expect(ran.exitCode).toBe(1)
-			expect(ran.lines.find((line) => line.startsWith('│ run ')) ?? '').not.toMatch(/done/)
+			const tip = headOf(root)
+			expect(sectionLines({ output: ran.text, name: 'commit' })).toEqual([
+				`${tip.slice(0, 7)}  1 file  +3 −1  feat(read): read answers one`,
+				'pending  1 file  +3 −0  docs(changelog): read',
+				`HEAD ${base.slice(0, 7)} → ${tip.slice(0, 7)} · nothing pushed`,
+			])
 			expect(ran.lines.some((line) => /handover run '|bash commit\.sh/.test(line))).toBe(true)
 		})
 
-		it('run again when every lot is committed already → the card still says done', async () => {
+		it('run again when every lot is committed already → the verdict still says DONE', async () => {
 			const { lotsPath, out } = prepare()
 			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 			await runFolder({ out })
@@ -1730,9 +2138,7 @@ describe(
 			const again = await runFolder({ out })
 
 			expect(again.exitCode).toBe(0)
-			expect(again.lines.find((line) => line.startsWith('│ run ')) ?? '').toMatch(
-				/^│ run {9}done +│$/,
-			)
+			expect(verdictLines(again.text)[0]).toMatch(/^DONE {2}2 lots · /)
 		})
 	},
 )
@@ -1772,9 +2178,7 @@ describe('handover run: the lot file archived', { timeout: SCRATCH_REPOSITORY_TI
 		expect(readIfExists(join(out, 'lot.json'))).toBe(DECLARATION)
 		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe('{}\n')
 		expect(archivedLines(result.lines)).toEqual([`lot file archived: ${join(out, 'lot.json')}`])
-		expect(tddRowLines(result.text)).toEqual([
-			'accepted: src/read.test.ts::read > answers one (pins existing behaviour)',
-		])
+		expect(tddRowLines(result.text)).toEqual(['1 accepted', '  1  pins existing behaviour'])
 	})
 
 	/** A repository whose pre-commit hook refuses the CHANGELOG lot while `marker` exists; its hand-over written. */
@@ -1886,5 +2290,1220 @@ describe('handover run: the lot file archived', { timeout: SCRATCH_REPOSITORY_TI
 		expect(readIfExists(join(out, 'lot.json'))).toBe(DECLARATION)
 		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe(next)
 		expect(archivedLines(second.lines)).toEqual([])
+	})
+})
+
+describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	/**
+	 * The card's gate lines, wherever its layout puts them: `<mark> <name> <detail>`, the box, a row label
+	 * and the padding left out, runs of spaces as one.
+	 */
+	function gateLinesOf(output: string): string[] {
+		return output.split('\n').flatMap(function gateLine(line) {
+			const match = /^│\s+(?:gates\s+)?([✓!✗] \S.*?)\s*│$/.exec(line)
+			return match ? [match[1].replace(/ {2,}/g, ' ')] : []
+		})
+	}
+
+	const NO_VITEST = '! tdd not run here (the package does not test with vitest)'
+
+	it('a fast gate and the rules run on this tree → one line per recorded step with its counts, the rules line, no findings ledger', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({
+				fast: [
+					{ name: 'check', run: `printf ' Tests  1056 passed | 4 skipped (1060)\\n'` },
+					{ name: 'tests', run: `printf ' Tests  397 passed (397)\\n'`, counts: 'tests' },
+					{ name: 'build', run: 'true' },
+					{ name: 'skills', run: 'npm run skills:check' },
+				],
+			}),
+		})
+		await runGateIn({ root, argv: [] })
+		runRules({ cwd: root, argv: [] })
+
+		const result = writeHandover({ lotsPath })
+
+		expect(gateLinesOf(result.output).sort()).toEqual(
+			[
+				NO_VITEST,
+				'✓ check 1056 passed · 4 skipped',
+				'✓ tests 397/397',
+				'✓ build',
+				'! skills not run here (no skills:check script)',
+				'✓ rules 0 errors · 0 warnings',
+				'! review no findings ledger',
+			].sort(),
+		)
+	})
+
+	it('no gate record and no rules record → ✗ gate never run on this tree, ! rules never run on this tree', () => {
+		const { lotsPath } = prepare({ committed: gatedPackage({ fast: [] }) })
+
+		const result = writeHandover({ lotsPath })
+
+		expect(gateLinesOf(result.output).sort()).toEqual(
+			[
+				'✗ gate never run on this tree',
+				'! rules never run on this tree',
+				'! review no findings ledger',
+			].sort(),
+		)
+	})
+
+	it('a step failing → ✗ on its line; the steps after it ! not run (an earlier step failed)', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({
+				fast: [
+					{ name: 'check', run: 'exit 3' },
+					{ name: 'build', run: 'true' },
+				],
+			}),
+		})
+		await runGateIn({ root, argv: [] })
+
+		const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+		expect(lines.filter((line) => /^[✓!✗] (check|build)\b/.test(line))).toEqual([
+			expect.stringMatching(/^✗ check\b/),
+			'! build not run (an earlier step failed)',
+		])
+	})
+
+	for (const row of [
+		{ edited: 'src/read.ts', changedSince: true },
+		{ edited: '.dialecte/lot.json', changedSince: false },
+	])
+		it(`${row.edited} written after the gate and the rules → ${row.changedSince ? 'each line ! with (the tree changed since)' : 'the lines as recorded (.dialecte/ is no part of the tree)'}`, async () => {
+			const { root, lotsPath } = prepare({
+				committed: gatedPackage({
+					fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
+				}),
+			})
+			await runGateIn({ root, argv: [] })
+			runRules({ cwd: root, argv: [] })
+			writeFiles({
+				root,
+				files: {
+					[row.edited]: row.changedSince ? 'export function read() {\n\treturn 2\n}\n' : '{}\n',
+				},
+			})
+
+			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+			expect(lines.filter((line) => /^[✓!✗] (check|rules|tdd)\b/.test(line)).sort()).toEqual(
+				(row.changedSince
+					? [
+							'! check 4/4 (the tree changed since)',
+							'! rules 0 errors · 0 warnings (the tree changed since)',
+							`${NO_VITEST} (the tree changed since)`,
+						]
+					: ['✓ check 4/4', '✓ rules 0 errors · 0 warnings', NO_VITEST]
+				).sort(),
+			)
+		})
+
+	it('every gate line ✓ or a ! of this tree (a step not run here, no findings ledger) → READY with the size and all gates green; no declarations, no second line', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({
+				fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
+			}),
+		})
+		await runGateIn({ root, argv: [] })
+		runRules({ cwd: root, argv: [] })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(gateLinesOf(output)).toEqual(
+			expect.arrayContaining([NO_VITEST, '! review no findings ledger']),
+		)
+		expect(verdictLines(output)).toEqual(['READY  2 lots · 2 files · +6 −1 · all gates green'])
+	})
+
+	it('no gate record → BLOCKED, the failed count and the name in place of all gates green', () => {
+		const { lotsPath } = prepare({ committed: gatedPackage({ fast: [] }) })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(verdictLines(output)).toEqual([
+			'BLOCKED  2 lots · 2 files · +6 −1 · 1 gate failed: gate',
+		])
+	})
+
+	it('passing steps and the rules recorded on another tree → BLOCKED: gates ran on another tree, naming each in card order', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({
+				fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
+			}),
+		})
+		await runGateIn({ root, argv: [] })
+		runRules({ cwd: root, argv: [] })
+		writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 2\n}\n' } })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(verdictLines(output)).toEqual([
+			'BLOCKED  2 lots · 2 files · +6 −1 · gates ran on another tree: tdd, check, rules',
+		])
+	})
+
+	it('a failed step recorded on another tree → stays ✗ with (the tree changed since); the verdict names it failed, then the other-tree step', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({ fast: [{ name: 'check', run: 'exit 3' }] }),
+		})
+		await runGateIn({ root, argv: [] })
+		writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 2\n}\n' } })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(gateLinesOf(output).filter((line) => /^[✓!✗] check\b/.test(line))).toEqual([
+			'✗ check exit 3 (the tree changed since)',
+		])
+		expect(verdictLines(output)).toEqual([
+			'BLOCKED  2 lots · 2 files · +6 −1 · 1 gate failed: check · gates ran on another tree: tdd',
+		])
+	})
+
+	for (const row of [
+		{ order: ['--fast', '--full'], check: '✓ check 5/5' },
+		{ order: ['--full', '--fast'], check: '✓ check 4/4' },
+	])
+		it(`gate ${row.order.join(' then gate ')}: a step both modes run → from the later record (${row.check}); a step only one mode runs → from that mode's record`, async () => {
+			const { root, lotsPath } = prepare({
+				committed: gatedPackage({
+					fast: [
+						{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` },
+						{ name: 'skills', run: 'npm run skills:check' },
+					],
+					full: [
+						{ name: 'check', run: `printf ' Tests  5 passed (5)\\n'` },
+						{ name: 'build', run: 'true' },
+					],
+				}),
+			})
+			for (const mode of row.order) await runGateIn({ root, argv: [mode] })
+
+			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+			expect(lines.filter((line) => /^[✓!✗] (check|build|skills)\b/.test(line)).sort()).toEqual(
+				[row.check, '✓ build', '! skills not run here (no skills:check script)'].sort(),
+			)
+		})
+
+	for (const row of [
+		{
+			name: 'two errors',
+			source: 'export function read() {\n\tconst write = () => 2\n\tconst make = () => 3\n}\n',
+			line: '✗ rules 2 errors · 0 warnings',
+		},
+		{
+			name: 'warnings only',
+			source:
+				'export function read(first: string, count: number) {}\nexport function write(first: string, count: number) {}\n',
+			line: '✓ rules 0 errors · 2 warnings',
+		},
+		{
+			name: 'one error and one warning',
+			source: 'export function read(first: string, count: number) {\n\tconst write = () => 2\n}\n',
+			line: '✗ rules 1 error · 1 warning',
+		},
+	])
+		it(`the rules run on this tree with ${row.name} → ${row.line}`, () => {
+			const { root, lotsPath } = prepare({
+				files: { 'src/read.ts': row.source, 'CHANGELOG.md': '# Changelog\n\n- read\n' },
+			})
+			runRules({ cwd: root, argv: [] })
+
+			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+			expect(lines.filter((line) => /^[✓!✗] rules\b/.test(line))).toEqual([row.line])
+		})
+
+	for (const row of [
+		{
+			name: 'every row closed (fixed, accepted, logged), rows up to round 2, a round-3 snapshot',
+			rows: [
+				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
+				'| R1-2 | 1 | nit | src/read.ts:2 | a long name | accepted (the name is the domain word) |',
+				'| R2-1 | 2 | should fix | src/read.ts:3 | no test of the empty case | logged (the next lot) |',
+			],
+			snapshots: [3],
+			line: '✓ review 3 rounds · approved · findings ledger',
+		},
+		{
+			name: 'every row closed, rows up to round 3, a round-2 snapshot',
+			rows: [
+				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
+				'| R3-1 | 3 | nit | src/read.ts:2 | a long name | fixed 3 |',
+			],
+			snapshots: [2],
+			line: '✓ review 3 rounds · approved · findings ledger',
+		},
+		{
+			name: 'only a nit open',
+			rows: [
+				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
+				'| R2-1 | 2 | nit | src/read.ts:2 | a long name | open |',
+			],
+			snapshots: [],
+			line: '! review 2 rounds · 1 nit open',
+		},
+		{
+			name: 'a blocking row open, a should-fix row to verify, a nit open',
+			rows: [
+				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | open |',
+				'| R1-2 | 1 | should fix | src/read.ts:2 | no test of the empty case | fix to verify |',
+				'| R1-3 | 1 | nit | src/read.ts:3 | a long name | open |',
+			],
+			snapshots: [2],
+			line: '✗ review 2 rounds · 2 open: blocking or should fix',
+		},
+		{
+			name: 'no row yet (the reviewer has not answered), a round-1 snapshot',
+			rows: [],
+			snapshots: [1],
+			line: '! review 1 round · no findings recorded',
+		},
+		{
+			name: 'no row and no snapshot',
+			rows: [],
+			snapshots: [],
+			line: '! review 0 rounds · no findings recorded',
+		},
+	])
+		it(`a findings ledger with ${row.name} → ${row.line}`, () => {
+			const { lotsPath, out } = prepare({ committed: gatedPackage({ fast: [] }) })
+			writeFileSync(
+				join(out, 'findings-ledger.md'),
+				[
+					'# Findings ledger - demo',
+					'',
+					'| id | round | severity | file:line | finding | state |',
+					'|---|---|---|---|---|---|',
+					...row.rows,
+					'',
+				].join('\n'),
+			)
+			for (const round of row.snapshots)
+				mkdirSync(join(out, `round-${round}`, 'src'), { recursive: true })
+
+			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+			expect(lines.filter((line) => /^[✓!✗] review\b/.test(line))).toEqual([row.line])
+		})
+
+	it('a lots file without gates text → no notes in the card nor in its data', () => {
+		const { lotsPath } = prepare({ overrides: { gates: undefined } })
+
+		const text = writeHandover({ lotsPath })
+		const data = JSON.parse(writeHandover({ lotsPath, argv: ['--json', '--rehash'] }).output)
+
+		expect(text.output).not.toMatch(/\bnotes\b/)
+		expect(data).not.toHaveProperty('notes')
+		expect(data.gates).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'gate' })]))
+	})
+})
+
+describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	/**
+	 * The card's lines with what changes from one run to the next replaced by fixed text of the same
+	 * length: the repository folder's name (`dialecte-scratch-` and 6 random characters), HEAD (`aaaaaaa`)
+	 * and the merged tip (`bbbbbbb`), each as the card writes a sha (7 characters).
+	 */
+	function maskVolatile(params: {
+		lines: string[]
+		root: string
+		head: string
+		tip: string
+	}): string[] {
+		return params.lines.map((line) =>
+			line
+				.replaceAll(basename(params.root), 'dialecte-scratch-XXXXXX')
+				.replaceAll(params.head.slice(0, 7), 'aaaaaaa')
+				.replaceAll(params.tip.slice(0, 7), 'bbbbbbb'),
+		)
+	}
+
+	/** The escape byte that opens an ANSI sequence. */
+	const ESCAPE = String.fromCharCode(27)
+
+	/** `text` between the ANSI code `open` and its reset (`close`, or the full reset 0), then `after`. */
+	function styledText(params: {
+		output: string
+		open: number
+		text: string
+		close: number
+		after: string
+	}): boolean {
+		return [params.close, 0].some((close) =>
+			params.output.includes(
+				`${ESCAPE}[${params.open}m${params.text}${ESCAPE}[${close}m${params.after}`,
+			),
+		)
+	}
+
+	/** The output with every `ESC [ <n> m` sequence left out. */
+	function withoutEscapes(output: string): string {
+		return output
+			.split(ESCAPE)
+			.map((part, index) => (index === 0 ? part : part.replace(/^\[\d+m/, '')))
+			.join('')
+	}
+
+	it('a full card at 80 columns → the verdict and the declarations to read, then the commit, gates, tdd and notes sections, the legend footer; every line 80 wide', async () => {
+		const { root, lotsPath, head, tip } = await fullCardScenario({ failingBuild: true })
+
+		const result = writeHandover({ lotsPath, columns: 80 })
+
+		expect(result.exitCode).toBe(0)
+		expect(maskVolatile({ lines: boxLines(result.output), root, head, tip })).toEqual([
+			'┌─ hand-over: dialecte-scratch-XXXXXX main ────────────────────────────────────┐',
+			'│ BLOCKED  2 lots · 1 file · +3 −1 · 1 merge not sized · 1 gate failed: build  │',
+			'│          4 declarations to read (below)                                      │',
+			'├─ commit ─────────────────────────────────────────────────────────────────────┤',
+			'│ pending  1 file  +3 −1  feat(read): read answers one                         │',
+			'│ pending  size after rehearse  merge: bring feat/x in                         │',
+			'│                               merge feat/x at bbbbbbb · 1 conflict · tree    │',
+			'│                               not recorded: rehearse first                   │',
+			'│ HEAD aaaaaaa                                                                 │',
+			'├─ gates ──────────────────────────────────────────────────────────────────────┤',
+			'│ ! tdd     not run here (the package does not test with vitest)               │',
+			'│ ✓ check   4/4                                                                │',
+			'│ ✗ build   exit 1                                                             │',
+			'│ ✓ rules   0 errors · 0 warnings                                              │',
+			'│ ! review  no findings ledger                                                 │',
+			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
+			'│ 1 proven red → green · 2 unchanged                                           │',
+			'│ 1 accepted                                                                   │',
+			'│   1  pins existing behaviour                                                 │',
+			'│ 1 revised · 1 gone · 2 unused                                      to read ↓ │',
+			'│   revised  src/read.test.ts › read > answers two                             │',
+			'│            the review asked for it                                           │',
+			'│   gone     src/old.test.ts (the table call was rewritten)                    │',
+			'│   unused   accept src/x.test.ts::x (never run): no receipt of that case      │',
+			'│   unused   revised src/y.test.ts::y (never run): no receipt of that case     │',
+			'│ 1 flag: helper code changed near unchanged cases (noise)                     │',
+			'├─ notes ──────────────────────────────────────────────────────────────────────┤',
+			'│ Run it with the cli of this branch.                                          │',
+			'└─ dialecte handover --legend · details: dialecte tdd status ──────────────────┘',
+		])
+	})
+
+	it('a merge lot whose tree a rehearsal recorded → its row and the totals carry the stat between the tree it merges on and its tree', async () => {
+		const unrecorded = await fullCardScenario({ failingBuild: false })
+		expect(writeHandover({ lotsPath: unrecorded.lotsPath }).exitCode).toBe(0)
+		const rehearsal = await runFolder({ out: unrecorded.out, argv: ['--rehearse'] })
+		const tree = /tree ([0-9a-f]{40})/.exec(rehearsal.text)?.[1] ?? ''
+		expect(tree).toMatch(/^[0-9a-f]{40}$/)
+		const { lotsPath, head, tip } = await fullCardScenario({ failingBuild: false, tree })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(verdictLines(output)).toEqual([
+			'READY  2 lots · 2 files · +4 −2 · all gates green',
+			'       4 declarations to read (below)',
+		])
+		expect(sectionLines({ output, name: 'commit' })).toEqual([
+			'pending  1 file  +3 −1  feat(read): read answers one',
+			'pending  1 file  +1 −1  merge: bring feat/x in',
+			`                        merge feat/x at ${tip.slice(0, 7)} · 1 conflict · tree ${tree.slice(0, 7)}`,
+			`HEAD ${head.slice(0, 7)}`,
+		])
+	})
+
+	it('gate and rules recorded on the worktree, then a real run of every lot → DONE with all gates green; no line says the tree changed since', async () => {
+		const { root, lotsPath, out } = prepare({
+			committed: gatedPackage({
+				fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
+			}),
+		})
+		await runGateIn({ root, argv: [] })
+		runRules({ cwd: root, argv: [] })
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const ran = await runFolder({ out })
+
+		expect(ran.exitCode).toBe(0)
+		expect(verdictLines(ran.text)).toEqual(['DONE  2 lots · 2 files · +6 −1 · all gates green'])
+		expect(boxLines(ran.text).filter((line) => line.includes('(the tree changed since)'))).toEqual(
+			[],
+		)
+	})
+
+	it('a run that commits a merge lot with its rehearsed tree → its commit row shows the commit and the real +/−, the merge line still under it', async () => {
+		const unrecorded = await fullCardScenario({ failingBuild: false })
+		expect(writeHandover({ lotsPath: unrecorded.lotsPath }).exitCode).toBe(0)
+		const rehearsal = await runFolder({ out: unrecorded.out, argv: ['--rehearse'] })
+		const tree = /tree ([0-9a-f]{40})/.exec(rehearsal.text)?.[1] ?? ''
+		expect(tree).toMatch(/^[0-9a-f]{40}$/)
+		const { root, lotsPath, out, head, tip } = await fullCardScenario({
+			failingBuild: false,
+			tree,
+		})
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const ran = await runFolder({ out })
+
+		expect(ran.exitCode).toBe(0)
+		const [mergeCommit, plainCommit] = git({ root, args: ['log', '--format=%H', '-2'] })
+			.trim()
+			.split('\n')
+		expect(sectionLines({ output: ran.text, name: 'commit' })).toEqual([
+			`${plainCommit.slice(0, 7)}  1 file  +3 −1  feat(read): read answers one`,
+			`${mergeCommit.slice(0, 7)}  1 file  +1 −1  merge: bring feat/x in`,
+			`                        merge feat/x at ${tip.slice(0, 7)} · 1 conflict · tree ${tree.slice(0, 7)}`,
+			`HEAD ${head.slice(0, 7)} → ${mergeCommit.slice(0, 7)} · nothing pushed`,
+		])
+	})
+
+	it('one lot, two gates failed, one declaration → 1 lot, 2 gates failed: check, rules, 1 declaration to read', async () => {
+		const { root, lotsPath } = prepare({
+			committed: gatedPackage({ fast: [{ name: 'check', run: 'exit 3' }] }),
+			files: {
+				'src/read.ts':
+					'export function read() {\n\tconst write = () => 2\n\tconst make = () => 3\n}\n',
+				'CHANGELOG.md': '# Changelog\n\n- read\n',
+			},
+			lots: [{ paths: ['src/', 'CHANGELOG.md'], message: 'feat(read): read answers one' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					gone: [{ file: 'src/old.test.ts', reason: 'the table call was rewritten' }],
+				}),
+			},
+		})
+		await runGateIn({ root, argv: [] })
+		runRules({ cwd: root, argv: [] })
+
+		const output = writeHandover({ lotsPath }).output
+
+		expect(verdictLines(output)).toEqual([
+			'BLOCKED  1 lot · 2 files · +7 −1 · 2 gates failed: check, rules',
+			'         1 declaration to read (below)',
+		])
+	})
+
+	it('a commit subject longer than the row → wraps under the subject column, every word kept, no …', () => {
+		const subject =
+			'feat(read): read answers one, and the reader keeps every answer it gave in the order it gave them'
+		const { lotsPath } = prepare({
+			lots: [
+				{ paths: ['src/'], message: subject },
+				{ paths: ['CHANGELOG.md'], message: 'docs(changelog): read' },
+			],
+		})
+
+		const output = writeHandover({ lotsPath, columns: 80 }).output
+
+		const rows = sectionLines({ output, name: 'commit' })
+		const continued: string[] = []
+		for (const text of rows.slice(1)) {
+			if (!/^ {24}\S/.test(text)) break
+			continued.push(text.trim())
+		}
+		expect(rows[0] ?? '').toMatch(/^pending {2}1 file {2}\+3 −1 {2}feat\(read\)/)
+		expect(continued.length).toBeGreaterThan(0)
+		expect([(rows[0] ?? '').slice(24), ...continued].join(' ')).toBe(subject)
+		expect(output).not.toContain('…')
+		expect(boxLines(output).filter((line) => line.length > 80)).toEqual([])
+	})
+
+	it('a 60-character token in the notes at 40 columns → cut at the width, no line wider, every character kept', () => {
+		const token = 'abcdefghij'.repeat(6)
+		const { lotsPath } = prepare({ overrides: { gates: token } })
+
+		const output = writeHandover({ lotsPath, columns: 40 }).output
+
+		expect(boxLines(output).filter((line) => line.length > 40)).toEqual([])
+		expect(
+			sectionLines({ output, name: 'notes' })
+				.map((text) => text.trim())
+				.join(''),
+		).toBe(token)
+	})
+
+	it('--json of the full card → the verdict, the failed and other-tree gate names, the declarations count, each lot pending, HEAD and no tip before a run', async () => {
+		const { lotsPath, head } = await fullCardScenario({ failingBuild: true })
+
+		const data = JSON.parse(writeHandover({ lotsPath, argv: ['--json'] }).output)
+
+		expect(data).toMatchObject({
+			verdict: 'BLOCKED',
+			failedGates: ['build'],
+			otherTreeGates: [],
+			declarations: 4,
+			head,
+			lots: [{ pending: true }, { pending: true }],
+		})
+		expect(data).not.toHaveProperty('tip')
+	})
+
+	it('--json of the full card → tdd as the plain text lines a person reads (no layout field, no padding), gates as the card lines', async () => {
+		const { lotsPath } = await fullCardScenario({ failingBuild: true })
+
+		const data = JSON.parse(writeHandover({ lotsPath, argv: ['--json'] }).output)
+
+		expect(data.tdd).toEqual([
+			'1 proven red → green · 2 unchanged',
+			'1 accepted',
+			'1 pins existing behaviour',
+			'1 revised · 1 gone · 2 unused',
+			'revised src/read.test.ts › read > answers two',
+			'the review asked for it',
+			'gone src/old.test.ts (the table call was rewritten)',
+			'unused accept src/x.test.ts::x (never run): no receipt of that case',
+			'unused revised src/y.test.ts::y (never run): no receipt of that case',
+			'1 flag: helper code changed near unchanged cases (noise)',
+		])
+		expect(data.gates).toEqual(
+			expect.arrayContaining([{ name: 'build', status: 'failed', detail: 'exit 1' }]),
+		)
+	})
+
+	it('a terminal of 60 columns → no line wider; a gate detail wraps under its detail column, the merge line (tree not recorded) under the subject column', async () => {
+		const { lotsPath, tip } = await fullCardScenario({ failingBuild: false })
+
+		const output = writeHandover({ lotsPath, columns: 60 }).output
+
+		const box = boxLines(output)
+		expect(box.filter((line) => line.length > 60)).toEqual([])
+		const tddGate = box.findIndex((line) => line.startsWith('│ ! tdd     not run here'))
+		const merge = box.findIndex((line) => /^│ {31}merge feat\/x at /.test(line))
+		expect({ tddGate: tddGate > 0, merge: merge > 0 }).toEqual({ tddGate: true, merge: true })
+		expect(box[tddGate + 1]).toMatch(/^│ {11}\S/)
+		const mergeRows = [box[merge]]
+		for (const line of box.slice(merge + 1)) {
+			if (!/^│ {31}\S/.test(line)) break
+			mergeRows.push(line)
+		}
+		expect(mergeRows.length).toBeGreaterThan(1)
+		expect(mergeRows.map((line) => rowText(line).trim()).join(' ')).toBe(
+			`merge feat/x at ${tip.slice(0, 7)} · 1 conflict · tree not recorded: rehearse first`,
+		)
+	})
+
+	it('the cli off a terminal with $COLUMNS of 50 → the card wraps at 50, no escape byte', () => {
+		const { lotsPath } = prepare({
+			overrides: {
+				gates:
+					'npm run type-check && npm run lint:check && npm run format:check && npm run test:run',
+			},
+		})
+
+		const result = runCli({ argv: ['handover', lotsPath], columns: 50 })
+
+		expect(result.exitCode).toBe(0)
+		const box = boxLines(result.output)
+		expect(box.length).toBeGreaterThan(0)
+		expect(box.filter((line) => line.length > 50)).toEqual([])
+		expect(result.output).not.toContain(ESCAPE)
+	})
+
+	it('handover run by the cli off a terminal with $COLUMNS of 50 → the card after the run wraps at 50, no escape byte', () => {
+		const { lotsPath, out } = prepare()
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = runCli({ argv: ['handover', 'run', out], columns: 50 })
+
+		expect(result.exitCode).toBe(0)
+		const box = boxLines(result.output)
+		expect(box.some((line) => line.startsWith('└'))).toBe(true)
+		expect(box.filter((line) => line.length > 50)).toEqual([])
+		expect(result.output).not.toContain(ESCAPE)
+	})
+
+	it('on a terminal (colour) → ✓ green, ! yellow, ✗ red, the verdict word bold; every box line as wide as the width once the escapes are left out', async () => {
+		const { lotsPath } = await fullCardScenario({ failingBuild: true })
+
+		const output = runHandover({
+			argv: [lotsPath],
+			cliPath: WRITER_CLI,
+			colour: true,
+			columns: 100,
+		}).output
+
+		expect(styledText({ output, open: 32, text: '✓', close: 39, after: ' check' })).toBe(true)
+		expect(styledText({ output, open: 33, text: '!', close: 39, after: ' tdd' })).toBe(true)
+		expect(styledText({ output, open: 31, text: '✗', close: 39, after: ' build' })).toBe(true)
+		expect(styledText({ output, open: 1, text: 'BLOCKED', close: 22, after: '  2 lots' })).toBe(
+			true,
+		)
+		const box = boxLines(withoutEscapes(output))
+		expect(box.map((line) => line.length)).toEqual(Array(box.length).fill(100))
+	})
+})
+
+describe('handover: the tdd section', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	/** A repository ready for a hand-over whose lot file holds `declaration`. */
+	function preparedWithDeclaration(declaration: object): { root: string; lotsPath: string } {
+		const { root, lotsPath } = prepare()
+		writeFiles({ root, files: { '.dialecte/lot.json': JSON.stringify(declaration) } })
+		return { root, lotsPath }
+	}
+
+	it('each case counted once by its last proof → <n> proven red → green · <m> unchanged · <k> kept first; kept after a green counts kept, kept after only unchanged counts unchanged; a case still red counted in none', () => {
+		const { root, lotsPath } = prepare()
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven once' },
+				{ kind: 'green', name: 'read > proven once' },
+				{ kind: 'unchanged', name: 'read > stays' },
+				{ kind: 'unchanged', name: 'read > stays as well' },
+				{ kind: 'red', name: 'read > proven twice' },
+				{ kind: 'green', name: 'read > proven twice' },
+				{ kind: 'red', name: 'read > proven twice' },
+				{ kind: 'green', name: 'read > proven twice' },
+				{ kind: 'red', name: 'read > still red' },
+				{ kind: 'unchanged', name: 'read > unchanged then kept' },
+				{
+					kind: 'kept',
+					name: 'read > unchanged then kept',
+					flags: ['test code changed around it'],
+				},
+				{ kind: 'red', name: 'read > proven then kept' },
+				{ kind: 'green', name: 'read > proven then kept' },
+				{ kind: 'kept', name: 'read > proven then kept', flags: ['test code changed around it'] },
+			],
+		})
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)[0]).toBe(
+			'2 proven red → green · 3 unchanged · 1 kept',
+		)
+	})
+
+	it('a gate record of another tree → the counts replaced by one line: counts from the last gate: run the gate on this tree', () => {
+		const { root, lotsPath } = prepare()
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+			],
+		})
+		writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 3\n}\n' } })
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			'counts from the last gate: run the gate on this tree',
+		])
+	})
+
+	it('no gate record → the counts replaced by one line: counts from the last gate: run the gate on this tree', () => {
+		const { root, lotsPath } = prepare()
+		writeLedgerOnly({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+				{ kind: 'unchanged', name: 'read > stays', flags: ['rollback'] },
+			],
+		})
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			'counts from the last gate: run the gate on this tree',
+		])
+	})
+
+	it("a case revised at review then green again → counted revised only, not proven: the counts are the gate's statuses", () => {
+		const { root, lotsPath } = preparedWithDeclaration({
+			revised: [
+				{ case: 'src/read.test.ts::read > edited at review', reason: 'the review asked for it' },
+			],
+		})
+		writeLedgerOnly({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+				{ kind: 'red', name: 'read > edited at review' },
+				{ kind: 'green', name: 'read > edited at review' },
+				{ kind: 'revised', name: 'read > edited at review', reason: 'the review asked for it' },
+				{ kind: 'green', name: 'read > edited at review' },
+			],
+		})
+		recordJudgedCasesWith({ root, statuses: { 'read > edited at review': 'revised' } })
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			'1 proven red → green · 0 unchanged',
+			toReadLine({ head: '1 revised', columns: 80 }),
+			'  revised  src/read.test.ts › read > edited at review',
+			'           the review asked for it',
+		])
+	})
+
+	it('no case kept → the counts line has no kept part', () => {
+		const { root, lotsPath } = prepare()
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+			],
+		})
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			'1 proven red → green · 0 unchanged',
+		])
+	})
+
+	it("accepted cases → a head line with their count, then one row per reason group (the lot file's exact reason), the largest group first, a tie in the lot file's order (not the ledger's, not alphabetical)", () => {
+		const reasons: Record<string, string> = {
+			'read > split one': 'split from a proven case',
+			'read > pinned one': 'pins of new code',
+			'read > split two': 'split from a proven case',
+			'read > pinned two': 'pins of new code',
+			'read > one': 'one behaviour per case',
+			'read > two': 'one behaviour per case',
+			'read > three': 'one behaviour per case',
+		}
+		const { root, lotsPath } = preparedWithDeclaration({
+			accept: Object.entries(reasons).map(([name, reason]) => ({
+				case: `src/read.test.ts::${name}`,
+				reason,
+			})),
+		})
+		writeLedger({
+			root,
+			receipts: [
+				'read > pinned one',
+				'read > one',
+				'read > pinned two',
+				'read > split one',
+				'read > two',
+				'read > split two',
+				'read > three',
+			].map((name) => ({ kind: 'accepted', name, reason: 'the reason the red run saw' })),
+		})
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)
+
+		expect(rows).toEqual([
+			'7 accepted',
+			'  3  one behaviour per case',
+			'  2  split from a proven case',
+			'  2  pins of new code',
+		])
+	})
+
+	it('accepted reasons longer than the row at 40 columns → each reason wrapped under itself, no line wider, every word kept', () => {
+		const first = 'the case pins behaviour the base already had before this lot'
+		const second = 'a proven case split in two at review'
+		const { root, lotsPath } = preparedWithDeclaration({
+			accept: [
+				{ case: 'src/read.test.ts::read > one', reason: first },
+				{ case: 'src/read.test.ts::read > two', reason: second },
+			],
+		})
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'accepted', name: 'read > one', reason: first },
+				{ kind: 'accepted', name: 'read > two', reason: second },
+			],
+		})
+
+		const output = writeHandover({ lotsPath, columns: 40 }).output
+
+		const rows = tddRowLines(output)
+		expect(boxLines(output).filter((line) => line.length > 40)).toEqual([])
+		const reasonRows = rows.slice(1)
+		expect(rows[0]).toBe('2 accepted')
+		expect(reasonRows.filter((row) => /^ {2}1 {2}\S/.test(row))).toHaveLength(2)
+		expect(
+			reasonRows.filter((row) => !/^ {2}1 {2}\S/.test(row)).every((row) => /^ {5}\S/.test(row)),
+		).toBe(true)
+		expect(reasonRows.length).toBeGreaterThan(2)
+		expect(
+			reasonRows
+				.map((row) => row.trim())
+				.join(' ')
+				.replace(/ {2,}/g, ' '),
+		).toBe(`1 ${first} 1 ${second}`)
+	})
+
+	it('a case only ever unchanged with a receipt flagged rollback → its flags counted each, never as noise', () => {
+		const { root, lotsPath } = prepare()
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'unchanged', name: 'read > rolled back', flags: ['rollback'] },
+				{ kind: 'kept', name: 'read > rolled back', flags: ['test code changed around it'] },
+			],
+		})
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)
+
+		expect(rows.filter((row) => /^\d+ flags?: /.test(row))).toEqual([
+			'1 flag: rollback',
+			'1 flag: test code changed around it',
+		])
+	})
+
+	it('a revised case title longer than the row → cut after its last whole word with …, the long reason wrapped under the file column', () => {
+		const name = 'read > a case whose title runs on and on, far past the right edge of the card'
+		const reason =
+			'the review found the case asserted the whole card where only the tdd lines matter, so it was cut down'
+		const { root, lotsPath } = preparedWithDeclaration({
+			revised: [{ case: `src/read.test.ts::${name}`, reason }],
+		})
+		writeLedger({ root, receipts: [{ kind: 'revised', name, reason }] })
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)
+
+		expect(rows[1]).toBe(
+			'  revised  src/read.test.ts › read > a case whose title runs on and on, …',
+		)
+		expect(rows.length).toBeGreaterThan(3)
+		expect(rows.slice(2).every((row) => /^ {11}\S/.test(row))).toBe(true)
+		expect(
+			rows
+				.slice(2)
+				.map((row) => row.trim())
+				.join(' '),
+		).toBe(reason)
+	})
+
+	it('flags → one line per kind with its count of cases (rollback, red after green, test code changed around it); a case only ever unchanged flagged test code changed around it → counted as noise; rollback and red after green never noise', () => {
+		const flag = 'test code changed around it'
+		const { root, lotsPath } = prepare()
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'unchanged', name: 'read > noise one' },
+				{ kind: 'kept', name: 'read > noise one', flags: [flag] },
+				{ kind: 'unchanged', name: 'read > noise two' },
+				{ kind: 'kept', name: 'read > noise two', flags: [flag] },
+				{ kind: 'kept', name: 'read > noise two', flags: [flag] },
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+				{ kind: 'kept', name: 'read > proven', flags: [flag] },
+				{ kind: 'unchanged', name: 'read > rolled back' },
+				{ kind: 'red', name: 'read > rolled back', flags: ['rollback'] },
+				{ kind: 'unchanged', name: 'read > made red' },
+				{ kind: 'red', name: 'read > made red', flags: ['red after green'] },
+			],
+		})
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)
+
+		expect(rows.filter((row) => /^\d+ flags?: /.test(row))).toEqual([
+			'1 flag: rollback',
+			'1 flag: red after green',
+			'1 flag: test code changed around it',
+			'2 flags: helper code changed near unchanged cases (noise)',
+		])
+		expect(rows.filter((row) => row.includes('read >'))).toEqual([])
+	})
+})
+
+describe('handover: the tdd section agrees with the gate', { timeout: 240_000 }, () => {
+	const STUB =
+		"export function add(left: number, right: number): number {\n\tthrow new Error('not implemented: add')\n}\n"
+	const IMPLEMENTED =
+		'export function add(left: number, right: number): number {\n\treturn left + right\n}\n'
+	const ADD_TEST = [
+		"import { add } from './add.ts'",
+		"import { expect, it } from 'vitest'",
+		"it('one plus two → three', () => { expect(add(1, 2)).toBe(3) })",
+		'',
+	].join('\n')
+
+	function tdd(params: { root: string; argv: string[] }) {
+		return runTdd({
+			cwd: params.root,
+			argv: params.argv,
+			now: () => new Date('2026-10-29T12:00:00.000Z'),
+		})
+	}
+
+	it("receipts of a case the change no longer has (retitled away) → not counted: the card's counts are the gate tdd step's on the same tree", async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		await tdd({ root, argv: ['green'] })
+		// the receipts the case held under a title it no longer has
+		const ledgerPath = join(root, '.git', 'dialecte-tdd.json')
+		const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as {
+			entries: Array<{ kind: string; name: string }>
+		}
+		const retitled = ledger.entries
+			.filter((entry) => entry.kind === 'red' || entry.kind === 'green')
+			.map((entry) => ({ ...entry, name: 'one plus two gives three' }))
+		writeFileSync(
+			ledgerPath,
+			JSON.stringify({ ...ledger, entries: [...retitled, ...ledger.entries] }),
+		)
+		const gate = await runGate({
+			cwd: root,
+			argv: ['--declare', 'src/'],
+			machineLock: {
+				path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
+				clock: createFakeClock(),
+				write: () => undefined,
+			},
+		})
+		const out = temporaryFolder('dialecte-handover-')
+		const lotsPath = join(out, 'lots.json')
+		const lotsFile: LotsFile = {
+			repository: root,
+			branch: 'main',
+			head: headOf(root),
+			lots: [{ paths: ['src/'], message: 'feat(add): add answers the sum' }],
+		}
+		writeFileSync(lotsPath, JSON.stringify(lotsFile))
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)
+
+		expect({
+			gate: gate.output.split('\n').filter((line) => /\btdd\b/.test(line)),
+			card: rows,
+		}).toEqual({
+			gate: ['ok    tdd  1 case(s) of the change: 1 red then green'],
+			card: ['1 proven red → green · 0 unchanged'],
+		})
+	})
+})
+
+/**
+ * Every term the card can print, as `dialecte handover --legend` prints it: grouped (the verdict, the marks,
+ * the commit section, the gate lines, the tdd terms, the card's own terms), each term in two lines - what it
+ * means, then whether to look.
+ */
+const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
+	[
+		{
+			term: 'READY',
+			meaning:
+				'no gate failed and none ran on another state of the tree: the lots can be committed',
+			look: 'look: the size, then the declarations to read',
+		},
+		{
+			term: 'BLOCKED',
+			meaning:
+				'a gate failed, never ran, or ran on another state of the tree; the line names each one',
+			look: 'look: the gates it names; fix them, then run them again',
+		},
+		{
+			term: 'DONE',
+			meaning: 'every lot of the hand-over is committed',
+			look: 'look only if a commit in the commit section is not the one you expected',
+		},
+	],
+	[
+		{
+			term: '✓',
+			meaning: 'the step passed on this tree',
+			look: 'look only if its counts surprise you',
+		},
+		{
+			term: '!',
+			meaning: 'not run here, or only nits open: it does not block; ran on another tree: it blocks',
+			look: 'look: the reason after it; on another tree, run the gate again',
+		},
+		{
+			term: '✗',
+			meaning: 'the step failed, or never ran on this tree: the hand-over is blocked',
+			look: 'look: always',
+		},
+	],
+	[
+		{
+			term: 'pending',
+			meaning: 'the lot is not committed yet; its commit sha once it is',
+			look: 'look only if a lot you expected is missing',
+		},
+		{
+			term: 'merge',
+			meaning:
+				'a merge lot: the branch and tip it merges, its conflicts, the tree a rehearsal recorded',
+			look: 'look only if it says tree not recorded: rehearse first',
+		},
+		{
+			term: 'HEAD',
+			meaning: 'the commit the hand-over starts from; after a run, base → tip and nothing pushed',
+			look: 'look only if the base is not the commit you expected',
+		},
+	],
+	[
+		{
+			term: 'gate',
+			meaning: 'no gate record on this tree: dialecte gate never ran here',
+			look: 'look: always; run dialecte gate',
+		},
+		{
+			term: 'check',
+			meaning: "the package's check script: types, lint, format and the tests it runs",
+			look: 'look only if it is not ✓',
+		},
+		{
+			term: 'tests',
+			meaning:
+				'the tests as passed/run: with --fast those of the changed files, with --full the whole suite',
+			look: 'look only if it is not ✓',
+		},
+		{ term: 'build', meaning: 'the package builds', look: 'look only if it is not ✓' },
+		{
+			term: 'docs',
+			meaning: 'the documentation builds (full gate)',
+			look: 'look only if it is not ✓',
+		},
+		{
+			term: 'type-bench',
+			meaning: 'the cost of the types stays within its baseline (full gate)',
+			look: 'look only if it is not ✓: a type grew in cost',
+		},
+		{
+			term: 'rules',
+			meaning: 'dialecte rules on the changed files: the errors and warnings of the house rules',
+			look: 'look only if it counts an error or a warning',
+		},
+		{
+			term: 'review',
+			meaning: 'the independent review: its rounds and open findings, from the findings ledger',
+			look: 'look only if it is not ✓: a finding is open, or no findings ledger means no review recorded',
+		},
+		{
+			term: 'skills',
+			meaning: 'the agent skills of the package are generated and in sync with the code',
+			look: 'look only if it is not ✓: the generated skills are out of sync with the code (a changed JSDoc counts)',
+		},
+		{
+			term: 'tdd',
+			meaning:
+				'every new or changed test case has its receipts: red before the code and green after, or unchanged, accepted or revised',
+			look: 'look only if it is not ✓; the tdd section says which cases',
+		},
+	],
+	[
+		{
+			term: 'exempt',
+			meaning:
+				'the lot changes no behaviour, so no case needs a red; the reason and the files touched follow',
+			look: 'look: the reason; a lot that changes behaviour is never exempt',
+		},
+		{
+			term: 'proven red → green',
+			meaning:
+				'cases that failed before the code and pass with it: the test was seen to test something',
+			look: 'look only if the count seems low for what the lot changes',
+		},
+		{
+			term: 'unchanged',
+			meaning: 'cases passing with their test code the same as at the base: nothing to prove',
+			look: 'look only if the lot was meant to change their behaviour',
+		},
+		{
+			term: 'kept',
+			meaning:
+				'proven cases that passed again at a later red run, after test code around them changed',
+			look: 'look: the "test code changed around it" flag line below',
+		},
+		{
+			term: 'accepted',
+			meaning: 'cases passing without a red, accepted by the lot with a reason',
+			look: 'look: the reasons; each should make sense to you',
+		},
+		{
+			term: 'earlier lots',
+			meaning: 'receipts of earlier lots the lot file no longer names, counted per kind',
+			look: "look only if you expected this lot's file to name them",
+		},
+		{
+			term: 'revised',
+			meaning:
+				'cases edited at review (proven before, accepted, unchanged or of the base); the lot gives a reason instead of a new red',
+			look: 'look: each one; the edit must not weaken the test',
+		},
+		{
+			term: 'gone',
+			meaning: "test cases of the base deleted, with the lot's reason",
+			look: 'look: each one; what they tested should still be tested',
+		},
+		{
+			term: 'unused',
+			meaning: 'an accept or revised entry of the lot file that no red run used',
+			look: 'look: each one; fix or remove it in the lot file',
+		},
+		{
+			term: 'rollback',
+			meaning:
+				'a red taken at production code the case had already left: code was put back to show a red',
+			look: 'look: always; ask why the code went back',
+		},
+		{
+			term: 'red after green',
+			meaning:
+				'a green case made red again with production unchanged: its test was changed to fail',
+			look: 'look: always; the test may have been bent to fail',
+		},
+		{
+			term: 'test code changed around it',
+			meaning: 'a proven case kept at a red run while a helper or its own test file changed',
+			look: 'look: each one; the change may weaken what the case proved',
+		},
+		{
+			term: 'helper code changed near unchanged cases (noise)',
+			meaning:
+				'unchanged cases flagged because test code around them changed; nothing proven is weakened',
+			look: 'look only if the count is far above what the change touches',
+		},
+	],
+	[
+		{
+			term: 'declarations to read',
+			meaning:
+				'the tdd lines a person must read before committing: revised, gone and unused entries',
+			look: 'look: each one, under to read ↓',
+		},
+		{
+			term: 'notes',
+			meaning: "the agent's caveats for this hand-over, in a few lines",
+			look: 'look: always',
+		},
+	],
+]
+
+/** The legend's lines unwrapped: per group, `<term>  <meaning>` then `  <look>` per term; a blank line between groups. */
+function legendLines(): string[] {
+	return LEGEND.flatMap((group, index) => [
+		...(index === 0 ? [] : ['']),
+		...group.flatMap((entry) => [`${entry.term}  ${entry.meaning}`, `  ${entry.look}`]),
+	])
+}
+
+describe('handover --legend', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('handover --legend → every term the card can print in two lines - what it means, then look: or look only if -; exit 0', () => {
+		const result = runHandover({ argv: ['--legend'], cliPath: WRITER_CLI, columns: 300 })
+
+		expect({ exitCode: result.exitCode, lines: result.output.split('\n') }).toEqual({
+			exitCode: 0,
+			lines: legendLines(),
+		})
+	})
+
+	it('handover --legend by the cli with $COLUMNS of 40 → no line wider, every word kept; without $COLUMNS → wrapped at 80', () => {
+		const words = legendLines().join(' ').split(/\s+/).filter(Boolean)
+		expect(legendLines().some((line) => line.length > 80)).toBe(true)
+
+		const narrow = runCli({ argv: ['handover', '--legend'], columns: 40 })
+		const standard = runCli({ argv: ['handover', '--legend'] })
+
+		expect({
+			exitCodes: [narrow.exitCode, standard.exitCode],
+			narrowTooWide: narrow.output.split('\n').filter((line) => line.length > 40),
+			standardTooWide: standard.output.split('\n').filter((line) => line.length > 80),
+			narrowWords: narrow.output.split(/\s+/).filter(Boolean),
+			standardWords: standard.output.split(/\s+/).filter(Boolean),
+		}).toEqual({
+			exitCodes: [0, 0],
+			narrowTooWide: [],
+			standardTooWide: [],
+			narrowWords: words,
+			standardWords: words,
+		})
 	})
 })

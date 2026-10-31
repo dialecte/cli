@@ -16,10 +16,15 @@
  * - `green`: every case of the changed test files (or those named) must hold a red receipt, its file and
  *   its test call as frozen, the helpers untouched, production changed since its red, and pass.
  * - `status`: each case of the change, the test code changed since it was frozen, the deleted cases (and
- *   the test calls of the base the lot file declares gone).
+ *   the test calls of the base the lot file declares gone); `status --legend`: the tdd terms of the
+ *   hand-over card's legend.
  */
+import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
+import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { runsTestsInABrowser } from '../lib/gate/run-gate.ts'
+import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
+import { renderLegend } from '../lib/legend/render-legend.ts'
 import {
 	acquireMachineLock,
 	describeHolder,
@@ -95,6 +100,11 @@ export async function run(argv: string[]): Promise<void> {
 		cwd: process.cwd(),
 		argv,
 		now: () => new Date(),
+		// the legend's width: the terminal's columns, else $COLUMNS, else 80
+		columns: resolveCardColumns({
+			terminalColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
+			environmentColumns: process.env.COLUMNS,
+		}),
 		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
 	})
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
@@ -108,6 +118,8 @@ export async function runTdd(params: {
 	live?: LiveOutput
 	/** The time a receipt records. */
 	now: () => Date
+	/** The width `status --legend` wraps its lines to. Default: 80. */
+	columns?: number
 	/** The machine lock a browser package's runs take: its file, the clock it waits with, where its lines go. */
 	machineLock?: {
 		path: string
@@ -122,7 +134,16 @@ export async function runTdd(params: {
 		return {
 			exitCode: 2,
 			output:
-				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait]',
+				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait] | status --legend',
+		}
+	// the legend needs no package: printed before any is looked up
+	if (subcommand === 'status' && hasFlag(argv, 'legend'))
+		return {
+			exitCode: 0,
+			output: renderLegend({
+				groups: [TDD_LEGEND_TERMS],
+				width: params.columns ?? DEFAULT_CARD_COLUMNS,
+			}),
 		}
 	const packageJson = readPackageJson(root)
 	const ledger = readLedger(root)

@@ -50,6 +50,7 @@ export async function checkTddReceipts(params: {
 		const changed = countChangedFiles({ root, base, packageJson })
 		return {
 			status: 'passed',
+			cases: [],
 			note: `exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
 		}
 	}
@@ -64,7 +65,7 @@ export async function checkTddReceipts(params: {
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
 	if (hashChangedTestCode({ root, base, packageJson }).size === 0)
-		return { status: 'passed', note: 'no test code new or changed since the base' }
+		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
 	const lock = params.lock()
 	if ('refusal' in lock) return { status: 'failed', reason: lock.refusal }
 	let state: TddState | { failure: string }
@@ -74,6 +75,7 @@ export async function checkTddReceipts(params: {
 		lock.release()
 	}
 	if ('failure' in state) return { status: 'failed', reason: state.failure }
+	const cases = state.cases.map((line) => ({ label: caseLabel(line), status: line.status }))
 	const open = state.cases.filter(
 		(line) =>
 			line.status !== 'green' &&
@@ -146,12 +148,14 @@ export async function checkTddReceipts(params: {
 	if (state.unfrozen.length)
 		return {
 			status: 'failed',
+			cases,
 			reason: `test code changed outside tdd red: ${state.unfrozen.join(', ')}`,
 			lines: [...caseLines, ...unlisted, ...evidence, TDD_NEXT_STEPS],
 		}
 	if (open.length || unlisted.length)
 		return {
 			status: 'failed',
+			cases,
 			reason: `${open.length} of ${state.cases.length} case(s) of the change without a red receipt then a green one${unlisted.length ? `; ${unlisted.length} test file(s) whose cases cannot be listed` : ''}`,
 			lines: [...caseLines, ...unlisted, ...evidence, TDD_NEXT_STEPS],
 		}
@@ -171,6 +175,7 @@ export async function checkTddReceipts(params: {
 	].filter(Boolean)
 	return {
 		status: 'passed',
+		cases,
 		note: state.cases.length
 			? `${state.cases.length} case(s) of the change: ${counts.join(', ')}`
 			: 'no test case of the change',

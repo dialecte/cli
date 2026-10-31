@@ -10,10 +10,14 @@
  * at a time on a machine; a second one waits (a line every 30 s naming the holder) or, with `--no-wait`,
  * refuses. The `tdd` step measures the lot from HEAD (the uncommitted work); `--base <ref>` and `--full`
  * (before a merge) measure the whole branch.
+ *
+ * A run that reaches its steps records them in the worktree's git folder (`dialecte-gate-<mode>.json`),
+ * for the hand-over card.
  */
 import { resolve } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
+import { recordGate } from '../lib/gate-records/gate-records.ts'
 import { STEP_DETAIL_INDENT } from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
@@ -163,6 +167,7 @@ export async function runGate(params: {
 	} finally {
 		if (gateLock && !('refusal' in gateLock)) gateLock.release()
 	}
+	recordGate({ root: cwd, mode, results })
 
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
@@ -231,6 +236,7 @@ async function tddStep(params: {
 		...(check.note && { note: check.note }),
 		...(check.lines?.length && { tail: check.lines.join('\n') }),
 		...(check.details?.length && { details: check.details }),
+		...(check.cases && { cases: check.cases }),
 	}
 }
 
