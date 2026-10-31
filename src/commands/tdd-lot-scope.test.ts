@@ -659,7 +659,7 @@ describe('what counts as trivia in a .ts test file', { timeout: 240_000 }, () =>
 		},
 		'an environment docblock comment added → test edited after red': {
 			head: [],
-			edit: (text) => `// @vitest-${'environment'} jsdom\n${text}`,
+			edit: (text) => `// @vitest-${'environment'} node\n${text}`,
 			expected: EDITED,
 		},
 		'a /* @vite-ignore */ comment added inside an import() → test edited after red': {
