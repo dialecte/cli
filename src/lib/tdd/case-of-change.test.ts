@@ -1,4 +1,4 @@
-import { isCaseOfChange } from './case-of-change.ts'
+import { isCaseOfBase, isCaseOfChange } from './case-of-change.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -125,4 +125,24 @@ describe('isCaseOfChange', () => {
 				}),
 			).toBe(testCase.changed)
 		})
+})
+
+describe('isCaseOfBase', () => {
+	it('a title of the base written once more now (a new it reusing it inside another describe of the base) → neither the new case nor the base case of that title is provably of the base: each needs an accept or a red', () => {
+		const base = [
+			"describe('add', () => { it('returns zero', () => { expect(add(0, 0)).toBe(0) }) })",
+			"describe('sub', () => { it('one', () => { expect(sub(1, 0)).toBe(1) }) })",
+			'',
+		].join('\n')
+		const text = base.replace(
+			"it('one', () => { expect(sub(1, 0)).toBe(1) })",
+			"it('one', () => { expect(sub(1, 0)).toBe(1) }); it('returns zero', () => { expect(sub(0, 0)).toBe(0) })",
+		)
+		const file = { file: 'src/math.test.ts', text, baseText: base }
+
+		expect({
+			reused: isCaseOfBase({ file, name: 'sub > returns zero' }),
+			original: isCaseOfBase({ file, name: 'add > returns zero' }),
+		}).toEqual({ reused: false, original: false })
+	})
 })

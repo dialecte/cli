@@ -1,13 +1,15 @@
 /**
  * The state of the change's tests, as `tdd status` and the gate read it: every case of the changed test
  * files (a collect-only run) with its status and flags; the test code changed since the red run that last
- * froze it; the test cases the change deletes; the files whose cases cannot be listed.
+ * froze it; the test cases the change deletes (an untitled test call of the base, in a file a `gone` entry of
+ * the lot file names, is declared gone with its reason); the files whose cases cannot be listed.
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { isWrittenAsString } from './case-of-change.ts'
 import { caseStatusOf, flagsOf, frozenHashOf } from './case-status.ts'
+import { entryNamesFile, readGoneEntries } from './lot-declaration.ts'
 import { createModuleResolver } from './module-resolver.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { readRunCases } from './select-cases.ts'
@@ -17,11 +19,12 @@ import {
 	listDeletedTestFiles,
 	readAtBase,
 } from './tdd-files.ts'
+import { UNTITLED_CALL_GONE } from './tdd.constants.ts'
 import { listTestDependencies } from './test-dependencies.ts'
 import { listTestCalls } from './test-source.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { ChangedTestFile, TddFinding, TddLedger, TddState } from './tdd.types.ts'
+import type { ChangedTestFile, LotGoneEntry, TddFinding, TddLedger, TddState } from './tdd.types.ts'
 
 export async function readTddState(params: {
 	root: string
@@ -35,7 +38,9 @@ export async function readTddState(params: {
 		.filter(([file, hash]) => frozenHashOf({ ledger, file }) !== hash)
 		.map(([file]) => file)
 	const changed = listChangedTestFiles({ root, base })
-	const findings = findDeletedCases({ root, base, ledger, changed })
+	const gone = readGoneEntries(root)
+	if ('failure' in gone) return gone
+	const findings = findDeletedCases({ root, base, ledger, changed, gone })
 	if (changed.length === 0) return { cases: [], unfrozen, findings, unlisted: [] }
 	const modules = await runTestCases({
 		root,
@@ -95,6 +100,8 @@ function findDeletedCases(params: {
 	base: string
 	ledger: TddLedger
 	changed: readonly ChangedTestFile[]
+	/** The lot file's `gone` entries. */
+	gone: readonly LotGoneEntry[]
 }): TddFinding[] {
 	const findings: TddFinding[] = []
 	for (const file of params.changed) {
@@ -103,21 +110,37 @@ function findDeletedCases(params: {
 			if (file.text.includes(call.text)) continue
 			if (call.title !== undefined && isWrittenAsString({ text: file.text, title: call.title }))
 				continue
-			findings.push({
-				file: file.file,
-				detail: call.title
-					? `the test "${call.title}" of the base is gone`
-					: 'a test call of the base is gone',
-			})
+			if (call.title !== undefined) {
+				findings.push({
+					verb: 'deleted',
+					file: file.file,
+					detail: `the test "${call.title}" of the base is gone`,
+				})
+				continue
+			}
+			// an edited call with a computed title looks deleted: the lot file may say why
+			const declared = params.gone.find((entry) =>
+				entryNamesFile({ entry: entry.file, file: file.file }),
+			)
+			findings.push(
+				declared
+					? { verb: 'gone', file: file.file, detail: `${UNTITLED_CALL_GONE} (${declared.reason})` }
+					: { verb: 'deleted', file: file.file, detail: UNTITLED_CALL_GONE },
+			)
 		}
 	}
 	for (const file of listDeletedTestFiles(params))
-		findings.push({ file, detail: 'the test file of the base is deleted' })
+		findings.push({ verb: 'deleted', file, detail: 'the test file of the base is deleted' })
 	const receiptFiles = new Set(
 		params.ledger.entries.flatMap((entry) => (entry.kind === 'freeze' ? [] : [entry.file])),
 	)
 	for (const file of receiptFiles)
 		if (!existsSync(join(params.root, file)) && readAtBase({ ...params, file }) === undefined)
-			findings.push({ file, detail: 'a new test file deleted after its receipts' })
+			findings.push({ verb: 'deleted', file, detail: 'a new test file deleted after its receipts' })
 	return findings
+}
+
+/** A finding as `tdd status` and the gate print it: `deleted  <file>  <detail>`, `gone  <file>  <detail>`. */
+export function findingLine(finding: TddFinding): string {
+	return `${finding.verb}  ${finding.file}  ${finding.detail}`
 }

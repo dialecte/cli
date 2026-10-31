@@ -1,18 +1,26 @@
 /**
  * `dialecte handover run <folder>`: the guards, then the lots not committed yet, then the card. With a
- * rehearsal, the guards read the repository and the lots are committed in its scratch clone.
+ * rehearsal, the guards read the repository and the lots are committed in its scratch clone. A real run
+ * that leaves every lot committed then moves the lot file (`.dialecte/lot.json`) into the folder: the next
+ * lot on the branch starts from an empty declaration, not from this lot's entries.
  */
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { renderCard } from '../card/render-card.ts'
 import { formatDuration } from '../progress/format-duration.ts'
+import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard, handoverCardRows } from './handover-card.ts'
 import { handoverLockPath } from './handover-lock.ts'
-import { COMMIT_SCRIPT_FILE } from './handover.constants.ts'
+import {
+	ARCHIVED_LOT_FILE,
+	COMMIT_SCRIPT_FILE,
+	EMPTY_LOT_DECLARATION,
+	LOT_FILE_ARCHIVED,
+} from './handover.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
@@ -97,9 +105,45 @@ export async function runHandoverFolder(params: {
 		width: params.columns,
 	})
 	for (const line of box.split('\n')) write(line)
+	// after the card, which shows the entries the lot file held
+	if (card.done) {
+		const archived = archiveLotFile({ root: lotsFile.repository, folder: handover.folder })
+		if (archived) write(LOT_FILE_ARCHIVED.replace('{path}', archived))
+	}
 	// whole on one line, whatever the width: a person copies it
 	if (!card.done) write(card.command)
 	return committed ? 0 : 1
+}
+
+/**
+ * Moves the worktree's lot file into the hand-over folder and leaves an empty declaration in its place;
+ * the archived path, or undefined when there is nothing to archive (no lot file, an empty one) or the
+ * folder holds one already (a second run: the first archive stays).
+ */
+function archiveLotFile(params: { root: string; folder: string }): string | undefined {
+	const source = join(params.root, LOT_FILE)
+	const target = join(params.folder, ARCHIVED_LOT_FILE)
+	if (!existsSync(source) || existsSync(target)) return undefined
+	if (isEmptyDeclaration(readFileSync(source, 'utf8'))) return undefined
+	copyFileSync(source, target)
+	writeFileSync(source, EMPTY_LOT_DECLARATION)
+	return target
+}
+
+/** A JSON object with no key (`{}`, ` { }`): a lot file that declares nothing. */
+function isEmptyDeclaration(text: string): boolean {
+	try {
+		const declaration: unknown = JSON.parse(text)
+		return (
+			typeof declaration === 'object' &&
+			declaration !== null &&
+			!Array.isArray(declaration) &&
+			Object.keys(declaration).length === 0
+		)
+	} catch {
+		// not JSON: it holds something the lot wrote, kept with the hand-over
+		return false
+	}
 }
 
 /** The repository's hand-over lock goes when it names this folder's script. */

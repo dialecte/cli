@@ -127,13 +127,19 @@ export type CaseStatusLine = TestCaseId & { status: CaseStatus; flags: ReceiptFl
 export type ChangedTestFile = { file: string; text: string; baseText: string | undefined }
 
 /** The tdd state of a lot, as `.dialecte/lot.json` declares it. */
-export type LotDeclaration = { tdd?: string; accept?: unknown; revised?: unknown }
+export type LotDeclaration = { tdd?: string; accept?: unknown; revised?: unknown; gone?: unknown }
 
 /**
  * A case the lot file names with a reason: accepted without a red, or revised at review.
  * `<file>::<name>` (` [project]` when a project runs it).
  */
 export type LotCaseEntry = { case: string; reason: string }
+
+/**
+ * A test file (or a glob over test files) whose test calls of the base, gone without a title, the lot
+ * declares with a reason: `"gone": [{ "file": "<file or glob>", "reason": "..." }]`.
+ */
+export type LotGoneEntry = { file: string; reason: string }
 
 /** The lists of cases a lot file may hold. */
 export type LotCaseList = 'accept' | 'revised'
@@ -186,8 +192,12 @@ export type RunnerError = {
 /** A test call of a file: its title as written (undefined when computed) and its source. */
 export type TestCall = { title: string | undefined; text: string }
 
-/** What the review should see beside the case statuses: test cases gone since the base, a file left out. */
-export type TddFinding = { file: string; detail: string }
+/**
+ * What the review should see beside the case statuses: test cases gone since the base, a file left out.
+ * `gone`: a test call of the base gone without a title, in a file a `gone` entry of the lot file names
+ * (its reason in the detail); `deleted`: any other.
+ */
+export type TddFinding = { verb: 'deleted' | 'gone'; file: string; detail: string }
 
 /**
  * The state of the change's test code and cases, as `tdd status` and the gate read it: each case, the test
@@ -208,6 +218,8 @@ export type RunCase = TestCaseId & {
 	caseHash: string
 	/** New or changed since the base, by its test call and titles. */
 	ofChange: boolean
+	/** The base provably holds it (its file, its own title and every title written now), whatever its call. */
+	ofBase: boolean
 }
 
 /** Where an import of a test file leads. */

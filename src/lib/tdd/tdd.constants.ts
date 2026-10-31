@@ -132,7 +132,7 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
 /** The keys a lot file may hold; any other is a typo, refused. */
-export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised']
+export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone']
 
 /** The keys of an `accept` or `revised` entry. */
 export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
@@ -165,7 +165,23 @@ export const HOLE_TOKEN = '<hole>'
 export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
 
 /** What `dialecte lot` writes. */
-export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised']
+export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone']
 
 export const LOT_USAGE =
-	'exempt <reason> | accept <case> <reason> | revised <case> <reason> (writes .dialecte/lot.json at the package root)'
+	'exempt <reason> | accept <case> <reason> | revised <case> <reason> | gone <file|glob> <reason> (writes .dialecte/lot.json at the package root; a case is <file>::<name>, a revised one may also be a file or a glob)'
+
+/** The keys of a `gone` entry. */
+export const GONE_ENTRY_KEYS: readonly string[] = ['file', 'reason']
+
+/** What `"gone"` of the lot file must hold. */
+export const GONE_LIST_SHAPE =
+	'each "gone" entry must be { "file": "<file or glob>", "reason": "<why>" }'
+
+/** Characters a regular expression reads as syntax: a glob's literal characters, escaped. */
+export const GLOB_SPECIAL_CHARACTER_PATTERN = /[.+^${}()|[\]\\]/g
+
+/** A test call of the base gone without a title: the finding a `gone` entry of the lot file covers. */
+export const UNTITLED_CALL_GONE = 'a test call of the base is gone'
+
+/** A passing case a `revised` entry names that the base cannot be shown to hold. */
+export const NOT_PROVABLY_OF_THE_BASE = 'not provably a case of the base: accept it or prove it red'

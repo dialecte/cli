@@ -148,3 +148,15 @@ export const STAGED_SUFFIX = '.staged'
 
 /** In the install backup: the working file did not exist. */
 export const ABSENT_SUFFIX = '.absent'
+
+/** The card's line for the accepted and revised receipts of earlier lots, `{counts}` a count per kind. */
+export const EARLIER_LOTS_LINE = 'earlier lots: {counts} (not in the lot file)'
+
+/** Where `handover run` moves the lot file of a committed hand-over: in its folder. */
+export const ARCHIVED_LOT_FILE = 'lot.json'
+
+/** The line `handover run` writes when it moves the lot file into the hand-over folder. */
+export const LOT_FILE_ARCHIVED = 'lot file archived: {path}'
+
+/** What a lot file holds once archived: an empty declaration. */
+export const EMPTY_LOT_DECLARATION = '{}\n'

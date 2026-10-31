@@ -8,13 +8,15 @@
  *   assertion (or on a stub's `not implemented`, or on a TypeError of existing code, inside an asserting
  *   `expect(...)`) gets a red receipt; a passing case that is new or changed is refused (it proves
  *   nothing), one the same as at the base is marked unchanged, one with a receipt and the same test call is
- *   kept, one the lot declares revised at review is recorded revised. A file with a refusal still records
- *   its other cases' receipts but is not frozen; the files without a refusal are frozen, and the changed
- *   helpers, fixtures and snapshots a red of theirs depends on. The change is measured from HEAD (the
+ *   kept, one the lot declares revised at review (a proven case, or an edited case the base provably
+ *   holds) is recorded revised. A file with a refusal still records its other cases' receipts but is not
+ *   frozen; the files without a refusal are frozen, and the changed helpers, fixtures and snapshots a red
+ *   or a revised case of theirs depends on. The change is measured from HEAD (the
  *   uncommitted lot), or from where HEAD left `--base <ref>`.
  * - `green`: every case of the changed test files (or those named) must hold a red receipt, its file and
  *   its test call as frozen, the helpers untouched, production changed since its red, and pass.
- * - `status`: each case of the change, the test code changed since it was frozen, the deleted cases.
+ * - `status`: each case of the change, the test code changed since it was frozen, the deleted cases (and
+ *   the test calls of the base the lot file declares gone).
  */
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { runsTestsInABrowser } from '../lib/gate/run-gate.ts'
@@ -30,7 +32,12 @@ import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { frozenHashOf, receiptsOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
-import { readAcceptances, readRevisions } from '../lib/tdd/lot-declaration.ts'
+import {
+	findCaseEntry,
+	namesOneCase,
+	readAcceptances,
+	readRevisions,
+} from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
@@ -48,11 +55,12 @@ import {
 	readLedger,
 	resolveBase,
 } from '../lib/tdd/tdd-files.ts'
-import { readTddState } from '../lib/tdd/tdd-state.ts'
+import { findingLine, readTddState } from '../lib/tdd/tdd-state.ts'
 import {
 	CHANGED_AND_PASSES,
 	FROZEN_AFTER_RED,
 	NO_RED_RECEIPT,
+	NOT_PROVABLY_OF_THE_BASE,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
 	PROOF_KINDS,
@@ -275,8 +283,8 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 		}
 		if (refused) continue
 		frozen[file.file] = testCode.get(file.file) ?? ''
-		// a helper, fixture or snapshot is frozen only by a red it can have shaped
-		if (judged.some((judgement) => judgement.kind === 'red'))
+		// a helper, fixture or snapshot is frozen only by a red it can have shaped, or a revision declared
+		if (judged.some((judgement) => judgement.kind === 'red' || judgement.kind === 'revised'))
 			for (const dependency of dependencies)
 				if (testCode.has(dependency)) frozen[dependency] = testCode.get(dependency) ?? ''
 	}
@@ -320,9 +328,11 @@ function judgeRed(params: {
 		}
 		const flags: ReceiptFlag[] = []
 		if (isRolledBack({ receipts, productionHash })) flags.push('rollback')
-		// a case the lot declares revised at review is made red again on purpose
-		const revised = params.revisions.some((revision) => revision.case === caseLabel(testCase))
-		if (prior?.kind === 'green' && prior.productionHash === productionHash && !revised)
+		// a case the lot names revised at review is made red again on purpose; a file or glob entry
+		// records only passing cases revised, so it never excuses a red
+		const revised = findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })
+		const namedRevised = revised !== undefined && namesOneCase(revised.case)
+		if (prior?.kind === 'green' && prior.productionHash === productionHash && !namedRevised)
 			flags.push('red after green')
 		return {
 			testCase,
@@ -340,7 +350,7 @@ function judgeRed(params: {
 			reason: 'failed',
 			flags: [],
 		}
-	const acceptance = params.acceptances.find((accepted) => accepted.case === caseLabel(testCase))
+	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
 	if (acceptance)
 		return {
 			testCase,
@@ -349,9 +359,16 @@ function judgeRed(params: {
 			reason: acceptance.reason,
 			flags: [],
 		}
-	const revision = params.revisions.find((revised) => revised.case === caseLabel(testCase))
+	const revision = findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })
+	// a file or glob entry never stands for the green a red case still owes; an exact entry may
+	const covers = revision !== undefined && (namesOneCase(revision.case) || !awaitsGreen(receipts))
 	// a proven case edited at review passes: the lot's reason stands for a new red
-	if (revision && prior && (prior.caseHash !== testCase.caseHash || params.testCodeChanged))
+	if (
+		revision &&
+		covers &&
+		prior &&
+		(prior.caseHash !== testCase.caseHash || params.testCodeChanged)
+	)
 		return {
 			testCase,
 			kind: 'revised',
@@ -387,6 +404,19 @@ function judgeRed(params: {
 			reason: CHANGED_AND_PASSES,
 			flags: [],
 		}
+	// a case of the base edited at review: the base proves it as a receipt would; a new one needs a red
+	if (revision && testCase.ofChange) {
+		if (testCase.ofBase)
+			return {
+				testCase,
+				kind: 'revised',
+				detail: revision.reason,
+				reason: revision.reason,
+				flags: [],
+			}
+		const reason = `${PROVES_NOTHING}; ${NOT_PROVABLY_OF_THE_BASE}`
+		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+	}
 	if (testCase.ofChange) {
 		const lastGreen = [...ledger.entries]
 			.reverse()
@@ -398,6 +428,14 @@ function judgeRed(params: {
 		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
 	}
 	return { testCase, kind: 'unchanged', detail: '', flags: [] }
+}
+
+/** The case's last proof is a red with no green after it: its green is still owed. */
+function awaitsGreen(receipts: readonly TddReceipt[]): boolean {
+	const lastProof = receipts.map((receipt) => PROOF_KINDS.includes(receipt.kind)).lastIndexOf(true)
+	return (
+		receipts[lastProof]?.kind === 'red' && lastIndexOfKind({ receipts, kind: 'green' }) < lastProof
+	)
 }
 
 function lastIndexOfKind(params: {
@@ -552,7 +590,7 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 		...(helpersUnfrozen.length
 			? [`test code changed outside tdd red: ${helpersUnfrozen.join(', ')}`]
 			: []),
-		...state.findings.map((finding) => `deleted  ${finding.file}  ${finding.detail}`),
+		...state.findings.map(findingLine),
 		...state.unlisted.map(
 			(file) =>
 				`cannot list  ${file.file}  ${file.failure.kind}: ${firstLine(file.failure.message)}`,
