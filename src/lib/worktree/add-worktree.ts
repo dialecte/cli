@@ -83,7 +83,7 @@ export function addWorktree(params: {
 }
 
 /** The folder of the worktree that has `branch` checked out (the main checkout included); none when no worktree has. */
-function checkoutOf(params: { repository: string; branch: string }): string | undefined {
+export function checkoutOf(params: { repository: string; branch: string }): string | undefined {
 	let path: string | undefined
 	for (const line of readGit({
 		root: params.repository,

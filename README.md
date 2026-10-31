@@ -36,6 +36,8 @@ dialecte tdd red|green|status   # receipts: each new test failed on an assertion
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
 dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
+dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
+dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
@@ -145,7 +147,7 @@ The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](ht
 
 ## Contributing to a Dialecte package
 
-Seven commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Nine commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
@@ -359,6 +361,37 @@ the answer.
   `node_modules`, `dist`, `.vitepress/cache`, `.vitepress/dist`, `.DS_Store` and the hooks folder; a long
   list is counted, the first three named); a rehearsal clone whose process still runs, or without a
   marker. It reads each worktree with `git --no-optional-locks`, so it never rewrites an index.
+- `dialecte record review|decision|snapshot` and `dialecte review delta` keep a lot's review rounds in its
+  hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
+  folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
+  words after it are taken as they are, so a finding or a reason may start with `--`.
+  - `record review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
+    appends the row `| R<n>-<k> | <n> | <severity> | <file:line> | <finding> | open |` to
+    `<folder>/findings-ledger.md` (the folder, the file and its table made when absent; k one past the
+    highest of the round). A `|` is written `\|`; a line break is refused. A hand-written ledger keeps
+    every other byte.
+  - `record decision <folder> <id> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
+    `fixed <round> [note]` (a round after the one that raised it), `accepted <reason>`, `logged <where>`.
+    An id not in the ledger is refused, naming the ids it holds.
+  - `record snapshot <folder> --round <n>` copies every file `git status --porcelain -z
+--untracked-files=all` lists at the worktree root (the old path of a rename included) to
+    `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
+    disk (or now a folder) that HEAD holds goes in `round-<n>.deleted`, NUL-separated, sorted; HEAD in
+    `round-<n>.base`. An existing round, an untracked nested repository and a submodule (a gitlink in the
+    index or at HEAD) are refused; a run that
+    stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
+    never part of it.
+  - `review delta <folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
+    `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
+    in the form that fits where the file is: the snapshot copy against the worktree file (or
+    `/dev/null` when it is gone), `/dev/null` against a file deleted then and back now or new and absent
+    from the base, `git diff HEAD` for a file round n-1 had at the base. Files unchanged since round n-1
+    are left out; colour, external diff and textconv settings never apply. It refuses when HEAD moved
+    since `round-<n-1>.base`, and refuses a nested repository or a submodule as `record snapshot` does. `--worktree` adds a throwaway worktree on the branch
+    `<lot branch>-round-<n-1>` from the lot's branch tip: the deletions applied with `git rm
+--pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
+    prints its path and the removal command with its absolute `cd`. The lot's worktree is never
+    changed.
 
 `gate --fast` starts with the hygiene of the worktree: nothing staged; no stash entry pushed on this
 worktree's branch since `worktree add` made it (the baseline keeps every stash entry it saw, so another
