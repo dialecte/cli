@@ -8,9 +8,20 @@
  * Bundled with tsup; the shebang is injected by the tsup banner.
  */
 import { COMMANDS, HELP } from './cli.constants.ts'
+import {
+	clearRepositoryEnvironment,
+	ignoredRepositoryEnvironmentLine,
+	namesAnotherRepository,
+} from './lib/git-environment.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
 
 async function main(): Promise<void> {
+	// run from a commit hook, git's GIT_DIR and GIT_INDEX_FILE would point every git command at the
+	// committed repository; said only when they named another repository than the folder's own
+	const given = { ...process.env }
+	const cleared = clearRepositoryEnvironment(process.env)
+	if (namesAnotherRepository({ given, folder: process.cwd() }))
+		console.error(ignoredRepositoryEnvironmentLine(cleared))
 	const invocation = parseInvocation({
 		argv: process.argv.slice(2),
 		commandNames: Object.keys(COMMANDS),
