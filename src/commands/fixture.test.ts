@@ -50,7 +50,7 @@ describe('test XML validator', () => {
 			assertValidTestXml(
 				'<Root xmlns="http://dialecte.dev/XML/DEFAULT"><AA_1 aAA_1="x"><AAA_1 aAAA_1="abc"><AAAA_1 aAAAA_1="x"/></AAA_1></AA_1></Root>',
 			),
-		).toThrow(/AA_1/)
+		).toThrow(/^fixture: not valid core test dialecte:[\s\S]*AA_1/)
 	})
 })
 
