@@ -3,7 +3,7 @@
  * earlier committed lots, a package whose `src/test` is a production entry, a formatter pass or a review
  * revision after the code exists, a file with one refused case.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
@@ -795,5 +795,521 @@ describe('a green case after the next file is red', { timeout: 240_000 }, () => 
 		])
 		expect(afterEdit[0]).toBe('red  add > one plus two → three')
 		expect(afterFix[0]).toBe('green  add > one plus two → three')
+	})
+})
+
+describe('a revised case freezes the test code it depends on', { timeout: 240_000 }, () => {
+	const CASE = 'src/add.test.ts::add > one plus two → three'
+	const REASON = 'the review asked for the zero case'
+	const FIXTURE = 'test/fixtures/expected.ts'
+	const FIXTURE_TEST = ADD_TEST.replace(
+		"import { add } from './add.ts'",
+		"import { add } from './add.ts'\nimport { EXPECTED } from '../test/fixtures/expected.ts'",
+	).replace('toBe(3)', 'toBe(EXPECTED)')
+	const REVISED_FIXTURE_TEST = FIXTURE_TEST.replace(
+		'expect(add(1, 2)).toBe(EXPECTED)',
+		'expect(add(1, 2)).toBe(EXPECTED); expect(add(0, 0)).toBe(0)',
+	)
+
+	it('a proven case and its fixture edited at review, declared revised → red records it revised and freezes both; the gate tdd step passes', async () => {
+		const root = createVitestPackage({ dialecte: GATE_CONFIG })
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': ADD_STUB,
+				'src/add.test.ts': FIXTURE_TEST,
+				[FIXTURE]: 'export const EXPECTED = 3\n',
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), ADD)
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': REVISED_FIXTURE_TEST,
+				[FIXTURE]: 'export const EXPECTED = 1 + 2\n',
+				'.dialecte/lot.json': JSON.stringify({ revised: [{ case: CASE, reason: REASON }] }),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output)).toEqual([`revised  ${CASE}  ${REASON}`])
+		expect(red.output.split('\n').at(-1)).toMatch(
+			/; frozen: src\/add\.test\.ts, test\/fixtures\/expected\.ts$/,
+		)
+		expect(result.output.split('\n')[1]).toBe('ok    tdd  1 case(s) of the change: 1 revised')
+	})
+
+	it('a case of the base and its fixture edited, declared revised → red records it revised (no receipt needed) and freezes both; the gate tdd step passes', async () => {
+		const root = createVitestPackage({
+			dialecte: GATE_CONFIG,
+			files: {
+				'src/add.ts': ADD,
+				'src/add.test.ts': FIXTURE_TEST,
+				[FIXTURE]: 'export const EXPECTED = 3\n',
+			},
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': REVISED_FIXTURE_TEST,
+				[FIXTURE]: 'export const EXPECTED = 1 + 2\n',
+				'.dialecte/lot.json': JSON.stringify({ revised: [{ case: CASE, reason: REASON }] }),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output)).toEqual([`revised  ${CASE}  ${REASON}`])
+		expect(red.output.split('\n').at(-1)).toMatch(
+			/; frozen: src\/add\.test\.ts, test\/fixtures\/expected\.ts$/,
+		)
+		expect(result.output.split('\n').slice(1, 3)).toEqual([
+			'ok    tdd  1 case(s) of the change: 1 revised',
+			`        revised  ${CASE}  ${REASON}`,
+		])
+	})
+
+	it('a fixture edited for a file whose only case is accepted → not frozen, the gate fails naming it; a revised base case of another file is frozen; a glob accept entry is reported unused', async () => {
+		const SUB_CASE = 'src/sub.test.ts::sub > three minus one → two'
+		const root = createVitestPackage({
+			dialecte: GATE_CONFIG,
+			files: { 'src/add.ts': ADD, 'src/sub.ts': SUB, 'src/sub.test.ts': SUB_TEST },
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': FIXTURE_TEST,
+				[FIXTURE]: 'export const EXPECTED = 3\n',
+				'src/sub.test.ts': SUB_TEST.replace(
+					'expect(sub(3, 1)).toBe(2)',
+					'expect(sub(3, 1)).toBe(2); expect(sub(2, 0)).toBe(2)',
+				),
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [
+						{ case: CASE, reason: 'pins existing behaviour' },
+						{ case: 'src/**/*.test.ts', reason: 'a glob is never accepted' },
+					],
+					revised: [{ case: SUB_CASE, reason: REASON }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
+
+		expect(caseLines(red.output)).toEqual([
+			`accepted  ${CASE}  pins existing behaviour`,
+			`revised  ${SUB_CASE}  ${REASON}`,
+		])
+		expect(red.output.split('\n').at(-1)).toMatch(
+			/; frozen: src\/add\.test\.ts, src\/sub\.test\.ts$/,
+		)
+		expect(result.exitCode).toBe(1)
+		expect(result.output.split('\n')[1]).toBe(
+			'FAIL  tdd  test code changed outside tdd red: test/fixtures/expected.ts',
+		)
+		expect(result.output.split('\n')).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(
+					/^ *unused accept {2}src\/\*\*\/\*\.test\.ts {2}.*a glob is never accepted/,
+				),
+			]),
+		)
+	})
+})
+
+describe(
+	'revised for a case of the base: only what the base provably held',
+	{ timeout: 240_000 },
+	() => {
+		const REASON = 'a mechanical rename across the file'
+
+		/** The base holds `add` and its test `base`; the lot rewrites the test as `now`, the lot file as `declaration`. */
+		function baseEditedAs(params: {
+			base: string
+			now: string
+			declaration: Record<string, unknown>
+			files?: Record<string, string>
+			baseFiles?: Record<string, string>
+		}): string {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: { 'src/add.ts': ADD, 'src/add.test.ts': params.base, ...params.baseFiles },
+			})
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': params.now,
+					'.dialecte/lot.json': JSON.stringify(params.declaration),
+					...params.files,
+				},
+			})
+			return root
+		}
+
+		const EDITED_CALL = ADD_TEST.replace(
+			'expect(add(1, 2)).toBe(3)',
+			'expect(add(1, 2)).toBe(3); expect(add(2, 1)).toBe(3)',
+		)
+
+		/** The add test with a second case, `zero plus zero → zero`, that the lot never touches. */
+		function withZeroCase(text: string): string {
+			return text.replace(
+				'\n})',
+				"\n\tit('zero plus zero → zero', () => { expect(add(0, 0)).toBe(0) })\n})",
+			)
+		}
+
+		const UNTOUCHED = 'unchanged  src/add.test.ts::add > zero plus zero → zero'
+
+		it('a file entry → the edited base case is revised with its reason, an untouched one stays unchanged; a new title in the same file is still refused; an accept entry naming the file accepts nothing', async () => {
+			const root = baseEditedAs({
+				base: withZeroCase(ADD_TEST),
+				now: withZeroCase(EDITED_CALL).replace(
+					'toBe(0) })\n})',
+					"toBe(0) })\n\tit('two plus two → four', () => { expect(add(2, 2)).toBe(4) })\n})",
+				),
+				declaration: {
+					revised: [{ case: 'src/add.test.ts', reason: REASON }],
+					accept: [{ case: 'src/add.test.ts', reason: 'pins existing behaviour' }],
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				`revised  src/add.test.ts::add > one plus two → three  ${REASON}`,
+				UNTOUCHED,
+				expect.stringMatching(/^refused {2}src\/add\.test\.ts::add > two plus two → four {2}/),
+			])
+		})
+
+		it('a glob entry → the edited base case is revised, an untouched one stays unchanged; a case of a new file the glob matches is still refused', async () => {
+			const root = baseEditedAs({
+				base: withZeroCase(ADD_TEST),
+				now: withZeroCase(EDITED_CALL),
+				declaration: { revised: [{ case: 'src/**/*.test.ts', reason: REASON }] },
+				files: { 'src/sub.ts': SUB, 'src/sub.test.ts': SUB_TEST },
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				`revised  src/add.test.ts::add > one plus two → three  ${REASON}`,
+				UNTOUCHED,
+				expect.stringMatching(/^refused {2}src\/sub\.test\.ts::sub > three minus one → two {2}/),
+			])
+		})
+
+		it('a table whose call is edited and a row added → the row of the base is revised, the added row is refused', async () => {
+			function tableTest(params: { rows: string[]; call: string }): string {
+				return [
+					"import { add } from './add.ts'",
+					"import { describe, expect, it } from 'vitest'",
+					'const SUMS: Record<string, [number, number, number]> = {',
+					...params.rows,
+					'}',
+					"describe('add', () => {",
+					'\tfor (const [name, [left, right, total]] of Object.entries(SUMS))',
+					`\t\tit(name, () => { ${params.call} })`,
+					'})',
+					'',
+				].join('\n')
+			}
+			const root = baseEditedAs({
+				base: tableTest({
+					rows: ["\t'one plus two': [1, 2, 3],"],
+					call: 'expect(add(left, right)).toBe(total)',
+				}),
+				now: tableTest({
+					rows: ["\t'one plus two': [1, 2, 3],", "\t'two plus two': [2, 2, 4],"],
+					call: 'expect(add(left, right)).toBe(total); expect(add(right, left)).toBe(total)',
+				}),
+				declaration: { revised: [{ case: 'src/add.test.ts', reason: REASON }] },
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(caseLines(red.output)).toEqual([
+				`revised  src/add.test.ts::add > one plus two  ${REASON}`,
+				expect.stringMatching(/^refused {2}src\/add\.test\.ts::add > two plus two {2}/),
+			])
+		})
+
+		it('a glob entry over a base case whose describe is renamed (same it title) and call edited → refused: a title of its name is not in the base; an edited base case of another file is revised', async () => {
+			const root = baseEditedAs({
+				base: ADD_TEST,
+				now: EDITED_CALL.replace("describe('add'", "describe('sum'"),
+				declaration: { revised: [{ case: 'src/**/*.test.ts', reason: REASON }] },
+				baseFiles: { 'src/sub.ts': SUB, 'src/sub.test.ts': SUB_TEST },
+				files: {
+					'src/sub.test.ts': SUB_TEST.replace(
+						'expect(sub(3, 1)).toBe(2)',
+						'expect(sub(3, 1)).toBe(2); expect(sub(2, 0)).toBe(2)',
+					),
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(/^refused {2}src\/add\.test\.ts::sum > one plus two → three {2}/),
+				`revised  src/sub.test.ts::sub > three minus one → two  ${REASON}`,
+			])
+		})
+
+		it('a title the file computes (a template), not written as a string at the base → refused: not provably a case of the base', async () => {
+			function computedTitleTest(call: string): string {
+				return [
+					"import { add } from './add.ts'",
+					"import { describe, expect, it } from 'vitest'",
+					"describe('add', () => {",
+					`\tfor (const total of [3]) it(\`sums to \${total}\`, () => { ${call} })`,
+					'})',
+					'',
+				].join('\n')
+			}
+			const root = baseEditedAs({
+				base: computedTitleTest('expect(add(1, 2)).toBe(total)'),
+				now: computedTitleTest('expect(add(1, 2)).toBe(total); expect(add(2, 1)).toBe(total)'),
+				declaration: {
+					revised: [{ case: 'src/add.test.ts::add > sums to 3', reason: REASON }],
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					/^refused {2}src\/add\.test\.ts::add > sums to 3 {2}.*not provably a case of the base: accept it or prove it red/,
+				),
+			])
+		})
+
+		it('a proven case revised by a file entry, a file entry over a file of red-then-green cases and a glob matching nothing → the gate lists the case with the reason and the other two as unused', async () => {
+			const CASE = 'src/add.test.ts::add > one plus two → three'
+			const root = createVitestPackage({ dialecte: GATE_CONFIG })
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': ADD_STUB,
+					'src/add.test.ts': ADD_TEST,
+					'src/sub.ts': SUB_STUB,
+					'src/sub.test.ts': SUB_TEST,
+				},
+			})
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFiles({ root, files: { 'src/add.ts': ADD, 'src/sub.ts': SUB } })
+			await tdd({ cwd: root, argv: ['green'] })
+			writeFiles({
+				root,
+				files: {
+					'src/add.test.ts': EDITED_CALL,
+					'.dialecte/lot.json': JSON.stringify({
+						revised: [
+							{ case: 'src/add.test.ts', reason: REASON },
+							{ case: 'src/sub.test.ts', reason: 'only red there' },
+							{ case: 'lib/**/*.test.ts', reason: 'nothing there' },
+						],
+					}),
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+			expect(caseLines(red.output)).toEqual([
+				`revised  ${CASE}  ${REASON}`,
+				expect.stringMatching(/^kept {5}src\/sub\.test\.ts::sub > three minus one → two/),
+			])
+			expect(result.exitCode).toBe(0)
+			expect(result.output.split('\n').slice(1, 5)).toEqual([
+				'ok    tdd  2 case(s) of the change: 1 red then green, 1 revised',
+				`        revised  ${CASE}  ${REASON}`,
+				expect.stringMatching(
+					/^ {8}unused revised entry {2}src\/sub\.test\.ts {2}.*only red there/,
+				),
+				expect.stringMatching(
+					/^ {8}unused revised entry {2}lib\/\*\*\/\*\.test\.ts {2}.*nothing there/,
+				),
+			])
+		})
+	},
+)
+
+describe('a test call of the base gone, declared in the lot file', { timeout: 240_000 }, () => {
+	const REASON = 'the zero case moved into a table'
+	const BASE_TEST = [
+		"import { add } from './add.ts'",
+		"import { describe, expect, it } from 'vitest'",
+		"const ZERO_TITLE = 'zero plus zero → zero'",
+		"describe('add', () => {",
+		"\tit('one plus two → three', () => { expect(add(1, 2)).toBe(3) })",
+		'\tit(ZERO_TITLE, () => { expect(add(0, 0)).toBe(0) })',
+		"\tit('two plus two → four', () => { expect(add(2, 2)).toBe(4) })",
+		'})',
+		'',
+	].join('\n')
+
+	it('an untitled call gone in a file the entry matches → "gone" with the reason in status and the gate; a titled call gone and a deleted test file stay "deleted"; an entry matching nothing is unused', async () => {
+		const root = createVitestPackage({
+			dialecte: GATE_CONFIG,
+			files: {
+				'src/add.ts': ADD,
+				'src/add.test.ts': BASE_TEST,
+				'src/sub.ts': SUB,
+				'src/sub.test.ts': SUB_TEST,
+			},
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': ADD_TEST,
+				'.dialecte/lot.json': JSON.stringify({
+					gone: [
+						{ file: 'src/**/*.test.ts', reason: REASON },
+						{ file: 'lib/**/*.test.ts', reason: 'nothing there' },
+					],
+				}),
+			},
+		})
+		rmSync(join(root, 'src/sub.test.ts'))
+		await tdd({ cwd: root, argv: ['red'] })
+
+		const status = await tdd({ cwd: root, argv: ['status'] })
+		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
+
+		const gone = `gone  src/add.test.ts  a test call of the base is gone (${REASON})`
+		const titled = 'deleted  src/add.test.ts  the test "two plus two → four" of the base is gone'
+		const deletedFile = 'deleted  src/sub.test.ts  the test file of the base is deleted'
+		expect(
+			status.output
+				.split('\n')
+				.filter((line) => /^(gone|deleted) /.test(line))
+				.sort(),
+		).toEqual([deletedFile, titled, gone].sort())
+		expect(result.exitCode).toBe(0)
+		const details = result.output
+			.split('\n')
+			.filter((line) => line.startsWith('        '))
+			.map((line) => line.trim())
+		expect(details.filter((line) => !line.startsWith('unused')).sort()).toEqual(
+			[deletedFile, titled, gone].sort(),
+		)
+		expect(details.filter((line) => line.startsWith('unused'))).toEqual([
+			expect.stringMatching(/^unused gone entry {2}lib\/\*\*\/\*\.test\.ts {2}.*nothing there/),
+		])
+	})
+})
+
+describe('what a file or glob revised entry never covers', { timeout: 240_000 }, () => {
+	const REASON = 'a mechanical rename across the file'
+	const GLOB_ENTRY = { revised: [{ case: 'src/**/*.test.ts', reason: REASON }] }
+
+	it('a new it reusing a title of the base inside another describe of the base, under a glob entry → refused, not revised', async () => {
+		const MATH_TEST = [
+			"import { add } from './add.ts'",
+			"import { sub } from './sub.ts'",
+			"import { describe, expect, it } from 'vitest'",
+			"describe('add', () => { it('returns zero', () => { expect(add(0, 0)).toBe(0) }) })",
+			"describe('sub', () => { it('one', () => { expect(sub(1, 0)).toBe(1) }) })",
+			'',
+		].join('\n')
+		const root = createVitestPackage({
+			dialecte: GATE_CONFIG,
+			files: { 'src/add.ts': ADD, 'src/sub.ts': SUB, 'src/math.test.ts': MATH_TEST },
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/math.test.ts': MATH_TEST.replace(
+					"it('one', () => { expect(sub(1, 0)).toBe(1) })",
+					"it('one', () => { expect(sub(1, 0)).toBe(1) }); it('returns zero', () => { expect(sub(0, 0)).toBe(0) })",
+				),
+				'.dialecte/lot.json': JSON.stringify(GLOB_ENTRY),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(1)
+		expect(caseLines(red.output).filter((line) => line.includes('::sub > returns zero'))).toEqual([
+			expect.stringMatching(/^refused {2}src\/math\.test\.ts::sub > returns zero {2}/),
+		])
+	})
+
+	/** A case made red in this lot, then implemented (it passes) but never green; then its file edited outside its call. */
+	async function redThenFileEdited(declaration: Record<string, unknown>): Promise<string> {
+		const root = createVitestPackage({ dialecte: GATE_CONFIG })
+		writeFiles({ root, files: { 'src/add.ts': ADD_STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': ADD,
+				'src/add.test.ts': ADD_TEST.replace(
+					"import { describe, expect, it } from 'vitest'",
+					"import { describe, expect, it } from 'vitest'\nconst UNUSED = 1",
+				),
+				'.dialecte/lot.json': JSON.stringify(declaration),
+			},
+		})
+		return root
+	}
+
+	it('a red case never green, its file then edited, under a glob entry → refused as without the entry; an exact entry naming it → revised', async () => {
+		const CASE = 'src/add.test.ts::add > one plus two → three'
+		const globbed = await redThenFileEdited(GLOB_ENTRY)
+		const exact = await redThenFileEdited({ revised: [{ case: CASE, reason: REASON }] })
+
+		const globRed = await tdd({ cwd: globbed, argv: ['red'] })
+		const exactRed = await tdd({ cwd: exact, argv: ['red'] })
+
+		expect(caseLines(globRed.output)).toEqual([
+			`refused  ${CASE}  test code changed since its red and it passes`,
+		])
+		expect(caseLines(exactRed.output)).toEqual([`revised  ${CASE}  ${REASON}`])
+	})
+
+	it('a glob entry over a file: a case made red again after its green keeps "red after green"; only the case recorded revised drops it', async () => {
+		const TWO_CASES = ADD_TEST.replace(
+			'\n})',
+			"\n\tit('zero plus zero → zero', () => { expect(add(0, 0)).toBe(0) })\n})",
+		)
+		const root = createVitestPackage({ dialecte: GATE_CONFIG })
+		writeFiles({ root, files: { 'src/add.ts': ADD_STUB, 'src/add.test.ts': TWO_CASES } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), ADD)
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add.test.ts': TWO_CASES.replace(
+					'expect(add(1, 2)).toBe(3)',
+					'expect(add(1, 2)).toBe(3); expect(add(2, 1)).toBe(3)',
+				).replace('expect(add(0, 0)).toBe(0)', 'expect(add(0, 0)).toBe(1)'),
+				'.dialecte/lot.json': JSON.stringify(GLOB_ENTRY),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(red.output)).toEqual([
+			`revised  src/add.test.ts::add > one plus two → three  ${REASON}`,
+			expect.stringMatching(
+				/^red {6}src\/add\.test\.ts::add > zero plus zero → zero {2}assertion: .*flags: red after green$/,
+			),
+		])
 	})
 })

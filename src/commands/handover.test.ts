@@ -146,6 +146,40 @@ function installHook(params: { root: string; script: string }): void {
 	git({ root, args: ['config', 'core.hooksPath', '.husky/_'] })
 }
 
+/** The lines of the card's tdd row, without the box and the label. */
+function tddRowLines(output: string): string[] {
+	const lines = output.split('\n')
+	const first = lines.findIndex((line) => line.startsWith('│ tdd '))
+	if (first < 0) return []
+	const rest = lines.slice(first + 1)
+	const end = rest.findIndex((line) => !/^│ {13}\S/.test(line))
+	return [lines[first], ...rest.slice(0, end < 0 ? rest.length : end)].map((line) =>
+		line.slice('│ tdd         '.length).replace(/ *│$/, ''),
+	)
+}
+
+/** A ledger of receipts of `src/read.test.ts`, each with its kind, name and reason. */
+function writeLedger(params: {
+	root: string
+	receipts: Array<{ kind: string; name: string; reason: string }>
+}): void {
+	writeFileSync(
+		join(params.root, '.git', 'dialecte-tdd.json'),
+		JSON.stringify({
+			version: 3,
+			entries: params.receipts.map((receipt) => ({
+				...receipt,
+				file: 'src/read.test.ts',
+				project: '',
+				testFileHash: 'h',
+				caseHash: 'c',
+				productionHash: 'p',
+				at: '2026-10-29T12:00:00.000Z',
+			})),
+		}),
+	)
+}
+
 describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('a changed file in no lot → refused, nothing written', () => {
 		const { lotsPath, out } = prepare({
@@ -416,46 +450,75 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		)
 	})
 
-	it('an accepted receipt whose acceptance left the lot file, and an acceptance no receipt used → both on the card', () => {
+	it("receipts of earlier lots → folded into one count line per kind, a case counted once; a receipt the lot file names listed with the file's reason; an unused entry still listed", () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
 			root,
 			files: {
 				'.dialecte/lot.json': JSON.stringify({
-					accept: [{ case: 'src/read.test.ts::read > unused', reason: 'never run' }],
+					accept: [
+						{ case: 'src/read.test.ts::read > answers one', reason: 'pins existing behaviour' },
+						{ case: 'src/read.test.ts::read > unused', reason: 'never run' },
+					],
 				}),
 			},
 		})
-		writeFileSync(
-			join(root, '.git', 'dialecte-tdd.json'),
-			JSON.stringify({
-				version: 3,
-				entries: [
-					{
-						kind: 'accepted',
-						file: 'src/read.test.ts',
-						name: 'read > answers one',
-						project: '',
-						testFileHash: 'h',
-						caseHash: 'c',
-						productionHash: 'p',
-						reason: 'pins existing behaviour',
-						at: '2026-10-29T12:00:00.000Z',
-					},
-				],
-			}),
-		)
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'accepted', name: 'read > answers one', reason: 'the reason the red run saw' },
+				{ kind: 'accepted', name: 'read > earlier one', reason: 'an earlier lot' },
+				{ kind: 'accepted', name: 'read > earlier one', reason: 'an earlier lot, run again' },
+				{ kind: 'accepted', name: 'read > earlier two', reason: 'an earlier lot' },
+				{ kind: 'revised', name: 'read > earlier three', reason: 'an earlier review' },
+			],
+		})
 
-		expect(writeHandover({ lotsPath }).output.split('\n')).toEqual(
-			expect.arrayContaining([
-				expect.stringMatching(
-					/^│ tdd {9}accepted: src\/read\.test\.ts::read > answers one \(pins existing behaviour\) - no longer in the lot file +│$/,
-				),
-				expect.stringMatching(
-					/^│ {13}accept unused: src\/read\.test\.ts::read > unused \(never run\): no receipt of that case +│$/,
-				),
-			]),
+		expect(tddRowLines(writeHandover({ lotsPath }).output).sort()).toEqual(
+			[
+				'accepted: src/read.test.ts::read > answers one (pins existing behaviour)',
+				'earlier lots: 2 accepted, 1 revised (not in the lot file)',
+				'accept unused: src/read.test.ts::read > unused (never run): no receipt of that case',
+			].sort(),
 		)
+	})
+
+	it("a revised receipt whose file a glob entry of the lot file matches → listed with the entry's reason, the entry not unused, nothing folded", () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					revised: [{ case: 'src/**/*.test.ts', reason: 'the loops were merged' }],
+				}),
+			},
+		})
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'revised', name: 'read > answers one', reason: 'the reason the red run saw' },
+			],
+		})
+
+		expect(tddRowLines(writeHandover({ lotsPath }).output)).toEqual([
+			'revised: src/read.test.ts::read > answers one (the loops were merged)',
+		])
+	})
+
+	it('a gone entry of the lot file → on the card as gone: <file> (<reason>)', () => {
+		const { root, lotsPath } = prepare()
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					gone: [{ file: 'src/read.test.ts', reason: 'the table call was rewritten' }],
+				}),
+			},
+		})
+
+		expect(tddRowLines(writeHandover({ lotsPath }).output)).toEqual([
+			'gone: src/read.test.ts (the table call was rewritten)',
+		])
 	})
 
 	it('--json → the same content as data', () => {
@@ -1673,3 +1736,155 @@ describe(
 		})
 	},
 )
+
+/** The text of a file, or undefined when there is none. */
+function readIfExists(path: string): string | undefined {
+	return existsSync(path) ? readFileSync(path, 'utf8') : undefined
+}
+
+describe('handover run: the lot file archived', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	const DECLARATION = `${JSON.stringify(
+		{
+			accept: [{ case: 'src/read.test.ts::read > answers one', reason: 'pins existing behaviour' }],
+		},
+		null,
+		'\t',
+	)}\n`
+
+	function archivedLines(lines: readonly string[]): string[] {
+		return lines.filter((line) => line.startsWith('lot file archived'))
+	}
+
+	it('every lot committed by a real run → the lot file moved into the folder as lot.json, an empty declaration left, one line says so; the card shows the entries it held', async () => {
+		const { root, lotsPath, out } = prepare()
+		writeFiles({ root, files: { '.dialecte/lot.json': DECLARATION } })
+		writeLedger({
+			root,
+			receipts: [
+				{ kind: 'accepted', name: 'read > answers one', reason: 'pins existing behaviour' },
+			],
+		})
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(0)
+		expect(readIfExists(join(out, 'lot.json'))).toBe(DECLARATION)
+		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe('{}\n')
+		expect(archivedLines(result.lines)).toEqual([`lot file archived: ${join(out, 'lot.json')}`])
+		expect(tddRowLines(result.text)).toEqual([
+			'accepted: src/read.test.ts::read > answers one (pins existing behaviour)',
+		])
+	})
+
+	/** A repository whose pre-commit hook refuses the CHANGELOG lot while `marker` exists; its hand-over written. */
+	function preparedWithRefusingHook(): { root: string; out: string; marker: string } {
+		const { root, lotsPath, out } = prepare()
+		const marker = join(temporaryFolder('dialecte-hook-marker-'), 'refuse')
+		installHook({
+			root,
+			script: `if [ -f '${marker}' ] && git diff --cached --name-only | grep -q CHANGELOG; then exit 1; fi\nexit 0`,
+		})
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		writeFiles({ root, files: { '.dialecte/lot.json': DECLARATION } })
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		return { root, out, marker }
+	}
+
+	it('a rehearsal → the lot file left as it is, nothing archived, no line', async () => {
+		const { root, out } = preparedWithRefusingHook()
+
+		const rehearsed = await runFolder({ out, argv: ['--rehearse'] })
+
+		expect(rehearsed.exitCode).toBe(0)
+		expect(archivedLines(rehearsed.lines)).toEqual([])
+		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe(DECLARATION)
+		expect(existsSync(join(out, 'lot.json'))).toBe(false)
+	})
+
+	it('a run stopped by a hook → the lot file left as it is, nothing archived; the run that commits the last lot archives it', async () => {
+		const { root, out, marker } = preparedWithRefusingHook()
+		writeFileSync(marker, '')
+		const stopped = await runFolder({ out })
+		const afterStop = readIfExists(join(root, '.dialecte/lot.json'))
+		const archivedAfterStop = existsSync(join(out, 'lot.json'))
+		rmSync(marker)
+
+		const resumed = await runFolder({ out })
+
+		expect(stopped.exitCode).toBe(1)
+		expect(archivedLines(stopped.lines)).toEqual([])
+		expect(afterStop).toBe(DECLARATION)
+		expect(archivedAfterStop).toBe(false)
+		expect(resumed.exitCode).toBe(0)
+		expect(archivedLines(resumed.lines)).toEqual([`lot file archived: ${join(out, 'lot.json')}`])
+		expect(readIfExists(join(out, 'lot.json'))).toBe(DECLARATION)
+		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe('{}\n')
+	})
+
+	const LOT_FILE_ROWS: Array<{
+		name: string
+		/** The worktree's lot file before the run; none when undefined. */
+		content: string | undefined
+		archived: boolean
+	}> = [
+		{ name: 'no lot file', content: undefined, archived: false },
+		{ name: 'an empty lot file {} with a newline', content: '{}\n', archived: false },
+		{ name: 'an empty lot file {} without a newline', content: '{}', archived: false },
+		{
+			name: 'an empty lot file { } with spaces and blank lines',
+			content: ' { }\n\n',
+			archived: false,
+		},
+		{ name: 'a lot file with entries', content: DECLARATION, archived: true },
+		{ name: 'a lot file that is not JSON', content: '{ not json', archived: true },
+		{ name: 'a lot file holding []', content: '[]\n', archived: true },
+	]
+
+	for (const row of LOT_FILE_ROWS)
+		it(`${row.name} → ${row.archived ? 'archived into the folder, {} left, one line' : 'nothing archived, no line, the file left as it is'}`, async () => {
+			const { root, lotsPath, out } = prepare()
+			if (row.content !== undefined)
+				writeFiles({ root, files: { '.dialecte/lot.json': row.content } })
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+			const result = await runFolder({ out })
+
+			expect(result.exitCode).toBe(0)
+			expect({
+				lines: archivedLines(result.lines),
+				archive: readIfExists(join(out, 'lot.json')),
+				worktree: readIfExists(join(root, '.dialecte/lot.json')),
+			}).toEqual(
+				row.archived
+					? {
+							lines: [`lot file archived: ${join(out, 'lot.json')}`],
+							archive: row.content,
+							worktree: '{}\n',
+						}
+					: { lines: [], archive: undefined, worktree: row.content },
+			)
+		})
+
+	it("a second run on a folder whose lot.json exists → the archived lot.json is not overwritten, the next lot's file is left as it is, no line", async () => {
+		const { root, lotsPath, out } = prepare()
+		writeFiles({ root, files: { '.dialecte/lot.json': DECLARATION } })
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		const first = await runFolder({ out })
+		const archived = readIfExists(join(out, 'lot.json'))
+		const next = `${JSON.stringify({ tdd: 'exempt: the next lot' }, null, '\t')}\n`
+		writeFiles({ root, files: { '.dialecte/lot.json': next } })
+
+		const second = await runFolder({ out })
+
+		expect(first.exitCode).toBe(0)
+		expect(archived).toBe(DECLARATION)
+		expect(second.exitCode).toBe(0)
+		expect(readIfExists(join(out, 'lot.json'))).toBe(DECLARATION)
+		expect(readIfExists(join(root, '.dialecte/lot.json'))).toBe(next)
+		expect(archivedLines(second.lines)).toEqual([])
+	})
+})

@@ -214,17 +214,27 @@ the answer.
     production state the case had already left, `red after green` when the case's own last receipt is a
     green at the same production state.
   - The run freezes each test file without a refusal, and a changed helper, fixture or snapshot only when
-    a case of a file depending on it went red in that run: what it imports (relative, tsconfig `paths`
-    or vite alias, barrels and re-exports followed through test code; a package name is a dependency,
-    not test code), a changed file whose name it or its helpers mention, its own snapshot. A helper no
-    red covers stays unfrozen, and the gate fails on it. An import that looks local (`@/`, `~/`, `#`, a
-    `paths` or alias prefix) and resolves nowhere refuses its file, naming the import.
+    a case of a file depending on it went red, or was recorded revised, in that run: what it imports
+    (relative, tsconfig `paths` or vite alias, barrels and re-exports followed through test code; a
+    package name is a dependency, not test code), a changed file whose name its test code mentions, or
+    the text of a production module its test code imports directly (a constant naming a fixture; one hop
+    into production, never further, and the module itself is production), its own snapshot. Every
+    dependency found by import is followed in turn, and one found by a name written with its folder
+    (`fixtures/scan.ts`, a full path): it brings the files it imports (`import type` included). A bare
+    file name (`index.ts`) may be another file: the changed file it names is a dependency, not followed. A
+    helper no red covers stays unfrozen, and the gate fails on it. An import that looks local (`@/`, `~/`,
+    `#`, a `paths` or alias prefix) and resolves nowhere refuses its file, naming the import.
   - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
     test code as frozen, production changed since its red ("nothing in production changed since red"),
     and a pass.
   - `status` prints each case (red, green, unchanged, accepted, missing receipt, test edited after red,
-    with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A ledger
-    that cannot be read is refused with its path.
+    with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A test
+    call of the base gone without a title (an `it(name, ...)` whose title is a variable: an edited call
+    looks deleted) prints `deleted <file> a test call of the base is gone`; when a `gone` entry of
+    `.dialecte/lot.json` names its file (a path or a glob), it prints
+    `gone <file> a test call of the base is gone (<reason>)` instead, in the gate's details too. A titled
+    test gone and a deleted test file stay `deleted`. A ledger that cannot be read is refused with its
+    path.
   - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
   - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
     committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
@@ -241,10 +251,19 @@ the answer.
     `*.script.ts` under such a folder stay test code. `testCase.only ? it.only : it` is no focus marker.
   - A case edited at review after it was proven is declared in `.dialecte/lot.json`
     (`"revised": [{ "case": "<file>::<name>", "reason": "<why>" }]`). It needs an earlier receipt of
-    the case (a red, an unchanged, an accepted one), not necessarily a red. The next `tdd red` records
-    it as revised when it passes (a red when it fails) and freezes its file again. Without that red run the
-    gate fails on the edit; the gate, `status` and the hand-over card list the revisions with their
-    reason, an entry no red run used as a note.
+    the case (a red, an unchanged, an accepted one), not necessarily a red, or to be a case of the base:
+    its file exists at the base, its own title is written as a string there and no more times now, and
+    every title of its name written as a string now is written there too. A new case (a new file, a new title, a row added to a
+    table) still needs a red; a case whose title the file computes and the base does not write is refused
+    ("not provably a case of the base: accept it or prove it red"). The `case` may also be a file path or
+    a glob over file paths (`scripts/**/*.test.ts`: `**` any folders, `*` and `?` within one), relative
+    to the package root, without `::`: it applies to every case of the matching files, with one reason.
+    A file or glob entry never covers a case whose last proof is a red still waiting for its green, and
+    keeps the `red after green` flag of a case made red again; an exact entry covers both. An `accept`
+    entry stays one exact case. The next `tdd red` records it as revised when it passes (a
+    red when it fails) and freezes its file and the changed test code it depends on. Without that red
+    run the gate fails on the edit; the gate, `status` and the hand-over card list the revisions with
+    their reason, an entry (exact, file or glob) no revised case used as a note.
   - What it cannot see: the receipts can be written by an agent with a shell; a deliberate throw in
     production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
     be told from an honest red (at the first step the red's production is the base's). The flags and the
@@ -328,8 +347,17 @@ the answer.
   the working copies put back byte for byte;
   refused when the install changed the staged files or the versions still differ (dev, peer and optional
   packages an install leaves out aside). The card counts the tdd flags per kind
-  (`dialecte tdd status --flags` lists the cases), and its run row says `done` once every lot is
-  committed (the command stays for a pending or partly committed hand-over).
+  (`dialecte tdd status --flags` lists the cases), lists the accepted and revised receipts the current
+  lot file names (exactly, or by a file or glob `revised` entry) with the file's reason, folds the
+  receipts of earlier lots into one line (`earlier lots: 410 accepted, 12 revised (not in the lot
+  file)`), lists the unused `accept` and `revised` entries and every `gone` entry (`gone: <file>
+  (<reason>)`; whether one covers a finding is the gate's to say), and its run row
+  says `done` once every lot is committed (the command stays for a pending or partly committed
+  hand-over). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
+  into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration
+  (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
+  the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a
+  folder that holds a `lot.json` already (a second run) leave the lot file as it is.
 - `dialecte handover list [--root <dir>] [--json]` lists every hand-over folder under the workspace's
   `_commit-plan/` (or the folder given, or the current one): repository, worktree, branch, lots, age, and
   its state - pending, partly committed, committed, or stale when something else moved the branch. A
@@ -343,9 +371,11 @@ the answer.
   has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
   once in the exclude file of the repository's common git folder (so for the main checkout and every
   worktree of it), and writes the hygiene baseline `gate --fast` compares with; it prints a card.
-- `dialecte lot exempt <reason>`, `lot accept <case> <reason>`, `lot revised <case> <reason>` write the lot
-  declaration `.dialecte/lot.json` at the package root (the nearest package.json above the current
-  folder) as tab-indented JSON, keeping what it holds; the same case again replaces its reason.
+- `dialecte lot exempt <reason>`, `lot accept <case> <reason>`, `lot revised <case|file|glob> <reason>`,
+  `lot gone <file|glob> <reason>` write the lot declaration `.dialecte/lot.json` at the package root (the
+  nearest package.json above the current folder) as tab-indented JSON, keeping what it holds; the same
+  case (or file) again replaces its reason. `accept` needs a case `<file>::<name>`; `gone` refuses one
+  (it writes `"gone": [{ "file": "<file or glob>", "reason": "..." }]`).
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
@@ -385,8 +415,9 @@ others fail the gate with the list. The flags of the receipts and the deleted ca
 step. The lot file may also accept cases without a red - a new test of behaviour that already exists, an honest
 cut of an assertion: `"accept": [{ "case": "<file>::<name> [project]", "reason": "..." }]`. An accepted
 case passes `tdd red` as accepted and does not block its file; the gate and the hand-over card list each
-acceptance with its reason, the card from the receipts (an accepted case whose entry left the file is
-marked), and both report an acceptance no case used. The file is strict: an unknown key, at the top or in
+acceptance with its reason, the card from the receipts (those of earlier lots, which the file no longer
+names, counted on one line), and both report an acceptance or a `revised` entry no case used. The card
+lists every `gone` entry with its reason; only the gate reports a `gone` entry that covers no finding. The file is strict: an unknown key, at the top or in
 an `accept` entry, and an exemption without a reason are refused, naming what is wrong. A lot the orchestrator declares exempt - a wording, rename or doc-only lot - passes with its reason
 and what the change touches: `{ "tdd": "exempt: <reason>" }` in `.dialecte/lot.json` at the package root
 prints "exempt: <reason> (n production file(s), m test file(s) changed)". The hygiene and the hand-over

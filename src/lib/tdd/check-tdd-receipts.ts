@@ -1,17 +1,26 @@
 import { shortMessage } from './classify-failure.ts'
-import { readAcceptances, readRevisions, readTddExemption } from './lot-declaration.ts'
+import {
+	entryNamesCase,
+	entryNamesFile,
+	findCaseEntry,
+	readAcceptances,
+	readGoneEntries,
+	readRevisions,
+	readTddExemption,
+} from './lot-declaration.ts'
 /**
  * The `tdd` step of `dialecte gate`: every test-code file changed since the base (HEAD: the uncommitted
  * lot; a `--base` ref or `--full`: the whole branch) is as the red run that last froze it left it, and
  * every case of the change holds a red receipt and a later green one (or passed at a red run as the same
  * case as at the base, accepted or revised by the lot file, each with its reason shown). The flags
- * of the receipts and the cases the change deletes are shown for the review. A lot the orchestrator
+ * of the receipts, the cases the change deletes (the untitled test calls the lot file declares gone, with
+ * its reason) and the entries of the lot file nothing used are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
  * that does not test with vitest skips the step.
  */
 import { caseLabel } from './select-cases.ts'
 import { countChangedFiles, hashChangedTestCode, readLedger, resolveBase } from './tdd-files.ts'
-import { readTddState } from './tdd-state.ts'
+import { findingLine, readTddState } from './tdd-state.ts'
 import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -52,6 +61,8 @@ export async function checkTddReceipts(params: {
 	if ('failure' in acceptances) return { status: 'failed', reason: acceptances.failure }
 	const revisions = readRevisions(root)
 	if ('failure' in revisions) return { status: 'failed', reason: revisions.failure }
+	const gone = readGoneEntries(root)
+	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
 	if (hashChangedTestCode({ root, base, packageJson }).size === 0)
 		return { status: 'passed', note: 'no test code new or changed since the base' }
 	const lock = params.lock()
@@ -75,37 +86,56 @@ export async function checkTddReceipts(params: {
 			.filter((line) => line.status === 'revised')
 			.map(
 				(line) =>
-					`revised  ${caseLabel(line)}  ${revisions.find((revised) => revised.case === caseLabel(line))?.reason ?? '(no longer in the lot file)'}`,
+					`revised  ${caseLabel(line)}  ${findCaseEntry({ entries: revisions, testCase: line, list: 'revised' })?.reason ?? '(no longer in the lot file)'}`,
 			),
 		...state.cases
 			.filter((line) => line.status === 'accepted')
 			.map(
 				(line) =>
-					`accepted  ${caseLabel(line)}  ${acceptances.find((accepted) => accepted.case === caseLabel(line))?.reason ?? '(no longer in the lot file)'}`,
+					`accepted  ${caseLabel(line)}  ${findCaseEntry({ entries: acceptances, testCase: line, list: 'accept' })?.reason ?? '(no longer in the lot file)'}`,
 			),
-		...state.findings.map((finding) => `deleted  ${finding.file}  ${finding.detail}`),
+		...state.findings.map(findingLine),
 		...state.cases
 			.filter((line) => line.flags.length)
 			.map((line) => `flag  ${caseLabel(line)}  ${line.flags.join(', ')}`),
 	]
-	const labels = new Set(state.cases.map((line) => caseLabel(line)))
 	evidence.push(
 		...acceptances
-			.filter((acceptance) => !labels.has(acceptance.case))
+			.filter(
+				(acceptance) =>
+					!state.cases.some((line) =>
+						entryNamesCase({ entry: acceptance.case, testCase: line, list: 'accept' }),
+					),
+			)
 			.map(
 				(acceptance) =>
 					`unused accept  ${acceptance.case}  no case of the change has that name (${acceptance.reason})`,
 			),
 	)
-	const revisedLabels = new Set(
-		state.cases.filter((line) => line.status === 'revised').map((line) => caseLabel(line)),
-	)
+	const revisedCases = state.cases.filter((line) => line.status === 'revised')
 	evidence.push(
 		...revisions
-			.filter((revision) => !revisedLabels.has(revision.case))
+			.filter(
+				(revision) =>
+					!revisedCases.some((line) =>
+						entryNamesCase({ entry: revision.case, testCase: line, list: 'revised' }),
+					),
+			)
 			.map(
 				(revision) =>
 					`unused revised entry  ${revision.case}  no case of the change stands revised by a red run (${revision.reason})`,
+			),
+		...gone
+			.filter(
+				(entry) =>
+					!state.findings.some(
+						(finding) =>
+							finding.verb === 'gone' && entryNamesFile({ entry: entry.file, file: finding.file }),
+					),
+			)
+			.map(
+				(entry) =>
+					`unused gone entry  ${entry.file}  no test call of the base gone without a title in a file it names (${entry.reason})`,
 			),
 	)
 	const unlisted = state.unlisted.map(

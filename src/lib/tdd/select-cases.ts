@@ -6,7 +6,7 @@
 import { realpathSync } from 'node:fs'
 import { relative } from 'node:path'
 
-import { isCaseOfChange } from './case-of-change.ts'
+import { isCaseOfBase, isCaseOfChange } from './case-of-change.ts'
 import { classifyFailure } from './classify-failure.ts'
 import { hashText, isProductionPath } from './tdd-files.ts'
 import { CASE_ARGUMENT_SEPARATOR } from './tdd.constants.ts'
@@ -98,6 +98,7 @@ export function readRunCases(params: {
 					location: reported.location,
 				}),
 				ofChange: isCaseOfChange({ file, name: reported.name, location: reported.location }),
+				ofBase: isCaseOfBase({ file, name: reported.name }),
 			})
 		}
 	}

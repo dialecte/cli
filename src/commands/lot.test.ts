@@ -110,16 +110,73 @@ describe('dialecte lot', { timeout: 60_000 }, () => {
 			expect(readFileSync(lotFile(root), 'utf8')).toBe(content)
 		})
 
-	for (const verb of ['accept', 'revised'])
-		it(`${verb} with a case not shaped <file>::<name> → refused at write, nothing written`, () => {
-			const root = packageRoot()
+	it('accept with a case not shaped <file>::<name> → refused at write, nothing written', () => {
+		const root = packageRoot()
 
-			expect(runLot({ cwd: root, argv: [verb, 'src/a.test.ts', 'a reason'] })).toEqual({
-				exitCode: 2,
-				output: expect.stringMatching(/^lot: .*<file>::<name>/),
-			})
-			expect(existsSync(lotFile(root))).toBe(false)
+		expect(runLot({ cwd: root, argv: ['accept', 'src/a.test.ts', 'a reason'] })).toEqual({
+			exitCode: 2,
+			output: expect.stringMatching(/^lot: .*<file>::<name>/),
 		})
+		expect(existsSync(lotFile(root))).toBe(false)
+	})
+
+	it("revised with a file, then with a glob → each written as the entry's case, one reason each; accept with the same glob, revised with an empty argument and gone naming a case → refused, nothing else written", () => {
+		const root = packageRoot()
+
+		expect(runLot({ cwd: root, argv: ['revised', 'src/a.test.ts', 'a reason'] }).exitCode).toBe(0)
+		expect(
+			runLot({ cwd: root, argv: ['revised', 'scripts/**/*.test.ts', 'another reason'] }).exitCode,
+		).toBe(0)
+		expect(
+			runLot({ cwd: root, argv: ['accept', 'scripts/**/*.test.ts', 'a reason'] }).exitCode,
+		).toBe(2)
+		expect(runLot({ cwd: root, argv: ['revised', '', 'a reason'] }).exitCode).toBe(2)
+		expect(
+			runLot({ cwd: root, argv: ['gone', 'src/a.test.ts::a > one', 'a reason'] }).exitCode,
+		).toBe(2)
+
+		expect(readFileSync(lotFile(root), 'utf8')).toBe(
+			lotText({
+				revised: [
+					{ case: 'src/a.test.ts', reason: 'a reason' },
+					{ case: 'scripts/**/*.test.ts', reason: 'another reason' },
+				],
+			}),
+		)
+	})
+
+	it('gone <file> and gone <glob> → "gone" entries { file, reason }; the same file again → its reason replaced; the other keys stay', () => {
+		const root = packageRoot()
+		writeFiles({ root, files: { '.dialecte/lot.json': lotText({ tdd: 'exempt: a rename' }) } })
+
+		expect(runLot({ cwd: root, argv: ['gone', 'src/a.test.ts', 'a reason'] }).exitCode).toBe(0)
+		expect(
+			runLot({ cwd: root, argv: ['gone', 'scripts/**/*.test.ts', 'another reason'] }).exitCode,
+		).toBe(0)
+		expect(runLot({ cwd: root, argv: ['gone', 'src/a.test.ts', 'a better reason'] }).exitCode).toBe(
+			0,
+		)
+
+		expect(readFileSync(lotFile(root), 'utf8')).toBe(
+			lotText({
+				tdd: 'exempt: a rename',
+				gone: [
+					{ file: 'src/a.test.ts', reason: 'a better reason' },
+					{ file: 'scripts/**/*.test.ts', reason: 'another reason' },
+				],
+			}),
+		)
+	})
+
+	it('gone without a reason → usage naming the gone verb, exit 2, nothing written', () => {
+		const root = packageRoot()
+
+		expect(runLot({ cwd: root, argv: ['gone', 'src/a.test.ts'] })).toEqual({
+			exitCode: 2,
+			output: expect.stringMatching(/^lot: .* gone /),
+		})
+		expect(existsSync(lotFile(root))).toBe(false)
+	})
 
 	it('an unknown verb → usage, exit 2', () => {
 		const root = packageRoot()

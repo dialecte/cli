@@ -68,7 +68,7 @@ Commands:
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
-  lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case>, each with a reason
+  lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason
   worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
@@ -137,13 +137,16 @@ Contributing (inside a dialecte repository):
                              # 'not implemented', a TypeError of existing code, inside an asserting expect) is a
                              # red; a new or changed case that passes, a missing export, a type or syntax error, a
                              # timeout, a .only is refused; one refusal records no red of its file; the files
-                             # without a refusal and the changed helpers, fixtures, snapshots are frozen
+                             # without a refusal are frozen, and the changed helpers, fixtures, snapshots a
+                             # red or revised case of theirs depends on; a revised entry may name a proven
+                             # case or an edited case of the base
   dialecte tdd green [<test file> | <test file>::<case name>]...
                              # each case with a red receipt, its test code as frozen, production changed since
                              # its red, passes; records a green receipt
   dialecte tdd status [--json] [--flags]
                              # per case: red, green, unchanged, missing receipt, test edited after red, flags;
-                             # test code changed outside tdd red; cases the change deletes
+                             # test code changed outside tdd red; cases the change deletes (an untitled test
+                             # call of the base in a file a "gone" entry names: gone, with its reason)
   dialecte new verb <namespace> <query|transaction> <name> [--version <v>]
                              # verb, types, red test (only: true), barrel export, namespace registration
   dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]
@@ -152,11 +155,14 @@ Contributing (inside a dialecte repository):
   dialecte handover run <folder> [--rehearse [--keep]] [--resume-merge]
                              # what commit.sh runs: each guard with its time, each lot announced (a spinner on
                              # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse
-                             # commits in a scratch clone
+                             # commits in a scratch clone; a real run that commits every lot moves
+                             # .dialecte/lot.json into the folder as lot.json and leaves {} in its place
   dialecte handover list [--root <dir>] [--json]
                              # every hand-over folder: repository, worktree, branch, lots, age, state
-  dialecte lot exempt <reason> | lot accept <case> <reason> | lot revised <case> <reason>
-                             # writes .dialecte/lot.json at the package root (tab JSON), keeping the rest
+  dialecte lot exempt <reason> | lot accept <case> <reason> | lot revised <case|file|glob> <reason>
+  dialecte lot gone <file|glob> <reason>
+                             # writes .dialecte/lot.json at the package root (tab JSON), keeping the rest;
+                             # a case is <file>::<name>; a file or glob covers every case of its files
   dialecte worktree add <repository> <branch> [--from <ref>] [--json]
                              # under the workspace's .worktrees/: hooks folder, copy-on-write node_modules,
                              # hygiene baseline
