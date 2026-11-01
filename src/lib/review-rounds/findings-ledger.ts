@@ -14,11 +14,16 @@ import {
 	ROUND_PATTERN,
 } from './review-rounds.constants.ts'
 
-import type { DecisionState, LedgerRow, LedgerTable } from './review-rounds.types.ts'
+import type { DecisionState, LedgerTable, MarkdownTable } from './review-rounds.types.ts'
 
 /** A value as a ledger cell writes it: `|` escaped. */
 export function escapeCell(value: string): string {
 	return value.replace(/\|/g, '\\|')
+}
+
+/** A ledger cell's value as written by `escapeCell`, read back: `\|` is `|`. */
+export function unescapeCell(cell: string): string {
+	return cell.replace(/\\\|/g, '|')
 }
 
 /**
@@ -35,18 +40,35 @@ export function tableCells(line: string): string[] | undefined {
 
 /** The findings table among the ledger's lines: a header whose first cell is `id`, its separator, its rows. */
 export function findLedgerTable(lines: string[]): LedgerTable | undefined {
+	const table = findTable({ lines, firstCell: 'id' })
+	if (!table) return undefined
+	return {
+		lastLine: table.lastLine,
+		rows: table.rowLines.map(function ledgerRow(line) {
+			const cells = tableCells(lines[line]) ?? []
+			return { line, id: cells[0], round: roundOfRow(cells) }
+		}),
+	}
+}
+
+/**
+ * The first markdown table among the lines whose header's first cell is `firstCell`: a header, its
+ * separator, the row lines up to the first line that is no table line.
+ */
+export function findTable(params: {
+	lines: string[]
+	firstCell: string
+}): MarkdownTable | undefined {
+	const { lines } = params
 	for (let index = 0; index + 1 < lines.length; index++) {
 		const header = tableCells(lines[index])
 		const separator = tableCells(lines[index + 1])
-		if (header?.[0] !== 'id' || !separator?.every((cell) => /^:?-+:?$/.test(cell))) continue
-		const rows: LedgerRow[] = []
+		if (header?.[0] !== params.firstCell || !separator?.every((cell) => /^:?-+:?$/.test(cell)))
+			continue
+		const rowLines: number[] = []
 		let line = index + 2
-		for (; line < lines.length; line++) {
-			const cells = tableCells(lines[line])
-			if (!cells) break
-			rows.push({ line, id: cells[0], round: roundOfRow(cells) })
-		}
-		return { lastLine: line - 1, rows }
+		for (; line < lines.length && tableCells(lines[line]); line++) rowLines.push(line)
+		return { lastLine: line - 1, rowLines }
 	}
 	return undefined
 }
@@ -80,21 +102,42 @@ export function appendFinding(params: {
 	})
 	const id = `R${params.round}-${Math.max(0, ...numbers) + 1}`
 	const row = `| ${id} | ${params.round} | ${params.severity} | ${escapeCell(params.at)} | ${escapeCell(params.finding)} | open |`
+	appendTableRow({
+		path: params.path,
+		lines,
+		table,
+		title: `# Findings ledger - ${params.title}`,
+		head: LEDGER_TABLE_HEAD,
+		row,
+	})
+	return id
+}
+
+/**
+ * Writes `row` into the file at `path` whose lines are `lines`: right after the table's last row (its line
+ * end kept), every other byte as it was; a file without that table gets the header and the row at its end,
+ * an empty or absent file the title first.
+ */
+export function appendTableRow(params: {
+	path: string
+	lines: string[]
+	table: Pick<MarkdownTable, 'lastLine'> | undefined
+	/** The title line of a new file. */
+	title: string
+	/** The table's header row and separator, each followed by a line feed. */
+	head: string
+	row: string
+}): void {
+	const { lines, table, row } = params
+	const text = lines.join('\n')
 	if (table) {
 		const lineEnd = lines[table.lastLine].endsWith('\r') ? '\r' : ''
-		lines.splice(table.lastLine + 1, 0, `${row}${lineEnd}`)
-		writeFileSync(params.path, lines.join('\n'))
-	} else if (text === '')
-		writeFileSync(
-			params.path,
-			`# Findings ledger - ${params.title}\n\n${LEDGER_TABLE_HEAD}${row}\n`,
-		)
+		const written = [...lines]
+		written.splice(table.lastLine + 1, 0, `${row}${lineEnd}`)
+		writeFileSync(params.path, written.join('\n'))
+	} else if (text === '') writeFileSync(params.path, `${params.title}\n\n${params.head}${row}\n`)
 	else
-		writeFileSync(
-			params.path,
-			`${text}${text.endsWith('\n') ? '' : '\n'}\n${LEDGER_TABLE_HEAD}${row}\n`,
-		)
-	return id
+		writeFileSync(params.path, `${text}${text.endsWith('\n') ? '' : '\n'}\n${params.head}${row}\n`)
 }
 
 /**

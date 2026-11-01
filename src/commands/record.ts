@@ -1,11 +1,13 @@
 /**
  * `dialecte record review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`,
  * `record decision <folder> <id> <state...>`, `record snapshot <folder> --round <n>`: the findings ledger
- * and the per-round snapshots of a lot's review rounds, in its hand-over folder.
+ * and the per-round snapshots of a lot's review rounds, in its hand-over folder; `record choice <folder> --by
+ * <who> <decision>`: a decision made outside the ledger, in its `decisions.md`.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
+import { appendDecision, dayOf } from '../lib/review-rounds/decisions-file.ts'
 import {
 	appendFinding,
 	findLedgerTable,
@@ -13,8 +15,11 @@ import {
 	replaceStateCell,
 } from '../lib/review-rounds/findings-ledger.ts'
 import {
+	CHOICE_OPTIONS,
+	DECISIONS_FILE,
 	LEDGER_FILE,
 	LINE_BREAK_PATTERN,
+	RECORD_CHOICE_USAGE,
 	RECORD_DECISION_USAGE,
 	RECORD_REVIEW_OPTIONS,
 	RECORD_REVIEW_USAGE,
@@ -39,9 +44,10 @@ export async function run(argv: string[]): Promise<void> {
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runRecord(params: { cwd: string; argv: string[] }): CommandResult {
+export function runRecord(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
 	const [subcommand, ...argv] = params.argv
 	try {
+		if (subcommand === 'choice') return recordChoice({ cwd: params.cwd, argv, now: params.now })
 		if (subcommand === 'review') return recordReview({ cwd: params.cwd, argv })
 		if (subcommand === 'decision') return recordDecision({ cwd: params.cwd, argv })
 		if (subcommand === 'snapshot') return recordSnapshot({ cwd: params.cwd, argv })
@@ -49,6 +55,33 @@ export function runRecord(params: { cwd: string; argv: string[] }): CommandResul
 		return { exitCode: 1, output: `record: ${(error as Error).message}` }
 	}
 	return { exitCode: 2, output: RECORD_USAGE }
+}
+
+function recordChoice(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+	const read = readArguments({ argv: params.argv, valueOptions: CHOICE_OPTIONS })
+	if (typeof read === 'string') return { exitCode: 2, output: `${RECORD_CHOICE_USAGE} (${read})` }
+	const [folderWord, decision] = read.words
+	const by = read.values.get('by') ?? ''
+	if (read.words.length !== 2 || !by.trim() || !decision?.trim())
+		return { exitCode: 2, output: RECORD_CHOICE_USAGE }
+	if (LINE_BREAK_PATTERN.test(by) || LINE_BREAK_PATTERN.test(decision))
+		return {
+			exitCode: 2,
+			output: `${RECORD_CHOICE_USAGE} (the decision and --by are one line each)`,
+		}
+	const folder = resolve(params.cwd, folderWord)
+	const refusal = handoverFolderRefusal(folder)
+	if (refusal) return { exitCode: 1, output: `record: ${refusal}` }
+	mkdirSync(folder, { recursive: true })
+	const path = join(folder, DECISIONS_FILE)
+	appendDecision({
+		path,
+		title: basename(folder),
+		decision,
+		by,
+		when: dayOf(params.now ?? new Date()),
+	})
+	return { exitCode: 0, output: `record: choice by ${by} - ${path}` }
 }
 
 function recordReview(params: { cwd: string; argv: string[] }): CommandResult {

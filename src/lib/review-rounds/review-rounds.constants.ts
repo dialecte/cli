@@ -37,7 +37,21 @@ export const DECISION_STATES = [
 ] as const
 
 export const RECORD_USAGE =
-	'record: review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding> | decision <folder> <id> <state...> | snapshot <folder> --round <n>'
+	'record: review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding> | decision <folder> <id> <state...> | snapshot <folder> --round <n> | choice <folder> --by <who> <decision>'
+
+export const RECORD_CHOICE_USAGE = 'record choice: expected <folder> --by <who> <decision>'
+
+/** The options `record choice` takes followed by a value, without the dashes. */
+export const CHOICE_OPTIONS = ['by'] as const
+
+/** The file of the decisions made outside the findings ledger, in the hand-over folder. */
+export const DECISIONS_FILE = 'decisions.md'
+
+/** The first header cell of the decisions table. */
+export const DECISIONS_FIRST_CELL = 'decision'
+
+/** The decisions table's header row and separator, each followed by a line feed. */
+export const DECISIONS_TABLE_HEAD = '| decision | by | when |\n|---|---|---|\n'
 
 export const RECORD_REVIEW_USAGE =
 	'record review: expected <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>'

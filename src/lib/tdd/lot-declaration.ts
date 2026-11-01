@@ -36,7 +36,7 @@ import type {
 
 /** The exemption the lot declares, none, or why the declaration cannot be read. */
 export function readTddExemption(root: string): TddExemption {
-	const declaration = readLotDeclaration(root)
+	const declaration = readLotDeclaration(join(root, LOT_FILE))
 	if ('failure' in declaration) return { kind: 'invalid', reason: declaration.failure }
 	if (declaration.tdd === undefined) return { kind: 'none' }
 	const exempt = TDD_EXEMPT_PATTERN.exec(String(declaration.tdd))
@@ -50,17 +50,17 @@ export function readTddExemption(root: string): TddExemption {
 
 /** The cases the lot accepts without a red, or why the declaration cannot be read. */
 export function readAcceptances(root: string): LotCaseEntry[] | { failure: string } {
-	return readCaseList({ root, list: 'accept' })
+	return readDeclaredCases({ path: join(root, LOT_FILE), list: 'accept' })
 }
 
 /** The cases the lot declares revised at review, or why the declaration cannot be read. */
 export function readRevisions(root: string): LotCaseEntry[] | { failure: string } {
-	return readCaseList({ root, list: 'revised' })
+	return readDeclaredCases({ path: join(root, LOT_FILE), list: 'revised' })
 }
 
 /** The test files (or globs) whose untitled test calls of the base the lot declares gone, or why the declaration cannot be read. */
 export function readGoneEntries(root: string): LotGoneEntry[] | { failure: string } {
-	const declaration = readLotDeclaration(root)
+	const declaration = readLotDeclaration(join(root, LOT_FILE))
 	if ('failure' in declaration) return declaration
 	const entries = declaration.gone
 	const shape = { failure: `${LOT_FILE}: ${GONE_LIST_SHAPE}` }
@@ -116,11 +116,15 @@ export function namesOneCase(entry: string): boolean {
 	return entry.includes(CASE_ARGUMENT_SEPARATOR)
 }
 
-function readCaseList(params: {
-	root: string
+/**
+ * The entries of one list of the lot declaration at `path` (the package's `.dialecte/lot.json`, or the
+ * `lot.json` a hand-over folder keeps), or why the declaration cannot be read; none when the file is absent.
+ */
+export function readDeclaredCases(params: {
+	path: string
 	list: LotCaseList
 }): LotCaseEntry[] | { failure: string } {
-	const declaration = readLotDeclaration(params.root)
+	const declaration = readLotDeclaration(params.path)
 	if ('failure' in declaration) return declaration
 	const entries = declaration[params.list]
 	const shape = `${LOT_FILE}: ${CASE_LIST_SHAPE.replace('{list}', params.list)}`
@@ -137,8 +141,7 @@ function readCaseList(params: {
 	return entries as LotCaseEntry[]
 }
 
-function readLotDeclaration(root: string): LotDeclaration | { failure: string } {
-	const path = join(root, LOT_FILE)
+function readLotDeclaration(path: string): LotDeclaration | { failure: string } {
 	if (!existsSync(path)) return {}
 	let declaration: LotDeclaration
 	try {
