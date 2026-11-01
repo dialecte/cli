@@ -56,5 +56,11 @@
 	},
 	"engines": {
 		"node": ">=22.18"
+	},
+	"allowScripts": {
+		"esbuild": true,
+		"fsevents": true,
+		"file:../../../core": false,
+		"file:../../../../core": false
 	}
 }
