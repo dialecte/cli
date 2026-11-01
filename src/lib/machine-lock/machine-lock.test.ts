@@ -23,6 +23,32 @@ function holdBy(params: { path: string; pid: number }): void {
 	)
 }
 
+/** When the holder of the nesting cases started, as `ps -o lstart=` prints it. */
+const HOLDER_START = 'Sat Nov  1 09:00:00 2026'
+
+/** A lock held by `pid`, its process start recorded. */
+function holdByStarted(params: { path: string; pid: number; processStart: string }): void {
+	writeFileSync(
+		params.path,
+		JSON.stringify({
+			pid: params.pid,
+			command: 'dialecte lock run -- npx vitest run',
+			startedAt: '2026-11-01T09:00:00.000Z',
+			processStart: params.processStart,
+		}),
+	)
+}
+
+/** DIALECTE_MACHINE_LOCK_HOLDER set for the current test, put back when it ends. */
+function setHolderVariable(value: string): void {
+	const before = process.env.DIALECTE_MACHINE_LOCK_HOLDER
+	process.env.DIALECTE_MACHINE_LOCK_HOLDER = value
+	onTestFinished(function restore() {
+		if (before === undefined) delete process.env.DIALECTE_MACHINE_LOCK_HOLDER
+		else process.env.DIALECTE_MACHINE_LOCK_HOLDER = before
+	})
+}
+
 describe('acquireMachineLock', () => {
 	it('free → taken with the holder written; release → the file goes', () => {
 		const path = lockIn(temporaryFolder('dialecte-lock-'))
@@ -187,6 +213,133 @@ describe('acquireMachineLock', () => {
 
 		expect(outcome.acquired).toBe(true)
 		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(4242)
+	})
+
+	it('held by the live pid DIALECTE_MACHINE_LOCK_HOLDER names (a command run under lock run) → acquired at once; its release leaves the lock to that holder', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdByStarted({ path, pid: 1111, processStart: HOLDER_START })
+		setHolderVariable(`1111:${HOLDER_START}`)
+
+		const outcome = acquireMachineLock({
+			path,
+			command: 'dialecte gate --full',
+			wait: false,
+			clock: createFakeClock(),
+			write: () => undefined,
+			pid: 4242,
+			isAlive: () => true,
+			processStartOf: (pid) => (pid === 1111 ? HOLDER_START : 'Sat Nov  1 10:05:00 2026'),
+		})
+
+		expect(outcome.acquired).toBe(true)
+		if (outcome.acquired) outcome.release()
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(1111)
+	})
+
+	it('DIALECTE_MACHINE_LOCK_HOLDER naming the holder pid with no start → not nested, refused', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdByStarted({ path, pid: 1111, processStart: HOLDER_START })
+		setHolderVariable('1111')
+
+		expect(
+			acquireMachineLock({
+				path,
+				command: 'dialecte gate --full',
+				wait: false,
+				clock: createFakeClock(),
+				write: () => undefined,
+				pid: 4242,
+				isAlive: () => true,
+				processStartOf: (pid) => (pid === 1111 ? HOLDER_START : 'Sat Nov  1 10:05:00 2026'),
+			}),
+		).toMatchObject({ acquired: false, holder: { pid: 1111 } })
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(1111)
+	})
+
+	it('a live holder whose start was not recorded (ps missing) and DIALECTE_MACHINE_LOCK_HOLDER naming its pid with no start (<pid>:) → nested at once; its release leaves the lock to that holder', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdBy({ path, pid: 1111 })
+		setHolderVariable('1111:')
+
+		const outcome = acquireMachineLock({
+			path,
+			command: 'dialecte gate --full',
+			wait: false,
+			clock: createFakeClock(),
+			write: () => undefined,
+			pid: 4242,
+			isAlive: () => true,
+			processStartOf: () => undefined,
+		})
+
+		expect(outcome.acquired).toBe(true)
+		if (outcome.acquired) outcome.release()
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(1111)
+	})
+
+	it('DIALECTE_MACHINE_LOCK_HOLDER naming the holder pid with another start (an inherited variable, the pid reused) → refused; with the holder start → nested', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdByStarted({ path, pid: 1111, processStart: HOLDER_START })
+		setHolderVariable('')
+		function acquireWith(variable: string) {
+			process.env.DIALECTE_MACHINE_LOCK_HOLDER = variable
+			return acquireMachineLock({
+				path,
+				command: 'dialecte gate --full',
+				wait: false,
+				clock: createFakeClock(),
+				write: () => undefined,
+				pid: 4242,
+				isAlive: () => true,
+				processStartOf: (pid) => (pid === 1111 ? HOLDER_START : 'Sat Nov  1 10:05:00 2026'),
+			})
+		}
+
+		expect([
+			acquireWith('1111:Fri Oct 31 08:00:00 2026').acquired,
+			acquireWith(`1111:${HOLDER_START}`).acquired,
+		]).toEqual([false, true])
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(1111)
+	})
+
+	it('DIALECTE_MACHINE_LOCK_HOLDER naming a pid other than the live holder → refused, the lock still names the holder', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdBy({ path, pid: 1111 })
+		setHolderVariable('2222')
+
+		const outcome = acquireMachineLock({
+			path,
+			command: 'dialecte gate --full',
+			wait: false,
+			clock: createFakeClock(),
+			write: () => undefined,
+			pid: 4242,
+			isAlive: () => true,
+		})
+
+		expect(outcome).toMatchObject({ acquired: false, holder: { pid: 1111 } })
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(1111)
+	})
+
+	it('DIALECTE_MACHINE_LOCK_HOLDER naming a holder that is gone → stale, taken over; release removes the lock', () => {
+		const path = lockIn(temporaryFolder('dialecte-lock-'))
+		holdBy({ path, pid: 1111 })
+		setHolderVariable('1111')
+
+		const outcome = acquireMachineLock({
+			path,
+			command: 'dialecte gate --full',
+			wait: false,
+			clock: createFakeClock(),
+			write: () => undefined,
+			pid: 4242,
+			isAlive: (pid) => pid !== 1111,
+		})
+
+		expect(outcome.acquired).toBe(true)
+		expect(JSON.parse(readFileSync(path, 'utf8')).pid).toBe(4242)
+		if (outcome.acquired) outcome.release()
+		expect(existsSync(path)).toBe(false)
 	})
 
 	it('DIALECTE_CACHE_DIR set but empty → the platform cache folder, not a lock relative to the cwd', () => {

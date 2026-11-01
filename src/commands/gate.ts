@@ -39,9 +39,8 @@ import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepLock, StepResult } from '../lib/gate/gate.types.ts'
-import type { WriteLine } from '../lib/handover/handover.types.ts'
+import type { MachineLockAccess, MachineLockTaken } from '../lib/machine-lock/machine-lock.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
-import type { Clock } from '../lib/progress/clock.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -60,7 +59,7 @@ export async function runGate(params: {
 	/** Where each step's start line (or spinner) goes while it runs; the result is returned at the end. */
 	live?: LiveOutput
 	/** The machine lock: its file, the clock it waits with, where its waiting lines go. */
-	machineLock?: { path: string; clock: Clock; write: WriteLine; isAlive?: (pid: number) => boolean }
+	machineLock?: MachineLockAccess
 }): Promise<CommandResult> {
 	const { cwd, argv } = params
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
@@ -82,7 +81,7 @@ export async function runGate(params: {
 		clock: createSystemClock(),
 		write: (line: string) => console.error(line),
 	}
-	function lockFor(command: string): { release(): void } | { refusal: string } {
+	function lockFor(command: string): MachineLockTaken {
 		const outcome = acquireMachineLock({
 			path: machineLock.path,
 			command,
@@ -129,6 +128,9 @@ export async function runGate(params: {
 			restored: [],
 			reason: gateLock.refusal,
 		})
+	// what every step runs under while the gate holds the lock (`--full`)
+	const heldHolderVariable =
+		gateLock && !('refusal' in gateLock) ? gateLock.holderVariable : undefined
 	try {
 		if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
 		else {
@@ -141,7 +143,7 @@ export async function runGate(params: {
 				lock: () =>
 					runsTestsInABrowser({ root: cwd, packageJson })
 						? lockFor(`dialecte gate --${mode} (tdd) in ${resolve(cwd)}`)
-						: { release: () => undefined },
+						: { release: () => undefined, holderVariable: heldHolderVariable },
 			})
 			results.push(tdd)
 			if (running) showLive({ result: tdd, running })
@@ -153,6 +155,7 @@ export async function runGate(params: {
 				steps,
 				packageJson,
 				lockStep,
+				heldHolderVariable,
 				...(progress && {
 					announce: function announce(step) {
 						const running = progress.start({ name: step.name, detail: step.run })
@@ -216,7 +219,7 @@ function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 async function tddStep(params: {
 	cwd: string
 	packageJson: PackageJson
-	lock: () => { release(): void } | { refusal: string }
+	lock: () => MachineLockTaken
 	ref: string | undefined
 	wholeBranch: boolean
 }): Promise<StepResult> {

@@ -22,6 +22,14 @@ describe('parseInvocation', () => {
 			argv: ['nope', '--help'],
 			expected: { kind: 'help' },
 		},
+		"-h after -- → the command's own word: run, -- and -h passed on": {
+			argv: ['coverage', '--', '-h'],
+			expected: { kind: 'run', command: 'coverage', argv: ['--', '-h'] },
+		},
+		'-h before -- → help, nothing runs': {
+			argv: ['coverage', '-h', '--', 'x'],
+			expected: { kind: 'help' },
+		},
 		'unknown command → unknown': {
 			argv: ['nope', 'x'],
 			expected: { kind: 'unknown', command: 'nope' },

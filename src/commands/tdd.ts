@@ -25,6 +25,7 @@ import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
+import { MACHINE_LOCK_HOLDER_VARIABLE } from '../lib/machine-lock/machine-lock.constants.ts'
 import {
 	acquireMachineLock,
 	describeHolder,
@@ -80,8 +81,7 @@ import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers } from '../lib/tdd/test-source.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { WriteLine } from '../lib/handover/handover.types.ts'
-import type { Clock } from '../lib/progress/clock.types.ts'
+import type { MachineLockAccess, MachineLockTaken } from '../lib/machine-lock/machine-lock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
@@ -121,12 +121,7 @@ export async function runTdd(params: {
 	/** The width `status --legend` wraps its lines to. Default: 80. */
 	columns?: number
 	/** The machine lock a browser package's runs take: its file, the clock it waits with, where its lines go. */
-	machineLock?: {
-		path: string
-		clock: Clock
-		write: WriteLine
-		isAlive?: (pid: number) => boolean
-	}
+	machineLock?: MachineLockAccess
 }): Promise<CommandResult> {
 	const { cwd: root, argv } = params
 	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: ['base'] })
@@ -168,6 +163,9 @@ export async function runTdd(params: {
 			targets: parseTargets(words),
 			ledger,
 			base,
+			...(lock?.holderVariable && {
+				environment: { [MACHINE_LOCK_HOLDER_VARIABLE]: lock.holderVariable },
+			}),
 			...(params.live && {
 				progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
 			}),
@@ -638,7 +636,12 @@ async function announcedRun(params: {
 		name: `tdd ${params.subcommand}: vitest`,
 		detail: `${files.length} test file(s)`,
 	})
-	const modules = await runTestCases({ root: context.root, files, filter: 'all' })
+	const modules = await runTestCases({
+		root: context.root,
+		files,
+		filter: 'all',
+		environment: context.environment,
+	})
 	running?.finish(
 		`${'failure' in modules ? '✗' : '✓'} tdd ${params.subcommand}: vitest ran ${files.length} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
 	)
@@ -707,7 +710,7 @@ function lockMachine(params: {
 	subcommand: TddSubcommand
 	argv: string[]
 	machineLock: Parameters<typeof runTdd>[0]['machineLock']
-}): { release(): void } | { refusal: string } {
+}): MachineLockTaken {
 	const machineLock = params.machineLock ?? {
 		path: machineLockPath(),
 		clock: createSystemClock(),

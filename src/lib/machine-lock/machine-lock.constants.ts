@@ -1,6 +1,13 @@
 /** The machine-wide lock heavy runs take, in the user's cache folder. */
 export const MACHINE_LOCK_FILE = 'heavy-run.lock'
 
+/**
+ * The environment variable naming the process that holds the machine lock for a command, as
+ * `<pid>:<process start>` (`lock run` sets it for the command it runs): a lock that live process holds is
+ * already this process's own.
+ */
+export const MACHINE_LOCK_HOLDER_VARIABLE = 'DIALECTE_MACHINE_LOCK_HOLDER'
+
 /** What a caller reports while the lock file exists but holds no holder yet. */
 export const BEING_WRITTEN_HOLDER = {
 	pid: 0,

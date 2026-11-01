@@ -14,6 +14,7 @@ import {
 	BROWSER_COMMAND_PATTERN,
 	BROWSER_CONFIG_PATTERN,
 	BROWSER_TEST_DEPENDENCY_PATTERN,
+	MACHINE_LOCK_HOLDER_VARIABLE,
 	TEST_CONFIG_FILES,
 	TEST_RUNNER_PATTERN,
 } from '../machine-lock/machine-lock.constants.ts'
@@ -40,6 +41,11 @@ export async function runGateSteps(params: {
 	packageJson: PackageJson
 	/** Takes the machine lock around a heavy step; without it, no step waits for the lock. */
 	lockStep?: StepLock
+	/**
+	 * The holder variable of a lock held around every step (`gate --full`): given to a step that took no
+	 * lock of its own.
+	 */
+	heldHolderVariable?: string
 	/** Default: the system clock. */
 	clock?: Clock
 	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
@@ -80,6 +86,7 @@ export async function runGateSteps(params: {
 				generatedDocs: packageJson.dialecte?.generatedDocs ?? [],
 				clock: params.clock,
 				watchdog: params.watchdog,
+				holderVariable: lock?.holderVariable ?? params.heldHolderVariable,
 			})
 			results.push(result)
 			finished?.(result)
@@ -121,6 +128,8 @@ async function runStep(params: {
 	generatedDocs: string[]
 	clock?: Clock
 	watchdog?: Watchdog
+	/** The machine lock's holder variable while the step holds it: a `lock run` inside does not wait. */
+	holderVariable?: string
 }): Promise<StepResult> {
 	const { root, step } = params
 	const snapshot = step.restoresGeneratedDocs
@@ -130,7 +139,11 @@ async function runStep(params: {
 		command: 'sh',
 		args: ['-c', step.run],
 		cwd: root,
-		environment: { FORCE_COLOR: '0', NO_COLOR: '1' },
+		environment: {
+			FORCE_COLOR: '0',
+			NO_COLOR: '1',
+			...(params.holderVariable && { [MACHINE_LOCK_HOLDER_VARIABLE]: params.holderVariable }),
+		},
 		clock: params.clock,
 		watchdog: params.watchdog,
 	})
