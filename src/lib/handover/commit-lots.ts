@@ -6,17 +6,20 @@
  * lines under the spinner; every byte goes to the hook's full log as it comes. Once the hook ended, one
  * summary line of its steps with their counts, then its warning lines (passed) or its error lines and the
  * failing step's last lines (failed), then the full log's path; then the commit's sha and stat. A
- * repository with no commit hook prints none of it. A lot whose commit fails is unstaged again
- * (a merge lot's merge aborted), so the same command resumes at it once the cause is fixed. A merge lot
- * merges its recorded tip with its resolutions, checked against what was reviewed and rehearsed. Before
- * any commit that stages a change of the lock, `node_modules` are brought to it. A commit whose hook
- * prints nothing and gains no CPU for the stall time is stopped: its process tree is printed, then
- * killed, and the lot is not committed.
+ * repository with no commit hook prints none of it. A hook that ended (passed or failed, not stalled) is
+ * recorded as a gate record of the tree it ran on (`dialecte-gate-hook.json`), which the card reads. A lot
+ * whose commit fails is unstaged again (a merge lot's merge aborted), so the same command resumes at it
+ * once the cause is fixed. A merge lot merges its recorded tip with its resolutions, checked against what
+ * was reviewed and rehearsed. Before any commit that stages a change of the lock, `node_modules` are
+ * brought to it. A commit whose hook prints nothing and gains no CPU for the stall time is stopped: its
+ * process tree is printed, then killed, and the lot is not committed.
  */
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { recordHook } from '../gate-records/gate-records.ts'
+import { computeStateHash } from '../gate-records/state-hash.ts'
 import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -30,14 +33,16 @@ import {
 	HOOK_OUTPUT_PREFIX,
 } from './handover.constants.ts'
 import { createHookLiveView } from './hook-live-view.ts'
-import { hookOutcomeLines } from './hook-output.ts'
+import { hookOutcomeLines, hookSummarySteps, readHookSteps } from './hook-output.ts'
 import { removeMergeMarker, runMergeLot, undoMerge } from './merge-lot.ts'
 import { syncNodeModules } from './sync-node-modules.ts'
 import { unstageLot } from './unstage-lot.ts'
 
+import type { RecordedStep } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { Installer, ResolvedLot, WriteLine } from './handover.types.ts'
+import type { HookSummaryStep } from './hook-output.types.ts'
 
 /** The commit of every lot committed, the first lot first; undefined when a commit failed (its lines written). */
 export async function commitLots(params: {
@@ -117,6 +122,9 @@ export async function commitLots(params: {
 			return undefined
 		}
 		if (synced.note) write(`  ${synced.note}`)
+		// the hook runs on the working files: its record is of the tree before the commit
+		const hooked = hasCommitHook(root)
+		const stateHash = hooked ? computeStateHash(root) : undefined
 		// the hook's log grows as it prints: a run killed midway still leaves it
 		const hookLog = createHookLog({ lot: number })
 		const hookView = createHookLiveView({ running, tty, write, clock })
@@ -136,7 +144,7 @@ export async function commitLots(params: {
 			onLine: hookView.read,
 		})
 		// a repository with no commit hook stays silent
-		const hookRan = commit.output !== '' || hasCommitHook(root)
+		const hookRan = commit.output !== '' || hooked
 		if (!hookRan) rmSync(dirname(hookLog), { recursive: true, force: true })
 		const hookOutcome = hookRan
 			? hookOutcomeLines({
@@ -145,6 +153,16 @@ export async function commitLots(params: {
 					logPath: hookLog,
 				}).map((line) => `${HOOK_OUTPUT_PREFIX}${line}`)
 			: []
+		// after a failed commit HEAD is still the base; a stalled hook proved nothing
+		if (stateHash !== undefined && !commit.stalled)
+			recordHook({
+				root,
+				stateHash,
+				steps: hookSummarySteps({
+					steps: readHookSteps(commit.output),
+					passed: commit.exitCode === 0,
+				}).map(recordedHookStep),
+			})
 		if (commit.exitCode !== 0) {
 			running.finish(...hookOutcome)
 			// the commit's processes are gone by now (a stalled run settles once its tree is killed)
@@ -195,6 +213,11 @@ export async function commitLots(params: {
 		}
 	}
 	return commits
+}
+
+/** A step of the hook's summary as its gate record holds it. */
+function recordedHookStep(step: HookSummaryStep): RecordedStep {
+	return { name: step.name, status: step.failed ? 'failed' : 'passed', counts: step.counts }
 }
 
 /** An empty file, in a folder of its own, for the hook's whole output, its bytes as they came. */

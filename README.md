@@ -305,7 +305,9 @@ the answer.
   }
   ```
 
-  `gates` is optional free text: the card prints it as its notes, and reads the gates from their records.
+  `gates` is optional free text, the caveats for the person about to run the hand-over: the cards printed
+  before a run (this one, a rehearsal's) show it as their notes; the card a real run prints after it has
+  none. The card reads the gates from their records.
   It refuses (and writes nothing) when the branch or HEAD differ, `core.hooksPath` names a folder that
   does not exist (git would skip every hook; it says how to restore it), something is staged, a changed
   file is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
@@ -331,11 +333,14 @@ the answer.
     `tree not recorded: rehearse first`); a merge lot is sized from the tree it was trial-merged on to
     the tree a rehearsal recorded, else says `size after rehearse`. Then `HEAD <sha>`, after a run
     `HEAD <base> → <tip> · nothing pushed`.
-  - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`
-    and `--full`), then `rules` from its record, then `review` from the hand-over folder's findings ledger
-    and `round-<n>/` snapshots. `✓` passed; `!` to look at (a step not run here, with its reason, or not
-    run after a failure; `rules` never run; no findings ledger, or one holding no row yet:
-    `no findings recorded`; only nits open); `✗` failed (a failed step,
+  - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`,
+    `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
+    `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
+    since the hook names its own scripts, not the gate's steps), then `rules` from its record, then
+    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots. `✓` passed; `!` to
+    look at (a step not run here, with its reason, or not run after a failure; `rules` never run; no
+    findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
+    failed step,
     a rules error, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
     record). A record of another tree than the worktree's now ends with `(the tree changed since)`: its
     line turns `!` and blocks the hand-over; a failed step stays `✗`.
@@ -357,7 +362,8 @@ the answer.
     and whose receipts are otherwise only unchanged are counted apart (a case flagged rollback or red after
     green never is), as
     `helper code changed near unchanged cases (noise)`.
-  - `notes`: the lots file's `gates` text, as written.
+  - `notes`: the lots file's `gates` text, as written; only on the cards printed before a run (the
+    written card, a rehearsal's), never on the card after a real run.
 
   Its closing rule reads `dialecte handover --legend · details: dialecte tdd status` (in a box too narrow
   for it, that text is printed inside, above a plain closing rule). The command stays
@@ -375,13 +381,23 @@ the answer.
   what runs and the time. The commit's hook output is read as steps, from npm's script headers: a script
   that runs others (`npm run`, `run-p`, `run-s`, `npm-run-all`) is their parent, and the lines of the
   scripts a parent runs in parallel stay the parent's. While the hook runs, only the current step and the
-  warning and error lines show (lint, format, type-check and build warnings and errors, failing tests): on
-  a terminal the step with its elapsed time and those lines live under the spinner, off one `│ ▶ <step>`
-  per step and those lines behind `│`. Every byte goes to the hook's full log as it comes. After a passing
-  hook, one summary line (`check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning`: the scripts the hook
-  runs, a script they run only when it printed counts or failed), the warning lines and
-  `full log: <path>`; after a failing hook, the summary with `✗`, the error lines not among the failing
-  step's last 30 lines, those 30 lines and the log's path. A hook that prints nothing gets `hook ✓` (or
+  warning and error lines show (lint, format, type-check and build warnings and errors, failing tests),
+  each labelled by the step that printed it (`[lint:check] <line>`): on a terminal the step with its
+  elapsed time and those lines live under the spinner, off one `│ ▶ <step>` per step and those lines
+  behind `│`. A test step (a `test` segment in its name: `test`, `test:run`, `unit:test`; or a test
+  runner on its command line: `vitest`, `jest`, `node --test`) shows its failing tests and failed scripts
+  only: the warnings its tests print are theirs, not the repository's. Every byte goes to the hook's full
+  log as it comes. After a passing hook, one summary line
+  (`check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning in lint:check`: the scripts the hook runs, a
+  script they run only when it printed counts or failed; the warnings counted per step and kind, in the
+  order first printed), the labelled warning lines and `full log: <path>`; after a failing hook, the
+  summary with `✗`, the labelled error lines not among the failing step's last 30 lines, those 30 lines
+  and the log's path. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
+  the git folder of the repository it committed in (`dialecte-gate-hook.json`, mode `hook`): HEAD after
+  it (the new commit, or the base when it failed), the state hash of the tree before the commit and the
+  steps its summary names with their status and counts; the card reads it with the gate records, so a
+  lot committed where no `dialecte gate` ran still shows its gates, until a newer gate record replaces
+  it. A rehearsal records in its scratch clone only. A hook that prints nothing gets `hook ✓` (or
   `hook ✗`) and the log's path; a repository with no commit hook prints none of it (in husky's `.husky/_`,
   which holds a wrapper for every hook name, a hook counts only when its script exists in `.husky/`). Then the commit with
   its stat; the total time and the card at the end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
@@ -421,8 +437,13 @@ the answer.
   `package-lock.json` differs from HEAD's, `node_modules` are brought to it: the staged lock and
   `package.json` written over the working copies (the working ones saved first in the git folder's
   `dialecte-install-backup`, put back after the install, on an interrupt too; a backup a crash left is
-  restored by the next run when the files still hold the staged bytes, else refused naming it), `npm ci`,
-  the working copies put back byte for byte;
+  restored by the next run when the files still hold the staged bytes, else refused naming it),
+  `npm ci --ignore-scripts --prefer-offline --no-audit --no-fund` (no install script runs: a `prepare`
+  or `postinstall` could change git config, hooks or any file; `npm ci` reinstalls every package, so
+  the note after the sync names each installed package of the staged lock that has one,
+  `install scripts not run: <names>`: each package once by its name, a nested copy too, five named then
+  `and <n> more`), the working copies put back
+  byte for byte;
   refused when the install changed the staged files or the versions still differ (dev, peer and optional
   packages an install leaves out aside). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
   into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration

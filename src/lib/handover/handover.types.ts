@@ -174,7 +174,10 @@ export type HandoverCard = {
 	declarations: number
 	/** The gate steps (the latest record of each), the rules and the review, one line each. */
 	gates: CardGateLine[]
-	/** The lots file's `gates` text: the agent's caveats; absent when the lots file has none. */
+	/**
+	 * The lots file's `gates` text: the agent's caveats for the person about to run; absent when the lots file
+	 * has none and on the card a real run prints after it.
+	 */
 	notes?: string
 	/**
 	 * The test receipts for the reviewer, as the card's tdd lines: the lot's exemption, the counts, the
@@ -228,6 +231,14 @@ export type GuardedRun = { head: string; commits: string[] }
 export type Installer = (params: {
 	root: string
 }) => Promise<{ exitCode: number | undefined; output: string }>
+
+/** A package entry of a staged `package-lock.json`, as the lock sync reads it. */
+export type StagedLockEntry = {
+	version?: string
+	link?: boolean
+	/** The package has an install script, which the lock sync does not run. */
+	hasInstallScript?: boolean
+} & Record<string, unknown>
 
 /** A case's last proof, as the card's tdd counts read it: still red, proven red → green, unchanged, kept. */
 export type TddProof = 'red' | 'proven' | 'unchanged' | 'kept'

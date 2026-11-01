@@ -12,6 +12,13 @@ import { spawnSync } from 'node:child_process'
 
 import { resolveBin } from './bin.ts'
 import { getArg, hasFlag } from './config.ts'
+import {
+	EXITED_WARNING_END,
+	FAILED_FILES_NAMED,
+	FAILURE_DETAIL_INDENT,
+	NOT_STARTED_WARNING_END,
+	WARNING_INDENT,
+} from './format.constants.ts'
 
 import type { FormatFilesParams, FormatOpts } from './format.types.ts'
 
@@ -21,7 +28,8 @@ export function formatOptsFromArgv(argv: string[]): FormatOpts {
 
 /**
  * Run oxfmt over `files` (absolute or root-relative). No-op on skip / when no oxfmt is available.
- * Answers false when oxfmt ran and failed, so a caller that must not leave unformatted files can say so.
+ * Answers false when oxfmt failed or could not start, so a caller that must not leave unformatted files
+ * can say so; the warning says why (the error, or the files and oxfmt's own lines).
  */
 export function formatFiles(params: FormatFilesParams): boolean {
 	const { root, files, options = {} } = params
@@ -34,6 +42,35 @@ export function formatFiles(params: FormatFilesParams): boolean {
 	const args = [...(options.config ? ['--config', options.config] : []), ...files]
 	const res = spawnSync(oxfmt.path, args, { cwd: root, encoding: 'utf8' })
 	if (res.status === 0) return true
-	console.warn(`  ⚠ oxfmt exited ${res.status ?? '?'} — emitted files may be unformatted`)
+	if (res.error) {
+		console.warn(
+			`${WARNING_INDENT}⚠ oxfmt could not start (${res.error.message}) ${NOT_STARTED_WARNING_END}`,
+		)
+		return false
+	}
+	const details = [...namedFiles(files), ...outputLines({ stderr: res.stderr, stdout: res.stdout })]
+	console.warn(
+		[
+			`${WARNING_INDENT}⚠ oxfmt exited ${res.status ?? '?'} ${EXITED_WARNING_END}`,
+			...details.map(function indentDetail(line) {
+				return `${FAILURE_DETAIL_INDENT}${line}`
+			}),
+		].join('\n'),
+	)
 	return false
+}
+
+/** The files oxfmt was given, as given, the first few named and the others counted. */
+function namedFiles(files: string[]): string[] {
+	const named = files.slice(0, FAILED_FILES_NAMED)
+	const others = files.length - named.length
+	return others > 0 ? [...named, `and ${others} more`] : named
+}
+
+/** oxfmt's own lines: its stderr, or its stdout when stderr is empty. */
+function outputLines(params: { stderr: string; stdout: string }): string[] {
+	const output = params.stderr.trim() ? params.stderr : params.stdout
+	return output.split(/\r?\n/).filter(function hasText(line) {
+		return line.trim() !== ''
+	})
 }

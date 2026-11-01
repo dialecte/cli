@@ -2,7 +2,8 @@
  * `dialecte handover run <folder>`: the guards, then the lots not committed yet, then the card. With a
  * rehearsal, the guards read the repository and the lots are committed in its scratch clone. A real run
  * that leaves every lot committed then moves the lot file (`.dialecte/lot.json`) into the folder: the next
- * lot on the branch starts from an empty declaration, not from this lot's entries.
+ * lot on the branch starts from an empty declaration, not from this lot's entries. The card after a real run
+ * has no notes: they were written for the person about to run it, and what the run proved is in its gates.
  */
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -92,7 +93,8 @@ export async function runHandoverFolder(params: {
 		folder: handover.folder,
 		branch: lotsFile.branch,
 		head: guarded.head,
-		notes: lotsFile.gates,
+		// the notes are for the person about to run: a rehearsal's card keeps them, a real run's drops them
+		notes: rehearsal ? lotsFile.gates : undefined,
 		lots,
 		commits,
 		cliPath: params.cliPath,

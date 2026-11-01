@@ -28,8 +28,27 @@ export const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
 /** The lock whose packages `node_modules` must hold before a commit that stages a change of it. */
 export const PACKAGE_LOCK_FILE = 'package-lock.json'
 
-/** What installs the staged lock's packages exactly (the lock is never rewritten). */
-export const INSTALL_COMMAND = ['npm', 'ci', '--prefer-offline', '--no-audit', '--no-fund'] as const
+/**
+ * What installs the staged lock's packages exactly (the lock is never rewritten), running no install script:
+ * a script (the root's `prepare`, a package's `postinstall`) could change git config, hooks or any file.
+ */
+export const INSTALL_COMMAND = [
+	'npm',
+	'ci',
+	'--ignore-scripts',
+	'--prefer-offline',
+	'--no-audit',
+	'--no-fund',
+] as const
+
+/** Before the names of the installed packages of the staged lock whose install script did not run. */
+export const SKIPPED_INSTALL_SCRIPTS_NOTE = '; install scripts not run: '
+
+/** The most packages that note names; the others are counted (`and <n> more`). */
+export const SKIPPED_SCRIPTS_NAMED = 5
+
+/** The folder segment before a package's name in a lock path (`vite/node_modules/fsevents`). */
+export const NODE_MODULES_SEGMENT = 'node_modules/'
 
 /** The manifest written over with its staged copy while the staged lock is installed. */
 export const PACKAGE_MANIFEST_FILE = 'package.json'

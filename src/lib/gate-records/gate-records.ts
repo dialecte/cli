@@ -1,18 +1,23 @@
 /**
  * The gate and rules records in the worktree's git folder: what `dialecte gate` and `dialecte rules` write
- * after a run, and what the hand-over card reads back.
+ * after a run, what `handover run` writes after a commit's hook, and what the hand-over card reads back.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { readGit } from '../git.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
-import { GATE_RECORD_FILE, RULES_RECORD_FILE, UNRECORDED_STEPS } from './gate-records.constants.ts'
+import {
+	GATE_RECORD_FILE,
+	HOOK_RECORD_MODE,
+	RULES_RECORD_FILE,
+	UNRECORDED_STEPS,
+} from './gate-records.constants.ts'
 import { computeStateHash } from './state-hash.ts'
 
 import type { GateMode, StepResult } from '../gate/gate.types.ts'
 import type { CaseStatus } from '../tdd/tdd.types.ts'
-import type { GateRecord, RecordedStep, RulesRecord } from './gate-records.types.ts'
+import type { GateRecord, GateRecordMode, RecordedStep, RulesRecord } from './gate-records.types.ts'
 
 /** Where git keeps `name` for the worktree `root` is in (its own git folder in a linked worktree). */
 function recordPathOf(params: { root: string; name: string }): string {
@@ -20,7 +25,7 @@ function recordPathOf(params: { root: string; name: string }): string {
 	return resolve(params.root, path.trim())
 }
 
-function gateRecordName(mode: GateMode): string {
+function gateRecordName(mode: GateRecordMode): string {
 	return GATE_RECORD_FILE.replace('{mode}', mode)
 }
 
@@ -76,6 +81,26 @@ function recordedStepOf(result: StepResult): RecordedStep {
 	}
 }
 
+/**
+ * Records a commit's hook as a gate run of the tree it ran on: `stateHash` taken before the commit (the hook
+ * runs on the working files), `head` the commit it let through or HEAD when it failed, the steps its
+ * summary names with their counts.
+ */
+export function recordHook(params: {
+	root: string
+	stateHash: string
+	steps: RecordedStep[]
+}): void {
+	const record: GateRecord = {
+		mode: HOOK_RECORD_MODE,
+		at: new Date().toISOString(),
+		head: readHead(params.root),
+		stateHash: params.stateHash,
+		steps: params.steps,
+	}
+	writeRecord({ root: params.root, name: gateRecordName(HOOK_RECORD_MODE), record })
+}
+
 /** Records a rules run on the changed files. */
 export function recordRules(params: {
 	root: string
@@ -94,9 +119,9 @@ export function recordRules(params: {
 	writeRecord({ root: params.root, name: RULES_RECORD_FILE, record })
 }
 
-/** The gate records of the worktree `root` is in, each mode that has one. */
+/** The gate records of the worktree `root` is in, each mode that has one (a commit hook's among them). */
 export function readGateRecords(root: string): GateRecord[] {
-	const modes: GateMode[] = ['fast', 'full']
+	const modes: GateRecordMode[] = ['fast', 'full', HOOK_RECORD_MODE]
 	return modes.flatMap((mode) => readRecord<GateRecord>({ root, name: gateRecordName(mode) }) ?? [])
 }
 

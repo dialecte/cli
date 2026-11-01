@@ -1,7 +1,7 @@
 /**
  * The hand-over card: the verdict (READY, BLOCKED, DONE) with the size and what to read, what is committed
- * (each lot, a merge with its tree, HEAD), the gates as their records say, the test receipts, the notes, and
- * the command, before and after the run.
+ * (each lot, a merge with its tree, HEAD), the gates as their records say, the test receipts, the notes (before
+ * a run only), and the command, before and after the run.
  */
 import { spawnSync } from 'node:child_process'
 import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
@@ -88,7 +88,10 @@ export function buildHandoverCard(params: {
 	folder: string
 	branch: string
 	head: string
-	/** The lots file's `gates` text: the card's notes. */
+	/**
+	 * The lots file's `gates` text, the caveats for the person about to run the hand-over: the notes of the
+	 * cards printed before a run (the written card, a rehearsal's); undefined after a real run.
+	 */
 	notes: string | undefined
 	lots: readonly ResolvedLot[]
 	/** The commits of the lots committed already, the first lot first. */
@@ -523,7 +526,7 @@ function caseEntryLines(params: {
 
 /**
  * The card in sections: the verdict with the size and the declarations to read, then the commit, gates,
- * tdd and notes sections; the command is printed under the box, whole.
+ * tdd and notes (before a run only) sections; the command is printed under the box, whole.
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
 	return {

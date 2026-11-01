@@ -11,10 +11,15 @@ import {
 	FAIL_LINE,
 	FAILED_TEST_LINE,
 	FAILING_HOOK_LINES,
+	FAILING_PARALLEL_TEST_HOOK_LINES,
+	FAILING_PARALLEL_TEST_STEP_LINES,
 	FAILING_TEST_RUN_STEP_LINES,
 	LINT_WARNING,
+	OXFMT_WARNING,
 	PASSING_HOOK_LINES,
+	PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS,
 	RUN_P_ERROR,
+	TEST_BROWSER_FAILURE,
 	TYPE_ERROR,
 } from '../../test/hook-output-lines.constants.ts'
 import {
@@ -47,14 +52,17 @@ const NOT_COMMITTED_LINE = new RegExp(`^✗ ${LOT} 1 not committed`)
 
 const SPINNER = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /
 
-const PASSING_SUMMARY = 'check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning'
+const PASSING_SUMMARY = 'check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning in lint:check'
+
+/** The cli hook's lint warning as it is shown: labelled by the step that printed it. */
+const LABELLED_WARNING = `[lint:check] ${LINT_WARNING}`
 
 const FAILING_SUMMARY = 'check ✗ · test:run ✗ 1 failed of 1214'
 
 /** After the failing cli hook: the summary, the failing test line printed before the tail, the tail. */
 const FAILING_OUTCOME = [
 	FAILING_SUMMARY,
-	FAILED_TEST_LINE,
+	`[test:run] ${FAILED_TEST_LINE}`,
 	...FAILING_TEST_RUN_STEP_LINES.slice(-30),
 ]
 
@@ -63,11 +71,11 @@ const FAILING_STREAM = [
 	'▶ check',
 	'▶ type-check',
 	'▶ lint:check',
-	LINT_WARNING,
+	LABELLED_WARNING,
 	'▶ format:check',
 	'▶ test:run',
-	FAILED_TEST_LINE,
-	FAIL_LINE,
+	`[test:run] ${FAILED_TEST_LINE}`,
+	`[test:run] ${FAIL_LINE}`,
 ]
 
 function prefixed(lines: readonly string[]): string[] {
@@ -168,16 +176,58 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 				'▶ check',
 				'▶ type-check',
 				'▶ lint:check',
-				LINT_WARNING,
+				LABELLED_WARNING,
 				'▶ format:check',
 				'▶ test:run',
 				'▶ build',
 				PASSING_SUMMARY,
-				LINT_WARNING,
+				LABELLED_WARNING,
 				`full log: ${log}`,
 			]),
 		)
 		expect(readFileSync(log, 'utf8')).toBe(`${PASSING_HOOK_LINES.join('\n')}\n`)
+	})
+
+	it("off a terminal, a passing hook whose test:run prints a generator's oxfmt warning → that line neither streamed nor counted nor listed, only in the log; the lint:check warning labelled as before", async () => {
+		const { out } = prepareWithHook(printLines(PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS))
+		const { live, written } = pipeOutput()
+
+		const exitCode = await runLive({ out, live })
+
+		const start = written.indexOf(START_LINE)
+		const end = written.findIndex((line) => COMMIT_LINE.test(line))
+		const log = logPathIn(written)
+		expect(exitCode).toBe(0)
+		expect(written.slice(start + 1, end)).toEqual(
+			prefixed([
+				'▶ check',
+				'▶ type-check',
+				'▶ lint:check',
+				LABELLED_WARNING,
+				'▶ format:check',
+				'▶ test:run',
+				'▶ build',
+				PASSING_SUMMARY,
+				LABELLED_WARNING,
+				`full log: ${log}`,
+			]),
+		)
+		expect(readFileSync(log, 'utf8')).toContain(OXFMT_WARNING)
+	})
+
+	it("on a terminal, a passing hook whose test:run prints a generator's oxfmt warning → never in the live region; the lines after the hook as for the hook without it", async () => {
+		const { out } = prepareWithHook(printLines(PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS))
+		const terminal = createFakeTerminal({ tty: true })
+
+		const exitCode = await runLive({ out, live: terminal.output })
+
+		expect(exitCode).toBe(0)
+		expect(
+			terminal.rewrites.filter((region) => region.some((line) => line.includes('oxfmt exited'))),
+		).toEqual([])
+		expect(terminal.written.filter((line) => line.startsWith(PREFIX))).toEqual(
+			prefixed([PASSING_SUMMARY, LABELLED_WARNING, `full log: ${logPathIn(terminal.written)}`]),
+		)
 	})
 
 	it('on a terminal, a passing hook → under the spinner only the current step with its elapsed time and the warning lines; afterwards the summary, the warning and the log path before the commit line, no collapsed line', async () => {
@@ -195,13 +245,16 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 					region
 						.slice(1)
 						.every(
-							(line) => /^ {2}│ ▶ \S+ \d+\.\d s$/.test(line) || line === `${PREFIX}${LINT_WARNING}`,
+							(line) =>
+								/^ {2}│ ▶ \S+ \d+\.\d s$/.test(line) || line === `${PREFIX}${LABELLED_WARNING}`,
 						),
 			),
 		).toBe(true)
-		expect(terminal.rewrites.at(-1)?.slice(1)).toEqual(prefixed(['▶ build 0.0 s', LINT_WARNING]))
+		expect(terminal.rewrites.at(-1)?.slice(1)).toEqual(
+			prefixed(['▶ build 0.0 s', LABELLED_WARNING]),
+		)
 		expect(terminal.written.filter((line) => line.startsWith(PREFIX))).toEqual(
-			prefixed([PASSING_SUMMARY, LINT_WARNING, `full log: ${logPathIn(terminal.written)}`]),
+			prefixed([PASSING_SUMMARY, LABELLED_WARNING, `full log: ${logPathIn(terminal.written)}`]),
 		)
 		expect(terminal.written[summary + 3]).toMatch(COMMIT_LINE)
 		expect(terminal.written.some((line) => line.includes('line(s) of hook output'))).toBe(false)
@@ -311,11 +364,11 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		expect(written.slice(start + 1, end)).toEqual(
 			prefixed([
 				'▶ check',
-				LINT_WARNING,
+				`[check] ${LINT_WARNING}`,
 				'▶ test:node',
 				'▶ build',
-				'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning',
-				LINT_WARNING,
+				'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning in check',
+				`[check] ${LINT_WARNING}`,
 				`full log: ${logPathIn(written)}`,
 			]),
 		)
@@ -333,11 +386,32 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		expect(written.slice(start + 1, end)).toEqual(
 			prefixed([
 				'▶ check',
-				LINT_WARNING,
-				TYPE_ERROR,
-				RUN_P_ERROR,
+				`[check] ${LINT_WARNING}`,
+				`[check] ${TYPE_ERROR}`,
+				`[check] ${RUN_P_ERROR}`,
 				'check ✗ · type-check ✗',
 				...CORE_FAILING_CHECK_STEP_LINES.slice(-30),
+				`full log: ${logPathIn(written)}`,
+			]),
+		)
+	})
+
+	it('off a terminal, a test step running run-p failing → its script failure line streamed labelled [test], the oxfmt warning beside it never; then test ✗ · test:browser ✗, the failure line labelled, the last 30 lines and the log path', async () => {
+		const { out } = prepareWithHook(`${printLines(FAILING_PARALLEL_TEST_HOOK_LINES)}; exit 1`)
+		const { live, written } = pipeOutput()
+
+		const exitCode = await runLive({ out, live })
+
+		const start = written.indexOf(START_LINE)
+		const end = written.findIndex((line) => NOT_COMMITTED_LINE.test(line))
+		expect(exitCode).toBe(1)
+		expect(written.slice(start + 1, end)).toEqual(
+			prefixed([
+				'▶ test',
+				`[test] ${TEST_BROWSER_FAILURE}`,
+				'test ✗ · test:browser ✗',
+				`[test] ${TEST_BROWSER_FAILURE}`,
+				...FAILING_PARALLEL_TEST_STEP_LINES.slice(-30),
 				`full log: ${logPathIn(written)}`,
 			]),
 		)
@@ -391,7 +465,7 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		}
 		const { out } = prepareWithHook(
 			[
-				printLines(['', '> demo@1.0.0 test:run', '> vitest run']),
+				printLines(['', '> demo@1.0.0 lint:check', '> oxlint']),
 				waitForFlag('filtered'),
 				printLines(['filtered progress']),
 				waitForFlag('warning'),
@@ -418,22 +492,27 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		const { live, written } = pipeOutput()
 
 		const run = runLive({ out, live, clock })
-		await waitFor({ check: () => written.includes(`${PREFIX}▶ test:run`), bound: 12_000 })
+		await waitFor({ check: () => written.includes(`${PREFIX}▶ lint:check`), bound: 12_000 })
 		clock.advance(20_000)
 		writeFileSync(join(flags, 'filtered'), '1')
 		await waitFor({ check: () => logHolds('filtered progress'), bound: 12_000 })
 		clock.advance(15_000)
 		const afterFiltered = written.filter((line) => running.test(line))
 		writeFileSync(join(flags, 'warning'), '1')
-		await waitFor({ check: () => written.includes(`${PREFIX}${LINT_WARNING}`), bound: 12_000 })
+		await waitFor({
+			check: () => written.some((line) => line.endsWith(LINT_WARNING)),
+			bound: 12_000,
+		})
 		clock.advance(27_000)
 		const afterWarning = written.filter((line) => running.test(line))
 		writeFileSync(join(flags, 'done'), '1')
 		const exitCode = await run
 
-		expect({ afterFiltered, afterWarning, exitCode }).toEqual({
+		const warningLine = written.find((line) => line.endsWith(LINT_WARNING))
+		expect({ afterFiltered, afterWarning, warningLine, exitCode }).toEqual({
 			afterFiltered: [expect.stringMatching(/ running 30 s$/)],
 			afterWarning: [expect.stringMatching(/ running 30 s$/)],
+			warningLine: `${PREFIX}${LABELLED_WARNING}`,
 			exitCode: 0,
 		})
 	})
@@ -453,9 +532,9 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		expect(written.slice(start + 1, end)).toEqual(
 			prefixed([
 				'▶ lint:check',
-				LINT_WARNING,
-				'lint:check ✓ · 1 lint warning',
-				LINT_WARNING,
+				LABELLED_WARNING,
+				'lint:check ✓ · 1 lint warning in lint:check',
+				LABELLED_WARNING,
 				`full log: ${log}`,
 			]),
 		)
