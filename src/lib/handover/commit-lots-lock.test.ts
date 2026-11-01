@@ -3,6 +3,10 @@ import { join } from 'node:path'
 
 import { createFakeClock } from '../../../test/fake-clock.ts'
 import {
+	PERSON_WHO_RUNS_THE_REPOSITORY,
+	TOUCH_THE_GIT_FOLDER,
+} from '../../../test/refusal-wording.constants.ts'
+import {
 	createScratchRepository,
 	git,
 	temporaryFolder,
@@ -73,16 +77,19 @@ describe('commitLots after a stalled commit that left index.lock', { timeout: 30
 		expect(lines.join('\n')).toMatch(/unstaged again/)
 	})
 
-	it('the lock stays → no "unstaged" claim; the message says the files are still staged and names the lock to remove', async () => {
+	it('the lock stays → no "unstaged" claim; the message says the files are still staged and names the lock, never asking to delete or remove it', async () => {
 		const { root, lock } = stalledCommitInAWorktree()
 		const lines: string[] = []
 
 		await expect(commitA({ root, lines, clock: createFakeClock() })).resolves.toBeUndefined()
 
 		const output = lines.join('\n')
+		const stillStaged = lines.filter((line) => /still staged/.test(line))
 		expect(output).not.toMatch(/unstaged again/)
-		expect(output).toMatch(/still staged/)
-		expect(output).toContain(lock)
+		expect(stillStaged).toHaveLength(1)
+		expect(stillStaged[0]).toContain(lock)
+		expect(stillStaged[0]).toContain(PERSON_WHO_RUNS_THE_REPOSITORY)
+		expect(stillStaged[0]).not.toMatch(TOUCH_THE_GIT_FOLDER)
 		expect(git({ root, args: ['diff', '--cached', '--name-only'] }).trim()).toBe('a.txt')
 	})
 })

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
+import { GIT_READ_ENVIRONMENT } from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
 
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
@@ -12,6 +13,8 @@ export function readGit(params: { root: string; args: string[] }): string {
 		cwd: params.root,
 		encoding: 'utf8',
 		maxBuffer: 1e8,
+		// a status or diff never refreshes the index behind a commit running at the same time
+		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
 	})
 	if (result.status !== 0)
 		throw new Error(`git ${params.args.join(' ')}: ${(result.stderr || result.stdout).trim()}`)

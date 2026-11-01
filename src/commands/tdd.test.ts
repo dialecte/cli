@@ -1116,6 +1116,151 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(red.output).not.toContain('rollback')
 	})
 
+	/** A helper the green of `add` adds, the refactor after it drops. */
+	const HELPER =
+		'export function plus(left: number, right: number): number {\n\treturn left + right\n}\n'
+
+	/** `add` through the helper. */
+	const HELPED = `import { plus } from './helper.ts'\nexport function add(left: number, right: number): number {\n\treturn plus(left, right)\n}\n`
+
+	/** A production file of the base the green of `add` edits, the refactor after it puts back. */
+	const FORMAT = "export const SEPARATOR = ', '\n"
+
+	/** red of `add` on the stub, then green with `add` through a new `src/helper.ts`. */
+	async function proveAddWithHelper(root: string): Promise<void> {
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({ root, files: { 'src/add.ts': HELPED, 'src/helper.ts': HELPER } })
+		await tdd({ cwd: root, argv: ['green'] })
+	}
+
+	it('a refactor after a green dropping the file the green added (src/helper.ts inlined), tdd green → green without a flag, no rollback line, no flag in tdd status', async () => {
+		const root = createVitestPackage({})
+		await proveAddWithHelper(root)
+		unlinkSync(join(root, 'src/helper.ts'))
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED } })
+
+		const green = await tdd({ cwd: root, argv: ['green'] })
+		const flagged = await tdd({ cwd: root, argv: ['status', '--flags'] })
+
+		expect({
+			exitCode: green.exitCode,
+			cases: caseLines(green.output),
+			rollback: green.output.includes('rollback'),
+			flagged: flagged.output,
+		}).toEqual({
+			exitCode: 0,
+			cases: ['green    src/add.test.ts::add > one plus two → three'],
+			rollback: false,
+			flagged: 'tdd status: no case of the change carries a flag',
+		})
+	})
+
+	it('a refactor after a green putting a file of the base back to its content at the base, tdd green → green without a flag, no rollback line', async () => {
+		const root = createVitestPackage({ files: { 'src/format.ts': FORMAT } })
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({
+			root,
+			files: { 'src/add.ts': IMPLEMENTED, 'src/format.ts': `${FORMAT}export const PLUS = '+'\n` },
+		})
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({ root, files: { 'src/format.ts': FORMAT } })
+
+		const green = await tdd({ cwd: root, argv: ['green'] })
+
+		expect({
+			exitCode: green.exitCode,
+			cases: caseLines(green.output),
+			rollback: green.output.includes('rollback'),
+		}).toEqual({
+			exitCode: 0,
+			cases: ['green    src/add.test.ts::add > one plus two → three'],
+			rollback: false,
+		})
+	})
+
+	it('a green at code put back (src/helper.ts dropped) proving a case for the first time → flagged rollback, the line naming src/helper.ts before the summary', async () => {
+		const root = createVitestPackage({})
+		await proveAddWithHelper(root)
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+		await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+		unlinkSync(join(root, 'src/helper.ts'))
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/sub.ts': SUB_IMPLEMENTED } })
+
+		const green = await tdd({ cwd: root, argv: ['green', 'src/sub.test.ts'] })
+
+		expect({
+			cases: caseLines(green.output),
+			end: green.output.split('\n').slice(-2),
+		}).toEqual({
+			cases: ['green    src/sub.test.ts::sub > three minus one → two  flags: rollback'],
+			end: [
+				ROLLBACK_LINE.replace('{files}', 'src/helper.ts'),
+				expect.stringMatching(/^tdd green: 1 green, /),
+			],
+		})
+	})
+
+	it('a red at code put back after a green (src/helper.ts dropped) → flagged rollback, the line naming src/helper.ts before the summary', async () => {
+		const root = createVitestPackage({})
+		await proveAddWithHelper(root)
+		unlinkSync(join(root, 'src/helper.ts'))
+		writeFiles({
+			root,
+			files: { 'src/add.ts': IMPLEMENTED, 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST },
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+
+		expect({
+			cases: caseLines(red.output),
+			end: red.output.split('\n').slice(-2),
+		}).toEqual({
+			cases: [
+				'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub  flags: rollback',
+			],
+			end: [
+				ROLLBACK_LINE.replace('{files}', 'src/helper.ts'),
+				expect.stringMatching(/^tdd red: 1 red, /),
+			],
+		})
+	})
+
+	it('green A with src/helper.ts, a refactor dropping it green A again (no flag), red B there (no flag), then src/helper.ts back at its content before the refactor and green B → B flagged rollback, the line naming src/helper.ts', async () => {
+		const root = createVitestPackage({})
+		await proveAddWithHelper(root)
+		unlinkSync(join(root, 'src/helper.ts'))
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED } })
+		const refactored = await tdd({ cwd: root, argv: ['green', 'src/add.test.ts'] })
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+		const red = await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+		writeFiles({ root, files: { 'src/helper.ts': HELPER, 'src/sub.ts': SUB_IMPLEMENTED } })
+
+		const green = await tdd({ cwd: root, argv: ['green', 'src/sub.test.ts'] })
+
+		expect({
+			refactored: caseLines(refactored.output),
+			refactoredFlagged: refactored.output.includes('rollback'),
+			red: caseLines(red.output),
+			redFlagged: red.output.includes('rollback'),
+			green: caseLines(green.output),
+			greenEnd: green.output.split('\n').slice(-2),
+		}).toEqual({
+			refactored: ['green    src/add.test.ts::add > one plus two → three'],
+			refactoredFlagged: false,
+			red: [
+				'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub',
+			],
+			redFlagged: false,
+			green: ['green    src/sub.test.ts::sub > three minus one → two  flags: rollback'],
+			greenEnd: [
+				ROLLBACK_LINE.replace('{files}', 'src/helper.ts'),
+				expect.stringMatching(/^tdd green: 1 green, /),
+			],
+		})
+	})
+
 	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', async () => {
 		const root = createVitestPackage({
 			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },

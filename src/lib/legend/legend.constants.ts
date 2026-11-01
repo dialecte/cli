@@ -176,7 +176,7 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 	{
 		term: 'rollback',
 		meaning:
-			'a red taken at production code the case had already left: code was put back to show a red',
+			'a red, or a green run proving a case for the first time, taken while the lot moved production code back (a refactor green of cases already green is not flagged)',
 		look: 'look: always; ask why the code went back',
 	},
 	{
@@ -186,7 +186,8 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 	},
 	{
 		term: 'test code changed around it',
-		meaning: 'a proven case kept at a red run while a helper or its own test file changed',
+		meaning:
+			'a case proven green whose test code (its own test file or a helper) changed around it after its green',
 		look: 'look: each one; the change may weaken what the case proved',
 	},
 	{

@@ -250,3 +250,30 @@ export const FAILING_PARALLEL_TEST_HOOK_LINES = [
 
 /** The lines of that `test` step: its command line, then the mixed lines of its scripts. */
 export const FAILING_PARALLEL_TEST_STEP_LINES = FAILING_PARALLEL_TEST_HOOK_LINES.slice(2)
+
+/** The notice Vite prints each time it loads a config file `configLoader: 'native'` cannot read. */
+export const VITE_CONFIG_LOADER_WARNING =
+	"(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:"
+
+/** Where core's first vite build starts printing, in its `build` step. */
+const CORE_VITE_BUILD_START = CORE_PASSING_HOOK_LINES.indexOf(
+	'vite v7.1.5 building for production...',
+)
+
+/**
+ * Core's hook passing, its `build` step printing Vite's configLoader warning three times: before each of
+ * its two vite builds, and once more as the second config loads again.
+ */
+export const CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING = [
+	...CORE_PASSING_HOOK_LINES.slice(0, CORE_VITE_BUILD_START),
+	VITE_CONFIG_LOADER_WARNING,
+	...CORE_PASSING_HOOK_LINES.slice(CORE_VITE_BUILD_START),
+	VITE_CONFIG_LOADER_WARNING,
+	'vite v7.1.5 building for production...',
+	VITE_CONFIG_LOADER_WARNING,
+	'transforming...',
+	'✓ 18 modules transformed.',
+	'rendering chunks...',
+	'dist/engine.js  96.40 kB │ gzip: 21.30 kB',
+	'✓ built in 0.40s',
+]

@@ -45,7 +45,11 @@ import {
 	readRevisions,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
-import { filesMovedBack, readProductionState } from '../lib/tdd/production-states.ts'
+import {
+	filesMovedBack,
+	isRollbackGreen,
+	readProductionState,
+} from '../lib/tdd/production-states.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
 	caseLabel,
@@ -542,12 +546,26 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 				detail: `cannot list its cases: ${notARed(file.failure)}`,
 			}),
 		)
-	for (const testCase of cases) {
-		if (testCase.state === 'skipped' || !isTargeted({ testCase, targets: context.targets }))
-			continue
-		const proof = receiptsOf({ ledger, testCase: idOf(testCase) })
-			.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
-			.at(-1)
+	const verdicts = cases
+		.filter(
+			(testCase) =>
+				testCase.state !== 'skipped' && isTargeted({ testCase, targets: context.targets }),
+		)
+		.map(function judgeCase(testCase) {
+			const proof = receiptsOf({ ledger, testCase: idOf(testCase) })
+				.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
+				.at(-1)
+			const refusal = greenRefusal({ testCase, proof, ledger, testCode, productionHash })
+			return { testCase, proof, refusal }
+		})
+	const proven = verdicts
+		.filter(({ proof, refusal }) => refusal === undefined && !isTestOnlyProof(proof))
+		.map(({ testCase }) => ({ ...idOf(testCase), caseHash: testCase.caseHash }))
+	// a green at code put back still advances; flagged when it proves a case never green before
+	const flags: ReceiptFlag[] = isRollbackGreen({ ledger, cases: proven, movedBack })
+		? ['rollback']
+		: []
+	for (const { testCase, proof, refusal } of verdicts) {
 		const base = {
 			...idOf(testCase),
 			testFileHash: testCode.get(testCase.file) ?? '',
@@ -555,19 +573,12 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 			productionHash,
 			at,
 		}
-		const refusal = greenRefusal({ testCase, proof, ledger, testCode, productionHash })
 		if (refusal) {
 			entries.push({ ...base, kind: 'refused', reason: refusal })
 			lines.push(statusLine({ label: 'refused', id: caseLabel(testCase), detail: refusal }))
-		} else if (
-			proof?.kind === 'unchanged' ||
-			proof?.kind === 'accepted' ||
-			proof?.kind === 'revised'
-		)
+		} else if (proof && isTestOnlyProof(proof))
 			lines.push(statusLine({ label: proof.kind, id: caseLabel(testCase), detail: '' }))
 		else {
-			// a green at code put back still advances: the put back is shown at its green
-			const flags: ReceiptFlag[] = movedBack.length ? ['rollback'] : []
 			entries.push({ ...base, kind: 'green', ...(flags.length && { flags }) })
 			lines.push(
 				statusLine({
@@ -582,9 +593,14 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 	const summary = `tdd green: ${countLines({ lines, label: 'green' })} green, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'refused' })} refused`
 	const refused = countLines({ lines, label: 'refused' })
 	// counted before: the rollback line is no case line
-	if (movedBack.length && countLines({ lines, label: 'green' }) > 0)
+	if (flags.length && countLines({ lines, label: 'green' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
 	return finish({ context, lines, summary, refused })
+}
+
+/** Whether the case's last proof is one a green run only reports (no green receipt): unchanged, accepted, revised. */
+function isTestOnlyProof(proof: TddReceipt | undefined): boolean {
+	return proof?.kind === 'unchanged' || proof?.kind === 'accepted' || proof?.kind === 'revised'
 }
 
 /** Why a case cannot be green now, or undefined when its green is earned. */

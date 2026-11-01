@@ -1,0 +1,45 @@
+/**
+ * A real `handover run` marks its hand-over folder while it runs (`running.json`: its pid and when it
+ * started), so a gate does not run under a hand-over committing at that moment. The marker goes at the
+ * run's end, on a failure, and on Ctrl-C or a termination received while a child of the run works (a
+ * commit with its hook, an install); a run stopped at another moment leaves it, and a marker whose process
+ * is gone counts as no run. A gate it refuses names the marker, so a person can tell a pid reused by
+ * another process.
+ */
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { isProcessAlive } from '../process-alive.ts'
+import { onSignalExit } from '../progress/interrupt-forwarding.ts'
+import { HANDOVER_RUN_MARKER_FILE } from './handover.constants.ts'
+
+import type { HandoverRunMarker } from './handover.types.ts'
+
+/** Marks `folder` as running in this process; the answer removes the marker (also run on a forwarded signal). */
+export function writeRunMarker(params: { folder: string; now: Date }): () => void {
+	const path = join(params.folder, HANDOVER_RUN_MARKER_FILE)
+	const marker: HandoverRunMarker = { pid: process.pid, startedAt: params.now.toISOString() }
+	writeFileSync(path, `${JSON.stringify(marker)}\n`)
+	function removeMarker(): void {
+		rmSync(path, { force: true })
+	}
+	const removeSignalHook = onSignalExit(removeMarker)
+	return function release() {
+		removeSignalHook()
+		removeMarker()
+	}
+}
+
+/** The run in progress in `folder`: its marker when it names a live process; undefined otherwise. */
+export function readRunMarker(folder: string): HandoverRunMarker | undefined {
+	const path = join(folder, HANDOVER_RUN_MARKER_FILE)
+	if (!existsSync(path)) return undefined
+	let marker: Partial<HandoverRunMarker>
+	try {
+		marker = JSON.parse(readFileSync(path, 'utf8')) as Partial<HandoverRunMarker>
+	} catch {
+		return undefined
+	}
+	if (typeof marker.pid !== 'number' || !isProcessAlive(marker.pid)) return undefined
+	return { pid: marker.pid, startedAt: String(marker.startedAt ?? '') }
+}

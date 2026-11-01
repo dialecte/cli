@@ -6,6 +6,7 @@
 import { realpathSync } from 'node:fs'
 import { relative } from 'node:path'
 
+import { realPathOf } from '../file-system.ts'
 import { isCaseOfBase, isCaseOfChange } from './case-of-change.ts'
 import { classifyFailure } from './classify-failure.ts'
 import { hashText, isProductionPath } from './tdd-files.ts'
@@ -145,7 +146,7 @@ export function modulesOf(params: {
 }): ReportedModule[] {
 	const realRoot = realpathSync(params.root)
 	return params.modules.filter(
-		(testModule) => relative(realRoot, realpathOr(testModule.file)) === params.file,
+		(testModule) => relative(realRoot, realPathOf(testModule.file)) === params.file,
 	)
 }
 
@@ -181,19 +182,11 @@ function productionFileJudge(params: {
 }): (path: string) => boolean {
 	const realRoot = realpathSync(params.root)
 	return function isProductionFile(path) {
-		const file = relative(realRoot, realpathOr(path))
+		const file = relative(realRoot, realPathOf(path))
 		return (
 			!file.startsWith('..') &&
 			!file.startsWith('/') &&
 			isProductionPath({ file, packageJson: params.packageJson })
 		)
-	}
-}
-
-function realpathOr(path: string): string {
-	try {
-		return realpathSync(path)
-	} catch {
-		return path
 	}
 }

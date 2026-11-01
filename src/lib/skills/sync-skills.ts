@@ -24,6 +24,7 @@ import {
 } from 'node:fs'
 import { dirname, join, parse, relative, resolve } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { SKILL_NAME_PATTERN, SKILLS_FOLDER } from './skill-file.constants.ts'
 import { COPY_EXCLUDED_FOLDERS, COPY_MARKER_FILE, MANIFEST_FILE } from './sync-skills.constants.ts'
 
@@ -145,7 +146,7 @@ export function syncSkills(params: {
 
 			for (const source of params.sources) {
 				const destination = join(targetFolder, source.name)
-				if (existsOrIsLink(destination)) {
+				if (isPresent(destination)) {
 					const listedInManifest = previouslyInstalled.includes(source.name)
 					if (
 						!isOwnedEntry({
@@ -196,7 +197,7 @@ function isOwnedEntry(params: {
 	/** The skill folder being installed at `path`; undefined when removing an unshipped skill. */
 	sourcePath: string | undefined
 }): boolean {
-	if (!SKILL_NAME_PATTERN.test(params.name) || !existsOrIsLink(params.path)) return false
+	if (!SKILL_NAME_PATTERN.test(params.name) || !isPresent(params.path)) return false
 	if (lstatSync(params.path).isSymbolicLink())
 		return (
 			params.listedInManifest ||
@@ -309,15 +310,6 @@ function isSyncedVersion(value: unknown): value is { package: string; version: s
 		'version' in value &&
 		typeof value.version === 'string'
 	)
-}
-
-function existsOrIsLink(path: string): boolean {
-	try {
-		lstatSync(path)
-		return true
-	} catch {
-		return false
-	}
 }
 
 /** A symlink is unlinked, never followed: the source folder must survive. */

@@ -36,6 +36,8 @@ export async function runHandoverFolder(params: {
 	clock: Clock
 	colour: boolean
 	onProcessGroup?: (pid: number) => void
+	/** Added to the environment the commits and their hooks run in (a rehearsal's short `TMPDIR`). */
+	hookEnvironment?: Record<string, string>
 	/** Where each lot announces itself; default: start and running lines through `write`. */
 	progress?: StepProgress
 	/** The progress draws on a terminal. */
@@ -67,6 +69,7 @@ export async function runHandoverFolder(params: {
 		write,
 		clock,
 		onProcessGroup: params.onProcessGroup,
+		hookEnvironment: params.hookEnvironment,
 		progress: params.progress,
 		tty: params.tty,
 	})

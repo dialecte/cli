@@ -18,6 +18,7 @@ import {
 	PARALLEL_FLAGS,
 	PARALLEL_RUNNER,
 	PLAIN_HOOK_STEP,
+	REPEAT_COUNT_SUFFIX,
 	RUN_ALL_RUNNERS,
 	RUNNER_ARGUMENT,
 	SCRIPT_FAILURE,
@@ -32,6 +33,7 @@ import {
 
 import type { StepCounts } from '../gate/gate.types.ts'
 import type {
+	CountedFlaggedLine,
 	FlaggedHookLine,
 	HookLineKind,
 	HookParentStep,
@@ -39,6 +41,7 @@ import type {
 	HookStepReader,
 	HookSummaryStep,
 	PlacedFlaggedLine,
+	RepeatedLine,
 	ScriptsRun,
 } from './hook-output.types.ts'
 
@@ -177,8 +180,9 @@ export function createHookStepReader(params: {
 /**
  * The lines printed once the hook ended (without the hook prefix): its summary line, then the warning lines
  * (passed) or the error lines not among the failing step's last lines, then those lines (failed), each
- * labelled by its step, then the full log's path. The summary names the steps `hookSummarySteps` selects and
- * counts the warnings per step and kind.
+ * labelled by its step, then the full log's path. A line its step printed several times is listed once,
+ * where it was first printed, with its count (`(×3)`). The summary names the steps `hookSummarySteps`
+ * selects and counts the distinct warnings per step and kind.
  */
 export function hookOutcomeLines(params: {
 	output: string
@@ -192,10 +196,10 @@ export function hookOutcomeLines(params: {
 	})
 	const logLine = `full log: ${params.logPath}`
 	if (params.passed) {
-		const shown = flagged.map((entry) => entry.flagged)
+		const shown = distinctFlaggedLines(flagged.map((entry) => entry.flagged))
 		return [
-			[...parts, ...warningCounts(shown)].join(' · '),
-			...shown.map((entry) => entry.label),
+			[...parts, ...warningCounts(shown.map((entry) => entry.flagged))].join(' · '),
+			...shown.map(countedLabel),
 			logLine,
 		]
 	}
@@ -209,16 +213,42 @@ export function hookOutcomeLines(params: {
 	)
 	return [
 		parts.join(' · '),
-		...before.map((entry) => entry.flagged.label),
+		...distinctFlaggedLines(before.map((entry) => entry.flagged)).map(countedLabel),
 		...tail.slice(tailStart),
 		logLine,
 	]
 }
 
 /**
+ * The flagged lines each once, in the order first printed, with how many times its step printed it: lines
+ * of different steps never merge (their labels differ).
+ */
+function distinctFlaggedLines(flagged: readonly FlaggedHookLine[]): CountedFlaggedLine[] {
+	const byLabel = new Map<string, CountedFlaggedLine>()
+	for (const entry of flagged) {
+		const seen = byLabel.get(entry.label)
+		if (seen) seen.count += 1
+		else byLabel.set(entry.label, { flagged: entry, count: 1 })
+	}
+	return [...byLabel.values()]
+}
+
+function countedLabel(entry: CountedFlaggedLine): string {
+	return withRepeatCount({ text: entry.flagged.label, count: entry.count })
+}
+
+/** A flagged line as shown: `<line> (×<count>)` from a count of 2, else the line. */
+export function withRepeatCount(params: RepeatedLine): string {
+	return params.count > 1
+		? `${params.text}${REPEAT_COUNT_SUFFIX.replace('{count}', String(params.count))}`
+		: params.text
+}
+
+/**
  * The steps a hook's summary names, in the order they started: the scripts the hook file runs, a script they
  * run only when it has counts or is the one that failed, and after the failing step the tasks run-p says
- * failed. A failed hook's failing step is its last; it and the steps running it failed.
+ * failed. A failed hook's failing step is its last; it and the steps running it failed. A warning or error
+ * line a step printed several times counts once.
  */
 export function hookSummarySteps(params: {
 	steps: HookStep[]
@@ -228,7 +258,7 @@ export function hookSummarySteps(params: {
 	const failing = params.passed ? undefined : steps.at(-1)
 	const failed = failingChain({ steps, failing })
 	return steps.flatMap(function summaryStep(step) {
-		const counts = step.runsScripts ? {} : readStepCounts(step.lines.join('\n'))
+		const counts = step.runsScripts ? {} : readStepCounts(withoutRepeats(step.lines).join('\n'))
 		const stepFailed = failed.has(step)
 		if (step.parent && !renderHookCounts(counts) && !stepFailed) return []
 		const tasks =
@@ -236,6 +266,17 @@ export function hookSummarySteps(params: {
 				? failedTasks(step.lines).map((task) => ({ name: task, failed: true, counts: {} }))
 				: []
 		return [{ name: step.name, failed: stepFailed, counts }, ...tasks]
+	})
+}
+
+/** The lines without a warning or error line printed already before (the same text). */
+function withoutRepeats(lines: readonly string[]): string[] {
+	const flagged = new Set<string>()
+	return lines.filter(function firstPrinted(line) {
+		if (!classifyHookLine(line)) return true
+		if (flagged.has(line)) return false
+		flagged.add(line)
+		return true
 	})
 }
 

@@ -11,7 +11,7 @@ import { hashFile, hashProduction, isProductionPath, listChangedSince } from './
 import { DELETED_PRODUCTION_FILE } from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { ProductionState, TddLedger } from './tdd.types.ts'
+import type { HashedTestCase, ProductionState, TddLedger } from './tdd.types.ts'
 
 /**
  * The production state of the package now: its `hashProduction`, the base, its production files changed
@@ -60,6 +60,31 @@ export function filesMovedBack(params: { ledger: TddLedger; current: ProductionS
 			had.set(file, (had.get(file) ?? new Set<string>()).add(content))
 	}
 	return movedBackFrom({ files: current.files, newest, had }).sort()
+}
+
+/**
+ * Whether a green run at the current production state is flagged `rollback`: a production file moved back
+ * (`movedBack` not empty) and a case it proves has no green receipt in the ledger before, of its own test call
+ * (`caseHash`), whatever that green's flags (a refactor that keeps every proven case green is not flagged).
+ */
+export function isRollbackGreen(params: {
+	ledger: TddLedger
+	cases: readonly HashedTestCase[]
+	movedBack: readonly string[]
+}): boolean {
+	const { ledger, cases, movedBack } = params
+	if (movedBack.length === 0) return false
+	return cases.some(
+		(testCase) =>
+			!ledger.entries.some(
+				(entry) =>
+					entry.kind === 'green' &&
+					entry.file === testCase.file &&
+					entry.name === testCase.name &&
+					entry.project === testCase.project &&
+					entry.caseHash === testCase.caseHash,
+			),
+	)
 }
 
 /**

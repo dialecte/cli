@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,7 +10,7 @@ import {
 	readWorkspaceFacts,
 } from './package-facts.ts'
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 let root: string
 
@@ -21,6 +21,10 @@ function touch(path: string, content = ''): void {
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'dialecte-facts-'))
+})
+
+afterEach(() => {
+	rmSync(root, { recursive: true, force: true })
 })
 
 describe('listRepositoryPaths', () => {

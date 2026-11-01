@@ -41,6 +41,8 @@ export async function streamCommand(params: {
 	 * lines show live under its spinner instead of being written.
 	 */
 	step?: { running: RunningStep; tty: boolean }
+	/** Added to the command's environment (a rehearsal's short `TMPDIR`). */
+	environment?: Record<string, string>
 	/** Each piece of text the command prints, as it comes (a log kept while it runs). */
 	onText?: (text: string) => void
 	/**
@@ -91,7 +93,7 @@ export async function streamCommand(params: {
 			args: params.args,
 			cwd: params.cwd,
 			input: params.input,
-			environment: { FORCE_COLOR: '0' },
+			environment: { ...params.environment, FORCE_COLOR: '0' },
 			onLine: print,
 			onOutput: function heard(text) {
 				params.onText?.(text)

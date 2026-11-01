@@ -43,6 +43,12 @@ export type FlaggedHookLine = {
 	label: string
 }
 
+/** A line with how many times it was printed (shown `<line> (×<count>)` from a count of 2). */
+export type RepeatedLine = { text: string; count: number }
+
+/** A flagged line with how many times its step printed it. */
+export type CountedFlaggedLine = { flagged: FlaggedHookLine; count: number }
+
 /** A flagged line with the step holding it and its place among that step's lines. */
 export type PlacedFlaggedLine = { flagged: FlaggedHookLine; step: HookStep; index: number }
 
@@ -70,4 +76,6 @@ export type HookStepReader = {
 /** Shows a running hook's output as it comes: its steps and its warning and error lines. */
 export type HookLiveView = {
 	read(line: string): void
+	/** The hook ended: off a terminal, a run of repeats of the last flagged line is written with its count. */
+	end(): void
 }

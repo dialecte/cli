@@ -17,6 +17,11 @@ export type CardLine = {
 	emphasis?: CardEmphasis
 	trailing?: string
 	cut?: boolean
+	/**
+	 * When the room its hang leaves is below the least: the text before the hang column (the lead) on a row of
+	 * its own and the rest under it, a few columns in, wrapped to the full width (a commit line's message).
+	 */
+	stack?: boolean
 	/** The text without the layout put in it (a label's padding, a count's alignment), for data. */
 	plain?: string
 }

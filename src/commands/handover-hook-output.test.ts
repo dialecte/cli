@@ -1,13 +1,23 @@
 /** `handover run`: a commit hook's output read as steps - live only its step and its warnings, then a summary. */
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
+import { removeHookLogs } from '../../test/hook-logs.ts'
 import {
 	CORE_FAILING_CHECK_STEP_LINES,
 	CORE_FAILING_HOOK_LINES,
 	CORE_PASSING_HOOK_LINES,
+	CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING,
 	FAIL_LINE,
 	FAILED_TEST_LINE,
 	FAILING_HOOK_LINES,
@@ -21,6 +31,7 @@ import {
 	RUN_P_ERROR,
 	TEST_BROWSER_FAILURE,
 	TYPE_ERROR,
+	VITE_CONFIG_LOADER_WARNING,
 } from '../../test/hook-output-lines.constants.ts'
 import {
 	createScratchRepository,
@@ -125,13 +136,23 @@ function runLive(params: {
 	write?: (line: string) => void
 	clock?: Clock
 }): Promise<number> {
+	const lines: string[] = []
+	removeHookLogs({ lines })
+	/** `write`, every line kept for the hook logs it names. */
+	function recording(write: (line: string) => void): (line: string) => void {
+		return function recordLine(line) {
+			lines.push(line)
+			write(line)
+		}
+	}
+	const live = { ...params.live, writeLine: recording(params.live.writeLine) }
 	return runHandoverRun({
 		argv: [params.out],
-		write: params.write ?? params.live.writeLine,
+		write: params.write ? recording(params.write) : live.writeLine,
 		clock: params.clock ?? createFakeClock(),
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
-		live: params.live,
+		live,
 	})
 }
 
@@ -370,6 +391,37 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 				'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning in check',
 				`[check] ${LINT_WARNING}`,
 				`full log: ${logPathIn(written)}`,
+			]),
+		)
+	})
+
+	it("off a terminal, core hook passing, its build printing Vite's configLoader warning three times → that line written as printed, then with (×3) as the hook ends, before the summary; the summary counts it once and lists it once with (×3)", async () => {
+		const { out } = prepareWithHook(printLines(CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING))
+		const { live, written } = pipeOutput()
+
+		const exitCode = await runLive({ out, live })
+
+		const log = logPathIn(written)
+		onTestFinished(function removeHookLog() {
+			if (basename(dirname(log)).startsWith('dialecte-hook-'))
+				rmSync(dirname(log), { recursive: true, force: true })
+		})
+		const start = written.indexOf(START_LINE)
+		const end = written.findIndex((line) => COMMIT_LINE.test(line))
+		const repeated = `[build] ${VITE_CONFIG_LOADER_WARNING} (×3)`
+		expect(exitCode).toBe(0)
+		expect(written.slice(start + 1, end)).toEqual(
+			prefixed([
+				'▶ check',
+				`[check] ${LINT_WARNING}`,
+				'▶ test:node',
+				'▶ build',
+				`[build] ${VITE_CONFIG_LOADER_WARNING}`,
+				repeated,
+				'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning in check · 1 build warning in build',
+				`[check] ${LINT_WARNING}`,
+				repeated,
+				`full log: ${log}`,
 			]),
 		)
 	})

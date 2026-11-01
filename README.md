@@ -168,11 +168,21 @@ the answer.
   and warnings), which the hand-over card reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
-  file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered and is judged on its exit
+  file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered, with
+  `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
-  step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. The gate refuses to run
-  while a hand-over script holds the repository. A run that reaches its steps records its result in the
+  step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. While a hand-over
+  holds the repository (`dialecte handover <lots.json>` wrote its lock), the gate runs only under the
+  hand-over written for this repository - the script the lock names exists and the `lots.json` beside it
+  names this repository, real paths compared - and says so in one line with the command that refreshes
+  the hand-over once the gate is green (`dialecte handover <lots.json> --rehash`): an author re-gates
+  after a late edit without touching the lock. It refuses under a hand-over of another repository, a
+  script that is gone, a folder without a lots file, and while a real `handover run` of that folder is
+  in progress (its `running.json` names a live process; that refusal names the marker file, in the
+  hand-over folder, so a person can tell a pid reused by another process). A refusal names the script and the lock and
+  says what to do: run the hand-over first (its last commit releases the lock), or hand the lock's path
+  to the person who runs the repository, who decides. A run that reaches its steps records its result in the
   worktree's git folder, `dialecte-gate-fast.json` or `dialecte-gate-full.json`: when it ran, HEAD, the
   state hash and each step (the tdd step first) with its status, its counts and its note or reason, the
   tdd step with the cases of the change it judged (`cases`: label and status); a run refused at the hygiene or at the machine lock records nothing. The state hash is that of the tree the
@@ -184,7 +194,12 @@ the answer.
   gate's summary then leaves out the lines already shown; off a terminal and with `--json` it keeps them).
   A silent hook gets the waiting-for-input / watch-mode hint once, at 90 s of silence, on both. The
   `handover` card is as wide as the terminal's columns, else `$COLUMNS`, else 80: the box is exactly that
-  wide and every line wraps inside it with a hanging indent under its text column. Colour only on a
+  wide and every line wraps inside it with a hanging indent under its text column, never into fewer
+  than 20 columns of text: a hang that would leave less is reduced; a commit line whose columns
+  (`<sha> <files> <+->`) leave its subject less puts the subject, and a merge lot's merge line, on their
+  own rows under it, 2 columns in; a line kept to one row with `…` is wrapped whole when its cut would
+  keep less; a word wider than the room after the hang (a long path) takes a row of its own, 2 columns
+  in. Colour only on a
   terminal (and never with `NO_COLOR`); the `✓` `!` `✗` marks read the same without it. The command
   follows the box whole on one line, to copy: `cd <folder> && bash commit.sh`, or
   `node <this cli> handover run <folder>` when the repository's own cli does not answer
@@ -201,7 +216,8 @@ the answer.
   after 2 s) and the run ends only once its processes are gone, as `stalled`: the gate's step fails with
   `stalled: no output, no CPU for 10 m 0 s` and the tree in its tail, `tdd`'s run fails with the tree, a
   hand-over lot is not committed and its files are unstaged (waiting a few seconds for a stopped git's
-  `index.lock`; when the lock stays, the run says the files are still staged and names the lock). A
+  `index.lock`; when the lock stays, the run says the files are still staged, names the lock and says
+  to hand its path to the person who runs the repository, who decides once no git runs in it). A
   `ps` that fails or times out gives no verdict on that sample; failing for the whole 10 minutes is a
   stall of its own. Ctrl-C, SIGTERM or SIGHUP received by the cli is passed on to every running child's group.
   A child that asks the terminal (a gpg or ssh passphrase prompt) runs in a background group: it
@@ -235,9 +251,14 @@ the answer.
     order: a green, or a receipt at a state moving nothing back, makes its state's contents the newest; a
     put back only reds, refusals or unchanged receipts saw stays put back and adds no content, so a
     later red there is flagged again, a restore is not, and a step a green proved (an experiment undone
-    and kept) is the new newest. A green taken at code put back is flagged `rollback` too, with the same
-    line, and still makes its state the newest: a refactor that drops a file the lot added, or puts a
-    file back to its content at the base, shows that line once, at its green. A state read at another
+    and kept) is the new newest. A green run taken at code put back still makes its state the newest;
+    its receipts are flagged `rollback`, with the same line, only when a case the run proves had no
+    green receipt before (of the same file, name, project and test call; a refused run is no green, an
+    earlier green counts whatever its flags): a refactor that keeps proven cases green (drops a file the
+    lot added, puts a file back to its content at the base) is not flagged, a green run proving a case
+    for the first time there is. Content the refactor
+    moved away stays reached: bringing it back later flags the reds and the first greens taken there.
+    A state read at another
     base, a lot committed since, is not compared;
     `red after green` when the case's own last receipt is a green at the same production state.
   - The run freezes each test file without a refusal, and a changed helper, fixture or snapshot only when
@@ -340,7 +361,9 @@ the answer.
   `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name, status, detail),
   `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, and each lot with
   `pending` until it is committed. Edited a file after the review? `--rehash` (also after
-  editing `lots.json`). The repository stays locked for `dialecte gate` until every lot is committed.
+  editing `lots.json`). The repository stays held until every lot is committed: `dialecte gate` runs
+  only under this hand-over (see `gate`), and a hand-over of another folder is refused, naming the script
+  that holds the repository and its lock.
 
 - The hand-over card is what a person reads before running the hand-over, and again at its end. Its title
   is `hand-over: <repository folder> <branch>`; the repository and worktree paths are not in it. Its
@@ -406,12 +429,20 @@ the answer.
   elapsed time and those lines live under the spinner, off one `│ ▶ <step>` per step and those lines
   behind `│`. A test step (a `test` segment in its name: `test`, `test:run`, `unit:test`; or a test
   runner on its command line: `vitest`, `jest`, `node --test`) shows its failing tests and failed scripts
-  only: the warnings its tests print are theirs, not the repository's. Every byte goes to the hook's full
+  only: the warnings its tests print are theirs, not the repository's. A line its step printed already
+  (the same text: Vite's `configLoader` notice, 2-3 times per build) is not a new line: on a terminal
+  the first one carries the count, `<line> (×3)`, updated in place; off a terminal (a log) a line is
+  written as it is read, its identical repeats right after it are counted, and when that run of repeats
+  ends (another warning or error line, the next step, the hook's end) a run of two or more is written
+  again as `<line> (×<n>)`. Lines of different steps never merge. Every byte goes to the hook's full
   log as it comes. After a passing hook, one summary line
   (`check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning in lint:check`: the scripts the hook runs, a
   script they run only when it printed counts or failed; the warnings counted per step and kind, in the
-  order first printed), the labelled warning lines and `full log: <path>`; after a failing hook, the
-  summary with `✗`, the labelled error lines not among the failing step's last 30 lines, those 30 lines
+  order first printed, each distinct line once: the same text printed again in its step counts once),
+  the labelled warning lines (each once, where it was first printed, with its step's total as
+  `(×<n>)` from 2) and `full log: <path>`; after a failing hook, the
+  summary with `✗`, the labelled error lines not among the failing step's last 30 lines (each once, with
+  its count), those 30 lines
   and the log's path. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
   the git folder of the repository it committed in (`dialecte-gate-hook.json`, mode `hook`): HEAD after
   it (the new commit, or the base when it failed), the state hash of the tree before the commit and the
@@ -426,9 +457,22 @@ the answer.
   pushes. `--rehearse` announces the clone (`▶ rehearsal clone`), warns naming the untracked files outside
   `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
   HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
-  run as they will for real; the clone is removed at the end (`--keep` keeps it), and on Ctrl-C or
-  SIGTERM, with the hook and every process it started stopped. The clone's git folder holds a marker
-  naming the process that made it (`dialecte-rehearsal.json`).
+  run as they will for real. The clone sits in a rehearsal folder under a short root, `/tmp` on macOS
+  and Linux (the system's temporary folder on Windows):
+  `/tmp/dialecte-rehearse-<random>/<repository folder name>`, so a tool's socket under the hook's
+  temporary folder stays within the system's path limit; the hook runs with `TMPDIR` set to a folder
+  inside the rehearsal folder. Beside the clone, a link per relative `file:` / `link:` dependency of the
+  repository's package.json that leaves the repository, to the folder the same path reaches from the
+  repository (`file:../core`: `<rehearsal folder>/core` -> the repository's `../core`), so the clone
+  resolves it as the checkout does; one line names the links, and a path that leaves the rehearsal
+  folder too, or whose target is missing, is not linked (a line says why). The whole rehearsal folder is
+  removed at the end - its links unlinked, never what they reach - (`--keep` keeps it and names it:
+  `kept the rehearsal folder: <path>`), and on Ctrl-C or SIGTERM, with the hook and every process it
+  started stopped. The clone's git folder holds a marker naming the process that made it
+  (`dialecte-rehearsal.json`). A real run marks its hand-over folder with `running.json` (its pid and
+  start time) while it runs, removed at its end, on a failure, and on Ctrl-C, SIGTERM or SIGHUP received
+  while a commit (its hook) or an install runs; a run stopped at another moment leaves it, and a marker whose
+  process is gone counts as no run.
 - A lot of `lots.json` can be a merge (git 2.38 or later, for its trial merge):
   `{ "kind": "merge", "branch": "<branch or tag>", "tip": "<sha>", "resolved": { "<path>": "<file>" | null }, "message": "...", "tree": "<sha>" }`
   (`null`: the merge removes the file). Merge lots are trial-merged in sequence: each on the tree the lots
@@ -518,7 +562,9 @@ the answer.
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
-  rehearsal clones whose process is gone, with the command that removes each (its absolute `cd` first).
+  rehearsals whose process is gone - the rehearsal folders under `/tmp` (each goes whole) and the clones
+  earlier cli versions made in the system's temporary folder, each judged by its marker - with the
+  command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
   commands (or the `--yes` command) to a person. Kept, each with why: an unmerged branch; the branch the
   main checkout is on; a worktree a hand-over is pending in, or with uncommitted changes; a branch whose
@@ -848,6 +894,13 @@ copies `.husky/_` into each new worktree, so `handover run` proves a cli lot aga
 runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the suite's setup file
 (`test/git-environment.setup.ts`, vitest `setupFiles`) clears them before any test, so a test's git acts on
 its scratch repository only, and the cli clears git's repository variables at its start.
+
+The suite leaves no temporary folder behind: every test removes what it makes in its own teardown, also
+when it fails. A vitest global setup (`test/suite-guard/temp-folder-guard.setup.ts`, `globalSetup`) gives
+the run one short folder of its own (`dlt-<random>` under the system's temporary folder) and sets it as
+`TMPDIR` for the workers and the commands they spawn; at the end any entry left in it fails the run,
+named (ten, then `and <n> more`; Node's compile cache is not one), and the folder is removed whatever
+the outcome.
 
 The cli does not re-declare core's types: the definition, record, diagnostic, error, expectation and reader shapes
 (`ResolvedDefinition`, `DataType`, `AttributeDefinition`, `AnyDialecteConfig`, `ChildOccurrences`, `Diagnostic`,

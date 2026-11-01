@@ -2,12 +2,19 @@ import { unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
-import { filesMovedBack, readProductionState } from './production-states.ts'
+import { filesMovedBack, isRollbackGreen, readProductionState } from './production-states.ts'
 import { hashProduction, hashText } from './tdd-files.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ProductionState, ReceiptKind, TddLedger, TddReceipt } from './tdd.types.ts'
+import type {
+	ProductionState,
+	ReceiptFlag,
+	ReceiptKind,
+	TddLedger,
+	TddReceipt,
+	TestCaseId,
+} from './tdd.types.ts'
 
 /** The base the states of the rows are read with, unless a row names another. */
 const BASE = 'base-1'
@@ -285,6 +292,24 @@ const WALK_CASES: Record<
 		current: { hash: 'mixed', files: { 'src/add.ts': 'add-1', 'src/sub.ts': 'sub-2' } },
 		moved: ['src/add.ts'],
 	},
+	'a green at a state dropping a file the lot added (a refactor), a red there, then the file back at its content before the refactor → named':
+		{
+			ledger: walkLedgerOf({
+				steps: [
+					'stub',
+					{ state: 'helped', kind: 'green' },
+					{ state: 'refactored', kind: 'green' },
+					'refactored',
+				],
+				production: {
+					stub: { 'src/add.ts': 'add-0' },
+					helped: { 'src/add.ts': 'add-1', 'src/helper.ts': 'helper-1' },
+					refactored: { 'src/add.ts': 'add-2' },
+				},
+			}),
+			current: { hash: 'back', files: { 'src/add.ts': 'add-2', 'src/helper.ts': 'helper-1' } },
+			moved: ['src/helper.ts'],
+		},
 	'two files put back after a green, one restored → only the file still back': {
 		ledger: walkLedgerOf({
 			steps: ['one', { state: 'two', kind: 'green' }, 'one'],
@@ -313,6 +338,150 @@ describe('filesMovedBack, the ledger walked', () => {
 			expect(
 				filesMovedBack({ ledger: row.ledger, current: { ...row.current, base: BASE } }),
 			).toEqual(row.moved)
+		})
+})
+
+/** The case `name` of `src/add.test.ts` in the default project. */
+function caseOf(name: string): TestCaseId & { caseHash: string } {
+	return { file: 'src/add.test.ts', name, project: '', caseHash: 'case' }
+}
+
+/** A receipt of `kind` of the case `name`, at the state `state`. */
+function receiptOf(params: {
+	name: string
+	kind: ReceiptKind
+	state?: string
+	project?: string
+	caseHash?: string
+	flags?: ReceiptFlag[]
+}): TddReceipt {
+	return {
+		...receiptAt(params.state ?? 'one'),
+		name: params.name,
+		kind: params.kind,
+		project: params.project ?? '',
+		caseHash: params.caseHash ?? 'case',
+		...(params.flags && { flags: params.flags }),
+	}
+}
+
+/** A ledger of these receipts, recording no state (the decision reads the receipts of the cases only). */
+function receiptsLedger(receipts: TddReceipt[]): TddLedger {
+	return { version: 3, entries: receipts }
+}
+
+/**
+ * A green run at the current state: flagged `rollback` when a file moved back and a case it proves was
+ * never green before; a refactor keeping proven cases green is not.
+ */
+const ROLLBACK_GREEN_CASES: Record<
+	string,
+	{
+		ledger: TddLedger
+		cases: (TestCaseId & { caseHash: string })[]
+		movedBack: string[]
+		flagged: boolean
+	}
+> = {
+	'nothing moved back, a case green for the first time → not flagged': {
+		ledger: receiptsLedger([receiptOf({ name: 'A', kind: 'red' })]),
+		cases: [caseOf('A')],
+		movedBack: [],
+		flagged: false,
+	},
+	'a file moved back, the case green before (a refactor dropping a file) → not flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'A', kind: 'red' }),
+			receiptOf({ name: 'A', kind: 'green', state: 'two' }),
+		]),
+		cases: [caseOf('A')],
+		movedBack: ['src/helper.ts'],
+		flagged: false,
+	},
+	'a file moved back, two cases both green before → not flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'A', kind: 'red' }),
+			receiptOf({ name: 'B', kind: 'red' }),
+			receiptOf({ name: 'A', kind: 'green', state: 'two' }),
+			receiptOf({ name: 'B', kind: 'green', state: 'two' }),
+		]),
+		cases: [caseOf('A'), caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: false,
+	},
+	'a file moved back, the case green before at a green itself flagged rollback → not flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'A', kind: 'red' }),
+			receiptOf({ name: 'A', kind: 'green', state: 'two', flags: ['rollback'] }),
+		]),
+		cases: [caseOf('A')],
+		movedBack: ['src/helper.ts'],
+		flagged: false,
+	},
+	'a file moved back, the case green before only at an older test call (another caseHash) → flagged':
+		{
+			ledger: receiptsLedger([
+				receiptOf({ name: 'A', kind: 'red', caseHash: 'case-before' }),
+				receiptOf({ name: 'A', kind: 'green', state: 'two', caseHash: 'case-before' }),
+				receiptOf({ name: 'A', kind: 'red', state: 'two' }),
+			]),
+			cases: [caseOf('A')],
+			movedBack: ['src/helper.ts'],
+			flagged: true,
+		},
+	'a file moved back, the case proven green for the first time → flagged': {
+		ledger: receiptsLedger([receiptOf({ name: 'B', kind: 'red' })]),
+		cases: [caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: true,
+	},
+	'a file moved back, one case green before and one green for the first time → flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'A', kind: 'red' }),
+			receiptOf({ name: 'A', kind: 'green', state: 'two' }),
+			receiptOf({ name: 'B', kind: 'red', state: 'two' }),
+		]),
+		cases: [caseOf('A'), caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: true,
+	},
+	'a file moved back, only another case green before → flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'A', kind: 'red' }),
+			receiptOf({ name: 'A', kind: 'green', state: 'two' }),
+			receiptOf({ name: 'B', kind: 'red', state: 'two' }),
+		]),
+		cases: [caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: true,
+	},
+	'a file moved back, the case only refused at an earlier green → flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'B', kind: 'red' }),
+			receiptOf({ name: 'B', kind: 'refused', state: 'two' }),
+		]),
+		cases: [caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: true,
+	},
+	'a file moved back, the same case name green before in another project → flagged': {
+		ledger: receiptsLedger([
+			receiptOf({ name: 'B', kind: 'red', project: 'browser' }),
+			receiptOf({ name: 'B', kind: 'green', state: 'two', project: 'browser' }),
+			receiptOf({ name: 'B', kind: 'red', state: 'two' }),
+		]),
+		cases: [caseOf('B')],
+		movedBack: ['src/helper.ts'],
+		flagged: true,
+	},
+}
+
+describe('isRollbackGreen', () => {
+	for (const [name, row] of Object.entries(ROLLBACK_GREEN_CASES))
+		it(name, () => {
+			expect(
+				isRollbackGreen({ ledger: row.ledger, cases: row.cases, movedBack: row.movedBack }),
+			).toBe(row.flagged)
 		})
 })
 
