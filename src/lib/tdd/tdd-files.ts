@@ -12,6 +12,7 @@ import { gitFolderOf, listRepositoryFiles, readGit } from '../git.ts'
 import { readHygieneBaseline } from '../worktree/hygiene.ts'
 import { DEFAULT_BASE_BRANCH, LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import {
+	DELETED_PRODUCTION_FILE,
 	FIXTURE_FOLDER_PATTERN,
 	GENERATED_FILE_PATTERN,
 	LEDGER_VERSION,
@@ -25,7 +26,7 @@ import {
 import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { ChangedTestFile, TddEntry, TddLedger } from './tdd.types.ts'
+import type { ChangedTestFile, ProductionState, TddEntry, TddLedger } from './tdd.types.ts'
 
 export function hashFile(path: string): string {
 	return createHash('sha256').update(readFileSync(path)).digest('hex')
@@ -49,7 +50,7 @@ export function hashProduction(params: { root: string; packageJson: PackageJson 
 	for (const file of listRepositoryFiles({ root: params.root, folder: '.' })) {
 		if (!isProductionPath({ file, packageJson: params.packageJson })) continue
 		const path = join(params.root, file)
-		hash.update(`${file}\0${existsSync(path) ? hashFile(path) : 'deleted'}\n`)
+		hash.update(`${file}\0${existsSync(path) ? hashFile(path) : DELETED_PRODUCTION_FILE}\n`)
 	}
 	return hash.digest('hex')
 }
@@ -116,11 +117,33 @@ export function readLedger(root: string): TddLedger | { failure: string } {
 	return ledger
 }
 
-export function appendEntries(params: { root: string; entries: readonly TddEntry[] }): void {
+/**
+ * Adds the entries to the ledger, with the production state they were taken at (`production`: kept under
+ * its base beside the states already recorded); nothing written when there is no entry.
+ */
+export function appendEntries(params: {
+	root: string
+	entries: readonly TddEntry[]
+	production?: ProductionState
+}): void {
 	if (params.entries.length === 0) return
 	const ledger = readLedger(params.root)
-	const known = 'failure' in ledger ? [] : ledger.entries
-	const next: TddLedger = { version: LEDGER_VERSION, entries: [...known, ...params.entries] }
+	const known: TddLedger = 'failure' in ledger ? { version: LEDGER_VERSION, entries: [] } : ledger
+	const { production } = params
+	const states = {
+		...known.production,
+		...(production && {
+			[production.base]: {
+				...known.production?.[production.base],
+				[production.hash]: production.files,
+			},
+		}),
+	}
+	const next: TddLedger = {
+		version: LEDGER_VERSION,
+		entries: [...known.entries, ...params.entries],
+		...(Object.keys(states).length && { production: states }),
+	}
 	writeFileSync(ledgerPath(params.root), `${JSON.stringify(next, null, '\t')}\n`)
 }
 

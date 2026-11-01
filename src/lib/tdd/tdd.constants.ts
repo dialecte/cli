@@ -47,6 +47,15 @@ export const SNAPSHOT_MISMATCH_PATTERN = /^Snapshot `.*` mismatched/
 /** The functions that declare a test case. */
 export const CASE_FUNCTIONS: readonly string[] = ['it', 'test']
 
+/** The functions that group test cases under a title. */
+export const SUITE_FUNCTIONS: readonly string[] = ['describe', 'suite']
+
+/** The modifiers called with a table before the call taking the title (`it.each(table)(...)`): a format title. */
+export const TABLE_MODIFIERS: readonly string[] = ['each', 'for']
+
+/** The modifiers called with a condition before the call taking the title (`it.skipIf(condition)(...)`). */
+export const CONDITION_MODIFIERS: readonly string[] = ['skipIf', 'runIf']
+
 /** The functions a focus marker (`.only`) narrows a run with. */
 export const TEST_FUNCTIONS: readonly string[] = ['it', 'test', 'describe', 'suite', 'bench']
 
@@ -185,3 +194,13 @@ export const UNTITLED_CALL_GONE = 'a test call of the base is gone'
 
 /** A passing case a `revised` entry names that the base cannot be shown to hold. */
 export const NOT_PROVABLY_OF_THE_BASE = 'not provably a case of the base: accept it or prove it red'
+
+/** What a production state records for a file of the base the change deletes. */
+export const DELETED_PRODUCTION_FILE = 'deleted'
+
+/**
+ * The line `tdd red` and `tdd green` print before their summary when production moved back to an earlier
+ * content, `{files}` the files moved back.
+ */
+export const ROLLBACK_LINE =
+	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte review delta --worktree)"

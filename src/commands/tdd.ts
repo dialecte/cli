@@ -44,6 +44,7 @@ import {
 	readRevisions,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
+import { filesMovedBack, readProductionState } from '../lib/tdd/production-states.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
 	caseLabel,
@@ -55,7 +56,6 @@ import {
 import {
 	appendEntries,
 	hashChangedTestCode,
-	hashProduction,
 	listChangedTestFiles,
 	readLedger,
 	resolveBase,
@@ -71,6 +71,7 @@ import {
 	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
+	ROLLBACK_LINE,
 	TEST_CODE_CHANGED_SINCE_RED,
 	UNRESOLVED_IMPORT_HINT,
 	TDD_SUBCOMMANDS,
@@ -191,7 +192,9 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	const lines: string[] = []
 	const entries: TddEntry[] = []
 	const at = context.now().toISOString()
-	const productionHash = hashProduction(context)
+	const production = readProductionState(context)
+	const productionHash = production.hash
+	const movedBack = filesMovedBack({ ledger: context.ledger, current: production })
 	const testCode = hashChangedTestCode(context)
 	const focused = files.filter(
 		(file) => findOnlyMarkers({ text: file.text, file: file.file }).length > 0,
@@ -269,7 +272,15 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 		const judged = cases
 			.filter((testCase) => testCase.file === file.file && testCase.state !== 'skipped')
 			.map((testCase) =>
-				judgeRed({ testCase, context, productionHash, testCodeChanged, acceptances, revisions }),
+				judgeRed({
+					testCase,
+					context,
+					productionHash,
+					movedBack: movedBack.length > 0,
+					testCodeChanged,
+					acceptances,
+					revisions,
+				}),
 			)
 		const refused = judged.some((judgement) => judgement.kind === 'refused')
 		for (const judgement of judged) {
@@ -310,11 +321,15 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 				if (testCode.has(dependency)) frozen[dependency] = testCode.get(dependency) ?? ''
 	}
 	if (Object.keys(frozen).length) entries.push({ kind: 'freeze', files: frozen, at })
-	appendEntries({ root, entries })
+	appendEntries({ root, entries, production })
 	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'revised' })} revised, ${countLines({ lines, label: 'refused' })} refused; ${
 		Object.keys(frozen).length ? `frozen: ${Object.keys(frozen).join(', ')}` : 'nothing frozen'
 	}`
-	return finish({ context, lines, summary, refused: countLines({ lines, label: 'refused' }) })
+	const refused = countLines({ lines, label: 'refused' })
+	// counted before: the rollback line is no case line
+	if (movedBack.length && countLines({ lines, label: 'red' }) > 0)
+		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
+	return finish({ context, lines, summary, refused })
 }
 
 /** What a red run makes of one case. */
@@ -322,6 +337,8 @@ function judgeRed(params: {
 	testCase: RunCase
 	context: TddContext
 	productionHash: string
+	/** A production file moved back from the newest content the lot reached to an earlier one. */
+	movedBack: boolean
 	/** The case's test file, or test code it depends on, differs from its last freeze. */
 	testCodeChanged: boolean
 	acceptances: readonly LotCaseEntry[]
@@ -348,7 +365,7 @@ function judgeRed(params: {
 			return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
 		}
 		const flags: ReceiptFlag[] = []
-		if (isRolledBack({ receipts, productionHash })) flags.push('rollback')
+		if (params.movedBack || isRolledBack({ receipts, productionHash })) flags.push('rollback')
 		// a case the lot names revised at review is made red again on purpose; a file or glob entry
 		// records only passing cases revised, so it never excuses a red
 		const revised = findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })
@@ -410,10 +427,13 @@ function judgeRed(params: {
 				reason: TEST_CODE_CHANGED_SINCE_RED,
 				flags: [],
 			}
+		// only a green can have been weakened by the code around it; a case never proven green is kept as is
+		if (lastGreen < 0)
+			return { testCase, kind: 'kept', detail: `proven before (${prior.kind})`, flags: [] }
 		return {
 			testCase,
 			kind: 'kept',
-			detail: `proven before (${lastGreen >= 0 ? 'green' : prior.kind})`,
+			detail: 'proven before (green)',
 			flags: ['test code changed around it'],
 		}
 	}
@@ -510,7 +530,9 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 		modules,
 		files,
 	})
-	const productionHash = hashProduction(context)
+	const production = readProductionState(context)
+	const productionHash = production.hash
+	const movedBack = filesMovedBack({ ledger, current: production })
 	const at = context.now().toISOString()
 	const lines: string[] = []
 	const entries: TddEntry[] = []
@@ -546,17 +568,25 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 		)
 			lines.push(statusLine({ label: proof.kind, id: caseLabel(testCase), detail: '' }))
 		else {
-			entries.push({ ...base, kind: 'green' })
-			lines.push(statusLine({ label: 'green', id: caseLabel(testCase), detail: '' }))
+			// a green at code put back still advances: the put back is shown at its green
+			const flags: ReceiptFlag[] = movedBack.length ? ['rollback'] : []
+			entries.push({ ...base, kind: 'green', ...(flags.length && { flags }) })
+			lines.push(
+				statusLine({
+					label: 'green',
+					id: caseLabel(testCase),
+					detail: flags.length ? `flags: ${flags.join(', ')}` : '',
+				}),
+			)
 		}
 	}
-	appendEntries({ root, entries })
-	return finish({
-		context,
-		lines,
-		summary: `tdd green: ${countLines({ lines, label: 'green' })} green, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'refused' })} refused`,
-		refused: countLines({ lines, label: 'refused' }),
-	})
+	appendEntries({ root, entries, production })
+	const summary = `tdd green: ${countLines({ lines, label: 'green' })} green, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'refused' })} refused`
+	const refused = countLines({ lines, label: 'refused' })
+	// counted before: the rollback line is no case line
+	if (movedBack.length && countLines({ lines, label: 'green' }) > 0)
+		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
+	return finish({ context, lines, summary, refused })
 }
 
 /** Why a case cannot be green now, or undefined when its green is earned. */

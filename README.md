@@ -218,13 +218,24 @@ the answer.
     timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
     case the same as at the base is marked unchanged; a case the lot accepts is marked accepted; a green
     case whose test code changed around it is kept and flagged `test code changed around it` (the next
-    step adding a case to a green file). A file with a refusal still records its other cases'
+    step adding a case to a green file); a case never proven green (only unchanged, accepted or revised)
+    is kept without a flag, and no receipt. A file with a refusal still records its other cases'
     receipts, the refusals kept as evidence, but is not frozen: the gate fails on it until no case of
     it is refused.
   - A red records the case (file, full name, project), the hashes of its test file, of its own test call
     and of the production files, the failing message and the time. It is flagged `rollback` at a
-    production state the case had already left, `red after green` when the case's own last receipt is a
-    green at the same production state.
+    production state the case, or the lot, had already left: a production file moved back from the
+    newest content the lot reached to its content at the base or at an earlier receipt (the run prints
+    one `rollback:` line naming the files). The ledger keeps, per base and per production state a receipt
+    names, the content of each production file changed since that base. The receipts are walked in
+    order: a green, or a receipt at a state moving nothing back, makes its state's contents the newest; a
+    put back only reds, refusals or unchanged receipts saw stays put back and adds no content, so a
+    later red there is flagged again, a restore is not, and a step a green proved (an experiment undone
+    and kept) is the new newest. A green taken at code put back is flagged `rollback` too, with the same
+    line, and still makes its state the newest: a refactor that drops a file the lot added, or puts a
+    file back to its content at the base, shows that line once, at its green. A state read at another
+    base, a lot committed since, is not compared;
+    `red after green` when the case's own last receipt is a green at the same production state.
   - The run freezes each test file without a refusal, and a changed helper, fixture or snapshot only when
     a case of a file depending on it went red, or was recorded revised, in that run: what it imports
     (relative, tsconfig `paths` or vite alias, barrels and re-exports followed through test code; a
@@ -266,9 +277,14 @@ the answer.
   - A case edited at review after it was proven is declared in `.dialecte/lot.json`
     (`"revised": [{ "case": "<file>::<name>", "reason": "<why>" }]`). It needs an earlier receipt of
     the case (a red, an unchanged, an accepted one), not necessarily a red, or to be a case of the base:
-    its file exists at the base, its own title is written as a string there and no more times now, and
-    every title of its name written as a string now is written there too. A new case (a new file, a new title, a row added to a
-    table) still needs a red; a case whose title the file computes and the base does not write is refused
+    its file exists at the base, every title of its name written as a string now is written there too,
+    and, when its own title is the literal title of an `it` / `test` call at the base or now, the base
+    holds such a call with its describe path (a computed describe title, a `describe.each` /
+    `describe.for` format, matches any; a `describe.skipIf` / `describe.runIf` suite counts by its
+    title) and the file now no more of them (a test moved to another describe, or a string of that title
+    removed elsewhere, is no proof); otherwise (a table row, a computed title) its own title is written
+    as a string there and no more times now. A new case (a new file, a new title, a row added to a table)
+    still needs a red; a case whose title the file computes and the base does not write is refused
     ("not provably a case of the base: accept it or prove it red"). The `case` may also be a file path or
     a glob over file paths (`scripts/**/*.test.ts`: `**` any folders, `*` and `?` within one), relative
     to the package root, without `::`: it applies to every case of the matching files, with one reason.
