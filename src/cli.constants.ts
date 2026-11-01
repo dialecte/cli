@@ -13,6 +13,7 @@ import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
+import { run as recap } from './commands/recap.ts'
 import { run as record } from './commands/record.ts'
 import { run as review } from './commands/review.ts'
 import { run as rules } from './commands/rules.ts'
@@ -20,6 +21,7 @@ import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
 import { run as skills } from './commands/skills.ts'
 import { run as tdd } from './commands/tdd.ts'
+import { run as text } from './commands/text.ts'
 import { run as worktree } from './commands/worktree.ts'
 
 export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
@@ -45,6 +47,8 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	worktree,
 	record,
 	review,
+	recap,
+	text,
 }
 
 export const HELP = `
@@ -74,8 +78,10 @@ Commands:
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
   lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason
   worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
-  record     A lot's review rounds in its hand-over folder: review | decision | snapshot
+  record     A lot's review rounds in its hand-over folder: review | decision | snapshot | choice
   review     The fix diff since the previous round's snapshot: delta
+  recap      A pull request's expandable part, built from the hand-over's records only
+  text       The human part of a GitHub text, before it is posted: check (headings, word cap)
 
 Zero-config: namespace = capitalized package name, versions discovered from src/<version>/definition/.
 Core is detected by package name and benched via a built-in test dialect. Override per package.json
@@ -186,9 +192,18 @@ Contributing (inside a dialecte repository):
                              # copies what git status lists to round-<n>/, the deletions to round-<n>.deleted,
                              # HEAD to round-<n>.base; the hand-over folder stays outside every repository;
                              # a nested repository or a submodule is refused; -- ends the options of each
+  dialecte record choice <folder> --by <who> <decision>
+                             # appends | decision | who | yyyy-mm-dd | to <folder>/decisions.md (made when absent)
   dialecte review delta <folder> --round <n> [--worktree] [--json]
                              # per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a
                              # throwaway worktree holding round n-1 and prints its removal command
+  dialecte recap <hand-over folder>
+                             # the <details> part of a pull request from records only: commits, tests added,
+                             # checks, review rounds, decisions, follow-ups, the git user name; writes nothing
+  dialecte text check <file> [--kind pr|issue|comment|commit]
+                             # the lines before <details: headings What changes, Why, How to check it (then
+                             # Watch out) for pr and issue, none for comment and commit; word cap 150 | 200 |
+                             # 80 | 100, headings and code blocks not counted; a commit subject of 72 at most
 
 Env: RUNS=5 dialecte bench   (repetitions for the min); COVERAGE_CHILD_CAP=N (cap edges)
 `

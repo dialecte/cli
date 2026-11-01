@@ -69,7 +69,7 @@ export function handoverState(handover: HandoverFolder): HandoverState {
 	return 'pending'
 }
 
-function revisionOf(params: { root: string; revision: string }): string | undefined {
+export function revisionOf(params: { root: string; revision: string }): string | undefined {
 	const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', params.revision], {
 		cwd: params.root,
 		encoding: 'utf8',

@@ -44,6 +44,21 @@ export type LedgerTable = {
 	rows: LedgerRow[]
 }
 
+/** A markdown table among a file's lines: the indexes of its row lines and of its last line. */
+export type MarkdownTable = {
+	/** Index of the last line of the table (the separator when no row yet). */
+	lastLine: number
+	/** Index of each row's line, in file order. */
+	rowLines: number[]
+}
+
+/** One row of `decisions.md`: a decision made outside the findings ledger, who made it, when. */
+export type DecisionRow = {
+	decision: string
+	by: string
+	when: string
+}
+
 /** A decision as `record decision` takes it: the state written, and the round a fix needs to beat. */
 export type DecisionState = {
 	written: string

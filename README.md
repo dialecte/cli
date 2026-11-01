@@ -38,6 +38,9 @@ dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human r
 dialecte handover --legend      # every term of the hand-over card: what it means, whether to look
 dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
+dialecte record choice <folder> --by <who> <decision>   # a decision made outside the ledger, in decisions.md
+dialecte recap <folder>    # the pull request's expandable part, built from the hand-over's records only
+dialecte text check <file> # the human part of a GitHub text: its fixed headings and its word cap
 dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
@@ -148,7 +151,7 @@ The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](ht
 
 ## Contributing to a Dialecte package
 
-Nine commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Eleven commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
@@ -472,6 +475,10 @@ the answer.
   - `record decision <folder> <id> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
     `fixed <round> [note]` (a round after the one that raised it), `accepted <reason>`, `logged <where>`.
     An id not in the ledger is refused, naming the ids it holds.
+  - `record choice <folder> --by <who> <decision>` appends `| <decision> | <who> | <yyyy-mm-dd> |` to
+    `<folder>/decisions.md` (made with its title and table when absent): a decision made outside the
+    findings ledger, the user's above all. A `|` is written `\|`; an empty `--by`, a line break, or more
+    than one decision word (quote it) is refused.
   - `record snapshot <folder> --round <n>` copies every file `git status --porcelain -z
 --untracked-files=all` lists at the worktree root (the old path of a rename included) to
     `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
@@ -552,6 +559,46 @@ so "No test files found" passes with a note instead of failing; `restoresGenerat
 it; `heavy: true` / `false` says whether the step takes the machine lock); `baseBranch` is the branch
 `worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
 tags and citations `rules` and `handover` refuse.
+
+### GitHub text: recap and text check
+
+Text written with an assistant tends to retell the diff and grow long. The pull request splits in two:
+an expandable part made from records, and a short human part that is checked before it is posted. Both
+commands only print; the user posts.
+
+- `dialecte recap <hand-over folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
+  records only: the commits of the lots (or `not committed yet`), the test cases the newest gate record of the
+  current tree judged red then green, counted per test file, the gate and rules lines, the review rounds from
+  the findings ledger, the decisions (accepted findings, the lot declaration's `accept` and `revised` entries,
+  the rows of `decisions.md`), the logged findings as follow-ups, and who reviewed and posted it (`git config
+user.name`; no name set is refused). Every section is always there, saying so in one line when empty; a
+  branch that does not hold the lots on top of the recorded base lists none as committed and says so. Each
+  finding is printed with its id, its text without one leading reviewer tag `[...]`. The ledger is read whole:
+  every row after its header with the header's cell count is a finding, whatever its id (`R<n>-<k>`, `TR3-1`,
+  `F-a`, printed as written), notes between rounds included; its round is the round cell's, else the one an
+  `R<n>-` id names, else the row is refused. A state is read as a history (`fix wrong 2 (...) - fixed 3
+(reasoned)`): it starts with `fixed`, `accepted`, `logged`, `open`, `fix to verify`, `fix wrong` or
+  `reopened`, and a spaced dash starts a new part only before `fixed <n>`, `reopened <n> by <id>`, `fix wrong
+<n>`, `fix to verify`, a closing `open`, or a later `accepted` or `logged` followed by ` (`, `: ` or a
+  spaced dash; any other spaced dash belongs to the text before it. The last part decides (`fix wrong`,
+  `reopened` and `fix to verify` leave the finding open), an accepted one's reason being the rest (in its
+  parentheses, or after `- ` / `: `); a state recap cannot read is refused with the row's id. A `file:line` is
+  printed relative to the repository, or to the workspace folder for a sibling repository (the parent of the
+  main checkout; of the `.worktrees` folder when the repository is gone), never absolute: an absolute path
+  outside both, or one the rewrite does not reach (a `/` starting a path segment after a backtick, a quote,
+  `=`, `[`, `-`; `~/`), is refused with the row's id; a `/` starting no segment (`a.ts / b.ts`, `+/- 2`) and
+  URLs stay. Where a finding was logged, the hand-over folder and the lots file's notes are left out. It writes
+  nothing.
+- `dialecte text check <file> [--kind pr|issue|comment|commit]` checks every line before the first `<details`
+  line (the recap is not checked). A pull request or an issue holds the headings `What changes`, `Why`, `How
+to check it` in this order, then `Watch out` only when it has something to say; each with text under it,
+  nothing before the first. A comment or a commit holds no heading; a commit's line 1 is its subject, not
+  empty and at most 72 characters (longer ones are cut in logs and in GitHub's list), with a blank line before
+  the body. The word cap: 150 for a pull request (the diff carries the rest), 200 for an issue (it stands
+  alone), 80 for a comment (it answers one point), 100 for a commit body (the why; the subject is not
+  counted). Words hold a letter or a digit; headings and fenced code blocks are not counted. Past the cap it
+  prints the count, the cap and every line from the one that passed it. Exit 0 when the text holds, 1 with one
+  line per problem.
 
 ## Run a script
 
