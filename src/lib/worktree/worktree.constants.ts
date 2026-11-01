@@ -32,3 +32,26 @@ export const LOT_FOLDER_EXCLUDE = '.dialecte/'
 
 /** The lot declaration as a path relative to a repository or a package root. */
 export const LOT_FILE_PATTERN = /(^|\/)\.dialecte\/lot\.json$/
+
+/** The sections of a package.json naming dependencies. */
+export const DEPENDENCY_SECTIONS = [
+	'dependencies',
+	'devDependencies',
+	'optionalDependencies',
+	'peerDependencies',
+] as const
+
+/** A dependency installed from a folder (`file:../core`, `link:../core`): its path. */
+export const LOCAL_DEPENDENCY_PATTERN = /^(?:file|link):(.+)$/
+
+/** The lockfile `worktree add` reads `node_modules` against. */
+export const PACKAGE_LOCK_FILE = 'package-lock.json'
+
+/** Where npm installs packages; a nested package sits in its parent's own one. */
+export const NODE_MODULES_PREFIX = 'node_modules/'
+
+/** How many packages that differ from the lockfile the card names; the rest are counted. */
+export const NODE_MODULES_PROBLEMS_SHOWN = 5
+
+/** Why `worktree prune` keeps a link, or a folder reached through one. */
+export const PRUNE_LINK_REASON = 'a link: prune never removes a link nor what it points to'
