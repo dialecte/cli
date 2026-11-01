@@ -6,7 +6,8 @@
  *             Claude Code the station agents and the session-start check (`--no-session-check` leaves it out)
  *   generate  rewrite the generated blocks of the package's skills from its source
  *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
- *             has invalid frontmatter or a stale block, or when a method has no JSDoc summary / @intent
+ *             has invalid frontmatter or a stale block, or when a method or a function exported by a
+ *             package entry has no JSDoc summary / @intent
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
@@ -14,7 +15,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { API_JSON_FILE } from '../lib/api/api-json.constants.ts'
 import { buildApiJson, renderApiJson } from '../lib/api/api-json.ts'
 import { getArg, hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
-import { discoverMethods } from '../lib/discover.ts'
+import { discoverExports, discoverMethods } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { askVendor } from '../lib/models/ask-vendor.ts'
@@ -24,10 +25,12 @@ import { isVendorId } from '../lib/models/vendor-id.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
+	indexedMethods,
 	renderApiIndex,
 	renderIntentIndex,
 } from '../lib/skills/api-index.ts'
 import { checkSkillPage } from '../lib/skills/check-skill-page.ts'
+import { readExportEntries } from '../lib/skills/export-entries.ts'
 import { GENERATED_MARKER_PATTERN } from '../lib/skills/generated-blocks.constants.ts'
 import {
 	findStaleGeneratedKinds,
@@ -345,12 +348,18 @@ export function checkPages(params: {
 			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}: ${finding.message}`,
 		)
 	const errors = findings.filter((finding) => finding.severity === 'error').length
+	const methodCount = methods.filter((method) => method.entry === undefined).length
+	// the export rows the index lists: not @internal, defined in the package, not a root's method
+	const exportCount = indexedMethods(methods).filter(
+		({ entry }) => entry.entry !== undefined,
+	).length
 	console.log(
-		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methods.length} method(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)`,
+		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methodCount} method(s) and ${exportCount} export(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)`,
 	)
 	return errors ? 1 : 0
 }
 
+/** The methods of q / tx / doc / project, then the functions the package entries export. */
 function collectMethods(params: { argv: string[]; cwd: string }): MethodEntry[] {
 	const tsconfig = tsconfigOf(params.argv, params.cwd)
 	const methodsByPath = new Map<string, MethodEntry>()
@@ -362,7 +371,9 @@ function collectMethods(params: { argv: string[]; cwd: string }): MethodEntry[] 
 			maxDepth: METHOD_DISCOVERY_DEPTH,
 		}))
 			methodsByPath.set(method.path, method)
-	return [...methodsByPath.values()]
+	const entries = readExportEntries({ root: params.cwd })
+	const exported = discoverExports({ entries, tsconfig, root: params.cwd })
+	return [...methodsByPath.values(), ...exported]
 }
 
 /**

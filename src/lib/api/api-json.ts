@@ -13,7 +13,7 @@ import { findTestExample, splitDeclaredAt } from './find-example.ts'
 
 import type { MethodEntry } from '../discover.types.ts'
 import type { IndexedMethod } from '../skills/api-index.types.ts'
-import type { ApiJson, ApiMethod, MethodRoot } from './api-json.types.ts'
+import type { ApiJson, ApiMethod, ApiMethodFields, MethodRoot } from './api-json.types.ts'
 
 export function buildApiJson(params: {
 	packageName: string
@@ -29,34 +29,40 @@ export function buildApiJson(params: {
 	}
 }
 
+/** The row of a root method, or of a function an entry exports (`root: 'export'` and its `entry`). */
 function apiMethodOf(params: { method: IndexedMethod; root: string }): ApiMethod {
 	const { entry, otherRoutes } = params.method
 	const path = displayPath(entry.path)
-	return {
-		path,
-		root: rootOf(entry.path),
+	const fields: Omit<ApiMethodFields, 'path'> = {
 		otherRoutes: otherRoutes.map(displayPath),
 		signature: entry.signature,
 		summary: entry.summary,
 		intents: entry.intents,
 		declaredAt: entry.declaredAt && lineOf({ declaredAt: entry.declaredAt, root: params.root }),
 		example:
-			(entry.example && isUsableExample({ example: entry.example, path })
+			(entry.example &&
+			isUsableExample({ example: entry.example, path, exported: entry.entry !== undefined })
 				? entry.example
 				: undefined) ??
-			(entry.declaredAt
+			// a test calls the function with its query or transaction first, which the route binds: an export
+			// binds nothing, so a test call is not written on its route
+			(entry.declaredAt && entry.entry === undefined
 				? findTestExample({ root: params.root, declaredAt: entry.declaredAt, route: path })
 				: undefined),
 	}
+	// the keys in the same order for both: path, root, entry, then the fields
+	if (entry.entry === undefined) return { path, root: rootOf(entry.path), ...fields }
+	return { path, root: 'export', entry: entry.entry, ...fields }
 }
 
-/** A JSDoc example worth shipping: it calls the method on a route or a query (`query.getTree(`), and it is short. */
-function isUsableExample(params: { example: string; path: string }): boolean {
+/**
+ * A JSDoc example worth shipping: it calls the method on a route or a query (`query.getTree(`), or calls the
+ * exported function by its name (`connectHub(`), and it is short.
+ */
+function isUsableExample(params: { example: string; path: string; exported: boolean }): boolean {
 	const name = params.path.slice(params.path.lastIndexOf('.') + 1)
-	return (
-		params.example.length <= EXAMPLE_MAX_LENGTH &&
-		new RegExp(`\\.${name}\\s*\\(`).test(params.example)
-	)
+	const call = params.exported ? `\\b${name}\\s*\\(` : `\\.${name}\\s*\\(`
+	return params.example.length <= EXAMPLE_MAX_LENGTH && new RegExp(call).test(params.example)
 }
 
 /** The root discover walked the method from: the first segment of its path. */

@@ -18,3 +18,11 @@ export const QUOTED_SENTENCE_MIN_WORDS = 4
  * `@intent`, the test case): `skills check` refuses a method whose summary or intent still holds it.
  */
 export const PLACEHOLDER_MARKER = 'FILL:'
+
+/** The header of the method table of the `api` block. */
+export const METHOD_TABLE_HEADER = '| Method | What it answers | Reach for it to |'
+
+/** The header of an entry's table of the `api` block: its exports, written by their name. */
+export const EXPORT_TABLE_HEADER = '| Function | What it answers | Reach for it to |'
+
+export const TABLE_SEPARATOR = '|---|---|---|'

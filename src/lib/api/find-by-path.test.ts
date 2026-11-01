@@ -2,9 +2,9 @@ import { findByPath } from './find-by-path.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ApiJson, ApiMethod } from './api-json.types.ts'
+import type { ApiJson, ApiRootMethod } from './api-json.types.ts'
 
-function method(params: Partial<ApiMethod> & { path: string }): ApiMethod {
+function method(params: Partial<ApiRootMethod> & { path: string }): ApiRootMethod {
 	return {
 		root: 'q',
 		otherRoutes: [],

@@ -16,6 +16,8 @@ export type MethodEntry = {
 	internal: boolean
 	/** Where the method is declared (`file:position`): the same method reached by several routes shares it. */
 	declaredAt: string | undefined
+	/** The package entry a standalone export comes from ('@dialecte/core/sqlite'); undefined for a route of q/tx/doc/project. */
+	entry?: string
 }
 
 export type DiscoverParams = {

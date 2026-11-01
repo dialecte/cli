@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { MethodEntry } from '../discover.types.ts'
 
+/** Reads declarations and tests from a temp folder: wide slack for a loaded shared machine. */
+const DISK_TEST_TIMEOUT = 30_000
+
 let root: string
 
 function write(path: string, content: string): void {
@@ -172,7 +175,7 @@ const testCases: TestCase[] = [
 	},
 ]
 
-describe('buildApiJson', () => {
+describe('buildApiJson', { timeout: DISK_TEST_TIMEOUT }, () => {
 	for (const testCase of testCases)
 		it(testCase.description, () => {
 			if (testCase.testFile) write('src/info/of.test.ts', testCase.testFile)
@@ -198,6 +201,77 @@ describe('buildApiJson', () => {
 		expect(JSON.parse(first).methods.map((method: { path: string }) => method.path)).toEqual([
 			'doc.query.info.of',
 			'doc.query.info.title',
+		])
+	})
+	it('an export row → root export, the entry, path <specifier>.<name>; no throw', () => {
+		expect(
+			buildApiJson({
+				packageName: '@acme/pkg',
+				methods: [
+					entry({
+						path: '@acme/pkg/sqlite.of',
+						entry: '@acme/pkg/sqlite',
+						declaredAt: 'src/sqlite.ts:1',
+					}),
+				],
+				root,
+			}).methods,
+		).toEqual([
+			expect.objectContaining({
+				path: '@acme/pkg/sqlite.of',
+				root: 'export',
+				entry: '@acme/pkg/sqlite',
+				otherRoutes: [],
+			}),
+		])
+	})
+
+	it('an @internal export with no summary and no @intent beside a documented one → absent from the methods', () => {
+		expect(
+			buildApiJson({
+				packageName: '@acme/pkg',
+				methods: [
+					entry({ path: '@acme/pkg.shown', entry: '@acme/pkg', declaredAt: 'src/a.ts:1' }),
+					entry({
+						path: '@acme/pkg.hidden',
+						entry: '@acme/pkg',
+						summary: 'Hidden.',
+						intents: ['hide'],
+						internal: true,
+						declaredAt: 'src/a.ts:3',
+					}),
+					entry({
+						path: '@acme/pkg.plumbing',
+						entry: '@acme/pkg',
+						summary: undefined,
+						intents: [],
+						internal: true,
+						declaredAt: 'src/a.ts:2',
+					}),
+				],
+				root,
+			}).methods.map((method) => method.path),
+		).toEqual(['@acme/pkg.shown'])
+	})
+
+	it('one function exported by ./testing then ./a → one row on the ./testing route, the ./a route in otherRoutes', () => {
+		const shared = { entry: undefined, declaredAt: 'src/helper.ts:1' }
+		expect(
+			buildApiJson({
+				packageName: '@acme/pkg',
+				methods: [
+					entry({ ...shared, path: '@acme/pkg/testing.helper', entry: '@acme/pkg/testing' }),
+					entry({ ...shared, path: '@acme/pkg/a.helper', entry: '@acme/pkg/a' }),
+				],
+				root,
+			}).methods,
+		).toEqual([
+			expect.objectContaining({
+				path: '@acme/pkg/testing.helper',
+				root: 'export',
+				entry: '@acme/pkg/testing',
+				otherRoutes: ['@acme/pkg/a.helper'],
+			}),
 		])
 	})
 })

@@ -23,7 +23,7 @@ dialecte bench [--check]   # measure the type-instantiation cost of your own typ
 dialecte audit             # render the public type surface and flag readability issues (C1–C6)
 dialecte skills sync       # install the agent skills your dependencies ship, for your agents
 dialecte skills generate   # refresh the generated blocks of this package's skills
-dialecte skills check      # fail on a skill citing what the code no longer has
+dialecte skills check      # fail on a skill citing what the code no longer has, or an undocumented public function
 dialecte api find "<need>" # find a method by what you need
 dialecte api show <path>   # read one method's contract
 dialecte members <expr>    # what an expression of the live types holds
@@ -97,9 +97,11 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
   tells the agent to run `doctor` first.
 - **Working on Dialecte**: `npx @dialecte/cli skills sync --from ../` takes them from your local checkouts.
 - **In a package**: `dialecte skills generate` rewrites the `<!-- dialecte-skills:generated <kind> -->`
-  blocks (`extensions`, `core-methods`, `hooks`, `api`, `intents`) from the source.
+  blocks (`extensions`, `core-methods`, `hooks`, `api`, `intents`) from the source; the `api` block lists
+  the methods, then one section per package entry (each `exports` subpath shipping a `.d.ts`) with the
+  functions it exports.
   `dialecte skills check` verifies every API, path and npm script a page cites, and that every public
-  method the package defines has a JSDoc summary and an `@intent` tag; it warns when a summary or an
+  method and every function an entry exports (not `@internal`) has a JSDoc summary and an `@intent` tag; it warns when a summary or an
   intent quotes a sentence, since the generated pages republish the JSDoc. A page about several
   repositories declares `<!-- dialecte-skills workspace -->` and is fully verified with
   `--workspace <folder>`; a deliberate outside mention goes in `<!-- dialecte-skills ignore: token -->`.
@@ -111,7 +113,7 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
 
 - `dialecte api find "<need>" [--package <name>] [--limit 5]` searches the `api.json` every installed
   package ships next to its skill's `api.md` (written by `skills generate`): one line per method - route,
-  `q | tx | doc | project`, the intent that matched, the package. Ranking, in order: how many words of the
+  `q | tx | doc | project | export`, the intent that matched, the package. Ranking, in order: how many words of the
   need the method's `@intent` tags hold, then its summary, then its name - one intent word beats any number
   of summary words; stop words dropped, word forms reduced to a light stem (`copied`, `copies`, `copying`
   → `copy`); ties put a dialecte's verb before core's, then sort by route.

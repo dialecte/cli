@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
 import { diagnose } from '../lib/doctor/diagnose.ts'
-import { chooseVendor, checkPages, generatePages, runSync, runSyncCommand } from './skills.ts'
+import { chooseVendor, checkPages, generatePages, run, runSync, runSyncCommand } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -478,5 +478,127 @@ describe('runSyncCommand', () => {
 
 		expect(manifestOf('.claude/skills').vendor).toBe('openai')
 		expect(manifestOf('.agents/skills').vendor).toBe('openai')
+	})
+})
+
+/** Builds a TypeScript program inside the command: wide slack for a loaded shared machine. */
+const EXPORTS_COMMAND_TIMEOUT = 120_000
+
+describe('skills check and generate, package exports', { timeout: EXPORTS_COMMAND_TIMEOUT }, () => {
+	function writeExportingPackage(): void {
+		write(
+			'package.json',
+			JSON.stringify({
+				name: '@acme/widget',
+				exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
+			}),
+		)
+		write(
+			'tsconfig.json',
+			JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					module: 'esnext',
+					moduleResolution: 'bundler',
+					target: 'es2022',
+					noEmit: true,
+				},
+			}),
+		)
+		write(
+			'src/index.ts',
+			[
+				'export function frobnicate(value: string): string {',
+				'\treturn value',
+				'}',
+				'',
+				'/** @internal */',
+				'export function plumbing(): void {}',
+				'',
+			].join('\n'),
+		)
+		write('skills/demo/SKILL.md', `${FRONTMATTER}${API_START}\nold\n${END}\n`)
+	}
+
+	/** Runs the subcommand in `root`; a process.exit becomes a thrown exit code. */
+	async function runInRoot(subcommand: string): Promise<number> {
+		vi.spyOn(process, 'cwd').mockReturnValue(root)
+		vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+			throw new Error(`exit:${code}`)
+		}) as never)
+		try {
+			await run([subcommand, '--no-format'])
+			return 0
+		} catch (error) {
+			const match = /^exit:(\d+)$/.exec((error as Error).message)
+			if (!match) throw error
+			return Number(match[1])
+		}
+	}
+
+	it('generate then check, the entry exporting an undocumented function → generate exit 0; check exit 1, its only error names <pkg>.<fn>, the summary counts methods and exports apart', async () => {
+		writeExportingPackage()
+
+		const generateExitCode = await runInRoot('generate')
+		vi.mocked(console.error).mockClear()
+		vi.mocked(console.log).mockClear()
+		const checkExitCode = await runInRoot('check')
+
+		expect(generateExitCode).toBe(0)
+		expect(checkExitCode).toBe(1)
+
+		expect(vi.mocked(console.error).mock.calls.map((call) => String(call[0]))).toEqual([
+			expect.stringContaining('`@acme/widget.frobnicate` has no JSDoc summary'),
+			expect.stringContaining('`@acme/widget.frobnicate` has no @intent tag'),
+		])
+		expect(vi.mocked(console.log).mock.calls.map((call) => String(call[0]))).toContain(
+			'❌ 1 skill page(s), 0 method(s) and 1 export(s) checked: 2 error(s), 0 warning(s)',
+		)
+	})
+
+	it('generate on it → the api block of the page holds the entry section', async () => {
+		writeExportingPackage()
+
+		const exitCode = await runInRoot('generate')
+
+		expect(exitCode).toBe(0)
+		expect(read('skills/demo/SKILL.md')).toContain(
+			'### `@acme/widget`\n\n| Function | What it answers | Reach for it to |',
+		)
+	})
+
+	it('generate on a package with entries ./zeta then ./alpha → the ### headers follow the order of the exports map', async () => {
+		write(
+			'package.json',
+			JSON.stringify({
+				name: '@acme/widget',
+				exports: {
+					'./zeta': { types: './dist/zeta.d.ts' },
+					'./alpha': { types: './dist/alpha.d.ts' },
+				},
+			}),
+		)
+		write(
+			'tsconfig.json',
+			JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					module: 'esnext',
+					moduleResolution: 'bundler',
+					target: 'es2022',
+					noEmit: true,
+				},
+			}),
+		)
+		write('src/zeta.ts', '/** Zeta. @intent zed */\nexport function zeta(): void {}\n')
+		write('src/alpha.ts', '/** Alpha. @intent ay */\nexport function alpha(): void {}\n')
+		write('skills/demo/SKILL.md', `${FRONTMATTER}${API_START}\nold\n${END}\n`)
+
+		const exitCode = await runInRoot('generate')
+
+		expect(exitCode).toBe(0)
+		expect(
+			[...read('skills/demo/SKILL.md').matchAll(/^### `(.+)`$/gm)].map((match) => match[1]),
+		).toEqual(['@acme/widget/zeta', '@acme/widget/alpha'])
 	})
 })
