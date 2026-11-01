@@ -20,12 +20,15 @@ import {
 	INSTALL_COMMAND,
 	OPTIONAL_LOCK_FLAGS,
 	PACKAGE_LOCK_FILE,
+	NODE_MODULES_SEGMENT,
 	PACKAGE_MANIFEST_FILE,
+	SKIPPED_INSTALL_SCRIPTS_NOTE,
+	SKIPPED_SCRIPTS_NAMED,
 	STAGED_SUFFIX,
 } from './handover.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
-import type { Installer } from './handover.types.ts'
+import type { Installer, StagedLockEntry } from './handover.types.ts'
 
 /** Nothing to do, done (with a note), or why the commit must not go on. */
 export async function syncNodeModules(params: {
@@ -89,7 +92,7 @@ export async function syncNodeModules(params: {
 	if (after.length)
 		return { refusal: `node_modules still differ from the staged lock: ${shortList(after)}` }
 	return {
-		note: `node_modules brought to the staged lock (${shortList(before)}) in ${formatDuration(clock.now() - startedAt)}`,
+		note: `node_modules brought to the staged lock (${shortList(before)}) in ${formatDuration(clock.now() - startedAt)}${skippedScriptsNote(root)}`,
 	}
 }
 
@@ -139,22 +142,30 @@ function stagedBytes(params: { root: string; file: string }): Buffer | undefined
 	return staged.status === 0 ? staged.stdout : undefined
 }
 
-/** Each package of the staged lock `node_modules` does not hold at its version: `name installed (lock v)`. */
-function nodeModulesAgainstStagedLock(root: string): string[] {
+/** The staged lock's packages under `node_modules/`, in lock order; none when the index holds no lock. */
+function readStagedLockPackages(root: string): Array<[string, StagedLockEntry]> {
 	const staged = spawnSync('git', ['show', `:${PACKAGE_LOCK_FILE}`], {
 		cwd: root,
 		encoding: 'utf8',
 	})
 	if (staged.status !== 0) return []
-	const lock = JSON.parse(staged.stdout) as {
-		packages?: Record<string, { version?: string; link?: boolean } & Record<string, unknown>>
-	}
-	return Object.entries(lock.packages ?? {}).flatMap(function differs([path, entry]) {
-		if (!path.startsWith('node_modules/') || entry.link) return []
-		const manifest = join(root, path, 'package.json')
-		const installed = existsSync(manifest)
-			? (JSON.parse(readFileSync(manifest, 'utf8')) as { version?: string }).version
-			: undefined
+	const lock = JSON.parse(staged.stdout) as { packages?: Record<string, StagedLockEntry> }
+	return Object.entries(lock.packages ?? {}).filter(([path]) => path.startsWith('node_modules/'))
+}
+
+/** The version a package's installed manifest says; undefined when it is not installed. */
+function installedVersion(params: { root: string; path: string }): string | undefined {
+	const manifest = join(params.root, params.path, 'package.json')
+	return existsSync(manifest)
+		? (JSON.parse(readFileSync(manifest, 'utf8')) as { version?: string }).version
+		: undefined
+}
+
+/** Each package of the staged lock `node_modules` does not hold at its version: `name installed (lock v)`. */
+function nodeModulesAgainstStagedLock(root: string): string[] {
+	return readStagedLockPackages(root).flatMap(function differs([path, entry]) {
+		if (entry.link) return []
+		const installed = installedVersion({ root, path })
 		// an install may leave dev, peer and optional packages out
 		if (installed === undefined && OPTIONAL_LOCK_FLAGS.some((flag) => entry[flag] === true))
 			return []
@@ -162,6 +173,25 @@ function nodeModulesAgainstStagedLock(root: string): string[] {
 			? []
 			: [`${path.slice('node_modules/'.length)} ${installed ?? 'missing'} (lock ${entry.version})`]
 	})
+}
+
+/**
+ * The note's end naming each installed package of the staged lock with an install script, if any: `npm ci`
+ * reinstalls every package, and none of their scripts ran. A package is named once, by its name (a nested
+ * copy, `vite/node_modules/fsevents`, is `fsevents`), in lock order, the first few named and the others
+ * counted.
+ */
+function skippedScriptsNote(root: string): string {
+	const names = readStagedLockPackages(root).flatMap(function withScript([path, entry]) {
+		if (entry.link || entry.hasInstallScript !== true) return []
+		if (installedVersion({ root, path }) === undefined) return []
+		return [path.slice(path.lastIndexOf(NODE_MODULES_SEGMENT) + NODE_MODULES_SEGMENT.length)]
+	})
+	const unique = [...new Set(names)]
+	if (unique.length === 0) return ''
+	const named = unique.slice(0, SKIPPED_SCRIPTS_NAMED)
+	const others = unique.length - named.length
+	return `${SKIPPED_INSTALL_SCRIPTS_NOTE}${named.join(', ')}${others > 0 ? ` and ${others} more` : ''}`
 }
 
 function installWithNpm(params: { root: string }): ReturnType<Installer> {

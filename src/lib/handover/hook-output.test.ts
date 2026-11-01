@@ -5,10 +5,16 @@ import {
 	FAIL_LINE,
 	FAILED_TEST_LINE,
 	FAILING_HOOK_LINES,
+	FAILING_PARALLEL_TEST_HOOK_LINES,
+	FAILING_PARALLEL_TEST_STEP_LINES,
+	FAILING_TEST_RUN_LINES,
 	FAILING_TEST_RUN_STEP_LINES,
 	LINT_WARNING,
+	OXFMT_WARNING,
 	PASSING_HOOK_LINES,
+	PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS,
 	RUN_P_ERROR,
+	TEST_BROWSER_FAILURE,
 	TYPE_ERROR,
 } from '../../../test/hook-output-lines.constants.ts'
 import { classifyHookLine, hookOutcomeLines, readHookSteps } from './hook-output.ts'
@@ -248,8 +254,8 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		expect(
 			hookOutcomeLines({ output: outputOf(PASSING_HOOK_LINES), passed: true, logPath: LOG }),
 		).toEqual([
-			'check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning',
-			LINT_WARNING,
+			'check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning in lint:check',
+			`[lint:check] ${LINT_WARNING}`,
 			`full log: ${LOG}`,
 		])
 	})
@@ -258,8 +264,8 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		expect(
 			hookOutcomeLines({ output: outputOf(CORE_PASSING_HOOK_LINES), passed: true, logPath: LOG }),
 		).toEqual([
-			'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning',
-			LINT_WARNING,
+			'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning in check',
+			`[check] ${LINT_WARNING}`,
 			`full log: ${LOG}`,
 		])
 	})
@@ -310,10 +316,35 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		])
 
 		expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual([
-			'lint:check ✓ · build ✓ · 2 lint warnings · 1 build warning',
+			'lint:check ✓ · build ✓ · 2 lint warnings in lint:check · 1 build warning in build',
+			`[lint:check] ${LINT_WARNING}`,
+			`[lint:check] ${second}`,
+			`[build] ${build}`,
+			`full log: ${LOG}`,
+		])
+	})
+
+	it('one kind of warning printed by two steps, then another kind by the first again → a count per step and kind, in the order first printed', () => {
+		const lintInBuild = "  ⚠ eslint(no-unused-vars): Variable 'unused' is declared but never used."
+		const build = '(!) Some chunks are larger than 500 kB after minification.'
+		const output = outputOf([
+			'> demo@1.0.0 lint:check',
+			'> oxlint',
 			LINT_WARNING,
-			second,
+			'',
+			'> demo@1.0.0 build',
+			'> vite build',
 			build,
+			lintInBuild,
+			build,
+		])
+
+		expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual([
+			'lint:check ✓ · build ✓ · 1 lint warning in lint:check · 2 build warnings in build · 1 lint warning in build',
+			`[lint:check] ${LINT_WARNING}`,
+			`[build] ${build}`,
+			`[build] ${lintInBuild}`,
+			`[build] ${build}`,
 			`full log: ${LOG}`,
 		])
 	})
@@ -323,7 +354,23 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 			hookOutcomeLines({ output: outputOf(FAILING_HOOK_LINES), passed: false, logPath: LOG }),
 		).toEqual([
 			'check ✗ · test:run ✗ 1 failed of 1214',
-			FAILED_TEST_LINE,
+			`[test:run] ${FAILED_TEST_LINE}`,
+			...FAILING_TEST_RUN_STEP_LINES.slice(-30),
+			`full log: ${LOG}`,
+		])
+	})
+
+	it('the cli hook failing in test:run, a type error printed early in test:run → only the failing test line listed before the tail: a test step shows its test failures only', () => {
+		const testRunStart = FAILING_HOOK_LINES.length - FAILING_TEST_RUN_LINES.length
+		const output = outputOf([
+			...FAILING_HOOK_LINES.slice(0, testRunStart),
+			TYPE_ERROR,
+			...FAILING_HOOK_LINES.slice(testRunStart),
+		])
+
+		expect(hookOutcomeLines({ output, passed: false, logPath: LOG })).toEqual([
+			'check ✗ · test:run ✗ 1 failed of 1214',
+			`[test:run] ${FAILED_TEST_LINE}`,
 			...FAILING_TEST_RUN_STEP_LINES.slice(-30),
 			`full log: ${LOG}`,
 		])
@@ -383,6 +430,62 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		expect(
 			hookOutcomeLines({ output: 'changelog refused\n', passed: false, logPath: LOG }),
 		).toEqual(['hook ✗', 'changelog refused', `full log: ${LOG}`])
+	})
+
+	it("the cli hook passing, a generator's oxfmt warning printed inside test:run → neither counted nor listed: only the lint warning of lint:check", () => {
+		expect(
+			hookOutcomeLines({
+				output: outputOf(PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS),
+				passed: true,
+				logPath: LOG,
+			}),
+		).toEqual([
+			'check ✓ · test:run ✓ 1214 · build ✓ · 1 lint warning in lint:check',
+			`[lint:check] ${LINT_WARNING}`,
+			`full log: ${LOG}`,
+		])
+	})
+
+	const testSteps: { name: string; command: string; testStep: boolean }[] = [
+		{ name: 'test', command: '> sh scripts/check.sh', testStep: true },
+		{ name: 'test:run', command: '> sh scripts/check.sh', testStep: true },
+		{ name: 'test:node', command: '> sh scripts/check.sh', testStep: true },
+		{ name: 'unit:test', command: '> sh scripts/check.sh', testStep: true },
+		{ name: 'verify', command: '> vitest run', testStep: true },
+		{ name: 'verify', command: '> jest', testStep: true },
+		{ name: 'verify', command: '> node --test src/', testStep: true },
+		{ name: 'contest', command: '> sh scripts/check.sh', testStep: false },
+		{ name: 'testing:build', command: '> sh scripts/check.sh', testStep: false },
+		{ name: 'build', command: '> tsup', testStep: false },
+	]
+	for (const row of testSteps)
+		it(`a step ${row.name} running ${row.command.slice(2)} printing a warning ⚠ line → ${row.testStep ? 'a test step: not counted, not listed' : 'counted in it and listed labelled'}`, () => {
+			const output = outputOf([`> demo@1.0.0 ${row.name}`, row.command, OXFMT_WARNING])
+
+			expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual(
+				row.testStep
+					? [`${row.name} ✓`, `full log: ${LOG}`]
+					: [
+							`${row.name} ✓ · 1 lint warning in ${row.name}`,
+							`[${row.name}] ${OXFMT_WARNING}`,
+							`full log: ${LOG}`,
+						],
+			)
+		})
+
+	it('a test step running run-p failing: its script failure line printed before the last 30 lines → still listed, labelled [test]; the oxfmt warning beside it not listed', () => {
+		expect(
+			hookOutcomeLines({
+				output: outputOf(FAILING_PARALLEL_TEST_HOOK_LINES),
+				passed: false,
+				logPath: LOG,
+			}),
+		).toEqual([
+			'test ✗ · test:browser ✗',
+			`[test] ${TEST_BROWSER_FAILURE}`,
+			...FAILING_PARALLEL_TEST_STEP_LINES.slice(-30),
+			`full log: ${LOG}`,
+		])
 	})
 
 	it('a hook printing nothing → hook ✓ and the log path when it passes; hook ✗ and the log path when it fails', () => {

@@ -21,7 +21,13 @@ import {
 	RUN_ALL_RUNNERS,
 	RUNNER_ARGUMENT,
 	SCRIPT_FAILURE,
+	SCRIPT_NAME_SEPARATOR,
 	SCRIPT_RUNNER,
+	STEP_COUNT_SUFFIX,
+	STEP_LABEL,
+	TEST_RUNNER_COMMAND,
+	TEST_STEP_KINDS,
+	TEST_STEP_SEGMENT,
 } from './hook-output.constants.ts'
 
 import type { StepCounts } from '../gate/gate.types.ts'
@@ -31,6 +37,8 @@ import type {
 	HookParentStep,
 	HookStep,
 	HookStepReader,
+	HookSummaryStep,
+	PlacedFlaggedLine,
 	ScriptsRun,
 } from './hook-output.types.ts'
 
@@ -45,23 +53,38 @@ export function classifyHookLine(line: string): HookLineKind | undefined {
  * is a `> <package>@<version> <script>` line after a blank line (or first), followed by its `> <command>` line.
  */
 export function readHookSteps(output: string): HookStep[] {
-	const lines = output.split('\n')
+	return readHookOutput({ output }).steps
+}
+
+/** The hook's steps and its flagged lines, each with the step holding it and its place in that step's lines. */
+function readHookOutput(params: { output: string }): {
+	steps: HookStep[]
+	flagged: PlacedFlaggedLine[]
+} {
+	const lines = params.output.split('\n')
 	if (lines.at(-1) === '') lines.pop()
-	const reader = createHookStepReader({})
+	const flagged: PlacedFlaggedLine[] = []
+	const reader = createHookStepReader({
+		onFlagged: function placeFlagged(entry, step) {
+			flagged.push({ flagged: entry, step, index: step.lines.length - 1 })
+		},
+	})
 	for (const line of lines) reader.read(line)
-	return reader.end()
+	return { steps: reader.end(), flagged }
 }
 
 /**
  * Reads a hook's output a line at a time: `onStep` hears each step as its header is read (a script run in
- * parallel by its parent is none: its lines stay the parent's), `onFlagged` each warning or error line.
+ * parallel by its parent is none: its lines stay the parent's), `onFlagged` each warning or error line with
+ * the step holding it, its last line. In a test step only its failures are flagged.
  */
 export function createHookStepReader(params: {
 	onStep?: (step: HookStep) => void
-	onFlagged?: (flagged: FlaggedHookLine) => void
+	onFlagged?: (flagged: FlaggedHookLine, step: HookStep) => void
 }): HookStepReader {
 	const steps: HookStep[] = []
 	const parents: HookParentStep[] = []
+	const testSteps = new Set<HookStep>()
 	// the lines before the first step: a step `hook` once one is not blank
 	const leading: string[] = []
 	let current: HookStep | undefined
@@ -79,7 +102,17 @@ export function createHookStepReader(params: {
 			params.onStep?.(current)
 		}
 		const kind = classifyHookLine(line)
-		if (kind) params.onFlagged?.({ line, kind })
+		if (!kind) return
+		if (testSteps.has(current) && !TEST_STEP_KINDS.includes(kind)) return
+		params.onFlagged?.(
+			{
+				line,
+				kind,
+				step: current.name,
+				label: `${STEP_LABEL.replace('{step}', current.name)}${line}`,
+			},
+			current,
+		)
 	}
 
 	function startStep(header: { line: string; command: string }): void {
@@ -108,6 +141,7 @@ export function createHookStepReader(params: {
 		}
 		steps.push(step)
 		current = step
+		if (isTestStep({ name, commandLine: header.command })) testSteps.add(step)
 		if (step.runsScripts) parents.push({ ...run, step })
 		params.onStep?.(step)
 	}
@@ -142,47 +176,78 @@ export function createHookStepReader(params: {
 
 /**
  * The lines printed once the hook ended (without the hook prefix): its summary line, then the warning lines
- * (passed) or the error lines not among the failing step's last lines, then those lines (failed), then
- * the full log's path. The summary names the scripts the hook file runs, and a script they run only when it has
- * counts or is the one that failed.
+ * (passed) or the error lines not among the failing step's last lines, then those lines (failed), each
+ * labelled by its step, then the full log's path. The summary names the steps `hookSummarySteps` selects and
+ * counts the warnings per step and kind.
  */
 export function hookOutcomeLines(params: {
 	output: string
 	passed: boolean
 	logPath: string
 }): string[] {
-	const steps = readHookSteps(params.output)
-	const failing = params.passed ? undefined : steps.at(-1)
-	const failed = failingChain({ steps, failing })
-	const parts: string[] = []
-	for (const step of steps) {
-		const counts = step.runsScripts ? '' : renderHookCounts(readStepCounts(step.lines.join('\n')))
-		const stepFailed = failed.has(step)
-		if (step.parent && !counts && !stepFailed) continue
-		parts.push(`${step.name} ${stepFailed ? '✗' : '✓'}${counts ? ` ${counts}` : ''}`)
-		if (step === failing) for (const task of failedTasks(step.lines)) parts.push(`${task} ✗`)
-	}
+	const { steps, flagged } = readHookOutput({ output: params.output })
+	const parts = hookSummarySteps({ steps, passed: params.passed }).map(function summaryPart(entry) {
+		const counts = renderHookCounts(entry.counts)
+		return `${entry.name} ${entry.failed ? '✗' : '✓'}${counts ? ` ${counts}` : ''}`
+	})
 	const logLine = `full log: ${params.logPath}`
-	if (!failing) {
-		const flagged = steps.flatMap((step) => flaggedLines(step.lines))
+	if (params.passed) {
+		const shown = flagged.map((entry) => entry.flagged)
 		return [
-			[...parts, ...warningCounts(flagged)].join(' · '),
-			...flagged.map((entry) => entry.line),
+			[...parts, ...warningCounts(shown)].join(' · '),
+			...shown.map((entry) => entry.label),
 			logLine,
 		]
 	}
-	const tailStart = Math.max(failing.lines.length - FAILING_TAIL_LINES, 0)
-	const before = steps.flatMap((step) =>
-		flaggedLines(step === failing ? step.lines.slice(0, tailStart) : step.lines),
+	const failing = steps.at(-1)
+	const tail = failing?.lines ?? []
+	const tailStart = Math.max(tail.length - FAILING_TAIL_LINES, 0)
+	const before = flagged.filter(
+		(entry) =>
+			!HOOK_WARNING_KINDS.includes(entry.flagged.kind) &&
+			(entry.step !== failing || entry.index < tailStart),
 	)
 	return [
 		parts.join(' · '),
-		...before
-			.filter((entry) => !HOOK_WARNING_KINDS.includes(entry.kind))
-			.map((entry) => entry.line),
-		...failing.lines.slice(tailStart),
+		...before.map((entry) => entry.flagged.label),
+		...tail.slice(tailStart),
 		logLine,
 	]
+}
+
+/**
+ * The steps a hook's summary names, in the order they started: the scripts the hook file runs, a script they
+ * run only when it has counts or is the one that failed, and after the failing step the tasks run-p says
+ * failed. A failed hook's failing step is its last; it and the steps running it failed.
+ */
+export function hookSummarySteps(params: {
+	steps: HookStep[]
+	passed: boolean
+}): HookSummaryStep[] {
+	const { steps } = params
+	const failing = params.passed ? undefined : steps.at(-1)
+	const failed = failingChain({ steps, failing })
+	return steps.flatMap(function summaryStep(step) {
+		const counts = step.runsScripts ? {} : readStepCounts(step.lines.join('\n'))
+		const stepFailed = failed.has(step)
+		if (step.parent && !renderHookCounts(counts) && !stepFailed) return []
+		const tasks =
+			step === failing
+				? failedTasks(step.lines).map((task) => ({ name: task, failed: true, counts: {} }))
+				: []
+		return [{ name: step.name, failed: stepFailed, counts }, ...tasks]
+	})
+}
+
+/**
+ * A step running tests: a `test` segment in its name (`test:run`, `unit:test`), or a test runner on its
+ * command line (`> vitest run`, `> node --test`).
+ */
+function isTestStep(params: { name: string; commandLine: string }): boolean {
+	return (
+		params.name.split(SCRIPT_NAME_SEPARATOR).includes(TEST_STEP_SEGMENT) ||
+		TEST_RUNNER_COMMAND.test(params.commandLine)
+	)
 }
 
 /** A line as a terminal shows it: no line end, only the text after its last carriage return. */
@@ -255,20 +320,22 @@ function failedTasks(lines: readonly string[]): string[] {
 	return [...new Set(tasks)]
 }
 
-function flaggedLines(lines: readonly string[]): FlaggedHookLine[] {
-	return lines.flatMap((line) => {
-		const kind = classifyHookLine(line)
-		return kind ? [{ line, kind }] : []
-	})
-}
-
-/** Each kind of warning with its count, in the order first printed: `2 lint warnings`. */
+/**
+ * Each kind of warning with its count per step, in the order first printed: `2 lint warnings in lint:check`.
+ */
 function warningCounts(flagged: readonly FlaggedHookLine[]): string[] {
-	const counts = new Map<HookLineKind, number>()
-	for (const entry of flagged)
-		if (HOOK_WARNING_KINDS.includes(entry.kind))
-			counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
-	return [...counts].map(([kind, count]) => counted({ count, noun: kind }))
+	const counts = new Map<string, { kind: HookLineKind; step: string; count: number }>()
+	for (const entry of flagged) {
+		if (!HOOK_WARNING_KINDS.includes(entry.kind)) continue
+		const key = `${entry.step}\n${entry.kind}`
+		const tally = counts.get(key) ?? { kind: entry.kind, step: entry.step, count: 0 }
+		tally.count += 1
+		counts.set(key, tally)
+	}
+	return [...counts.values()].map(
+		(entry) =>
+			`${counted({ count: entry.count, noun: entry.kind })}${STEP_COUNT_SUFFIX.replace('{step}', entry.step)}`,
+	)
 }
 
 /** A step's counts in its summary: `1214`, `1210 (4 skipped)`, `1 failed of 1214`, `2 errors`; '' for none. */

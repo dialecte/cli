@@ -1,8 +1,8 @@
 /**
  * The hand-over card's gate lines, from records, never from prose: one per gate step (the latest record of
- * each step across the two modes), then the rules, then the review from the hand-over folder's findings
- * ledger and round snapshots. A record of another tree than the worktree's now is marked stale: it warns,
- * or stays failed.
+ * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes
+ * whole), then the rules, then the review from the hand-over folder's findings ledger and round snapshots.
+ * A record of another tree than the worktree's now is marked stale: it warns, or stays failed.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,6 +13,8 @@ import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.
 import {
 	DETAIL_SEPARATOR,
 	GATE_LINE_NAME,
+	HOOK_RECORD_DETAIL,
+	HOOK_RECORD_MODE,
 	MISSING_SCRIPT_DETAIL,
 	MISSING_SCRIPT_PATTERN,
 	NEVER_RUN_DETAIL,
@@ -53,16 +55,39 @@ export function buildCardGateLines(params: {
 function gateStepLines(params: { records: GateRecord[]; stateHash: string }): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
-	const latest = new Map<string, { step: RecordedStep; stateHash: string }>()
-	const oldestFirst = [...params.records].sort((first, second) => first.at.localeCompare(second.at))
+	const latest = new Map<string, { step: RecordedStep; record: GateRecord }>()
+	const oldestFirst = currentRecords(params.records).sort((first, second) =>
+		first.at.localeCompare(second.at),
+	)
 	for (const record of oldestFirst)
-		for (const step of record.steps) latest.set(step.name, { step, stateHash: record.stateHash })
+		for (const step of record.steps) latest.set(step.name, { step, record })
 	return [...latest.values()].map(function stepLine(entry) {
+		const line = lineOfStep(entry.step)
 		return withTreeCheck({
-			line: lineOfStep(entry.step),
-			current: entry.stateHash === params.stateHash,
+			line: entry.record.mode === HOOK_RECORD_MODE ? fromHook(line) : line,
+			current: entry.record.stateHash === params.stateHash,
 		})
 	})
+}
+
+/**
+ * The records the card reads: a commit hook's record only when no gate record is newer. The hook names its
+ * own scripts (`test:run`, `lint:check`), never the gate's steps, so a later gate run could not replace its
+ * lines one by one: it replaces the whole record.
+ */
+function currentRecords(records: readonly GateRecord[]): GateRecord[] {
+	const newestGate = records
+		.filter((record) => record.mode !== HOOK_RECORD_MODE)
+		.reduce((newest, record) => (record.at > newest ? record.at : newest), '')
+	return records.filter((record) => record.mode !== HOOK_RECORD_MODE || record.at > newestGate)
+}
+
+/** A line read from a commit hook's record: its detail ends saying so (`✓ test:run  1214/1214 · commit hook`). */
+function fromHook(line: CardGateLine): CardGateLine {
+	return {
+		...line,
+		detail: [line.detail, HOOK_RECORD_DETAIL].filter(Boolean).join(DETAIL_SEPARATOR),
+	}
 }
 
 function lineOfStep(step: RecordedStep): CardGateLine {

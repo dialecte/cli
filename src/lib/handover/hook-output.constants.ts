@@ -37,6 +37,28 @@ export const PLAIN_HOOK_STEP = 'hook'
 /** The failing step's last lines printed once the hook failed. */
 export const FAILING_TAIL_LINES = 30
 
+/** The segment of a script name (split on `:`) that makes its step a test step: `test`, `test:run`, `unit:test`. */
+export const TEST_STEP_SEGMENT = 'test'
+
+/** The script name's segment separator. */
+export const SCRIPT_NAME_SEPARATOR = ':'
+
+/** A step's command line running a test runner: `> vitest run`, `> jest`, `> node --test src/`. */
+export const TEST_RUNNER_COMMAND =
+	/^> (?:\S+=\S*\s+)*(?:npx\s+)?(?:vitest|jest|mocha|node(?:\s+\S+)*\s+--test)(?:\s|$)/
+
+/**
+ * The kinds flagged in a test step: its failures. A test suite runs commands whose warnings are part of the
+ * tests (a generator printing its formatter's warning in a scratch folder), not of the repository.
+ */
+export const TEST_STEP_KINDS: readonly HookLineKind[] = ['test failure', 'script failure']
+
+/** Before a flagged line, naming the step that printed it: `[lint:check] <line>`. */
+export const STEP_LABEL = '[{step}] '
+
+/** After a warning count in the summary, naming the step: `1 lint warning in lint:check`. */
+export const STEP_COUNT_SUFFIX = ' in {step}'
+
 /** The kinds counted after a passing hook; the others are errors. */
 export const HOOK_WARNING_KINDS: readonly HookLineKind[] = ['lint warning', 'build warning']
 

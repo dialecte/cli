@@ -31,6 +31,12 @@ export const REVIEW_LINE_NAME = 'review'
 /** A gate (or rules) never run on the worktree. */
 export const NEVER_RUN_DETAIL = 'never run on this tree'
 
+/** The end of a gate line's detail read from a commit hook's record. */
+export const HOOK_RECORD_DETAIL = 'commit hook'
+
+/** The mode of the record `handover run` writes for a commit's hook. */
+export const HOOK_RECORD_MODE = 'hook'
+
 /** After a record's detail when its state hash is not the worktree's now. */
 export const TREE_CHANGED_SUFFIX = ' (the tree changed since)'
 

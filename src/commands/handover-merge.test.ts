@@ -804,6 +804,149 @@ describe('the lock sync installs the staged state', { timeout: SCRATCH_REPOSITOR
 	})
 })
 
+/** The installer as `handover run` runs it: npm ci with no install script. */
+const INSTALL_ARGUMENTS = 'ci --ignore-scripts --prefer-offline --no-audit --no-fund'
+
+describe('the lock sync runs no install scripts', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('the installer runs npm ci --ignore-scripts --prefer-offline --no-audit --no-fund; a lock with no install script → no install-scripts note', async () => {
+		const root = createScratchRepository({
+			'package.json': PACKAGE_V0,
+			'package-lock.json': LOCK_V1,
+			'.gitignore': 'node_modules\n',
+		})
+		writeFiles({
+			root,
+			files: {
+				'node_modules/dep/package.json': '{ "name": "dep", "version": "1.0.0" }\n',
+				'package-lock.json': LOCK_V2,
+			},
+		})
+		const record = join(temporaryFolder('dialecte-npm-record-'), 'record.txt')
+		installFakeNpm([`echo "$*" >> '${record}'`, INSTALL_DEP_TWO])
+		const out = temporaryFolder('dialecte-lock-handover-')
+		const lotsPath = join(out, 'lots.json')
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({
+				repository: root,
+				branch: 'main',
+				head: head(root),
+				lots: [{ paths: ['package-lock.json'], message: 'chore(deps): dep 2' }],
+			}),
+		)
+		expect(writeHandover(lotsPath).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(0)
+		expect(existsSync(record) ? readFileSync(record, 'utf8') : '').toBe(`${INSTALL_ARGUMENTS}\n`)
+		expect(result.text).toContain('node_modules brought to the staged lock')
+		expect(result.text).not.toContain('install scripts not run')
+	})
+
+	it('npm ci reinstalls every package: the note names each installed package with an install script once, by its name, in lock order, five then a count: dep, plain, settled (already at its version), clock, dial and 1 more; a nested copy of dep not named again; one without a script → not named', async () => {
+		function lockWithScripts(version: string): string {
+			return `${JSON.stringify(
+				{
+					lockfileVersion: 3,
+					packages: {
+						'': {},
+						'node_modules/dep': { version, hasInstallScript: true },
+						'node_modules/plain': { version, hasInstallScript: true },
+						'node_modules/bare': { version },
+						'node_modules/settled': { version: '1.0.0', hasInstallScript: true },
+						'node_modules/plain/node_modules/dep': { version: '1.0.0', hasInstallScript: true },
+						'node_modules/clock': { version: '1.0.0', hasInstallScript: true },
+						'node_modules/dial': { version: '1.0.0', hasInstallScript: true },
+						'node_modules/edge': { version: '1.0.0', hasInstallScript: true },
+					},
+				},
+				null,
+				'\t',
+			)}\n`
+		}
+		const root = createScratchRepository({
+			'package.json': PACKAGE_V0,
+			'package-lock.json': lockWithScripts('1.0.0'),
+			'.gitignore': 'node_modules\n',
+		})
+		writeFiles({
+			root,
+			files: {
+				'node_modules/dep/package.json': '{ "name": "dep", "version": "1.0.0" }\n',
+				'node_modules/plain/package.json': '{ "name": "plain", "version": "1.0.0" }\n',
+				'node_modules/bare/package.json': '{ "name": "bare", "version": "1.0.0" }\n',
+				'node_modules/settled/package.json': '{ "name": "settled", "version": "1.0.0" }\n',
+				'node_modules/plain/node_modules/dep/package.json':
+					'{ "name": "dep", "version": "1.0.0" }\n',
+				'node_modules/clock/package.json': '{ "name": "clock", "version": "1.0.0" }\n',
+				'node_modules/dial/package.json': '{ "name": "dial", "version": "1.0.0" }\n',
+				'node_modules/edge/package.json': '{ "name": "edge", "version": "1.0.0" }\n',
+				'package-lock.json': lockWithScripts('2.0.0'),
+			},
+		})
+		installFakeNpm([
+			INSTALL_DEP_TWO,
+			'mkdir -p node_modules/plain',
+			`echo '{ "name": "plain", "version": "2.0.0" }' > node_modules/plain/package.json`,
+			'mkdir -p node_modules/bare',
+			`echo '{ "name": "bare", "version": "2.0.0" }' > node_modules/bare/package.json`,
+		])
+		const out = temporaryFolder('dialecte-lock-handover-')
+		const lotsPath = join(out, 'lots.json')
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({
+				repository: root,
+				branch: 'main',
+				head: head(root),
+				lots: [{ paths: ['package-lock.json'], message: 'chore(deps): dep and plain 2' }],
+			}),
+		)
+		expect(writeHandover(lotsPath).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(0)
+		expect(/install scripts not run: (.*)$/m.exec(result.text)?.[1]).toBe(
+			'dep, plain, settled, clock, dial and 1 more',
+		)
+	})
+
+	it('a failed install → the refusal names the command as run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund failed (exit 1)', async () => {
+		const root = createScratchRepository({
+			'package.json': PACKAGE_V0,
+			'package-lock.json': LOCK_V1,
+			'.gitignore': 'node_modules\n',
+		})
+		writeFiles({
+			root,
+			files: {
+				'node_modules/dep/package.json': '{ "name": "dep", "version": "1.0.0" }\n',
+				'package-lock.json': LOCK_V2,
+			},
+		})
+		installFakeNpm(['echo boom >&2', 'exit 1'])
+		const out = temporaryFolder('dialecte-failed-install-')
+		const lotsPath = join(out, 'lots.json')
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({
+				repository: root,
+				branch: 'main',
+				head: head(root),
+				lots: [{ paths: ['package-lock.json'], message: 'chore(deps): dep 2' }],
+			}),
+		)
+		expect(writeHandover(lotsPath).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.text).toContain(`npm ${INSTALL_ARGUMENTS} failed (exit 1)`)
+	})
+})
+
 describe(
 	'the lock sync leaves out what an install may not bring',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },

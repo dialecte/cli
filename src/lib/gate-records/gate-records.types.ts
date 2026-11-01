@@ -19,23 +19,28 @@ export type RecordedStep = {
 	cases?: JudgedCase[]
 }
 
+/** What wrote a gate record: `dialecte gate --fast` / `--full`, or a commit's hook during `handover run`. */
+export type GateRecordMode = GateMode | 'hook'
+
 /**
  * `dialecte-gate-fast.json` / `dialecte-gate-full.json`: the last gate run of that mode that reached its
  * steps (a run refused at the hygiene or the machine lock leaves the file as it was).
+ * `dialecte-gate-hook.json`: the last commit hook `handover run` saw end (a stalled one records nothing).
  */
 export type GateRecord = {
-	mode: GateMode
+	mode: GateRecordMode
 	/** When it ran, ISO 8601. */
 	at: string
-	/** HEAD as a full sha. */
+	/** HEAD as a full sha: for a hook, the commit it let through, or HEAD when it failed. */
 	head: string
 	/**
-	 * sha256 (hex) of the tree the worktree would commit: HEAD's tree with the changed and untracked files
-	 * on top and the deleted ones removed, `.dialecte/` left out. Committing those changes leaves it as it
-	 * was (HEAD moves, the tree is the same); a gate record and a rules record of one tree hold the same hash.
+	 * sha256 (hex) of the tree the worktree would commit (for a hook, taken before the commit): HEAD's tree
+	 * with the changed and untracked files on top and the deleted ones removed, `.dialecte/` left out.
+	 * Committing those changes leaves it as it was (HEAD moves, the tree is the same); a gate record and a
+	 * rules record of one tree hold the same hash.
 	 */
 	stateHash: string
-	/** The tdd step, then the configured steps, in run order. */
+	/** The tdd step, then the configured steps, in run order; for a hook, the steps its summary names. */
 	steps: RecordedStep[]
 }
 

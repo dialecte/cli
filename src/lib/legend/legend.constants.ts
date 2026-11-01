@@ -35,7 +35,7 @@ const MARK_TERMS: LegendGroup = [
 	{
 		term: '!',
 		meaning: 'not run here, or only nits open: it does not block; ran on another tree: it blocks',
-		look: 'look: the reason after it; on another tree, run the gate again',
+		look: 'look: the reason after it; on another tree, run the gate again (a gate run replaces commit hook lines too)',
 	},
 	{
 		term: '✗',
@@ -70,6 +70,12 @@ const GATE_TERMS: LegendGroup = [
 		term: 'gate',
 		meaning: 'no gate record on this tree: dialecte gate never ran here',
 		look: 'look: always; run dialecte gate',
+	},
+	{
+		term: 'commit hook',
+		meaning:
+			'the line comes from the commit hook a hand-over run saw, its own scripts by name (test:run, lint:check, hook); a gate run after it replaces those lines',
+		look: 'look only if it is not ✓',
 	},
 	{
 		term: 'check',
@@ -200,7 +206,8 @@ const CARD_TERMS: LegendGroup = [
 	},
 	{
 		term: 'notes',
-		meaning: "the agent's caveats for this hand-over, in a few lines",
+		meaning:
+			"the agent's caveats for the person about to run the hand-over; the card after a run has none",
 		look: 'look: always',
 	},
 ]

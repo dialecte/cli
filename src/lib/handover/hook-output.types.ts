@@ -1,3 +1,5 @@
+import type { StepCounts } from '../gate/gate.types.ts'
+
 /** What a line of a hook's output is when it is one to show: a warning or an error of a tool the hook runs. */
 export type HookLineKind =
 	| 'lint warning'
@@ -31,8 +33,21 @@ export type HookStep = {
 /** A pattern of a tool's warning or error line, and the kind such a line is. */
 export type HookLinePattern = { kind: HookLineKind; pattern: RegExp }
 
-/** A line of a hook's output worth showing, with its kind. */
-export type FlaggedHookLine = { line: string; kind: HookLineKind }
+/** A line of a hook's output worth showing, with its kind and the step that printed it. */
+export type FlaggedHookLine = {
+	line: string
+	kind: HookLineKind
+	/** The step's name; a script run in parallel by its parent is its parent's step. */
+	step: string
+	/** The line written as shown: `[<step>] <line>`. */
+	label: string
+}
+
+/** A flagged line with the step holding it and its place among that step's lines. */
+export type PlacedFlaggedLine = { flagged: FlaggedHookLine; step: HookStep; index: number }
+
+/** A step the hook's summary names: passed or failed, with the counts its own summary lines said. */
+export type HookSummaryStep = { name: string; failed: boolean; counts: StepCounts }
 
 /** The npm scripts a command line runs. */
 export type ScriptsRun = {

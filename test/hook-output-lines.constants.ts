@@ -64,6 +64,19 @@ export const PASSING_HOOK_LINES = [
 	'ESM ⚡️ Build success in 120ms',
 ]
 
+/**
+ * What the cli's generator commands print when their oxfmt fails: the cli's own suite runs them in scratch
+ * folders, so the line shows up inside `test:run`.
+ */
+export const OXFMT_WARNING = '  ⚠ oxfmt exited 1 — emitted files may be unformatted'
+
+/** Every script passing, `test:run` printing a generator's oxfmt warning among its test files. */
+export const PASSING_HOOK_LINES_WITH_OXFMT_IN_TESTS = [
+	...CHECK_BEFORE_TESTS,
+	OXFMT_WARNING,
+	...PASSING_HOOK_LINES.slice(CHECK_BEFORE_TESTS.length),
+]
+
 export const FAILED_TEST_LINE = '   × read > answers one 3ms'
 
 export const FAIL_LINE = ' FAIL  src/read.test.ts > read > answers one'
@@ -209,3 +222,31 @@ export const CORE_PASSING_HOOK_LINES = [
 	'dist/index.js  412.30 kB │ gzip: 80.12 kB',
 	'✓ built in 1.20s',
 ]
+
+/** run-p naming the browser tests as failed. */
+export const TEST_BROWSER_FAILURE = 'ERROR: "test:browser" exited with 1.'
+
+/**
+ * A `test` script running `test:node` and `test:browser` with run-p, the browser tests failing: a
+ * generator's oxfmt warning, run-p's failure line, then more than 30 lines of npm's error block.
+ */
+export const FAILING_PARALLEL_TEST_HOOK_LINES = [
+	'',
+	'> demo@1.0.0 test',
+	'> run-p test:node test:browser',
+	'',
+	'',
+	'> demo@1.0.0 test:node',
+	'> node --test',
+	'',
+	'',
+	'> demo@1.0.0 test:browser',
+	'> vitest run --project browser',
+	'',
+	OXFMT_WARNING,
+	TEST_BROWSER_FAILURE,
+	...Array.from({ length: 32 }, (_unused, index) => `npm error detail ${index + 1}`),
+]
+
+/** The lines of that `test` step: its command line, then the mixed lines of its scripts. */
+export const FAILING_PARALLEL_TEST_STEP_LINES = FAILING_PARALLEL_TEST_HOOK_LINES.slice(2)

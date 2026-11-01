@@ -1574,6 +1574,49 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 		)
 	})
 
+	it('the notes are for the person about to run: the rehearsal card keeps them; the card a real run prints after committing every lot has no notes section', async () => {
+		const { out } = prepareWithHook('true')
+
+		const rehearsed = await runFolder({ out, argv: ['--rehearse'] })
+		const run = await runFolder({ out })
+
+		expect(rehearsed.exitCode).toBe(0)
+		expect(sectionLines({ output: rehearsed.text, name: 'notes' })).toEqual(['npm run check'])
+		expect(run.exitCode).toBe(0)
+		expect(boxLines(run.text).filter((line) => line.startsWith('├─ notes '))).toEqual([])
+		expect(boxLines(run.text).some((line) => line.startsWith('├─ gates '))).toBe(true)
+	})
+
+	it('a real run whose second commit fails (one lot of two committed) → the card after it has no notes section', async () => {
+		const { root, lotsPath, out } = prepare()
+		installHook({
+			root,
+			script: 'git diff --cached --name-only | grep -q CHANGELOG.md && exit 1; exit 0',
+		})
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(1)
+		expect(subjectsOf({ root, count: 1 })).toEqual(['feat(read): read answers one'])
+		expect(boxLines(result.text).filter((line) => line.startsWith('├─ notes '))).toEqual([])
+		expect(boxLines(result.text).some((line) => line.startsWith('├─ gates '))).toBe(true)
+	})
+
+	it('a real run whose only commit fails (no lot committed) → the card after it has no notes section', async () => {
+		const { out } = prepareWithHook('exit 1')
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(1)
+		expect(boxLines(result.text).filter((line) => line.startsWith('├─ notes '))).toEqual([])
+		expect(boxLines(result.text).some((line) => line.startsWith('├─ gates '))).toBe(true)
+	})
+
 	it('a repository whose own cli lacks handover run → the run line is node <this cli> handover run <dir>; one with it keeps bash commit.sh', () => {
 		const lacking = prepare()
 		const having = prepare()
@@ -1647,12 +1690,12 @@ describe(
 		it('off a terminal, a hook succeeding → its step line streams as it comes (the hook waits for it to be seen), then its warning line only; then the summary, the warning and the full log path; the log holds every line', async () => {
 			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 			const { out } = prepareWithHook(
-				`echo ""; echo "> demo@1.0.0 test:run"; echo "> vitest run"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
+				`echo ""; echo "> demo@1.0.0 lint:check"; echo "> oxlint"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
 			)
 			const written: string[] = []
 			function record(line: string): void {
 				written.push(line)
-				if (line === '  │ ▶ test:run') writeFileSync(flag, '1')
+				if (line === '  │ ▶ lint:check') writeFileSync(flag, '1')
 			}
 
 			const exitCode = await runLive({
@@ -1665,10 +1708,10 @@ describe(
 			const logPath = /full log: (\/\S+)/.exec(written[logLine] ?? '')?.[1] ?? ''
 			expect(exitCode).toBe(0)
 			expect(written.filter((line) => line.startsWith('  │ '))).toEqual([
-				'  │ ▶ test:run',
-				`  │ ${HOOK_WARNING}`,
-				'  │ test:run ✓ · 1 lint warning',
-				`  │ ${HOOK_WARNING}`,
+				'  │ ▶ lint:check',
+				`  │ [lint:check] ${HOOK_WARNING}`,
+				'  │ lint:check ✓ · 1 lint warning in lint:check',
+				`  │ [lint:check] ${HOOK_WARNING}`,
 				`  │ full log: ${logPath}`,
 			])
 			expect(readFileSync(logPath, 'utf8').split('\n')).toEqual(
@@ -1679,7 +1722,7 @@ describe(
 		it('on a terminal, a hook succeeding → under the spinner only its step and its warning line, never an ordinary line; afterwards the summary, the warning and the log path sit before the commit line, no other hook line', async () => {
 			const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 			const { out } = prepareWithHook(
-				`echo ""; echo "> demo@1.0.0 test:run"; echo "> vitest run"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
+				`echo ""; echo "> demo@1.0.0 lint:check"; echo "> oxlint"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1; ${PRINT_30_LINES_WITH_WARNING}`,
 			)
 			const terminal = createFakeTerminal({ tty: true })
 			const draw = terminal.output.rewriteLines
@@ -1687,24 +1730,26 @@ describe(
 				...terminal.output,
 				rewriteLines(lines) {
 					draw(lines)
-					if (lines.includes('  │ ▶ test:run 0.0 s')) writeFileSync(flag, '1')
+					if (lines.includes('  │ ▶ lint:check 0.0 s')) writeFileSync(flag, '1')
 				},
 			}
 
 			const exitCode = await runLive({ out, live, write: terminal.output.writeLine })
 
 			const screen = terminal.screen()
-			const summary = screen.indexOf('  │ test:run ✓ · 1 lint warning')
+			const summary = screen.indexOf('  │ lint:check ✓ · 1 lint warning in lint:check')
 			const logPath = /full log: (\/\S+)/.exec(screen[summary + 2] ?? '')?.[1] ?? ''
 			expect(exitCode).toBe(0)
-			expect(terminal.rewrites.some((region) => region.includes(`  │ ${HOOK_WARNING}`))).toBe(true)
+			expect(
+				terminal.rewrites.some((region) => region.includes(`  │ [lint:check] ${HOOK_WARNING}`)),
+			).toBe(true)
 			expect(
 				terminal.rewrites.some((region) => region.some((line) => /^ {2}│ line \d+$/.test(line))),
 			).toBe(false)
 			expect(terminal.rewrites.every((region) => SPINNER.test(region[0]))).toBe(true)
 			expect(terminal.written.filter((line) => line.startsWith('  │ '))).toEqual([
-				'  │ test:run ✓ · 1 lint warning',
-				`  │ ${HOOK_WARNING}`,
+				'  │ lint:check ✓ · 1 lint warning in lint:check',
+				`  │ [lint:check] ${HOOK_WARNING}`,
 				`  │ full log: ${logPath}`,
 			])
 			expect(screen[summary + 3]).toMatch(/^✓ [0-9a-f]{12} feat\(read\)/)
@@ -1990,9 +2035,9 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 			/full log: (\/\S+)/.exec(written.find((line) => line.includes('full log:')) ?? '')?.[1] ?? ''
 		expect(exitCode).toBe(0)
 		expect(
-			written.filter((line) => line === '  │ src/a.ts:1:1: warning eslint(no-console): €'),
+			written.filter((line) => line === '  │ [hook] src/a.ts:1:1: warning eslint(no-console): €'),
 		).toHaveLength(2)
-		expect(written).toContain('  │ hook ✓ · 1 lint warning')
+		expect(written).toContain('  │ hook ✓ · 1 lint warning in hook')
 		expect(written.some((line) => line.includes('�'))).toBe(false)
 		expect(readFileSync(logPath, 'utf8')).toBe('src/a.ts:1:1: warning eslint(no-console): €\n')
 	})
@@ -3302,7 +3347,7 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		{
 			term: '!',
 			meaning: 'not run here, or only nits open: it does not block; ran on another tree: it blocks',
-			look: 'look: the reason after it; on another tree, run the gate again',
+			look: 'look: the reason after it; on another tree, run the gate again (a gate run replaces commit hook lines too)',
 		},
 		{
 			term: '✗',
@@ -3333,6 +3378,12 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			term: 'gate',
 			meaning: 'no gate record on this tree: dialecte gate never ran here',
 			look: 'look: always; run dialecte gate',
+		},
+		{
+			term: 'commit hook',
+			meaning:
+				'the line comes from the commit hook a hand-over run saw, its own scripts by name (test:run, lint:check, hook); a gate run after it replaces those lines',
+			look: 'look only if it is not ✓',
 		},
 		{
 			term: 'check',
@@ -3461,7 +3512,8 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		},
 		{
 			term: 'notes',
-			meaning: "the agent's caveats for this hand-over, in a few lines",
+			meaning:
+				"the agent's caveats for the person about to run the hand-over; the card after a run has none",
 			look: 'look: always',
 		},
 	],
