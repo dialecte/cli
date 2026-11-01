@@ -750,6 +750,25 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
+	it('a package whose tests run in a browser → its tests run with the holder variable naming the tdd run with its start', async () => {
+		const root = createVitestPackage({
+			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },
+		})
+		const holderFile = join(root, 'holder.txt')
+		writeFiles({
+			root,
+			files: {
+				'src/holder.test.ts': `import { writeFileSync } from 'node:fs'\nimport { expect, it } from 'vitest'\n\nit('records the holder', () => {\n\twriteFileSync(${JSON.stringify(holderFile)}, process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')\n\texpect(1).toBe(2)\n})\n`,
+			},
+		})
+
+		await tdd({ cwd: root, argv: ['red', 'src/holder.test.ts'] })
+
+		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toEqual(
+			expect.stringMatching(new RegExp(`^${process.pid}:\\S.*$`)),
+		)
+	})
+
 	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', async () => {
 		const root = createVitestPackage({
 			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },

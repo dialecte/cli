@@ -8,6 +8,7 @@ import { explain } from './commands/explain.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
+import { run as lock } from './commands/lock.ts'
 import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
@@ -43,6 +44,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	handover,
 	lot,
 	worktree,
+	lock,
 	record,
 	review,
 }
@@ -69,11 +71,12 @@ Commands:
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
+  lock       Run any command under the machine lock gate and tdd take: run [--no-wait] -- <command>
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
   lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason
-  worktree   A worktree ready to work in (hooks, node_modules, hygiene baseline); prune what a merge left
+  worktree   A worktree ready to work in (hooks, sibling links, node_modules checked, hygiene baseline); prune what a merge left
   record     A lot's review rounds in its hand-over folder: review | decision | snapshot
   review     The fix diff since the previous round's snapshot: delta
 
@@ -138,6 +141,12 @@ Contributing (inside a dialecte repository):
                              # refuses while a hand-over script holds the repository; --fast starts with the
                              # worktree's hygiene (nothing staged, no stash on its branch, new files declared);
                              # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait)
+  dialecte lock run [--no-wait] -- <command> [<argument>...]
+                             # runs the command (no shell, its output on the terminal) holding the machine lock
+                             # gate and tdd take: waits with a line every 30 s naming the holder, or refuses
+                             # with --no-wait (exit 1); exits with the command's code (128 + the signal's
+                             # number, 127 not found, 126 not runnable); the environment as the cli got it;
+                             # a gate or lock run inside it does not wait; -h after -- is the command's
   dialecte tdd red [<test file>]... [--no-wait] [--json]
                              # every case of the changed test files: a failure on an assertion (or a stub's
                              # 'not implemented', a TypeError of existing code, inside an asserting expect) is a
@@ -172,12 +181,15 @@ Contributing (inside a dialecte repository):
                              # writes .dialecte/lot.json at the package root (tab JSON), keeping the rest;
                              # a case is <file>::<name>; a file or glob covers every case of its files
   dialecte worktree add <repository> <branch> [--from <ref>] [--json]
-                             # under the workspace's .worktrees/: hooks folder, copy-on-write node_modules,
-                             # hygiene baseline
+                             # under the workspace's .worktrees/: hooks folder, the links its file: and link:
+                             # dependencies need to sibling checkouts (.worktrees/core -> ../core, never
+                             # replacing what is there), copy-on-write node_modules read against
+                             # package-lock.json (the npm ci to run when it differs), hygiene baseline
   dialecte worktree prune [--root <workspace>] [--yes] [--json]
                              # merged worktrees and branches, committed hand-overs, rehearsal clones: the
                              # commands with their cd; --yes runs them after a confirmation on a terminal
-                             # (a fresh worktree, ignored files, an unmerged branch are kept)
+                             # (a fresh worktree, ignored files, an unmerged branch are kept; a link, and a
+                             # folder a link reaches, are never removed)
   dialecte record review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>
                              # appends R<n>-<k> open to <folder>/findings-ledger.md (made when absent)
   dialecte record decision <folder> <id> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>

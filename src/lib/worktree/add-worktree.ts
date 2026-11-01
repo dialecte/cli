@@ -2,9 +2,11 @@
  * `dialecte worktree add`: a git worktree under the workspace's `.worktrees/`, ready to work in - the
  * hooks folder of `core.hooksPath` copied (husky's `.husky/_` is ignored by git, so a new worktree misses
  * it and git skips every hook), `node_modules` copied on write with its links (from the worktree that has
- * the `--from` branch checked out when there is one, else from the main checkout), `.dialecte/` (the lot
- * declaration, never committed) in the repository's `.git/info/exclude`, and the hygiene baseline
- * `gate --fast` compares with.
+ * the `--from` branch checked out when there is one, else from the main checkout), the links its `file:`
+ * and `link:` dependencies need to reach sibling checkouts through `.worktrees/` (made before the copy),
+ * that `node_modules` read against the worktree's `package-lock.json`, `.dialecte/` (the lot declaration,
+ * never committed) in the repository's `.git/info/exclude`, and the hygiene baseline `gate --fast`
+ * compares with.
  */
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -14,8 +16,11 @@ import { readHooksFolder } from '../git-hooks.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
+import { checkNodeModules } from './check-node-modules.ts'
 import { copyNodeModules } from './copy-node-modules.ts'
 import { writeHygieneBaseline } from './hygiene.ts'
+import { readLockedPackages } from './locked-packages.ts'
+import { linkSiblings } from './sibling-links.ts'
 import { DEFAULT_BASE_BRANCH, LOT_FOLDER_EXCLUDE } from './worktree.constants.ts'
 
 import type { AddedWorktree } from './worktree.types.ts'
@@ -59,6 +64,8 @@ export function addWorktree(params: {
 		copiedHooks = hooks.configured
 	}
 	excludeLotFolder(worktree)
+	// the copied links and `npm ci` reach sibling checkouts through these
+	const siblingLinks = linkSiblings({ worktree, repository })
 	const checkout = params.from ? checkoutOf({ repository, branch: params.from }) : undefined
 	// that worktree's own node_modules when it has one on disk, else the main checkout's
 	const nodeModules =
@@ -69,6 +76,9 @@ export function addWorktree(params: {
 	const copy = existsSync(nodeModules)
 		? copyNodeModules({ from: nodeModules, to: join(worktree, 'node_modules') })
 		: undefined
+	const nodeModulesCheck = checkNodeModules({ worktree })
+	const lockfileRead = readLockedPackages({ worktree })
+	const lockedPackages = 'packages' in lockfileRead ? lockfileRead.packages.length : 0
 	const baseline = writeHygieneBaseline({ root: worktree, now: params.now })
 	return {
 		repository,
@@ -78,6 +88,9 @@ export function addWorktree(params: {
 		head: baseline.head,
 		hooks: copiedHooks,
 		nodeModules: copy,
+		siblingLinks,
+		nodeModulesCheck,
+		lockedPackages,
 		baseline,
 	}
 }

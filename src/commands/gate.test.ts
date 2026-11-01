@@ -20,6 +20,9 @@ import type { GateRecord } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode } from '../lib/gate/gate.types.ts'
 
+/** The cli's entry in the sources: Node runs it with its type stripping. */
+const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
+
 /** A package whose gate runs the given steps. */
 function packageWith(params: {
 	fast?: GateStep[]
@@ -264,6 +267,49 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(readFileSync(join(root, 'light.txt'), 'utf8').trim()).toBe('free')
 		expect(readFileSync(join(root, 'browser.txt'), 'utf8').trim()).toBe('held')
 	})
+
+	it('--full, a light step running dialecte lock run --no-wait → it runs at once under the gate, the holder variable naming the gate with its start', async () => {
+		const lockFolder = temporaryFolder('dialecte-gate-lock-')
+		const lockPath = join(lockFolder, 'heavy-run.lock')
+		const script = `require('fs').writeFileSync('holder.txt', process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`
+		const root = packageWith({
+			full: [
+				{
+					name: 'nested',
+					run: `DIALECTE_CACHE_DIR=${JSON.stringify(lockFolder)} ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_SOURCE)} lock run --no-wait -- ${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
+				},
+			],
+		})
+
+		const result = await gate({ cwd: root, argv: ['--full'], lockPath })
+
+		expect(result.exitCode).toBe(0)
+		expect(readFileSync(join(root, 'holder.txt'), 'utf8')).toMatch(
+			new RegExp(`^${process.pid}:\\S.*$`),
+		)
+	})
+
+	it('a heavy step running dialecte lock run --no-wait → it runs at once under the gate, the holder variable naming the gate with its start', async () => {
+		const lockFolder = temporaryFolder('dialecte-gate-lock-')
+		const lockPath = join(lockFolder, 'heavy-run.lock')
+		const script = `require('fs').writeFileSync('holder.txt', process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`
+		const root = packageWith({
+			fast: [
+				{
+					name: 'nested',
+					run: `DIALECTE_CACHE_DIR=${JSON.stringify(lockFolder)} ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_SOURCE)} lock run --no-wait -- ${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
+					heavy: true,
+				},
+			],
+		})
+
+		const result = await gate({ cwd: root, argv: [], lockPath })
+
+		expect(result.exitCode).toBe(0)
+		expect(readFileSync(join(root, 'holder.txt'), 'utf8')).toMatch(
+			new RegExp(`^${process.pid}:\\S.*$`),
+		)
+	})
 })
 
 describe('runGate: a package whose tests run in a browser', { timeout: 30_000 }, () => {
@@ -346,6 +392,29 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		await tdd({ root, argv: ['green'] })
 		return root
 	}
+
+	it('--full on a package whose tests run in node → the tdd step lists the cases with the holder variable naming the gate with its start', async () => {
+		const root = tddPackage()
+		const holderFile = join(root, 'holder.txt')
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/add.test.ts': [
+					"import { writeFileSync } from 'node:fs'",
+					ADD_TEST,
+					`writeFileSync(${JSON.stringify(holderFile)}, process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`,
+					'',
+				].join('\n'),
+			},
+		})
+
+		await gate({ cwd: root, argv: ['--full'] })
+
+		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toEqual(
+			expect.stringMatching(new RegExp(`^${process.pid}:\\S.*$`)),
+		)
+	})
 
 	it('a new test file never proven red → fails: test code changed outside tdd red, the cases listed', async () => {
 		const root = tddPackage()

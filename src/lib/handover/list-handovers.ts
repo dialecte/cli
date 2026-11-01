@@ -4,7 +4,7 @@
  * stale when something else moved the branch.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { mainCheckoutOf } from '../git.ts'
@@ -18,41 +18,60 @@ import {
 import { readHandoverFolder } from './read-handover-folder.ts'
 
 import type { HandoverFolder, HandoverListing, HandoverState } from './handover.types.ts'
+import type { Dirent } from 'node:fs'
 
 export function listHandovers(params: { root: string; now: number }): HandoverListing[] {
-	return findHandoverFolders({ folder: params.root, depth: LIST_DEPTH }).flatMap(
-		function listing(folder): HandoverListing[] {
-			if (!existsSync(join(folder, HANDOVER_FILES.lots)))
-				return [
-					{
-						folder,
-						repository: '-',
-						worktree: '-',
-						branch: '-',
-						lots: undefined,
-						age: params.now - newestScriptTime(folder),
-						state: 'legacy script, state unknown',
-					},
-				]
-			const handover = readHandoverFolder(folder)
-			if (typeof handover === 'string') return []
-			const { lotsFile } = handover
-			const repositoryExists = existsSync(lotsFile.repository)
+	const folders = findHandoverFolders({ folder: params.root, depth: LIST_DEPTH })
+	return onePerRealPath(folders).flatMap(function listing(folder): HandoverListing[] {
+		if (!existsSync(join(folder, HANDOVER_FILES.lots)))
 			return [
 				{
 					folder,
-					repository: repositoryExists
-						? basename(mainCheckoutOf(lotsFile.repository))
-						: basename(lotsFile.repository),
-					worktree: lotsFile.repository,
-					branch: lotsFile.branch,
-					lots: lotsFile.lots.length,
-					age: params.now - statSync(join(folder, COMMIT_SCRIPT_FILE)).mtimeMs,
-					state: repositoryExists ? handoverState(handover) : 'repository missing',
+					repository: '-',
+					worktree: '-',
+					branch: '-',
+					lots: undefined,
+					age: params.now - newestScriptTime(folder),
+					state: 'legacy script, state unknown',
 				},
 			]
-		},
-	)
+		const handover = readHandoverFolder(folder)
+		if (typeof handover === 'string') return []
+		const { lotsFile } = handover
+		const repositoryExists = existsSync(lotsFile.repository)
+		return [
+			{
+				folder,
+				repository: repositoryExists
+					? basename(mainCheckoutOf(lotsFile.repository))
+					: basename(lotsFile.repository),
+				worktree: lotsFile.repository,
+				branch: lotsFile.branch,
+				lots: lotsFile.lots.length,
+				age: params.now - statSync(join(folder, COMMIT_SCRIPT_FILE)).mtimeMs,
+				state: repositoryExists ? handoverState(handover) : 'repository missing',
+			},
+		]
+	})
+}
+
+/**
+ * One folder per hand-over: a folder reached by its path and through a link is listed once, by the path
+ * that is not itself a link when there is one.
+ */
+function onePerRealPath(folders: readonly string[]): string[] {
+	const byRealPath = new Map<string, string>()
+	for (const folder of folders) {
+		const real = realpathSync(folder)
+		const known = byRealPath.get(real)
+		if (
+			known === undefined ||
+			(lstatSync(known).isSymbolicLink() && !lstatSync(folder).isSymbolicLink())
+		)
+			byRealPath.set(real, folder)
+	}
+	const kept = new Set(byRealPath.values())
+	return folders.filter((folder) => kept.has(folder))
 }
 
 /** Where the hand-over stands, read from the tip of its branch (the worktree may sit elsewhere). */
@@ -86,7 +105,10 @@ function newestScriptTime(folder: string): number {
 	return Math.max(...listLegacyScripts(folder).map((name) => statSync(join(folder, name)).mtimeMs))
 }
 
-/** Folders holding a lots file and a script, `depth` levels down at most; dependencies and git folders skipped. */
+/**
+ * Folders holding a lots file and a script, `depth` levels down at most, a link to a folder followed (prune
+ * keeps a hand-over reached through one); dependencies and git folders skipped.
+ */
 export function findHandoverFolders(params: { folder: string; depth: number }): string[] {
 	const { folder } = params
 	if (!existsSync(folder)) return []
@@ -98,9 +120,20 @@ export function findHandoverFolders(params: { folder: string; depth: number }): 
 			: []
 	if (params.depth === 0) return found
 	for (const entry of readdirSync(folder, { withFileTypes: true }))
-		if (entry.isDirectory() && entry.name !== 'node_modules' && !entry.name.startsWith('.'))
+		if (isFolder({ folder, entry }) && entry.name !== 'node_modules' && !entry.name.startsWith('.'))
 			found.push(
 				...findHandoverFolders({ folder: join(folder, entry.name), depth: params.depth - 1 }),
 			)
 	return found.sort()
+}
+
+/** A folder, or a link to one. */
+function isFolder(params: { folder: string; entry: Dirent }): boolean {
+	if (params.entry.isDirectory()) return true
+	if (!params.entry.isSymbolicLink()) return false
+	try {
+		return statSync(join(params.folder, params.entry.name)).isDirectory()
+	} catch {
+		return false
+	}
 }

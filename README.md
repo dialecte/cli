@@ -32,11 +32,12 @@ dialecte models            # which model each tier (fast, standard, strong, fron
 dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
+dialecte lock run -- <command>  # any heavy command under the machine lock gate and tdd take
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
 dialecte handover --legend      # every term of the hand-over card: what it means, whether to look
-dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
+dialecte worktree add|prune     # a worktree ready to work in (sibling links, node_modules checked); what a merge left behind
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
 dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
@@ -463,6 +464,33 @@ the answer.
   has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
   once in the exclude file of the repository's common git folder (so for the main checkout and every
   worktree of it), and writes the hygiene baseline `gate --fast` compares with; it prints a card.
+  Before the copy it makes the links the worktree's `file:` and `link:` dependencies need (`dependencies`,
+  `devDependencies`, `optionalDependencies`, `peerDependencies`): a relative path that leaves the worktree
+  into the workspace's `.worktrees/` (`file:../core` from `.worktrees/cli-x` reaches `.worktrees/core`)
+  gets a relative link there to the folder the same path reaches from the main checkout
+  (`.worktrees/core -> ../core`). Each dependency gets one outcome, in the card's `links` row and the
+  JSON's `siblingLinks` (`dependency`, `link`, `target`, `outcome`): `created`; `present` (a link that
+  already reaches it: a second worktree changes nothing); `skipped: <target> missing`;
+  `skipped: <folder> missing` for a path into a sibling whose own folder is not under `.worktrees/` yet
+  (`file:../core/sub/pkg` without `.worktrees/core`); `skipped: outside .worktrees/`;
+  `skipped: cannot make the link (<code>)` when the file system refuses it (`EACCES`, ...);
+  `kept: points to <its text>, not <target>` or `kept: a real folder` (or file): what is there is never
+  replaced. A path inside the repository needs no link and is not listed. After the copy it reads
+  `node_modules` against the worktree's `package-lock.json` (its `packages` map, lockfileVersion 2 or 3,
+  nested packages included, bundled ones left out): each package installed at its locked version
+  (`missing`, `<installed> installed, lock <locked>`, `package.json unreadable`), each link reaching what
+  the lockfile resolves it to (`link to <path> missing`, `… points elsewhere`). A package npm may leave
+  out of this machine's install is not missing when absent: `optional`, or an `os` / `cpu` list this
+  platform does not match (`!x` excluding x); a `devOptional` one is, since a development install puts it
+  in. The card's `lockfile` row says
+  `✓ node_modules matches package-lock.json (<n> packages)`, or the count of packages that differ with the
+  first five, and a `next` row holds the command that puts it right, `cd '<worktree>' && npm ci`. Without
+  a lockfile it says `no package-lock.json: not checked`; a lockfile that is not JSON, or has no `packages`
+  map (lockfileVersion 1), is not checked either (`package-lock.json unreadable: not checked`,
+  `package-lock.json has no packages map: not checked`). The JSON carries it as `nodeModulesCheck`
+  (`lockfile`, `notChecked`, `problems`: `package`, `problem`; `command` when there are problems). The
+  exit code stays 0 whatever the links and the lockfile say: the worktree exists, and its card says what
+  to run.
 - `dialecte lot exempt <reason>`, `lot accept <case> <reason>`, `lot revised <case|file|glob> <reason>`,
   `lot gone <file|glob> <reason>` write the lot declaration `.dialecte/lot.json` at the package root (the
   nearest package.json above the current folder) as tab-indented JSON, keeping what it holds; the same
@@ -480,7 +508,18 @@ the answer.
   (just made); a worktree holding ignored files that removing it would delete (anything but
   `node_modules`, `dist`, `.vitepress/cache`, `.vitepress/dist`, `.DS_Store` and the hooks folder; a long
   list is counted, the first three named); a rehearsal clone whose process still runs, or without a
-  marker. It reads each worktree with `git --no-optional-locks`, so it never rewrites an index.
+  marker. It never removes, nor offers to remove, a symbolic link or what a link reaches. A worktree
+  path, a hand-over folder or a rehearsal clone that is a link, or a hand-over folder reached through a
+  linked folder under the workspace at any depth, is kept with
+  `a link: prune never removes a link nor what it points to` (a dangling link included). A worktree,
+  hand-over folder or rehearsal clone that a link reaches (links looked for one level under the
+  workspace, its `.worktrees/`, its `_commit-plan/` and the scratch folder) is kept with
+  `the link <link> points to it`. `git worktree prune` unregisters every worktree whose folder holds no
+  checkout, a link's too: while a registered worktree of the repository is a link, a worktree deleted
+  from disk is kept, naming that link, and no `git worktree prune` is offered. The sibling links
+  `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
+  `git --no-optional-locks`, so it never rewrites an index. `handover list` follows a link to a hand-over
+  folder and lists a folder reached by its path and through a link once.
 - `dialecte record review|decision|snapshot` and `dialecte review delta` keep a lot's review rounds in its
   hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
   folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
@@ -530,6 +569,29 @@ two shells with other languages or time zones agree; a `ps` that answers nothing
 look dead), is taken over under a short takeover lock (`<lock>.takeover`), so only one caller replaces
 it. A lock file still being written is left alone; one that stays unreadable, or a takeover lock, is
 cleared once it is a few seconds old.
+
+`dialecte lock run [--no-wait] -- <command> [<argument>...]` runs any other heavy command (a mutation
+run, a browser suite) under the same lock: it takes it as `dialecte lock run -- <command words>`,
+waiting with the same line every 30 s or refusing at once with `--no-wait` (exit 1, naming the holder),
+runs the command without a shell, its output on the terminal, in the environment the cli was given
+(git's repository variables, which the cli clears for its own git commands, included), and releases the
+lock when the command ends. It exits with the command's code: 128 + the signal's number when a signal
+ended it, 127 when the command is not found, 126 when it is found but cannot be run (not executable).
+While the command runs, Ctrl-C (an interrupt or a termination sent to the process group) reaches the
+command and `lock run` waits for it; a termination sent to `lock run` alone is passed on to the command.
+Node cannot tell the two terminations apart, so a termination sent to the whole group reaches the
+command twice. A `lock run` itself killed (SIGKILL, or SIGHUP when its terminal closes) leaves its lock
+behind while the command may still run: the next caller finds its pid gone and takes the lock over. The
+command runs with `DIALECTE_MACHINE_LOCK_HOLDER` naming the holder as `<pid>:<process start>`: a `gate`,
+`tdd` or `lock run` inside it finds the lock held by that live process (the pid and its start both
+matching, so a reused pid does not when the process start is known; with no start recorded, `<pid>:`
+matches the pid alone) and takes it at once, its release leaving the lock to the holder
+(`dialecte lock run -- npx dialecte gate --full` does not wait on itself; a third level names the same
+holder). `gate` and `tdd` do the same for what they run while they hold the lock: a heavy gate step, a
+browser package's vitest runs, and under `gate --full` (which holds the lock for its whole run) every
+step and the tdd step get `DIALECTE_MACHINE_LOCK_HOLDER` naming the holder, so a `dialecte lock run`
+inside them runs at once. `-h` and `--help` after `--` belong to the command (the help is read only before `--`, for every
+command). No command after `--`, or another subcommand than `run`, is a usage error (exit 2).
 
 `gate --fast` and `--full` run a `tdd` step after the hygiene (first in `--full`): every test-code file
 changed since the base (test files, helpers, fixtures, snapshots) must be as the red run that last froze it
@@ -709,8 +771,9 @@ The `schema`, `run`, `fixture` and `explain` tests drive `@dialecte/core`'s own 
 
 While the cli follows core's 0.8 train, the devDependency is `"@dialecte/core": "file:../core"`, and the lockfile
 holds it: the cli's checkout sits next to core's (`Dialecte/cli` and `Dialecte/core`), and a worktree under
-`Dialecte/.worktrees/` needs a `core` link beside it (`Dialecte/.worktrees/core` → `../core`). Build core there
-(`npm run build`) before running the tests. A release pins a published core again: `prepublishOnly` runs
+`Dialecte/.worktrees/` reaches it through the link `Dialecte/.worktrees/core` → `../core`, which
+`dialecte worktree add` makes (its card says `npm ci` when the copied `node_modules` differs from the
+lockfile). Build core there (`npm run build`) before running the tests. A release pins a published core again: `prepublishOnly` runs
 `src/release-check.ts` before the build, which refuses a package.json naming any dependency by a local folder
 (`file:`, `link:`, `git+file:`, a bare `../x`, `./x`, `/x` or `~/x` path) in `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies`, one line
 per dependency (its field, name and spec), and says how to pin it

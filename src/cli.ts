@@ -13,14 +13,15 @@ import {
 	ignoredRepositoryEnvironmentLine,
 	namesAnotherRepository,
 } from './lib/git-environment.ts'
+import { GIVEN_ENVIRONMENT } from './lib/given-environment.constants.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
 
 async function main(): Promise<void> {
 	// run from a commit hook, git's GIT_DIR and GIT_INDEX_FILE would point every git command at the
 	// committed repository; said only when they named another repository than the folder's own
-	const given = { ...process.env }
+	// GIVEN_ENVIRONMENT was taken when the imports above were evaluated, before this clearing
 	const cleared = clearRepositoryEnvironment(process.env)
-	if (namesAnotherRepository({ given, folder: process.cwd() }))
+	if (namesAnotherRepository({ given: GIVEN_ENVIRONMENT, folder: process.cwd() }))
 		console.error(ignoredRepositoryEnvironmentLine(cleared))
 	const invocation = parseInvocation({
 		argv: process.argv.slice(2),

@@ -1,3 +1,4 @@
+import type { MachineLockTaken } from '../machine-lock/machine-lock.types.ts'
 import type { JudgedCase } from '../tdd/tdd.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 
@@ -37,4 +38,4 @@ export type StepResult = {
 export type StepAnnouncer = (step: GateStep) => (result: StepResult) => void
 
 /** Takes the machine lock for a heavy step: a release, or why the step cannot run. */
-export type StepLock = (step: GateStep) => { release(): void } | { refusal: string }
+export type StepLock = (step: GateStep) => MachineLockTaken

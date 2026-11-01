@@ -2,7 +2,9 @@
  * One heavy run at a time on a machine (a full gate, a browser suite): the lock is a file in the user's
  * cache folder naming its holder (pid, command, start time). A holder whose process is gone left a stale
  * lock, taken over. A second caller waits, with a line every 30 s naming the holder, or refuses at once.
- * The holder's own process takes it again for free (a heavy step inside a full gate).
+ * The holder's own process takes it again for free (a heavy step inside a full gate), and so does a
+ * process whose `DIALECTE_MACHINE_LOCK_HOLDER` names the live holder by its pid and its process start
+ * (`<pid>:<start>`, a command `lock run` runs): its release leaves the lock to that holder.
  */
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -16,6 +18,7 @@ import { HEARTBEAT_INTERVAL_MILLISECONDS } from '../progress/progress.constants.
 import {
 	BEING_WRITTEN_HOLDER,
 	MACHINE_LOCK_FILE,
+	MACHINE_LOCK_HOLDER_VARIABLE,
 	MACHINE_LOCK_POLL_MILLISECONDS,
 	STALE_FILE_MILLISECONDS,
 	TAKEOVER_SUFFIX,
@@ -43,6 +46,7 @@ export function acquireMachineLock(params: {
 	const pid = params.pid ?? process.pid
 	const isAlive = params.isAlive ?? isProcessAlive
 	const processStartOf = params.processStartOf ?? readProcessStart
+	const holderVariable = process.env[MACHINE_LOCK_HOLDER_VARIABLE] ?? ''
 	mkdirSync(dirname(path), { recursive: true })
 	const waitStartedAt = clock.now()
 	let lastLineAt: number | undefined
@@ -54,12 +58,23 @@ export function acquireMachineLock(params: {
 			processStart: processStartOf(pid),
 		}
 		const content = `${JSON.stringify(holder)}\n`
-		const acquired = { acquired: true as const, release: () => releaseIfHeld({ path, pid }) }
+		const acquired = {
+			acquired: true as const,
+			holderVariable: holderVariableOf(holder),
+			release: () => releaseIfHeld({ path, pid }),
+		}
 		if (createByLink({ path, content })) return acquired
 		const current = readHolder(path)
 		if (current === 'missing') continue
-		if (typeof current === 'object' && current.pid === pid)
-			return { acquired: true, release: () => undefined }
+		if (
+			typeof current === 'object' &&
+			(current.pid === pid || (holderVariableOf(current) === holderVariable && !isStale(current)))
+		)
+			return {
+				acquired: true,
+				holderVariable: holderVariableOf(current),
+				release: () => undefined,
+			}
 		function isStale(read: ReturnType<typeof readHolder>): boolean {
 			if (read === 'missing') return false
 			if (read === 'being written')
@@ -87,6 +102,14 @@ export function acquireMachineLock(params: {
 		}
 		clock.sleep(MACHINE_LOCK_POLL_MILLISECONDS)
 	}
+}
+
+/**
+ * The value of `DIALECTE_MACHINE_LOCK_HOLDER` naming a holder: `<pid>:<process start>`, so a pid reused by
+ * another process does not match when the start is known (`<pid>:` when `ps` gave none: the pid alone).
+ */
+function holderVariableOf(holder: MachineLockHolder): string {
+	return `${holder.pid}:${holder.processStart ?? ''}`
 }
 
 /** `pid 123 runs "dialecte gate --full" since <date>`. */

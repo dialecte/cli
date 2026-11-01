@@ -2,11 +2,12 @@
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
  * commits are all in the base branch, the hand-over folders already committed, and the rehearsal clones
  * left behind - each with the command that removes it, with its absolute `cd`. Never an unmerged branch,
- * a dirty worktree, or one a pending hand-over commits in.
+ * a dirty worktree, or one a pending hand-over commits in; never a symbolic link (the sibling link
+ * `.worktrees/core -> ../core` among them) nor a folder a link reaches.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
@@ -17,17 +18,18 @@ import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { readPackageJson } from '../package-json.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { shellQuote } from '../shell-quote.ts'
-import { COMMIT_PLAN_FOLDER } from '../workspace.constants.ts'
+import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { readHygieneBaseline } from './hygiene.ts'
 import {
 	DEFAULT_BASE_BRANCH,
 	IGNORED_FILES_SHOWN,
+	PRUNE_LINK_REASON,
 	REBUILT_IGNORED_FOLDERS,
 	REBUILT_IGNORED_NAMES,
 } from './worktree.constants.ts'
 
 import type { HandoverFolder } from '../handover/handover.types.ts'
-import type { PruneItem, PrunePlan, WorkspacePrunePlan } from './worktree.types.ts'
+import type { FolderLink, PruneItem, PrunePlan, WorkspacePrunePlan } from './worktree.types.ts'
 
 export function planPrune(params: {
 	workspace: string
@@ -40,14 +42,22 @@ export function planPrune(params: {
 		const handover = readHandoverFolder(folder)
 		return typeof handover === 'string' ? [] : [handover]
 	})
+	const links = [
+		params.workspace,
+		join(params.workspace, WORKTREES_FOLDER),
+		join(params.workspace, COMMIT_PLAN_FOLDER),
+		params.scratchRoot,
+	].flatMap((folder) => findLinks(folder))
 	const repositories = readdirSync(params.workspace, { withFileTypes: true })
 		.filter((entry) => entry.isDirectory() && isMainCheckout(join(params.workspace, entry.name)))
-		.map((entry) => planRepository({ repository: join(params.workspace, entry.name), handovers }))
+		.map((entry) =>
+			planRepository({ repository: join(params.workspace, entry.name), handovers, links }),
+		)
 	const scratch = existsSync(params.scratchRoot)
 		? readdirSync(params.scratchRoot)
 				.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
 				.sort()
-				.map((name) => planRehearsalClone({ scratchRoot: params.scratchRoot, name }))
+				.map((name) => planRehearsalClone({ scratchRoot: params.scratchRoot, name, links }))
 		: []
 	return { repositories, scratch }
 }
@@ -55,6 +65,8 @@ export function planPrune(params: {
 function planRepository(params: {
 	repository: string
 	handovers: readonly HandoverFolder[]
+	/** The links found around the workspace: what they reach is kept. */
+	links: readonly FolderLink[]
 }): PrunePlan {
 	const { repository } = params
 	const baseBranch = readPackageJson(repository).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
@@ -84,8 +96,24 @@ function planRepository(params: {
 		args: ['rev-parse', '--abbrev-ref', 'HEAD'],
 	}).trim()
 	const keptBranches = new Set<string>([baseBranch, checkedOut])
-	for (const worktree of listWorktrees(repository).slice(1)) {
-		const name = spellUnder({ path: worktree.path, folder: dirname(repository) })
+	const worktrees = listWorktrees(repository)
+		.slice(1)
+		.map((worktree) => ({
+			...worktree,
+			name: spellUnder({ path: worktree.path, folder: dirname(repository) }),
+		}))
+	// `git worktree prune` unregisters every worktree whose folder holds no checkout: a link's too, when
+	// what it points to holds no `.git`
+	const linkedWorktrees = worktrees
+		.map((worktree) => worktree.name)
+		.filter((name) => isLink(name) && !existsSync(join(name, '.git')))
+	for (const worktree of worktrees) {
+		const { name } = worktree
+		if (isLink(name)) {
+			if (worktree.branch) keptBranches.add(worktree.branch)
+			items.push({ kind: 'worktree', name, kept: PRUNE_LINK_REASON })
+			continue
+		}
 		if (!worktree.branch) {
 			items.push({ kind: 'worktree', name, kept: 'detached HEAD' })
 			continue
@@ -97,11 +125,19 @@ function planRepository(params: {
 					branch: worktree.branch,
 					baseBranch,
 					pending: pendingWorktrees.has(realpathSync(name)),
+					links: params.links,
 				})
 			: undefined
 		if (kept) {
 			keptBranches.add(worktree.branch)
 			items.push({ kind: 'worktree', name, kept: `${worktree.branch}: ${kept}` })
+		} else if (!existsSync(name) && linkedWorktrees.length > 0) {
+			keptBranches.add(worktree.branch)
+			items.push({
+				kind: 'worktree',
+				name,
+				kept: `${worktree.branch}: deleted from disk; pruning it would also unregister the worktree at the link ${linkedWorktrees.join(', ')}`,
+			})
 		} else
 			items.push({
 				kind: 'worktree',
@@ -142,14 +178,87 @@ function planRepository(params: {
 		})
 	}
 
-	for (const handover of mine)
-		if (handoverStateOf(handover) === 'committed' && isRemovableHandoverFolder(handover.folder))
-			items.push({
-				kind: 'hand-over',
-				name: handover.folder,
-				command: `cd ${shellQuote(dirname(handover.folder))} && rm -rf ${shellQuote(basename(handover.folder))}`,
-			})
+	for (const handover of mine) {
+		if (handoverStateOf(handover) !== 'committed') continue
+		const { folder } = handover
+		if (isReachedThroughLink({ path: folder, root: dirname(repository) })) {
+			items.push({ kind: 'hand-over', name: folder, kept: PRUNE_LINK_REASON })
+			continue
+		}
+		if (!isRemovableHandoverFolder(folder)) continue
+		const reachedBy = linkReaching({ folder, links: params.links })
+		items.push(
+			reachedBy
+				? { kind: 'hand-over', name: folder, kept: `the link ${reachedBy} points to it` }
+				: {
+						kind: 'hand-over',
+						name: folder,
+						command: `cd ${shellQuote(dirname(folder))} && rm -rf ${shellQuote(basename(folder))}`,
+					},
+		)
+	}
 	return { repository, baseBranch, items }
+}
+
+/** The symbolic links directly in `folder`, each with the real path it reaches (a dangling one left out). */
+function findLinks(folder: string): FolderLink[] {
+	if (!existsSync(folder)) return []
+	return readdirSync(folder, { withFileTypes: true })
+		.filter((entry) => entry.isSymbolicLink())
+		.flatMap(function reach(entry): FolderLink[] {
+			const link = join(folder, entry.name)
+			try {
+				return [{ link, target: realpathSync(link) }]
+			} catch {
+				return []
+			}
+		})
+}
+
+/** A link that reaches the folder or something inside it: removing the folder would break it. */
+function linkReaching(params: {
+	folder: string
+	links: readonly FolderLink[]
+}): string | undefined {
+	const real = realpathSync(params.folder)
+	return params.links.find(function reaches(link) {
+		const fromFolder = relative(real, link.target)
+		return (
+			fromFolder === '' ||
+			(fromFolder !== '..' && !fromFolder.startsWith(`..${sep}`) && !isAbsolute(fromFolder))
+		)
+	})?.link
+}
+
+/**
+ * The path, or a folder on its way down from `root` (the workspace), is a symbolic link: removing it would
+ * remove what a link points to. Only the path itself is looked at when it is not under `root`.
+ */
+function isReachedThroughLink(params: { path: string; root: string }): boolean {
+	const fromRoot = relative(params.root, params.path)
+	if (
+		fromRoot === '' ||
+		fromRoot === '..' ||
+		fromRoot.startsWith(`..${sep}`) ||
+		isAbsolute(fromRoot)
+	)
+		return isLink(params.path)
+	for (
+		let folder = params.path;
+		folder !== params.root && folder !== dirname(folder);
+		folder = dirname(folder)
+	)
+		if (isLink(folder)) return true
+	return false
+}
+
+/** The path itself is a symbolic link (dangling or not). */
+function isLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink()
+	} catch {
+		return false
+	}
 }
 
 /** A folder of its own: not `_commit-plan` itself, nor one holding other folders (more hand-overs, notes). */
@@ -169,8 +278,13 @@ function isMainCheckout(folder: string): boolean {
 }
 
 /** A rehearsal clone goes when the process that made it is gone; kept while it runs or without a marker. */
-function planRehearsalClone(params: { scratchRoot: string; name: string }): PruneItem {
+function planRehearsalClone(params: {
+	scratchRoot: string
+	name: string
+	links: readonly FolderLink[]
+}): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
+	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
 	const markerPath = join(clone, '.git', REHEARSAL_MARKER_FILE)
 	const marker = readRehearsalMarker(markerPath)
 	if (!marker)
@@ -185,6 +299,9 @@ function planRehearsalClone(params: { scratchRoot: string; name: string }): Prun
 			name: clone,
 			kept: `its rehearsal still runs: pid ${marker.pid}`,
 		}
+	const reachedBy = linkReaching({ folder: clone, links: params.links })
+	if (reachedBy)
+		return { kind: 'rehearsal clone', name: clone, kept: `the link ${reachedBy} points to it` }
 	return {
 		kind: 'rehearsal clone',
 		name: clone,
@@ -209,7 +326,10 @@ function whyKeepWorktree(params: {
 	branch: string
 	baseBranch: string
 	pending: boolean
+	links: readonly FolderLink[]
 }): string | undefined {
+	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
+	if (reachedBy) return `the link ${reachedBy} points to it`
 	const unmerged = unmergedCount({
 		root: params.repository,
 		branch: params.branch,
