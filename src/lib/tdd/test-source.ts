@@ -1,4 +1,12 @@
-import { ASSERTION_CALLEE, CASE_FUNCTIONS, ONLY_MARKER, TEST_FUNCTIONS } from './tdd.constants.ts'
+import {
+	ASSERTION_CALLEE,
+	CASE_FUNCTIONS,
+	CONDITION_MODIFIERS,
+	ONLY_MARKER,
+	SUITE_FUNCTIONS,
+	TABLE_MODIFIERS,
+	TEST_FUNCTIONS,
+} from './tdd.constants.ts'
 
 /** Questions about a test file's source, answered from its syntax tree (never from lines or greps). */
 import ts from 'typescript'
@@ -160,7 +168,10 @@ function isCalled(access: ts.PropertyAccessExpression): boolean {
 	return ts.isCallExpression(node.parent) && node.parent.expression === node
 }
 
-/** Every `it` / `test` call of the file, with its title when it is written as a string. */
+/**
+ * Every `it` / `test` call of the file, with its title when it is written as a string, and the titles of
+ * the `describe` / `suite` calls around it.
+ */
 export function listTestCalls(params: { text: string; file: string }): TestCall[] {
 	const { text } = params
 	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
@@ -175,6 +186,8 @@ export function listTestCalls(params: { text: string; file: string }): TestCall[
 			calls.push({
 				title: title && ts.isStringLiteralLike(title) ? title.text : undefined,
 				text: node.getText(source),
+				each: takesFormatTitle(node.expression),
+				describePath: describePathOf(node),
 			})
 		}
 		ts.forEachChild(node, visit)
@@ -183,15 +196,65 @@ export function listTestCalls(params: { text: string; file: string }): TestCall[
 	return calls
 }
 
-/** `it(...)`, `test.skip(...)`, `it.each(table)(...)`: the call that takes a test's title and body. */
+/**
+ * The titles of the `describe` / `suite` calls whose arguments hold the node, outermost first: undefined
+ * for a title the file computes (a variable, a template with substitutions, an `.each` / `.for` format).
+ */
+function describePathOf(node: ts.Node): (string | undefined)[] {
+	const path: (string | undefined)[] = []
+	for (let child = node, parent = node.parent; parent; child = parent, parent = parent.parent)
+		if (
+			ts.isCallExpression(parent) &&
+			parent.arguments.some((argument) => argument === child) &&
+			isSuiteCallee(parent.expression)
+		)
+			path.unshift(suiteTitleOf(parent))
+	return path
+}
+
+/**
+ * `describe(...)`, `suite.skip(...)`, `describe.each(table)(...)`, `describe.skipIf(condition)(...)`: the call
+ * that takes a suite's title and body.
+ */
+function isSuiteCallee(callee: ts.Expression): boolean {
+	if (ts.isCallExpression(callee)) return isSuiteCallee(callee.expression) && isModifierCall(callee)
+	const root = rootIdentifierOf(callee)
+	return root !== undefined && SUITE_FUNCTIONS.includes(root)
+}
+
+/** The suite call's title as written; undefined for an `.each` / `.for` format or a computed title. */
+function suiteTitleOf(call: ts.CallExpression): string | undefined {
+	const title = call.arguments[0]
+	if (takesFormatTitle(call.expression) || !title || !ts.isStringLiteralLike(title))
+		return undefined
+	return title.text
+}
+
+/**
+ * `it(...)`, `test.skip(...)`, `it.each(table)(...)`, `it.skipIf(condition)(...)`: the call that takes a
+ * test's title and body.
+ */
 function isTestCallee(callee: ts.Expression): boolean {
-	if (ts.isCallExpression(callee)) return isTestCallee(callee.expression) && isEachCall(callee)
+	if (ts.isCallExpression(callee)) return isTestCallee(callee.expression) && isModifierCall(callee)
 	const root = rootIdentifierOf(callee)
 	return root !== undefined && CASE_FUNCTIONS.includes(root)
 }
 
-function isEachCall(call: ts.CallExpression): boolean {
-	return ts.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'each'
+/** `.each(table)`, `.for(table)`, `.skipIf(condition)`, `.runIf(condition)`: a call returning the call that takes the title. */
+function isModifierCall(call: ts.CallExpression): boolean {
+	return (
+		ts.isPropertyAccessExpression(call.expression) &&
+		[...TABLE_MODIFIERS, ...CONDITION_MODIFIERS].includes(call.expression.name.text)
+	)
+}
+
+/** The callee is a table call (`it.each(table)`, `describe.for(table)`): the title it takes is a format. */
+function takesFormatTitle(callee: ts.Expression): boolean {
+	return (
+		ts.isCallExpression(callee) &&
+		ts.isPropertyAccessExpression(callee.expression) &&
+		TABLE_MODIFIERS.includes(callee.expression.name.text)
+	)
 }
 
 /** `it` of `it.skip.each`: the identifier a chain of property accesses starts from. */

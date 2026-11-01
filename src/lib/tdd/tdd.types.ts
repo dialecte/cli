@@ -60,7 +60,10 @@ export type CaseFailure = { kind: FailureKind; message: string }
 
 /** What a red, green or refusal says about the evidence, for the reviewer. */
 export type ReceiptFlag =
-	/** A red at a production state an earlier, superseded receipt of the case already had: code rolled back. */
+	/**
+	 * Code rolled back: a red at a production state an earlier, superseded receipt of the case already had, or
+	 * a red or a green taken while a production file is back at an earlier content.
+	 */
 	| 'rollback'
 	/** A red of a case whose own last receipt is a green, production unchanged since: its test was made red again. */
 	| 'red after green'
@@ -109,8 +112,26 @@ export type TddFreeze = { kind: 'freeze'; files: Record<string, string>; at: str
 
 export type TddEntry = TddReceipt | TddFreeze
 
-/** Everything a worktree's `tdd` commands recorded, oldest first: the order decides what "later" means. */
-export type TddLedger = { version: 3; entries: TddEntry[] }
+/**
+ * Everything a worktree's `tdd` commands recorded, oldest first: the order decides what "later" means.
+ * `production`: per base (the commit a run measured the change from), per production state a receipt
+ * names (its `productionHash`), the content hash of each production file that differs from that base
+ * (`'deleted'` for a file of the base deleted); a file absent from a state is as at that base. Keyed by
+ * base first, a state means nothing against another base, and the same tree read at two bases keeps
+ * both. A ledger without it records no state.
+ */
+export type TddLedger = {
+	version: 3
+	entries: TddEntry[]
+	production?: Record<string, Record<string, Record<string, string>>>
+}
+
+/**
+ * The production files of the package now: `hash` as `hashProduction` computes it, `base` the commit
+ * the change is measured from, `files` the production files changed since that base with the sha256 of
+ * their bytes (`'deleted'` for a file of the base deleted).
+ */
+export type ProductionState = { hash: string; base: string; files: Record<string, string> }
 
 export type CaseStatus =
 	| 'red'
@@ -199,8 +220,18 @@ export type RunnerError = {
 	stacks?: readonly { file: string; line: number; column: number }[]
 }
 
-/** A test call of a file: its title as written (undefined when computed) and its source. */
-export type TestCall = { title: string | undefined; text: string }
+/**
+ * A test call of a file: its title as written (undefined when computed), its source, whether it is an
+ * `.each` / `.for` call (its title a format), and the titles of the `describe` / `suite` calls around it,
+ * outermost first (undefined for a computed one: a variable, a template with substitutions, an `.each` /
+ * `.for` format).
+ */
+export type TestCall = {
+	title: string | undefined
+	text: string
+	each: boolean
+	describePath: (string | undefined)[]
+}
 
 /**
  * What the review should see beside the case statuses: test cases gone since the base, a file left out.

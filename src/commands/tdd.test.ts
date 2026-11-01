@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
-import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
-import { hashTestCode } from '../lib/tdd/tdd-files.ts'
+import { hashTestCode, hashText } from '../lib/tdd/tdd-files.ts'
+import { ROLLBACK_LINE } from '../lib/tdd/tdd.constants.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -397,7 +398,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 
 		expect(caseLines(red.output)).toEqual([
 			'red      src/add.test.ts::add > one plus two → three  not-implemented: not implemented: add  flags: rollback',
-			'red      src/add.test.ts::add > two plus two → four  not-implemented: not implemented: add',
+			'red      src/add.test.ts::add > two plus two → four  not-implemented: not implemented: add  flags: rollback',
 		])
 		expect(status.output).toContain(
 			'red  src/add.test.ts::add > one plus two → three  flags: rollback',
@@ -424,6 +425,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 
 		expect(flagged.output.split('\n')).toEqual([
 			'red  src/add.test.ts::add > one plus two → three  flags: rollback',
+			'red  src/add.test.ts::add > two plus two → four  flags: rollback',
 		])
 	})
 
@@ -767,6 +769,351 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toEqual(
 			expect.stringMatching(new RegExp(`^${process.pid}:\\S.*$`)),
 		)
+	})
+
+	/** `add` implemented and `sub` a stub, as a base may hold them. */
+	const ADD_AND_SUB_STUB =
+		IMPLEMENTED +
+		"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n"
+
+	const NO_FLAG_CASES: Record<
+		string,
+		{
+			base: Record<string, string>
+			firstRed: Record<string, string>
+			secondRed: Record<string, string>
+			/** The case lines of the second red. */
+			lines: string[]
+		}
+	> = {
+		'its test file edited again (a case C added)': {
+			base: {
+				'src/add.ts': ADD_AND_SUB_STUB,
+				'src/add.test.ts': addTest([
+					"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
+				]).replace("import { add } from './add.ts'", "import { add, sub } from './add.ts'"),
+			},
+			firstRed: {
+				'src/add.test.ts': addTest([
+					"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
+					"it('B three minus one', () => { expect(sub(3, 1)).toBe(2) })",
+				]).replace("import { add } from './add.ts'", "import { add, sub } from './add.ts'"),
+			},
+			secondRed: {
+				'src/add.test.ts': addTest([
+					"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
+					"it('B three minus one', () => { expect(sub(3, 1)).toBe(2) })",
+					"it('C five minus two', () => { expect(sub(5, 2)).toBe(3) })",
+				]).replace("import { add } from './add.ts'", "import { add, sub } from './add.ts'"),
+			},
+			lines: [
+				'kept     src/add.test.ts::add > A one plus two  proven before (unchanged)',
+				'red      src/add.test.ts::add > B three minus one  not-implemented: not implemented: sub',
+				'red      src/add.test.ts::add > C five minus two  not-implemented: not implemented: sub',
+			],
+		},
+		'a helper its test file imports edited': {
+			base: {
+				'src/add.ts': ADD_AND_SUB_STUB,
+				'test/expected.ts': 'export const THREE = 3\n',
+				'src/add.test.ts': addTest([
+					"it('A one plus two', () => { expect(add(1, 2)).toBe(THREE) })",
+				]).replace(
+					"import { add } from './add.ts'",
+					"import { add, sub } from './add.ts'\nimport { THREE } from '../test/expected.ts'",
+				),
+			},
+			firstRed: {
+				'src/add.test.ts': addTest([
+					"it('A one plus two', () => { expect(add(1, 2)).toBe(THREE) })",
+					"it('B three minus one', () => { expect(sub(3, 1)).toBe(2) })",
+				]).replace(
+					"import { add } from './add.ts'",
+					"import { add, sub } from './add.ts'\nimport { THREE } from '../test/expected.ts'",
+				),
+			},
+			secondRed: { 'test/expected.ts': 'export const THREE = 3\nexport const TWO = 2\n' },
+			lines: [
+				'kept     src/add.test.ts::add > A one plus two  proven before (unchanged)',
+				'red      src/add.test.ts::add > B three minus one  not-implemented: not implemented: sub',
+			],
+		},
+	}
+
+	for (const [name, row] of Object.entries(NO_FLAG_CASES))
+		it(`a case of the base never proven green (only unchanged), ${name} at a second red → kept without a flag, no receipt for it, status unchanged, no flag listed`, async () => {
+			const root = createVitestPackage({ files: row.base })
+			writeFiles({ root, files: row.firstRed })
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFiles({ root, files: row.secondRed })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const status = await tdd({ cwd: root, argv: ['status'] })
+			const flagged = await tdd({ cwd: root, argv: ['status', '--flags'] })
+
+			expect(caseLines(red.output)).toEqual(row.lines)
+			expect(receiptLines(root).filter((line) => line.endsWith('A one plus two'))).toEqual([
+				'unchanged add > A one plus two',
+			])
+			expect(status.output).toContain('unchanged  src/add.test.ts::add > A one plus two')
+			expect(flagged.output).toBe('tdd status: no case of the change carries a flag')
+		})
+
+	/** A second test file of `add`, holding one new case. */
+	const ADD_MORE_TEST = addTest(["it('two plus two → four', () => { expect(add(2, 2)).toBe(4) })"])
+
+	/** A test file of `sub`, holding one case. */
+	const SUB_TEST = [
+		"import { sub } from './sub.ts'",
+		"import { describe, expect, it } from 'vitest'",
+		"describe('sub', () => {",
+		"\tit('three minus one → two', () => { expect(sub(3, 1)).toBe(2) })",
+		'})',
+		'',
+	].join('\n')
+
+	const SUB_STUB =
+		"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n"
+
+	const SUB_IMPLEMENTED =
+		'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n'
+
+	/** A production file an experiment adds, then removes. */
+	const EXTRA = 'export const EXTRA = 1\n'
+
+	const MUL_STUB =
+		"export function mul(left: number, right: number): number {\n\tthrow new Error('not implemented: mul')\n}\n"
+
+	/** red on the stub, then green on the implementation of `add`. */
+	async function proveAdd(root: string): Promise<void> {
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		await tdd({ cwd: root, argv: ['green'] })
+	}
+
+	it('a new test file red at production put back to the stub after a green, a green case of sub kept beside → the new case flagged rollback, the case with its own rollback flagged once, the kept case without a flag nor a receipt, the line naming src/add.ts alone before the summary; the ledger keeps each production state', async () => {
+		const root = createVitestPackage({})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/add.test.ts': ADD_TEST,
+				'src/sub.ts': SUB_STUB,
+				'src/sub.test.ts': SUB_TEST,
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/sub.ts': SUB_IMPLEMENTED } })
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add-more.test.ts': ADD_MORE_TEST } })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(red.output).sort()).toEqual([
+			'kept     src/sub.test.ts::sub > three minus one → two  proven before (green)',
+			'red      src/add-more.test.ts::add > two plus two → four  not-implemented: not implemented: add  flags: rollback',
+			'red      src/add.test.ts::add > one plus two → three  not-implemented: not implemented: add  flags: rollback',
+		])
+		expect(red.output.split('\n').slice(-2)).toEqual([
+			ROLLBACK_LINE.replace('{files}', 'src/add.ts'),
+			expect.stringMatching(/^tdd red: 2 red, /),
+		])
+		expect(receiptLines(root).filter((line) => line.startsWith('kept '))).toEqual([])
+		const receipts = readLedger(root).entries.filter(
+			(entry): entry is TddReceipt => entry.kind !== 'freeze',
+		)
+		const atStub = receipts.find((receipt) => receipt.kind === 'red')?.productionHash ?? ''
+		const atImplementation =
+			receipts.find((receipt) => receipt.kind === 'green')?.productionHash ?? ''
+		const movedBack = receipts.at(-1)?.productionHash ?? ''
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+		expect(readLedger(root).production).toEqual({
+			[base]: {
+				[atStub]: { 'src/add.ts': hashText(STUB), 'src/sub.ts': hashText(SUB_STUB) },
+				[atImplementation]: {
+					'src/add.ts': hashText(IMPLEMENTED),
+					'src/sub.ts': hashText(SUB_IMPLEMENTED),
+				},
+				[movedBack]: { 'src/add.ts': hashText(STUB), 'src/sub.ts': hashText(SUB_IMPLEMENTED) },
+			},
+		})
+	})
+
+	it('a lot proven then committed (HEAD moved, the ledger kept), the next lot red at a new stub file → no flag, no rollback line', async () => {
+		const root = createVitestPackage({})
+		await proveAdd(root)
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: add'] })
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(red.output)).toEqual([
+			'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub',
+		])
+		expect(red.output).not.toContain('rollback')
+	})
+
+	it('production put back after a green, a run whose only new case is refused (it passes there), then that case made to fail → red flagged rollback with the line; restored and green, a later red at the restored production → no flag', async () => {
+		const root = createVitestPackage({})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/add.test.ts': ADD_TEST,
+				'src/sub.ts': SUB_STUB,
+				'src/sub.test.ts': SUB_TEST,
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/sub.ts': SUB_IMPLEMENTED } })
+		await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/add-more.test.ts': addTest([
+					"it('two plus two → four', () => { expect(2 + 2).toBe(4) })",
+				]),
+			},
+		})
+		await tdd({ cwd: root, argv: ['red', 'src/add-more.test.ts'] })
+		writeFiles({ root, files: { 'src/add-more.test.ts': ADD_MORE_TEST } })
+
+		const rolledBack = await tdd({ cwd: root, argv: ['red', 'src/add-more.test.ts'] })
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED } })
+		await tdd({ cwd: root, argv: ['green', 'src/add-more.test.ts'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add-wrong.test.ts': addTest([
+					"it('one plus one → three', () => { expect(add(1, 1)).toBe(3) })",
+				]),
+			},
+		})
+		const restored = await tdd({ cwd: root, argv: ['red', 'src/add-wrong.test.ts'] })
+
+		expect({
+			rolledBack: caseLines(rolledBack.output),
+			rolledBackEnd: rolledBack.output.split('\n').slice(-2),
+			restored: caseLines(restored.output),
+			restoredFlagged: restored.output.includes('rollback'),
+		}).toEqual({
+			rolledBack: [
+				'red      src/add-more.test.ts::add > two plus two → four  not-implemented: not implemented: add  flags: rollback',
+			],
+			rolledBackEnd: [
+				ROLLBACK_LINE.replace('{files}', 'src/add.ts'),
+				expect.stringMatching(/^tdd red: 1 red, /),
+			],
+			restored: [
+				'red      src/add-wrong.test.ts::add > one plus one → three  assertion: expected 2 to be 3 // Object.is equality',
+			],
+			restoredFlagged: false,
+		})
+	})
+
+	it('an experiment undone and kept (a file added at a green, then removed): the next step red flagged rollback naming it, green; the step after red without a flag', async () => {
+		const root = createVitestPackage({})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/extra.ts': EXTRA } })
+		await tdd({ cwd: root, argv: ['green'] })
+		unlinkSync(join(root, 'src/extra.ts'))
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+
+		const undone = await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+		writeFiles({ root, files: { 'src/sub.ts': SUB_IMPLEMENTED } })
+		await tdd({ cwd: root, argv: ['green', 'src/sub.test.ts'] })
+		writeFiles({
+			root,
+			files: { 'src/mul.ts': MUL_STUB, 'src/mul.test.ts': mulTest([MUL_ROWS[0]]) },
+		})
+		const next = await tdd({ cwd: root, argv: ['red', 'src/mul.test.ts'] })
+
+		expect({
+			undone: caseLines(undone.output),
+			undoneEnd: undone.output.split('\n').slice(-2),
+			next: caseLines(next.output),
+			nextFlagged: next.output.includes('rollback'),
+		}).toEqual({
+			undone: [
+				'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub  flags: rollback',
+			],
+			undoneEnd: [
+				ROLLBACK_LINE.replace('{files}', 'src/extra.ts'),
+				expect.stringMatching(/^tdd red: 1 red, /),
+			],
+			next: ['red      src/mul.test.ts::mul > two by three  not-implemented: not implemented: mul'],
+			nextFlagged: false,
+		})
+	})
+
+	it('a green taken at production put back (add.ts back to the stub, sub implemented) → the green flagged rollback with the line; the next red at that code without a flag', async () => {
+		const root = createVitestPackage({})
+		await proveAdd(root)
+		writeFiles({ root, files: { 'src/sub.ts': SUB_STUB, 'src/sub.test.ts': SUB_TEST } })
+		await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/sub.ts': SUB_IMPLEMENTED } })
+
+		const green = await tdd({ cwd: root, argv: ['green', 'src/sub.test.ts'] })
+		writeFiles({ root, files: { 'src/add-more.test.ts': ADD_MORE_TEST } })
+		const next = await tdd({ cwd: root, argv: ['red', 'src/add-more.test.ts'] })
+
+		expect({
+			green: caseLines(green.output),
+			greenEnd: green.output.split('\n').slice(-2),
+			next: caseLines(next.output),
+			nextFlagged: next.output.includes('rollback'),
+		}).toEqual({
+			green: ['green    src/sub.test.ts::sub > three minus one → two  flags: rollback'],
+			greenEnd: [
+				ROLLBACK_LINE.replace('{files}', 'src/add.ts'),
+				expect.stringMatching(/^tdd green: 1 green, /),
+			],
+			next: [
+				'red      src/add-more.test.ts::add > two plus two → four  not-implemented: not implemented: add',
+			],
+			nextFlagged: false,
+		})
+	})
+
+	it('a new test file red at a production never seen (a new stub file, add.ts untouched) after a green → no flag, no rollback line', async () => {
+		const root = createVitestPackage({})
+		await proveAdd(root)
+		writeFiles({
+			root,
+			files: {
+				'src/sub.ts': SUB_STUB,
+				'src/sub.test.ts': SUB_TEST,
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red', 'src/sub.test.ts'] })
+
+		expect(caseLines(red.output)).toEqual([
+			'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub',
+		])
+		expect(red.output).not.toContain('rollback')
+	})
+
+	it('a ledger written without production states (an older run), production put back to the stub → the new case red without a flag, no failure', async () => {
+		const root = createVitestPackage({})
+		await proveAdd(root)
+		const older = { version: 3, entries: readLedger(root).entries }
+		writeFileSync(join(root, '.git', 'dialecte-tdd.json'), `${JSON.stringify(older, null, '\t')}\n`)
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add-more.test.ts': ADD_MORE_TEST } })
+
+		const red = await tdd({ cwd: root, argv: ['red', 'src/add-more.test.ts'] })
+
+		expect({ exitCode: red.exitCode, cases: caseLines(red.output) }).toEqual({
+			exitCode: 0,
+			cases: [
+				'red      src/add-more.test.ts::add > two plus two → four  not-implemented: not implemented: add',
+			],
+		})
+		expect(red.output).not.toContain('rollback')
 	})
 
 	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', async () => {

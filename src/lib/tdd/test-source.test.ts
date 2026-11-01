@@ -55,6 +55,46 @@ describe('listTestCalls', () => {
 			}).map((call) => call.title),
 		).toEqual(['one', 'two', 'adds %i', undefined])
 	})
+
+	const MODIFIER_CASES: Record<
+		string,
+		{ text: string; calls: { title: string | undefined; each: boolean; path: unknown[] }[] }
+	> = {
+		'it inside describe.for(table) → its describe title a format (undefined)': {
+			text: "describe.for([1])('row %i', () => { it('a', () => {}) })\n",
+			calls: [{ title: 'a', each: false, path: [undefined] }],
+		},
+		'it inside describe.skipIf(condition) → the literal describe title': {
+			text: "describe.skipIf(skipped)('skipped', () => { it('b', () => {}) })\n",
+			calls: [{ title: 'b', each: false, path: ['skipped'] }],
+		},
+		'it inside describe.runIf(condition) → the literal describe title': {
+			text: "describe.runIf(running)('running', () => { it('c', () => {}) })\n",
+			calls: [{ title: 'c', each: false, path: ['running'] }],
+		},
+		'it.for(table) → a test call, its title a format': {
+			text: "it.for([1])('adds %i', ([value]) => {})\n",
+			calls: [{ title: 'adds %i', each: true, path: [] }],
+		},
+		'it.skipIf(condition) and test.runIf(condition) → test calls with their literal titles': {
+			text: "it.skipIf(skipped)('d', () => {})\ntest.runIf(running)('e', () => {})\n",
+			calls: [
+				{ title: 'd', each: false, path: [] },
+				{ title: 'e', each: false, path: [] },
+			],
+		},
+	}
+
+	for (const [name, row] of Object.entries(MODIFIER_CASES))
+		it(name, () => {
+			expect(
+				listTestCalls({ file: 'a.test.ts', text: row.text }).map((call) => ({
+					title: call.title,
+					each: call.each,
+					path: call.describePath,
+				})),
+			).toEqual(row.calls)
+		})
 })
 
 describe('testCallTextAt in a .ts file', () => {
