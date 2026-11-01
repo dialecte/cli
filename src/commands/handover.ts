@@ -26,13 +26,18 @@ import {
 	handoverCardData,
 	handoverCardSections,
 } from '../lib/handover/handover-card.ts'
-import { readHandoverLock } from '../lib/handover/handover-lock.ts'
-import { COMMIT_SCRIPT_FILE } from '../lib/handover/handover.constants.ts'
+import {
+	handoverHoldRefusal,
+	handoverLockPath,
+	readHandoverLock,
+} from '../lib/handover/handover-lock.ts'
+import { writeRunMarker } from '../lib/handover/handover-run-marker.ts'
+import { COMMIT_SCRIPT_FILE, HANDOVER_WRITTEN_NOTE } from '../lib/handover/handover.constants.ts'
 import { listHandovers } from '../lib/handover/list-handovers.ts'
 import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
-import { rehearseHandover } from '../lib/handover/rehearse-handover.ts'
+import { rehearsalScratchRoot, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
@@ -42,6 +47,7 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 
@@ -66,7 +72,10 @@ export async function run(argv: string[]): Promise<void> {
 			clock: createSystemClock(),
 			colour,
 			columns,
-			scratchRoot: tmpdir(),
+			scratchRoot: rehearsalScratchRoot({
+				platform: process.platform,
+				systemTemporaryFolder: tmpdir(),
+			}),
 		})
 		if (exitCode !== 0) process.exit(exitCode)
 		return
@@ -119,7 +128,13 @@ export function runHandover(params: {
 
 	const heldBy = readHandoverLock(lotsFile.repository)
 	if (heldBy && heldBy !== scriptPath && existsSync(heldBy))
-		return refused([`the repository is held by ${heldBy}: run it, or delete it and its lock`])
+		return refused([
+			handoverHoldRefusal({
+				script: heldBy,
+				lock: handoverLockPath(lotsFile.repository),
+				why: '',
+			}),
+		])
 
 	const referencePatterns = readReferencePatterns(lotsFile.repository)
 	const { plan, refusals } = planHandover({
@@ -155,7 +170,7 @@ export function runHandover(params: {
 				colour: params.colour ?? false,
 				width: params.columns,
 			}),
-			`Review the card, then run it (the repository stays locked for \`dialecte gate\` until every lot is committed):`,
+			HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)),
 			card.command,
 		].join('\n'),
 	}
@@ -167,7 +182,7 @@ export async function runHandoverRun(params: {
 	write: WriteLine
 	clock: Clock
 	colour: boolean
-	/** Where `--rehearse` makes its clone. */
+	/** Where `--rehearse` makes its rehearsal folder. */
 	scratchRoot: string
 	/** A terminal that redraws its last line (spinner), or lines only; default: lines through `write`. */
 	live?: LiveOutput
@@ -209,17 +224,23 @@ export async function runHandoverRun(params: {
 			cliPath,
 			resumeMerge: hasFlag(argv, 'resume-merge'),
 		})
-	return runHandoverFolder({
-		handover,
-		write,
-		clock: params.clock,
-		colour: params.colour,
-		progress,
-		tty: live.tty,
-		columns: params.columns ?? live.columns,
-		cliPath,
-		resumeMerge: hasFlag(argv, 'resume-merge'),
-	})
+	// a real run marks its folder: a gate does not run under a hand-over committing now
+	const releaseRunMarker = writeRunMarker({ folder: handover.folder, now: new Date() })
+	try {
+		return await runHandoverFolder({
+			handover,
+			write,
+			clock: params.clock,
+			colour: params.colour,
+			progress,
+			tty: live.tty,
+			columns: params.columns ?? live.columns,
+			cliPath,
+			resumeMerge: hasFlag(argv, 'resume-merge'),
+		})
+	} finally {
+		releaseRunMarker()
+	}
 }
 
 /** `handover list [--root <dir>] [--json]`: default root the workspace's `_commit-plan`, else the cwd. */

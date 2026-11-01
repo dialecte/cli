@@ -9,6 +9,9 @@ import type { TDD_SUBCOMMANDS } from './tdd.constants.ts'
  */
 export type TestCaseId = { file: string; name: string; project: string }
 
+/** A test case with the hash of its own test call. */
+export type HashedTestCase = TestCaseId & { caseHash: string }
+
 /** Where a test case or an error frame is in its file, 1-based. */
 export type SourceLocation = { line: number; column: number }
 

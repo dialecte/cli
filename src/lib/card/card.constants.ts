@@ -17,3 +17,15 @@ export const CUT_MARK = '…'
 
 /** The least room between a row's text and the mark at its right edge. */
 export const TRAILING_GAP = 2
+
+/**
+ * The least room a wrapped card line keeps for its text: a hanging indent that would leave less is reduced, a
+ * line marked cut whose cut would keep less after its hang is wrapped instead.
+ */
+export const MINIMUM_TEXT_COLUMNS = 20
+
+/**
+ * Where a row starts when its text leaves its hanging indent: the text of a stacked line under its lead, a
+ * word too wide for the room after the hang.
+ */
+export const STACKED_INDENT = 2

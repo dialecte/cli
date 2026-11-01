@@ -2,8 +2,9 @@
  * `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` - the Definition of Done
  * of the package, inside its repository: `--fast` (default) while iterating, `--full` once per lot. Steps
  * come from `"dialecte": { "gate": { "fast", "full" } }` in package.json, or the defaults. One line per
- * step with the counts the step itself printed; refuses to run while a hand-over script holds the
- * repository.
+ * step with the counts the step itself printed. While a hand-over script holds the repository it runs only
+ * under the hand-over written for this repository (its lots file names it) when no real run of it is in
+ * progress, and says so in one line; it refuses otherwise.
  *
  * `--fast` starts with the hygiene of the worktree (nothing staged, the stash as it was when the worktree
  * was made, new files declared). `--full`, and every heavy step, hold the machine-wide lock: one heavy run
@@ -14,7 +15,7 @@
  * A run that reaches its steps records them in the worktree's git folder (`dialecte-gate-<mode>.json`),
  * for the hand-over card.
  */
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
 import { recordGate } from '../lib/gate-records/gate-records.ts'
@@ -22,7 +23,8 @@ import { STEP_DETAIL_INDENT } from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { renderStepCounts } from '../lib/gate/step-counts.ts'
-import { handoverLockPath, readHandoverLock } from '../lib/handover/handover-lock.ts'
+import { readHandoverHold } from '../lib/handover/handover-lock.ts'
+import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
 import {
 	acquireMachineLock,
 	describeHolder,
@@ -67,12 +69,17 @@ export async function runGate(params: {
 	const mode: GateMode = hasFlag(argv, 'full') ? 'full' : 'fast'
 	const json = hasFlag(argv, 'json')
 
-	const heldBy = readHandoverLock(cwd)
-	if (heldBy)
-		return {
-			exitCode: 1,
-			output: `gate: the repository is held by the hand-over ${heldBy} - run it first (it releases the lock), or drop the hand-over and delete ${handoverLockPath(cwd)}`,
-		}
+	const hold = readHandoverHold(cwd)
+	if ('refusal' in hold) return { exitCode: 1, output: `gate: ${hold.refusal}` }
+	const underHandover =
+		'folder' in hold
+			? [
+					GATE_UNDER_HANDOVER.replace('{folder}', hold.folder).replace(
+						'{lots}',
+						join(hold.folder, HANDOVER_FILES.lots),
+					),
+				]
+			: []
 
 	const packageJson = readPackageJson(cwd)
 	const steps = resolveGateSteps({ packageJson, mode })
@@ -182,6 +189,7 @@ export async function runGate(params: {
 	return {
 		exitCode,
 		output: [
+			...underHandover,
 			// on a terminal a step's line is on the screen already: the summary does not repeat it
 			...results
 				.filter((result) => !(params.live?.tty && shownLive.has(result)))

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { createFakeClock } from '../../../test/fake-clock.ts'
 import { readRecordFile } from '../../../test/gate-records.ts'
+import { removeHookLogs } from '../../../test/hook-logs.ts'
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
 import { runChild } from '../progress/run-child.ts'
 import { commitLots } from './commit-lots.ts'
@@ -66,6 +67,8 @@ describe('commitLots stall', () => {
 	it('a commit with a hook stopped as stalled → no hook record; the same commit whose hook answers → a record of its steps', async () => {
 		const stalledRoot = repositoryWithHook()
 		const answeredRoot = repositoryWithHook()
+		const lines: string[] = []
+		removeHookLogs({ lines })
 		vi.mocked(runChild).mockReset()
 		vi.mocked(runChild).mockResolvedValueOnce({
 			exitCode: undefined,
@@ -86,7 +89,7 @@ describe('commitLots stall', () => {
 				root: stalledRoot,
 				lots,
 				commits: [],
-				write: () => undefined,
+				write: (line) => lines.push(line),
 				clock: createFakeClock(),
 			}),
 		).resolves.toBeUndefined()
@@ -95,7 +98,7 @@ describe('commitLots stall', () => {
 				root: answeredRoot,
 				lots,
 				commits: [],
-				write: () => undefined,
+				write: (line) => lines.push(line),
 				clock: createFakeClock(),
 			}),
 		).resolves.toHaveLength(1)

@@ -5,6 +5,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	readlinkSync,
+	rmSync,
 	symlinkSync,
 	unlinkSync,
 	writeFileSync,
@@ -14,7 +15,7 @@ import { join } from 'node:path'
 
 import { discoverSkillSources, syncSkills } from './sync-skills.ts'
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { SkillSource } from './sync-skills.types.ts'
 
@@ -38,6 +39,10 @@ function coreSkill(): SkillSource[] {
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'dialecte-skills-'))
+})
+
+afterEach(() => {
+	rmSync(root, { recursive: true, force: true })
 })
 
 describe('discoverSkillSources', () => {

@@ -35,9 +35,14 @@ export function planPrune(params: {
 	workspace: string
 	/** Hand-over folders found under the workspace's `_commit-plan`. */
 	handoverFolders: readonly string[]
-	/** Where rehearsal clones are made: the system's temporary folder. */
+	/** Where rehearsal folders are made. */
 	scratchRoot: string
+	/** Where earlier cli versions made rehearsal clones, looked in too when it is not `scratchRoot`. */
+	formerScratchRoot?: string
 }): WorkspacePrunePlan {
+	const scratchRoots = [
+		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
+	]
 	const handovers = params.handoverFolders.flatMap(function read(folder): HandoverFolder[] {
 		const handover = readHandoverFolder(folder)
 		return typeof handover === 'string' ? [] : [handover]
@@ -46,19 +51,20 @@ export function planPrune(params: {
 		params.workspace,
 		join(params.workspace, WORKTREES_FOLDER),
 		join(params.workspace, COMMIT_PLAN_FOLDER),
-		params.scratchRoot,
+		...scratchRoots,
 	].flatMap((folder) => findLinks(folder))
 	const repositories = readdirSync(params.workspace, { withFileTypes: true })
 		.filter((entry) => entry.isDirectory() && isMainCheckout(join(params.workspace, entry.name)))
 		.map((entry) =>
 			planRepository({ repository: join(params.workspace, entry.name), handovers, links }),
 		)
-	const scratch = existsSync(params.scratchRoot)
-		? readdirSync(params.scratchRoot)
-				.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
-				.sort()
-				.map((name) => planRehearsalClone({ scratchRoot: params.scratchRoot, name, links }))
-		: []
+	const scratch = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
+		if (!existsSync(scratchRoot)) return []
+		return readdirSync(scratchRoot)
+			.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
+			.sort()
+			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
+	})
 	return { repositories, scratch }
 }
 
@@ -277,7 +283,11 @@ function isMainCheckout(folder: string): boolean {
 	)
 }
 
-/** A rehearsal clone goes when the process that made it is gone; kept while it runs or without a marker. */
+/**
+ * A rehearsal goes when the process that made it is gone; kept while it runs or without a marker. Its
+ * marker is in the clone's git folder: the entry itself (an earlier cli's clone) or the clone inside it (a
+ * rehearsal folder, which goes whole).
+ */
 function planRehearsalClone(params: {
 	scratchRoot: string
 	name: string
@@ -285,8 +295,7 @@ function planRehearsalClone(params: {
 }): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
 	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
-	const markerPath = join(clone, '.git', REHEARSAL_MARKER_FILE)
-	const marker = readRehearsalMarker(markerPath)
+	const marker = readRehearsalMarker(rehearsalMarkerPath(clone))
 	if (!marker)
 		return {
 			kind: 'rehearsal clone',
@@ -306,6 +315,24 @@ function planRehearsalClone(params: {
 		kind: 'rehearsal clone',
 		name: clone,
 		command: `cd ${shellQuote(params.scratchRoot)} && rm -rf ${shellQuote(params.name)}`,
+	}
+}
+
+/** The marker of the rehearsal in `entry`: in its own git folder, else in that of a clone inside it. */
+function rehearsalMarkerPath(entry: string): string {
+	const ownMarker = join(entry, '.git', REHEARSAL_MARKER_FILE)
+	if (existsSync(ownMarker) || !isDirectory(entry)) return ownMarker
+	const inside = readdirSync(entry, { withFileTypes: true })
+		.filter((child) => child.isDirectory())
+		.map((child) => join(entry, child.name, '.git', REHEARSAL_MARKER_FILE))
+	return inside.find((path) => existsSync(path)) ?? ownMarker
+}
+
+function isDirectory(path: string): boolean {
+	try {
+		return statSync(path).isDirectory()
+	} catch {
+		return false
 	}
 }
 

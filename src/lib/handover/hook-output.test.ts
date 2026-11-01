@@ -1,7 +1,9 @@
+import { runHookLiveView } from '../../../test/hook-live-view-run.ts'
 import {
 	CORE_FAILING_CHECK_STEP_LINES,
 	CORE_FAILING_HOOK_LINES,
 	CORE_PASSING_HOOK_LINES,
+	CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING,
 	FAIL_LINE,
 	FAILED_TEST_LINE,
 	FAILING_HOOK_LINES,
@@ -16,7 +18,9 @@ import {
 	RUN_P_ERROR,
 	TEST_BROWSER_FAILURE,
 	TYPE_ERROR,
+	VITE_CONFIG_LOADER_WARNING,
 } from '../../../test/hook-output-lines.constants.ts'
+import { HOOK_OUTPUT_PREFIX } from './handover.constants.ts'
 import { classifyHookLine, hookOutcomeLines, readHookSteps } from './hook-output.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -340,11 +344,10 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		])
 
 		expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual([
-			'lint:check ✓ · build ✓ · 1 lint warning in lint:check · 2 build warnings in build · 1 lint warning in build',
+			'lint:check ✓ · build ✓ · 1 lint warning in lint:check · 1 build warning in build · 1 lint warning in build',
 			`[lint:check] ${LINT_WARNING}`,
-			`[build] ${build}`,
+			`[build] ${build} (×2)`,
 			`[build] ${lintInBuild}`,
-			`[build] ${build}`,
 			`full log: ${LOG}`,
 		])
 	})
@@ -446,6 +449,64 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 		])
 	})
 
+	it("core hook passing, its build printing Vite's configLoader warning three times → the line listed once with (×3) where it was first printed; the summary counts it once: 1 build warning in build", () => {
+		expect(
+			hookOutcomeLines({
+				output: outputOf(CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING),
+				passed: true,
+				logPath: LOG,
+			}),
+		).toEqual([
+			'check ✓ · test:node ✓ 3741 · build ✓ · 1 lint warning in check · 1 build warning in build',
+			`[check] ${LINT_WARNING}`,
+			`[build] ${VITE_CONFIG_LOADER_WARNING} (×3)`,
+			`full log: ${LOG}`,
+		])
+	})
+
+	it('the same warning printed by two steps, twice by the second → never merged across steps: one line per step, the count on the second only', () => {
+		const output = outputOf([
+			'> demo@1.0.0 build:lib',
+			'> vite build',
+			VITE_CONFIG_LOADER_WARNING,
+			'',
+			'> demo@1.0.0 build:engine',
+			'> vite build -c vite.engine.config.ts',
+			VITE_CONFIG_LOADER_WARNING,
+			'✓ built in 0.40s',
+			VITE_CONFIG_LOADER_WARNING,
+		])
+
+		expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual([
+			'build:lib ✓ · build:engine ✓ · 1 build warning in build:lib · 1 build warning in build:engine',
+			`[build:lib] ${VITE_CONFIG_LOADER_WARNING}`,
+			`[build:engine] ${VITE_CONFIG_LOADER_WARNING} (×2)`,
+			`full log: ${LOG}`,
+		])
+	})
+
+	it('a hook failing in test:run after type-check printed the same type error twice → the error listed once with (×2) before the failing test line and the tail', () => {
+		const output = outputOf([
+			'> demo@1.0.0 type-check',
+			'> tsc --noEmit',
+			TYPE_ERROR,
+			TYPE_ERROR,
+			'',
+			'> demo@1.0.0 test:run',
+			'> vitest run',
+			'',
+			...FAILING_TEST_RUN_LINES,
+		])
+
+		expect(hookOutcomeLines({ output, passed: false, logPath: LOG })).toEqual([
+			'type-check ✓ 1 error · test:run ✗ 1 failed of 1214',
+			`[type-check] ${TYPE_ERROR} (×2)`,
+			`[test:run] ${FAILED_TEST_LINE}`,
+			...['> vitest run', '', ...FAILING_TEST_RUN_LINES].slice(-30),
+			`full log: ${LOG}`,
+		])
+	})
+
 	const testSteps: { name: string; command: string; testStep: boolean }[] = [
 		{ name: 'test', command: '> sh scripts/check.sh', testStep: true },
 		{ name: 'test:run', command: '> sh scripts/check.sh', testStep: true },
@@ -497,5 +558,131 @@ describe('hookOutcomeLines: what stays once the hook ended', () => {
 			'hook ✗',
 			`full log: ${LOG}`,
 		])
+	})
+})
+
+describe('createHookLiveView: a warning repeated in its step', () => {
+	/** A line as the live view shows it, behind the hook prefix. */
+	function shown(line: string): string {
+		return `${HOOK_OUTPUT_PREFIX}${line}`
+	}
+	const repeated = `[build] ${VITE_CONFIG_LOADER_WARNING}`
+
+	it("off a terminal, core hook whose build prints Vite's configLoader warning three times → the warning written as it is printed, its repeats counted, then once more with (×3) as the run of repeats ends at the hook's end; the order kept", () => {
+		expect(
+			runHookLiveView({ lines: CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING, tty: false })
+				.written,
+		).toEqual(
+			[
+				'▶ check',
+				`[check] ${LINT_WARNING}`,
+				'▶ test:node',
+				'▶ build',
+				repeated,
+				`${repeated} (×3)`,
+			].map(shown),
+		)
+	})
+
+	it('off a terminal, a warning twice then another in the same step → the warning written at its own read, its repeat counted, then with (×2) as soon as the other is read; the other written at its read', () => {
+		const second = 'src/write.ts:4:1: warning eslint(no-console): Unexpected console statement.'
+		const lines = ['> demo@1.0.0 lint:check', '> oxlint', LINT_WARNING, LINT_WARNING, second]
+
+		expect(runHookLiveView({ lines, tty: false }).writtenAfterEachRead.slice(2)).toEqual([
+			['▶ lint:check', `[lint:check] ${LINT_WARNING}`].map(shown),
+			['▶ lint:check', `[lint:check] ${LINT_WARNING}`].map(shown),
+			[
+				'▶ lint:check',
+				`[lint:check] ${LINT_WARNING}`,
+				`[lint:check] ${LINT_WARNING} (×2)`,
+				`[lint:check] ${second}`,
+			].map(shown),
+		])
+		expect(runHookLiveView({ lines, tty: false }).written).toEqual(
+			[
+				'▶ lint:check',
+				`[lint:check] ${LINT_WARNING}`,
+				`[lint:check] ${LINT_WARNING} (×2)`,
+				`[lint:check] ${second}`,
+			].map(shown),
+		)
+	})
+
+	it('off a terminal, a warning twice, another, then the first again in the same step → the first, its run of two as (×2), the other, then the first again as a new run of one: nothing more at the end', () => {
+		const second = 'src/write.ts:4:1: warning eslint(no-console): Unexpected console statement.'
+
+		expect(
+			runHookLiveView({
+				lines: [
+					'> demo@1.0.0 lint:check',
+					'> oxlint',
+					LINT_WARNING,
+					LINT_WARNING,
+					second,
+					LINT_WARNING,
+				],
+				tty: false,
+			}).written,
+		).toEqual(
+			[
+				'▶ lint:check',
+				`[lint:check] ${LINT_WARNING}`,
+				`[lint:check] ${LINT_WARNING} (×2)`,
+				`[lint:check] ${second}`,
+				`[lint:check] ${LINT_WARNING}`,
+			].map(shown),
+		)
+	})
+
+	it('after the hook, a warning twice, another, then the first again in one step → one line with the step total (×3) where it was first printed, the other after it; counted as two distinct lines', () => {
+		const second = 'src/write.ts:4:1: warning eslint(no-console): Unexpected console statement.'
+		const output = outputOf([
+			'> demo@1.0.0 lint:check',
+			'> oxlint',
+			LINT_WARNING,
+			LINT_WARNING,
+			second,
+			LINT_WARNING,
+		])
+
+		expect(hookOutcomeLines({ output, passed: true, logPath: LOG })).toEqual([
+			'lint:check ✓ · 2 lint warnings in lint:check',
+			`[lint:check] ${LINT_WARNING} (×3)`,
+			`[lint:check] ${second}`,
+			`full log: ${LOG}`,
+		])
+	})
+
+	it("on a terminal, core hook whose build prints Vite's configLoader warning three times → the live region holds that line once, its count updated in place to (×3); never two copies of it", () => {
+		const lines = CORE_PASSING_HOOK_LINES_WITH_REPEATED_BUILD_WARNING
+
+		expect(runHookLiveView({ lines, tty: true }).regions.at(-1)).toEqual(
+			['▶ build 0.0 s', `[check] ${LINT_WARNING}`, `${repeated} (×3)`].map(shown),
+		)
+		expect(
+			runHookLiveView({ lines, tty: true }).regions.filter(
+				(region) => region.filter((line) => line.startsWith(shown(repeated))).length > 1,
+			),
+		).toEqual([])
+		expect(
+			runHookLiveView({ lines, tty: true }).regions.some((region) =>
+				region.includes(shown(`${repeated} (×2)`)),
+			),
+		).toBe(true)
+	})
+
+	it('on a terminal, a warning, another, then the first again in the same step → the first line carries (×2) in its place, the other stays after it', () => {
+		const second = 'src/write.ts:4:1: warning eslint(no-console): Unexpected console statement.'
+
+		expect(
+			runHookLiveView({
+				lines: ['> demo@1.0.0 lint:check', '> oxlint', LINT_WARNING, second, LINT_WARNING],
+				tty: true,
+			}).regions.at(-1),
+		).toEqual(
+			['▶ lint:check 0.0 s', `[lint:check] ${LINT_WARNING} (×2)`, `[lint:check] ${second}`].map(
+				shown,
+			),
+		)
 	})
 })

@@ -56,6 +56,12 @@ export const TEST_STEP_KINDS: readonly HookLineKind[] = ['test failure', 'script
 /** Before a flagged line, naming the step that printed it: `[lint:check] <line>`. */
 export const STEP_LABEL = '[{step}] '
 
+/**
+ * After a flagged line printed more than once by its step (the same text): how many times, `(×3)`. Shown
+ * once the line was printed twice.
+ */
+export const REPEAT_COUNT_SUFFIX = ' (×{count})'
+
 /** After a warning count in the summary, naming the step: `1 lint warning in lint:check`. */
 export const STEP_COUNT_SUFFIX = ' in {step}'
 

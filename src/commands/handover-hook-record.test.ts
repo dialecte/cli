@@ -1,10 +1,11 @@
 /** `handover run`: a commit's hook result recorded as a gate record of the tree it ran on, and read by the card. */
 import { chmodSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { gitPathOf, readRecordFile } from '../../test/gate-records.ts'
+import { removeHookLogs } from '../../test/hook-logs.ts'
 import { FAILING_HOOK_LINES, PASSING_HOOK_LINES } from '../../test/hook-output-lines.constants.ts'
 import {
 	createScratchRepository,
@@ -81,6 +82,7 @@ async function runFolder(params: {
 	scratchRoot?: string
 }): Promise<{ exitCode: number; text: string }> {
 	const lines: string[] = []
+	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
@@ -309,7 +311,9 @@ describe(
 
 			const result = await runFolder({ out, argv: ['--rehearse', '--keep'], scratchRoot })
 
-			const [clone] = readdirSync(scratchRoot).map((name) => join(scratchRoot, name))
+			const [clone] = readdirSync(scratchRoot).map((name) =>
+				join(scratchRoot, name, basename(root)),
+			)
 			expect(result.exitCode).toBe(0)
 			expect(readRecordFile<GateRecord>({ root: clone, name: HOOK_RECORD })).toMatchObject({
 				mode: 'hook',

@@ -31,6 +31,7 @@ import {
 	HOOK_HEARTBEAT_LABEL,
 	HOOK_LOG_FOLDER_PREFIX,
 	HOOK_OUTPUT_PREFIX,
+	STILL_STAGED_INDEX_LOCK,
 } from './handover.constants.ts'
 import { createHookLiveView } from './hook-live-view.ts'
 import { hookOutcomeLines, hookSummarySteps, readHookSteps } from './hook-output.ts'
@@ -55,6 +56,8 @@ export async function commitLots(params: {
 	clock: Clock
 	/** Each commit runs in a process group of its own, its pid given here (a rehearsal stops it on an interrupt). */
 	onProcessGroup?: (pid: number) => void
+	/** Added to the environment the commit and its hook run in (a rehearsal's short `TMPDIR`). */
+	hookEnvironment?: Record<string, string>
 	/** Where each lot announces itself; default: start and running lines through `write`. */
 	progress?: StepProgress
 	/** The progress draws on a terminal: the hook's lines show live under the spinner. */
@@ -139,10 +142,13 @@ export async function commitLots(params: {
 			clock,
 			every: HEARTBEAT_INTERVAL_MILLISECONDS,
 			onProcessGroup: params.onProcessGroup,
+			environment: params.hookEnvironment,
 			step: { running, tty },
 			onText: (text) => appendFileSync(hookLog, text),
 			onLine: hookView.read,
 		})
+		// off a terminal a run of repeats of the last flagged line ends with the hook: its count before the outcome
+		hookView.end()
 		// a repository with no commit hook stays silent
 		const hookRan = commit.output !== '' || hooked
 		if (!hookRan) rmSync(dirname(hookLog), { recursive: true, force: true })
@@ -231,7 +237,7 @@ function createHookLog(params: { lot: number }): string {
 function stillStaged(params: { unstaged: { reason: string; lock?: string }; lot: number }): string {
 	const { unstaged } = params
 	const clear = unstaged.lock
-		? `once no git runs in the repository, remove ${unstaged.lock}, then`
+		? STILL_STAGED_INDEX_LOCK.replace('{lock}', unstaged.lock)
 		: 'fix the cause, then'
 	return `    its files are still staged (git reset failed: ${unstaged.reason}); ${clear} run the same command: its index guard says how to unstage them, and it resumes at lot ${params.lot}`
 }

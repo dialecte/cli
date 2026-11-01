@@ -1,8 +1,10 @@
 /**
  * `handover run <folder> --rehearse`: the run on a scratch clone that looks like the person's tree - the
  * repository at HEAD, the current working tree on top, the hooks folder, a copy-on-write copy of
- * `node_modules` - so the hooks run as they will for real. The guards read the repository; the lots are
- * committed in the clone, which is removed at the end unless kept.
+ * `node_modules` - so the hooks run as they will for real. The clone lives in a rehearsal folder under a
+ * short scratch root, beside links to the repository's sibling folders its relative `file:` dependencies
+ * reach, and the hook runs with a short temporary folder inside it. The guards read the repository; the
+ * lots are committed in the clone; the whole rehearsal folder is removed at the end unless kept.
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -16,7 +18,7 @@ import {
 	writeFileSync,
 } from 'node:fs'
 import { constants } from 'node:os'
-import { dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, readGit, readGitConfig } from '../git.ts'
@@ -26,10 +28,13 @@ import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { copyNodeModules } from '../worktree/copy-node-modules.ts'
 import {
+	POSIX_REHEARSAL_SCRATCH_ROOT,
 	REHEARSAL_FOLDER_PREFIX,
 	REHEARSAL_MARKER_FILE,
+	REHEARSAL_TEMPORARY_FOLDER,
 	UNTRACKED_WARNING_LIMIT,
 } from './handover.constants.ts'
+import { linkRehearsalSiblings, removeRehearsalFolder } from './rehearsal-links.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
@@ -41,7 +46,7 @@ export async function rehearseHandover(params: {
 	write: WriteLine
 	clock: Clock
 	colour: boolean
-	/** The folder the clone is made in: the system's temporary folder. */
+	/** The folder the rehearsal folder is made in (`rehearsalScratchRoot`). */
 	scratchRoot: string
 	keep: boolean
 	/** Where the clone and each lot announce themselves; default: start and running lines through `write`. */
@@ -63,13 +68,17 @@ export async function rehearseHandover(params: {
 			clock: params.clock,
 		})
 	const repository = handover.lotsFile.repository
-	const clone = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
+	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
+	const clone = join(folder, basename(repository))
+	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
+	mkdirSync(hookTemporary)
 	write(`rehearsal in ${clone}`)
-	/** The hook's process group is stopped first (SIGKILL after its grace), then the clone goes. */
+	const links: string[] = []
+	/** The hook's process group is stopped first (SIGKILL after its grace), then the rehearsal folder goes. */
 	function interrupted(signal: NodeJS.Signals): void {
 		void stopLiveGroups(signal).then(function cleanUp() {
-			rmSync(clone, { recursive: true, force: true })
-			write(`interrupted (${signal}): the hook stopped, the rehearsal clone removed`)
+			removeRehearsalFolder({ folder, links })
+			write(`interrupted (${signal}): the hook stopped, the rehearsal folder removed`)
 			process.exit(128 + constants.signals[signal])
 		})
 	}
@@ -88,6 +97,9 @@ export async function rehearseHandover(params: {
 		})
 		try {
 			prepareClone({ repository, clone, branch: handover.lotsFile.branch, write })
+			const siblings = linkRehearsalSiblings({ repository, folder, clone })
+			links.push(...siblings.links)
+			for (const line of siblings.lines) write(line)
 		} catch (error) {
 			running.finish('✗ rehearsal clone')
 			throw error
@@ -104,15 +116,29 @@ export async function rehearseHandover(params: {
 			columns: params.columns,
 			cliPath: params.cliPath,
 			resumeMerge: params.resumeMerge,
+			hookEnvironment: { TMPDIR: hookTemporary },
 		})
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
-		if (params.keep) write(`kept the rehearsal clone: ${clone}`)
+		if (params.keep) write(`kept the rehearsal folder: ${folder}`)
 		else {
-			rmSync(clone, { recursive: true, force: true })
-			write('removed the rehearsal clone')
+			removeRehearsalFolder({ folder, links })
+			write('removed the rehearsal clone and its folder')
 		}
 	}
+}
+
+/**
+ * The folder rehearsals are made in: a short one, so the paths under it (a tool's socket in the hook's
+ * temporary folder among them) stay within the system's limits.
+ */
+export function rehearsalScratchRoot(params: {
+	platform: NodeJS.Platform
+	/** The system's temporary folder (`os.tmpdir()`). */
+	systemTemporaryFolder: string
+}): string {
+	// a Windows temporary folder has no short fixed counterpart: it stays
+	return params.platform === 'win32' ? params.systemTemporaryFolder : POSIX_REHEARSAL_SCRATCH_ROOT
 }
 
 /**

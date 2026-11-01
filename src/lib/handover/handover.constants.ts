@@ -77,6 +77,42 @@ export const LEGACY_SCRIPT_PATTERN = /^commit.*\.sh$/
 /** The marker a rehearsal clone holds, in its git folder: whose process made it. */
 export const REHEARSAL_MARKER_FILE = 'dialecte-rehearsal.json'
 
+/**
+ * The marker a real `handover run` holds in its hand-over folder while it runs (`{ "pid", "startedAt" }`),
+ * removed at its end: `dialecte gate` refuses while its process is alive.
+ */
+export const HANDOVER_RUN_MARKER_FILE = 'running.json'
+
+/**
+ * A refusal while the repository is held by a hand-over the caller may not run under: names the script, why
+ * (`{why}`, empty or a parenthesis), and the lock, and says what to do without touching the lock.
+ */
+export const HANDOVER_HOLD_REFUSAL =
+	"the repository is held by the hand-over {script}{why} (its lock: {lock}): run it first (its last commit releases the lock), or hand the lock's path to the person who runs the repository, who decides"
+
+/** Why the hand-over holding the repository is not one written for it. */
+export const HANDOVER_HOLD_REASONS = {
+	scriptGone: ' (no such script)',
+	noLotsFile: ' (its folder holds no lots file: {reason})',
+	otherRepository: ' (written for another repository: {repository})',
+} as const
+
+/** Under the card `handover <lots.json>` printed, above the command that runs it; `{lots}` the lots file, quoted. */
+export const HANDOVER_WRITTEN_NOTE =
+	'Review the card, then run it. The repository is held until every lot is committed; `dialecte gate` still runs under this hand-over (after a late edit: re-gate, then `dialecte handover {lots} --rehash`):'
+
+/** A refusal while a real run of the hand-over written for this repository is in progress. */
+export const HANDOVER_RUNNING_REFUSAL =
+	'the hand-over {folder} is running (pid {pid}, since {startedAt}, marked by {marker}): wait until its run ends, then run the gate again'
+
+/** The gate's line when it runs under the hand-over written for its repository. */
+export const GATE_UNDER_HANDOVER =
+	'under the hand-over {folder} of this repository: once the gate is green, refresh it with `dialecte handover {lots} --rehash`'
+
+/** The lot's files stayed staged and git's index lock is there: what to do without touching the lock. */
+export const STILL_STAGED_INDEX_LOCK =
+	"git's index lock {lock} is still there: hand its path to the person who runs the repository, who decides once no git runs in it, then"
+
 /** The commit a lots file names: a sha or an unambiguous prefix of one. */
 export const HEAD_PATTERN = /^[0-9a-f]{7,40}$/
 
@@ -91,8 +127,21 @@ export const HOOK_LOG_FOLDER_PREFIX = 'dialecte-hook-'
 
 export const HOOK_HEARTBEAT_LABEL = '  … hook running'
 
-/** Folders `--rehearse` clones into, under the system's temporary folder; `worktree prune` finds them by it. */
+/**
+ * The rehearsal folders `--rehearse` makes (the clone inside, named as its repository, with the links to the
+ * repository's siblings beside it); `worktree prune` finds them, and an earlier cli's clones, by it.
+ */
 export const REHEARSAL_FOLDER_PREFIX = 'dialecte-rehearse-'
+
+/**
+ * Where rehearsal folders are made on a POSIX system: a short path whatever the system's temporary folder
+ * (a tool's socket path under the hook's temporary folder must stay within the system's limit of about 100
+ * bytes).
+ */
+export const POSIX_REHEARSAL_SCRATCH_ROOT = '/tmp'
+
+/** The hook's temporary folder (`TMPDIR`) in the rehearsal folder: short, removed with it. */
+export const REHEARSAL_TEMPORARY_FOLDER = '.tmp'
 
 /** How deep `handover list` looks for hand-over folders under its root. */
 export const LIST_DEPTH = 4

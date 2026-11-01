@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
+import { removeHookLogs } from '../../test/hook-logs.ts'
 import {
 	createScratchRepository,
 	git,
@@ -208,6 +209,7 @@ async function runFolder(params: {
 	argv?: string[]
 }): Promise<{ exitCode: number; lines: string[]; text: string }> {
 	const lines: string[] = []
+	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),

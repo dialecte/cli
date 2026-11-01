@@ -6,6 +6,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { readPackageJson } from '../package-json.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { DEPENDENCY_SECTIONS, LOCAL_DEPENDENCY_PATTERN } from './worktree.constants.ts'
@@ -97,18 +98,8 @@ function describeExisting(params: { link: string; target: string }): string {
 	return `kept: points to ${readlinkSync(link)}, not ${target}`
 }
 
-/** Something at the path, a dangling link included. */
-function isPresent(path: string): boolean {
-	try {
-		lstatSync(path)
-		return true
-	} catch {
-		return false
-	}
-}
-
 /** Strictly under the folder. */
-function isInside(params: { path: string; folder: string }): boolean {
+export function isInside(params: { path: string; folder: string }): boolean {
 	const fromFolder = relative(params.folder, params.path)
 	return (
 		fromFolder !== '' &&

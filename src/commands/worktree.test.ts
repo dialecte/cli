@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
+import { deadPid } from '../../test/dead-pid.ts'
 import {
 	git,
 	initializeRepository,
@@ -192,11 +193,6 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 	})
 })
 
-/** A pid no process holds any more: a child that already exited. */
-function deadPid(): number {
-	return spawnSync('true').pid
-}
-
 /** A rehearsal clone left in `scratchRoot`, its marker naming the process that made it. */
 function makeRehearsalClone(params: { scratchRoot: string; name: string; pid?: number }): string {
 	const clone = join(params.scratchRoot, params.name)
@@ -207,6 +203,16 @@ function makeRehearsalClone(params: { scratchRoot: string; name: string; pid?: n
 			JSON.stringify({ pid: params.pid, startedAt: '2026-10-29T10:00:00.000Z' }),
 		)
 	return clone
+}
+
+/**
+ * A rehearsal folder left in `scratchRoot` as this cli makes it: the clone in a folder named as the
+ * repository (`core`), its marker naming the process that made it.
+ */
+function makeRehearsalFolder(params: { scratchRoot: string; name: string; pid: number }): string {
+	const folder = join(params.scratchRoot, params.name)
+	makeRehearsalClone({ scratchRoot: folder, name: 'core', pid: params.pid })
+	return folder
 }
 
 function commitIn(params: { root: string; file: string; message: string }): void {
@@ -435,6 +441,39 @@ describe('worktree prune', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 		)
 		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-live'")
 		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-bare'")
+	})
+
+	it('rehearsal folders (the clone inside, named as its repository) in the scratch root, and a clone of an earlier cli in the former temporary folder → each found by its marker: the dead ones removed from their own root, the live one kept', async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		const formerScratchRoot = temporaryFolder('dialecte-former-root-')
+		makeRehearsalFolder({ scratchRoot, name: 'dialecte-rehearse-dead', pid: deadPid() })
+		makeRehearsalFolder({ scratchRoot, name: 'dialecte-rehearse-live', pid: process.pid })
+		makeRehearsalClone({
+			scratchRoot: formerScratchRoot,
+			name: 'dialecte-rehearse-former',
+			pid: deadPid(),
+		})
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace],
+			cwd: workspace,
+			scratchRoot,
+			formerScratchRoot,
+			isTerminal: false,
+			confirm: async () => true,
+		})
+
+		expect(result.output.split('\n')).toEqual(
+			expect.arrayContaining([
+				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
+				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
+				`  remove  ${join(formerScratchRoot, 'dialecte-rehearse-former')}`,
+				`cd '${scratchRoot}' && rm -rf 'dialecte-rehearse-dead'`,
+				`cd '${formerScratchRoot}' && rm -rf 'dialecte-rehearse-former'`,
+			]),
+		)
+		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-live'")
 	})
 
 	it('a workspace child whose .git is a file → no crash; the main checkout on a merged branch → that branch kept', async () => {

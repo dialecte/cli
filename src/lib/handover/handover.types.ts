@@ -245,3 +245,18 @@ export type TddProof = 'red' | 'proven' | 'unchanged' | 'kept'
 
 /** An accepted or revised receipt with the lot file entry that names its case. */
 export type DeclaredReceipt = { receipt: TddReceipt; entry: LotCaseEntry }
+
+/**
+ * Whether a gate may run while the repository's hand-over lock is held: free (no lock), under the hand-over
+ * written for this repository (its folder), or refused (why).
+ */
+export type HandoverHold =
+	| { held: false }
+	| { held: true; folder: string }
+	| { held: true; refusal: string }
+
+/** A real `handover run` in progress, as its folder's marker names it. */
+export type HandoverRunMarker = { pid: number; startedAt: string }
+
+/** The links a rehearsal made beside its clone, and the lines saying what it linked and what it could not. */
+export type RehearsalLinks = { links: string[]; lines: string[] }

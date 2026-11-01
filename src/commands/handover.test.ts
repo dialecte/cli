@@ -6,21 +6,30 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join, relative, sep } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
+import { removeHookLogs } from '../../test/hook-logs.ts'
+import {
+	PERSON_WHO_RUNS_THE_REPOSITORY,
+	RUN_THE_HANDOVER,
+	TOUCH_THE_GIT_FOLDER,
+} from '../../test/refusal-wording.constants.ts'
 import {
 	createScratchRepository,
 	git,
+	initializeRepository,
 	writeFiles,
 	temporaryFolder,
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
+import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { runGate } from './gate.ts'
 import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
@@ -143,6 +152,7 @@ async function runFolder(params: {
 	scratchRoot?: string
 }): Promise<{ exitCode: number; lines: string[]; text: string }> {
 	const lines: string[] = []
+	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
@@ -157,6 +167,78 @@ function subjectsOf(params: { root: string; count: number }): string[] {
 	return git({ root: params.root, args: ['log', '--format=%s', `-${params.count}`] })
 		.trim()
 		.split('\n')
+}
+
+/** The pid a run marker's text names; undefined when the text is no marker. */
+function markerPid(text: string): number | undefined {
+	try {
+		const marker = JSON.parse(text) as { pid?: unknown }
+		return typeof marker.pid === 'number' ? marker.pid : undefined
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * The rehearsal folder a path lies in: its nearest folder named `dialecte-rehearse-<random>`; undefined
+ * for a path in none.
+ */
+function rehearsalFolderOf(path: string): string | undefined {
+	for (let folder = path; folder !== dirname(folder); folder = dirname(folder))
+		if (basename(folder).startsWith('dialecte-rehearse-')) return folder
+	return undefined
+}
+
+/** The rehearsal folder a `rehearsal in <path>` line of the output names, removed when the test ends. */
+function announcedRehearsalFolder(output: string): string | undefined {
+	const folder = rehearsalFolderOf(/^rehearsal in (\S+)$/m.exec(output)?.[1] ?? '')
+	onTestFinished(function removeRehearsalFolder() {
+		if (folder) rmSync(folder, { recursive: true, force: true })
+	})
+	return folder
+}
+
+/**
+ * A workspace of sibling folders: the repository `cli` holding a package.json whose dependencies are
+ * `dependencies`, and beside it `core` and `scl`, each holding a marker file; two changed files in one
+ * lot, the hook `hook`, the hand-over written.
+ */
+function prepareWithSiblings(params: { dependencies: Record<string, string>; hook: string }): {
+	family: string
+	root: string
+	out: string
+} {
+	const family = temporaryFolder('dialecte-family-')
+	const root = initializeRepository({
+		root: join(family, 'cli'),
+		files: {
+			'package.json': JSON.stringify({ name: 'demo', dependencies: params.dependencies }),
+			'src/read.ts': 'export function read() {}\n',
+		},
+	})
+	writeFiles({
+		root: family,
+		files: { 'core/marker.txt': 'core\n', 'scl/marker.txt': 'scl\n' },
+	})
+	installHook({ root, script: params.hook })
+	writeFiles({
+		root,
+		files: {
+			'src/read.ts': 'export function read() {\n\treturn 1\n}\n',
+			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
+		},
+	})
+	const out = temporaryFolder('dialecte-handover-')
+	const lotsPath = join(out, 'lots.json')
+	const lotsFile: LotsFile = {
+		repository: root,
+		branch: 'main',
+		head: headOf(root),
+		lots: [{ paths: ['src/', 'CHANGELOG.md'], message: 'feat(read): read answers one' }],
+	}
+	writeFileSync(lotsPath, JSON.stringify(lotsFile))
+	expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+	return { family, root, out }
 }
 
 /** A pre-commit hook in `.husky/_`, as husky installs it: ignored by git, named by core.hooksPath. */
@@ -520,6 +602,16 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
 	})
 
+	it('written → above the command: the repository held until every lot is committed, the gate still running under this hand-over, a late edit re-gated then --rehash on the lots file written (its path quoted)', () => {
+		const { lotsPath } = prepare()
+
+		const lines = writeHandover({ lotsPath }).output.split('\n')
+
+		expect(lines.at(-2)).toBe(
+			`Review the card, then run it. The repository is held until every lot is committed; \`dialecte gate\` still runs under this hand-over (after a late edit: re-gate, then \`dialecte handover '${lotsPath}' --rehash\`):`,
+		)
+	})
+
 	it('the lot file .dialecte/lot.json in no lot → not refused; a lot declared exempt from the receipts → its line first in the tdd section, before the counts', () => {
 		const { root, lotsPath } = prepare()
 		writeFiles({
@@ -827,14 +919,18 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	})
 
 	it('the repository held by another hand-over → refused', () => {
-		const { lotsPath } = prepare()
+		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 		const otherOut = temporaryFolder('dialecte-handover-')
 
 		const result = writeHandover({ lotsPath, argv: ['--out', otherOut] })
 
 		expect(result.exitCode).toBe(1)
-		expect(result.output).toContain('the repository is held by')
+		expect(result.output).toContain(join(out, 'commit.sh'))
+		expect(result.output).toContain(join(root, '.git', 'dialecte-handover.lock'))
+		expect(result.output).toMatch(RUN_THE_HANDOVER)
+		expect(result.output).toContain(PERSON_WHO_RUNS_THE_REPOSITORY)
+		expect(result.output).not.toMatch(TOUCH_THE_GIT_FOLDER)
 	})
 
 	it('a multi-line gates text → comment lines of the script header, never run', () => {
@@ -1239,6 +1335,46 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		)
 	})
 
+	it('a real run → while its hook runs, the folder holds the run marker naming this process; once every lot is committed the marker is gone', async () => {
+		const { root, lotsPath, out } = prepare()
+		const seen = join(temporaryFolder('dialecte-seen-'), 'marker.json')
+		installHook({
+			root,
+			script: `cat '${join(out, HANDOVER_RUN_MARKER_FILE)}' > '${seen}' 2>/dev/null; true`,
+		})
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(0)
+		expect(markerPid(readFileSync(seen, 'utf8'))).toBe(process.pid)
+		expect(existsSync(join(out, HANDOVER_RUN_MARKER_FILE))).toBe(false)
+	})
+
+	it('a real run whose hook fails → the marker named this process while the hook ran, and is gone after the failure', async () => {
+		const { root, lotsPath, out } = prepare()
+		const seen = join(temporaryFolder('dialecte-seen-'), 'marker.json')
+		installHook({
+			root,
+			script: `cat '${join(out, HANDOVER_RUN_MARKER_FILE)}' > '${seen}' 2>/dev/null; exit 1`,
+		})
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out })
+
+		expect(result.exitCode).toBe(1)
+		expect(markerPid(readFileSync(seen, 'utf8'))).toBe(process.pid)
+		expect(existsSync(join(out, HANDOVER_RUN_MARKER_FILE))).toBe(false)
+	})
+
 	it('--probe → answers that this cli runs hand-overs, touches nothing', async () => {
 		const lines: string[] = []
 
@@ -1330,8 +1466,9 @@ describe('handover run --rehearse', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () 
 		const result = await runFolder({ out, argv: ['--rehearse', '--keep'], scratchRoot })
 
 		expect(result.exitCode).toBe(0)
-		const [clone] = readdirSync(scratchRoot).map((name) => join(scratchRoot, name))
-		expect(result.text).toContain(`kept the rehearsal clone: ${clone}`)
+		const [folder] = readdirSync(scratchRoot).map((name) => join(scratchRoot, name))
+		const clone = join(folder, basename(root))
+		expect(result.text).toContain(`kept the rehearsal folder: ${folder}`)
 		expect(lstatSync(join(clone, 'node_modules')).isSymbolicLink()).toBe(false)
 		expect(readFileSync(join(clone, 'node_modules/demo/index.js'), 'utf8')).toBe(
 			'module.exports = 1\n',
@@ -1348,6 +1485,103 @@ describe('handover run --rehearse', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () 
 	})
 })
 
+describe(
+	'handover run --rehearse: the rehearsal folder',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('the clone at <scratch root>/dialecte-rehearse-<random>/<repository folder name>; the hook runs with TMPDIR a short folder of the rehearsal folder beside the clone; everything removed after', async () => {
+			const { root, lotsPath, out } = prepare()
+			const seen = temporaryFolder('dialecte-seen-')
+			installHook({
+				root,
+				script: `pwd -P > '${join(seen, 'pwd.txt')}'; printf '%s' "$TMPDIR" > '${join(seen, 'tmpdir.txt')}'; test -d "$TMPDIR"`,
+			})
+			writeFileSync(
+				lotsPath,
+				JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+			)
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+			const realScratchRoot = realpathSync(scratchRoot)
+
+			const result = await runFolder({ out, argv: ['--rehearse'], scratchRoot })
+
+			const clone = relative(realScratchRoot, readFileSync(join(seen, 'pwd.txt'), 'utf8').trim())
+			const hookTemporary = readFileSync(join(seen, 'tmpdir.txt'), 'utf8')
+			const inRehearsal = relative(
+				hookTemporary.startsWith(realScratchRoot) ? realScratchRoot : scratchRoot,
+				hookTemporary,
+			)
+			const [rehearsal] = clone.split(sep)
+			expect(result.exitCode).toBe(0)
+			expect(clone.split(sep)).toEqual([
+				expect.stringMatching(/^dialecte-rehearse-/),
+				basename(root),
+			])
+			expect(inRehearsal.split(sep)).toEqual([rehearsal, expect.not.stringMatching(basename(root))])
+			expect(inRehearsal.length).toBeLessThanOrEqual(40)
+			expect(readdirSync(scratchRoot)).toEqual([])
+		})
+
+		it('a relative file: dependency leaving the repository (file:../core) → resolves from the clone as from the checkout: a hook reading ../core commits; the folder and its links removed after, their target untouched', async () => {
+			const { family, out } = prepareWithSiblings({
+				dependencies: { '@dialecte/core': 'file:../core' },
+				hook: 'test "$(cat ../core/marker.txt)" = core',
+			})
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+
+			const result = await runFolder({ out, argv: ['--rehearse'], scratchRoot })
+
+			expect(result.exitCode).toBe(0)
+			expect(result.text).toContain('rehearsed: 1 commit(s) on main')
+			expect(readdirSync(scratchRoot)).toEqual([])
+			expect(readFileSync(join(family, 'core', 'marker.txt'), 'utf8')).toBe('core\n')
+		})
+
+		it('--keep, file: and link: dependencies on siblings → the rehearsal folder kept, a link per sibling beside the clone reaching the folder the same path reaches from the repository', async () => {
+			const { family, root, out } = prepareWithSiblings({
+				dependencies: { '@dialecte/core': 'file:../core', '@dialecte/scl': 'link:../scl' },
+				hook: 'true',
+			})
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+
+			const result = await runFolder({ out, argv: ['--rehearse', '--keep'], scratchRoot })
+
+			expect(result.exitCode).toBe(0)
+			const [folder] = readdirSync(scratchRoot).map((name) => join(scratchRoot, name))
+			expect(
+				readdirSync(folder)
+					.filter((name) => name !== basename(root))
+					.sort(),
+			).toEqual(expect.arrayContaining(['core', 'scl']))
+			expect(
+				['core', 'scl'].map((name) => ({
+					name,
+					link: lstatSync(join(folder, name)).isSymbolicLink(),
+					reaches: realpathSync(join(folder, name)),
+				})),
+			).toEqual([
+				{ name: 'core', link: true, reaches: realpathSync(join(family, 'core')) },
+				{ name: 'scl', link: true, reaches: realpathSync(join(family, 'scl')) },
+			])
+		})
+
+		it('a file: dependency whose path leaves the rehearsal folder (file:../../far) → no link made, a line naming it; the rehearsal goes on', async () => {
+			const { out } = prepareWithSiblings({
+				dependencies: { far: 'file:../../far' },
+				hook: 'true',
+			})
+			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+
+			const result = await runFolder({ out, argv: ['--rehearse'], scratchRoot })
+
+			expect(result.exitCode).toBe(0)
+			expect(result.lines.filter((line) => line.includes('../../far'))).toHaveLength(1)
+			expect(readdirSync(scratchRoot)).toEqual([])
+		})
+	},
+)
+
 describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it("SIGINT while the hook runs → the clone removed and the hook's child killed", async () => {
 		const { root, lotsPath, out } = prepare()
@@ -1363,15 +1597,22 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 
 		const run = spawn(process.execPath, [CLI_SOURCE, 'handover', 'run', out, '--rehearse'], {
 			env: { ...process.env, TMPDIR: scratchRoot },
-			stdio: 'ignore',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		})
+		let output = ''
+		run.stdout.on('data', function keep(chunk: Buffer) {
+			output += chunk.toString()
 		})
 		const exited = new Promise<number | null>((resolveExit) => run.on('exit', resolveExit))
 		await waitFor({ check: () => existsSync(childPidFile), bound: 30_000 })
 		const childPid = Number(readFileSync(childPidFile, 'utf8').trim())
 		run.kill('SIGINT')
 		const exitCode = await exited
+		const folder = announcedRehearsalFolder(output)
 
 		expect(exitCode).not.toBe(0)
+		expect(['/tmp', realpathSync('/tmp')]).toContain(folder && dirname(folder))
+		expect(folder && existsSync(folder)).toBe(false)
 		expect(
 			readdirSync(scratchRoot).filter((name) => name.startsWith('dialecte-rehearse-')),
 		).toEqual([])
@@ -1402,7 +1643,11 @@ describe(
 
 			const run = spawn(process.execPath, [CLI_SOURCE, 'handover', 'run', out, '--rehearse'], {
 				env: { ...process.env, TMPDIR: scratchRoot },
-				stdio: 'ignore',
+				stdio: ['ignore', 'pipe', 'ignore'],
+			})
+			let output = ''
+			run.stdout.on('data', function keep(chunk: Buffer) {
+				output += chunk.toString()
 			})
 			const exited = new Promise<number | null>((resolveExit) => run.on('exit', resolveExit))
 			await waitFor({ check: () => existsSync(pidFile), bound: 30_000 })
@@ -1414,8 +1659,11 @@ describe(
 			await new Promise((resolve) => setTimeout(resolve, 3_000))
 			const alive = pids.filter(isProcessAlive)
 			for (const pid of alive) process.kill(pid, 'SIGKILL')
+			const folder = announcedRehearsalFolder(output)
 
 			expect(alive).toEqual([])
+			expect(folder).toBeDefined()
+			expect(folder && existsSync(folder)).toBe(false)
 			expect(
 				readdirSync(scratchRoot).filter((name) => name.startsWith('dialecte-rehearse-')),
 			).toEqual([])
@@ -1498,8 +1746,11 @@ describe(
 		it('off a terminal → the lot start line is written before its hook runs, and comes before its commit line', async () => {
 			const { root, out } = prepareWithHook('touch "$(git rev-parse --show-toplevel)/hook-ran"')
 			const lines: { line: string; hookBegan: boolean }[] = []
+			const written: string[] = []
+			removeHookLogs({ lines: written })
 			function record(line: string): void {
 				lines.push({ line, hookBegan: existsSync(join(root, 'hook-ran')) })
+				written.push(line)
 			}
 
 			const exitCode = await runHandoverRun({
@@ -1524,6 +1775,7 @@ describe(
 		it('on a terminal → a spinner line names the lot while its hook runs, the commit line replaces it, no start line, no spinner left', async () => {
 			const { out } = prepareWithHook('true')
 			const terminal = createFakeTerminal({ tty: true })
+			removeHookLogs({ lines: terminal.written })
 
 			const exitCode = await runHandoverRun({
 				argv: [out],
@@ -1673,13 +1925,23 @@ function runLive(params: {
 	write?: (line: string) => void
 	clock?: Clock
 }): Promise<number> {
+	const lines: string[] = []
+	removeHookLogs({ lines })
+	/** `write`, every line kept for the hook logs it names. */
+	function recording(write: (line: string) => void): (line: string) => void {
+		return function recordLine(line) {
+			lines.push(line)
+			write(line)
+		}
+	}
+	const live = { ...params.live, writeLine: recording(params.live.writeLine) }
 	return runHandoverRun({
 		argv: [params.out],
-		write: params.write ?? params.live.writeLine,
+		write: params.write ? recording(params.write) : live.writeLine,
 		clock: params.clock ?? createFakeClock(),
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
-		live: params.live,
+		live,
 	})
 }
 
@@ -3482,7 +3744,7 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		{
 			term: 'rollback',
 			meaning:
-				'a red taken at production code the case had already left: code was put back to show a red',
+				'a red, or a green run proving a case for the first time, taken while the lot moved production code back (a refactor green of cases already green is not flagged)',
 			look: 'look: always; ask why the code went back',
 		},
 		{
@@ -3493,7 +3755,8 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		},
 		{
 			term: 'test code changed around it',
-			meaning: 'a proven case kept at a red run while a helper or its own test file changed',
+			meaning:
+				'a case proven green whose test code (its own test file or a helper) changed around it after its green',
 			look: 'look: each one; the change may weaken what the case proved',
 		},
 		{

@@ -609,7 +609,8 @@ function sum(values: readonly number[]): number {
 /**
  * One line per lot - its commit or `pending`, its files, its lines, its subject (the sized lots' columns
  * aligned) - a merge lot's merge line under its subject, then HEAD (`base → tip · nothing pushed` after a
- * run).
+ * run). On a width that leaves the subject too little room, the subject and the merge line go under the
+ * lot's columns.
  */
 function commitLines(card: HandoverCard): CardLine[] {
 	const sized = card.lots.filter((lot) => !lot.notSized)
@@ -622,8 +623,10 @@ function commitLines(card: HandoverCard): CardLine[] {
 			: `${filesCell(lot).padEnd(fileWidth)}  ${lineCounts(lot).padEnd(countWidth)}`
 		const lead = `${sha}  ${size}  `
 		return [
-			{ text: `${lead}${lot.subject}`, hang: lead.length },
-			...(lot.merge ? [{ text: `${' '.repeat(lead.length)}${lot.merge}`, hang: lead.length }] : []),
+			{ text: `${lead}${lot.subject}`, hang: lead.length, stack: true },
+			...(lot.merge
+				? [{ text: `${' '.repeat(lead.length)}${lot.merge}`, hang: lead.length, stack: true }]
+				: []),
 		]
 	})
 	const head = card.head.slice(0, CARD_SHA_LENGTH)

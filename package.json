@@ -62,5 +62,12 @@
 		"fsevents": true,
 		"file:../../../core": false,
 		"file:../../../../core": false
+	},
+	"dialecte": {
+		"tdd": {
+			"production": [
+				"test/suite-guard"
+			]
+		}
 	}
 }

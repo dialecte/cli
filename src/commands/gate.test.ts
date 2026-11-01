@@ -1,9 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { deadPid } from '../../test/dead-pid.ts'
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
+import {
+	PERSON_WHO_RUNS_THE_REPOSITORY,
+	RUN_THE_HANDOVER,
+	TOUCH_THE_GIT_FOLDER,
+} from '../../test/refusal-wording.constants.ts'
 import {
 	createScratchRepository,
 	git,
@@ -11,6 +17,7 @@ import {
 	writeFiles,
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { runGate } from './gate.ts'
 import { runTdd } from './tdd.ts'
 
@@ -167,9 +174,118 @@ describe('runGate', { timeout: 30_000 }, () => {
 		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(1)
-		expect(result.output).toContain('held by the hand-over /plans/commit.sh')
-		expect(result.output).toContain(`delete ${join(root, '.git/dialecte-handover.lock')}`)
+		expect(result.output).toContain('/plans/commit.sh')
+		expect(result.output).toContain(join(root, '.git/dialecte-handover.lock'))
+		expect(result.output).toMatch(RUN_THE_HANDOVER)
+		expect(result.output).toContain(PERSON_WHO_RUNS_THE_REPOSITORY)
+		expect(result.output).not.toMatch(TOUCH_THE_GIT_FOLDER)
 		expect(existsSync(join(root, 'ran'))).toBe(false)
+	})
+})
+
+/**
+ * A hand-over folder whose lots file names `repository`, with its `commit.sh`, the lock of `root` naming
+ * that script (as `handover <lots.json>` writes them); the run marker naming `runningPid` when given.
+ */
+function writtenHandover(params: {
+	root: string
+	repository: string
+	lotsFile?: boolean
+	runningPid?: number
+}): string {
+	const folder = temporaryFolder('dialecte-handover-')
+	if (params.lotsFile !== false)
+		writeFileSync(
+			join(folder, 'lots.json'),
+			JSON.stringify({
+				repository: params.repository,
+				branch: 'main',
+				head: git({ root: params.root, args: ['rev-parse', 'HEAD'] }).trim(),
+				lots: [{ paths: ['src/'], message: 'feat(read): read answers one' }],
+			}),
+		)
+	writeFileSync(join(folder, 'commit.sh'), '#!/bin/sh\n')
+	if (params.runningPid !== undefined)
+		writeFileSync(
+			join(folder, HANDOVER_RUN_MARKER_FILE),
+			JSON.stringify({ pid: params.runningPid, startedAt: '2026-11-01T10:00:00.000Z' }),
+		)
+	writeFileSync(join(params.root, '.git/dialecte-handover.lock'), `${join(folder, 'commit.sh')}\n`)
+	return folder
+}
+
+describe('runGate under a written hand-over', { timeout: 30_000 }, () => {
+	it('the lock names a hand-over written for this repository (its lots file naming the real path) → the gate runs its steps and records them, one line naming the hand-over it runs under', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		const folder = writtenHandover({ root, repository: realpathSync(root) })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(existsSync(join(root, 'ran'))).toBe(true)
+		expect(existsSync(join(root, '.git/dialecte-gate-fast.json'))).toBe(true)
+		expect(result.output.split('\n').filter((line) => line.includes(folder))).toHaveLength(1)
+	})
+
+	it('the lock names a hand-over of another repository → refused naming the lock and the script holding it, nothing under .git to delete; no step run', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		const other = createScratchRepository()
+		const folder = writtenHandover({ root, repository: other })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain(join(folder, 'commit.sh'))
+		expect(result.output).toContain(join(root, '.git/dialecte-handover.lock'))
+		expect(result.output).toMatch(RUN_THE_HANDOVER)
+		expect(result.output).toContain(PERSON_WHO_RUNS_THE_REPOSITORY)
+		expect(result.output).not.toMatch(TOUCH_THE_GIT_FOLDER)
+		expect(existsSync(join(root, 'ran'))).toBe(false)
+	})
+
+	it('the lock names a script whose folder holds no lots file → refused, no step run', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		const folder = writtenHandover({ root, repository: root, lotsFile: false })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain(join(folder, 'commit.sh'))
+		expect(result.output).toContain(PERSON_WHO_RUNS_THE_REPOSITORY)
+		expect(result.output).not.toMatch(TOUCH_THE_GIT_FOLDER)
+		expect(existsSync(join(root, 'ran'))).toBe(false)
+	})
+
+	it('a hand-over of this repository whose real run is in progress (its run marker naming a live process) → refused, no step run', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		const folder = writtenHandover({ root, repository: root, runningPid: process.pid })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain(folder)
+		expect(result.output).not.toMatch(TOUCH_THE_GIT_FOLDER)
+		expect(existsSync(join(root, 'ran'))).toBe(false)
+	})
+
+	it('a hand-over whose run is in progress → the refusal names its run marker file in the hand-over folder (outside .git), so a person can judge a pid reused by another process', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		const folder = writtenHandover({ root, repository: root, runningPid: process.pid })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain(join(folder, HANDOVER_RUN_MARKER_FILE))
+	})
+
+	it('a hand-over of this repository whose run marker names a process that is gone → not running: the gate runs its steps', async () => {
+		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
+		writtenHandover({ root, repository: root, runningPid: deadPid() })
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(existsSync(join(root, 'ran'))).toBe(true)
 	})
 })
 
@@ -266,6 +382,17 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 
 		expect(readFileSync(join(root, 'light.txt'), 'utf8').trim()).toBe('free')
 		expect(readFileSync(join(root, 'browser.txt'), 'utf8').trim()).toBe('held')
+	})
+
+	it('a step → run with GIT_OPTIONAL_LOCKS=0, so a git status inside it never takes index.lock', async () => {
+		const root = packageWith({
+			fast: [{ name: 'locks', run: 'printf %s "$GIT_OPTIONAL_LOCKS" > locks.txt' }],
+		})
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(readFileSync(join(root, 'locks.txt'), 'utf8')).toBe('0')
 	})
 
 	it('--full, a light step running dialecte lock run --no-wait → it runs at once under the gate, the holder variable naming the gate with its start', async () => {

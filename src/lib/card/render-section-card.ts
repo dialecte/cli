@@ -2,9 +2,11 @@
  * A card in sections a person reads before acting: a titled box, each section opened by a
  * `├─ <name> ─┤` rule, a closing rule carrying a short text (too long for it: in the box above
  * a plain closing rule). With a width, the box is exactly that wide: every line wraps inside it
- * with a hanging indent under its text column, a word wider than the room cut (no character
- * lost), or a line marked so cut to one row with `…`; a mark sits at the right edge of a line's
- * first row. Colour only when asked for, as on a terminal: a line's first word in its emphasis.
+ * with a hanging indent under its text column, never into fewer than `MINIMUM_TEXT_COLUMNS`
+ * columns (the hang reduced, a stacked line's text put under its lead), a word wider than the
+ * room cut (no character lost), or a line marked so cut to one row with `…` when the cut keeps
+ * that room; a mark sits at the right edge of a line's first row. Colour only when asked for,
+ * as on a terminal: a line's first word in its emphasis.
  */
 import {
 	BOLD_RESET_CODE,
@@ -12,6 +14,8 @@ import {
 	CUT_MARK,
 	EMPHASIS_CODES,
 	DEFAULT_CARD_COLUMNS,
+	MINIMUM_TEXT_COLUMNS,
+	STACKED_INDENT,
 	TRAILING_GAP,
 } from './card.constants.ts'
 
@@ -106,7 +110,8 @@ function rowWidth(row: BoxRow): number {
 
 /**
  * The rows of a card line: as it is without a width, else wrapped to the box's text width (less the
- * room its right-edge mark takes), or cut to one row; the mark on the first row.
+ * room its right-edge mark takes), stacked under its lead when its hang leaves too little room, or cut to
+ * one row when the cut keeps enough room after its hang; the mark on the first row.
  */
 function wrapCardLine(params: { line: CardLine; width: number | undefined }): BoxRow[] {
 	const { line } = params
@@ -116,10 +121,56 @@ function wrapCardLine(params: { line: CardLine; width: number | undefined }): Bo
 		params.width - 4 - (line.trailing ? line.trailing.length + TRAILING_GAP : 0),
 		1,
 	)
-	if (line.cut)
-		return [{ text: cutText({ text: line.text, width: room }), emphasis: line.emphasis }]
-	return wrapText({ text: line.text, hang: line.hang, width: room }).map((text, index) =>
+	const texts = cardLineTexts({ line, room })
+	return texts.map((text, index) =>
 		index === 0 ? { text, emphasis: line.emphasis, ...mark } : { text },
+	)
+}
+
+/** The texts of a card line's rows in `room` columns: cut, stacked or wrapped. */
+function cardLineTexts(params: { line: CardLine; room: number }): string[] {
+	const { line, room } = params
+	if (line.cut) {
+		const cut = cutText({ text: line.text, width: room })
+		const keptAfterHang =
+			cut.length - ` ${CUT_MARK}`.length - hangWithin({ hang: line.hang, width: room })
+		if (cut === line.text || keptAfterHang >= MINIMUM_TEXT_COLUMNS) return [cut]
+	}
+	if (line.stack && room - line.hang < MINIMUM_TEXT_COLUMNS) {
+		const lead = line.text.slice(0, line.hang).trimEnd()
+		const rest = line.text.slice(line.hang).trimStart()
+		const indent = ' '.repeat(STACKED_INDENT)
+		return [
+			...(lead.trim() ? wrapLead({ lead, room }) : []),
+			...wrapText({ text: `${indent}${rest}`, hang: STACKED_INDENT, width: room }),
+		]
+	}
+	return wrapText({ text: line.text, hang: line.hang, width: room })
+}
+
+/**
+ * A stacked line's lead in `room` columns: broken only between its columns (runs of two spaces or more,
+ * so `+310 −87` stays together), each continuation row `STACKED_INDENT` columns in; a column wider than
+ * its row wrapped by words.
+ */
+function wrapLead(params: { lead: string; room: number }): string[] {
+	const { room } = params
+	const indent = ' '.repeat(STACKED_INDENT)
+	const parts = params.lead.split(/( {2,})/)
+	const rows: string[] = []
+	let current = parts[0]
+	for (let index = 1; index < parts.length; index += 2) {
+		const column = parts[index + 1]
+		const joined = `${current}${parts[index]}${column}`
+		if (joined.length <= room || !current.trim()) current = joined
+		else {
+			rows.push(current)
+			current = `${indent}${column}`
+		}
+	}
+	rows.push(current)
+	return rows.flatMap((row) =>
+		row.length <= room ? [row] : wrapText({ text: row, hang: STACKED_INDENT, width: room }),
 	)
 }
 
@@ -143,17 +194,25 @@ function cutText(params: { text: string; width: number }): string {
 
 /**
  * The text in lines no wider than `width`: broken between words, each continuation line indented
- * by `hang` (less when the width leaves no room), a word wider than the room cut; the leading
- * spaces of the text kept.
+ * by `hang` (less when it would leave fewer than `MINIMUM_TEXT_COLUMNS` columns: the text's own
+ * leading spaces then reduced with it), a word wider than the room after the hang on a row of its
+ * own `STACKED_INDENT` columns in when it fits there (the next words fill that row), else cut; the
+ * leading spaces of the text kept.
  */
 export function wrapText(params: { text: string; hang: number; width: number }): string[] {
 	const { width } = params
-	const indent = ' '.repeat(Math.max(Math.min(params.hang, width - 1), 0))
+	const hang = hangWithin({ hang: params.hang, width })
+	const indent = ' '.repeat(hang)
+	const leading = /^\s*/.exec(params.text)?.[0] ?? ''
+	const text =
+		hang < params.hang && leading.length > hang
+			? `${' '.repeat(hang)}${params.text.slice(leading.length)}`
+			: params.text
 	const lines: string[] = []
 	let current = ''
 	let started = false
 	let space = ''
-	for (const token of params.text.match(/\s+|\S+/g) ?? ['']) {
+	for (const token of text.match(/\s+|\S+/g) ?? ['']) {
 		if (/^\s/.test(token)) {
 			space = token
 			continue
@@ -171,6 +230,10 @@ export function wrapText(params: { text: string; hang: number; width: number }):
 		} else current = `${current}${space}`
 		space = ''
 		let word = token
+		if (started && word.length > width - indent.length && STACKED_INDENT + word.length <= width) {
+			current = `${' '.repeat(STACKED_INDENT)}${word}`
+			continue
+		}
 		while (current.length + word.length > width) {
 			const room = width - current.length
 			if (room <= 0) {
@@ -187,6 +250,11 @@ export function wrapText(params: { text: string; hang: number; width: number }):
 	}
 	lines.push(current)
 	return lines
+}
+
+/** A hanging indent within `width`: reduced so that it leaves at least `MINIMUM_TEXT_COLUMNS` columns. */
+function hangWithin(params: { hang: number; width: number }): number {
+	return Math.max(Math.min(params.hang, params.width - MINIMUM_TEXT_COLUMNS), 0)
 }
 
 /** The width a card takes: the terminal's columns, else `$COLUMNS` when set, else the default. */

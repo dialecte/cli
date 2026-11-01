@@ -4,9 +4,10 @@
  * parent (`inBundle`) and, when absent, those npm may leave out here (`optional`, or an `os` / `cpu` list
  * this machine does not match). A `devOptional` one is installed by a development install: checked.
  */
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { NODE_MODULES_PREFIX, PACKAGE_LOCK_FILE } from './worktree.constants.ts'
 
 import type { LockfileEntry, LockfileRead } from './worktree.types.ts'
@@ -46,14 +47,4 @@ function matchesHere(params: { list: string[] | undefined; value: string }): boo
 	const allowed = list.filter((item) => !item.startsWith('!'))
 	if (excluded.includes(params.value)) return false
 	return allowed.length === 0 || allowed.includes(params.value)
-}
-
-/** Something at the path, a dangling link included. */
-function isPresent(path: string): boolean {
-	try {
-		lstatSync(path)
-		return true
-	} catch {
-		return false
-	}
 }

@@ -10,6 +10,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { GIT_READ_ENVIRONMENT } from '../git.constants.ts'
 import {
 	BROWSER_COMMAND_PATTERN,
 	BROWSER_CONFIG_PATTERN,
@@ -142,6 +143,8 @@ async function runStep(params: {
 		environment: {
 			FORCE_COLOR: '0',
 			NO_COLOR: '1',
+			// a git status a step runs while a hand-over commits must not take index.lock
+			...GIT_READ_ENVIRONMENT,
 			...(params.holderVariable && { [MACHINE_LOCK_HOLDER_VARIABLE]: params.holderVariable }),
 		},
 		clock: params.clock,

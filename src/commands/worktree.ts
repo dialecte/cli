@@ -17,6 +17,7 @@ import { renderCard } from '../lib/card/render-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { LIST_DEPTH } from '../lib/handover/handover.constants.ts'
 import { findHandoverFolders } from '../lib/handover/list-handovers.ts'
+import { rehearsalScratchRoot } from '../lib/handover/rehearse-handover.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
@@ -51,7 +52,11 @@ export async function run(argv: string[]): Promise<void> {
 				? await runWorktreePrune({
 						argv: rest,
 						cwd: process.cwd(),
-						scratchRoot: tmpdir(),
+						scratchRoot: rehearsalScratchRoot({
+							platform: process.platform,
+							systemTemporaryFolder: tmpdir(),
+						}),
+						formerScratchRoot: tmpdir(),
 						isTerminal: Boolean(process.stdin.isTTY && process.stdout.isTTY),
 						confirm: askOnTerminal,
 					})
@@ -90,6 +95,11 @@ export async function runWorktreePrune(params: {
 	cwd: string
 	/** Where rehearsal clones are looked for. */
 	scratchRoot: string
+	/**
+	 * Where earlier cli versions made rehearsal clones (the system's temporary folder), looked in too when
+	 * it is not `scratchRoot`.
+	 */
+	formerScratchRoot?: string
 	isTerminal: boolean
 	confirm: (question: string) => Promise<boolean>
 }): Promise<CommandResult> {
@@ -105,6 +115,7 @@ export async function runWorktreePrune(params: {
 			depth: LIST_DEPTH,
 		}),
 		scratchRoot: params.scratchRoot,
+		formerScratchRoot: params.formerScratchRoot,
 	})
 	const removals = [...plan.repositories.flatMap((repository) => repository.items), ...plan.scratch]
 		.filter((item) => item.command)
