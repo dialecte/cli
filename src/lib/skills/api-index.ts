@@ -5,13 +5,17 @@
  *
  * One row per method, not per route: a method reachable from several roots (the perf helper on
  * `doc.query`, `doc` and `project`; every read also on `tx`) shares its declaration, and is listed once
- * under its canonical route.
+ * under its canonical route. The functions exported by the package entries (`@dialecte/core/sqlite`) are
+ * indexed too, under `<specifier>.<name>`; a function also reached from a root is that root's row.
  */
 import {
 	PLACEHOLDER_MARKER,
 	QUOTED_SENTENCE_MIN_WORDS,
 	QUOTED_TEXT_PATTERN,
+	EXPORT_TABLE_HEADER,
+	METHOD_TABLE_HEADER,
 	ROOT_PRIORITY,
+	TABLE_SEPARATOR,
 	TEXT_COLLATOR,
 	UNINDEXED_GROUPS,
 } from './api-index.constants.ts'
@@ -20,19 +24,46 @@ import { INLINE_CODE_PATTERN } from './skill-file.constants.ts'
 import type { MethodEntry } from '../discover.types.ts'
 import type { IndexedMethod } from './api-index.types.ts'
 
+/**
+ * The method table, then one section per package entry, in the order the entries come (the `exports` map's),
+ * holding the functions whose canonical route is an export of that entry, written by their name.
+ */
 export function renderApiIndex(entries: readonly MethodEntry[]): string {
-	const rows = indexedMethods(entries).map(function row({
-		entry,
-		otherRoutes,
-	}: IndexedMethod): string {
-		const also = otherRoutes.length
-			? ` (also ${otherRoutes.map((route) => `\`${displayPath(route)}\``).join(', ')})`
-			: ''
-		const summary = entry.summary ?? '-'
-		const intents = entry.intents.join('; ') || '-'
-		return `| \`${displayPath(entry.path)}\`${also} | ${tableCell(summary)} | ${tableCell(intents)} |`
+	const indexed = indexedMethods(entries)
+	const methodRows = indexed
+		.filter(({ entry }) => entry.entry === undefined)
+		.map((method) => indexRow({ method, name: displayPath(method.entry.path) }))
+	const sections = entryOrder(entries).flatMap(function section(specifier: string): string[] {
+		const rows = indexed
+			.filter(({ entry }) => entry.entry === specifier)
+			.map((method) => ({ method, name: exportName(method.entry) }))
+			.sort((left, right) => TEXT_COLLATOR.compare(left.name, right.name))
+			.map(indexRow)
+		return rows.length
+			? ['', `### \`${specifier}\``, '', EXPORT_TABLE_HEADER, TABLE_SEPARATOR, ...rows]
+			: []
 	})
-	return ['| Method | What it answers | Reach for it to |', '|---|---|---|', ...rows].join('\n')
+	return [METHOD_TABLE_HEADER, TABLE_SEPARATOR, ...methodRows, ...sections].join('\n')
+}
+
+function indexRow(params: { method: IndexedMethod; name: string }): string {
+	const { entry, otherRoutes } = params.method
+	const also = otherRoutes.length
+		? ` (also ${otherRoutes.map((route) => `\`${displayPath(route)}\``).join(', ')})`
+		: ''
+	const summary = entry.summary ?? '-'
+	const intents = entry.intents.join('; ') || '-'
+	return `| \`${params.name}\`${also} | ${tableCell(summary)} | ${tableCell(intents)} |`
+}
+
+/** The package entries in the order their exports come: the order of the `exports` map. */
+function entryOrder(entries: readonly MethodEntry[]): string[] {
+	return [...new Set(entries.flatMap((entry) => (entry.entry === undefined ? [] : [entry.entry])))]
+}
+
+/** The function name of an export route: `@dialecte/core/sqlite.connectHub` → `connectHub`. */
+function exportName(entry: MethodEntry): string {
+	return entry.entry === undefined ? entry.path : entry.path.slice(entry.entry.length + 1)
 }
 
 export function renderIntentIndex(entries: readonly MethodEntry[]): string {
@@ -120,12 +151,18 @@ export function indexedMethods(entries: readonly MethodEntry[]): IndexedMethod[]
 		)
 }
 
+/**
+ * Roots first (in their priority, the shorter route first); then the exports, in the order they come (the
+ * entries' order, `sort` being stable): the export of the first entry of the `exports` map names the function.
+ */
 function compareRoutes(left: MethodEntry, right: MethodEntry): number {
-	return rootRank(left.path) - rootRank(right.path) || left.path.length - right.path.length
+	if (left.entry !== undefined && right.entry !== undefined) return 0
+	return rootRank(left) - rootRank(right) || left.path.length - right.path.length
 }
 
-function rootRank(path: string): number {
-	const rank = ROOT_PRIORITY.indexOf(path.split('.')[0])
+function rootRank(entry: MethodEntry): number {
+	if (entry.entry !== undefined) return ROOT_PRIORITY.length
+	const rank = ROOT_PRIORITY.indexOf(entry.path.split('.')[0])
 	return rank === -1 ? ROOT_PRIORITY.length : rank
 }
 

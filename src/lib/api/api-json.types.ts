@@ -3,11 +3,29 @@ import type { ROOTS } from '../discover.constants.ts'
 /** The root a method hangs from: a read on `doc.query`, a write on `tx`, the document or the project. */
 export type MethodRoot = (typeof ROOTS)[number]
 
-/** One method of a package as `api.json` ships it: what `dialecte api find` and `api show` read. */
-export type ApiMethod = {
-	/** The canonical route, as a caller writes it: `doc.query.info.of`, `tx.reference.applyUuidRemap`. */
-	path: string
+/**
+ * One method of a package as `api.json` ships it: what `dialecte api find` and `api show` read. A method of a
+ * root or a function a package entry exports: `root` tells them apart, and only an export has an `entry`.
+ */
+export type ApiMethod = ApiRootMethod | ApiExportedFunction
+
+/** A method reached from a root (`q`, `tx`, `doc`, `project`). */
+export type ApiRootMethod = ApiMethodFields & {
 	root: MethodRoot
+	entry?: undefined
+}
+
+/** A function a package entry exports on its own (`@dialecte/core/sqlite.connectHub`). */
+export type ApiExportedFunction = ApiMethodFields & {
+	root: 'export'
+	/** The package entry the function comes from ('@dialecte/core/sqlite'). */
+	entry: string
+}
+
+/** What every row of `api.json` holds, whatever its root. */
+export type ApiMethodFields = {
+	/** The canonical route, as a caller writes it: `doc.query.info.of`, `@dialecte/core/sqlite.connectHub`. */
+	path: string
 	/** The same method reached from other roots. */
 	otherRoutes: string[]
 	/** As the type checker prints it, the bound query or transaction left out. */

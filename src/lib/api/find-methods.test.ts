@@ -2,11 +2,26 @@ import { findMethods, wordsOf } from './find-methods.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ApiJson, ApiMethod } from './api-json.types.ts'
+import type { ApiExportedFunction, ApiJson, ApiRootMethod } from './api-json.types.ts'
 
-function method(params: Partial<ApiMethod> & { path: string }): ApiMethod {
+function method(params: Partial<ApiRootMethod> & { path: string }): ApiRootMethod {
 	return {
 		root: 'q',
+		otherRoutes: [],
+		signature: '() => void',
+		summary: undefined,
+		intents: [],
+		declaredAt: undefined,
+		example: undefined,
+		...params,
+	}
+}
+
+function exportedFunction(
+	params: Partial<ApiExportedFunction> & { path: string; entry: string },
+): ApiExportedFunction {
+	return {
+		root: 'export',
 		otherRoutes: [],
 		signature: '() => void',
 		summary: undefined,
@@ -327,4 +342,26 @@ describe('wordsOf', () => {
 	}
 	for (const [text, expected] of Object.entries(testCases))
 		it(`${text} → ${expected.join(' ')}`, () => expect(wordsOf(text)).toEqual(expected))
+})
+
+describe('findMethods, package exports', () => {
+	const EXPORTS: ApiJson = {
+		package: '@acme/sqlite-tools',
+		methods: [
+			exportedFunction({
+				path: '@acme/sqlite-tools/sqlite.connectHub',
+				entry: '@acme/sqlite-tools/sqlite',
+			}),
+		],
+	}
+
+	it('a need naming words of the function name and of the specifier → only the name words count', () => {
+		const [first] = findMethods({ indexes: [EXPORTS], need: 'connect hub sqlite', limit: 3 })
+
+		expect(first?.hits).toEqual({ intent: 0, summary: 0, name: 2 })
+	})
+
+	it('a need naming only a word of the specifier → no name hit, not found', () => {
+		expect(findMethods({ indexes: [EXPORTS], need: 'sqlite', limit: 3 })).toEqual([])
+	})
 })

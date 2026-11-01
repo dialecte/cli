@@ -9,8 +9,10 @@
  */
 import {
 	CORE_GROUPS,
+	EMPHASIS_UNDERSCORE_PATTERN,
 	GENERATED_BLOCK_PATTERN,
 	GENERATED_MARKER_PATTERN,
+	STRONG_UNDERSCORE_PATTERN,
 } from './generated-blocks.constants.ts'
 
 export function renderExtensionsTable(methodPaths: readonly string[]): string {
@@ -116,17 +118,37 @@ export function findStaleGeneratedKinds(params: {
 	return staleKinds
 }
 
+/**
+ * The content without what a formatter may change: the padding of table cells, the length of a separator
+ * row, and the emphasis marker (`_x_` for `*x*`, `__x__` for `**x**`; code spans left as they are).
+ */
 function layoutFree(content: string): string {
 	return content
 		.split('\n')
 		.map(function withoutPadding(line: string): string {
-			return line
-				.trim()
-				.replace(/\s*\|\s*/g, '|')
-				.replace(/-{3,}/g, '---')
+			return sameEmphasis(
+				line
+					.trim()
+					.replace(/\s*\|\s*/g, '|')
+					.replace(/-{3,}/g, '---'),
+			)
 		})
 		.filter((line) => line !== '')
 		.join('\n')
+}
+
+/** Underscore emphasis written with asterisks, outside code spans (the odd parts of a split on backticks). */
+function sameEmphasis(line: string): string {
+	return line
+		.split('`')
+		.map((part, index) =>
+			index % 2 === 1
+				? part
+				: part
+						.replace(STRONG_UNDERSCORE_PATTERN, '**$1**')
+						.replace(EMPHASIS_UNDERSCORE_PATTERN, '$1*$2*'),
+		)
+		.join('`')
 }
 
 /** A start marker whose next marker is not an end: generating would swallow the next block. */

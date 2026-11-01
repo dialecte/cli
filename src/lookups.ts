@@ -15,5 +15,11 @@ export { answerSchema } from './lib/schema/answer-schema.ts'
 
 export type { MemberEntriesRead } from './commands/members.types.ts'
 export type { SchemaDialectesRead } from './commands/schema.types.ts'
-export type { ApiJson } from './lib/api/api-json.types.ts'
+export type {
+	ApiExportedFunction,
+	ApiJson,
+	ApiMethod,
+	ApiMethodFields,
+	ApiRootMethod,
+} from './lib/api/api-json.types.ts'
 export type { CommandOutput } from './lib/command-output.types.ts'

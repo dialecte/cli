@@ -27,6 +27,7 @@ import { renderJsDocText } from './render-jsdoc-text.ts'
 import ts from 'typescript'
 
 import type { DiscoverParams, MethodEntry } from './discover.types.ts'
+import type { ExportEntry } from './skills/export-entries.types.ts'
 
 export function discoverMethodPaths(params: DiscoverParams): string[] {
 	return discoverMethods(params).map((entry) => entry.path)
@@ -76,6 +77,60 @@ export function discoverMethods(params: DiscoverParams): MethodEntry[] {
 	} finally {
 		rmSync(entryPath, { force: true })
 	}
+}
+
+/**
+ * One entry per callable value export of the package entries (a function, an arrow or function-expression
+ * const), route `<specifier>.<name>`, in the order of the entries. Each is followed through its re-exports to
+ * the function that declares it, as the root walk does: the same declaration key whatever the route, and its
+ * declared signature, no parameter dropped. Classes, constants and types are not callable values: left out.
+ */
+export function discoverExports(params: {
+	entries: readonly ExportEntry[]
+	tsconfig: string
+	root: string
+}): MethodEntry[] {
+	const { root } = params
+	if (params.entries.length === 0) return []
+	const parsed = ts.parseJsonConfigFileContent(
+		ts.readConfigFile(join(root, params.tsconfig), ts.sys.readFile).config,
+		ts.sys,
+		root,
+	)
+	const program = ts.createProgram(
+		params.entries.map((entry) => join(root, entry.source)),
+		{ ...parsed.options, noEmit: true, rootDir: root },
+	)
+	const checker = program.getTypeChecker()
+	return params.entries.flatMap((entry) => entryExports({ checker, program, entry, root }))
+}
+
+function entryExports(params: {
+	checker: ts.TypeChecker
+	program: ts.Program
+	entry: ExportEntry
+	root: string
+}): MethodEntry[] {
+	const { checker, entry, root } = params
+	const sourceFile = params.program.getSourceFile(join(root, entry.source))
+	const moduleSymbol = sourceFile && checker.getSymbolAtLocation(sourceFile)
+	if (!moduleSymbol) return []
+	return checker.getExportsOfModule(moduleSymbol).flatMap((exported): MethodEntry[] => {
+		const target =
+			exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
+		if (!(target.flags & ts.SymbolFlags.Value) || target.flags & ts.SymbolFlags.Class) return []
+		const type = checker.getTypeOfSymbol(target)
+		if (type.getCallSignatures().length === 0) return []
+		const { documentation, declaringSymbol } = documentationOf({ checker, symbol: exported, root })
+		return [
+			{
+				path: `${entry.specifier}.${exported.getName()}`,
+				signature: signatureOf({ checker, boundType: type, declaringSymbol }),
+				...documentation,
+				entry: entry.specifier,
+			},
+		]
+	})
 }
 
 function walkMembers(params: {
@@ -283,12 +338,14 @@ function documentationOf(params: { checker: ts.TypeChecker; symbol: ts.Symbol; r
 		}
 	}
 	const declaringFunction = lastDeclared(visited) ?? declaringSymbol
+	// no summary: the tags of the function still count (`/** @internal */` hides it)
+	const tags = declaringFunction?.getJsDocTags(checker) ?? []
 	return {
 		documentation: {
 			summary: undefined,
-			intents: [],
-			example: undefined,
-			internal: false,
+			intents: intentsOf(tags),
+			example: exampleOf(tags),
+			internal: tags.some((tag) => tag.name === 'internal'),
 			definedInPackage: isDeclaredInPackage({ symbol: declaringFunction, root: params.root }),
 			declaredAt: declarationKey({ symbol: declaringFunction, root: params.root }),
 		},

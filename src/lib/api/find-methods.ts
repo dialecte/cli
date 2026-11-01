@@ -78,7 +78,7 @@ function scoreMethod(params: {
 	const hits = {
 		intent: sharedCount({ text: method.intents.join(' '), needWords }),
 		summary: sharedCount({ text: method.summary ?? '', needWords }),
-		name: sharedCount({ text: routeName(method.path), needWords }),
+		name: sharedCount({ text: routeName(method), needWords }),
 	}
 	const best = Math.max(0, ...intentMatches)
 	return {
@@ -93,9 +93,11 @@ function sharedCount(params: { text: string; needWords: ReadonlySet<string> }): 
 	return new Set(wordsOf(params.text).filter((word) => params.needWords.has(word))).size
 }
 
-/** The route below its root: `doc.query.info.of` → `info.of`. */
-function routeName(path: string): string {
-	return path.replace(/^(doc\.query|tx|doc|project)\./, '')
+/** The route below its root (`doc.query.info.of` → `info.of`); an export's name without its entry. */
+function routeName(method: ApiMethod): string {
+	if (method.entry !== undefined && method.path.startsWith(`${method.entry}.`))
+		return method.path.slice(method.entry.length + 1)
+	return method.path.replace(/^(doc\.query|tx|doc|project)\./, '')
 }
 
 function compareFound(left: FoundMethod, right: FoundMethod): number {

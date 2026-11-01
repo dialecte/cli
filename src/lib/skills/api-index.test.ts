@@ -265,3 +265,271 @@ describe('findQuotedSentences', () => {
 		})
 	}
 })
+
+function exportEntry(
+	params: Partial<MethodEntry> & { name: string; specifier: string },
+): MethodEntry {
+	const { name, specifier, ...rest } = params
+	return entry({
+		path: `${specifier}.${name}`,
+		entry: specifier,
+		declaredAt: `src/${specifier.replace(/\W+/g, '-')}.ts:${name}`,
+		...rest,
+	})
+}
+
+describe('renderApiIndex, package exports', () => {
+	it('an export sharing its declaration with q.x → one row doc.query.x, the export route in (also ...), no entry section row', () => {
+		const rendered = renderApiIndex([
+			entry({ path: 'q.x', summary: 'Reads x.', intents: ['read x'], declaredAt: 'src/x.ts:0' }),
+			entry({
+				path: '@acme/pkg.x',
+				entry: '@acme/pkg',
+				summary: 'Reads x.',
+				intents: ['read x'],
+				declaredAt: 'src/x.ts:0',
+			}),
+		])
+
+		expect(rendered).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `doc.query.x` (also `@acme/pkg.x`) | Reads x. | read x |',
+			].join('\n'),
+		)
+	})
+
+	it('exports of two entries → after the method table one section per entry in entry order, rows by name', () => {
+		const rendered = renderApiIndex([
+			entry({ path: 'q.info.of', summary: 'Title.', intents: ['label'] }),
+			exportEntry({
+				specifier: '@acme/pkg/sqlite',
+				name: 'connectHub',
+				summary: 'Connect.',
+				intents: ['open', 'reach'],
+			}),
+			exportEntry({ specifier: '@acme/pkg', name: 'zeta', summary: undefined, intents: [] }),
+			exportEntry({
+				specifier: '@acme/pkg/sqlite',
+				name: 'attach',
+				summary: 'Attach | pipe.',
+				intents: ['attach'],
+			}),
+			exportEntry({ specifier: '@acme/pkg', name: 'alpha', summary: 'Alpha.', intents: ['start'] }),
+		])
+
+		expect(rendered).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `doc.query.info.of` | Title. | label |',
+				'',
+				'### `@acme/pkg/sqlite`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `attach` | Attach \\| pipe. | attach |',
+				'| `connectHub` | Connect. | open; reach |',
+				'',
+				'### `@acme/pkg`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `alpha` | Alpha. | start |',
+				'| `zeta` | - | - |',
+			].join('\n'),
+		)
+	})
+
+	it('a documented @internal export → absent from the api block beside a documented export', () => {
+		const rendered = renderApiIndex([
+			exportEntry({ specifier: '@acme/pkg', name: 'shown', summary: 'Shown.', intents: ['show'] }),
+			exportEntry({
+				specifier: '@acme/pkg',
+				name: 'plumbing',
+				summary: 'Plumbing.',
+				intents: ['plumb'],
+				internal: true,
+			}),
+		])
+
+		expect(rendered).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'',
+				'### `@acme/pkg`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `shown` | Shown. | show |',
+			].join('\n'),
+		)
+	})
+})
+
+describe('renderApiIndex, the same function in two entries', () => {
+	it('exported by . and ./test (. first) → one row in the . section, the ./test route in (also ...), no ./test section row', () => {
+		const shared = { summary: 'Helps.', intents: ['help'], declaredAt: 'src/helper.ts:0' }
+		const rendered = renderApiIndex([
+			exportEntry({ specifier: '@acme/pkg', name: 'helper', ...shared }),
+			exportEntry({ specifier: '@acme/pkg/test', name: 'helper', ...shared }),
+		])
+
+		expect(rendered).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'',
+				'### `@acme/pkg`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `helper` (also `@acme/pkg/test.helper`) | Helps. | help |',
+			].join('\n'),
+		)
+	})
+})
+
+describe('renderApiIndex, entry order decides the canonical export', () => {
+	const shared = { summary: 'Helps.', intents: ['help'], declaredAt: 'src/helper.ts:0' }
+	const LONGER_FIRST = [
+		exportEntry({ specifier: '@acme/pkg/testing', name: 'helper', ...shared }),
+		exportEntry({ specifier: '@acme/pkg/a', name: 'helper', ...shared }),
+	]
+
+	it('map order ./testing then ./a, the function on both → the row sits in the ./testing section, also names the ./a route', () => {
+		expect(renderApiIndex(LONGER_FIRST)).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'',
+				'### `@acme/pkg/testing`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `helper` (also `@acme/pkg/a.helper`) | Helps. | help |',
+			].join('\n'),
+		)
+	})
+
+	it('the same two entries → the intent row names the same canonical route', () => {
+		expect(renderIntentIndex(LONGER_FIRST)).toBe(
+			['| When you need to... | Use |', '|---|---|', '| help | `@acme/pkg/testing.helper` |'].join(
+				'\n',
+			),
+		)
+	})
+
+	it('a dependency re-export (definedInPackage false) beside a documented export → no section row for it', () => {
+		expect(
+			renderApiIndex([
+				exportEntry({ specifier: '@acme/pkg', name: 'own', summary: 'Own.', intents: ['own it'] }),
+				exportEntry({
+					specifier: '@acme/pkg',
+					name: 'fromDependency',
+					summary: 'Theirs.',
+					intents: ['use theirs'],
+					definedInPackage: false,
+				}),
+			]),
+		).toBe(
+			[
+				'| Method | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'',
+				'### `@acme/pkg`',
+				'',
+				'| Function | What it answers | Reach for it to |',
+				'|---|---|---|',
+				'| `own` | Own. | own it |',
+			].join('\n'),
+		)
+	})
+})
+
+describe('renderIntentIndex, package exports', () => {
+	it('export rows → listed as <specifier>.<name>; a documented @internal export is absent', () => {
+		expect(
+			renderIntentIndex([
+				exportEntry({
+					specifier: '@acme/pkg/sqlite',
+					name: 'connectHub',
+					intents: ['open the hub'],
+				}),
+				exportEntry({
+					specifier: '@acme/pkg',
+					name: 'plumbing',
+					summary: 'Plumbing.',
+					intents: ['plumb'],
+					internal: true,
+				}),
+			]),
+		).toBe(
+			[
+				'| When you need to... | Use |',
+				'|---|---|',
+				'| open the hub | `@acme/pkg/sqlite.connectHub` |',
+			].join('\n'),
+		)
+	})
+})
+
+describe('findUndocumentedMethods and findQuotedSentences, package exports', () => {
+	const testCases: Record<string, { entries: MethodEntry[]; expected: string[] }> = {
+		'export without summary → message names the route': {
+			entries: [exportEntry({ specifier: '@acme/pkg/sub', name: 'run', summary: undefined })],
+			expected: ['`@acme/pkg/sub.run` has no JSDoc summary'],
+		},
+		'export without @intent → message names the route': {
+			entries: [exportEntry({ specifier: '@acme/pkg/sub', name: 'run', intents: [] })],
+			expected: ['`@acme/pkg/sub.run` has no @intent tag'],
+		},
+		'export with FILL: in summary and intent → placeholder messages name the route': {
+			entries: [
+				exportEntry({
+					specifier: '@acme/pkg/sub',
+					name: 'run',
+					summary: `${PLACEHOLDER_MARKER} what it answers`,
+					intents: [`${PLACEHOLDER_MARKER} the goal`],
+				}),
+			],
+			expected: [
+				'`@acme/pkg/sub.run` JSDoc summary is still a placeholder: write it',
+				'`@acme/pkg/sub.run` @intent is still a placeholder: write it',
+			],
+		},
+		'@internal export without summary and @intent → nothing reported': {
+			entries: [
+				exportEntry({
+					specifier: '@acme/pkg/sub',
+					name: 'plumbing',
+					summary: undefined,
+					intents: [],
+					internal: true,
+				}),
+			],
+			expected: [],
+		},
+	}
+
+	for (const [title, testCase] of Object.entries(testCases))
+		it(title, () => {
+			expect(findUndocumentedMethods(testCase.entries)).toEqual(testCase.expected)
+		})
+
+	it('export whose summary quotes a sentence → message names the route', () => {
+		expect(
+			findQuotedSentences([
+				exportEntry({
+					specifier: '@acme/pkg/sub',
+					name: 'run',
+					summary: 'Returns "the name of the bay" as given.',
+				}),
+			]),
+		).toEqual([
+			'`@acme/pkg/sub.run` summary quotes a sentence: rephrase it, generated pages republish JSDoc',
+		])
+	})
+})

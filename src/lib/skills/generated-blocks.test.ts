@@ -177,3 +177,30 @@ describe('findUnclosedGeneratedBlocks', () => {
 		})
 	}
 })
+
+describe('findStaleGeneratedKinds, emphasis rewritten by a formatter', () => {
+	const RENDERED = [
+		'| Function | What it answers |',
+		'|---|---|',
+		'| `of` | The *scope* and **key** of it. |',
+	].join('\n')
+
+	function staleKindsOf(content: string): string[] {
+		const markdown = `<!-- dialecte-skills:generated api -->\n${content}\n<!-- /dialecte-skills:generated -->`
+		return findStaleGeneratedKinds({ markdown, blocks: { api: RENDERED } })
+	}
+
+	it('rendered *scope* and **key**, page _scope_ and __key__ → fresh', () => {
+		expect(
+			staleKindsOf(RENDERED.replace('*scope*', '_scope_').replace('**key**', '__key__')),
+		).toEqual([])
+	})
+
+	it('rendered *scope*, page _scope_ only → fresh', () => {
+		expect(staleKindsOf(RENDERED.replace('*scope*', '_scope_'))).toEqual([])
+	})
+
+	it('a real word change under rewritten emphasis (scope vs scopes) → stale', () => {
+		expect(staleKindsOf(RENDERED.replace('*scope*', '_scopes_'))).toEqual(['api'])
+	})
+})

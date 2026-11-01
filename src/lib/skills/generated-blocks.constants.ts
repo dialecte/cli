@@ -8,3 +8,9 @@ export const GENERATED_BLOCK_PATTERN =
 /** Any marker: group 1 is the kind for a start marker, undefined for an end marker. */
 export const GENERATED_MARKER_PATTERN =
 	/<!-- (?:dialecte-skills:generated ([\w-]+)|\/dialecte-skills:generated) -->/g
+
+/** `__x__`: strong emphasis written with underscores. */
+export const STRONG_UNDERSCORE_PATTERN = /__(?=\S)(.+?)(?<=\S)__/g
+
+/** `_x_` not inside a word (`snake_case` stays): emphasis written with underscores. */
+export const EMPHASIS_UNDERSCORE_PATTERN = /(^|[^\w_])_(?=\S)([^_\n]+?)(?<=\S)_(?![\w_])/g
