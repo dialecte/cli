@@ -32,7 +32,7 @@ export function readMutationDeclaration(params: {
 	if (errorFactories !== undefined && !isStringList(errorFactories))
 		return invalid('dialecte.mutation.errorFactories must be an array of strings')
 	const badGlob = [
-		...(scope as string[]).map((glob) => ({ field: 'scope', glob })),
+		...scope.map((glob) => ({ field: 'scope', glob })),
 		...(exclude ?? []).map((glob) => ({ field: 'exclude', glob })),
 	].find(({ glob }) => UNSUPPORTED_GLOB_SYNTAX.test(glob))
 	if (badGlob !== undefined)

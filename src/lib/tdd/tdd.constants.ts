@@ -141,7 +141,7 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
 /** The keys a lot file may hold; any other is a typo, refused. */
-export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone']
+export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'mutation']
 
 /** The keys of an `accept` or `revised` entry. */
 export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
@@ -174,10 +174,10 @@ export const HOLE_TOKEN = '<hole>'
 export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
 
 /** What `dialecte lot` writes. */
-export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone']
+export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone', 'mutation']
 
 export const LOT_USAGE =
-	'exempt <reason> | accept <case> <reason> | revised <case> <reason> | gone <file|glob> <reason> (writes .dialecte/lot.json at the package root; a case is <file>::<name>, a revised one may also be a file or a glob)'
+	'exempt <reason> | accept <case> <reason> | revised <case> <reason> | gone <file|glob> <reason> | mutation <off|changed|audit|gate> (writes .dialecte/lot.json at the package root; a case is <file>::<name>, a revised one may also be a file or a glob)'
 
 /** The keys of a `gone` entry. */
 export const GONE_ENTRY_KEYS: readonly string[] = ['file', 'reason']

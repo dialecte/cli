@@ -11,6 +11,7 @@ import { run as handover } from './commands/handover.ts'
 import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
+import { run as mutants } from './commands/mutants.ts'
 import { run as narrowing } from './commands/narrowing.ts'
 import { run as newVerb } from './commands/new-verb.ts'
 import { run as recap } from './commands/recap.ts'
@@ -44,6 +45,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	new: newVerb,
 	handover,
 	lot,
+	mutants,
 	worktree,
 	record,
 	review,
@@ -76,7 +78,8 @@ Commands:
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
-  lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason
+  lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason; mutation <mode>
+  mutants    Mutation testing of the declared scope: run | status | schedule | abandon | migrate
   worktree   A worktree ready to work in (hooks, sibling links, node_modules checked, hygiene baseline); prune what a merge left
   record     A lot's review rounds in its hand-over folder: review | decision | snapshot | choice
   review     The fix diff since the previous round's snapshot: delta
@@ -182,6 +185,22 @@ Contributing (inside a dialecte repository):
   dialecte lot gone <file|glob> <reason>
                              # writes .dialecte/lot.json at the package root (tab JSON), keeping the rest;
                              # a case is <file>::<name>; a file or glob covers every case of its files
+  dialecte lot mutation <off|changed|audit|gate>
+                             # the lot's mutation switch (no reason); absent: changed when the lot's diff touches
+                             # the declared scope, off otherwise; gate = changed that the hand-over waits for
+  dialecte mutants run [--mode changed|audit] [--base <ref>]
+                             # Stryker on package.json "dialecte": { "mutation" }: changed = the scope lines changed
+                             # since the merge base with "dialecte": { "baseBranch" } (main when not said) or
+                             # --base, audit = the whole scope; without --mode the lot's switch decides; a
+                             # detached HEAD is refused. The run is stored (git common folder) before Stryker
+                             # starts; fast tier, timed-out mutants alone, full tier on unlisted survivors; new
+                             # survivors go to the ledger; exit 1 only when Stryker fails, never on survivors
+  dialecte mutants status [--json]
+                             # running runs with their age, died runs, new survivors by lot, scheduled ones by follow-up
+  dialecte mutants schedule <follow-up> <key>... | schedule <follow-up> --all-new
+  dialecte mutants abandon <run id>
+                             # a died run marked abandoned (kept); a running or reported run is refused
+  dialecte mutants migrate   # scripts/mutants/equivalent-mutants.json -> .dialecte/mutation-records.json (never overwritten)
   dialecte worktree add <repository> <branch> [--from <ref>] [--json]
                              # under the workspace's .worktrees/: hooks folder, the links its file: and link:
                              # dependencies need to sibling checkouts (.worktrees/core -> ../core, never

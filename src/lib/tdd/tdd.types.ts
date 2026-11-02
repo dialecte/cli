@@ -151,7 +151,14 @@ export type CaseStatusLine = TestCaseId & { status: CaseStatus; flags: ReceiptFl
 export type ChangedTestFile = { file: string; text: string; baseText: string | undefined }
 
 /** The tdd state of a lot, as `.dialecte/lot.json` declares it. */
-export type LotDeclaration = { tdd?: string; accept?: unknown; revised?: unknown; gone?: unknown }
+export type LotDeclaration = {
+	tdd?: string
+	accept?: unknown
+	revised?: unknown
+	gone?: unknown
+	/** Whether and how `dialecte mutants run` mutates the lot: `off`, `changed`, `audit` or `gate`. */
+	mutation?: unknown
+}
 
 /**
  * A case the lot file names with a reason: accepted without a red, or revised at review.

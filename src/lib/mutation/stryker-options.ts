@@ -13,7 +13,8 @@ import type { MutationDeclaration, MutationTier, StrykerOptions } from './mutati
  * The StrykerJS options of one tier, built in memory (nothing is written): fast (vitest, per-test coverage,
  * incremental), timeouts (the same, one worker, a long limit) or full (the declared command, one worker). The
  * report file and temp folder sit under `workDir`, apart per tier; `concurrency` is set only when passed, or
- * always 1 for the tiers that need it. Throws for `full` on a declaration without `full.command`.
+ * always 1 for the tiers that need it; only the fast tier is incremental (said explicitly, so no config file turns it on
+ * elsewhere). Throws for `full` on a declaration without `full.command`.
  */
 export function buildStrykerOptions(params: {
 	declaration: MutationDeclaration
@@ -23,8 +24,19 @@ export function buildStrykerOptions(params: {
 	incrementalFile: string
 	ignorerPlugin: string
 	concurrency?: number
+	/** The config file Stryker reads under these options (an empty one keeps the package's own config out). */
+	configFile?: string
 }): StrykerOptions {
-	const { declaration, tier, mutate, workDir, incrementalFile, ignorerPlugin, concurrency } = params
+	const {
+		declaration,
+		tier,
+		mutate,
+		workDir,
+		incrementalFile,
+		ignorerPlugin,
+		concurrency,
+		configFile,
+	} = params
 	const common = {
 		mutate,
 		ignorers: [...IGNORER_NAMES],
@@ -35,6 +47,7 @@ export function buildStrykerOptions(params: {
 		tempDirName: `${workDir}/stryker-tmp-${tier}`,
 		disableTypeChecks: false,
 		timeoutMS: TIER_TIMEOUT_MS[tier],
+		...(configFile === undefined ? {} : { configFile }),
 		...(SINGLE_WORKER_TIERS.includes(tier)
 			? { concurrency: 1 }
 			: concurrency === undefined
@@ -50,6 +63,7 @@ export function buildStrykerOptions(params: {
 			testRunner: 'command',
 			commandRunner: { command: declaration.full.command },
 			coverageAnalysis: 'off',
+			incremental: false,
 			plugins: [ignorerPlugin],
 		}
 	}

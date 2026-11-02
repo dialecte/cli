@@ -1,7 +1,7 @@
 /** Read-only git questions the contributor commands ask about the repository they run in. */
 import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { GIT_READ_ENVIRONMENT } from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
@@ -56,6 +56,20 @@ export function listRepositoryFiles(params: { root: string; folder: string }): s
 export function gitFolderOf(root: string): string {
 	const folder = readGit({ root, args: ['rev-parse', '--git-dir'] }).trim()
 	return isAbsolute(folder) ? folder : join(root, folder)
+}
+
+/** The git folder every worktree of the repository `root` is in shares (absolute). */
+export function commonGitFolderOf(root: string): string {
+	const common = readGit({
+		root,
+		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+	}).trim()
+	return resolve(root, common)
+}
+
+/** The name of the branch checked out in `root` (`HEAD` when detached). */
+export function currentBranchOf(root: string): string {
+	return readGit({ root, args: ['rev-parse', '--abbrev-ref', 'HEAD'] }).trim()
 }
 
 /** The main checkout of the repository `root` belongs to (itself when it is not a linked worktree). */

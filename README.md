@@ -40,6 +40,7 @@ dialecte worktree add|prune     # a worktree ready to work in (sibling links, no
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
 dialecte record choice <folder> --by <who> <decision>   # a decision made outside the ledger, in decisions.md
 dialecte recap <folder>    # the pull request's expandable part, built from the hand-over's records only
+dialecte mutants run|status|schedule|abandon|migrate   # mutation testing of the declared scope; survivors tracked until handled
 dialecte text check <file> # the human part of a GitHub text: its fixed headings and its word cap
 dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
@@ -621,6 +622,47 @@ the answer.
   nearest package.json above the current folder) as tab-indented JSON, keeping what it holds; the same
   case (or file) again replaces its reason. `accept` needs a case `<file>::<name>`; `gone` refuses one
   (it writes `"gone": [{ "file": "<file or glob>", "reason": "..." }]`).
+- `dialecte lot mutation <off|changed|audit|gate>` writes the lot's mutation switch (`"mutation"`, no
+  reason). Without it, `dialecte mutants run` mutates the changed lines when the lot's diff touches the
+  declared scope and nothing otherwise; `audit` mutates the whole scope; `gate` runs as `changed`.
+- `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
+  its devDependency) on the scope `package.json` declares:
+  `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.
+  `changed` mutates the scope lines changed since the merge base with the base branch (`dialecte.baseBranch`,
+  `main` when not said; then the remote's default branch, `refs/remotes/origin/HEAD`; with neither the run
+  is refused, exit 2, naming `dialecte.baseBranch` and `--base`) or `--base <ref>`, untracked scope files
+  whole; `audit` the whole scope (no base needed). Without `--mode` the lot's switch decides; with no switch,
+  `changed` when the change touches the scope, else `mutation off for this lot` and exit 0. A detached HEAD is
+  refused: a run is filed under its branch. Before Stryker starts, the run is written `running` with its
+  process id and that process's start time to `<git-common-dir>/dialecte-mutation/runs/<run id>.json` (every
+  worktree of the repository reads it); a run whose process is gone before it reports, or whose pid now
+  belongs to a process that started at another time, reads `died`. Every Stryker call names an empty config
+  file (`configFile`), so a `stryker.config.json` of the package is never merged in, and only the fast tier is
+  incremental. The fast tier runs first, then the timed-out mutants alone, then the declared full tier on the
+  survivors no committed record (`.dialecte/mutation-records.json`) lists; the entry is then replaced
+  `reported` with the counts, the survivors and the keys of the mutants it detected (killed or timed out), and
+  each survivor no record lists enters the ledger (`<git-common-dir>/dialecte-mutation/ledger.json`) as `new`,
+  keyed `<package>::<survivor key>`. A `new` or `scheduled` survivor becomes `killed` only when a later run
+  detected that exact mutant, and never by a run that started before the last run reporting it (that run tested
+  older code); a record with a reason and a family makes it `recorded` (a scheduled one keeps its follow-up
+  name). Any other run leaves it as it is: a survivor whose line changed or went away stays pending until the
+  lot tests it, records its reason or schedules it. The ledger's readers and writers hold a lock file beside it
+  (one whose owner process is gone, or that names no owner and is a few seconds old, is taken over) and first
+  take in every reported run the ledger has not taken in yet, in the order they started, so a run whose ledger
+  update was missed still reaches it, once. The last lines name the package, lot (the branch), tree (12
+  characters), mode, counts, each new survivor `file:line mutation` and each ledger item the run moved
+  (`<key>  file:line  killed|recorded`). Exit 1 only when Stryker fails (the run stays `running` until the
+  process ends); survivors never fail the command. Reports and sandboxes go under `.tmp/mutants/<run id>/`,
+  removed once the run reported. Stryker's incremental file, `.tmp/mutants/incremental.json`, is shared by
+  the runs of a worktree: two runs at once in one worktree share it.
+- `dialecte mutants status [--json]`: the package's running runs with their age, died runs, `new`
+  survivors grouped by the lot that first saw them and `scheduled` ones by follow-up.
+  `dialecte mutants schedule <follow-up> <key>...` (or `--all-new`) moves `new` survivors to `scheduled`
+  under that follow-up (an unknown key refuses the whole call); `dialecte mutants abandon <run id>` marks a
+  died run `abandoned` and keeps it (a running or reported run is refused); `dialecte mutants migrate`
+  turns `scripts/mutants/equivalent-mutants.json` into `.dialecte/mutation-records.json` (same keys and
+  reasons, family `unclassified`, the line's hash), never overwriting an existing file. The store is
+  written by the cli only: never edit it by hand.
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the

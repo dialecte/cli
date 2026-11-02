@@ -141,7 +141,8 @@ export function readDeclaredCases(params: {
 	return entries as LotCaseEntry[]
 }
 
-function readLotDeclaration(path: string): LotDeclaration | { failure: string } {
+/** The lot declaration at `path` (empty when the file is absent), or why it cannot be read: not JSON, not an object, an unknown key. */
+export function readLotDeclaration(path: string): LotDeclaration | { failure: string } {
 	if (!existsSync(path)) return {}
 	let declaration: LotDeclaration
 	try {

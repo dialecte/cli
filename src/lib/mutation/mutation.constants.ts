@@ -88,5 +88,72 @@ export const STRYKER_VALIDATION_SCHEMA = {
 	},
 } as const
 
-/** Glob syntax the runner's matcher does not read (it would silently match nothing): braces, classes, extglobs. */
+/**
+ * Glob syntax a scope or exclude glob may not use: braces, classes and extglobs. The runner's matcher would read `[`
+ * and `{` as literal characters and match nothing the author meant, so they are refused rather than matched
+ * literally; a declared dialecte's paths hold no bracket or brace.
+ */
 export const UNSUPPORTED_GLOB_SYNTAX = /[{[]|[!?+*@]\(/
+
+/** The values `.dialecte/lot.json` `mutation` takes. */
+export const MUTATION_MODES = ['off', 'changed', 'audit', 'gate'] as const
+
+/** The runs `dialecte mutants run` can be asked for. */
+export const RUN_MODES = ['changed', 'audit'] as const
+
+/** The store, in the git folder every worktree of a repository shares. */
+export const MUTATION_STORE_FOLDER = 'dialecte-mutation'
+export const MUTATION_RUNS_FOLDER = 'runs'
+export const MUTATION_LEDGER_FILE = 'ledger.json'
+
+export const NOTHING_TO_MUTATE = 'nothing to mutate'
+
+/** What `run` prints when the lot's switch, or a lot touching no scope file, leaves mutation off. */
+export const MUTATION_OFF = 'mutation off for this lot'
+
+/** Where a run's reports and Stryker's sandboxes go, package-relative (a folder Stryker leaves out of its copy). */
+export const MUTANTS_WORK_FOLDER = '.tmp/mutants'
+
+/** Stryker's incremental file, kept across the runs of a worktree. */
+export const MUTANTS_INCREMENTAL_FILE = '.tmp/mutants/incremental.json'
+
+/** The ignorer plugin's file name in the cli's build output. */
+export const IGNORER_PLUGIN_FILE = 'ignorers.js'
+
+/** The folder the cli's build writes into, beside its package.json. */
+export const CLI_DIST_FOLDER = 'dist'
+
+/** The separator of a ledger key: `<package>::<survivor key>`. */
+export const LEDGER_KEY_SEPARATOR = '::'
+
+/** The length a tree id is shortened to in what `run` and `status` print. */
+export const SHORT_TREE_LENGTH = 12
+
+export const MUTANTS_VERBS = ['run', 'status', 'schedule', 'abandon', 'migrate'] as const
+
+export const MUTANTS_USAGE = `usage: dialecte mutants run [--mode changed|audit] [--base <ref>]
+       dialecte mutants status [--json]
+       dialecte mutants schedule <follow-up> <survivor key>... | schedule <follow-up> --all-new
+       dialecte mutants abandon <run id>
+       dialecte mutants migrate`
+
+/** The lock every ledger reader and writer holds while it folds runs in or writes, beside the ledger. */
+export const MUTATION_LEDGER_LOCK_FILE = 'ledger.lock'
+
+/** The ids of the reported runs the ledger has taken in, beside the ledger. */
+export const MUTATION_APPLIED_RUNS_FILE = 'applied-runs.json'
+
+/** How long a ledger reader or writer waits for the lock held by a live process before it gives up. */
+export const LEDGER_LOCK_TIMEOUT_MS = 30_000
+
+/** How old a lock naming no owner must be to be stale: far longer than its creator needs to write its owner in. */
+export const LEDGER_LOCK_ORPHAN_MS = 5_000
+
+/** How long it sleeps between two tries of the lock. */
+export const LEDGER_LOCK_RETRY_MS = 10
+
+/** The config file every Stryker call names, holding `{}`, in the run's work folder: no config of the package is merged in. */
+export const EMPTY_STRYKER_CONFIG_FILE = 'stryker.empty.config.json'
+
+/** The remote's default branch, as a clone records it: a changed run's base when the package's base branch is missing. */
+export const REMOTE_DEFAULT_BRANCH = 'refs/remotes/origin/HEAD'
