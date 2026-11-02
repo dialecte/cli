@@ -143,7 +143,7 @@ describe('judgeReport', () => {
 				key: FIRST_KEY,
 				line: 1,
 				mutation: 'ConditionalExpression: x === 1 -> true',
-				range: `${FILE}:1:10-1:18`,
+				range: `${FILE}:1:10-1:17`,
 				lineHash: hashLine({ text: LINE_ONE_HASH_TEXT }),
 			},
 		])
@@ -476,16 +476,16 @@ describe('rangesOf', () => {
 			],
 		})
 		expect(rangesOf({ report: run, select: (status) => status === 'Timeout' })).toEqual([
-			`${FILE}:1:10-1:18`,
-			`${FILE}:3:7-3:15`,
+			`${FILE}:1:10-1:17`,
+			`${FILE}:3:7-3:14`,
 		])
 	})
 })
 
 describe('exactRange', () => {
-	it('the report counts columns from 1, --mutate counts the start column from 0', () => {
+	it('the report counts both columns from 1, --mutate counts both from 0', () => {
 		const one = mutant({ id: '1', status: 'Survived', line: 3, column: 5 })
-		expect(exactRange({ file: FILE, mutant: one })).toBe(`${FILE}:3:4-3:12`)
+		expect(exactRange({ file: FILE, mutant: one })).toBe(`${FILE}:3:4-3:11`)
 	})
 })
 

@@ -1,12 +1,14 @@
 /**
  * `dialecte lot exempt <reason>` / `lot accept <case> <reason>` / `lot revised <case|file|glob> <reason>` /
- * `lot gone <file|glob> <reason>`: writes the lot declaration `.dialecte/lot.json` of the package in the
+ * `lot gone <file|glob> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
  * case, a file or a glob; a gone entry a file or a glob, never a case.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
+import { packageRootOf } from '../lib/package-root.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { LOT_VERBS, LOT_USAGE } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
@@ -22,6 +24,8 @@ export async function run(argv: string[]): Promise<void> {
 
 export function runLot(params: { cwd: string; argv: string[] }): CommandResult {
 	const [verb, ...words] = params.argv
+	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
+	if (mutationRefusal) return { exitCode: 2, output: `lot: ${mutationRefusal}` }
 	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
 	const gone = verb === 'gone'
 	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone ? 2 : 1))
@@ -71,16 +75,20 @@ export function runLot(params: { cwd: string; argv: string[] }): CommandResult {
 		declaration.gone = known
 			? entries.map((entry) => (entry.file === file ? { file, reason } : entry))
 			: [...entries, { file, reason }]
-	} else declaration.tdd = `exempt: ${words[0]}`
+	} else if (verb === 'mutation') declaration.mutation = words[0]
+	else declaration.tdd = `exempt: ${words[0]}`
 	mkdirSync(dirname(path), { recursive: true })
 	writeFileSync(path, `${JSON.stringify(declaration, null, '\t')}\n`)
 	return { exitCode: 0, output: `lot: ${path} written` }
 }
 
-/** The nearest folder at or above `cwd` holding a package.json. */
-function packageRootOf(cwd: string): string | undefined {
-	for (let folder = cwd; ; folder = dirname(folder)) {
-		if (existsSync(join(folder, 'package.json'))) return folder
-		if (dirname(folder) === folder) return undefined
-	}
+/** Why `lot mutation <mode>` refuses its words: no mode, a mode it does not know, or a reason after it. */
+function refuseMutationWords(words: readonly string[]): string | undefined {
+	const modes = MUTATION_MODES.join(' | ')
+	if (words.length === 0) return `mutation needs a mode: mutation <${modes}>`
+	if (!MUTATION_MODES.some((mode) => mode === words[0]))
+		return `mutation takes one of ${MUTATION_MODES.join(', ')}, not ${JSON.stringify(words[0])}`
+	if (words.length > 1)
+		return `mutation takes no reason: lot mutation <${modes}>, nothing after the mode`
+	return undefined
 }

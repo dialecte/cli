@@ -65,6 +65,34 @@ export function judgeReport(params: {
 	return { survivors, unlisted, stale: [...killed, ...gone] }
 }
 
+/**
+ * The survivor keys of a report's mutants: those a test detected (killed, or timed out) and every mutant the report
+ * holds. What a ledger update needs to tell a survivor a run killed from one whose code is gone.
+ */
+export function mutantKeysOf(params: { report: MutationReport }): {
+	detected: string[]
+	tested: string[]
+} {
+	const { report } = params
+	const testNames = testNamesOf({ report })
+	const described = Object.entries(report.files).flatMap(([file, reported]) =>
+		reported.mutants.map((mutant) => ({
+			status: mutant.status,
+			key: describeMutant({ file, reported, mutant, testNames }).key,
+		})),
+	)
+	return {
+		detected: [
+			...new Set(
+				described
+					.filter(({ status }) => status === KILLED_STATUS || status === TIMEOUT_STATUS)
+					.map(({ key }) => key),
+			),
+		],
+		tested: [...new Set(described.map(({ key }) => key))],
+	}
+}
+
 /** The records with the run's survivors (a reason, family and hashes already written are kept) and without the stale ones. */
 export function recordSurvivors(params: {
 	records: MutationRecords
@@ -220,13 +248,13 @@ export function rangesOf(params: {
 }
 
 /**
- * A mutant's location in StrykerJS's `--mutate file:line:column-line:column` form - its start column counted from 0,
- * where the report counts from 1 - so a run re-mutates that mutant (and the mutants nested in it).
+ * A mutant's location in StrykerJS's `--mutate file:line:column-line:column` form - both columns counted from 0,
+ * where the report counts them from 1 - so a run re-mutates that mutant (and the mutants nested in it).
  */
 export function exactRange(params: { file: string; mutant: ReportedMutant }): string {
 	const { file, mutant } = params
 	const { start, end } = mutant.location
-	return `${file}:${start.line}:${start.column - 1}-${end.line}:${end.column}`
+	return `${file}:${start.line}:${start.column - 1}-${end.line}:${end.column - 1}`
 }
 
 function describeMutant(params: {
@@ -347,7 +375,7 @@ function sameMutant(params: { file: string; mutant: ReportedMutant }): string {
 }
 
 /** A record that lists its survivor: a reason written and a known family (a gap is no family: it gets a test). */
-function isListed(params: { record: MutationRecord | undefined }): boolean {
+export function isListed(params: { record: MutationRecord | undefined }): boolean {
 	const { record } = params
 	return (
 		record !== undefined &&
