@@ -532,3 +532,82 @@ describe('hashTests', () => {
 		expect(hashTests({ tests: ['a', 'b', 'a'] })).toBe(hashTests({ tests: ['a', 'b'] }))
 	})
 })
+
+/*
+ * The report's shape, as `testNamesOf` (judge.ts) reads it: `coveredBy` holds the ids of the tests that run the
+ * mutant, `testFiles[file].tests[{ id, name }]` names them; the ids are numbered per run.
+ */
+describe('judgeReport: the tests a survivor names', () => {
+	const OTHER_TEST_FILE = 'test/b.test.ts'
+
+	function tested(params: {
+		coveredBy: string[] | undefined
+		testFiles?: MutationReport['testFiles']
+	}): MutationReport {
+		const { coveredBy, testFiles = testFilesOf({ first: '0', second: '1' }) } = params
+		return report({
+			mutants: [mutant({ id: '1', status: 'Survived', line: 1, coveredBy })],
+			testFiles,
+		})
+	}
+
+	it('the covering tests the report resolves → their names, file then name, sorted', () => {
+		expect(
+			judgeReport({ report: tested({ coveredBy: ['1', '0'] }), records: {} }).survivors,
+		).toEqual([expect.objectContaining({ tests: [`${TEST_FILE}#one`, `${TEST_FILE}#two`] })])
+	})
+
+	it('a test covering the mutant twice → named once', () => {
+		expect(
+			judgeReport({ report: tested({ coveredBy: ['1', '1', '0', '1'] }), records: {} }).survivors,
+		).toEqual([expect.objectContaining({ tests: [`${TEST_FILE}#one`, `${TEST_FILE}#two`] })])
+	})
+
+	it('tests of two files → sorted as the whole name, whatever the ids say', () => {
+		const testFiles = {
+			[TEST_FILE]: { tests: [{ id: '0', name: 'zeta' }] },
+			[OTHER_TEST_FILE]: { tests: [{ id: '1', name: 'alpha' }] },
+		}
+
+		expect(
+			judgeReport({ report: tested({ coveredBy: ['0', '1'], testFiles }), records: {} }).survivors,
+		).toEqual([
+			expect.objectContaining({ tests: [`${TEST_FILE}#zeta`, `${OTHER_TEST_FILE}#alpha`] }),
+		])
+	})
+
+	it('some ids resolve, one does not → the names it resolves', () => {
+		expect(
+			judgeReport({ report: tested({ coveredBy: ['0', '9'] }), records: {} }).survivors,
+		).toEqual([expect.objectContaining({ tests: [`${TEST_FILE}#one`] })])
+	})
+
+	/** Whether each survivor of a report holding a covered mutant (line 1) then the given one (line 2) names tests. */
+	function namesTests(params: {
+		coveredBy: string[] | undefined
+		testFiles?: MutationReport['testFiles']
+	}): boolean[] {
+		const { coveredBy, testFiles = testFilesOf({ first: '0', second: '1' }) } = params
+		const both = report({
+			mutants: [
+				mutant({ id: '1', status: 'Survived', line: 1, coveredBy: ['0'] }),
+				mutant({ id: '2', status: 'Survived', line: 2, coveredBy }),
+			],
+			testFiles,
+		})
+		return judgeReport({ report: both, records: {} }).survivors.map((survivor) =>
+			Object.hasOwn(survivor, 'tests'),
+		)
+	}
+
+	it.each([
+		['no coveredBy', undefined, undefined],
+		['an empty coveredBy', [], undefined],
+		['ids the report does not resolve', ['8', '9'], testFilesOf({ first: '0', second: '1' })],
+	])(
+		'%s → no tests property (a covered mutant of the same report has one)',
+		(_label, coveredBy, testFiles) => {
+			expect(namesTests({ coveredBy, testFiles })).toEqual([true, false])
+		},
+	)
+})

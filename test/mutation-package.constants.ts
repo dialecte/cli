@@ -21,3 +21,10 @@ export const RECORDS_FILE = '.dialecte/mutation-records.json'
 
 /** The bound of a case that runs on small scratch folders and no repository: a guard against a hang, not a measure of speed. */
 export const SMALL_CASE_TIMEOUT = 60_000
+
+/** The bound of the child process that prints the cli's help: a guard against a hang, with wide slack. */
+export const CLI_HELP_TIMEOUT = 120_000
+
+/** The other engine files of the scratch package with a ledger of every state. */
+export const OTHER_FILE = 'src/engine/b.ts'
+export const DONE_FILE = 'src/engine/done.ts'

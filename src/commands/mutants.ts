@@ -1,8 +1,9 @@
 /**
- * `dialecte mutants run | status | schedule | abandon | migrate`: mutation testing of a package's declared scope.
- * A run is written to the repository's store before Stryker starts and replaced when it reports, so a run that
- * never reports is found; its survivors go to the ledger, where they stay pending until a test kills them, a
- * committed record explains them, or they are scheduled for a follow-up.
+ * `dialecte mutants run | status | schedule | abandon | migrate | judge | record | drop`: mutation testing of a
+ * package's declared scope. A run is written to the repository's store before Stryker starts and replaced when it
+ * reports, so a run that never reports is found; its survivors go to the ledger, where they stay pending until a test
+ * kills them, a committed record explains them (`judge` shows them, `record` writes the record), or they are
+ * scheduled for a follow-up. Every verb but `run` prints one JSON object with `--json`.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -31,13 +32,13 @@ import {
 } from '../lib/mutation/ledger.ts'
 import { effectiveMode, readMutationMode } from '../lib/mutation/lot-mode.ts'
 import { migrateRecords } from '../lib/mutation/migrate-records.ts'
+import { MUTANTS_JSON_VERBS } from '../lib/mutation/mutation-agent.constants.ts'
 import {
 	CLI_DIST_FOLDER,
 	EMPTY_STRYKER_CONFIG_FILE,
 	IGNORER_PLUGIN_FILE,
 	LEGACY_RECORDS_PATH,
 	MUTANTS_INCREMENTAL_FILE,
-	MUTANTS_USAGE,
 	MUTANTS_VERBS,
 	MUTANTS_WORK_FOLDER,
 	MUTATION_OFF,
@@ -58,6 +59,10 @@ import { isProcessAlive } from '../lib/process-alive.ts'
 import { processStartTime } from '../lib/process-start-time.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { DEFAULT_BASE_BRANCH } from '../lib/worktree/worktree.constants.ts'
+import { dropVerb } from './mutants-drop.ts'
+import { judgeVerb } from './mutants-judge.ts'
+import { answered, asksJson, refused, usageResult } from './mutants-output.ts'
+import { recordVerb } from './mutants-record.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
@@ -88,11 +93,14 @@ export async function run(argv: string[]): Promise<void> {
 		argv,
 		dependencies: { runStryker: runStrykerOfPackage },
 	})
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+	// a --json result is one JSON object on stdout, whatever its exit code
+	const printsJson =
+		MUTANTS_JSON_VERBS.some((known) => known === argv[0]) && asksJson(argv.slice(1))
+	;(result.exitCode === 0 || printsJson ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-/** `dialecte mutants run | status | schedule | abandon | migrate`. */
+/** `dialecte mutants run | status | schedule | abandon | migrate | judge | record | drop`. */
 export async function runMutants(params: {
 	cwd: string
 	argv: string[]
@@ -100,8 +108,12 @@ export async function runMutants(params: {
 }): Promise<CommandResult> {
 	const [verb, ...rest] = params.argv
 	if (!MUTANTS_VERBS.some((known) => known === verb)) return usage()
+	const json = MUTANTS_JSON_VERBS.some((known) => known === verb) && asksJson(rest)
 	const root = packageRootOf(params.cwd)
-	if (!root) return { exitCode: 1, output: `mutants: no package.json at or above ${params.cwd}` }
+	if (!root) {
+		const reason = `no package.json at or above ${params.cwd}`
+		return json ? refused({ verb, json, reason }) : { exitCode: 1, output: `mutants: ${reason}` }
+	}
 	const isAlive = params.dependencies.isAlive ?? isProcessAlive
 	const startTimeOf = params.dependencies.startTimeOf ?? processStartTime
 	const now = params.dependencies.now ?? newDate
@@ -116,12 +128,12 @@ export async function runMutants(params: {
 		if (verb === 'status') return statusVerb({ root, argv: rest, isAlive, startTimeOf, now })
 		if (verb === 'schedule') return scheduleVerb({ root, argv: rest })
 		if (verb === 'abandon') return abandonVerb({ root, argv: rest, isAlive, startTimeOf })
+		if (verb === 'judge') return judgeVerb({ root, argv: rest, isAlive, startTimeOf })
+		if (verb === 'record') return recordVerb({ root, argv: rest, isAlive, startTimeOf })
+		if (verb === 'drop') return dropVerb({ root, argv: rest, isAlive, startTimeOf })
 		return migrateVerb({ root, argv: rest })
 	} catch (error) {
-		return {
-			exitCode: 1,
-			output: `mutants ${verb}: ${(error as Error).message}`,
-		}
+		return refused({ verb, json, reason: (error as Error).message })
 	}
 }
 
@@ -446,7 +458,8 @@ function statusVerb(params: {
 }): CommandResult {
 	const { root, isAlive, startTimeOf, now } = params
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['json'] })
-	if (typeof read === 'string' || read.words.length > 0) return usage(read)
+	if (typeof read === 'string' || read.words.length > 0)
+		return usageResult({ verb: 'status', json: asksJson(params.argv), read })
 	const packageName = packageNameOf(root)
 	const pending = pendingOf({ root, isAlive, startTimeOf })
 	const scheduled = itemsOf({ ledger: readLedger({ root }), packageName }).filter(
@@ -508,19 +521,22 @@ function groupBy(params: {
 
 function scheduleVerb(params: { root: string; argv: string[] }): CommandResult {
 	const { root } = params
-	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['all-new'] })
-	if (typeof read === 'string') return usage(read)
+	const json = asksJson(params.argv)
+	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['all-new', 'json'] })
+	if (typeof read === 'string') return usageResult({ verb: 'schedule', json, read })
 	const [followUp, ...keys] = read.words
 	const allNew = read.flags.has('all-new')
-	if (!followUp || (keys.length === 0) === !allNew) return usage()
+	if (!followUp || (keys.length === 0) === !allNew) return usageResult({ verb: 'schedule', json })
 	const result = allNew
 		? scheduleAllNew({ root, followUp })
 		: scheduleItems({ root, keys, followUp })
-	if (!result.ok) return { exitCode: 1, output: `mutants schedule: ${result.reason}` }
-	return {
-		exitCode: 0,
-		output: `mutants schedule: ${result.scheduled.length} survivor${result.scheduled.length === 1 ? '' : 's'} scheduled for ${followUp}${result.scheduled.map((key) => `\n  ${key}`).join('')}`,
-	}
+	if (!result.ok) return refused({ verb: 'schedule', json, reason: result.reason })
+	return answered({
+		verb: 'schedule',
+		json,
+		text: `mutants schedule: ${result.scheduled.length} survivor${result.scheduled.length === 1 ? '' : 's'} scheduled for ${followUp}${result.scheduled.map((key) => `\n  ${key}`).join('')}`,
+		fields: { followUp, scheduled: result.scheduled },
+	})
 }
 
 function abandonVerb(params: {
@@ -530,25 +546,36 @@ function abandonVerb(params: {
 	startTimeOf: StartTimeReader
 }): CommandResult {
 	const { root, isAlive, startTimeOf } = params
-	const read = readArguments({ argv: params.argv, valueOptions: [] })
-	if (typeof read === 'string' || read.words.length !== 1) return usage(read)
+	const json = asksJson(params.argv)
+	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['json'] })
+	if (typeof read === 'string' || read.words.length !== 1)
+		return usageResult({ verb: 'abandon', json, read })
 	const [runId] = read.words
 	const result = abandonRun({ root, runId, isAlive, startTimeOf })
-	if (!result.ok) return { exitCode: 1, output: `mutants abandon: ${result.reason}` }
-	return { exitCode: 0, output: `mutants abandon: run ${runId} abandoned (its entry is kept)` }
+	if (!result.ok) return refused({ verb: 'abandon', json, reason: result.reason })
+	return answered({
+		verb: 'abandon',
+		json,
+		text: `mutants abandon: run ${runId} abandoned (its entry is kept)`,
+		fields: { runId },
+	})
 }
 
 function migrateVerb(params: { root: string; argv: string[] }): CommandResult {
 	const { root } = params
-	if (params.argv.length > 0) return usage()
+	const json = asksJson(params.argv)
+	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['json'] })
+	if (typeof read === 'string' || read.words.length > 0)
+		return usageResult({ verb: 'migrate', json, read })
 	const legacyPath = join(root, LEGACY_RECORDS_PATH)
 	if (!existsSync(legacyPath))
-		return { exitCode: 1, output: `mutants migrate: no ${LEGACY_RECORDS_PATH} in ${root}` }
+		return refused({ verb: 'migrate', json, reason: `no ${LEGACY_RECORDS_PATH} in ${root}` })
 	if (existsSync(join(root, MUTATION_RECORDS_PATH)))
-		return {
-			exitCode: 1,
-			output: `mutants migrate: ${MUTATION_RECORDS_PATH} already exists in ${root}: nothing overwritten`,
-		}
+		return refused({
+			verb: 'migrate',
+			json,
+			reason: `${MUTATION_RECORDS_PATH} already exists in ${root}: nothing overwritten`,
+		})
 	const legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as LegacyRecords
 	const records = migrateRecords({ legacy, readLine: (line) => readLineOf({ root, ...line }) })
 	writeRecordsFile({ root, records })
@@ -556,10 +583,12 @@ function migrateVerb(params: { root: string; argv: string[] }): CommandResult {
 		(total, mutants) => total + Object.keys(mutants).length,
 		0,
 	)
-	return {
-		exitCode: 0,
-		output: `mutants migrate: ${count} record${count === 1 ? '' : 's'} written to ${MUTATION_RECORDS_PATH} (${LEGACY_RECORDS_PATH} kept)`,
-	}
+	return answered({
+		verb: 'migrate',
+		json,
+		text: `mutants migrate: ${count} record${count === 1 ? '' : 's'} written to ${MUTATION_RECORDS_PATH} (${LEGACY_RECORDS_PATH} kept)`,
+		fields: { path: MUTATION_RECORDS_PATH, written: count },
+	})
 }
 
 /** The text of a line of a package file; empty when the file or the line is gone. */
@@ -570,8 +599,7 @@ function readLineOf(params: { root: string; file: string; line: number }): strin
 }
 
 function usage(read?: unknown): CommandResult {
-	const reason = typeof read === 'string' ? ` (${read})` : ''
-	return { exitCode: 2, output: `mutants: ${MUTANTS_USAGE}${reason}` }
+	return usageResult({ read })
 }
 
 function newDate(): Date {
