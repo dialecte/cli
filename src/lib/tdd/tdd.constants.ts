@@ -204,3 +204,16 @@ export const DELETED_PRODUCTION_FILE = 'deleted'
  */
 export const ROLLBACK_LINE =
 	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte review delta --worktree)"
+
+/** Config files a test project is declared in: where a test file's import aliases come from. */
+export const TEST_CONFIG_FILES = [
+	'vitest.config.ts',
+	'vitest.config.mts',
+	'vitest.config.js',
+	'vitest.config.mjs',
+	'vitest.workspace.ts',
+	'vite.config.ts',
+	'vite.config.mts',
+	'vite.config.js',
+	'vite.config.mjs',
+] as const

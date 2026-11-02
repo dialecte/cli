@@ -6,7 +6,6 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createFakeClock } from '../../test/fake-clock.ts'
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { runGate } from './gate.ts'
@@ -23,11 +22,6 @@ function tdd(params: { cwd: string; argv: string[] }) {
 		cwd: params.cwd,
 		argv: params.argv,
 		now: () => NOW,
-		machineLock: {
-			path: join(temporaryFolder('dialecte-tdd-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-		},
 	})
 }
 
@@ -35,11 +29,6 @@ function gate(params: { cwd: string; argv: string[] }) {
 	return runGate({
 		cwd: params.cwd,
 		argv: params.argv,
-		machineLock: {
-			path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-		},
 	})
 }
 

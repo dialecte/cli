@@ -1,4 +1,3 @@
-import type { MachineLockTaken } from '../machine-lock/machine-lock.types.ts'
 import type { JudgedCase } from '../tdd/tdd.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 
@@ -32,10 +31,21 @@ export type StepResult = {
 	details?: string[]
 	/** The tdd step: the cases of the change it judged (`TddCheck.cases`). */
 	cases?: JudgedCase[]
+	/** A vitest test step that failed: its one serial rerun. */
+	rerun?: StepRerun
 }
 
-/** Announces a step about to run (after its lock); answers what to call with its result once it ran. */
-export type StepAnnouncer = (step: GateStep) => (result: StepResult) => void
+/** The serial rerun of a failed vitest test step, on the files its first run named. */
+export type StepRerun = {
+	/** The failing files the first run named, in its order; `[]` when it named none (the whole step was rerun). */
+	files: string[]
+	/** The files that failed again. */
+	failing: string[]
+	/** Passed: exit 0, no failed test, at least one test passed. */
+	status: 'passed' | 'failed'
+	exitCode: number
+	counts: StepCounts
+}
 
-/** Takes the machine lock for a heavy step: a release, or why the step cannot run. */
-export type StepLock = (step: GateStep) => MachineLockTaken
+/** Announces a step about to run; answers what to call with its result once it ran. */
+export type StepAnnouncer = (step: GateStep) => (result: StepResult) => void

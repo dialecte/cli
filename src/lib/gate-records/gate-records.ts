@@ -51,7 +51,7 @@ function readHead(root: string): string {
 
 /**
  * Records a gate run that reached its steps: the tdd step and the configured ones, in run order. A run
- * refused at the hygiene or at the machine lock records nothing.
+ * refused at the hygiene records nothing.
  */
 export function recordGate(params: { root: string; mode: GateMode; results: StepResult[] }): void {
 	const refused = params.results.some(

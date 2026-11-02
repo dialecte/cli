@@ -28,6 +28,7 @@ import {
 	temporaryFolder,
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
@@ -47,7 +48,7 @@ import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
  * Each case makes repositories and runs git (and npx, hooks, clones) dozens of times: on a loaded machine
  * that takes seconds, so the bound leaves room; it is never a measure of speed.
  */
-const SCRATCH_REPOSITORY_TIMEOUT = 60_000
+const SCRATCH_REPOSITORY_TIMEOUT = HANDOVER_CASE_TIMEOUT
 
 /** The cli's entry in the sources: Node runs it with its type stripping. */
 const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
@@ -382,16 +383,11 @@ function gatedPackage(params: { fast?: GateStep[]; full?: GateStep[] }): Record<
 	}
 }
 
-/** The gate in `root`, its machine lock in a folder of the test's own. */
+/** The gate in `root`. */
 async function runGateIn(params: { root: string; argv: string[] }): Promise<number> {
 	const result = await runGate({
 		cwd: params.root,
 		argv: params.argv,
-		machineLock: {
-			path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-		},
 	})
 	return result.exitCode
 }
@@ -3547,11 +3543,6 @@ describe('handover: the tdd section agrees with the gate', { timeout: 240_000 },
 		const gate = await runGate({
 			cwd: root,
 			argv: ['--declare', 'src/'],
-			machineLock: {
-				path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-				clock: createFakeClock(),
-				write: () => undefined,
-			},
 		})
 		const out = temporaryFolder('dialecte-handover-')
 		const lotsPath = join(out, 'lots.json')

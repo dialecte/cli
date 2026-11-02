@@ -20,6 +20,7 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
+import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import {
 	HANDOVER_FILES,
 	INSTALL_BACKUP_FOLDER,
@@ -31,7 +32,7 @@ import { describe, expect, it, onTestFinished } from 'vitest'
 
 import type { LotPlan, MergeLot, MergeLotPlan } from '../lib/handover/handover.types.ts'
 
-const SCRATCH_REPOSITORY_TIMEOUT = 60_000
+const SCRATCH_REPOSITORY_TIMEOUT = HANDOVER_CASE_TIMEOUT
 const WRITER_CLI = '/opt/dialecte/dist/cli.js'
 const MERGE_SUBJECT = 'merge: bring feat/x in'
 const NOT_A_TREE = 'f'.repeat(40)

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { join } from 'node:path'
 
 import { deadPid } from '../../test/dead-pid.ts'
-import { createFakeClock } from '../../test/fake-clock.ts'
+import { FAKE_VITEST } from '../../test/fake-vitest.constants.ts'
 import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import {
@@ -21,14 +21,11 @@ import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { runGate } from './gate.ts'
 import { runTdd } from './tdd.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { GateRecord } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode } from '../lib/gate/gate.types.ts'
-
-/** The cli's entry in the sources: Node runs it with its type stripping. */
-const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
 
 /** A package whose gate runs the given steps. */
 function packageWith(params: {
@@ -51,24 +48,9 @@ function packageWith(params: {
 	})
 }
 
-/** The gate in `root`, its machine lock in a folder of the test's own: never the user's cache. */
-function gate(params: {
-	cwd: string
-	argv: string[]
-	lines?: string[]
-	isAlive?: (pid: number) => boolean
-	lockPath?: string
-}) {
-	return runGate({
-		cwd: params.cwd,
-		argv: params.argv,
-		machineLock: {
-			path: params.lockPath ?? join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: (line) => params.lines?.push(line),
-			isAlive: params.isAlive,
-		},
-	})
+/** The gate in `root`. */
+function gate(params: { cwd: string; argv: string[] }) {
+	return runGate({ cwd: params.cwd, argv: params.argv })
 }
 
 /** The tdd line of a package that does not test with vitest. */
@@ -77,6 +59,10 @@ const NO_VITEST_LINE = 'skip  tdd  the package does not test with vitest'
 /** The hygiene note of a scratch repository made without `worktree add`. */
 const NO_BASELINE_LINE =
 	'ok    hygiene  no hygiene baseline (worktree not made by `dialecte worktree add`): the stash is not compared'
+
+afterEach(function forgetTheCacheFolder() {
+	vi.unstubAllEnvs()
+})
 
 describe('runGate', { timeout: 30_000 }, () => {
 	it('a step whose output says passed but exits non-zero → failed, the next step not run', async () => {
@@ -143,6 +129,70 @@ describe('runGate', { timeout: 30_000 }, () => {
 		expect(failingResult.output.split('\n')[2]).toBe(
 			'FAIL  tests  exit 0  tests 3 passed, 1 failed / 4  1 test(s) failed',
 		)
+	})
+
+	it('a test step failing in parallel, passing on its serial rerun → ok, both runs on its line, each file flaky under it, the record flagged', async () => {
+		const root = packageWith({
+			fast: [{ name: 'tests', run: 'sh ./vitest run', counts: 'tests' }],
+			files: { vitest: FAKE_VITEST, mode: 'flaky' },
+		})
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n').slice(2)).toEqual([
+			'ok    tests  exit 1  tests 40 passed, 2 failed / 42, files 10  serial rerun of 3 file(s): exit 0, tests 3 passed / 3, files 2  flaky in parallel',
+			'        flaky  src/c.test.ts',
+			'        flaky  src/a.test.ts',
+			'        flaky  src/b.test.ts',
+			'gate --fast: green',
+		])
+		expect(
+			readRecordFile<GateRecord>({ root, name: 'dialecte-gate-fast.json' })?.steps,
+		).toContainEqual(
+			expect.objectContaining({ name: 'tests', status: 'passed', note: 'flaky in parallel' }),
+		)
+	})
+
+	it('--json on a step rerun serially → the step carries its rerun: files, the files still failing, status, exit code, counts', async () => {
+		const root = packageWith({
+			fast: [{ name: 'tests', run: 'sh ./vitest run', counts: 'tests' }],
+			files: { vitest: FAKE_VITEST, mode: 'broken' },
+		})
+
+		const result = await gate({ cwd: root, argv: ['--json'] })
+
+		const steps = (JSON.parse(result.output) as { steps: { step: GateStep }[] }).steps
+		expect(steps.find((entry) => entry.step.name === 'tests')).toMatchObject({
+			status: 'failed',
+			rerun: {
+				files: ['src/c.test.ts', 'src/a.test.ts', 'src/b.test.ts'],
+				failing: ['src/a.test.ts'],
+				status: 'failed',
+				exitCode: 1,
+				counts: { tests: { passed: 2, failed: 1, skipped: 0, total: 3 } },
+			},
+		})
+	})
+
+	it('a test step failing in parallel and on its serial rerun → FAIL as a real failure, the files still failing named, the serial run’s tail', async () => {
+		const root = packageWith({
+			fast: [{ name: 'tests', run: 'sh ./vitest run', counts: 'tests' }],
+			files: { vitest: FAKE_VITEST, mode: 'broken' },
+		})
+
+		const result = await gate({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output.split('\n').slice(2, 8)).toEqual([
+			'FAIL  tests  exit 1  tests 40 passed, 2 failed / 42, files 10  serial rerun of 3 file(s): exit 1, tests 2 passed, 1 failed / 3, files 2  real failure: exit 1',
+			'        flaky  src/c.test.ts',
+			'        failed  src/a.test.ts',
+			'        flaky  src/b.test.ts',
+			'gate --fast: failed at tests',
+			'--- last lines of tests ---',
+		])
+		expect(result.output).toContain('the serial run failed here')
 	})
 
 	it('an npm script the package lacks → skipped; the rest green → exit 0 with the counts', async () => {
@@ -289,7 +339,7 @@ describe('runGate under a written hand-over', { timeout: 30_000 }, () => {
 	})
 })
 
-describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
+describe('runGate: hygiene, no machine lock', { timeout: 30_000 }, () => {
 	it('--fast with a staged file → hygiene fails first with how to look, no step run', async () => {
 		const root = packageWith({ fast: [{ name: 'check', run: 'touch ran' }] })
 		writeFileSync(join(root, 'README.md'), 'changed\n')
@@ -324,64 +374,30 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		)
 	})
 
-	it('--full while another live process holds the machine lock, --no-wait → refused naming it, no step run', async () => {
-		const root = packageWith({ full: [{ name: 'build', run: 'touch ran' }] })
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
+	it('--full --no-wait, the old machine lock file of the cache folder held by a live process → the steps run: no gate takes a lock', async () => {
+		const cache = temporaryFolder('dialecte-gate-cache-')
 		writeFileSync(
-			lockPath,
+			join(cache, 'heavy-run.lock'),
 			JSON.stringify({
-				pid: 1111,
-				command: 'dialecte gate --full in /elsewhere',
+				pid: process.ppid,
+				command: 'elsewhere',
 				startedAt: '2026-10-29T10:00:00.000Z',
 			}),
 		)
-
-		const result = await gate({
-			cwd: root,
-			argv: ['--full', '--no-wait'],
-			lockPath,
-			isAlive: () => true,
-		})
-
-		expect(result.exitCode).toBe(1)
-		expect(result.output.split('\n').slice(0, 2)).toEqual([
-			'FAIL  machine lock  the machine lock is held (--no-wait): pid 1111 runs "dialecte gate --full in /elsewhere" since 2026-10-29T10:00:00.000Z',
-			'--    tdd  not run: an earlier step failed',
-		])
-		expect(existsSync(join(root, 'ran'))).toBe(false)
-	})
-
-	it('--full → the lock held while the steps run (with this gate as holder), released after', async () => {
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
+		vi.stubEnv('DIALECTE_CACHE_DIR', cache)
+		// a run under an older cli that still names a holder must not decide this case
+		vi.stubEnv('DIALECTE_MACHINE_LOCK_HOLDER', undefined)
 		const root = packageWith({
-			full: [{ name: 'build', run: `cat ${JSON.stringify(lockPath)} > seen.json` }],
+			full: [{ name: 'build', run: 'printf %s "$DIALECTE_MACHINE_LOCK_HOLDER" > ran' }],
 		})
 
-		const result = await gate({ cwd: root, argv: ['--full'], lockPath })
+		const result = await gate({ cwd: root, argv: ['--full', '--no-wait'] })
+
 		expect(result.exitCode).toBe(0)
-
-		expect(JSON.parse(readFileSync(join(root, 'seen.json'), 'utf8'))).toMatchObject({
-			pid: process.pid,
-			command: `dialecte gate --full in ${root}`,
-		})
-		expect(existsSync(lockPath)).toBe(false)
-	})
-
-	it('--fast: a heavy step takes the lock, a light one does not', async () => {
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
-		const probe = `test -f ${JSON.stringify(lockPath)} && echo held || echo free`
-		const root = packageWith({
-			fast: [
-				{ name: 'light', run: `{ ${probe}; } > light.txt` },
-				{ name: 'browser', run: `{ ${probe}; } > browser.txt`, heavy: true },
-			],
-		})
-
-		const result = await gate({ cwd: root, argv: [], lockPath })
-		expect(result.exitCode).toBe(0)
-
-		expect(readFileSync(join(root, 'light.txt'), 'utf8').trim()).toBe('free')
-		expect(readFileSync(join(root, 'browser.txt'), 'utf8').trim()).toBe('held')
+		// no step runs as the holder of a lock
+		expect(
+			existsSync(join(root, 'ran')) ? readFileSync(join(root, 'ran'), 'utf8') : undefined,
+		).toBe('')
 	})
 
 	it('a step → run with GIT_OPTIONAL_LOCKS=0, so a git status inside it never takes index.lock', async () => {
@@ -394,91 +410,47 @@ describe('runGate: hygiene and the machine lock', { timeout: 30_000 }, () => {
 		expect(result.exitCode).toBe(0)
 		expect(readFileSync(join(root, 'locks.txt'), 'utf8')).toBe('0')
 	})
-
-	it('--full, a light step running dialecte lock run --no-wait → it runs at once under the gate, the holder variable naming the gate with its start', async () => {
-		const lockFolder = temporaryFolder('dialecte-gate-lock-')
-		const lockPath = join(lockFolder, 'heavy-run.lock')
-		const script = `require('fs').writeFileSync('holder.txt', process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`
-		const root = packageWith({
-			full: [
-				{
-					name: 'nested',
-					run: `DIALECTE_CACHE_DIR=${JSON.stringify(lockFolder)} ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_SOURCE)} lock run --no-wait -- ${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
-				},
-			],
-		})
-
-		const result = await gate({ cwd: root, argv: ['--full'], lockPath })
-
-		expect(result.exitCode).toBe(0)
-		expect(readFileSync(join(root, 'holder.txt'), 'utf8')).toMatch(
-			new RegExp(`^${process.pid}:\\S.*$`),
-		)
-	})
-
-	it('a heavy step running dialecte lock run --no-wait → it runs at once under the gate, the holder variable naming the gate with its start', async () => {
-		const lockFolder = temporaryFolder('dialecte-gate-lock-')
-		const lockPath = join(lockFolder, 'heavy-run.lock')
-		const script = `require('fs').writeFileSync('holder.txt', process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`
-		const root = packageWith({
-			fast: [
-				{
-					name: 'nested',
-					run: `DIALECTE_CACHE_DIR=${JSON.stringify(lockFolder)} ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_SOURCE)} lock run --no-wait -- ${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
-					heavy: true,
-				},
-			],
-		})
-
-		const result = await gate({ cwd: root, argv: [], lockPath })
-
-		expect(result.exitCode).toBe(0)
-		expect(readFileSync(join(root, 'holder.txt'), 'utf8')).toMatch(
-			new RegExp(`^${process.pid}:\\S.*$`),
-		)
-	})
 })
 
 describe('runGate: a package whose tests run in a browser', { timeout: 30_000 }, () => {
-	/** A package shaped like core: its unit project runs in chromium through @vitest/browser-playwright. */
-	function browserPackage(params: { lockPath: string; browser: boolean }): string {
-		const probe = `test -f ${JSON.stringify(params.lockPath)} && echo held || echo free`
-		return createScratchRepository({
+	it('its test step, declared heavy, the old machine lock file held by a live process, --no-wait → the step runs', async () => {
+		const cache = temporaryFolder('dialecte-gate-cache-')
+		writeFileSync(
+			join(cache, 'heavy-run.lock'),
+			JSON.stringify({
+				pid: process.ppid,
+				command: 'elsewhere',
+				startedAt: '2026-10-29T10:00:00.000Z',
+			}),
+		)
+		vi.stubEnv('DIALECTE_CACHE_DIR', cache)
+		// shaped like core: its unit project runs in chromium through @vitest/browser-playwright
+		const root = createScratchRepository({
 			'package.json': JSON.stringify({
 				name: 'demo',
-				devDependencies: params.browser
-					? { '@vitest/browser-playwright': '^4.1.10', vitest: '^4.1.8' }
-					: { vitest: '^4.1.8' },
+				devDependencies: { '@vitest/browser-playwright': '^4.1.10', vitest: '^4.1.8' },
 				dialecte: {
 					gate: {
 						fast: [
 							{
 								name: 'tests',
-								run: `{ ${probe}; } > tests.txt; printf ' Tests  1 passed (1)\\n'`,
+								run: "touch ran; printf ' Tests  1 passed (1)\\n'",
 								counts: 'tests',
+								// a key of the old lock: ignored
+								heavy: true,
 							},
 						],
 					},
 				},
 			}),
-			'vitest.config.ts': params.browser
-				? "export default { test: { projects: [{ test: { name: 'unit', browser: createBrowser() } }] } }\n"
-				: "export default { test: { environment: 'node' } }\n",
+			'vitest.config.ts':
+				"export default { test: { projects: [{ test: { name: 'unit', browser: createBrowser() } }] } }\n",
 		})
-	}
 
-	it('the test step of a package running its tests in a browser → holds the machine lock; a node-only package → does not', async () => {
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
-		const browser = browserPackage({ lockPath, browser: true })
-		const node = browserPackage({ lockPath, browser: false })
+		const result = await gate({ cwd: root, argv: ['--no-wait'] })
 
-		const browserResult = await gate({ cwd: browser, argv: [], lockPath })
-		expect(browserResult.exitCode).toBe(0)
-		const nodeResult = await gate({ cwd: node, argv: [], lockPath })
-		expect(nodeResult.exitCode).toBe(0)
-
-		expect(readFileSync(join(browser, 'tests.txt'), 'utf8').trim()).toBe('held')
-		expect(readFileSync(join(node, 'tests.txt'), 'utf8').trim()).toBe('free')
+		expect(result.exitCode).toBe(0)
+		expect(existsSync(join(root, 'ran'))).toBe(true)
 	})
 })
 
@@ -519,29 +491,6 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		await tdd({ root, argv: ['green'] })
 		return root
 	}
-
-	it('--full on a package whose tests run in node → the tdd step lists the cases with the holder variable naming the gate with its start', async () => {
-		const root = tddPackage()
-		const holderFile = join(root, 'holder.txt')
-		writeFiles({
-			root,
-			files: {
-				'src/add.ts': STUB,
-				'src/add.test.ts': [
-					"import { writeFileSync } from 'node:fs'",
-					ADD_TEST,
-					`writeFileSync(${JSON.stringify(holderFile)}, process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')`,
-					'',
-				].join('\n'),
-			},
-		})
-
-		await gate({ cwd: root, argv: ['--full'] })
-
-		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toEqual(
-			expect.stringMatching(new RegExp(`^${process.pid}:\\S.*$`)),
-		)
-	})
 
 	it('a new test file never proven red → fails: test code changed outside tdd red, the cases listed', async () => {
 		const root = tddPackage()
@@ -605,26 +554,6 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 			'ok    tdd  1 case(s) of the change: 1 unchanged',
 			'        deleted  src/add.test.ts  the test "zero plus zero → zero" of the base is gone',
 		])
-	})
-
-	it('a node-only package, the machine lock held by another live process → the tdd step does not take it', async () => {
-		const root = await redThenGreen()
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
-		writeFileSync(
-			lockPath,
-			JSON.stringify({ pid: 1111, command: 'elsewhere', startedAt: '2026-10-29T10:00:00.000Z' }),
-		)
-
-		const result = await gate({
-			cwd: root,
-			argv: ['--declare', 'src/', '--no-wait'],
-			lockPath,
-			isAlive: () => true,
-		})
-
-		expect(result.output.split('\n')[1]).toBe(
-			'ok    tdd  1 case(s) of the change: 1 red then green',
-		)
 	})
 
 	it('a case the lot accepts → counted and shown with its reason under the step', async () => {
@@ -820,7 +749,7 @@ describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
 		expect(deleted?.stateHash).not.toBe(committed?.stateHash)
 	})
 
-	it('a run refused at the hygiene or at the machine lock → nothing new recorded', async () => {
+	it('a run refused at the hygiene → nothing new recorded', async () => {
 		const root = packageWith({
 			fast: [{ name: 'check', run: 'true' }],
 			full: [{ name: 'build', run: 'true' }],
@@ -829,22 +758,11 @@ describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
 		const recorded = readRecord({ root, mode: 'fast' })
 		writeFileSync(join(root, 'README.md'), 'changed\n')
 		git({ root, args: ['add', 'README.md'] })
-		const lockPath = join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock')
-		writeFileSync(
-			lockPath,
-			JSON.stringify({ pid: 1111, command: 'elsewhere', startedAt: '2026-10-29T10:00:00.000Z' }),
-		)
 
 		const hygiene = await gate({ cwd: root, argv: [] })
-		const locked = await gate({
-			cwd: root,
-			argv: ['--full', '--no-wait'],
-			lockPath,
-			isAlive: () => true,
-		})
 
 		expect(recorded).toMatchObject({ mode: 'fast', steps: [{ name: 'tdd' }, { name: 'check' }] })
-		expect([hygiene.exitCode, locked.exitCode]).toEqual([1, 1])
+		expect(hygiene.exitCode).toBe(1)
 		expect(readRecord({ root, mode: 'fast' })).toEqual(recorded)
 		expect(readRecord({ root, mode: 'full' })).toBeUndefined()
 	})

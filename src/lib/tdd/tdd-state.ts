@@ -31,8 +31,6 @@ export async function readTddState(params: {
 	packageJson: PackageJson
 	ledger: TddLedger
 	base: string
-	/** Added to the vitest run's environment (the machine lock's holder variable while it is held). */
-	environment?: Record<string, string>
 }): Promise<TddState | { failure: string }> {
 	const { root, ledger, base } = params
 	const testCode = hashChangedTestCode({ root, base, packageJson: params.packageJson })
@@ -48,7 +46,6 @@ export async function readTddState(params: {
 		root,
 		files: changed.map((file) => file.file),
 		filter: 'collect',
-		environment: params.environment,
 	})
 	if ('failure' in modules) return modules
 	const { cases, unlisted } = readRunCases({

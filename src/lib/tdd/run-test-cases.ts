@@ -32,8 +32,6 @@ export async function runTestCases(params: {
 	files: readonly string[]
 	/** The full names of the cases to run, every case of the files, or none (collect them only). */
 	filter: { names: readonly string[] } | 'all' | 'collect'
-	/** Added to the run's environment (the machine lock's holder variable while it is held). */
-	environment?: Record<string, string>
 	/** Default: the system clock. */
 	clock?: Clock
 	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
@@ -66,7 +64,6 @@ export async function runTestCases(params: {
 				FORCE_COLOR: '0',
 				NO_COLOR: '1',
 				[REPORT_ENVIRONMENT_VARIABLE]: reportPath,
-				...params.environment,
 			},
 			clock: params.clock,
 			watchdog: params.watchdog,

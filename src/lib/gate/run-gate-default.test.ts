@@ -40,4 +40,23 @@ describe('runGateSteps hands over to runChild', () => {
 		expect(vi.mocked(runChild).mock.calls[0]?.[0].watchdog).toBeUndefined()
 		expect(vi.mocked(runChild).mock.calls[0]?.[0].clock).toBe(clock)
 	})
+
+	it('a vitest test step that stalled → not rerun: runChild is called once', async () => {
+		vi.mocked(runChild).mockClear()
+		vi.mocked(runChild).mockResolvedValue({
+			exitCode: undefined,
+			output: ' FAIL  src/a.test.ts > one\n',
+			stalled: { processes: [], report: '' },
+		})
+
+		const [result] = await runGateSteps({
+			root: temporaryFolder('dialecte-gate-stall-'),
+			steps: [{ name: 'tests', run: 'npx vitest run', counts: 'tests' }],
+			packageJson: {},
+			clock: createFakeClock(),
+		})
+
+		expect(result).toMatchObject({ status: 'failed', reason: expect.stringMatching(/^stalled/) })
+		expect(runChild).toHaveBeenCalledTimes(1)
+	})
 })

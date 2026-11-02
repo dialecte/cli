@@ -6,8 +6,8 @@ export const GATE_RECORD_FILE = 'dialecte-gate-{mode}.json'
 /** The record of `dialecte rules` on the changed files, in the worktree's git folder. */
 export const RULES_RECORD_FILE = 'dialecte-rules.json'
 
-/** The gate steps that are no steps of the record: the worktree's hygiene and the machine lock. */
-export const UNRECORDED_STEPS: readonly string[] = ['hygiene', 'machine lock']
+/** The gate steps that are no steps of the record: the worktree's hygiene. */
+export const UNRECORDED_STEPS: readonly string[] = ['hygiene']
 
 /** A path no state hash holds: the orchestrator's `.dialecte/` folder, at any depth. */
 export const STATE_EXCLUDED_PATTERN = /(^|\/)\.dialecte\//

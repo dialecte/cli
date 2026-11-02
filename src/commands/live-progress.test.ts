@@ -2,7 +2,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
 import {
 	createScratchRepository,
@@ -22,11 +21,6 @@ function gate(params: { cwd: string; live: LiveOutput; argv?: string[] }) {
 		cwd: params.cwd,
 		argv: params.argv ?? [],
 		live: params.live,
-		machineLock: {
-			path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-		},
 	})
 }
 
@@ -170,11 +164,6 @@ describe('tdd announces its vitest run', { timeout: 60_000 }, () => {
 			argv: ['red'],
 			now: () => new Date('2026-10-30T12:00:00.000Z'),
 			live,
-			machineLock: {
-				path: join(temporaryFolder('dialecte-tdd-lock-'), 'heavy-run.lock'),
-				clock: createFakeClock(),
-				write: () => undefined,
-			},
 		})
 
 		expect(lines.filter((entry) => entry.line.startsWith('▶ '))).toEqual([
