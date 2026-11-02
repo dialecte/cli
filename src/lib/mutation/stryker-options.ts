@@ -1,3 +1,4 @@
+import { INCREMENTAL_FILE_NAME } from './incremental-cache.constants.ts'
 import {
 	IGNORER_NAMES,
 	STRYKER_IGNORE_PATTERNS,
@@ -11,7 +12,7 @@ import type { MutationDeclaration, MutationTier, StrykerOptions } from './mutati
 
 /**
  * The StrykerJS options of one tier, built in memory (nothing is written): fast (vitest, per-test coverage,
- * incremental), timeouts (the same, one worker, a long limit) or full (the declared command, one worker). The
+ * incremental, its file in the run's work folder), timeouts (the same, one worker, a long limit) or full (the declared command, one worker). The
  * report file and temp folder sit under `workDir`, apart per tier; `concurrency` is set only when passed, or
  * always 1 for the tiers that need it; only the fast tier is incremental (said explicitly, so no config file turns it on
  * elsewhere). Throws for `full` on a declaration without `full.command`.
@@ -21,22 +22,12 @@ export function buildStrykerOptions(params: {
 	tier: MutationTier
 	mutate: string[]
 	workDir: string
-	incrementalFile: string
 	ignorerPlugin: string
 	concurrency?: number
 	/** The config file Stryker reads under these options (an empty one keeps the package's own config out). */
 	configFile?: string
 }): StrykerOptions {
-	const {
-		declaration,
-		tier,
-		mutate,
-		workDir,
-		incrementalFile,
-		ignorerPlugin,
-		concurrency,
-		configFile,
-	} = params
+	const { declaration, tier, mutate, workDir, ignorerPlugin, concurrency, configFile } = params
 	const common = {
 		mutate,
 		ignorers: [...IGNORER_NAMES],
@@ -74,7 +65,7 @@ export function buildStrykerOptions(params: {
 		vitest: { configFile: declaration.fast.vitestConfig, related: false },
 		coverageAnalysis: 'perTest',
 		incremental: tier === 'fast',
-		...(tier === 'fast' ? { incrementalFile } : {}),
+		...(tier === 'fast' ? { incrementalFile: `${workDir}/${INCREMENTAL_FILE_NAME}` } : {}),
 		plugins: [STRYKER_VITEST_RUNNER_PLUGIN, ignorerPlugin],
 	}
 }

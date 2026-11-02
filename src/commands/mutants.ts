@@ -11,7 +11,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { computeStateTree } from '../lib/gate-records/state-hash.ts'
 import { currentBranchOf, listRepositoryFiles, readGit } from '../lib/git.ts'
+import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
 import { readMutationDeclaration } from '../lib/mutation/declaration.ts'
+import { seedIncrementalFile, storeIncrementalFile } from '../lib/mutation/incremental-cache.ts'
 import {
 	judgeReport,
 	mutantKeysOf,
@@ -36,7 +38,6 @@ import {
 	EMPTY_STRYKER_CONFIG_FILE,
 	IGNORER_PLUGIN_FILE,
 	LEGACY_RECORDS_PATH,
-	MUTANTS_INCREMENTAL_FILE,
 	MUTANTS_USAGE,
 	MUTANTS_VERBS,
 	MUTANTS_WORK_FOLDER,
@@ -56,6 +57,7 @@ import { readPackageJson } from '../lib/package-json.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { processStartTime } from '../lib/process-start-time.ts'
+import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { DEFAULT_BASE_BRANCH } from '../lib/worktree/worktree.constants.ts'
 
@@ -221,6 +223,7 @@ async function runVerb(params: {
 		targets,
 		records,
 		workDir,
+		tree,
 		runStryker,
 	})
 	if ('failure' in tiers)
@@ -248,11 +251,30 @@ async function runTiers(params: {
 	targets: string[]
 	records: MutationRecords
 	workDir: string
+	tree: string
 	runStryker: MutantsDependencies['runStryker']
 }): Promise<{ report: MutationReport; survivors: readonly Survivor[] } | { failure: string }> {
-	const { declaration, targets, records } = params
-	const fast = await runTier({ ...params, tier: 'fast', mutate: targets })
+	const { root, declaration, targets, records, tree } = params
+	const fastOptions = strykerOptionsOf({ ...params, tier: 'fast', mutate: targets })
+	const key = computeIncrementalKey({
+		root,
+		tree,
+		options: fastOptions,
+		cliVersion: readCliVersion(),
+		ignorerPlugin: ignorerPluginPath({ distFolder: cliDistFolder() }),
+	})
+	const incrementalFile = resolve(root, fastOptions.incrementalFile as string)
+	const packageHash = packageHashOf({ root })
+	seedIncrementalFile({ root, packageHash, key, incrementalFile })
+	const fast = await runTier({ ...params, tier: 'fast', options: fastOptions })
 	if ('failure' in fast) return fast
+	try {
+		storeIncrementalFile({ root, packageHash, key, incrementalFile })
+	} catch (error) {
+		process.stderr.write(
+			`mutants run: the incremental cache was not written (${(error as Error).message}); the next run of this tree starts cold\n`,
+		)
+	}
 	let report = withinTargets({
 		report: fast.report,
 		targets: targets.map((target) => parseTarget({ target })),
@@ -260,7 +282,11 @@ async function runTiers(params: {
 
 	const timedOut = rangesOf({ report, select: (status) => status === TIMEOUT_STATUS })
 	if (timedOut.length > 0) {
-		const alone = await runTier({ ...params, tier: 'timeouts', mutate: timedOut })
+		const alone = await runTier({
+			...params,
+			tier: 'timeouts',
+			options: strykerOptionsOf({ ...params, tier: 'timeouts', mutate: timedOut }),
+		})
 		if ('failure' in alone) return alone
 		report = withLoneTimeouts({ report, alone: alone.report })
 	}
@@ -268,32 +294,43 @@ async function runTiers(params: {
 	const { unlisted } = judgeReport({ report, records })
 	if (declaration.full !== undefined && unlisted.length > 0) {
 		const mutate = [...new Set(unlisted.map((survivor) => survivor.range))]
-		const full = await runTier({ ...params, tier: 'full', mutate })
+		const full = await runTier({
+			...params,
+			tier: 'full',
+			options: strykerOptionsOf({ ...params, tier: 'full', mutate }),
+		})
 		if ('failure' in full) return full
 		report = withFullRun({ fast: report, full: full.report })
 	}
 	return { report, survivors: judgeReport({ report, records }).survivors }
 }
 
-/** One Stryker run of a tier, and the report it wrote; why it failed otherwise. */
-async function runTier(params: {
-	root: string
+/** The options of one tier's Stryker run, in memory (the empty config file keeps the package's own out). */
+function strykerOptionsOf(params: {
 	declaration: MutationDeclaration
 	workDir: string
 	tier: MutationTier
 	mutate: string[]
-	runStryker: MutantsDependencies['runStryker']
-}): Promise<{ report: MutationReport } | { failure: string }> {
-	const { root, declaration, workDir, tier, mutate, runStryker } = params
-	const options: StrykerOptions = buildStrykerOptions({
+}): StrykerOptions {
+	const { declaration, workDir, tier, mutate } = params
+	return buildStrykerOptions({
 		declaration,
 		tier,
 		mutate,
 		workDir,
-		incrementalFile: MUTANTS_INCREMENTAL_FILE,
 		ignorerPlugin: ignorerPluginPath({ distFolder: cliDistFolder() }),
 		configFile: `${workDir}/${EMPTY_STRYKER_CONFIG_FILE}`,
 	})
+}
+
+/** One Stryker run of a tier with its options, and the report it wrote; why it failed otherwise. */
+async function runTier(params: {
+	root: string
+	tier: MutationTier
+	options: StrykerOptions
+	runStryker: MutantsDependencies['runStryker']
+}): Promise<{ report: MutationReport } | { failure: string }> {
+	const { root, tier, options, runStryker } = params
 	let exitCode: number
 	try {
 		exitCode = await runStryker({ options })

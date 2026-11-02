@@ -653,8 +653,13 @@ the answer.
   characters), mode, counts, each new survivor `file:line mutation` and each ledger item the run moved
   (`<key>  file:line  killed|recorded`). Exit 1 only when Stryker fails (the run stays `running` until the
   process ends); survivors never fail the command. Reports and sandboxes go under `.tmp/mutants/<run id>/`,
-  removed once the run reported. Stryker's incremental file, `.tmp/mutants/incremental.json`, is shared by
-  the runs of a worktree: two runs at once in one worktree share it.
+  removed once the run reported. Stryker's incremental file lives in the run's work folder, seeded from and
+  written back to `<git-common-dir>/dialecte-mutation/incremental/<package hash>-<key>.json` after a reported
+  fast tier. The key holds the whole tree (`.dialecte/` left out), the package's path, the installed lock, the
+  linked `file:` dependencies, the fast tier's options, the cli version and the ignorer plugin's bytes, so the
+  file is reused on an identical tree only (a rerun, other targets, `changed` then `audit`, another worktree at
+  the same tree, a rerun after recording reasons) and never across edits. The store keeps the newest 4 files of
+  a package. A write-back that fails prints one warning on stderr and the run goes on.
 - `dialecte mutants status [--json]`: the package's running runs with their age, died runs, `new`
   survivors grouped by the lot that first saw them and `scheduled` ones by follow-up.
   `dialecte mutants schedule <follow-up> <key>...` (or `--all-new`) moves `new` survivors to `scheduled`
