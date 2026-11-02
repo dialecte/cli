@@ -114,9 +114,6 @@ export const MUTATION_OFF = 'mutation off for this lot'
 /** Where a run's reports and Stryker's sandboxes go, package-relative (a folder Stryker leaves out of its copy). */
 export const MUTANTS_WORK_FOLDER = '.tmp/mutants'
 
-/** Stryker's incremental file, kept across the runs of a worktree. */
-export const MUTANTS_INCREMENTAL_FILE = '.tmp/mutants/incremental.json'
-
 /** The ignorer plugin's file name in the cli's build output. */
 export const IGNORER_PLUGIN_FILE = 'ignorers.js'
 

@@ -26,7 +26,6 @@ function args(params: {
 		tier,
 		mutate: ['src/a.ts:1-3'],
 		workDir: WORK_DIR,
-		incrementalFile: '/store/incremental/key.json',
 		ignorerPlugin: IGNORER_PLUGIN,
 		...(concurrency === undefined ? {} : { concurrency }),
 	}
@@ -76,7 +75,10 @@ describe('buildStrykerOptions', () => {
 			vitest: { configFile: DECLARATION.fast.vitestConfig, related: false },
 			coverageAnalysis: 'perTest',
 			incremental: true,
-			incrementalFile: '/store/incremental/key.json',
+			// MUT-4, @stryker-mutator/core 10.0.0: the option is `incrementalFile` (dist/src/stryker-cli.js:112,
+			// dist/src/fs/project-reader.js:37); Stryker reads it at project-reader.js:272-277 and writes it at
+			// dist/src/reporters/mutation-test-report-helper.js:125-128
+			incrementalFile: `${WORK_DIR}/incremental.json`,
 			plugins: expect.arrayContaining(['@stryker-mutator/vitest-runner']),
 			timeoutMS: 10000,
 		})
@@ -97,6 +99,12 @@ describe('buildStrykerOptions', () => {
 	it('timeouts and full: one worker even when no concurrency is passed', () => {
 		expect(buildStrykerOptions(args({ tier: 'timeouts' }))).toMatchObject({ concurrency: 1 })
 		expect(buildStrykerOptions(args({ tier: 'full' }))).toMatchObject({ concurrency: 1 })
+	})
+
+	it.each(['timeouts', 'full'] as const)('%s: incremental false and no incrementalFile', (tier) => {
+		const options = buildStrykerOptions(args({ tier }))
+		expect(options).toMatchObject({ incremental: false })
+		expect(options).not.toHaveProperty('incrementalFile')
 	})
 
 	it('full: the command runner, no coverage analysis, one worker whatever is passed, 30 s timeout', () => {
