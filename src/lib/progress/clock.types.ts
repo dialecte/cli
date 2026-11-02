@@ -4,7 +4,7 @@ export type Clock = {
 	now(): number
 	setTimeout(params: { callback: () => void; milliseconds: number }): ClockTimer
 	clearTimeout(timer: ClockTimer): void
-	/** Blocks the caller (the synchronous waits of the machine lock). */
+	/** Blocks the caller (the synchronous waits of a retry). */
 	sleep(milliseconds: number): void
 }
 

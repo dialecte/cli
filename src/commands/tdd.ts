@@ -1,8 +1,8 @@
 /**
- * `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait]` - the
+ * `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json]` - the
  * receipts that make the order of a lot's work visible: each new or changed test case failed for a real
  * reason before the code (red), then passed with the test code untouched (green). Receipts live in the
- * worktree's git folder; a package whose tests run in a browser runs them under the machine lock.
+ * worktree's git folder.
  *
  * - `red`: runs every case of the changed test files (or of the files named). A case failing on an
  *   assertion (or on a stub's `not implemented`, or on a TypeError of existing code, inside an asserting
@@ -22,15 +22,8 @@
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
-import { runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
-import { MACHINE_LOCK_HOLDER_VARIABLE } from '../lib/machine-lock/machine-lock.constants.ts'
-import {
-	acquireMachineLock,
-	describeHolder,
-	machineLockPath,
-} from '../lib/machine-lock/machine-lock.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
@@ -86,7 +79,6 @@ import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers } from '../lib/tdd/test-source.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { MachineLockAccess, MachineLockTaken } from '../lib/machine-lock/machine-lock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
@@ -125,8 +117,6 @@ export async function runTdd(params: {
 	now: () => Date
 	/** The width `status --legend` wraps its lines to. Default: 80. */
 	columns?: number
-	/** The machine lock a browser package's runs take: its file, the clock it waits with, where its lines go. */
-	machineLock?: MachineLockAccess
 }): Promise<CommandResult> {
 	const { cwd: root, argv } = params
 	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: ['base'] })
@@ -134,7 +124,7 @@ export async function runTdd(params: {
 		return {
 			exitCode: 2,
 			output:
-				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] [--no-wait] | status --legend',
+				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] | status --legend',
 		}
 	// the legend needs no package: printed before any is looked up
 	if (subcommand === 'status' && hasFlag(argv, 'legend'))
@@ -148,39 +138,24 @@ export async function runTdd(params: {
 	const packageJson = readPackageJson(root)
 	const ledger = readLedger(root)
 	if ('failure' in ledger) return { exitCode: 1, output: `tdd ${subcommand}: ${ledger.failure}` }
-	const lock = runsTestsInABrowser({ root, packageJson })
-		? lockMachine({ root, subcommand, argv, machineLock: params.machineLock })
-		: undefined
-	if (lock && 'refusal' in lock)
-		return { exitCode: 1, output: `tdd ${subcommand}: ${lock.refusal}` }
 	const base = resolveBase({ root, packageJson, ref: getArg(argv, 'base') })
-	if (typeof base !== 'string') {
-		if (lock && !('refusal' in lock)) lock.release()
-		return { exitCode: 1, output: `tdd ${subcommand}: ${base.failure}` }
+	if (typeof base !== 'string') return { exitCode: 1, output: `tdd ${subcommand}: ${base.failure}` }
+	const context: TddContext = {
+		root,
+		packageJson,
+		json: hasFlag(argv, 'json'),
+		flagsOnly: hasFlag(argv, 'flags'),
+		now: params.now,
+		targets: parseTargets(words),
+		ledger,
+		base,
+		...(params.live && {
+			progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
+		}),
 	}
-	try {
-		const context: TddContext = {
-			root,
-			packageJson,
-			json: hasFlag(argv, 'json'),
-			flagsOnly: hasFlag(argv, 'flags'),
-			now: params.now,
-			targets: parseTargets(words),
-			ledger,
-			base,
-			...(lock?.holderVariable && {
-				environment: { [MACHINE_LOCK_HOLDER_VARIABLE]: lock.holderVariable },
-			}),
-			...(params.live && {
-				progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
-			}),
-		}
-		if (subcommand === 'red') return await runRed(context)
-		if (subcommand === 'green') return await runGreen(context)
-		return await runStatus(context)
-	} finally {
-		if (lock && !('refusal' in lock)) lock.release()
-	}
+	if (subcommand === 'red') return await runRed(context)
+	if (subcommand === 'green') return await runGreen(context)
+	return await runStatus(context)
 }
 
 async function runRed(context: TddContext): Promise<CommandResult> {
@@ -686,7 +661,6 @@ async function announcedRun(params: {
 		root: context.root,
 		files,
 		filter: 'all',
-		environment: context.environment,
 	})
 	running?.finish(
 		`${'failure' in modules ? '✗' : '✓'} tdd ${params.subcommand}: vitest ran ${files.length} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
@@ -749,30 +723,6 @@ function firstLine(message: string): string {
 
 function idOf(testCase: TestCaseId): TestCaseId {
 	return { file: testCase.file, name: testCase.name, project: testCase.project }
-}
-
-function lockMachine(params: {
-	root: string
-	subcommand: TddSubcommand
-	argv: string[]
-	machineLock: Parameters<typeof runTdd>[0]['machineLock']
-}): MachineLockTaken {
-	const machineLock = params.machineLock ?? {
-		path: machineLockPath(),
-		clock: createSystemClock(),
-		write: (line: string) => console.error(line),
-	}
-	const outcome = acquireMachineLock({
-		path: machineLock.path,
-		command: `dialecte tdd ${params.subcommand} in ${params.root}`,
-		wait: !hasFlag(params.argv, 'no-wait'),
-		clock: machineLock.clock,
-		write: machineLock.write,
-		isAlive: machineLock.isAlive,
-	})
-	return outcome.acquired
-		? outcome
-		: { refusal: `the machine lock is held (--no-wait): ${describeHolder(outcome.holder)}` }
 }
 
 function isSubcommand(word: string | undefined): word is TddSubcommand {

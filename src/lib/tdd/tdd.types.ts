@@ -212,8 +212,6 @@ export type TddContext = {
 	base: string
 	/** Where a vitest run announces itself (a start line or a spinner); none when not given. */
 	progress?: StepProgress
-	/** Added to every vitest run's environment: the machine lock's holder variable while it is held. */
-	environment?: Record<string, string>
 }
 
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */

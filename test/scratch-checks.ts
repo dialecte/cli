@@ -92,17 +92,9 @@ export function createGatePackage(params: {
 	})
 }
 
-/** The gate in `cwd`, its machine lock in a folder of the test's own: never the user's cache. */
+/** The gate in `cwd`. */
 export function runGateIn(params: { cwd: string; argv: string[] }): Promise<CommandResult> {
-	return runGate({
-		cwd: params.cwd,
-		argv: params.argv,
-		machineLock: {
-			path: join(temporaryFolder('dialecte-gate-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-		},
-	})
+	return runGate({ cwd: params.cwd, argv: params.argv })
 }
 
 /** A green `gate --full` in `root`: the record the hand-over's rehearsal may reuse. */

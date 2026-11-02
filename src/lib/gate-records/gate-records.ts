@@ -59,7 +59,7 @@ function readHead(root: string): string {
 
 /**
  * Records a gate run that reached its steps: the tdd step and the configured ones, in run order, with the
- * key of what it checked. A run refused at the hygiene or at the machine lock records nothing. A run whose
+ * key of what it checked. A run refused at the hygiene records nothing. A run whose
  * configured steps ran also goes to the repository's store of records by tree; a run answered from a
  * record (`reused`) and a run stopped at its tdd step do not: they checked nothing of the tree. Answers
  * whether the record went to the store.

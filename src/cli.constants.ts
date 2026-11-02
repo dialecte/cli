@@ -8,7 +8,6 @@ import { explain } from './commands/explain.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
-import { run as lock } from './commands/lock.ts'
 import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
@@ -46,7 +45,6 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	handover,
 	lot,
 	worktree,
-	lock,
 	record,
 	review,
 	recap,
@@ -75,7 +73,6 @@ Commands:
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full
-  lock       Run any command under the machine lock gate and tdd take: run [--no-wait] -- <command>
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
@@ -142,20 +139,15 @@ Contributing (inside a dialecte repository):
   dialecte rules [<files...>] [--json]
                              # types / constants in their files, named functions, no await in an argument,
                              # object parameters, full words, no plan tag or standard citation
-  dialecte gate [--fast | --full] [--base <ref>] [--rerun] [--no-wait] [--declare <path>]... [--json]
+  dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]
                              # steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults;
                              # refuses while a hand-over script holds the repository; --fast starts with the
                              # worktree's hygiene (nothing staged, no stash on its branch, new files declared);
-                             # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait);
+                             # a vitest test step that fails is rerun once, serially, on its failing files:
+                             # passing there it is ok and flagged flaky in parallel, failing there a real failure;
                              # a green record of the same tree, install and steps (any worktree of the
-                             # repository) answers the steps after a fresh tdd step; --rerun runs them
-  dialecte lock run [--no-wait] -- <command> [<argument>...]
-                             # runs the command (no shell, its output on the terminal) holding the machine lock
-                             # gate and tdd take: waits with a line every 30 s naming the holder, or refuses
-                             # with --no-wait (exit 1); exits with the command's code (128 + the signal's
-                             # number, 127 not found, 126 not runnable); the environment as the cli got it;
-                             # a gate or lock run inside it does not wait; -h after -- is the command's
-  dialecte tdd red [<test file>]... [--no-wait] [--json]
+                             # repository) answers the steps after a fresh tdd step; --no-reuse runs them
+  dialecte tdd red [<test file>]... [--json]
                              # every case of the changed test files: a failure on an assertion (or a stub's
                              # 'not implemented', a TypeError of existing code, inside an asserting expect) is a
                              # red; a new or changed case that passes, a missing export, a type or syntax error, a

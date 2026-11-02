@@ -32,7 +32,6 @@ dialecte models            # which model each tier (fast, standard, strong, fron
 dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
-dialecte lock run -- <command>  # any heavy command under the machine lock gate and tdd take
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
@@ -168,9 +167,9 @@ the answer.
   symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
   in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
   and warnings), which the hand-over card reads; a run on named files records nothing.
-- `dialecte gate [--fast | --full] [--base <ref>] [--rerun] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
-  `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
-  file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered, with
+- `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
+  `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (the runner's
+  defaults: every file in parallel), `doc:build` and `type-bench:check`. Each step runs unfiltered, with
   `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
@@ -187,7 +186,7 @@ the answer.
   to the person who runs the repository, who decides. A run that reaches its steps records its result in the
   worktree's git folder, `dialecte-gate-fast.json` or `dialecte-gate-full.json`: when it ran, HEAD, the
   state hash and each step (the tdd step first) with its status, its counts and its note or reason, the
-  tdd step with the cases of the change it judged (`cases`: label and status); a run refused at the hygiene or at the machine lock records nothing. The state hash is that of the tree the
+  tdd step with the cases of the change it judged (`cases`: label and status); a run refused at the hygiene records nothing. The state hash is that of the tree the
   worktree would commit (HEAD's tree with the changed and untracked files on top, the deleted ones
   removed, `.dialecte/` left out): committing the lots leaves it the same, any other edit changes it.
   The record also holds its `key`, what the run checked: `tree` (the git tree id the state hash is the
@@ -213,7 +212,8 @@ the answer.
   run every time: they are about the worktree (what is staged, the receipts, `.dialecte/lot.json`, the
   base), not the tree, and a `tdd` step failing now is a failed gate. A record that failed, that ran no
   step, of another mode (`--fast` never answers `--full` nor the reverse) or written by an older cli
-  (no key) is never reused; a stored entry of another shape is ignored. `--rerun` runs the steps
+  (no key) is never reused; a stored entry of another shape is ignored. A test step that passed only on its
+  serial rerun is green: it is reused with its `flaky in parallel` note. `--no-reuse` runs the steps
   whatever the store holds. The key leaves out the Node version and the environment (a path given
   through an environment variable); a `file:` dependency edited and restored to the same size within
   the same modification time is not seen either.
@@ -251,11 +251,11 @@ the answer.
   stall of its own. Ctrl-C, SIGTERM or SIGHUP received by the cli is passed on to every running child's group.
   A child that asks the terminal (a gpg or ssh passphrase prompt) runs in a background group: it
   stops (state `T`) and is reported as stalled.
-- `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--no-wait] [--json]` makes
+- `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json]` makes
   the order of the work visible: tests written from the spec before any code, red for a real reason, then
   made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,
-  never in the tree. Runs use the package's own vitest (each project's run of a case is a case of its own;
-  a package whose tests run in a browser takes the machine lock), with snapshots never written
+  never in the tree. Runs use the package's own vitest (each project's run of a case is a case of its own),
+  with snapshots never written
   (`--update=none`, CI): a snapshot test's snapshot is written by the test station before the red.
   - `red` runs every case of the changed test files (or of the files named). A case that fails on an
     assertion (a snapshot mismatch included), on a stub's error (a message starting with
@@ -688,41 +688,20 @@ worktree's branch since `worktree add` made it (the baseline keeps every stash e
 session dropping one changes nothing; one stash is shared by every worktree and session: a new entry of
 another branch is only noted, naming it; without a baseline the stash is not compared); and
 every new file one the change declares (`--declare <path>`, repeatable; an undeclared one is a warning).
-A failure says what changed and how to look at it with read-only commands. `gate --full`, and every
-heavy step, hold a machine-wide lock in your cache folder (`$DIALECTE_CACHE_DIR` overrides it) naming
-its holder. A step is heavy when it says so (`"heavy": true` / `false`); else when its command names a
-browser project (`--browser`, a `--project` named browser, playwright); else when the package runs its
-tests in a browser (it depends on `@vitest/browser*` or playwright, or its vitest / vite config declares
-a `browser`) and the step is a test step (it counts tests, or runs vitest or playwright). Another heavy
-run waits with a line every 30 s naming the holder, or refuses with `--no-wait`. A lock whose process is
-gone, or whose pid now belongs to a process started at another time (read in the C locale and UTC, so
-two shells with other languages or time zones agree; a `ps` that answers nothing never makes a holder
-look dead), is taken over under a short takeover lock (`<lock>.takeover`), so only one caller replaces
-it. A lock file still being written is left alone; one that stays unreadable, or a takeover lock, is
-cleared once it is a few seconds old.
+A failure says what changed and how to look at it with read-only commands.
 
-`dialecte lock run [--no-wait] -- <command> [<argument>...]` runs any other heavy command (a mutation
-run, a browser suite) under the same lock: it takes it as `dialecte lock run -- <command words>`,
-waiting with the same line every 30 s or refusing at once with `--no-wait` (exit 1, naming the holder),
-runs the command without a shell, its output on the terminal, in the environment the cli was given
-(git's repository variables, which the cli clears for its own git commands, included), and releases the
-lock when the command ends. It exits with the command's code: 128 + the signal's number when a signal
-ended it, 127 when the command is not found, 126 when it is found but cannot be run (not executable).
-While the command runs, Ctrl-C (an interrupt or a termination sent to the process group) reaches the
-command and `lock run` waits for it; a termination sent to `lock run` alone is passed on to the command.
-Node cannot tell the two terminations apart, so a termination sent to the whole group reaches the
-command twice. A `lock run` itself killed (SIGKILL, or SIGHUP when its terminal closes) leaves its lock
-behind while the command may still run: the next caller finds its pid gone and takes the lock over. The
-command runs with `DIALECTE_MACHINE_LOCK_HOLDER` naming the holder as `<pid>:<process start>`: a `gate`,
-`tdd` or `lock run` inside it finds the lock held by that live process (the pid and its start both
-matching, so a reused pid does not when the process start is known; with no start recorded, `<pid>:`
-matches the pid alone) and takes it at once, its release leaving the lock to the holder
-(`dialecte lock run -- npx dialecte gate --full` does not wait on itself; a third level names the same
-holder). `gate` and `tdd` do the same for what they run while they hold the lock: a heavy gate step, a
-browser package's vitest runs, and under `gate --full` (which holds the lock for its whole run) every
-step and the tdd step get `DIALECTE_MACHINE_LOCK_HOLDER` naming the holder, so a `dialecte lock run`
-inside them runs at once. `-h` and `--help` after `--` belong to the command (the help is read only before `--`, for every
-command). No command after `--`, or another subcommand than `run`, is a usage error (exit 2).
+Steps run with the runner's defaults - no lock, no `nice`, no worker cap - whoever else shares the machine.
+A step that counts tests and runs vitest (its command, or the npm script it runs, names `vitest`) and fails
+on its exit code or its counts is run once more with `--no-file-parallelism`, on the failing files the first
+run named (through `npm run <script>` after one `--`; the whole step when the output names no file). The
+rerun passes when it exits 0, counts no failed test and at least one passed: the step then passes,
+flagged - `serial rerun of <n> file(s): exit 0, <counts>  flaky in parallel` on its line, one
+`flaky <file>` line under it per file, the note kept in the gate record. Otherwise the step fails as a
+`real failure: <why>`, each file listed under it as `failed <file>` when it failed again or `flaky <file>`
+when it passed serially, the rerun's last lines as the tail. While the rerun runs, the step's line still
+shows its own command. A step that stalled, counts no tests, runs no vitest, or already runs one file at a time
+(`--no-file-parallelism` in its command) is never rerun. `--json` carries the rerun of
+each step (`rerun`: files, the files still failing, status, exit code, counts).
 
 `gate --fast` and `--full` run a `tdd` step after the hygiene (first in `--full`): every test-code file
 changed since the base (test files, helpers, fixtures, snapshots) must be as the red run that last froze it
@@ -738,7 +717,7 @@ an `accept` entry, and an exemption without a reason are refused, naming what is
 and what the change touches: `{ "tdd": "exempt: <reason>" }` in `.dialecte/lot.json` at the package root
 prints "exempt: <reason> (n production file(s), m test file(s) changed)". The hygiene and the hand-over
 leave the file out (never committed); the hand-over card shows the exemption and the flags. A package that
-does not test with vitest skips the step; a node-only package's step never takes the machine lock.
+does not test with vitest skips the step.
 
 A package tunes them in its package.json:
 
@@ -763,7 +742,7 @@ A package tunes them in its package.json:
 `gate.fast` / `gate.full` replace the default steps of that mode (`counts: "tests"` makes a step fail
 when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
-it; `heavy: true` / `false` says whether the step takes the machine lock); `baseBranch` is the branch
+it); `baseBranch` is the branch
 `worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
 tags and citations `rules` and `handover` refuse.
 

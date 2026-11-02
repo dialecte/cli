@@ -189,7 +189,7 @@ const NOT_REUSED: Record<string, NotReusedVariant> = {
 	'a file changed': {
 		change: (root) => writeFiles({ root, files: { 'src/a.ts': 'export const a = 2\n' } }),
 	},
-	'--rerun': { lastArgv: ['--rerun'] },
+	'--no-reuse': { lastArgv: ['--no-reuse'] },
 	'node_modules/.package-lock.json changed': {
 		change: (root) =>
 			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } }),

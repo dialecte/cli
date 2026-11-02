@@ -13,6 +13,7 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
+import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { runHandover, runHandoverRun } from './handover.ts'
 
@@ -22,7 +23,7 @@ import type { GateRecord } from '../lib/gate-records/gate-records.types.ts'
 import type { LotsFile } from '../lib/handover/handover.types.ts'
 
 /** Scratch repositories, git, a hook and a clone per case: the bound leaves room on a loaded machine. */
-const SCRATCH_REPOSITORY_TIMEOUT = 60_000
+const SCRATCH_REPOSITORY_TIMEOUT = HANDOVER_CASE_TIMEOUT
 
 /** The record a commit's hook leaves in the git folder of the repository it commits in. */
 const HOOK_RECORD = 'dialecte-gate-hook.json'

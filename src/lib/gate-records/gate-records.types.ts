@@ -5,7 +5,7 @@
 import type { GateMode, StepCounts, StepStatus } from '../gate/gate.types.ts'
 import type { JudgedCase } from '../tdd/tdd.types.ts'
 
-/** One step of a gate run as recorded: the hygiene and the machine lock are no steps, never recorded. */
+/** One step of a gate run as recorded: the hygiene is no step, never recorded. */
 export type RecordedStep = {
 	name: string
 	status: StepStatus
@@ -39,7 +39,7 @@ export type CheckKey = {
 
 /**
  * `dialecte-gate-fast.json` / `dialecte-gate-full.json`: the last gate run of that mode that reached its
- * steps (a run refused at the hygiene or the machine lock leaves the file as it was).
+ * steps (a run refused at the hygiene leaves the file as it was).
  * `dialecte-gate-hook.json`: the last commit hook `handover run` saw end (a stalled one records nothing).
  */
 export type GateRecord = {

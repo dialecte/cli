@@ -2,37 +2,21 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createFakeClock } from '../../test/fake-clock.ts'
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { hashTestCode, hashText } from '../lib/tdd/tdd-files.ts'
 import { ROLLBACK_LINE } from '../lib/tdd/tdd.constants.ts'
 import { runTdd } from './tdd.ts'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TddLedger, TddReceipt } from '../lib/tdd/tdd.types.ts'
 
 const NOW = new Date('2026-10-29T12:00:00.000Z')
 
-/** `tdd` in the package, its receipts dated NOW, its machine lock in a folder of the test's own. */
-function tdd(params: {
-	cwd: string
-	argv: string[]
-	lockPath?: string
-	isAlive?: (pid: number) => boolean
-}) {
-	return runTdd({
-		cwd: params.cwd,
-		argv: params.argv,
-		now: () => NOW,
-		machineLock: {
-			path: params.lockPath ?? join(temporaryFolder('dialecte-tdd-lock-'), 'heavy-run.lock'),
-			clock: createFakeClock(),
-			write: () => undefined,
-			isAlive: params.isAlive,
-		},
-	})
+/** `tdd` in the package, its receipts dated NOW. */
+function tdd(params: { cwd: string; argv: string[] }) {
+	return runTdd({ cwd: params.cwd, argv: params.argv, now: () => NOW })
 }
 
 function readLedger(root: string): TddLedger {
@@ -752,25 +736,6 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		)
 	})
 
-	it('a package whose tests run in a browser → its tests run with the holder variable naming the tdd run with its start', async () => {
-		const root = createVitestPackage({
-			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },
-		})
-		const holderFile = join(root, 'holder.txt')
-		writeFiles({
-			root,
-			files: {
-				'src/holder.test.ts': `import { writeFileSync } from 'node:fs'\nimport { expect, it } from 'vitest'\n\nit('records the holder', () => {\n\twriteFileSync(${JSON.stringify(holderFile)}, process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')\n\texpect(1).toBe(2)\n})\n`,
-			},
-		})
-
-		await tdd({ cwd: root, argv: ['red', 'src/holder.test.ts'] })
-
-		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toEqual(
-			expect.stringMatching(new RegExp(`^${process.pid}:\\S.*$`)),
-		)
-	})
-
 	/** `add` implemented and `sub` a stub, as a base may hold them. */
 	const ADD_AND_SUB_STUB =
 		IMPLEMENTED +
@@ -1261,34 +1226,46 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		})
 	})
 
-	it('a package whose tests run in a browser, the machine lock held by another live process, --no-wait → refused, nothing run', async () => {
-		const root = createVitestPackage({
-			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },
-		})
-		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/add.test.ts': ADD_TEST } })
-		const lockPath = join(temporaryFolder('dialecte-tdd-lock-'), 'heavy-run.lock')
+	it('a package whose tests run in a browser, the old machine lock file held by a live process, --no-wait → red and status run, its vitest names no holder', async () => {
+		const cache = temporaryFolder('dialecte-tdd-cache-')
 		writeFileSync(
-			lockPath,
+			join(cache, 'heavy-run.lock'),
 			JSON.stringify({
-				pid: 1111,
-				command: 'dialecte gate --full in /elsewhere',
+				pid: process.ppid,
+				command: 'elsewhere',
 				startedAt: '2026-10-29T10:00:00.000Z',
 			}),
 		)
-
-		const red = await tdd({ cwd: root, argv: ['red', '--no-wait'], lockPath, isAlive: () => true })
-
-		expect(red).toEqual({
-			exitCode: 1,
-			output:
-				'tdd red: the machine lock is held (--no-wait): pid 1111 runs "dialecte gate --full in /elsewhere" since 2026-10-29T10:00:00.000Z',
+		vi.stubEnv('DIALECTE_CACHE_DIR', cache)
+		// a run under an older cli that still names a holder must not decide this case
+		vi.stubEnv('DIALECTE_MACHINE_LOCK_HOLDER', undefined)
+		const root = createVitestPackage({
+			devDependencies: { '@vitest/browser-playwright': '^4.1.10' },
 		})
-		expect(readLedger(root).entries).toEqual([])
+		const holderFile = join(root, 'holder.txt')
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/add.test.ts': ADD_TEST,
+				'src/holder.test.ts': `import { writeFileSync } from 'node:fs'\nimport { expect, it } from 'vitest'\n\nit('records the holder', () => {\n\twriteFileSync(${JSON.stringify(holderFile)}, process.env.DIALECTE_MACHINE_LOCK_HOLDER ?? '')\n\texpect(1).toBe(2)\n})\n`,
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red', '--no-wait'] })
+		const status = await tdd({ cwd: root, argv: ['status', '--no-wait'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(readLedger(root).entries).toContainEqual(expect.objectContaining({ kind: 'red' }))
+		// its vitest runs as the holder of no lock
+		expect(existsSync(holderFile) ? readFileSync(holderFile, 'utf8') : undefined).toBe('')
+		expect(status.output).not.toContain('machine lock')
 	})
 })
 
 afterEach(function forgetTheFlag() {
 	delete process.env.DIALECTE_TDD_FLIP
+	vi.unstubAllEnvs()
 })
 
 /** The cli's entry in the sources: Node runs it with its type stripping. */

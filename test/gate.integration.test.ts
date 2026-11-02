@@ -112,7 +112,7 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 		})
 	})
 
-	it('vitest --changed on a change that touches no test (a doc edit) → passed with a note; the same output without changedOnly → failed', async () => {
+	it('vitest --changed on a change that touches no test (a doc edit) → passed with a note; the same output without changedOnly → failed, its serial rerun too', async () => {
 		const folder = scratchRepository({
 			'demo.test.js': "test('a', () => {})\n",
 			'README.md': '# Demo\n',
@@ -138,6 +138,10 @@ describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
 			exitCode: 0,
 			note: 'no test file is affected by the change',
 		})
-		expect(plain).toMatchObject({ status: 'failed', reason: 'no test ran' })
+		expect(plain).toMatchObject({
+			status: 'failed',
+			reason: 'real failure: no test ran',
+			rerun: { files: [], failing: [], status: 'failed', exitCode: 0 },
+		})
 	})
 })

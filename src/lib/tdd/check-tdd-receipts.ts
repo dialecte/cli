@@ -1,4 +1,3 @@
-import { MACHINE_LOCK_HOLDER_VARIABLE } from '../machine-lock/machine-lock.constants.ts'
 import { shortMessage } from './classify-failure.ts'
 import {
 	entryNamesCase,
@@ -24,15 +23,12 @@ import { countChangedFiles, hashChangedTestCode, readLedger, resolveBase } from 
 import { findingLine, readTddState } from './tdd-state.ts'
 import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
 
-import type { MachineLockTaken } from '../machine-lock/machine-lock.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { TddCheck, TddState } from './tdd.types.ts'
 
 export async function checkTddReceipts(params: {
 	root: string
 	packageJson: PackageJson
-	/** Takes the machine lock before the run that lists the cases (a browser package). */
-	lock: () => MachineLockTaken
 	/** `--base <ref>`: measured from where HEAD left it. */
 	ref?: string
 	/** `--full`: the whole branch, before a merge. Default: HEAD, the uncommitted lot. */
@@ -68,22 +64,7 @@ export async function checkTddReceipts(params: {
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
 	if (hashChangedTestCode({ root, base, packageJson }).size === 0)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
-	const lock = params.lock()
-	if ('refusal' in lock) return { status: 'failed', reason: lock.refusal }
-	let state: TddState | { failure: string }
-	try {
-		state = await readTddState({
-			root,
-			packageJson,
-			ledger,
-			base,
-			...(lock.holderVariable && {
-				environment: { [MACHINE_LOCK_HOLDER_VARIABLE]: lock.holderVariable },
-			}),
-		})
-	} finally {
-		lock.release()
-	}
+	const state = await readTddState({ root, packageJson, ledger, base })
 	if ('failure' in state) return { status: 'failed', reason: state.failure }
 	const cases = state.cases.map((line) => ({ label: caseLabel(line), status: line.status }))
 	const open = state.cases.filter(

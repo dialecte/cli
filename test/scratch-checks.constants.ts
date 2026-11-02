@@ -1,7 +1,9 @@
 /** What the tests of the check reuse share: bounds, wordings, the hook a scratch package runs. */
 
-/** Scratch repositories, git, a hook and a clone per case: the bound leaves room on a loaded machine. */
-export const SCRATCH_REPOSITORY_TIMEOUT = 60_000
+import { HANDOVER_CASE_TIMEOUT } from './test-timing.constants.ts'
+
+/** The bound of a case that runs gates and hand-overs through scratch repositories: see HANDOVER_CASE_TIMEOUT. */
+export const SCRATCH_REPOSITORY_TIMEOUT = HANDOVER_CASE_TIMEOUT
 
 /** A gate whose tdd step really runs (a vitest package): the bound leaves room for it. */
 export const TDD_GATE_TIMEOUT = 240_000

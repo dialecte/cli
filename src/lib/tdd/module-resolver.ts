@@ -8,10 +8,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
 
-import { TEST_CONFIG_FILES } from '../machine-lock/machine-lock.constants.ts'
 import {
 	LOCAL_SPECIFIER_PATTERN,
 	MODULE_EXTENSIONS,
+	TEST_CONFIG_FILES,
 	TSCONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
 
