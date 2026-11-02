@@ -4,7 +4,7 @@
  * every guard, then writes the hand-over folder (the lots file, the snapshot and a one-line `commit.sh`)
  * and the card a person reviews, and takes the repository's hand-over lock.
  *
- * `dialecte handover run <folder> [--rehearse [--keep]]` - what `commit.sh` runs: the guards again, each
+ * `dialecte handover run <folder> [--rehearse [--keep] [--full]]` - what `commit.sh` runs: the guards again, each
  * on its own line with its duration, then lot after lot with the hook's output, a heartbeat while it is
  * silent, and the card at the end; a rerun resumes after the lots already committed.
  *
@@ -176,7 +176,7 @@ export function runHandover(params: {
 	}
 }
 
-/** `handover run <folder> [--rehearse [--keep]]`; `handover run --probe` answers that this cli has the command. */
+/** `handover run <folder> [--rehearse [--keep] [--full]]`; `handover run --probe` answers that this cli has the command. */
 export async function runHandoverRun(params: {
 	argv: string[]
 	write: WriteLine
@@ -223,6 +223,7 @@ export async function runHandoverRun(params: {
 			columns: params.columns ?? live.columns,
 			cliPath,
 			resumeMerge: hasFlag(argv, 'resume-merge'),
+			full: hasFlag(argv, 'full'),
 		})
 	// a real run marks its folder: a gate does not run under a hand-over committing now
 	const releaseRunMarker = writeRunMarker({ folder: handover.folder, now: new Date() })

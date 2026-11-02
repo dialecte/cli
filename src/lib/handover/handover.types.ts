@@ -1,5 +1,5 @@
 import type { CardLine } from '../card/card.types.ts'
-import type { CardGateLine } from '../gate-records/gate-records.types.ts'
+import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
@@ -260,3 +260,33 @@ export type HandoverRunMarker = { pid: number; startedAt: string }
 
 /** The links a rehearsal made beside its clone, and the lines saying what it linked and what it could not. */
 export type RehearsalLinks = { links: string[]; lines: string[] }
+
+/** What a rehearsal decides for one lot: rehearse it in a scratch clone, or reuse a green record of its tree. */
+export type RehearsalDecision = {
+	/** The lot's number, from 1. */
+	lot: number
+	/** The tree the lot's commit will leave. */
+	tree: string
+	decision: 'reused' | 'rehearsed'
+	reason: string
+	/** The record reused. */
+	record?: { mode: GateRecordMode; at: string; head: string }
+}
+
+/** A rehearsal's decision for a lot, before its number and tree are added. */
+export type LotDecision = Omit<RehearsalDecision, 'lot' | 'tree'>
+
+/** What every lot's decision of a rehearsal reads: the repository, what is installed, the commands, the hook. */
+export type RehearsalPlanContext = {
+	root: string
+	/** The branch the hand-over commits on. */
+	branch: string
+	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	/** The command hash a record of each mode must hold to be reused. */
+	commands: { full: string; hook: string }
+	/** What the commit hook's text names that stages files, if anything. */
+	stages: string | undefined
+}
+
+/** The tree a lot of a hand-over starts from and the tree its commit will hold. */
+export type LotTree = { before: string; tree: string }

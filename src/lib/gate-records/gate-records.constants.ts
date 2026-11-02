@@ -67,3 +67,46 @@ export const NIT_SEVERITY = 'nit'
 
 /** A review round's snapshot folder in the hand-over folder: `round-<n>`. */
 export const ROUND_FOLDER_PATTERN = /^round-([1-9]\d*)$/
+
+/** The folder of the records by tree, in the repository's common git folder: `<tree>.json` inside. */
+export const CHECK_STORE_FOLDER = 'dialecte-checks'
+
+/** What npm installed, as a check key hashes it: npm's own lock of `node_modules`, relative to the package. */
+export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'
+
+/** A check key's `lockHash` when nothing is installed. */
+export const NO_INSTALLED_LOCK = 'none'
+
+/** A dependency installed from a folder of the machine: `"file:../core"`. */
+export const FILE_DEPENDENCY_PREFIX = 'file:'
+
+/** The folders of a `file:` dependency its fingerprint leaves out: its own installs and git folder. */
+export const LINKED_SKIPPED_FOLDERS: readonly string[] = ['node_modules', '.git']
+
+/** The package.json fields whose `file:` dependencies a check key fingerprints. */
+export const LINKED_DEPENDENCY_FIELDS = [
+	'dependencies',
+	'devDependencies',
+	'optionalDependencies',
+] as const
+
+/** The origin of a hook record a rehearsal made in its scratch clone. */
+export const REHEARSAL_ORIGIN = 'rehearsal'
+
+/** The end of a card gate line read from a rehearsal's record. */
+export const REHEARSAL_RECORD_DETAIL = 'rehearsal'
+
+/** The end of a card gate line read from a record made at another commit than HEAD. */
+export const RECORD_FROM_DETAIL = 'from {head}'
+
+/** How many characters of a sha or tree id the reuse lines and the card's record suffixes show. */
+export const SHORT_SHA_LENGTH = 12
+
+/** A segment of a package.json `files` entry npm reads as a glob: the walk starts before it. */
+export const PACKAGE_FILES_GLOB_PATTERN = /[*?[\]{}]/
+
+/** A package.json `files` entry that excludes paths from what npm packs. */
+export const PACKAGE_FILES_EXCLUSION_PREFIX = '!'
+
+/** The fields of a check key, each a string: a stored record's key is checked against them. */
+export const CHECK_KEY_FIELDS = ['tree', 'lockHash', 'commandHash', 'linked'] as const

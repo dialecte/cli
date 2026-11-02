@@ -46,15 +46,23 @@ export function describeMissingHooksFolder(root: string): string | undefined {
  * exists in the folder above.
  */
 export function hasCommitHook(root: string): boolean {
+	return listCommitHookFiles(root).length > 0
+}
+
+/**
+ * The files a commit in `root` runs as its hooks, in the order git runs them: husky's scripts of the
+ * package (`.husky/pre-commit`) when the hooks folder is husky's, else the hooks folder's executable files.
+ */
+export function listCommitHookFiles(root: string): string[] {
 	const { folder } = readHooksFolder(root)
 	const husky = isFile(join(folder, HUSKY_RUNNER_FILE))
-	return COMMIT_HOOK_NAMES.some(function runsHook(name) {
-		if (husky) return isFile(join(dirname(folder), name))
+	return COMMIT_HOOK_NAMES.flatMap(function hookFileOf(name) {
+		if (husky) return isFile(join(dirname(folder), name)) ? [join(dirname(folder), name)] : []
 		try {
 			const status = statSync(join(folder, name))
-			return status.isFile() && (status.mode & 0o111) !== 0
+			return status.isFile() && (status.mode & 0o111) !== 0 ? [join(folder, name)] : []
 		} catch {
-			return false
+			return []
 		}
 	})
 }

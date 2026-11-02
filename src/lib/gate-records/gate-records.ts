@@ -7,17 +7,25 @@ import { resolve } from 'node:path'
 
 import { readGit } from '../git.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
+import { storeCheckRecord } from './check-store.ts'
 import {
 	GATE_RECORD_FILE,
 	HOOK_RECORD_MODE,
+	REHEARSAL_ORIGIN,
 	RULES_RECORD_FILE,
 	UNRECORDED_STEPS,
 } from './gate-records.constants.ts'
-import { computeStateHash } from './state-hash.ts'
+import { computeStateHash, hashStateTree } from './state-hash.ts'
 
 import type { GateMode, StepResult } from '../gate/gate.types.ts'
 import type { CaseStatus } from '../tdd/tdd.types.ts'
-import type { GateRecord, GateRecordMode, RecordedStep, RulesRecord } from './gate-records.types.ts'
+import type {
+	CheckKey,
+	GateRecord,
+	GateRecordMode,
+	RecordedStep,
+	RulesRecord,
+} from './gate-records.types.ts'
 
 /** Where git keeps `name` for the worktree `root` is in (its own git folder in a linked worktree). */
 function recordPathOf(params: { root: string; name: string }): string {
@@ -50,24 +58,54 @@ function readHead(root: string): string {
 }
 
 /**
- * Records a gate run that reached its steps: the tdd step and the configured ones, in run order. A run
- * refused at the hygiene or at the machine lock records nothing.
+ * Records a gate run that reached its steps: the tdd step and the configured ones, in run order, with the
+ * key of what it checked. A run refused at the hygiene or at the machine lock records nothing. A run whose
+ * configured steps ran also goes to the repository's store of records by tree; a run answered from a
+ * record (`reused`) and a run stopped at its tdd step do not: they checked nothing of the tree. Answers
+ * whether the record went to the store.
  */
-export function recordGate(params: { root: string; mode: GateMode; results: StepResult[] }): void {
+export function recordGate(params: {
+	root: string
+	mode: GateMode
+	results: StepResult[]
+	/** What the run checked; absent when the state changed while the steps ran (the record is then not stored). */
+	key?: CheckKey
+	/**
+	 * Without a key, the tree the steps started on: the record's state hash, so the card never reads the record
+	 * as current for the state the steps left.
+	 */
+	checkedTree?: string
+	/** The record the run was answered from: its time and HEAD. */
+	reused?: { at: string; head: string }
+}): boolean {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
 	)
-	if (refused) return
+	if (refused) return false
 	const record: GateRecord = {
 		mode: params.mode,
 		at: new Date().toISOString(),
 		head: readHead(params.root),
-		stateHash: computeStateHash(params.root),
+		stateHash: stateHashOf(params),
 		steps: params.results
 			.filter((result) => !UNRECORDED_STEPS.includes(result.step.name))
 			.map(recordedStepOf),
+		...(params.key && { key: params.key }),
+		...(params.reused && { reused: params.reused }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(params.mode), record })
+	const tddFailed = params.results.some(
+		(result) => result.step.name === TDD_STEP.name && result.status === 'failed',
+	)
+	const stored = Boolean(params.key) && !params.reused && !tddFailed
+	if (stored) storeCheckRecord({ root: params.root, record })
+	return stored
+}
+
+/** The state hash a gate record holds: of the tree its key names, else of the tree its steps started on. */
+function stateHashOf(params: { root: string; key?: CheckKey; checkedTree?: string }): string {
+	const tree = params.key?.tree ?? params.checkedTree
+	return tree ? hashStateTree(tree) : computeStateHash(params.root)
 }
 
 function recordedStepOf(result: StepResult): RecordedStep {
@@ -82,23 +120,29 @@ function recordedStepOf(result: StepResult): RecordedStep {
 }
 
 /**
- * Records a commit's hook as a gate run of the tree it ran on: `stateHash` taken before the commit (the hook
- * runs on the working files), `head` the commit it let through or HEAD when it failed, the steps its
- * summary names with their counts.
+ * Records a commit's hook as a gate run of the tree it ran on: `key` taken before the commit (the hook runs
+ * on the working files), `head` the commit it let through or HEAD when it failed, the steps its summary
+ * names with their counts. The record goes to the worktree's git folder and to the store of `storeRoot`
+ * (default `root`): a rehearsal stores it in the repository it cloned, marked as a rehearsal's.
  */
 export function recordHook(params: {
 	root: string
-	stateHash: string
+	key: CheckKey
 	steps: RecordedStep[]
+	/** The repository whose store holds the record, when the commit ran in a scratch clone of it. */
+	storeRoot?: string
 }): void {
 	const record: GateRecord = {
 		mode: HOOK_RECORD_MODE,
 		at: new Date().toISOString(),
 		head: readHead(params.root),
-		stateHash: params.stateHash,
+		stateHash: hashStateTree(params.key.tree),
 		steps: params.steps,
+		key: params.key,
+		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(HOOK_RECORD_MODE), record })
+	storeCheckRecord({ root: params.storeRoot ?? params.root, record })
 }
 
 /** Records a rules run on the changed files. */

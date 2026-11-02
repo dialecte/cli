@@ -23,6 +23,21 @@ export type RecordedStep = {
 export type GateRecordMode = GateMode | 'hook'
 
 /**
+ * What a check ran on, as a record names it: the tree it ran on, what npm had installed, what ran, and the
+ * folders of the `file:` dependencies as they were. Two records with the same key checked the same thing.
+ */
+export type CheckKey = {
+	/** The git tree id of the state it ran on. */
+	tree: string
+	/** sha256 (hex) of `node_modules/.package-lock.json`, `none` when absent. */
+	lockHash: string
+	/** sha256 (hex) of what ran: the gate's resolved steps and `--base`, or the commit hook's files. */
+	commandHash: string
+	/** sha256 (hex) over the folders of the `file:` dependencies (paths, sizes, mtimes). */
+	linked: string
+}
+
+/**
  * `dialecte-gate-fast.json` / `dialecte-gate-full.json`: the last gate run of that mode that reached its
  * steps (a run refused at the hygiene or the machine lock leaves the file as it was).
  * `dialecte-gate-hook.json`: the last commit hook `handover run` saw end (a stalled one records nothing).
@@ -42,6 +57,12 @@ export type GateRecord = {
 	stateHash: string
 	/** The tdd step, then the configured steps, in run order; for a hook, the steps its summary names. */
 	steps: RecordedStep[]
+	/** What the run checked; absent on a record written by an older cli, which is never reused. */
+	key?: CheckKey
+	/** The run answered from the record of `at` and `head` instead of running its steps. */
+	reused?: { at: string; head: string }
+	/** A rehearsal's hook record: it ran in a scratch clone of the repository. */
+	origin?: 'rehearsal'
 }
 
 /** `dialecte-rules.json`: the last `dialecte rules` run on the changed files (a run on named files records nothing). */

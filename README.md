@@ -168,7 +168,7 @@ the answer.
   symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
   in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
   and warnings), which the hand-over card reads; a run on named files records nothing.
-- `dialecte gate [--fast | --full] [--base <ref>] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
+- `dialecte gate [--fast | --full] [--base <ref>] [--rerun] [--no-wait] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (niced, one
   file at a time), `doc:build` and `type-bench:check`. Each step runs unfiltered, with
   `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
@@ -190,6 +190,33 @@ the answer.
   tdd step with the cases of the change it judged (`cases`: label and status); a run refused at the hygiene or at the machine lock records nothing. The state hash is that of the tree the
   worktree would commit (HEAD's tree with the changed and untracked files on top, the deleted ones
   removed, `.dialecte/` left out): committing the lots leaves it the same, any other edit changes it.
+  The record also holds its `key`, what the run checked: `tree` (the git tree id the state hash is the
+  sha256 of), `lockHash` (sha256 of `node_modules/.package-lock.json`, what npm installed; `none` without
+  it), `commandHash` (sha256 of the steps' names and commands in order, and HEAD's commit when a step
+  runs only the tests the change affects, which depend on the diff against HEAD; `--base` is no part of
+  it: it reads the `tdd` step only) and `linked` (sha256 over the package's `file:` dependencies as node
+  loads them - the folder `node_modules/<name>` links to, else the path package.json names - each file
+  they publish, their package.json and the paths of its `files`, with its path, size and modification
+  time; an exclusion (`!…`) is left out and a glob is walked from the folder before its wildcard, a
+  superset of what npm packs; a dependency without package.json or `files` is taken whole;
+  `node_modules` and `.git` are always left out). The key is taken before the steps and again after
+  them: when they differ (a step edited a file, an install or a rebuilt dependency during the run) the
+  record is written without a key, with the state hash of the tree the steps started on, and not stored;
+  the gate says so in one line before its verdict (`"stored": false` with `--json`). A run whose steps
+  ran is also stored by its tree in the repository's common git folder, `dialecte-checks/<tree>.json`
+  (`git rev-parse --git-common-dir`), which every worktree of the repository reads (the newest record
+  kept per mode and key). Before its steps, a gate looks there: a green record of the same mode and the
+  same key answers instead of running them -
+  `reused: gate --<mode> green on this tree at <time> (HEAD <sha>)`, the record's step lines, then
+  `gate --<mode>: green (reused)` (`"reused": true` with `--json`) - and the worktree's record is
+  written marked `reused` with the time and HEAD of the run it reuses. The hygiene and the `tdd` step
+  run every time: they are about the worktree (what is staged, the receipts, `.dialecte/lot.json`, the
+  base), not the tree, and a `tdd` step failing now is a failed gate. A record that failed, that ran no
+  step, of another mode (`--fast` never answers `--full` nor the reverse) or written by an older cli
+  (no key) is never reused; a stored entry of another shape is ignored. `--rerun` runs the steps
+  whatever the store holds. The key leaves out the Node version and the environment (a path given
+  through an environment variable); a `file:` dependency edited and restored to the same size within
+  the same modification time is not seen either.
 - A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
   off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
   terminal one spinner line `⠋ <step> - <what runs> <elapsed>` that the step's result line replaces (the
@@ -387,8 +414,16 @@ the answer.
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
     failed step,
     a rules error, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
-    record). A record of another tree than the worktree's now ends with `(the tree changed since)`: its
-    line turns `!` and blocks the hand-over; a failed step stays `✗`.
+    record). The records read are the worktree's last runs and the store's records of the tree the
+    hand-over commits - the worktree's tree, or for a hand-over holding a merge lot the tree its last lot
+    leaves (the trial merge with its resolutions) - the newest record of each step winning; a tdd step
+    another worktree recorded is left out (its verdict is that worktree's), and a stored record counts
+    only when it ran against what is installed here now (the same `node_modules` and `file:`
+    dependencies) with the command of its mode now. A line from a record made at a commit outside the
+    history of HEAD ends `· from <sha>` (the branch commit's hook record read for a merge on main; a
+    record of an earlier commit of this line carries none), a rehearsal's record `· rehearsal`. A record
+    of another tree than the one checked ends with `(the tree changed since)`: its line turns `!` and
+    blocks the hand-over; a failed step stays `✗`.
   - `tdd`: the lot's exemption; only the cases of the change count, those the gate's tdd step listed on
     this tree (a retitled or removed case's receipts are not counted under the old title); without a gate
     record of this tree that lists them, one line `counts from the last gate: run the gate on this tree`
@@ -450,13 +485,38 @@ the answer.
   it (the new commit, or the base when it failed), the state hash of the tree before the commit and the
   steps its summary names with their status and counts; the card reads it with the gate records, so a
   lot committed where no `dialecte gate` ran still shows its gates, until a newer gate record replaces
-  it. A rehearsal records in its scratch clone only. A hook that prints nothing gets `hook ✓` (or
+  it. The record holds its key too (the tree the hook ran on, what npm installed, the `file:` dependencies,
+  and for `commandHash` the hook files git runs: husky's `.husky/<hook>` scripts, else the hooks folder's
+  executable files) and goes to the repository's store of records by tree. A rehearsal writes it in its
+  scratch clone's git folder and in the repository's store, marked `origin: "rehearsal"`, never in the
+  repository's own `dialecte-gate-hook.json`. A hook that prints nothing gets `hook ✓` (or
   `hook ✗`) and the log's path; a repository with no commit hook prints none of it (in husky's `.husky/_`,
   which holds a wrapper for every hook name, a hook counts only when its script exists in `.husky/`). Then the commit with
   its stat; the total time and the card at the end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
   finds the lots already committed on top of the recorded HEAD (same message, same paths, same content)
   and resumes at the next one; anything else on top of HEAD is refused with what was found. It never
-  pushes. `--rehearse` announces the clone (`▶ rehearsal clone`), warns naming the untracked files outside
+  pushes. `--rehearse` first decides, per lot and before any clone, whether rehearsing it can find
+  something new, and prints one line per lot: `lot <n>/<N>  reused  <reason>` or
+  `lot <n>/<N>  rehearse  <reason>`. A plain lot is reused when the store holds a green `gate --full` of
+  the tree its commit will hold (HEAD with every lot up to it on top) with the key of now - the same
+  `node_modules`, `file:` dependencies and `--full` steps - the lot does not change `package-lock.json`,
+  and the commit hook stages no files of its own (its text names `git add`, `git stage`, `lint-staged` or
+  `git update-index`): `green gate --full on tree <tree>`. A merge lot is reused when the tree it leaves
+  (its trial merge with its resolutions) is its tip's tree and a green record of that tree - the branch
+  commit's hook record or a `gate --full`, with the key of now - is in the store, under the same
+  conditions: `green hook record of the tip's tree <tree>`. Otherwise the line says the first reason that
+  holds: `no green gate --full on tree <tree>`, `the lot changes package-lock.json`,
+  `the hook stages files (<match>)`, `node_modules changed since the record`,
+  `a linked dependency changed since the record`,
+  `<branch> moved: the merge leaves tree <tree>, the tip holds <tree>` (`<branch>` the one the hand-over
+  commits on: `main moved: ...`), `no green record of the tip's tree <tree>`; `--rehearse --full`
+  rehearses every lot (`--full`). The decisions go to `rehearsal.json` in the hand-over folder
+  (when, and per lot its tree, `reused` or `rehearsed`, the reason and the record reused: mode, time,
+  HEAD). When every lot is reused no clone is made: the guards, a reused merge's `tree <sha>`, then
+  `rehearsal skipped: every lot's tree has a green record` and the card. Otherwise the clone is made and
+  the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
+  others with their hook. A real run (no `--rehearse`) runs every commit's hook, whatever the store holds.
+  The rehearsal clone (`▶ rehearsal clone`) warns naming the untracked files outside
   `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
   HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
   run as they will for real. The clone sits in a rehearsal folder under a short root, `/tmp` on macOS
@@ -487,29 +547,29 @@ the answer.
   aside). It records the conflicts, each resolution's hash and the tree the merge was trial-merged on
   (`onTree`) in `merges.json`, under the review hash like `lots.json` (`--rehash` after a review). A resolution may
   cover a file that merges cleanly (the lot changes it on top of the merge). Rehearse first:
-  `--rehearse` prints the merge's `tree <sha>`, which goes into the lot as `tree`; a real run requires it
-  ("tree not recorded: rehearse first"). Before merging, the run refuses the lot when HEAD's tree is
-  not its `onTree` - an earlier lot committed other content (a hook staged files of its own) - naming
-  both trees, with nothing merged, and the next step (see what the lots before it committed, then write
-  the hand-over again from this HEAD for the lots left). A `merges.json` without `onTree` (written by an
-  earlier cli) is refused at the read: write the hand-over again, then `--rehash` after a review. The run merges the recorded tip (`git merge --no-ff
---no-commit`; a branch moved since is a note) and refuses a merge in progress, leaving it - except one
-  of the lot's own tip that this cli started (its marker in the git folder) or with `--resume-merge`,
-  aborted and redone. It checks the conflicts against the recorded ones, copies the resolutions
-  (hash-checked), refuses conflict markers in the result, and checks the staged tree against the recorded
-  one before the commit (else the merge is aborted) and the commit's tree after it (a hook may stage
-  files). A merge whose hook refuses it is aborted, for a clean rerun. A rerun recognises a done merge by
-  its subject, the tip as its second parent and its tree. Before any commit whose staged
-  `package-lock.json` differs from HEAD's, `node_modules` are brought to it: the staged lock and
-  `package.json` written over the working copies (the working ones saved first in the git folder's
-  `dialecte-install-backup`, put back after the install, on an interrupt too; a backup a crash left is
-  restored by the next run when the files still hold the staged bytes, else refused naming it),
+  `--rehearse` prints the merge's `tree <sha>` (a reused merge too), which goes into the lot as `tree`;
+  a real run requires it ("tree not recorded: rehearse first"). Before merging, the run refuses the lot
+  when HEAD's tree is not its `onTree` - an earlier lot committed other content (a hook staged files of
+  its own) - naming both trees, with nothing merged, and the next step (see what the lots before it
+  committed, then write the hand-over again from this HEAD for the lots left). A `merges.json` without
+  `onTree` (written by an earlier cli) is refused at the read: write the hand-over again, then
+  `--rehash` after a review. The run merges the recorded tip (`git merge --no-ff --no-commit`; a branch
+  moved since is a note) and refuses a merge in progress, leaving it - except one of the lot's own tip
+  that this cli started (its marker in the git folder) or with `--resume-merge`, aborted and redone. It
+  checks the conflicts against the recorded ones, copies the resolutions (hash-checked), refuses
+  conflict markers in the result, and checks the staged tree against the recorded one before the commit
+  (else the merge is aborted) and the commit's tree after it (a hook may stage files). A merge whose
+  hook refuses it is aborted, for a clean rerun. A rerun recognises a done merge by its subject, the
+  tip as its second parent and its tree. Before any commit whose staged `package-lock.json` differs
+  from HEAD's, `node_modules` are brought to it: the staged lock and `package.json` written over the
+  working copies (the working ones saved first in the git folder's `dialecte-install-backup`, put back
+  after the install, on an interrupt too; a backup a crash left is restored by the next run when the
+  files still hold the staged bytes, else refused naming it),
   `npm ci --ignore-scripts --prefer-offline --no-audit --no-fund` (no install script runs: a `prepare`
   or `postinstall` could change git config, hooks or any file; `npm ci` reinstalls every package, so
   the note after the sync names each installed package of the staged lock that has one,
   `install scripts not run: <names>`: each package once by its name, a nested copy too, five named then
-  `and <n> more`), the working copies put back
-  byte for byte;
+  `and <n> more`), the working copies put back byte for byte;
   refused when the install changed the staged files or the versions still differ (dev, peer and optional
   packages an install leaves out aside). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
   into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration

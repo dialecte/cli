@@ -2,14 +2,26 @@
  * The hand-over card's gate lines, from records, never from prose: one per gate step (the latest record of
  * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes
  * whole), then the rules, then the review from the hand-over folder's findings ledger and round snapshots.
- * A record of another tree than the worktree's now is marked stale: it warns, or stays failed.
+ * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
+ * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
+ * A line from a record made at a commit outside HEAD's history (a branch commit's hook record read for a
+ * merge on main) ends `· from <commit>`, a rehearsal's `· rehearsal`. A stored record counts only when it
+ * ran against what is installed now (the same `node_modules`, the same `file:` dependencies) with the
+ * command of its mode now. A record of another tree than the one checked is marked stale: it warns, or stays
+ * failed.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { counted } from '../counted.ts'
+import { resolveGateSteps } from '../gate/gate-config.ts'
+import { isAncestorCommit } from '../git.ts'
+import { readPackageJson } from '../package-json.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
+import { TDD_STEP } from '../tdd/tdd.constants.ts'
+import { gateCommandHash, hashHookCommand, readInstalledKey } from './check-key.ts'
+import { isSameKey, readTreeRecords } from './check-store.ts'
 import {
 	DETAIL_SEPARATOR,
 	GATE_LINE_NAME,
@@ -24,13 +36,18 @@ import {
 	NOT_RUN_DETAIL,
 	NOT_RUN_HERE_DETAIL,
 	OPEN_LEDGER_STATES,
+	RECORD_FROM_DETAIL,
+	REHEARSAL_ORIGIN,
+	REHEARSAL_RECORD_DETAIL,
 	REVIEW_APPROVED_DETAIL,
 	REVIEW_LINE_NAME,
 	ROUND_FOLDER_PATTERN,
 	RULES_LINE_NAME,
+	SHORT_SHA_LENGTH,
 	TREE_CHANGED_SUFFIX,
 } from './gate-records.constants.ts'
 import { readGateRecords, readRulesRecord } from './gate-records.ts'
+import { hashStateTree } from './state-hash.ts'
 
 import type { StepCounts } from '../gate/gate.types.ts'
 import type { CardGateLine, GateRecord, RecordedStep, RulesRecord } from './gate-records.types.ts'
@@ -40,19 +57,96 @@ export function buildCardGateLines(params: {
 	root: string
 	/** The hand-over folder: its findings ledger and round snapshots. */
 	folder: string
-	/** The worktree's tree now (`computeStateHash`): a record of another tree is stale. */
+	/** The worktree's tree now (`computeStateHash`): a rules record of another tree is stale. */
 	stateHash: string
+	/**
+	 * The tree the hand-over commits (the worktree's, or the tree its last merge lot leaves): a gate record of
+	 * another tree is stale.
+	 */
+	tree: string
 }): CardGateLine[] {
-	const { stateHash } = params
+	const { root, tree } = params
+	const own = readGateRecords(root)
+	const others = readTreeRecords({ root, tree }).filter(
+		(record) => !own.some((ownRecord) => isSameRun({ record, other: ownRecord })),
+	)
+	// what a run here would hold now is read only when another run's record is there to compare with
+	const stored = others.length
+		? others.filter(currentStoredRecord({ root, tree })).map(withoutTddStep)
+		: []
+	const records = [...own, ...stored]
+	const heads = new Set(records.map((record) => record.head))
 	return [
-		...gateStepLines({ records: readGateRecords(params.root), stateHash }),
-		rulesLine({ record: readRulesRecord(params.root), stateHash }),
+		...gateStepLines({
+			records,
+			stateHash: hashStateTree(tree),
+			outsideHistory: new Set(
+				[...heads].filter(
+					(head) => !isAncestorCommit({ root, ancestor: head, descendant: 'HEAD' }),
+				),
+			),
+		}),
+		rulesLine({ record: readRulesRecord(root), stateHash: params.stateHash }),
 		reviewLine(params.folder),
 	]
 }
 
+/**
+ * Which stored records of `tree` count for the worktree `root`: those whose key is the key a run there would
+ * have now - what is installed, the `file:` dependencies, the command of the record's mode.
+ */
+function currentStoredRecord(params: {
+	root: string
+	tree: string
+}): (record: GateRecord) => boolean {
+	const { root, tree } = params
+	const installed = readInstalledKey(root)
+	const commands = readCommandHashes(root)
+	return function isCurrent(record) {
+		const commandHash = commands[record.mode]
+		return (
+			commandHash !== undefined &&
+			isSameKey({ key: { tree, ...installed, commandHash }, other: record.key })
+		)
+	}
+}
+
+/**
+ * The command hash of each record mode in the worktree `root`; none when the package's gate steps cannot be
+ * read (a `dialecte.gate` that is no list of steps): no stored record counts then, and the card still prints.
+ */
+function readCommandHashes(root: string): Record<string, string> {
+	try {
+		const packageJson = readPackageJson(root)
+		return {
+			fast: gateCommandHash({ root, steps: resolveGateSteps({ packageJson, mode: 'fast' }) }),
+			full: gateCommandHash({ root, steps: resolveGateSteps({ packageJson, mode: 'full' }) }),
+			[HOOK_RECORD_MODE]: hashHookCommand(root),
+		}
+	} catch {
+		// a package.json the gate itself would refuse: nothing stored can be told current
+		return {}
+	}
+}
+
+/** The same run: a worktree's record and its copy in the store. */
+function isSameRun(params: { record: GateRecord; other: GateRecord }): boolean {
+	const { record, other } = params
+	return record.mode === other.mode && record.at === other.at && record.head === other.head
+}
+
+/** A record another worktree (or a rehearsal) made: its tdd step judged that worktree's receipts, not these. */
+function withoutTddStep(record: GateRecord): GateRecord {
+	return { ...record, steps: record.steps.filter((step) => step.name !== TDD_STEP.name) }
+}
+
 /** Each step's line from its latest record; `gate never run` when there is no record. */
-function gateStepLines(params: { records: GateRecord[]; stateHash: string }): CardGateLine[] {
+function gateStepLines(params: {
+	records: GateRecord[]
+	stateHash: string
+	/** The commits of records outside HEAD's history: a line of such a record says which. */
+	outsideHistory: ReadonlySet<string>
+}): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
 	const latest = new Map<string, { step: RecordedStep; record: GateRecord }>()
@@ -64,7 +158,11 @@ function gateStepLines(params: { records: GateRecord[]; stateHash: string }): Ca
 	return [...latest.values()].map(function stepLine(entry) {
 		const line = lineOfStep(entry.step)
 		return withTreeCheck({
-			line: entry.record.mode === HOOK_RECORD_MODE ? fromHook(line) : line,
+			line: withRecordSource({
+				line: entry.record.mode === HOOK_RECORD_MODE ? fromHook(line) : line,
+				record: entry.record,
+				outsideHistory: params.outsideHistory,
+			}),
 			current: entry.record.stateHash === params.stateHash,
 		})
 	})
@@ -88,6 +186,27 @@ function fromHook(line: CardGateLine): CardGateLine {
 		...line,
 		detail: [line.detail, HOOK_RECORD_DETAIL].filter(Boolean).join(DETAIL_SEPARATOR),
 	}
+}
+
+/**
+ * A line of a rehearsal's record ends `· rehearsal`; a line of a record made at a commit outside HEAD's
+ * history ends `· from <commit>`, whichever worktree made it. A record made at HEAD, or at a commit HEAD
+ * holds (the gate before the lots were committed), carries no suffix.
+ */
+function withRecordSource(params: {
+	line: CardGateLine
+	record: GateRecord
+	outsideHistory: ReadonlySet<string>
+}): CardGateLine {
+	const { line, record } = params
+	const source =
+		record.origin === REHEARSAL_ORIGIN
+			? REHEARSAL_RECORD_DETAIL
+			: !params.outsideHistory.has(record.head)
+				? ''
+				: RECORD_FROM_DETAIL.replace('{head}', record.head.slice(0, SHORT_SHA_LENGTH))
+	if (!source) return line
+	return { ...line, detail: [line.detail, source].filter(Boolean).join(DETAIL_SEPARATOR) }
 }
 
 function lineOfStep(step: RecordedStep): CardGateLine {

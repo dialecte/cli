@@ -7,7 +7,9 @@
  * summary line of its steps with their counts, then its warning lines (passed) or its error lines and the
  * failing step's last lines (failed), then the full log's path; then the commit's sha and stat. A
  * repository with no commit hook prints none of it. A hook that ended (passed or failed, not stalled) is
- * recorded as a gate record of the tree it ran on (`dialecte-gate-hook.json`), which the card reads. A lot
+ * recorded as a gate record of the tree it ran on (`dialecte-gate-hook.json`, and the repository's store of
+ * records by tree), which the card reads. A rehearsal may commit a lot without its hook (`--no-verify`, in
+ * its scratch clone only) when a green record of the lot's tree answers for it. A lot
  * whose commit fails is unstaged again (a merge lot's merge aborted), so the same command resumes at it
  * once the cause is fixed. A merge lot merges its recorded tip with its resolutions, checked against what
  * was reviewed and rehearsed. Before any commit that stages a change of the lock, `node_modules` are
@@ -18,8 +20,8 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { computeCheckKey, hashHookCommand } from '../gate-records/check-key.ts'
 import { recordHook } from '../gate-records/gate-records.ts'
-import { computeStateHash } from '../gate-records/state-hash.ts'
 import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -64,6 +66,10 @@ export async function commitLots(params: {
 	tty?: boolean
 	/** Brings `node_modules` to a staged lock that changed; default: `npm install`. */
 	install?: Installer
+	/** The lots (numbered from 1) committed without their hook: a rehearsal's lots a green record answers. */
+	withoutHook?: ReadonlySet<number>
+	/** The repository whose store holds the hook records, when `root` is a rehearsal clone of it. */
+	storeRoot?: string
 }): Promise<string[] | undefined> {
 	const { root, lots, write, clock } = params
 	const tty = params.tty ?? false
@@ -125,15 +131,16 @@ export async function commitLots(params: {
 			return undefined
 		}
 		if (synced.note) write(`  ${synced.note}`)
+		const skipsHook = params.withoutHook?.has(number) ?? false
 		// the hook runs on the working files: its record is of the tree before the commit
-		const hooked = hasCommitHook(root)
-		const stateHash = hooked ? computeStateHash(root) : undefined
+		const hooked = !skipsHook && hasCommitHook(root)
+		const key = hooked ? computeCheckKey({ root, commandHash: hashHookCommand(root) }) : undefined
 		// the hook's log grows as it prints: a run killed midway still leaves it
 		const hookLog = createHookLog({ lot: number })
 		const hookView = createHookLiveView({ running, tty, write, clock })
 		const commit = await streamCommand({
 			command: 'git',
-			args: ['commit', '-q', '-F', '-'],
+			args: ['commit', '-q', ...(skipsHook ? ['--no-verify'] : []), '-F', '-'],
 			cwd: root,
 			input: `${lot.message.trim()}\n`,
 			prefix: HOOK_OUTPUT_PREFIX,
@@ -160,10 +167,11 @@ export async function commitLots(params: {
 				}).map((line) => `${HOOK_OUTPUT_PREFIX}${line}`)
 			: []
 		// after a failed commit HEAD is still the base; a stalled hook proved nothing
-		if (stateHash !== undefined && !commit.stalled)
+		if (key !== undefined && !commit.stalled)
 			recordHook({
 				root,
-				stateHash,
+				key,
+				...(params.storeRoot && { storeRoot: params.storeRoot }),
 				steps: hookSummarySteps({
 					steps: readHookSteps(commit.output),
 					passed: commit.exitCode === 0,

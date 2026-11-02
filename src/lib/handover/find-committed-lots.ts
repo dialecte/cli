@@ -3,9 +3,7 @@
  * next lot's message and exactly that lot's paths with the content of the working tree (the reviewed
  * snapshot); a merge lot, its subject, the recorded tip as second parent and the recorded tree. The first commit that does not is reported as foreign.
  */
-import { spawnSync } from 'node:child_process'
-
-import { readGit } from '../git.ts'
+import { isAncestorCommit, readGit } from '../git.ts'
 
 import type { CommittedLots, MergeLot, ResolvedLot } from './handover.types.ts'
 
@@ -22,8 +20,7 @@ export function findCommittedLots(params: {
 	const { root, head, lots } = params
 	const tip = readGit({ root, args: ['rev-parse', params.tip] }).trim()
 	if (tip === head) return { commits: [] }
-	const isAncestor = spawnSync('git', ['merge-base', '--is-ancestor', head, tip], { cwd: root })
-	if (isAncestor.status !== 0)
+	if (!isAncestorCommit({ root, ancestor: head, descendant: tip }))
 		return {
 			commits: [],
 			foreign: `${tip.slice(0, 12)} is not on top of the recorded HEAD ${head.slice(0, 12)} (rebased, reset or another branch)`,

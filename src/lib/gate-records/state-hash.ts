@@ -12,10 +12,19 @@ import { STATE_EXCLUDED_PATTERN } from './gate-records.constants.ts'
 
 /** The state hash of the worktree `root` is in (any folder of it). */
 export function computeStateHash(root: string): string {
+	return hashStateTree(computeStateTree(root))
+}
+
+/** The tree the worktree `root` is in would commit: the git tree id its state hash is the sha256 of. */
+export function computeStateTree(root: string): string {
 	const top = workTreeTopOf(root) ?? root
 	const files = listWorkingChanges(top).filter((file) => !STATE_EXCLUDED_PATTERN.test(file))
 	const headTree = readGit({ root: top, args: ['rev-parse', 'HEAD^{tree}'] }).trim()
-	const tree = addWorkingFilesToTree({ root: top, tree: headTree, files })
+	return addWorkingFilesToTree({ root: top, tree: headTree, files })
+}
+
+/** The state hash of a tree: sha256 (hex) of its id. */
+export function hashStateTree(tree: string): string {
 	return createHash('sha256').update(tree).digest('hex')
 }
 

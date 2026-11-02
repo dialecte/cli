@@ -328,3 +328,39 @@ export const CARD_SHA_LENGTH = 7
 
 /** The minus sign of the card's line counts (not a hyphen). */
 export const MINUS_SIGN = '−'
+
+/** A commit hook that stages files of its own: its commit may hold another tree than any record checked. */
+export const HOOK_STAGES_PATTERN =
+	/\bgit\s+add\b|\bgit\s+stage\b|\blint-staged\b|\bgit\s+update-index\b/
+
+/** The decisions of a rehearsal, per lot, in the hand-over folder. */
+export const REHEARSAL_DECISIONS_FILE = 'rehearsal.json'
+
+/** A rehearsal's line per lot: `lot <n>/<N>  reused  <reason>` or `lot <n>/<N>  rehearse  <reason>`. */
+export const REHEARSAL_DECISION_LINE = 'lot {number}/{count}  {decision}  {reason}'
+
+/** How a decision reads on its line. */
+export const REHEARSAL_DECISION_WORDS = { reused: 'reused', rehearsed: 'rehearse' } as const
+
+/** Under a reused merge lot: the tree its commit will hold, to record in the lot as `tree`. */
+export const REUSED_MERGE_TREE_LINE = '  tree {tree}'
+
+/** When no lot needs rehearsing: no clone is made. */
+export const REHEARSAL_SKIPPED_LINE = "rehearsal skipped: every lot's tree has a green record"
+
+/** Why a lot is reused or rehearsed; `{tree}`, `{tip}` are short tree ids. */
+export const REHEARSAL_REASONS = {
+	fullGate: 'green gate --full on tree {tree}',
+	tipRecord: "green {mode} record of the tip's tree {tree}",
+	noFullGate: 'no green gate --full on tree {tree}',
+	noTipRecord: "no green record of the tip's tree {tree}",
+	lotChangesLock: 'the lot changes package-lock.json',
+	mergeChangesLock: 'the merge changes package-lock.json',
+	hookStages: 'the hook stages files ({match})',
+	branchMoved: '{branch} moved: the merge leaves tree {tree}, the tip holds {tip}',
+	installChanged: 'node_modules changed since the record',
+	linkedChanged: 'a linked dependency changed since the record',
+	commandChanged: 'the {mode} command changed since the record',
+	full: '--full',
+	noPlan: 'no plan: {error}',
+} as const

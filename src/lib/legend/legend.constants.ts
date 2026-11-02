@@ -78,6 +78,18 @@ const GATE_TERMS: LegendGroup = [
 		look: 'look only if it is not ✓',
 	},
 	{
+		term: 'from <sha>',
+		meaning:
+			"the line comes from a record made at a commit outside this branch's history, such as the branch commit a merge brings in",
+		look: 'look only if it is not ✓',
+	},
+	{
+		term: 'rehearsal',
+		meaning:
+			'the line comes from the commit hook of a rehearsal in a scratch clone, which ran on the tree the lots leave',
+		look: 'look only if it is not ✓',
+	},
+	{
 		term: 'check',
 		meaning: "the package's check script: types, lint, format and the tests it runs",
 		look: 'look only if it is not ✓',

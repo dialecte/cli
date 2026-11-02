@@ -12,7 +12,7 @@ import { counted } from '../counted.ts'
 import { buildCardGateLines } from '../gate-records/card-gates.ts'
 import { CARD_GATE_MARKS } from '../gate-records/gate-records.constants.ts'
 import { readJudgedCases } from '../gate-records/gate-records.ts'
-import { computeStateHash } from '../gate-records/state-hash.ts'
+import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { shellQuote } from '../shell-quote.ts'
@@ -58,6 +58,7 @@ import {
 	TREE_NOT_RECORDED,
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
+import { listLotTrees } from './lot-trees.ts'
 
 import type { CardLine, CardSection, SectionCard } from '../card/card.types.ts'
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
@@ -112,8 +113,19 @@ export function buildHandoverCard(params: {
 		params.done ||
 		params.cliPath === undefined ||
 		runsHandovers({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
-	const stateHash = computeStateHash(root)
-	const gates = buildCardGateLines({ root, folder: params.folder, stateHash })
+	const stateTree = computeStateTree(root)
+	const stateHash = hashStateTree(stateTree)
+	const gates = buildCardGateLines({
+		root,
+		folder: params.folder,
+		stateHash,
+		tree: checkedTree({
+			root,
+			stateTree,
+			// the lots committed in the repository already are in its tree
+			lots: params.lots.slice(commitRoot === root ? params.commits.length : 0),
+		}),
+	})
 	const failedGates = gates.filter((line) => line.status === 'failed').map((line) => line.name)
 	const otherTreeGates = gates
 		.filter((line) => line.stale && line.status !== 'failed')
@@ -175,6 +187,25 @@ export function buildHandoverCard(params: {
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
+	}
+}
+
+/**
+ * The tree the card's gates are checked against: the worktree's, or for lots holding a merge the tree the
+ * last lot will leave (the merge's trial tree with its resolutions), which no worktree holds. Git cannot
+ * build it (a tip gone): the worktree's, as before a merge.
+ */
+function checkedTree(params: {
+	root: string
+	stateTree: string
+	lots: readonly ResolvedLot[]
+}): string {
+	if (!params.lots.some((lot) => lot.merge)) return params.stateTree
+	try {
+		return listLotTrees({ root: params.root, lots: params.lots }).at(-1)?.tree ?? params.stateTree
+	} catch {
+		// the guards and the run say what git refused
+		return params.stateTree
 	}
 }
 

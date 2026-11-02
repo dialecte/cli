@@ -2965,6 +2965,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(maskVolatile({ lines: boxLines(result.output), root, head, tip })).toEqual([
 			'┌─ hand-over: dialecte-scratch-XXXXXX main ────────────────────────────────────┐',
 			'│ BLOCKED  2 lots · 1 file · +3 −1 · 1 merge not sized · 1 gate failed: build  │',
+			'│          · gates ran on another tree: tdd, check                             │',
 			'│          4 declarations to read (below)                                      │',
 			'├─ commit ─────────────────────────────────────────────────────────────────────┤',
 			'│ pending  1 file  +3 −1  feat(read): read answers one                         │',
@@ -2973,9 +2974,10 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│                               not recorded: rehearse first                   │',
 			'│ HEAD aaaaaaa                                                                 │',
 			'├─ gates ──────────────────────────────────────────────────────────────────────┤',
-			'│ ! tdd     not run here (the package does not test with vitest)               │',
-			'│ ✓ check   4/4                                                                │',
-			'│ ✗ build   exit 1                                                             │',
+			'│ ! tdd     not run here (the package does not test with vitest) (the tree     │',
+			'│           changed since)                                                     │',
+			'│ ! check   4/4 (the tree changed since)                                       │',
+			'│ ✗ build   exit 1 (the tree changed since)                                    │',
 			'│ ✓ rules   0 errors · 0 warnings                                              │',
 			'│ ! review  no findings ledger                                                 │',
 			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
@@ -3006,8 +3008,8 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const output = writeHandover({ lotsPath }).output
 
 		expect(verdictLines(output)).toEqual([
-			'READY  2 lots · 2 files · +4 −2 · all gates green',
-			'       4 declarations to read (below)',
+			'BLOCKED  2 lots · 2 files · +4 −2 · gates ran on another tree: tdd, check, build',
+			'         4 declarations to read (below)',
 		])
 		expect(sectionLines({ output, name: 'commit' })).toEqual([
 			'pending  1 file  +3 −1  feat(read): read answers one',
@@ -3138,7 +3140,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(data).toMatchObject({
 			verdict: 'BLOCKED',
 			failedGates: ['build'],
-			otherTreeGates: [],
+			otherTreeGates: ['tdd', 'check'],
 			declarations: 4,
 			head,
 			lots: [{ pending: true }, { pending: true }],
@@ -3164,7 +3166,9 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'1 flag: helper code changed near unchanged cases (noise)',
 		])
 		expect(data.gates).toEqual(
-			expect.arrayContaining([{ name: 'build', status: 'failed', detail: 'exit 1' }]),
+			expect.arrayContaining([
+				{ name: 'build', status: 'failed', detail: 'exit 1 (the tree changed since)', stale: true },
+			]),
 		)
 	})
 
@@ -3230,7 +3234,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			columns: 100,
 		}).output
 
-		expect(styledText({ output, open: 32, text: '✓', close: 39, after: ' check' })).toBe(true)
+		expect(styledText({ output, open: 32, text: '✓', close: 39, after: ' rules' })).toBe(true)
 		expect(styledText({ output, open: 33, text: '!', close: 39, after: ' tdd' })).toBe(true)
 		expect(styledText({ output, open: 31, text: '✗', close: 39, after: ' build' })).toBe(true)
 		expect(styledText({ output, open: 1, text: 'BLOCKED', close: 22, after: '  2 lots' })).toBe(
@@ -3645,6 +3649,18 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			term: 'commit hook',
 			meaning:
 				'the line comes from the commit hook a hand-over run saw, its own scripts by name (test:run, lint:check, hook); a gate run after it replaces those lines',
+			look: 'look only if it is not ✓',
+		},
+		{
+			term: 'from <sha>',
+			meaning:
+				"the line comes from a record made at a commit outside this branch's history, such as the branch commit a merge brings in",
+			look: 'look only if it is not ✓',
+		},
+		{
+			term: 'rehearsal',
+			meaning:
+				'the line comes from the commit hook of a rehearsal in a scratch clone, which ran on the tree the lots leave',
 			look: 'look only if it is not ✓',
 		},
 		{

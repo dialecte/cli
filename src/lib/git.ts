@@ -69,6 +69,20 @@ export function mainCheckoutOf(root: string): string {
 	return realpathSync(main) === realpathSync(root) ? root : main
 }
 
+/** `ancestor` is `descendant` or one of its ancestors; a commit git does not hold is not. */
+export function isAncestorCommit(params: {
+	root: string
+	ancestor: string
+	descendant: string
+}): boolean {
+	return (
+		spawnSync('git', ['merge-base', '--is-ancestor', params.ancestor, params.descendant], {
+			cwd: params.root,
+			env: { ...process.env, ...GIT_READ_ENVIRONMENT },
+		}).status === 0
+	)
+}
+
 /** The value of a git config key in `root`, or undefined when it is not set. */
 export function readGitConfig(params: { root: string; key: string }): string | undefined {
 	const result = spawnSync('git', ['config', '--get', params.key], {
