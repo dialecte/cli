@@ -41,6 +41,8 @@
 		"oxfmt": "^0.53.0"
 	},
 	"devDependencies": {
+		"@babel/parser": "8.0.7",
+		"@babel/traverse": "8.0.7",
 		"@dialecte/core": "file:../core",
 		"@types/node": "^22.0.0",
 		"@typescript/native": "npm:typescript@^7.0.2",
