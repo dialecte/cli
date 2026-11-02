@@ -2,7 +2,8 @@
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
  * commits are all in the base branch, the hand-over folders already committed, and the rehearsal clones
  * left behind - each with the command that removes it, with its absolute `cd`. Never an unmerged branch,
- * a dirty worktree, or one a pending hand-over commits in; never a symbolic link (the sibling link
+ * a dirty worktree, one a pending hand-over commits in, or one a mutation run that still runs (or died before
+ * reporting) was started from; never a symbolic link (the sibling link
  * `.worktrees/core -> ../core` among them) nor a folder a link reaches.
  */
 import { spawnSync } from 'node:child_process'
@@ -15,6 +16,8 @@ import { handoverLockPath } from '../handover/handover-lock.ts'
 import { REHEARSAL_FOLDER_PREFIX, REHEARSAL_MARKER_FILE } from '../handover/handover.constants.ts'
 import { handoverState } from '../handover/list-handovers.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
+import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
+import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { shellQuote } from '../shell-quote.ts'
@@ -24,11 +27,13 @@ import {
 	DEFAULT_BASE_BRANCH,
 	IGNORED_FILES_SHOWN,
 	PRUNE_LINK_REASON,
+	PRUNE_RUN_PREFIX,
 	REBUILT_IGNORED_FOLDERS,
 	REBUILT_IGNORED_NAMES,
 } from './worktree.constants.ts'
 
 import type { HandoverFolder } from '../handover/handover.types.ts'
+import type { RunEntry } from '../mutation/mutation.types.ts'
 import type { FolderLink, PruneItem, PrunePlan, WorkspacePrunePlan } from './worktree.types.ts'
 
 export function planPrune(params: {
@@ -102,6 +107,10 @@ function planRepository(params: {
 		args: ['rev-parse', '--abbrev-ref', 'HEAD'],
 	}).trim()
 	const keptBranches = new Set<string>([baseBranch, checkedOut])
+	// a run that still runs, or died before reporting, needs the worktree it was started from
+	const ownedRuns = readRuns({ root: repository }).filter(
+		(run) => (run.state === 'running' || run.state === 'died') && existsSync(run.worktree),
+	)
 	const worktrees = listWorktrees(repository)
 		.slice(1)
 		.map((worktree) => ({
@@ -132,6 +141,7 @@ function planRepository(params: {
 					baseBranch,
 					pending: pendingWorktrees.has(realpathSync(name)),
 					links: params.links,
+					ownedRuns,
 				})
 			: undefined
 		if (kept) {
@@ -354,9 +364,15 @@ function whyKeepWorktree(params: {
 	baseBranch: string
 	pending: boolean
 	links: readonly FolderLink[]
+	/** The repository's runs that still run or died before reporting: the worktree one was started from stays. */
+	ownedRuns: readonly RunEntry[]
 }): string | undefined {
 	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
 	if (reachedBy) return `the link ${reachedBy} points to it`
+	const worktree = realpathSync(params.worktree)
+	const owned = params.ownedRuns.find((run) => realpathSync(run.worktree) === worktree)
+	if (owned)
+		return `${PRUNE_RUN_PREFIX}${owned.state === 'running' ? runningLine(owned) : diedRunLine(owned)}`
 	const unmerged = unmergedCount({
 		root: params.repository,
 		branch: params.branch,

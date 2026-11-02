@@ -410,6 +410,7 @@ the answer.
     `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
     `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
     since the hook names its own scripts, not the gate's steps), then `rules` from its record, then
+    `mutation` when the package declares a mutation scope (below), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots. `✓` passed; `!` to
     look at (a step not run here, with its reason, or not run after a failure; `rules` never run; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
@@ -425,6 +426,19 @@ the answer.
     record of an earlier commit of this line carries none), a rehearsal's record `· rehearsal`. A record
     of another tree than the one checked ends with `(the tree changed since)`: its line turns `!` and
     blocks the hand-over; a failed step stays `✗`.
+    The `mutation` line is what the package still owes its mutation runs, read from the mutation store when
+    the card is written. `✗` (blocks): `new` survivors or died runs of the package, whatever their lot
+    (`2 new survivors · 1 died run: dialecte mutants status`); a run of the branch still running when the
+    hand-over merges a branch (`run <id> still running (pid <pid>): the merge waits for it`, a run of a
+    merged branch too) or when the lot's mutation switch is `gate` (`...: a gate lot waits for it`); a gate
+    lot with no run of its branch (or a merged one) reported on the tree the hand-over commits
+    (`gate lot: run dialecte mutants run on this tree first`); an invalid `dialecte.mutation` or lot switch,
+    with its reason. `!` (does not block): a run of the branch still running on a plain hand-over
+    (`...: its survivors are not in yet`). Otherwise `✓ mutation nothing pending`. To unblock: kill each
+    survivor with a test, record its reason (`.dialecte/mutation-records.json`), or
+    `dialecte mutants schedule <follow-up> <key>`; rerun a died run or `dialecte mutants abandon <run id>`;
+    wait for a running run; run `dialecte mutants run` on the tree for a gate lot. The switch is the
+    hand-over folder's `lot.json` when it holds one, else `.dialecte/lot.json`.
   - `tdd`: the lot's exemption; only the cases of the change count, those the gate's tdd step listed on
     this tree (a retitled or removed case's receipts are not counted under the old title); without a gate
     record of this tree that lists them, one line `counts from the last gate: run the gate on this tree`
@@ -454,7 +468,12 @@ the answer.
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
-  lots, plan tags and citations. When the staged files are exactly the next lot's (a run stopped after
+  lots, plan tags and citations, and last `mutation`: the card's `mutation` verdict computed again when the
+  guard runs (never taken from the card), so a run that reported a survivor, or died, after the card was
+  written refuses the run with exit 1 and nothing committed (`✗ mutation <detail>`, each survivor and died
+  run indented under it, then what to do with each); a run still running on a plain hand-over passes with
+  its warning; `✓ mutation no mutation scope declared` for a package without one. A rehearsal runs the
+  same guard. When the staged files are exactly the next lot's (a run stopped after
   staging it), the index guard prints the command that unstages them, with its `cd`.
   Then each lot announced before its work: off a terminal `▶ lot n/N` with its files and subject, and a
   line every 30 s in which nothing of the lot was shown (`… <lot> running 2 m 10 s`: hook lines the view
@@ -662,7 +681,10 @@ the answer.
   died run `abandoned` and keeps it (a running or reported run is refused); `dialecte mutants migrate`
   turns `scripts/mutants/equivalent-mutants.json` into `.dialecte/mutation-records.json` (same keys and
   reasons, family `unclassified`, the line's hash), never overwriting an existing file. The store is
-  written by the cli only: never edit it by hand.
+  written by the cli only: never edit it by hand. A `new` survivor or a died run blocks every hand-over of
+  the package (the card's `mutation` line and `handover run`'s guard) until it is killed, recorded,
+  scheduled, rerun or abandoned; a running run blocks a merge hand-over and a gate lot; `dialecte worktree
+prune` keeps the worktree of a running or died run.
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
@@ -671,7 +693,10 @@ the answer.
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
   commands (or the `--yes` command) to a person. Kept, each with why: an unmerged branch; the branch the
-  main checkout is on; a worktree a hand-over is pending in, or with uncommitted changes; a branch whose
+  main checkout is on; a worktree a mutation run was started from while that run still runs
+  (`mutation run <id> still running (pid <pid>)`) or after it died before reporting
+  (`mutation run <id> died before reporting: rerun or dialecte mutants abandon <id>`; a reported or
+  abandoned run keeps nothing); a worktree a hand-over is pending in, or with uncommitted changes; a branch whose
   reflog still reaches commits the base does not hold (reset onto a newer base after commits of its own:
   its reflog is the only way back to them); a worktree or branch with no commit of its own in its reflog
   (just made); a worktree holding ignored files that removing it would delete (anything but
@@ -796,7 +821,11 @@ commands only print; the user posts.
 
 - `dialecte recap <hand-over folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
   records only: the commits of the lots (or `not committed yet`), the test cases the newest gate record of the
-  current tree judged red then green, counted per test file, the gate and rules lines, the review rounds from
+  current tree judged red then green, counted per test file, the gate and rules lines (and `mutation`), the
+  lot's mutation runs (`Mutation`: each run of the branch and of the branches it merges, oldest first, with
+  its mode, id and counts or its state; each survivor those runs killed or recorded; each survivor first seen
+  on those branches and scheduled, with its follow-up; `No mutation run.`, or `No mutation scope declared.`
+  for a package without one), the review rounds from
   the findings ledger, the decisions (accepted findings, the lot declaration's `accept` and `revised` entries,
   the rows of `decisions.md`), the logged findings as follow-ups, and who reviewed and posted it (`git config
 user.name`; no name set is refused). Every section is always there, saying so in one line when empty; a

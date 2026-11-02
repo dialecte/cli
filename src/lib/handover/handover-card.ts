@@ -58,7 +58,7 @@ import {
 	TREE_NOT_RECORDED,
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
-import { listLotTrees } from './lot-trees.ts'
+import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 
 import type { CardLine, CardSection, SectionCard } from '../card/card.types.ts'
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
@@ -125,6 +125,8 @@ export function buildHandoverCard(params: {
 			// the lots committed in the repository already are in its tree
 			lots: params.lots.slice(commitRoot === root ? params.commits.length : 0),
 		}),
+		branch: params.branch,
+		mergedBranches: mergedBranchesOf(params.lots),
 	})
 	const failedGates = gates.filter((line) => line.status === 'failed').map((line) => line.name)
 	const otherTreeGates = gates
@@ -187,25 +189,6 @@ export function buildHandoverCard(params: {
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
-	}
-}
-
-/**
- * The tree the card's gates are checked against: the worktree's, or for lots holding a merge the tree the
- * last lot will leave (the merge's trial tree with its resolutions), which no worktree holds. Git cannot
- * build it (a tip gone): the worktree's, as before a merge.
- */
-function checkedTree(params: {
-	root: string
-	stateTree: string
-	lots: readonly ResolvedLot[]
-}): string {
-	if (!params.lots.some((lot) => lot.merge)) return params.stateTree
-	try {
-		return listLotTrees({ root: params.root, lots: params.lots }).at(-1)?.tree ?? params.stateTree
-	} catch {
-		// the guards and the run say what git refused
-		return params.stateTree
 	}
 }
 
