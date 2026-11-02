@@ -34,3 +34,13 @@ export const NO_AFFECTED_TEST_NOTE = 'no test file is affected by the change'
 
 /** Before each line shown under a step's line (the tdd step's flags, deleted cases). */
 export const STEP_DETAIL_INDENT = '        '
+
+/** The line before the steps a green record of the same check answers: when it ran, at which HEAD. */
+export const GATE_REUSED_LINE = 'reused: gate --{mode} green on this tree at {at} (HEAD {head})'
+
+/** The verdict of a gate whose steps a green record answered. */
+export const GATE_REUSED_VERDICT = 'gate --{mode}: green (reused)'
+
+/** Before the verdict, when the tree, the install or a linked dependency changed while the steps ran. */
+export const GATE_STATE_CHANGED_LINE =
+	'not stored for reuse: the files, node_modules or a linked dependency changed while the steps ran'

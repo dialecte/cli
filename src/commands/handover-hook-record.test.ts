@@ -121,6 +121,12 @@ describe(
 				at: expect.stringMatching(ISO_TIME_PATTERN),
 				head: headOf(root),
 				stateHash: stateBefore,
+				key: {
+					tree: expect.stringMatching(/^[0-9a-f]{40}$/),
+					lockHash: 'none',
+					commandHash: expect.stringMatching(SHA256_PATTERN),
+					linked: expect.stringMatching(SHA256_PATTERN),
+				},
 				steps: [
 					expect.objectContaining({ name: 'check', status: 'passed' }),
 					expect.objectContaining({

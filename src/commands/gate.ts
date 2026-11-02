@@ -13,13 +13,25 @@
  * (before a merge) measure the whole branch.
  *
  * A run that reaches its steps records them in the worktree's git folder (`dialecte-gate-<mode>.json`),
- * for the hand-over card.
+ * for the hand-over card, with the key of what it checked: the tree, what npm installed, the steps, the
+ * `file:` dependencies' folders. A run whose steps ran also goes to the repository's store of records by
+ * tree, which every worktree of the repository reads. A green record of the same mode and key answers the
+ * steps instead of running them (`--rerun` runs them whatever the store holds); the hygiene and the `tdd`
+ * step, which are about the worktree and not the tree, run every time.
  */
 import { join, resolve } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
+import { computeCheckKey, gateCommandHash } from '../lib/gate-records/check-key.ts'
+import { findReusableRecord, isSameKey, originOfRecord } from '../lib/gate-records/check-store.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { recordGate } from '../lib/gate-records/gate-records.ts'
-import { STEP_DETAIL_INDENT } from '../lib/gate/gate-config.constants.ts'
+import {
+	GATE_REUSED_LINE,
+	GATE_REUSED_VERDICT,
+	GATE_STATE_CHANGED_LINE,
+	STEP_DETAIL_INDENT,
+} from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps, runsTestsInABrowser } from '../lib/gate/run-gate.ts'
 import { renderStepCounts } from '../lib/gate/step-counts.ts'
@@ -39,6 +51,7 @@ import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { CheckKey, GateRecord, RecordedStep } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepLock, StepResult } from '../lib/gate/gate.types.ts'
 import type { MachineLockAccess, MachineLockTaken } from '../lib/machine-lock/machine-lock.types.ts'
@@ -83,6 +96,8 @@ export async function runGate(params: {
 
 	const packageJson = readPackageJson(cwd)
 	const steps = resolveGateSteps({ packageJson, mode })
+	// `--base` reads the tdd step only, which runs every time: it is no part of what the steps check
+	const commandHash = gateCommandHash({ root: cwd, steps })
 	const machineLock = params.machineLock ?? {
 		path: machineLockPath(),
 		clock: createSystemClock(),
@@ -121,6 +136,8 @@ export async function runGate(params: {
 		shownLive.add(shown.result)
 	}
 	const results: StepResult[] = []
+	let reused: { record: GateRecord; key: CheckKey } | undefined
+	let keyBefore: CheckKey | undefined
 	if (mode === 'fast') {
 		const hygiene = hygieneStep({ cwd, declared: declaredPaths(argv) })
 		results.push(hygiene)
@@ -155,8 +172,23 @@ export async function runGate(params: {
 			results.push(tdd)
 			if (running) showLive({ result: tdd, running })
 		}
+		// the key of the state the steps start on: a record is stored only when they leave it the same
+		keyBefore = results.some((result) => result.status === 'failed')
+			? undefined
+			: computeCheckKey({ root: cwd, commandHash })
+		const found =
+			keyBefore && !hasFlag(argv, 'rerun')
+				? findReusableRecord({ root: cwd, mode, key: keyBefore })
+				: undefined
+		reused = found && keyBefore && { record: found, key: keyBefore }
 		if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
-		else {
+		else if (reused) {
+			if (progress) live?.writeLine(renderReuseLine({ mode, record: reused.record }))
+			for (const result of reusedResults({ record: reused.record, steps })) {
+				results.push(result)
+				if (progress) showLive({ result })
+			}
+		} else {
 			const stepResults = await runGateSteps({
 				root: cwd,
 				steps,
@@ -177,15 +209,37 @@ export async function runGate(params: {
 	} finally {
 		if (gateLock && !('refusal' in gateLock)) gateLock.release()
 	}
-	recordGate({ root: cwd, mode, results })
+	const original = reused && originOfRecord(reused.record)
+	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
+	// a state changed while the steps ran (a step edited a file, an install, a rebuilt dependency) was not
+	// the state they checked: the run is recorded without a key, never stored
+	const changedTree =
+		keyBefore !== undefined && !isSameKey({ key: keyBefore, other: keyAfter })
+			? keyBefore.tree
+			: undefined
+	const changedWhileRunning = changedTree !== undefined
+	const stored = recordGate({
+		root: cwd,
+		mode,
+		results,
+		// without a key the record holds the tree its steps started on: never current for the one they left
+		...(changedTree === undefined ? { key: keyAfter } : { checkedTree: changedTree }),
+		...(original && { reused: original }),
+	})
+	const notStored = changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []
 
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
 	if (json)
 		return {
 			exitCode,
-			output: JSON.stringify({ mode, ok: !failed, steps: results }, null, 2),
+			output: JSON.stringify(
+				{ mode, ok: !failed, ...(reused && { reused: true }), stored, steps: results },
+				null,
+				2,
+			),
 		}
+	const reuseLine = reused && renderReuseLine({ mode, record: reused.record })
 	return {
 		exitCode,
 		output: [
@@ -196,11 +250,45 @@ export async function runGate(params: {
 				.flatMap((result) => [
 					renderStepLine(result),
 					...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+					// the steps after the tdd step are the record's: said once, before them
+					...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
 				]),
-			failed ? `gate --${mode}: failed at ${failed.step.name}` : `gate --${mode}: green`,
+			...notStored,
+			failed
+				? `gate --${mode}: failed at ${failed.step.name}`
+				: reused
+					? GATE_REUSED_VERDICT.replace('{mode}', mode)
+					: `gate --${mode}: green`,
 			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
 		].join('\n'),
 	}
+}
+
+/** `reused: gate --<mode> green on this tree at <time> (HEAD <short>)`, naming the run that checked. */
+function renderReuseLine(params: { mode: GateMode; record: GateRecord }): string {
+	const { at, head } = originOfRecord(params.record)
+	return GATE_REUSED_LINE.replace('{mode}', params.mode)
+		.replace('{at}', at)
+		.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
+}
+
+/** The configured steps as the reused record holds them (its tdd step left out: this run made its own). */
+function reusedResults(params: { record: GateRecord; steps: readonly GateStep[] }): StepResult[] {
+	return params.record.steps
+		.filter((step) => step.name !== TDD_STEP.name)
+		.map(function resultOf(recorded: RecordedStep): StepResult {
+			return {
+				step: params.steps.find((step) => step.name === recorded.name) ?? {
+					name: recorded.name,
+					run: '',
+				},
+				status: recorded.status,
+				counts: recorded.counts,
+				restored: [],
+				...(recorded.note && { note: recorded.note }),
+				...(recorded.reason && { reason: recorded.reason }),
+			}
+		})
 }
 
 /** The worktree's hygiene as the first step of `--fast`. */

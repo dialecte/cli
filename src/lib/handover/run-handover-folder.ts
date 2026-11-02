@@ -1,6 +1,7 @@
 /**
  * `dialecte handover run <folder>`: the guards, then the lots not committed yet, then the card. With a
- * rehearsal, the guards read the repository and the lots are committed in its scratch clone. A real run
+ * rehearsal, the guards read the repository and the lots are committed in its scratch clone, or not at all
+ * when a green record answers for every lot. A real run
  * that leaves every lot committed then moves the lot file (`.dialecte/lot.json`) into the folder: the next
  * lot on the branch starts from an empty declaration, not from this lot's entries. The card after a real run
  * has no notes: they were written for the person about to run it, and what the run proved is in its gates.
@@ -21,6 +22,7 @@ import {
 	COMMIT_SCRIPT_FILE,
 	EMPTY_LOT_DECLARATION,
 	LOT_FILE_ARCHIVED,
+	REHEARSAL_SKIPPED_LINE,
 } from './handover.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
@@ -48,12 +50,20 @@ export async function runHandoverFolder(params: {
 	cliPath?: string
 	/** `--resume-merge`: a merge of the next lot's tip in progress, someone else's too, is aborted and redone. */
 	resumeMerge?: boolean
+	/** A rehearsal; default: the lots are committed elsewhere than in the repository. */
+	rehearsal?: boolean
+	/** A rehearsal a green record answers for every lot of: the guards, then the card, no commit. */
+	skipCommits?: boolean
+	/** The lots (numbered from 1) a rehearsal commits without their hook. */
+	withoutHook?: ReadonlySet<number>
+	/** The repository whose store holds the hook records, when the lots are committed in a clone of it. */
+	storeRoot?: string
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
 	const startedAt = clock.now()
 	const commitRoot = params.commitRoot ?? lotsFile.repository
-	const rehearsal = commitRoot !== lotsFile.repository
+	const rehearsal = params.rehearsal ?? commitRoot !== lotsFile.repository
 	const guarded = checkHandoverGuards({
 		handover,
 		write,
@@ -62,17 +72,22 @@ export async function runHandoverFolder(params: {
 		resumeMerge: params.resumeMerge,
 	})
 	if (!guarded) return 1
-	const committed = await commitLots({
-		root: commitRoot,
-		lots,
-		commits: guarded.commits,
-		write,
-		clock,
-		onProcessGroup: params.onProcessGroup,
-		hookEnvironment: params.hookEnvironment,
-		progress: params.progress,
-		tty: params.tty,
-	})
+	if (params.skipCommits) write(REHEARSAL_SKIPPED_LINE)
+	const committed = params.skipCommits
+		? guarded.commits
+		: await commitLots({
+				root: commitRoot,
+				lots,
+				commits: guarded.commits,
+				write,
+				clock,
+				onProcessGroup: params.onProcessGroup,
+				hookEnvironment: params.hookEnvironment,
+				progress: params.progress,
+				tty: params.tty,
+				withoutHook: params.withoutHook,
+				storeRoot: params.storeRoot,
+			})
 	// a stopped run: the lots it did commit, for the card (the hand-over is partly committed)
 	const commits =
 		committed ??
@@ -83,7 +98,7 @@ export async function runHandoverFolder(params: {
 			lots,
 			compareContent: false,
 		}).commits
-	if (committed) {
+	if (committed && !params.skipCommits) {
 		if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })
 		const made = committed.length - guarded.commits.length
 		write(

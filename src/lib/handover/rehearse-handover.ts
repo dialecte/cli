@@ -5,6 +5,11 @@
  * short scratch root, beside links to the repository's sibling folders its relative `file:` dependencies
  * reach, and the hook runs with a short temporary folder inside it. The guards read the repository; the
  * lots are committed in the clone; the whole rehearsal folder is removed at the end unless kept.
+ *
+ * Before any clone, each lot is decided (`planRehearsal`) and its line printed: a lot a green record of its
+ * tree answers for is committed in the clone without its hook, the others with it; the decisions go to the
+ * hand-over folder's `rehearsal.json`. When every lot is answered for, no clone is made: the guards, a
+ * reused merge's tree, then the card. The hook records the clone makes go to the repository's store.
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -29,17 +34,23 @@ import { createStepProgress } from '../progress/step-progress.ts'
 import { copyNodeModules } from '../worktree/copy-node-modules.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
+	REHEARSAL_DECISION_LINE,
+	REHEARSAL_DECISION_WORDS,
+	REHEARSAL_DECISIONS_FILE,
 	REHEARSAL_FOLDER_PREFIX,
 	REHEARSAL_MARKER_FILE,
 	REHEARSAL_TEMPORARY_FOLDER,
+	REHEARSAL_REASONS,
+	REUSED_MERGE_TREE_LINE,
 	UNTRACKED_WARNING_LIMIT,
 } from './handover.constants.ts'
 import { linkRehearsalSiblings, removeRehearsalFolder } from './rehearsal-links.ts'
+import { planRehearsal } from './rehearsal-plan.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { HandoverFolder, WriteLine } from './handover.types.ts'
+import type { HandoverFolder, RehearsalDecision, WriteLine } from './handover.types.ts'
 
 export async function rehearseHandover(params: {
 	handover: HandoverFolder
@@ -59,8 +70,41 @@ export async function rehearseHandover(params: {
 	cliPath?: string
 	/** `--resume-merge`, passed on to the guards. */
 	resumeMerge?: boolean
+	/** `--full`: every lot is rehearsed, whatever the records say. */
+	full?: boolean
 }): Promise<number> {
 	const { handover, write } = params
+	const decisions = decideLots({ handover, full: params.full ?? false })
+	writeFileSync(
+		join(handover.folder, REHEARSAL_DECISIONS_FILE),
+		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
+	)
+	const everyLotReused = decisions.every((decision) => decision.decision === 'reused')
+	for (const decision of decisions) {
+		write(
+			REHEARSAL_DECISION_LINE.replace('{number}', String(decision.lot))
+				.replace('{count}', String(decisions.length))
+				.replace('{decision}', REHEARSAL_DECISION_WORDS[decision.decision])
+				.replace('{reason}', decision.reason),
+		)
+		// no clone commits the merge: its tree, which the real run requires in the lot, is said here
+		if (everyLotReused && handover.lots[decision.lot - 1].merge)
+			write(REUSED_MERGE_TREE_LINE.replace('{tree}', decision.tree))
+	}
+	if (everyLotReused)
+		return runHandoverFolder({
+			handover,
+			write,
+			clock: params.clock,
+			colour: params.colour,
+			progress: params.progress,
+			tty: params.tty,
+			columns: params.columns,
+			cliPath: params.cliPath,
+			resumeMerge: params.resumeMerge,
+			rehearsal: true,
+			skipCommits: true,
+		})
 	const progress =
 		params.progress ??
 		createStepProgress({
@@ -117,6 +161,12 @@ export async function rehearseHandover(params: {
 			cliPath: params.cliPath,
 			resumeMerge: params.resumeMerge,
 			hookEnvironment: { TMPDIR: hookTemporary },
+			withoutHook: new Set(
+				decisions
+					.filter((decision) => decision.decision === 'reused')
+					.map((decision) => decision.lot),
+			),
+			storeRoot: repository,
 		})
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
@@ -125,6 +175,27 @@ export async function rehearseHandover(params: {
 			removeRehearsalFolder({ folder, links })
 			write('removed the rehearsal clone and its folder')
 		}
+	}
+}
+
+/**
+ * Each lot's decision; when the plan cannot be made (git cannot build a lot's tree), every lot is rehearsed
+ * and the guards say what is wrong.
+ */
+function decideLots(params: { handover: HandoverFolder; full: boolean }): RehearsalDecision[] {
+	try {
+		return planRehearsal(params)
+	} catch (error) {
+		const reason = REHEARSAL_REASONS.noPlan.replace(
+			'{error}',
+			(error instanceof Error ? error.message : String(error)).split('\n')[0],
+		)
+		return params.handover.lots.map((_lot, index) => ({
+			lot: index + 1,
+			tree: '',
+			decision: 'rehearsed',
+			reason,
+		}))
 	}
 }
 

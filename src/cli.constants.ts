@@ -142,11 +142,13 @@ Contributing (inside a dialecte repository):
   dialecte rules [<files...>] [--json]
                              # types / constants in their files, named functions, no await in an argument,
                              # object parameters, full words, no plan tag or standard citation
-  dialecte gate [--fast | --full] [--no-wait] [--declare <path>]... [--json]
+  dialecte gate [--fast | --full] [--base <ref>] [--rerun] [--no-wait] [--declare <path>]... [--json]
                              # steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults;
                              # refuses while a hand-over script holds the repository; --fast starts with the
                              # worktree's hygiene (nothing staged, no stash on its branch, new files declared);
-                             # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait)
+                             # --full and heavy steps hold the machine lock (waits, or refuses with --no-wait);
+                             # a green record of the same tree, install and steps (any worktree of the
+                             # repository) answers the steps after a fresh tdd step; --rerun runs them
   dialecte lock run [--no-wait] -- <command> [<argument>...]
                              # runs the command (no shell, its output on the terminal) holding the machine lock
                              # gate and tdd take: waits with a line every 30 s naming the holder, or refuses
@@ -175,10 +177,12 @@ Contributing (inside a dialecte repository):
                              # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
                              # refuses files in no lot, tags, citations, a missing core.hooksPath folder;
                              # --legend: every term of the card, what it means, whether to look
-  dialecte handover run <folder> [--rehearse [--keep]] [--resume-merge]
+  dialecte handover run <folder> [--rehearse [--keep] [--full]] [--resume-merge]
                              # what commit.sh runs: each guard with its time, each lot announced (a spinner on
                              # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse
-                             # commits in a scratch clone; a real run that commits every lot moves
+                             # commits in a scratch clone, without the hook a lot whose tree has a green
+                             # record (no clone when every lot has one; --full rehearses every lot), its
+                             # decisions in rehearsal.json; a real run that commits every lot moves
                              # .dialecte/lot.json into the folder as lot.json and leaves {} in its place
   dialecte handover list [--root <dir>] [--json]
                              # every hand-over folder: repository, worktree, branch, lots, age, state

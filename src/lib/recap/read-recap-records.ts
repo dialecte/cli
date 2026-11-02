@@ -9,7 +9,7 @@ import { basename, dirname, join } from 'node:path'
 import { buildCardGateLines } from '../gate-records/card-gates.ts'
 import { REVIEW_LINE_NAME } from '../gate-records/gate-records.constants.ts'
 import { readGateRecords, readJudgedCases, readRulesRecord } from '../gate-records/gate-records.ts'
-import { computeStateHash } from '../gate-records/state-hash.ts'
+import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf, readGitConfig } from '../git.ts'
 import { findCommittedLots } from '../handover/find-committed-lots.ts'
 import { revisionOf } from '../handover/list-handovers.ts'
@@ -54,11 +54,12 @@ export function readRecapRecords(params: {
 		bases: pathBasesOf({ root, repositoryExists }),
 	})
 	if (typeof findings === 'string') return findings
-	const stateHash = repositoryExists ? computeStateHash(root) : undefined
+	const stateTree = repositoryExists ? computeStateTree(root) : undefined
+	const stateHash = stateTree && hashStateTree(stateTree)
 	return {
 		...readCommits({ handover, repositoryExists }),
 		judgedCases: stateHash ? readJudgedCases({ root, stateHash }) : undefined,
-		checks: stateHash ? readChecks({ root, folder, stateHash }) : [],
+		checks: stateTree && stateHash ? readChecks({ root, folder, stateHash, tree: stateTree }) : [],
 		findings,
 		accepted,
 		revised,
@@ -117,7 +118,12 @@ function spellingsOf(folder: string): string[] {
 }
 
 /** The gate and rules lines of the repository, the review line left out; none when nothing was recorded. */
-function readChecks(params: { root: string; folder: string; stateHash: string }): CardGateLine[] {
+function readChecks(params: {
+	root: string
+	folder: string
+	stateHash: string
+	tree: string
+}): CardGateLine[] {
 	if (readGateRecords(params.root).length === 0 && !readRulesRecord(params.root)) return []
 	return buildCardGateLines(params).filter((line) => line.name !== REVIEW_LINE_NAME)
 }
