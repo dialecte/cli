@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { onTestFinished } from 'vitest'
+import { onTestFinished, vi } from 'vitest'
 
 /** A new empty folder under the system's temporary folder, removed when the current test ends. */
 export function temporaryFolder(prefix: string): string {
@@ -13,6 +13,17 @@ export function temporaryFolder(prefix: string): string {
 		rmSync(folder, { recursive: true, force: true })
 	})
 	return folder
+}
+
+/**
+ * Git reads only a config of the test's own, holding `userName` when given, for the rest of the test: never the
+ * machine's global nor system config. The caller restores the environment (`vi.unstubAllEnvs`).
+ */
+export function isolateGitConfig(params: { userName?: string } = {}): void {
+	const file = join(temporaryFolder('dialecte-git-config-'), 'gitconfig')
+	writeFileSync(file, params.userName ? `[user]\n\tname = ${params.userName}\n` : '')
+	vi.stubEnv('GIT_CONFIG_GLOBAL', file)
+	vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
 }
 
 /** A repository on `main` with one commit holding `files`, removed when the current test ends. */

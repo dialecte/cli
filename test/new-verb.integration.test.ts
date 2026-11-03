@@ -123,8 +123,11 @@ function dialecteFixture(): string {
 	return root
 }
 
+/** The cli's own tsc (TypeScript 7, as `type-check`), run by node: through npx, npm 12 prints `npm notice run` lines. */
+const TSC = join(CLI_ROOT, 'node_modules/@typescript/native/bin/tsc')
+
 function typeCheck(root: string): { status: number | null; output: string } {
-	const result = spawnSync('npx', ['tsc', '-p', join(root, 'tsconfig.json')], {
+	const result = spawnSync(process.execPath, [TSC, '-p', join(root, 'tsconfig.json')], {
 		cwd: CLI_ROOT,
 		encoding: 'utf8',
 	})

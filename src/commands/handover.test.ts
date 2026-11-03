@@ -2197,10 +2197,13 @@ describe('handover: the card width', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, ()
 	for (const columns of [40, 100])
 		it(`a width of ${columns} → the run command stays whole on one line (copyable), outside the wrapped box`, () => {
 			const { lotsPath, out } = prepare({ overrides: { gates: LONG_GATES } })
+			// Its name alone is as wide as the card: the command is wider, however short the tmp path.
+			const folder = join(out, 'hand-over-'.padEnd(columns, 'x'))
+			mkdirSync(folder)
 
-			const result = writeHandover({ lotsPath, columns })
+			const result = writeHandover({ lotsPath, argv: ['--out', folder], columns })
 
-			const command = `node '${WRITER_CLI}' handover run '${out}'`
+			const command = `node '${WRITER_CLI}' handover run '${folder}'`
 			expect(command.length).toBeGreaterThan(columns)
 			expect(result.output.split('\n')).toContain(command)
 			expect(cardLines(result.output).filter((line) => line.length > columns)).toEqual([])
