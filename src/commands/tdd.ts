@@ -11,7 +11,8 @@
  *   kept, one the lot declares revised at review (a proven case, or an edited case the base provably
  *   holds) is recorded revised. A file with a refusal still records its other cases' receipts but is not
  *   frozen; the files without a refusal are frozen, and the changed helpers, fixtures and snapshots a red
- *   or a revised case of theirs depends on. The change is measured from HEAD (the
+ *   or a revised case of theirs depends on, or a `revised` entry names when every test file depending on
+ *   them is frozen without a red (recorded revised). The change is measured from HEAD (the
  *   uncommitted lot), or from where HEAD left `--base <ref>`.
  * - `green`: every case of the changed test files (or those named) must hold a red receipt, its file and
  *   its test call as frozen, the helpers untouched, production changed since its red, and pass.
@@ -36,6 +37,7 @@ import {
 	namesOneCase,
 	readAcceptances,
 	readRevisions,
+	revisionOfHelper,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
 import {
@@ -62,6 +64,7 @@ import { findingLine, readTddState } from '../lib/tdd/tdd-state.ts'
 import {
 	CHANGED_AND_PASSES,
 	FROZEN_AFTER_RED,
+	HELPER_DEPENDENT_OUTSIDE_RUN,
 	NO_RED_RECEIPT,
 	NOT_PROVABLY_OF_THE_BASE,
 	NOTHING_CHANGED_SINCE_RED,
@@ -84,6 +87,7 @@ import type {
 	LotCaseEntry,
 	CaseFailure,
 	ReceiptFlag,
+	RevisedHelper,
 	RunCase,
 	TddContext,
 	TddEntry,
@@ -160,7 +164,8 @@ export async function runTdd(params: {
 
 async function runRed(context: TddContext): Promise<CommandResult> {
 	const { root } = context
-	const files = targetFiles({ changed: listChangedTestFiles(context), targets: context.targets })
+	const changed = listChangedTestFiles(context)
+	const files = targetFiles({ changed, targets: context.targets })
 	if (files.length === 0)
 		return {
 			exitCode: 1,
@@ -224,17 +229,26 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	}
 	const changedTestCode = [...testCode.keys()]
 	const resolveModule = createModuleResolver({ root })
+	// listed once per file, for the run's files and, when a `revised` entry names a helper, every changed one
+	const listedDependencies = new Map<string, ReturnType<typeof listTestDependencies>>()
+	function dependenciesOf(file: string): ReturnType<typeof listTestDependencies> {
+		const listed =
+			listedDependencies.get(file) ??
+			listTestDependencies({
+				root,
+				file,
+				changedTestCode,
+				resolveModule,
+				packageJson: context.packageJson,
+			})
+		listedDependencies.set(file, listed)
+		return listed
+	}
 	const frozen: Record<string, string> = {}
 	for (const file of runnable.filter(
 		(candidate) => !unlisted.some((file) => file.file === candidate.file),
 	)) {
-		const { dependencies, unresolved: unresolvedImports } = listTestDependencies({
-			root,
-			file: file.file,
-			changedTestCode,
-			resolveModule,
-			packageJson: context.packageJson,
-		})
+		const { dependencies, unresolved: unresolvedImports } = dependenciesOf(file.file)
 		if (unresolvedImports.length) {
 			const reason = `cannot resolve the import ${unresolvedImports.map((specifier) => `"${specifier}"`).join(', ')}: ${UNRESOLVED_IMPORT_HINT}`
 			lines.push(statusLine({ label: 'refused', id: file.file, detail: reason }))
@@ -297,7 +311,37 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 			for (const dependency of dependencies)
 				if (testCode.has(dependency)) frozen[dependency] = testCode.get(dependency) ?? ''
 	}
-	if (Object.keys(frozen).length) entries.push({ kind: 'freeze', files: frozen, at })
+	const { revised: revisedHelpers, outsideRun } = helpersToRevise({
+		context,
+		revisions,
+		testCode,
+		frozen,
+		// every changed test file, refused or outside the run too: the entry waits for all the helper's dependents
+		dependents: (helper) =>
+			changed
+				.filter((file) => dependenciesOf(file.file).dependencies.includes(helper))
+				.map((file) => file.file),
+		inRun: (file) => files.some((runFile) => runFile.file === file),
+	})
+	for (const { file, entry } of revisedHelpers) {
+		frozen[file] = testCode.get(file) ?? ''
+		lines.push(statusLine({ label: 'revised', id: file, detail: entry.reason }))
+	}
+	for (const { file, outside } of outsideRun)
+		lines.push(
+			statusLine({
+				label: 'unfrozen',
+				id: file,
+				detail: HELPER_DEPENDENT_OUTSIDE_RUN.replace('{files}', outside.join(', ')),
+			}),
+		)
+	if (Object.keys(frozen).length)
+		entries.push({
+			kind: 'freeze',
+			files: frozen,
+			...(revisedHelpers.length && { revised: revisedHelpers.map(({ file }) => file) }),
+			at,
+		})
 	appendEntries({ root, entries, production })
 	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'revised' })} revised, ${countLines({ lines, label: 'refused' })} refused; ${
 		Object.keys(frozen).length ? `frozen: ${Object.keys(frozen).join(', ')}` : 'nothing frozen'
@@ -307,6 +351,41 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 	if (movedBack.length && countLines({ lines, label: 'red' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
 	return finish({ context, lines, summary, refused })
+}
+
+/**
+ * The changed helpers a `revised` entry of the lot file lets this red run freeze: changed since their last
+ * freeze, not frozen by a red or a revised case of the run, and with at least one changed test file
+ * depending on them, every such file in the run and frozen by it (none refused, none with a red: a red
+ * freezes its helpers itself). The entry never excuses a red. With the helpers it leaves unfrozen only
+ * because changed dependents of theirs are outside a targeted run, and those files.
+ */
+function helpersToRevise(params: {
+	context: TddContext
+	revisions: readonly LotCaseEntry[]
+	testCode: ReadonlyMap<string, string>
+	/** The test code this run freezes so far. */
+	frozen: Readonly<Record<string, string>>
+	/** The changed test files depending on the helper. */
+	dependents: (helper: string) => string[]
+	/** The test file is one of the run's. */
+	inRun: (file: string) => boolean
+}): { revised: RevisedHelper[]; outsideRun: Array<{ file: string; outside: string[] }> } {
+	const { frozen } = params
+	const revised: RevisedHelper[] = []
+	const outsideRun: Array<{ file: string; outside: string[] }> = []
+	for (const [file, hash] of params.testCode) {
+		const entry = revisionOfHelper({ revisions: params.revisions, file })
+		if (!entry || file in frozen) continue
+		if (frozenHashOf({ ledger: params.context.ledger, file }) === hash) continue
+		const dependents = params.dependents(file)
+		const inRun = dependents.filter((dependent) => params.inRun(dependent))
+		const outside = dependents.filter((dependent) => !params.inRun(dependent))
+		if (!inRun.length || !inRun.every((dependent) => dependent in frozen)) continue
+		if (outside.length) outsideRun.push({ file, outside })
+		else revised.push({ file, entry })
+	}
+	return { revised, outsideRun }
 }
 
 /** What a red run makes of one case. */

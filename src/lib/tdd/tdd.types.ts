@@ -111,7 +111,13 @@ export type TddReceipt = TestCaseId & {
 }
 
 /** The test code a red run froze: each file (test files, helpers, fixtures, snapshots) with its sha256. */
-export type TddFreeze = { kind: 'freeze'; files: Record<string, string>; at: string }
+export type TddFreeze = {
+	kind: 'freeze'
+	files: Record<string, string>
+	/** The helpers (test code that is not a test file) this run froze because a `revised` entry of the lot file names them. */
+	revised?: string[]
+	at: string
+}
 
 export type TddEntry = TddReceipt | TddFreeze
 
@@ -165,6 +171,9 @@ export type LotDeclaration = {
  * `<file>::<name>` (` [project]` when a project runs it).
  */
 export type LotCaseEntry = { case: string; reason: string }
+
+/** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
+export type RevisedHelper = { file: string; entry: LotCaseEntry }
 
 /**
  * A test file (or a glob over test files) whose test calls of the base, gone without a title, the lot

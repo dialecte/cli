@@ -32,6 +32,7 @@ import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
+import { hashTestCode } from '../lib/tdd/tdd-files.ts'
 import { runGate } from './gate.ts'
 import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
 import { runRules } from './rules.ts'
@@ -753,6 +754,101 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			toReadLine({ head: '1 revised', columns: 80 }),
 			'  revised  src/read.test.ts › read > answers one',
 			'           the review asked for it',
+		])
+	})
+
+	it('a test helper frozen by a revised entry → under the to-read line: revised <helper>, the reason on the next line, counted, not unused', () => {
+		const helper = 'test/expected.ts'
+		const { root, lotsPath } = prepare({
+			files: {
+				'src/read.ts': 'export function read() {\n\treturn 1\n}\n',
+				[helper]: 'export const EXPECTED = 3\n',
+			},
+			lots: [{ paths: ['src/', 'test/'], message: 'feat(read): read answers one' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					revised: [{ case: helper, reason: 'the helper gained a constant at review' }],
+				}),
+			},
+		})
+		writeFileSync(
+			join(root, '.git', 'dialecte-tdd.json'),
+			JSON.stringify({
+				version: 3,
+				entries: [
+					{
+						kind: 'freeze',
+						files: { [helper]: hashTestCode({ root, file: helper }) },
+						revised: [helper],
+						at: '2026-10-30T12:00:00.000Z',
+					},
+				],
+			}),
+		)
+		recordJudgedCases(root)
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			toReadLine({ head: '1 revised', columns: 80 }),
+			'  revised  test/expected.ts',
+			'           the helper gained a constant at review',
+		])
+	})
+
+	it("a glob entry used by a helper that also names an earlier lot's revised receipt → the helper listed, the entry not unused (as at the gate)", () => {
+		const helper = 'test/expected.ts'
+		const { root, lotsPath } = prepare({
+			files: {
+				'src/read.ts': 'export function read() {\n\treturn 1\n}\n',
+				[helper]: 'export const EXPECTED = 3\n',
+			},
+			lots: [{ paths: ['src/', 'test/'], message: 'feat(read): read answers one' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'.dialecte/lot.json': JSON.stringify({
+					revised: [{ case: 'test/*.ts', reason: 'the helper gained a constant at review' }],
+				}),
+			},
+		})
+		const ledgerPath = join(root, '.git', 'dialecte-tdd.json')
+		const freeze = {
+			kind: 'freeze',
+			files: { [helper]: hashTestCode({ root, file: helper }) },
+			revised: [helper],
+			at: '2026-10-30T12:00:00.000Z',
+		}
+		writeFileSync(ledgerPath, JSON.stringify({ version: 3, entries: [freeze] }))
+		recordJudgedCases(root)
+		// an earlier lot's revised receipt the glob names, judged by no gate of this change
+		writeFileSync(
+			ledgerPath,
+			JSON.stringify({
+				version: 3,
+				entries: [
+					{
+						kind: 'revised',
+						file: 'test/old.test.ts',
+						name: 'old > earlier',
+						project: '',
+						testFileHash: 'h',
+						caseHash: 'c',
+						productionHash: 'p',
+						reason: 'an earlier review',
+						at: '2026-10-29T12:00:00.000Z',
+					},
+					freeze,
+				],
+			}),
+		)
+
+		expect(tddRowLines(writeHandover({ lotsPath, columns: 80 }).output)).toEqual([
+			toReadLine({ head: '1 revised', columns: 80 }),
+			'  revised  test/expected.ts',
+			'           the helper gained a constant at review',
 		])
 	})
 

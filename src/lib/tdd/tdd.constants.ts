@@ -140,6 +140,10 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
+/** Why a red run leaves a helper a `revised` entry names unfrozen: a changed dependent of it is not in the run. */
+export const HELPER_DEPENDENT_OUTSIDE_RUN =
+	'a changed test file outside this run depends on it: {files}'
+
 /** The keys a lot file may hold; any other is a typo, refused. */
 export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'mutation']
 

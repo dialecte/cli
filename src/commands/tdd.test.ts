@@ -4,13 +4,16 @@ import { join } from 'node:path'
 
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { readPackageJson } from '../lib/package-json.ts'
+import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { hashTestCode, hashText } from '../lib/tdd/tdd-files.ts'
 import { ROLLBACK_LINE } from '../lib/tdd/tdd.constants.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { TddLedger, TddReceipt } from '../lib/tdd/tdd.types.ts'
+import type { TddFreeze, TddLedger, TddReceipt } from '../lib/tdd/tdd.types.ts'
 
 const NOW = new Date('2026-10-29T12:00:00.000Z')
 
@@ -37,7 +40,7 @@ function receiptLines(root: string): string[] {
 function caseLines(output: string): string[] {
 	return output
 		.split('\n')
-		.filter((line) => /^(red|refused|green|unchanged|kept|accepted) /.test(line))
+		.filter((line) => /^(red|refused|green|unchanged|kept|accepted|revised) /.test(line))
 }
 
 /** The hash a receipt records for the add test file: the cli's own, of its tokens. */
@@ -1308,5 +1311,335 @@ describe('tdd status --legend', { timeout: 60_000 }, () => {
 			terms: 24,
 		})
 		expect(legend.lines).toEqual(handover.lines.slice(first, last + 2))
+	})
+})
+
+describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
+	const HELPER = 'test/expected.ts'
+	const REASON = 'the helper gained a constant at review'
+	const CASE = 'src/add.test.ts::add > one plus two → three'
+	const HELPER_TEXT = 'export const EXPECTED = 3\n'
+	const EDITED_HELPER_TEXT = `${HELPER_TEXT}export const SPARE = 4\n`
+	const HELPER_TEST = ADD_TEST.replace(
+		"import { add } from './add.ts'",
+		"import { add } from './add.ts'\nimport { EXPECTED } from '../test/expected.ts'",
+	).replace('toBe(3)', 'toBe(EXPECTED)')
+
+	/** The freeze entries of the ledger, oldest first. */
+	function freezes(root: string): TddFreeze[] {
+		return readLedger(root).entries.filter((entry): entry is TddFreeze => entry.kind === 'freeze')
+	}
+
+	/** The hashes the ledger froze `file` at, oldest first. */
+	function frozenHashes(params: { root: string; file: string }): string[] {
+		return freezes(params.root).flatMap((freeze) => {
+			const hash = freeze.files[params.file]
+			return hash === undefined ? [] : [hash]
+		})
+	}
+
+	/** The lot file naming `entries` as `revised`. */
+	function lotFile(entries: unknown): Record<string, string> {
+		return { '.dialecte/lot.json': JSON.stringify({ revised: entries }) }
+	}
+
+	/**
+	 * A package whose `add` test reads `EXPECTED` from the helper: red at the stub (the helper frozen),
+	 * the production implemented and `tdd green`; then the helper edited (a constant the production still
+	 * satisfies) and the lot file written when given. With `green: false` the green run is left out: the
+	 * case stays a red waiting for its green.
+	 */
+	async function helperEdited(
+		params: { lot?: unknown; green?: boolean; files?: Record<string, string> } = {},
+	): Promise<string> {
+		const root = createVitestPackage({})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				[HELPER]: HELPER_TEXT,
+				'src/add.test.ts': HELPER_TEST,
+				...params.files,
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), IMPLEMENTED)
+		if (params.green !== false) await tdd({ cwd: root, argv: ['green'] })
+		writeFiles({
+			root,
+			files: {
+				[HELPER]: EDITED_HELPER_TEXT,
+				...(params.lot !== undefined && lotFile(params.lot)),
+			},
+		})
+		return root
+	}
+
+	it('every dependent case green, an entry naming the helper → red freezes it at its new hash, prints `revised  <helper>  <reason>`, counts it', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output)).toContain(`revised  ${HELPER}  ${REASON}`)
+		expect(red.output).toMatch(/^tdd red: .*, 1 revised, 0 refused; frozen: /m)
+		expect(red.output.split('\n').find((line) => line.startsWith('tdd red:'))).toContain(HELPER)
+		expect(freezes(root).at(-1)).toEqual({
+			kind: 'freeze',
+			files: {
+				'src/add.test.ts': hashTestCode({ root, file: 'src/add.test.ts' }),
+				[HELPER]: hashTestCode({ root, file: HELPER }),
+			},
+			revised: [HELPER],
+			at: NOW.toISOString(),
+		})
+	})
+
+	it('the same, then tdd green → exit 0, the dependent case green again against the new helper', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+		await tdd({ cwd: root, argv: ['red'] })
+
+		const green = await tdd({ cwd: root, argv: ['green'] })
+
+		expect(green.exitCode).toBe(0)
+		expect(caseLines(green.output)).toEqual([`green    ${CASE}`])
+	})
+
+	it('the same, then the gate step and status → passed, details `revised  <helper>  <reason>`, no unused entry, no unfrozen helper', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+		await tdd({ cwd: root, argv: ['red'] })
+		const beforeGreen = await tdd({ cwd: root, argv: ['status'] })
+		await tdd({ cwd: root, argv: ['green'] })
+
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+		const status = await tdd({ cwd: root, argv: ['status'] })
+
+		expect(
+			beforeGreen.output
+				.split('\n')
+				.some((line) => line === `red  ${CASE}` || line.startsWith(`red  ${CASE}  `)),
+		).toBe(true)
+		expect(beforeGreen.output).not.toContain(`green  ${CASE}`)
+		expect(check.status).toBe('passed')
+		expect(check.details).toContain(`revised  ${HELPER}  ${REASON}`)
+		expect(check.details?.filter((line) => line.startsWith('unused revised entry'))).toEqual([])
+		expect(status.output).not.toContain('test code changed outside tdd red')
+	})
+
+	it('a glob over files without `::` (test/*.ts) → names every helper it matches, one `revised` line each, both frozen', async () => {
+		const root = await helperEdited({
+			lot: [{ case: 'test/*.ts', reason: REASON }],
+			files: {
+				'test/other.ts': 'export const OTHER = 1\n',
+				'src/add.test.ts': HELPER_TEST.replace(
+					"import { EXPECTED } from '../test/expected.ts'",
+					"import { EXPECTED } from '../test/expected.ts'\nimport { OTHER } from '../test/other.ts'\nvoid OTHER",
+				),
+			},
+		})
+		writeFiles({
+			root,
+			files: { 'test/other.ts': 'export const OTHER = 1\nexport const MORE = 2\n' },
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output).filter((line) => line.startsWith('revised'))).toEqual([
+			`revised  ${HELPER}  ${REASON}`,
+			`revised  test/other.ts  ${REASON}`,
+		])
+		expect(freezes(root).at(-1)?.revised).toEqual([HELPER, 'test/other.ts'])
+	})
+
+	it('a `<file>::<name>` entry never names a helper → the helper is not frozen, green refused as without an entry', async () => {
+		const root = await helperEdited({ lot: [{ case: `${HELPER}::EXPECTED`, reason: REASON }] })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
+
+		expect(red.output).not.toContain(`revised  ${HELPER}`)
+		expect(frozenHashes({ root, file: HELPER })).not.toContain(hashTestCode({ root, file: HELPER }))
+		expect(green.exitCode).toBe(1)
+		expect(green.output).toContain(
+			`tdd green: test code changed since the last red run: ${HELPER} - tests are frozen after red; go back to the test station`,
+		)
+	})
+
+	it('no entry for the helper (guard) → red does not freeze it, green and the gate refuse naming it', async () => {
+		const root = await helperEdited()
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const green = await tdd({ cwd: root, argv: ['green'] })
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(frozenHashes({ root, file: HELPER })).not.toContain(hashTestCode({ root, file: HELPER }))
+		expect(red.output).not.toContain(`revised  ${HELPER}`)
+		expect(green.exitCode).toBe(1)
+		expect(green.output).toContain(
+			`tdd green: test code changed since the last red run: ${HELPER} - tests are frozen after red; go back to the test station`,
+		)
+		expect(check).toMatchObject({
+			status: 'failed',
+			reason: `test code changed outside tdd red: ${HELPER}`,
+		})
+	})
+
+	it('an entry, but a dependent case is a red still waiting for its green (guard) → that case refused, its file and the helper not frozen', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }], green: false })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(1)
+		expect(caseLines(red.output)).toEqual([
+			`refused  ${CASE}  test code changed since its red and it passes`,
+		])
+		expect(frozenHashes({ root, file: HELPER })).not.toContain(hashTestCode({ root, file: HELPER }))
+		expect(freezes(root)).toHaveLength(1)
+	})
+
+	it('an entry, but a test file depending on the helper is refused in the run (guard) → the helper is not frozen', async () => {
+		const root = await helperEdited({
+			lot: [{ case: HELPER, reason: REASON }],
+			files: {
+				'src/sub.test.ts': [
+					"import { add } from './add.ts'",
+					"import { EXPECTED } from '../test/expected.ts'",
+					"import { describe, expect, it } from 'vitest'",
+					"describe('sub', () => {",
+					"\tit('two plus one → three', () => { expect(add(2, 1)).toBe(EXPECTED) })",
+					'})',
+					'',
+				].join('\n'),
+			},
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/sub.test.ts': readFileSync(join(root, 'src/sub.test.ts'), 'utf8').replace(
+					"\tit('two",
+					"\tit.only('two",
+				),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(1)
+		expect(frozenHashes({ root, file: HELPER })).not.toContain(hashTestCode({ root, file: HELPER }))
+		expect(red.output).not.toContain(`revised  ${HELPER}`)
+	})
+
+	it('an entry naming a helper no changed test file of the run depends on (guard) → the helper is not frozen by the entry', async () => {
+		const root = await helperEdited({
+			lot: [{ case: 'test/unused.ts', reason: REASON }],
+			files: { 'test/unused.ts': 'export const UNUSED = 1\n' },
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({ root, files: { 'test/unused.ts': 'export const UNUSED = 2\n' } })
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output).not.toContain('revised  test/unused.ts')
+		expect(frozenHashes({ root, file: 'test/unused.ts' })).toEqual([])
+	})
+
+	it('an entry whose freeze was superseded by a later freeze of the helper at another hash (guard) → the gate keeps `unused revised entry  <helper>  ...`', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+		const ledgerPath = join(root, '.git', 'dialecte-tdd.json')
+		const ledger = readLedger(root)
+		ledger.entries.push(
+			{
+				kind: 'freeze',
+				files: { [HELPER]: hashText('an earlier state of the helper') },
+				revised: [HELPER],
+				at: NOW.toISOString(),
+			},
+			{
+				kind: 'freeze',
+				files: { [HELPER]: hashTestCode({ root, file: HELPER }) },
+				at: NOW.toISOString(),
+			},
+		)
+		writeFileSync(ledgerPath, JSON.stringify(ledger))
+
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect([...(check.details ?? []), ...(check.lines ?? [])]).toContain(
+			`unused revised entry  ${HELPER}  no case of the change stands revised by a red run (${REASON})`,
+		)
+	})
+
+	it('an entry for a helper unchanged since its freeze (guard) → the gate details keep `unused revised entry  <helper>  ...`', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+		writeFiles({ root, files: { [HELPER]: HELPER_TEXT } })
+
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(check.status).toBe('passed')
+		expect(check.details).toContain(
+			`unused revised entry  ${HELPER}  no case of the change stands revised by a red run (${REASON})`,
+		)
+	})
+
+	it('a targeted red, a changed test file outside the run depends on the helper with a red awaiting its green → the entry does not freeze it, a line names that file', async () => {
+		const root = await helperEdited({
+			lot: [{ case: HELPER, reason: REASON }],
+			files: {
+				'src/sub.ts':
+					"export function sub(left: number, right: number): number {\n\tthrow new Error('not implemented: sub')\n}\n",
+				'src/sub.test.ts': [
+					"import { sub } from './sub.ts'",
+					"import { EXPECTED } from '../test/expected.ts'",
+					"import { describe, expect, it } from 'vitest'",
+					"describe('sub', () => {",
+					"\tit('five minus two → three', () => { expect(sub(5, 2)).toBe(EXPECTED) })",
+					'})',
+					'',
+				].join('\n'),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red', 'src/add.test.ts'] })
+
+		expect(red.output).not.toContain(`revised  ${HELPER}`)
+		expect(frozenHashes({ root, file: HELPER })).not.toContain(hashTestCode({ root, file: HELPER }))
+		expect(red.output.split('\n')).toContain(
+			`unfrozen  ${HELPER}  a changed test file outside this run depends on it: src/sub.test.ts`,
+		)
+	})
+
+	it('a second red at the same helper hash (guard) → no second `revised` line, one freeze lists the helper revised', async () => {
+		const root = await helperEdited({ lot: [{ case: HELPER, reason: REASON }] })
+		await tdd({ cwd: root, argv: ['red'] })
+
+		const again = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(again.output).not.toContain(`revised  ${HELPER}`)
+		expect(freezes(root).filter((freeze) => freeze.revised !== undefined)).toHaveLength(1)
+	})
+
+	it('a test file under test/ the helper glob matches (guard) → only the helper is a revised helper, the test file is no helper', async () => {
+		const root = await helperEdited({
+			lot: [{ case: 'test/*.ts', reason: REASON }],
+			files: {
+				'test/extra.test.ts': [
+					"import { add } from '../src/add.ts'",
+					"import { describe, expect, it } from 'vitest'",
+					"describe('extra', () => {",
+					"\tit('two plus two → four', () => { expect(add(2, 2)).toBe(4) })",
+					'})',
+					'',
+				].join('\n'),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output).filter((line) => line.startsWith('revised'))).toEqual([
+			`revised  ${HELPER}  ${REASON}`,
+		])
+		expect(freezes(root).at(-1)?.revised).toEqual([HELPER])
 	})
 })

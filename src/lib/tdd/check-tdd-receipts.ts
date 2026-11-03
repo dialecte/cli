@@ -3,6 +3,8 @@ import {
 	entryNamesCase,
 	entryNamesFile,
 	findCaseEntry,
+	listRevisedHelpers,
+	namesRevisedHelper,
 	readAcceptances,
 	readGoneEntries,
 	readRevisions,
@@ -12,7 +14,8 @@ import {
  * The `tdd` step of `dialecte gate`: every test-code file changed since the base (HEAD: the uncommitted
  * lot; a `--base` ref or `--full`: the whole branch) is as the red run that last froze it left it, and
  * every case of the change holds a red receipt and a later green one (or passed at a red run as the same
- * case as at the base, accepted or revised by the lot file, each with its reason shown). The flags
+ * case as at the base, accepted or revised by the lot file, each with its reason shown; a helper a red run
+ * froze for a `revised` entry is shown with its reason too). The flags
  * of the receipts, the cases the change deletes (the untitled test calls the lot file declares gone, with
  * its reason) and the entries of the lot file nothing used are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
@@ -62,7 +65,8 @@ export async function checkTddReceipts(params: {
 	if ('failure' in revisions) return { status: 'failed', reason: revisions.failure }
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
-	if (hashChangedTestCode({ root, base, packageJson }).size === 0)
+	const testCode = hashChangedTestCode({ root, base, packageJson })
+	if (testCode.size === 0)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
 	const state = await readTddState({ root, packageJson, ledger, base })
 	if ('failure' in state) return { status: 'failed', reason: state.failure }
@@ -74,7 +78,9 @@ export async function checkTddReceipts(params: {
 			line.status !== 'accepted' &&
 			line.status !== 'revised',
 	)
+	const revisedHelpers = listRevisedHelpers({ ledger, testCode, revisions })
 	const evidence = [
+		...revisedHelpers.map(({ file, entry }) => `revised  ${file}  ${entry.reason}`),
 		...state.cases
 			.filter((line) => line.status === 'revised')
 			.map(
@@ -112,7 +118,7 @@ export async function checkTddReceipts(params: {
 				(revision) =>
 					!revisedCases.some((line) =>
 						entryNamesCase({ entry: revision.case, testCase: line, list: 'revised' }),
-					),
+					) && !namesRevisedHelper({ entry: revision, helpers: revisedHelpers }),
 			)
 			.map(
 				(revision) =>

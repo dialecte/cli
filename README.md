@@ -300,7 +300,8 @@ the answer.
     dependency found by import is followed in turn, and one found by a name written with its folder
     (`fixtures/scan.ts`, a full path): it brings the files it imports (`import type` included). A bare
     file name (`index.ts`) may be another file: the changed file it names is a dependency, not followed. A
-    helper no red covers stays unfrozen, and the gate fails on it. An import that looks local (`@/`, `~/`,
+    helper no red covers stays unfrozen, and the gate fails on it, unless a `revised` entry names it
+    (below). An import that looks local (`@/`, `~/`,
     `#`, a `paths` or alias prefix) and resolves nowhere refuses its file, naming the import.
   - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
     test code as frozen, production changed since its red ("nothing in production changed since red"),
@@ -346,9 +347,17 @@ the answer.
     A file or glob entry never covers a case whose last proof is a red still waiting for its green, and
     keeps the `red after green` flag of a case made red again; an exact entry covers both. An `accept`
     entry stays one exact case. The next `tdd red` records it as revised when it passes (a
-    red when it fails) and freezes its file and the changed test code it depends on. Without that red
-    run the gate fails on the edit; the gate, `status` and the hand-over card list the revisions with
-    their reason, an entry (exact, file or glob) no revised case used as a note.
+    red when it fails) and freezes its file and the changed test code it depends on. A file or glob entry
+    may also name a test helper (test code that is not a test file: a helper, a fixture, a constant beside
+    the tests) edited at review while its dependent cases stay green: the next `tdd red` freezes it at its
+    new hash and prints `revised  <helper>  <reason>`, when every changed test file depending on it (at
+    least one) is in the run and frozen by it with no case red (a refused file, a red still waiting for
+    its green, or no dependent file in the run leaves it unfrozen; a changed dependent outside a targeted
+    run too, named on an `unfrozen  <helper>` line). The new freeze makes the dependent
+    cases' earlier green stale: `tdd green` proves them again. Without that red run the gate fails on the
+    edit; `status` lists the revised cases, the gate and the hand-over card list the revisions (cases
+    and helpers) with their reason, an entry (exact, file or glob) no revised case or helper used as a
+    note.
   - What it cannot see: the receipts can be written by an agent with a shell; a deliberate throw in
     production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
     be told from an honest red (at the first step the red's production is the base's). The flags and the
@@ -437,7 +446,8 @@ the answer.
     of earlier lots, which the lot file no longer names, on one line
     (`earlier lots: 410 accepted, 12 revised (not in the lot file)`); then
     `<n> revised · <m> gone · <k> unused` with `to read ↓` at its right edge and one entry each: a revised case `<file> › <title>` (named by the lot file exactly, or by a file or glob entry)
-    with its reason under it, a `gone` entry with its reason (whether one covers a finding is the gate's
+    with its reason under it, a helper a red run froze for a `revised` entry as `revised <helper>` with its
+    reason under it, a `gone` entry with its reason (whether one covers a finding is the gate's
     to say), an `accept` or `revised` entry no case used. Then one line per kind of flag with its count of
     cases (`dialecte tdd status --flags` lists them); cases whose only flag is `test code changed around it`
     and whose receipts are otherwise only unchanged are counted apart (a case flagged rollback or red after
