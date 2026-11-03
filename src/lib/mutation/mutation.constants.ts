@@ -126,13 +126,25 @@ export const LEDGER_KEY_SEPARATOR = '::'
 /** The length a tree id is shortened to in what `run` and `status` print. */
 export const SHORT_TREE_LENGTH = 12
 
-export const MUTANTS_VERBS = ['run', 'status', 'schedule', 'abandon', 'migrate'] as const
+export const MUTANTS_VERBS = [
+	'run',
+	'status',
+	'schedule',
+	'abandon',
+	'migrate',
+	'judge',
+	'record',
+	'drop',
+] as const
 
 export const MUTANTS_USAGE = `usage: dialecte mutants run [--mode changed|audit] [--base <ref>]
        dialecte mutants status [--json]
-       dialecte mutants schedule <follow-up> <survivor key>... | schedule <follow-up> --all-new
-       dialecte mutants abandon <run id>
-       dialecte mutants migrate`
+       dialecte mutants schedule <follow-up> <survivor key>... | schedule <follow-up> --all-new [--json]
+       dialecte mutants abandon <run id> [--json]
+       dialecte mutants migrate [--json]
+       dialecte mutants judge [--file <file>] [--json]
+       dialecte mutants record (--key <survivor key>... | --file <file>) --family <family> --reason <text> [--removable] [--json]
+       dialecte mutants drop <run id> [--json]`
 
 /** The lock every ledger reader and writer holds while it folds runs in or writes, beside the ledger. */
 export const MUTATION_LEDGER_LOCK_FILE = 'ledger.lock'

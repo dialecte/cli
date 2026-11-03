@@ -79,7 +79,7 @@ Commands:
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
   lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason; mutation <mode>
-  mutants    Mutation testing of the declared scope: run | status | schedule | abandon | migrate
+  mutants    Mutation testing of the declared scope: run | status | schedule | abandon | migrate | judge | record | drop
   worktree   A worktree ready to work in (hooks, sibling links, node_modules checked, hygiene baseline); prune what a merge left
   record     A lot's review rounds in its hand-over folder: review | decision | snapshot | choice
   review     The fix diff since the previous round's snapshot: delta
@@ -197,10 +197,19 @@ Contributing (inside a dialecte repository):
                              # survivors go to the ledger; exit 1 only when Stryker fails, never on survivors
   dialecte mutants status [--json]
                              # running runs with their age, died runs, new survivors by lot, scheduled ones by follow-up
-  dialecte mutants schedule <follow-up> <key>... | schedule <follow-up> --all-new
-  dialecte mutants abandon <run id>
+  dialecte mutants schedule <follow-up> <key>... | schedule <follow-up> --all-new [--json]
+  dialecte mutants abandon <run id> [--json]
                              # a died run marked abandoned (kept); a running or reported run is refused
-  dialecte mutants migrate   # scripts/mutants/equivalent-mutants.json -> .dialecte/mutation-records.json (never overwritten)
+  dialecte mutants migrate [--json]
+                             # scripts/mutants/equivalent-mutants.json -> .dialecte/mutation-records.json (never overwritten)
+  dialecte mutants judge [--file <file>] [--json]
+                             # per file, the new survivors: the code around each as it is now, its covering tests,
+                             # a family guess and the record / schedule commands; capped packets (12000 bytes)
+  dialecte mutants record (--key <key>... | --file <file>) --family <family> --reason <text> [--removable] [--json]
+                             # writes the records to .dialecte/mutation-records.json, then moves the new or
+                             # scheduled survivors to recorded; --file = every new or scheduled survivor of the file
+  dialecte mutants drop <run id> [--json]
+                             # removes an abandoned run, or a reported run the ledger took in, from the store
   dialecte worktree add <repository> <branch> [--from <ref>] [--json]
                              # under the workspace's .worktrees/: hooks folder, the links its file: and link:
                              # dependencies need to sibling checkouts (.worktrees/core -> ../core, never

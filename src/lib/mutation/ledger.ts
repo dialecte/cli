@@ -160,7 +160,7 @@ export function itemsOf(params: { ledger: Ledger; packageName: string }): KeyedL
  * run the caller reports, among them, with its records and targets); writes the ledger and the applied runs when they
  * changed.
  */
-function withLedgerLock<Result>(params: {
+export function withLedgerLock<Result>(params: {
 	root: string
 	given?: GivenRun
 	work: (state: LockedLedger) => Result
@@ -454,7 +454,8 @@ function readJson<Value>(params: { path: string; empty: Value }): Value {
 		: params.empty
 }
 
-function ledgerKeyOf(params: { packageName: string; key: string }): string {
+/** The key the ledger file holds a package's survivor under: `<package>::<survivor key>`. */
+export function ledgerKeyOf(params: { packageName: string; key: string }): string {
 	return `${params.packageName}${LEDGER_KEY_SEPARATOR}${params.key}`
 }
 

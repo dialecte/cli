@@ -6,6 +6,7 @@
  */
 import { createHash } from 'node:crypto'
 
+import { PACKET_MAX_TESTS } from './mutation-agent.constants.ts'
 import {
 	KILLED_STATUS,
 	MUTATE_TARGET,
@@ -288,6 +289,7 @@ function describeMutant(params: {
 		range: exactRange({ file, mutant }),
 		lineHash: hashLine({ text: startLine }),
 		...testsHashOf({ coveredBy: mutant.coveredBy, testNames }),
+		...coveringTestsOf({ coveredBy: mutant.coveredBy, testNames }),
 	}
 }
 
@@ -298,6 +300,24 @@ function testNamesOf(params: { report: MutationReport }): ReadonlyMap<string, st
 			tests.map(({ id, name }): [string, string] => [id, `${file}#${name}`]),
 		),
 	)
+}
+
+/**
+ * The names of a mutant's covering tests the report resolves, unique and sorted, the first `PACKET_MAX_TESTS` of them,
+ * and how many more there are; none when it resolves none. A run entry keeps every survivor: the names stay few.
+ */
+function coveringTestsOf(params: {
+	coveredBy: readonly string[] | undefined
+	testNames: ReadonlyMap<string, string>
+}): { tests?: string[]; testsMore?: number } {
+	const { coveredBy = [], testNames } = params
+	const tests = [...new Set(coveredBy.flatMap((id) => testNames.get(id) ?? []))].sort()
+	if (tests.length === 0) return {}
+	const testsMore = tests.length - PACKET_MAX_TESTS
+	return {
+		tests: tests.slice(0, PACKET_MAX_TESTS),
+		...(testsMore > 0 ? { testsMore } : {}),
+	}
 }
 
 /** The tests hash of a mutant's covering tests; none when the report names none or an id it cannot resolve. */

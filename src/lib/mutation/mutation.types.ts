@@ -122,6 +122,10 @@ export type Survivor = {
 	readonly lineHash: string
 	/** Hash of the tests covering the mutant (see `hashTests`); absent when the report names none. */
 	readonly testsHash?: string
+	/** The covering tests the report names, `<test file>#<test name>`, unique and sorted, the first `PACKET_MAX_TESTS` of them; absent when it names none. */
+	readonly tests?: readonly string[]
+	/** The covering tests left out of `tests`; absent when none was. */
+	readonly testsMore?: number
 }
 
 export type Verdict = {

@@ -40,7 +40,7 @@ dialecte worktree add|prune     # a worktree ready to work in (sibling links, no
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
 dialecte record choice <folder> --by <who> <decision>   # a decision made outside the ledger, in decisions.md
 dialecte recap <folder>    # the pull request's expandable part, built from the hand-over's records only
-dialecte mutants run|status|schedule|abandon|migrate   # mutation testing of the declared scope; survivors tracked until handled
+dialecte mutants run|status|schedule|abandon|migrate|judge|record|drop   # mutation testing of the declared scope; survivors tracked until handled
 dialecte text check <file> # the human part of a GitHub text: its fixed headings and its word cap
 dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
@@ -668,6 +668,31 @@ the answer.
   turns `scripts/mutants/equivalent-mutants.json` into `.dialecte/mutation-records.json` (same keys and
   reasons, family `unclassified`, the line's hash), never overwriting an existing file. The store is
   written by the cli only: never edit it by hand.
+- `dialecte mutants judge [--file <file>]` prints, per file (sorted), the package's `new` survivors as a judge
+  packet: each survivor's key, line and mutation, a family guess with its reason (the first rule its code
+  matches: an `errors/` file or error wording, a `.constants.ts` file or a module-level declaration, an
+  exhaustive `default:`; `unclassified` when none does), the covering tests the last run that reported it named
+  (five, then `…and <n> more`), the code around it as the file is now (5 lines above and below, 21 at most, each
+  line cut at 160 characters, the mutated lines marked `>`, `line changed since the run` when its text differs
+  from the reported one) and the `record` and `schedule` commands that close it. A packet holds 10 survivors at
+  most and its JSON and its text stay within 12000 bytes each: the rest is counted (`…and <n> more survivors`);
+  a lone survivor over the cap loses window lines (context first), then test names, then the end of its mutation
+  text, each counted. A run entry stores at most five covering test names per survivor, and how many more.
+  `dialecte mutants record (--key <key>... | --file <file>) --family <family> --reason <text> [--removable]`
+  writes each survivor's record to `.dialecte/mutation-records.json` (family, trimmed reason of at most 200
+  characters, the hashes of its line and tests; `removable` for `invariant-guard` and `fallback-never-taken`
+  only; other records kept, files and records sorted), then moves each `new` or `scheduled` one to `recorded`
+  (a killed or recorded one stays as it is), both under the ledger lock, the records first: a crash between the
+  two leaves the survivor `new` until a later run or `record` takes the record in. `--key` repeats or takes
+  several keys; `--file` takes every `new` or `scheduled` survivor of the file. An unknown family, `unclassified`,
+  an empty or too long reason, `--removable` with another family, an unknown key, or a `--file` holding no `new`
+  or `scheduled` survivor refuses the whole call (exit 1, nothing written); both `--key` and `--file`, neither, no
+  `--family` or `--reason`, or an option given another of the verb's options as its value (`--reason --json`) is a
+  usage error (exit 2). `dialecte mutants drop <run id>` removes an abandoned run, or a reported run the ledger
+  took in, from the store; a running or died run (abandon it first) and a reported run no ledger reader took in
+  yet (`dialecte mutants status` takes it in) are refused. Every verb but `run` takes `--json` and then prints
+  exactly one JSON object on stdout, a refusal included: `{ "verb", "ok": true, ... }` or
+  `{ "verb", "ok": false, "reason" }` with the usual exit code (`status --json` prints the status itself).
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
