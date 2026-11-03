@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-03
+
 ### Added
 
 - `dialecte gate --hook [--no-reuse]`: the test steps of the package's `gate --full`, for a commit hook. A green `gate --full` record of what is committed answers them instead of running them: same key as the gate's store (the tree, what npm installed, the `file:` dependencies, the full gate's command hash), the tree taken from the index git hands the hook (`GIT_INDEX_FILE`, else the worktree's index), never from the working files, so a merge commit's hook and a partial commit check what they record. One line says which: `gate --hook: tests reused from gate --full green on tree <tree> at <time> (HEAD <sha>)`, or `gate --hook: no green gate --full of tree <tree> with this install: running the tests` before the test steps (rerun serially on a failure, one vitest summary line of their summed counts after them). No hygiene, no tdd step, no hand-over hold, no record; `--no-reuse` runs the tests whatever the store holds.
