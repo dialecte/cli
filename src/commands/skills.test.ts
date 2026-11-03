@@ -107,7 +107,8 @@ describe('generatePages', () => {
 		const exitCode = generatePages({ cwd: root, methods: [], formatOptions: {} })
 
 		expect(exitCode).toBe(0)
-		expect(read('skills/demo/SKILL.md')).toContain(`${HOOKS_START}\n\n${NO_HOOKS}\n\n${END}`)
+		// oxfmt 0.75 (markdown) keeps no blank line before the block's closing comment
+		expect(read('skills/demo/SKILL.md')).toContain(`${HOOKS_START}\n\n${NO_HOOKS}\n${END}`)
 		// the formatter padded the table of the page it rewrote
 		expect(read('skills/demo/SKILL.md')).toContain('| a   | b   |')
 		expect(read('skills/demo/references/fresh.md')).toBe(fresh)

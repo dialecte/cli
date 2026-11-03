@@ -298,16 +298,16 @@ export function checkPages(params: {
 	const workspaceFacts = workspace ? readWorkspaceFacts(workspace) : undefined
 
 	const findings: SkillFinding[] = [
-		...findUndocumentedMethods(methods).map(
-			(message): SkillFinding => ({
-				file: 'src',
-				severity: 'error',
-				message: `${message} (the skills' API index is built from the JSDoc)`,
-			}),
-		),
-		...findQuotedSentences(methods).map(
-			(message): SkillFinding => ({ file: 'src', severity: 'warning', message }),
-		),
+		...findUndocumentedMethods(methods).map((message): SkillFinding => ({
+			file: 'src',
+			severity: 'error',
+			message: `${message} (the skills' API index is built from the JSDoc)`,
+		})),
+		...findQuotedSentences(methods).map((message): SkillFinding => ({
+			file: 'src',
+			severity: 'warning',
+			message,
+		})),
 	]
 	const pages = listSkillPages(cwd)
 	for (const page of pages) {

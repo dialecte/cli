@@ -772,7 +772,7 @@ the answer.
     findings ledger, the user's above all. A `|` is written `\|`; an empty `--by`, a line break, or more
     than one decision word (quote it) is refused.
   - `record snapshot <folder> --round <n>` copies every file `git status --porcelain -z
---untracked-files=all` lists at the worktree root (the old path of a rename included) to
+    --untracked-files=all` lists at the worktree root (the old path of a rename included) to
     `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
     disk (or now a folder) that HEAD holds goes in `round-<n>.deleted`, NUL-separated, sorted; HEAD in
     `round-<n>.base`. An existing round, an untracked nested repository and a submodule (a gitlink in the
@@ -787,7 +787,7 @@ the answer.
     are left out; colour, external diff and textconv settings never apply. It refuses when HEAD moved
     since `round-<n-1>.base`, and refuses a nested repository or a submodule as `record snapshot` does. `--worktree` adds a throwaway worktree on the branch
     `<lot branch>-round-<n-1>` from the lot's branch tip: the deletions applied with `git rm
---pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
+    --pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
     prints its path and the removal command with its absolute `cd`. The lot's worktree is never
     changed.
 
@@ -869,15 +869,15 @@ commands only print; the user posts.
   for a package without one), the review rounds from
   the findings ledger, the decisions (accepted findings, the lot declaration's `accept` and `revised` entries,
   the rows of `decisions.md`), the logged findings as follow-ups, and who reviewed and posted it (`git config
-user.name`; no name set is refused). Every section is always there, saying so in one line when empty; a
+  user.name`; no name set is refused). Every section is always there, saying so in one line when empty; a
   branch that does not hold the lots on top of the recorded base lists none as committed and says so. Each
   finding is printed with its id, its text without one leading reviewer tag `[...]`. The ledger is read whole:
   every row after its header with the header's cell count is a finding, whatever its id (`R<n>-<k>`, `TR3-1`,
   `F-a`, printed as written), notes between rounds included; its round is the round cell's, else the one an
   `R<n>-` id names, else the row is refused. A state is read as a history (`fix wrong 2 (...) - fixed 3
-(reasoned)`): it starts with `fixed`, `accepted`, `logged`, `open`, `fix to verify`, `fix wrong` or
+  (reasoned)`): it starts with `fixed`, `accepted`, `logged`, `open`, `fix to verify`, `fix wrong` or
   `reopened`, and a spaced dash starts a new part only before `fixed <n>`, `reopened <n> by <id>`, `fix wrong
-<n>`, `fix to verify`, a closing `open`, or a later `accepted` or `logged` followed by ` (`, `: ` or a
+  <n>`, `fix to verify`, a closing `open`, or a later `accepted` or `logged` followed by ` (`, `: ` or a
   spaced dash; any other spaced dash belongs to the text before it. The last part decides (`fix wrong`,
   `reopened` and `fix to verify` leave the finding open), an accepted one's reason being the rest (in its
   parentheses, or after `- ` / `: `); a state recap cannot read is refused with the row's id. A `file:line` is
@@ -889,7 +889,7 @@ user.name`; no name set is refused). Every section is always there, saying so in
   nothing.
 - `dialecte text check <file> [--kind pr|issue|comment|commit]` checks every line before the first `<details`
   line (the recap is not checked). A pull request or an issue holds the headings `What changes`, `Why`, `How
-to check it` in this order, then `Watch out` only when it has something to say; each with text under it,
+  to check it` in this order, then `Watch out` only when it has something to say; each with text under it,
   nothing before the first. A comment or a commit holds no heading; a commit's line 1 is its subject, not
   empty and at most 72 characters (longer ones are cut in logs and in GitHub's list), with a blank line before
   the body. The word cap: 150 for a pull request (the diff carries the rest), 200 for an issue (it stands

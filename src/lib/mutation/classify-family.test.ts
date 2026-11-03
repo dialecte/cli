@@ -132,15 +132,13 @@ const CASES: Case[] = [
 			family: 'wording',
 		}),
 	),
-	...['detail', 'message', 'reason', 'hint', 'text'].map(
-		(name): Case => ({
-			label: `a string in a property named ${name}`,
-			source: inFunction(`return { ${name}: 'MSG' }`),
-			mutator: 'StringLiteral',
-			original: "'MSG'",
-			family: 'wording',
-		}),
-	),
+	...['detail', 'message', 'reason', 'hint', 'text'].map((name): Case => ({
+		label: `a string in a property named ${name}`,
+		source: inFunction(`return { ${name}: 'MSG' }`),
+		mutator: 'StringLiteral',
+		original: "'MSG'",
+		family: 'wording',
+	})),
 	{
 		label: 'a string in a property named otherwise',
 		source: inFunction("return { name: 'MSG' }"),
