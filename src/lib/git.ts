@@ -7,14 +7,19 @@ import { GIT_READ_ENVIRONMENT } from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
 
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
-export function readGit(params: { root: string; args: string[] }): string {
+export function readGit(params: {
+	root: string
+	args: string[]
+	/** Variables set for this command only, over the cli's environment (`GIT_INDEX_FILE`). */
+	environment?: NodeJS.ProcessEnv
+}): string {
 	// paths as they are (`été.ts`), not octal-quoted
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {
 		cwd: params.root,
 		encoding: 'utf8',
 		maxBuffer: 1e8,
 		// a status or diff never refreshes the index behind a commit running at the same time
-		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
+		env: { ...process.env, ...GIT_READ_ENVIRONMENT, ...params.environment },
 	})
 	if (result.status !== 0)
 		throw new Error(`git ${params.args.join(' ')}: ${(result.stderr || result.stdout).trim()}`)

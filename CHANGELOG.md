@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-03
+
+### Added
+
+- `dialecte gate --hook [--no-reuse]`: the test steps of the package's `gate --full`, for a commit hook. A green `gate --full` record of what is committed answers them instead of running them: same key as the gate's store (the tree, what npm installed, the `file:` dependencies, the full gate's command hash), the tree taken from the index git hands the hook (`GIT_INDEX_FILE`, else the worktree's index), never from the working files, so a merge commit's hook and a partial commit check what they record. One line says which: `gate --hook: tests reused from gate --full green on tree <tree> at <time> (HEAD <sha>)`, or `gate --hook: no green gate --full of tree <tree> with this install: running the tests` before the test steps (rerun serially on a failure, one vitest summary line of their summed counts after them). No hygiene, no tdd step, no hand-over hold, no record; `--no-reuse` runs the tests whatever the store holds.
+
+### Changed
+
+- The cli's own `check` script no longer runs the suite (type-check, lint, format); its pre-commit hook runs `check`, then the suite through `npm run test:hook` (`gate --hook`), then `build`. A lot whose tree passed `gate --full` commits and merges without running the suite again: a one-commit lot and its merge (onto a main that did not move) run the suite once instead of five times (fast gate 1, full gate 2, commit hook 1, merge commit hook 1). The hook still runs it for a tree no green `gate --full` checked: the earlier commits of a multi-commit hand-over, a merge onto a main that moved, any commit when a full step runs only the changed tests (its command hash holds HEAD).
+
+### Fixed
+
+- `handover run` keys a commit hook's record by the tree the commit records (the index just before `git commit`), not by the working files: a lot committed while a later lot's file is already edited, or a merge lot before such a lot, has its hook record under its own commit's tree. A hook's test step that `gate --hook` answered from a `gate --full` record is recorded with a note naming that run (`reused gate --full of <time> (HEAD <sha>)`), and its card line reads `reused by the hook`.
+
 ## [0.2.0] - 2026-11-03
 
 ### Added

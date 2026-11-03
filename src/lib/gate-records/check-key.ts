@@ -1,11 +1,22 @@
 /** The key of a check: what a record ran on, computed from the worktree as it is now. */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import {
+	copyFileSync,
+	existsSync,
+	lstatSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 
 import { listCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
+import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import {
 	FILE_DEPENDENCY_PREFIX,
 	INSTALLED_LOCK_FILE,
@@ -14,6 +25,7 @@ import {
 	NO_INSTALLED_LOCK,
 	PACKAGE_FILES_EXCLUSION_PREFIX,
 	PACKAGE_FILES_GLOB_PATTERN,
+	COMMIT_INDEX_FOLDER_PREFIX,
 } from './gate-records.constants.ts'
 import { computeStateTree } from './state-hash.ts'
 
@@ -72,6 +84,44 @@ export function hashHookCommand(root: string): string {
 		hash.update('\0')
 	}
 	return hash.digest('hex')
+}
+
+/**
+ * The key of what a commit in the worktree `root` is in records: the tree of its index (`readIndexTree`), what
+ * npm installed, the `file:` dependencies, and `commandHash`.
+ */
+export function computeCommitKey(params: {
+	root: string
+	commandHash: string
+	/** The index the commit records, as git hands it to a hook (relative: to the worktree top); default: the worktree's own. */
+	indexFile?: string
+}): CheckKey {
+	return {
+		tree: readIndexTree({ root: params.root, indexFile: params.indexFile }),
+		...readInstalledKey(params.root),
+		commandHash: params.commandHash,
+	}
+}
+
+/**
+ * The tree a commit would record: `git write-tree` of the index `indexFile` - relative to the worktree top, as git
+ * means a `GIT_INDEX_FILE` it hands a hook - else of the worktree's own index. It runs on a copy of that index:
+ * write-tree locks and rewrites the index it reads, and the repository's index is never touched.
+ */
+export function readIndexTree(params: { root: string; indexFile?: string }): string {
+	const { root, indexFile } = params
+	const index = indexFile
+		? resolve(workTreeTopOf(root) ?? root, indexFile)
+		: readGit({ root, args: ['rev-parse', '--path-format=absolute', '--git-path', 'index'] }).trim()
+	const folder = mkdtempSync(join(tmpdir(), COMMIT_INDEX_FOLDER_PREFIX))
+	try {
+		const copy = join(folder, 'index')
+		// no index yet (nothing ever staged): write-tree of a missing index answers the empty tree, as git's own does
+		if (existsSync(index)) copyFileSync(index, copy)
+		return readGit({ root, args: ['write-tree'], environment: { GIT_INDEX_FILE: copy } }).trim()
+	} finally {
+		rmSync(folder, { recursive: true, force: true })
+	}
 }
 
 /** The tree id of a commit. */

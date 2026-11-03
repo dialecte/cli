@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { readGit } from '../git.ts'
 import { CHECK_KEY_FIELDS, CHECK_STORE_FOLDER } from './gate-records.constants.ts'
 
-import type { CheckKey, GateRecord, GateRecordMode } from './gate-records.types.ts'
+import type { CheckKey, GateRecord, GateRecordMode, RecordOrigin } from './gate-records.types.ts'
 
 /** Stores `record` under `record.key.tree`; a record without key has no tree to go under and is not stored. */
 export function storeCheckRecord(params: { root: string; record: GateRecord }): void {
@@ -58,7 +58,7 @@ export function findReusableRecord(params: {
 }
 
 /** The run a record answers for: the record itself, or the run it was answered from in turn. */
-export function originOfRecord(record: GateRecord): { at: string; head: string } {
+export function originOfRecord(record: GateRecord): RecordOrigin {
 	return record.reused ?? { at: record.at, head: record.head }
 }
 

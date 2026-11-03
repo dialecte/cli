@@ -5,6 +5,8 @@
 
 import { stripVTControlCharacters } from 'node:util'
 
+import { VITEST_COUNT_SEPARATOR, VITEST_TESTS_LINE } from './gate-config.constants.ts'
+
 import type { StepCounts } from './gate.types.ts'
 
 export function readStepCounts(output: string): StepCounts {
@@ -94,4 +96,36 @@ function lastMatch(params: { text: string; pattern: RegExp }): RegExpMatchArray 
 function countOf(params: { text: string; word: string }): number {
 	const match = new RegExp(`(\\d+) ${params.word}`).exec(params.text)
 	return match ? Number(match[1]) : 0
+}
+
+/**
+ * The test counts as vitest's own summary line writes them (`      Tests  1 failed | 3 passed (4)`), the line
+ * `readStepCounts` reads back; undefined without test counts.
+ */
+export function renderVitestTestsLine(counts: StepCounts): string | undefined {
+	if (!counts.tests) return undefined
+	const { passed, failed, skipped, total } = counts.tests
+	const parts = [
+		failed ? `${failed} failed` : '',
+		passed || (!failed && !skipped) ? `${passed} passed` : '',
+		skipped ? `${skipped} skipped` : '',
+	].filter(Boolean)
+	return VITEST_TESTS_LINE.replace('{counts}', parts.join(VITEST_COUNT_SEPARATOR)).replace(
+		'{total}',
+		String(total),
+	)
+}
+
+/** The test counts of several steps added up; none when no step counted tests. */
+export function sumStepCounts(counts: readonly StepCounts[]): StepCounts {
+	const tests = counts.flatMap((entry) => (entry.tests ? [entry.tests] : []))
+	if (tests.length === 0) return {}
+	return {
+		tests: tests.reduce((sum, entry) => ({
+			passed: sum.passed + entry.passed,
+			failed: sum.failed + entry.failed,
+			skipped: sum.skipped + entry.skipped,
+			total: sum.total + entry.total,
+		})),
+	}
 }

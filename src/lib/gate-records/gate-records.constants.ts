@@ -12,6 +12,9 @@ export const UNRECORDED_STEPS: readonly string[] = ['hygiene']
 /** A path no state hash holds: the orchestrator's `.dialecte/` folder, at any depth. */
 export const STATE_EXCLUDED_PATTERN = /(^|\/)\.dialecte\//
 
+/** The folder (in the system's temporary folder) a commit's index is copied to for `git write-tree`. */
+export const COMMIT_INDEX_FOLDER_PREFIX = 'dialecte-commit-index-'
+
 /** The folder (in the system's temporary folder) the state hash's index of its own is built in. */
 export const STATE_INDEX_FOLDER_PREFIX = 'dialecte-state-index-'
 
@@ -33,6 +36,12 @@ export const NEVER_RUN_DETAIL = 'never run on this tree'
 
 /** The end of a gate line's detail read from a commit hook's record. */
 export const HOOK_RECORD_DETAIL = 'commit hook'
+
+/** The note of a hook's test step that `gate --hook` answered from a green `gate --full` record. */
+export const HOOK_REUSED_NOTE = 'reused gate --full of {at} (HEAD {head})'
+
+/** The detail of the card's line for a hook's test step answered from a green `gate --full` record. */
+export const HOOK_REUSED_DETAIL = 'reused by the hook'
 
 /** The mode of the record `handover run` writes for a commit's hook. */
 export const HOOK_RECORD_MODE = 'hook'

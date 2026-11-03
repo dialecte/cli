@@ -1,5 +1,6 @@
 /**
- * `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` - the Definition of Done
+ * `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` | `dialecte gate --hook
+ * [--no-reuse]` - the Definition of Done
  * of the package, inside its repository: `--fast` (default) while iterating, `--full` once per lot. Steps
  * come from `"dialecte": { "gate": { "fast", "full" } }` in package.json, or the defaults. One line per
  * step with the counts the step itself printed. While a hand-over script holds the repository it runs only
@@ -18,15 +19,31 @@
  * tree, which every worktree of the repository reads. A green record of the same mode and key answers the
  * steps instead of running them (`--no-reuse` runs them whatever the store holds); the hygiene and the `tdd`
  * step, which are about the worktree and not the tree, run every time.
+ *
+ * `--hook [--no-reuse]` runs in a commit hook: the test steps of `--full` (those counting tests), unless a green
+ * `--full` record of what is committed answers them - its key the tree of the index git hands the hook (never the
+ * working files: a merge commit and a partial commit check what they record), what npm installed, the `file:`
+ * dependencies and the full gate's command hash. It prints one line saying which; no hygiene, no tdd step, no
+ * hand-over hold (it runs inside `handover run`'s own commit), no record.
  */
 import { join } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
-import { computeCheckKey, gateCommandHash } from '../lib/gate-records/check-key.ts'
+import {
+	computeCheckKey,
+	computeCommitKey,
+	gateCommandHash,
+} from '../lib/gate-records/check-key.ts'
 import { findReusableRecord, isSameKey, originOfRecord } from '../lib/gate-records/check-store.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { recordGate } from '../lib/gate-records/gate-records.ts'
 import {
+	GATE_HOOK_FAILED_LINE,
+	GATE_HOOK_GREEN_LINE,
+	GATE_HOOK_MODE_REFUSAL,
+	GATE_HOOK_NO_TEST_STEP_LINE,
+	GATE_HOOK_REUSED_LINE,
+	GATE_HOOK_RUNNING_LINE,
 	GATE_REUSED_LINE,
 	GATE_REUSED_VERDICT,
 	GATE_STATE_CHANGED_LINE,
@@ -34,7 +51,9 @@ import {
 } from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
-import { renderStepCounts } from '../lib/gate/step-counts.ts'
+import { renderStepCounts, renderVitestTestsLine, sumStepCounts } from '../lib/gate/step-counts.ts'
+import { namesAnotherRepository } from '../lib/git-environment.ts'
+import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
 import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -53,10 +72,20 @@ import type { PackageJson } from '../lib/package-json.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
+	// git hands a commit hook the index it commits; the cli cleared it from its own environment at start. When the
+	// git variables given name another repository than this folder's, the cli ignores them: what is committed is
+	// then unknown, and `gate --hook` runs the tests instead of keying an index that may not be the commit's
+	const ignoredGivenRepository = namesAnotherRepository({
+		given: GIVEN_ENVIRONMENT,
+		folder: process.cwd(),
+	})
+	const indexFile = ignoredGivenRepository ? undefined : GIVEN_ENVIRONMENT.GIT_INDEX_FILE
 	const result = await runGate({
 		cwd: process.cwd(),
 		argv,
 		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
+		...(indexFile && { indexFile }),
+		...(ignoredGivenRepository && { reusable: false }),
 	})
 	console.log(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
@@ -67,8 +96,23 @@ export async function runGate(params: {
 	argv: string[]
 	/** Where each step's start line (or spinner) goes while it runs; the result is returned at the end. */
 	live?: LiveOutput
+	/** `--hook`: the index file git handed the commit hook (relative: to the worktree top); default: the worktree's own index. */
+	indexFile?: string
+	/** `--hook`: false when what is committed is unknown (git variables naming another repository): the tests run. */
+	reusable?: boolean
 }): Promise<CommandResult> {
 	const { cwd, argv } = params
+	if (hasFlag(argv, 'hook')) {
+		if (hasFlag(argv, 'fast') || hasFlag(argv, 'full'))
+			return { exitCode: 2, output: GATE_HOOK_MODE_REFUSAL }
+		return runHookGate({
+			cwd,
+			argv,
+			indexFile: params.indexFile,
+			reusable: params.reusable ?? true,
+			live: params.live,
+		})
+	}
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
 		return { exitCode: 2, output: 'gate: --fast or --full, not both' }
 	const mode: GateMode = hasFlag(argv, 'full') ? 'full' : 'fast'
@@ -210,6 +254,82 @@ export async function runGate(params: {
 			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
 		].join('\n'),
 	}
+}
+
+/**
+ * `gate --hook`: the full gate's test steps for the commit being made, answered by a green `--full` record of
+ * its key, else run (their lines, one vitest summary line of their summed counts, then the verdict).
+ */
+async function runHookGate(params: {
+	cwd: string
+	argv: string[]
+	indexFile: string | undefined
+	reusable: boolean
+	live: LiveOutput | undefined
+}): Promise<CommandResult> {
+	const { cwd } = params
+	const packageJson = readPackageJson(cwd)
+	const fullSteps = resolveGateSteps({ packageJson, mode: 'full' })
+	const testSteps = fullSteps.filter((step) => step.counts === 'tests')
+	if (testSteps.length === 0) return { exitCode: 0, output: GATE_HOOK_NO_TEST_STEP_LINE }
+	const key = computeCommitKey({
+		root: cwd,
+		commandHash: gateCommandHash({ root: cwd, steps: fullSteps }),
+		...(params.indexFile && { indexFile: params.indexFile }),
+	})
+	const shortTree = key.tree.slice(0, SHORT_SHA_LENGTH)
+	const found =
+		!params.reusable || hasFlag(params.argv, 'no-reuse')
+			? undefined
+			: findReusableRecord({ root: cwd, mode: 'full', key })
+	if (found) {
+		const { at, head } = originOfRecord(found)
+		return {
+			exitCode: 0,
+			output: GATE_HOOK_REUSED_LINE.replace('{tree}', shortTree)
+				.replace('{at}', at)
+				.replace('{head}', head.slice(0, SHORT_SHA_LENGTH)),
+		}
+	}
+	const runningLine = GATE_HOOK_RUNNING_LINE.replace('{tree}', shortTree)
+	const { live } = params
+	const progress = live ? createStepProgress({ live, clock: createSystemClock() }) : undefined
+	live?.writeLine(runningLine)
+	const results = await runGateSteps({
+		root: cwd,
+		steps: testSteps,
+		packageJson,
+		...(progress && {
+			announce: function announce(step) {
+				const running = progress.start({ name: step.name, detail: step.run })
+				return function finished(result) {
+					running.finish(...hookStepLines(result))
+				}
+			},
+		}),
+	})
+	const failed = results.find((result) => result.status === 'failed')
+	// one line for every step: a hook's reader reads the last summary line of the hook's step
+	const summary = renderVitestTestsLine(sumStepCounts(results.map((result) => result.counts)))
+	if (summary && live?.tty) live.writeLine(summary)
+	return {
+		exitCode: failed ? 1 : 0,
+		output: [
+			// on a terminal the lines are on the screen already
+			...(live?.tty ? [] : [runningLine, ...results.flatMap(hookStepLines)]),
+			...(summary && !live?.tty ? [summary] : []),
+			failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
+			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
+		].join('\n'),
+	}
+}
+
+/** A test step `gate --hook` ran: its line and the lines under it (the files a rerun named). */
+function hookStepLines(result: StepResult): string[] {
+	return [
+		renderStepLine(result),
+		...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+	]
 }
 
 /** `reused: gate --<mode> green on this tree at <time> (HEAD <short>)`, naming the run that checked. */

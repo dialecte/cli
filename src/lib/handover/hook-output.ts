@@ -6,6 +6,7 @@
 import { stripVTControlCharacters } from 'node:util'
 
 import { counted } from '../counted.ts'
+import { GATE_HOOK_REUSED_PATTERN } from '../gate/gate-config.constants.ts'
 import { readStepCounts } from '../gate/step-counts.ts'
 import {
 	COMMAND_SEPARATORS,
@@ -31,6 +32,7 @@ import {
 	TEST_STEP_SEGMENT,
 } from './hook-output.constants.ts'
 
+import type { RecordOrigin } from '../gate-records/gate-records.types.ts'
 import type { StepCounts } from '../gate/gate.types.ts'
 import type {
 	CountedFlaggedLine,
@@ -265,8 +267,15 @@ export function hookSummarySteps(params: {
 			step === failing
 				? failedTasks(step.lines).map((task) => ({ name: task, failed: true, counts: {} }))
 				: []
-		return [{ name: step.name, failed: stepFailed, counts }, ...tasks]
+		const reused = readHookReuse(step.lines)
+		return [{ name: step.name, failed: stepFailed, counts, ...(reused && { reused }) }, ...tasks]
 	})
+}
+
+/** The record `gate --hook` says it answered from (`GATE_HOOK_REUSED_LINE`): its time and short HEAD. */
+function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
+	const match = GATE_HOOK_REUSED_PATTERN.exec(stripVTControlCharacters(lines.join('\n')))
+	return match ? { at: match[2], head: match[3] } : undefined
 }
 
 /** The lines without a warning or error line printed already before (the same text). */

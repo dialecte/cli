@@ -1,3 +1,4 @@
+import type { RecordOrigin } from '../gate-records/gate-records.types.ts'
 import type { StepCounts } from '../gate/gate.types.ts'
 
 /** What a line of a hook's output is when it is one to show: a warning or an error of a tool the hook runs. */
@@ -53,7 +54,13 @@ export type CountedFlaggedLine = { flagged: FlaggedHookLine; count: number }
 export type PlacedFlaggedLine = { flagged: FlaggedHookLine; step: HookStep; index: number }
 
 /** A step the hook's summary names: passed or failed, with the counts its own summary lines said. */
-export type HookSummaryStep = { name: string; failed: boolean; counts: StepCounts }
+export type HookSummaryStep = {
+	name: string
+	failed: boolean
+	counts: StepCounts
+	/** `gate --hook` answered the step from the green `gate --full` record of this time and short HEAD. */
+	reused?: RecordOrigin
+}
 
 /** The npm scripts a command line runs. */
 export type ScriptsRun = {
