@@ -2,10 +2,10 @@
  * Lines a lot adds and removes: against HEAD while it waits, from its commit once committed; a merge lot
  * between the tree it merges on and the tree it holds, or its commit against its first parent.
  */
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readGit } from '../git.ts'
+import { readCommittedBytes } from './committed-bytes.ts'
 import { SHORTSTAT_PATTERNS } from './handover.constants.ts'
 
 import type { DiffSize, TreeDiffSize } from './handover.types.ts'
@@ -34,7 +34,7 @@ export function workingTreeSizeOf(params: {
 			)
 		: { insertions: 0, deletions: 0 }
 	for (const file of params.files.filter((path) => !tracked.has(path)))
-		size.insertions += lineCountOf(readFileSync(join(params.root, file), 'utf8'))
+		size.insertions += lineCountOf(readCommittedBytes(join(params.root, file)).toString('utf8'))
 	return size
 }
 

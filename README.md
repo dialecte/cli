@@ -883,6 +883,7 @@ A package tunes them in its package.json:
 	},
 	"generatedDocs": [".vitepress/data/elements-catalog.json"],
 	"referencePatterns": ["SPEC-[0-9]+"],
+	"allowReferences": ["ticket number"],
 	"baseBranch": "main"
 }
 ```
@@ -892,7 +893,11 @@ when it counts no test; `changedOnly: true` marks a step that runs only the test
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
 it); `baseBranch` is the branch
 `worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
-tags and citations `rules` and `handover` refuse.
+tags and citations `rules` and `handover` refuse; `allowReferences` lifts the generic tags the package commits on
+purpose - `ticket number`, `acceptance criterion`, `plan tag` (an app that cites its issue numbers) - and
+refuses any other label: a citation of a standard is never allowed. A lot may hold a symbolic link, a link to a
+folder included: it is hashed and scanned as its target text and committed as a link, the way git stores it (a
+rehearsal copies it as the same relative link).
 
 ### GitHub text: recap and text check
 

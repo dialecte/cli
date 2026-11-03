@@ -15,6 +15,11 @@ export type PackageJson = {
 export type DialecteField = {
 	/** Extended regular expressions of text never committed in this package (its standard's names). */
 	referencePatterns?: string[]
+	/**
+	 * Labels of generic patterns this package commits on purpose (an app citing its tickets: `ticket number`,
+	 * `acceptance criterion`, `plan tag`); a citation of a standard is never allowed.
+	 */
+	allowReferences?: string[]
 	/** Files a docs build rewrites that are restored byte for byte after `gate --full`. */
 	generatedDocs?: string[]
 	/** The branch work is merged into (`main` when not said): `worktree add` starts from it, `worktree prune` compares with it. */

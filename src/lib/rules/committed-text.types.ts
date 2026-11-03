@@ -9,6 +9,8 @@ export type ReferencePattern = {
 	 * reported from the end of that group.
 	 */
 	leadingBoundary?: boolean
+	/** A package may allow it (`"dialecte": { "allowReferences" }`): a tag, never a citation of a standard. */
+	allowable?: true
 }
 
 export type ReferenceMatch = {

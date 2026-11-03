@@ -17,6 +17,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { dirname, isAbsolute, join } from 'node:path'
 
 import { listChangedFiles, readGit } from '../git.ts'
+import { readCommittedBytes } from './committed-bytes.ts'
 import {
 	BINARY_PROBE_LENGTH,
 	CONFLICT_MARKER_PATTERN,
@@ -245,7 +246,7 @@ export function stagedFilesWithMarkers(root: string): string[] {
 	}).filter(function holdsMarkers(file) {
 		const path = join(root, file)
 		if (!existsSync(path)) return false
-		const text = readFileSync(path)
+		const text = readCommittedBytes(path)
 		// a binary file is never read for markers
 		return (
 			!text.subarray(0, BINARY_PROBE_LENGTH).includes(0) &&

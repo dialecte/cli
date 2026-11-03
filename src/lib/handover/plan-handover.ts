@@ -6,9 +6,9 @@
  * trial-merged on what the lots before it leave: HEAD, each earlier plain lot's files as they are in the
  * working tree, each earlier merge with its resolutions.
  */
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { describeMissingHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { findLotReferences } from './find-lot-references.ts'
@@ -85,8 +85,8 @@ export function planHandover(params: {
 		pendingFiles.push(...files)
 		return {
 			message: lot.message,
-			files: files.filter((file) => existsSync(join(root, file))),
-			deletedFiles: files.filter((file) => !existsSync(join(root, file))),
+			files: files.filter((file) => isPresent(join(root, file))),
+			deletedFiles: files.filter((file) => !isPresent(join(root, file))),
 		}
 	})
 	for (const file of changedFiles)

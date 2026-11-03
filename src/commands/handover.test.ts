@@ -8,6 +8,7 @@ import {
 	readFileSync,
 	realpathSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
@@ -515,6 +516,97 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toContain(`message, line 1: ticket number \`${'#'}3102\``)
 		expect(existsSync(join(out, 'commit.sh'))).toBe(false)
+	})
+
+	it('a package allowing ticket numbers → a lot message and a file with a ticket reference are written', () => {
+		const { lotsPath, out } = prepare({
+			committed: {
+				'package.json': JSON.stringify({
+					name: 'app',
+					dialecte: { allowReferences: ['ticket number'] },
+				}),
+			},
+			files: { 'src/read.ts': `// see ${'#'}3102\nexport function read() {}\n` },
+			lots: [{ paths: ['src/'], message: `feat(read): read answers one\n\nRefs ${'#'}3102` }],
+		})
+
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		expect(existsSync(join(out, 'commit.sh'))).toBe(true)
+	})
+
+	it('a symlink to a folder in a lot → written, then committed as a link', async () => {
+		const { root, lotsPath, out } = prepare({
+			files: { 'shared/skills/demo/SKILL.md': '# demo\n' },
+			lots: [
+				{ paths: ['shared/', 'agents/'], message: 'chore: shared skills and the link to them' },
+			],
+		})
+		mkdirSync(join(root, 'agents'))
+		symlinkSync('../shared/skills', join(root, 'agents', 'skills'), 'dir')
+
+		let exitCode: number | undefined
+		expect(() => {
+			exitCode = writeHandover({ lotsPath }).exitCode
+		}).not.toThrow()
+		expect(exitCode).toBe(0)
+		const run = await runFolder({ out })
+
+		expect(run.exitCode).toBe(0)
+		expect(git({ root, args: ['ls-tree', 'HEAD', 'agents/skills'] })).toMatch(/^120000 /)
+	})
+
+	it('a package allowing ticket numbers → the run commits the lot, the reference in its message kept', async () => {
+		const { root, lotsPath, out } = prepare({
+			committed: {
+				'package.json': JSON.stringify({
+					name: 'app',
+					dialecte: { allowReferences: ['ticket number'] },
+				}),
+			},
+			files: { 'src/read.ts': 'export function read() {\n\treturn 1\n}\n' },
+			lots: [{ paths: ['src/'], message: `feat(read): read answers one (${'#'}3102)` }],
+		})
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const run = await runFolder({ out })
+
+		expect(run.exitCode).toBe(0)
+		expect(subjectsOf({ root, count: 1 })).toEqual([`feat(read): read answers one (${'#'}3102)`])
+	})
+
+	it('a package allowing a citation of a standard → the write refused, naming it, nothing written', () => {
+		const { lotsPath, out } = prepare({
+			committed: {
+				'package.json': JSON.stringify({
+					name: 'app',
+					dialecte: { allowReferences: ['clause citation'] },
+				}),
+			},
+		})
+
+		expect(() => writeHandover({ lotsPath })).toThrow(/clause citation/)
+		expect(existsSync(join(out, 'commit.sh'))).toBe(false)
+	})
+
+	it('a lot holding a link to a folder, run again after it was committed → no hashing error, nothing committed twice', async () => {
+		const { root, lotsPath, out } = prepare({
+			files: { 'shared/skills/demo/SKILL.md': '# demo\n' },
+			lots: [
+				{ paths: ['shared/', 'agents/'], message: 'chore: shared skills and the link to them' },
+			],
+		})
+		mkdirSync(join(root, 'agents'))
+		symlinkSync('../shared/skills', join(root, 'agents', 'skills'), 'dir')
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		const first = await runFolder({ out })
+		expect(first.exitCode).toBe(0)
+		const head = headOf(root)
+
+		const again = runFolder({ out })
+
+		await expect(again).resolves.toMatchObject({ exitCode: 0 })
+
+		expect(headOf(root)).toBe(head)
 	})
 
 	it('a plan tag in an eval prompt under skills/ → refused when the folder is written', () => {
@@ -1512,6 +1604,32 @@ describe('handover run --rehearse', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () 
 		).toEqual([' M src/read.ts', '?? CHANGELOG.md'])
 		expect(existsSync(join(root, '.git', 'dialecte-handover.lock'))).toBe(true)
 		expect(readdirSync(scratchRoot)).toEqual([])
+	})
+
+	it('a lot holding a relative link to a folder → rehearsed with the link as it is, a hook reading it through the link commits', async () => {
+		const { root, lotsPath, out } = prepare({
+			files: { 'shared/skills/demo/SKILL.md': '# demo\n' },
+			lots: [
+				{ paths: ['shared/', 'agents/'], message: 'chore: shared skills and the link to them' },
+			],
+		})
+		mkdirSync(join(root, 'agents'))
+		symlinkSync('../shared/skills', join(root, 'agents', 'skills'), 'dir')
+		installHook({
+			root,
+			script:
+				'test "$(readlink agents/skills)" = ../shared/skills && test -f agents/skills/demo/SKILL.md',
+		})
+		writeFileSync(
+			lotsPath,
+			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
+		)
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+
+		const result = await runFolder({ out, argv: ['--rehearse'] })
+
+		expect(result.text).toContain('rehearsed: 1 commit(s) on main')
+		expect(result.exitCode).toBe(0)
 	})
 
 	it('a lot deleting every file of a folder → the folder is gone in the clone too, a hook asserting its absence commits', async () => {
