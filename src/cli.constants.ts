@@ -108,12 +108,14 @@ Skills:
                              # agents; --contributing adds the contributor skills (metadata.audience: contributor,
                              # to change a dialecte package), remembered until --no-contributing; remembers the
                              # model vendor (detected, asked on a terminal, or --vendor; none: models unset);
-                             # with the contributor skills, for Claude Code also writes the station agents
-                             # (.claude/agents/dialecte-*.md) and a SessionStart hook running doctor --brief
-                             # (--no-session-check leaves it out)
+                             # with the contributor skills, writes a doctor --brief session-start check in AGENTS.md
+                             # for every agent, and for Claude Code the station agents (.claude/agents/dialecte-*.md,
+                             # adapters of the dialecte-lot skill's stations) and a SessionStart hook
+                             # (--no-session-check leaves the check out)
   dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
   dialecte skills check [--workspace <dir>]
-                             # fail on a cited API / path / npm script that does not exist, or a stale block
+                             # fail on a cited API / path / npm script that does not exist, or a stale block;
+                             # a dialecte-lot skill's references/stations.md must match the cli's stations
 
 Lookups (the same with or without the repositories; --json on each):
   dialecte api find "<need>" [--package <name>] [--limit 5]

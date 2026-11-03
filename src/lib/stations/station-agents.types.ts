@@ -3,16 +3,17 @@ import type { STATION_NAMES } from './station-agents.constants.ts'
 
 export type StationName = (typeof STATION_NAMES)[number]
 
-/** One station of a lot that spawns an agent: the envelope the agent runs in, never the station's own text. */
+/** What a station may do: read files; review = read and run commands; edit = read, edit, run commands. */
+export type StationAccess = 'read' | 'review' | 'edit'
+
+/** One station of a lot that spawns an agent: the envelope the agent runs in; its definition lives in `dialecte-lot`'s references/stations.md. */
 export type StationDefinition = {
 	name: StationName
 	tier: ModelTierName
-	/** Claude Code tool names the agent may use; every other tool is unavailable to it. */
-	tools: readonly string[]
+	/** What the station may do; the Claude adapter maps it to tool names. */
+	access: StationAccess
 	/** When the orchestrator should spawn it: what the host shows next to the agent's name. */
 	description: string
-	/** Two to four lines: the station of `dialecte-lot` it plays, and what it leaves. */
-	role: readonly string[]
 }
 
 /** A file of the project that `skills sync` writes for an agent host. */

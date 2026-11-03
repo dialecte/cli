@@ -4,6 +4,8 @@ import { basename, dirname, join } from 'node:path'
 
 import { AGENT_SKILL_FOLDERS, MANIFEST_FILE } from '../skills/sync-skills.constants.ts'
 import { readSyncManifest } from '../skills/sync-skills.ts'
+import { AGENTS_FILE } from '../stations/agents-file-check.constants.ts'
+import { holdsOnlyTheAgentsCheck } from '../stations/agents-file-check.ts'
 import { CLAUDE_SETTINGS_FILE } from '../stations/session-check.constants.ts'
 import { holdsOnlyTheCheck } from '../stations/session-check.ts'
 import { CLAUDE_AGENTS_FOLDER } from '../stations/station-agents.constants.ts'
@@ -63,11 +65,19 @@ function presentPaths(cwd: string): Set<string> {
 	)
 }
 
-/** True for a skills folder, or a folder holding only one, whose content is a manifest and the skills it lists. */
+/**
+ * True for a skills folder, or a folder holding only one, whose content is a manifest and the skills it lists;
+ * for `AGENTS.md`, when it holds only the session-check section.
+ */
 function holdsOnlySyncedSkills(params: { cwd: string; path: string }): boolean {
 	const skillFolders = Object.values(AGENT_SKILL_FOLDERS)
 	if (skillFolders.includes(params.path)) return isSyncedSkillsFolder(join(params.cwd, params.path))
-	if (!statSync(join(params.cwd, params.path)).isDirectory()) return false
+	const stat = statSync(join(params.cwd, params.path))
+	if (params.path === AGENTS_FILE)
+		return (
+			stat.isFile() && holdsOnlyTheAgentsCheck(readFileSync(join(params.cwd, params.path), 'utf8'))
+		)
+	if (!stat.isDirectory()) return false
 	const entries = readdirSync(join(params.cwd, params.path))
 	const ownSkillFolders = skillFolders.filter((folder) => dirname(folder) === params.path)
 	return (

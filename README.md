@@ -83,16 +83,31 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
 - **Station agents (Claude Code)**: when Claude Code is a target (the default), the contributor skills are
   installed and the project's model vendor is anthropic, `skills sync` also writes one agent per station of `dialecte-lot` into
   `.claude/agents/dialecte-<station>.md`: `implementer` and `fixer` (standard tier), `implementer-strong` and
-  `reviewer` (strong), `eval-runner` and `standard-reader` (standard), `grader` and `searcher` (fast). Each file
+  `reviewer` and `grader` (strong), `eval-runner` and `standard-reader` (standard), `searcher` (fast). Each file
   sets the model (from the `dialecte models` map, as the alias Claude Code accepts: `sonnet`, `opus`,
   `haiku`) and the tools: the reviewer holds the read tools and Bash (it runs the tests) and no Write or Edit,
-  the searcher and the grader hold read tools only. The body is a few lines naming the station, the skills to
-  load and the never-list; it never copies a skill. The files are owned through the manifest: replaced on
+  the searcher and the grader hold read tools only. These files are adapters: a station's tier and access
+  (`read`, `review`, `edit`) are the cli's, its definition is the `dialecte-lot` skill's `references/stations.md`
+  (one `### <station>` section with a `- Tier:` and an `- Access:` line), and the Claude tool names are only the
+  Claude form of the access. The body is a few lines naming the station and its section in the installed
+  `.claude/skills/dialecte-lot/references/stations.md`, the skills to load and the never-list; it never copies a skill.
+  The `eval-runner` and the `grader` read neither the page nor a lot skill (they judge the skill under test): their
+  brief carries their definition and names the only skill text they read. `skills check`, in a package shipping `dialecte-lot`, refuses a
+  `references/stations.md` that is missing, lacks a station, has an unknown section or a `Tier:` / `Access:` line out of
+  line with the cli. The files are owned through the manifest: replaced on
   every sync, removed when no longer produced, and a file of your own with the same name is reported, never
   overwritten. `dialecte doctor` warns about a stale or missing one. Other hosts (Copilot / VS Code, Codex,
   Gemini) get no agent files from this command yet: the tier of each station comes from `dialecte models`
   there, as the `Tier:` line of a brief says.
-- **Session-start check (Claude Code)**: `skills sync` adds a `SessionStart` hook running
+- **Session-start check, every agent**: when `dialecte-lot` is installed by the sync (whatever the targets),
+  `skills sync` writes a section in the project's root `AGENTS.md`, between `<!-- dialecte-skills:session-check -->`
+  and `<!-- /dialecte-skills:session-check -->`, telling the agent to run `npx --no-install @dialecte/cli doctor --brief`
+  at a session start. It is created when there is no `AGENTS.md`, else appended after one blank line (every byte of
+  your text stays, line ends included), replaced when an older release wrote another sentence, and removed (with the
+  blank line it added, the file deleted when nothing else is left) by `--no-session-check`, `--no-contributing` or
+  a sync without `dialecte-lot`. A marker without its pair, or a doubled one, leaves the file alone with a warning.
+  An `AGENTS.md` holding only the section is no evidence of a vendor.
+- **Session-start check (Claude Code)**: the same check as an adapter: `skills sync` adds a `SessionStart` hook running
   `npx --no-install @dialecte/cli doctor --brief` (the installed cli: no download at a session start) to
   `.claude/settings.json`, inserted by a minimal text edit (the rest of your file stays byte for byte), never
   duplicated, removed when you drop the claude target. If you edited the hook's text since, removal cuts only

@@ -1,9 +1,13 @@
 /** The Claude Code agent file of each station of `dialecte-lot`: the envelope (model, tools), never the skills' text. */
 import { MODEL_TIERS } from '../models/model-tiers.constants.ts'
 import {
+	BRIEF_DEFINED_STATIONS,
 	CLAUDE_MODEL_ALIASES,
+	CLAUDE_TOOLS_BY_ACCESS,
 	GENERATED_NOTE,
 	LOAD_SKILLS_LINE,
+	LOT_SKILL,
+	STATIONS_PAGE_PATH,
 	NEVER_LINE,
 	STATION_AGENT_PREFIX,
 	STATIONS,
@@ -22,6 +26,23 @@ export function claudeModelAlias(modelName: string): string | undefined {
 	return CLAUDE_MODEL_ALIASES.includes(alias) ? alias : undefined
 }
 
+/** The station line and the load line; a station that runs a skill under test reads none of the lot's skills. */
+function stationLines(params: { station: StationDefinition }): string[] {
+	const { station } = params
+	const play = `You play the \`${station.name}\` station of \`${LOT_SKILL}\`:`
+	if (BRIEF_DEFINED_STATIONS.includes(station.name))
+		return [
+			`${play} your brief carries your definition and names the only skill text you read; read no other.`,
+			'',
+		]
+	return [
+		`${play} its definition is ${STATIONS_PAGE_PATH}, section \`${station.name}\`.`,
+		'',
+		LOAD_SKILLS_LINE,
+		'',
+	]
+}
+
 /** The agent file of one station; `model` is the alias Claude Code accepts. */
 export function renderStationAgent(params: { station: StationDefinition; model: string }): string {
 	const { station, model } = params
@@ -29,15 +50,12 @@ export function renderStationAgent(params: { station: StationDefinition; model: 
 		'---',
 		`name: ${STATION_AGENT_PREFIX}${station.name}`,
 		`description: ${JSON.stringify(station.description)}`,
-		`tools: ${station.tools.join(', ')}`,
+		`tools: ${CLAUDE_TOOLS_BY_ACCESS[station.access].join(', ')}`,
 		`model: ${model}`,
 		'---',
 		`<!-- ${GENERATED_NOTE} -->`,
 		'',
-		...station.role,
-		'',
-		LOAD_SKILLS_LINE,
-		'',
+		...stationLines({ station }),
 		NEVER_LINE,
 		'',
 	].join('\n')

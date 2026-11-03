@@ -30,6 +30,8 @@ import {
 	renderIntentIndex,
 } from '../lib/skills/api-index.ts'
 import { checkSkillPage } from '../lib/skills/check-skill-page.ts'
+import { STATIONS_FILE } from '../lib/skills/check-station-definitions.constants.ts'
+import { checkStationDefinitions } from '../lib/skills/check-station-definitions.ts'
 import { readExportEntries } from '../lib/skills/export-entries.ts'
 import { GENERATED_MARKER_PATTERN } from '../lib/skills/generated-blocks.constants.ts'
 import {
@@ -55,6 +57,8 @@ import {
 	selectAudience,
 	syncSkills,
 } from '../lib/skills/sync-skills.ts'
+import { AGENTS_FILE } from '../lib/stations/agents-file-check.constants.ts'
+import { syncAgentsFileCheck } from '../lib/stations/agents-file-check.ts'
 import { planStationAgents } from '../lib/stations/render-station-agent.ts'
 import {
 	CLAUDE_SETTINGS_FILE,
@@ -204,6 +208,12 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		vendor: params.vendor,
 		lotLeftOut: leftOutNames.includes(LOT_SKILL),
 	})
+	syncAgentsCheck({
+		argv,
+		cwd,
+		// the check points at the doctor of the cli: enabled while this sync keeps dialecte-lot in any target
+		enabled: targetFolders.some((folder) => readSyncManifest(folder).installed.includes(LOT_SKILL)),
+	})
 	for (const path of report.conflicts)
 		console.warn(`⚠️  ${path} exists and was not installed by sync: left untouched`)
 	if (missingDependencies.length)
@@ -253,8 +263,8 @@ function syncClaudeCodeExtras(params: {
 	if (claudeIsTarget && !hasLot)
 		console.log(
 			params.lotLeftOut
-				? 'no station agents or session check: they come with the contributor skills (--contributing)'
-				: `no station agents or session check: no dependency ships the ${LOT_SKILL} skill`,
+				? 'no station agents: they come with the contributor skills (--contributing)'
+				: `no station agents: no dependency ships the ${LOT_SKILL} skill`,
 		)
 	if (hasLot && agents.skippedReason) console.log(agents.skippedReason)
 
@@ -276,6 +286,22 @@ function syncClaudeCodeExtras(params: {
 	if (session === 'invalid-hooks')
 		console.warn(
 			`⚠️  ${CLAUDE_SETTINGS_FILE}: "hooks" is not an object or "hooks.SessionStart" is not a list: session-start check not added or removed`,
+		)
+}
+
+/** The session-start check in the project's `AGENTS.md`, for every agent: independent of the claude target. */
+function syncAgentsCheck(params: { argv: string[]; cwd: string; enabled: boolean }): void {
+	const state = syncAgentsFileCheck({
+		cwd: params.cwd,
+		enabled: params.enabled && !hasFlag(params.argv, 'no-session-check'),
+	})
+	if (state === 'added')
+		console.log(`✅ ${AGENTS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
+	if (state === 'updated') console.log(`✅ ${AGENTS_FILE}: session-start check updated`)
+	if (state === 'removed') console.log(`🗑  ${AGENTS_FILE}: session-start check removed`)
+	if (state === 'unclosed')
+		console.warn(
+			`⚠️  ${AGENTS_FILE}: the dialecte session-check section is not closed: left as it is`,
 		)
 }
 
@@ -372,6 +398,9 @@ export function checkPages(params: {
 			})
 	}
 
+	if (pages.some((page) => page.skillName === LOT_SKILL))
+		findings.push(...checkStationDefinitions({ markdown: readStationsPage(cwd) }))
+
 	for (const apiJson of staleApiJsonFiles({ cwd, methods }))
 		findings.push({
 			file: apiJson.file,
@@ -467,6 +496,12 @@ function renderBlocks(params: { cwd: string; methods: MethodEntry[] }): Record<s
 		api: renderApiIndex(params.methods),
 		intents: renderIntentIndex(params.methods),
 	}
+}
+
+/** `skills/dialecte-lot/references/stations.md`, or undefined when the package has none. */
+function readStationsPage(cwd: string): string | undefined {
+	const path = join(cwd, STATIONS_FILE)
+	return existsSync(path) ? readFileSync(path, 'utf8') : undefined
 }
 
 function readPage(params: { cwd: string; page: SkillPage }): string {

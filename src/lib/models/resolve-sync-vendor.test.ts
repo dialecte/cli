@@ -2,6 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import {
+	AGENTS_CHECK_END,
+	AGENTS_CHECK_LINE,
+	AGENTS_CHECK_START,
+} from '../stations/agents-file-check.constants.ts'
 import { SESSION_CHECK_COMMAND } from '../stations/session-check.constants.ts'
 import { detectProjectVendor, resolveSyncVendor } from './resolve-sync-vendor.ts'
 
@@ -117,5 +122,30 @@ describe('resolveSyncVendor', () => {
 
 		touch('.github/skills/my-own-skill/SKILL.md')
 		expect(detectProjectVendor(root).kind).toBe('choose')
+	})
+
+	describe('AGENTS.md and .codex', () => {
+		const SECTION = `${AGENTS_CHECK_START}\n${AGENTS_CHECK_LINE}\n${AGENTS_CHECK_END}\n`
+
+		it('AGENTS.md holding only the sync section, with .codex/ -> no evidence of Codex', () => {
+			writeFileSync(join(root, 'AGENTS.md'), SECTION)
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toEqual({ kind: 'none' })
+		})
+
+		it('AGENTS.md with text of the user and the section, with .codex/ -> openai', () => {
+			writeFileSync(join(root, 'AGENTS.md'), `# Mine\n\n${SECTION}`)
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toMatchObject({ kind: 'one', vendor: 'openai' })
+		})
+
+		it("AGENTS.md being a folder, with .codex/ -> no throw, the user's own: openai", () => {
+			mkdirSync(join(root, 'AGENTS.md'))
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toMatchObject({ kind: 'one', vendor: 'openai' })
+		})
 	})
 })
