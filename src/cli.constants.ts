@@ -102,11 +102,15 @@ Examples:
   dialecte audit               # write benchmarks/types/readability-audit.md
 
 Skills:
-  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--vendor <id>] [--no-session-check]
-                             # install the skills of your dependencies (or of local checkouts) for your agents;
-                             # remembers the model vendor (detected, asked on a terminal, or --vendor) for models;
-                             # for Claude Code also writes the station agents (.claude/agents/dialecte-*.md) and a
-                             # SessionStart hook running doctor --brief (--no-session-check leaves it out)
+  dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing]
+                      [--vendor <id>] [--no-session-check]
+                             # install the consumer skills of your dependencies (or of local checkouts) for your
+                             # agents; --contributing adds the contributor skills (metadata.audience: contributor,
+                             # to change a dialecte package), remembered until --no-contributing; remembers the
+                             # model vendor (detected, asked on a terminal, or --vendor; none: models unset);
+                             # with the contributor skills, for Claude Code also writes the station agents
+                             # (.claude/agents/dialecte-*.md) and a SessionStart hook running doctor --brief
+                             # (--no-session-check leaves it out)
   dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
   dialecte skills check [--workspace <dir>]
                              # fail on a cited API / path / npm script that does not exist, or a stale block
@@ -115,8 +119,9 @@ Lookups (the same with or without the repositories; --json on each):
   dialecte api find "<need>" [--package <name>] [--limit 5]
                              # methods whose intents, summary or name match the need, best first
   dialecte api show <path>   # signature, summary, intents, routes, declaration, example (info.of, tx.addChild)
-  dialecte members <expression>
-                             # one line per member of doc.query, doc.query.reference, tx.lifecycle.extract...
+  dialecte members <expression> [--package <name>] [--version <v>]
+                             # one line per member of doc.query, doc.query.reference, tx.lifecycle.extract...;
+                             # in an app, of the installed dialecte (--package / --version when several)
   dialecte schema <Tag> [--package <name>]
                              # parents, children with how often, attributes; an unknown tag answers the closest
   dialecte models [--vendor <anthropic|openai|google>] [--json]

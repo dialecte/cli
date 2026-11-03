@@ -253,6 +253,101 @@ describe('runSync vendor', () => {
 	})
 })
 
+describe('runSync audience', () => {
+	const CONTRIBUTOR =
+		'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: contributor\n---\n'
+	const CONSUMER =
+		'---\nname: dialecte\ndescription: Use it.\nmetadata:\n  audience: consumer\n---\n'
+
+	beforeEach(() => {
+		write('package.json', JSON.stringify({ dependencies: { '@dialecte/core': '1' } }))
+		write(
+			'node_modules/@dialecte/core/package.json',
+			JSON.stringify({ name: '@dialecte/core', version: '1.0.0' }),
+		)
+		write('node_modules/@dialecte/core/skills/dialecte/SKILL.md', CONSUMER)
+		write('node_modules/@dialecte/core/skills/dialecte-lot/SKILL.md', CONTRIBUTOR)
+	})
+
+	it('no flag -> the consumer skill alone, one line naming the contributor skill and --contributing, no station agent', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte'])
+		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(
+			lines.some((line) => line.includes('dialecte-lot') && line.includes('--contributing')),
+		).toBe(true)
+	})
+
+	it('--contributing -> both skills, remembered: a later sync without the flag keeps both', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		expect(manifestOf('.agents/skills')).toMatchObject({
+			installed: ['dialecte', 'dialecte-lot'],
+			contributing: true,
+		})
+	})
+
+	it('--no-contributing after --contributing -> the contributor skill removed, its line says why', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		vi.mocked(console.log).mockClear()
+
+		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
+
+		expect(manifestOf('.agents/skills').installed).toEqual(['dialecte'])
+		expect(existsSync(join(root, '.agents/skills/dialecte-lot'))).toBe(false)
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(
+			lines.some((line) => line.includes('dialecte-lot') && line.includes('contributor')),
+		).toBe(true)
+	})
+
+	it('a consumer sync for Claude Code -> the station agents line says they come with --contributing', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(lines.some((line) => line.includes('no dependency ships'))).toBe(false)
+		expect(
+			lines.some((line) => line.includes('station agents') && line.includes('--contributing')),
+		).toBe(true)
+	})
+
+	it('--contributing and --no-contributing together -> rejected before anything is installed', () => {
+		expect(() =>
+			runSync({ argv: ['--agent', 'agents', '--contributing', '--no-contributing'], cwd: root }),
+		).toThrow('--contributing')
+		expect(existsSync(join(root, '.agents'))).toBe(false)
+	})
+
+	it('both contributing flags with a vendor -> rejected before any manifest is written', async () => {
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		await expect(
+			syncCommand([
+				'--agent',
+				'agents',
+				'--vendor',
+				'openai',
+				'--contributing',
+				'--no-contributing',
+			]),
+		).rejects.toThrow('--contributing')
+		expect(manifestOf('.agents/skills').vendor).toBeUndefined()
+	})
+
+	it('a consumer sync -> doctor says in sync, never that the contributor skill is missing', () => {
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		const skillLines = diagnose({ cwd: root, dialecteRoot: undefined, cliVersion: '0.2.0' }).filter(
+			(line) => line.subject === 'skills',
+		)
+
+		expect(skillLines.map((line) => line.status)).toEqual(['ok'])
+	})
+})
+
 describe('runSync station agents and the session check', () => {
 	const SESSION_COMMAND = 'npx --no-install @dialecte/cli doctor --brief'
 
@@ -433,13 +528,13 @@ describe('runSyncCommand', () => {
 		expect(manifestOf('.agents/skills').vendor).toBe('openai')
 	})
 
-	it('first sync, no terminal, nothing detected, no manifest -> exit 2 naming --vendor, nothing installed', async () => {
+	it('first sync, no terminal, nothing detected, no manifest -> installs without a vendor and says how to set it', async () => {
 		const result = await syncCommand([])
 
-		expect(result.exitCode).toBe(2)
+		expect(result.exitCode).toBe(0)
 		expect(result.output).toContain('--vendor')
-		expect(existsSync(join(root, '.claude'))).toBe(false)
-		expect(existsSync(join(root, '.agents'))).toBe(false)
+		expect(manifestOf('.claude/skills').vendor).toBeUndefined()
+		expect(manifestOf('.agents/skills').vendor).toBeUndefined()
 	})
 
 	it('a manifest without vendor (older sync), no terminal -> goes on without a vendor and says how to set it', async () => {

@@ -2,6 +2,7 @@
 export const MEMBERS_VALUE_OPTIONS: readonly string[] = [
 	'namespace',
 	'entry',
+	'package',
 	'version',
 	'tsconfig',
 	'constants-dir',
@@ -9,4 +10,4 @@ export const MEMBERS_VALUE_OPTIONS: readonly string[] = [
 ]
 
 export const MEMBERS_USAGE =
-	'usage: dialecte members <expression> [--json] [--version <v>]  (in an app: --namespace <Name> --entry <module exporting it>)'
+	'usage: dialecte members <expression> [--json] [--package <name>] [--version <v>]  (in an app the installed dialecte is found; --namespace <Name> --entry <module exporting it> override)'

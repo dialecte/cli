@@ -17,6 +17,8 @@ export type SkillClaims = {
 export type SkillFrontmatter = {
 	name: string | undefined
 	description: string | undefined
+	/** `metadata.audience`: who the skill is for; absent = consumer. */
+	audience?: string | undefined
 }
 
 export type SkillFinding = {

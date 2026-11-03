@@ -26,6 +26,21 @@ describe('readFrontmatter', () => {
 			markdown: '# Only a body',
 			expected: { name: undefined, description: undefined },
 		},
+		'metadata.audience contributor → audience read': {
+			markdown:
+				'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: contributor\n---\n',
+			expected: { name: 'dialecte-lot', description: 'Use it.', audience: 'contributor' },
+		},
+		'audience nested deeper under metadata → not metadata.audience': {
+			markdown:
+				'---\nname: dialecte\ndescription: Use it.\nmetadata:\n  tags:\n    audience: contributor\n---\n',
+			expected: { name: 'dialecte', description: 'Use it.', audience: undefined },
+		},
+		'metadata without audience, audience at the top level → no audience': {
+			markdown:
+				'---\nname: dialecte\ndescription: Use it.\nmetadata:\n  owner: core\naudience: contributor\n---\n',
+			expected: { name: 'dialecte', description: 'Use it.', audience: undefined },
+		},
 	}
 
 	for (const [title, testCase] of Object.entries(testCases)) {
@@ -41,6 +56,16 @@ describe('validateFrontmatter', () => {
 			frontmatter: { name: 'dialecte-scl', description: 'SCL map' },
 			folderName: 'dialecte-scl',
 			expected: [],
+		},
+		'audience consumer or contributor → no message': {
+			frontmatter: { name: 'dialecte-lot', description: 'x', audience: 'contributor' },
+			folderName: 'dialecte-lot',
+			expected: [],
+		},
+		'unknown audience → reported': {
+			frontmatter: { name: 'dialecte-lot', description: 'x', audience: 'maintainer' },
+			folderName: 'dialecte-lot',
+			expected: ['metadata.audience "maintainer" must be consumer or contributor'],
 		},
 		'name differs from folder → reported': {
 			frontmatter: { name: 'dialecte', description: 'x' },

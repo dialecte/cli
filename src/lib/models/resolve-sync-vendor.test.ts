@@ -34,11 +34,11 @@ afterEach(() => {
 })
 
 describe('resolveSyncVendor', () => {
-	it('no TTY, no vendor, nothing detected -> fail naming --vendor', () => {
+	it('no TTY, no vendor, nothing detected -> unset, the notice naming --vendor', () => {
 		const resolution = resolve({})
 
-		expect(resolution.kind).toBe('fail')
-		expect(resolution.kind === 'fail' && resolution.output).toContain('--vendor')
+		expect(resolution.kind).toBe('unset')
+		expect(resolution.kind === 'unset' && resolution.notice).toContain('--vendor')
 	})
 
 	it('--vendor openai -> set, without detecting', () => {
@@ -63,14 +63,14 @@ describe('resolveSyncVendor', () => {
 		expect(resolve({})).toEqual({ kind: 'set', vendor: 'anthropic' })
 	})
 
-	it('a multi-vendor host on a TTY -> ask among every vendor; without a TTY -> fail', () => {
+	it('a multi-vendor host on a TTY -> ask among every vendor; without a TTY -> unset', () => {
 		touch('.github/copilot-instructions.md')
 
 		expect(resolve({ interactive: true })).toEqual({
 			kind: 'ask',
 			candidates: ['anthropic', 'openai', 'google'],
 		})
-		expect(resolve({}).kind).toBe('fail')
+		expect(resolve({}).kind).toBe('unset')
 	})
 
 	it('nothing detected on a TTY -> ask among every vendor', () => {

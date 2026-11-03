@@ -52,6 +52,7 @@ import {
 	discoverSkillSources,
 	readSyncManifest,
 	rememberVendor,
+	selectAudience,
 	syncSkills,
 } from '../lib/skills/sync-skills.ts'
 import { planStationAgents } from '../lib/stations/render-station-agent.ts'
@@ -102,7 +103,7 @@ function isSubcommand(value: string | undefined): value is SkillsSubcommand {
 	return SUBCOMMAND_NAMES.includes(value as SkillsSubcommand)
 }
 
-/** The vendor first, then the sync; what it has to say on stderr, and 2 when nothing was installed. */
+/** The vendor first, then the sync; what it has to say on stderr. */
 export async function runSyncCommand(params: {
 	argv: string[]
 	cwd: string
@@ -112,15 +113,13 @@ export async function runSyncCommand(params: {
 	output: NodeJS.WritableStream
 }): Promise<CommandOutput> {
 	const choice = await chooseVendor(params)
-	if (choice.exitCode === 2) return { output: choice.output, exitCode: 2 }
 	runSync({ argv: params.argv, cwd: params.cwd, vendor: choice.vendor })
 	return { output: choice.output, exitCode: 0 }
 }
 
 /**
  * The model vendor to remember: `--vendor`, the one the manifests remember, the one the project folder says,
- * or the one the person picks. Without one: the sync goes on when a manifest already exists, stops (exit code 2)
- * on a first sync nobody can answer.
+ * or the one the person picks. Without one the sync goes on and `models` stays unset: the skills need no vendor.
  */
 export async function chooseVendor(params: {
 	argv: string[]
@@ -139,17 +138,15 @@ export async function chooseVendor(params: {
 		cwd: params.cwd,
 		interactive: params.interactive,
 	})
-	if (resolution.kind === 'set') return { vendor: resolution.vendor, output: warnings, exitCode: 0 }
+	if (resolution.kind === 'set') return { vendor: resolution.vendor, output: warnings }
 	if (resolution.kind === 'unset')
-		return { vendor: undefined, output: warnings + resolution.notice, exitCode: 0 }
-	if (resolution.kind === 'fail')
-		return { vendor: undefined, output: warnings + resolution.output, exitCode: 2 }
+		return { vendor: undefined, output: warnings + resolution.notice }
 	const vendor = await askVendor({
 		candidates: resolution.candidates,
 		input: params.input,
 		output: params.output,
 	})
-	return { vendor, output: warnings, exitCode: 0 }
+	return { vendor, output: warnings }
 }
 
 /** Installs the skills for the agents; throws on an unknown `--agent`. */
@@ -161,28 +158,51 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		throw new Error(
 			`skills sync: unknown agent ${unknownAgents.join(', ')} (known: ${Object.keys(AGENT_SKILL_FOLDERS).join(', ')})`,
 		)
+	if (hasFlag(argv, 'contributing') && hasFlag(argv, 'no-contributing'))
+		throw new Error('skills sync: --contributing and --no-contributing exclude each other')
 
 	// every manifest of the project says the same vendor, the folders of this sync or not
 	if (params.vendor !== undefined)
 		for (const folder of listManifestFolders(cwd))
 			rememberVendor({ folder: join(cwd, folder), vendor: params.vendor })
 
-	const { sources, missingDependencies } = discoverSkillSources({ cwd, from: getArg(argv, 'from') })
+	const targetFolders = agents.map((agent) => join(cwd, AGENT_SKILL_FOLDERS[agent]))
+	const contributing = isContributingSync({ argv, targetFolders })
+	const discovered = discoverSkillSources({ cwd, from: getArg(argv, 'from') })
+	const { missingDependencies } = discovered
+	const { selected: sources, leftOut } = selectAudience({
+		sources: discovered.sources,
+		contributing,
+	})
+	const leftOutNames = leftOut.map((source) => source.name)
 	const report = syncSkills({
 		sources,
-		targetFolders: agents.map((agent) => join(cwd, AGENT_SKILL_FOLDERS[agent])),
+		targetFolders,
 		mode: hasFlag(argv, 'copy') ? 'copy' : 'link',
 		keepUnshipped: missingDependencies.length > 0,
 		vendor: params.vendor,
+		leftOut: leftOutNames,
+		contributing,
 	})
 
 	for (const source of sources) console.log(`✅ ${source.name}  (${source.origin})`)
-	for (const name of report.removed) console.log(`🗑  ${name}  (no longer shipped)`)
+	for (const name of report.removed)
+		console.log(
+			leftOutNames.includes(name)
+				? `🗑  ${name}  (contributor skill: --contributing installs it)`
+				: `🗑  ${name}  (no longer shipped)`,
+		)
+	const notInstalled = leftOutNames.filter((name) => !report.removed.includes(name))
+	if (notInstalled.length)
+		console.log(
+			`contributor skills not installed: ${notInstalled.join(', ')} (to change a dialecte package: --contributing)`,
+		)
 	syncClaudeCodeExtras({
 		argv,
 		cwd,
 		claudeIsTarget: agents.includes('claude'),
 		vendor: params.vendor,
+		lotLeftOut: leftOutNames.includes(LOT_SKILL),
 	})
 	for (const path of report.conflicts)
 		console.warn(`⚠️  ${path} exists and was not installed by sync: left untouched`)
@@ -195,6 +215,16 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 }
 
 /**
+ * `--contributing` installs the contributor skills too, `--no-contributing` stops; without either, a sync does
+ * what the last one did (any target folder's manifest says so).
+ */
+function isContributingSync(params: { argv: string[]; targetFolders: readonly string[] }): boolean {
+	if (hasFlag(params.argv, 'contributing')) return true
+	if (hasFlag(params.argv, 'no-contributing')) return false
+	return params.targetFolders.some((folder) => readSyncManifest(folder).contributing === true)
+}
+
+/**
  * What `sync` adds for Claude Code next to the skills: the station agents and the session-start check, both
  * owned through the claude skills manifest. Without the claude target, what an earlier sync wrote is removed.
  */
@@ -203,6 +233,8 @@ function syncClaudeCodeExtras(params: {
 	cwd: string
 	claudeIsTarget: boolean
 	vendor: VendorId | undefined
+	/** `dialecte-lot` is shipped but this consumer sync left it out. */
+	lotLeftOut: boolean
 }): void {
 	const { argv, cwd, claudeIsTarget } = params
 	const manifest = readSyncManifest(join(cwd, AGENT_SKILL_FOLDERS.claude))
@@ -219,7 +251,11 @@ function syncClaudeCodeExtras(params: {
 	for (const path of agents.conflicts)
 		console.warn(`⚠️  ${path} exists and was not written by sync: left untouched`)
 	if (claudeIsTarget && !hasLot)
-		console.log(`no station agents or session check: no dependency ships the ${LOT_SKILL} skill`)
+		console.log(
+			params.lotLeftOut
+				? 'no station agents or session check: they come with the contributor skills (--contributing)'
+				: `no station agents or session check: no dependency ships the ${LOT_SKILL} skill`,
+		)
 	if (hasLot && agents.skippedReason) console.log(agents.skippedReason)
 
 	const session = syncSessionCheck({

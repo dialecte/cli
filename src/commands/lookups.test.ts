@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { runApi } from './api.ts'
 import { runDoctor } from './doctor.ts'
@@ -37,4 +37,45 @@ describe('a lookup run outside a package', () => {
 				exitCode: 2,
 			})
 		})
+})
+
+describe('members in an app', () => {
+	function writeJson(params: { path: string; content: unknown }): void {
+		mkdirSync(dirname(join(root, params.path)), { recursive: true })
+		writeFileSync(join(root, params.path), JSON.stringify(params.content))
+	}
+
+	function installDialecte(params: { name: string; version: string }): void {
+		writeJson({
+			path: `node_modules/${params.name}/package.json`,
+			content: {
+				name: params.name,
+				dependencies: { '@dialecte/core': '1' },
+				exports: { [`./${params.version}`]: './x.js', [`./${params.version}/test`]: './t.js' },
+			},
+		})
+	}
+
+	it('two dialectes installed, nothing named → each listed, exit 2, no type read', () => {
+		writeJson({
+			path: 'package.json',
+			content: { dependencies: { '@acme/a': '1', '@acme/b': '1' } },
+		})
+		installDialecte({ name: '@acme/a', version: 'v1' })
+		installDialecte({ name: '@acme/b', version: 'v2' })
+
+		expect(runMembers({ argv: ['doc.query'], cwd: root })).toEqual({
+			output:
+				'several dialectes are installed: pass --package <name> [--version <v>]\n  @acme/a --version v1\n  @acme/b --version v2\n',
+			exitCode: 2,
+		})
+	})
+
+	it('no dialecte installed → says so, exit 2', () => {
+		writeJson({ path: 'package.json', content: { dependencies: {} } })
+
+		expect(runMembers({ argv: ['doc.query'], cwd: root }).output).toContain(
+			'no dialecte installed here',
+		)
+	})
 })

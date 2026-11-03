@@ -14,6 +14,7 @@ import {
 	discoverSkillSources,
 	findInstalledPackage,
 	readSyncManifest,
+	selectAudience,
 } from '../skills/sync-skills.ts'
 import {
 	CHECKOUT_LIST_LIMIT,
@@ -121,7 +122,11 @@ function skills(cwd: string): DoctorLine[] {
 
 	return synced.map(function syncLine(folder: string): DoctorLine {
 		const manifest = readSyncManifest(join(cwd, folder))
-		const missing = sources
+		const expected = selectAudience({
+			sources,
+			contributing: manifest.contributing === true,
+		}).selected
+		const missing = expected
 			.map((source) => source.name)
 			.filter((name) => !manifest.installed.includes(name))
 		if (missing.length)
@@ -131,7 +136,7 @@ function skills(cwd: string): DoctorLine[] {
 				detail: `${folder} lacks ${missing.join(', ')}`,
 				fix: SYNC_COMMAND,
 			}
-		const stale = sources.flatMap(function staleCopy(source): string[] {
+		const stale = expected.flatMap(function staleCopy(source): string[] {
 			const recorded = manifest.versions[source.name]
 			if (isLink(join(cwd, folder, source.name)) || source.version === undefined) return []
 			if (recorded?.version === source.version) return []

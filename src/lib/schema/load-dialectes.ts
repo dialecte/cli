@@ -68,12 +68,14 @@ async function loadDialecte(params: {
 	return { packageName: params.packageName, config, readers }
 }
 
-function readManifest(folder: string): PackageManifest | undefined {
+/** A folder's package.json, undefined when it has none. */
+export function readManifest(folder: string): PackageManifest | undefined {
 	const path = join(folder, 'package.json')
 	return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : undefined
 }
 
-function isBuiltOnCore(manifest: PackageManifest): boolean {
+/** A dialecte: a package other than core that depends on core (or takes it as a peer). */
+export function isBuiltOnCore(manifest: PackageManifest): boolean {
 	return (
 		manifest.name !== CORE_PACKAGE &&
 		(manifest.dependencies?.[CORE_PACKAGE] !== undefined ||

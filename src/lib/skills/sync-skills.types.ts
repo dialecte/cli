@@ -7,6 +7,16 @@ export type SkillSource = {
 	origin: string
 	/** The version in the origin's package.json, when it has one. */
 	version?: string
+	/** `metadata.audience` of its SKILL.md: a contributor skill is installed only by a contributing sync. */
+	audience: SkillAudience
+}
+
+export type SkillAudience = 'consumer' | 'contributor'
+
+/** The skills a sync installs for its audience, and the contributor skills it leaves out. */
+export type AudienceSelection = {
+	selected: SkillSource[]
+	leftOut: SkillSource[]
 }
 
 /** Per installed skill, the package and the version a sync took it from. */
@@ -18,6 +28,8 @@ export type SyncManifest = {
 	versions: SyncedVersions
 	/** The model vendor of the project (`dialecte models`); unknown for a manifest written before it existed. */
 	vendor?: string
+	/** A sync with `--contributing` installed the contributor skills too: later syncs keep doing so. */
+	contributing?: true
 	/** The Claude Code station agent files (names in `.claude/agents`) a sync wrote: what a later sync may replace or remove. */
 	stationAgents?: string[]
 	/** A sync added the session-start check to `.claude/settings.json`. */

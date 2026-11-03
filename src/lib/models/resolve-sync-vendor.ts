@@ -9,7 +9,6 @@ import { holdsOnlyTheCheck } from '../stations/session-check.ts'
 import { CLAUDE_AGENTS_FOLDER } from '../stations/station-agents.constants.ts'
 import { detectVendor } from './detect-vendor.ts'
 import { VENDOR_HOSTS, VENDOR_IDS } from './model-tiers.constants.ts'
-import { listManifestFolders } from './remembered-vendor.ts'
 import { isVendorId } from './vendor-id.ts'
 
 import type { SyncVendorResolution, VendorDetection, VendorId } from './model-tiers.types.ts'
@@ -39,18 +38,13 @@ export function resolveSyncVendor(params: {
 			candidates: detection.kind === 'choose' ? detection.candidates : [...VENDOR_IDS],
 		}
 	const howToSet = `Pass \`--vendor <${VENDOR_IDS.join('|')}>\` to set it.`
-	if (listManifestFolders(params.cwd).length > 0)
-		return {
-			kind: 'unset',
-			notice: `skills sync: no vendor remembered for the models (\`dialecte models\`). ${howToSet}\n`,
-		}
+	const detected =
+		detection.kind === 'choose'
+			? ` Several agents or a multi-vendor host were detected (${detection.candidates.join(', ')}).`
+			: ''
 	return {
-		kind: 'fail',
-		output: `skills sync: which vendor's models does this project use? ${
-			detection.kind === 'choose'
-				? `Several agents or a multi-vendor host were detected (${detection.candidates.join(', ')}).`
-				: 'No agent folder was detected.'
-		} ${howToSet}\n`,
+		kind: 'unset',
+		notice: `skills sync: no vendor remembered for the models (\`dialecte models\`).${detected} ${howToSet}\n`,
 	}
 }
 

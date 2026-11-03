@@ -1,4 +1,5 @@
 import {
+	chmodSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -34,7 +35,14 @@ function writePackage(params: { folder: string; json: object }): void {
 
 function coreSkill(): SkillSource[] {
 	writeSkill({ folder: join(root, 'core/skills'), name: 'dialecte' })
-	return [{ name: 'dialecte', path: join(root, 'core/skills/dialecte'), origin: '@dialecte/core' }]
+	return [
+		{
+			name: 'dialecte',
+			path: join(root, 'core/skills/dialecte'),
+			origin: '@dialecte/core',
+			audience: 'consumer',
+		},
+	]
 }
 
 beforeEach(() => {
@@ -64,11 +72,13 @@ describe('discoverSkillSources', () => {
 					name: 'dialecte-scl',
 					path: join(root, 'node_modules/@dialecte/scl/skills/dialecte-scl'),
 					origin: '@dialecte/scl',
+					audience: 'consumer',
 				},
 				{
 					name: 'dialecte',
 					path: join(root, 'node_modules/@dialecte/core/skills/dialecte'),
 					origin: '@dialecte/core',
+					audience: 'consumer',
 				},
 			],
 			missingDependencies: [],
@@ -102,6 +112,7 @@ describe('discoverSkillSources', () => {
 				name: 'dialecte-scl',
 				path: join(root, 'node_modules/@dialecte/scl/skills/dialecte-scl'),
 				origin: '@dialecte/scl',
+				audience: 'consumer',
 			},
 		])
 	})
@@ -122,8 +133,18 @@ describe('discoverSkillSources', () => {
 
 		expect(discoverSkillSources({ cwd: '/elsewhere', from: root })).toEqual({
 			sources: [
-				{ name: 'dialecte', path: join(root, 'core/skills/dialecte'), origin: 'core' },
-				{ name: 'dialecte-scl', path: join(root, 'scl/skills/dialecte-scl'), origin: 'scl' },
+				{
+					name: 'dialecte',
+					path: join(root, 'core/skills/dialecte'),
+					origin: 'core',
+					audience: 'consumer',
+				},
+				{
+					name: 'dialecte-scl',
+					path: join(root, 'scl/skills/dialecte-scl'),
+					origin: 'scl',
+					audience: 'consumer',
+				},
 			],
 			missingDependencies: [],
 		})
@@ -136,6 +157,46 @@ describe('discoverSkillSources', () => {
 		expect(() => discoverSkillSources({ cwd: root, from: root })).toThrow(
 			'skill "dialecte" is shipped by both core and scl',
 		)
+	})
+})
+
+describe('syncSkills, left-out skills', () => {
+	it('a dependency missing (unshipped kept) and a contributor skill left out → the left-out one removed all the same', () => {
+		syncSkills({
+			sources: coreSkill(),
+			targetFolders: [join(root, '.agents/skills')],
+			mode: 'link',
+		})
+
+		const report = syncSkills({
+			sources: [],
+			targetFolders: [join(root, '.agents/skills')],
+			mode: 'link',
+			keepUnshipped: true,
+			leftOut: ['dialecte'],
+		})
+
+		expect(report.removed).toEqual(['dialecte'])
+		expect(existsSync(join(root, '.agents/skills/dialecte'))).toBe(false)
+	})
+})
+
+describe('discoverSkillSources, unreadable SKILL.md', () => {
+	it('a SKILL.md it may not read → a consumer skill, nothing thrown', () => {
+		writePackage({ folder: root, json: { dependencies: { '@acme/odd': '1' } } })
+		writeSkill({ folder: join(root, 'node_modules/@acme/odd/skills'), name: 'odd' })
+		chmodSync(join(root, 'node_modules/@acme/odd/skills/odd/SKILL.md'), 0o000)
+
+		expect(discoverSkillSources({ cwd: root }).sources.map((source) => source.audience)).toEqual([
+			'consumer',
+		])
+	})
+
+	it('a folder named SKILL.md → not a skill, nothing thrown', () => {
+		writePackage({ folder: root, json: { dependencies: { '@acme/odd': '1' } } })
+		mkdirSync(join(root, 'node_modules/@acme/odd/skills/odd/SKILL.md'), { recursive: true })
+
+		expect(discoverSkillSources({ cwd: root }).sources).toEqual([])
 	})
 })
 

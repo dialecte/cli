@@ -70,12 +70,18 @@ Env: `RUNS=5 dialecte bench` (repetitions kept as the min); `COVERAGE_CHILD_CAP=
 Every Dialecte package ships the agent skills that describe it in `skills/<name>/SKILL.md` (open
 [Agent Skills](https://agentskills.io) format), versioned with its code.
 
-- **In an app**: `npx @dialecte/cli skills sync` links the skills of your `@dialecte/*` (and any other)
-  dependencies into `.claude/skills` and `.agents/skills` (Codex, Cursor, Gemini CLI, Copilot read the
+- **In an app**: `npx @dialecte/cli skills sync` links the consumer skills of your `@dialecte/*` (and any
+  other) dependencies into `.claude/skills` and `.agents/skills` (Codex, Cursor, Gemini CLI, Copilot read the
   latter; add `--agent copilot` for `.github/skills`). Links follow your installed versions; rerun after
   adding a dependency. `--copy` writes copies instead of links.
-- **Station agents (Claude Code)**: when Claude Code is a target (the default) and the project's model vendor
-  is anthropic, `skills sync` also writes one agent per station of `dialecte-lot` into
+- **Consumer and contributor skills**: a skill whose frontmatter says `metadata:` / `audience: contributor` is
+  for changing a dialecte package (core's `dialecte-contributing`, `dialecte-lot`); a skill without one is a
+  consumer skill. A sync installs the consumer skills only and names the contributor skills it left out;
+  `--contributing` installs them too and is remembered (`contributing` in `.dialecte-skills.json`) until
+  `--no-contributing` removes them. `dialecte doctor` expects the skills of the audience the manifest says;
+  `skills check` refuses another audience value.
+- **Station agents (Claude Code)**: when Claude Code is a target (the default), the contributor skills are
+  installed and the project's model vendor is anthropic, `skills sync` also writes one agent per station of `dialecte-lot` into
   `.claude/agents/dialecte-<station>.md`: `implementer` and `fixer` (standard tier), `implementer-strong` and
   `reviewer` (strong), `eval-runner` and `standard-reader` (standard), `grader` and `searcher` (fast). Each file
   sets the model (from the `dialecte models` map, as the alias Claude Code accepts: `sonnet`, `opus`,
@@ -95,7 +101,8 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
   versions and the station agents are in sync, otherwise one line per problem with its fix, and always exits 0.
   `--no-session-check` leaves the hook out (and removes the one a sync added). Elsewhere, the `dialecte` skill
   tells the agent to run `doctor` first.
-- **Working on Dialecte**: `npx @dialecte/cli skills sync --from ../` takes them from your local checkouts.
+- **Working on Dialecte**: `npx @dialecte/cli skills sync --from ../ --contributing` takes them from your local
+  checkouts, the contributor skills included.
 - **In a package**: `dialecte skills generate` rewrites the `<!-- dialecte-skills:generated <kind> -->`
   blocks (`extensions`, `core-methods`, `hooks`, `api`, `intents`) from the source; the `api` block lists
   the methods, then one section per package entry (each `exports` subpath shipping a `.d.ts`) with the
@@ -123,8 +130,10 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   whose arguments a caller can copy (written-out values first; never a test case field, a fixture constant
   or a cast). No such call, no example.
 - `dialecte members <expression>` (`doc.query`, `doc.query.reference`, `tx.lifecycle.extract`): the
-  IntelliSense walk on demand, from the live types of the package where it runs. In an app, point it at
-  the namespace holding your project's types: `--namespace <Name> --entry <module>`.
+  IntelliSense walk on demand, from the live types of the package where it runs. In an app it reads the
+  installed dialecte (a dependency built on `@dialecte/core` exporting `./<version>` with its `./<version>/test`
+  entry: its namespace is its name capitalized, `Scl` from `@dialecte/scl/v2019C1`); with several, it lists them and
+  `--package <name>` / `--version <v>` picks one. `--namespace <Name> --entry <module>` override.
 - `dialecte schema <Tag> [--package <name>]`: parents, children in order with how often each may appear,
   attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants - read
   through the readers of the core each installed dialecte depends on (how often a child may appear is core's
@@ -140,9 +149,8 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   `dialecte skills sync` remembered as `vendor` in `.dialecte-skills.json`, in every skill folder of the
   project. Sync detects it from the project (`.claude/`, `AGENTS.md` + `.codex/`, `.gemini/`; a folder holding
   only the skills a sync wrote is no evidence) and asks on a terminal when several agents, a multi-vendor host
-  (Copilot, Cursor) or none are found. Without a terminal, a first sync that cannot tell (no manifest, nothing detected) exits 2 naming
-  `--vendor <id>`, which also sets it without asking; a project that already has a manifest and an ambiguous
-  or empty detection keeps syncing without a vendor and is told how to set it. When manifests disagree, `models` warns on stderr, naming them, and uses the
+  (Copilot, Cursor) or none are found. Without a terminal, a sync that cannot tell installs the skills without a vendor (`models` stays
+  unset: the skills need none) and says how to set it: `--vendor <id>`, which also sets it without asking. When manifests disagree, `models` warns on stderr, naming them, and uses the
   most recently written; an unknown vendor id in a manifest is ignored with a warning. Exit 1 for an unknown
   `--vendor`, 2 when no vendor is known.
 
