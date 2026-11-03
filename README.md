@@ -435,7 +435,8 @@ the answer.
     (`gate lot: run dialecte mutants run on this tree first`); an invalid `dialecte.mutation` or lot switch,
     with its reason. `!` (does not block): a run of the branch still running on a plain hand-over
     (`...: its survivors are not in yet`). Otherwise `✓ mutation nothing pending`. To unblock: kill each
-    survivor with a test, record its reason (`.dialecte/mutation-records.json`), or
+    survivor with a test, record its reason
+    (`dialecte mutants record --key <key> --family <family> --reason <why>`), or
     `dialecte mutants schedule <follow-up> <key>`; rerun a died run or `dialecte mutants abandon <run id>`;
     wait for a running run; run `dialecte mutants run` on the tree for a gate lot. The switch is the
     hand-over folder's `lot.json` when it holds one, else `.dialecte/lot.json`.
@@ -686,10 +687,7 @@ the answer.
   died run `abandoned` and keeps it (a running or reported run is refused); `dialecte mutants migrate`
   turns `scripts/mutants/equivalent-mutants.json` into `.dialecte/mutation-records.json` (same keys and
   reasons, family `unclassified`, the line's hash), never overwriting an existing file. The store is
-  written by the cli only: never edit it by hand. A `new` survivor or a died run blocks every hand-over of
-  the package (the card's `mutation` line and `handover run`'s guard) until it is killed, recorded,
-  scheduled, rerun or abandoned; a running run blocks a merge hand-over and a gate lot; `dialecte worktree
-prune` keeps the worktree of a running or died run.
+  written by the cli only: never edit it by hand.
 - `dialecte mutants judge [--file <file>]` prints, per file (sorted), the package's `new` survivors as a judge
   packet: each survivor's key, line and mutation, a family guess with its reason (the first rule its code
   matches: an `errors/` file or error wording, a `.constants.ts` file or a module-level declaration, an
@@ -710,11 +708,14 @@ prune` keeps the worktree of a running or died run.
   an empty or too long reason, `--removable` with another family, an unknown key, or a `--file` holding no `new`
   or `scheduled` survivor refuses the whole call (exit 1, nothing written); both `--key` and `--file`, neither, no
   `--family` or `--reason`, or an option given another of the verb's options as its value (`--reason --json`) is a
-  usage error (exit 2). `dialecte mutants drop <run id>` removes an abandoned run, or a reported run the ledger
-  took in, from the store; a running or died run (abandon it first) and a reported run no ledger reader took in
-  yet (`dialecte mutants status` takes it in) are refused. Every verb but `run` takes `--json` and then prints
-  exactly one JSON object on stdout, a refusal included: `{ "verb", "ok": true, ... }` or
+  usage error (exit 2). `dialecte mutants drop <run id>` removes an abandoned run, or a reported run, from the
+  store; a running or died run (abandon it first) and the latest reported run of its branch (it is that branch's
+  evidence: drop it once a newer run of the branch reported) are refused. Every verb but `run` takes `--json` and
+  then prints exactly one JSON object on stdout, a refusal included: `{ "verb", "ok": true, ... }` or
   `{ "verb", "ok": false, "reason" }` with the usual exit code (`status --json` prints the status itself).
+- A `new` survivor or a died run blocks every hand-over of the package (the card's `mutation` line and
+  `handover run`'s guard) until it is killed, recorded, scheduled, rerun or abandoned; a running run blocks a
+  merge hand-over and a gate lot; `dialecte worktree prune` keeps the worktree of a running or died run.
 - `dialecte worktree prune [--root <workspace>] [--yes] [--json]` lists, per repository of the workspace,
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the

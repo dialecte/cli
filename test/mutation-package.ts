@@ -225,6 +225,26 @@ export function storedReportedRun(params: {
 	})
 }
 
+/** Two reported runs of the current branch no ledger reader took in: the older one, then the latest (half an hour later). */
+export function olderAndLatestReportedRuns(root: string): { older: string; latest: string } {
+	const older = storedReportedRun({
+		root,
+		startedAt: '2026-11-02T10:00:00.000Z',
+		survivors: [survivorOf({ key: 'k1' })],
+	})
+	const latest = storedReportedRun({
+		root,
+		startedAt: '2026-11-02T10:30:00.000Z',
+		survivors: [survivorOf({ key: 'k2', line: 5 })],
+	})
+	return { older: older.runId, latest: latest.runId }
+}
+
+/** What `dropRun` refuses with for the latest reported run of a branch. */
+export function latestReportedRefusal(params: { runId: string; branch: string }): string {
+	return `run ${params.runId} is the latest reported run of ${params.branch}: it is that branch's evidence; drop it once a newer run of the branch reported`
+}
+
 /** The text of the ledger and of the applied-runs file as the store holds them now; undefined for a file not there. */
 export function storeFileTexts(root: string): { ledger?: string; applied?: string } {
 	const folder = join(commonGitDirOf(root), MUTATION_STORE_FOLDER)

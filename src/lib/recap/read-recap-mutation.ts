@@ -2,6 +2,7 @@
 import { mergedBranchesOf } from '../handover/lot-trees.ts'
 import { readMutationDeclaration } from '../mutation/declaration.ts'
 import { itemsOf, readLedger } from '../mutation/ledger.ts'
+import { RECORD_MOVER } from '../mutation/mutation.constants.ts'
 import { packageNameOf, readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
 
@@ -10,8 +11,9 @@ import type { RecapMutation } from './recap.types.ts'
 
 /**
  * The runs of the hand-over's branch and of the branches its merge lots merge, oldest first; the survivors those
- * runs killed or recorded; the survivors first seen on those branches and scheduled. `undeclared` when the package
- * declares no mutation scope; nothing listed when the repository is gone.
+ * runs killed or recorded, and those `dialecte mutants record` closed that were first seen on those branches; the
+ * survivors first seen on those branches and scheduled. `undeclared` when the package declares no mutation scope;
+ * nothing listed when the repository is gone.
  */
 export function readRecapMutation(params: {
 	handover: HandoverFolder
@@ -33,7 +35,12 @@ export function readRecapMutation(params: {
 	return {
 		kind: 'declared',
 		runs,
-		moved: items.filter((item) => item.movedBy !== undefined && runIds.has(item.movedBy)),
+		moved: items.filter(
+			(item) =>
+				item.movedBy !== undefined &&
+				(runIds.has(item.movedBy) ||
+					(item.movedBy === RECORD_MOVER && branches.has(item.firstSeen.lot))),
+		),
 		scheduled: items.filter(
 			(item) => item.state === 'scheduled' && branches.has(item.firstSeen.lot),
 		),

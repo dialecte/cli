@@ -203,7 +203,10 @@ export type LedgerItem = {
 	state: LedgerState
 	/** When the last run that reported the survivor started: a run that started earlier never kills it. */
 	lastReportedStartedAt?: string
-	/** The run that last moved the item (to killed or recorded), so its output can name it. */
+	/**
+	 * What last moved the item (to killed or recorded): the run, so its output can name it, or `record` when
+	 * `dialecte mutants record` did.
+	 */
 	movedBy?: string
 	followUp?: string
 	reason?: string

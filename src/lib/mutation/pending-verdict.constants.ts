@@ -38,7 +38,7 @@ export const RUNNING_CONSEQUENCE = {
 
 /** The last line of a verdict that lists survivors or died runs. */
 export const ACT_ON_EACH =
-	'act on each: a test that kills it, a recorded reason in .dialecte/mutation-records.json, or dialecte mutants schedule <follow-up>'
+	'act on each: a test that kills it, dialecte mutants record --key <key> --family <family> --reason <why>, or dialecte mutants schedule <follow-up> <key>'
 
 /** A gate lot without a reported run of its branches on the tree it hands over. */
 export const GATE_LOT_WITHOUT_RUN = 'gate lot: run dialecte mutants run on this tree first'

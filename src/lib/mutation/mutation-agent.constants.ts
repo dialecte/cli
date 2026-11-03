@@ -121,3 +121,11 @@ export const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/
 
 /** The shortest a survivor's mutation text is cut to when a packet over the byte cap shrinks it. */
 export const MUTATION_MIN_CHARS = 40
+
+/** `drop` refuses the latest reported run of its package and branch: `{runId}`, `{branch}`. */
+export const DROP_LATEST_REPORTED_REFUSAL =
+	"run {runId} is the latest reported run of {branch}: it is that branch's evidence; drop it once a newer run of the branch reported"
+
+/** `drop` found the run reported after the ledger lock took the runs in: `{runId}`. */
+export const DROP_REPORTED_MEANWHILE_REFUSAL =
+	'run {runId} reported while the drop ran: drop it again'

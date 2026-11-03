@@ -15,6 +15,7 @@ import {
 import {
 	MUTATION_FAMILIES,
 	MUTATION_RECORDS_PATH,
+	RECORD_MOVER,
 	REMOVABLE_FAMILIES,
 } from './mutation.constants.ts'
 import { readRecordsFile } from './records-file.ts'
@@ -186,7 +187,7 @@ function moveToRecorded(params: {
 			ledger[ledgerKeyOf({ packageName, key })] = {
 				...item,
 				state: 'recorded',
-				movedBy: 'record',
+				movedBy: RECORD_MOVER,
 			}
 		return {
 			key,

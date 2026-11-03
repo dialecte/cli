@@ -2,6 +2,7 @@
 import { rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import { recordWith } from '../../test/mutation-agent.ts'
 import {
 	FOLLOW_UP,
 	MERGED_BRANCH,
@@ -25,6 +26,7 @@ import { PACKAGE_NAME, SCOPE_FILE } from '../../test/mutation-package.constants.
 import { mutationPackage, survivorOf } from '../../test/mutation-package.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import { createScratchRepository } from '../../test/scratch-repository.ts'
+import { RECORD_MOVER } from '../lib/mutation/mutation.constants.ts'
 import { runRecap } from './recap.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -199,6 +201,42 @@ describe('recap: the Mutation section', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 			`- changed run \`${first.runId}\`: 3 killed · 2 survived · 0 timed out · 0 no coverage`,
 			`- changed run \`${recording.runId}\`: 3 killed · 1 survived · 0 timed out · 0 no coverage`,
 			`- ${SECOND_ITEM}: recorded by \`${recording.runId}\``,
+		])
+	})
+
+	it('a survivor first seen on the branch and closed by record → listed, recorded by `record`', () => {
+		const { root, recap } = recapScenario({ declared: true })
+		reportRun({ root, survivors: [survivorOf({ key: 'k1' })], now: startedAt(1) })
+		expect(recordWith({ root, keys: ['k1'] })).toMatchObject({ ok: true })
+
+		expect(recapSection({ output: recap(), heading: MUTATION_HEADING })).toEqual([
+			expect.stringContaining('changed run'),
+			`- ${FIRST_ITEM}: recorded by \`${RECORD_MOVER}\``,
+		])
+	})
+
+	it('a survivor first seen on a branch a merge lot merges and closed by record → listed', () => {
+		const { root, lotsPath, out } = mergeHandover({})
+		expect(writeHandover(lotsPath).exitCode).toBe(0)
+		reportRun({ root, branch: MERGED_BRANCH, survivors: [survivorOf({ key: 'k1' })] })
+		expect(recordWith({ root, keys: ['k1'] })).toMatchObject({ ok: true })
+
+		const result = runRecap({ cwd: dirname(out), argv: [out] })
+
+		expect(result.exitCode).toBe(0)
+		expect(recapSection({ output: result.output, heading: MUTATION_HEADING })).toEqual([
+			expect.stringContaining('changed run'),
+			`- ${FIRST_ITEM}: recorded by \`${RECORD_MOVER}\``,
+		])
+	})
+
+	it('a survivor first seen on another branch and closed by record → not listed', () => {
+		const { root, recap } = recapScenario({ declared: true })
+		reportRun({ root, branch: 'feat/other', survivors: [survivorOf({ key: 'k1' })] })
+		expect(recordWith({ root, keys: ['k1'] })).toMatchObject({ ok: true })
+
+		expect(recapSection({ output: recap(), heading: MUTATION_HEADING })).toEqual([
+			'No mutation run.',
 		])
 	})
 })

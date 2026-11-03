@@ -16,7 +16,7 @@ export const SECOND_SURVIVOR_MUTATION = 'EqualityOperator: x === 1 -> x !== 1'
 
 /** The closing line every failed verdict with items prints. */
 export const ACT_ON_EACH_LINE =
-	'act on each: a test that kills it, a recorded reason in .dialecte/mutation-records.json, or dialecte mutants schedule <follow-up>'
+	'act on each: a test that kills it, dialecte mutants record --key <key> --family <family> --reason <why>, or dialecte mutants schedule <follow-up> <key>'
 
 /** `dialecte mutants status` closes the counts of a failed verdict. */
 export const STATUS_TAIL = ': dialecte mutants status'
