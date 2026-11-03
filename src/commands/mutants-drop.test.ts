@@ -3,7 +3,9 @@ import { join } from 'node:path'
 
 import { deadPid } from '../../test/dead-pid.ts'
 import {
+	latestReportedRefusal,
 	mutationPackage,
+	olderAndLatestReportedRuns,
 	parsedOutput,
 	runMutantsIn,
 	storeFileTexts,
@@ -57,28 +59,70 @@ describe('mutants drop', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(existsSync(runFileOf({ root, runId }))).toBe(false)
 	})
 
-	it('a reported run the ledger took in → removed, the ledger bytes unchanged', async () => {
+	it('an older reported run the ledger took in → removed, the ledger bytes unchanged', async () => {
 		const root = mutationPackage()
-		const runId = unapplied(root)
-		expect(Object.keys(readLedger({ root }))).toHaveLength(1)
+		const { older } = olderAndLatestReportedRuns(root)
+		expect(Object.keys(readLedger({ root }))).toHaveLength(2)
 		const before = storeFileTexts(root)
 
-		await expect(runMutantsIn({ root, argv: ['drop', runId] })).resolves.toMatchObject({
+		await expect(runMutantsIn({ root, argv: ['drop', older] })).resolves.toMatchObject({
 			exitCode: 0,
 		})
-		expect(existsSync(runFileOf({ root, runId }))).toBe(false)
+		expect(existsSync(runFileOf({ root, runId: older }))).toBe(false)
 		expect(storeFileTexts(root)).toEqual(before)
 	})
 
-	it('a reported run the ledger has not taken in → exit 1 saying so, the file kept', async () => {
+	it('an older reported run the ledger has not taken in → removed, the drop took it in', async () => {
+		const root = mutationPackage()
+		const { older } = olderAndLatestReportedRuns(root)
+
+		await expect(runMutantsIn({ root, argv: ['drop', older] })).resolves.toMatchObject({
+			exitCode: 0,
+		})
+		expect(existsSync(runFileOf({ root, runId: older }))).toBe(false)
+		expect(Object.keys(readLedger({ root })).sort()).toEqual(['demo-pkg::k1', 'demo-pkg::k2'])
+	})
+
+	it('the latest reported run of its branch → exit 1 with the evidence wording, the file kept', async () => {
+		const root = mutationPackage()
+		const { latest } = olderAndLatestReportedRuns(root)
+
+		await expect(runMutantsIn({ root, argv: ['drop', latest] })).resolves.toEqual({
+			exitCode: 1,
+			output: expect.stringContaining(latestReportedRefusal({ runId: latest, branch: 'main' })),
+		})
+		expect(existsSync(runFileOf({ root, runId: latest }))).toBe(true)
+	})
+
+	it('a lone reported run → exit 1 as the latest of its branch, the file kept', async () => {
 		const root = mutationPackage()
 		const runId = unapplied(root)
 
 		await expect(runMutantsIn({ root, argv: ['drop', runId] })).resolves.toMatchObject({
 			exitCode: 1,
-			output: expect.stringMatching(/not yet taken into the ledger/),
+			output: expect.stringContaining(latestReportedRefusal({ runId, branch: 'main' })),
 		})
 		expect(existsSync(runFileOf({ root, runId }))).toBe(true)
+	})
+
+	it('--json, the latest reported run → { verb, ok: false, reason }, exit 1, the file kept', async () => {
+		const root = mutationPackage()
+		const { latest } = olderAndLatestReportedRuns(root)
+
+		await expect(
+			runMutantsIn({ root, argv: ['drop', latest, '--json'] }).then(({ exitCode, output }) => ({
+				exitCode,
+				json: parsedOutput(output),
+			})),
+		).resolves.toEqual({
+			exitCode: 1,
+			json: {
+				verb: 'drop',
+				ok: false,
+				reason: latestReportedRefusal({ runId: latest, branch: 'main' }),
+			},
+		})
+		expect(existsSync(runFileOf({ root, runId: latest }))).toBe(true)
 	})
 
 	it('a running run → exit 1, the file kept', async () => {

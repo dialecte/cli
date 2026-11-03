@@ -126,6 +126,9 @@ export const LEDGER_KEY_SEPARATOR = '::'
 /** The length a tree id is shortened to in what `run` and `status` print. */
 export const SHORT_TREE_LENGTH = 12
 
+/** What the ledger's `movedBy` holds for an item `dialecte mutants record` closed. */
+export const RECORD_MOVER = 'record'
+
 export const MUTANTS_VERBS = [
 	'run',
 	'status',

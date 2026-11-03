@@ -6,7 +6,10 @@ import { answered, asksJson, refused, usageResult } from './mutants-output.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { OwnerCheck } from '../lib/mutation/mutation.types.ts'
 
-/** Removes an abandoned run, or a reported run the ledger took in; refuses any other run. */
+/**
+ * Removes an abandoned run, or a reported run (the ledger lock takes it in first); refuses a running or died run and
+ * the latest reported run of its branch.
+ */
 export function dropVerb(params: { root: string; argv: string[] } & OwnerCheck): CommandResult {
 	const { root, argv, isAlive, startTimeOf } = params
 	const json = asksJson(argv)

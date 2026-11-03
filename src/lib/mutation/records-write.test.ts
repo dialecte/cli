@@ -29,6 +29,7 @@ import {
 	MUTATION_LEDGER_LOCK_FILE,
 	MUTATION_RUNS_FOLDER,
 	MUTATION_STORE_FOLDER,
+	RECORD_MOVER,
 	REMOVABLE_FAMILIES,
 } from './mutation.constants.ts'
 import { readRecordsFile } from './records-file.ts'
@@ -66,7 +67,7 @@ describe('record: the transition table', { timeout: SCRATCH_REPOSITORY_TIMEOUT }
 		})
 		expect(storedLedger(root)[ledgerKey('n1')]).toMatchObject({
 			state: 'recorded',
-			movedBy: 'record',
+			movedBy: RECORD_MOVER,
 		})
 	})
 
@@ -79,7 +80,7 @@ describe('record: the transition table', { timeout: SCRATCH_REPOSITORY_TIMEOUT }
 		})
 		expect(storedLedger(root)[ledgerKey('s1')]).toMatchObject({
 			state: 'recorded',
-			movedBy: 'record',
+			movedBy: RECORD_MOVER,
 			followUp: 'later',
 		})
 	})
@@ -424,7 +425,7 @@ describe('record: forced orders', { timeout: LOCK_CHILD_TIMEOUT }, () => {
 		await exited
 		expect(storedLedger(root)).toMatchObject({
 			[ledgerKey('from-run')]: { state: 'new' },
-			[ledgerKey('n1')]: { state: 'recorded', movedBy: 'record' },
+			[ledgerKey('n1')]: { state: 'recorded', movedBy: RECORD_MOVER },
 		})
 		expect(recordedFile(root)[SCOPE_FILE].n1).toMatchObject({ family: 'wording' })
 	})

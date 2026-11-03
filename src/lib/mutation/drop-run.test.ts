@@ -3,7 +3,14 @@ import { dirname, join } from 'node:path'
 
 import { deadPid } from '../../../test/dead-pid.ts'
 import {
+	declaredRepositoryWithOtherPackage,
+	onBranch,
+	startedAt,
+} from '../../../test/mutation-hooks.ts'
+import {
+	latestReportedRefusal,
 	mutationPackage,
+	olderAndLatestReportedRuns,
 	runFiles,
 	storeFileTexts,
 	storedReportedRun,
@@ -13,8 +20,12 @@ import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constan
 import { commonGitDirOf } from '../../../test/scratch-tree.ts'
 import { dropRun } from './drop-run.ts'
 import { readLedger } from './ledger.ts'
-import { MUTATION_RUNS_FOLDER, MUTATION_STORE_FOLDER } from './mutation.constants.ts'
-import { abandonRun, readRuns, startRun } from './run-store.ts'
+import {
+	MUTATION_LEDGER_LOCK_FILE,
+	MUTATION_RUNS_FOLDER,
+	MUTATION_STORE_FOLDER,
+} from './mutation.constants.ts'
+import { abandonRun, finishRun, readRuns, startRun } from './run-store.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -46,15 +57,11 @@ function unappliedRun(root: string): string {
 		.runId
 }
 
-/** A reported run a ledger reader took in. */
+/** An older reported run (a newer one of its branch reported), both taken in by a ledger reader. */
 function appliedRun(root: string): string {
-	const { runId } = storedReportedRun({
-		root,
-		startedAt: STARTED,
-		survivors: [survivorOf({ key: 'k1' })],
-	})
-	expect(Object.keys(readLedger({ root }))).toHaveLength(1)
-	return runId
+	const { older } = olderAndLatestReportedRuns(root)
+	expect(Object.keys(readLedger({ root }))).toHaveLength(2)
+	return older
 }
 
 /** A run abandoned after it died. */
@@ -67,7 +74,7 @@ function abandonedRun(root: string): string {
 describe('dropRun: the runs it removes', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it.each([
 		['an abandoned run', abandonedRun],
-		['a reported run the ledger has taken in', appliedRun],
+		['an older reported run the ledger has taken in', appliedRun],
 	])(
 		'%s → removed: its file gone, readRuns no longer lists it, the ledger and applied runs untouched',
 		(_label, make) => {
@@ -106,24 +113,18 @@ describe('dropRun: the runs it refuses', { timeout: SCRATCH_REPOSITORY_TIMEOUT }
 		expect(storeFileTexts(root)).toEqual(before)
 	})
 
-	it.each([
-		['a died run', diedRun, /mutants abandon/],
-		['a reported run the ledger has not taken in', unappliedRun, /not yet taken into the ledger/],
-	])(
-		'%s → refused, its file kept, the ledger and applied runs untouched',
-		(_label, make, reason) => {
-			const root = mutationPackage()
-			const runId = make(root)
-			const before = storeFileTexts(root)
+	it('a died run → refused naming abandon, its file kept, the ledger and applied runs untouched', () => {
+		const root = mutationPackage()
+		const runId = diedRun(root)
+		const before = storeFileTexts(root)
 
-			expect(dropRun({ root, runId })).toMatchObject({
-				ok: false,
-				reason: expect.stringMatching(reason),
-			})
-			expect(existsSync(runFileOf({ root, runId }))).toBe(true)
-			expect(storeFileTexts(root)).toEqual(before)
-		},
-	)
+		expect(dropRun({ root, runId })).toMatchObject({
+			ok: false,
+			reason: expect.stringMatching(/mutants abandon/),
+		})
+		expect(existsSync(runFileOf({ root, runId }))).toBe(true)
+		expect(storeFileTexts(root)).toEqual(before)
+	})
 
 	it('a died run → the refusal names the abandon command for that run', () => {
 		const root = mutationPackage()
@@ -189,28 +190,205 @@ describe(
 	'dropRun: a reported run and its own fold',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('before any ledger reader took it in → refused and the entry stays; after a reader took it in → removed; the ledger bytes are the same before and after the drop', () => {
+		it('an older reported run no ledger reader took in → removed: the drop takes it in under the lock first, the ledger then holds its survivors', () => {
 			const root = mutationPackage()
-			const { runId } = storedReportedRun({
-				root,
-				startedAt: STARTED,
-				survivors: [survivorOf({ key: 'k1' })],
-			})
+			const { older, latest } = olderAndLatestReportedRuns(root)
+			expect(storeFileTexts(root).applied).toBeUndefined()
 
-			expect(dropRun({ root, runId })).toMatchObject({
+			expect(dropRun({ root, runId: older })).toEqual({ ok: true })
+			expect(existsSync(runFileOf({ root, runId: older }))).toBe(false)
+			expect(existsSync(runFileOf({ root, runId: latest }))).toBe(true)
+
+			const folded = storeFileTexts(root)
+			expect(Object.keys(readLedger({ root })).sort()).toEqual(['demo-pkg::k1', 'demo-pkg::k2'])
+			expect(folded.applied).toContain(older)
+			expect(folded.applied).toContain(latest)
+			expect(storeFileTexts(root)).toEqual(folded)
+		})
+
+		it('a lone reported run no ledger reader took in → refused as the latest of its branch, its file kept', () => {
+			const root = mutationPackage()
+			const runId = unappliedRun(root)
+
+			expect(dropRun({ root, runId })).toEqual({
 				ok: false,
-				reason: expect.stringMatching(/not yet taken into the ledger/),
+				reason: latestReportedRefusal({ runId, branch: 'main' }),
 			})
 			expect(existsSync(runFileOf({ root, runId }))).toBe(true)
+		})
+	},
+)
 
-			expect(Object.keys(readLedger({ root }))).toHaveLength(1)
-			const folded = storeFileTexts(root)
+describe(
+	'dropRun: the latest reported run of a branch is its evidence',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('the latest reported run (taken in or not) → refused with the evidence wording, every run file kept', () => {
+			const root = mutationPackage()
+			const { latest } = olderAndLatestReportedRuns(root)
+			const before = runFiles(root)
 
-			expect(dropRun({ root, runId })).toEqual({ ok: true })
-			expect(existsSync(runFileOf({ root, runId }))).toBe(false)
-			expect(storeFileTexts(root)).toEqual(folded)
-			expect(folded.ledger).toContain('k1')
-			expect(folded.applied).toContain(runId)
+			expect(dropRun({ root, runId: latest })).toEqual({
+				ok: false,
+				reason: latestReportedRefusal({ runId: latest, branch: 'main' }),
+			})
+			expect(runFiles(root)).toEqual(before)
+			expect(dropRun({ root, runId: latest })).toMatchObject({ ok: false })
+			expect(runFiles(root)).toEqual(before)
+		})
+
+		it('two runs started together → the one that finished last is the latest, the other drops', () => {
+			const root = mutationPackage()
+			const first = storedReportedRun({
+				root,
+				startedAt: '2026-11-02T10:00:00.000Z',
+				finishedAt: '2026-11-02T10:05:00.000Z',
+				survivors: [survivorOf({ key: 'k1' })],
+			})
+			const second = storedReportedRun({
+				root,
+				startedAt: '2026-11-02T10:00:00.000Z',
+				finishedAt: '2026-11-02T10:06:00.000Z',
+				survivors: [survivorOf({ key: 'k2', line: 5 })],
+			})
+
+			expect(dropRun({ root, runId: second.runId })).toMatchObject({ ok: false })
+			expect(dropRun({ root, runId: first.runId })).toEqual({ ok: true })
+		})
+
+		it('a newer run of the branch that is running, died or abandoned → the reported run stays refused', () => {
+			const root = mutationPackage()
+			const reported = unappliedRun(root)
+			diedRun(root)
+			abandonedRun(root)
+			startRun({
+				root,
+				pid: process.pid,
+				lot: 'lot-a',
+				tree: TREE,
+				mode: 'changed',
+				now: new Date('2026-11-02T12:00:00.000Z'),
+			})
+
+			expect(dropRun({ root, runId: reported })).toMatchObject({
+				ok: false,
+				reason: latestReportedRefusal({ runId: reported, branch: 'main' }),
+			})
+			expect(existsSync(runFileOf({ root, runId: reported }))).toBe(true)
+		})
+
+		it('a newer reported run of another branch → the reported run stays refused', () => {
+			const root = mutationPackage()
+			const reported = unappliedRun(root)
+			onBranch({
+				root,
+				branch: 'feat/other',
+				work: () =>
+					storedReportedRun({
+						root,
+						startedAt: '2026-11-02T12:00:00.000Z',
+						survivors: [survivorOf({ key: 'k9' })],
+					}),
+			})
+
+			expect(dropRun({ root, runId: reported })).toMatchObject({
+				ok: false,
+				reason: latestReportedRefusal({ runId: reported, branch: 'main' }),
+			})
+		})
+
+		it('a newer reported run of another package on the same branch name → the reported run stays refused', () => {
+			const { root, other } = declaredRepositoryWithOtherPackage()
+			const reported = unappliedRun(root)
+			const { runId } = startRun({
+				root: other,
+				pid: process.pid,
+				lot: 'lot-a',
+				tree: TREE,
+				mode: 'changed',
+				now: new Date('2026-11-02T12:00:00.000Z'),
+			})
+			finishRun({
+				root: other,
+				runId,
+				counts: { killed: 1, survived: 0, timedOut: 0, noCoverage: 0 },
+				survivors: [],
+				now: new Date('2026-11-02T12:05:00.000Z'),
+			})
+
+			expect(dropRun({ root, runId: reported })).toMatchObject({
+				ok: false,
+				reason: latestReportedRefusal({ runId: reported, branch: 'main' }),
+			})
+		})
+
+		it('an older reported run of the branch, with a newer one died → removed', () => {
+			const root = mutationPackage()
+			const { older } = olderAndLatestReportedRuns(root)
+			diedRun(root)
+
+			expect(dropRun({ root, runId: older })).toEqual({ ok: true })
+		})
+	},
+)
+
+describe(
+	'dropRun: the decision and the removal are one step under the ledger lock',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('a run reports between the decision and the removal → the dropped run is the older one, the new run and the latest stay, the next reader takes the new run in', () => {
+			const root = mutationPackage()
+			const { older, latest } = olderAndLatestReportedRuns(root)
+			expect(Object.keys(readLedger({ root }))).toHaveLength(2)
+			let between = ''
+
+			expect(
+				dropRun({
+					root,
+					runId: older,
+					afterDecision() {
+						expect(
+							existsSync(
+								join(commonGitDirOf(root), MUTATION_STORE_FOLDER, MUTATION_LEDGER_LOCK_FILE),
+							),
+						).toBe(true)
+						between = storedReportedRun({
+							root,
+							startedAt: startedAt(20).toISOString(),
+							survivors: [survivorOf({ key: 'k3', line: 6 })],
+						}).runId
+					},
+				}),
+			).toEqual({ ok: true })
+
+			expect(between).not.toBe('')
+			expect(existsSync(runFileOf({ root, runId: older }))).toBe(false)
+			expect(existsSync(runFileOf({ root, runId: latest }))).toBe(true)
+			expect(existsSync(runFileOf({ root, runId: between }))).toBe(true)
+			expect(Object.keys(readLedger({ root })).sort()).toEqual([
+				'demo-pkg::k1',
+				'demo-pkg::k2',
+				'demo-pkg::k3',
+			])
+		})
+
+		it('a refused drop never calls afterDecision and removes nothing', () => {
+			const root = mutationPackage()
+			const { latest } = olderAndLatestReportedRuns(root)
+			const before = runFiles(root)
+			let calls = 0
+
+			expect(
+				dropRun({
+					root,
+					runId: latest,
+					afterDecision() {
+						calls += 1
+					},
+				}),
+			).toMatchObject({ ok: false })
+			expect(calls).toBe(0)
+			expect(runFiles(root)).toEqual(before)
 		})
 	},
 )

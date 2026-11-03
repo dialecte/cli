@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
  * detected its exact mutant (`killed`) or when the records list it (`recorded`); any other run leaves it as it is, so a
  * survivor whose line changed or went away stays pending until the lot tests it, records it or schedules it. A run that
  * started before the last run reporting a survivor never kills it: it tested older code. `schedule` moves a `new` one
- * to `scheduled` for a follow-up. An item a run moved names that run (`movedBy`). Items are keyed `<package>::<survivor key>`, so two packages of one
+ * to `scheduled` for a follow-up. An item a run moved names that run (`movedBy`; `record` when `dialecte mutants record` moved it). Items are keyed `<package>::<survivor key>`, so two packages of one
  * repository never touch each other's items. The cli is the only writer.
  *
  * Every reader and writer holds the lock file beside the ledger while it works, and takes in each reported run the
@@ -209,16 +209,20 @@ function foldMissedRuns(params: { root: string; state: LockedLedger; given?: Giv
 		.map((run) => ({ run, records: recordsOfRun(run), targets: run.targets ?? [] }))
 	const missed = [...stored, ...(given ? [given] : [])]
 		.filter(({ run }) => !state.applied.has(run.runId))
-		.sort(
-			(first, second) =>
-				first.run.startedAt.localeCompare(second.run.startedAt) ||
-				(first.run.finishedAt ?? '').localeCompare(second.run.finishedAt ?? ''),
-		)
+		.sort((first, second) => compareRunsInFoldOrder(first.run, second.run))
 	for (const { run, records } of missed) {
 		state.ledger = applyRun({ ledger: state.ledger, run, records })
 		state.applied.add(run.runId)
 		state.changed = true
 	}
+}
+
+/** The order the ledger takes reported runs in: by start, two runs started at once by finish. */
+export function compareRunsInFoldOrder(first: RunEntry, second: RunEntry): number {
+	return (
+		first.startedAt.localeCompare(second.startedAt) ||
+		(first.finishedAt ?? '').localeCompare(second.finishedAt ?? '')
+	)
 }
 
 /** `updateLedger`'s work under the lock: the fold already took its run in. */
