@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tdd runner starts the package's own vitest (`node_modules/.bin/vitest`, from the package root up to the repository root) instead of going through npx: npm's start-up (0.3 s on a quiet machine, about 2 s under load) leaves every `tdd red`, `tdd green`, `tdd status` and the gate's `tdd` step. `npx --no-install vitest run` stays the fallback.
 - The Claude station agent files are adapters of the `dialecte-lot` skill's `references/stations.md`: a station now carries an access (`read`, `review`, `edit`) the Claude adapter maps to its tools (same tools as before), and its body names the station and its section instead of a role text. The `grader` runs on the strong tier (the skill-eval graders are strong and blind), so its agent file sets the strong model. The eval runner and the grader agents load no lot skill and read no stations page: their brief carries their definition and names the only skill text they read.
 - `dialecte skills sync` without a vendor and without a terminal installs the skills and leaves `models` unset (it says how to set it), instead of exiting 2 on a first sync: the skills need no vendor.
 

@@ -94,8 +94,17 @@ export const PROVES_NOTHING = 'it ran green: this test proves nothing yet'
 
 export const FROZEN_AFTER_RED = 'tests are frozen after red; go back to the test station'
 
-/** The package's own vitest, never a download. */
+/** The fallback when no package binary is found: the package's own vitest through npx, never a download. */
 export const VITEST_COMMAND = ['npx', '--no-install', 'vitest', 'run'] as const
+
+/** Where a package manager links a dependency's binary, relative to a folder holding `node_modules`. */
+export const VITEST_BIN_PATH = ['node_modules', '.bin', 'vitest'] as const
+
+/** The argument that makes the vitest binary run once instead of watching. */
+export const VITEST_RUN_ARGUMENT = 'run'
+
+/** A folder holding this entry (a folder, or a file in a worktree) is the repository root. */
+export const REPOSITORY_MARKER = '.git'
 
 /** How many last lines of a run that wrote no report are shown. */
 export const RUN_OUTPUT_TAIL_LINES = 20
