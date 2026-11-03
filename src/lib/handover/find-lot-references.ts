@@ -1,8 +1,8 @@
 /** Plan tags and standard citations in the files (evals and fixtures included) and messages of the lots. */
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { findReferences, isReferenceChecked } from '../rules/committed-text.ts'
+import { readCommittedBytes } from './committed-bytes.ts'
 import { BINARY_PROBE_LENGTH } from './handover.constants.ts'
 
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
@@ -22,7 +22,7 @@ export function findLotReferences(params: {
 				`lot ${index + 1} message, line ${reference.line}: ${reference.label} \`${reference.text}\``,
 			)
 		for (const file of lot.files) {
-			const content = readFileSync(join(root, file))
+			const content = readCommittedBytes(join(root, file))
 			if (isBinary(content) || !isReferenceChecked(file)) continue
 			for (const reference of findReferences({
 				text: content.toString('utf8'),

@@ -32,12 +32,26 @@ export function findReferences(params: {
 	return matches.sort((left, right) => left.line - right.line || left.column - right.column)
 }
 
-/** The generic patterns, then those the package declares in `"dialecte": { "referencePatterns" }`. */
+/**
+ * The generic patterns but those the package allows (`"dialecte": { "allowReferences" }`), then those it declares
+ * (`"dialecte": { "referencePatterns" }`). Allowing a pattern that is not allowable (a citation of a standard) throws.
+ */
 export function readReferencePatterns(root: string): ReferencePattern[] {
 	const packageJson = readPackageJson(root)
 	const declared = packageJson.dialecte?.referencePatterns ?? []
+	const allowed = packageJson.dialecte?.allowReferences ?? []
+	if (!Array.isArray(allowed) || allowed.some((label) => typeof label !== 'string'))
+		throw new Error('dialecte.allowReferences: a list of labels, such as ["ticket number"]')
+	const allowable = GENERIC_REFERENCE_PATTERNS.filter((pattern) => pattern.allowable).map(
+		(pattern) => pattern.label,
+	)
+	const refused = allowed.filter((label) => !allowable.includes(label))
+	if (refused.length)
+		throw new Error(
+			`dialecte.allowReferences: ${refused.join(', ')} can never be allowed (only a tag can); allowable: ${allowable.join(', ')}`,
+		)
 	return [
-		...GENERIC_REFERENCE_PATTERNS,
+		...GENERIC_REFERENCE_PATTERNS.filter((pattern) => !allowed.includes(pattern.label)),
 		...declared.map((source) => ({
 			label: `reference declared by ${packageJson.name ?? 'the package'}`,
 			source,

@@ -3,7 +3,9 @@
  * next lot's message and exactly that lot's paths with the content of the working tree (the reviewed
  * snapshot); a merge lot, its subject, the recorded tip as second parent and the recorded tree. The first commit that does not is reported as foreign.
  */
+
 import { isAncestorCommit, readGit } from '../git.ts'
+import { gitBlobIds } from './committed-bytes.ts'
 
 import type { CommittedLots, MergeLot, ResolvedLot } from './handover.types.ts'
 
@@ -97,9 +99,7 @@ function describeMismatch(params: {
 	})
 		.split('\n')
 		.filter(Boolean)
-	const workingBlobs = readGit({ root, args: ['hash-object', '--', ...lot.files] })
-		.split('\n')
-		.filter(Boolean)
+	const workingBlobs = gitBlobIds({ root, files: lot.files })
 	return committedBlobs.join('\n') === workingBlobs.join('\n')
 		? undefined
 		: 'other content than the reviewed files'

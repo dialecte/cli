@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
@@ -181,7 +182,7 @@ export function checkHandoverGuards(params: {
 				const differing = handover.snapshotLines.filter(function differs(line) {
 					const [hash, ...pathParts] = line.split('  ')
 					const path = join(root, pathParts.join('  '))
-					return !existsSync(path) || hashFile(path) !== hash
+					return !isPresent(path) || hashFile(path) !== hash
 				})
 				return differing.length
 					? {
@@ -196,7 +197,7 @@ export function checkHandoverGuards(params: {
 			name: 'deleted',
 			check: function deletedStayDeleted() {
 				const deleted = lots.flatMap((lot) => lot.deletedFiles)
-				const back = deleted.filter((file) => existsSync(join(root, file)))
+				const back = deleted.filter((file) => isPresent(join(root, file)))
 				return back.length
 					? { ok: false, detail: 'deleted in the snapshot and there again', lines: back }
 					: { ok: true, detail: `${deleted.length} file(s) absent` }

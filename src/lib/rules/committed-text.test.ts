@@ -104,6 +104,35 @@ describe('readReferencePatterns', () => {
 		])
 	})
 
+	it('a package allowing ticket numbers and acceptance criteria → the generic ones without them', () => {
+		const root = temporaryFolder('dialecte-references-')
+		writeFileSync(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: 'app',
+				dialecte: { allowReferences: ['ticket number', 'acceptance criterion'] },
+			}),
+		)
+
+		expect(readReferencePatterns(root).map((pattern) => pattern.label)).toEqual(
+			GENERIC_REFERENCE_PATTERNS.map((pattern) => pattern.label).filter(
+				(label) => label !== 'ticket number' && label !== 'acceptance criterion',
+			),
+		)
+	})
+
+	it('a package allowing a citation of a standard → refused, naming it and what may be allowed', () => {
+		const root = temporaryFolder('dialecte-references-')
+		writeFileSync(
+			join(root, 'package.json'),
+			JSON.stringify({ name: 'app', dialecte: { allowReferences: ['clause citation'] } }),
+		)
+
+		expect(() => readReferencePatterns(root)).toThrow(
+			/clause citation.*never.*plan tag, acceptance criterion, ticket number/,
+		)
+	})
+
 	it('no package.json or no declaration → the generic ones', () => {
 		expect(readReferencePatterns(temporaryFolder('dialecte-references-'))).toEqual(
 			GENERIC_REFERENCE_PATTERNS,

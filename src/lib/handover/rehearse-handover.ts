@@ -15,16 +15,20 @@ import { spawnSync } from 'node:child_process'
 import {
 	cpSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readlinkSync,
 	rmdirSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
 import { constants } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, readGit, readGitConfig } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -265,9 +269,13 @@ function prepareClone(params: {
 	for (const file of changed) {
 		const source = join(repository, file)
 		const target = join(clone, file)
-		if (existsSync(source)) {
+		if (isPresent(source)) {
 			mkdirSync(dirname(target), { recursive: true })
-			cpSync(source, target)
+			// a link is copied as the link it is (relative, never followed), as git commits it
+			if (lstatSync(source).isSymbolicLink()) {
+				rmSync(target, { force: true })
+				symlinkSync(readlinkSync(source), target)
+			} else cpSync(source, target)
 		} else {
 			rmSync(target, { force: true })
 			removeEmptiedFolders({ clone, folder: dirname(target) })

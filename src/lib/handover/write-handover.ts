@@ -6,10 +6,11 @@
  * written per lot: `handover run` reads the lots from `lots.json`.
  */
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { renderCommitScript } from './commit-script.ts'
+import { readCommittedBytes } from './committed-bytes.ts'
 import { handoverLockPath } from './handover-lock.ts'
 import { COMMIT_SCRIPT_FILE, HANDOVER_FILES } from './handover.constants.ts'
 
@@ -60,9 +61,9 @@ export function writeHandover(params: {
 	writeFileSync(handoverLockPath(plan.repository), `${scriptPath}\n`)
 }
 
-/** sha256 of a file's bytes, as `shasum -a 256` prints it. */
+/** sha256 of the bytes git commits for a path (a link: its target text), as `shasum -a 256` prints it for a file. */
 export function hashFile(path: string): string {
-	return createHash('sha256').update(readFileSync(path)).digest('hex')
+	return createHash('sha256').update(readCommittedBytes(path)).digest('hex')
 }
 
 function linesOf(lines: readonly string[]): string {
