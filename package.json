@@ -1,6 +1,6 @@
 {
 	"name": "@dialecte/cli",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Dialecte CLI",
 	"license": "MIT",
 	"repository": {
@@ -38,12 +38,12 @@
 	},
 	"dependencies": {
 		"jsonc-parser": "3.3.1",
-		"oxfmt": "^0.53.0"
+		"oxfmt": "^0.75.0"
 	},
 	"devDependencies": {
 		"@babel/parser": "8.0.7",
 		"@babel/traverse": "8.0.7",
-		"@dialecte/core": "file:../core",
+		"@dialecte/core": "^0.8.0",
 		"@types/node": "^22.0.0",
 		"@typescript/native": "npm:typescript@^7.0.2",
 		"@xmldom/xmldom": "0.8.15",

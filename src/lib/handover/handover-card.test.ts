@@ -220,12 +220,7 @@ function rowTexts(box: string): string[] {
 	return box
 		.split('\n')
 		.filter((line) => line.startsWith('│'))
-		.map((line) =>
-			line
-				.slice('│ '.length)
-				.replace(/ *│$/, '')
-				.trim(),
-		)
+		.map((line) => line.slice('│ '.length).replace(/ *│$/, '').trim())
 }
 
 describe('the hand-over card at a width', () => {
