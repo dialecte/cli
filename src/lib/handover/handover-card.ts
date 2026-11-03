@@ -19,13 +19,20 @@ import { shellQuote } from '../shell-quote.ts'
 import {
 	entryNamesCase,
 	findCaseEntry,
+	listRevisedHelpers,
+	namesRevisedHelper,
 	readAcceptances,
 	readGoneEntries,
 	readRevisions,
 	readTddExemption,
 } from '../tdd/lot-declaration.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
-import { countChangedFiles, readLedger, resolveBase } from '../tdd/tdd-files.ts'
+import {
+	countChangedFiles,
+	hashChangedTestCode,
+	readLedger,
+	resolveBase,
+} from '../tdd/tdd-files.ts'
 import {
 	ACCEPTED_REASON_INDENT,
 	ALL_GATES_GREEN,
@@ -67,6 +74,7 @@ import type {
 	LotCaseEntry,
 	LotCaseList,
 	LotGoneEntry,
+	RevisedHelper,
 	TddReceipt,
 } from '../tdd/tdd.types.ts'
 import type {
@@ -266,9 +274,9 @@ function tddSection(params: {
 	const { root, judged } = params
 	const lines: CardLine[] = []
 	const exemption = readTddExemption(root)
+	const packageJson = readPackageJson(root)
+	const base = resolveBase({ root, packageJson })
 	if (exemption.kind === 'exempt') {
-		const packageJson = readPackageJson(root)
-		const base = resolveBase({ root, packageJson })
 		if (typeof base !== 'string')
 			lines.push(plainLine(`exempt: ${exemption.reason} (${base.failure})`))
 		else {
@@ -290,7 +298,7 @@ function tddSection(params: {
 	const ledger = readLedger(root)
 	if ('failure' in ledger) {
 		lines.push(plainLine(ledger.failure))
-		lines.push(...toReadLines({ revised: [], gone, unused: [] }))
+		lines.push(...toReadLines({ revised: [], revisedHelpers: [], gone, unused: [] }))
 		return { lines, declarations: gone.length }
 	}
 	const receipts = ledger.entries.filter((entry): entry is TddReceipt => entry.kind !== 'freeze')
@@ -302,10 +310,22 @@ function tddSection(params: {
 		kind: 'accepted',
 		list: 'accept',
 	})
+	const declaredRevisions = 'failure' in revisions ? [] : revisions
+	// the helpers a red run froze for a `revised` entry read as revised cases; with the gate's cases only
+	const revisedHelpers =
+		judged && typeof base === 'string'
+			? listRevisedHelpers({
+					ledger,
+					testCode: hashChangedTestCode({ root, base, packageJson }),
+					revisions: declaredRevisions,
+				})
+			: []
 	const revised = caseEntryLines({
 		receipts,
 		ofChange: ofChange.filter((receipt) => judged?.get(caseLabel(receipt)) === 'revised'),
-		declared: 'failure' in revisions ? [] : revisions,
+		declared: declaredRevisions,
+		// an entry a helper used is no unused entry, as at the gate
+		used: (entry) => namesRevisedHelper({ entry, helpers: revisedHelpers }),
 		kind: 'revised',
 		list: 'revised',
 	})
@@ -327,8 +347,14 @@ function tddSection(params: {
 		lines.push(plainLine(EARLIER_LOTS_LINE.replace('{counts}', earlier.join(', '))))
 	// without the gate's cases, no entry can be told unused
 	const unused = judged ? [...accepted.unused, ...revised.unused] : []
-	lines.push(...toReadLines({ revised: revised.listed, gone, unused }), ...flagLines(ofChange))
-	return { lines, declarations: revised.listed.length + gone.length + unused.length }
+	lines.push(
+		...toReadLines({ revised: revised.listed, revisedHelpers, gone, unused }),
+		...flagLines(ofChange),
+	)
+	return {
+		lines,
+		declarations: revised.listed.length + revisedHelpers.length + gone.length + unused.length,
+	}
 }
 
 /** A tdd line that wraps under its first column. */
@@ -414,12 +440,15 @@ function acceptedLines(params: {
  */
 function toReadLines(params: {
 	revised: readonly DeclaredReceipt[]
+	/** The helpers a red run froze for a `revised` entry: `revised <helper>`, no case title. */
+	revisedHelpers: readonly RevisedHelper[]
 	gone: readonly LotGoneEntry[]
 	unused: readonly string[]
 }): CardLine[] {
-	const { revised, gone, unused } = params
+	const { revised, revisedHelpers, gone, unused } = params
+	const revisedCount = revised.length + revisedHelpers.length
 	const head = [
-		revised.length ? `${revised.length} ${TO_READ_LABELS.revised}` : '',
+		revisedCount ? `${revisedCount} ${TO_READ_LABELS.revised}` : '',
 		gone.length ? `${gone.length} ${TO_READ_LABELS.gone}` : '',
 		unused.length ? `${unused.length} ${TO_READ_LABELS.unused}` : '',
 	].filter(Boolean)
@@ -445,6 +474,10 @@ function toReadLines(params: {
 				text: `${receipt.file}${CASE_TITLE_SEPARATOR}${receipt.name}${receipt.project ? ` [${receipt.project}]` : ''}`,
 				cut: true,
 			}),
+			{ text: `${' '.repeat(hang)}${entry.reason}`, hang, plain: entry.reason },
+		]),
+		...revisedHelpers.flatMap(({ file, entry }): CardLine[] => [
+			entryLine({ label: TO_READ_LABELS.revised, text: file, cut: true }),
 			{ text: `${' '.repeat(hang)}${entry.reason}`, hang, plain: entry.reason },
 		]),
 		...gone.map((entry) =>
@@ -494,7 +527,7 @@ function flagLines(receipts: readonly TddReceipt[]): CardLine[] {
 /**
  * The accepted (or revised) receipts of the cases of the change whose case the lot file names, each with
  * the file's entry; how many cases of the ledger the file does not name (earlier lots') there are; then
- * the entries of the file no red run of a case of the change used, as their lines.
+ * the entries of the file no red run of a case of the change used (nor `used` otherwise), as their lines.
  */
 function caseEntryLines(params: {
 	/** Every receipt of the ledger. */
@@ -502,6 +535,8 @@ function caseEntryLines(params: {
 	/** The receipts of the cases of the change (the gate's judged cases); none without a gate. */
 	ofChange: readonly TddReceipt[]
 	declared: readonly LotCaseEntry[]
+	/** An entry used otherwise than by a case (a helper a red run froze for it): never unused. */
+	used?: (entry: LotCaseEntry) => boolean
 	kind: 'accepted' | 'revised'
 	list: LotCaseList
 }): { listed: DeclaredReceipt[]; earlier: number; unused: string[] } {
@@ -525,7 +560,9 @@ function caseEntryLines(params: {
 	const unused = params.declared
 		.filter(
 			(entry) =>
-				!recorded.some((receipt) => entryNamesCase({ entry: entry.case, testCase: receipt, list })),
+				!recorded.some((receipt) =>
+					entryNamesCase({ entry: entry.case, testCase: receipt, list }),
+				) && !params.used?.(entry),
 		)
 		.map(
 			(entry) =>

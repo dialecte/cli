@@ -6,3 +6,10 @@
  * watchdog.
  */
 export const HANDOVER_CASE_TIMEOUT = 300_000
+
+/**
+ * The bound of a case that runs `tdd red` and `tdd green` several times in a scratch package (each run starts
+ * vitest): up to four vitest runs per case, the same bound as the neighbouring tdd scenarios (an estimate, not
+ * measured): four minutes is a guard against a hang, never a measure of speed.
+ */
+export const HELPER_SCENARIO_TIMEOUT = 240_000

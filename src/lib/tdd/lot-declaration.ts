@@ -23,6 +23,7 @@ import {
 	GONE_LIST_SHAPE,
 	LOT_KEYS,
 	TDD_EXEMPT_PATTERN,
+	TEST_FILE_PATTERN,
 } from './tdd.constants.ts'
 
 import type {
@@ -30,7 +31,9 @@ import type {
 	LotCaseList,
 	LotDeclaration,
 	LotGoneEntry,
+	RevisedHelper,
 	TddExemption,
+	TddLedger,
 	TestCaseId,
 } from './tdd.types.ts'
 
@@ -109,6 +112,49 @@ export function entryNamesCase(params: {
 /** An entry with no `::` names files: a path or a glob, relative to the package root, matching the file. */
 export function entryNamesFile(params: { entry: string; file: string }): boolean {
 	return !namesOneCase(params.entry) && matchesGlob({ path: params.file, glob: params.entry })
+}
+
+/**
+ * The `revised` entry that names a test helper (test code that is not a test file): the first file or glob
+ * entry matching it; a `<file>::<name>` entry never names a helper.
+ */
+export function revisionOfHelper(params: {
+	revisions: readonly LotCaseEntry[]
+	file: string
+}): LotCaseEntry | undefined {
+	if (TEST_FILE_PATTERN.test(params.file)) return undefined
+	return params.revisions.find((entry) => entryNamesFile({ entry: entry.case, file: params.file }))
+}
+
+/**
+ * The helpers a `revised` entry stands for: a freeze of the ledger lists the helper in `revised` at the
+ * hash it froze, the helper is test code changed since the base with that hash now, and an entry names it.
+ * The gate and the hand-over card read used helper entries from here.
+ */
+export function listRevisedHelpers(params: {
+	ledger: TddLedger
+	/** The test code changed since the base, with its hash now. */
+	testCode: ReadonlyMap<string, string>
+	revisions: readonly LotCaseEntry[]
+}): RevisedHelper[] {
+	const used = new Map<string, RevisedHelper>()
+	for (const freeze of params.ledger.entries) {
+		if (freeze.kind !== 'freeze') continue
+		for (const file of freeze.revised ?? []) {
+			const entry = revisionOfHelper({ revisions: params.revisions, file })
+			const now = params.testCode.get(file)
+			if (entry && now !== undefined && freeze.files[file] === now) used.set(file, { file, entry })
+		}
+	}
+	return [...used.values()]
+}
+
+/** The `revised` entry names a helper a red run froze for it (one of `listRevisedHelpers`): the entry is used. */
+export function namesRevisedHelper(params: {
+	entry: LotCaseEntry
+	helpers: readonly RevisedHelper[]
+}): boolean {
+	return params.helpers.some(({ file }) => entryNamesFile({ entry: params.entry.case, file }))
 }
 
 /** The entry names one case (`<file>::<name>`), not files. */
