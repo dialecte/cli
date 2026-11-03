@@ -72,3 +72,36 @@ export const ARGUMENT_SEPARATOR_PATTERN = /(^|\s)--(\s|$)/
 
 /** Why a test step failed that counted no test. */
 export const NO_TEST_RAN_REASON = 'no test ran'
+
+/** `gate --hook` next to `--fast` or `--full`. */
+export const GATE_HOOK_MODE_REFUSAL = 'gate: --hook, --fast or --full, one of them'
+
+/** `gate --hook` on a package whose `gate --full` holds no step counting tests. */
+export const GATE_HOOK_NO_TEST_STEP_LINE = 'gate --hook: no test step in gate --full'
+
+/** `gate --hook` answered by a green `gate --full` record of the committed tree: the one line it prints. */
+export const GATE_HOOK_REUSED_LINE =
+	'gate --hook: tests reused from gate --full green on tree {tree} at {at} (HEAD {head})'
+
+/** `GATE_HOOK_REUSED_LINE` as a hook's output holds it: the tree, the time and the HEAD it names. */
+export const GATE_HOOK_REUSED_PATTERN =
+	/^gate --hook: tests reused from gate --full green on tree (\S+) at (\S+) \(HEAD ([0-9a-f]+)\)$/m
+
+/** `gate --hook` with no green `gate --full` record of that key: the line before the test steps it runs. */
+export const GATE_HOOK_RUNNING_LINE =
+	'gate --hook: no green gate --full of tree {tree} with this install: running the tests'
+
+/** The verdict of a `gate --hook` whose test steps passed. */
+export const GATE_HOOK_GREEN_LINE = 'gate --hook: green'
+
+/** The verdict of a `gate --hook` whose test step `{step}` failed. */
+export const GATE_HOOK_FAILED_LINE = 'gate --hook: failed at {step}'
+
+/**
+ * vitest's summary line, written once after the test steps `gate --hook` ran (their counts summed), so a hook's
+ * reader counts every test of the hook's one step.
+ */
+export const VITEST_TESTS_LINE = '      Tests  {counts} ({total})'
+
+/** Between the counts of `VITEST_TESTS_LINE`, as vitest writes them. */
+export const VITEST_COUNT_SEPARATOR = ' | '

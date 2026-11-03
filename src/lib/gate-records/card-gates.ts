@@ -30,6 +30,7 @@ import {
 	GATE_LINE_NAME,
 	HOOK_RECORD_DETAIL,
 	HOOK_RECORD_MODE,
+	HOOK_REUSED_DETAIL,
 	MISSING_SCRIPT_DETAIL,
 	MISSING_SCRIPT_PATTERN,
 	NEVER_RUN_DETAIL,
@@ -250,6 +251,9 @@ function lineOfStep(step: RecordedStep): CardGateLine {
 			status: 'warning',
 			detail: NOT_RUN_HERE_DETAIL.replace('{reason}', shortReason(step.reason ?? '')),
 		}
+	// a hook's test step answered from a green `gate --full` record ran no test: it says so instead of counts
+	if (step.status === 'passed' && step.reused)
+		return { name, status: 'passed', detail: HOOK_REUSED_DETAIL }
 	const counts = renderCardCounts(step.counts)
 	if (step.status === 'failed')
 		return {

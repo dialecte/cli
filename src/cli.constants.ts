@@ -74,7 +74,7 @@ Commands:
   fixture    The smallest valid XML document holding an element, built by the installed dialecte's engine
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
-  gate       The package's Definition of Done with the real counts: --fast (default) | --full
+  gate       The package's Definition of Done with the real counts: --fast (default) | --full | --hook
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
@@ -150,6 +150,9 @@ Contributing (inside a dialecte repository):
                              # passing there it is ok and flagged flaky in parallel, failing there a real failure;
                              # a green record of the same tree, install and steps (any worktree of the
                              # repository) answers the steps after a fresh tdd step; --no-reuse runs them
+  dialecte gate --hook [--no-reuse]
+                             # in a commit hook: the test steps of --full, unless a green --full record of the
+                             # committed tree (the index git hands the hook), install and steps answers them
   dialecte tdd red [<test file>]... [--json]
                              # every case of the changed test files: a failure on an assertion (or a stub's
                              # 'not implemented', a TypeError of existing code, inside an asserting expect) is a

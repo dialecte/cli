@@ -17,7 +17,12 @@ export type RecordedStep = {
 	reason?: string
 	/** The tdd step: the cases of the change it judged, what the card counts (`TddCheck.cases`). */
 	cases?: JudgedCase[]
+	/** A hook's test step `gate --hook` answered from the green `gate --full` record of this time and short HEAD. */
+	reused?: RecordOrigin
 }
+
+/** The run a record names: when it ran (ISO 8601) and its HEAD (full, or the short sha a hook's line printed). */
+export type RecordOrigin = { at: string; head: string }
 
 /** What wrote a gate record: `dialecte gate --fast` / `--full`, or a commit's hook during `handover run`. */
 export type GateRecordMode = GateMode | 'hook'
@@ -59,8 +64,8 @@ export type GateRecord = {
 	steps: RecordedStep[]
 	/** What the run checked; absent on a record written by an older cli, which is never reused. */
 	key?: CheckKey
-	/** The run answered from the record of `at` and `head` instead of running its steps. */
-	reused?: { at: string; head: string }
+	/** The run answered from the record of `at` and `head` (full sha) instead of running its steps. */
+	reused?: RecordOrigin
 	/** A rehearsal's hook record: it ran in a scratch clone of the repository. */
 	origin?: 'rehearsal'
 }

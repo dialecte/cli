@@ -32,6 +32,7 @@ dialecte models            # which model each tier (fast, standard, strong, fron
 dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte rules             # code-rules self-check of the changed files
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
+dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
@@ -218,6 +219,22 @@ the answer.
   whatever the store holds. The key leaves out the Node version and the environment (a path given
   through an environment variable); a `file:` dependency edited and restored to the same size within
   the same modification time is not seen either.
+- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the test steps of `--full` (its steps counting
+  tests), unless a green `--full` record of what is committed answers them. Its key is the one a `--full` run of
+  that state stores - the tree, what npm installed, the `file:` dependencies, the full gate's command hash - with
+  the tree taken from the index git hands the hook (`GIT_INDEX_FILE`, else the worktree's index), never from the
+  working files: a merge commit and a partial commit check what they record. A green record of that key prints
+  one line, `gate --hook: tests reused from gate --full green on tree <tree> at <time> (HEAD <sha>)`, and runs
+  nothing; otherwise `gate --hook: no green gate --full of tree <tree> with this install: running the tests`, the
+  test steps (rerun serially on a failure, as the gate does), then one vitest summary line of their summed counts (what the hand-over's hook reader counts),
+  and `gate --hook: green` or `gate --hook: failed at <step>` (exit 1). It runs no hygiene and no tdd step,
+  reads no hand-over hold (it runs inside `handover run`'s own commit) and records nothing: `handover run`
+  records the hook. `--no-reuse` runs the tests whatever the store holds, and so does a hook whose git variables name another
+  repository than its folder's (the cli ignores them, so what is committed is unknown); `--hook` with `--fast` or `--full` is
+  refused (exit 2). Write it in the hook as an npm script (`"test:hook": "dialecte gate --hook"`), so the
+  hand-over reads it as a test step of its own: its card line reads `reused by the hook` when the hook answered
+  from a record. The cli's own hook runs `npm run check` (type-check, lint, format; no suite), `npm run
+  test:hook`, then `npm run build`.
 - A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
   off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
   terminal one spinner line `⠋ <step> - <what runs> <elapsed>` that the step's result line replaces (the
@@ -1041,9 +1058,12 @@ lockfile). Build core there (`npm run build`) before running the tests. A releas
 per dependency (its field, name and spec), and says how to pin it
 (`npm install --save-exact <name>@<version>`).
 
-The cli has a commit hook: `.husky/pre-commit` runs `npm run check`, then `npm run build`. `npm install` in the
+The cli has a commit hook: `.husky/pre-commit` runs `npm run check` (type-check, lint, format; no suite), then
+`npm run test:hook` (`dialecte gate --hook` from the sources: the suite, unless a green `gate --full` of the
+committed tree answers it), then `npm run build`. `npm install` in the
 cli checkout activates it (`"prepare": "husky"` sets `core.hooksPath` to `.husky/_`), and `dialecte worktree add`
-copies `.husky/_` into each new worktree, so `handover run` proves a cli lot again at its commit. A hook
+copies `.husky/_` into each new worktree, so `handover run` proves a cli lot again at its commit, running the
+suite only for a tree no green `gate --full` checked. A hook
 runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the suite's setup file
 (`test/git-environment.setup.ts`, vitest `setupFiles`) clears them before any test, so a test's git acts on
 its scratch repository only, and the cli clears git's repository variables at its start.

@@ -20,7 +20,8 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { computeCheckKey, hashHookCommand } from '../gate-records/check-key.ts'
+import { computeCommitKey, hashHookCommand } from '../gate-records/check-key.ts'
+import { HOOK_REUSED_NOTE } from '../gate-records/gate-records.constants.ts'
 import { recordHook } from '../gate-records/gate-records.ts'
 import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
@@ -132,9 +133,9 @@ export async function commitLots(params: {
 		}
 		if (synced.note) write(`  ${synced.note}`)
 		const skipsHook = params.withoutHook?.has(number) ?? false
-		// the hook runs on the working files: its record is of the tree before the commit
+		// the record is of the tree the commit records: the index, the lot's files or the merge staged in it
 		const hooked = !skipsHook && hasCommitHook(root)
-		const key = hooked ? computeCheckKey({ root, commandHash: hashHookCommand(root) }) : undefined
+		const key = hooked ? computeCommitKey({ root, commandHash: hashHookCommand(root) }) : undefined
 		// the hook's log grows as it prints: a run killed midway still leaves it
 		const hookLog = createHookLog({ lot: number })
 		const hookView = createHookLiveView({ running, tty, write, clock })
@@ -231,7 +232,15 @@ export async function commitLots(params: {
 
 /** A step of the hook's summary as its gate record holds it. */
 function recordedHookStep(step: HookSummaryStep): RecordedStep {
-	return { name: step.name, status: step.failed ? 'failed' : 'passed', counts: step.counts }
+	return {
+		name: step.name,
+		status: step.failed ? 'failed' : 'passed',
+		counts: step.counts,
+		...(step.reused && {
+			note: HOOK_REUSED_NOTE.replace('{at}', step.reused.at).replace('{head}', step.reused.head),
+			reused: step.reused,
+		}),
+	}
 }
 
 /** An empty file, in a folder of its own, for the hook's whole output, its bytes as they came. */

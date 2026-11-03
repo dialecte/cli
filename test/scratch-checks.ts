@@ -93,8 +93,17 @@ export function createGatePackage(params: {
 }
 
 /** The gate in `cwd`. */
-export function runGateIn(params: { cwd: string; argv: string[] }): Promise<CommandResult> {
-	return runGate({ cwd: params.cwd, argv: params.argv })
+export function runGateIn(params: {
+	cwd: string
+	argv: string[]
+	/** `gate --hook`: the index file git hands the hook. */
+	indexFile?: string
+}): Promise<CommandResult> {
+	return runGate({
+		cwd: params.cwd,
+		argv: params.argv,
+		...(params.indexFile && { indexFile: params.indexFile }),
+	})
 }
 
 /** A green `gate --full` in `root`: the record the hand-over's rehearsal may reuse. */
@@ -257,10 +266,13 @@ export async function createBranchScenario(params: {
 	lockChange?: boolean
 	/** A green `gate --full` is run on the branch tip's tree (the branch checked out, clean). */
 	gateOnTip?: boolean
+	/** Added to the hook's script. */
+	hookExtra?: string
 }): Promise<{ root: string; tip: string }> {
 	const root = createHookedPackage({
 		hookCounter: params.hookCounter,
 		gateCounter: params.gateCounter,
+		...(params.hookExtra && { hookExtra: params.hookExtra }),
 		...(params.lockChange && { packageLock: PACKAGE_LOCK_BEFORE }),
 	})
 	const lot = {

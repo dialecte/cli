@@ -32,7 +32,8 @@
 		"format:fix": "oxfmt",
 		"test": "vitest",
 		"test:run": "vitest run",
-		"check": "npm run type-check && npm run lint:check && npm run format:check && npm run test:run",
+		"test:hook": "node src/cli.ts gate --hook",
+		"check": "npm run type-check && npm run lint:check && npm run format:check",
 		"prepublishOnly": "node src/release-check.ts && npm run build",
 		"prepare": "husky"
 	},
