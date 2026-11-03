@@ -4,12 +4,13 @@ import { basename, dirname, join } from 'node:path'
 
 import { AGENT_SKILL_FOLDERS, MANIFEST_FILE } from '../skills/sync-skills.constants.ts'
 import { readSyncManifest } from '../skills/sync-skills.ts'
+import { AGENTS_FILE } from '../stations/agents-file-check.constants.ts'
+import { holdsOnlyTheAgentsCheck } from '../stations/agents-file-check.ts'
 import { CLAUDE_SETTINGS_FILE } from '../stations/session-check.constants.ts'
 import { holdsOnlyTheCheck } from '../stations/session-check.ts'
 import { CLAUDE_AGENTS_FOLDER } from '../stations/station-agents.constants.ts'
 import { detectVendor } from './detect-vendor.ts'
 import { VENDOR_HOSTS, VENDOR_IDS } from './model-tiers.constants.ts'
-import { listManifestFolders } from './remembered-vendor.ts'
 import { isVendorId } from './vendor-id.ts'
 
 import type { SyncVendorResolution, VendorDetection, VendorId } from './model-tiers.types.ts'
@@ -39,18 +40,13 @@ export function resolveSyncVendor(params: {
 			candidates: detection.kind === 'choose' ? detection.candidates : [...VENDOR_IDS],
 		}
 	const howToSet = `Pass \`--vendor <${VENDOR_IDS.join('|')}>\` to set it.`
-	if (listManifestFolders(params.cwd).length > 0)
-		return {
-			kind: 'unset',
-			notice: `skills sync: no vendor remembered for the models (\`dialecte models\`). ${howToSet}\n`,
-		}
+	const detected =
+		detection.kind === 'choose'
+			? ` Several agents or a multi-vendor host were detected (${detection.candidates.join(', ')}).`
+			: ''
 	return {
-		kind: 'fail',
-		output: `skills sync: which vendor's models does this project use? ${
-			detection.kind === 'choose'
-				? `Several agents or a multi-vendor host were detected (${detection.candidates.join(', ')}).`
-				: 'No agent folder was detected.'
-		} ${howToSet}\n`,
+		kind: 'unset',
+		notice: `skills sync: no vendor remembered for the models (\`dialecte models\`).${detected} ${howToSet}\n`,
 	}
 }
 
@@ -69,11 +65,19 @@ function presentPaths(cwd: string): Set<string> {
 	)
 }
 
-/** True for a skills folder, or a folder holding only one, whose content is a manifest and the skills it lists. */
+/**
+ * True for a skills folder, or a folder holding only one, whose content is a manifest and the skills it lists;
+ * for `AGENTS.md`, when it holds only the session-check section.
+ */
 function holdsOnlySyncedSkills(params: { cwd: string; path: string }): boolean {
 	const skillFolders = Object.values(AGENT_SKILL_FOLDERS)
 	if (skillFolders.includes(params.path)) return isSyncedSkillsFolder(join(params.cwd, params.path))
-	if (!statSync(join(params.cwd, params.path)).isDirectory()) return false
+	const stat = statSync(join(params.cwd, params.path))
+	if (params.path === AGENTS_FILE)
+		return (
+			stat.isFile() && holdsOnlyTheAgentsCheck(readFileSync(join(params.cwd, params.path), 'utf8'))
+		)
+	if (!stat.isDirectory()) return false
 	const entries = readdirSync(join(params.cwd, params.path))
 	const ownSkillFolders = skillFolders.filter((folder) => dirname(folder) === params.path)
 	return (

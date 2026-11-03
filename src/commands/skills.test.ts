@@ -254,6 +254,122 @@ describe('runSync vendor', () => {
 	})
 })
 
+describe('runSync audience', () => {
+	const CONTRIBUTOR =
+		'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: contributor\n---\n'
+	const CONSUMER =
+		'---\nname: dialecte\ndescription: Use it.\nmetadata:\n  audience: consumer\n---\n'
+
+	beforeEach(() => {
+		write('package.json', JSON.stringify({ dependencies: { '@dialecte/core': '1' } }))
+		write(
+			'node_modules/@dialecte/core/package.json',
+			JSON.stringify({ name: '@dialecte/core', version: '1.0.0' }),
+		)
+		write('node_modules/@dialecte/core/skills/dialecte/SKILL.md', CONSUMER)
+		write('node_modules/@dialecte/core/skills/dialecte-lot/SKILL.md', CONTRIBUTOR)
+	})
+
+	it('no flag -> the consumer skill alone, one line naming the contributor skill and --contributing, no station agent', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte'])
+		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(
+			lines.some((line) => line.includes('dialecte-lot') && line.includes('--contributing')),
+		).toBe(true)
+	})
+
+	it('--contributing -> both skills, remembered: a later sync without the flag keeps both', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		expect(manifestOf('.agents/skills')).toMatchObject({
+			installed: ['dialecte', 'dialecte-lot'],
+			contributing: true,
+		})
+	})
+
+	it('--no-contributing after --contributing -> the contributor skill removed, its line says why', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		vi.mocked(console.log).mockClear()
+
+		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
+
+		expect(manifestOf('.agents/skills').installed).toEqual(['dialecte'])
+		expect(existsSync(join(root, '.agents/skills/dialecte-lot'))).toBe(false)
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(
+			lines.some((line) => line.includes('dialecte-lot') && line.includes('contributor')),
+		).toBe(true)
+	})
+
+	it('--no-contributing after a contributing sync -> the AGENTS.md section removed, the removal line printed', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+		vi.mocked(console.log).mockClear()
+
+		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
+
+		expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(lines).toContain('🗑  AGENTS.md: session-start check removed')
+	})
+
+	it('--contributing then --no-session-check -> the AGENTS.md section removed', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+
+		runSync({ argv: ['--agent', 'agents', '--no-session-check'], cwd: root })
+
+		expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+	})
+
+	it('a consumer sync for Claude Code -> the station agents line says they come with --contributing', () => {
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(lines.some((line) => line.includes('no dependency ships'))).toBe(false)
+		expect(
+			lines.some((line) => line.includes('station agents') && line.includes('--contributing')),
+		).toBe(true)
+	})
+
+	it('--contributing and --no-contributing together -> rejected before anything is installed', () => {
+		expect(() =>
+			runSync({ argv: ['--agent', 'agents', '--contributing', '--no-contributing'], cwd: root }),
+		).toThrow('--contributing')
+		expect(existsSync(join(root, '.agents'))).toBe(false)
+	})
+
+	it('both contributing flags with a vendor -> rejected before any manifest is written', async () => {
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		await expect(
+			syncCommand([
+				'--agent',
+				'agents',
+				'--vendor',
+				'openai',
+				'--contributing',
+				'--no-contributing',
+			]),
+		).rejects.toThrow('--contributing')
+		expect(manifestOf('.agents/skills').vendor).toBeUndefined()
+	})
+
+	it('a consumer sync -> doctor says in sync, never that the contributor skill is missing', () => {
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		const skillLines = diagnose({ cwd: root, dialecteRoot: undefined, cliVersion: '0.2.0' }).filter(
+			(line) => line.subject === 'skills',
+		)
+
+		expect(skillLines.map((line) => line.status)).toEqual(['ok'])
+	})
+})
+
 describe('runSync station agents and the session check', () => {
 	const SESSION_COMMAND = 'npx --no-install @dialecte/cli doctor --brief'
 
@@ -306,6 +422,93 @@ describe('runSync station agents and the session check', () => {
 
 		expect(sessionCommands()).toEqual([])
 		expect(existsSync(join(root, '.claude/agents/dialecte-reviewer.md'))).toBe(true)
+	})
+
+	describe('the AGENTS.md session check', () => {
+		const AGENTS_START = '<!-- dialecte-skills:session-check -->'
+		const AGENTS_END = '<!-- /dialecte-skills:session-check -->'
+		const AGENTS_SECTION = `${AGENTS_START}\nAt the start of a session, run \`${SESSION_COMMAND}\`: nothing printed means the Dialecte skills are in sync; otherwise each line is a problem with its fix.\n${AGENTS_END}\n`
+
+		function agentsText(): string | undefined {
+			return existsSync(join(root, 'AGENTS.md')) ? read('AGENTS.md') : undefined
+		}
+
+		function logLines(): string[] {
+			return vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		}
+
+		it('a contributing sync with the claude target -> AGENTS.md holds the section, the line is printed, the Claude hook stays', () => {
+			runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+			expect(agentsText()).toBe(AGENTS_SECTION)
+			expect(logLines()).toContain(`✅ AGENTS.md: session-start check (${SESSION_COMMAND})`)
+			expect(sessionCommands()).toEqual([SESSION_COMMAND])
+		})
+
+		it('--agent agents only (no claude target) -> AGENTS.md still written, no Claude settings', () => {
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(agentsText()).toBe(AGENTS_SECTION)
+			expect(logLines()).toContain(`✅ AGENTS.md: session-start check (${SESSION_COMMAND})`)
+			expect(existsSync(join(root, '.claude/settings.json'))).toBe(false)
+		})
+
+		it('an AGENTS.md of the user -> the section appended after one blank line', () => {
+			write('AGENTS.md', '# Mine\n')
+
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(agentsText()).toBe(`# Mine\n\n${AGENTS_SECTION}`)
+		})
+
+		it('--no-session-check after it was added -> the section removed (a file left empty deleted), the removal line printed', () => {
+			runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+			vi.mocked(console.log).mockClear()
+
+			runSync({ argv: ['--agent', 'claude', '--no-session-check'], cwd: root })
+
+			expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+			expect(logLines()).toContain('🗑  AGENTS.md: session-start check removed')
+			expect(sessionCommands()).toEqual([])
+		})
+
+		it('--no-session-check on a file with user text -> only the section goes', () => {
+			write('AGENTS.md', '# Mine\n')
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+			expect(agentsText()).toBe(`# Mine\n\n${AGENTS_SECTION}`)
+
+			runSync({ argv: ['--agent', 'agents', '--no-session-check'], cwd: root })
+
+			expect(read('AGENTS.md')).toBe('# Mine\n')
+		})
+
+		it('an older body between the markers -> replaced, the update line printed', () => {
+			write('AGENTS.md', `${AGENTS_START}\nAn older sentence.\n${AGENTS_END}\n`)
+
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(agentsText()).toBe(AGENTS_SECTION)
+			expect(logLines()).toContain('✅ AGENTS.md: session-start check updated')
+		})
+
+		it('no dependency ships dialecte-lot -> no AGENTS.md written', () => {
+			write('package.json', JSON.stringify({ dependencies: {} }))
+
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+		})
+
+		it('a section with an end marker missing -> file left as it is, one warning says why', () => {
+			write('AGENTS.md', `${AGENTS_START}\nold\n`)
+
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(read('AGENTS.md')).toBe(`${AGENTS_START}\nold\n`)
+			expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toContain(
+				'AGENTS.md: the dialecte session-check section is not closed: left as it is',
+			)
+		})
 	})
 
 	it('the claude target removed -> the agents and the hook sync wrote are removed', () => {
@@ -434,13 +637,13 @@ describe('runSyncCommand', () => {
 		expect(manifestOf('.agents/skills').vendor).toBe('openai')
 	})
 
-	it('first sync, no terminal, nothing detected, no manifest -> exit 2 naming --vendor, nothing installed', async () => {
+	it('first sync, no terminal, nothing detected, no manifest -> installs without a vendor and says how to set it', async () => {
 		const result = await syncCommand([])
 
-		expect(result.exitCode).toBe(2)
+		expect(result.exitCode).toBe(0)
 		expect(result.output).toContain('--vendor')
-		expect(existsSync(join(root, '.claude'))).toBe(false)
-		expect(existsSync(join(root, '.agents'))).toBe(false)
+		expect(manifestOf('.claude/skills').vendor).toBeUndefined()
+		expect(manifestOf('.agents/skills').vendor).toBeUndefined()
 	})
 
 	it('a manifest without vendor (older sync), no terminal -> goes on without a vendor and says how to set it', async () => {
@@ -601,5 +804,64 @@ describe('skills check and generate, package exports', { timeout: EXPORTS_COMMAN
 		expect(
 			[...read('skills/demo/SKILL.md').matchAll(/^### `(.+)`$/gm)].map((match) => match[1]),
 		).toEqual(['@acme/widget/zeta', '@acme/widget/alpha'])
+	})
+})
+
+describe('checkPages, the dialecte-lot station definitions', () => {
+	const LOT_PAGE = `---\nname: dialecte-lot\ndescription: Use it.\n---\n`
+	const STATION_PINS: [string, string, string][] = [
+		['test-writer', 'standard', 'edit'],
+		['test-reviewer', 'strong', 'review'],
+		['implementer', 'standard', 'edit'],
+		['implementer-strong', 'strong', 'edit'],
+		['reviewer', 'strong', 'review'],
+		['fixer', 'standard', 'edit'],
+		['eval-runner', 'standard', 'edit'],
+		['grader', 'strong', 'read'],
+		['standard-reader', 'standard', 'read'],
+		['searcher', 'fast', 'read'],
+	]
+	const STATIONS_MD = `# Stations\n\n${STATION_PINS.map(
+		([name, tier, access]) =>
+			`### ${name}\n\n- Tier: ${tier}\n- Access: ${access}\n\nWhat it does.\n`,
+	).join('\n')}`
+
+	beforeEach(() => {
+		write('package.json', JSON.stringify({ name: '@acme/lot' }))
+		write('skills/dialecte-lot/SKILL.md', LOT_PAGE)
+	})
+
+	it('references/stations.md with every station, tier and access as the cli has them -> exit 0', () => {
+		write('skills/dialecte-lot/references/stations.md', STATIONS_MD)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
+	})
+
+	it('references/stations.md missing -> exit 1', () => {
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+	})
+
+	it('a wrong Access line -> exit 1, the error names the station, expected and found', () => {
+		const wrong = STATIONS_MD.replace(
+			'### grader\n\n- Tier: strong\n- Access: read',
+			'### grader\n\n- Tier: strong\n- Access: edit',
+		)
+		expect(wrong).not.toBe(STATIONS_MD)
+		write('skills/dialecte-lot/references/stations.md', wrong)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+		const errors = vi.mocked(console.error).mock.calls.flat().join('\n')
+		expect(errors).toContain('grader')
+		expect(errors).toContain('read')
+		expect(errors).toContain('edit')
+	})
+})
+
+describe('checkPages, a package that does not ship dialecte-lot', () => {
+	it('no references/stations.md needed -> exit 0', () => {
+		write('package.json', JSON.stringify({ name: '@acme/other' }))
+		write('skills/demo/SKILL.md', FRONTMATTER)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
 	})
 })

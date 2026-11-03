@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Consumer and contributor skills. A skill's frontmatter may say who it is for, `metadata:` / `audience: contributor` (changing a dialecte package) or `consumer` (the default). `dialecte skills sync` installs the consumer skills only and prints the contributor skills it left out; `--contributing` installs them too and is remembered in `.dialecte-skills.json` (`contributing: true`) until `--no-contributing` removes them. The station agents and the session-start check come with the contributor skills only. `dialecte doctor` expects the skills of the audience each manifest says; `skills check` refuses an unknown audience.
+- `dialecte skills sync` writes the session-start check in the project's root `AGENTS.md` for every agent, not only Claude Code: a section between `<!-- dialecte-skills:session-check -->` markers telling the agent to run `npx --no-install @dialecte/cli doctor --brief`. It is written when `dialecte-lot` is installed by the sync (whatever the targets), created or appended after one blank line (the rest of the file byte for byte, CRLF kept), updated when an older release wrote another sentence, removed by `--no-session-check`, `--no-contributing` or a sync without `dialecte-lot` (a file left empty is deleted), and left alone with a warning when a marker has no pair. An `AGENTS.md` holding only the section is no evidence of a vendor. The Claude `SessionStart` hook stays.
+- `dialecte skills check` in a package shipping `dialecte-lot` reads `references/stations.md` and refuses a missing file, a station without its `### <station>` section, an unknown or doubled section, and a `- Tier:` / `- Access:` line out of line with the cli's stations (fenced blocks are ignored, and so is a `###` section with no `Tier:` or `Access:` line).
+- `dialecte members` in an app reads the installed dialecte (a dependency built on `@dialecte/core` that exports `./<version>` with its `./<version>/test` entry, bound as its capitalized name from that version: `Scl` from `@dialecte/scl/v2019C1`) without `--namespace` / `--entry`; with several it lists them, `--package <name>` / `--version <v>` picks one.
+
+### Changed
+
+- The Claude station agent files are adapters of the `dialecte-lot` skill's `references/stations.md`: a station now carries an access (`read`, `review`, `edit`) the Claude adapter maps to its tools (same tools as before), and its body names the station and its section instead of a role text. The `grader` runs on the strong tier (the skill-eval graders are strong and blind), so its agent file sets the strong model. The eval runner and the grader agents load no lot skill and read no stations page: their brief carries their definition and names the only skill text they read.
+- `dialecte skills sync` without a vendor and without a terminal installs the skills and leaves `models` unset (it says how to set it), instead of exiting 2 on a first sync: the skills need no vendor.
+
 ## [0.2.1] - 2026-11-03
 
 ### Added

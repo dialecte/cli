@@ -6,6 +6,14 @@ export const SKILL_NAME_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(-[a-z0-9]+)*$/
 
 export const DESCRIPTION_MAX_LENGTH = 1024
 
+/**
+ * Who a skill is for (`metadata.audience`): a consumer uses a dialecte in an app, a contributor changes a dialecte
+ * package. A skill without one is a consumer skill.
+ */
+export const SKILL_AUDIENCES: readonly string[] = ['consumer', 'contributor']
+
+export const CONTRIBUTOR_AUDIENCE = 'contributor'
+
 /** `<!-- dialecte-skills ignore: a b -->` and `<!-- dialecte-skills workspace -->`. */
 export const DIRECTIVE_PATTERN = /<!--\s*dialecte-skills\s+([\s\S]*?)-->/g
 

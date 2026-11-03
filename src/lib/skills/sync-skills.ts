@@ -18,6 +18,7 @@ import {
 	readFileSync,
 	readlinkSync,
 	rmSync,
+	statSync,
 	symlinkSync,
 	unlinkSync,
 	writeFileSync,
@@ -25,10 +26,12 @@ import {
 import { dirname, join, parse, relative, resolve } from 'node:path'
 
 import { isPresent } from '../file-system.ts'
-import { SKILL_NAME_PATTERN, SKILLS_FOLDER } from './skill-file.constants.ts'
+import { CONTRIBUTOR_AUDIENCE, SKILL_NAME_PATTERN, SKILLS_FOLDER } from './skill-file.constants.ts'
+import { readFrontmatter } from './skill-file.ts'
 import { COPY_EXCLUDED_FOLDERS, COPY_MARKER_FILE, MANIFEST_FILE } from './sync-skills.constants.ts'
 
 import type {
+	AudienceSelection,
 	DiscoveredSkillSources,
 	SkillSource,
 	SyncedVersions,
@@ -94,15 +97,40 @@ function skillsOf(params: { origin: string; folder: string }): SkillSource[] {
 	if (!existsSync(skillsFolder)) return []
 	const version = packageVersion(params.folder)
 	return readdirSync(skillsFolder, { withFileTypes: true })
-		.filter(
-			(entry) => entry.isDirectory() && existsSync(join(skillsFolder, entry.name, 'SKILL.md')),
-		)
+		.filter((entry) => entry.isDirectory() && isFile(join(skillsFolder, entry.name, 'SKILL.md')))
 		.map((entry) => ({
 			name: entry.name,
 			path: join(skillsFolder, entry.name),
 			origin: params.origin,
 			...(version === undefined ? {} : { version }),
+			audience: audienceOf(join(skillsFolder, entry.name, 'SKILL.md')),
 		}))
+}
+
+function isFile(path: string): boolean {
+	return existsSync(path) && statSync(path).isFile()
+}
+
+/** A SKILL.md that cannot be read is a consumer skill: sync and doctor never stop on it. */
+function audienceOf(skillFile: string): SkillSource['audience'] {
+	try {
+		const { audience } = readFrontmatter(readFileSync(skillFile, 'utf8'))
+		return audience === CONTRIBUTOR_AUDIENCE ? 'contributor' : 'consumer'
+	} catch {
+		return 'consumer'
+	}
+}
+
+/** A consumer sync installs the consumer skills; a contributing sync installs every skill. */
+export function selectAudience(params: {
+	sources: readonly SkillSource[]
+	contributing: boolean
+}): AudienceSelection {
+	if (params.contributing) return { selected: [...params.sources], leftOut: [] }
+	return {
+		selected: params.sources.filter((source) => source.audience === 'consumer'),
+		leftOut: params.sources.filter((source) => source.audience === 'contributor'),
+	}
 }
 
 function packageVersion(folder: string): string | undefined {
@@ -120,6 +148,10 @@ export function syncSkills(params: {
 	keepUnshipped?: boolean
 	/** The model vendor to remember; the one already in a manifest stays when not given. */
 	vendor?: string
+	/** Skills shipped but left out of this sync (contributor skills): removed even when unshipped ones are kept. */
+	leftOut?: readonly string[]
+	/** Remembered in the manifest: the sync installed the contributor skills too. */
+	contributing?: boolean
 }): SyncReport {
 	const report: SyncReport = { installed: [], removed: [], conflicts: [] }
 	const shipped = new Set(params.sources.map((source) => source.name))
@@ -135,7 +167,7 @@ export function syncSkills(params: {
 				const entry = join(targetFolder, name)
 				if (!isOwnedEntry({ path: entry, name, listedInManifest: true, sourcePath: undefined }))
 					continue
-				if (params.keepUnshipped) {
+				if (params.keepUnshipped && !params.leftOut?.includes(name)) {
 					installed.push(name)
 					if (previous.versions[name]) versions[name] = previous.versions[name]
 					continue
@@ -174,6 +206,7 @@ export function syncSkills(params: {
 					installed,
 					versions,
 					vendor: params.vendor ?? previous.vendor,
+					...(params.contributing ? { contributing: true as const } : {}),
 					stationAgents: previous.stationAgents,
 					sessionCheck: previous.sessionCheck,
 					settingsCreated: previous.settingsCreated,
@@ -237,6 +270,7 @@ export function readSyncManifest(targetFolder: string): SyncManifest {
 		installed?: unknown
 		versions?: unknown
 		vendor?: unknown
+		contributing?: unknown
 		stationAgents?: unknown
 		sessionCheck?: unknown
 		settingsCreated?: unknown
@@ -258,6 +292,7 @@ export function readSyncManifest(targetFolder: string): SyncManifest {
 		installed,
 		versions,
 		...(typeof manifest.vendor === 'string' ? { vendor: manifest.vendor } : {}),
+		...(manifest.contributing === true ? { contributing: true as const } : {}),
 		...(stationAgents ? { stationAgents } : {}),
 		...(manifest.sessionCheck === true ? { sessionCheck: true as const } : {}),
 		...(manifest.settingsCreated === true ? { settingsCreated: true as const } : {}),
@@ -275,6 +310,7 @@ export function writeSyncManifest(params: {
 	const {
 		versions,
 		vendor,
+		contributing,
 		stationAgents,
 		sessionCheck,
 		settingsCreated,
@@ -285,6 +321,7 @@ export function writeSyncManifest(params: {
 		installed,
 		...(versions && Object.keys(versions).length ? { versions } : {}),
 		...(vendor === undefined ? {} : { vendor }),
+		...(contributing ? { contributing } : {}),
 		...(stationAgents?.length ? { stationAgents } : {}),
 		...(sessionCheck ? { sessionCheck } : {}),
 		...(settingsCreated ? { settingsCreated } : {}),

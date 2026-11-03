@@ -12,6 +12,7 @@ import {
 	DIRECTIVE_PATTERN,
 	INLINE_CODE_PATTERN,
 	NPM_OPTIONS_WITH_VALUE,
+	SKILL_AUDIENCES,
 	SKILL_NAME_PATTERN,
 } from './skill-file.constants.ts'
 
@@ -23,7 +24,21 @@ export function readFrontmatter(markdown: string): SkillFrontmatter {
 	return {
 		name: readField({ block, field: 'name' }),
 		description: readField({ block, field: 'description' }),
+		audience: readMetadataField({ block, field: 'audience' }),
 	}
+}
+
+/** A field of the `metadata:` map, its indented lines read as a block of their own. */
+function readMetadataField(params: { block: string; field: string }): string | undefined {
+	const lines = /^metadata:[ \t]*\n((?:[ \t]+.*\n?)*)/m.exec(`${params.block}\n`)?.[1]
+	if (!lines) return undefined
+	// the map's own keys sit at its first indent; a deeper line belongs to a nested map
+	const indent = /^[ \t]+/.exec(lines)?.[0] ?? ''
+	const ownLines = lines
+		.split('\n')
+		.filter((line) => line.startsWith(indent) && !/^[ \t]/.test(line.slice(indent.length)))
+		.map((line) => line.slice(indent.length))
+	return readField({ block: ownLines.join('\n'), field: params.field })
 }
 
 function readField(params: { block: string; field: string }): string | undefined {
@@ -52,7 +67,7 @@ export function validateFrontmatter(params: {
 	frontmatter: SkillFrontmatter
 	folderName: string
 }): string[] {
-	const { name, description } = params.frontmatter
+	const { name, description, audience } = params.frontmatter
 	const messages: string[] = []
 	if (!name || !SKILL_NAME_PATTERN.test(name))
 		messages.push(
@@ -62,6 +77,8 @@ export function validateFrontmatter(params: {
 		messages.push(`name "${name}" must match its folder "${params.folderName}"`)
 	if (!description || description.length > DESCRIPTION_MAX_LENGTH)
 		messages.push(`description is required (1-${DESCRIPTION_MAX_LENGTH} characters)`)
+	if (audience !== undefined && !SKILL_AUDIENCES.includes(audience))
+		messages.push(`metadata.audience "${audience}" must be ${SKILL_AUDIENCES.join(' or ')}`)
 	return messages
 }
 

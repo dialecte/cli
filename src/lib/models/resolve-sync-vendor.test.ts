@@ -2,6 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import {
+	AGENTS_CHECK_END,
+	AGENTS_CHECK_LINE,
+	AGENTS_CHECK_START,
+} from '../stations/agents-file-check.constants.ts'
 import { SESSION_CHECK_COMMAND } from '../stations/session-check.constants.ts'
 import { detectProjectVendor, resolveSyncVendor } from './resolve-sync-vendor.ts'
 
@@ -34,11 +39,11 @@ afterEach(() => {
 })
 
 describe('resolveSyncVendor', () => {
-	it('no TTY, no vendor, nothing detected -> fail naming --vendor', () => {
+	it('no TTY, no vendor, nothing detected -> unset, the notice naming --vendor', () => {
 		const resolution = resolve({})
 
-		expect(resolution.kind).toBe('fail')
-		expect(resolution.kind === 'fail' && resolution.output).toContain('--vendor')
+		expect(resolution.kind).toBe('unset')
+		expect(resolution.kind === 'unset' && resolution.notice).toContain('--vendor')
 	})
 
 	it('--vendor openai -> set, without detecting', () => {
@@ -63,14 +68,14 @@ describe('resolveSyncVendor', () => {
 		expect(resolve({})).toEqual({ kind: 'set', vendor: 'anthropic' })
 	})
 
-	it('a multi-vendor host on a TTY -> ask among every vendor; without a TTY -> fail', () => {
+	it('a multi-vendor host on a TTY -> ask among every vendor; without a TTY -> unset', () => {
 		touch('.github/copilot-instructions.md')
 
 		expect(resolve({ interactive: true })).toEqual({
 			kind: 'ask',
 			candidates: ['anthropic', 'openai', 'google'],
 		})
-		expect(resolve({}).kind).toBe('fail')
+		expect(resolve({}).kind).toBe('unset')
 	})
 
 	it('nothing detected on a TTY -> ask among every vendor', () => {
@@ -117,5 +122,30 @@ describe('resolveSyncVendor', () => {
 
 		touch('.github/skills/my-own-skill/SKILL.md')
 		expect(detectProjectVendor(root).kind).toBe('choose')
+	})
+
+	describe('AGENTS.md and .codex', () => {
+		const SECTION = `${AGENTS_CHECK_START}\n${AGENTS_CHECK_LINE}\n${AGENTS_CHECK_END}\n`
+
+		it('AGENTS.md holding only the sync section, with .codex/ -> no evidence of Codex', () => {
+			writeFileSync(join(root, 'AGENTS.md'), SECTION)
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toEqual({ kind: 'none' })
+		})
+
+		it('AGENTS.md with text of the user and the section, with .codex/ -> openai', () => {
+			writeFileSync(join(root, 'AGENTS.md'), `# Mine\n\n${SECTION}`)
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toMatchObject({ kind: 'one', vendor: 'openai' })
+		})
+
+		it("AGENTS.md being a folder, with .codex/ -> no throw, the user's own: openai", () => {
+			mkdirSync(join(root, 'AGENTS.md'))
+			touch('.codex/config.toml')
+
+			expect(detectProjectVendor(root)).toMatchObject({ kind: 'one', vendor: 'openai' })
+		})
 	})
 })

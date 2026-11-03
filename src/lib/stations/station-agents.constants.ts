@@ -1,4 +1,6 @@
-import type { StationDefinition } from './station-agents.types.ts'
+import { AGENT_SKILL_FOLDERS } from '../skills/sync-skills.constants.ts'
+
+import type { StationAccess, StationDefinition } from './station-agents.types.ts'
 
 /** The stations of `dialecte-lot` that spawn an agent. Gates and the hand-over are commands, not agents. */
 export const STATION_NAMES = [
@@ -28,8 +30,15 @@ const READ_TOOLS = ['Read', 'Glob', 'Grep', 'Skill'] as const
 const REVIEW_TOOLS = ['Read', 'Glob', 'Grep', 'Bash', 'Skill'] as const
 const EDIT_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'Skill'] as const
 
+/** The Claude Code tools of each access level: used only by the Claude adapter. */
+export const CLAUDE_TOOLS_BY_ACCESS: Record<StationAccess, readonly string[]> = {
+	read: READ_TOOLS,
+	review: REVIEW_TOOLS,
+	edit: EDIT_TOOLS,
+}
+
 export const LOAD_SKILLS_LINE =
-	'Load first, with the Skill tool: `dialecte-lot` (your station and its report shape), `dialecte-contributing` (the gates and the code rules), `dialecte` (the API). They are the source of truth; this file only sets your envelope.'
+	'Read that section first: it says which skills you load (`dialecte-lot`, `dialecte-contributing`, `dialecte`). The skills are the source of truth; this file only sets your envelope.'
 
 export const NEVER_LINE =
 	'Never: commit, stage (`git add`), push, merge, `git stash`, `git reset`, `git restore`, `git checkout --`, `rm`; nothing outside the worktree your brief names. Your brief is your whole context.'
@@ -41,113 +50,72 @@ export const STATIONS: readonly StationDefinition[] = [
 	{
 		name: 'test-writer',
 		tier: 'standard',
-		tools: EDIT_TOOLS,
+		access: 'edit',
 		description:
 			'Dialecte lot, test station of one brief step: writes the tests (and stubs) from the brief and the existing code, then proves them red with `dialecte tdd red`. Give it the brief step.',
-		role: [
-			'You are the test station of a Dialecte lot (`dialecte-lot`): you write the tests of one brief step from the spec, never the production code.',
-			'You may add stubs whose body throws `not implemented: <name>` so the tests compile; call them inside `expect(...)`.',
-			'Run `dialecte tdd red` until every case is red on an assertion, and answer with its output.',
-		],
 	},
 	{
 		name: 'test-reviewer',
 		tier: 'strong',
-		tools: REVIEW_TOOLS,
+		access: 'review',
 		description:
 			'Dialecte lot, test review before any code: reads only the tests against the brief (does each pin a behaviour, would a plausible wrong implementation fail it). Read-only.',
-		role: [
-			'You are the test review of a Dialecte lot (`dialecte-lot`): you read the tests of the step against the brief, before any production code.',
-			'You modify nothing (`dialecte tdd status` is the one command to run). Answer per test: the behaviour it pins, a plausible wrong implementation it lets through, a verdict.',
-		],
 	},
 	{
 		name: 'implementer',
 		tier: 'standard',
-		tools: EDIT_TOOLS,
+		access: 'edit',
 		description:
 			'Dialecte lot, Station 1 (implement) on a mechanical or fully specified lot: production code only until `dialecte tdd green`, then the fast gate. Give it the brief.',
-		role: [
-			'You are the implementer of a Dialecte lot: Station 1 of `dialecte-lot`, step mode.',
-			'The tests are written and red: change production code only until `dialecte tdd green` passes; a test you find wrong goes back to the test station with the reason. Run the fast gate, and answer with the implement report shape of the skill.',
-		],
 	},
 	{
 		name: 'implementer-strong',
 		tier: 'strong',
-		tools: EDIT_TOOLS,
+		access: 'edit',
 		description:
 			'Dialecte lot, Station 1 (implement) on a design-heavy lot: production code only until `dialecte tdd green`, then the fast gate. Give it the brief.',
-		role: [
-			'You are the implementer of a design-heavy Dialecte lot: Station 1 of `dialecte-lot`, step mode.',
-			'The tests are written and red: change production code only until `dialecte tdd green` passes; a test you find wrong goes back to the test station with the reason. Run the fast gate, and answer with the implement report shape of the skill.',
-		],
 	},
 	{
 		name: 'reviewer',
 		tier: 'strong',
-		tools: REVIEW_TOOLS,
+		access: 'review',
 		description:
 			'Dialecte lot, Station 3 (independent review): pass 1 correctness, pass 2 fit, read-only. Give it the brief and the diff, not the implementer conclusions.',
-		role: [
-			'You are the reviewer of a Dialecte lot: Station 3 of `dialecte-lot`, a different agent from the implementer.',
-			'You modify nothing: you read the diff and run the tests. Answer with the review report shape of the skill (both passes, a verdict).',
-		],
 	},
 	{
 		name: 'fixer',
 		tier: 'standard',
-		tools: EDIT_TOOLS,
+		access: 'edit',
 		description:
 			'Dialecte lot, Station 4 (fix mode) on wording and naming findings: fixed, disagreed or escalated per finding. Give it the findings.',
-		role: [
-			'You are the implementer in fix mode: Station 4 of `dialecte-lot`.',
-			'For each finding answer fixed, disagreed (one line why) or needs the user; never drop one.',
-		],
 	},
 	{
 		name: 'eval-runner',
 		tier: 'standard',
-		tools: EDIT_TOOLS,
+		access: 'edit',
 		description:
 			'Runs one skill-eval case of a Dialecte skill, with or without the skill, and leaves the outputs the graders read.',
-		role: [
-			'You run one skill-eval case of `dialecte-lot` (a skill text change goes through skill-creator evals).',
-			'Follow the case prompt exactly, with or without the skill as your brief says, and write only the outputs it names.',
-		],
 	},
 	{
 		name: 'grader',
-		tier: 'fast',
-		tools: READ_TOOLS,
+		tier: 'strong',
+		access: 'read',
 		description:
 			'Grades the output of a skill-eval run against one grader file, pass or fail with the evidence. Read-only.',
-		role: [
-			'You grade the output of a skill-eval run against the grader files your brief names.',
-			'You read, never run or change anything: answer pass or fail per grader, with the line that shows it.',
-		],
 	},
 	{
 		name: 'standard-reader',
 		tier: 'standard',
-		tools: READ_TOOLS,
+		access: 'read',
 		description:
 			'Independent reader of the IEC standard markdown for one question, with line references. Read-only.',
-		role: [
-			'You read the standard for one question: "Reading the standard" of `dialecte-contributing`.',
-			'You read the standard markdown only, answer with line references, and never rely on what another agent concluded.',
-		],
 	},
 	{
 		name: 'searcher',
 		tier: 'fast',
-		tools: READ_TOOLS,
+		access: 'read',
 		description:
 			'Finds where something lives in a Dialecte repository (files, symbols, API paths) and answers with paths and line numbers. Read-only.',
-		role: [
-			'You locate code, files or documentation for the question your brief asks, in the Dialecte repositories it names.',
-			'You read, never change anything: answer with absolute paths and line numbers, nothing speculative.',
-		],
 	},
 ]
 
@@ -156,3 +124,9 @@ export const STATION_AGENT_FILE_PATTERN = /^dialecte-[a-z]+(-[a-z]+)*\.md$/
 
 /** The skill the station agents point at: without it installed for Claude Code they are not written. */
 export const LOT_SKILL = 'dialecte-lot'
+
+/** Where the Claude adapter's body sends the agent for its station's definition. */
+export const STATIONS_PAGE_PATH = `${AGENT_SKILL_FOLDERS.claude}/${LOT_SKILL}/references/stations.md`
+
+/** The stations that run the skill under test: their brief carries the definition, they load no lot skill. */
+export const BRIEF_DEFINED_STATIONS: readonly string[] = ['eval-runner', 'grader']

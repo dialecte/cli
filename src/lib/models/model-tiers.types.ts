@@ -38,9 +38,8 @@ export type VendorDetection =
 export type SyncVendorResolution =
 	| { kind: 'set'; vendor: VendorId }
 	| { kind: 'ask'; candidates: VendorId[] }
-	/** A manifest already exists: the sync goes on without a vendor and says how to set it. */
+	/** Nobody can answer: the sync goes on without a vendor (`models` stays unset) and says how to set it. */
 	| { kind: 'unset'; notice: string }
-	| { kind: 'fail'; output: string }
 
 /** The vendor the skills manifests remember, and what was odd about them. */
 export type RememberedVendor = {
@@ -51,10 +50,8 @@ export type RememberedVendor = {
 
 /** What `skills sync` settles about the vendor before it installs. */
 export type VendorChoice = {
-	/** To remember; undefined when the sync goes on without one (or stops). */
+	/** To remember; undefined when the sync goes on without one. */
 	vendor: VendorId | undefined
 	/** Lines for stderr. */
 	output: string
-	/** 2: nothing may be installed. */
-	exitCode: 0 | 2
 }
