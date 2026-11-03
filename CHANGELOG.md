@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-03
+
 ### Added
 
 - Consumer and contributor skills. A skill's frontmatter may say who it is for, `metadata:` / `audience: contributor` (changing a dialecte package) or `consumer` (the default). `dialecte skills sync` installs the consumer skills only and prints the contributor skills it left out; `--contributing` installs them too and is remembered in `.dialecte-skills.json` (`contributing: true`) until `--no-contributing` removes them. The station agents and the session-start check come with the contributor skills only. `dialecte doctor` expects the skills of the audience each manifest says; `skills check` refuses an unknown audience.
