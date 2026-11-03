@@ -1,7 +1,8 @@
 /**
- * Runs test cases of a package with its own vitest (`npx --no-install vitest run`, its projects as it
- * declares them), filtered to the files and the case names asked, and answers what the run saw through the
- * cli's reporter. Snapshots are never written (`--update=none`, CI): a test's expected value is its own.
+ * Runs test cases of a package with its own vitest (`node_modules/.bin/vitest` up to the repository root,
+ * else `npx --no-install vitest run`; its projects as it declares them), filtered to the files and the case
+ * names asked, and answers what the run saw through the cli's reporter.
+ * Snapshots are never written (`--update=none`, CI): a test's expected value is its own.
  * The run goes through `runChild`: stdin closed, and stopped as stalled when it prints nothing and its
  * processes gain no CPU for `stallAfter`.
  */
@@ -13,13 +14,13 @@ import { fileURLToPath } from 'node:url'
 import { runChild } from '../progress/run-child.ts'
 import { stallReason } from '../progress/stall-reason.ts'
 import { tailOf } from '../progress/tail-of.ts'
+import { resolvePackageVitest } from './package-vitest.ts'
 import {
 	CASE_NAME_SEPARATOR,
 	COLLECT_ONLY_PATTERN,
 	REPORT_ENVIRONMENT_VARIABLE,
 	REPORTER_FILE_NAMES,
 	RUN_OUTPUT_TAIL_LINES,
-	VITEST_COMMAND,
 } from './tdd.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
@@ -45,7 +46,7 @@ export async function runTestCases(params: {
 			? []
 			: ['-t', filter === 'collect' ? COLLECT_ONLY_PATTERN : namePattern(filter.names)]
 	try {
-		const [command, ...commandArguments] = VITEST_COMMAND
+		const { command, arguments: commandArguments } = resolvePackageVitest({ root: params.root })
 		const execution = await runChild({
 			command,
 			args: [

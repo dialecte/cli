@@ -291,3 +291,9 @@ export type ModuleResolver = (params: { specifier: string; from: string }) => Mo
 
 /** A vite alias: the specifier prefix and the absolute folder it stands for. */
 export type ModuleAlias = { find: string; replacement: string }
+
+/** How to start the package's vitest: a command and the arguments before the files. */
+export type PackageVitest = {
+	command: string
+	arguments: readonly string[]
+}
