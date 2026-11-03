@@ -1,5 +1,6 @@
 /** What `dialecte recap` reads from the records of a hand-over, before it prints a line. */
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
+import type { KeyedLedgerItem, RunEntry } from '../mutation/mutation.types.ts'
 import type { DecisionRow } from '../review-rounds/review-rounds.types.ts'
 import type { CaseStatus, LotCaseEntry } from '../tdd/tdd.types.ts'
 
@@ -38,6 +39,7 @@ export type RecapRecords = {
 	judgedCases: ReadonlyMap<string, CaseStatus> | undefined
 	/** The gate and rules lines, without the review line; empty when nothing was recorded. */
 	checks: CardGateLine[]
+	mutation: RecapMutation
 	/** The ledger's rows; undefined when the folder holds no ledger. */
 	findings: RecapFinding[] | undefined
 	accepted: LotCaseEntry[]
@@ -59,3 +61,12 @@ export type RecapPathBases = {
 	/** The parent folder of the repository's main checkout, each spelling of it. */
 	workspace: string[]
 }
+
+/**
+ * The mutation runs of the lot (its branch and the branches it merges): `undeclared` when the package declares no
+ * mutation scope; else the runs, oldest first, the survivors they killed or recorded and the lot's scheduled
+ * survivors (all empty when the repository is gone).
+ */
+export type RecapMutation =
+	| { kind: 'undeclared' }
+	| { kind: 'declared'; runs: RunEntry[]; moved: KeyedLedgerItem[]; scheduled: KeyedLedgerItem[] }

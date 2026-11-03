@@ -3,20 +3,25 @@
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
  * the merge lots (none in progress, trees recorded, resolutions as reviewed), an empty index, the files
  * against the reviewed snapshot, the deleted files, files outside the lots,
- * and plan tags or standard citations in the lots' files and messages.
+ * plan tags or standard citations in the lots' files and messages, and what the package still owes its
+ * mutation runs.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
+import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
+import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import { GUARD_NAME_WIDTH, HANDOVER_FILES } from './handover.constants.ts'
+import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { hashFile } from './write-handover.ts'
@@ -223,6 +228,12 @@ export function checkHandoverGuards(params: {
 					: { ok: true, detail: `${fileCount} file(s), ${lots.length} message(s)` }
 			},
 		},
+		{
+			name: MUTATION_GATE_NAME,
+			check: function nothingPendingInMutation() {
+				return checkMutation({ handover, committed: run.commits.length })
+			},
+		},
 	]
 	// an install a signal or a crash interrupted left the working package files in a backup
 	const leftover = existsSync(root) ? restoreLeftoverBackup(root) : undefined
@@ -307,6 +318,36 @@ function checkMerges(params: {
 		ok: true,
 		detail: `${pending.length} merge(s) to commit, resolutions as reviewed`,
 		...(notes.length && { lines: notes }),
+	}
+}
+
+/**
+ * What the package owes its mutation runs, read from the store now (never from the card): new survivors,
+ * died runs, a run a merge or a gate lot waits for, a gate lot without a run on the tree the lots still to commit
+ * leave, refuse; a run of the branch still running passes with its warning.
+ */
+function checkMutation(params: { handover: HandoverFolder; committed: number }): GuardVerdict {
+	const { folder, lotsFile, lots } = params.handover
+	const root = lotsFile.repository
+	const verdict = pendingVerdict({
+		root,
+		branch: lotsFile.branch,
+		mergedBranches: mergedBranchesOf(lots),
+		lotMode: lotModeOf({ root, folder }),
+		// computed only for a gate lot: the trial merge of a merge lot costs
+		tree: function handedOverTree() {
+			return checkedTree({
+				root,
+				stateTree: computeStateTree(root),
+				lots: lots.slice(params.committed),
+			})
+		},
+	})
+	if (!verdict) return { ok: true, detail: NO_MUTATION_SCOPE }
+	return {
+		ok: verdict.status !== 'failed',
+		detail: verdict.detail,
+		...(verdict.lines.length && { lines: verdict.lines }),
 	}
 }
 

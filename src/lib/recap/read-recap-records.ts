@@ -1,7 +1,7 @@
 /**
  * The records a recap is built from, read and never written: the lots and their commits, the gate and rules
- * records of the repository, the findings ledger, the lot declaration and `decisions.md` of the hand-over
- * folder, the git user name.
+ * records of the repository, the lot's mutation runs, the findings ledger, the lot declaration and
+ * `decisions.md` of the hand-over folder, the git user name.
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -13,12 +13,14 @@ import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf, readGitConfig } from '../git.ts'
 import { findCommittedLots } from '../handover/find-committed-lots.ts'
 import { revisionOf } from '../handover/list-handovers.ts'
+import { checkedTree, mergedBranchesOf } from '../handover/lot-trees.ts'
 import { readDecisions } from '../review-rounds/decisions-file.ts'
 import { DECISIONS_FILE, LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { readDeclaredCases } from '../tdd/lot-declaration.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { readFindings } from './read-findings.ts'
+import { readRecapMutation } from './read-recap-mutation.ts'
 import { FOLDER_LOT_FILE, NO_USER_NAME } from './recap.constants.ts'
 
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
@@ -56,10 +58,27 @@ export function readRecapRecords(params: {
 	if (typeof findings === 'string') return findings
 	const stateTree = repositoryExists ? computeStateTree(root) : undefined
 	const stateHash = stateTree && hashStateTree(stateTree)
+	const committed = readCommits({ handover, repositoryExists })
 	return {
-		...readCommits({ handover, repositoryExists }),
+		...committed,
 		judgedCases: stateHash ? readJudgedCases({ root, stateHash }) : undefined,
-		checks: stateTree && stateHash ? readChecks({ root, folder, stateHash, tree: stateTree }) : [],
+		checks:
+			stateTree && stateHash
+				? readChecks({
+						root,
+						folder,
+						stateHash,
+						// as the card: the tree the lots not committed yet leave, a merge's trial tree included
+						tree: checkedTree({
+							root,
+							stateTree,
+							lots: handover.lots.slice(committed.commits.filter((lot) => lot.commit).length),
+						}),
+						branch: lotsFile.branch,
+						mergedBranches: mergedBranchesOf(handover.lots),
+					})
+				: [],
+		mutation: readRecapMutation({ handover, repositoryExists }),
 		findings,
 		accepted,
 		revised,
@@ -123,6 +142,8 @@ function readChecks(params: {
 	folder: string
 	stateHash: string
 	tree: string
+	branch: string
+	mergedBranches: readonly string[]
 }): CardGateLine[] {
 	if (readGateRecords(params.root).length === 0 && !readRulesRecord(params.root)) return []
 	return buildCardGateLines(params).filter((line) => line.name !== REVIEW_LINE_NAME)

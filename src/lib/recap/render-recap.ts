@@ -11,17 +11,23 @@ import {
 	DECISION_PREFIXES,
 	EMPTY_SECTION,
 	FINDING_OUTCOMES,
+	NO_MUTATION_SCOPE_DECLARED,
 	NOT_COMMITTED,
 	OTHER_JUDGED_STATUSES,
 	PREPARED_BY,
 	RECAP_CLOSE,
+	RECAP_MOVED_ITEM,
 	RECAP_OPEN,
+	RECAP_OTHER_RUN,
+	RECAP_REPORTED_RUN,
+	RECAP_SCHEDULED_ITEM,
 	ROUND_SEVERITIES,
 	SECTION_TITLES,
 	TESTS_ADDED_LINE,
 } from './recap.constants.ts'
 
-import type { RecapFinding, RecapRecords } from './recap.types.ts'
+import type { KeyedLedgerItem, RunEntry } from '../mutation/mutation.types.ts'
+import type { RecapFinding, RecapMutation, RecapRecords } from './recap.types.ts'
 
 export function renderRecap(records: RecapRecords): string {
 	return [
@@ -35,6 +41,9 @@ export function renderRecap(records: RecapRecords): string {
 		'',
 		SECTION_TITLES.checks,
 		...checkLines(records),
+		'',
+		SECTION_TITLES.mutation,
+		...mutationLines(records.mutation),
 		'',
 		SECTION_TITLES.review,
 		...reviewLines(records),
@@ -95,6 +104,50 @@ function checkLines(records: RecapRecords): string[] {
 	return records.checks.map((line) =>
 		[`- ${CARD_GATE_MARKS[line.status]}`, line.name, line.detail].filter(Boolean).join(' '),
 	)
+}
+
+/** Each run of the lot, oldest first, then the survivors its runs killed or recorded, then its scheduled ones. */
+function mutationLines(mutation: RecapMutation): string[] {
+	if (mutation.kind === 'undeclared') return [NO_MUTATION_SCOPE_DECLARED]
+	const { runs, moved, scheduled } = mutation
+	if (runs.length + moved.length + scheduled.length === 0) return [EMPTY_SECTION.mutation]
+	return [
+		...runs.map(runLine),
+		...moved.map((item) =>
+			itemText({ template: RECAP_MOVED_ITEM, item })
+				.replace('{state}', item.state)
+				.replace('{id}', item.movedBy ?? ''),
+		),
+		...scheduled.map((item) =>
+			itemText({ template: RECAP_SCHEDULED_ITEM, item }).replace('{followUp}', item.followUp ?? ''),
+		),
+	]
+}
+
+/** A reported run with its counts; any other run with its state. */
+function runLine(run: RunEntry): string {
+	if (run.state !== 'reported' || !run.counts)
+		return runText({ template: RECAP_OTHER_RUN, run }).replace('{state}', run.state)
+	const { killed, survived, timedOut, noCoverage } = run.counts
+	return runText({ template: RECAP_REPORTED_RUN, run })
+		.replace('{killed}', String(killed))
+		.replace('{survived}', String(survived))
+		.replace('{timedOut}', String(timedOut))
+		.replace('{noCoverage}', String(noCoverage))
+}
+
+/** A run's mode and id put in a template. */
+function runText(params: { template: string; run: RunEntry }): string {
+	return params.template.replace('{mode}', params.run.mode).replace('{id}', params.run.runId)
+}
+
+/** A survivor's `file:line` and mutation put in a template. */
+function itemText(params: { template: string; item: KeyedLedgerItem }): string {
+	const { template, item } = params
+	return template
+		.replace('{file}', item.file)
+		.replace('{line}', String(item.line))
+		.replace('{mutation}', item.mutation)
 }
 
 /** The totals, then each round with its findings in ledger order. */

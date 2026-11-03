@@ -22,3 +22,32 @@ export function listLotTrees(params: { root: string; lots: readonly ResolvedLot[
 		return { before, tree: base.tree }
 	})
 }
+
+/**
+ * The tree the lots still to commit leave: the worktree's, or for lots holding a merge the tree the last lot
+ * will leave (the merge's trial tree with its resolutions), which no worktree holds. Git cannot build it (a
+ * tip gone): the worktree's, as before a merge. The card checks its gates against it; the run's `mutation`
+ * guard looks for a gate lot's mutation run on it.
+ * @intent find the tree a hand-over commits, check a record against the handed-over tree
+ */
+export function checkedTree(params: {
+	root: string
+	stateTree: string
+	lots: readonly ResolvedLot[]
+}): string {
+	if (!params.lots.some((lot) => lot.merge)) return params.stateTree
+	try {
+		return listLotTrees({ root: params.root, lots: params.lots }).at(-1)?.tree ?? params.stateTree
+	} catch {
+		// the guards and the run say what git refused
+		return params.stateTree
+	}
+}
+
+/**
+ * The branches the hand-over's merge lots merge, in lot order; empty for a hand-over without a merge lot.
+ * @intent list the branches a hand-over merges, read the runs of a merged branch
+ */
+export function mergedBranchesOf(lots: readonly ResolvedLot[]): string[] {
+	return lots.flatMap((lot) => (lot.merge ? [lot.merge.branch] : []))
+}

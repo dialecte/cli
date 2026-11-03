@@ -12,6 +12,7 @@ export const SECTION_TITLES = {
 	commits: '### Commits',
 	tests: '### Tests added',
 	checks: '### Checks',
+	mutation: '### Mutation',
 	review: '### Review',
 	decisions: '### Decisions',
 	followUps: '### Follow-ups',
@@ -21,6 +22,7 @@ export const SECTION_TITLES = {
 export const EMPTY_SECTION = {
 	tests: 'No test case added.',
 	checks: 'No check recorded.',
+	mutation: 'No mutation run.',
 	review: 'No review recorded.',
 	decisions: 'No decision recorded.',
 	followUps: 'No follow-up.',
@@ -154,3 +156,19 @@ export const FOLDER_LOT_FILE = 'lot.json'
 /** The refusal when no git user name is set. */
 export const NO_USER_NAME =
 	'no git user name in {where}: set it with `git config user.name "<your name>"`'
+
+/** The Mutation section of a package that declares no mutation scope. */
+export const NO_MUTATION_SCOPE_DECLARED = 'No mutation scope declared.'
+
+/** A reported run in the Mutation section: its mode, its id, its counts. */
+export const RECAP_REPORTED_RUN =
+	'- {mode} run `{id}`: {killed} killed · {survived} survived · {timedOut} timed out · {noCoverage} no coverage'
+
+/** A run in any other state: `running`, `died`, `abandoned`. */
+export const RECAP_OTHER_RUN = '- {mode} run `{id}`: {state}'
+
+/** A survivor a run of the lot killed or recorded. */
+export const RECAP_MOVED_ITEM = '- `{file}:{line}` {mutation}: {state} by `{id}`'
+
+/** A survivor of the lot left for a follow-up. */
+export const RECAP_SCHEDULED_ITEM = '- `{file}:{line}` {mutation}: scheduled for {followUp}'

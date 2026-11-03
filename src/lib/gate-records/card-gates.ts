@@ -1,7 +1,8 @@
 /**
  * The hand-over card's gate lines, from records, never from prose: one per gate step (the latest record of
  * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes
- * whole), then the rules, then the review from the hand-over folder's findings ledger and round snapshots.
+ * whole), then the rules, then what the package owes its mutation runs (read from the mutation store when
+ * the card is built), then the review from the hand-over folder's findings ledger and round snapshots.
  * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
  * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
  * A line from a record made at a commit outside HEAD's history (a branch commit's hook record read for a
@@ -16,6 +17,8 @@ import { join } from 'node:path'
 import { counted } from '../counted.ts'
 import { resolveGateSteps } from '../gate/gate-config.ts'
 import { isAncestorCommit } from '../git.ts'
+import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
+import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
@@ -64,6 +67,10 @@ export function buildCardGateLines(params: {
 	 * another tree is stale.
 	 */
 	tree: string
+	/** The hand-over's branch: the `mutation` line reads the runs of it. */
+	branch: string
+	/** The branches the hand-over's merge lots merge: their runs count as the branch's. */
+	mergedBranches: readonly string[]
 }): CardGateLine[] {
 	const { root, tree } = params
 	const own = readGateRecords(root)
@@ -87,8 +94,33 @@ export function buildCardGateLines(params: {
 			),
 		}),
 		rulesLine({ record: readRulesRecord(root), stateHash: params.stateHash }),
+		...mutationLines(params),
 		reviewLine(params.folder),
 	]
+}
+
+/**
+ * The `mutation` line: what the package still owes, read from the mutation store now (`pendingVerdict`); none
+ * when the package declares no mutation scope.
+ */
+function mutationLines(params: {
+	root: string
+	folder: string
+	tree: string
+	branch: string
+	mergedBranches: readonly string[]
+}): CardGateLine[] {
+	const { root, folder, tree, branch, mergedBranches } = params
+	const verdict = pendingVerdict({
+		root,
+		branch,
+		mergedBranches,
+		lotMode: lotModeOf({ root, folder }),
+		tree,
+	})
+	return verdict
+		? [{ name: MUTATION_GATE_NAME, status: verdict.status, detail: verdict.detail }]
+		: []
 }
 
 /**

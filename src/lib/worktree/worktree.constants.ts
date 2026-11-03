@@ -55,3 +55,6 @@ export const NODE_MODULES_PROBLEMS_SHOWN = 5
 
 /** Why `worktree prune` keeps a link, or a folder reached through one. */
 export const PRUNE_LINK_REASON = 'a link: prune never removes a link nor what it points to'
+
+/** Before a mutation run's line when the run keeps the worktree it was started from. */
+export const PRUNE_RUN_PREFIX = 'mutation '

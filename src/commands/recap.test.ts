@@ -212,6 +212,8 @@ function recapText(params: {
 	commits: string[]
 	tests: string[]
 	checks: string[]
+	/** The Mutation section: no scope declared unless a case says otherwise. */
+	mutation?: string[]
 	review: string[]
 	decisions: string[]
 	followUps: string[]
@@ -229,6 +231,9 @@ function recapText(params: {
 		'',
 		'### Checks',
 		...params.checks,
+		'',
+		'### Mutation',
+		...(params.mutation ?? ['No mutation scope declared.']),
 		'',
 		'### Review',
 		...params.review,
@@ -450,6 +455,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 						commits: commitLines([]),
 						tests: ['No test case added.'],
 						checks: ['No check recorded.'],
+						mutation: ['No mutation run.'],
 						review: [
 							'2 rounds, 2 findings: 1 fixed, 1 logged.',
 							ANY_LINE,
@@ -538,6 +544,9 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 					'- ✗ lint 1 error · 0 warnings · oxlint (the tree changed since)',
 					'- ✓ rules 0 errors · 3 warnings',
 					'',
+					'### Mutation',
+					'No mutation scope declared.',
+					'',
 					'### Review',
 				].join('\n'),
 			),
@@ -604,6 +613,9 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 					'- ✗ gate never run on this tree',
 					'- ✓ rules 0 errors · 0 warnings',
 					'',
+					'### Mutation',
+					'No mutation scope declared.',
+					'',
 					'### Review',
 				].join('\n'),
 			),
@@ -629,9 +641,16 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 		expect(runRecap({ cwd, argv: [folder] })).toEqual({
 			exitCode: 0,
 			output: expect.stringContaining(
-				['### Checks', '- ✓ check 7/7', '- ! rules never run on this tree', '', '### Review'].join(
-					'\n',
-				),
+				[
+					'### Checks',
+					'- ✓ check 7/7',
+					'- ! rules never run on this tree',
+					'',
+					'### Mutation',
+					'No mutation scope declared.',
+					'',
+					'### Review',
+				].join('\n'),
 			),
 		})
 	})
