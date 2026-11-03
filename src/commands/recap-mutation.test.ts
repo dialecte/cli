@@ -25,15 +25,19 @@ import {
 import { PACKAGE_NAME, SCOPE_FILE } from '../../test/mutation-package.constants.ts'
 import { mutationPackage, survivorOf } from '../../test/mutation-package.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
-import { createScratchRepository } from '../../test/scratch-repository.ts'
+import { createScratchRepository, isolateGitConfig } from '../../test/scratch-repository.ts'
 import { RECORD_MOVER } from '../lib/mutation/mutation.constants.ts'
 import { runRecap } from './recap.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const MUTATION_HEADING = '### Mutation'
 const FIRST_ITEM = `\`${SCOPE_FILE}:2\` ConditionalExpression: x === 1 -> true`
 const SECOND_ITEM = `\`${SCOPE_FILE}:${SECOND_SURVIVOR_LINE}\` ${SECOND_SURVIVOR_MUTATION}`
+
+afterEach(function restoreEnvironment() {
+	vi.unstubAllEnvs()
+})
 
 /** The recap of a hand-over on `main` of a repository whose package declares its mutation scope, or not. */
 function recapScenario(params: { declared: boolean }): { root: string; recap: () => string } {
@@ -154,6 +158,8 @@ describe('recap: the Mutation section', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 		const { root, recap } = recapScenario({ declared: true })
 		reportRun({ root, survivors: [survivorOf({ key: 'k1' })] })
 		rmSync(root, { recursive: true, force: true })
+		// the recap reads the user name in the current folder, where git sees only the test's config
+		isolateGitConfig({ userName: 'Folder Person' })
 
 		expect(recapSection({ output: recap(), heading: MUTATION_HEADING })).toEqual([
 			'No mutation run.',

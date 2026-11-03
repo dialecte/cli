@@ -5,6 +5,7 @@ import { gitPathOf } from '../../test/gate-records.ts'
 import {
 	git,
 	initializeRepository,
+	isolateGitConfig,
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
@@ -56,17 +57,6 @@ const LOT_FILES = LOTS.flatMap((lot) => Object.keys(lot.files)).sort()
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-/**
- * Git reads no global nor system config for the rest of the test: the user name comes from the repository
- * (or the folder) the test sets it in, never from the machine's own config.
- */
-function isolateGitConfig(): void {
-	const file = join(temporaryFolder('dialecte-recap-config-'), 'gitconfig')
-	writeFileSync(file, '')
-	vi.stubEnv('GIT_CONFIG_GLOBAL', file)
-	vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
-}
 
 function headOf(root: string): string {
 	return git({ root, args: ['rev-parse', 'HEAD'] }).trim()
