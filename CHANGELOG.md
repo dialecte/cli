@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-04
+
 ### Changed
 
 - The tdd runner starts the package's own vitest (`node_modules/.bin/vitest`, from the package root up to the repository root) instead of going through npx: npm's start-up (0.3 s on a quiet machine, about 2 s under load) leaves every `tdd red`, `tdd green`, `tdd status` and the gate's `tdd` step. `npx --no-install vitest run` stays the fallback.
