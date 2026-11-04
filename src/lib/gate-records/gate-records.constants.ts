@@ -31,6 +31,14 @@ export const GATE_LINE_NAME = 'gate'
 export const RULES_LINE_NAME = 'rules'
 export const REVIEW_LINE_NAME = 'review'
 
+/** The card's line of a contributor without a contrib record of the checked tree, and its detail. */
+export const CONTRIB_LINE_NAME = 'contrib'
+export const CONTRIB_NEVER_RUN_DETAIL = 'never run: dialecte contrib'
+/** A contrib row of the worktree's last record of the same tree, made at another HEAD than the lots file's. */
+export const CONTRIB_HEAD_MOVED_SUFFIX = ' (HEAD moved since: run dialecte contrib again)'
+/** A contrib row of the worktree's last record of the same tree and HEAD, against another install or other rows. */
+export const CONTRIB_KEY_CHANGED_SUFFIX = ' (the install or the contrib rows changed since)'
+
 /** A gate (or rules) never run on the worktree. */
 export const NEVER_RUN_DETAIL = 'never run on this tree'
 

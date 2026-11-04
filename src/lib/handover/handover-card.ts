@@ -1,18 +1,30 @@
 /**
  * The hand-over card: the verdict (READY, BLOCKED, DONE) with the size and what to read, what is committed
- * (each lot, a merge with its tree, HEAD), the gates as their records say, the test receipts, the notes (before
- * a run only), and the command, before and after the run.
+ * (each lot, a merge with its tree, HEAD), the gates as their records say (with the review and the standard
+ * check), a contributor's contrib rows, the test receipts, the notes (before a run only), and the command, before
+ * and after the run.
  */
 import { basename } from 'node:path'
 
 import { counted } from '../counted.ts'
-import { buildCardGateLines } from '../gate-records/card-gates.ts'
-import { CARD_GATE_MARKS } from '../gate-records/gate-records.constants.ts'
+import {
+	buildCardGateLines,
+	buildContribLines,
+	buildMutationLines,
+	buildReviewLine,
+} from '../gate-records/card-gates.ts'
+import {
+	CARD_GATE_MARKS,
+	CONTRIB_LINE_NAME,
+	DETAIL_SEPARATOR,
+} from '../gate-records/gate-records.constants.ts'
 import { readJudgedCases } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
+import { readProfile } from '../profile/profile.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { readStandardLine } from '../standard/read-standard-line.ts'
 import {
 	entryNamesCase,
 	findCaseEntry,
@@ -120,10 +132,10 @@ export function buildHandoverCard(params: {
 		params.probe({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
 	const stateTree = computeStateTree(root)
 	const stateHash = hashStateTree(stateTree)
-	const gates = buildCardGateLines({
+	const profile = readProfile(root)
+	const checked = {
 		root,
 		folder: params.folder,
-		stateHash,
 		tree: checkedTree({
 			root,
 			stateTree,
@@ -132,9 +144,19 @@ export function buildHandoverCard(params: {
 		}),
 		branch: params.branch,
 		mergedBranches: mergedBranchesOf(params.lots),
-	})
-	const failedGates = gates.filter((line) => line.status === 'failed').map((line) => line.name)
-	const otherTreeGates = gates
+	}
+	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
+	const gates = [
+		...buildCardGateLines(checked),
+		...(profile === 'consumer' ? buildMutationLines(checked) : []),
+		buildReviewLine(params.folder),
+		readStandardLine({ folder: params.folder }),
+	]
+	const contrib =
+		profile === 'contributor' ? buildContribLines({ ...checked, head: params.head }) : undefined
+	const allLines = [...gates, ...(contrib ?? [])]
+	const failedGates = allLines.filter((line) => line.status === 'failed').map((line) => line.name)
+	const otherTreeGates = allLines
 		.filter((line) => line.stale && line.status !== 'failed')
 		.map((line) => line.name)
 	const tdd = tddSection({ root, judged: readJudgedCases({ root, stateHash }) })
@@ -185,6 +207,8 @@ export function buildHandoverCard(params: {
 		otherTreeGates,
 		declarations: tdd.declarations,
 		gates,
+		profile,
+		...(contrib && { contrib }),
 		...(params.notes && { notes: params.notes }),
 		...(tdd.lines.length && { tdd: tdd.lines }),
 		lots,
@@ -552,7 +576,7 @@ function caseEntryLines(params: {
 
 /**
  * The card in sections: the verdict with the size and the declarations to read, then the commit, gates,
- * tdd and notes (before a run only) sections; the command is printed under the box, whole.
+ * contrib (a contributor's), tdd and notes (before a run only) sections; the command is printed under the box, whole.
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
 	return {
@@ -564,6 +588,9 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 			{ lines: verdictLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.commit, lines: commitLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.gates, lines: gateLines(card.gates) },
+			...(card.contrib
+				? [{ name: HANDOVER_CARD_SECTIONS.contrib, lines: gateLines(contribLines(card.contrib)) }]
+				: []),
 			...(card.tdd?.length ? [{ name: HANDOVER_CARD_SECTIONS.tdd, lines: card.tdd }] : []),
 			...optionalSection({ name: HANDOVER_CARD_SECTIONS.notes, text: card.notes }),
 		],
@@ -675,6 +702,24 @@ function gateLines(lines: readonly CardGateLine[]): CardLine[] {
 		hang: 2 + nameWidth + 2,
 		emphasis: line.status,
 	}))
+}
+
+/**
+ * The contrib section's lines: one `contrib` line naming every row when each one passed, with the source of the
+ * record they came from (`· rehearsal`, `· from <commit>`); else the rows, one line each.
+ */
+function contribLines(lines: readonly CardGateLine[]): readonly CardGateLine[] {
+	if (!lines.every((line) => line.status === 'passed')) return lines
+	const source = lines.find((line) => line.source)?.source
+	return [
+		{
+			name: CONTRIB_LINE_NAME,
+			status: 'passed',
+			detail: [...lines.map((line) => line.name), ...(source ? [source] : [])].join(
+				DETAIL_SEPARATOR,
+			),
+		},
+	]
 }
 
 /** A section of the text's lines, none when there is no text. */

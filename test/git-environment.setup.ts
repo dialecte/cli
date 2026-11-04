@@ -6,6 +6,7 @@
  * alias, a default branch): the suite sees what a CI machine sees, an empty one.
  */
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
+import { STANDARD_ENVIRONMENT_VARIABLE } from '../src/lib/standard/standard.constants.ts'
 import {
 	CONFIG_ENVIRONMENT_VARIABLES,
 	DISCOVERY_ENVIRONMENT_VARIABLES,
@@ -23,3 +24,6 @@ for (const name of [
 // git reads /dev/null as an empty config file
 process.env.GIT_CONFIG_GLOBAL = '/dev/null'
 process.env.GIT_CONFIG_NOSYSTEM = '1'
+
+// the standard the person works against is theirs, not the suite's: the cases that need one set it themselves
+delete process.env[STANDARD_ENVIRONMENT_VARIABLE]

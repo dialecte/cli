@@ -37,7 +37,7 @@ export const DECISION_STATES = [
 ] as const
 
 export const RECORD_USAGE =
-	'record: review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding> | decision <folder> <id> <state...> | snapshot <folder> --round <n> | choice <folder> --by <who> <decision>'
+	'record: review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding> | decision <folder> <id> <state...> | snapshot <folder> --round <n> | choice <folder> --by <who> <decision> | standard <folder> consulted <note> | not-consulted <reason>'
 
 export const RECORD_CHOICE_USAGE = 'record choice: expected <folder> --by <who> <decision>'
 

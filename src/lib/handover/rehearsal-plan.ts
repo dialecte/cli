@@ -5,10 +5,12 @@
  * `node_modules`, the same `file:` dependencies, the same steps), the lot does not change
  * `package-lock.json` and the commit hook stages no files of its own. A merge lot is reused when the tree it
  * leaves is its tip's tree and a green record of that tree (the branch commit's hook, or a `gate --full`)
- * matches what is installed now, under the same conditions.
+ * matches what is installed now, under the same conditions. A contributor's last lot also says when the tree the
+ * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone.
  */
 import { readFileSync } from 'node:fs'
 
+import { findContribRecord } from '../contrib/contrib-key.ts'
 import { gateCommandHash, hashHookCommand, readInstalledKey } from '../gate-records/check-key.ts'
 import {
 	isGreenRecord,
@@ -21,6 +23,7 @@ import { resolveGateSteps } from '../gate/gate-config.ts'
 import { listCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
+import { readProfile } from '../profile/profile.ts'
 import { HOOK_STAGES_PATTERN, PACKAGE_LOCK_FILE, REHEARSAL_REASONS } from './handover.constants.ts'
 import { listLotTrees } from './lot-trees.ts'
 
@@ -58,6 +61,11 @@ export function planRehearsal(params: {
 		},
 		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
 	}
+	const contribRun = needsContribRun({
+		root,
+		tree: trees.at(-1)?.tree,
+		head: params.handover.lotsFile.head,
+	})
 	return params.handover.lots.map(function decide(lot, index): RehearsalDecision {
 		const { tree } = trees[index]
 		const decision = params.full
@@ -65,8 +73,31 @@ export function planRehearsal(params: {
 			: lot.merge
 				? decideMerge({ context, merge: lot.merge, lotTree: trees[index] })
 				: decidePlain({ context, lot, tree })
-		return { lot: index + 1, tree, ...decision }
+		return {
+			lot: index + 1,
+			tree,
+			...decision,
+			...(contribRun && index === trees.length - 1 && { contrib: 'run' as const }),
+		}
 	})
+}
+
+/**
+ * A contributor's hand-over whose last lot leaves `tree` (the tree the `contrib` guard checks) with no green contrib
+ * record of it at the lots file's HEAD (the guard's), against what is installed now: the rehearsal runs
+ * `dialecte contrib` on it in the clone.
+ */
+function needsContribRun(params: {
+	root: string
+	tree: string | undefined
+	/** The lots file's HEAD, as written. */
+	head: string
+}): boolean {
+	const { root, tree } = params
+	if (tree === undefined || readProfile(root) !== 'contributor') return false
+	const head = readGit({ root, args: ['rev-parse', `${params.head}^{commit}`] }).trim()
+	const record = findContribRecord({ root, tree, head })
+	return !(record && isGreenRecord(record))
 }
 
 function decidePlain(params: {

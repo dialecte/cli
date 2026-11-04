@@ -149,6 +149,20 @@ export const LIST_DEPTH = 4
 /** Width of the guard name column of the progress lines. */
 export const GUARD_NAME_WIDTH = 11
 
+/** What the `references` guard says a lot holds, per profile: a consumer's lots may name tickets and plan tags. */
+export const CONTRIBUTOR_REFERENCES_DETAIL = 'a plan tag or a standard citation'
+export const CONSUMER_REFERENCES_DETAIL = 'a standard citation'
+
+/** The `contrib` guard of a contributor: refused without a green record of the tree, or naming the failed rows. */
+export const CONTRIB_GUARD_NAME = 'contrib'
+export const NO_GREEN_CONTRIB_DETAIL =
+	'no green dialecte contrib of this tree: run dialecte contrib'
+export const FAILED_CONTRIB_DETAIL =
+	'dialecte contrib failed at {rows} on this tree: fix them, then run it again'
+export const GREEN_CONTRIB_DETAIL = 'green on this tree at {at}'
+/** A rehearsal never stops at the `contrib` guard: it says what the real run would refuse. */
+export const REHEARSAL_CONTRIB_DETAIL = '{detail} (the real run refuses; the rehearsal goes on)'
+
 /**
  * The script a hand-over writes. People run it with `sh` (macOS: bash 3.2), so it re-executes itself
  * with bash. It runs the cli the repository installs; a cli without `handover run` (missing, or older)
@@ -298,6 +312,7 @@ export const HANDOVER_CARD_TITLE = 'hand-over: {repository} {branch}'
 export const HANDOVER_CARD_SECTIONS = {
 	commit: 'commit',
 	gates: 'gates',
+	contrib: 'contrib',
 	tdd: 'tdd',
 	notes: 'notes',
 } as const
@@ -344,6 +359,28 @@ export const REHEARSAL_DECISION_WORDS = { reused: 'reused', rehearsed: 'rehearse
 
 /** Under a reused merge lot: the tree its commit will hold, to record in the lot as `tree`. */
 export const REUSED_MERGE_TREE_LINE = '  tree {tree}'
+
+/** A contributor's lot whose tree has no green contrib record: `dialecte contrib` runs in the clone first. */
+export const REHEARSAL_CONTRIB_LINE =
+	'lot {number}/{count}  contrib  no green dialecte contrib of tree {tree}: run in the clone, on the tree the lots leave'
+
+/**
+ * The rehearsal's contrib run cannot answer the real run: the key the clone would record differs from the one the
+ * `contrib` guard asks for, in these parts.
+ */
+export const REHEARSAL_CONTRIB_UNANSWERABLE =
+	"not run: the lots change the {parts}, so no contrib record of this hand-over can answer the real run's guard"
+
+/** The parts of a contrib key, named as a person changes them. */
+export const CONTRIB_KEY_PARTS = [
+	{ field: 'commandHash', name: 'contrib steps' },
+	{ field: 'lockHash', name: 'install' },
+	{ field: 'linked', name: 'linked dependencies' },
+	{ field: 'tree', name: 'tree' },
+] as const
+
+/** The rehearsal's step that runs `dialecte contrib` in the clone. */
+export const REHEARSAL_CONTRIB_STEP = 'rehearsal contrib'
 
 /** When no lot needs rehearsing: no clone is made. */
 export const REHEARSAL_SKIPPED_LINE = "rehearsal skipped: every lot's tree has a green record"

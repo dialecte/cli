@@ -60,6 +60,8 @@ export async function runHandoverFolder(params: {
 	withoutHook?: ReadonlySet<number>
 	/** The repository whose store holds the hook records, when the lots are committed in a clone of it. */
 	storeRoot?: string
+	/** A rehearsal whose contrib run in the clone cannot answer the real run: why, for the `contrib` guard. */
+	contribUnanswerable?: string
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -72,6 +74,7 @@ export async function runHandoverFolder(params: {
 		clock,
 		rehearsal,
 		resumeMerge: params.resumeMerge,
+		contribUnanswerable: params.contribUnanswerable,
 	})
 	if (!guarded) return 1
 	if (params.skipCommits) write(REHEARSAL_SKIPPED_LINE)

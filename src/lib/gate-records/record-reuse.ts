@@ -62,6 +62,8 @@ export function recordCheckedRun(params: {
 	keyAfter: CheckKey
 	/** The record that answered the run instead of its steps. */
 	reused?: GateRecord
+	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
+	storeRoot?: string
 }): { stored: boolean; changedWhileRunning: boolean } {
 	const { keyBefore, keyAfter } = params
 	const changedTree =
@@ -74,6 +76,7 @@ export function recordCheckedRun(params: {
 		results: params.results,
 		...(changedTree === undefined ? { key: keyAfter } : { checkedTree: changedTree }),
 		...(params.reused && { reused: originOfRecord(params.reused) }),
+		...(params.storeRoot && { storeRoot: params.storeRoot }),
 	})
 	return { stored, changedWhileRunning: changedTree !== undefined }
 }

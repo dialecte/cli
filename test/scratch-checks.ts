@@ -418,7 +418,7 @@ export function lotLinePattern(params: {
 	return new RegExp(`^lot ${params.index}/${params.count} {2}${params.decision} {2}${reason}$`, 'm')
 }
 
-/** The card's gate lines of the gate steps: the rules and review lines left out. */
+/** The card's gate lines of the gate steps: the rules, review and standard lines left out. */
 export function gateStepLinesOf(output: string): string[] {
-	return gateLinesOf(output).filter((line) => !/^[✓!✗] (rules|review)\b/.test(line))
+	return gateLinesOf(output).filter((line) => !/^[✓!✗] (rules|review|standard)\b/.test(line))
 }

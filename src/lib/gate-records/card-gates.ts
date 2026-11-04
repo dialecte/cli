@@ -1,22 +1,23 @@
 /**
- * The hand-over card's gate lines, from records, never from prose: one per gate step (the latest record of
- * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes
- * whole), then the rules, then what the package owes its mutation runs (read from the mutation store when
- * the card is built), then the review from the hand-over folder's findings ledger and round snapshots.
+ * The hand-over card's gate lines, from records, never from prose. The gate steps: one per step (the latest record of
+ * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes whole).
  * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
  * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
  * A line from a record made at a commit outside HEAD's history (a branch commit's hook record read for a
  * merge on main) ends `· from <commit>`, a rehearsal's `· rehearsal`. A stored record counts only when it
  * ran against what is installed now (the same `node_modules`, the same `file:` dependencies) with the
  * command of its mode now. A record of another tree than the one checked is marked stale: it warns, or stays
- * failed.
+ * failed. Beside them, each line the card composes: the rules (the recap's), what the package owes its mutation
+ * runs (read from the mutation store when the card is built), the review from the hand-over folder's findings
+ * ledger and round snapshots, and a contributor's contrib rows from the contrib record of the checked tree.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { findContribRecord } from '../contrib/contrib-key.ts'
 import { counted } from '../counted.ts'
 import { resolveGateSteps } from '../gate/gate-config.ts'
-import { isAncestorCommit } from '../git.ts'
+import { isAncestorCommit, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -26,6 +27,10 @@ import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import { gateCommandHash, hashHookCommand, readInstalledKey } from './check-key.ts'
 import { isSameKey, readTreeRecords } from './check-store.ts'
 import {
+	CONTRIB_HEAD_MOVED_SUFFIX,
+	CONTRIB_KEY_CHANGED_SUFFIX,
+	CONTRIB_LINE_NAME,
+	CONTRIB_NEVER_RUN_DETAIL,
 	DETAIL_SEPARATOR,
 	GATE_LINE_NAME,
 	HOOK_RECORD_DETAIL,
@@ -50,28 +55,20 @@ import {
 	SHORT_SHA_LENGTH,
 	TREE_CHANGED_SUFFIX,
 } from './gate-records.constants.ts'
-import { readGateRecords, readRulesRecord } from './gate-records.ts'
+import { readContribRecord, readGateRecords, readRulesRecord } from './gate-records.ts'
 import { hashStateTree } from './state-hash.ts'
 
 import type { StepCounts } from '../gate/gate.types.ts'
-import type { CardGateLine, GateRecord, RecordedStep, RulesRecord } from './gate-records.types.ts'
+import type { CardGateLine, GateRecord, RecordedStep } from './gate-records.types.ts'
 
 export function buildCardGateLines(params: {
 	/** The worktree the records are of. */
 	root: string
-	/** The hand-over folder: its findings ledger and round snapshots. */
-	folder: string
-	/** The worktree's tree now (`computeStateHash`): a rules record of another tree is stale. */
-	stateHash: string
 	/**
 	 * The tree the hand-over commits (the worktree's, or the tree its last merge lot leaves): a gate record of
 	 * another tree is stale.
 	 */
 	tree: string
-	/** The hand-over's branch: the `mutation` line reads the runs of it. */
-	branch: string
-	/** The branches the hand-over's merge lots merge: their runs count as the branch's. */
-	mergedBranches: readonly string[]
 }): CardGateLine[] {
 	const { root, tree } = params
 	const own = readGateRecords(root)
@@ -83,20 +80,57 @@ export function buildCardGateLines(params: {
 		? others.filter(currentStoredRecord({ root, tree })).map(withoutTddStep)
 		: []
 	const records = [...own, ...stored]
-	const heads = new Set(records.map((record) => record.head))
+	return gateStepLines({
+		records,
+		stateHash: hashStateTree(tree),
+		outsideHistory: commitsOutsideHistory({ root, records }),
+	})
+}
+
+/**
+ * A contributor's contrib rows: the rules, the package steps and release from the contrib record of the checked
+ * tree, then the live `mutation` row (`pendingVerdict`). The record counts when its key is the one the `contrib`
+ * guard asks for: a contrib run at `head` (the lots file's HEAD) on that tree, against what is installed now, with
+ * the package's contrib rows. Without one, the worktree's last contrib record, each row stale and saying what
+ * changed since (the tree, HEAD, or the install and the rows); without either, one failed `contrib` line saying to
+ * run it.
+ */
+export function buildContribLines(params: {
+	root: string
+	folder: string
+	tree: string
+	branch: string
+	mergedBranches: readonly string[]
+	/** The commit the contrib run must have been made at: the lots file's HEAD. Default: HEAD. */
+	head?: string
+}): CardGateLine[] {
+	const { root, tree } = params
+	const head = readGit({ root, args: ['rev-parse', `${params.head ?? 'HEAD'}^{commit}`] }).trim()
+	const current = findStoredContribRecord({ root, tree, head })
+	const record = current ?? readContribRecord(root)
+	if (!record)
+		return [
+			{ name: CONTRIB_LINE_NAME, status: 'failed', detail: CONTRIB_NEVER_RUN_DETAIL },
+			...buildMutationLines(params),
+		]
+	const outsideHistory = commitsOutsideHistory({ root, records: [record] })
+	const source = recordSourceOf({ record, outsideHistory })
+	const staleSuffix = current
+		? undefined
+		: record.stateHash !== hashStateTree(tree)
+			? TREE_CHANGED_SUFFIX
+			: record.head !== head
+				? CONTRIB_HEAD_MOVED_SUFFIX
+				: CONTRIB_KEY_CHANGED_SUFFIX
 	return [
-		...gateStepLines({
-			records,
-			stateHash: hashStateTree(tree),
-			outsideHistory: new Set(
-				[...heads].filter(
-					(head) => !isAncestorCommit({ root, ancestor: head, descendant: 'HEAD' }),
-				),
-			),
+		...record.steps.map(function contribLine(step): CardGateLine {
+			const line = {
+				...withRecordSource({ line: lineOfStep(step), record, outsideHistory }),
+				...(source && { source }),
+			}
+			return staleSuffix === undefined ? line : staleLine({ line, suffix: staleSuffix })
 		}),
-		rulesLine({ record: readRulesRecord(root), stateHash: params.stateHash }),
-		...mutationLines(params),
-		reviewLine(params.folder),
+		...buildMutationLines(params),
 	]
 }
 
@@ -104,7 +138,7 @@ export function buildCardGateLines(params: {
  * The `mutation` line: what the package still owes, read from the mutation store now (`pendingVerdict`); none
  * when the package declares no mutation scope.
  */
-function mutationLines(params: {
+export function buildMutationLines(params: {
 	root: string
 	folder: string
 	tree: string
@@ -122,6 +156,33 @@ function mutationLines(params: {
 	return verdict
 		? [{ name: MUTATION_GATE_NAME, status: verdict.status, detail: verdict.detail }]
 		: []
+}
+
+/** The stored contrib record of `tree` keyed as the guard asks; none when the package's contrib rows cannot be read. */
+function findStoredContribRecord(params: {
+	root: string
+	tree: string
+	head: string
+}): GateRecord | undefined {
+	try {
+		return findContribRecord(params)
+	} catch {
+		// a package.json contrib itself would refuse: nothing stored can be told current (the card still prints)
+		return undefined
+	}
+}
+
+/** The commits of `records` outside HEAD's history: a line of such a record says which. */
+function commitsOutsideHistory(params: {
+	root: string
+	records: readonly GateRecord[]
+}): ReadonlySet<string> {
+	const heads = new Set(params.records.map((record) => record.head))
+	return new Set(
+		[...heads].filter(
+			(head) => !isAncestorCommit({ root: params.root, ancestor: head, descendant: 'HEAD' }),
+		),
+	)
 }
 
 /**
@@ -231,15 +292,21 @@ function withRecordSource(params: {
 	record: GateRecord
 	outsideHistory: ReadonlySet<string>
 }): CardGateLine {
-	const { line, record } = params
-	const source =
-		record.origin === REHEARSAL_ORIGIN
-			? REHEARSAL_RECORD_DETAIL
-			: !params.outsideHistory.has(record.head)
-				? ''
-				: RECORD_FROM_DETAIL.replace('{head}', record.head.slice(0, SHORT_SHA_LENGTH))
+	const { line } = params
+	const source = recordSourceOf(params)
 	if (!source) return line
 	return { ...line, detail: [line.detail, source].filter(Boolean).join(DETAIL_SEPARATOR) }
+}
+
+/** `rehearsal` for a rehearsal's record, `from <commit>` for one made outside HEAD's history; else none. */
+function recordSourceOf(params: {
+	record: GateRecord
+	outsideHistory: ReadonlySet<string>
+}): string | undefined {
+	const { record } = params
+	if (record.origin === REHEARSAL_ORIGIN) return REHEARSAL_RECORD_DETAIL
+	if (!params.outsideHistory.has(record.head)) return undefined
+	return RECORD_FROM_DETAIL.replace('{head}', record.head.slice(0, SHORT_SHA_LENGTH))
 }
 
 function lineOfStep(step: RecordedStep): CardGateLine {
@@ -299,18 +366,24 @@ function errorsAndWarnings(params: { errors?: number; warnings?: number }): stri
  * turns `!`.
  */
 function withTreeCheck(params: { line: CardGateLine; current: boolean }): CardGateLine {
+	if (params.current) return params.line
+	return staleLine({ line: params.line, suffix: TREE_CHANGED_SUFFIX })
+}
+
+/** A line of a record that no longer answers: `suffix` after its detail; a failed step stays `✗`, any other line turns `!`. */
+function staleLine(params: { line: CardGateLine; suffix: string }): CardGateLine {
 	const { line } = params
-	if (params.current) return line
 	return {
-		name: line.name,
+		...line,
 		status: line.status === 'failed' ? 'failed' : 'warning',
-		detail: `${line.detail}${TREE_CHANGED_SUFFIX}`,
+		detail: `${line.detail}${params.suffix}`,
 		stale: true,
 	}
 }
 
-function rulesLine(params: { record: RulesRecord | undefined; stateHash: string }): CardGateLine {
-	const { record } = params
+/** The `rules` line from the worktree's rules record: stale when it is of another tree than `stateHash`'s. */
+export function buildRulesLine(params: { root: string; stateHash: string }): CardGateLine {
+	const record = readRulesRecord(params.root)
 	if (!record) return { name: RULES_LINE_NAME, status: 'warning', detail: NEVER_RUN_DETAIL }
 	return withTreeCheck({
 		line: {
@@ -327,7 +400,7 @@ function rulesLine(params: { record: RulesRecord | undefined; stateHash: string 
  * holds no row yet, `✗` when a blocking or should-fix row is; the rounds are the highest of the rows' and
  * the snapshots'.
  */
-function reviewLine(folder: string): CardGateLine {
+export function buildReviewLine(folder: string): CardGateLine {
 	const ledgerPath = join(folder, LEDGER_FILE)
 	if (!existsSync(ledgerPath))
 		return { name: REVIEW_LINE_NAME, status: 'warning', detail: NO_LEDGER_DETAIL }

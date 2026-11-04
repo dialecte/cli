@@ -41,6 +41,7 @@ dialecte handover --legend      # every term of the hand-over card: what it mean
 dialecte worktree add|prune     # a worktree ready to work in (sibling links, node_modules checked); what a merge left behind
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
 dialecte record choice <folder> --by <who> <decision>   # a decision made outside the ledger, in decisions.md
+dialecte record standard <folder> consulted <note>      # the standard check, read by the card's standard line
 dialecte recap <folder>    # the pull request's expandable part, built from the hand-over's records only
 dialecte mutants run|status|schedule|abandon|migrate|judge|record|drop   # mutation testing of the declared scope; survivors tracked until handled
 dialecte text check <file> # the human part of a GitHub text: its fixed headings and its word cap
@@ -217,6 +218,28 @@ whose skills were synced without the contributor ones; an invalid value is an er
 `contrib.steps` replaces the default package steps (`docs`, `type-bench`); `[]` keeps the built-in rows only
 (`rules`, `release`). See the command under [Contributing to a Dialecte package](#contributing-to-a-dialecte-package).
 
+The hand-over follows the profile:
+
+- A consumer's card holds, in `gates`, the gate steps, the review and the standard line, and a `mutation`
+  line only when a scope is declared: no `rules`, `docs`, `type-bench` or `release` line, no contrib
+  section. `handover run` has no `contrib` guard; its `references` guard refuses `a standard citation`.
+- A contributor's card has the same `gates` and a `contrib` section after them: the rows of the
+  `dialecte contrib` record of the tree the lots leave (`rules`, the package's steps, `release`), then the
+  live `mutation` row. Every row green: one line, `✓ contrib  rules · docs · type-bench · release`, with the
+  record's source (`· rehearsal`, `· from <commit>`); any `!` or `✗`: one line per row. No record of the
+  tree: `✗ contrib  never run: dialecte contrib`. `handover run` checks a `contrib` guard between
+  `references` and `mutation`: a green contrib record of the tree the lots leave, at the lots file's HEAD,
+  against what is installed now; else `no green dialecte contrib of this tree: run dialecte contrib`, or the
+  failed rows' names. Its `references` guard refuses `a plan tag or a standard citation`. A rehearsal never
+  stops at the guard (a refusal prints `! contrib  ... (the real run refuses; the rehearsal goes on)`): when
+  the tree the lots leave has no green contrib record (a merge lot's merged tree too), it runs
+  `dialecte contrib` in its scratch clone first, at the lots file's HEAD, and the card reads that record
+  `· rehearsal`. When the lots change what the record is keyed by (a merge bringing other contrib steps, the
+  install, the linked dependencies), no record can answer the real run: the rehearsal says which part, and
+  does not run contrib.
+- Both profiles get the card's `standard` line (see the hand-over card below) and
+  `dialecte record standard <folder> consulted <note> | not-consulted <reason>`.
+
 ## Contributing to a Dialecte package
 
 Twelve commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
@@ -233,7 +256,7 @@ the answer.
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
   in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
-  and warnings), which the hand-over card reads; a run on named files records nothing.
+  and warnings), which `dialecte recap` reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
   runner's defaults: every file in parallel). The docs build and the type bench are contributor checks:
@@ -494,9 +517,10 @@ the answer.
   `commit.sh` that runs
   `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
   installs no cli that can, it says so in one line with the fix) - and prints the hand-over card, the
-  command with its absolute `cd` under it. `--json` answers the card as data: the verdict, `failedGates`,
-  `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name, status, detail),
-  `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, and each lot with
+  command with its absolute `cd` under it. `--json` answers the card as data: the verdict, `profile`,
+  `failedGates`, `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name,
+  status, detail), `contrib` (a contributor's contrib rows, one per row: name, status, detail, and `stale`
+  or `source` - `rehearsal`, `from <commit>` - when they apply), `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, and each lot with
   `pending` until it is committed. Edited a file after the review? `--rehash` (also after
   editing `lots.json`). The repository stays held until every lot is committed: `dialecte gate` runs
   only under this hand-over (see `gate`), and a hand-over of another folder is refused, naming the script
@@ -516,13 +540,12 @@ the answer.
   - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`,
     `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
     `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
-    since the hook names its own scripts, not the gate's steps), then `rules` from its record, then
-    `mutation` when the package declares a mutation scope (below), then
-    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots. `✓` passed; `!` to
-    look at (a step not run here, with its reason, or not run after a failure; `rules` never run; no
+    since the hook names its own scripts, not the gate's steps), then, in a consumer, `mutation` when the
+    package declares a mutation scope (below), then
+    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots, then `standard`. `✓`
+    passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
-    failed step,
-    a rules error, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
+    failed step, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
     record). The records read are the worktree's last runs and the store's records of the tree the
     hand-over commits - the worktree's tree, or for a hand-over holding a merge lot the tree its last lot
     leaves (the trial merge with its resolutions) - the newest record of each step winning; a tdd step
@@ -547,6 +570,22 @@ the answer.
     `dialecte mutants schedule <follow-up> <key>`; rerun a died run or `dialecte mutants abandon <run id>`;
     wait for a running run; run `dialecte mutants run` on the tree for a gate lot. The switch is the
     hand-over folder's `lot.json` when it holds one, else `.dialecte/lot.json`.
+    The `standard` line says whether the standard was consulted. A standard is configured when
+    `DIALECTE_STANDARD` names a file or folder that exists (the environment only: no committed file names
+    it). `✓ standard  consulted · <note>` when one is configured and the station recorded a consultation;
+    `✗ standard  configured, not consulted: dialecte record standard <folder> consulted <note>` (blocks) when
+    one is configured and none is recorded; `! standard  not consulted: none configured (DIALECTE_STANDARD)`
+    otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. The station records it
+    with `dialecte record standard <folder> consulted <note>` or `not-consulted <reason>`.
+  - `contrib` (a contributor's): the rows of the `dialecte contrib` record of the tree the hand-over commits,
+    read as gate lines (`rules` with its errors and warnings, the package's steps, `release`), then the live
+    `mutation` row. A stored record counts when its key is the one the `contrib` guard asks for: a run at
+    the lots file's HEAD on that tree, against what is installed now, with the package's contrib rows. Else
+    the worktree's last contrib record, each row stale and saying what changed: `(the tree changed since)`,
+    `(HEAD moved since: run dialecte contrib again)`, or `(the install or the contrib rows changed since)`;
+    else `✗ contrib  never run: dialecte contrib`. Every row green prints one line naming the rows, with the
+    record's source; any other row expands the section to one line per row. A failed or stale row counts
+    with the failed gates and the gates of another tree.
   - `tdd`: the lot's exemption; only the cases of the change count, those the gate's tdd step listed on
     this tree (a retitled or removed case's receipts are not counted under the old title); without a gate
     record of this tree that lists them, one line `counts from the last gate: run the gate on this tree`
@@ -577,7 +616,9 @@ the answer.
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
-  lots, references (citations, declared patterns, and the tags of a contributor), and last `mutation`: the card's `mutation` verdict computed again when the
+  lots, references (citations, declared patterns, and the tags of a contributor), `contrib` in a contributor
+  (a green `dialecte contrib` record of the tree the lots leave, at the lots file's HEAD, against what is
+  installed now; a rehearsal never stops there), and last `mutation`: the card's `mutation` verdict computed again when the
   guard runs (never taken from the card), so a run that reported a survivor, or died, after the card was
   written refuses the run with exit 1 and nothing committed (`✗ mutation <detail>`, each survivor and died
   run indented under it, then what to do with each); a run still running on a plain hand-over passes with
@@ -641,8 +682,12 @@ the answer.
   commits on: `main moved: ...`), `no green record of the tip's tree <tree>`; `--rehearse --full`
   rehearses every lot (`--full`). The decisions go to `rehearsal.json` in the hand-over folder
   (when, and per lot its tree, `reused` or `rehearsed`, the reason and the record reused: mode, time,
-  HEAD). When every lot is reused no clone is made: the guards, a reused merge's `tree <sha>`, then
-  `rehearsal skipped: every lot's tree has a green record` and the card. Otherwise the clone is made and
+  HEAD, and `contrib: "run"` on a contributor's last lot whose tree has no green contrib record). When every
+  lot is reused and no contrib run is needed, no clone is made: the guards, a reused merge's `tree <sha>`,
+  then `rehearsal skipped: every lot's tree has a green record` and the card. Otherwise the clone is made
+  (`▶ rehearsal contrib` then runs `dialecte contrib` in it at the lots file's HEAD on the tree the lots
+  leave, before any commit, its record going to the repository's store as a rehearsal's; the clone is put
+  back after it, the files the run left removed) and
   the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
   others with their hook. A real run (no `--rehearse`) runs every commit's hook, whatever the store holds.
   The rehearsal clone (`▶ rehearsal clone`) warns naming the untracked files outside
@@ -853,6 +898,10 @@ the answer.
   `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
   `git --no-optional-locks`, so it never rewrites an index. `handover list` follows a link to a hand-over
   folder and lists a folder reached by its path and through a link once.
+- `dialecte record standard <folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
+  (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
+  references of what was read stay in the findings ledger. Another state, or no note, is a usage error
+  (exit 2); a folder inside a repository is refused as below.
 - `dialecte record review|decision|snapshot` and `dialecte review delta` keep a lot's review rounds in its
   hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
   folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the

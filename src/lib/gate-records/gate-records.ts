@@ -60,7 +60,8 @@ function readHead(root: string): string {
 /**
  * Records a gate run (or a `dialecte contrib` run) that reached its steps: the tdd step and the configured ones, in run order, with the
  * key of what it checked. A run refused at the hygiene records nothing. A run whose
- * configured steps ran also goes to the repository's store of records by tree; a run answered from a
+ * configured steps ran also goes to the repository's store of records by tree (a rehearsal's to the store of the
+ * repository it cloned, marked as a rehearsal's); a run answered from a
  * record (`reused`) and a run stopped at its tdd step do not: they checked nothing of the tree. Answers
  * whether the record went to the store.
  */
@@ -77,6 +78,8 @@ export function recordGate(params: {
 	checkedTree?: string
 	/** The record the run was answered from: its time and HEAD. */
 	reused?: { at: string; head: string }
+	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
+	storeRoot?: string
 }): boolean {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
@@ -92,13 +95,14 @@ export function recordGate(params: {
 			.map(recordedStepOf),
 		...(params.key && { key: params.key }),
 		...(params.reused && { reused: params.reused }),
+		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(params.mode), record })
 	const tddFailed = params.results.some(
 		(result) => result.step.name === TDD_STEP.name && result.status === 'failed',
 	)
 	const stored = Boolean(params.key) && !params.reused && !tddFailed
-	if (stored) storeCheckRecord({ root: params.root, record })
+	if (stored) storeCheckRecord({ root: params.storeRoot ?? params.root, record })
 	return stored
 }
 
@@ -185,6 +189,11 @@ export function readJudgedCases(params: {
 		if (cases) return new Map(cases.map((judged) => [judged.label, judged.status]))
 	}
 	return undefined
+}
+
+/** The last `dialecte contrib` record of the worktree `root` is in; undefined when none. */
+export function readContribRecord(root: string): GateRecord | undefined {
+	return readRecord<GateRecord>({ root, name: gateRecordName('contrib') })
 }
 
 /** The rules record of the worktree `root` is in; undefined when none. */
