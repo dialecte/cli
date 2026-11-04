@@ -1,8 +1,8 @@
 /**
- * The hand-over card: the verdict (READY, BLOCKED, DONE) with the size and what to read, what is committed
- * (each lot, a merge with its tree, HEAD), the gates as their records say (with the review and the standard
- * check), a contributor's contrib rows, the test receipts, the notes (before a run only), and the command, before
- * and after the run.
+ * The hand-over card: the verdict (READY, BLOCKED, DONE, ABANDONED) with the size and what to read, what is
+ * committed (each lot, a merge with its tree, HEAD), the gates as their records say (with the review and the
+ * standard check), a contributor's contrib rows, the test receipts, the notes (before a run only), the command,
+ * before and after the run, and a closing rule naming the hand-over (its registered name, else its folder).
  */
 import { basename } from 'node:path'
 
@@ -42,6 +42,7 @@ import {
 	readLedger,
 	resolveBase,
 } from '../tdd/tdd-files.ts'
+import { registeredNameOf } from './handover-store.ts'
 import {
 	ACCEPTED_REASON_INDENT,
 	ALL_GATES_GREEN,
@@ -52,6 +53,8 @@ import {
 	EARLIER_LOTS_LINE,
 	FLAG_ORDER,
 	HANDOVER_CARD_FOOTER,
+	HANDOVER_CARD_NAMED_FOOTER,
+	SHELL_PLAIN_WORD,
 	HANDOVER_CARD_SECTIONS,
 	HANDOVER_CARD_TITLE,
 	HANDOVER_PROBE_TIMEOUT_MILLISECONDS,
@@ -121,6 +124,8 @@ export function buildHandoverCard(params: {
 	probeTimeout?: number
 	/** Every lot is committed in the repository: the card says done, no command. */
 	done?: boolean
+	/** `handover abandon` marked the hand-over: the card says abandoned, no command. */
+	abandoned?: boolean
 	/** Asks whether the repository's own cli runs hand-overs. */
 	probe: HandoverProbe
 }): HandoverCard {
@@ -128,6 +133,7 @@ export function buildHandoverCard(params: {
 	const commitRoot = params.commitRoot ?? root
 	const ownCli =
 		params.done ||
+		params.abandoned ||
 		params.cliPath === undefined ||
 		params.probe({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
 	const stateTree = computeStateTree(root)
@@ -192,11 +198,14 @@ export function buildHandoverCard(params: {
 		}
 	})
 	const merges = lots.flatMap((lot) => (lot.merge ? [`lot ${lot.index}: ${lot.merge}`] : []))
-	const verdict: HandoverVerdict = params.done
-		? 'DONE'
-		: failedGates.length || otherTreeGates.length
-			? 'BLOCKED'
-			: 'READY'
+	const verdict: HandoverVerdict = params.abandoned
+		? 'ABANDONED'
+		: params.done
+			? 'DONE'
+			: failedGates.length || otherTreeGates.length
+				? 'BLOCKED'
+				: 'READY'
+	const name = registeredNameOf({ root, folder: params.folder })
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
@@ -215,6 +224,8 @@ export function buildHandoverCard(params: {
 		...(params.commits.length && { tip: params.commits.at(-1) }),
 		...(merges.length && { merges }),
 		...(params.done && { done: true }),
+		...(name && { name }),
+		folder: params.folder,
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
@@ -594,8 +605,17 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 			...(card.tdd?.length ? [{ name: HANDOVER_CARD_SECTIONS.tdd, lines: card.tdd }] : []),
 			...optionalSection({ name: HANDOVER_CARD_SECTIONS.notes, text: card.notes }),
 		],
-		footer: HANDOVER_CARD_FOOTER,
+		footer: footerOf(card),
 	}
+}
+
+/** The closing rule: the hand-over's registered name, else its folder, so a partial copy still names it. */
+function footerOf(card: HandoverCard): string {
+	const id = card.name ?? card.folder
+	if (!id) return HANDOVER_CARD_FOOTER
+	// one shell word, so the footer's commands run as copied; a plain path stays as it reads
+	const word = SHELL_PLAIN_WORD.test(id) ? id : shellQuote(id)
+	return HANDOVER_CARD_NAMED_FOOTER.replaceAll('{id}', word)
 }
 
 /**

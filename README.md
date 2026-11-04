@@ -36,7 +36,7 @@ dialecte gate [--full]     # the package's Definition of Done, with the real cou
 dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte new verb <namespace> <query|transaction> <name>
-dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (run, list)
+dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (show, run, abandon, list)
 dialecte handover --legend      # every term of the hand-over card: what it means, whether to look
 dialecte worktree add|prune     # a worktree ready to work in (sibling links, node_modules checked); what a merge left behind
 dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
@@ -517,10 +517,21 @@ the answer.
   `commit.sh` that runs
   `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
   installs no cli that can, it says so in one line with the fix) - and prints the hand-over card, the
-  command with its absolute `cd` under it. `--json` answers the card as data: the verdict, `profile`,
+  command with its absolute `cd` under it. The folder is the lots file's, or `--out <dir>`. Every hand-over
+  written is registered in the repository's store, `<git common dir>/dialecte-handover/`: shared by every
+  worktree of the repository, kept when a worktree is removed, never in the working tree. The store holds
+  one entry per hand-over, `<name>.json` = `{ folder, branch, worktree, written, state }` (the folder's
+  absolute path, the lots file's branch and repository, when it was written, and its state as last
+  recorded: `pending` when written, `committed` by a real run that commits every lot, `abandoned` by
+  `handover abandon`); the folder stays where it was written. The name is `<yyyy-mm-dd>-<branch slug>[-<n>]` -
+  the local date, the branch with every run of characters outside `[A-Za-z0-9._-]` (the `/` included)
+  turned into one `-`, then `-2`, `-3`... when that name has an entry already. A folder registered already
+  (the same real path) keeps its name: `--rehash` updates its entry, never a second one. A rehearsal and
+  `show` write no entry. `--json` answers the card as data: the verdict, `profile`,
   `failedGates`, `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name,
   status, detail), `contrib` (a contributor's contrib rows, one per row: name, status, detail, and `stale`
-  or `source` - `rehearsal`, `from <commit>` - when they apply), `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, and each lot with
+  or `source` - `rehearsal`, `from <commit>` - when they apply), `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, `name` (the
+  hand-over's registered name; absent for a folder with no entry), and each lot with
   `pending` until it is committed. Edited a file after the review? `--rehash` (also after
   editing `lots.json`). The repository stays held until every lot is committed: `dialecte gate` runs
   only under this hand-over (see `gate`), and a hand-over of another folder is refused, naming the script
@@ -608,9 +619,12 @@ the answer.
   - `notes`: the lots file's `gates` text, as written; only on the cards printed before a run (the
     written card, a rehearsal's), never on the card after a real run.
 
-  Its closing rule reads `dialecte handover --legend · details: dialecte tdd status` (in a box too narrow
-  for it, that text is printed inside, above a plain closing rule). The command stays
-  under the box until every lot is committed. `dialecte handover --legend` prints every term the card can
+  Its closing rule names the hand-over, so a part of the card copied alone still says which one it is:
+  `dialecte handover show <id> · run <id> · --legend · details: dialecte tdd status`, `<id>` the
+  hand-over's registered name, or its folder's absolute path when it has no entry (a folder written by an
+  earlier cli; in a box too narrow for it, that
+  text is printed inside, above a plain closing rule) - on the written card, `show`'s, a run's and a
+  rehearsal's. The command stays under the box until every lot is committed. `dialecte handover --legend` prints every term the card can
   print, each in two lines: what it means, and whether to look.
 
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
@@ -750,9 +764,43 @@ the answer.
   (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
   the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a
   folder that holds a `lot.json` already (a second run) leave the lot file as it is.
+- `dialecte handover show [<name|folder>] [--json]` prints a hand-over's card again, recomputed from its
+  folder (the lots file, the snapshot) and the records - the lots found committed from the lots file's HEAD
+  to the tip of its branch, `DONE` when every lot is - and writes nothing: not in the folder, the store,
+  the worktree or its index, nor a lock or a run marker. A word without a path separator that names an
+  entry of the store is that entry's folder; anything else is a path (relative to the current folder), and
+  a registered folder given by its path still gets its name on the card. Without an argument: the newest
+  registered hand-over of the current branch (the latest date, then the highest counter, from the name),
+  whatever its state; none for the branch: the store's entries, one `name  branch  state` line each, exit
+  1 (an empty or missing store says so, exit 1). While the folder exists its state is the folder's own
+  (abandoned, pending, partly committed, committed, stale); a folder removed is `gone`: listed, never run,
+  never shown as a card (exit 1, naming the missing folder). After the box, when a file of a lot not yet committed
+  (or `lots.json`) differs from what was reviewed, a deleted one included:
+  `<n> file(s) differ from the reviewed snapshot: re-gate, then dialecte handover <folder>/lots.json --rehash`;
+  then the run command on its own line, none once done or abandoned. Colour and width as the written
+  card. An unknown name, or a folder that is no hand-over: exit 2, naming it. `--json` answers the card
+  as data with its `folder` and `name`, as `dialecte handover --json` does, and `changedSinceReview` (the
+  count of that line).
+- `dialecte handover run` without a folder runs the one registered hand-over still to run (its folder
+  pending or partly committed; `--rehearse` too): an abandoned, committed, stale or gone one is skipped.
+  Two or more: refused, nothing run and no run marker, one `name  branch  verdict` line each (`READY` or
+  `BLOCKED`, computed as `show` does), exit 2; none: says so, exit 1. `handover run <name>` runs that
+  registered hand-over (a gone one: exit 2, naming its folder).
+- `dialecte handover abandon [<name|folder>]` gives up a hand-over that will not run: it writes
+  `abandoned.json` (when) in its folder, records its entry `abandoned`, then removes the lock of its worktree when the lock names this
+  folder's `commit.sh` (a lock naming another hand-over is left, said in one line). Without an argument:
+  the hand-over the current worktree's lock names; no lock: says nothing is held, exit 1. Refused (exit 2,
+  nothing written) while a real run of it is in progress, and once every lot is committed; a partly
+  committed one may be abandoned, its commits stay. It never touches the index, a ref or a commit. An
+  abandoned hand-over is `abandoned` in `list` and `show`'s listing, `ABANDONED` on its card (no run
+  command); `run` without a folder skips it, `run <it>` refuses (exit 2, naming the marker); abandoning it
+  again says it already is (exit 0), and `dialecte handover <lots.json> --rehash` of its folder is refused
+  (exit 2, nothing written, naming `abandoned.json`): write a new hand-over into a new folder instead. A run
+  and an abandon started at the same moment never both go on: each reads the other's marker again after
+  writing its own, and one that finds it refuses (exit 2), nothing committed or abandoned.
 - `dialecte handover list [--root <dir>] [--json]` lists every hand-over folder under the workspace's
   `_commit-plan/` (or the folder given, or the current one): repository, worktree, branch, lots, age, and
-  its state - pending, partly committed, committed, or stale when something else moved the branch. A
+  its state - pending, partly committed, committed, abandoned, or stale when something else moved the branch. A
   folder holding a hand-written `commit*.sh` and no lots file shows as "legacy script, state unknown".
 - `dialecte worktree add <repository> <branch> [--from <ref>] [--json]` makes a worktree under the
   workspace's `.worktrees/<repository>-<branch tail>` (the last segment of the branch: `core-depth` for

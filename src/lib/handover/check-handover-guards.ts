@@ -37,6 +37,11 @@ import {
 } from './handover.constants.ts'
 import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
+import {
+	differingSnapshotLines,
+	isLotsFileAsReviewed,
+	snapshotPathOf,
+} from './reviewed-snapshot.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { hashFile } from './write-handover.ts'
 
@@ -103,7 +108,7 @@ export function checkHandoverGuards(params: {
 						ok: false,
 						detail: `${HANDOVER_FILES.merges} changed since the hand-over was written: \`dialecte handover --rehash <lots.json>\` after a review`,
 					}
-				return hashFile(join(handover.folder, HANDOVER_FILES.lots)) === handover.lotsHash
+				return isLotsFileAsReviewed(handover)
 					? { ok: true, detail: `${lots.length} lot(s) as reviewed` }
 					: {
 							ok: false,
@@ -205,16 +210,12 @@ export function checkHandoverGuards(params: {
 		{
 			name: 'snapshot',
 			check: function filesAsReviewed() {
-				const differing = handover.snapshotLines.filter(function differs(line) {
-					const [hash, ...pathParts] = line.split('  ')
-					const path = join(root, pathParts.join('  '))
-					return !isPresent(path) || hashFile(path) !== hash
-				})
+				const differing = differingSnapshotLines({ root, snapshotLines: handover.snapshotLines })
 				return differing.length
 					? {
 							ok: false,
 							detail: `${differing.length} file(s) differ from the reviewed snapshot: \`dialecte handover --rehash <lots.json>\` after a review`,
-							lines: differing.map((line) => line.split('  ').slice(1).join('  ')),
+							lines: differing.map(snapshotPathOf),
 						}
 					: { ok: true, detail: `${handover.snapshotLines.length} file(s)` }
 			},

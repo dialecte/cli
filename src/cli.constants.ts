@@ -194,9 +194,18 @@ Contributing (inside a dialecte repository):
                              # verb, types, red test (only: true), barrel export, namespace registration
   dialecte handover <lots.json> [--out <dir>] [--rehash] [--json] | handover --legend
                              # the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card;
-                             # refuses files in no lot, tags, citations, a missing core.hooksPath folder;
-                             # --legend: every term of the card, what it means, whether to look
-  dialecte handover run <folder> [--rehearse [--keep] [--full]] [--resume-merge]
+                             # registered in <git common dir>/dialecte-handover/<name>.json, <name> =
+                             # <yyyy-mm-dd>-<branch slug>[-<n>]; refuses files in no lot, tags, citations, a
+                             # missing core.hooksPath folder; --legend: every term of the card, what it means,
+                             # whether to look
+  dialecte handover show [<name|folder>] [--json]
+                             # the card again, recomputed, nothing written; without an argument the newest
+                             # hand-over of the current branch; the files changed since the review, the run line
+  dialecte handover abandon [<name|folder>]
+                             # marks a hand-over that will not run (abandoned.json) and releases its lock;
+                             # without an argument the one the worktree's lock names
+  dialecte handover run [<name|folder>] [--rehearse [--keep] [--full]] [--resume-merge]
+                             # without a folder: the one registered hand-over still to run (two: refused, listed);
                              # what commit.sh runs: each guard with its time, each lot announced (a spinner on
                              # a terminal), the hook live, its full log, the card; a rerun resumes; --rehearse
                              # commits in a scratch clone, without the hook a lot whose tree has a green
