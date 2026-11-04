@@ -17,6 +17,12 @@ export type ContribPackageParams = {
 	gateFast?: GateStep[]
 	/** `dialecte.gate.full`. */
 	gateFull?: GateStep[]
+	/** `dialecte.mutation`: the declared mutation scope. */
+	mutation?: Record<string, unknown>
+	/** `dialecte.standard`: a path the package must not be able to name the standard by. */
+	standard?: string
+	/** `dialecte.allowReferences`. */
+	allowReferences?: string[]
 	/** `dialecte.generatedDocs`. */
 	generatedDocs?: string[]
 	/** More package.json fields (`scripts`, `devDependencies`). */

@@ -35,6 +35,7 @@ import {
 	readWorktreeState,
 	workTreeTopOf,
 } from '../lib/review-rounds/worktree-state.ts'
+import { recordStandard } from '../lib/standard/record-standard.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 
@@ -51,6 +52,7 @@ export function runRecord(params: { cwd: string; argv: string[]; now?: Date }): 
 		if (subcommand === 'review') return recordReview({ cwd: params.cwd, argv })
 		if (subcommand === 'decision') return recordDecision({ cwd: params.cwd, argv })
 		if (subcommand === 'snapshot') return recordSnapshot({ cwd: params.cwd, argv })
+		if (subcommand === 'standard') return recordStandard({ cwd: params.cwd, argv, now: params.now })
 	} catch (error) {
 		return { exitCode: 1, output: `record: ${(error as Error).message}` }
 	}

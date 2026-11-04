@@ -19,6 +19,7 @@ const CARD: HandoverCard = {
 	failedGates: [],
 	otherTreeGates: [],
 	declarations: 1,
+	profile: 'consumer',
 	gates: [
 		{ name: 'check', status: 'passed', detail: '3839 passed · 20 skipped' },
 		{ name: 'tdd', status: 'passed', detail: '14/14' },

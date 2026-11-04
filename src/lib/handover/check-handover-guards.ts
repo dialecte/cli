@@ -3,25 +3,38 @@
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
  * the merge lots (none in progress, trees recorded, resolutions as reviewed), an empty index, the files
  * against the reviewed snapshot, the deleted files, files outside the lots,
- * plan tags or standard citations in the lots' files and messages, and what the package still owes its
- * mutation runs.
+ * plan tags (a contributor's) or standard citations in the lots' files and messages, a contributor's green
+ * `dialecte contrib` of the tree the lots leave, and what the package still owes its mutation runs.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { findContribRecord } from '../contrib/contrib-key.ts'
 import { isPresent } from '../file-system.ts'
+import { isGreenRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
+import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
-import { GUARD_NAME_WIDTH, HANDOVER_FILES } from './handover.constants.ts'
+import {
+	CONSUMER_REFERENCES_DETAIL,
+	CONTRIB_GUARD_NAME,
+	CONTRIBUTOR_REFERENCES_DETAIL,
+	FAILED_CONTRIB_DETAIL,
+	GREEN_CONTRIB_DETAIL,
+	GUARD_NAME_WIDTH,
+	HANDOVER_FILES,
+	NO_GREEN_CONTRIB_DETAIL,
+	REHEARSAL_CONTRIB_DETAIL,
+} from './handover.constants.ts'
 import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
@@ -46,11 +59,24 @@ export function checkHandoverGuards(params: {
 	rehearsal?: boolean
 	/** `--resume-merge`: a merge of the next lot's tip in progress, even someone else's, is aborted and redone. */
 	resumeMerge?: boolean
+	/**
+	 * A rehearsal whose contrib run in the clone cannot answer the real run: why (the lots change the contrib rows,
+	 * the install...). The `contrib` guard says that rather than advising a run.
+	 */
+	contribUnanswerable?: string
 }): GuardedRun | undefined {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
 	const root = lotsFile.repository
 	const run: GuardedRun = { head: '', commits: [] }
+	// an install a signal or a crash interrupted left the working package files in a backup
+	const leftover = existsSync(root) ? restoreLeftoverBackup(root) : undefined
+	if (leftover) {
+		write(`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`)
+		if (!leftover.ok) return undefined
+	}
+	// read once the working package files are the person's again
+	const profile = existsSync(root) ? readProfile(root) : undefined
 
 	const guards: { name: string; check: () => GuardVerdict }[] = [
 		{
@@ -225,10 +251,37 @@ export function checkHandoverGuards(params: {
 				})
 				const fileCount = lots.reduce((total, lot) => total + lot.files.length, 0)
 				return found.length
-					? { ok: false, detail: 'a plan tag or a standard citation', lines: found }
+					? {
+							ok: false,
+							detail:
+								profile === 'contributor'
+									? CONTRIBUTOR_REFERENCES_DETAIL
+									: CONSUMER_REFERENCES_DETAIL,
+							lines: found,
+						}
 					: { ok: true, detail: `${fileCount} file(s), ${lots.length} message(s)` }
 			},
 		},
+		...(profile === 'contributor'
+			? [
+					{
+						name: CONTRIB_GUARD_NAME,
+						check: function greenContrib(): GuardVerdict {
+							const verdict = checkContrib({ handover, run })
+							if (verdict.ok || !params.rehearsal) return verdict
+							// a rehearsal goes on past a refusal, marked so the person sees the real run would stop here
+							return {
+								ok: true,
+								warning: true,
+								detail: REHEARSAL_CONTRIB_DETAIL.replace(
+									'{detail}',
+									params.contribUnanswerable ?? verdict.detail,
+								),
+							}
+						},
+					},
+				]
+			: []),
 		{
 			name: MUTATION_GATE_NAME,
 			check: function nothingPendingInMutation() {
@@ -236,17 +289,11 @@ export function checkHandoverGuards(params: {
 			},
 		},
 	]
-	// an install a signal or a crash interrupted left the working package files in a backup
-	const leftover = existsSync(root) ? restoreLeftoverBackup(root) : undefined
-	if (leftover) {
-		write(`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`)
-		if (!leftover.ok) return undefined
-	}
 	for (const { name, check } of guards) {
 		const startedAt = clock.now()
 		const verdict = check()
 		write(
-			`${verdict.ok ? '✓' : '✗'} ${name.padEnd(GUARD_NAME_WIDTH)} ${verdict.detail}  ${formatDuration(clock.now() - startedAt)}`,
+			`${verdict.ok ? (verdict.warning ? '!' : '✓') : '✗'} ${name.padEnd(GUARD_NAME_WIDTH)} ${verdict.detail}  ${formatDuration(clock.now() - startedAt)}`,
 		)
 		for (const line of verdict.lines ?? []) write(`    ${line}`)
 		if (!verdict.ok) return undefined
@@ -349,6 +396,33 @@ function checkMutation(params: { handover: HandoverFolder; committed: number }):
 		ok: verdict.status !== 'failed',
 		detail: verdict.detail,
 		...(verdict.lines.length && { lines: verdict.lines }),
+	}
+}
+
+/**
+ * A contributor's contrib run of the tree the lots still to commit leave: a green record whose key is the one a run
+ * would have now (that tree, what is installed, the contrib rows) at the lots file's HEAD, before any lot is
+ * committed; else refused, naming the failed rows of a record of that key.
+ */
+function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): GuardVerdict {
+	const { lotsFile, lots } = params.handover
+	const root = lotsFile.repository
+	const tree = checkedTree({
+		root,
+		stateTree: computeStateTree(root),
+		lots: lots.slice(params.run.commits.length),
+	})
+	const record = findContribRecord({ root, tree, head: params.run.head })
+	if (record && isGreenRecord(record))
+		return { ok: true, detail: GREEN_CONTRIB_DETAIL.replace('{at}', originOfRecord(record).at) }
+	const failed = (record?.steps ?? [])
+		.filter((step) => step.status === 'failed')
+		.map((step) => step.name)
+	return {
+		ok: false,
+		detail: failed.length
+			? FAILED_CONTRIB_DETAIL.replace('{rows}', failed.join(', '))
+			: NO_GREEN_CONTRIB_DETAIL,
 	}
 }
 

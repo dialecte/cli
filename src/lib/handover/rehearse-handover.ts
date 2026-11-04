@@ -8,8 +8,10 @@
  *
  * Before any clone, each lot is decided (`planRehearsal`) and its line printed: a lot a green record of its
  * tree answers for is committed in the clone without its hook, the others with it; the decisions go to the
- * hand-over folder's `rehearsal.json`. When every lot is answered for, no clone is made: the guards, a
- * reused merge's tree, then the card. The hook records the clone makes go to the repository's store.
+ * hand-over folder's `rehearsal.json`. A contributor's hand-over whose tree has no green contrib record runs
+ * `dialecte contrib` in the clone first, on the tree the lots leave. When every lot is answered for (and no contrib
+ * run is needed), no clone is made: the guards, a reused merge's tree, then the card. The hook and contrib records
+ * the clone makes go to the repository's store.
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -28,7 +30,11 @@ import {
 import { constants } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
+import { contribKeyOf } from '../contrib/contrib-key.ts'
+import { runContrib } from '../contrib/run-contrib.ts'
 import { isPresent } from '../file-system.ts'
+import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
+import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, readGit, readGitConfig } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -38,6 +44,10 @@ import { createStepProgress } from '../progress/step-progress.ts'
 import { copyNodeModules } from '../worktree/copy-node-modules.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
+	CONTRIB_KEY_PARTS,
+	REHEARSAL_CONTRIB_LINE,
+	REHEARSAL_CONTRIB_UNANSWERABLE,
+	REHEARSAL_CONTRIB_STEP,
 	REHEARSAL_DECISION_LINE,
 	REHEARSAL_DECISION_WORDS,
 	REHEARSAL_DECISIONS_FILE,
@@ -52,6 +62,7 @@ import { linkRehearsalSiblings, removeRehearsalFolder } from './rehearsal-links.
 import { planRehearsal } from './rehearsal-plan.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
+import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type {
@@ -90,7 +101,10 @@ export async function rehearseHandover(params: {
 		join(handover.folder, REHEARSAL_DECISIONS_FILE),
 		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
 	)
-	const everyLotReused = decisions.every((decision) => decision.decision === 'reused')
+	const contribRun = decisions.find((decision) => decision.contrib === 'run')
+	// a contrib run of the tree the lots leave needs the clone, whatever the lots' records say
+	const everyLotReused =
+		!contribRun && decisions.every((decision) => decision.decision === 'reused')
 	for (const decision of decisions) {
 		write(
 			REHEARSAL_DECISION_LINE.replace('{number}', String(decision.lot))
@@ -101,6 +115,12 @@ export async function rehearseHandover(params: {
 		// no clone commits the merge: its tree, which the real run requires in the lot, is said here
 		if (everyLotReused && handover.lots[decision.lot - 1].merge)
 			write(REUSED_MERGE_TREE_LINE.replace('{tree}', decision.tree))
+		if (decision.contrib === 'run')
+			write(
+				REHEARSAL_CONTRIB_LINE.replace('{number}', String(decision.lot))
+					.replace('{count}', String(decisions.length))
+					.replace('{tree}', decision.tree.slice(0, SHORT_SHA_LENGTH)),
+			)
 	}
 	if (everyLotReused)
 		return runHandoverFolder({
@@ -161,6 +181,21 @@ export async function rehearseHandover(params: {
 			throw error
 		}
 		running.finish(`✓ rehearsal clone  ${formatDuration(params.clock.now() - startedAt)}`)
+		const contribUnanswerable = contribRun
+			? await runContribInClone({
+					repository,
+					clone,
+					branch: handover.lotsFile.branch,
+					head: readGit({
+						root: repository,
+						args: ['rev-parse', `${handover.lotsFile.head}^{commit}`],
+					}).trim(),
+					tree: contribRun.tree,
+					write,
+					progress,
+					clock: params.clock,
+				})
+			: undefined
 		return await runHandoverFolder({
 			handover,
 			commitRoot: clone,
@@ -180,6 +215,7 @@ export async function rehearseHandover(params: {
 					.map((decision) => decision.lot),
 			),
 			storeRoot: repository,
+			contribUnanswerable,
 		})
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
@@ -274,23 +310,8 @@ function prepareClone(params: {
 		if (value !== undefined) readGit({ root: clone, args: ['config', key, value] })
 	}
 
-	const changed = listChangedFiles({ root: repository, withDeleted: true })
-	for (const file of changed) {
-		const source = join(repository, file)
-		const target = join(clone, file)
-		if (isPresent(source)) {
-			mkdirSync(dirname(target), { recursive: true })
-			// a link is copied as the link it is (relative, never followed), as git commits it
-			if (lstatSync(source).isSymbolicLink()) {
-				rmSync(target, { force: true })
-				symlinkSync(readlinkSync(source), target)
-			} else cpSync(source, target)
-		} else {
-			rmSync(target, { force: true })
-			removeEmptiedFolders({ clone, folder: dirname(target) })
-		}
-	}
-	write(`  working tree: ${changed.length} changed file(s) on top of ${head.slice(0, 12)}`)
+	const changed = copyWorkingTree({ repository, clone })
+	write(`  working tree: ${changed} changed file(s) on top of ${head.slice(0, 12)}`)
 
 	const hooks = readHooksFolder(repository)
 	if (hooks.configured && isAbsolute(hooks.configured))
@@ -311,6 +332,105 @@ function prepareClone(params: {
 		)
 	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
+}
+
+/**
+ * The repository's working tree on top of the clone at HEAD: each changed, untracked or deleted file as it is in the
+ * repository. How many files were changed.
+ */
+function copyWorkingTree(params: { repository: string; clone: string }): number {
+	const { repository, clone } = params
+	const changed = listChangedFiles({ root: repository, withDeleted: true })
+	for (const file of changed) {
+		const source = join(repository, file)
+		const target = join(clone, file)
+		if (isPresent(source)) {
+			mkdirSync(dirname(target), { recursive: true })
+			// a link is copied as the link it is (relative, never followed), as git commits it
+			if (lstatSync(source).isSymbolicLink()) {
+				rmSync(target, { force: true })
+				symlinkSync(readlinkSync(source), target)
+			} else cpSync(source, target)
+		} else {
+			rmSync(target, { force: true })
+			removeEmptiedFolders({ clone, folder: dirname(target) })
+		}
+	}
+	return changed.length
+}
+
+/**
+ * `dialecte contrib` in the clone, before any lot is committed there: at the lots file's HEAD (the HEAD the real
+ * run's `contrib` guard keys the record with), on the tree the lots leave checked out over the working tree. Its
+ * record goes to the repository's store, marked as a rehearsal's, so the card reads it and the real run's guard
+ * accepts it. When the key the clone would record is not the one the guard asks for - the lots change the contrib
+ * steps (a merge bringing another `dialecte.contrib`), the install or the linked dependencies, or the clone does not
+ * hold the tree - no record of this hand-over can answer the real run: contrib is not run, and why is answered (and
+ * printed). Afterwards the clone is put back as it was: at its branch, the repository's working tree on top, the
+ * files the run left removed.
+ */
+async function runContribInClone(params: {
+	repository: string
+	clone: string
+	branch: string
+	/** The lots file's HEAD, as a full commit. */
+	head: string
+	tree: string
+	write: WriteLine
+	progress: StepProgress
+	clock: Clock
+}): Promise<string | undefined> {
+	const { repository, clone, head, tree, write } = params
+	const startedAt = params.clock.now()
+	const running = params.progress.start({
+		name: REHEARSAL_CONTRIB_STEP,
+		detail: `dialecte contrib on tree ${tree.slice(0, SHORT_SHA_LENGTH)}`,
+	})
+	const untrackedBefore = listUntracked(clone)
+	const moved = readGit({ root: clone, args: ['rev-parse', 'HEAD'] }).trim() !== head
+	try {
+		if (moved) readGit({ root: clone, args: ['checkout', '-q', '-f', '--detach', head] })
+		readGit({ root: clone, args: ['read-tree', '-u', '--reset', tree] })
+		const differing = differingKeyParts({
+			expected: contribKeyOf({ root: repository, tree, head }),
+			actual: contribKeyOf({ root: clone, tree: computeStateTree(clone), head }),
+		})
+		if (differing.length) {
+			const reason = REHEARSAL_CONTRIB_UNANSWERABLE.replace('{parts}', differing.join(', '))
+			running.finish(`! ${REHEARSAL_CONTRIB_STEP}  ${reason}`)
+			return reason
+		}
+		const result = await runContrib({ cwd: clone, argv: [], storeRoot: repository })
+		running.finish(
+			`${result.exitCode === 0 ? '✓' : '✗'} ${REHEARSAL_CONTRIB_STEP}  ${formatDuration(params.clock.now() - startedAt)}`,
+		)
+		for (const line of result.output.split('\n')) write(`  ${line}`)
+		return undefined
+	} finally {
+		if (moved) readGit({ root: clone, args: ['checkout', '-q', '-f', params.branch] })
+		readGit({ root: clone, args: ['read-tree', '-u', '--reset', 'HEAD'] })
+		for (const file of listUntracked(clone).filter((path) => !untrackedBefore.includes(path))) {
+			rmSync(join(clone, file), { force: true })
+			removeEmptiedFolders({ clone, folder: dirname(join(clone, file)) })
+		}
+		copyWorkingTree({ repository, clone })
+		spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
+	}
+}
+
+/** The parts of a contrib key that differ, by what a person would change: the contrib steps, the install... */
+function differingKeyParts(params: { expected: CheckKey; actual: CheckKey }): string[] {
+	const { expected, actual } = params
+	return CONTRIB_KEY_PARTS.filter((part) => expected[part.field] !== actual[part.field]).map(
+		(part) => part.name,
+	)
+}
+
+/** The untracked files of the clone git does not ignore. */
+function listUntracked(clone: string): string[] {
+	return readGit({ root: clone, args: ['ls-files', '--others', '--exclude-standard'] })
+		.split('\n')
+		.filter(Boolean)
 }
 
 /** A deleted file's folder, and each parent up to the clone, removed while empty: as git leaves the tree. */

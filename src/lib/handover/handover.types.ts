@@ -1,5 +1,6 @@
 import type { CardLine } from '../card/card.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
+import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
@@ -172,8 +173,12 @@ export type HandoverCard = {
 	otherTreeGates: string[]
 	/** The entries a person must read: revised receipts, gone test files, unused lot file entries. */
 	declarations: number
-	/** The gate steps (the latest record of each), the rules and the review, one line each. */
+	/** The gate steps (the latest record of each) and the review, one line each. */
 	gates: CardGateLine[]
+	/** The package's profile: a contributor's card holds the `contrib` section. */
+	profile: Profile
+	/** A contributor's contrib rows (the rules, the package steps, release, mutation), one line each; none for a consumer. */
+	contrib?: CardGateLine[]
 	/**
 	 * The lots file's `gates` text: the agent's caveats for the person about to run; absent when the lots file
 	 * has none and on the card a real run prints after it.
@@ -222,7 +227,13 @@ export type HandoverListing = {
 export type WriteLine = (line: string) => void
 
 /** A guard's verdict: a short detail on its line, and the lines that explain a refusal. */
-export type GuardVerdict = { ok: boolean; detail: string; lines?: string[] }
+export type GuardVerdict = {
+	ok: boolean
+	/** The run goes on, and the line is marked `!`: a refusal a rehearsal tolerates. */
+	warning?: true
+	detail: string
+	lines?: string[]
+}
 
 /** Where the guards leave a run: the full recorded HEAD and the lots committed already. */
 export type GuardedRun = { head: string; commits: string[] }
@@ -271,6 +282,8 @@ export type RehearsalDecision = {
 	reason: string
 	/** The record reused. */
 	record?: { mode: GateRecordMode; at: string; head: string }
+	/** A contributor's lot whose tree has no green contrib record: the rehearsal runs `dialecte contrib` in the clone. */
+	contrib?: 'run'
 }
 
 /** A rehearsal's decision for a lot, before its number and tree are added. */

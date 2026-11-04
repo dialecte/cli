@@ -37,6 +37,9 @@ export const NO_LOCAL_DEPENDENCY_NOTE = 'no local dependency'
 export const RULES_FIRST_ERROR = 'first: {file} {rule}'
 export const RULES_MORE_ERRORS = ', {count} more'
 
+/** The mode of a contrib run's record, in the worktree's git folder and in the store. */
+export const CONTRIB_RECORD_MODE = 'contrib'
+
 /** The command a reused contrib record is named by. */
 export const CONTRIB_COMMAND = 'contrib'
 

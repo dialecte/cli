@@ -84,7 +84,7 @@ Commands:
   lot        The lot declaration .dialecte/lot.json: exempt | accept <case> | revised <case|file|glob> | gone <file|glob>, each with a reason; mutation <mode>
   mutants    Mutation testing of the declared scope: run | status | schedule | abandon | migrate | judge | record | drop
   worktree   A worktree ready to work in (hooks, sibling links, node_modules checked, hygiene baseline); prune what a merge left
-  record     A lot's review rounds in its hand-over folder: review | decision | snapshot | choice
+  record     A lot's review rounds in its hand-over folder: review | decision | snapshot | choice | standard
   review     The fix diff since the previous round's snapshot: delta
   recap      A pull request's expandable part, built from the hand-over's records only
   text       The human part of a GitHub text, before it is posted: check (headings, word cap)
@@ -201,7 +201,9 @@ Contributing (inside a dialecte repository):
                              # commits in a scratch clone, without the hook a lot whose tree has a green
                              # record (no clone when every lot has one; --full rehearses every lot), its
                              # decisions in rehearsal.json; a real run that commits every lot moves
-                             # .dialecte/lot.json into the folder as lot.json and leaves {} in its place
+                             # .dialecte/lot.json into the folder as lot.json and leaves {} in its place;
+                             # a contributor's run needs a green dialecte contrib of the tree the lots leave
+                             # (guard contrib), which a rehearsal runs in its clone when there is none
   dialecte handover list [--root <dir>] [--json]
                              # every hand-over folder: repository, worktree, branch, lots, age, state
   dialecte lot exempt <reason> | lot accept <case> <reason> | lot revised <case|file|glob> <reason>
@@ -253,6 +255,10 @@ Contributing (inside a dialecte repository):
                              # a nested repository or a submodule is refused; -- ends the options of each
   dialecte record choice <folder> --by <who> <decision>
                              # appends | decision | who | yyyy-mm-dd | to <folder>/decisions.md (made when absent)
+  dialecte record standard <folder> consulted <note> | not-consulted <reason>
+                             # writes <folder>/standard.json (state, note, time): the card's standard line passes
+                             # with consulted when DIALECTE_STANDARD names an existing file or folder, fails
+                             # without it, and only warns when no standard is configured
   dialecte review delta <folder> --round <n> [--worktree] [--json]
                              # per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a
                              # throwaway worktree holding round n-1 and prints its removal command

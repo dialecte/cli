@@ -6,8 +6,11 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
-import { buildCardGateLines } from '../gate-records/card-gates.ts'
-import { REVIEW_LINE_NAME } from '../gate-records/gate-records.constants.ts'
+import {
+	buildCardGateLines,
+	buildMutationLines,
+	buildRulesLine,
+} from '../gate-records/card-gates.ts'
 import { readGateRecords, readJudgedCases, readRulesRecord } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf, readGitConfig } from '../git.ts'
@@ -136,7 +139,7 @@ function spellingsOf(folder: string): string[] {
 	return real === folder ? [folder] : [folder, real]
 }
 
-/** The gate and rules lines of the repository, the review line left out; none when nothing was recorded. */
+/** The gate, rules and mutation lines of the repository (the review is the recap's own); none when nothing was recorded. */
 function readChecks(params: {
 	root: string
 	folder: string
@@ -146,7 +149,7 @@ function readChecks(params: {
 	mergedBranches: readonly string[]
 }): CardGateLine[] {
 	if (readGateRecords(params.root).length === 0 && !readRulesRecord(params.root)) return []
-	return buildCardGateLines(params).filter((line) => line.name !== REVIEW_LINE_NAME)
+	return [...buildCardGateLines(params), buildRulesLine(params), ...buildMutationLines(params)]
 }
 
 /** One list of the lot declaration, or why it cannot be read. */

@@ -106,4 +106,9 @@ export type CardGateLine = {
 	 * the hand-over unless it failed (then it counts as failed). Absent on a record of this tree.
 	 */
 	stale?: true
+	/**
+	 * A contrib row's record source, as its detail ends (`rehearsal`, `from <commit>`): the card's one contrib line
+	 * says it once. Absent on a gate line, a live row, and a record made at HEAD or a commit HEAD holds.
+	 */
+	source?: string
 }

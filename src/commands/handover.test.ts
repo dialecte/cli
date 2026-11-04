@@ -36,6 +36,7 @@ import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
+import { STANDARD_ENVIRONMENT_VARIABLE, STANDARD_FILE } from '../lib/standard/standard.constants.ts'
 import { hashTestCode } from '../lib/tdd/tdd-files.ts'
 import { runGate } from './gate.ts'
 import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
@@ -1064,8 +1065,12 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 		expect(JSON.parse(result.output).gates).toEqual([
 			{ name: 'gate', status: 'failed', detail: 'never run on this tree' },
-			{ name: 'rules', status: 'warning', detail: 'never run on this tree' },
 			{ name: 'review', status: 'warning', detail: 'no findings ledger' },
+			{
+				name: 'standard',
+				status: 'warning',
+				detail: 'not consulted: none configured (DIALECTE_STANDARD)',
+			},
 		])
 	})
 
@@ -2906,7 +2911,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 
 	const NO_VITEST = '! tdd not run here (the package does not test with vitest)'
 
-	it('a fast gate and the rules run on this tree → one line per recorded step with its counts, the rules line, no findings ledger', async () => {
+	it('a fast gate run on this tree → one line per recorded step with its counts, no rules line, no findings ledger, the standard line', async () => {
 		const { root, lotsPath } = prepare({
 			committed: gatedPackage({
 				fast: [
@@ -2929,13 +2934,13 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ tests 397/397',
 				'✓ build',
 				'! skills not run here (no skills:check script)',
-				'✓ rules 0 errors · 0 warnings',
 				'! review no findings ledger',
+				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
 	})
 
-	it('no gate record and no rules record → ✗ gate never run on this tree, ! rules never run on this tree', () => {
+	it('no gate record → ✗ gate never run on this tree, no rules line', () => {
 		const { lotsPath } = prepare({ committed: gatedPackage({ fast: [] }) })
 
 		const result = writeHandover({ lotsPath })
@@ -2943,8 +2948,8 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		expect(gateLinesOf(result.output).sort()).toEqual(
 			[
 				'✗ gate never run on this tree',
-				'! rules never run on this tree',
 				'! review no findings ledger',
+				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
 	})
@@ -2972,7 +2977,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		{ edited: 'src/read.ts', changedSince: true },
 		{ edited: '.dialecte/lot.json', changedSince: false },
 	])
-		it(`${row.edited} written after the gate and the rules → ${row.changedSince ? 'each line ! with (the tree changed since)' : 'the lines as recorded (.dialecte/ is no part of the tree)'}`, async () => {
+		it(`${row.edited} written after the gate → ${row.changedSince ? 'each line ! with (the tree changed since)' : 'the lines as recorded (.dialecte/ is no part of the tree)'}`, async () => {
 			const { root, lotsPath } = prepare({
 				committed: gatedPackage({
 					fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
@@ -2991,12 +2996,8 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 
 			expect(lines.filter((line) => /^[✓!✗] (check|rules|tdd)\b/.test(line)).sort()).toEqual(
 				(row.changedSince
-					? [
-							'! check 4/4 (the tree changed since)',
-							'! rules 0 errors · 0 warnings (the tree changed since)',
-							`${NO_VITEST} (the tree changed since)`,
-						]
-					: ['✓ check 4/4', '✓ rules 0 errors · 0 warnings', NO_VITEST]
+					? ['! check 4/4 (the tree changed since)', `${NO_VITEST} (the tree changed since)`]
+					: ['✓ check 4/4', NO_VITEST]
 				).sort(),
 			)
 		})
@@ -3028,7 +3029,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		])
 	})
 
-	it('passing steps and the rules recorded on another tree → BLOCKED: gates ran on another tree, naming each in card order', async () => {
+	it('passing steps recorded on another tree → BLOCKED: gates ran on another tree, naming each in card order', async () => {
 		const { root, lotsPath } = prepare({
 			committed: gatedPackage({
 				fast: [{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` }],
@@ -3041,7 +3042,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		const output = writeHandover({ lotsPath }).output
 
 		expect(verdictLines(output)).toEqual([
-			'BLOCKED  2 lots · 2 files · +6 −1 · gates ran on another tree: tdd, check, rules',
+			'BLOCKED  2 lots · 2 files · +6 −1 · gates ran on another tree: tdd, check',
 		])
 	})
 
@@ -3088,34 +3089,20 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 			)
 		})
 
-	for (const row of [
-		{
-			name: 'two errors',
-			source: 'export function read() {\n\tconst write = () => 2\n\tconst make = () => 3\n}\n',
-			line: '✗ rules 2 errors · 0 warnings',
-		},
-		{
-			name: 'warnings only',
-			source:
-				'export function read(first: string, count: number) {}\nexport function write(first: string, count: number) {}\n',
-			line: '✓ rules 0 errors · 2 warnings',
-		},
-		{
-			name: 'one error and one warning',
-			source: 'export function read(first: string, count: number) {\n\tconst write = () => 2\n}\n',
-			line: '✗ rules 1 error · 1 warning',
-		},
-	])
-		it(`the rules run on this tree with ${row.name} → ${row.line}`, () => {
-			const { root, lotsPath } = prepare({
-				files: { 'src/read.ts': row.source, 'CHANGELOG.md': '# Changelog\n\n- read\n' },
-			})
-			runRules({ cwd: root, argv: [] })
-
-			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
-
-			expect(lines.filter((line) => /^[✓!✗] rules\b/.test(line))).toEqual([row.line])
+	it('the rules run on this tree with errors → the card of a consumer holds no rules line', () => {
+		const { root, lotsPath } = prepare({
+			files: {
+				'src/read.ts':
+					'export function read() {\n\tconst write = () => 2\n\tconst make = () => 3\n}\n',
+				'CHANGELOG.md': '# Changelog\n\n- read\n',
+			},
 		})
+		runRules({ cwd: root, argv: [] })
+
+		const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+		expect(lines.filter((line) => /^[✓!✗] rules\b/.test(line))).toEqual([])
+	})
 
 	for (const row of [
 		{
@@ -3266,12 +3253,12 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│                               not recorded: rehearse first                   │',
 			'│ HEAD aaaaaaa                                                                 │',
 			'├─ gates ──────────────────────────────────────────────────────────────────────┤',
-			'│ ! tdd     not run here (the package does not test with vitest) (the tree     │',
-			'│           changed since)                                                     │',
-			'│ ! check   4/4 (the tree changed since)                                       │',
-			'│ ✗ build   exit 1 (the tree changed since)                                    │',
-			'│ ✓ rules   0 errors · 0 warnings                                              │',
-			'│ ! review  no findings ledger                                                 │',
+			'│ ! tdd       not run here (the package does not test with vitest) (the tree   │',
+			'│             changed since)                                                   │',
+			'│ ! check     4/4 (the tree changed since)                                     │',
+			'│ ✗ build     exit 1 (the tree changed since)                                  │',
+			'│ ! review    no findings ledger                                               │',
+			'│ ! standard  not consulted: none configured (DIALECTE_STANDARD)               │',
 			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
 			'│ 1 proven red → green · 2 unchanged                                           │',
 			'│ 1 accepted                                                                   │',
@@ -3356,7 +3343,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		])
 	})
 
-	it('one lot, two gates failed, one declaration → 1 lot, 2 gates failed: check, rules, 1 declaration to read', async () => {
+	it('one lot, one gate failed, one declaration → 1 lot, 1 gate failed: check, 1 declaration to read', async () => {
 		const { root, lotsPath } = prepare({
 			committed: gatedPackage({ fast: [{ name: 'check', run: 'exit 3' }] }),
 			files: {
@@ -3380,7 +3367,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const output = writeHandover({ lotsPath }).output
 
 		expect(verdictLines(output)).toEqual([
-			'BLOCKED  1 lot · 2 files · +7 −1 · 2 gates failed: check, rules',
+			'BLOCKED  1 lot · 2 files · +7 −1 · 1 gate failed: check',
 			'         1 declaration to read (below)',
 		])
 	})
@@ -3471,10 +3458,10 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 
 		const box = boxLines(output)
 		expect(box.filter((line) => line.length > 60)).toEqual([])
-		const tddGate = box.findIndex((line) => line.startsWith('│ ! tdd     not run here'))
+		const tddGate = box.findIndex((line) => line.startsWith('│ ! tdd       not run here'))
 		const merge = box.findIndex((line) => /^│ {31}merge feat\/x at /.test(line))
 		expect({ tddGate: tddGate > 0, merge: merge > 0 }).toEqual({ tddGate: true, merge: true })
-		expect(box[tddGate + 1]).toMatch(/^│ {11}\S/)
+		expect(box[tddGate + 1]).toMatch(/^│ {13}\S/)
 		const mergeRows = [box[merge]]
 		for (const line of box.slice(merge + 1)) {
 			if (!/^│ {31}\S/.test(line)) break
@@ -3517,7 +3504,15 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 	})
 
 	it('on a terminal (colour) → ✓ green, ! yellow, ✗ red, the verdict word bold; every box line as wide as the width once the escapes are left out', async () => {
-		const { lotsPath } = await fullCardScenario({ failingBuild: true })
+		const { lotsPath, out } = await fullCardScenario({ failingBuild: true })
+		process.env[STANDARD_ENVIRONMENT_VARIABLE] = temporaryFolder('dialecte-standard-')
+		onTestFinished(function removeStandard() {
+			delete process.env[STANDARD_ENVIRONMENT_VARIABLE]
+		})
+		writeFileSync(
+			join(out, STANDARD_FILE),
+			JSON.stringify({ state: 'consulted', note: 'read it', at: '2026-11-04T10:00:00.000Z' }),
+		)
 
 		const output = runHandover({
 			probe: noRepositoryCli,
@@ -3527,7 +3522,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			columns: 100,
 		}).output
 
-		expect(styledText({ output, open: 32, text: '✓', close: 39, after: ' rules' })).toBe(true)
+		expect(styledText({ output, open: 32, text: '✓', close: 39, after: ' standard' })).toBe(true)
 		expect(styledText({ output, open: 33, text: '!', close: 39, after: ' tdd' })).toBe(true)
 		expect(styledText({ output, open: 31, text: '✗', close: 39, after: ' build' })).toBe(true)
 		expect(styledText({ output, open: 1, text: 'BLOCKED', close: 22, after: '  2 lots' })).toBe(
@@ -3964,24 +3959,36 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		},
 		{ term: 'build', meaning: 'the package builds', look: 'look only if it is not ✓' },
 		{
+			term: 'contrib',
+			meaning:
+				"the contributor checks (dialecte contrib): rules, the package's steps (docs and type-bench by default), release, and mutation when a scope is declared; one line when every row is green",
+			look: 'look only if it is not ✓: a row failed, dialecte contrib never ran on this tree, or it ran on another tree',
+		},
+		{
 			term: 'docs',
-			meaning: 'the documentation builds (full gate)',
+			meaning: 'a contrib row: the documentation builds',
 			look: 'look only if it is not ✓',
 		},
 		{
 			term: 'type-bench',
-			meaning: 'the cost of the types stays within its baseline (full gate)',
+			meaning: 'a contrib row: the cost of the types stays within its baseline',
 			look: 'look only if it is not ✓: a type grew in cost',
 		},
 		{
 			term: 'rules',
-			meaning: 'dialecte rules on the changed files: the errors and warnings of the house rules',
+			meaning:
+				'a contrib row: dialecte rules on the changed files, the errors and warnings of the house rules',
 			look: 'look only if it counts an error or a warning',
 		},
 		{
 			term: 'review',
 			meaning: 'the independent review: its rounds and open findings, from the findings ledger',
 			look: 'look only if it is not ✓: a finding is open, or no findings ledger means no review recorded',
+		},
+		{
+			term: 'standard',
+			meaning: 'whether the standard named by DIALECTE_STANDARD was consulted',
+			look: 'look only if it is not ✓: ! means no standard is configured, ✗ means one is and no consultation was recorded',
 		},
 		{
 			term: 'skills',

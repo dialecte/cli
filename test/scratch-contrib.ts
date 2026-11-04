@@ -45,6 +45,9 @@ export function createContribPackage(params: ContribPackageParams = {}): string 
 				...(params.gateFull && { full: params.gateFull }),
 			},
 		}),
+		...(params.mutation && { mutation: params.mutation }),
+		...(params.standard && { standard: params.standard }),
+		...(params.allowReferences && { allowReferences: params.allowReferences }),
 		...(params.generatedDocs && { generatedDocs: params.generatedDocs }),
 	}
 	return createScratchRepository({

@@ -102,24 +102,36 @@ const GATE_TERMS: LegendGroup = [
 	},
 	{ term: 'build', meaning: 'the package builds', look: 'look only if it is not ✓' },
 	{
+		term: 'contrib',
+		meaning:
+			"the contributor checks (dialecte contrib): rules, the package's steps (docs and type-bench by default), release, and mutation when a scope is declared; one line when every row is green",
+		look: 'look only if it is not ✓: a row failed, dialecte contrib never ran on this tree, or it ran on another tree',
+	},
+	{
 		term: 'docs',
-		meaning: 'the documentation builds (full gate)',
+		meaning: 'a contrib row: the documentation builds',
 		look: 'look only if it is not ✓',
 	},
 	{
 		term: 'type-bench',
-		meaning: 'the cost of the types stays within its baseline (full gate)',
+		meaning: 'a contrib row: the cost of the types stays within its baseline',
 		look: 'look only if it is not ✓: a type grew in cost',
 	},
 	{
 		term: 'rules',
-		meaning: 'dialecte rules on the changed files: the errors and warnings of the house rules',
+		meaning:
+			'a contrib row: dialecte rules on the changed files, the errors and warnings of the house rules',
 		look: 'look only if it counts an error or a warning',
 	},
 	{
 		term: 'review',
 		meaning: 'the independent review: its rounds and open findings, from the findings ledger',
 		look: 'look only if it is not ✓: a finding is open, or no findings ledger means no review recorded',
+	},
+	{
+		term: 'standard',
+		meaning: 'whether the standard named by DIALECTE_STANDARD was consulted',
+		look: 'look only if it is not ✓: ! means no standard is configured, ✗ means one is and no consultation was recorded',
 	},
 	{
 		term: 'skills',

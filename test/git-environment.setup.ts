@@ -5,6 +5,7 @@
  * on their own folder only.
  */
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
+import { STANDARD_ENVIRONMENT_VARIABLE } from '../src/lib/standard/standard.constants.ts'
 import {
 	CONFIG_ENVIRONMENT_VARIABLES,
 	DISCOVERY_ENVIRONMENT_VARIABLES,
@@ -18,3 +19,6 @@ for (const name of [
 	...DISCOVERY_ENVIRONMENT_VARIABLES,
 ])
 	delete process.env[name]
+
+// the standard the person works against is theirs, not the suite's: the cases that need one set it themselves
+delete process.env[STANDARD_ENVIRONMENT_VARIABLE]
