@@ -10,13 +10,12 @@ import { dirname, join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { gitFolderOf, readGit } from '../git.ts'
-import { readRunMarker } from './handover-run-marker.ts'
+import { readRunMarker, runningRefusal } from './handover-run-marker.ts'
 import {
 	HANDOVER_FILES,
 	HANDOVER_HOLD_REASONS,
 	HANDOVER_HOLD_REFUSAL,
 	HANDOVER_LOCK_FILE,
-	HANDOVER_RUN_MARKER_FILE,
 	HANDOVER_RUNNING_REFUSAL,
 } from './handover.constants.ts'
 import { readLotsFile } from './read-lots-file.ts'
@@ -66,10 +65,7 @@ export function readHandoverHold(root: string): HandoverHold {
 	if (running)
 		return {
 			held: true,
-			refusal: HANDOVER_RUNNING_REFUSAL.replace('{folder}', folder)
-				.replace('{pid}', String(running.pid))
-				.replace('{startedAt}', running.startedAt)
-				.replace('{marker}', join(folder, HANDOVER_RUN_MARKER_FILE)),
+			refusal: runningRefusal({ template: HANDOVER_RUNNING_REFUSAL, folder, running }),
 		}
 	return { held: true, folder }
 }

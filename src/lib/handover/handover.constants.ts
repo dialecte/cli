@@ -1,4 +1,5 @@
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
+import type { HandoverState } from './handover.types.ts'
 
 /** Name of the lock file, in the repository's git folder, while a hand-over script waits or runs. */
 export const HANDOVER_LOCK_FILE = 'dialecte-handover.lock'
@@ -17,6 +18,80 @@ export const HANDOVER_FILES = {
 	merges: 'merges.json',
 	/** The hash of `merges.json` as reviewed: an edit after the hand-over is refused. */
 	mergesHash: 'merges.sha256',
+	/** Written by `handover abandon`: the hand-over will not run (`{ "at" }`, the time it was abandoned). */
+	abandoned: 'abandoned.json',
+} as const
+
+/** The folder, in the repository's shared git folder, registering every hand-over written (one entry each). */
+export const HANDOVER_STORE_FOLDER = 'dialecte-handover'
+
+/** The extension of an entry of the store: `<name>.json`. */
+export const STORE_ENTRY_EXTENSION = '.json'
+
+/** A run of characters a branch name turns into one `-` in a store name. */
+export const STORE_NAME_REPLACED_CHARACTERS = /[^A-Za-z0-9._-]+/g
+
+/** The counter of the second hand-over of a branch on a day (the first has none). */
+export const STORE_NAME_FIRST_COUNTER = 2
+
+/** The date that starts a store name (`yyyy-mm-dd`). */
+export const STORE_NAME_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/** What follows the date and the branch slug in a store name after the first: `-<counter>`. */
+export const STORE_NAME_COUNTER_PATTERN = /^-(\d+)$/
+
+/** The dashes at either end of a branch slug, left out of the name. */
+export const STORE_NAME_EDGE_DASHES = /^-+|-+$/g
+
+/** The states `handover run` without a folder runs: something still to commit, nothing else moved. */
+export const RUNNABLE_STATES: readonly HandoverState[] = ['pending', 'partly committed']
+
+/** The refusals of `handover show`, `run` and `abandon` before any hand-over is read. */
+export const HANDOVER_STORE_REFUSALS = {
+	noRepository: 'handover {verb}: {cwd} is in no git repository',
+	noHandover: 'handover {verb}: {argument} names no hand-over: {reason}',
+	folderGone: 'handover {verb}: {name}: its folder {folder} is gone',
+} as const
+
+/** What `handover show` prints besides the card. */
+export const HANDOVER_SHOW_TEXTS = {
+	emptyStore: 'handover show: no hand-over in {store}',
+	noneForBranch: 'handover show: no hand-over of {branch} in {store}; it holds:',
+	repositoryMissing: 'handover show: {folder}: its repository {repository} does not exist',
+	changed:
+		'{count} file(s) differ from the reviewed snapshot: re-gate, then dialecte handover {lots} --rehash',
+} as const
+
+/** What `handover run` without a folder prints when it does not run one. */
+export const HANDOVER_RUN_TEXTS = {
+	nothingToRun: 'handover run: no hand-over to run in {store} (none pending or partly committed)',
+	several:
+		'handover run: {count} hand-overs to run in {store}, nothing run: name one (dialecte handover run <name>)',
+	abandoned: 'handover run: {folder} is abandoned ({marker}): nothing run; write a new hand-over',
+} as const
+
+/** `handover <lots.json> --rehash` of an abandoned folder: refused, nothing written. */
+export const HANDOVER_REHASH_ABANDONED_REFUSAL =
+	'handover: {folder} is abandoned ({marker}): nothing written; write the hand-over into a new folder (--out <dir>)'
+
+/** A run and an abandon that crossed: each refuses once it finds the other's marker after writing its own. */
+export const HANDOVER_INTERLEAVING_REFUSALS = {
+	run: 'handover run: {folder} was abandoned while this run started ({marker}): nothing run, its run marker removed',
+	abandon:
+		'handover abandon: a run of {folder} started while it was being abandoned (pid {pid}, since {startedAt}, marked by {marker}): nothing abandoned, the lock and the entry kept',
+} as const
+
+/** What `handover abandon` prints. */
+export const HANDOVER_ABANDON_TEXTS = {
+	nothingHeld:
+		'handover abandon: nothing is held in {root}: name the hand-over (dialecte handover abandon <name|folder>)',
+	already: 'handover abandon: {folder} is abandoned already (since {at})',
+	committed: 'handover abandon: every lot of {folder} is committed: nothing to abandon',
+	running:
+		'handover abandon: the hand-over {folder} is running (pid {pid}, since {startedAt}, marked by {marker}): nothing abandoned; wait until its run ends',
+	abandoned: 'handover abandon: {folder} abandoned: it will not run, its commits stay',
+	lockReleased: 'the lock {lock} released',
+	lockKept: 'the lock {lock} names another hand-over ({script}): left as it is',
 } as const
 
 /** A conflict marker line git leaves in a file it could not merge. */
@@ -304,6 +379,16 @@ export const SHORTSTAT_PATTERNS = {
 
 /** The text of the card's closing rule: where its terms and the receipts are explained. */
 export const HANDOVER_CARD_FOOTER = 'dialecte handover --legend · details: dialecte tdd status'
+
+/** A word the shell reads as it is, unquoted (the footer quotes any other). */
+export const SHELL_PLAIN_WORD = /^[A-Za-z0-9._/@%+=:,-]+$/
+
+/**
+ * The closing rule of the card of a known hand-over: `{id}` its registered name, or its folder without an entry
+ * (shell-quoted when it needs it), so a partial copy of the card still says which hand-over it is.
+ */
+export const HANDOVER_CARD_NAMED_FOOTER =
+	'dialecte handover show {id} · run {id} · --legend · details: dialecte tdd status'
 
 /** The card's title: `{repository}` the repository's folder name, `{branch}` the branch. */
 export const HANDOVER_CARD_TITLE = 'hand-over: {repository} {branch}'

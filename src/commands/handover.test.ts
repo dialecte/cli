@@ -90,6 +90,9 @@ async function waitFor(params: { check: () => boolean; bound: number }): Promise
 /** Kept out of the literals: `lot` followed by a number reads as a plan tag to `dialecte rules`. */
 const LOT = 'lot'
 
+/** The time the written cards are dated from: their registered name is `2026-11-04-main`. */
+const CARD_NOW = new Date(2026, 10, 4, 12, 0, 0)
+
 /** The cli a hand-over names as its fallback: never run by these tests. */
 const WRITER_CLI = '/opt/dialecte/dist/cli.js'
 
@@ -149,6 +152,7 @@ function writeHandover(params: {
 		probe: params.probe ?? noRepositoryCli,
 		argv: [params.lotsPath, ...(params.argv ?? [])],
 		cliPath: WRITER_CLI,
+		now: CARD_NOW,
 		columns: params.columns,
 		probeTimeout: params.probeTimeout,
 	})
@@ -2392,7 +2396,8 @@ describe('handover: the card width', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, ()
 				.join(' '),
 		}).toEqual({
 			bottom: `└${'─'.repeat(38)}┘`,
-			footer: 'dialecte handover --legend · details: dialecte tdd status',
+			footer:
+				'dialecte handover show 2026-11-04-main · run 2026-11-04-main · --legend · details: dialecte tdd status',
 		})
 	})
 
@@ -3235,7 +3240,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			.join('')
 	}
 
-	it('a full card at 80 columns → the verdict and the declarations to read, then the commit, gates, tdd and notes sections, the legend footer; every line 80 wide', async () => {
+	it('a full card at 80 columns → the verdict and the declarations to read, then the commit, gates, tdd and notes sections, the named footer (in the box, too long for its rule); every line 80 wide', async () => {
 		const { root, lotsPath, head, tip } = await fullCardScenario({ failingBuild: true })
 
 		const result = writeHandover({ lotsPath, columns: 80 })
@@ -3272,7 +3277,10 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ 1 flag: helper code changed near unchanged cases (noise)                     │',
 			'├─ notes ──────────────────────────────────────────────────────────────────────┤',
 			'│ Run it with the cli of this branch.                                          │',
-			'└─ dialecte handover --legend · details: dialecte tdd status ──────────────────┘',
+			'├──────────────────────────────────────────────────────────────────────────────┤',
+			'│ dialecte handover show 2026-11-04-main · run 2026-11-04-main · --legend ·    │',
+			'│ details: dialecte tdd status                                                 │',
+			'└──────────────────────────────────────────────────────────────────────────────┘',
 		])
 	})
 
@@ -3885,6 +3893,12 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			term: 'DONE',
 			meaning: 'every lot of the hand-over is committed',
 			look: 'look only if a commit in the commit section is not the one you expected',
+		},
+		{
+			term: 'ABANDONED',
+			meaning:
+				'dialecte handover abandon marked the hand-over: it will not run; the lots it committed stay',
+			look: 'look only if you meant to run it: write a new hand-over',
 		},
 	],
 	[

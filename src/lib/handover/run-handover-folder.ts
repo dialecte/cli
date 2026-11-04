@@ -2,8 +2,9 @@
  * `dialecte handover run <folder>`: the guards, then the lots not committed yet, then the card. With a
  * rehearsal, the guards read the repository and the lots are committed in its scratch clone, or not at all
  * when a green record answers for every lot. A real run
- * that leaves every lot committed then moves the lot file (`.dialecte/lot.json`) into the folder: the next
- * lot on the branch starts from an empty declaration, not from this lot's entries. The card after a real run
+ * that leaves every lot committed then records the hand-over `committed` in the store (when it is registered)
+ * and moves the lot file (`.dialecte/lot.json`) into the folder: the next lot on the branch starts from an
+ * empty declaration, not from this lot's entries. The card after a real run
  * has no notes: they were written for the person about to run it, and what the run proved is in its gates.
  */
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -17,6 +18,7 @@ import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard, handoverCardSections } from './handover-card.ts'
 import { handoverLockPath } from './handover-lock.ts'
+import { findHandoverStore, recordHandoverState } from './handover-store.ts'
 import {
 	ARCHIVED_LOT_FILE,
 	COMMIT_SCRIPT_FILE,
@@ -133,6 +135,11 @@ export async function runHandoverFolder(params: {
 	for (const line of box.split('\n')) write(line)
 	// after the card, which shows the entries the lot file held
 	if (card.done) {
+		recordHandoverState({
+			store: findHandoverStore(lotsFile.repository),
+			folder: handover.folder,
+			state: 'committed',
+		})
 		const archived = archiveLotFile({ root: lotsFile.repository, folder: handover.folder })
 		if (archived) write(LOT_FILE_ARCHIVED.replace('{path}', archived))
 	}

@@ -9,6 +9,7 @@ import { basename, join } from 'node:path'
 
 import { mainCheckoutOf } from '../git.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
+import { readAbandonedMarker } from './handover-abandoned-marker.ts'
 import {
 	COMMIT_SCRIPT_FILE,
 	HANDOVER_FILES,
@@ -17,7 +18,12 @@ import {
 } from './handover.constants.ts'
 import { readHandoverFolder } from './read-handover-folder.ts'
 
-import type { HandoverFolder, HandoverListing, HandoverState } from './handover.types.ts'
+import type {
+	CommittedLots,
+	HandoverFolder,
+	HandoverListing,
+	HandoverState,
+} from './handover.types.ts'
 import type { Dirent } from 'node:fs'
 
 export function listHandovers(params: { root: string; now: number }): HandoverListing[] {
@@ -49,7 +55,7 @@ export function listHandovers(params: { root: string; now: number }): HandoverLi
 				branch: lotsFile.branch,
 				lots: lotsFile.lots.length,
 				age: params.now - statSync(join(folder, COMMIT_SCRIPT_FILE)).mtimeMs,
-				state: repositoryExists ? handoverState(handover) : 'repository missing',
+				state: handoverState(handover),
 			},
 		]
 	})
@@ -74,18 +80,32 @@ function onePerRealPath(folders: readonly string[]): string[] {
 	return folders.filter((folder) => kept.has(folder))
 }
 
-/** Where the hand-over stands, read from the tip of its branch (the worktree may sit elsewhere). */
+/**
+ * Where the hand-over stands: abandoned when `handover abandon` marked it (asked first, the repository may be
+ * gone), else read from the tip of its branch (the worktree may sit elsewhere).
+ */
 export function handoverState(handover: HandoverFolder): HandoverState {
+	const { lotsFile, lots } = handover
+	if (readAbandonedMarker(handover.folder)) return 'abandoned'
+	if (!existsSync(lotsFile.repository)) return 'repository missing'
+	const found = committedLotsOnBranch(handover)
+	if (!found || found.foreign) return 'stale: HEAD moved by something else'
+	if (found.commits.length === lots.length) return 'committed'
+	if (found.commits.length > 0) return 'partly committed'
+	return 'pending'
+}
+
+/**
+ * The lots committed on the tip of the hand-over's branch on top of the lots file's HEAD; undefined when
+ * either is no commit of the repository.
+ */
+export function committedLotsOnBranch(handover: HandoverFolder): CommittedLots | undefined {
 	const { lotsFile, lots } = handover
 	const root = lotsFile.repository
 	const head = revisionOf({ root, revision: `${lotsFile.head}^{commit}` })
 	const tip = revisionOf({ root, revision: `refs/heads/${lotsFile.branch}` })
-	if (!head || !tip) return 'stale: HEAD moved by something else'
-	const found = findCommittedLots({ root, head, tip, lots, compareContent: false })
-	if (found.foreign) return 'stale: HEAD moved by something else'
-	if (found.commits.length === lots.length) return 'committed'
-	if (found.commits.length > 0) return 'partly committed'
-	return 'pending'
+	if (!head || !tip) return undefined
+	return findCommittedLots({ root, head, tip, lots, compareContent: false })
 }
 
 export function revisionOf(params: { root: string; revision: string }): string | undefined {

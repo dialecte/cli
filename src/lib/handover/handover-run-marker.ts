@@ -43,3 +43,16 @@ export function readRunMarker(folder: string): HandoverRunMarker | undefined {
 	if (typeof marker.pid !== 'number' || !isProcessAlive(marker.pid)) return undefined
 	return { pid: marker.pid, startedAt: String(marker.startedAt ?? '') }
 }
+
+/** A refusal while the run `running` of `folder` is in progress: `template` with its folder, pid, start and marker. */
+export function runningRefusal(params: {
+	template: string
+	folder: string
+	running: HandoverRunMarker
+}): string {
+	return params.template
+		.replace('{folder}', params.folder)
+		.replace('{pid}', String(params.running.pid))
+		.replace('{startedAt}', params.running.startedAt)
+		.replace('{marker}', join(params.folder, HANDOVER_RUN_MARKER_FILE))
+}

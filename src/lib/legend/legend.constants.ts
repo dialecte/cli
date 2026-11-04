@@ -23,6 +23,12 @@ const VERDICT_TERMS: LegendGroup = [
 		meaning: 'every lot of the hand-over is committed',
 		look: 'look only if a commit in the commit section is not the one you expected',
 	},
+	{
+		term: 'ABANDONED',
+		meaning:
+			'dialecte handover abandon marked the hand-over: it will not run; the lots it committed stay',
+		look: 'look only if you meant to run it: write a new hand-over',
+	},
 ]
 
 /** The marks of a gate line. */

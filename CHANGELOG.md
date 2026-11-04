@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-05
+
+### Added
+
+- The hand-over registry: every hand-over `dialecte handover <lots.json>` writes is registered in `<git common dir>/dialecte-handover/`, shared by every worktree of the repository and never in the working tree, as one entry `<name>.json` = `{ folder, branch, worktree, written, state }`; `<name>` is `<yyyy-mm-dd>-<branch slug>[-<n>]`. The folder stays where it is written (the lots file's folder, or `--out`). A folder registered already keeps its name: `--rehash` updates its entry. A real run that commits every lot records it `committed`; a rehearsal and `show` write no entry.
+- `dialecte handover show [<name|folder>] [--json]`: the card of a hand-over again, recomputed from its folder and the records, nothing written; without an argument the newest registered hand-over of the current branch; none: the store's entries (`name  branch  state`, `gone` for a folder removed). A line after the box counts the files changed since the review, with the re-gate and `--rehash` advice; then the run command.
+- `dialecte handover run` without a folder runs the one registered hand-over still to run; with two or more it refuses and lists them (name, branch, verdict). `run <name>` runs a registered hand-over by its name.
+- `dialecte handover abandon [<name|folder>]`: marks a hand-over that will not run (`abandoned.json`), records its entry `abandoned` and releases its worktree's lock; refused while it runs and once every lot is committed. Its state is `abandoned`, its card says `ABANDONED` without a run command, `run` refuses it, and `dialecte handover <lots.json> --rehash` of its folder is refused (exit 2, nothing written, naming `abandoned.json`). A run and an abandon started at the same moment never both go on: one that finds the other's marker after writing its own refuses (exit 2).
+- The hand-over card's closing rule names the hand-over: `dialecte handover show <id> · run <id> · --legend · details: dialecte tdd status`, `<id>` its registered name, or its folder when it has no entry. `--json` carries `name` for a registered hand-over.
+
 ## [0.3.0] - 2026-11-04
 
 ### Added

@@ -152,8 +152,8 @@ export type CardLot = DiffSize & {
 	notSized?: true
 }
 
-/** The card's first word: every gate green, a gate blocking it, or every lot committed. */
-export type HandoverVerdict = 'READY' | 'BLOCKED' | 'DONE'
+/** The card's first word: every gate green, a gate blocking it, every lot committed, or abandoned. */
+export type HandoverVerdict = 'READY' | 'BLOCKED' | 'DONE' | 'ABANDONED'
 
 /** What a person reviews before running a hand-over, and sees again at its end. */
 export type HandoverCard = {
@@ -165,7 +165,10 @@ export type HandoverCard = {
 	head: string
 	/** After a run: the new tip of the branch (the card shows `HEAD base → tip`). */
 	tip?: string
-	/** `DONE` once every lot is committed, else `BLOCKED` when a gate failed or ran on another tree, else `READY`. */
+	/**
+	 * `ABANDONED` when `handover abandon` marked it, `DONE` once every lot is committed, else `BLOCKED` when a
+	 * gate failed or ran on another tree, else `READY`.
+	 */
 	verdict: HandoverVerdict
 	/** The gate lines that failed, by name, in card order. */
 	failedGates: string[]
@@ -196,6 +199,10 @@ export type HandoverCard = {
 	command: string
 	/** Every lot is committed: the card says done instead of the command. */
 	done?: boolean
+	/** The hand-over's registered name; absent for a folder with no entry in the store. */
+	name?: string
+	/** The hand-over folder (absolute): the footer names it when the hand-over has no entry in the store. */
+	folder?: string
 }
 
 /** The card as `--json` answers it: the tdd lines as plain text, every other field as the card holds it. */
@@ -208,7 +215,32 @@ export type HandoverState =
 	| 'committed'
 	| 'stale: HEAD moved by something else'
 	| 'repository missing'
+	| 'abandoned'
 	| 'legacy script, state unknown'
+
+/** The state an entry of the store records: as last written, read only once its folder is gone. */
+export type HandoverEntryState = 'pending' | 'committed' | 'abandoned'
+
+/**
+ * An entry of the store (`<name>.json`): the hand-over folder (absolute, as written), the lots file's branch
+ * and repository, when the hand-over was written (ISO time), and its state as last recorded.
+ */
+export type HandoverStoreEntry = {
+	folder: string
+	branch: string
+	worktree: string
+	written: string
+	state: HandoverEntryState
+}
+
+/** An entry of the store with its name. */
+export type StoreEntry = HandoverStoreEntry & { name: string }
+
+/** Where a registered hand-over stands in a listing of the store: its folder's state, or `gone` without it. */
+export type RegisteredState = HandoverState | 'gone'
+
+/** Where a name of the store sorts among the names of its branch: its date, then its counter (1 without one). */
+export type StoreNameRank = { date: string; counter: number }
 
 /** One line of `handover list`. */
 export type HandoverListing = {
@@ -269,6 +301,9 @@ export type HandoverHold =
 /** A real `handover run` in progress, as its folder's marker names it. */
 export type HandoverRunMarker = { pid: number; startedAt: string }
 
+/** What `handover abandon` writes in the folder: when the hand-over was abandoned (ISO time). */
+export type HandoverAbandonedMarker = { at: string }
+
 /** The links a rehearsal made beside its clone, and the lines saying what it linked and what it could not. */
 export type RehearsalLinks = { links: string[]; lines: string[] }
 
@@ -306,3 +341,9 @@ export type LotTree = { before: string; tree: string }
 
 /** Whether the repository's own cli runs hand-overs (`handover run --probe`), within `timeout` milliseconds. */
 export type HandoverProbe = (params: { root: string; timeout: number }) => boolean
+
+/**
+ * A callback a test injects to force an order of two writers: called between a check and the write that
+ * follows it (or between a name's pick and its write), so the other writer can act in that gap.
+ */
+export type InterleavingSeam = () => void
