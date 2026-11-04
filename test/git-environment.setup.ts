@@ -2,7 +2,8 @@
  * Suite setup (vitest `setupFiles`): the suite may run inside a commit hook, where git sets
  * GIT_DIR, GIT_INDEX_FILE, its config and the commit's identity. The tests spawn git in scratch
  * repositories with this process's environment: cleared here, before any test, those commands act
- * on their own folder only.
+ * on their own folder only. Nor do they read the person's global or system git config (a `dialecte.*` key, an
+ * alias, a default branch): the suite sees what a CI machine sees, an empty one.
  */
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
 import {
@@ -18,3 +19,7 @@ for (const name of [
 	...DISCOVERY_ENVIRONMENT_VARIABLES,
 ])
 	delete process.env[name]
+
+// git reads /dev/null as an empty config file
+process.env.GIT_CONFIG_GLOBAL = '/dev/null'
+process.env.GIT_CONFIG_NOSYSTEM = '1'
