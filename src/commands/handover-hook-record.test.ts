@@ -1,4 +1,5 @@
 /** `handover run`: a commit's hook result recorded as a gate record of the tree it ran on, and read by the card. */
+
 import { chmodSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
@@ -7,6 +8,7 @@ import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.consta
 import { gitPathOf, readRecordFile } from '../../test/gate-records.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import { FAILING_HOOK_LINES, PASSING_HOOK_LINES } from '../../test/hook-output-lines.constants.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	createScratchRepository,
 	git,
@@ -72,7 +74,13 @@ function prepare(script: string | undefined): { root: string; out: string } {
 		lots: [{ paths: ['src/', 'CHANGELOG.md'], message: 'feat(read): read answers one' }],
 	}
 	writeFileSync(lotsPath, JSON.stringify(lotsFile))
-	expect(runHandover({ argv: [lotsPath], cliPath: '/opt/dialecte/dist/cli.js' }).exitCode).toBe(0)
+	expect(
+		runHandover({
+			argv: [lotsPath],
+			cliPath: '/opt/dialecte/dist/cli.js',
+			probe: noRepositoryCli,
+		}).exitCode,
+	).toBe(0)
 	return { root, out }
 }
 
@@ -85,6 +93,7 @@ async function runFolder(params: {
 	const lines: string[] = []
 	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
 		clock: createFakeClock(),
@@ -268,7 +277,11 @@ describe(
 			}
 			writeFileSync(lotsPath, JSON.stringify(lotsFile))
 
-			const written = runHandover({ argv: [lotsPath], cliPath: '/opt/dialecte/dist/cli.js' })
+			const written = runHandover({
+				argv: [lotsPath],
+				cliPath: '/opt/dialecte/dist/cli.js',
+				probe: noRepositoryCli,
+			})
 
 			expect(written.exitCode).toBe(0)
 			expect(gateLinesOf(written.output).filter((line) => line.endsWith('commit hook'))).toEqual([])

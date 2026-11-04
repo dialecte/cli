@@ -15,12 +15,14 @@ import { basename, dirname, join, relative, sep } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
+import { DEFAULT_PROBE_TIMEOUT_MILLISECONDS } from '../../test/handover-card-probe.constants.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import {
 	PERSON_WHO_RUNS_THE_REPOSITORY,
 	RUN_THE_HANDOVER,
 	TOUCH_THE_GIT_FOLDER,
 } from '../../test/refusal-wording.constants.ts'
+import { noRepositoryCli, recordingProbe } from '../../test/repository-cli-probe.ts'
 import {
 	createScratchRepository,
 	git,
@@ -32,6 +34,7 @@ import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
+import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { hashTestCode } from '../lib/tdd/tdd-files.ts'
 import { runGate } from './gate.ts'
@@ -42,7 +45,7 @@ import { runTdd } from './tdd.ts'
 import { describe, expect, it, onTestFinished } from 'vitest'
 
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
-import type { LotsFile } from '../lib/handover/handover.types.ts'
+import type { HandoverProbe, LotsFile } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
@@ -139,8 +142,10 @@ function writeHandover(params: {
 	argv?: string[]
 	columns?: number
 	probeTimeout?: number
+	probe?: HandoverProbe
 }) {
 	return runHandover({
+		probe: params.probe ?? noRepositoryCli,
 		argv: [params.lotsPath, ...(params.argv ?? [])],
 		cliPath: WRITER_CLI,
 		columns: params.columns,
@@ -153,10 +158,12 @@ async function runFolder(params: {
 	out: string
 	argv?: string[]
 	scratchRoot?: string
+	probe?: HandoverProbe
 }): Promise<{ exitCode: number; lines: string[]; text: string }> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
+		probe: params.probe ?? noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
 		clock: createFakeClock(),
@@ -1563,6 +1570,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const lines: string[] = []
 
 		const exitCode = await runHandoverRun({
+			probe: noRepositoryCli,
 			argv: ['--probe'],
 			write: (line) => lines.push(line),
 			clock: createFakeClock(),
@@ -1964,6 +1972,7 @@ describe(
 			}
 
 			const exitCode = await runHandoverRun({
+				probe: noRepositoryCli,
 				argv: [out],
 				write: record,
 				clock: createFakeClock(),
@@ -1988,6 +1997,7 @@ describe(
 			removeHookLogs({ lines: terminal.written })
 
 			const exitCode = await runHandoverRun({
+				probe: noRepositoryCli,
 				argv: [out],
 				write: terminal.output.writeLine,
 				clock: createFakeClock(),
@@ -2111,11 +2121,73 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 			}),
 		)
 
-		const lackingCard = writeHandover({ lotsPath: lacking.lotsPath }).output.split('\n').at(-1)
-		const havingCard = writeHandover({ lotsPath: having.lotsPath }).output.split('\n').at(-1)
+		const lackingCard = writeHandover({ lotsPath: lacking.lotsPath, probe: probeRepositoryCli })
+			.output.split('\n')
+			.at(-1)
+		const havingCard = writeHandover({ lotsPath: having.lotsPath, probe: probeRepositoryCli })
+			.output.split('\n')
+			.at(-1)
 
 		expect(lackingCard).toBe(`node '${WRITER_CLI}' handover run '${lacking.out}'`)
 		expect(havingCard).toBe(`cd '${having.out}' && bash commit.sh`)
+	})
+
+	it('the probe given to runHandover is the one the card uses → a probe answering true: the run line is bash commit.sh, asked once, for the repository', () => {
+		const { root, lotsPath, out } = prepare()
+		const asked = recordingProbe({ answer: true })
+
+		const result = writeHandover({ lotsPath, probe: asked.probe })
+
+		expect(result.output.split('\n').at(-1)).toBe(`cd '${out}' && bash commit.sh`)
+		expect(asked.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
+	})
+
+	it('the probe given to runHandover is the one the card uses → a probe answering false: the run line is the writer cli, asked once', () => {
+		const { root, lotsPath, out } = prepare()
+		const asked = recordingProbe({ answer: false })
+
+		const result = writeHandover({ lotsPath, probe: asked.probe })
+
+		expect(result.output.split('\n').at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
+		expect(asked.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
+	})
+
+	it('--rehash passes its probe to the card too → the rewritten card follows the probe, asked once', () => {
+		const { lotsPath, out } = prepare()
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		const asked = recordingProbe({ answer: true })
+
+		const result = writeHandover({ lotsPath, argv: ['--rehash'], probe: asked.probe })
+
+		expect(result.output.split('\n').at(-1)).toBe(`cd '${out}' && bash commit.sh`)
+		expect(asked.calls).toHaveLength(1)
+	})
+
+	it('handover run --rehearse given a probe → the card of the rehearsal follows its answer, asked once', async () => {
+		const { root, lotsPath, out } = prepare()
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		const yes = recordingProbe({ answer: true })
+		const no = recordingProbe({ answer: false })
+
+		const answeredYes = await runFolder({ out, argv: ['--rehearse'], probe: yes.probe })
+		const answeredNo = await runFolder({ out, argv: ['--rehearse'], probe: no.probe })
+
+		expect(answeredYes.lines).toContain(`cd '${out}' && bash commit.sh`)
+		expect(yes.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
+		expect(answeredNo.lines.some((line) => /^node '.+' handover run /.test(line))).toBe(true)
+		expect(answeredNo.lines).not.toContain(`cd '${out}' && bash commit.sh`)
+		expect(no.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
+	})
+
+	it('a real handover run that stops on a failing hook, given a probe → its card follows the probe answer, asked once', async () => {
+		const { root, out } = prepareWithHook('exit 1')
+		const asked = recordingProbe({ answer: true })
+
+		const result = await runFolder({ out, probe: asked.probe })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.lines).toContain(`cd '${out}' && bash commit.sh`)
+		expect(asked.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
 	})
 })
 
@@ -2146,6 +2218,7 @@ function runLive(params: {
 	}
 	const live = { ...params.live, writeLine: recording(params.live.writeLine) }
 	return runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out],
 		write: params.write ? recording(params.write) : live.writeLine,
 		clock: params.clock ?? createFakeClock(),
@@ -2558,7 +2631,7 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 		)
 
 		const startedAt = Date.now()
-		const result = writeHandover({ lotsPath, probeTimeout: 300 })
+		const result = writeHandover({ lotsPath, probeTimeout: 300, probe: probeRepositoryCli })
 		const elapsed = Date.now() - startedAt
 
 		expect(elapsed).toBeLessThan(5_000)
@@ -3441,6 +3514,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const { lotsPath } = await fullCardScenario({ failingBuild: true })
 
 		const output = runHandover({
+			probe: noRepositoryCli,
 			argv: [lotsPath],
 			cliPath: WRITER_CLI,
 			colour: true,
@@ -4016,7 +4090,12 @@ function legendLines(): string[] {
 
 describe('handover --legend', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('handover --legend → every term the card can print in two lines - what it means, then look: or look only if -; exit 0', () => {
-		const result = runHandover({ argv: ['--legend'], cliPath: WRITER_CLI, columns: 300 })
+		const result = runHandover({
+			argv: ['--legend'],
+			cliPath: WRITER_CLI,
+			columns: 300,
+			probe: noRepositoryCli,
+		})
 
 		expect({ exitCode: result.exitCode, lines: result.output.split('\n') }).toEqual({
 			exitCode: 0,

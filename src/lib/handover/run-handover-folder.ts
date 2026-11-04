@@ -27,7 +27,7 @@ import {
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { HandoverFolder, WriteLine } from './handover.types.ts'
+import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.ts'
 
 /** The exit code: 0 when every lot is committed, 1 when a guard or a commit refused. */
 export async function runHandoverFolder(params: {
@@ -37,6 +37,8 @@ export async function runHandoverFolder(params: {
 	write: WriteLine
 	clock: Clock
 	colour: boolean
+	/** Asks whether the repository's own cli runs hand-overs, for the card's run line. */
+	probe: HandoverProbe
 	onProcessGroup?: (pid: number) => void
 	/** Added to the environment the commits and their hooks run in (a rehearsal's short `TMPDIR`). */
 	hookEnvironment?: Record<string, string>
@@ -116,6 +118,7 @@ export async function runHandoverFolder(params: {
 		lots,
 		commits,
 		cliPath: params.cliPath,
+		probe: params.probe,
 		// the repository's hand-over is done only by a real run that committed every lot
 		done: !rehearsal && commits.length === lots.length,
 	})

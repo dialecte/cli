@@ -3,6 +3,7 @@
  * `updateLedger`, `scheduleItems`, `abandonRun`) on scratch repositories: runs of a branch, survivors the ledger
  * holds, and the hand-overs and recaps that read them.
  */
+
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
@@ -31,6 +32,7 @@ import {
 } from './mutation-hooks.constants.ts'
 import { PACKAGE_NAME, SCOPE_FILE } from './mutation-package.constants.ts'
 import { mutationPackage } from './mutation-package.ts'
+import { noRepositoryCli } from './repository-cli-probe.ts'
 import { WRITER_CLI } from './scratch-checks.constants.ts'
 import { git, initializeRepository, temporaryFolder, writeFiles } from './scratch-repository.ts'
 
@@ -266,7 +268,7 @@ export function hooksHandover(params: { declared: boolean }): {
 
 /** `dialecte handover <lots file>`: the card as printed. */
 export function writeHandover(lotsPath: string): { exitCode: number; output: string } {
-	return runHandover({ argv: [lotsPath], cliPath: WRITER_CLI })
+	return runHandover({ argv: [lotsPath], cliPath: WRITER_CLI, probe: noRepositoryCli })
 }
 
 /** `dialecte handover run <folder>`, every line it printed kept. */
@@ -277,6 +279,7 @@ export async function runFolder(params: {
 	const lines: string[] = []
 	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
 		clock: createFakeClock(),

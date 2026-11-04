@@ -3,10 +3,7 @@
  * (each lot, a merge with its tree, HEAD), the gates as their records say, the test receipts, the notes (before
  * a run only), and the command, before and after the run.
  */
-import { spawnSync } from 'node:child_process'
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename } from 'node:path'
 
 import { counted } from '../counted.ts'
 import { buildCardGateLines } from '../gate-records/card-gates.ts'
@@ -42,9 +39,6 @@ import {
 	CASE_TITLE_SEPARATOR,
 	EARLIER_LOTS_LINE,
 	FLAG_ORDER,
-	HANDOVER_PROBE_ANSWER,
-	HANDOVER_PROBE_COMMAND,
-	HANDOVER_PROBE_FOLDER_PREFIX,
 	HANDOVER_CARD_FOOTER,
 	HANDOVER_CARD_SECTIONS,
 	HANDOVER_CARD_TITLE,
@@ -82,6 +76,7 @@ import type {
 	DeclaredReceipt,
 	HandoverCard,
 	HandoverCardData,
+	HandoverProbe,
 	HandoverVerdict,
 	MergeLot,
 	ResolvedLot,
@@ -114,13 +109,15 @@ export function buildHandoverCard(params: {
 	probeTimeout?: number
 	/** Every lot is committed in the repository: the card says done, no command. */
 	done?: boolean
+	/** Asks whether the repository's own cli runs hand-overs. */
+	probe: HandoverProbe
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
 	const ownCli =
 		params.done ||
 		params.cliPath === undefined ||
-		runsHandovers({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
+		params.probe({ root, timeout: params.probeTimeout ?? HANDOVER_PROBE_TIMEOUT_MILLISECONDS })
 	const stateTree = computeStateTree(root)
 	const stateHash = hashStateTree(stateTree)
 	const gates = buildCardGateLines({
@@ -229,28 +226,6 @@ function mergeLine(merge: MergeLot): string {
 		`${conflicts} ${conflicts === 1 ? 'conflict' : 'conflicts'}`,
 		merge.tree ? `tree ${merge.tree.slice(0, CARD_SHA_LENGTH)}` : TREE_NOT_RECORDED,
 	].join(CARD_PART_SEPARATOR)
-}
-
-/** The repository installs a cli that runs hand-overs: it answers the probe `commit.sh` sends. */
-function runsHandovers(params: { root: string; timeout: number }): boolean {
-	const [command, ...args] = HANDOVER_PROBE_COMMAND
-	// the answer goes to a file, not a pipe: a process the probe left behind cannot hold the wait open
-	const folder = mkdtempSync(join(tmpdir(), HANDOVER_PROBE_FOLDER_PREFIX))
-	const answerPath = join(folder, 'answer.txt')
-	const answer = openSync(answerPath, 'w')
-	try {
-		const probe = spawnSync(command, args, {
-			cwd: params.root,
-			stdio: ['ignore', answer, 'ignore'],
-			timeout: params.timeout,
-			killSignal: 'SIGKILL',
-		})
-		// a probe that times out is a cli that cannot be trusted to run the hand-over
-		return probe.status === 0 && readFileSync(answerPath, 'utf8').includes(HANDOVER_PROBE_ANSWER)
-	} finally {
-		closeSync(answer)
-		rmSync(folder, { recursive: true, force: true })
-	}
 }
 
 /**

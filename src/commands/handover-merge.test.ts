@@ -14,6 +14,7 @@ import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	createScratchRepository,
 	git,
@@ -202,7 +203,7 @@ function mergeScenario(options: ScenarioOptions = {}): MergeScenario {
 }
 
 function writeHandover(lotsPath: string) {
-	return runHandover({ argv: [lotsPath], cliPath: WRITER_CLI })
+	return runHandover({ argv: [lotsPath], cliPath: WRITER_CLI, probe: noRepositoryCli })
 }
 
 async function runFolder(params: {
@@ -212,6 +213,7 @@ async function runFolder(params: {
 	const lines: string[] = []
 	removeHookLogs({ lines })
 	const exitCode = await runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: (line) => lines.push(line),
 		clock: createFakeClock(),
@@ -1060,7 +1062,11 @@ describe(
 
 				const refused = await runFolder({ out: scenario.out })
 				const afterRefusal = untouched(scenario.root)
-				const rehashed = runHandover({ argv: [scenario.lotsPath, '--rehash'], cliPath: WRITER_CLI })
+				const rehashed = runHandover({
+					argv: [scenario.lotsPath, '--rehash'],
+					cliPath: WRITER_CLI,
+					probe: noRepositoryCli,
+				})
 				const accepted = await runFolder({ out: scenario.out })
 
 				expect(refused.exitCode).toBe(1)
@@ -1108,6 +1114,7 @@ describe(
 			const scenario = mergeScenario({ noTree: true })
 
 			const result = runHandover({
+				probe: noRepositoryCli,
 				argv: [scenario.lotsPath],
 				cliPath: WRITER_CLI,
 				gitVersion: () => 'git version 2.37.1',
@@ -1614,7 +1621,11 @@ describe(
 			}
 			for (const [index, lot] of lotsFile.lots.entries()) lot.tree = trees[index] ?? NOT_A_TREE
 			writeFileSync(scenario.lotsPath, JSON.stringify(lotsFile))
-			const rehashed = runHandover({ argv: [scenario.lotsPath, '--rehash'], cliPath: WRITER_CLI })
+			const rehashed = runHandover({
+				argv: [scenario.lotsPath, '--rehash'],
+				cliPath: WRITER_CLI,
+				probe: noRepositoryCli,
+			})
 
 			const ran = await runFolder({ out: scenario.out })
 

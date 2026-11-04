@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	git,
 	initializeRepository,
@@ -94,7 +95,11 @@ function makeCommittedHandover(params: {
 		}),
 	)
 	expect(
-		runHandover({ argv: [join(params.folder, 'lots.json')], cliPath: '/opt/cli.js' }).exitCode,
+		runHandover({
+			argv: [join(params.folder, 'lots.json')],
+			cliPath: '/opt/cli.js',
+			probe: noRepositoryCli,
+		}).exitCode,
 	).toBe(0)
 	git({ root: worktree, args: ['add', 'CHANGELOG.md'] })
 	git({ root: worktree, args: ['commit', '-q', '-m', `docs(changelog): ${name}`] })

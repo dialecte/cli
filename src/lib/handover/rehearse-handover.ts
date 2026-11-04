@@ -54,13 +54,20 @@ import { runHandoverFolder } from './run-handover-folder.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { HandoverFolder, RehearsalDecision, WriteLine } from './handover.types.ts'
+import type {
+	HandoverFolder,
+	HandoverProbe,
+	RehearsalDecision,
+	WriteLine,
+} from './handover.types.ts'
 
 export async function rehearseHandover(params: {
 	handover: HandoverFolder
 	write: WriteLine
 	clock: Clock
 	colour: boolean
+	/** Asks whether the repository's own cli runs hand-overs, for the card's run line. */
+	probe: HandoverProbe
 	/** The folder the rehearsal folder is made in (`rehearsalScratchRoot`). */
 	scratchRoot: string
 	keep: boolean
@@ -101,6 +108,7 @@ export async function rehearseHandover(params: {
 			write,
 			clock: params.clock,
 			colour: params.colour,
+			probe: params.probe,
 			progress: params.progress,
 			tty: params.tty,
 			columns: params.columns,
@@ -159,6 +167,7 @@ export async function rehearseHandover(params: {
 			write,
 			clock: params.clock,
 			colour: params.colour,
+			probe: params.probe,
 			progress,
 			tty: params.tty,
 			columns: params.columns,

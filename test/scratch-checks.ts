@@ -3,6 +3,7 @@
  * outside the repository (so the tree does not change), and a package with a husky commit hook that counts
  * its runs the same way, with the hand-over written and run around it.
  */
+
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -13,6 +14,7 @@ import { readHandoverFolder } from '../src/lib/handover/read-handover-folder.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { createFakeClock } from './fake-clock.ts'
 import { removeHookLogs } from './hook-logs.ts'
+import { noRepositoryCli } from './repository-cli-probe.ts'
 import {
 	BRANCH_NAME,
 	HOOK_STEP_LINES,
@@ -197,7 +199,7 @@ export function writeHandoverFolder(params: {
 		lots: params.lots,
 	}
 	writeFileSync(lotsPath, JSON.stringify(lotsFile))
-	const written = runHandover({ argv: [lotsPath], cliPath: WRITER_CLI })
+	const written = runHandover({ argv: [lotsPath], cliPath: WRITER_CLI, probe: noRepositoryCli })
 	expect(written.exitCode).toBe(0)
 	return { out, output: written.output }
 }
@@ -227,6 +229,7 @@ export async function runFolder(params: { out: string; argv?: string[] }): Promi
 			if (name.startsWith(REHEARSAL_FOLDER_PREFIX)) seen.add(name)
 	}
 	const exitCode = await runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
 		write: function keepLine(line) {
 			lines.push(line)

@@ -1,8 +1,10 @@
 /** `handover run --rehearse`: a lot is rehearsed only when it can find something new; the card reads the store. */
+
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { ISO_TIME_PATTERN } from '../../test/gate-records.constants.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	BRANCH_NAME,
 	READ_LOT,
@@ -242,7 +244,11 @@ describe('handover run --rehearse: a merge lot', { timeout: SCRATCH_REPOSITORY_T
 		lotsFile.lots[0].tree = printedTree
 		writeFileSync(lotsPath, JSON.stringify(lotsFile))
 
-		const rehashed = runHandover({ argv: [lotsPath, '--rehash'], cliPath: WRITER_CLI })
+		const rehashed = runHandover({
+			argv: [lotsPath, '--rehash'],
+			cliPath: WRITER_CLI,
+			probe: noRepositoryCli,
+		})
 		const real = await runFolder({ out })
 
 		expect(printedTree).toBe(git({ root, args: ['rev-parse', `${tip}^{tree}`] }).trim())
