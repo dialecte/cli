@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
 ### Added
 
 - A contributor's committed text never names the tools that consume it: `git config --global dialecte.consumerNames "<name>, <name>"` lists them on the machine (never in the repository), and `rules` and `handover` refuse each as a whole word, case kept (`consumer tool name`). A consumer is never checked for it.
