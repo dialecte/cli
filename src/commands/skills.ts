@@ -5,6 +5,8 @@
  *   sync      install the skills of the app's dependencies (or of a local workspace) for the agents, and for
  *             Claude Code the station agents and the session-start check (`--no-session-check` leaves it out)
  *   generate  rewrite the generated blocks of the package's skills from its source
+ *   changed   which skills the change touches, and whether their evals are due (hand-written text) or not
+ *             (generated blocks only)
  *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
  *             has invalid frontmatter or a stale block, or when a method or a function exported by a
  *             package entry has no JSDoc summary / @intent
@@ -68,6 +70,7 @@ import {
 import { syncSessionCheck } from '../lib/stations/session-check.ts'
 import { CLAUDE_AGENTS_FOLDER, LOT_SKILL } from '../lib/stations/station-agents.constants.ts'
 import { syncStationAgents } from '../lib/stations/sync-station-agents.ts'
+import { runSkillsChanged } from './skills-changed.ts'
 import {
 	CONTRIBUTOR_SYNC_REFUSAL,
 	METHOD_DISCOVERY_DEPTH,
@@ -98,6 +101,12 @@ export async function run(argv: string[]): Promise<void> {
 			output: process.stdout,
 		})
 		process.stderr.write(result.output)
+		process.exitCode = result.exitCode
+		return
+	}
+	if (subcommand === 'changed') {
+		const result = runSkillsChanged({ cwd, argv: rest })
+		process.stdout.write(result.output)
 		process.exitCode = result.exitCode
 		return
 	}

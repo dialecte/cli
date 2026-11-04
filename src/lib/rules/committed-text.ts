@@ -1,8 +1,12 @@
+import { readGitConfig } from '../git.ts'
 /** Plan tags and standard citations in committed text, found line by line. */
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
 import {
+	CONSUMER_NAME_LABEL,
+	CONSUMER_NAMES_KEY,
 	GENERIC_REFERENCE_PATTERNS,
+	REGEX_SPECIAL_PATTERN,
 	REFERENCE_FREE_EXTENSIONS,
 } from './committed-text.constants.ts'
 
@@ -53,14 +57,31 @@ export function readReferencePatterns(root: string): ReferencePattern[] {
 		throw new Error(
 			`dialecte.allowReferences: ${refused.join(', ')} can never be allowed (only a tag can); allowable: ${allowable.join(', ')}`,
 		)
-	const excluded = readProfile(root) === 'contributor' ? allowed : allowable
+	const contributor = readProfile(root) === 'contributor'
+	const excluded = contributor ? allowed : allowable
 	return [
 		...GENERIC_REFERENCE_PATTERNS.filter((pattern) => !excluded.includes(pattern.label)),
 		...declared.map((source) => ({
 			label: `reference declared by ${packageJson.name ?? 'the package'}`,
 			source,
 		})),
+		...(contributor ? consumerNamePatterns(root) : []),
 	]
+}
+
+/**
+ * The tools that consume the package, which its committed text never names: read from the machine's git
+ * config (`git config --global dialecte.consumerNames "<name>, <name>"`), so the names themselves are never
+ * committed. Whole words, case kept; none when the key is unset.
+ */
+function consumerNamePatterns(root: string): ReferencePattern[] {
+	const names = (readGitConfig({ root, key: CONSUMER_NAMES_KEY }) ?? '')
+		.split(',')
+		.map((name) => name.trim())
+		.filter(Boolean)
+	if (names.length === 0) return []
+	const alternatives = names.map((name) => name.replace(REGEX_SPECIAL_PATTERN, '\\$&')).join('|')
+	return [{ label: CONSUMER_NAME_LABEL, source: `\\b(${alternatives})\\b` }]
 }
 
 /** Whether references are looked for in the file: not in style and image files, where a `#` number is a colour. */

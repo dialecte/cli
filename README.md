@@ -24,6 +24,7 @@ dialecte audit             # render the public type surface and flag readability
 dialecte skills sync       # install the agent skills your dependencies ship, for your agents
 dialecte skills generate   # refresh the generated blocks of this package's skills
 dialecte skills check      # fail on a skill citing what the code no longer has, or an undocumented public function
+dialecte skills changed    # per skill touched: hand-written (its evals are due) or generated blocks only (no evals)
 dialecte api find "<need>" # find a method by what you need
 dialecte api show <path>   # read one method's contract
 dialecte members <expr>    # what an expression of the live types holds
@@ -192,7 +193,9 @@ One field of package.json says what the package is to the cli:
 - `contributor`: a package of the Dialecte family. The same canon, and the contributor checks: tags are
   refused too (minus those `allowReferences` lifts), `dialecte contrib` runs the code rules, the docs build,
   the type bench and the release guard, and `skills sync` installs the contributor skills (`--no-contributing`
-  is refused).
+  is refused). A contributor never names the tools that consume it: list them once on the machine with
+  `git config --global dialecte.consumerNames "<name>, <name>"` (never committed, so the names stay out of the
+  repository) and `rules` and `handover` refuse them as whole words (`consumer tool name`).
 - Any other value is refused by every command that reads it:
   `dialecte.profile: "<value>" is not a profile; profiles: contributor, consumer`.
 

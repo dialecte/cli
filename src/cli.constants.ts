@@ -117,6 +117,7 @@ Skills:
                              # (--no-session-check leaves the check out)
   dialecte skills generate   # rewrite the generated blocks (verb map, method index, hook files) from the source
   dialecte skills check [--workspace <dir>]
+  dialecte skills changed [--base <ref>]   # per skill: hand-written change (evals due) or generated blocks only
                              # fail on a cited API / path / npm script that does not exist, or a stale block;
                              # a dialecte-lot skill's references/stations.md must match the cli's stations
 
