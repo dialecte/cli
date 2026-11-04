@@ -14,6 +14,7 @@ import {
 import { join } from 'node:path'
 
 import { deadPid } from '../../test/dead-pid.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	git,
 	initializeRepository,
@@ -268,7 +269,11 @@ function createPruneWorkspace(): {
 		}),
 	)
 	expect(
-		runHandover({ argv: [join(pendingPlan, 'lots.json')], cliPath: '/opt/cli.js' }).exitCode,
+		runHandover({
+			argv: [join(pendingPlan, 'lots.json')],
+			cliPath: '/opt/cli.js',
+			probe: noRepositoryCli,
+		}).exitCode,
 	).toBe(0)
 	return { workspace, core, worktrees }
 }

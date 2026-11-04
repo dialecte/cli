@@ -38,6 +38,7 @@ import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
 import { rehearsalScratchRoot, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
+import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
@@ -52,7 +53,7 @@ import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HandoverListing, WriteLine } from '../lib/handover/handover.types.ts'
+import type { HandoverListing, HandoverProbe, WriteLine } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
@@ -72,6 +73,7 @@ export async function run(argv: string[]): Promise<void> {
 			clock: createSystemClock(),
 			colour,
 			columns,
+			probe: probeRepositoryCli,
 			scratchRoot: rehearsalScratchRoot({
 				platform: process.platform,
 				systemTemporaryFolder: tmpdir(),
@@ -88,6 +90,7 @@ export async function run(argv: string[]): Promise<void> {
 					cliPath: realpathSync(process.argv[1]),
 					colour,
 					columns,
+					probe: probeRepositoryCli,
 				})
 	;(result.exitCode === 0 ? console.log : console.error)(result.output)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
@@ -100,6 +103,8 @@ export function runHandover(params: {
 	colour?: boolean
 	/** The card's width: it is exactly that wide, every line wrapped to it. Default: no wrapping. */
 	columns?: number
+	/** Asks whether the repository's own cli runs hand-overs, for the card's run line. */
+	probe: HandoverProbe
 	/** The most the repository's own cli may take to answer the `handover run --probe` check, in milliseconds. */
 	probeTimeout?: number
 	/** The git version line (`git version 2.43.0`): merge lots need git 2.38 or later. Default: asks git. */
@@ -156,6 +161,7 @@ export function runHandover(params: {
 		commits: [],
 		cliPath: params.cliPath,
 		probeTimeout: params.probeTimeout,
+		probe: params.probe,
 	})
 	if (hasFlag(argv, 'json'))
 		return {
@@ -182,6 +188,8 @@ export async function runHandoverRun(params: {
 	write: WriteLine
 	clock: Clock
 	colour: boolean
+	/** Asks whether the repository's own cli runs hand-overs, for the card's run line. */
+	probe: HandoverProbe
 	/** Where `--rehearse` makes its rehearsal folder. */
 	scratchRoot: string
 	/** A terminal that redraws its last line (spinner), or lines only; default: lines through `write`. */
@@ -216,6 +224,7 @@ export async function runHandoverRun(params: {
 			write,
 			clock: params.clock,
 			colour: params.colour,
+			probe: params.probe,
 			scratchRoot: params.scratchRoot,
 			keep: hasFlag(argv, 'keep'),
 			progress,
@@ -233,6 +242,7 @@ export async function runHandoverRun(params: {
 			write,
 			clock: params.clock,
 			colour: params.colour,
+			probe: params.probe,
 			progress,
 			tty: live.tty,
 			columns: params.columns ?? live.columns,

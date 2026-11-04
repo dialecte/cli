@@ -290,3 +290,6 @@ export type RehearsalPlanContext = {
 
 /** The tree a lot of a hand-over starts from and the tree its commit will hold. */
 export type LotTree = { before: string; tree: string }
+
+/** Whether the repository's own cli runs hand-overs (`handover run --probe`), within `timeout` milliseconds. */
+export type HandoverProbe = (params: { root: string; timeout: number }) => boolean

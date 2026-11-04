@@ -1,4 +1,5 @@
 /** `handover run`: a commit hook's output read as steps - live only its step and its warnings, then a summary. */
+
 import {
 	chmodSync,
 	existsSync,
@@ -33,6 +34,7 @@ import {
 	TYPE_ERROR,
 	VITE_CONFIG_LOADER_WARNING,
 } from '../../test/hook-output-lines.constants.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	createScratchRepository,
 	git,
@@ -125,7 +127,13 @@ function prepareWithHook(script: string): { out: string } {
 		lots: [{ paths: ['src/', 'CHANGELOG.md'], message: 'feat(read): read answers one' }],
 	}
 	writeFileSync(lotsPath, JSON.stringify(lotsFile))
-	expect(runHandover({ argv: [lotsPath], cliPath: '/opt/dialecte/dist/cli.js' }).exitCode).toBe(0)
+	expect(
+		runHandover({
+			argv: [lotsPath],
+			cliPath: '/opt/dialecte/dist/cli.js',
+			probe: noRepositoryCli,
+		}).exitCode,
+	).toBe(0)
 	return { out }
 }
 
@@ -147,6 +155,7 @@ function runLive(params: {
 	}
 	const live = { ...params.live, writeLine: recording(params.live.writeLine) }
 	return runHandoverRun({
+		probe: noRepositoryCli,
 		argv: [params.out],
 		write: params.write ? recording(params.write) : live.writeLine,
 		clock: params.clock ?? createFakeClock(),

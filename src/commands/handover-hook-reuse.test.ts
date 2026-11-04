@@ -2,6 +2,7 @@
  * `handover run` after a hook that reused a green `gate --full`: the hook record is keyed by the tree the
  * commit records, the reuse line is read into the note and the card, and a merge lot is not marked stale.
  */
+
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -14,6 +15,7 @@ import {
 	WRITTEN_REUSE_TREE,
 } from '../../test/gate-hook.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
 	BRANCH_NAME,
 	HOOK_RECORD_FILE,
@@ -152,7 +154,10 @@ describe(
 			const lotsFile = JSON.parse(readFileSync(lotsPath, 'utf8'))
 			lotsFile.lots[0].tree = tipTree
 			writeFileSync(lotsPath, JSON.stringify(lotsFile))
-			expect(runHandover({ argv: [lotsPath, '--rehash'], cliPath: WRITER_CLI }).exitCode).toBe(0)
+			expect(
+				runHandover({ argv: [lotsPath, '--rehash'], cliPath: WRITER_CLI, probe: noRepositoryCli })
+					.exitCode,
+			).toBe(0)
 
 			const ran = await runFolder({ out })
 

@@ -18,6 +18,7 @@ import {
 	writeGreenRecords,
 } from '../../../test/mutation-hooks.ts'
 import { survivorOf } from '../../../test/mutation-package.ts'
+import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { renderSectionCard } from '../card/render-section-card.ts'
@@ -46,6 +47,7 @@ function cardOf(params: { declared: boolean; gate?: boolean; lotFile?: string })
 				notes: undefined,
 				lots: [],
 				commits: [],
+				probe: noRepositoryCli,
 			}),
 	}
 }
