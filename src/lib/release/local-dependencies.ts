@@ -35,8 +35,13 @@ export function checkPublishable(params: { root: string }): { exitCode: number; 
 		exitCode: 1,
 		lines: [
 			'refused: package.json names a dependency by a local folder, which only resolves on this machine',
-			...local.map((dependency) => `  ${dependency.field}  ${dependency.name}  ${dependency.spec}`),
+			...local.map((dependency) => `  ${renderLocalDependency(dependency)}`),
 			'pin a published version of each (npm install --save-exact <name>@<version>) before publishing',
 		],
 	}
+}
+
+/** `devDependencies  core  file:../core`: the field, the name and the spec of a dependency named by a local folder. */
+export function renderLocalDependency(dependency: LocalDependency): string {
+	return `${dependency.field}  ${dependency.name}  ${dependency.spec}`
 }

@@ -29,6 +29,7 @@ function read(path: string): string {
 	return readFileSync(join(root, path), 'utf8')
 }
 
+const SESSION_COMMAND = 'npx --no-install @dialecte/cli doctor --brief'
 const FRONTMATTER = '---\nname: demo\ndescription: Use it.\n---\n'
 const API_START = '<!-- dialecte-skills:generated api -->'
 const API_METHOD = {
@@ -370,9 +371,93 @@ describe('runSync audience', () => {
 	})
 })
 
-describe('runSync station agents and the session check', () => {
-	const SESSION_COMMAND = 'npx --no-install @dialecte/cli doctor --brief'
+describe('runSync profile', () => {
+	const CONTRIBUTOR_SKILL =
+		'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: contributor\n---\n'
+	const CONSUMER_SKILL =
+		'---\nname: dialecte\ndescription: Use it.\nmetadata:\n  audience: consumer\n---\n'
+	const CONSUMER_LOT_SKILL =
+		'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: consumer\n---\n'
+	/** A project whose package.json declares `profile` (none: the field is left out) and whose core ships `lot`. */
+	function projectShipping(params: { profile?: string; lot: string }): void {
+		write(
+			'package.json',
+			JSON.stringify({
+				dependencies: { '@dialecte/core': '1' },
+				...(params.profile && { dialecte: { profile: params.profile } }),
+			}),
+		)
+		write(
+			'node_modules/@dialecte/core/package.json',
+			JSON.stringify({ name: '@dialecte/core', version: '1.0.0' }),
+		)
+		write('node_modules/@dialecte/core/skills/dialecte/SKILL.md', CONSUMER_SKILL)
+		write('node_modules/@dialecte/core/skills/dialecte-lot/SKILL.md', params.lot)
+	}
 
+	it('contributor without flags → contributor skills installed, manifest contributing: true', () => {
+		projectShipping({ profile: 'contributor', lot: CONTRIBUTOR_SKILL })
+
+		expect(() => runSync({ argv: ['--agent', 'agents'], cwd: root })).not.toThrow()
+		expect(manifestOf('.agents/skills')).toMatchObject({
+			installed: ['dialecte', 'dialecte-lot'],
+			contributing: true,
+		})
+	})
+
+	it('contributor --no-contributing → refused, nothing written', () => {
+		projectShipping({ profile: 'contributor', lot: CONTRIBUTOR_SKILL })
+
+		expect(() => runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })).toThrow(
+			'skills sync: the contributor profile installs the contributor skills',
+		)
+		expect(existsSync(join(root, '.agents'))).toBe(false)
+	})
+
+	it('consumer without flags and no manifest → consumer skills only (0.2.2 behaviour)', () => {
+		projectShipping({ lot: CONTRIBUTOR_SKILL })
+
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		expect(manifestOf('.agents/skills').installed).toEqual(['dialecte'])
+	})
+
+	it('consumer --contributing → contributor skills too, remembered', () => {
+		projectShipping({ profile: 'consumer', lot: CONTRIBUTOR_SKILL })
+
+		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+		runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+		expect(manifestOf('.agents/skills')).toMatchObject({
+			installed: ['dialecte', 'dialecte-lot'],
+			contributing: true,
+		})
+	})
+
+	it('consumer without flags, a dependency shipping dialecte-lot as a consumer skill → dialecte-lot installed with the station agents and the session check', () => {
+		projectShipping({ lot: CONSUMER_LOT_SKILL })
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte', 'dialecte-lot'])
+		expect(existsSync(join(root, '.claude/agents/dialecte-reviewer.md'))).toBe(true)
+		expect(read('.claude/settings.json')).toContain(SESSION_COMMAND)
+	})
+
+	it('consumer without flags, dialecte-lot shipped as a contributor skill → left out with today’s line', () => {
+		projectShipping({ lot: CONTRIBUTOR_SKILL })
+
+		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+
+		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte'])
+		expect(lines).toContain(
+			'no station agents: they come with the contributor skills (--contributing)',
+		)
+	})
+})
+
+describe('runSync station agents and the session check', () => {
 	function sessionCommands(): string[] {
 		// a settings.json sync created is deleted with its hook
 		if (!existsSync(join(root, '.claude/settings.json'))) return []
@@ -580,7 +665,11 @@ function syncCommand(argv: string[]) {
 	return runSyncCommand({ argv, cwd: root, ...NO_TERMINAL })
 }
 
-function manifestOf(folder: string): { installed: string[]; vendor?: string } {
+function manifestOf(folder: string): {
+	installed: string[]
+	vendor?: string
+	contributing?: boolean
+} {
 	return JSON.parse(read(`${folder}/.dialecte-skills.json`))
 }
 

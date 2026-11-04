@@ -512,6 +512,9 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 	it('a lot message with a ticket tag → refused, nothing written', () => {
 		const { lotsPath, out } = prepare({
+			committed: {
+				'package.json': JSON.stringify({ name: 'demo', dialecte: { profile: 'contributor' } }),
+			},
 			lots: [
 				{ paths: ['src/'], message: `feat(read): read answers one (${'#'}3102)` },
 				{ paths: ['CHANGELOG.md'], message: 'docs(changelog): read' },
@@ -618,6 +621,9 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 	it('a plan tag in an eval prompt under skills/ → refused when the folder is written', () => {
 		const { lotsPath } = prepare({
+			committed: {
+				'package.json': JSON.stringify({ name: 'demo', dialecte: { profile: 'contributor' } }),
+			},
 			files: { 'skills/demo/evals/case/prompt.md': `You implement ${'lot'} T5.\n` },
 			lots: [{ paths: ['skills/'], message: 'feat(skills): an eval case' }],
 		})

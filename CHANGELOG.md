@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `"dialecte": { "profile": "contributor" | "consumer" }` in a package's package.json says what the package is to the cli: a package of the Dialecte family, or an app built on one (the default). Any other value is refused by every command that reads it, naming the value and both profiles. `dialecte doctor` prints the profile, warns on an `allowReferences` a consumer does not need, on a contributor whose `dialecte.gate.full` still holds `docs` or `type-bench`, and on a contributor whose skills were synced without the contributor ones; an invalid profile is an error line (`❌`, exit 1; `doctor --brief` prints it and exits 0). In a contributor, `dialecte skills sync` installs the contributor skills without `--contributing`, and refuses `--no-contributing`.
+- `dialecte contrib [--no-reuse] [--json]`: the contributor checks, after `gate --full` and before `dialecte handover`. One row each: `rules` on the files changed against HEAD, the package's `dialecte.contrib.steps` (default: `docs`, `npm run doc:build` with the generated docs restored, and `type-bench`, `npm run type-bench:check`), `release` (no dependency named by a local folder), and `mutation` when a scope is declared. A step a green `gate --full` of this tree and install passed with the same command is not run again (`reused from gate --full at <time>`). The run is recorded (`dialecte-gate-contrib.json`) and stored by tree, keyed with HEAD; a green record of the same key answers the rows, `--no-reuse` runs them. Exit 0, 1 on a failed row, 2 in a consumer (nothing written).
+
+### Changed
+
+- **Breaking**: a package without `dialecte.profile` is a consumer. `rules` and `handover` no longer refuse its tags (`plan tag`, `acceptance criterion`, `ticket number`), only citations of a standard and its own `referencePatterns`; `allowReferences` changes nothing there. `mutants run` without a declared scope refuses, naming the opt-in. A dialecte package declares `"profile": "contributor"` to keep the tag refusal.
+- **Breaking**: the default `gate --full` steps are `check`, `skills`, `build` and `tests`: the docs build and the type bench moved to `dialecte contrib`. A package that lists them in `dialecte.gate.full` keeps them there, and `contrib` does not run them again on the same tree and install.
+
 ## [0.2.3] - 2026-11-04
 
 ### Changed

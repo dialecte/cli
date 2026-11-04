@@ -2,6 +2,7 @@
 import { run as api } from './commands/api.ts'
 import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
+import { run as contrib } from './commands/contrib.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
 import { explain } from './commands/explain.ts'
@@ -41,6 +42,7 @@ export const COMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
 	explain,
 	rules,
 	gate,
+	contrib,
 	tdd,
 	new: newVerb,
 	handover,
@@ -75,6 +77,7 @@ Commands:
   explain    What an error or diagnostic code means, when it is raised, the usual fix
   rules      Code-rules self-check of the changed files (syntax tree, not greps)
   gate       The package's Definition of Done with the real counts: --fast (default) | --full | --hook
+  contrib    The contributor checks of a dialecte package (profile contributor): rules, docs, type bench, release
   tdd        Receipts that each new test failed on an assertion before the code, then passed untouched
   new        Scaffold in the house style: new verb <namespace> <query|transaction> <name>
   handover   The guarded commit-by-lots hand-over a human runs, from a lots file: write | run | list
@@ -148,7 +151,8 @@ Run:
 Contributing (inside a dialecte repository):
   dialecte rules [<files...>] [--json]
                              # types / constants in their files, named functions, no await in an argument,
-                             # object parameters, full words, no plan tag or standard citation
+                             # object parameters, full words, no standard citation (nor, in a contributor
+                             # profile, a plan tag, acceptance criterion or ticket number)
   dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]
                              # steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults;
                              # refuses while a hand-over script holds the repository; --fast starts with the
@@ -160,6 +164,15 @@ Contributing (inside a dialecte repository):
   dialecte gate --hook [--no-reuse]
                              # in a commit hook: the test steps of --full, unless a green --full record of the
                              # committed tree (the index git hands the hook), install and steps answers them
+  dialecte contrib [--no-reuse] [--json]
+                             # in a package whose package.json says "dialecte": { "profile": "contributor" },
+                             # after gate --full and before handover: rules on the changed files, the
+                             # "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the
+                             # generatedDocs restored, npm run type-bench:check), no dependency named by a local
+                             # folder, the mutation line when a scope is declared; a step a green gate --full of
+                             # this tree and install passed with the same command is not run again; a green
+                             # record of the same tree, install, steps and HEAD answers the rows; --no-reuse runs
+                             # them; exit 1 on a failed row, 2 in a consumer
   dialecte tdd red [<test file>]... [--json]
                              # every case of the changed test files: a failure on an assertion (or a stub's
                              # 'not implemented', a TypeError of existing code, inside an asserting expect) is a

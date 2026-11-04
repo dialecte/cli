@@ -170,6 +170,7 @@ describe('diagnose', () => {
 				'✅ @dialecte/cli  0.2.0',
 				'✅ @dialecte/core  0.7.0',
 				'✅ @dialecte/scl  0.10.0',
+				'✅ profile  consumer (default)',
 				'✅ core API  @dialecte/scl on core 0.7.0 - 0.7: import inside the store (project.importFile answers { documentId, diagnostics }), per-file IO hook session, createTestHelpers',
 				'✅ skills  .claude/skills in sync with node_modules',
 				`✅ checkouts  none in ${workspace} (the installed packages are the source)`,
@@ -316,5 +317,29 @@ describe('diagnose, station agents', () => {
 
 	it('another vendor, or none known -> no station agent line', () => {
 		expect(stationLines()).toEqual([])
+	})
+})
+
+describe('diagnose, the skills of a contributor profile', () => {
+	it('a contributor whose manifest is not contributing, core shipping a contributor dialecte-lot → the skills line lacks dialecte-lot', () => {
+		write(
+			'app/package.json',
+			JSON.stringify({
+				name: 'app',
+				dependencies: { '@dialecte/core': '0.7.0', '@dialecte/scl': '0.10.0' },
+				dialecte: { profile: 'contributor' },
+			}),
+		)
+		write(
+			'app/node_modules/@dialecte/core/skills/dialecte-lot/SKILL.md',
+			'---\nname: dialecte-lot\ndescription: Use it.\nmetadata:\n  audience: contributor\n---\n',
+		)
+
+		expect(linesOf()).toContainEqual({
+			status: 'warning',
+			subject: 'skills',
+			detail: '.claude/skills lacks dialecte-lot',
+			fix: 'npx @dialecte/cli skills sync',
+		})
 	})
 })

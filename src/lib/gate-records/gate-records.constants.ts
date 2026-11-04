@@ -108,6 +108,9 @@ export const REHEARSAL_RECORD_DETAIL = 'rehearsal'
 /** The end of a card gate line read from a record made at another commit than HEAD. */
 export const RECORD_FROM_DETAIL = 'from {head}'
 
+/** The line before the steps a green record of the same check answers: `{command}` is `gate --full` or `contrib`. */
+export const RECORD_REUSED_LINE = 'reused: {command} green on this tree at {at} (HEAD {head})'
+
 /** How many characters of a sha or tree id the reuse lines and the card's record suffixes show. */
 export const SHORT_SHA_LENGTH = 12
 

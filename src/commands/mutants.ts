@@ -41,6 +41,7 @@ import {
 	IGNORER_PLUGIN_FILE,
 	LEGACY_RECORDS_PATH,
 	MUTANTS_VERBS,
+	MUTATION_CONSUMER_OPT_IN,
 	MUTANTS_WORK_FOLDER,
 	MUTATION_OFF,
 	MUTATION_RECORDS_PATH,
@@ -58,6 +59,7 @@ import { readPackageJson } from '../lib/package-json.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { processStartTime } from '../lib/process-start-time.ts'
+import { readProfile } from '../lib/profile/profile.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { DEFAULT_BASE_BRANCH } from '../lib/worktree/worktree.constants.ts'
@@ -162,6 +164,8 @@ async function runVerb(params: {
 
 	const packageJson = readPackageJson(root)
 	const declared = readMutationDeclaration({ packageJson })
+	if (declared.kind === 'none' && readProfile(root) === 'consumer')
+		return { exitCode: 1, output: `mutants run: ${MUTATION_CONSUMER_OPT_IN}` }
 	if (declared.kind === 'none')
 		return {
 			exitCode: 1,

@@ -91,12 +91,75 @@ describe('the ticket number pattern', () => {
 })
 
 describe('readReferencePatterns', () => {
-	it('a package declaring patterns → the generic ones, then its own', () => {
+	const TAG_LABELS = GENERIC_REFERENCE_PATTERNS.filter((pattern) => pattern.allowable).map(
+		(pattern) => pattern.label,
+	)
+	const CITATION_LABELS = GENERIC_REFERENCE_PATTERNS.map((pattern) => pattern.label).filter(
+		(label) => !TAG_LABELS.includes(label),
+	)
+
+	/** A package whose package.json holds `dialecte`. */
+	function packageDeclaring(params: { dialecte: Record<string, unknown>; name?: string }): string {
 		const root = temporaryFolder('dialecte-references-')
 		writeFileSync(
 			join(root, 'package.json'),
-			JSON.stringify({ name: '@dialecte/demo', dialecte: { referencePatterns: ['SPEC-[0-9]+'] } }),
+			JSON.stringify({ name: params.name ?? '@dialecte/demo', dialecte: params.dialecte }),
 		)
+		return root
+	}
+
+	it('consumer: generic citations and declared patterns, no tag', () => {
+		const root = packageDeclaring({ dialecte: { referencePatterns: ['SPEC-[0-9]+'] } })
+
+		expect(readReferencePatterns(root)).toEqual([
+			...GENERIC_REFERENCE_PATTERNS.filter((pattern) => !TAG_LABELS.includes(pattern.label)),
+			{ label: 'reference declared by @dialecte/demo', source: 'SPEC-[0-9]+' },
+		])
+		expect(readReferencePatterns(root).map((pattern) => pattern.label)).toEqual([
+			...CITATION_LABELS,
+			'reference declared by @dialecte/demo',
+		])
+	})
+
+	it('consumer with allowReferences: ["ticket number"] → same list as without it', () => {
+		const without = packageDeclaring({ dialecte: { referencePatterns: ['SPEC-[0-9]+'] } })
+		const allowing = packageDeclaring({
+			dialecte: { referencePatterns: ['SPEC-[0-9]+'], allowReferences: ['ticket number'] },
+		})
+
+		expect(readReferencePatterns(allowing)).toEqual(readReferencePatterns(without))
+		expect(readReferencePatterns(allowing).map((pattern) => pattern.label)).toEqual([
+			...CITATION_LABELS,
+			'reference declared by @dialecte/demo',
+		])
+	})
+
+	it('consumer with allowReferences: ["clause citation"] → throws as in a contributor', () => {
+		const root = packageDeclaring({
+			dialecte: { allowReferences: ['clause citation'] },
+			name: 'app',
+		})
+
+		expect(() => readReferencePatterns(root)).toThrow(
+			/clause citation.*never.*plan tag, acceptance criterion, ticket number/,
+		)
+	})
+
+	it('contributor with allowReferences: ["clause citation"] → throws, naming it and what may be allowed', () => {
+		const root = packageDeclaring({
+			dialecte: { profile: 'contributor', allowReferences: ['clause citation'] },
+			name: 'app',
+		})
+
+		expect(() => readReferencePatterns(root)).toThrow(
+			/clause citation.*never.*plan tag, acceptance criterion, ticket number/,
+		)
+	})
+
+	it('contributor: every generic pattern then the declared ones', () => {
+		const root = packageDeclaring({
+			dialecte: { profile: 'contributor', referencePatterns: ['SPEC-[0-9]+'] },
+		})
 
 		expect(readReferencePatterns(root)).toEqual([
 			...GENERIC_REFERENCE_PATTERNS,
@@ -104,15 +167,27 @@ describe('readReferencePatterns', () => {
 		])
 	})
 
-	it('a package allowing ticket numbers and acceptance criteria → the generic ones without them', () => {
-		const root = temporaryFolder('dialecte-references-')
-		writeFileSync(
-			join(root, 'package.json'),
-			JSON.stringify({
-				name: 'app',
-				dialecte: { allowReferences: ['ticket number', 'acceptance criterion'] },
-			}),
+	it('contributor with allowReferences: ["ticket number"] → every generic one but the ticket', () => {
+		const root = packageDeclaring({
+			dialecte: { profile: 'contributor', allowReferences: ['ticket number'] },
+			name: 'app',
+		})
+
+		expect(readReferencePatterns(root).map((pattern) => pattern.label)).toEqual(
+			GENERIC_REFERENCE_PATTERNS.map((pattern) => pattern.label).filter(
+				(label) => label !== 'ticket number',
+			),
 		)
+	})
+
+	it('a contributor allowing ticket numbers and acceptance criteria → the generic ones without them', () => {
+		const root = packageDeclaring({
+			dialecte: {
+				profile: 'contributor',
+				allowReferences: ['ticket number', 'acceptance criterion'],
+			},
+			name: 'app',
+		})
 
 		expect(readReferencePatterns(root).map((pattern) => pattern.label)).toEqual(
 			GENERIC_REFERENCE_PATTERNS.map((pattern) => pattern.label).filter(
@@ -121,21 +196,11 @@ describe('readReferencePatterns', () => {
 		)
 	})
 
-	it('a package allowing a citation of a standard → refused, naming it and what may be allowed', () => {
-		const root = temporaryFolder('dialecte-references-')
-		writeFileSync(
-			join(root, 'package.json'),
-			JSON.stringify({ name: 'app', dialecte: { allowReferences: ['clause citation'] } }),
-		)
-
-		expect(() => readReferencePatterns(root)).toThrow(
-			/clause citation.*never.*plan tag, acceptance criterion, ticket number/,
-		)
-	})
-
-	it('no package.json or no declaration → the generic ones', () => {
-		expect(readReferencePatterns(temporaryFolder('dialecte-references-'))).toEqual(
-			GENERIC_REFERENCE_PATTERNS,
-		)
+	it('no package.json or no declaration → the consumer list: citations only', () => {
+		expect(
+			readReferencePatterns(temporaryFolder('dialecte-references-')).map(
+				(pattern) => pattern.label,
+			),
+		).toEqual(CITATION_LABELS)
 	})
 })

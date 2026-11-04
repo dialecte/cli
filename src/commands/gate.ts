@@ -34,9 +34,13 @@ import {
 	computeCommitKey,
 	gateCommandHash,
 } from '../lib/gate-records/check-key.ts'
-import { findReusableRecord, isSameKey, originOfRecord } from '../lib/gate-records/check-store.ts'
+import { findReusableRecord, originOfRecord } from '../lib/gate-records/check-store.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
-import { recordGate } from '../lib/gate-records/gate-records.ts'
+import {
+	recordCheckedRun,
+	renderReuseLine,
+	reusedResults,
+} from '../lib/gate-records/record-reuse.ts'
 import {
 	GATE_HOOK_FAILED_LINE,
 	GATE_HOOK_GREEN_LINE,
@@ -44,14 +48,14 @@ import {
 	GATE_HOOK_NO_TEST_STEP_LINE,
 	GATE_HOOK_REUSED_LINE,
 	GATE_HOOK_RUNNING_LINE,
-	GATE_REUSED_LINE,
 	GATE_REUSED_VERDICT,
 	GATE_STATE_CHANGED_LINE,
 	STEP_DETAIL_INDENT,
 } from '../lib/gate/gate-config.constants.ts'
 import { resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
-import { renderStepCounts, renderVitestTestsLine, sumStepCounts } from '../lib/gate/step-counts.ts'
+import { renderVitestTestsLine, sumStepCounts } from '../lib/gate/step-counts.ts'
+import { renderStepLine } from '../lib/gate/step-line.ts'
 import { namesAnotherRepository } from '../lib/git-environment.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
@@ -65,9 +69,9 @@ import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { CheckKey, GateRecord, RecordedStep } from '../lib/gate-records/gate-records.types.ts'
+import type { CheckKey, GateRecord } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
-import type { GateMode, StepRerun, StepResult } from '../lib/gate/gate.types.ts'
+import type { GateMode, StepResult } from '../lib/gate/gate.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 
@@ -180,8 +184,13 @@ export async function runGate(params: {
 	reused = found && keyBefore && { record: found, key: keyBefore }
 	if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
 	else if (reused) {
-		if (progress) live?.writeLine(renderReuseLine({ mode, record: reused.record }))
-		for (const result of reusedResults({ record: reused.record, steps })) {
+		if (progress)
+			live?.writeLine(renderReuseLine({ command: `gate --${mode}`, record: reused.record }))
+		for (const result of reusedResults({
+			record: reused.record,
+			steps,
+			leftOut: [TDD_STEP.name],
+		})) {
 			results.push(result)
 			if (progress) showLive({ result })
 		}
@@ -201,22 +210,14 @@ export async function runGate(params: {
 		})
 		results.push(...stepResults)
 	}
-	const original = reused && originOfRecord(reused.record)
 	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
-	// a state changed while the steps ran (a step edited a file, an install, a rebuilt dependency) was not
-	// the state they checked: the run is recorded without a key, never stored
-	const changedTree =
-		keyBefore !== undefined && !isSameKey({ key: keyBefore, other: keyAfter })
-			? keyBefore.tree
-			: undefined
-	const changedWhileRunning = changedTree !== undefined
-	const stored = recordGate({
+	const { stored, changedWhileRunning } = recordCheckedRun({
 		root: cwd,
 		mode,
 		results,
-		// without a key the record holds the tree its steps started on: never current for the one they left
-		...(changedTree === undefined ? { key: keyAfter } : { checkedTree: changedTree }),
-		...(original && { reused: original }),
+		keyBefore,
+		keyAfter,
+		...(reused && { reused: reused.record }),
 	})
 	const notStored = changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []
 
@@ -231,7 +232,7 @@ export async function runGate(params: {
 				2,
 			),
 		}
-	const reuseLine = reused && renderReuseLine({ mode, record: reused.record })
+	const reuseLine = reused && renderReuseLine({ command: `gate --${mode}`, record: reused.record })
 	return {
 		exitCode,
 		output: [
@@ -332,33 +333,6 @@ function hookStepLines(result: StepResult): string[] {
 	]
 }
 
-/** `reused: gate --<mode> green on this tree at <time> (HEAD <short>)`, naming the run that checked. */
-function renderReuseLine(params: { mode: GateMode; record: GateRecord }): string {
-	const { at, head } = originOfRecord(params.record)
-	return GATE_REUSED_LINE.replace('{mode}', params.mode)
-		.replace('{at}', at)
-		.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
-}
-
-/** The configured steps as the reused record holds them (its tdd step left out: this run made its own). */
-function reusedResults(params: { record: GateRecord; steps: readonly GateStep[] }): StepResult[] {
-	return params.record.steps
-		.filter((step) => step.name !== TDD_STEP.name)
-		.map(function resultOf(recorded: RecordedStep): StepResult {
-			return {
-				step: params.steps.find((step) => step.name === recorded.name) ?? {
-					name: recorded.name,
-					run: '',
-				},
-				status: recorded.status,
-				counts: recorded.counts,
-				restored: [],
-				...(recorded.note && { note: recorded.note }),
-				...(recorded.reason && { reason: recorded.reason }),
-			}
-		})
-}
-
 /** The worktree's hygiene as the first step of `--fast`. */
 function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 	const report = checkHygiene({ root: params.cwd, declared: params.declared })
@@ -414,33 +388,4 @@ function declaredPaths(argv: readonly string[]): string[] {
 
 function notRun(step: GateStep): StepResult {
 	return { step, status: 'not-run', counts: {}, restored: [] }
-}
-
-function renderStepLine(result: StepResult): string {
-	const { step } = result
-	if (result.status === 'not-run') return `--    ${step.name}  not run: an earlier step failed`
-	if (result.status === 'skipped') return `skip  ${step.name}  ${result.reason}`
-	const counts = renderStepCounts(result.counts)
-	const restored = result.restored.length ? `restored ${result.restored.join(', ')}` : ''
-	const failure = result.reason && result.reason !== `exit ${result.exitCode}` ? result.reason : ''
-	return [
-		result.status === 'passed' ? 'ok  ' : 'FAIL',
-		step.name,
-		result.exitCode === undefined ? '' : `exit ${result.exitCode}`,
-		counts,
-		result.rerun ? renderRerun(result.rerun) : '',
-		failure,
-		result.note ?? '',
-		restored,
-	]
-		.filter(Boolean)
-		.join('  ')
-}
-
-/** `serial rerun of 3 file(s): exit 0, tests 3 passed / 3` - the second run of a failed vitest test step. */
-function renderRerun(rerun: StepRerun): string {
-	const what = rerun.files.length ? `${rerun.files.length} file(s)` : 'the step'
-	return [`serial rerun of ${what}: exit ${rerun.exitCode}`, renderStepCounts(rerun.counts)]
-		.filter(Boolean)
-		.join(', ')
 }
