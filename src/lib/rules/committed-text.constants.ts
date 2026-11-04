@@ -29,3 +29,11 @@ export const GENERIC_REFERENCE_PATTERNS: readonly ReferencePattern[] = [
 
 /** Style and image files: a hex colour such as `#fff` is never a ticket. No reference is looked for in them. */
 export const REFERENCE_FREE_EXTENSIONS: readonly string[] = ['css', 'scss', 'sass', 'less', 'svg']
+
+/** The git config key listing the tools that consume a contributor package (comma-separated). */
+export const CONSUMER_NAMES_KEY = 'dialecte.consumerNames'
+
+export const CONSUMER_NAME_LABEL = 'consumer tool name'
+
+/** Characters escaped in a consumer name so it matches literally. */
+export const REGEX_SPECIAL_PATTERN = /[.*+?^${}()|[\]\\]/g
