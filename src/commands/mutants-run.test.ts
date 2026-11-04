@@ -48,7 +48,31 @@ describe(
 	'mutants run: what it refuses and what it mutates',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('a package with no dialecte.mutation declaration → exit 1 naming dialecte.mutation, no run started, no Stryker call', async () => {
+		it('contributor without a scope → exit 1 naming dialecte.mutation, no run started, no Stryker call', async () => {
+			const root = mutationPackage()
+			writeFiles({
+				root,
+				files: {
+					'package.json': `${JSON.stringify({ name: PACKAGE_NAME, dialecte: { profile: 'contributor' } })}\n`,
+				},
+			})
+			const calls: StrykerCall[] = []
+
+			await expect(
+				runMutants({
+					cwd: root,
+					argv: ['run'],
+					dependencies: { runStryker: fakeStryker({ root, reports: {}, calls }) },
+				}),
+			).resolves.toMatchObject({
+				exitCode: 1,
+				output: expect.stringMatching(/^(?!.*opt-in in the consumer profile).*dialecte\.mutation/s),
+			})
+			expect(calls).toEqual([])
+			expect(storedRuns(root)).toEqual([])
+		})
+
+		it('consumer without a scope → refused naming the opt-in, no run started', async () => {
 			const root = mutationPackage()
 			writeFiles({ root, files: { 'package.json': `${JSON.stringify({ name: PACKAGE_NAME })}\n` } })
 			const calls: StrykerCall[] = []
@@ -61,10 +85,26 @@ describe(
 				}),
 			).resolves.toMatchObject({
 				exitCode: 1,
-				output: expect.stringContaining('dialecte.mutation'),
+				output: expect.stringContaining(
+					'mutation is opt-in in the consumer profile: declare "dialecte": { "mutation": { "scope": [...] } }',
+				),
 			})
 			expect(calls).toEqual([])
 			expect(storedRuns(root)).toEqual([])
+		})
+
+		it('consumer with a scope → runs as in a contributor', async () => {
+			const root = editedPackage()
+			const calls: StrykerCall[] = []
+
+			await expect(
+				runMutants({
+					cwd: root,
+					argv: ['run'],
+					dependencies: { runStryker: fakeStryker({ root, reports: { fast: ALL_KILLED }, calls }) },
+				}),
+			).resolves.toMatchObject({ exitCode: 0 })
+			expect(calls.length).toBeGreaterThan(0)
 		})
 
 		it('an invalid declaration → exit 1 with the reason, no run started', async () => {

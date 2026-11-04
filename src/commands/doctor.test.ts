@@ -96,3 +96,127 @@ describe('runDoctor --brief', () => {
 		expect(result.output).toContain('✅ dialecte')
 	})
 })
+
+describe('runDoctor profile', () => {
+	function doctor(): ReturnType<typeof runDoctor> {
+		return runDoctor({ argv: [], cwd: app, dialecteRoot: undefined, cliVersion: '0.2.0' })
+	}
+
+	it('a consumer without a field → profile consumer (default)', () => {
+		write('package.json', JSON.stringify({ name: 'app', dependencies: {} }))
+
+		expect(doctor().output).toContain('✅ profile  consumer (default)\n')
+	})
+
+	it('a consumer with allowReferences → the warning allowReferences is the consumer default: remove it', () => {
+		write(
+			'package.json',
+			JSON.stringify({
+				name: 'app',
+				dependencies: {},
+				dialecte: { allowReferences: ['ticket number'] },
+			}),
+		)
+
+		const result = doctor()
+
+		expect(result.output).toContain('allowReferences is the consumer default: remove it')
+		expect(result.exitCode).toBe(1)
+	})
+
+	it('a contributor → profile contributor', () => {
+		write(
+			'package.json',
+			JSON.stringify({ name: 'app', dependencies: {}, dialecte: { profile: 'contributor' } }),
+		)
+
+		expect(doctor().output).toContain('profile  contributor\n')
+	})
+
+	it('a contributor whose dialecte.gate.full holds docs → the warning to move it to dialecte.contrib.steps', () => {
+		write(
+			'package.json',
+			JSON.stringify({
+				name: 'app',
+				dependencies: {},
+				dialecte: {
+					profile: 'contributor',
+					gate: { full: [{ name: 'docs', run: 'npm run doc:build' }] },
+				},
+			}),
+		)
+
+		const result = doctor()
+
+		expect(result.output).toContain('dialecte.contrib.steps')
+		expect(result.exitCode).toBe(1)
+	})
+
+	it('a contributor whose skills manifest is not contributing → the warning with dialecte skills sync', () => {
+		write(
+			'package.json',
+			JSON.stringify({ name: 'app', dependencies: {}, dialecte: { profile: 'contributor' } }),
+		)
+		write('.claude/skills/.dialecte-skills.json', JSON.stringify({ installed: ['dialecte'] }))
+
+		const result = doctor()
+
+		expect(result.output).toContain('dialecte skills sync')
+		expect(result.exitCode).toBe(1)
+	})
+
+	it('an invalid profile → an error line naming the value, not a crash', () => {
+		write(
+			'package.json',
+			JSON.stringify({ name: 'app', dependencies: {}, dialecte: { profile: 'Contributer' } }),
+		)
+
+		const result = doctor()
+
+		expect(result.output).toMatch(/^❌ profile .*"Contributer" is not a profile/m)
+		expect(result.exitCode).not.toBe(0)
+	})
+
+	it('an invalid profile with --brief → the ❌ line printed, exit 0', () => {
+		write(
+			'package.json',
+			JSON.stringify({ name: 'app', dependencies: {}, dialecte: { profile: 'Contributer' } }),
+		)
+
+		const result = brief()
+
+		expect(result.output).toMatch(/^❌ profile .*"Contributer" is not a profile/m)
+		expect(result.exitCode).toBe(0)
+	})
+
+	it('a contributor whose dialecte.gate.full holds type-bench → the warning to move it to dialecte.contrib.steps', () => {
+		write(
+			'package.json',
+			JSON.stringify({
+				name: 'app',
+				dependencies: {},
+				dialecte: {
+					profile: 'contributor',
+					gate: { full: [{ name: 'type-bench', run: 'npm run type-bench:check' }] },
+				},
+			}),
+		)
+
+		const result = doctor()
+
+		expect(result.output).toContain('dialecte.contrib.steps')
+		expect(result.exitCode).toBe(1)
+	})
+
+	it('a plain contributor → no dialecte.contrib.steps warning', () => {
+		write(
+			'package.json',
+			JSON.stringify({ name: 'app', dependencies: {}, dialecte: { profile: 'contributor' } }),
+		)
+
+		const result = doctor()
+
+		expect(result.output).toContain('profile  contributor\n')
+		expect(result.output).not.toContain('dialecte.contrib.steps')
+	})
+})

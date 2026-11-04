@@ -2,3 +2,7 @@
 export const METHOD_DISCOVERY_DEPTH = 3
 
 export const SUBCOMMAND_NAMES = ['sync', 'generate', 'check'] as const
+
+/** `skills sync --no-contributing` in a contributor, whose profile always installs the contributor skills. */
+export const CONTRIBUTOR_SYNC_REFUSAL =
+	'skills sync: the contributor profile installs the contributor skills'

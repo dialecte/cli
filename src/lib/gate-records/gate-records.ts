@@ -17,7 +17,7 @@ import {
 } from './gate-records.constants.ts'
 import { computeStateHash, hashStateTree } from './state-hash.ts'
 
-import type { GateMode, StepResult } from '../gate/gate.types.ts'
+import type { StepResult } from '../gate/gate.types.ts'
 import type { CaseStatus } from '../tdd/tdd.types.ts'
 import type {
 	CheckKey,
@@ -58,7 +58,7 @@ function readHead(root: string): string {
 }
 
 /**
- * Records a gate run that reached its steps: the tdd step and the configured ones, in run order, with the
+ * Records a gate run (or a `dialecte contrib` run) that reached its steps: the tdd step and the configured ones, in run order, with the
  * key of what it checked. A run refused at the hygiene records nothing. A run whose
  * configured steps ran also goes to the repository's store of records by tree; a run answered from a
  * record (`reused`) and a run stopped at its tdd step do not: they checked nothing of the tree. Answers
@@ -66,7 +66,7 @@ function readHead(root: string): string {
  */
 export function recordGate(params: {
 	root: string
-	mode: GateMode
+	mode: Exclude<GateRecordMode, 'hook'>
 	results: StepResult[]
 	/** What the run checked; absent when the state changed while the steps ran (the record is then not stored). */
 	key?: CheckKey

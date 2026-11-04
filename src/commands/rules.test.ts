@@ -167,3 +167,48 @@ describe('runRules: the record in the git folder', () => {
 		})
 	})
 })
+
+describe('runRules: references by profile', () => {
+	// built from parts, so this file never matches the patterns it tests
+	const TICKET_AND_CRITERION = `fixes ${'#'}1234, see ${'AC'}1`
+	const CLAUSE = `as ${'Clause'} 5 says`
+	const PLAN_TAG = `added in ${'lot'} A`
+
+	/** A repository with a package.json holding `dialecte`, and a changed notes file holding `text`. */
+	function packageWithChange(params: { dialecte?: Record<string, unknown>; text: string }): string {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo', dialecte: params.dialecte })}\n`,
+		})
+		writeFiles({ root, files: { 'notes.md': `${params.text}\n` } })
+		return root
+	}
+
+	it('consumer: a changed file with a ticket number and an acceptance criterion → 0 errors', () => {
+		const root = packageWithChange({ text: TICKET_AND_CRITERION })
+
+		expect(runRules({ cwd: root, argv: [] })).toMatchObject({
+			exitCode: 0,
+			output: expect.stringContaining('0 error(s)'),
+		})
+	})
+
+	it('consumer: a changed file with a clause citation → 1 error (clause citation)', () => {
+		const root = packageWithChange({ text: CLAUSE })
+
+		const result = runRules({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('clause citation')
+		expect(result.output).toContain('1 error(s)')
+	})
+
+	it('contributor: a changed file with a plan tag → 1 error (plan tag)', () => {
+		const root = packageWithChange({ dialecte: { profile: 'contributor' }, text: PLAN_TAG })
+
+		const result = runRules({ cwd: root, argv: [] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('plan tag')
+		expect(result.output).toContain('1 error(s)')
+	})
+})

@@ -176,16 +176,55 @@ Run outside a package (no `package.json`), each answers a usage error.
 
 The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](https://github.com/dialecte/mcp) (`npx @dialecte/mcp`). It builds on the pure answer functions this package exports at `@dialecte/cli/lookups`.
 
+## Profiles
+
+One field of package.json says what the package is to the cli:
+
+```json
+"dialecte": { "profile": "contributor" }
+```
+
+- `consumer` (the default, a package without the field): an app built on a dialecte. It runs the canon: the
+  gate steps, the tdd receipts, the review ledger, the hand-over. `rules` and `handover` refuse a citation
+  of a standard and the package's own `referencePatterns`; tags (`plan tag`, `acceptance criterion`,
+  `ticket number`) are allowed. Mutation testing is off unless `dialecte.mutation.scope` is declared
+  (`mutants run` without one says how to opt in). `dialecte contrib` refuses with exit 2.
+- `contributor`: a package of the Dialecte family. The same canon, and the contributor checks: tags are
+  refused too (minus those `allowReferences` lifts), `dialecte contrib` runs the code rules, the docs build,
+  the type bench and the release guard, and `skills sync` installs the contributor skills (`--no-contributing`
+  is refused).
+- Any other value is refused by every command that reads it:
+  `dialecte.profile: "<value>" is not a profile; profiles: contributor, consumer`.
+
+The profile is read from the package.json at the command's root, never from a flag or the environment: it
+describes the package, not the session. `dialecte doctor` prints it (`profile consumer (default)`), warns on
+an `allowReferences` a consumer does not need, on a contributor whose `dialecte.gate.full` still holds `docs`
+or `type-bench` (they belong in `dialecte.contrib.steps`, or drop them for the defaults) and on a contributor
+whose skills were synced without the contributor ones; an invalid value is an error line (`❌`).
+
+`dialecte contrib` (in a contributor, after `gate --full` and before `dialecte handover`):
+
+```json
+"dialecte": {
+	"profile": "contributor",
+	"contrib": { "steps": [{ "name": "docs", "run": "npm run doc:build", "restoresGeneratedDocs": true }] }
+}
+```
+
+`contrib.steps` replaces the default package steps (`docs`, `type-bench`); `[]` keeps the built-in rows only
+(`rules`, `release`). See the command under [Contributing to a Dialecte package](#contributing-to-a-dialecte-package).
+
 ## Contributing to a Dialecte package
 
-Eleven commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Twelve commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
 - `dialecte rules [<files...>] [--json]` checks the code rules on the syntax tree of the changed files
   (or the files given): exported types outside a `*.types.ts` file, module constants outside a
-  `*.constants.ts` file, functions declared as `const`, an `await` inside an argument, plan tags and
-  standard citations are errors, and so is a test that takes the system's temporary folder itself as
+  `*.constants.ts` file, functions declared as `const`, an `await` inside an argument, standard
+  citations and the package's `referencePatterns` (and, in a contributor, plan tags, acceptance criteria
+  and ticket numbers: see [Profiles](#profiles)) are errors, and so is a test that takes the system's temporary folder itself as
   its root (`tmpdir()` handed to a call that lists or scans a folder, or given as `root` / `cwd` /
   `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
@@ -193,8 +232,9 @@ the answer.
   in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
   and warnings), which the hand-over card reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
-  `skills:check` and the tests of the changed files; `--full` adds `build`, the whole suite (the runner's
-  defaults: every file in parallel), `doc:build` and `type-bench:check`. Each step runs unfiltered, with
+  `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
+  runner's defaults: every file in parallel). The docs build and the type bench are contributor checks:
+  `dialecte contrib` runs them (see [Profiles](#profiles)). Each step runs unfiltered, with
   `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
@@ -292,6 +332,21 @@ the answer.
   stall of its own. Ctrl-C, SIGTERM or SIGHUP received by the cli is passed on to every running child's group.
   A child that asks the terminal (a gpg or ssh passphrase prompt) runs in a background group: it
   stops (state `T`) and is reported as stalled.
+- `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
+  `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
+  changed against HEAD (recorded as `dialecte rules` records it), the package's `dialecte.contrib.steps`
+  (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
+  `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a missing
+  npm script skips the step), `release` (no dependency named by a local folder), then `mutation` when the
+  package declares a mutation scope (read from the mutation store now, never recorded). A package step a
+  green `gate --full` record of this tree and install passed with the same name and command is not run
+  again: its row says `reused from gate --full at <time>`. The run is recorded as `dialecte-gate-contrib.json`
+  in the worktree's git folder and stored by tree like a gate record, its key holding HEAD too (the rules
+  row reads the changed files against it); a green record of the same key answers the rows
+  (`reused: contrib green on this tree at <time> (HEAD <sha>)`), `--no-reuse` runs them and every step a
+  `gate --full` passed. Exit 0 green, 1 a row failed, 2 refused (a consumer, where nothing is written, or
+  a value of package.json no command accepts). `--json`: `{ profile, rows: [{ name, status, detail }],
+  reused?: { at, head } }`.
 - `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json]` makes
   the order of the work visible: tests written from the spec before any code, red for a real reason, then
   made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,
@@ -430,8 +485,8 @@ the answer.
   none. The card reads the gates from their records.
   It refuses (and writes nothing) when the branch or HEAD differ, `core.hooksPath` names a folder that
   does not exist (git would skip every hook; it says how to restore it), something is staged, a changed
-  file is in no lot or in two, or a lot file (evals included) or message holds a plan tag or a standard
-  citation. Otherwise it writes the hand-over folder - the lots file, the snapshot (`files.txt`,
+  file is in no lot or in two, or a lot file (evals included) or message holds a standard citation, one
+  of the package's `referencePatterns`, or, in a contributor, a tag (see [Profiles](#profiles)). Otherwise it writes the hand-over folder - the lots file, the snapshot (`files.txt`,
   `files.sha256`, `files.deleted`, and `lots.sha256`: the lots file as reviewed) and a one-line
   `commit.sh` that runs
   `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
@@ -519,7 +574,7 @@ the answer.
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
-  lots, plan tags and citations, and last `mutation`: the card's `mutation` verdict computed again when the
+  lots, references (citations, declared patterns, and the tags of a contributor), and last `mutation`: the card's `mutation` verdict computed again when the
   guard runs (never taken from the card), so a run that reported a survivor, or died, after the card was
   written refuses the run with exit 1 and nothing committed (`✗ mutation <detail>`, each survivor and died
   run indented under it, then what to do with each); a run still running on a plain hand-over passes with
@@ -881,6 +936,7 @@ A package tunes them in its package.json:
 			}
 		]
 	},
+	"profile": "contributor",
 	"generatedDocs": [".vitepress/data/elements-catalog.json"],
 	"referencePatterns": ["SPEC-[0-9]+"],
 	"allowReferences": ["ticket number"],
@@ -892,10 +948,11 @@ A package tunes them in its package.json:
 when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
 it); `baseBranch` is the branch
-`worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the plan
-tags and citations `rules` and `handover` refuse; `allowReferences` lifts the generic tags the package commits on
-purpose - `ticket number`, `acceptance criterion`, `plan tag` (an app that cites its issue numbers) - and
-refuses any other label: a citation of a standard is never allowed. A lot may hold a symbolic link, a link to a
+`worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the
+citations (and, in a contributor, the tags) `rules` and `handover` refuse; `allowReferences` is the contributor's
+opt-out: it lifts generic tags a contributor commits on purpose - `ticket number`, `acceptance criterion`,
+`plan tag` - and refuses any other label in either profile: a citation of a standard is never allowed. A consumer
+allows every tag already, so `allowReferences` changes nothing there (`dialecte doctor` says to remove it). A lot may hold a symbolic link, a link to a
 folder included: it is hashed and scanned as its target text and committed as a link, the way git stores it (a
 rehearsal copies it as the same relative link).
 

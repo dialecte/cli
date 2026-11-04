@@ -37,3 +37,20 @@ export const CHECKOUT_LIST_LIMIT = 8
 
 /** The subject of the station agents' line. */
 export const STATION_AGENTS_SUBJECT = 'station agents'
+
+/** The subject of the profile's lines. */
+export const PROFILE_SUBJECT = 'profile'
+
+/** A consumer declaring `allowReferences`: every tag is allowed in a consumer already. */
+export const CONSUMER_ALLOWS_REFERENCES = 'allowReferences is the consumer default: remove it'
+
+/** A contributor whose `dialecte.gate.full` still runs `{steps}`, which `dialecte contrib` runs. */
+export const CONTRIBUTOR_GATE_STEPS =
+	'dialecte.gate.full holds {steps}: dialecte contrib runs them, move them to dialecte.contrib.steps (or drop them for the defaults)'
+
+/**
+ * A contributor whose skills in `{folder}` were synced without the contributor skills; the line's only fix is the
+ * command it names.
+ */
+export const CONTRIBUTOR_SKILLS_NOT_SYNCED =
+	'{folder} lacks the contributor skills: dialecte skills sync installs them in a contributor'

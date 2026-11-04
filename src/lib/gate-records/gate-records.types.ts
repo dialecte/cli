@@ -24,8 +24,8 @@ export type RecordedStep = {
 /** The run a record names: when it ran (ISO 8601) and its HEAD (full, or the short sha a hook's line printed). */
 export type RecordOrigin = { at: string; head: string }
 
-/** What wrote a gate record: `dialecte gate --fast` / `--full`, or a commit's hook during `handover run`. */
-export type GateRecordMode = GateMode | 'hook'
+/** What wrote a gate record: `dialecte gate --fast` / `--full`, `dialecte contrib`, or a commit's hook during `handover run`. */
+export type GateRecordMode = GateMode | 'hook' | 'contrib'
 
 /**
  * What a check ran on, as a record names it: the tree it ran on, what npm had installed, what ran, and the

@@ -7,6 +7,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { readProfile } from '../profile/profile.ts'
 import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
 import { AGENT_SKILL_FOLDERS, MANIFEST_FILE } from '../skills/sync-skills.constants.ts'
 import {
@@ -25,6 +26,7 @@ import {
 	INSTALL_COMMAND,
 	SYNC_COMMAND,
 } from './doctor.constants.ts'
+import { profileLines } from './profile-lines.ts'
 import { stationAgentLines } from './station-agent-lines.ts'
 
 import type { DoctorContext, DoctorLine } from './doctor.types.ts'
@@ -33,6 +35,7 @@ export function diagnose(context: DoctorContext): DoctorLine[] {
 	return [
 		{ status: 'ok', subject: 'dialecte', detail: `cli ${context.cliVersion} running` },
 		...installedPackages(context.cwd),
+		...profileLines(context.cwd),
 		...coreGenerations(context.cwd),
 		...skills(context.cwd),
 		...stationAgentLines(context.cwd),
@@ -120,11 +123,12 @@ function skills(cwd: string): DoctorLine[] {
 			},
 		]
 
+	const contributor = isContributor(cwd)
 	return synced.map(function syncLine(folder: string): DoctorLine {
 		const manifest = readSyncManifest(join(cwd, folder))
 		const expected = selectAudience({
 			sources,
-			contributing: manifest.contributing === true,
+			contributing: contributor || manifest.contributing === true,
 		}).selected
 		const missing = expected
 			.map((source) => source.name)
@@ -153,6 +157,15 @@ function skills(cwd: string): DoctorLine[] {
 			}
 		return { status: 'ok', subject: 'skills', detail: `${folder} in sync with node_modules` }
 	})
+}
+
+/** The package declares the contributor profile; a value that is no profile is the profile line's error, not this one's. */
+function isContributor(cwd: string): boolean {
+	try {
+		return readProfile(cwd) === 'contributor'
+	} catch {
+		return false
+	}
 }
 
 function isLink(path: string): boolean {

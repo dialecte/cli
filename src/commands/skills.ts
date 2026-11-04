@@ -22,6 +22,7 @@ import { askVendor } from '../lib/models/ask-vendor.ts'
 import { listManifestFolders, readRememberedVendor } from '../lib/models/remembered-vendor.ts'
 import { resolveSyncVendor } from '../lib/models/resolve-sync-vendor.ts'
 import { isVendorId } from '../lib/models/vendor-id.ts'
+import { readProfile } from '../lib/profile/profile.ts'
 import {
 	findQuotedSentences,
 	findUndocumentedMethods,
@@ -67,12 +68,17 @@ import {
 import { syncSessionCheck } from '../lib/stations/session-check.ts'
 import { CLAUDE_AGENTS_FOLDER, LOT_SKILL } from '../lib/stations/station-agents.constants.ts'
 import { syncStationAgents } from '../lib/stations/sync-station-agents.ts'
-import { METHOD_DISCOVERY_DEPTH, SUBCOMMAND_NAMES } from './skills.constants.ts'
+import {
+	CONTRIBUTOR_SYNC_REFUSAL,
+	METHOD_DISCOVERY_DEPTH,
+	SUBCOMMAND_NAMES,
+} from './skills.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
 import type { MethodEntry } from '../lib/discover.types.ts'
 import type { FormatOpts } from '../lib/format.types.ts'
 import type { VendorChoice, VendorId } from '../lib/models/model-tiers.types.ts'
+import type { Profile } from '../lib/profile/profile.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
 import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
 
@@ -116,6 +122,8 @@ export async function runSyncCommand(params: {
 	input: NodeJS.ReadableStream
 	output: NodeJS.WritableStream
 }): Promise<CommandOutput> {
+	// refused before the vendor is asked: a person never answers a prompt for a sync that does not run
+	refuseNoContributing({ argv: params.argv, cwd: params.cwd })
 	const choice = await chooseVendor(params)
 	runSync({ argv: params.argv, cwd: params.cwd, vendor: choice.vendor })
 	return { output: choice.output, exitCode: 0 }
@@ -164,6 +172,7 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		)
 	if (hasFlag(argv, 'contributing') && hasFlag(argv, 'no-contributing'))
 		throw new Error('skills sync: --contributing and --no-contributing exclude each other')
+	const profile = refuseNoContributing({ argv, cwd })
 
 	// every manifest of the project says the same vendor, the folders of this sync or not
 	if (params.vendor !== undefined)
@@ -171,7 +180,7 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 			rememberVendor({ folder: join(cwd, folder), vendor: params.vendor })
 
 	const targetFolders = agents.map((agent) => join(cwd, AGENT_SKILL_FOLDERS[agent]))
-	const contributing = isContributingSync({ argv, targetFolders })
+	const contributing = isContributingSync({ argv, targetFolders, profile })
 	const discovered = discoverSkillSources({ cwd, from: getArg(argv, 'from') })
 	const { missingDependencies } = discovered
 	const { selected: sources, leftOut } = selectAudience({
@@ -224,11 +233,24 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		console.log('No dependency ships skills (look for skills/<name>/SKILL.md).')
 }
 
+/** The package's profile; `--no-contributing` in a contributor, which always installs the contributor skills, throws. */
+function refuseNoContributing(params: { argv: string[]; cwd: string }): Profile {
+	const profile = readProfile(params.cwd)
+	if (profile === 'contributor' && hasFlag(params.argv, 'no-contributing'))
+		throw new Error(CONTRIBUTOR_SYNC_REFUSAL)
+	return profile
+}
+
 /**
- * `--contributing` installs the contributor skills too, `--no-contributing` stops; without either, a sync does
- * what the last one did (any target folder's manifest says so).
+ * A contributor installs the contributor skills, always. In a consumer, `--contributing` installs them too,
+ * `--no-contributing` stops; without either, a sync does what the last one did (any target folder's manifest says so).
  */
-function isContributingSync(params: { argv: string[]; targetFolders: readonly string[] }): boolean {
+function isContributingSync(params: {
+	argv: string[]
+	targetFolders: readonly string[]
+	profile: Profile
+}): boolean {
+	if (params.profile === 'contributor') return true
 	if (hasFlag(params.argv, 'contributing')) return true
 	if (hasFlag(params.argv, 'no-contributing')) return false
 	return params.targetFolders.some((folder) => readSyncManifest(folder).contributing === true)

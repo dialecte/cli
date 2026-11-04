@@ -108,6 +108,10 @@ export const MUTATION_LEDGER_FILE = 'ledger.json'
 
 export const NOTHING_TO_MUTATE = 'nothing to mutate'
 
+/** What `run` answers a consumer that declares no mutation scope: mutation is off until it opts in. */
+export const MUTATION_CONSUMER_OPT_IN =
+	'mutation is opt-in in the consumer profile: declare "dialecte": { "mutation": { "scope": [...] } }'
+
 /** What `run` prints when the lot's switch, or a lot touching no scope file, leaves mutation off. */
 export const MUTATION_OFF = 'mutation off for this lot'
 

@@ -67,6 +67,10 @@
 		"file:../../../../core": false
 	},
 	"dialecte": {
+		"profile": "contributor",
+		"contrib": {
+			"steps": []
+		},
 		"tdd": {
 			"production": [
 				"test/suite-guard"

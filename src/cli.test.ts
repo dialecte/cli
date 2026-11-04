@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { temporaryFolder } from '../test/scratch-repository.ts'
@@ -43,5 +43,34 @@ describe('the cli', { timeout: 30_000 }, () => {
 		expect(`${usage.stdout}${usage.stderr}`).not.toContain('--no-wait')
 		expect(readme).not.toContain('--no-wait')
 		expect(readme).not.toContain('lock run')
+	})
+
+	it('--help lists contrib', () => {
+		const help = spawnSync(process.execPath, [CLI_SOURCE, '--help'], {
+			encoding: 'utf8',
+			cwd: temporaryFolder('dialecte-cli-help-'),
+		})
+
+		expect(help.stdout).toMatch(/^\s+dialecte contrib\b/m)
+	})
+
+	it('contrib in a folder whose package.json has no profile → exit 2, the consumer refusal', () => {
+		const folder = temporaryFolder('dialecte-cli-contrib-')
+		writeFileSync(join(folder, 'package.json'), JSON.stringify({ name: 'app' }))
+
+		const run = spawnSync(process.execPath, [CLI_SOURCE, 'contrib'], {
+			encoding: 'utf8',
+			cwd: folder,
+		})
+
+		expect(run.status).toBe(2)
+		expect(run.stdout).toContain('contrib: no contributor checks in the consumer profile')
+	})
+
+	it('the README has a Profiles section naming dialecte contrib', () => {
+		const readme = readFileSync(join(import.meta.dirname, '..', 'README.md'), 'utf8')
+
+		expect(readme).toContain('## Profiles')
+		expect(readme).toContain('dialecte contrib')
 	})
 })

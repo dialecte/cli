@@ -24,6 +24,10 @@ export type DialecteField = {
 	generatedDocs?: string[]
 	/** The branch work is merged into (`main` when not said): `worktree add` starts from it, `worktree prune` compares with it. */
 	baseBranch?: string
+	/** `contributor` (a package of the Dialecte family) or `consumer` (an app; the default). */
+	profile?: string
+	/** The package steps of `dialecte contrib`, replacing the default ones (`docs`, `type-bench`). */
+	contrib?: { steps?: GateStep[] }
 	/** Steps that replace the default ones of `dialecte gate`. */
 	gate?: { fast?: GateStep[]; full?: GateStep[] }
 	/**

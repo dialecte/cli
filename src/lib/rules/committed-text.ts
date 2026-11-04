@@ -1,5 +1,6 @@
 /** Plan tags and standard citations in committed text, found line by line. */
 import { readPackageJson } from '../package-json.ts'
+import { readProfile } from '../profile/profile.ts'
 import {
 	GENERIC_REFERENCE_PATTERNS,
 	REFERENCE_FREE_EXTENSIONS,
@@ -33,8 +34,10 @@ export function findReferences(params: {
 }
 
 /**
- * The generic patterns but those the package allows (`"dialecte": { "allowReferences" }`), then those it declares
- * (`"dialecte": { "referencePatterns" }`). Allowing a pattern that is not allowable (a citation of a standard) throws.
+ * The generic patterns a package's committed text may not hold, then those it declares
+ * (`"dialecte": { "referencePatterns" }`). A consumer allows every tag; a contributor allows only those it lists
+ * (`"dialecte": { "allowReferences" }`). Allowing a pattern that is not allowable (a citation of a standard) throws,
+ * in either profile.
  */
 export function readReferencePatterns(root: string): ReferencePattern[] {
 	const packageJson = readPackageJson(root)
@@ -50,8 +53,9 @@ export function readReferencePatterns(root: string): ReferencePattern[] {
 		throw new Error(
 			`dialecte.allowReferences: ${refused.join(', ')} can never be allowed (only a tag can); allowable: ${allowable.join(', ')}`,
 		)
+	const excluded = readProfile(root) === 'contributor' ? allowed : allowable
 	return [
-		...GENERIC_REFERENCE_PATTERNS.filter((pattern) => !allowed.includes(pattern.label)),
+		...GENERIC_REFERENCE_PATTERNS.filter((pattern) => !excluded.includes(pattern.label)),
 		...declared.map((source) => ({
 			label: `reference declared by ${packageJson.name ?? 'the package'}`,
 			source,
