@@ -1,6 +1,6 @@
 /**
  * `decisions.md` in a lot's hand-over folder: the decisions made outside the findings ledger (the user's
- * above all), one row `| decision | by | when |` each. `record choice` appends a row the way `record review`
+ * above all), one row `| decision | by | when |` each. `lot choice` appends a row the way `lot finding`
  * appends a finding; `recap` reads the rows back.
  */
 import { existsSync, readFileSync } from 'node:fs'

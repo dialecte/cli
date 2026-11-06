@@ -19,7 +19,7 @@ export function readHandoverFolder(folder: string): HandoverFolder | string {
 		HANDOVER_FILES.lotsHash,
 	].filter((name) => !existsSync(join(absoluteFolder, name)))
 	if (missing.length)
-		return `${absoluteFolder} misses ${missing.join(', ')}: write it with \`dialecte handover <lots.json>\``
+		return `${absoluteFolder} misses ${missing.join(', ')}: write it with \`dialecte handover write <lots.json>\``
 	const files = readLines(join(absoluteFolder, HANDOVER_FILES.files))
 	const deleted = new Set(readLines(join(absoluteFolder, HANDOVER_FILES.deleted)))
 	const mergesPath = join(absoluteFolder, HANDOVER_FILES.merges)

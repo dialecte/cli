@@ -1,6 +1,6 @@
 /**
- * `dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]` - the commit-by-lots hand-over a human
- * runs. From a lots file (repository, expected branch and HEAD, lots with paths and messages) it checks
+ * `dialecte handover write <lots.json> [--out <dir>] [--rehash] [--json]` (or `dialecte handover <lots.json>`)
+ * - the commit-by-lots hand-over a human runs. From a lots file (repository, expected branch and HEAD, lots with paths and messages) it checks
  * every guard, then writes the hand-over folder (the lots file, the snapshot and a one-line `commit.sh`)
  * and the card a person reviews, and takes the repository's hand-over lock.
  *
@@ -72,6 +72,7 @@ import {
 	HANDOVER_RUN_TEXTS,
 	HANDOVER_SHOW_TEXTS,
 	HANDOVER_STORE_REFUSALS,
+	HANDOVER_USAGE,
 	HANDOVER_WRITTEN_NOTE,
 	RUNNABLE_STATES,
 } from '../lib/handover/handover.constants.ts'
@@ -160,7 +161,15 @@ function runHandoverVerb(params: {
 			probe: probeRepositoryCli,
 			cliPath,
 		})
-	return runHandover({ argv, cliPath, colour, columns, probe: probeRepositoryCli })
+	// write is the named form of handover <lots.json>, which stays
+	const writeArguments = argv[0] === 'write' ? rest : argv
+	return runHandover({
+		argv: writeArguments,
+		cliPath,
+		colour,
+		columns,
+		probe: probeRepositoryCli,
+	})
 }
 
 export function runHandover(params: {
@@ -191,7 +200,7 @@ export function runHandover(params: {
 			}),
 		}
 	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
-	if (!lotsPath) return usage('handover: expected the path of a lots file')
+	if (!lotsPath) return usage(HANDOVER_USAGE)
 	const absoluteLotsPath = resolve(lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)

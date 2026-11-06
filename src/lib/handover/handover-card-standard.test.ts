@@ -45,7 +45,7 @@ describe('the card’s standard line', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 		expect(data.verdict).toBe('READY')
 	})
 
-	it('DIALECTE_STANDARD naming an existing folder and nothing recorded → ✗ standard, verdict BLOCKED', async () => {
+	it('DIALECTE_STANDARD naming an existing folder and nothing recorded → ✗ standard citing dialecte lot standard, verdict BLOCKED', async () => {
 		vi.stubEnv(STANDARD_ENVIRONMENT_VARIABLE, temporaryFolder('dialecte-standard-'))
 		const root = await gatedConsumer()
 

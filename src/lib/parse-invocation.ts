@@ -1,6 +1,7 @@
 /**
  * `dialecte <command> [options]`: `--help` or `-h` anywhere before `--` answers with the help and runs
- * nothing, so a command never receives it as an option and never runs by mistake. The words after `--`
+ * nothing, so a command never receives it as an option and never runs by mistake: that command's help after
+ * a known command, the global help otherwise; `--json` before `--` asks for it as JSON. The words after `--`
  * are the command's own (a finding starting with a dash) and are not read.
  */
 import type { Invocation } from './parse-invocation.types.ts'
@@ -12,7 +13,12 @@ export function parseInvocation(params: {
 	const [command, ...rest] = params.argv
 	const separator = params.argv.indexOf('--')
 	const options = separator === -1 ? params.argv : params.argv.slice(0, separator)
-	if (!command || options.includes('--help') || options.includes('-h')) return { kind: 'help' }
+	if (!command || options.includes('--help') || options.includes('-h')) {
+		const json = options.includes('--json')
+		return params.commandNames.includes(command ?? '')
+			? { kind: 'help', command, json }
+			: { kind: 'help', json }
+	}
 	if (!params.commandNames.includes(command)) return { kind: 'unknown', command }
 	return { kind: 'run', command, argv: rest }
 }

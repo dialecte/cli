@@ -17,40 +17,73 @@ npm i -D @dialecte/cli   # provides the `dialecte` binary
 
 ## Commands
 
+`dialecte --help` lists the commands by family; `dialecte <command> --help` prints that command only (its
+verbs, flags, exit codes and one example); `dialecte --help --json` answers every command, verb, flag and exit
+code from the one map the code declares, and `dialecte <command> --help --json` that one command in the same
+shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
+2 usage or refused; a command's help says when it differs.
+
 ```
-dialecte coverage          # generate complete, schema-driven type-coverage probes
-dialecte bench [--check]   # measure the type-instantiation cost of your own types (library .d.ts skipped); --check gates CI
-dialecte audit             # render the public type surface and flag readability issues (C1–C6)
-dialecte skills sync       # install the agent skills your dependencies ship, for your agents
-dialecte skills generate   # refresh the generated blocks of this package's skills
-dialecte skills check      # fail on a skill citing what the code no longer has, or an undocumented public function
-dialecte skills changed    # per skill touched: hand-written (its evals are due) or generated blocks only (no evals)
-dialecte api find "<need>" # find a method by what you need
-dialecte api show <path>   # read one method's contract
+Discover    api  members  schema  explain
+Use         run  fixture  new
+Grow        lot
+Check       gate  tdd  rules  contrib  mutants
+Hand over   handover
+Workspace   worktree  doctor  models  skills
+Maintain    bench  coverage  narrowing  audit  text
+```
+
+```
+dialecte api find "<need>" # find a method by what you need; api show <path>: one method's contract
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
-dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
-dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
-dialecte rules             # code-rules self-check of the changed files
+dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
+dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
+dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
+dialecte new verb <namespace> <query|transaction> <name>
+dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
+dialecte lot finding|decide|snapshot|choice|standard <folder> ...   # a lot's review rounds, in its hand-over folder
+dialecte lot delta <folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
+dialecte lot recap <folder>   # the pull request's expandable part, built from the hand-over's records only
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
-dialecte new verb <namespace> <query|transaction> <name>
-dialecte handover <lots.json>   # the guarded commit-by-lots hand-over a human runs (show, run, abandon, list)
-dialecte handover --legend      # every term of the hand-over card: what it means, whether to look
-dialecte worktree add|prune     # a worktree ready to work in (sibling links, node_modules checked); what a merge left behind
-dialecte record review|decision|snapshot   # a lot's findings ledger and round snapshots, in its hand-over folder
-dialecte record choice <folder> --by <who> <decision>   # a decision made outside the ledger, in decisions.md
-dialecte record standard <folder> consulted <note>      # the standard check, read by the card's standard line
-dialecte recap <folder>    # the pull request's expandable part, built from the hand-over's records only
-dialecte mutants run|status|schedule|abandon|migrate|judge|record|drop   # mutation testing of the declared scope; survivors tracked until handled
+dialecte rules             # code-rules self-check of the changed files
+dialecte contrib           # the contributor checks, after gate --full and before the hand-over
+dialecte mutants run|status|schedule|abandon|migrate|judge|record|drop   # mutation testing of the declared scope
+dialecte handover write <lots.json>   # the guarded commit-by-lots hand-over a human runs (handover <lots.json> too)
+dialecte handover show|run|abandon|list|--legend
+dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
+dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
+dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
+dialecte skills sync|generate|check|changed   # the agent skills your dependencies ship, and this package's own
+dialecte bench [--check]   # measure the type-instantiation cost of your own types; --check gates CI
+dialecte coverage          # generate complete, schema-driven type-coverage probes
+dialecte narrowing         # assert schema-derived type narrowing still holds
+dialecte audit             # render the public type surface and flag readability issues (C1-C6)
 dialecte text check <file> # the human part of a GitHub text: its fixed headings and its word cap
-dialecte review delta <folder> --round <n> # the fix diff since round n-1; --worktree: the old code to run a test on
-dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
-dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
-dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
-dialecte --help
 ```
+
+### Renamed in 1.0
+
+The review rounds' commands moved under `lot`. The old forms run nothing and write nothing: each answers
+`renamed: dialecte <old> is now dialecte <new>` on stderr, exit 2, until 2.0. Its second line is the full new
+command with the same arguments, or, with no arguments, the new form's usage line; `record` or `review`
+without a verb lists every form that replaced it. Asked with `--help`, an old form prints the same answer on
+stdout, with the words given before `--help`, exit 0; with `--help --json` it prints
+`{ renamed: [{ old, new }] }`, the words after `dialecte` (`record` lists its five forms).
+
+| 1.0                                                                                   | Before                     |
+| ------------------------------------------------------------------------------------- | -------------------------- |
+| `dialecte lot finding <folder> --round <n> --severity <s> --at <file:line> <finding>` | `dialecte record review`   |
+| `dialecte lot decide <folder> <id> <state>`                                           | `dialecte record decision` |
+| `dialecte lot snapshot <folder> --round <n>`                                          | `dialecte record snapshot` |
+| `dialecte lot choice <folder> --by <who> <decision>`                                  | `dialecte record choice`   |
+| `dialecte lot standard <folder> consulted <note> \| not-consulted <reason>`           | `dialecte record standard` |
+| `dialecte lot delta <folder> --round <n> [--worktree] [--json]`                       | `dialecte review delta`    |
+| `dialecte lot recap <folder>`                                                         | `dialecte recap`           |
+
+`dialecte handover write <lots.json>` names what `dialecte handover <lots.json>` does; the old form stays.
 
 ## Zero-config
 
@@ -238,7 +271,7 @@ The hand-over follows the profile:
   install, the linked dependencies), no record can answer the real run: the rehearsal says which part, and
   does not run contrib.
 - Both profiles get the card's `standard` line (see the hand-over card below) and
-  `dialecte record standard <folder> consulted <note> | not-consulted <reason>`.
+  `dialecte lot standard <folder> consulted <note> | not-consulted <reason>`.
 
 ## Contributing to a Dialecte package
 
@@ -256,7 +289,7 @@ the answer.
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
   in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
-  and warnings), which `dialecte recap` reads; a run on named files records nothing.
+  and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
   runner's defaults: every file in parallel). The docs build and the type bench are contributor checks:
@@ -489,7 +522,7 @@ the answer.
   iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover <lots.json> [--out <dir>] [--rehash] [--json]` prepares the commit-by-lots
+- `dialecte handover write <lots.json> [--out <dir>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
   hand-over a human runs. The lots file names the repository, the branch and HEAD expected, and the lots
   (paths, message):
 
@@ -584,10 +617,10 @@ the answer.
     The `standard` line says whether the standard was consulted. A standard is configured when
     `DIALECTE_STANDARD` names a file or folder that exists (the environment only: no committed file names
     it). `✓ standard  consulted · <note>` when one is configured and the station recorded a consultation;
-    `✗ standard  configured, not consulted: dialecte record standard <folder> consulted <note>` (blocks) when
+    `✗ standard  configured, not consulted: dialecte lot standard <folder> consulted <note>` (blocks) when
     one is configured and none is recorded; `! standard  not consulted: none configured (DIALECTE_STANDARD)`
     otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. The station records it
-    with `dialecte record standard <folder> consulted <note>` or `not-consulted <reason>`.
+    with `dialecte lot standard <folder> consulted <note>` or `not-consulted <reason>`.
   - `contrib` (a contributor's): the rows of the `dialecte contrib` record of the tree the hand-over commits,
     read as gate lines (`rules` with its errors and warnings, the package's steps, `release`), then the live
     `mutation` row. A stored record counts when its key is the one the `contrib` guard asks for: a run at
@@ -846,6 +879,45 @@ the answer.
 - `dialecte lot mutation <off|changed|audit|gate>` writes the lot's mutation switch (`"mutation"`, no
   reason). Without it, `dialecte mutants run` mutates the changed lines when the lot's diff touches the
   declared scope and nothing otherwise; `audit` mutates the whole scope; `gate` runs as `changed`.
+- `dialecte lot standard <folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
+  (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
+  references of what was read stay in the findings ledger. Another state, or no note, is a usage error
+  (exit 2); a folder inside a repository is refused as below.
+- `dialecte lot finding`, `decide`, `snapshot`, `choice` and `delta` keep a lot's review rounds in its
+  hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
+  folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
+  words after it are taken as they are, so a finding or a reason may start with `--`.
+  - `lot finding <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
+    appends the row `| R<n>-<k> | <n> | <severity> | <file:line> | <finding> | open |` to
+    `<folder>/findings-ledger.md` (the folder, the file and its table made when absent; k one past the
+    highest of the round). A `|` is written `\|`; a line break is refused. A hand-written ledger keeps
+    every other byte.
+  - `lot decide <folder> <id> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
+    `fixed <round> [note]` (a round after the one that raised it), `accepted <reason>`, `logged <where>`.
+    An id not in the ledger is refused, naming the ids it holds.
+  - `lot choice <folder> --by <who> <decision>` appends `| <decision> | <who> | <yyyy-mm-dd> |` to
+    `<folder>/decisions.md` (made with its title and table when absent): a decision made outside the
+    findings ledger, the user's above all. A `|` is written `\|`; an empty `--by`, a line break, or more
+    than one decision word (quote it) is refused.
+  - `lot snapshot <folder> --round <n>` copies every file `git status --porcelain -z
+    --untracked-files=all` lists at the worktree root (the old path of a rename included) to
+    `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
+    disk (or now a folder) that HEAD holds goes in `round-<n>.deleted`, NUL-separated, sorted; HEAD in
+    `round-<n>.base`. An existing round, an untracked nested repository and a submodule (a gitlink in the
+    index or at HEAD) are refused; a run that
+    stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
+    never part of it.
+  - `lot delta <folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
+    `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
+    in the form that fits where the file is: the snapshot copy against the worktree file (or
+    `/dev/null` when it is gone), `/dev/null` against a file deleted then and back now or new and absent
+    from the base, `git diff HEAD` for a file round n-1 had at the base. Files unchanged since round n-1
+    are left out; colour, external diff and textconv settings never apply. It refuses when HEAD moved
+    since `round-<n-1>.base`, and refuses a nested repository or a submodule as `lot snapshot` does. `--worktree` adds a throwaway worktree on the branch
+    `<lot branch>-round-<n-1>` from the lot's branch tip: the deletions applied with `git rm
+    --pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
+    prints its path and the removal command with its absolute `cd`. The lot's worktree is never
+    changed.
 - `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
   its devDependency) on the scope `package.json` declares:
   `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.
@@ -946,45 +1018,6 @@ the answer.
   `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
   `git --no-optional-locks`, so it never rewrites an index. `handover list` follows a link to a hand-over
   folder and lists a folder reached by its path and through a link once.
-- `dialecte record standard <folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
-  (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
-  references of what was read stay in the findings ledger. Another state, or no note, is a usage error
-  (exit 2); a folder inside a repository is refused as below.
-- `dialecte record review|decision|snapshot` and `dialecte review delta` keep a lot's review rounds in its
-  hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
-  folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
-  words after it are taken as they are, so a finding or a reason may start with `--`.
-  - `record review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
-    appends the row `| R<n>-<k> | <n> | <severity> | <file:line> | <finding> | open |` to
-    `<folder>/findings-ledger.md` (the folder, the file and its table made when absent; k one past the
-    highest of the round). A `|` is written `\|`; a line break is refused. A hand-written ledger keeps
-    every other byte.
-  - `record decision <folder> <id> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
-    `fixed <round> [note]` (a round after the one that raised it), `accepted <reason>`, `logged <where>`.
-    An id not in the ledger is refused, naming the ids it holds.
-  - `record choice <folder> --by <who> <decision>` appends `| <decision> | <who> | <yyyy-mm-dd> |` to
-    `<folder>/decisions.md` (made with its title and table when absent): a decision made outside the
-    findings ledger, the user's above all. A `|` is written `\|`; an empty `--by`, a line break, or more
-    than one decision word (quote it) is refused.
-  - `record snapshot <folder> --round <n>` copies every file `git status --porcelain -z
-    --untracked-files=all` lists at the worktree root (the old path of a rename included) to
-    `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
-    disk (or now a folder) that HEAD holds goes in `round-<n>.deleted`, NUL-separated, sorted; HEAD in
-    `round-<n>.base`. An existing round, an untracked nested repository and a submodule (a gitlink in the
-    index or at HEAD) are refused; a run that
-    stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
-    never part of it.
-  - `review delta <folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
-    `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
-    in the form that fits where the file is: the snapshot copy against the worktree file (or
-    `/dev/null` when it is gone), `/dev/null` against a file deleted then and back now or new and absent
-    from the base, `git diff HEAD` for a file round n-1 had at the base. Files unchanged since round n-1
-    are left out; colour, external diff and textconv settings never apply. It refuses when HEAD moved
-    since `round-<n-1>.base`, and refuses a nested repository or a submodule as `record snapshot` does. `--worktree` adds a throwaway worktree on the branch
-    `<lot branch>-round-<n-1>` from the lot's branch tip: the deletions applied with `git rm
-    --pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
-    prints its path and the removal command with its absolute `cd`. The lot's worktree is never
-    changed.
 
 `gate --fast` starts with the hygiene of the worktree: nothing staged; no stash entry pushed on this
 worktree's branch since `worktree add` made it (the baseline keeps every stash entry it saw, so another
@@ -1056,13 +1089,13 @@ allows every tag already, so `allowReferences` changes nothing there (`dialecte 
 folder included: it is hashed and scanned as its target text and committed as a link, the way git stores it (a
 rehearsal copies it as the same relative link).
 
-### GitHub text: recap and text check
+### GitHub text: lot recap and text check
 
 Text written with an assistant tends to retell the diff and grow long. The pull request splits in two:
 an expandable part made from records, and a short human part that is checked before it is posted. Both
 commands only print; the user posts.
 
-- `dialecte recap <hand-over folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
+- `dialecte lot recap <hand-over folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
   records only: the commits of the lots (or `not committed yet`), the test cases the newest gate record of the
   current tree judged red then green, counted per test file, the gate and rules lines (and `mutation`), the
   lot's mutation runs (`Mutation`: each run of the branch and of the branches it merges, oldest first, with

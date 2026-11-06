@@ -1,13 +1,21 @@
 /**
- * `dialecte` — the Dialecte dialect dev CLI (`@dialecte/cli`). Type-performance benchmarking,
- * coverage probes, and readability audits for any Dialecte dialect (and core itself); the agent skills;
- * the lookups (api, members, schema, doctor); scripts (run, explain); the contributor tools (rules, gate,
- * new verb, handover).
- * Subcommands live in ./commands/* (registered in ./cli.constants.ts); shared zero-config discovery in
- * ./lib/config.ts.
+ * `dialecte` — the Dialecte cli (`@dialecte/cli`): discover, use and grow a Dialecte. The lookups (api,
+ * members, schema, explain), scripts and fixtures (run, fixture, new), a lot and its checks (lot, gate, tdd,
+ * rules, contrib, mutants), the hand-over, the workspace (worktree, doctor, models, skills) and the
+ * package's maintenance (bench, coverage, narrowing, audit, text).
+ * Subcommands live in ./commands/* (registered in ./cli.constants.ts); the help reads the declared command
+ * map (./lib/command-map/); shared zero-config discovery in ./lib/config.ts.
  * Bundled with tsup; the shebang is injected by the tsup banner.
  */
-import { COMMANDS, HELP } from './cli.constants.ts'
+import { COMMANDS, COMMANDS_BY_NAME, HELP_FLAGS } from './cli.constants.ts'
+import { answerRenamed, isRenamedCommand, renamedJson } from './lib/command-map/renamed-answer.ts'
+import {
+	listedEntryOf,
+	renderCommandJson,
+	renderCommandSection,
+	renderGlobalHelp,
+	renderHelpJson,
+} from './lib/command-map/render-help.ts'
 import {
 	clearRepositoryEnvironment,
 	ignoredRepositoryEnvironmentLine,
@@ -23,20 +31,48 @@ async function main(): Promise<void> {
 	const cleared = clearRepositoryEnvironment(process.env)
 	if (namesAnotherRepository({ given: GIVEN_ENVIRONMENT, folder: process.cwd() }))
 		console.error(ignoredRepositoryEnvironmentLine(cleared))
-	const invocation = parseInvocation({
-		argv: process.argv.slice(2),
-		commandNames: Object.keys(COMMANDS),
-	})
+	const argv = process.argv.slice(2)
+	const invocation = parseInvocation({ argv, commandNames: Object.keys(COMMANDS) })
 	if (invocation.kind === 'help') {
-		console.log(HELP.trim())
+		console.log(
+			helpText({ command: invocation.command, json: invocation.json, words: helpWords(argv) }),
+		)
 		return
 	}
 	if (invocation.kind === 'unknown') {
 		console.error(`dialecte: unknown command "${invocation.command}"\n`)
-		console.log(HELP.trim())
+		console.log(renderGlobalHelp())
 		process.exit(1)
 	}
-	await COMMANDS[invocation.command](invocation.argv)
+	await COMMANDS_BY_NAME[invocation.command](invocation.argv)
+}
+
+/**
+ * The help asked for: one command's section, else the global help; a renamed command answers what replaced it,
+ * with the words given before `--help`.
+ */
+function helpText(params: { command?: string; json: boolean; words: string[] }): string {
+	const { command, json } = params
+	const entry = command === undefined ? undefined : listedEntryOf(command)
+	if (command !== undefined && entry)
+		return json
+			? renderCommandJson({ name: command, entry })
+			: renderCommandSection({ name: command, entry })
+	if (command !== undefined && isRenamedCommand(command))
+		return json
+			? renamedJson({ command, argv: params.words })
+			: answerRenamed({ command, argv: params.words })
+	return json ? renderHelpJson() : renderGlobalHelp()
+}
+
+/** The words after the command, without the help and JSON flags read before `--`. */
+function helpWords(argv: string[]): string[] {
+	const separator = argv.indexOf('--')
+	return argv
+		.slice(1)
+		.filter(
+			(word, index) => (separator !== -1 && index + 1 >= separator) || !HELP_FLAGS.includes(word),
+		)
 }
 
 main().catch((error) => {

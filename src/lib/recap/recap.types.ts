@@ -1,4 +1,4 @@
-/** What `dialecte recap` reads from the records of a hand-over, before it prints a line. */
+/** What `dialecte lot recap` reads from the records of a hand-over, before it prints a line. */
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
 import type { KeyedLedgerItem, RunEntry } from '../mutation/mutation.types.ts'
 import type { DecisionRow } from '../review-rounds/review-rounds.types.ts'
@@ -9,11 +9,11 @@ export type FindingOutcome = 'fixed' | 'accepted' | 'logged' | 'open'
 
 /** One row of the findings ledger, its pipes unescaped. */
 export type RecapFinding = {
-	/** As written: `R<round>-<k>` as `record review` writes it, or any hand-written id (`TR3-1`, `F-a`). */
+	/** As written: `R<round>-<k>` as `lot finding` writes it, or any hand-written id (`TR3-1`, `F-a`). */
 	id: string
 	/** The round cell's round, else the one an `R<round>-` id names. */
 	round: number
-	/** As `record review` writes it: `blocking`, `should fix`, `nit`. */
+	/** As `lot finding` writes it: `blocking`, `should fix`, `nit`. */
 	severity: string
 	/** `file:line`, an absolute path made relative to the repository or the workspace folder. */
 	at: string

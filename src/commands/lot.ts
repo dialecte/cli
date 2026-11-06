@@ -3,15 +3,23 @@
  * `lot gone <file|glob> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
  * case, a file or a glob; a gone entry a file or a glob, never a case.
+ * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
+ * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`.
+ * The usage is the map's lot section.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
+import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
-import { LOT_VERBS, LOT_USAGE } from '../lib/tdd/tdd.constants.ts'
+import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
+import { runRecap } from './recap.ts'
+import { runRecordVerb } from './record.ts'
+import { runDelta } from './review.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LotCaseEntry, LotCaseList, LotGoneEntry } from '../lib/tdd/tdd.types.ts'
@@ -22,14 +30,16 @@ export async function run(argv: string[]): Promise<void> {
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runLot(params: { cwd: string; argv: string[] }): CommandResult {
+export function runLot(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
 	const [verb, ...words] = params.argv
+	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
+	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
 	if (mutationRefusal) return { exitCode: 2, output: `lot: ${mutationRefusal}` }
 	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
 	const gone = verb === 'gone'
 	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone ? 2 : 1))
-		return { exitCode: 2, output: `lot: ${LOT_USAGE}` }
+		return { exitCode: 2, output: renderLotUsage() }
 	if (list === 'accept' && !namesOneCase(words[0]))
 		return {
 			exitCode: 2,
@@ -91,4 +101,21 @@ function refuseMutationWords(words: readonly string[]): string | undefined {
 	if (words.length > 1)
 		return `mutation takes no reason: lot mutation <${modes}>, nothing after the mode`
 	return undefined
+}
+
+/** A review rounds' verb run by today's implementation, or undefined for any other verb. */
+function runReviewRoundVerb(params: {
+	cwd: string
+	verb: string | undefined
+	words: string[]
+	now?: Date
+}): CommandResult | undefined {
+	const { cwd, words } = params
+	const form = formOfLotVerb(params.verb)
+	if (!form) return undefined
+	if (form.command === 'record')
+		return runRecordVerb({ verb: form.lotVerb, cwd, argv: words, now: params.now })
+	if (form.command === 'review')
+		return runDelta({ cwd, argv: words, now: params.now ?? new Date() })
+	return runRecap({ cwd, argv: words })
 }

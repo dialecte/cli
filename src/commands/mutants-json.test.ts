@@ -162,13 +162,13 @@ describe('mutants usage', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	)
 })
 
-describe('the cli help', { timeout: CLI_HELP_TIMEOUT }, () => {
+describe('the cli help of mutants', { timeout: CLI_HELP_TIMEOUT }, () => {
 	let help: { status: number | null; lines: string[] }
 
 	beforeAll(function printHelpOnce() {
 		const result = spawnSync(
 			process.execPath,
-			[join(import.meta.dirname, '..', 'cli.ts'), '--help'],
+			[join(import.meta.dirname, '..', 'cli.ts'), 'mutants', '--help'],
 			{
 				encoding: 'utf8',
 				timeout: CLI_HELP_TIMEOUT,
@@ -187,9 +187,11 @@ describe('the cli help', { timeout: CLI_HELP_TIMEOUT }, () => {
 		},
 	)
 
-	it('the list of commands names judge, record and drop', () => {
+	it('the mutants section names judge, record and drop', () => {
 		expect(help.status).toBe(0)
-		expect(help.lines.find((line) => /^\s+mutants\s/.test(line))).toMatch(/judge.*record.*drop/)
+		expect(help.lines.filter((line) => /^\s*dialecte mutants\b/.test(line)).join('\n')).toMatch(
+			/judge[\s\S]*record[\s\S]*drop/,
+		)
 	})
 })
 

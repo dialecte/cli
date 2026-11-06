@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { ISO_TIME_PATTERN } from '../../test/gate-records.constants.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
-import { RECORD_STANDARD_USAGE, STANDARD_FILE } from '../lib/standard/standard.constants.ts'
+import { STANDARD_FILE } from '../lib/standard/standard.constants.ts'
 import { runRecord } from './record.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -21,6 +21,9 @@ function standardOf(folder: string): unknown {
 	return JSON.parse(readFileSync(join(folder, STANDARD_FILE), 'utf8'))
 }
 
+/** The usage a refused call answers with, under its new name. */
+const STANDARD_USAGE = 'lot standard: expected <folder> consulted <note> | not-consulted <reason>'
+
 describe('record standard', () => {
 	it('consulted <note> → exit 0, standard.json with the state, the note and the time', () => {
 		const folder = handoverFolder()
@@ -31,6 +34,7 @@ describe('record standard', () => {
 		})
 
 		expect(result.exitCode).toBe(0)
+		expect(result.output).toMatch(/^lot standard: consulted - /)
 		expect(standardOf(folder)).toEqual({
 			state: 'consulted',
 			note: 'read the section on units',
@@ -47,6 +51,7 @@ describe('record standard', () => {
 		})
 
 		expect(result.exitCode).toBe(0)
+		expect(result.output).toMatch(/^lot standard: not-consulted - /)
 		expect(standardOf(folder)).toEqual({
 			state: 'not-consulted',
 			note: 'the change touches no standard',
@@ -75,7 +80,7 @@ describe('record standard', () => {
 		})
 
 		expect(result.exitCode).toBe(2)
-		expect(result.output).toContain(RECORD_STANDARD_USAGE)
+		expect(result.output).toContain(STANDARD_USAGE)
 		expect(existsSync(join(folder, STANDARD_FILE))).toBe(false)
 	})
 
@@ -85,7 +90,7 @@ describe('record standard', () => {
 		const result = runRecord({ cwd: dirname(folder), argv: ['standard', folder, 'consulted'] })
 
 		expect(result.exitCode).toBe(2)
-		expect(result.output).toContain(RECORD_STANDARD_USAGE)
+		expect(result.output).toContain(STANDARD_USAGE)
 		expect(existsSync(join(folder, STANDARD_FILE))).toBe(false)
 	})
 })

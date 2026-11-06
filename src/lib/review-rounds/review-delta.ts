@@ -13,6 +13,7 @@ import { mainCheckoutOf, readGit } from '../git.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { addWorktree, checkoutOf } from '../worktree/add-worktree.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
+import { verbPrefix } from './review-round-verbs.ts'
 import { DELTA_FILE_MARK, NO_FILE, PLAIN_DIFF_OPTIONS } from './review-rounds.constants.ts'
 import { copyFileOrLink, roundNames } from './snapshot-round.ts'
 import { isFileOrLink, listTreeFiles } from './worktree-state.ts'
@@ -35,9 +36,9 @@ export function previousRoundRefusal(params: {
 	const names = roundNames(params.previous)
 	const snapshot = join(params.folder, names.folder)
 	if (!existsSync(snapshot) || !statSync(snapshot).isDirectory())
-		return `no snapshot ${snapshot}: record snapshot --round ${params.previous} takes it`
+		return `no snapshot ${snapshot}: lot snapshot --round ${params.previous} takes it`
 	if (!existsSync(join(params.folder, names.deleted)))
-		return `no ${join(params.folder, names.deleted)}: record snapshot --round ${params.previous} writes it`
+		return `no ${join(params.folder, names.deleted)}: lot snapshot --round ${params.previous} writes it`
 	const baseFile = join(params.folder, names.base)
 	if (!existsSync(baseFile)) return undefined
 	const base = readFileSync(baseFile, 'utf8').trim()
@@ -234,18 +235,18 @@ function removalCommand(params: { main: string; path: string; branch: string }):
 	return `cd ${shellQuote(params.main)} && git worktree remove --force ${shellQuote(params.path)} && git branch -D ${shellQuote(params.branch)}`
 }
 
-/** The text `review delta` prints. */
+/** The text `lot delta` prints. */
 export function renderDelta(delta: ReviewDelta): string {
 	const previous = `round-${delta.round - 1}`
 	const lines = delta.files.length
 		? [
-				`review delta: ${previous} → worktree ${delta.root} - ${delta.files.length} file(s) changed`,
+				`${verbPrefix('delta')}: ${previous} → worktree ${delta.root} - ${delta.files.length} file(s) changed`,
 				...delta.files.map(
 					(file) =>
 						`${DELTA_FILE_MARK} ${file.path} (${file.form})\n${file.diff.replace(/\n$/, '')}`,
 				),
 			]
-		: [`review delta: nothing changed since ${previous}`]
+		: [`${verbPrefix('delta')}: nothing changed since ${previous}`]
 	if (delta.throwaway)
 		lines.push(
 			`throwaway worktree: ${delta.throwaway.path} (branch ${delta.throwaway.branch}, ${previous} applied)`,

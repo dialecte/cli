@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: the review rounds' commands move under `lot`, with the same arguments: `record review` is now `lot finding`, `record decision` is now `lot decide`, `record snapshot` is now `lot snapshot`, `record choice` is now `lot choice`, `record standard` is now `lot standard`, `review delta` is now `lot delta`, and `recap` is now `lot recap`. What each prints starts with its new name (`lot finding: R1-1 open - ...`), and every hint the cli prints cites the new forms (the card's standard line: `dialecte lot standard <folder> consulted <note>`). The old forms run nothing and write nothing: each answers `renamed: dialecte <old> is now dialecte <new>` on stderr, then the full new command with the same arguments (with none, the new form's usage line), exit 2, until 2.0; `record` or `review` without a verb names every form that replaced it. Asked with `--help`, an old form prints that answer on stdout with the words given before `--help`, exit 0; with `--help --json`, `{ renamed: [{ old, new }] }`.
+- **Breaking**: `dialecte <command> --help` (or `-h`, before `--`) prints that command's section only: its summary, usage lines, what they do, the exit codes that differ from the default and one example; nothing runs. `dialecte --help` prints the commands by family (Discover, Use, Grow, Check, Hand over, Workspace, Maintain) under a new title, and `dialecte --help --json` answers `{ commands: [{ name, family, summary, usage, exitCodes, example, notes }] }` in family order; `dialecte <command> --help --json` answers that one command in the same shape. One map declared in the code is the source of all of them.
+
+### Added
+
+- `dialecte handover write <lots.json>` writes the hand-over `dialecte handover <lots.json>` writes, which stays; `handover` alone names its verbs.
+
 ## [0.3.1] - 2026-11-05
 
 ### Added

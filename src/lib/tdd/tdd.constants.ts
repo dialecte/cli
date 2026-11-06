@@ -189,9 +189,6 @@ export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
 /** What `dialecte lot` writes. */
 export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone', 'mutation']
 
-export const LOT_USAGE =
-	'exempt <reason> | accept <case> <reason> | revised <case> <reason> | gone <file|glob> <reason> | mutation <off|changed|audit|gate> (writes .dialecte/lot.json at the package root; a case is <file>::<name>, a revised one may also be a file or a glob)'
-
 /** The keys of a `gone` entry. */
 export const GONE_ENTRY_KEYS: readonly string[] = ['file', 'reason']
 
@@ -216,7 +213,7 @@ export const DELETED_PRODUCTION_FILE = 'deleted'
  * content, `{files}` the files moved back.
  */
 export const ROLLBACK_LINE =
-	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte review delta --worktree)"
+	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte lot delta --worktree)"
 
 /** Config files a test project is declared in: where a test file's import aliases come from. */
 export const TEST_CONFIG_FILES = [

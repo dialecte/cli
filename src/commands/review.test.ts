@@ -160,7 +160,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 0,
-			output: 'review delta: nothing changed since round-1',
+			output: 'lot delta: nothing changed since round-1',
 		})
 	})
 
@@ -317,7 +317,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 0,
-			output: 'review delta: nothing changed since round-1',
+			output: 'lot delta: nothing changed since round-1',
 		})
 	})
 
@@ -375,7 +375,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 0,
-			output: 'review delta: nothing changed since round-1',
+			output: 'lot delta: nothing changed since round-1',
 		})
 	})
 
@@ -414,7 +414,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 			exitCode: 0,
 			output: expect.stringMatching(
 				new RegExp(
-					`^${escapeRegExp(`review delta: round-1 → worktree ${root} - 2 file(s) changed`)}\n` +
+					`^${escapeRegExp(`lot delta: round-1 → worktree ${root} - 2 file(s) changed`)}\n` +
 						`── a\\.ts \\(round-1 → worktree\\)\ndiff --git [\\s\\S]*-old\n\\+new\n` +
 						`[\\s\\S]*── e\\.ts \\(new → worktree\\)\ndiff --git [\\s\\S]*\\+e\n?$`,
 				),
@@ -432,7 +432,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runRecord({ cwd: root, argv: ['snapshot', folder, '--round', '1'] })).toEqual({
 			exitCode: 0,
-			output: expect.stringMatching(/^record: round-1 /),
+			output: expect.stringMatching(/^lot snapshot: round-1 /),
 		})
 		writeFiles({ root, files: { 'moved.ts': 'a2\n', 'b.ts': 'b\n' } })
 		writeFileSync(join(root, 'bin.dat'), BINARY_AFTER)
@@ -547,7 +547,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 0,
-			output: 'review delta: nothing changed since round-1',
+			output: 'lot delta: nothing changed since round-1',
 		})
 	})
 
@@ -562,7 +562,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 			expect(runReview(deltaCall({ cwd: root, folder, flags: [...flags] }))).toEqual({
 				exitCode: 2,
-				output: expect.stringMatching(/^review[^\n]*$/),
+				output: expect.stringMatching(/^lot delta[^\n]*$/),
 			})
 		})
 
@@ -592,7 +592,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^review( delta)?: .*round-1(?!\.deleted)/),
+			output: expect.stringMatching(/^lot delta: .*round-1(?!\.deleted)/),
 		})
 	})
 
@@ -604,7 +604,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^review( delta)?: .*round-1\.deleted/),
+			output: expect.stringMatching(/^lot delta: .*round-1\.deleted/),
 		})
 	})
 
@@ -616,7 +616,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 			expect(runReview(deltaCall({ cwd: root, folder, round }))).toEqual({
 				exitCode: 2,
-				output: expect.stringMatching(/^review[^\n]*$/),
+				output: expect.stringMatching(/^lot delta[^\n]*$/),
 			})
 		})
 
@@ -627,7 +627,7 @@ describe('dialecte review delta', { timeout: 60_000 }, () => {
 
 		expect(runReview({ cwd: root, argv: ['delta', folder], now: NOW })).toEqual({
 			exitCode: 2,
-			output: expect.stringMatching(/^review[^\n]*$/),
+			output: expect.stringMatching(/^lot delta[^\n]*$/),
 		})
 	})
 
@@ -788,7 +788,7 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^review( delta)?: .*detached/),
+			output: expect.stringMatching(/^lot delta: .*detached/),
 		})
 		expect(git({ root, args: ['branch', '--list', 'main-round-1'] })).toBe('')
 		expect(
@@ -807,7 +807,7 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: `review delta: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
+			output: `lot delta: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
 		})
 	})
 
@@ -820,7 +820,7 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^review delta: .*nested/),
+			output: expect.stringMatching(/^lot delta: .*nested/),
 		})
 	})
 
@@ -835,7 +835,7 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 
 		expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^review delta: .*\bsub\b/),
+			output: expect.stringMatching(/^lot delta: .*\bsub\b/),
 		})
 	})
 
@@ -852,7 +852,7 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 			exitCode: 1,
 			output: expect.stringMatching(
 				new RegExp(
-					`^review delta: [\\s\\S]*node_modules[\\s\\S]*${escapeRegExp(
+					`^lot delta: [\\s\\S]*node_modules[\\s\\S]*${escapeRegExp(
 						`cd '${root}' && git worktree remove --force '${throwaway}' && git branch -D 'main-round-1'`,
 					)}`,
 				),
@@ -938,7 +938,7 @@ describe('dialecte review delta - a submodule newly added', { timeout: 60_000 },
 
 			expect(runReview(deltaCall({ cwd: root, folder }))).toEqual({
 				exitCode: 1,
-				output: expect.stringMatching(/^review delta: .*\bsub\b/),
+				output: expect.stringMatching(/^lot delta: .*\bsub\b/),
 			})
 		})
 })

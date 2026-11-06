@@ -31,7 +31,7 @@ export const MUTATION_DECLARATION = {
 
 /** The standard line's wordings, as the card prints them: the third is what comes before the folder, the note is the placeholder. */
 export const STANDARD_NOT_CONFIGURED = 'not consulted: none configured (DIALECTE_STANDARD)'
-export const STANDARD_NOT_CONSULTED_START = 'configured, not consulted: dialecte record standard'
+export const STANDARD_NOT_CONSULTED_START = 'configured, not consulted: dialecte lot standard'
 export const STANDARD_NOT_CONSULTED_END = 'consulted <note>'
 
 /** The time a standard record written by the tests says it was made. */

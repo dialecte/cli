@@ -1,8 +1,8 @@
-/** The fixed wording of `dialecte recap`: its sections, its sentences, its usage. */
+/** The fixed wording of `dialecte lot recap`: its sections, its sentences, its usage. */
 import type { CaseStatus } from '../tdd/tdd.types.ts'
 import type { FindingOutcome } from './recap.types.ts'
 
-export const RECAP_USAGE = 'recap: expected <hand-over folder>'
+export const RECAP_USAGE = 'lot recap: expected <hand-over folder>'
 
 export const RECAP_OPEN = ['<details>', '<summary>How this change was made</summary>'] as const
 
@@ -92,7 +92,7 @@ export const REASON_LEAD_PATTERN = /^\s*(?:[-:]\s*)?/
 /** A reason in parentheses: the text inside the outer ones. */
 export const PARENTHESISED_REASON_PATTERN = /^\((.*)\)$/s
 
-/** The round an id names when its round cell holds none: `R<round>-...` as `record review` writes it. */
+/** The round an id names when its round cell holds none: `R<round>-...` as `lot finding` writes it. */
 export const ROUND_FROM_ID_PATTERN = /^R(\d+)-/
 
 /**
@@ -120,7 +120,7 @@ export const NO_ROUND = '{id} has no round: write its round cell'
 
 /** The refusal of a state whose first segment starts with no state word: `{id}`, `{state}`. */
 export const UNREADABLE_STATE =
-	'{id} has a state recap cannot read: "{state}"; set it with dialecte record decision'
+	'{id} has a state recap cannot read: "{state}"; set it with dialecte lot decide'
 
 /** The refusal of a `file:line` cell pointing outside the workspace folder: `{id}`. */
 export const OUTSIDE_WORKSPACE =

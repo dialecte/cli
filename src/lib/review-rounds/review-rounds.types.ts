@@ -1,4 +1,4 @@
-/** The throwaway worktree `review delta --worktree` makes on the previous round's snapshot. */
+/** The throwaway worktree `lot delta --worktree` makes on the previous round's snapshot. */
 export type ReviewThrowaway = {
 	/** The throwaway worktree's folder. */
 	path: string
@@ -18,7 +18,7 @@ export type ReviewDeltaFile = {
 	diff: string
 }
 
-/** What `review delta --json` prints. */
+/** What `lot delta --json` prints. */
 export type ReviewDelta = {
 	round: number
 	/** `<folder>/round-<n-1>`. */
@@ -59,7 +59,7 @@ export type DecisionRow = {
 	when: string
 }
 
-/** A decision as `record decision` takes it: the state written, and the round a fix needs to beat. */
+/** A decision as `lot decide` takes it: the state written, and the round a fix needs to beat. */
 export type DecisionState = {
 	written: string
 	/** For `fixed <round>`: the round that verified the fix. */
@@ -73,7 +73,7 @@ export type StatusListing = {
 	nestedRepositories: string[]
 }
 
-/** What `record snapshot` took. */
+/** What `lot snapshot` took. */
 export type TakenSnapshot = {
 	copied: number
 	deleted: number

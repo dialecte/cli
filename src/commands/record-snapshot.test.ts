@@ -50,7 +50,7 @@ function summary(params: {
 	root: string
 	folder: string
 }) {
-	return `record: round-${params.round ?? 1} - ${params.copied} copied, ${params.deleted} deleted, base ${headOf(params.root).slice(0, 12)} - ${params.folder}`
+	return `lot snapshot: round-${params.round ?? 1} - ${params.copied} copied, ${params.deleted} deleted, base ${headOf(params.root).slice(0, 12)} - ${params.folder}`
 }
 
 /** Every file and symlink under `folder`, relative to it, sorted (folders themselves not listed). */
@@ -350,7 +350,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 			expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 				exitCode: 1,
-				output: expect.stringMatching(/^record: /),
+				output: expect.stringMatching(/^lot snapshot: /),
 			})
 			expect(readdirSync(folder)).toEqual([existing])
 			if (existing === 'round-1') expect(readdirSync(join(folder, existing))).toEqual([])
@@ -365,7 +365,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: .*nested\//),
+			output: expect.stringMatching(/^lot snapshot: .*nested\//),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -376,7 +376,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 		expect(runRecord(snapshotCall({ cwd, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: /),
+			output: expect.stringMatching(/^lot snapshot: /),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -389,7 +389,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
+			output: `lot snapshot: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
 		})
 		expect(existsSync(folder)).toBe(false)
 	})
@@ -405,7 +405,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 					cwd: root,
 					argv: ['snapshot', folder, ...(round === undefined ? [] : ['--round', round])],
 				}),
-			).toEqual({ exitCode: 2, output: expect.stringMatching(/^record[^\n]*$/) })
+			).toEqual({ exitCode: 2, output: expect.stringMatching(/^lot snapshot[^\n]*$/) })
 			expect(readdirSync(folder)).toEqual([])
 		})
 })
@@ -438,7 +438,7 @@ describe('dialecte record snapshot - round 1 fixes', { timeout: 60_000 }, () => 
 			exitCode: 1,
 			output: expect.stringMatching(
 				new RegExp(
-					`^record: ${escapeRegExp(folder)} is inside the git folder (${escapeRegExp(lotGitFolder)}|${escapeRegExp(join(main, '.git'))}): a hand-over folder stays outside every repository$`,
+					`^lot snapshot: ${escapeRegExp(folder)} is inside the git folder (${escapeRegExp(lotGitFolder)}|${escapeRegExp(join(main, '.git'))}): a hand-over folder stays outside every repository$`,
 				),
 			),
 		})
@@ -456,7 +456,7 @@ describe('dialecte record snapshot - round 1 fixes', { timeout: 60_000 }, () => 
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
+			output: `lot snapshot: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
 		})
 		expect(existsSync(folder)).toBe(false)
 	})
@@ -469,7 +469,7 @@ describe('dialecte record snapshot - round 1 fixes', { timeout: 60_000 }, () => 
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: .*\bsub\b/),
+			output: expect.stringMatching(/^lot snapshot: .*\bsub\b/),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -481,7 +481,7 @@ describe('dialecte record snapshot - round 1 fixes', { timeout: 60_000 }, () => 
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: .*\bsub\b/),
+			output: expect.stringMatching(/^lot snapshot: .*\bsub\b/),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -493,7 +493,7 @@ describe('dialecte record snapshot - round 1 fixes', { timeout: 60_000 }, () => 
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: .*\bsub\b/),
+			output: expect.stringMatching(/^lot snapshot: .*\bsub\b/),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -524,7 +524,7 @@ describe('dialecte record snapshot - a submodule newly added', { timeout: 60_000
 
 			expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 				exitCode: 1,
-				output: expect.stringMatching(/^record: .*\bsub\b/),
+				output: expect.stringMatching(/^lot snapshot: .*\bsub\b/),
 			})
 			expect(readdirSync(folder)).toEqual([])
 		})

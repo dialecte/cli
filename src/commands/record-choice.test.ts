@@ -1,9 +1,10 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { createScratchRepository, temporaryFolder } from '../../test/scratch-repository.ts'
-import { HELP } from '../cli.constants.ts'
 import { handoverFolderRefusal } from '../lib/review-rounds/worktree-state.ts'
+import { runLot } from './lot.ts'
 import { runRecord } from './record.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -12,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 const NOW = new Date('2026-11-01T12:00:00')
 
 /** The usage `record choice` answers a refused call with, a reason in parentheses allowed after it. */
-const CHOICE_USAGE_PATTERN = /^record choice: expected <folder> --by <who> <decision>( \(.+\))?$/
+const CHOICE_USAGE_PATTERN = /^lot choice: expected <folder> --by <who> <decision>( \(.+\))?$/
 
 const DECISIONS_HEAD = '| decision | by | when |\n|---|---|---|\n'
 
@@ -49,7 +50,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 			runRecord(choiceCall({ folder, words: ['--by', 'Ada Lovelace', 'Keep the old flag'] })),
 		).toEqual({
 			exitCode: 0,
-			output: `record: choice by Ada Lovelace - ${decisionsOf(folder)}`,
+			output: `lot choice: by Ada Lovelace - ${decisionsOf(folder)}`,
 		})
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			freshDecisions(['| Keep the old flag | Ada Lovelace | 2026-11-01 |']),
@@ -76,7 +77,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 
 		expect(runRecord(choiceCall({ folder, words: ['--by', 'Ada', 'Keep the old flag'] }))).toEqual({
 			exitCode: 0,
-			output: `record: choice by Ada - ${decisionsOf(folder)}`,
+			output: `lot choice: by Ada - ${decisionsOf(folder)}`,
 		})
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			[...before.slice(0, 7), '| Keep the old flag | Ada | 2026-11-01 |', ...before.slice(7)].join(
@@ -90,7 +91,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 
 		expect(
 			runRecord(choiceCall({ folder, words: ['--by', 'Ada|Grace', 'Split | merge later'] })),
-		).toEqual({ exitCode: 0, output: `record: choice by Ada|Grace - ${decisionsOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot choice: by Ada|Grace - ${decisionsOf(folder)}` })
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			freshDecisions(['| Split \\| merge later | Ada\\|Grace | 2026-11-01 |']),
 		)
@@ -101,7 +102,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 
 		expect(runRecord(choiceCall({ folder, words: ['Keep the old flag', '--by', 'Ada'] }))).toEqual({
 			exitCode: 0,
-			output: `record: choice by Ada - ${decisionsOf(folder)}`,
+			output: `lot choice: by Ada - ${decisionsOf(folder)}`,
 		})
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			freshDecisions(['| Keep the old flag | Ada | 2026-11-01 |']),
@@ -113,7 +114,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 
 		expect(
 			runRecord(choiceCall({ folder, words: ['--by', 'Ada', '--', '--force stays off'] })),
-		).toEqual({ exitCode: 0, output: `record: choice by Ada - ${decisionsOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot choice: by Ada - ${decisionsOf(folder)}` })
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			freshDecisions(['| --force stays off | Ada | 2026-11-01 |']),
 		)
@@ -148,7 +149,7 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 				argv: ['choice', 'lot', '--by', 'Ada', 'Keep the old flag'],
 				now: NOW,
 			}),
-		).toEqual({ exitCode: 0, output: `record: choice by Ada - ${decisionsOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot choice: by Ada - ${decisionsOf(folder)}` })
 		expect(readFileSync(decisionsOf(folder), 'utf8')).toBe(
 			freshDecisions(['| Keep the old flag | Ada | 2026-11-01 |']),
 		)
@@ -171,15 +172,20 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 				argv: ['choice', folder, '--by', 'Ada', 'Keep the old flag'],
 				now: NOW,
 			}),
-		).toEqual({ exitCode: 1, output: `record: ${handoverFolderRefusal(folder)}` })
+		).toEqual({ exitCode: 1, output: `lot choice: ${handoverFolderRefusal(folder)}` })
 		expect(existsSync(decisionsOf(folder))).toBe(false)
 	})
 
-	it('the record usage and the help name the new subcommand', () => {
-		expect(runRecord({ cwd: handoverFolder(), argv: [] })).toEqual({
+	it('the lot usage and the help name the new verb', () => {
+		expect(runLot({ cwd: handoverFolder(), argv: [] })).toEqual({
 			exitCode: 2,
 			output: expect.stringContaining('choice <folder> --by <who> <decision>'),
 		})
-		expect(HELP).toContain(`dialecte record choice <folder> --by <who> <decision>`)
+		expect(
+			spawnSync(process.execPath, [join(import.meta.dirname, '..', 'cli.ts'), 'lot', '--help'], {
+				encoding: 'utf8',
+				cwd: handoverFolder(),
+			}).stdout,
+		).toContain('dialecte lot choice <folder> --by <who> <decision>')
 	})
 })

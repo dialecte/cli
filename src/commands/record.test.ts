@@ -106,7 +106,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R1-1 | 1 | blocking | src/a.ts:3 | the first | open |']),
@@ -130,7 +130,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-2 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-2 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger([
@@ -151,7 +151,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R2-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R2-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger([
@@ -176,7 +176,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-8 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-8 open - ${ledgerOf(folder)}`,
 		})
 	})
 
@@ -189,7 +189,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R12-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R12-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R12-1 | 12 | nit | src/a.ts:1 | late | open |']),
@@ -217,7 +217,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 				),
 			).toEqual({
 				exitCode: 0,
-				output: `record: R1-1 open - ${ledgerOf(folder)}`,
+				output: `lot finding: R1-1 open - ${ledgerOf(folder)}`,
 			})
 			expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 				freshLedger([`| R1-1 | 1 | ${written} | src/a.ts:1 | a finding | open |`]),
@@ -239,7 +239,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R2-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R2-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger([
@@ -259,7 +259,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-3 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-3 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			HAND_WRITTEN.replace(
@@ -282,7 +282,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 					finding: 'third round',
 				}),
 			),
-		).toEqual({ exitCode: 0, output: `record: R3-1 open - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot finding: R3-1 open - ${ledgerOf(folder)}` })
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			HAND_WRITTEN.replace(
 				'| fixed 3 (with R3-1) |\n',
@@ -300,7 +300,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R1-1 | 1 | nit | src/a.ts:1 | first | open |']),
@@ -316,7 +316,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-1 open - ${ledgerOf(folder)}`,
 		})
 		const text = readFileSync(ledgerOf(folder), 'utf8')
 		expect(text.startsWith('Some notes.\n')).toBe(true)
@@ -335,7 +335,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			),
 		).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 open - ${ledgerOf(folder)}`,
+			output: `lot finding: R1-1 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R1-1 | 1 | nit | src/a\\|b.ts:1 | a \\| b | open |']),
@@ -361,7 +361,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 					'first',
 				],
 			}),
-		).toEqual({ exitCode: 0, output: `record: R1-1 open - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot finding: R1-1 open - ${ledgerOf(folder)}` })
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R1-1 | 1 | nit | src/a.ts:1 | first | open |']),
 		)
@@ -389,7 +389,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 						...change,
 					}),
 				),
-			).toEqual({ exitCode: 2, output: expect.stringMatching(/^record[^\n]*$/) })
+			).toEqual({ exitCode: 2, output: expect.stringMatching(/^lot finding[^\n]*$/) })
 			expect(existsSync(folder)).toBe(false)
 		})
 
@@ -418,7 +418,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 				runRecord({ cwd: folder.replace(/\/lot$/, ''), argv: ['review', folder, ...argv] }),
 			).toEqual({
 				exitCode: 2,
-				output: expect.stringMatching(/^record[^\n]*$/),
+				output: expect.stringMatching(/^lot finding[^\n]*$/),
 			})
 			expect(existsSync(folder)).toBe(false)
 		})
@@ -441,7 +441,7 @@ describe('dialecte record review', { timeout: 60_000 }, () => {
 			}),
 		).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
+			output: `lot finding: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
 		})
 		expect(existsSync(join(repository, 'handover'))).toBe(false)
 	})
@@ -465,7 +465,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 			expect(runRecord(decisionCall({ folder, words: ['R1-2', ...words] }))).toEqual({
 				exitCode: 0,
-				output: `record: R1-2 ${written} - ${ledgerOf(folder)}`,
+				output: `lot decide: R1-2 ${written} - ${ledgerOf(folder)}`,
 			})
 			expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 				TWO_ROWS.replace(
@@ -480,7 +480,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-2', 'open'] }))).toEqual({
 			exitCode: 0,
-			output: `record: R1-2 open - ${ledgerOf(folder)}`,
+			output: `lot decide: R1-2 open - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			HAND_WRITTEN.replace(
@@ -495,7 +495,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-1', 'accepted', 'a | b'] }))).toEqual({
 			exitCode: 0,
-			output: expect.stringMatching(/^record: R1-1 accepted \(a \\?\| b\) - /),
+			output: expect.stringMatching(/^lot decide: R1-1 accepted \(a \\?\| b\) - /),
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			TWO_ROWS.replace('| the first | open |', '| the first | accepted (a \\| b) |'),
@@ -517,7 +517,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 			expect(runRecord(decisionCall({ folder, words: ['R1-1', ...words] }))).toEqual({
 				exitCode: 2,
-				output: expect.stringMatching(/^record[^\n]*$/),
+				output: expect.stringMatching(/^lot decide[^\n]*$/),
 			})
 			expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 		})
@@ -528,7 +528,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 		expect(runRecord(decisionCall({ folder, words: ['R1-1', 'done'] }))).toEqual({
 			exitCode: 2,
 			output: expect.stringMatching(
-				/^record(?=[\s\S]*\bopen\b)(?=[\s\S]*fix-to-verify)(?=[\s\S]*\bfixed\b)(?=[\s\S]*\baccepted\b)(?=[\s\S]*\blogged\b)/,
+				/^lot decide(?=[\s\S]*\bopen\b)(?=[\s\S]*fix-to-verify)(?=[\s\S]*\bfixed\b)(?=[\s\S]*\baccepted\b)(?=[\s\S]*\blogged\b)/,
 			),
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
@@ -539,7 +539,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-1'] }))).toEqual({
 			exitCode: 2,
-			output: expect.stringMatching(/^record/),
+			output: expect.stringMatching(/^lot decide/),
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 	})
@@ -549,7 +549,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R3-1', 'open'] }))).toEqual({
 			exitCode: 1,
-			output: 'record: unknown finding id R3-1; the ledger holds R1-1, R1-2',
+			output: 'lot decide: unknown finding id R3-1; the ledger holds R1-1, R1-2',
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(HAND_WRITTEN)
 	})
@@ -563,7 +563,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-1', 'fixed', '2'] }))).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 fixed 2 - ${ledgerOf(folder)}`,
+			output: `lot decide: R1-1 fixed 2 - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			text.replace('| src/a.ts:1 | first | open |', '| src/a.ts:1 | first | fixed 2 |'),
@@ -576,7 +576,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R12-1', 'fixed', '3'] }))).toEqual({
 			exitCode: 2,
-			output: expect.stringMatching(/^record[^\n]*$/),
+			output: expect.stringMatching(/^lot decide[^\n]*$/),
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(text)
 	})
@@ -587,7 +587,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R12-1', 'fixed', '13'] }))).toEqual({
 			exitCode: 0,
-			output: `record: R12-1 fixed 13 - ${ledgerOf(folder)}`,
+			output: `lot decide: R12-1 fixed 13 - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			text.replace('| late | open |', '| late | fixed 13 |'),
@@ -599,7 +599,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R9-9', 'open'] }))).toEqual({
 			exitCode: 1,
-			output: 'record: unknown finding id R9-9; the ledger holds R1-1, R1-2',
+			output: 'lot decide: unknown finding id R9-9; the ledger holds R1-1, R1-2',
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 	})
@@ -610,7 +610,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-1', 'open'] }))).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^record: /),
+			output: expect.stringMatching(/^lot decide: /),
 		})
 		expect(readdirSync(folder)).toEqual([])
 	})
@@ -624,7 +624,7 @@ describe('dialecte record decision', { timeout: 60_000 }, () => {
 
 		expect(runRecord(decisionCall({ folder, words: ['R1-1', 'open'] }))).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
+			output: `lot decide: ${folder} is inside the repository ${top}: a hand-over folder stays outside every repository`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 	})
@@ -653,7 +653,7 @@ describe('dialecte record - a hand-over folder inside a git folder', { timeout: 
 			}),
 		).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
+			output: `lot finding: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
 		})
 		expect(existsSync(folder)).toBe(false)
 	})
@@ -668,7 +668,7 @@ describe('dialecte record - a hand-over folder inside a git folder', { timeout: 
 			runRecord({ cwd: repository, argv: ['decision', folder, 'R1-1', 'fixed', '2'] }),
 		).toEqual({
 			exitCode: 1,
-			output: `record: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
+			output: `lot decide: ${folder} is inside the git folder ${gitFolder}: a hand-over folder stays outside every repository`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 	})
@@ -687,7 +687,7 @@ describe('dialecte record - a CRLF ledger', { timeout: 60_000 }, () => {
 			runRecord(
 				reviewCall({ folder, round: '1', severity: 'nit', at: 'a.ts:2', finding: 'second' }),
 			),
-		).toEqual({ exitCode: 0, output: `record: R1-2 open - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot finding: R1-2 open - ${ledgerOf(folder)}` })
 		const text = readFileSync(ledgerOf(folder), 'utf8')
 		expect(text.startsWith(throughLastRow)).toBe(true)
 		expect(text.endsWith('\r\nA note.\r\n')).toBe(true)
@@ -701,7 +701,7 @@ describe('dialecte record - a CRLF ledger', { timeout: 60_000 }, () => {
 
 		expect(runRecord({ cwd: folder, argv: ['decision', folder, 'R1-1', 'fixed', '2'] })).toEqual({
 			exitCode: 0,
-			output: `record: R1-1 fixed 2 - ${ledgerOf(folder)}`,
+			output: `lot decide: R1-1 fixed 2 - ${ledgerOf(folder)}`,
 		})
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			CRLF_LEDGER.replace('| first | open |\r\n', '| first | fixed 2 |\r\n'),
@@ -729,7 +729,7 @@ describe('dialecte record - -- ends the options', { timeout: 60_000 }, () => {
 					'--x is wrong',
 				],
 			}),
-		).toEqual({ exitCode: 0, output: `record: R1-1 open - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot finding: R1-1 open - ${ledgerOf(folder)}` })
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			freshLedger(['| R1-1 | 1 | nit | a.ts:1 | --x is wrong | open |']),
 		)
@@ -754,7 +754,7 @@ describe('dialecte record - -- ends the options', { timeout: 60_000 }, () => {
 					'a finding',
 				],
 			}),
-		).toEqual({ exitCode: 0, output: `record: R1-1 open - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot finding: R1-1 open - ${ledgerOf(folder)}` })
 	})
 
 	it('record decision <id> accepted -- "--y" → written accepted (--y)', () => {
@@ -762,7 +762,7 @@ describe('dialecte record - -- ends the options', { timeout: 60_000 }, () => {
 
 		expect(
 			runRecord({ cwd: folder, argv: ['decision', folder, 'R1-1', 'accepted', '--', '--y'] }),
-		).toEqual({ exitCode: 0, output: `record: R1-1 accepted (--y) - ${ledgerOf(folder)}` })
+		).toEqual({ exitCode: 0, output: `lot decide: R1-1 accepted (--y) - ${ledgerOf(folder)}` })
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(
 			TWO_ROWS.replace('| the first | open |', '| the first | accepted (--y) |'),
 		)
@@ -776,7 +776,7 @@ describe('dialecte record - -- ends the options', { timeout: 60_000 }, () => {
 				cwd: dirname(folder),
 				argv: ['review', folder, '--round', '1', '--severity', 'nit', '--at', 'a.ts:1', '--x'],
 			}),
-		).toEqual({ exitCode: 2, output: expect.stringMatching(/^record[^\n]*$/) })
+		).toEqual({ exitCode: 2, output: expect.stringMatching(/^lot finding[^\n]*$/) })
 		expect(existsSync(folder)).toBe(false)
 	})
 
@@ -785,7 +785,7 @@ describe('dialecte record - -- ends the options', { timeout: 60_000 }, () => {
 
 		expect(
 			runRecord({ cwd: folder, argv: ['decision', folder, 'R1-1', 'accepted', '--y'] }),
-		).toEqual({ exitCode: 2, output: expect.stringMatching(/^record[^\n]*$/) })
+		).toEqual({ exitCode: 2, output: expect.stringMatching(/^lot decide[^\n]*$/) })
 		expect(readFileSync(ledgerOf(folder), 'utf8')).toBe(TWO_ROWS)
 	})
 })

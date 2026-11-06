@@ -8,27 +8,42 @@ const COMMAND_NAMES = ['coverage', 'skills']
 
 describe('parseInvocation', () => {
 	const testCases: Record<string, { argv: string[]; expected: Invocation }> = {
-		'no command → help': { argv: [], expected: { kind: 'help' } },
-		'--help as the command → help': { argv: ['--help'], expected: { kind: 'help' } },
-		'--help after a command and its options → help, nothing runs': {
+		'no command → the global help': { argv: [], expected: { kind: 'help', json: false } },
+		'--help as the command → the global help': {
+			argv: ['--help'],
+			expected: { kind: 'help', json: false },
+		},
+		'--help --json → the global help as json': {
+			argv: ['--help', '--json'],
+			expected: { kind: 'help', json: true },
+		},
+		'--json --help → the global help as json, whatever the order': {
+			argv: ['--json', '--help'],
+			expected: { kind: 'help', json: true },
+		},
+		'--json after -- → a word of nobody: not asked': {
+			argv: ['--help', '--', '--json'],
+			expected: { kind: 'help', json: false },
+		},
+		"--help after a command and its options → that command's help, nothing runs": {
 			argv: ['skills', 'sync', '--copy', '--help'],
-			expected: { kind: 'help' },
+			expected: { kind: 'help', command: 'skills', json: false },
 		},
-		'-h after a command → help, nothing runs': {
+		"-h after a command → that command's help, nothing runs": {
 			argv: ['coverage', '-h'],
-			expected: { kind: 'help' },
+			expected: { kind: 'help', command: 'coverage', json: false },
 		},
-		'--help after an unknown command → help': {
+		'--help after an unknown command → the global help': {
 			argv: ['nope', '--help'],
-			expected: { kind: 'help' },
+			expected: { kind: 'help', json: false },
 		},
 		"-h after -- → the command's own word: run, -- and -h passed on": {
 			argv: ['coverage', '--', '-h'],
 			expected: { kind: 'run', command: 'coverage', argv: ['--', '-h'] },
 		},
-		'-h before -- → help, nothing runs': {
+		"-h before -- → that command's help, nothing runs": {
 			argv: ['coverage', '-h', '--', 'x'],
-			expected: { kind: 'help' },
+			expected: { kind: 'help', command: 'coverage', json: false },
 		},
 		'unknown command → unknown': {
 			argv: ['nope', 'x'],

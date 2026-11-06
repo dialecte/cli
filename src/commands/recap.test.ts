@@ -26,7 +26,7 @@ import type { CaseStatus, LotCaseEntry } from '../lib/tdd/tdd.types.ts'
 const USER_NAME = 'Ada Lovelace'
 const USER_EMAIL = 'ada@example.com'
 
-const RECAP_USAGE = 'recap: expected <hand-over folder>'
+const RECAP_USAGE = 'lot recap: expected <hand-over folder>'
 
 const LEDGER_HEAD =
 	'# Findings ledger - lot\n\n| id | round | severity | file:line | finding | state |\n|---|---|---|---|---|---|\n'
@@ -737,7 +737,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 		expect(runRecap({ cwd, argv: [folder] })).toEqual({
 			exitCode: 1,
-			output: expect.stringMatching(/^recap: .*git config user\.name/s),
+			output: expect.stringMatching(/^lot recap: .*git config user\.name/s),
 		})
 	})
 
@@ -748,7 +748,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 		expect(runRecap({ cwd: dirname(folder), argv: [folder] })).toEqual({
 			exitCode: 1,
-			output: `recap: ${String(readHandoverFolder(folder))}`,
+			output: `lot recap: ${String(readHandoverFolder(folder))}`,
 		})
 	})
 
@@ -768,7 +768,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 		expect(runRecap({ cwd: dirname(withoutSnapshot), argv: [withoutSnapshot] })).toEqual({
 			exitCode: 1,
-			output: `recap: ${String(readHandoverFolder(withoutSnapshot))}`,
+			output: `lot recap: ${String(readHandoverFolder(withoutSnapshot))}`,
 		})
 	})
 
@@ -858,7 +858,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 			expect(runRecap({ cwd, argv: [folder] })).toEqual({
 				exitCode: 1,
-				output: `recap: R2-3 has a state recap cannot read: "${state}"; set it with dialecte record decision`,
+				output: `lot recap: R2-3 has a state recap cannot read: "${state}"; set it with dialecte lot decide`,
 			})
 		},
 	)
@@ -998,7 +998,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 		expect(runRecap({ cwd, argv: [folder] })).toEqual({
 			exitCode: 1,
-			output: 'recap: R1-9 points outside the workspace: write --at relative to its repository',
+			output: 'lot recap: R1-9 points outside the workspace: write --at relative to its repository',
 		})
 	})
 
@@ -1099,7 +1099,7 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 		expect(runRecap({ cwd, argv: [folder] })).toEqual({
 			exitCode: 1,
-			output: 'recap: TR3-1 has no round: write its round cell',
+			output: 'lot recap: TR3-1 has no round: write its round cell',
 		})
 	})
 
@@ -1124,7 +1124,8 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 
 			expect(runRecap({ cwd, argv: [folder] })).toEqual({
 				exitCode: 1,
-				output: 'recap: R1-9 points outside the workspace: write --at relative to its repository',
+				output:
+					'lot recap: R1-9 points outside the workspace: write --at relative to its repository',
 			})
 		},
 	)

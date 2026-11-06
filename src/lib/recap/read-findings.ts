@@ -2,7 +2,7 @@
  * The findings ledger as the recap reads it: every finding row of the file after the table's header - a row
  * whose first cell is a finding id and that has the header's cell count - wherever it stands, so rows written
  * under a note between rounds count too. Each state is read as the history orchestrators write by hand.
- * `findLedgerTable` stays the writers' reader (`record review`, `record decision`): only the first block.
+ * `findLedgerTable` stays the writers' reader (`lot finding`, `lot decide`): only the first block.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { relative } from 'node:path'

@@ -184,7 +184,7 @@ describe('dialecte lot', { timeout: 60_000 }, () => {
 		expect(runLot({ cwd: root, argv: ['bless', 'x'] })).toEqual({
 			exitCode: 2,
 			output: expect.stringMatching(
-				/^lot: exempt <reason> \| accept <case> <reason> \| revised <case> <reason>/,
+				/^lot: exempt <reason> \| accept <case> <reason> \| revised <case\|file\|glob> <reason>/,
 			),
 		})
 	})

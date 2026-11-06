@@ -7,7 +7,7 @@ export const LEDGER_FILE = 'findings-ledger.md'
 export const LEDGER_TABLE_HEAD =
 	'| id | round | severity | file:line | finding | state |\n|---|---|---|---|---|---|\n'
 
-/** The severities `record review` accepts, each with how it is written in the ledger. */
+/** The severities `lot finding` accepts, each with how it is written in the ledger. */
 export const SEVERITY_SPELLINGS: Readonly<Record<string, string>> = {
 	blocking: 'blocking',
 	'should-fix': 'should fix',
@@ -27,7 +27,7 @@ export const CELL_SEPARATOR_PATTERN = /(?<!\\)\|/
 /** A line break, refused inside a ledger value. */
 export const LINE_BREAK_PATTERN = /[\r\n]/
 
-/** The decision states, as `record decision` takes them. */
+/** The decision states, as `lot decide` takes them. */
 export const DECISION_STATES = [
 	'open',
 	'fix-to-verify',
@@ -36,12 +36,12 @@ export const DECISION_STATES = [
 	'logged <where>',
 ] as const
 
-export const RECORD_USAGE =
-	'record: review <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding> | decision <folder> <id> <state...> | snapshot <folder> --round <n> | choice <folder> --by <who> <decision> | standard <folder> consulted <note> | not-consulted <reason>'
+/** The command the review rounds' verbs live under, and the first word of what each prints (`lot <verb>: `). */
+export const LOT_COMMAND = 'lot'
 
-export const RECORD_CHOICE_USAGE = 'record choice: expected <folder> --by <who> <decision>'
+export const CHOICE_USAGE = 'lot choice: expected <folder> --by <who> <decision>'
 
-/** The options `record choice` takes followed by a value, without the dashes. */
+/** The options `lot choice` takes followed by a value, without the dashes. */
 export const CHOICE_OPTIONS = ['by'] as const
 
 /** The file of the decisions made outside the findings ledger, in the hand-over folder. */
@@ -53,25 +53,22 @@ export const DECISIONS_FIRST_CELL = 'decision'
 /** The decisions table's header row and separator, each followed by a line feed. */
 export const DECISIONS_TABLE_HEAD = '| decision | by | when |\n|---|---|---|\n'
 
-export const RECORD_REVIEW_USAGE =
-	'record review: expected <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>'
+export const FINDING_USAGE =
+	'lot finding: expected <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>'
 
-export const RECORD_DECISION_USAGE = `record decision: expected <folder> <id> <state...>; states: ${DECISION_STATES.join(', ')}`
+export const DECIDE_USAGE = `lot decide: expected <folder> <id> <state...>; states: ${DECISION_STATES.join(', ')}`
 
-export const RECORD_SNAPSHOT_USAGE = 'record snapshot: expected <folder> --round <n>'
+export const SNAPSHOT_USAGE = 'lot snapshot: expected <folder> --round <n>'
 
-export const REVIEW_USAGE =
-	'review: delta <folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
+export const DELTA_USAGE =
+	'lot delta: expected <folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
 
-export const REVIEW_DELTA_USAGE =
-	'review delta: expected <folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
-
-/** The options each subcommand takes followed by a value, without the dashes. */
-export const RECORD_REVIEW_OPTIONS = ['round', 'severity', 'at'] as const
+/** The options each verb takes followed by a value, without the dashes. */
+export const FINDING_OPTIONS = ['round', 'severity', 'at'] as const
 export const ROUND_OPTIONS = ['round'] as const
 
-/** The flags `review delta` takes, without the dashes. */
-export const REVIEW_DELTA_FLAGS = ['worktree', 'json'] as const
+/** The flags `lot delta` takes, without the dashes. */
+export const DELTA_FLAGS = ['worktree', 'json'] as const
 
 /** The suffix of the names a snapshot is built under before its final rename. */
 export const PARTIAL_SUFFIX = '.partial'

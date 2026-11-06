@@ -141,7 +141,7 @@ export function appendTableRow(params: {
 }
 
 /**
- * The state `record decision` writes from its words (`fixed 3 with R3-1` → `fixed 3 (with R3-1)`), or the
+ * The state `lot decide` writes from its words (`fixed 3 with R3-1` → `fixed 3 (with R3-1)`), or the
  * usage error when the words name no state or miss its value.
  */
 export function parseDecision(words: string[]): DecisionState | string {

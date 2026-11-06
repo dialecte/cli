@@ -70,6 +70,10 @@ export const HANDOVER_RUN_TEXTS = {
 	abandoned: 'handover run: {folder} is abandoned ({marker}): nothing run; write a new hand-over',
 } as const
 
+/** `handover` without a lots file or a verb: its verbs, `write` first. */
+export const HANDOVER_USAGE =
+	'handover: expected a verb: write <lots.json> [--out <dir>] [--rehash] [--json] | show [<name|folder>] | run [<name|folder>] | abandon [<name|folder>] | list | --legend (handover <lots.json> is handover write <lots.json>)'
+
 /** `handover <lots.json> --rehash` of an abandoned folder: refused, nothing written. */
 export const HANDOVER_REHASH_ABANDONED_REFUSAL =
 	'handover: {folder} is abandoned ({marker}): nothing written; write the hand-over into a new folder (--out <dir>)'

@@ -70,7 +70,7 @@ describe('readStandardLine', () => {
 		})
 	})
 
-	it('a configured folder, nothing recorded → failed, saying how to record the consultation', () => {
+	it('a configured folder, nothing recorded → failed, citing dialecte lot standard to record the consultation', () => {
 		vi.stubEnv(STANDARD_ENVIRONMENT_VARIABLE, temporaryFolder('dialecte-standard-'))
 
 		expect(readStandardLine({ folder: folderHolding() })).toEqual({
