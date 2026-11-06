@@ -161,6 +161,8 @@ export type HandoverCard = {
 	repository: string
 	/** Where the lots are committed (the main checkout, or a linked worktree of it). */
 	worktree: string
+	/** The worktree's index when its folder is numbered (`0171-cli-x` → `0171`): the title shows it. */
+	index?: string
 	branch: string
 	head: string
 	/** After a run: the new tip of the branch (the card shows `HEAD base → tip`). */
@@ -229,6 +231,8 @@ export type HandoverStoreEntry = {
 	folder: string
 	branch: string
 	worktree: string
+	/** The worktree's index when its folder is numbered: `handover show <index>` finds the entry by it. */
+	index?: string
 	written: string
 	state: HandoverEntryState
 }

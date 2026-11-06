@@ -39,7 +39,7 @@ function workspaceWithWorktree(params: { merged: boolean }): Scenario {
 	return { workspace, core, worktree }
 }
 
-/** `.worktrees/core-<name>` on `branch`, one commit of its own. */
+/** `.worktrees/<index>-core-<name>` on `branch`, one commit of its own. */
 function addWorktree(params: {
 	workspace: string
 	core: string
@@ -47,11 +47,14 @@ function addWorktree(params: {
 	merged: boolean
 }): string {
 	const { workspace, core, branch } = params
-	expect(
-		runWorktreeAdd({ argv: [core, branch], cwd: workspace, now: new Date(), colour: false })
-			.exitCode,
-	).toBe(0)
-	const worktree = join(workspace, '.worktrees', `core-${branch.split('/').at(-1)}`)
+	const added = runWorktreeAdd({
+		argv: [core, branch, '--json'],
+		cwd: workspace,
+		now: new Date(),
+		colour: false,
+	})
+	expect(added.exitCode).toBe(0)
+	const worktree = (JSON.parse(added.output) as { worktree: string }).worktree
 	const file = `src/${branch.split('/').at(-1)}.ts`
 	writeFiles({ root: worktree, files: { [file]: 'export {}\n' } })
 	git({ root: worktree, args: ['add', file] })

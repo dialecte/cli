@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `dialecte worktree add` names the folder `.worktrees/<index>-<repository>-<branch tail>` (`0171-cli-x`): a 4-digit index (it grows past `9999`), one counter per workspace, so the latest worktree sorts last. The next index is 1 + the highest of the claims in `.worktrees/.index/` (one empty file per index ever taken) and the numbered folders and links of `.worktrees/`; a claim is created only where none exists, so two runs at the same moment, of any repositories, never take the same index, and a number is never taken again once its worktree is removed. Unnumbered folders and the sibling links (`.worktrees/core`) keep their names. Branches are unchanged. `--json` carries `index`.
+- `dialecte review delta --worktree`: the throwaway keeps the lot's index, `.worktrees/<index>-<repository>-<branch tail>-round-<n>`, and takes no claim; from an unnumbered worktree or the main checkout it takes the workspace's next index.
+- The hand-over card of a numbered worktree is titled `hand-over: <index> <repository folder> <branch>` (`hand-over: 0171 cli feat/x`); every card's commit section ends with a `worktree` line, relative to the workspace when the worktree is inside it (`.worktrees/0171-cli-x`), else absolute. `--json` carries `index`.
+- The hand-over registry entry stores the worktree's `index`; `dialecte handover show`, `run` and `abandon` accept it (`0171`, or unpadded `171`) and take the newest entry of that worktree, ranked by name. An entry name or a path (`./0171`) still wins.
+
+### Fixed
+
+- `dialecte worktree prune` read every hand-over's repository twice per repository of the workspace and its state up to three times: on a workspace of 8 repositories and 173 hand-overs it spawned 7259 git processes and took two minutes. Each hand-over's repository is now read once, and its state once.
+
 ## [0.3.1] - 2026-11-05
 
 ### Added

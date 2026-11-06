@@ -4,7 +4,7 @@
  * standard check), a contributor's contrib rows, the test receipts, the notes (before a run only), the command,
  * before and after the run, and a closing rule naming the hand-over (its registered name, else its folder).
  */
-import { basename } from 'node:path'
+import { basename, dirname, relative } from 'node:path'
 
 import { counted } from '../counted.ts'
 import {
@@ -42,6 +42,8 @@ import {
 	readLedger,
 	resolveBase,
 } from '../tdd/tdd-files.ts'
+import { isInside } from '../worktree/sibling-links.ts'
+import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { registeredNameOf } from './handover-store.ts'
 import {
 	ACCEPTED_REASON_INDENT,
@@ -55,6 +57,7 @@ import {
 	HANDOVER_CARD_FOOTER,
 	HANDOVER_CARD_NAMED_FOOTER,
 	SHELL_PLAIN_WORD,
+	HANDOVER_CARD_NUMBERED_TITLE,
 	HANDOVER_CARD_SECTIONS,
 	HANDOVER_CARD_TITLE,
 	HANDOVER_PROBE_TIMEOUT_MILLISECONDS,
@@ -72,6 +75,7 @@ import {
 	TO_READ_LABELS,
 	TO_READ_MARK,
 	TREE_NOT_RECORDED,
+	WORKTREE_LINE_LABEL,
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
 import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
@@ -206,9 +210,11 @@ export function buildHandoverCard(params: {
 				? 'BLOCKED'
 				: 'READY'
 	const name = registeredNameOf({ root, folder: params.folder })
+	const index = worktreeIndexOf(root)
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
+		...(index && { index }),
 		branch: params.branch,
 		head: params.head,
 		verdict,
@@ -591,10 +597,11 @@ function caseEntryLines(params: {
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
 	return {
-		title: HANDOVER_CARD_TITLE.replace('{repository}', basename(card.repository)).replace(
-			'{branch}',
-			card.branch,
-		),
+		// the repository's own folder, never the worktree's: the index is shown once
+		title: (card.index ? HANDOVER_CARD_NUMBERED_TITLE : HANDOVER_CARD_TITLE)
+			.replace('{index}', card.index ?? '')
+			.replace('{repository}', basename(card.repository))
+			.replace('{branch}', card.branch),
 		sections: [
 			{ lines: verdictLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.commit, lines: commitLines(card) },
@@ -707,7 +714,22 @@ function commitLines(card: HandoverCard): CardLine[] {
 	const headText = moved
 		? `HEAD ${head} → ${card.tip?.slice(0, CARD_SHA_LENGTH)}${CARD_PART_SEPARATOR}${NOTHING_PUSHED}`
 		: `HEAD ${head}`
-	return [...lines, { text: headText, hang: 'HEAD '.length }]
+	return [
+		...lines,
+		{ text: headText, hang: 'HEAD '.length },
+		{ text: `${WORKTREE_LINE_LABEL}${worktreeShown(card)}`, hang: WORKTREE_LINE_LABEL.length },
+	]
+}
+
+/**
+ * The worktree as the card names it: relative to the workspace (the main checkout's folder) when it is inside
+ * it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path.
+ */
+function worktreeShown(card: HandoverCard): string {
+	const workspace = dirname(card.repository)
+	return isInside({ path: card.worktree, folder: workspace })
+		? relative(workspace, card.worktree)
+		: card.worktree
 }
 
 function filesCell(lot: CardLot): string {

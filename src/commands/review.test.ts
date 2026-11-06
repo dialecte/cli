@@ -658,13 +658,14 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 		})
 		symlinkSync('keep.ts', join(folder, 'round-1', 'link'))
 		writeFiles({ root, files: { 'keep.ts': 'keep now\n' } })
-		return { root, folder, throwaway: join(dirname(root), '.worktrees', 'repo-main-round-1') }
+		return { root, folder, throwaway: join(dirname(root), '.worktrees', '0001-repo-main-round-1') }
 	}
 
 	it('a branch <lot branch>-round-<n-1> checked out beside the lot: HEAD, the deletions, then round-1 copied over', () => {
 		const { root, folder, throwaway } = lotWithRoundOne()
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] })).exitCode).toBe(0)
+		expect(existsSync(throwaway)).toBe(true)
 		expect(git({ root: throwaway, args: ['rev-parse', '--abbrev-ref', 'HEAD'] }).trim()).toBe(
 			'main-round-1',
 		)
@@ -680,6 +681,7 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 		const { root, folder, throwaway } = lotWithRoundOne()
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] })).exitCode).toBe(0)
+		expect(existsSync(throwaway)).toBe(true)
 		expect(git({ root: throwaway, args: ['status', '--porcelain', '--untracked-files=all'] })).toBe(
 			' M keep.ts\nD  old.ts\nD  x\n?? link\n?? new.ts\n?? x/inner.ts\n',
 		)
@@ -695,7 +697,7 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 		writeRound({ folder, files: { 'a.ts': 'a round 1\n' }, base: headOf(lot) })
 		writeFiles({ root: lot, files: { 'a.ts': 'a now\n' } })
-		const throwaway = join(parent, '.worktrees', 'repo-feat-x-round-1')
+		const throwaway = join(parent, '.worktrees', '0001-repo-feat-x-round-1')
 
 		expect(runReview(deltaCall({ cwd: lot, folder, flags: ['--worktree'] }))).toEqual({
 			exitCode: 0,
@@ -713,6 +715,27 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 		)
 		expect(readFileSync(join(throwaway, 'feature.ts'), 'utf8')).toBe('feature\n')
 		expect(readFileSync(join(throwaway, 'a.ts'), 'utf8')).toBe('a round 1\n')
+	})
+
+	it('the lot is a numbered worktree 0042-repo-x on feat/x → the throwaway 0042-repo-x-round-1 keeps its index and takes no claim', () => {
+		const parent = realpathSync(temporaryFolder('dialecte-review-'))
+		const main = initializeRepository({ root: join(parent, 'repo'), files: { 'a.ts': 'a\n' } })
+		const lot = join(parent, '.worktrees', '0042-repo-x')
+		git({ root: main, args: ['worktree', 'add', '--quiet', '-b', 'feat/x', lot, 'main'] })
+		const folder = handoverFolder()
+		writeRound({ folder, files: { 'a.ts': 'a round 1\n' }, base: headOf(lot) })
+		writeFiles({ root: lot, files: { 'a.ts': 'a now\n' } })
+		const throwaway = join(parent, '.worktrees', '0042-repo-x-round-1')
+
+		expect(runReview(deltaCall({ cwd: lot, folder, flags: ['--json', '--worktree'] }))).toEqual({
+			exitCode: 0,
+			output: expect.stringContaining(`"path": "${throwaway}"`),
+		})
+		expect(readFileSync(join(throwaway, 'a.ts'), 'utf8')).toBe('a round 1\n')
+		expect(git({ root: throwaway, args: ['branch', '--show-current'] }).trim()).toBe(
+			'feat/x-round-1',
+		)
+		expect(existsSync(join(parent, '.worktrees', '.index'))).toBe(false)
 	})
 
 	it('the output names the throwaway and its removal command with an absolute cd', () => {
@@ -762,9 +785,10 @@ describe('dialecte review delta --worktree', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 		writeRound({ folder, files: { 'a.ts': 'a1\n' }, base: headOf(root) })
 		writeFiles({ root, files: { 'a.ts': 'a2\n' } })
-		const throwaway = join(dirname(root), '.worktrees', 'repo-main-round-1')
+		const throwaway = join(dirname(root), '.worktrees', '0001-repo-main-round-1')
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] })).exitCode).toBe(0)
+		expect(existsSync(throwaway)).toBe(true)
 		expect(readFileSync(join(throwaway, 'a.ts'), 'utf8')).toBe('a1\n')
 	})
 
@@ -846,7 +870,7 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 		writeRound({ folder, files: { 'a.ts': 'a1\n' }, base: headOf(root) })
 		writeFiles({ root, files: { 'a.ts': 'a2\n' } })
-		const throwaway = join(dirname(root), '.worktrees', 'repo-main-round-1')
+		const throwaway = join(dirname(root), '.worktrees', '0001-repo-main-round-1')
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] }))).toEqual({
 			exitCode: 1,
@@ -866,9 +890,10 @@ describe('dialecte review delta - round 1 fixes', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 		writeRound({ folder, deleted: ['g*.ts'], base: headOf(root) })
 		rmSync(join(root, 'g*.ts'))
-		const throwaway = join(dirname(root), '.worktrees', 'repo-main-round-1')
+		const throwaway = join(dirname(root), '.worktrees', '0001-repo-main-round-1')
 
 		expect(runReview(deltaCall({ cwd: root, folder, flags: ['--worktree'] })).exitCode).toBe(0)
+		expect(existsSync(throwaway)).toBe(true)
 		expect(readFileSync(join(throwaway, 'g1.ts'), 'utf8')).toBe('one\n')
 		expect(existsSync(join(throwaway, 'g*.ts'))).toBe(false)
 		expect(git({ root: throwaway, args: ['status', '--porcelain', '--untracked-files=all'] })).toBe(

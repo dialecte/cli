@@ -1,3 +1,5 @@
+import type { HandoverFolder } from '../handover/handover.types.ts'
+
 /** How `node_modules` was copied, and the package links re-pointed so they still reach their target. */
 export type NodeModulesCopy = {
 	method: 'copy-on-write' | 'copy'
@@ -29,6 +31,8 @@ export type HygieneReport = {
 export type AddedWorktree = {
 	repository: string
 	worktree: string
+	/** The index the worktree's folder starts with (`0007`). */
+	index: string
 	branch: string
 	/** Where the branch started: the given ref, the base branch, or the existing branch. */
 	from: string
@@ -111,6 +115,9 @@ export type PruneItem = {
 	/** The removal, with its absolute `cd`. */
 	command?: string
 }
+
+/** A hand-over `worktree prune` read, with the common git folder of its repository (undefined: in none). */
+export type PruneHandover = { handover: HandoverFolder; commonFolder: string | undefined }
 
 /** A symbolic link prune found, and the real path it reaches. */
 export type FolderLink = { link: string; target: string }

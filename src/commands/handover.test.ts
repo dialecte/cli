@@ -701,6 +701,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			'pending  1 file  +3 −1  feat(read): read answers one',
 			'pending  1 file  +3 −0  docs(changelog): read',
 			`HEAD ${headOf(root).slice(0, 7)}`,
+			`worktree ${basename(root)}`,
 		])
 		expect(sectionLines({ output: result.output, name: 'notes' })).toEqual(['npm run check'])
 		const box = boxLines(result.output)
@@ -2056,9 +2057,10 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 		const result = await runFolder({ out })
 
 		const tip = headOf(root)
-		expect(sectionLines({ output: result.text, name: 'commit' }).at(-1)).toBe(
+		expect(sectionLines({ output: result.text, name: 'commit' }).slice(-2)).toEqual([
 			`HEAD ${base.slice(0, 7)} → ${tip.slice(0, 7)} · nothing pushed`,
-		)
+			`worktree ${basename(root)}`,
+		])
 	})
 
 	it('the notes are for the person about to run: the rehearsal card keeps them; the card a real run prints after committing every lot has no notes section', async () => {
@@ -2735,6 +2737,7 @@ describe(
 				`${tip.slice(0, 7)}  1 file  +3 −1  feat(read): read answers one`,
 				'pending  1 file  +3 −0  docs(changelog): read',
 				`HEAD ${base.slice(0, 7)} → ${tip.slice(0, 7)} · nothing pushed`,
+				`worktree ${basename(root)}`,
 			])
 			expect(ran.lines.some((line) => /handover run '|bash commit\.sh/.test(line))).toBe(true)
 		})
@@ -3257,6 +3260,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│                               merge feat/x at bbbbbbb · 1 conflict · tree    │',
 			'│                               not recorded: rehearse first                   │',
 			'│ HEAD aaaaaaa                                                                 │',
+			'│ worktree dialecte-scratch-XXXXXX                                             │',
 			'├─ gates ──────────────────────────────────────────────────────────────────────┤',
 			'│ ! tdd       not run here (the package does not test with vitest) (the tree   │',
 			'│             changed since)                                                   │',
@@ -3290,7 +3294,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const rehearsal = await runFolder({ out: unrecorded.out, argv: ['--rehearse'] })
 		const tree = /tree ([0-9a-f]{40})/.exec(rehearsal.text)?.[1] ?? ''
 		expect(tree).toMatch(/^[0-9a-f]{40}$/)
-		const { lotsPath, head, tip } = await fullCardScenario({ failingBuild: false, tree })
+		const { root, lotsPath, head, tip } = await fullCardScenario({ failingBuild: false, tree })
 
 		const output = writeHandover({ lotsPath }).output
 
@@ -3303,6 +3307,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'pending  1 file  +1 −1  merge: bring feat/x in',
 			`                        merge feat/x at ${tip.slice(0, 7)} · 1 conflict · tree ${tree.slice(0, 7)}`,
 			`HEAD ${head.slice(0, 7)}`,
+			`worktree ${basename(root)}`,
 		])
 	})
 
@@ -3348,6 +3353,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			`${mergeCommit.slice(0, 7)}  1 file  +1 −1  merge: bring feat/x in`,
 			`                        merge feat/x at ${tip.slice(0, 7)} · 1 conflict · tree ${tree.slice(0, 7)}`,
 			`HEAD ${head.slice(0, 7)} → ${mergeCommit.slice(0, 7)} · nothing pushed`,
+			`worktree ${basename(root)}`,
 		])
 	})
 

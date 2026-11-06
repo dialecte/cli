@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { mainCheckoutOf, readGit } from '../git.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { addWorktree, checkoutOf } from '../worktree/add-worktree.ts'
+import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { DELTA_FILE_MARK, NO_FILE, PLAIN_DIFF_OPTIONS } from './review-rounds.constants.ts'
 import { copyFileOrLink, roundNames } from './snapshot-round.ts'
@@ -170,7 +171,8 @@ export function currentBranchOf(root: string): string | undefined {
 }
 
 /**
- * A throwaway worktree on branch `<branch>-round-<previous>` from the lot's branch (its tip is the base),
+ * A throwaway worktree on branch `<branch>-round-<previous>` from the lot's branch (its tip is the base), in
+ * `.worktrees/<index>-<repository>-<branch tail>-round-<previous>` (the lot's index when its worktree has one),
  * the snapshot's deletions removed with `git rm`, then the snapshot copied over it. Answers why not when
  * it cannot be made; the lot's own worktree is never written.
  */
@@ -188,6 +190,8 @@ export function addThrowaway(params: {
 			repository: params.root,
 			branch,
 			from: params.branch,
+			// the lot's own index when its worktree is numbered, else the workspace's next
+			index: worktreeIndexOf(params.root),
 			now: params.now,
 		})
 	} catch (error) {

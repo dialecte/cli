@@ -53,6 +53,21 @@ function createWorkspace(): { workspace: string; core: string } {
 	return { workspace, core }
 }
 
+/** `worktree add` at a fixed time; a throw comes back as the result it left instead of a card. */
+function addOrThrown(params: { argv: string[]; cwd: string }): {
+	exitCode: number | undefined
+	output: string
+} {
+	try {
+		return runWorktreeAdd({ ...params, now: new Date('2026-11-06T10:00:00Z'), colour: false })
+	} catch (error) {
+		return {
+			exitCode: undefined,
+			output: `threw: ${error instanceof Error ? error.message : String(error)}`,
+		}
+	}
+}
+
 describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 	it('a new branch → under .worktrees/, hooks folder copied, node_modules copied with its links, baseline written, card printed', () => {
 		const { workspace, core } = createWorkspace()
@@ -64,8 +79,9 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 			colour: false,
 		})
 
-		const worktree = join(workspace, '.worktrees', 'core-thing')
+		const worktree = join(workspace, '.worktrees', '0001-core-thing')
 		expect(result.exitCode).toBe(0)
+		expect(existsSync(worktree)).toBe(true)
 		expect(git({ root: worktree, args: ['rev-parse', '--abbrev-ref', 'HEAD'] }).trim()).toBe(
 			'feat/thing',
 		)
@@ -89,20 +105,112 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 		expect(result.output).toContain(`cd '${worktree}'`)
 	})
 
-	it('the worktree folder exists already → refused, nothing made', () => {
+	it('a second worktree, then a third after the second was removed → 0002, then 0003: a number is never taken again', () => {
 		const { workspace, core } = createWorkspace()
-		mkdirSync(join(workspace, '.worktrees', 'core-thing'), { recursive: true })
+		const now = new Date('2026-11-06T10:00:00Z')
+		const worktrees = join(workspace, '.worktrees')
 
-		const result = runWorktreeAdd({
-			argv: [core, 'feat/thing'],
+		const first = runWorktreeAdd({ argv: [core, 'feat/one'], cwd: workspace, now, colour: false })
+		const second = runWorktreeAdd({ argv: [core, 'feat/two'], cwd: workspace, now, colour: false })
+		expect(existsSync(join(worktrees, '0002-core-two'))).toBe(true)
+		git({ root: core, args: ['worktree', 'remove', join(worktrees, '0002-core-two')] })
+		const third = runWorktreeAdd({ argv: [core, 'feat/three'], cwd: workspace, now, colour: false })
+
+		expect([first.exitCode, second.exitCode, third.exitCode]).toEqual([0, 0, 0])
+		expect(existsSync(join(worktrees, '0001-core-one'))).toBe(true)
+		expect(existsSync(join(worktrees, '0003-core-three'))).toBe(true)
+		expect(
+			git({ root: join(worktrees, '0003-core-three'), args: ['branch', '--show-current'] }).trim(),
+		).toBe('feat/three')
+	})
+
+	it('cli then core in one workspace, beside an unnumbered worktree folder and the sibling link core → 0001-cli-x then 0002-core-y; the unnumbered folder and the link keep their names', () => {
+		const { workspace, core } = createWorkspace()
+		const worktrees = join(workspace, '.worktrees')
+		mkdirSync(join(worktrees, 'cli-old'), { recursive: true })
+		symlinkSync('../core', join(worktrees, 'core'))
+		const now = new Date('2026-11-06T10:00:00Z')
+
+		const first = runWorktreeAdd({
+			argv: [join(workspace, 'cli'), 'feat/x', '--json'],
 			cwd: workspace,
-			now: new Date(),
+			now,
+			colour: false,
+		})
+		const second = runWorktreeAdd({
+			argv: [core, 'feat/y', '--json'],
+			cwd: workspace,
+			now,
 			colour: false,
 		})
 
-		expect(result).toMatchObject({ exitCode: 1 })
-		expect(result.output).toContain('exists already')
+		expect(
+			[first, second].map(function folderOf(result) {
+				return (JSON.parse(result.output) as { worktree?: string }).worktree
+			}),
+		).toEqual([join(worktrees, '0001-cli-x'), join(worktrees, '0002-core-y')])
+		expect(existsSync(join(worktrees, 'cli-old'))).toBe(true)
+		expect(readlinkSync(join(worktrees, 'core'))).toBe('../core')
+	})
+
+	it('--from on a branch that exists → refused, exit 1, no index taken: the next worktree is 0001', () => {
+		const { workspace, core } = createWorkspace()
+		git({ root: core, args: ['branch', 'feat/there'] })
+		const now = new Date('2026-11-06T10:00:00Z')
+
+		const refused = runWorktreeAdd({
+			argv: [core, 'feat/there', '--from', 'main'],
+			cwd: workspace,
+			now,
+			colour: false,
+		})
+		const next = runWorktreeAdd({
+			argv: [core, 'feat/next', '--json'],
+			cwd: workspace,
+			now,
+			colour: false,
+		})
+
+		expect(refused).toMatchObject({ exitCode: 1, output: expect.stringContaining('--from') })
+		expect((JSON.parse(next.output) as { index?: string }).index).toBe('0001')
+	})
+
+	it('.worktrees/.index is a file → refused, exit 1 naming it; no worktree, no branch made', () => {
+		const { workspace, core } = createWorkspace()
+		const claims = join(workspace, '.worktrees', '.index')
+		mkdirSync(join(workspace, '.worktrees'), { recursive: true })
+		writeFileSync(claims, 'not a folder\n')
+
+		const result = addOrThrown({ argv: [core, 'feat/thing'], cwd: workspace })
+
+		expect(result).toEqual({ exitCode: 1, output: expect.stringContaining(claims) })
 		expect(git({ root: core, args: ['branch', '--list', 'feat/thing'] })).toBe('')
+	})
+
+	it('--json → the index and the numbered worktree; the card names the numbered folder', () => {
+		const { workspace, core } = createWorkspace()
+		const now = new Date('2026-11-06T10:00:00Z')
+
+		const json = runWorktreeAdd({
+			argv: [core, 'feat/one', '--json'],
+			cwd: workspace,
+			now,
+			colour: false,
+		})
+		const card = runWorktreeAdd({ argv: [core, 'feat/two'], cwd: workspace, now, colour: false })
+
+		expect(JSON.parse(json.output)).toMatchObject({
+			index: '0001',
+			worktree: join(workspace, '.worktrees', '0001-core-one'),
+			branch: 'feat/one',
+		})
+		expect(card.output).toMatch(
+			new RegExp(
+				`^│ worktree +${join(workspace, '.worktrees', '0002-core-two').replaceAll('.', '\\.')} +│$`,
+				'm',
+			),
+		)
+		expect(card.output).toContain(`cd '${join(workspace, '.worktrees', '0002-core-two')}'`)
 	})
 
 	it('a new worktree → .dialecte/ is excluded: a hand-written lot file never shows as untracked', () => {
@@ -115,7 +223,8 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 			colour: false,
 		})
 
-		const worktree = join(workspace, '.worktrees', 'core-thing')
+		const worktree = join(workspace, '.worktrees', '0001-core-thing')
+		expect(existsSync(worktree)).toBe(true)
 		writeFiles({ root: worktree, files: { '.dialecte/lot.json': '{}\n' } })
 		expect(result.exitCode).toBe(0)
 		expect(git({ root: worktree, args: ['status', '--porcelain'] })).toBe('')
@@ -150,7 +259,7 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 				colour: false,
 			})
 
-			const copied = join(workspace, '.worktrees', 'core-child', 'node_modules/demo/index.js')
+			const copied = join(workspace, '.worktrees', '0001-core-child', 'node_modules/demo/index.js')
 			expect(result.exitCode).toBe(0)
 			expect(existsSync(copied) ? readFileSync(copied, 'utf8') : undefined).toBe(
 				'module.exports = 1\n',
@@ -180,14 +289,19 @@ describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 		expect(fromWorktree.exitCode).toBe(0)
 		expect(fromMain.exitCode).toBe(0)
 		expect(
+			['0001-core-child', '0002-core-other'].map(function holdsDemo(name) {
+				return existsSync(join(workspace, '.worktrees', name, 'node_modules/demo/index.js'))
+			}),
+		).toEqual([true, true])
+		expect(
 			readFileSync(
-				join(workspace, '.worktrees', 'core-child', 'node_modules/demo/index.js'),
+				join(workspace, '.worktrees', '0001-core-child', 'node_modules/demo/index.js'),
 				'utf8',
 			),
 		).toBe('module.exports = "base"\n')
 		expect(
 			readFileSync(
-				join(workspace, '.worktrees', 'core-other', 'node_modules/demo/index.js'),
+				join(workspace, '.worktrees', '0002-core-other', 'node_modules/demo/index.js'),
 				'utf8',
 			),
 		).toBe('module.exports = 1\n')
@@ -231,15 +345,14 @@ function createPruneWorkspace(): {
 	const { workspace, core } = createWorkspace()
 	const worktrees: Record<string, string> = {}
 	for (const name of ['merged', 'unmerged', 'dirty', 'pending']) {
-		expect(
-			runWorktreeAdd({
-				argv: [core, `feat/${name}`],
-				cwd: workspace,
-				now: new Date(),
-				colour: false,
-			}).exitCode,
-		).toBe(0)
-		worktrees[name] = join(workspace, '.worktrees', `core-${name}`)
+		const added = runWorktreeAdd({
+			argv: [core, `feat/${name}`, '--json'],
+			cwd: workspace,
+			now: new Date(),
+			colour: false,
+		})
+		expect(added.exitCode).toBe(0)
+		worktrees[name] = (JSON.parse(added.output) as { worktree: string }).worktree
 	}
 	commitIn({ root: worktrees.merged, file: 'src/merged.ts', message: 'feat: merged' })
 	git({ root: core, args: ['merge', '-q', '--ff-only', 'feat/merged'] })
@@ -394,7 +507,7 @@ describe('worktree prune', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 
 		expect(result.output.split('\n')).toEqual(
 			expect.arrayContaining([
-				`  keep    worktree  ${join(workspace, '.worktrees', 'core-fresh')}  (feat/fresh: no commit of its own in its reflog)`,
+				`  keep    worktree  ${join(workspace, '.worktrees', '0001-core-fresh')}  (feat/fresh: no commit of its own in its reflog)`,
 				'  keep    branch  feat/started  (no commit of its own in its reflog)',
 			]),
 		)
@@ -598,15 +711,15 @@ describe('worktree prune', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 				'x',
 			]),
 		)
-		const flooded = join(workspace, '.worktrees', 'core-flooded')
-		expect(
-			runWorktreeAdd({
-				argv: [core, 'feat/flooded'],
-				cwd: workspace,
-				now: new Date(),
-				colour: false,
-			}).exitCode,
-		).toBe(0)
+		const added = runWorktreeAdd({
+			argv: [core, 'feat/flooded', '--json'],
+			cwd: workspace,
+			now: new Date(),
+			colour: false,
+		})
+		expect(added.exitCode).toBe(0)
+		const flooded = (JSON.parse(added.output) as { worktree: string }).worktree
+		expect(flooded).toBe(join(workspace, '.worktrees', '0005-core-flooded'))
 		commitIn({ root: flooded, file: 'src/flooded.ts', message: 'feat: flooded' })
 		git({ root: core, args: ['merge', '-q', '--ff-only', 'feat/flooded'] })
 		writeFiles({ root: flooded, files: logs })
