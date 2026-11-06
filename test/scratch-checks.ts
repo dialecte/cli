@@ -33,6 +33,7 @@ import {
 	writeFiles,
 } from './scratch-repository.ts'
 import { treeOfWorkingFiles } from './scratch-tree.ts'
+import { createRecordingSpawner } from './worktree-pool.ts'
 
 import { expect } from 'vitest'
 
@@ -238,6 +239,8 @@ export async function runFolder(params: { out: string; argv?: string[] }): Promi
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot,
+		// no run of these cases may start a real background delete
+		spawner: createRecordingSpawner().spawner,
 	})
 	noteRehearsalFolders()
 	return { exitCode, text: lines.join('\n'), rehearsalFolders: [...seen], scratchRoot }

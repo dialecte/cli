@@ -2,7 +2,8 @@
  * `dialecte worktree add`: a git worktree `.worktrees/<index>-<repository>-<branch tail>` of the workspace (the
  * index the next of the workspace's counter, or the one given), ready to work in - the
  * hooks folder of `core.hooksPath` copied (husky's `.husky/_` is ignored by git, so a new worktree misses
- * it and git skips every hook), `node_modules` copied on write with its links (from the worktree that has
+ * it and git skips every hook), `node_modules` taken from the workspace's pool when an entry matches the
+ * worktree's `package-lock.json`, else copied on write with its links (from the worktree that has
  * the `--from` branch checked out when there is one, else from the main checkout), the links its `file:`
  * and `link:` dependencies need to reach sibling checkouts through `.worktrees/` (made before the copy),
  * that `node_modules` read against the worktree's `package-lock.json`, `.dialecte/` (the lot declaration,
@@ -21,6 +22,7 @@ import { checkNodeModules } from './check-node-modules.ts'
 import { copyNodeModules } from './copy-node-modules.ts'
 import { writeHygieneBaseline } from './hygiene.ts'
 import { readLockedPackages } from './locked-packages.ts'
+import { takePooledNodeModules } from './node-modules-pool.ts'
 import { linkSiblings } from './sibling-links.ts'
 import { claimWorktreeIndex, worktreeFolderName } from './worktree-index.ts'
 import {
@@ -29,7 +31,7 @@ import {
 	WORKTREE_INDEX_FOLDER,
 } from './worktree.constants.ts'
 
-import type { AddedWorktree } from './worktree.types.ts'
+import type { AddedWorktree, ListedWorktree, NodeModulesSource } from './worktree.types.ts'
 
 /** The worktree made, or why it was not. */
 export function addWorktree(params: {
@@ -83,9 +85,12 @@ export function addWorktree(params: {
 			.filter((folder): folder is string => folder !== undefined)
 			.map((folder) => join(folder, 'node_modules'))
 			.find((folder) => existsSync(folder)) ?? join(repository, 'node_modules')
-	const copy = existsSync(nodeModules)
-		? copyNodeModules({ from: nodeModules, to: join(worktree, 'node_modules') })
-		: undefined
+	const provided = provideNodeModules({
+		checkout: worktree,
+		repository,
+		worktreesFolder,
+		from: nodeModules,
+	})
 	const nodeModulesCheck = checkNodeModules({ worktree })
 	const lockfileRead = readLockedPackages({ worktree })
 	const lockedPackages = 'packages' in lockfileRead ? lockfileRead.packages.length : 0
@@ -98,7 +103,7 @@ export function addWorktree(params: {
 		from,
 		head: baseline.head,
 		hooks: copiedHooks,
-		nodeModules: copy,
+		nodeModules: provided,
 		siblingLinks,
 		nodeModulesCheck,
 		lockedPackages,
@@ -108,15 +113,60 @@ export function addWorktree(params: {
 
 /** The folder of the worktree that has `branch` checked out (the main checkout included); none when no worktree has. */
 export function checkoutOf(params: { repository: string; branch: string }): string | undefined {
-	let path: string | undefined
-	for (const line of readGit({
-		root: params.repository,
-		args: ['worktree', 'list', '--porcelain'],
-	}).split('\n')) {
-		if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-		else if (line === `branch refs/heads/${params.branch}`) return path
-	}
-	return undefined
+	return listWorktrees(params.repository).find((worktree) => worktree.branch === params.branch)
+		?.path
+}
+
+/**
+ * The worktrees of the repository, the main checkout first, each with its branch (none when detached) and
+ * whether `git worktree lock` locked it.
+ */
+export function listWorktrees(repository: string): ListedWorktree[] {
+	const blocks = readGit({ root: repository, args: ['worktree', 'list', '--porcelain'] }).split(
+		'\n\n',
+	)
+	return blocks.filter(Boolean).map(function parse(block): ListedWorktree {
+		const lines = block.split('\n')
+		const path = lines.find((line) => line.startsWith('worktree '))?.slice('worktree '.length) ?? ''
+		const branch = lines
+			.find((line) => line.startsWith('branch refs/heads/'))
+			?.slice('branch refs/heads/'.length)
+		const locked = lines.some((line) => line === 'locked' || line.startsWith('locked '))
+		return { path, ...(branch && { branch }), ...(locked && { locked }) }
+	})
+}
+
+/**
+ * The `node_modules` of a new checkout: the newest pool entry whose lockfile matches (a rename), else a copy of
+ * `from` when it exists (copy-on-write where it can); how long it took.
+ */
+export function provideNodeModules(params: {
+	checkout: string
+	/** The repository's main checkout. */
+	repository: string
+	/** Where the pool is; none: no pool, a copy. */
+	worktreesFolder: string | undefined
+	/** The `node_modules` copied when the pool has none. */
+	from: string
+}): NodeModulesSource | undefined {
+	const startedAt = performance.now()
+	const take = params.worktreesFolder
+		? takePooledNodeModules({
+				worktree: params.checkout,
+				repository: params.repository,
+				worktreesFolder: params.worktreesFolder,
+			})
+		: undefined
+	if (take && 'taken' in take)
+		return { method: 'pooled', from: take.taken, seconds: secondsSince(startedAt) }
+	if (!existsSync(params.from)) return undefined
+	const copy = copyNodeModules({ from: params.from, to: join(params.checkout, 'node_modules') })
+	return { ...copy, seconds: secondsSince(startedAt) }
+}
+
+/** Seconds since `startedAt` (`performance.now()`), to one decimal. */
+function secondsSince(startedAt: number): number {
+	return Math.round((performance.now() - startedAt) / 100) / 10
 }
 
 /** `.dialecte/` in the repository's exclude file (shared by its worktrees), listed once. */

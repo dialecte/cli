@@ -22,6 +22,7 @@ import {
 	writeFiles,
 } from '../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import {
 	HANDOVER_FILES,
 	INSTALL_BACKUP_FOLDER,
@@ -219,6 +220,7 @@ async function runFolder(params: {
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		spawner: createRecordingSpawner().spawner,
 	})
 	return { exitCode, lines, text: lines.join('\n') }
 }

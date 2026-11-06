@@ -4,7 +4,10 @@
  * `node_modules` - so the hooks run as they will for real. The clone lives in a rehearsal folder under a
  * short scratch root, beside links to the repository's sibling folders its relative `file:` dependencies
  * reach, and the hook runs with a short temporary folder inside it. The guards read the repository; the
- * lots are committed in the clone; the whole rehearsal folder is removed at the end unless kept.
+ * lots are committed in the clone; the whole rehearsal folder is removed at the end unless kept. In a workspace
+ * (the repository's parent holds `.worktrees/`) the clone's `node_modules` comes from the pool when an entry
+ * matches its lockfile, goes back to the pool at the end, and the folder goes to the trash, removed in the
+ * background.
  *
  * Before any clone, each lot is decided (`planRehearsal`) and its line printed: a lot a green record of its
  * tree answers for is committed in the clone without its hook, the others with it; the decisions go to the
@@ -36,12 +39,17 @@ import { isPresent } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
-import { listChangedFiles, readGit, readGitConfig } from '../git.ts'
+import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
-import { copyNodeModules } from '../worktree/copy-node-modules.ts'
+import { WORKTREES_FOLDER } from '../workspace.constants.ts'
+import { provideNodeModules } from '../worktree/add-worktree.ts'
+import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
+import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
+import { parkNodeModules } from '../worktree/node-modules-pool.ts'
+import { spawnDetached, trashFolder } from '../worktree/trash.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
 	CONTRIB_KEY_PARTS,
@@ -55,20 +63,27 @@ import {
 	REHEARSAL_MARKER_FILE,
 	REHEARSAL_TEMPORARY_FOLDER,
 	REHEARSAL_REASONS,
+	REHEARSAL_REMOVED_LINE,
 	REUSED_MERGE_TREE_LINE,
 	UNTRACKED_WARNING_LIMIT,
 } from './handover.constants.ts'
-import { linkRehearsalSiblings, removeRehearsalFolder } from './rehearsal-links.ts'
+import {
+	linkRehearsalSiblings,
+	removeRehearsalFolder,
+	unlinkRehearsalLinks,
+} from './rehearsal-links.ts'
 import { planRehearsal } from './rehearsal-plan.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
 import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
+import type { BackgroundSpawner } from '../worktree/worktree.types.ts'
 import type {
 	HandoverFolder,
 	HandoverProbe,
 	RehearsalDecision,
+	RehearsalPool,
 	WriteLine,
 } from './handover.types.ts'
 
@@ -94,6 +109,10 @@ export async function rehearseHandover(params: {
 	resumeMerge?: boolean
 	/** `--full`: every lot is rehearsed, whatever the records say. */
 	full?: boolean
+	/** Starts the background removals of the trash (the tests stand in for it); default: a detached process. */
+	spawner?: BackgroundSpawner
+	/** Re-points the clone's `node_modules` links at the end of a rehearsal (the tests stand in for it, to make it throw). */
+	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): Promise<number> {
 	const { handover, write } = params
 	const decisions = decideLots({ handover, full: params.full ?? false })
@@ -144,6 +163,7 @@ export async function rehearseHandover(params: {
 			clock: params.clock,
 		})
 	const repository = handover.lotsFile.repository
+	const pool = params.keep ? undefined : poolOf(repository)
 	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
 	const clone = join(folder, basename(repository))
 	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
@@ -172,7 +192,7 @@ export async function rehearseHandover(params: {
 			...(params.tty && { detail: 'the repository, your working tree, hooks, node_modules' }),
 		})
 		try {
-			prepareClone({ repository, clone, branch: handover.lotsFile.branch, write })
+			prepareClone({ repository, clone, branch: handover.lotsFile.branch, write, pool })
 			const siblings = linkRehearsalSiblings({ repository, folder, clone })
 			links.push(...siblings.links)
 			for (const line of siblings.lines) write(line)
@@ -220,11 +240,95 @@ export async function rehearseHandover(params: {
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
 		if (params.keep) write(`kept the rehearsal folder: ${folder}`)
+		else if (pool)
+			for (const line of trashRehearsalFolder({
+				folder,
+				clone,
+				links,
+				pool,
+				spawner: params.spawner ?? spawnDetached,
+				relink: params.relink,
+			}))
+				write(line)
 		else {
 			removeRehearsalFolder({ folder, links })
-			write('removed the rehearsal clone and its folder')
+			write(REHEARSAL_REMOVED_LINE)
 		}
 	}
+}
+
+/**
+ * The pool and the trash of the repository's workspace: its main checkout's parent holds `.worktrees/`;
+ * undefined elsewhere (a repository on its own is rehearsed as before, nothing written beside it).
+ */
+function poolOf(repository: string): RehearsalPool | undefined {
+	const main = mainCheckoutOf(repository)
+	const worktreesFolder = join(dirname(main), WORKTREES_FOLDER)
+	return existsSync(worktreesFolder) ? { main, worktreesFolder } : undefined
+}
+
+/**
+ * The end of a rehearsal in a workspace: the clone's `node_modules` parked in the pool, the rehearsal folder
+ * renamed into the trash and removed in the background; removed here when the trash is on another file system.
+ * The lines to print.
+ */
+function trashRehearsalFolder(params: {
+	folder: string
+	clone: string
+	links: readonly string[]
+	pool: RehearsalPool
+	spawner: BackgroundSpawner
+	relink?: (params: { from: string; to: string; real: boolean }) => void
+}): string[] {
+	const { pool } = params
+	const now = new Date()
+	const lines: string[] = []
+	const nodeModules = join(params.clone, 'node_modules')
+	// a park that fails never replaces the rehearsal's result: one line, and the folder goes all the same
+	try {
+		// read and re-pointed while the sibling links beside the clone still resolve its `file:` dependencies
+		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
+		const checkedLockHash = lockHashOf(params.clone)
+		const check = existsSync(nodeModules) ? checkNodeModules({ worktree: params.clone }) : undefined
+		if (check)
+			(params.relink ?? relinkEscapingLinks)({ from: nodeModules, to: nodeModules, real: true })
+		unlinkRehearsalLinks(params.links)
+		if (check) {
+			const parked = parkNodeModules({
+				worktree: params.clone,
+				repository: pool.main,
+				worktreesFolder: pool.worktreesFolder,
+				now,
+				spawner: params.spawner,
+				// the caches go with the rehearsal folder
+				discardInto: params.folder,
+				check,
+				checkedLockHash,
+			})
+			lines.push(
+				typeof parked === 'string'
+					? `node_modules not parked: ${parked}`
+					: `node_modules parked in ${parked.entry}`,
+			)
+		}
+	} catch (error) {
+		lines.push(`node_modules not parked: ${(error as Error).message}`)
+	}
+	try {
+		const { trashed } = trashFolder({
+			folder: params.folder,
+			worktreesFolder: pool.worktreesFolder,
+			now,
+			spawner: params.spawner,
+		})
+		lines.push(`sent the rehearsal folder to the trash: ${trashed}`)
+	} catch {
+		// another file system (a rename cannot cross it): removed here, as without a trash
+		// the links still there when the park failed before unlinking them
+		removeRehearsalFolder({ folder: params.folder, links: params.links })
+		lines.push(REHEARSAL_REMOVED_LINE)
+	}
+	return lines
 }
 
 /**
@@ -293,6 +397,8 @@ function prepareClone(params: {
 	clone: string
 	branch: string
 	write: WriteLine
+	/** Where the clone's `node_modules` is taken from first; none: a copy, as before. */
+	pool: RehearsalPool | undefined
 }): void {
 	const { repository, clone, write } = params
 	const head = readGit({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
@@ -324,13 +430,18 @@ function prepareClone(params: {
 		cpSync(hooks.folder, join(clone, '.git', 'hooks'), { recursive: true })
 	write(`  hooks: ${hooks.configured ?? 'git hooks folder'} copied`)
 
-	const nodeModules = join(repository, 'node_modules')
-	if (existsSync(nodeModules)) {
-		const copy = copyNodeModules({ from: nodeModules, to: join(clone, 'node_modules') })
+	const provided = provideNodeModules({
+		checkout: clone,
+		repository: params.pool?.main ?? repository,
+		worktreesFolder: params.pool?.worktreesFolder,
+		from: join(repository, 'node_modules'),
+	})
+	if (provided)
 		write(
-			`  node_modules: ${copy.method}${copy.relinked.length ? `, ${copy.relinked.length} link(s) re-pointed` : ''}`,
+			provided.method === 'pooled'
+				? `  node_modules: pooled ${provided.from}`
+				: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
 		)
-	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 }
 

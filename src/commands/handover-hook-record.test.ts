@@ -16,6 +16,7 @@ import {
 	writeFiles,
 } from '../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { runHandover, runHandoverRun } from './handover.ts'
 
@@ -99,6 +100,7 @@ async function runFolder(params: {
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot: params.scratchRoot ?? temporaryFolder('dialecte-scratch-root-'),
+		spawner: createRecordingSpawner().spawner,
 	})
 	return { exitCode, text: lines.join('\n') }
 }

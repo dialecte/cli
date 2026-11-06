@@ -32,6 +32,7 @@ import type { Card, CardRow } from '../lib/card/card.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
 	AddedWorktree,
+	NodeModulesSource,
 	PruneItem,
 	PrunePlan,
 	SiblingLink,
@@ -161,6 +162,20 @@ function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem
 		for (const item of params.plan.scratch)
 			lines.push(item.kept ? `  keep    ${item.name}  (${item.kept})` : `  remove  ${item.name}`)
 	}
+	// what prune never touches: the pool is taken by the next worktree, the trash empties itself
+	const pooled = params.plan.pool.reduce((total, repository) => total + repository.entries, 0)
+	if (pooled > 0)
+		lines.push(
+			`pool: ${pooled} entr${pooled === 1 ? 'y' : 'ies'} (${params.plan.pool.map((repository) => `${repository.repository} ${repository.entries}`).join(', ')})`,
+		)
+	for (const folder of params.plan.poolLeftOver)
+		lines.push(
+			`pool: ${folder} left over (no pool.json: a park that never finished), left in place`,
+		)
+	if (params.plan.trash > 0)
+		lines.push(
+			`trash: ${params.plan.trash} folder${params.plan.trash === 1 ? '' : 's'}, being deleted or left over`,
+		)
 	if (params.removals.length)
 		lines.push('Removal commands:', ...params.removals.map((item) => item.command ?? ''))
 	return lines.join('\n')
@@ -196,11 +211,7 @@ function worktreeCard(added: AddedWorktree): Card {
 			}),
 			{
 				label: 'node_modules',
-				lines: [
-					added.nodeModules
-						? `${added.nodeModules.method}${added.nodeModules.relinked.length ? `, ${added.nodeModules.relinked.length} link(s) re-pointed` : ''}`
-						: 'none in the main checkout',
-				],
+				lines: [nodeModulesLine(added.nodeModules)],
 			},
 			{ label: 'lockfile', lines: [lockfileLine(added)] },
 			...(added.nodeModulesCheck.command
@@ -237,6 +248,13 @@ function linksRows(params: {
 			),
 		},
 	]
+}
+
+/** Where `node_modules` came from and how long it took: `pooled  _pool-cli-1  0.1 s`, `copy-on-write  46.2 s`. */
+function nodeModulesLine(source: NodeModulesSource | undefined): string {
+	if (!source) return 'none in the main checkout'
+	const from = source.method === 'pooled' ? `  ${source.from}` : ''
+	return `${source.method}${from}  ${source.seconds.toFixed(1)} s`
 }
 
 /** `node_modules` against the lockfile: matching, the first packages that differ, or not checked. */

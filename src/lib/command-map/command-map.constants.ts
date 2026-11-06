@@ -155,6 +155,7 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte lot standard <folder> consulted <note> | not-consulted <reason>',
 			'dialecte lot delta <folder> --round <n> [--worktree] [--json]',
 			'dialecte lot recap <folder>',
+			'dialecte lot close <hand-over name|index>... [--json]',
 		],
 		notes: [
 			'exempt|accept|revised|gone|mutation - write .dialecte/lot.json at the package root (tab JSON), keeping the rest',
@@ -168,6 +169,7 @@ export const COMMAND_MAP: CommandMap = {
 			"standard - writes <folder>/standard.json (state, note, time), read by the card's standard line",
 			'delta - per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a throwaway worktree holding round n-1 and prints its removal command',
 			"recap - the <details> part of a pull request from the hand-over's records only; writes nothing",
+			"close - for a committed or abandoned hand-over of the registry (by name or index): its worktree moved to .worktrees/_trash/ and removed in the background, its node_modules parked in .worktrees/_pool-<repository>-<n>; kept with why when it is the main checkout, on another branch than the hand-over's, locked, dirty, a process or a mutation run works there, or the processes are not known; the branch never touched; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
 		exitCodes: [],
 		example:
@@ -281,8 +283,8 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte worktree prune [--root <workspace>] [--yes] [--json]',
 		],
 		notes: [
-			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, copy-on-write node_modules read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
-			'prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with their cd; --yes runs them after a confirmation on a terminal',
+			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json (else a copy-on-write copy), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
+			'prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with their cd; --yes runs them after a confirmation on a terminal; the pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never touched',
 		],
 		exitCodes: ['0  add: the worktree exists, whatever the links and the lockfile say'],
 		example: 'dialecte worktree add cli feat/my-change',

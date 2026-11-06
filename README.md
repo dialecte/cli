@@ -45,6 +45,7 @@ dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialec
 dialecte lot finding|decide|snapshot|choice|standard <folder> ...   # a lot's review rounds, in its hand-over folder
 dialecte lot delta <folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte lot recap <folder>   # the pull request's expandable part, built from the hand-over's records only
+dialecte lot close <name|index>   # a finished lot: node_modules to the pool, its worktree to the trash
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
@@ -753,7 +754,11 @@ the answer.
   repository's package.json that leaves the repository, to the folder the same path reaches from the
   repository (`file:../core`: `<rehearsal folder>/core` -> the repository's `../core`), so the clone
   resolves it as the checkout does; one line names the links, and a path that leaves the rehearsal
-  folder too, or whose target is missing, is not linked (a line says why). The whole rehearsal folder is
+  folder too, or whose target is missing, is not linked (a line says why). In a workspace (the
+  repository's parent holds `.worktrees/`) the clone stays fresh but its `node_modules` is taken from the
+  pool when an entry matches its lockfile (`node_modules: pooled _pool-<repository>-<n>`), parked back at
+  the end, and the rehearsal folder goes to `.worktrees/_trash/`, removed in the background (removed here
+  when the trash is on another file system). Elsewhere the whole rehearsal folder is
   removed at the end - its links unlinked, never what they reach - (`--keep` keeps it and names it:
   `kept the rehearsal folder: <path>`), and on Ctrl-C or SIGTERM, with the hook and every process it
   started stopped. The clone's git folder holds a marker naming the process that made it
@@ -847,7 +852,8 @@ the answer.
   workspace's `.worktrees/<index>-<repository>-<branch tail>` (the last segment of the branch:
   `0171-core-depth` for `feat/depth`; a new branch starts from `--from`, else the base
   branch): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
-  plain worktree misses it), copies the main checkout's `node_modules` copy-on-write where the file system
+  plain worktree misses it), takes a `node_modules` from the workspace's pool when one matches (below), else
+  copies the main checkout's `node_modules` copy-on-write where the file system
   can (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
   has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
   once in the exclude file of the repository's common git folder (so for the main checkout and every
@@ -858,6 +864,24 @@ the answer.
   so two runs at the same moment, of any repositories, never take the same index (the other takes the
   next), and a number stays taken after its worktree is removed. Unnumbered folders and the sibling links
   (`.worktrees/core`) count for nothing and are never renamed. `--json` carries `index`.
+  The pool: a finished checkout's `node_modules` waits in `.worktrees/_pool-<repository>-<n>/node_modules`,
+  with a `pool.json` beside it (`{ repository, lockHash, parkedAt }`, `lockHash` the sha256 of the
+  `package-lock.json` it was checked against), at most two entries per repository (parking a third sends
+  the oldest to the trash). A park (`lot close`, the end of a rehearsal) takes only a `node_modules` that
+  matches its `package-lock.json` (as `worktree add` reads it), rewrites absolute, in place, every link inside
+  it whose relative target leaves `node_modules`, renames the folder into a new entry (no file is copied),
+  sends `node_modules/.vite` and `node_modules/.cache` to the trash (or leaves them in the folder already
+  going there), then writes `pool.json`; a `_pool-*` folder without one is a park that never finished,
+  never taken, and `worktree prune` names it as left over. `worktree add` takes the newest entry of the
+  repository whose `lockHash` is the new worktree's `package-lock.json` hash (a rename: two takers never
+  share one, the second goes on to the next entry), then reads it against the lockfile as it reads a copy.
+  No match, an empty pool or a rename across file systems: the copy. The card's `node_modules` row says
+  which and how long (`pooled  _pool-cli-1  0.1 s`, `copy-on-write  46.2 s`); `--json` carries
+  `nodeModules: { method, from?, seconds }`. The trash: `.worktrees/_trash/` - a worktree goes there by
+  `git worktree move` (git keeps it registered) then a background `git worktree remove --force`, a folder
+  by a rename then a background `rm -rf` of that one path; nobody waits for either. A folder left there (a
+  sleep, a crash) stays for you to look at. The pool and the trash are used only where the repository's
+  parent holds `.worktrees/`.
   Before the copy it makes the links the worktree's `file:` and `link:` dependencies need (`dependencies`,
   `devDependencies`, `optionalDependencies`, `peerDependencies`): a relative path that leaves the worktree
   into the workspace's `.worktrees/` (`file:../core` from `.worktrees/cli-x` reaches `.worktrees/core`)
@@ -933,7 +957,30 @@ the answer.
     workspace's next): the deletions applied with `git rm
     --pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
     prints its path and the removal command with its absolute `cd`. The lot's worktree is never
-    changed.
+    changed. Its `node_modules` comes from the pool, or a copy, as for `worktree add`.
+  - `lot close <hand-over name|index>... [--json]` closes finished lots: for each hand-over of the registry
+    named (by its name or its worktree's index) whose state is `committed` or `abandoned`, its worktree (the
+    path the registry entry holds) is closed: every decision first, for every argument with every rule, its
+    own state and branch included (one worktree reached by several names or indexes closes only when every
+    one of them may close, and then once, the other arguments answered "the same worktree as ..."; when one
+    keeps it, every one of them is kept, each line with the reason), its
+    `node_modules` read against the lockfile where it is; then the links of its `node_modules`
+    made absolute where they are, the worktree moved to the trash (`.worktrees/_trash/`, by
+    `git worktree move`), its `node_modules` parked in the pool (`.worktrees/_pool-<repository>-<n>`) from
+    there, its caches left in the trashed folder, and the trashed worktree removed in the background. Kept,
+    with why and nothing done for that hand-over: a hand-over still `pending`; its worktree is the main
+    checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
+    in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
+    (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); a mutation
+    run started from it that still runs or died before reporting; a process whose working folder is in it;
+    the processes not known (`lsof` failed or took longer than 20 s); a `dirty` worktree (anything
+    `git status --porcelain --untracked-files=normal` lists, untracked files included whatever
+    `status.showUntrackedFiles` says). The branch is never touched (`worktree prune` still lists the merged
+    ones). Each line names the folder it moved and where `node_modules` went (`closed  <name>: 0007-cli-x;
+    node_modules pooled in _pool-cli-1`, or `trashed: <why it was not parked>`); a failure part-way keeps
+    that hand-over with the error and what was already moved, the others go on. Exit 0 when every named
+    hand-over closed, 1 when one was kept, 2 for a name or index the registry does not hold (then nothing is
+    closed); `--json` prints `[{ handover, closed: true } | { handover, kept }]`.
 - `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
   its devDependency) on the scope `package.json` declares:
   `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.
@@ -1034,7 +1081,9 @@ the answer.
   `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
   `git --no-optional-locks`, so it never rewrites an index. Each hand-over's repository is read once for
   the whole workspace, and its state once, never once per repository. `handover list` follows a link to a
-  hand-over folder and lists a folder reached by its path and through a link once.
+  hand-over folder and lists a folder reached by its path and through a link once. The pool entries and the
+  trash (a worktree in `_trash/` included) are never listed nor touched: one line each,
+  `pool: 2 entries (cli 1, core 1)` and `trash: 3 folders, being deleted or left over`.
 
 `gate --fast` starts with the hygiene of the worktree: nothing staged; no stash entry pushed on this
 worktree's branch since `worktree add` made it (the baseline keeps every stash entry it saw, so another

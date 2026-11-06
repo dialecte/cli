@@ -86,6 +86,15 @@ describe('claimWorktreeIndex', () => {
 		expect(claimsOf(worktreesFolder)).toEqual(['0001', '0002'])
 	})
 
+	it('a pool entry _pool-cli-1 and a _trash/ holding 0020-core-old-<time> beside 0007-core-a → 0008: neither the pool nor the trash holds an index', () => {
+		const worktreesFolder = createWorktreesFolder({
+			folders: ['0007-core-a', '_pool-cli-1', '_pool-core-12', '_trash'],
+		})
+		mkdirSync(join(worktreesFolder, '_trash', '0020-core-old-20261106T100000'))
+
+		expect(claimWorktreeIndex({ worktreesFolder })).toBe('0008')
+	})
+
 	it('a claim 9999 → 10000: past four digits the index grows', () => {
 		const worktreesFolder = createWorktreesFolder({ claims: ['9999'] })
 

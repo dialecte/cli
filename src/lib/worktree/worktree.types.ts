@@ -39,7 +39,8 @@ export type AddedWorktree = {
 	head: string
 	/** The hooks folder copied from the main checkout, if any. */
 	hooks: string | undefined
-	nodeModules: NodeModulesCopy | undefined
+	/** Taken from the pool or copied; undefined when there was none to copy. */
+	nodeModules: NodeModulesSource | undefined
 	/** The links to sibling checkouts the `file:` and `link:` dependencies reach through `.worktrees/`. */
 	siblingLinks: SiblingLink[]
 	/** The copied `node_modules` read against the worktree's `package-lock.json`. */
@@ -142,8 +143,66 @@ export type StashEntry = {
 	branch?: string
 }
 
-/** `worktree prune` for a workspace: each repository, and the rehearsal clones left behind. */
-export type WorkspacePrunePlan = { repositories: PrunePlan[]; scratch: PruneItem[] }
+/**
+ * `worktree prune` for a workspace: each repository, the rehearsal clones left behind, and what prune never
+ * touches: the pool entries by repository, the folders in the trash.
+ */
+export type WorkspacePrunePlan = {
+	repositories: PrunePlan[]
+	scratch: PruneItem[]
+	/** The pool entries of each repository, by its folder name. */
+	pool: { repository: string; entries: number }[]
+	/** The `_pool-*` folders with no `pool.json` (a park that never finished): left for the person to look at. */
+	poolLeftOver: string[]
+	/** How many folders `.worktrees/_trash/` holds. */
+	trash: number
+}
 
 /** How a `cp` ended: its exit status, or the signal that stopped it. */
 export type CopyRun = { status: number | null; signal: NodeJS.Signals | null }
+
+/**
+ * Starts a command in the background and never waits for it (detached, its output ignored); the tests stand
+ * in for it and record the calls.
+ */
+export type BackgroundSpawner = (params: { command: string; args: string[]; cwd?: string }) => void
+
+/** What `pool.json` holds beside a pooled `node_modules`. */
+export type PoolEntryFile = {
+	/** The repository's folder name (`cli`). */
+	repository: string
+	/** sha256 (hex) of the `package-lock.json` the `node_modules` was checked against. */
+	lockHash: string
+	/** ISO time. */
+	parkedAt: string
+}
+
+/** A `node_modules` parked in the pool. */
+export type ParkedNodeModules = {
+	/** The pool entry's folder name (`_pool-cli-1`). */
+	entry: string
+	/** The entries the park sent to the trash (the oldest of a repository past two), by folder name. */
+	trashed: string[]
+}
+
+/** A pool entry of `.worktrees/`: its folder name and its `pool.json`. */
+export type PoolEntry = { name: string; file: PoolEntryFile }
+
+/** Where a new checkout's `node_modules` came from, and how long it took (seconds, one decimal). */
+export type NodeModulesSource =
+	| { method: 'pooled'; from: string; seconds: number }
+	| (NodeModulesCopy & { seconds: number })
+
+/** One worktree of `git worktree list --porcelain`: its path, its branch (none when detached), locked or not. */
+export type ListedWorktree = { path: string; branch?: string; locked?: boolean }
+
+/** A process and its working folder (a real path). */
+export type ProcessFolder = { pid: number; folder: string }
+
+/** What a take answered: the entry's name, or why nothing was taken. */
+export type PoolTake =
+	| { taken: string }
+	| { notTaken: 'no match' | 'cross-device' | 'taken by another' }
+
+/** A worktree or a folder sent to `.worktrees/_trash/`: where it is now. */
+export type TrashedFolder = { trashed: string }

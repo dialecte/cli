@@ -70,3 +70,39 @@ export const WORKTREE_INDEX_PATTERN = /^(\d{4,})-/
 
 /** A claim's name in `.index/`: the index alone. */
 export const WORKTREE_INDEX_CLAIM_PATTERN = /^\d{4,}$/
+
+/**
+ * `git status` as prune and `lot close` read a worktree: never rewriting its index, untracked files listed
+ * whatever `status.showUntrackedFiles` says (with `no`, an untracked file would read as clean, and git refuses
+ * `--ignored=matching`).
+ */
+export const WORKTREE_STATUS_ARGUMENTS = [
+	'--no-optional-locks',
+	'status',
+	'--porcelain',
+	'--untracked-files=normal',
+] as const
+
+/** How long `lot close` waits for the list of processes and their working folders before it keeps everything. */
+export const PROCESS_LIST_TIMEOUT_MS = 20_000
+
+/** A pool entry's folder in `.worktrees/`: `_pool-<repository>-<n>`. */
+export const POOL_FOLDER_PREFIX = '_pool-'
+
+/** A pool entry's name: its repository, then its number. */
+export const POOL_ENTRY_PATTERN = /^_pool-(.+)-(\d+)$/
+
+/** The file beside a pooled `node_modules`: `{ repository, lockHash, parkedAt }`. */
+export const POOL_FILE = 'pool.json'
+
+/** How many pool entries a repository keeps: parking one more sends the oldest to the trash. */
+export const POOL_ENTRIES_PER_REPOSITORY = 2
+
+/** The caches a park removes from `node_modules`: rebuilt by the tools that wrote them, tied to the old checkout. */
+export const POOL_REMOVED_CACHES = ['.vite', '.cache'] as const
+
+/** The folder a park renames the caches into, inside a folder already on its way to removal. */
+export const DISCARDED_CACHES_PREFIX = '.dialecte-discarded-caches-'
+
+/** The folder of `.worktrees/` where worktrees and folders wait for their background removal. */
+export const TRASH_FOLDER = '_trash'
