@@ -1,17 +1,20 @@
 /**
  * The registry of hand-overs: `<git-common-dir>/dialecte-handover/`, shared by every worktree of the
- * repository. Each hand-over written has one entry `<name>.json` (`{ folder, branch, worktree, written, state }`)
- * pointing to its folder, which stays where it was written (the lots file's folder, or `--out`). The name is
- * `<yyyy-mm-dd>-<branch slug>[-<n>]`; a folder registered already (same real path) keeps its name.
+ * repository. Each hand-over written has one entry `<name>.json` (`{ folder, branch, worktree, index, written,
+ * state }`, `index` only for a numbered worktree) pointing to its folder, which stays where it was written (the
+ * lots file's folder, or `--out`). The name is `<yyyy-mm-dd>-<branch slug>[-<n>]`; a folder registered already
+ * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { commonGitFolderOf } from '../git.ts'
+import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import {
 	HANDOVER_STORE_FOLDER,
 	STORE_ENTRY_EXTENSION,
+	STORE_INDEX_ARGUMENT_PATTERN,
 	STORE_NAME_COUNTER_PATTERN,
 	STORE_NAME_DATE_PATTERN,
 	STORE_NAME_EDGE_DASHES,
@@ -67,7 +70,10 @@ export function resolveHandoverArgument(params: {
 	return entry ? entry.folder : resolve(params.cwd, params.argument)
 }
 
-/** The entry an argument names (a word without a path separator), or undefined when it names none. */
+/**
+ * The entry an argument names (a word without a path separator): the entry of that name, else, for a number,
+ * the newest entry of the worktree of that index (`0171` or `171`); undefined when it names none.
+ */
 export function entryOfArgument(params: {
 	argument: string
 	store: string | undefined
@@ -76,7 +82,21 @@ export function entryOfArgument(params: {
 	const isWord =
 		!argument.includes('/') && !argument.includes(sep) && argument !== '.' && argument !== '..'
 	if (!store || !isWord) return undefined
-	return readStoreEntry({ store, name: argument })
+	const named = readStoreEntry({ store, name: argument })
+	if (named || !STORE_INDEX_ARGUMENT_PATTERN.test(argument)) return named
+	return newestOfIndex({ entries: readStoreEntries(store), index: Number(argument) })
+}
+
+/** The newest entry of the worktree numbered `index`, ranked by name as `newestOfBranch` ranks. */
+function newestOfIndex(params: {
+	entries: readonly StoreEntry[]
+	index: number
+}): StoreEntry | undefined {
+	return newestByName(
+		params.entries.filter(function isOfIndex(entry) {
+			return entry.index !== undefined && Number(entry.index) === params.index
+		}),
+	)
 }
 
 /** Every entry of the store, by name; an entry that does not parse is left out. */
@@ -119,10 +139,12 @@ export function registerHandover(params: {
 	afterNamePicked?: InterleavingSeam
 }): string {
 	const store = handoverStoreOf(params.root)
+	const index = worktreeIndexOf(params.root)
 	const entry: HandoverStoreEntry = {
 		folder: params.folder,
 		branch: params.branch,
 		worktree: params.root,
+		...(index && { index }),
 		written: params.now.toISOString(),
 		state: 'pending',
 	}
@@ -160,13 +182,17 @@ export function newestOfBranch(params: {
 	entries: readonly StoreEntry[]
 	branch: string
 }): StoreEntry | undefined {
-	const ofBranch = params.entries.filter((entry) => entry.branch === params.branch)
-	function rankOf(entry: StoreEntry): StoreNameRank {
-		return storeNameRank({ name: entry.name, branch: params.branch })
-	}
-	return ofBranch.reduce<StoreEntry | undefined>(function newer(newest, entry) {
+	return newestByName(params.entries.filter((entry) => entry.branch === params.branch))
+}
+
+/** The newest of `entries` by name: the latest date, then the highest counter after its branch's slug. */
+function newestByName(entries: readonly StoreEntry[]): StoreEntry | undefined {
+	return entries.reduce<StoreEntry | undefined>(function newer(newest, entry) {
 		if (!newest) return entry
-		const [candidate, current] = [rankOf(entry), rankOf(newest)]
+		const [candidate, current] = [
+			storeNameRank({ name: entry.name, branch: entry.branch }),
+			storeNameRank({ name: newest.name, branch: newest.branch }),
+		]
 		if (candidate.date !== current.date) return candidate.date > current.date ? entry : newest
 		return candidate.counter > current.counter ? entry : newest
 	}, undefined)
@@ -184,6 +210,7 @@ function readStoreEntry(params: { store: string; name: string }): StoreEntry | u
 			folder: entry.folder,
 			branch: entry.branch,
 			worktree: String(entry.worktree ?? ''),
+			...(typeof entry.index === 'string' && { index: entry.index }),
 			written: String(entry.written ?? ''),
 			state: entry.state ?? 'pending',
 		}

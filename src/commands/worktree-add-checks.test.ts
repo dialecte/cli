@@ -195,7 +195,7 @@ describe(
 
 			const result = add({ workspace, cli, branch: 'feat/thing' })
 
-			const worktree = join(workspace, '.worktrees', 'cli-thing')
+			const worktree = join(workspace, '.worktrees', '0001-cli-thing')
 			expect(result.exitCode).toBe(0)
 			expect(result.output).toMatch(
 				/^│ lockfile +✗ 7 package\(s\) differ from package-lock\.json: a missing, b missing, c missing, d missing, e missing, and 2 more +│$/m,
@@ -220,7 +220,7 @@ describe(
 
 			const result = add({ workspace, cli, branch: 'feat/thing', json: true })
 
-			const worktree = join(workspace, '.worktrees', 'cli-thing')
+			const worktree = join(workspace, '.worktrees', '0001-cli-thing')
 			expect(result.exitCode).toBe(0)
 			expect(JSON.parse(result.output).nodeModulesCheck).toEqual({
 				lockfile: 'package-lock.json',

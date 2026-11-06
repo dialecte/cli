@@ -34,7 +34,13 @@ import {
 
 import type { HandoverFolder } from '../handover/handover.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
-import type { FolderLink, PruneItem, PrunePlan, WorkspacePrunePlan } from './worktree.types.ts'
+import type {
+	FolderLink,
+	PruneHandover,
+	PruneItem,
+	PrunePlan,
+	WorkspacePrunePlan,
+} from './worktree.types.ts'
 
 export function planPrune(params: {
 	workspace: string
@@ -48,9 +54,11 @@ export function planPrune(params: {
 	const scratchRoots = [
 		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
 	]
-	const handovers = params.handoverFolders.flatMap(function read(folder): HandoverFolder[] {
+	// each hand-over's repository read once for the whole workspace, never once per repository
+	const handovers = params.handoverFolders.flatMap(function read(folder): PruneHandover[] {
 		const handover = readHandoverFolder(folder)
-		return typeof handover === 'string' ? [] : [handover]
+		if (typeof handover === 'string') return []
+		return [{ handover, commonFolder: commonFolderOf(handover.lotsFile.repository) }]
 	})
 	const links = [
 		params.workspace,
@@ -75,7 +83,7 @@ export function planPrune(params: {
 
 function planRepository(params: {
 	repository: string
-	handovers: readonly HandoverFolder[]
+	handovers: readonly PruneHandover[]
 	/** The links found around the workspace: what they reach is kept. */
 	links: readonly FolderLink[]
 }): PrunePlan {
@@ -84,19 +92,19 @@ function planRepository(params: {
 	if (!refExists({ root: repository, ref: `refs/heads/${baseBranch}` }))
 		return { repository, baseBranch, items: [], skipped: `no local branch ${baseBranch}` }
 	const cd = `cd ${shellQuote(repository)} &&`
-	const mine = params.handovers.filter((handover) =>
-		isSameRepository({ repository, worktree: handover.lotsFile.repository }),
-	)
+	const commonFolder = commonFolderOf(repository)
+	// each hand-over's state read once (it has one repository): three places of the plan ask it
+	const mine = params.handovers
+		.filter((entry) => entry.commonFolder !== undefined && entry.commonFolder === commonFolder)
+		.map((entry) => ({ ...entry.handover, state: handoverStateOf(entry.handover) }))
 	const pendingWorktrees = new Set(
 		mine
-			.filter(
-				(handover) => !['committed', 'repository missing'].includes(handoverStateOf(handover)),
-			)
+			.filter((handover) => !['committed', 'repository missing'].includes(handover.state))
 			.map((handover) => realpathSync(handover.lotsFile.repository)),
 	)
 	const pendingBranches = new Set(
 		mine
-			.filter((handover) => handoverStateOf(handover) !== 'committed')
+			.filter((handover) => handover.state !== 'committed')
 			.map((handover) => handover.lotsFile.branch),
 	)
 
@@ -195,7 +203,7 @@ function planRepository(params: {
 	}
 
 	for (const handover of mine) {
-		if (handoverStateOf(handover) !== 'committed') continue
+		if (handover.state !== 'committed') continue
 		const { folder } = handover
 		if (isReachedThroughLink({ path: folder, root: dirname(repository) })) {
 			items.push({ kind: 'hand-over', name: folder, kept: PRUNE_LINK_REASON })
@@ -495,18 +503,14 @@ function spellUnder(params: { path: string; folder: string }): string {
 		: params.path
 }
 
-function isSameRepository(params: { repository: string; worktree: string }): boolean {
-	if (!existsSync(params.worktree)) return false
+/** The git folder every worktree of the repository `root` belongs to shares; undefined when `root` is in none. */
+function commonFolderOf(root: string): string | undefined {
+	if (!existsSync(root)) return undefined
 	const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
-		cwd: params.worktree,
+		cwd: root,
 		encoding: 'utf8',
 	})
-	if (common.status !== 0) return false
-	const mainCommon = readGit({
-		root: params.repository,
-		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-	}).trim()
-	return common.stdout.trim() === mainCommon
+	return common.status === 0 ? common.stdout.trim() : undefined
 }
 
 function handoverStateOf(handover: HandoverFolder): string {

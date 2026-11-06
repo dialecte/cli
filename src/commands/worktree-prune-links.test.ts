@@ -45,22 +45,32 @@ function commitIn(params: { root: string; file: string; message: string }): void
 	git({ root: params.root, args: ['commit', '-q', '-m', params.message] })
 }
 
-/** `.worktrees/<repository>-<name>` on `feat/<name>`, one commit of its own, merged into main. */
+/** A worktree of `repository` on `feat/<name>` per name, made by `worktree add` in order: their folders. */
+function addedWorktrees(params: {
+	workspace: string
+	repository: string
+	names: string[]
+}): string[] {
+	return params.names.map(function add(name) {
+		const added = runWorktreeAdd({
+			argv: [params.repository, `feat/${name}`, '--json'],
+			cwd: params.workspace,
+			now: new Date(),
+			colour: false,
+		})
+		expect(added.exitCode).toBe(0)
+		return (JSON.parse(added.output) as { worktree: string }).worktree
+	})
+}
+
+/** `.worktrees/<index>-<repository>-<name>` on `feat/<name>`, one commit of its own, merged into main. */
 function makeMergedWorktree(params: {
 	workspace: string
 	repository: string
 	name: string
 }): string {
 	const { workspace, repository, name } = params
-	expect(
-		runWorktreeAdd({
-			argv: [repository, `feat/${name}`],
-			cwd: workspace,
-			now: new Date(),
-			colour: false,
-		}).exitCode,
-	).toBe(0)
-	const worktree = join(workspace, '.worktrees', `${repository.split('/').at(-1)}-${name}`)
+	const [worktree] = addedWorktrees({ workspace, repository, names: [name] })
 	commitIn({ root: worktree, file: `src/${name}.ts`, message: `feat: ${name}` })
 	git({ root: repository, args: ['merge', '-q', '--ff-only', `feat/${name}`] })
 	return worktree
@@ -74,15 +84,7 @@ function makeCommittedHandover(params: {
 	name: string
 }): void {
 	const { workspace, repository, name } = params
-	expect(
-		runWorktreeAdd({
-			argv: [repository, `feat/${name}`],
-			cwd: workspace,
-			now: new Date(),
-			colour: false,
-		}).exitCode,
-	).toBe(0)
-	const worktree = join(workspace, '.worktrees', `${repository.split('/').at(-1)}-${name}`)
+	const [worktree] = addedWorktrees({ workspace, repository, names: [name] })
 	writeFiles({ root: worktree, files: { 'CHANGELOG.md': '# Changelog\n' } })
 	mkdirSync(params.folder, { recursive: true })
 	writeFileSync(
@@ -220,15 +222,8 @@ describe(
 
 		it('a worktree whose path is now a dangling link → kept, never git worktree prune; a confirmed --yes leaves the link', async () => {
 			const { workspace, core } = createWorkspace()
-			expect(
-				runWorktreeAdd({
-					argv: [core, 'feat/gone'],
-					cwd: workspace,
-					now: new Date(),
-					colour: false,
-				}).exitCode,
-			).toBe(0)
-			const worktree = join(workspace, '.worktrees', 'core-gone')
+			const [worktree] = addedWorktrees({ workspace, repository: core, names: ['gone'] })
+			expect(worktree).toBe(join(workspace, '.worktrees', '0001-core-gone'))
 			rmSync(worktree, { recursive: true, force: true })
 			symlinkSync(join(workspace, 'nowhere'), worktree)
 
@@ -296,17 +291,15 @@ describe(
 		])
 			it(`a worktree whose path is a link (${linked.name}) beside a worktree deleted from disk → no git worktree prune offered, the deleted one kept naming the link; a confirmed --yes leaves the link registered`, async () => {
 				const { workspace, core } = createWorkspace()
-				for (const name of ['deleted', 'linked'])
-					expect(
-						runWorktreeAdd({
-							argv: [core, `feat/${name}`],
-							cwd: workspace,
-							now: new Date(),
-							colour: false,
-						}).exitCode,
-					).toBe(0)
-				const deleted = join(workspace, '.worktrees', 'core-deleted')
-				const linkedWorktree = join(workspace, '.worktrees', 'core-linked')
+				const [deleted, linkedWorktree] = addedWorktrees({
+					workspace,
+					repository: core,
+					names: ['deleted', 'linked'],
+				})
+				expect([deleted, linkedWorktree]).toEqual([
+					join(workspace, '.worktrees', '0001-core-deleted'),
+					join(workspace, '.worktrees', '0002-core-linked'),
+				])
 				rmSync(deleted, { recursive: true, force: true })
 				rmSync(linkedWorktree, { recursive: true, force: true })
 				symlinkSync(linked.target(workspace), linkedWorktree)
@@ -331,23 +324,21 @@ describe(
 				)
 				expect(confirmed.output).not.toContain('git worktree prune')
 				expect(git({ root: core, args: ['worktree', 'list', '--porcelain'] })).toMatch(
-					/^worktree .*\/\.worktrees\/core-linked$/m,
+					/^worktree .*\/\.worktrees\/0002-core-linked$/m,
 				)
 			})
 
 		it('a worktree deleted from disk beside a registered worktree that is a link to its live checkout (holding .git) → git worktree prune offered for the deleted one', async () => {
 			const { workspace, core } = createWorkspace()
-			for (const name of ['deleted', 'moved'])
-				expect(
-					runWorktreeAdd({
-						argv: [core, `feat/${name}`],
-						cwd: workspace,
-						now: new Date(),
-						colour: false,
-					}).exitCode,
-				).toBe(0)
-			const deleted = join(workspace, '.worktrees', 'core-deleted')
-			const moved = join(workspace, '.worktrees', 'core-moved')
+			const [deleted, moved] = addedWorktrees({
+				workspace,
+				repository: core,
+				names: ['deleted', 'moved'],
+			})
+			expect([deleted, moved]).toEqual([
+				join(workspace, '.worktrees', '0001-core-deleted'),
+				join(workspace, '.worktrees', '0002-core-moved'),
+			])
 			const checkout = join(temporaryFolder('dialecte-elsewhere-'), 'core-moved')
 			rmSync(deleted, { recursive: true, force: true })
 			renameSync(moved, checkout)

@@ -553,8 +553,9 @@ the answer.
   command with its absolute `cd` under it. The folder is the lots file's, or `--out <dir>`. Every hand-over
   written is registered in the repository's store, `<git common dir>/dialecte-handover/`: shared by every
   worktree of the repository, kept when a worktree is removed, never in the working tree. The store holds
-  one entry per hand-over, `<name>.json` = `{ folder, branch, worktree, written, state }` (the folder's
-  absolute path, the lots file's branch and repository, when it was written, and its state as last
+  one entry per hand-over, `<name>.json` = `{ folder, branch, worktree, index, written, state }` (the folder's
+  absolute path, the lots file's branch and repository, the worktree's index when its folder is numbered
+  (`0171` for `.worktrees/0171-cli-x`, absent otherwise), when it was written, and its state as last
   recorded: `pending` when written, `committed` by a real run that commits every lot, `abandoned` by
   `handover abandon`); the folder stays where it was written. The name is `<yyyy-mm-dd>-<branch slug>[-<n>]` -
   the local date, the branch with every run of characters outside `[A-Za-z0-9._-]` (the `/` included)
@@ -564,14 +565,18 @@ the answer.
   `failedGates`, `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name,
   status, detail), `contrib` (a contributor's contrib rows, one per row: name, status, detail, and `stale`
   or `source` - `rehearsal`, `from <commit>` - when they apply), `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, `name` (the
-  hand-over's registered name; absent for a folder with no entry), and each lot with
+  hand-over's registered name; absent for a folder with no entry), `worktree` (absolute), `index` (a
+  numbered worktree's), and each lot with
   `pending` until it is committed. Edited a file after the review? `--rehash` (also after
   editing `lots.json`). The repository stays held until every lot is committed: `dialecte gate` runs
   only under this hand-over (see `gate`), and a hand-over of another folder is refused, naming the script
   that holds the repository and its lock.
 
 - The hand-over card is what a person reads before running the hand-over, and again at its end. Its title
-  is `hand-over: <repository folder> <branch>`; the repository and worktree paths are not in it. Its
+  is `hand-over: <repository folder> <branch>`, with the worktree's index first from a numbered worktree
+  (`hand-over: 0171 cli feat/x`: the repository's own folder name, so the number is shown once). The commit
+  section ends with the `worktree` line: the worktree the lots are committed in, relative to the workspace
+  when it is inside it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path. Its
   first line is the verdict: `READY` when no gate line failed and none ran on another tree, `BLOCKED` with
   `<n> gates failed: <names>` and `gates ran on another tree: <names>`, `DONE` once a real run committed
   every lot; then the lots, files and `+<added> −<removed>` (`all gates green` when nothing blocks), and
@@ -801,7 +806,10 @@ the answer.
   folder (the lots file, the snapshot) and the records - the lots found committed from the lots file's HEAD
   to the tip of its branch, `DONE` when every lot is - and writes nothing: not in the folder, the store,
   the worktree or its index, nor a lock or a run marker. A word without a path separator that names an
-  entry of the store is that entry's folder; anything else is a path (relative to the current folder), and
+  entry of the store is that entry's folder; else a number (`0171`, or unpadded `171`) names the newest
+  entry of the worktree of that index (ranked by name as below, never by when it was written) - `run` and
+  `abandon` take it the same way; anything else is a path (relative to the current folder: `./0171` is a
+  folder), and
   a registered folder given by its path still gets its name on the card. Without an argument: the newest
   registered hand-over of the current branch (the latest date, then the highest counter, from the name),
   whatever its state; none for the branch: the store's entries, one `name  branch  state` line each, exit
@@ -836,14 +844,20 @@ the answer.
   its state - pending, partly committed, committed, abandoned, or stale when something else moved the branch. A
   folder holding a hand-written `commit*.sh` and no lots file shows as "legacy script, state unknown".
 - `dialecte worktree add <repository> <branch> [--from <ref>] [--json]` makes a worktree under the
-  workspace's `.worktrees/<repository>-<branch tail>` (the last segment of the branch: `core-depth` for
-  `feat/depth`; a new branch starts from `--from`, else the base
+  workspace's `.worktrees/<index>-<repository>-<branch tail>` (the last segment of the branch:
+  `0171-core-depth` for `feat/depth`; a new branch starts from `--from`, else the base
   branch): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
   plain worktree misses it), copies the main checkout's `node_modules` copy-on-write where the file system
   can (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
   has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
   once in the exclude file of the repository's common git folder (so for the main checkout and every
   worktree of it), and writes the hygiene baseline `gate --fast` compares with; it prints a card.
+  The index is 4 digits at least (`0001`, past `9999` it grows), one counter per workspace so the latest
+  worktree sorts last: 1 + the highest of the claims in `.worktrees/.index/` (one empty file per index ever
+  taken) and the numbered folders and links of `.worktrees/`. A claim is created only where none exists,
+  so two runs at the same moment, of any repositories, never take the same index (the other takes the
+  next), and a number stays taken after its worktree is removed. Unnumbered folders and the sibling links
+  (`.worktrees/core`) count for nothing and are never renamed. `--json` carries `index`.
   Before the copy it makes the links the worktree's `file:` and `link:` dependencies need (`dependencies`,
   `devDependencies`, `optionalDependencies`, `peerDependencies`): a relative path that leaves the worktree
   into the workspace's `.worktrees/` (`file:../core` from `.worktrees/cli-x` reaches `.worktrees/core`)
@@ -914,7 +928,9 @@ the answer.
     from the base, `git diff HEAD` for a file round n-1 had at the base. Files unchanged since round n-1
     are left out; colour, external diff and textconv settings never apply. It refuses when HEAD moved
     since `round-<n-1>.base`, and refuses a nested repository or a submodule as `lot snapshot` does. `--worktree` adds a throwaway worktree on the branch
-    `<lot branch>-round-<n-1>` from the lot's branch tip: the deletions applied with `git rm
+    `<lot branch>-round-<n-1>` from the lot's branch tip, in `.worktrees/<index>-<repository>-<branch
+    tail>-round-<n-1>` with the lot's own index when its worktree is numbered (no new claim; else the
+    workspace's next): the deletions applied with `git rm
     --pathspec-from-file`, then `round-<n-1>/` copied over, so a new test can run on the old code; it
     prints its path and the removal command with its absolute `cd`. The lot's worktree is never
     changed.
@@ -1016,8 +1032,9 @@ the answer.
   checkout, a link's too: while a registered worktree of the repository is a link, a worktree deleted
   from disk is kept, naming that link, and no `git worktree prune` is offered. The sibling links
   `worktree add` makes (`.worktrees/core -> ../core`) are in no item. It reads each worktree with
-  `git --no-optional-locks`, so it never rewrites an index. `handover list` follows a link to a hand-over
-  folder and lists a folder reached by its path and through a link once.
+  `git --no-optional-locks`, so it never rewrites an index. Each hand-over's repository is read once for
+  the whole workspace, and its state once, never once per repository. `handover list` follows a link to a
+  hand-over folder and lists a folder reached by its path and through a link once.
 
 `gate --fast` starts with the hygiene of the worktree: nothing staged; no stash entry pushed on this
 worktree's branch since `worktree add` made it (the baseline keeps every stash entry it saw, so another

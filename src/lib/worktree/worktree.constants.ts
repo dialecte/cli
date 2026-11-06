@@ -58,3 +58,15 @@ export const PRUNE_LINK_REASON = 'a link: prune never removes a link nor what it
 
 /** Before a mutation run's line when the run keeps the worktree it was started from. */
 export const PRUNE_RUN_PREFIX = 'mutation '
+
+/** The folder of `.worktrees/` holding one empty claim file per index ever taken, named by the index. */
+export const WORKTREE_INDEX_FOLDER = '.index'
+
+/** How many digits an index has at least: `0007`; past 9999 it grows (`10000`). */
+export const WORKTREE_INDEX_DIGITS = 4
+
+/** A numbered worktree folder's name: its index, then `-` (`0171-cli-x`). */
+export const WORKTREE_INDEX_PATTERN = /^(\d{4,})-/
+
+/** A claim's name in `.index/`: the index alone. */
+export const WORKTREE_INDEX_CLAIM_PATTERN = /^\d{4,}$/

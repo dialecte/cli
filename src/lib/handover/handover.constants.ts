@@ -37,6 +37,9 @@ export const STORE_NAME_FIRST_COUNTER = 2
 /** The date that starts a store name (`yyyy-mm-dd`). */
 export const STORE_NAME_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
+/** An argument of `show`, `run` or `abandon` that may name a worktree index (`0171`, or unpadded `171`). */
+export const STORE_INDEX_ARGUMENT_PATTERN = /^\d+$/
+
 /** What follows the date and the branch slug in a store name after the first: `-<counter>`. */
 export const STORE_NAME_COUNTER_PATTERN = /^-(\d+)$/
 
@@ -396,6 +399,12 @@ export const HANDOVER_CARD_NAMED_FOOTER =
 
 /** The card's title: `{repository}` the repository's folder name, `{branch}` the branch. */
 export const HANDOVER_CARD_TITLE = 'hand-over: {repository} {branch}'
+
+/** The card's title from a numbered worktree: `{index}` its index, then as `HANDOVER_CARD_TITLE`. */
+export const HANDOVER_CARD_NUMBERED_TITLE = 'hand-over: {index} {repository} {branch}'
+
+/** The commit section's line naming the worktree the lots are committed in. */
+export const WORKTREE_LINE_LABEL = 'worktree '
 
 /** The card's sections, in order, each opened by its rule. */
 export const HANDOVER_CARD_SECTIONS = {

@@ -86,6 +86,7 @@ const CARD_AT_80_COLUMNS = [
 	'│                              merge docs/retro-rules at 6e6622d · 0 conflicts │',
 	'│                              · tree 5481e99                                  │',
 	'│ HEAD 2d1cce9                                                                 │',
+	'│ worktree .worktrees/core-retro-rules                                         │',
 	'├─ gates ──────────────────────────────────────────────────────────────────────┤',
 	'│ ✓ check   3839 passed · 20 skipped                                           │',
 	'│ ✓ tdd     14/14                                                              │',
@@ -125,6 +126,7 @@ const CARD_AT_40_COLUMNS = [
 	'│   merge docs/retro-rules at 6e6622d  │',
 	'│   · 0 conflicts · tree 5481e99       │',
 	'│ HEAD 2d1cce9                         │',
+	'│ worktree .worktrees/core-retro-rules │',
 	'├─ gates ──────────────────────────────┤',
 	'│ ✓ check   3839 passed · 20 skipped   │',
 	'│ ✓ tdd     14/14                      │',
@@ -187,6 +189,8 @@ const CARD_AT_34_COLUMNS = [
 	'│   6e6622d · 1 conflict · tree  │',
 	'│   5481e99                      │',
 	'│ HEAD 2d1cce9                   │',
+	'│ worktree                       │',
+	'│   .worktrees/core-retro-rules  │',
 	'├─ gates ────────────────────────┤',
 	'│ ✓ check   3839 passed · 20     │',
 	'│           skipped              │',
@@ -223,6 +227,50 @@ function rowTexts(box: string): string[] {
 		.filter((line) => line.startsWith('│'))
 		.map((line) => line.slice('│ '.length).replace(/ *│$/, '').trim())
 }
+
+/** The commit section and the title of the card of a numbered worktree, at 80 columns. */
+const NUMBERED_CARD_HEAD_AT_80_COLUMNS = [
+	'┌─ hand-over: 0171 core main ──────────────────────────────────────────────────┐',
+	'│ READY  2 lots · 15 files · +430 −91 · all gates green                        │',
+]
+
+describe('the hand-over card of a numbered worktree', () => {
+	it('worktree .worktrees/0171-core-retro-rules, index 0171 → the title shows the index once, before the repository folder; the worktree line names the numbered folder', () => {
+		const card = renderSectionCard({
+			card: handoverCardSections({
+				...CARD,
+				worktree: '/Users/dev/Dialecte/.worktrees/0171-core-retro-rules',
+				index: '0171',
+			}),
+			colour: false,
+			width: 80,
+		})
+
+		expect(card.split('\n').slice(0, 2)).toEqual(NUMBERED_CARD_HEAD_AT_80_COLUMNS)
+		expect(rowTexts(card)).toContain('worktree .worktrees/0171-core-retro-rules')
+	})
+
+	it('the main checkout as the worktree → the line names its folder (core), the title has no index', () => {
+		const card = renderSectionCard({
+			card: handoverCardSections({ ...CARD, worktree: '/Users/dev/Dialecte/core' }),
+			colour: false,
+			width: 80,
+		})
+
+		expect(card.split('\n')[0]).toMatch(/^┌─ hand-over: core main ─+┐$/)
+		expect(rowTexts(card)).toContain('worktree core')
+	})
+
+	it('a worktree outside the repository folder (/tmp/elsewhere/wt) → the line holds its absolute path', () => {
+		const card = renderSectionCard({
+			card: handoverCardSections({ ...CARD, worktree: '/tmp/elsewhere/wt' }),
+			colour: false,
+			width: 80,
+		})
+
+		expect(rowTexts(card)).toContain('worktree /tmp/elsewhere/wt')
+	})
+})
 
 describe('the hand-over card at a width', () => {
 	it('80 columns → the card as before; 40 columns → each commit message on its own lines under its lot, the box exactly 40 wide, no row of a single character', () => {
