@@ -19,7 +19,8 @@ npm i -D @dialecte/cli   # provides the `dialecte` binary
 
 `dialecte --help` lists the commands by family; `dialecte <command> --help` prints that command only (its
 verbs, flags, exit codes and one example); `dialecte --help --json` answers every command, verb, flag and exit
-code from the one map the code declares, and `dialecte <command> --help --json` that one command in the same
+code from the one map the code declares (each command's `verbs` and `flags` derived from its usage lines, and
+`renamed`: every old form with its new one), and `dialecte <command> --help --json` that one command in the same
 shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
@@ -163,6 +164,16 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
   intent quotes a sentence, since the generated pages republish the JSDoc. A page about several
   repositories declares `<!-- dialecte-skills workspace -->` and is fully verified with
   `--workspace <folder>`; a deliberate outside mention goes in `<!-- dialecte-skills ignore: token -->`.
+  It also verifies every cli invocation a page cites in code (inline code and fenced blocks of any language,
+  never prose; generated blocks left out): one starting with `dialecte` or `@dialecte/cli`, after `npx`, a
+  `$ ` prompt or a shell operator. Its command, its verb and each `--flag` must be in the command map of the
+  cli the package uses (the cli's own map in the cli itself, else what the installed `@dialecte/cli` answers to
+  `dialecte --help --json`); an unknown one, or an old form of a command renamed in 1.0 (see "Renamed in
+  1.0"), is an error at `page:line` naming the closest valid form, or the new form, on a workspace page too. A quoted word, a
+  `<placeholder>` and what follows a bare `--` are not checked; `ignore:` takes the offending word (`record`,
+  `--fats`). With no installed cli, or one before the map, the invocations are not checked: one warning says
+  why and the summary line says so. A versioned `@dialecte/cli@<version>` and what follows an unclosed `<` are
+  not read.
 
 ## Lookups for agents (and people)
 
@@ -589,8 +600,13 @@ the answer.
   - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`,
     `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
     `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
-    since the hook names its own scripts, not the gate's steps), then, in a consumer, `mutation` when the
-    package declares a mutation scope (below), then
+    since the hook names its own scripts, not the gate's steps; the other way round, a hook record of the
+    tree the hand-over commits, not dropped by a newer gate record of that tree, replaces the lines of
+    every gate record of another tree it answers - a step of the same name, or a step counting tests when
+    the hook counts tests: a merge hand-over rehearsed or committed reads the hook's lines of the merged
+    tree, the worktree's `tests` of its tree before the merge left out. No check leaves silently: a step
+    the hook did not run reads `! skills  not run on the merged tree` (a warning, not of another tree), a
+    failed one stays `✗ ... (the tree changed since)`, and `tdd` stays the worktree's), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots, then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
@@ -604,7 +620,10 @@ the answer.
     history of HEAD ends `· from <sha>` (the branch commit's hook record read for a merge on main; a
     record of an earlier commit of this line carries none), a rehearsal's record `· rehearsal`. A record
     of another tree than the one checked ends with `(the tree changed since)`: its line turns `!` and
-    blocks the hand-over; a failed step stays `✗`.
+    blocks the hand-over; a failed step stays `✗`. The `tdd` line is the worktree's: it is stale only when
+    its record is of another tree than the worktree's now, never because the tree checked is a merge's;
+    once a merge hand-over is committed, its card keeps `! tdd ... (the tree changed since)` and `gates ran
+    on another tree: tdd`, since the worktree took the merge after its tdd verdict.
     The `mutation` line is what the package still owes its mutation runs, read from the mutation store when
     the card is written. `✗` (blocks): `new` survivors or died runs of the package, whatever their lot
     (`2 new survivors · 1 died run: dialecte mutants status`); a run of the branch still running when the
