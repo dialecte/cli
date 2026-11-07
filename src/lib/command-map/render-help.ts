@@ -13,8 +13,10 @@ import {
 	SECTION_INDENT,
 	USAGE_PREFIX,
 } from './command-map.constants.ts'
+import { commandSurfaceOf } from './command-surface.ts'
+import { allRenamedWords } from './renamed-answer.ts'
 
-import type { CommandEntry, HelpJson, RenamedEntry } from './command-map.types.ts'
+import type { CommandEntry, HelpJson, HelpJsonCommand, RenamedEntry } from './command-map.types.ts'
 
 /** The global help: the title, one line per family, the footer lines and the notes of every command. */
 export function renderGlobalHelp(): string {
@@ -56,18 +58,25 @@ export function renderCommandSection(params: { name: string; entry: CommandEntry
 	].join('\n')
 }
 
-/** `dialecte --help --json`: every command with its family, summary, usage, exit codes and example. */
+/** `dialecte --help --json`: every command with its entry, verbs and flags, then every renamed form. */
 export function renderHelpJson(): string {
 	const json: HelpJson = {
-		commands: listedCommands().map((command) => ({ name: command.name, ...command.entry })),
+		commands: listedCommands().map((command) => helpJsonCommandOf(command)),
+		renamed: allRenamedWords(),
 	}
 	return JSON.stringify(json, null, 2)
 }
 
 /** One command's entry as `dialecte <command> --help --json` prints it: the shape of `--help --json`. */
 export function renderCommandJson(params: { name: string; entry: CommandEntry }): string {
-	const json: HelpJson = { commands: [{ name: params.name, ...params.entry }] }
+	const json: Omit<HelpJson, 'renamed'> = { commands: [helpJsonCommandOf(params)] }
 	return JSON.stringify(json, null, 2)
+}
+
+/** A command as `--help --json` prints it: its name, its entry, the verbs and flags derived from its usage. */
+function helpJsonCommandOf(params: { name: string; entry: CommandEntry }): HelpJsonCommand {
+	const { verbs, flags } = commandSurfaceOf(params)
+	return { name: params.name, ...params.entry, verbs, flags }
 }
 
 /** What `lot` answers to no verb or an unknown one: every usage line of the map's lot section, after `lot: `. */
@@ -103,7 +112,7 @@ export function listedEntryOf(name: string): CommandEntry | undefined {
 }
 
 /** The commands the help lists, in family order, each family in the map's order. */
-function listedCommands(): Array<{ name: string; entry: CommandEntry }> {
+export function listedCommands(): Array<{ name: string; entry: CommandEntry }> {
 	const listed = Object.entries(COMMAND_MAP)
 		.filter((pair): pair is [string, CommandEntry] => isListed(pair[1]))
 		.map(([name, entry]) => ({ name, entry }))

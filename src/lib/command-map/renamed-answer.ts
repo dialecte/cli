@@ -9,7 +9,12 @@ import {
 	SHELL_SAFE_WORD_PATTERN,
 } from './renamed.constants.ts'
 
-import type { DeclaredRenamedForm, RenamedCommandName, RenamedJson } from './command-map.types.ts'
+import type {
+	DeclaredRenamedForm,
+	RenamedCommandName,
+	RenamedJson,
+	RenamedWords,
+} from './command-map.types.ts'
 
 /**
  * The answer to an old form: `renamed: dialecte <old words> is now dialecte <new words>`, then the new command
@@ -43,9 +48,19 @@ export function renamedJson(params: { command: RenamedCommandName; argv: string[
 	const named = namedForm(params)
 	const forms = named ? [named.form] : formsOf(params.command)
 	const json: RenamedJson = {
-		renamed: forms.map((form) => ({ old: oldWordsOf(form), new: newWordsOf(form) })),
+		renamed: forms.map(renamedWordsOf),
 	}
 	return JSON.stringify(json, null, 2)
+}
+
+/** Every old form with its new one, words after `dialecte`, in the table's order. */
+export function allRenamedWords(): RenamedWords[] {
+	return RENAMED_FORMS.map(renamedWordsOf)
+}
+
+/** One old form with its new one, words after `dialecte`. */
+function renamedWordsOf(form: DeclaredRenamedForm): RenamedWords {
+	return { old: oldWordsOf(form), new: newWordsOf(form) }
 }
 
 /** Whether a registered name is one of the commands renamed in 1.0. */

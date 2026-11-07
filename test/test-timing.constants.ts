@@ -13,3 +13,10 @@ export const HANDOVER_CASE_TIMEOUT = 300_000
  * measured): four minutes is a guard against a hang, never a measure of speed.
  */
 export const HELPER_SCENARIO_TIMEOUT = 240_000
+
+/**
+ * The bound of a case that spawns an installed cli's `--help --json` (one node process) or runs a whole
+ * `skills check` through one: a guard against a hang, never a measure of speed. A start takes well under a
+ * second on a quiet machine and several on a loaded one; two minutes is far above both.
+ */
+export const CLI_SURFACE_CASE_TIMEOUT = 120_000

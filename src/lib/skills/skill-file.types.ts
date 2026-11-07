@@ -25,4 +25,6 @@ export type SkillFinding = {
 	file: string
 	severity: 'error' | 'warning'
 	message: string
+	/** 1-based line of the page the finding points at. */
+	line?: number
 }

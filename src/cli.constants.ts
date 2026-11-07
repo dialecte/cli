@@ -57,6 +57,3 @@ export const COMMANDS = {
 /** The registered commands by any name: `COMMANDS` keeps literal keys for the command map, a word read is a string. */
 export const COMMANDS_BY_NAME: Readonly<Record<string, (argv: string[]) => Promise<void>>> =
 	COMMANDS
-
-/** The flags that ask for the help, and for it as JSON: not a word of the command they follow. */
-export const HELP_FLAGS: readonly string[] = ['--help', '-h', '--json']

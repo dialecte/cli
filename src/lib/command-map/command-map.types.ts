@@ -37,9 +37,25 @@ export type RenamedEntry = { renamedTo: string }
 export type CommandMap = Record<ListedCommandName, CommandEntry> &
 	Record<RenamedCommandName, RenamedEntry>
 
+/** What the map says a command accepts, derived from its usage lines. */
+export type CommandSurface = {
+	name: string
+	/** The bare words after the command name (`lot` -> finding, decide...), in first-seen order. */
+	verbs: string[]
+	/** Every `--name` of its usage lines (the zero-config flags expanded), unique, in first-seen order. */
+	flags: string[]
+}
+
+/** One old form of a renamed command with its new one, words after `dialecte`. */
+export type RenamedWords = { old: string; new: string }
+
+/** One command of `dialecte --help --json`: its entry, its name and what it accepts. */
+export type HelpJsonCommand = CommandEntry & { name: string; verbs: string[]; flags: string[] }
+
 /** What `dialecte --help --json` prints. */
 export type HelpJson = {
-	commands: Array<CommandEntry & { name: string }>
+	commands: HelpJsonCommand[]
+	renamed: RenamedWords[]
 }
 
 /** One old form of a renamed command: its words, and the `lot` verb that replaced it. */
@@ -61,4 +77,4 @@ export type ReviewRoundVerb = DeclaredRenamedForm['lotVerb']
 export type RecordVerb = Extract<DeclaredRenamedForm, { command: 'record' }>['lotVerb']
 
 /** What `dialecte <renamed command> --help --json` prints: each old form with its new one, words after `dialecte`. */
-export type RenamedJson = { renamed: Array<{ old: string; new: string }> }
+export type RenamedJson = { renamed: RenamedWords[] }

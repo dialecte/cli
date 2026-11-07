@@ -7,8 +7,8 @@
  *   generate  rewrite the generated blocks of the package's skills from its source
  *   changed   which skills the change touches, and whether their evals are due (hand-written text) or not
  *             (generated blocks only)
- *   check     fail when a skill cites an API, path or npm script that does not exist, links nowhere,
- *             has invalid frontmatter or a stale block, or when a method or a function exported by a
+ *   check     fail when a skill cites an API, path, npm script or cli invocation that does not exist, links
+ *             nowhere, has invalid frontmatter or a stale block, or when a method or a function exported by a
  *             package entry has no JSDoc summary / @intent
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -35,6 +35,9 @@ import {
 import { checkSkillPage } from '../lib/skills/check-skill-page.ts'
 import { STATIONS_FILE } from '../lib/skills/check-station-definitions.constants.ts'
 import { checkStationDefinitions } from '../lib/skills/check-station-definitions.ts'
+import { NOT_CHECKED_LINE, NOT_CHECKED_SUMMARY } from '../lib/skills/cli-invocations.constants.ts'
+import { checkCliInvocations, citedInvocationsOf } from '../lib/skills/cli-invocations.ts'
+import { readCliSurface } from '../lib/skills/cli-surface.ts'
 import { readExportEntries } from '../lib/skills/export-entries.ts'
 import { GENERATED_MARKER_PATTERN } from '../lib/skills/generated-blocks.constants.ts'
 import {
@@ -52,6 +55,7 @@ import {
 	readWorkspaceFacts,
 } from '../lib/skills/package-facts.ts'
 import { SKILLS_FOLDER } from '../lib/skills/skill-file.constants.ts'
+import { extractClaims } from '../lib/skills/skill-file.ts'
 import { AGENT_SKILL_FOLDERS, DEFAULT_AGENTS } from '../lib/skills/sync-skills.constants.ts'
 import {
 	discoverSkillSources,
@@ -403,8 +407,24 @@ export function checkPages(params: {
 		})),
 	]
 	const pages = listSkillPages(cwd)
-	for (const page of pages) {
-		const markdown = readPage({ cwd, page })
+	const markdowns = new Map(pages.map((page) => [page, readPage({ cwd, page })]))
+	// the map of the cli the package uses, read once when a page cites the cli; without one, said once, not counted
+	const citesCli = [...markdowns.values()].some(
+		(markdown) => citedInvocationsOf(markdown).length > 0,
+	)
+	const cliSurface = citesCli ? readCliSurface({ cwd }) : undefined
+	if (cliSurface && 'unavailable' in cliSurface)
+		console.warn(`⚠️  ${NOT_CHECKED_LINE.replace('{reason}', cliSurface.unavailable)}`)
+	for (const [page, markdown] of markdowns) {
+		if (cliSurface && 'surface' in cliSurface)
+			findings.push(
+				...checkCliInvocations({
+					file: page.file,
+					markdown,
+					surface: cliSurface.surface,
+					ignored: new Set(extractClaims(markdown).ignored),
+				}),
+			)
 		findings.push(
 			...checkSkillPage({
 				file: page.file,
@@ -441,7 +461,7 @@ export function checkPages(params: {
 
 	for (const finding of findings)
 		(finding.severity === 'error' ? console.error : console.warn)(
-			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}: ${finding.message}`,
+			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}${finding.line === undefined ? '' : `:${finding.line}`}: ${finding.message}`,
 		)
 	const errors = findings.filter((finding) => finding.severity === 'error').length
 	const methodCount = methods.filter((method) => method.entry === undefined).length
@@ -450,7 +470,7 @@ export function checkPages(params: {
 		({ entry }) => entry.entry !== undefined,
 	).length
 	console.log(
-		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methodCount} method(s) and ${exportCount} export(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)`,
+		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methodCount} method(s) and ${exportCount} export(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)${cliSurface && 'unavailable' in cliSurface ? NOT_CHECKED_SUMMARY : ''}`,
 	)
 	return errors ? 1 : 0
 }

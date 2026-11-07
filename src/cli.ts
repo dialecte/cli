@@ -7,7 +7,7 @@
  * map (./lib/command-map/); shared zero-config discovery in ./lib/config.ts.
  * Bundled with tsup; the shebang is injected by the tsup banner.
  */
-import { COMMANDS, COMMANDS_BY_NAME, HELP_FLAGS } from './cli.constants.ts'
+import { COMMANDS, COMMANDS_BY_NAME } from './cli.constants.ts'
 import { answerRenamed, isRenamedCommand, renamedJson } from './lib/command-map/renamed-answer.ts'
 import {
 	listedEntryOf,
@@ -22,6 +22,7 @@ import {
 	namesAnotherRepository,
 } from './lib/git-environment.ts'
 import { GIVEN_ENVIRONMENT } from './lib/given-environment.constants.ts'
+import { HELP_FLAGS } from './lib/parse-invocation.constants.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
 
 async function main(): Promise<void> {

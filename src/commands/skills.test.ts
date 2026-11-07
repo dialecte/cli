@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
+import { CLI_SURFACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { diagnose } from '../lib/doctor/diagnose.ts'
 import { chooseVendor, checkPages, generatePages, run, runSync, runSyncCommand } from './skills.ts'
 
@@ -952,5 +953,108 @@ describe('checkPages, a package that does not ship dialecte-lot', () => {
 		write('skills/demo/SKILL.md', FRONTMATTER)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
+	})
+})
+
+describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CASE_TIMEOUT }, () => {
+	/** The warnings printed so far that say the invocations were not checked. */
+	function notCheckedWarnings(): unknown[] {
+		return vi
+			.mocked(console.warn)
+			.mock.calls.map((call) => String(call[0]))
+			.filter((line) => line.includes('cli invocations not checked'))
+	}
+
+	it('a page citing an old form in the cli package → exit 1, the error printed as file:line', () => {
+		write('package.json', JSON.stringify({ name: '@dialecte/cli' }))
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte record review ../h\`.\n`)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+		// the frontmatter takes lines 1-4: the citation is on line 5
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:5: .*dialecte lot finding/),
+		)
+	})
+
+	it('a workspace page with a bad invocation → still exit 1, an error (the map is the cli own)', () => {
+		write('package.json', JSON.stringify({ name: '@dialecte/cli' }))
+		write(
+			'skills/demo/SKILL.md',
+			`${FRONTMATTER}<!-- dialecte-skills workspace -->\nRun \`dialecte record review ../h\`.\n`,
+		)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:6: /),
+		)
+	})
+
+	it('the ignore directive names the cited word → that page passes, another page still fails', () => {
+		write('package.json', JSON.stringify({ name: '@dialecte/cli' }))
+		write(
+			'skills/demo/SKILL.md',
+			`${FRONTMATTER}<!-- dialecte-skills ignore: frobnicate -->\nRun \`dialecte frobnicate\`.\n`,
+		)
+		write(
+			'skills/other/SKILL.md',
+			`${FRONTMATTER.replace('demo', 'other')}Run \`dialecte frobnicate\`.\n`,
+		)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+		expect(console.error).toHaveBeenCalledTimes(1)
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/^❌ skills\/other\/SKILL\.md:5: /),
+		)
+	})
+
+	it('an installed cli answering the map → its verbs decide: an unknown verb is an error', () => {
+		write('package.json', JSON.stringify({ name: 'app' }))
+		write(
+			'node_modules/@dialecte/cli/package.json',
+			JSON.stringify({ name: '@dialecte/cli', version: '9.9.9', bin: { dialecte: './bin.js' } }),
+		)
+		write(
+			'node_modules/@dialecte/cli/bin.js',
+			`process.stdout.write(${JSON.stringify(
+				JSON.stringify({
+					commands: [{ name: 'lot', verbs: ['finding'], flags: ['--round'] }],
+					renamed: [],
+				}),
+			)})\n`,
+		)
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte lot nothing\`.\n`)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:5: /),
+		)
+	})
+
+	it('no installed cli in a package that is not the cli → exit 0, one warning for all the pages', () => {
+		write('package.json', JSON.stringify({ name: 'app' }))
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte gate --fast\`.\n`)
+		write(
+			'skills/other/SKILL.md',
+			FRONTMATTER.replace('demo', 'other') + 'Run `dialecte nothing`.\n',
+		)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
+		expect(notCheckedWarnings()).toHaveLength(1)
+	})
+
+	it('an installed cli before the map → exit 0, one warning, no invocation finding', () => {
+		write('package.json', JSON.stringify({ name: 'app' }))
+		write(
+			'node_modules/@dialecte/cli/package.json',
+			JSON.stringify({ name: '@dialecte/cli', version: '0.3.1', bin: { dialecte: './bin.js' } }),
+		)
+		write(
+			'node_modules/@dialecte/cli/bin.js',
+			`process.stdout.write(${JSON.stringify(JSON.stringify({ commands: [{ name: 'gate' }] }))})\n`,
+		)
+		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte record review ../h\`.\n`)
+
+		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
+		expect(notCheckedWarnings()).toHaveLength(1)
 	})
 })

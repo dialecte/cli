@@ -23,6 +23,31 @@ export const GLOBAL_HELP_FOOTER = [
 	'dialecte --help --json         every command, verb, flag and exit code',
 ] as const
 
+/**
+ * The flags of the zero-config commands (coverage, bench, narrowing, audit), each with its value: the global
+ * notes print them, and a usage line's `[zero-config flags]` stands for them.
+ */
+export const ZERO_CONFIG_FLAGS = {
+	overrides: [
+		'--namespace <Name>',
+		'--entry <import>',
+		'--constants-dir <dir>',
+		'--out <dir>',
+		'--version <v>',
+		'--tsconfig <f>',
+	],
+	formatting: ['--format-config <path>', '--no-format'],
+} as const
+
+/** What a usage line writes in place of the zero-config flags. */
+export const ZERO_CONFIG_USAGE = '[zero-config flags]'
+
+/** A flag of a usage line: `--name`, not inside a word. */
+export const USAGE_FLAG_PATTERN = /(?<![\w-])--[a-z][a-z0-9-]*/g
+
+/** A verb: a bare lowercase word (`finding`, `no-reuse`), not a placeholder, a file name or a flag. */
+export const VERB_SHAPE_PATTERN = /^[a-z][a-z-]*$/
+
 /** What holds for every command, after the footer of the global help. */
 export const GLOBAL_HELP_NOTES = [
 	'Exit codes: 0 an answer or green, 1 nothing found or a failed check, 2 usage or refused;',
@@ -31,8 +56,8 @@ export const GLOBAL_HELP_NOTES = [
 	'Zero-config (coverage, bench, narrowing, audit): namespace = capitalized package name, versions',
 	'from src/<version>/definition/; core is benched through a built-in test dialect. Override in the',
 	'package.json "dialecte" field or with flags:',
-	'  --namespace <Name>  --entry <import>  --constants-dir <dir>  --out <dir>  --version <v>  --tsconfig <f>',
-	"Generated files are formatted with the package's oxfmt: --format-config <path> | --no-format.",
+	`  ${ZERO_CONFIG_FLAGS.overrides.join('  ')}`,
+	`Generated files are formatted with the package's oxfmt: ${ZERO_CONFIG_FLAGS.formatting.join(' | ')}.`,
 	'Env: RUNS=5 dialecte bench (repetitions for the min); COVERAGE_CHILD_CAP=N (cap child edges).',
 ] as const
 
@@ -312,14 +337,14 @@ export const COMMAND_MAP: CommandMap = {
 		summary: 'Agent skills shipped in skills/<name>/: sync | generate | check | changed',
 		usage: [
 			'dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing] [--vendor <id>] [--no-session-check]',
-			'dialecte skills generate',
-			'dialecte skills check [--workspace <dir>]',
+			'dialecte skills generate [zero-config flags]',
+			'dialecte skills check [--workspace <dir>] [zero-config flags]',
 			'dialecte skills changed [--base <ref>]',
 		],
 		notes: [
 			'sync - install the consumer skills of your dependencies (or of local checkouts) for your agents; --contributing adds the contributor skills, remembered until --no-contributing; remembers the model vendor; with the contributor skills, a doctor --brief session-start check in AGENTS.md and the station agents (--no-session-check leaves the check out)',
 			'generate - rewrite the generated blocks (verb map, method index, hook files) from the source',
-			'check - fail on a cited API / path / npm script that does not exist, or a stale block',
+			'check - fail on a cited API / path / npm script / cli invocation that does not exist, or a stale block',
 			'changed - per skill, hand-written change (evals due) or generated blocks only',
 		],
 		exitCodes: [],

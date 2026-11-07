@@ -4,6 +4,8 @@
  * a known command, the global help otherwise; `--json` before `--` asks for it as JSON. The words after `--`
  * are the command's own (a finding starting with a dash) and are not read.
  */
+import { HELP_ASKING_FLAGS, JSON_FLAG } from './parse-invocation.constants.ts'
+
 import type { Invocation } from './parse-invocation.types.ts'
 
 export function parseInvocation(params: {
@@ -13,8 +15,8 @@ export function parseInvocation(params: {
 	const [command, ...rest] = params.argv
 	const separator = params.argv.indexOf('--')
 	const options = separator === -1 ? params.argv : params.argv.slice(0, separator)
-	if (!command || options.includes('--help') || options.includes('-h')) {
-		const json = options.includes('--json')
+	if (!command || HELP_ASKING_FLAGS.some((flag) => options.includes(flag))) {
+		const json = options.includes(JSON_FLAG)
 		return params.commandNames.includes(command ?? '')
 			? { kind: 'help', command, json }
 			: { kind: 'help', json }
