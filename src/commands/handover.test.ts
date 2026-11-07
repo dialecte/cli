@@ -3252,7 +3252,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(maskVolatile({ lines: boxLines(result.output), root, head, tip })).toEqual([
 			'┌─ hand-over: dialecte-scratch-XXXXXX main ────────────────────────────────────┐',
 			'│ BLOCKED  2 lots · 1 file · +3 −1 · 1 merge not sized · 1 gate failed: build  │',
-			'│          · gates ran on another tree: tdd, check                             │',
+			'│          · gates ran on another tree: check                                  │',
 			'│          4 declarations to read (below)                                      │',
 			'├─ commit ─────────────────────────────────────────────────────────────────────┤',
 			'│ pending  1 file  +3 −1  feat(read): read answers one                         │',
@@ -3262,8 +3262,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ HEAD aaaaaaa                                                                 │',
 			'│ worktree dialecte-scratch-XXXXXX                                             │',
 			'├─ gates ──────────────────────────────────────────────────────────────────────┤',
-			'│ ! tdd       not run here (the package does not test with vitest) (the tree   │',
-			'│             changed since)                                                   │',
+			'│ ! tdd       not run here (the package does not test with vitest)             │',
 			'│ ! check     4/4 (the tree changed since)                                     │',
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
 			'│ ! review    no findings ledger                                               │',
@@ -3299,7 +3298,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const output = writeHandover({ lotsPath }).output
 
 		expect(verdictLines(output)).toEqual([
-			'BLOCKED  2 lots · 2 files · +4 −2 · gates ran on another tree: tdd, check, build',
+			'BLOCKED  2 lots · 2 files · +4 −2 · gates ran on another tree: check, build',
 			'         4 declarations to read (below)',
 		])
 		expect(sectionLines({ output, name: 'commit' })).toEqual([
@@ -3433,7 +3432,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(data).toMatchObject({
 			verdict: 'BLOCKED',
 			failedGates: ['build'],
-			otherTreeGates: ['tdd', 'check'],
+			otherTreeGates: ['check'],
 			declarations: 4,
 			head,
 			lots: [{ pending: true }, { pending: true }],

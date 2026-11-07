@@ -1,8 +1,17 @@
 /**
  * The hand-over card's gate lines, from records, never from prose. The gate steps: one per step (the latest record of
  * each step across the gate's two modes and the commit hook's record, which a newer gate record supersedes whole).
+ * The other way round, a hook record of the tree the card checks, not dropped by a newer gate record of the checked
+ * tree, supersedes every gate record of another tree: a merge hand-over's rehearsal (or commit) hook ran on the
+ * merged tree, so each step of the worktree's gate of its tree before the merge that the hook answers (a step of
+ * the same name, or a test step when the hook counts tests) leaves the card, even when the worktree gated its own
+ * tree again after the rehearsal. No check is dropped silently: a step the hook did not run reads
+ * `! <step>  not run on the merged tree` (a warning, not stale), a failed one stays `✗ ... (the tree changed
+ * since)`, and the tdd step stays.
  * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
  * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
+ * So the tdd line is the worktree's: stale only when its record is of another tree than the worktree's now, never
+ * because the tree checked is a merge's.
  * A line from a record made at a commit outside HEAD's history (a branch commit's hook record read for a
  * merge on main) ends `· from <commit>`, a rehearsal's `· rehearsal`. A stored record counts only when it
  * ran against what is installed now (the same `node_modules`, the same `file:` dependencies) with the
@@ -44,6 +53,7 @@ import {
 	NO_LEDGER_DETAIL,
 	NOT_RUN_DETAIL,
 	NOT_RUN_HERE_DETAIL,
+	NOT_RUN_ON_CHECKED_TREE_DETAIL,
 	OPEN_LEDGER_STATES,
 	RECORD_FROM_DETAIL,
 	REHEARSAL_ORIGIN,
@@ -56,7 +66,7 @@ import {
 	TREE_CHANGED_SUFFIX,
 } from './gate-records.constants.ts'
 import { readContribRecord, readGateRecords, readRulesRecord } from './gate-records.ts'
-import { hashStateTree } from './state-hash.ts'
+import { computeStateTree, hashStateTree } from './state-hash.ts'
 
 import type { StepCounts } from '../gate/gate.types.ts'
 import type { CardGateLine, GateRecord, RecordedStep } from './gate-records.types.ts'
@@ -66,9 +76,14 @@ export function buildCardGateLines(params: {
 	root: string
 	/**
 	 * The tree the hand-over commits (the worktree's, or the tree its last merge lot leaves): a gate record of
-	 * another tree is stale.
+	 * another tree is stale, but for its tdd step (checked against the worktree's tree, `stateHash`); a hook
+	 * record of this tree not dropped by a newer gate record of this tree supersedes the gate records of another
+	 * tree: the steps it answers leave the card, the others read `not run on the merged tree`, a failed one and
+	 * the tdd step stay.
 	 */
 	tree: string
+	/** The state hash of the worktree now, which the tdd line is checked against. Default: computed from `root`. */
+	stateHash?: string
 }): CardGateLine[] {
 	const { root, tree } = params
 	const own = readGateRecords(root)
@@ -83,6 +98,7 @@ export function buildCardGateLines(params: {
 	return gateStepLines({
 		records,
 		stateHash: hashStateTree(tree),
+		worktreeStateHash: params.stateHash ?? hashStateTree(computeStateTree(root)),
 		outsideHistory: commitsOutsideHistory({ root, records }),
 	})
 }
@@ -234,22 +250,36 @@ function withoutTddStep(record: GateRecord): GateRecord {
 	return { ...record, steps: record.steps.filter((step) => step.name !== TDD_STEP.name) }
 }
 
-/** Each step's line from its latest record; `gate never run` when there is no record. */
+/**
+ * Each step's line from its latest record; `gate never run` when there is no record. The tdd line is checked
+ * against the worktree's tree, every other line against the tree the card checks.
+ */
 function gateStepLines(params: {
 	records: GateRecord[]
 	stateHash: string
+	/** The state hash of the worktree's tree now: the tdd line is checked against it. */
+	worktreeStateHash: string
 	/** The commits of records outside HEAD's history: a line of such a record says which. */
 	outsideHistory: ReadonlySet<string>
 }): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
 	const latest = new Map<string, { step: RecordedStep; record: GateRecord }>()
-	const oldestFirst = currentRecords(params.records).sort((first, second) =>
+	const { stateHash } = params
+	const oldestFirst = currentRecords({ records: params.records, stateHash }).sort((first, second) =>
 		first.at.localeCompare(second.at),
 	)
+	const superseded = isSuperseded({ records: oldestFirst, stateHash })
 	for (const record of oldestFirst)
 		for (const step of record.steps) latest.set(step.name, { step, record })
 	return [...latest.values()].map(function stepLine(entry) {
+		// a step the standing hook did not run: said so, a warning of no tree; a failed one stays as it is
+		if (
+			superseded(entry.record) &&
+			entry.step.name !== TDD_STEP.name &&
+			entry.step.status !== 'failed'
+		)
+			return { name: entry.step.name, status: 'warning', detail: NOT_RUN_ON_CHECKED_TREE_DETAIL }
 		const line = lineOfStep(entry.step)
 		return withTreeCheck({
 			line: withRecordSource({
@@ -257,21 +287,85 @@ function gateStepLines(params: {
 				record: entry.record,
 				outsideHistory: params.outsideHistory,
 			}),
-			current: entry.record.stateHash === params.stateHash,
+			current:
+				entry.step.name === TDD_STEP.name
+					? entry.record.stateHash === params.worktreeStateHash
+					: entry.record.stateHash === params.stateHash,
 		})
 	})
 }
 
 /**
- * The records the card reads: a commit hook's record only when no gate record is newer. The hook names its
- * own scripts (`test:run`, `lint:check`), never the gate's steps, so a later gate run could not replace its
- * lines one by one: it replaces the whole record.
+ * The records the card reads: a commit hook's record only when no gate record is newer - for a hook record of
+ * `stateHash`'s tree, no gate record of that tree. The hook names its own scripts (`test:run`, `lint:check`),
+ * never the gate's steps, so a later gate run could not replace its lines one by one: it replaces the whole
+ * record. The mirror: while a hook record of `stateHash`'s tree stands, every gate record of another tree loses
+ * the steps that hook answers (a step of the same name, or a test step when the hook counts tests); its tdd step
+ * (the worktree's verdict), its failed steps and the steps the hook did not run stay.
  */
-function currentRecords(records: readonly GateRecord[]): GateRecord[] {
-	const newestGate = records
-		.filter((record) => record.mode !== HOOK_RECORD_MODE)
-		.reduce((newest, record) => (record.at > newest ? record.at : newest), '')
-	return records.filter((record) => record.mode !== HOOK_RECORD_MODE || record.at > newestGate)
+function currentRecords(params: {
+	records: readonly GateRecord[]
+	stateHash: string
+}): GateRecord[] {
+	const { records, stateHash } = params
+	const gates = records.filter((record) => record.mode !== HOOK_RECORD_MODE)
+	const newestGate = newestAt(gates)
+	const newestCheckedGate = newestAt(gates.filter((record) => record.stateHash === stateHash))
+	const standing = records.filter(function stands(record) {
+		if (record.mode !== HOOK_RECORD_MODE) return true
+		return record.at > (record.stateHash === stateHash ? newestCheckedGate : newestGate)
+	})
+	const checkedHooks = standing.filter(
+		(record) => record.mode === HOOK_RECORD_MODE && record.stateHash === stateHash,
+	)
+	if (checkedHooks.length === 0) return standing
+	const superseded = isSuperseded({ records: standing, stateHash })
+	return standing.map(function supersededByHook(record) {
+		return superseded(record) ? withoutAnsweredSteps({ record, hooks: checkedHooks }) : record
+	})
+}
+
+/**
+ * Which of `records` a standing hook record of `stateHash`'s tree supersedes: the gate records of another tree,
+ * when such a hook record is among them.
+ */
+function isSuperseded(params: {
+	records: readonly GateRecord[]
+	stateHash: string
+}): (record: GateRecord) => boolean {
+	const { stateHash } = params
+	const checkedHookStands = params.records.some(
+		(record) => record.mode === HOOK_RECORD_MODE && record.stateHash === stateHash,
+	)
+	return function superseded(record) {
+		return checkedHookStands && record.mode !== HOOK_RECORD_MODE && record.stateHash !== stateHash
+	}
+}
+
+/** The time of the newest of `records`; `''` when there is none. */
+function newestAt(records: readonly GateRecord[]): string {
+	return records.reduce((newest, record) => (record.at > newest ? record.at : newest), '')
+}
+
+/**
+ * A gate record a standing hook record of the checked tree superseded, without the steps `hooks` answer: a hook
+ * step of the same name, or, for a step counting tests, a hook step counting tests (the hook runs the full gate's
+ * test steps). Its tdd step (the worktree's own) and its failed steps always stay.
+ */
+function withoutAnsweredSteps(params: {
+	record: GateRecord
+	hooks: readonly GateRecord[]
+}): GateRecord {
+	const hookSteps = params.hooks.flatMap((hook) => hook.steps)
+	const hookCountsTests = hookSteps.some((step) => step.counts.tests !== undefined)
+	return {
+		...params.record,
+		steps: params.record.steps.filter(function unanswered(step) {
+			if (step.name === TDD_STEP.name || step.status === 'failed') return true
+			if (hookSteps.some((hookStep) => hookStep.name === step.name)) return false
+			return !(step.counts.tests !== undefined && hookCountsTests)
+		}),
+	}
 }
 
 /** A line read from a commit hook's record: its detail ends saying so (`✓ test:run  1214/1214 · commit hook`). */

@@ -145,6 +145,7 @@ export function buildHandoverCard(params: {
 	const profile = readProfile(root)
 	const checked = {
 		root,
+		stateHash,
 		folder: params.folder,
 		tree: checkedTree({
 			root,

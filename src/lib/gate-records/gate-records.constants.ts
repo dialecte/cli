@@ -60,6 +60,12 @@ export const TREE_CHANGED_SUFFIX = ' (the tree changed since)'
 /** A skipped step: `{reason}` in a few words. */
 export const NOT_RUN_HERE_DETAIL = 'not run here ({reason})'
 
+/**
+ * A step of a gate record of another tree that the standing hook record of the checked tree superseded but did not
+ * run (no step of its name, no test step answering a test step): it warns, never blocks.
+ */
+export const NOT_RUN_ON_CHECKED_TREE_DETAIL = 'not run on the merged tree'
+
 /** A step the gate did not run because an earlier one failed. */
 export const NOT_RUN_DETAIL = 'not run (an earlier step failed)'
 
