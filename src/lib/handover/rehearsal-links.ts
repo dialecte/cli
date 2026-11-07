@@ -53,6 +53,11 @@ export function linkRehearsalSiblings(params: {
 
 /** The rehearsal folder removed: its links unlinked first (their targets untouched), then the folder. */
 export function removeRehearsalFolder(params: { folder: string; links: readonly string[] }): void {
-	for (const link of params.links) if (isPresent(link)) unlinkSync(link)
+	unlinkRehearsalLinks(params.links)
 	rmSync(params.folder, { recursive: true, force: true })
+}
+
+/** The links beside the clone unlinked, their targets untouched: what goes before the folder leaves. */
+export function unlinkRehearsalLinks(links: readonly string[]): void {
+	for (const link of links) if (isPresent(link)) unlinkSync(link)
 }

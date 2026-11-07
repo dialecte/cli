@@ -4,7 +4,8 @@
  * left behind - each with the command that removes it, with its absolute `cd`. Never an unmerged branch,
  * a dirty worktree, one a pending hand-over commits in, or one a mutation run that still runs (or died before
  * reporting) was started from; never a symbolic link (the sibling link
- * `.worktrees/core -> ../core` among them) nor a folder a link reaches.
+ * `.worktrees/core -> ../core` among them) nor a folder a link reaches. The pool entries (`_pool-*`) and the
+ * trash (`_trash/`, a worktree in it included) are counted, never listed nor touched.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
@@ -22,7 +23,9 @@ import { readPackageJson } from '../package-json.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
+import { listWorktrees } from './add-worktree.ts'
 import { readHygieneBaseline } from './hygiene.ts'
+import { listPoolEntries } from './node-modules-pool.ts'
 import {
 	DEFAULT_BASE_BRANCH,
 	IGNORED_FILES_SHOWN,
@@ -30,6 +33,10 @@ import {
 	PRUNE_RUN_PREFIX,
 	REBUILT_IGNORED_FOLDERS,
 	REBUILT_IGNORED_NAMES,
+	POOL_ENTRY_PATTERN,
+	POOL_FILE,
+	TRASH_FOLDER,
+	WORKTREE_STATUS_ARGUMENTS,
 } from './worktree.constants.ts'
 
 import type { HandoverFolder } from '../handover/handover.types.ts'
@@ -78,7 +85,69 @@ export function planPrune(params: {
 			.sort()
 			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
 	})
-	return { repositories, scratch }
+	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
+	return {
+		repositories,
+		scratch,
+		pool: countPoolEntries(worktreesFolder),
+		poolLeftOver: listPoolLeftOver(worktreesFolder),
+		trash: countTrashed(worktreesFolder),
+	}
+}
+
+/** The `_pool-*` folders without a `pool.json`: a park that never finished, never taken nor evicted. */
+function listPoolLeftOver(worktreesFolder: string): string[] {
+	if (!isDirectory(worktreesFolder)) return []
+	return readdirSync(worktreesFolder)
+		.filter(
+			(name) =>
+				POOL_ENTRY_PATTERN.test(name) && !existsSync(join(worktreesFolder, name, POOL_FILE)),
+		)
+		.sort()
+		.map((name) => join(worktreesFolder, name))
+}
+
+/** The pool entries of each repository, in name order of the repositories. */
+function countPoolEntries(worktreesFolder: string): { repository: string; entries: number }[] {
+	const counts = new Map<string, number>()
+	for (const entry of listPoolEntries(worktreesFolder))
+		counts.set(entry.file.repository, (counts.get(entry.file.repository) ?? 0) + 1)
+	return [...counts]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([repository, entries]) => ({ repository, entries }))
+}
+
+/** How many folders wait in `.worktrees/_trash/`. */
+function countTrashed(worktreesFolder: string): number {
+	const trash = join(worktreesFolder, TRASH_FOLDER)
+	return isDirectory(trash) ? readdirSync(trash).length : 0
+}
+
+/** The path is in the workspace's `.worktrees/_trash/`: a worktree on its way out, never listed. */
+function isTrashed(params: { path: string; workspace: string }): boolean {
+	const fromTrash = relative(join(params.workspace, WORKTREES_FOLDER, TRASH_FOLDER), params.path)
+	return fromTrash !== '' && !fromTrash.startsWith('..') && !isAbsolute(fromTrash)
+}
+
+/**
+ * Why a run of the repository keeps `folder`: one still running, or one that died before reporting, was
+ * started from it; undefined when none was.
+ */
+export function mutationRunKeeping(params: {
+	runs: readonly RunEntry[]
+	folder: string
+}): string | undefined {
+	const folder = realpathSync(params.folder)
+	const owned = params.runs.find((run) => realpathSync(run.worktree) === folder)
+	if (!owned) return undefined
+	return `${PRUNE_RUN_PREFIX}${owned.state === 'running' ? runningLine(owned) : diedRunLine(owned)}`
+}
+
+/** The runs of the repository that still run, or died before reporting, whose worktree is on disk. */
+export function readOwnedRuns(repository: string): RunEntry[] {
+	return readRuns({ root: repository }).filter(
+		(run) => (run.state === 'running' || run.state === 'died') && existsSync(run.worktree),
+	)
 }
 
 function planRepository(params: {
@@ -116,15 +185,19 @@ function planRepository(params: {
 	}).trim()
 	const keptBranches = new Set<string>([baseBranch, checkedOut])
 	// a run that still runs, or died before reporting, needs the worktree it was started from
-	const ownedRuns = readRuns({ root: repository }).filter(
-		(run) => (run.state === 'running' || run.state === 'died') && existsSync(run.worktree),
-	)
+	const ownedRuns = readOwnedRuns(repository)
 	const worktrees = listWorktrees(repository)
 		.slice(1)
 		.map((worktree) => ({
 			...worktree,
 			name: spellUnder({ path: worktree.path, folder: dirname(repository) }),
 		}))
+		.filter(function listed(worktree) {
+			if (!isTrashed({ path: worktree.name, workspace: dirname(repository) })) return true
+			// in the trash: its background removal frees its branch; until then git refuses to delete it
+			if (worktree.branch) keptBranches.add(worktree.branch)
+			return false
+		})
 	// `git worktree prune` unregisters every worktree whose folder holds no checkout: a link's too, when
 	// what it points to holds no `.git`
 	const linkedWorktrees = worktrees
@@ -377,10 +450,8 @@ function whyKeepWorktree(params: {
 }): string | undefined {
 	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
 	if (reachedBy) return `the link ${reachedBy} points to it`
-	const worktree = realpathSync(params.worktree)
-	const owned = params.ownedRuns.find((run) => realpathSync(run.worktree) === worktree)
-	if (owned)
-		return `${PRUNE_RUN_PREFIX}${owned.state === 'running' ? runningLine(owned) : diedRunLine(owned)}`
+	const ownedRun = mutationRunKeeping({ runs: params.ownedRuns, folder: params.worktree })
+	if (ownedRun) return ownedRun
 	const unmerged = unmergedCount({
 		root: params.repository,
 		branch: params.branch,
@@ -392,7 +463,7 @@ function whyKeepWorktree(params: {
 	if (
 		readGit({
 			root: params.worktree,
-			args: ['--no-optional-locks', 'status', '--porcelain'],
+			args: [...WORKTREE_STATUS_ARGUMENTS],
 		}).trim()
 	)
 		return 'uncommitted changes'
@@ -462,7 +533,7 @@ function listRemovableIgnored(worktree: string): string[] {
 	const rebuilt = [...REBUILT_IGNORED_FOLDERS, ...(hooks ? [`${hooks.replace(/\/$/, '')}/`] : [])]
 	return readGit({
 		root: worktree,
-		args: ['--no-optional-locks', 'status', '--porcelain', '--ignored=matching'],
+		args: [...WORKTREE_STATUS_ARGUMENTS, '--ignored=matching'],
 	})
 		.split('\n')
 		.filter((line) => line.startsWith('!! '))
@@ -479,20 +550,6 @@ function unmergedCount(params: { root: string; branch: string; baseBranch: strin
 			args: ['rev-list', '--count', `${params.baseBranch}..refs/heads/${params.branch}`],
 		}).trim(),
 	)
-}
-
-function listWorktrees(repository: string): { path: string; branch?: string }[] {
-	const blocks = readGit({ root: repository, args: ['worktree', 'list', '--porcelain'] }).split(
-		'\n\n',
-	)
-	return blocks.filter(Boolean).map(function parse(block) {
-		const lines = block.split('\n')
-		const path = lines.find((line) => line.startsWith('worktree '))?.slice('worktree '.length) ?? ''
-		const branch = lines
-			.find((line) => line.startsWith('branch refs/heads/'))
-			?.slice('branch refs/heads/'.length)
-		return { path, ...(branch && { branch }) }
-	})
 }
 
 /** git answers real paths (`/private/var` for `/var` on macOS): a path under `folder` spelled as `folder` is. */

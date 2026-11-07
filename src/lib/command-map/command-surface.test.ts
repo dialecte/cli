@@ -30,6 +30,7 @@ const LOT_VERBS = [
 	'standard',
 	'delta',
 	'recap',
+	'close',
 ]
 
 /** An entry holding only the usage lines the derivation reads. */
@@ -116,7 +117,7 @@ describe('commandSurfaceOf', () => {
 })
 
 describe('dialecte --help --json, verbs and flags of the real map', () => {
-	it('lot → its 12 verbs, exactly, in the map order', () => {
+	it('lot → its 13 verbs, exactly, in the map order', () => {
 		expect(commandOf('lot')?.verbs).toEqual(LOT_VERBS)
 	})
 
@@ -197,7 +198,7 @@ describe('dialecte <command> --help --json', () => {
 		])
 	})
 
-	it('lot → its one command carries its 12 verbs', () => {
+	it('lot → its one command carries its 13 verbs', () => {
 		expect(
 			JSON.parse(renderCommandJson({ name: 'lot', entry: COMMAND_MAP.lot })).commands[0].verbs,
 		).toEqual(LOT_VERBS)

@@ -2,6 +2,7 @@ import type { CardLine } from '../card/card.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
+import type { ListedWorktree } from '../worktree/worktree.types.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
 export type LotsFile = {
@@ -351,3 +352,25 @@ export type HandoverProbe = (params: { root: string; timeout: number }) => boole
  * follows it (or between a name's pick and its write), so the other writer can act in that gap.
  */
 export type InterleavingSeam = () => void
+
+/** A rehearsal's workspace: the repository's main checkout and its `.worktrees/` (the pool and the trash). */
+export type RehearsalPool = { main: string; worktreesFolder: string }
+
+/**
+ * What `lot close` closes for one argument: the hand-over's registry entry, and the registered worktree at the
+ * path it holds (none when no worktree of the repository is there, or only one in the trash or the pool).
+ */
+export type CloseTarget = {
+	argument: string
+	entry: StoreEntry | undefined
+	worktree: ListedWorktree | undefined
+}
+
+/** What `lot close` did with one named hand-over: closed, or kept with why. */
+export type CloseOutcome = { handover: string } & ({ closed: true } | { kept: string })
+
+/**
+ * One outcome of `lot close`, with the folders it sent to the trash (by name) and where the parked
+ * `node_modules` went (`pooled in <entry>` or `trashed: <why not parked>`; none when nothing was to park).
+ */
+export type CloseResult = { outcome: CloseOutcome; moved: string[]; nodeModules?: string }

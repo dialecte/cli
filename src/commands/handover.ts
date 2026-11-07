@@ -109,6 +109,7 @@ import type {
 } from '../lib/handover/handover.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
+import type { BackgroundSpawner } from '../lib/worktree/worktree.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const colour = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR
@@ -298,6 +299,10 @@ export async function runHandoverRun(params: {
 	cwd?: string
 	/** Called between the check of the abandoned marker and the write of the run marker (a test forces `abandon` there). */
 	afterCheck?: InterleavingSeam
+	/** Starts the background removals of a rehearsal's trash (the tests stand in for it); default: a detached process. */
+	spawner?: BackgroundSpawner
+	/** Re-points the clone's `node_modules` links at the end of a rehearsal (the tests stand in for it, to make it throw). */
+	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): Promise<number> {
 	const { argv, write } = params
 	const live = params.live ?? { tty: false, writeLine: write, rewriteLines: () => undefined }
@@ -348,6 +353,8 @@ export async function runHandoverRun(params: {
 			cliPath,
 			resumeMerge: hasFlag(argv, 'resume-merge'),
 			full: hasFlag(argv, 'full'),
+			spawner: params.spawner,
+			relink: params.relink,
 		})
 	params.afterCheck?.()
 	// a real run marks its folder: a gate does not run under a hand-over committing now

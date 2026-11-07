@@ -4,7 +4,8 @@
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
  * case, a file or a glob; a gone entry a file or a glob, never a case.
  * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
- * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`.
+ * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`;
+ * `lot close <hand-over name|index>...` by `runLotClose`.
  * The usage is the map's lot section.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -17,6 +18,7 @@ import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
+import { runLotClose } from './lot-close.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
@@ -32,6 +34,7 @@ export async function run(argv: string[]): Promise<void> {
 
 export function runLot(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
 	const [verb, ...words] = params.argv
+	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined

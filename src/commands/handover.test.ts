@@ -32,6 +32,7 @@ import {
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
@@ -174,6 +175,7 @@ async function runFolder(params: {
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot: params.scratchRoot ?? temporaryFolder('dialecte-scratch-root-'),
+		spawner: createRecordingSpawner().spawner,
 	})
 	return { exitCode, lines, text: lines.join('\n') }
 }
@@ -2242,6 +2244,7 @@ function runLive(params: {
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		live,
+		spawner: createRecordingSpawner().spawner,
 	})
 }
 

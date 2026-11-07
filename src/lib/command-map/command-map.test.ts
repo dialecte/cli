@@ -88,6 +88,26 @@ describe('the command map', () => {
 		).toEqual([])
 	})
 
+	it('the lot section lists lot close with its arguments and notes it', () => {
+		const lot = COMMAND_MAP.lot
+		const notes = lot.notes ?? []
+
+		expect(lot.usage).toContain('dialecte lot close <hand-over name|index>... [--json]')
+		expect(notes.some((note) => note.startsWith('close - '))).toBe(true)
+	})
+
+	it('the worktree section names the node_modules pool and the trash, and no longer says add copies node_modules on write only', () => {
+		const worktree = COMMAND_MAP.worktree
+		const notes = worktree.notes ?? []
+		const add = notes.find((note) => note.startsWith('add - ')) ?? ''
+		const prune = notes.find((note) => note.startsWith('prune - ')) ?? ''
+
+		expect(add).toContain('pool')
+		expect(add).toContain('copy-on-write')
+		expect(prune).toContain('_pool-')
+		expect(prune).toContain('_trash')
+	})
+
 	it('the type refuses a map missing a command and a map holding a name no command has (checked by npm run check)', () => {
 		// @ts-expect-error a map without every command
 		const missing: CommandMap = {}

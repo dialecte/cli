@@ -515,6 +515,27 @@ describe('worktree prune', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
 		expect(result.output).not.toContain('git branch -d')
 	})
 
+	it('status.showUntrackedFiles=no in the repository config and an untracked file in a merged worktree → kept as uncommitted all the same', async () => {
+		const { workspace, core, worktrees } = createPruneWorkspace()
+		writeFiles({ root: worktrees.merged, files: { 'scratch.txt': 'not committed\n' } })
+		git({ root: core, args: ['config', 'status.showUntrackedFiles', 'no'] })
+
+		await expect(
+			runWorktreePrune({
+				argv: ['--root', workspace],
+				cwd: workspace,
+				scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+				isTerminal: false,
+				confirm: async () => true,
+			}),
+		).resolves.toEqual({
+			exitCode: 0,
+			output: expect.stringContaining(
+				`  keep    worktree  ${worktrees.merged}  (feat/merged: uncommitted changes)`,
+			),
+		})
+	})
+
 	it('a merged clean worktree holding an ignored file outside node_modules → kept, naming the file', async () => {
 		const { workspace, worktrees } = createPruneWorkspace()
 		writeFiles({ root: worktrees.merged, files: { 'notes.log': 'local notes\n' } })

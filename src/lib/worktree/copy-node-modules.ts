@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
+import { realPathOf } from '../file-system.ts'
+
 import type { CopyRun, NodeModulesCopy } from './worktree.types.ts'
 
 export function copyNodeModules(params: {
@@ -45,19 +47,29 @@ function runCp(args: string[]): CopyRun {
 	return { status: result.status, signal: result.signal }
 }
 
-/** Packages (`name` and `@scope/name`) linked by a relative path that leaves `from`: re-pointed absolute. */
-function relinkEscapingLinks(params: { from: string; to: string }): string[] {
+/**
+ * Packages (`name` and `@scope/name`) of `to` (a copy of `from`, or `from` renamed) linked by a relative path
+ * that leaves `node_modules`: re-pointed absolute to where the link reached from `from`.
+ */
+export function relinkEscapingLinks(params: {
+	from: string
+	to: string
+	/**
+	 * Re-point to the real path the link reaches, through any link on the way (a rehearsal's sibling links,
+	 * unlinked before its `node_modules` is parked); default: the path as resolved.
+	 */
+	real?: boolean
+}): string[] {
 	const relinked: string[] = []
-	for (const entry of packageEntries(params.from)) {
-		const source = join(params.from, entry)
-		if (!lstatSync(source).isSymbolicLink()) continue
-		const target = readlinkSync(source)
-		if (isAbsolute(target)) continue
-		const resolved = resolve(dirname(source), target)
-		if (!relative(params.from, resolved).startsWith('..')) continue
+	for (const entry of packageEntries(params.to)) {
 		const copy = join(params.to, entry)
+		if (!lstatSync(copy).isSymbolicLink()) continue
+		const target = readlinkSync(copy)
+		if (isAbsolute(target)) continue
+		const resolved = resolve(dirname(join(params.from, entry)), target)
+		if (!relative(params.from, resolved).startsWith('..')) continue
 		rmSync(copy, { force: true })
-		symlinkSync(resolved, copy)
+		symlinkSync(params.real ? realPathOf(resolved) : resolved, copy)
 		relinked.push(entry)
 	}
 	return relinked

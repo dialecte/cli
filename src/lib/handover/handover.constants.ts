@@ -159,6 +159,9 @@ export const LEGACY_SCRIPT_PATTERN = /^commit.*\.sh$/
 /** The marker a rehearsal clone holds, in its git folder: whose process made it. */
 export const REHEARSAL_MARKER_FILE = 'dialecte-rehearsal.json'
 
+/** The last line of a rehearsal whose folder was removed here (no trash beside the repository). */
+export const REHEARSAL_REMOVED_LINE = 'removed the rehearsal clone and its folder'
+
 /**
  * The marker a real `handover run` holds in its hand-over folder while it runs (`{ "pid", "startedAt" }`),
  * removed at its end: `dialecte gate` refuses while its process is alive.

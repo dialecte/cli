@@ -41,6 +41,7 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
+import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { runHandover, runHandoverRun } from './handover.ts'
 
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -162,6 +163,7 @@ function runLive(params: {
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
 		live,
+		spawner: createRecordingSpawner().spawner,
 	})
 }
 

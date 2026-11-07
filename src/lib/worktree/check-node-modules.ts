@@ -2,6 +2,7 @@
  * A worktree's `node_modules` read against its `package-lock.json`: every locked package installed at its
  * version, every link reaching what the lockfile resolves it to.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -10,6 +11,13 @@ import { readLockedPackages } from './locked-packages.ts'
 import { NODE_MODULES_PREFIX, PACKAGE_LOCK_FILE } from './worktree.constants.ts'
 
 import type { LockedPackage, NodeModulesCheck, NodeModulesProblem } from './worktree.types.ts'
+
+/** sha256 (hex) of the worktree's `package-lock.json`; undefined without one. */
+export function lockHashOf(worktree: string): string | undefined {
+	const lockfile = join(worktree, PACKAGE_LOCK_FILE)
+	if (!existsSync(lockfile)) return undefined
+	return createHash('sha256').update(readFileSync(lockfile)).digest('hex')
+}
 
 export function checkNodeModules(params: { worktree: string }): NodeModulesCheck {
 	const { worktree } = params
