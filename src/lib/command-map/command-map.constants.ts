@@ -127,6 +127,30 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: [],
 		example: 'dialecte explain CONCURRENT_TRANSACTION',
 	},
+	standard: {
+		family: 'Discover',
+		summary:
+			'Index and search the standards kept on this machine (DIALECTE_STANDARD: one folder per standard); the index lives in the cache',
+		usage: [
+			'dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]',
+			'dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]',
+			'dialecte standard show <file id>:<from>-<to> [--json]',
+			'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]',
+		],
+		notes: [
+			'the vocabulary - the tags, attributes and enumeration values of the installed dialectes (--package <name>: that one only); index, find and eval print it first',
+			'index - builds (or reuses) the index of each standard folder, prints its quality per file',
+			'find - the ranked slices of whole lines that hold the terms, then the clauses they refer to [linked]; --about <Tag> adds a tag of the installed dialectes',
+			'show - the normalised text of a range of original lines; a file id is <standard id>/<file name without .md>',
+			'eval - recall at 5 and 10 of find over a local gold file of { question, about?, expected: [{ file, quote }] } lines; the expected quotes are alternatives',
+			'the standard is never copied into a repository: its index is in $XDG_CACHE_HOME/dialecte (else ~/.cache/dialecte)',
+		],
+		exitCodes: [
+			'1  index: no indexable file · find: nothing matched · show: only blank or dropped lines · eval: no item with an expected quote · a file changed during the build',
+			'2  usage · no standard configured · a root or cache inside a git work tree · colliding ids · an unknown standard, file, --package or --about tag',
+		],
+		example: 'dialecte standard find "data object" --limit 5',
+	},
 	run: {
 		family: 'Use',
 		summary:

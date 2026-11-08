@@ -75,6 +75,7 @@ export type ExportTarget =
 
 export type PackageManifest = {
 	name?: string
+	version?: string
 	main?: string
 	exports?: string | Record<string, ExportTarget>
 	dependencies?: Record<string, string>

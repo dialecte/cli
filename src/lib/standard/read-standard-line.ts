@@ -9,9 +9,9 @@ import { join } from 'node:path'
 
 import { DETAIL_SEPARATOR } from '../gate-records/gate-records.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { readStandardRoot } from './read-standard-root.ts'
 import {
 	STANDARD_CONSULTED_DETAIL,
-	STANDARD_ENVIRONMENT_VARIABLE,
 	STANDARD_FILE,
 	STANDARD_LINE_NAME,
 	STANDARD_NOT_CONFIGURED_DETAIL,
@@ -49,8 +49,8 @@ export function readStandardLine(params: { folder: string }): CardGateLine {
 
 /** `DIALECTE_STANDARD` names a file or a folder that exists; a path that does not counts as none configured. */
 function isStandardConfigured(): boolean {
-	const path = process.env[STANDARD_ENVIRONMENT_VARIABLE]
-	return Boolean(path) && existsSync(path ?? '')
+	const path = readStandardRoot()
+	return path !== undefined && existsSync(path)
 }
 
 /** The folder's `standard.json`; undefined when there is none or it holds no record of a known state. */

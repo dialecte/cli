@@ -20,6 +20,7 @@ import { run as rules } from './commands/rules.ts'
 import { run as runScript } from './commands/run.ts'
 import { run as schema } from './commands/schema.ts'
 import { run as skills } from './commands/skills.ts'
+import { run as standard } from './commands/standard.ts'
 import { run as tdd } from './commands/tdd.ts'
 import { run as text } from './commands/text.ts'
 import { run as worktree } from './commands/worktree.ts'
@@ -39,6 +40,7 @@ export const COMMANDS = {
 	run: runScript,
 	fixture,
 	explain,
+	standard,
 	rules,
 	gate,
 	contrib,
