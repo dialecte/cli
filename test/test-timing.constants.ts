@@ -20,3 +20,11 @@ export const HELPER_SCENARIO_TIMEOUT = 240_000
  * second on a quiet machine and several on a loaded one; two minutes is far above both.
  */
 export const CLI_SURFACE_CASE_TIMEOUT = 120_000
+
+/**
+ * The bound of a case that writes a few small files in a scratch tree and runs a `standard` command over them
+ * (reads, hashes, writes an index folder; some load the installed dialecte's configuration): a guard against a
+ * hang, never a measure of speed. A case takes well under a second on a quiet machine; two minutes is far above
+ * a loaded one.
+ */
+export const STANDARD_DISK_CASE_TIMEOUT = 120_000

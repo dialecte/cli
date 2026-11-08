@@ -25,7 +25,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
 ```
-Discover    api  members  schema  explain
+Discover    api  members  schema  explain  standard
 Use         run  fixture  new
 Grow        lot
 Check       gate  tdd  rules  contrib  mutants
@@ -39,6 +39,7 @@ dialecte api find "<need>" # find a method by what you need; api show <path>: on
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
+dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -218,6 +219,87 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   `--vendor`, 2 when no vendor is known.
 
 Run outside a package (no `package.json`), each answers a usage error.
+
+## The standard index
+
+`dialecte standard` indexes the standards you hold on your machine and answers from them, in slices of whole
+lines with their original line numbers. The cli ships no standard and never copies one into a repository.
+
+**Where the standards are.** `DIALECTE_STANDARD` names one root folder holding one folder per standard; the
+folder's name, lowercased, is the standard's id, and its top-level, non-hidden `.md` files are the standard
+(subfolders are ignored; a symlink to a folder or a file counts). A file's id is `<standard id>/<file name
+without .md>`, lowercased.
+
+```
+$DIALECTE_STANDARD/
+  <standard id>/
+    <part>.md
+    <amendment>.md
+  <other standard id>/
+    <part>.md
+```
+
+Refused with exit 2, nothing built: `DIALECTE_STANDARD` not set, empty or naming a path that does not exist; a
+root that is a file, that holds `.md` files directly (they are named, with the expected layout) or that holds no
+standard folder; two folders,
+or two files of a folder, whose ids differ only by case (both named); a `--standard <id>` with no folder (the
+known ids named); the root, a standard folder or the cache inside a git work tree. A folder with no `.md` file
+is reported as `no indexable file` and skipped.
+
+**Where the index is.** In the cache only: `$XDG_CACHE_HOME/dialecte/standard/<standard id>/<manifest hash>/`
+(else `~/.cache/dialecte/...`), one folder per standard and per set of file contents (the manifest hash is the
+sha256 of the index format and each file's id and sha256). A folder is built into `<hash>.tmp-<pid>/` and renamed
+into place once complete: a file changed during the build aborts it (exit 1, the file named, nothing kept); a
+second builder reuses the first one's folder; a temporary folder left by a process that is gone is removed at the
+next build. A complete folder is reused, never rebuilt, unless `--rebuild` (the old folder is moved aside, the new
+one renamed in, then the old one removed: a reader never sees a half-removed index); the links to the vocabulary of the
+installed dialectes are a file of their own, written beside the rest when the selected dialectes change.
+Old folders are kept. While a build runs, a running line with its elapsed time goes to stderr on a terminal.
+
+**The vocabulary.** The tags, attributes and enumeration values of the dialectes installed where the command runs
+(every one, or the one `--package <name>` names) are exact names: case kept, never stemmed, then scored like a
+word (1 per clause or table, doubled in its heading or caption, weighted by the lines naming it). An attribute under three
+characters counts only as `@name`, `name=` or a table cell equal to it, an enumeration value under three
+characters only as a table cell equal to it; a name in lowercase letters only, from three characters, is searched
+as an ordinary word. The tags file is named by the hash of the selected dialectes' `name@version` list. `index`,
+`find` and `eval` print `vocabulary <name@version>[, ...]` (or `vocabulary none (no dialecte installed)`) as their
+first line, and `vocabulary: { packages }` in `--json`. A `--package` that is not installed answers exit 2 with
+the installed ones named.
+
+**Words.** Other words are searched by their stem: lowercased, the plural removed, then `-ied` and `-ying` to `-y`,
+a final `-ing` or `-ed` (with its doubled consonant) and a final `e` removed; common English, modal and question
+words are not searched. A word in capitals and digits with two capitals or more (an acronym) is kept from two
+characters, never split nor stemmed; its plural (the acronym and one lowercase `s`) is searched as the acronym.
+
+- `dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]`: builds or reuses the index of each standard
+  (or of `--standard <id>` only), then per standard `<id>  <n> files  built|reused in <time>  manifest <hash>`,
+  per file its lines, quality verdict, noise share, headings kept over candidates, tables and definitions, and
+  the lines repeated often enough to be a watermark (information only: nothing is dropped for being repeated).
+  Exit 1 when no selected folder holds a `.md` file.
+- `dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]`:
+  the slices that hold the terms, ranked over every selected standard (each slice names its file id): a header
+  `<file id>:<from>-<to>  <clause> <title>  score <s>`, then the normalised text. A slice starts at the first hit
+  of its clause's or table's densest run of terms (at most 60 lines holding the most distinct terms, weighted as
+  in the score) and runs to the last hit, 60 lines at most; a table starts at its caption when that run ends
+  within 60 lines of it. After the `--limit` (10)
+  direct slices come the clauses and tables they refer to, marked `[linked]`. `--about <Tag>` adds a tag of the
+  installed dialectes (an unknown one answers the closest; none installed is a usage error). Exit 1 when nothing
+  matches.
+- `dialecte standard show <file id>:<from>-<to> [--json]`: the normalised text of the logical lines overlapping
+  the range, each with its original lines. Exit 1 when the range holds only blank or dropped lines; 2 for a
+  malformed range, an unknown file id (the known ones named), a start after its end or an end after the file's
+  last line.
+- `dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]`: recall at 5 and at 10 of `find` over a gold
+  file you keep, one `{ "question": ..., "about"?: ..., "expected": [{ "file": "<file id>", "quote": ... }] }` per
+  line (other fields are ignored). The expected quotes of an item are alternatives: the item is found at the best
+  rank of any of them. A quote is matched in plain words: table pipes, `<br>` tags, `**`/`__` and a leading `#`
+  run are left out on both sides, then the text is normalised and case is ignored. Each missed item names its
+  closest quote and why (`ranked <r>`, `not found by find`, `not in the text`, `unknown file <id>`). Items with
+  no expected quote are counted apart. Exit 1 when no item has one; 2 for a gold file that cannot be read or a
+  malformed line (its number named).
+
+`show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
+`DIALECTE_STANDARD` when no standard is configured.
 
 ## MCP server
 
