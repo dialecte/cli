@@ -5,7 +5,8 @@
  * case, a file or a glob; a gone entry a file or a glob, never a case.
  * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
  * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`;
- * `lot close <hand-over name|index>...` by `runLotClose`.
+ * `lot close <hand-over name|index>...` by `runLotClose`; `lot start <brief.json>` by `startLot`, `lot status <id>`
+ * by `lotStatus`. A review rounds' verb takes `<id|folder>`: an id resolves to its lot folder first.
  * The usage is the map's lot section.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -15,15 +16,21 @@ import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
+import { REVIEW_ROUND_VALUE_OPTIONS } from '../lib/review-rounds/review-rounds.constants.ts'
+import { resolveLot } from '../lib/store/resolve-lot.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
 import { runLotClose } from './lot-close.ts'
+import { startLot } from './lot-start.ts'
+import { lotStatus } from './lot-status.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
 
+import type { DeclaredRenamedForm } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { ResolveMode } from '../lib/store/store.types.ts'
 import type { LotCaseEntry, LotCaseList, LotGoneEntry } from '../lib/tdd/tdd.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -35,6 +42,8 @@ export async function run(argv: string[]): Promise<void> {
 export function runLot(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
 	const [verb, ...words] = params.argv
 	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
@@ -113,12 +122,64 @@ function runReviewRoundVerb(params: {
 	words: string[]
 	now?: Date
 }): CommandResult | undefined {
-	const { cwd, words } = params
+	const { cwd } = params
 	const form = formOfLotVerb(params.verb)
 	if (!form) return undefined
+	const resolved = resolveFolderWord({
+		cwd,
+		words: params.words,
+		mode: form.command === 'record' ? 'write' : 'read',
+	})
+	if ('exitCode' in resolved) return resolved
+	const result = runResolvedVerb({ form, cwd, words: resolved.words, now: params.now })
+	if (resolved.note === undefined) return result
+	return { ...result, output: `${resolved.note}\n${result.output}` }
+}
+
+/** A review rounds' verb run on its words, the folder word already resolved. */
+function runResolvedVerb(params: {
+	form: DeclaredRenamedForm
+	cwd: string
+	words: string[]
+	now?: Date
+}): CommandResult {
+	const { form, cwd, words } = params
 	if (form.command === 'record')
 		return runRecordVerb({ verb: form.lotVerb, cwd, argv: words, now: params.now })
 	if (form.command === 'review')
 		return runDelta({ cwd, argv: words, now: params.now ?? new Date() })
 	return runRecap({ cwd, argv: words })
+}
+
+/**
+ * The words with the folder word (the first positional one) replaced by the folder its `<id|folder>` names: the lot
+ * folder of an id, else the folder as given; with the note of a folder that won over a lot of the same id, or the
+ * refusal of an ambiguous index. Words without a folder word are left to the verb's own usage.
+ */
+function resolveFolderWord(params: {
+	cwd: string
+	words: string[]
+	mode: ResolveMode
+}): { words: string[]; note?: string } | CommandResult {
+	const { words } = params
+	const position = firstPositionalIndex(words)
+	if (position === undefined) return { words }
+	const resolved = resolveLot({ argument: words[position], cwd: params.cwd, mode: params.mode })
+	if ('exitCode' in resolved) return resolved
+	const folder = 'lot' in resolved ? resolved.lot : resolved.folder
+	const replaced = words.map((word, index) => (index === position ? folder : word))
+	return 'note' in resolved && resolved.note !== undefined
+		? { words: replaced, note: resolved.note }
+		: { words: replaced }
+}
+
+/** Where the first word that is no option nor an option's value stands, as the review rounds' verbs read them. */
+function firstPositionalIndex(words: readonly string[]): number | undefined {
+	for (let index = 0; index < words.length; index++) {
+		const word = words[index]
+		if (word === '--') return index + 1 < words.length ? index + 1 : undefined
+		if (!word.startsWith('--')) return index
+		if (REVIEW_ROUND_VALUE_OPTIONS.includes(word.slice(2))) index++
+	}
+	return undefined
 }

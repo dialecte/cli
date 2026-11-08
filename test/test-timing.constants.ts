@@ -20,3 +20,11 @@ export const HELPER_SCENARIO_TIMEOUT = 240_000
  * second on a quiet machine and several on a loaded one; two minutes is far above both.
  */
 export const CLI_SURFACE_CASE_TIMEOUT = 120_000
+
+/**
+ * The bound of a case of the lot store's file system helpers (records published, folders built, a scratch
+ * repository's store found; a handful of file operations and at most one git setup): a guard against a hang, never
+ * a measure of speed. Such a case takes well under a second on a quiet machine and several seconds on a loaded one
+ * (the 30 s default has passed on a loaded machine for the neighbouring git cases); two minutes is far above both.
+ */
+export const STORE_CASE_TIMEOUT = 120_000

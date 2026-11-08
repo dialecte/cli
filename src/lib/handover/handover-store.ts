@@ -5,15 +5,20 @@
  * lots file's folder, or `--out`). The name is `<yyyy-mm-dd>-<branch slug>[-<n>]`; a folder registered already
  * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
 import { commonGitFolderOf } from '../git.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import {
+	entryPathOf,
+	isPathArgument,
+	readStoreEntries,
+	readStoreEntry,
+	registeredEntryOf,
+} from './handover-store-read.ts'
+import {
 	HANDOVER_STORE_FOLDER,
-	STORE_ENTRY_EXTENSION,
 	STORE_INDEX_ARGUMENT_PATTERN,
 	STORE_NAME_COUNTER_PATTERN,
 	STORE_NAME_DATE_PATTERN,
@@ -29,6 +34,8 @@ import type {
 	StoreEntry,
 	StoreNameRank,
 } from './handover.types.ts'
+
+export { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
 
 /** The store of the repository `root` belongs to (a linked worktree answers its main repository's). */
 export function handoverStoreOf(root: string): string {
@@ -79,9 +86,7 @@ export function entryOfArgument(params: {
 	store: string | undefined
 }): StoreEntry | undefined {
 	const { argument, store } = params
-	const isWord =
-		!argument.includes('/') && !argument.includes(sep) && argument !== '.' && argument !== '..'
-	if (!store || !isWord) return undefined
+	if (!store || isPathArgument(argument)) return undefined
 	const named = readStoreEntry({ store, name: argument })
 	if (named || !STORE_INDEX_ARGUMENT_PATTERN.test(argument)) return named
 	return newestOfIndex({ entries: readStoreEntries(store), index: Number(argument) })
@@ -97,27 +102,6 @@ function newestOfIndex(params: {
 			return entry.index !== undefined && Number(entry.index) === params.index
 		}),
 	)
-}
-
-/** Every entry of the store, by name; an entry that does not parse is left out. */
-export function readStoreEntries(store: string): StoreEntry[] {
-	if (!isFolder(store)) return []
-	return readdirSync(store)
-		.filter((file) => file.endsWith(STORE_ENTRY_EXTENSION))
-		.sort()
-		.flatMap(function entryOf(file): StoreEntry[] {
-			const entry = readStoreEntry({ store, name: file.slice(0, -STORE_ENTRY_EXTENSION.length) })
-			return entry ? [entry] : []
-		})
-}
-
-/** The entry registering `folder` (compared by real path), or undefined when it has none. */
-export function registeredEntryOf(params: {
-	store: string
-	folder: string
-}): StoreEntry | undefined {
-	const folder = realPathOf(params.folder)
-	return readStoreEntries(params.store).find((entry) => realPathOf(entry.folder) === folder)
 }
 
 /** The name of `folder` in the store of the repository `root`; undefined when it has no entry there. */
@@ -198,27 +182,6 @@ function newestByName(entries: readonly StoreEntry[]): StoreEntry | undefined {
 	}, undefined)
 }
 
-/** The entry `name` of `store`, or undefined when there is none or it does not parse. */
-function readStoreEntry(params: { store: string; name: string }): StoreEntry | undefined {
-	const path = entryPathOf(params)
-	if (!existsSync(path)) return undefined
-	try {
-		const entry = JSON.parse(readFileSync(path, 'utf8')) as Partial<HandoverStoreEntry>
-		if (typeof entry.folder !== 'string' || typeof entry.branch !== 'string') return undefined
-		return {
-			name: params.name,
-			folder: entry.folder,
-			branch: entry.branch,
-			worktree: String(entry.worktree ?? ''),
-			...(typeof entry.index === 'string' && { index: entry.index }),
-			written: String(entry.written ?? ''),
-			state: entry.state ?? 'pending',
-		}
-	} catch {
-		return undefined
-	}
-}
-
 /** Creates the entry `name`, never over one: false when it exists already (taken by another writer). */
 function createStoreEntry(params: {
 	store: string
@@ -243,10 +206,6 @@ function writeStoreEntry(params: { store: string; name: string; entry: HandoverS
 	writeFileSync(entryPathOf(params), entryText(params.entry))
 }
 
-function entryPathOf(params: { store: string; name: string }): string {
-	return join(params.store, `${params.name}${STORE_ENTRY_EXTENSION}`)
-}
-
 /**
  * Where a name sorts among the names of its branch: its date, and its counter after the branch's slug (1
  * when it has none). A name of another shape sorts before every dated one.
@@ -269,12 +228,4 @@ function localDate(now: Date): string {
 	const month = String(now.getMonth() + 1).padStart(2, '0')
 	const day = String(now.getDate()).padStart(2, '0')
 	return `${now.getFullYear()}-${month}-${day}`
-}
-
-function isFolder(path: string): boolean {
-	try {
-		return statSync(path).isDirectory()
-	} catch {
-		return false
-	}
 }

@@ -4,6 +4,7 @@ import {
 } from '../../../test/command-families.constants.ts'
 import { COMMANDS } from '../../cli.constants.ts'
 import { COMMAND_MAP } from './command-map.constants.ts'
+import { renderCommandSection } from './render-help.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -95,6 +96,35 @@ describe('the command map', () => {
 		expect(lot.usage).toContain('dialecte lot close <hand-over name|index>... [--json]')
 		expect(notes.some((note) => note.startsWith('close - '))).toBe(true)
 	})
+
+	const LOT_NEW_LINES = [
+		'dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--json]',
+		'dialecte lot status <id> [--json]',
+	]
+	for (const line of LOT_NEW_LINES)
+		it(`the lot section lists ${line}, in the map and in lot --help`, () => {
+			expect(COMMAND_MAP.lot.usage).toContain(line)
+			expect(renderCommandSection({ name: 'lot', entry: COMMAND_MAP.lot })).toContain(line)
+		})
+
+	for (const verb of ['start', 'status'])
+		it(`the lot section notes ${verb} with a ${verb} - line`, () => {
+			expect((COMMAND_MAP.lot.notes ?? []).some((note) => note.startsWith(`${verb} - `))).toBe(true)
+		})
+
+	const REVIEW_ROUND_LINES = [
+		'dialecte lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>',
+		'dialecte lot decide <id|folder> <id> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',
+		'dialecte lot snapshot <id|folder> --round <n>',
+		'dialecte lot choice <id|folder> --by <who> <decision>',
+		'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>',
+		'dialecte lot delta <id|folder> --round <n> [--worktree] [--json]',
+		'dialecte lot recap <id|folder>',
+	]
+	for (const line of REVIEW_ROUND_LINES)
+		it(`the review-round line says <id|folder>: ${line}`, () => {
+			expect(COMMAND_MAP.lot.usage).toContain(line)
+		})
 
 	it('the worktree section names the node_modules pool and the trash, and no longer says add copies node_modules on write only', () => {
 		const worktree = COMMAND_MAP.worktree

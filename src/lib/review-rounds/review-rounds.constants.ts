@@ -67,6 +67,11 @@ export const DELTA_USAGE =
 export const FINDING_OPTIONS = ['round', 'severity', 'at'] as const
 export const ROUND_OPTIONS = ['round'] as const
 
+/** Every option a review rounds' verb takes followed by a value: what skips to the folder word, the first positional one. */
+export const REVIEW_ROUND_VALUE_OPTIONS: readonly string[] = [
+	...new Set([...FINDING_OPTIONS, ...CHOICE_OPTIONS, ...ROUND_OPTIONS]),
+]
+
 /** The flags `lot delta` takes, without the dashes. */
 export const DELTA_FLAGS = ['worktree', 'json'] as const
 

@@ -42,10 +42,12 @@ dialecte explain <code>    # what an error or diagnostic code means, when it is 
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
+dialecte lot start <brief.json>   # a lot from its brief: the lot folder in the store, the numbered worktree, .dialecte/lot
+dialecte lot status <id>   # its state derived from the records, the checks, the exact next command; reads only
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
-dialecte lot finding|decide|snapshot|choice|standard <folder> ...   # a lot's review rounds, in its hand-over folder
-dialecte lot delta <folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
-dialecte lot recap <folder>   # the pull request's expandable part, built from the hand-over's records only
+dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
+dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
+dialecte lot recap <id|folder>   # the pull request's expandable part, built from the hand-over's records only
 dialecte lot close <name|index>   # a finished lot: node_modules to the pool, its worktree to the trash
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
 dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
@@ -928,6 +930,33 @@ the answer.
   (`lockfile`, `notChecked`, `problems`: `package`, `problem`; `command` when there are problems). The
   exit code stays 0 whatever the links and the lockfile say: the worktree exists, and its card says what
   to run.
+- `dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--json]` starts a lot from its brief
+  (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`).
+  Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
+  `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
+  a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it, no
+  overlap with an open lot of the same store. Then it claims the next worktree index, publishes the lot folder
+  `<git common folder>/dialecte-lots/<index>-<repository>-<branch tail>/` (the brief, a copy of the plan, the
+  first transition, `identity.json` last; every record written once, read-only), makes the numbered worktree at
+  the recorded base commit and its `.dialecte/lot` link to the lot folder. The store is appended to the user's
+  store list (`$XDG_STATE_HOME/dialecte/lot-stores`, else `~/.local/state/dialecte/lot-stores`), refused when
+  that list sits inside a git work tree. `--dry-run` runs the checks (the store-list refusal included, no
+  hard-link probe) and names the lot, writing and claiming nothing. A worktree that cannot be made leaves the lot
+  `failed` (exit 1), nothing removed, with `next: dialecte lot stop <full name> --reason <text>`; a link that
+  cannot be made leaves the lot working (exit 0, a `note:` line, `notes` in JSON; `lot status` reports the link
+  missing). Every `--json` exit is JSON: `{ lot, folder, worktree, runner, notes, next }` started,
+  `{ lot, folder, state, reason, next }` failed, `{ error, next: null }` before any lot exists.
+- `dialecte lot status <id> [--json]` derives the lot's state from its records (`working`, `input-required`,
+  `ready`, `committed`, `canceled`, `failed`), with the worktree and link checks and the exact next command (the
+  text form adds an `also:` line when there is one, five lines at most); it
+  reads files only, runs no git and writes nothing. Exit 0 for a lot found, 2 for an unknown or ambiguous id. An
+  `<id>` is an index (`171` = `0171`), a full name, a lot folder or `.dialecte/lot`; a word naming an existing
+  folder is that folder. The review rounds' verbs take `<id|folder>` the same way (a write needs an index
+  unique across every store of the list), and a lot folder is accepted as their hand-over folder although it
+  sits in the git folder.
+- `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
+  included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
+  folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).
 - `dialecte lot exempt <reason>`, `lot accept <case> <reason>`, `lot revised <case|file|glob> <reason>`,
   `lot gone <file|glob> <reason>` write the lot declaration `.dialecte/lot.json` at the package root (the
   nearest package.json above the current folder) as tab-indented JSON, keeping what it holds; the same
@@ -941,8 +970,8 @@ the answer.
   references of what was read stay in the findings ledger. Another state, or no note, is a usage error
   (exit 2); a folder inside a repository is refused as below.
 - `dialecte lot finding`, `decide`, `snapshot`, `choice` and `delta` keep a lot's review rounds in its
-  hand-over folder (`_commit-plan/<topic>-<date>/`), which stays outside every repository: each refuses a
-  folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
+  lot folder, or in a hand-over folder (`_commit-plan/<topic>-<date>/`) that stays outside every repository:
+  each refuses any other folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
   words after it are taken as they are, so a finding or a reason may start with `--`.
   - `lot finding <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
     appends the row `| R<n>-<k> | <n> | <severity> | <file:line> | <finding> | open |` to

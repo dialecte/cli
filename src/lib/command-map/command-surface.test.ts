@@ -18,6 +18,8 @@ const ZERO_CONFIG_FLAGS = [
 ]
 
 const LOT_VERBS = [
+	'start',
+	'status',
 	'exempt',
 	'accept',
 	'revised',
@@ -117,7 +119,7 @@ describe('commandSurfaceOf', () => {
 })
 
 describe('dialecte --help --json, verbs and flags of the real map', () => {
-	it('lot → its 13 verbs, exactly, in the map order', () => {
+	it('lot → its 15 verbs, exactly, in the map order (start and status first)', () => {
 		expect(commandOf('lot')?.verbs).toEqual(LOT_VERBS)
 	})
 
@@ -198,7 +200,7 @@ describe('dialecte <command> --help --json', () => {
 		])
 	})
 
-	it('lot → its one command carries its 13 verbs', () => {
+	it('lot → its one command carries its 15 verbs', () => {
 		expect(
 			JSON.parse(renderCommandJson({ name: 'lot', entry: COMMAND_MAP.lot })).commands[0].verbs,
 		).toEqual(LOT_VERBS)

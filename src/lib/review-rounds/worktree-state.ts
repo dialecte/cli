@@ -7,6 +7,7 @@ import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { readGit } from '../git.ts'
+import { lotFolderOf } from '../store/lot-folder.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { GITLINK_MODE } from './review-rounds.constants.ts'
 
@@ -24,9 +25,11 @@ export function workTreeTopOf(folder: string): string | undefined {
 
 /**
  * Why a hand-over folder is refused: it (or its nearest existing ancestor) is inside a git folder or a
- * git work tree. Undefined when it stands outside every repository.
+ * git work tree. Undefined when it stands outside every repository, or is a lot folder (the folder rule).
  */
 export function handoverFolderRefusal(folder: string): string | undefined {
+	// a lot folder is the lot's hand-over folder: decided from the path and its entries, before any git process
+	if (lotFolderOf({ folder })) return undefined
 	let existing = folder
 	while (!existsSync(existing) && dirname(existing) !== existing) existing = dirname(existing)
 	const lookFrom = statSync(existing).isDirectory() ? existing : dirname(existing)

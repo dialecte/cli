@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { runLot } from './lot.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -183,9 +184,7 @@ describe('dialecte lot', { timeout: 60_000 }, () => {
 
 		expect(runLot({ cwd: root, argv: ['bless', 'x'] })).toEqual({
 			exitCode: 2,
-			output: expect.stringMatching(
-				/^lot: exempt <reason> \| accept <case> <reason> \| revised <case\|file\|glob> <reason>/,
-			),
+			output: renderLotUsage(),
 		})
 	})
 })

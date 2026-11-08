@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path'
 
 import { createScratchRepository, temporaryFolder } from '../../test/scratch-repository.ts'
+import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { handoverFolderRefusal } from '../lib/review-rounds/worktree-state.ts'
 import { runLot } from './lot.ts'
 import { runRecord } from './record.ts'
@@ -177,15 +178,18 @@ describe('dialecte record choice', { timeout: 60_000 }, () => {
 	})
 
 	it('the lot usage and the help name the new verb', () => {
+		const declared =
+			COMMAND_MAP.lot.usage.find((line) => line.startsWith('dialecte lot choice ')) ?? ''
+
 		expect(runLot({ cwd: handoverFolder(), argv: [] })).toEqual({
 			exitCode: 2,
-			output: expect.stringContaining('choice <folder> --by <who> <decision>'),
+			output: expect.stringContaining(declared.replace('dialecte lot ', '')),
 		})
 		expect(
 			spawnSync(process.execPath, [join(import.meta.dirname, '..', 'cli.ts'), 'lot', '--help'], {
 				encoding: 'utf8',
 				cwd: handoverFolder(),
 			}).stdout,
-		).toContain('dialecte lot choice <folder> --by <who> <decision>')
+		).toContain(declared)
 	})
 })

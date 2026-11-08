@@ -77,6 +77,19 @@ export function currentBranchOf(root: string): string {
 	return readGit({ root, args: ['rev-parse', '--abbrev-ref', 'HEAD'] }).trim()
 }
 
+/** The branch exists as a ref of the repository `root` (`refs/heads/<branch>`). */
+export function branchExists(params: { root: string; branch: string }): boolean {
+	try {
+		readGit({
+			root: params.root,
+			args: ['show-ref', '--verify', '--quiet', `refs/heads/${params.branch}`],
+		})
+		return true
+	} catch {
+		return false
+	}
+}
+
 /** The main checkout of the repository `root` belongs to (itself when it is not a linked worktree). */
 export function mainCheckoutOf(root: string): string {
 	const common = readGit({
