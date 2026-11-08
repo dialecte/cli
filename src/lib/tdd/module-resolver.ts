@@ -1,16 +1,19 @@
 /**
  * Resolves what a test file imports to a file of the package: relative paths, the package's tsconfig
  * `paths` (every tsconfig of the package root, `extends` followed), and vite's `resolve.alias` (a string,
- * or the path literal of a call such as `fileURLToPath(new URL('./src', import.meta.url))`). A bare
+ * or the path literal of a call such as `fileURLToPath(new URL('./src', import.meta.url))`), a Vite import
+ * query or fragment (`?worker&url`, `?raw`, `#part`) left out of the file it names; and an `import.meta.glob`
+ * pattern to a glob over the package's files (`resolveGlob`). A bare
  * package name is a dependency, never test code; a specifier that looks local (`#`, `~/`, `@/`, a paths
  * or alias prefix) and resolves nowhere is answered as unresolved.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } from 'node:path'
 
 import {
 	LOCAL_SPECIFIER_PATTERN,
 	MODULE_EXTENSIONS,
+	SPECIFIER_QUERY_PATTERN,
 	TEST_CONFIG_FILES,
 	TSCONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
@@ -26,8 +29,32 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 		Object.keys(options.paths ?? {}).map((key) => key.replace(/\*.*$/, '')),
 	)
 	const aliases = readViteAliases(root)
-	return function resolveModule({ specifier, from }) {
-		const absoluteFrom = join(root, from)
+	/** The aliases whose prefix the specifier (or glob) starts with, in their order. */
+	function aliasesOfSpecifier(specifier: string): ModuleAlias[] {
+		return aliases.filter(
+			(alias) => specifier === alias.find || specifier.startsWith(`${alias.find}/`),
+		)
+	}
+	/** Vite's glob forms: relative to the importing file, `/` for the package root, or an alias prefix. */
+	function resolveGlob(params: { pattern: string; from: string }): string | undefined {
+		const { pattern } = params
+		const [alias] = aliasesOfSpecifier(pattern)
+		const absolute = pattern.startsWith('.')
+			? join(root, dirname(params.from), pattern)
+			: pattern.startsWith('/')
+				? join(root, pattern)
+				: alias
+					? join(alias.replacement, pattern.slice(alias.find.length))
+					: undefined
+		if (absolute === undefined) return undefined
+		const glob = relative(root, absolute).split(sep).join(posix.sep)
+		return glob.startsWith('..') ? undefined : glob
+	}
+	return Object.assign(resolveModule, { resolveGlob })
+	function resolveModule(params: { specifier: string; from: string }): ModuleResolution {
+		// the file a Vite query or fragment names (`./x.worker?worker&url`): the query is no part of its path
+		const specifier = params.specifier.replace(SPECIFIER_QUERY_PATTERN, '')
+		const absoluteFrom = join(root, params.from)
 		if (specifier.startsWith('.') || isAbsolute(specifier))
 			return localOrUnresolved({ root, path: resolve(dirname(absoluteFrom), specifier) })
 		for (const options of compilerOptions) {
@@ -37,18 +64,18 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 				if (local.kind === 'local') return local
 			}
 		}
-		for (const alias of aliases)
-			if (specifier === alias.find || specifier.startsWith(`${alias.find}/`)) {
-				const local = localOrUnresolved({
-					root,
-					path: join(alias.replacement, specifier.slice(alias.find.length)),
-				})
-				if (local.kind === 'local') return local
-			}
+		const matching = aliasesOfSpecifier(specifier)
+		for (const alias of matching) {
+			const local = localOrUnresolved({
+				root,
+				path: join(alias.replacement, specifier.slice(alias.find.length)),
+			})
+			if (local.kind === 'local') return local
+		}
 		const looksLocal =
 			LOCAL_SPECIFIER_PATTERN.test(specifier) ||
 			pathPrefixes.some((prefix) => prefix && specifier.startsWith(prefix)) ||
-			aliases.some((alias) => specifier === alias.find || specifier.startsWith(`${alias.find}/`))
+			matching.length > 0
 		return looksLocal ? { kind: 'unresolved' } : { kind: 'package' }
 	}
 }

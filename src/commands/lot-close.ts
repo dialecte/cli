@@ -31,6 +31,7 @@ export function runLotClose(params: {
 	}
 	const results = closeHandovers({
 		cwd: main,
+		runFrom: params.cwd,
 		names,
 		now: params.now ?? new Date(),
 		spawner: params.spawner ?? spawnDetached,

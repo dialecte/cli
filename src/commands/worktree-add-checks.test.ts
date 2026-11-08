@@ -313,6 +313,82 @@ describe(
 	},
 )
 
+describe(
+	'worktree add: workspace links of node_modules',
+	{ timeout: SCRATCH_WORKSPACE_TIMEOUT },
+	() => {
+		it('a link reaching inside the main checkout (node_modules/@s/pkg → ../../packages/pkg) → the copy keeps it relative, it reaches the new checkout’s own packages/pkg', () => {
+			const { workspace, cli } = createWorkspace({})
+			writeFiles({ root: cli, files: { 'packages/pkg/index.js': 'module.exports = 1\n' } })
+			git({ root: cli, args: ['add', '-A'] })
+			git({ root: cli, args: ['commit', '-q', '-m', 'feat: a workspace package'] })
+			mkdirSync(join(cli, 'node_modules', '@s'), { recursive: true })
+			symlinkSync('../../packages/pkg', join(cli, 'node_modules', '@s', 'pkg'))
+
+			const result = add({ workspace, cli, branch: 'feat/thing', json: true })
+
+			const { worktree } = JSON.parse(result.output) as { worktree: string }
+			const link = join(worktree, 'node_modules', '@s', 'pkg')
+			expect(result.exitCode).toBe(0)
+			expect(readlinkSync(link)).toBe('../../packages/pkg')
+			expect(realpathSync(link)).toBe(realpathSync(join(worktree, 'packages', 'pkg')))
+		})
+	},
+)
+
+describe(
+	'worktree add: a repository argument that is no repository',
+	{ timeout: SCRATCH_WORKSPACE_TIMEOUT },
+	() => {
+		/** `worktree add <repository> feat/thing` run from `cwd`; a throw comes back as the result it left. */
+		function addFrom(params: { cwd: string; repository: string }): {
+			exitCode: number | undefined
+			output: string
+		} {
+			try {
+				return runWorktreeAdd({
+					argv: [params.repository, 'feat/thing'],
+					cwd: params.cwd,
+					now: new Date('2026-11-01T10:00:00Z'),
+					colour: false,
+				})
+			} catch (error) {
+				return {
+					exitCode: undefined,
+					output: `threw: ${error instanceof Error ? error.message : String(error)}`,
+				}
+			}
+		}
+
+		it('a path that does not exist (the repository named from inside itself) → exit 2, one line naming the resolved path and saying it is no folder', () => {
+			const { cli } = createWorkspace({})
+
+			const result = addFrom({ cwd: cli, repository: 'cli' })
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).not.toContain('\n')
+			expect(
+				[join(cli, 'cli'), join(realpathSync(cli), 'cli')].some((path) =>
+					result.output.includes(path),
+				),
+			).toBe(true)
+			expect(result.output).toMatch(/is no folder/)
+		})
+
+		it('a folder outside any git repository → exit 2, one line saying it is in no git repository', () => {
+			const { workspace } = createWorkspace({})
+			const plain = temporaryFolder('dialecte-no-repository-')
+
+			const result = addFrom({ cwd: workspace, repository: plain })
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).not.toContain('\n')
+			expect([plain, realpathSync(plain)].some((path) => result.output.includes(path))).toBe(true)
+			expect(result.output).toMatch(/in no git repository/)
+		})
+	},
+)
+
 function escapeRegExp(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

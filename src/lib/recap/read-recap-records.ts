@@ -104,8 +104,7 @@ function readCommits(params: {
 		? revisionOf({ root, revision: `${lotsFile.head}^{commit}` })
 		: undefined
 	const tip = head ? revisionOf({ root, revision: `refs/heads/${lotsFile.branch}` }) : undefined
-	const found =
-		head && tip ? findCommittedLots({ root, head, tip, lots, compareContent: false }) : undefined
+	const found = head && tip ? findCommittedLots({ root, head, tip, lots }) : undefined
 	const branchRewritten = found?.foreign !== undefined
 	const commits = branchRewritten ? [] : (found?.commits ?? [])
 	return {

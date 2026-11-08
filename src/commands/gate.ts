@@ -52,7 +52,7 @@ import {
 	GATE_STATE_CHANGED_LINE,
 	STEP_DETAIL_INDENT,
 } from '../lib/gate/gate-config.constants.ts'
-import { resolveGateSteps } from '../lib/gate/gate-config.ts'
+import { renderAbsentDerivedLines, resolveGateSteps } from '../lib/gate/gate-config.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from '../lib/gate/step-counts.ts'
 import { renderStepLine } from '../lib/gate/step-line.ts'
@@ -210,6 +210,9 @@ export async function runGate(params: {
 		})
 		results.push(...stepResults)
 	}
+	// a derived step the package has no script for: one skip line, no step of the record
+	const absentLines = mode === 'full' ? renderAbsentDerivedLines({ packageJson, steps }) : []
+	if (progress) for (const line of absentLines) live?.writeLine(line)
 	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
 	const { stored, changedWhileRunning } = recordCheckedRun({
 		root: cwd,
@@ -246,6 +249,7 @@ export async function runGate(params: {
 					// the steps after the tdd step are the record's: said once, before them
 					...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
 				]),
+			...(params.live?.tty ? [] : absentLines),
 			...notStored,
 			failed
 				? `gate --${mode}: failed at ${failed.step.name}`

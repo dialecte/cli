@@ -17,6 +17,7 @@ import {
 	hashChangedTestCode,
 	listChangedTestFiles,
 	listDeletedTestFiles,
+	listMovedTestFiles,
 	readAtBase,
 } from './tdd-files.ts'
 import { UNTITLED_CALL_GONE } from './tdd.constants.ts'
@@ -41,10 +42,16 @@ export async function readTddState(params: {
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return gone
 	const findings = findDeletedCases({ root, base, ledger, changed, gone })
-	if (changed.length === 0) return { cases: [], unfrozen, findings, unlisted: [] }
+	// a test file moved with its bytes: its cases listed, unchanged, with no receipt to hold
+	const moved = listMovedTestFiles({ root, base })
+	// in path order, as the changed files are listed
+	const listed = [...changed, ...moved].sort((one, other) =>
+		one.file < other.file ? -1 : one.file > other.file ? 1 : 0,
+	)
+	if (listed.length === 0) return { cases: [], unfrozen, findings, unlisted: [] }
 	const modules = await runTestCases({
 		root,
-		files: changed.map((file) => file.file),
+		files: listed.map((file) => file.file),
 		filter: 'collect',
 	})
 	if ('failure' in modules) return modules
@@ -52,8 +59,9 @@ export async function readTddState(params: {
 		root,
 		packageJson: params.packageJson,
 		modules,
-		files: changed,
+		files: listed,
 	})
+	const movedFiles = new Set(moved.map((file) => file.file))
 	const resolveModule = createModuleResolver({ root })
 	const dependencies = new Map<string, string[]>()
 	/** The test code a test file depends on, read once per file. */
@@ -73,6 +81,7 @@ export async function readTddState(params: {
 	return {
 		cases: cases.map(function statusLine(testCase) {
 			const id = { file: testCase.file, name: testCase.name, project: testCase.project }
+			if (movedFiles.has(testCase.file)) return { ...id, status: 'unchanged' as const, flags: [] }
 			return {
 				...id,
 				status: caseStatusOf({

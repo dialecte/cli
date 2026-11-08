@@ -21,6 +21,17 @@ export const DEFAULT_GATE_STEPS: Readonly<Record<'fast' | 'full', readonly GateS
 	],
 }
 
+/**
+ * Steps `gate --full` and `contrib` derive from the package's scripts, after their own: a check a publish
+ * workflow runs (core's runs `type-narrowing`). Added when the package has the script and no step runs it.
+ */
+export const DERIVED_STEPS: readonly GateStep[] = [
+	{ name: 'type-narrowing', run: 'npm run type-narrowing' },
+]
+
+/** Why a step running an npm script the package lacks is skipped. */
+export const NO_NPM_SCRIPT_REASON = 'no npm script "{script}"'
+
 /** `npm run <script>` at the start of a step: a package without that script skips the step. */
 export const NPM_RUN_PATTERN = /^npm run ([^\s;&|]+)/
 

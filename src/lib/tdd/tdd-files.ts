@@ -1,14 +1,15 @@
 /**
  * The files `dialecte tdd` reasons about: the hashes a receipt records (a test file by its tokens, so a
  * formatter pass changes nothing; the production files, everything not test code and not generated, by
- * their bytes), the test code of the change since its base (test files, helpers, fixtures, snapshots)
- * and the ledger in the worktree's git folder.
+ * their bytes), the test code of the change since its base (test files, helpers, fixtures, snapshots;
+ * a file moved with its bytes is no change) and the ledger in the worktree's git folder.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { gitFolderOf, listRepositoryFiles, readGit } from '../git.ts'
+import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { readHygieneBaseline } from '../worktree/hygiene.ts'
 import { DEFAULT_BASE_BRANCH, LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import {
@@ -20,6 +21,8 @@ import {
 	SNAPSHOT_FILE_PATTERN,
 	SOURCE_FILE_PATTERN,
 	TDD_LEDGER_FILE,
+	TEST_CODE_KIND,
+	TEST_FILE_KIND,
 	TEST_FILE_PATTERN,
 	TEST_FOLDER_PATTERN,
 } from './tdd.constants.ts'
@@ -205,18 +208,36 @@ export function hashChangedTestCode(params: {
 	base: string
 	packageJson: PackageJson
 }): Map<string, string> {
+	const moved = listMovedFiles({
+		...params,
+		kindOf: function testCodeKind(file) {
+			if (!isPackageTestCode({ file, packageJson: params.packageJson })) return undefined
+			return TEST_FILE_PATTERN.test(file) ? TEST_FILE_KIND : TEST_CODE_KIND
+		},
+	})
 	return new Map(
 		listChangedSince(params)
-			.filter((file) => isPackageTestCode({ file, packageJson: params.packageJson }))
+			.filter(
+				(file) => !moved.has(file) && isPackageTestCode({ file, packageJson: params.packageJson }),
+			)
 			.map((file) => [file, hashTestCode({ root: params.root, file })]),
 	)
 }
 
-/** The test files changed since the base (new ones included, deleted ones left out), with both texts. */
+/** A test file's kind for a move: a test file moves only to a test file. */
+function testFileKind(file: string): string | undefined {
+	return TEST_FILE_PATTERN.test(file) ? TEST_FILE_KIND : undefined
+}
+
+/**
+ * The test files changed since the base (new ones included, deleted ones left out), with both texts; a test
+ * file moved with its bytes as at the base is no change (`listMovedTestFiles`).
+ */
 export function listChangedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
 	const { root, base } = params
+	const moved = listMovedFiles({ ...params, kindOf: testFileKind })
 	return listChangedSince(params)
-		.filter((file) => TEST_FILE_PATTERN.test(file))
+		.filter((file) => TEST_FILE_PATTERN.test(file) && !moved.has(file))
 		.map((file) => ({
 			file,
 			text: readFileSync(join(root, file), 'utf8'),
@@ -224,14 +245,83 @@ export function listChangedTestFiles(params: { root: string; base: string }): Ch
 		}))
 }
 
-/** The test files of the base that the change deletes. */
+/** The test files moved since the base with their bytes (R100): their text is the base text of the old path. */
+export function listMovedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
+	return [...listMovedFiles({ ...params, kindOf: testFileKind }).keys()]
+		.sort()
+		.map(function movedTestFile(file) {
+			const text = readFileSync(join(params.root, file), 'utf8')
+			return { file, text, baseText: text }
+		})
+}
+
+/** The test files of the base that the change deletes (a test file moved with its bytes is not deleted). */
 export function listDeletedTestFiles(params: { root: string; base: string }): string[] {
+	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKind }).values())
+	return listDeletedSince(params).filter(
+		(file) => TEST_FILE_PATTERN.test(file) && !sources.has(file),
+	)
+}
+
+/**
+ * The files moved since the base with their bytes (git's R100), new path → old path: each new file (added or
+ * untracked) holding the very bytes a file the change deletes held at the base, each deleted file paired once,
+ * and only within one kind (`kindOf`: undefined leaves a file out), so a rename that turns a test file on or
+ * off is no move. An empty file holds nothing to move: never paired.
+ */
+export function listMovedFiles(params: {
+	root: string
+	base: string
+	kindOf: (file: string) => string | undefined
+}): Map<string, string> {
+	const { root, base, kindOf } = params
+	const deleted = listDeletedSince(params).filter((file) => kindOf(file) !== undefined)
+	if (deleted.length === 0) return new Map()
+	const committed = readGit({
+		root,
+		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=A', base],
+	})
+	const untracked = readGit({ root, args: ['ls-files', '--others', '--exclude-standard'] })
+	const added = [
+		...new Set(
+			`${committed}\n${untracked}`
+				.split('\n')
+				.filter(
+					(file) =>
+						file &&
+						kindOf(file) !== undefined &&
+						existsSync(join(root, file)) &&
+						lstatSync(join(root, file)).size > 0,
+				),
+		),
+	].sort()
+	if (added.length === 0) return new Map()
+	const baseBlobs = readGit({
+		root,
+		args: ['rev-parse', ...deleted.map((file) => `${base}:./${file}`)],
+	}).split('\n')
+	const addedBlobs = gitBlobIds({ root, files: added })
+	const sourcesByKey = new Map<string, string[]>()
+	deleted.forEach(function index(file, position) {
+		const key = `${kindOf(file)}:${baseBlobs[position]}`
+		sourcesByKey.set(key, [...(sourcesByKey.get(key) ?? []), file])
+	})
+	const moves = new Map<string, string>()
+	added.forEach(function pair(file, position) {
+		const source = sourcesByKey.get(`${kindOf(file)}:${addedBlobs[position]}`)?.shift()
+		if (source !== undefined) moves.set(file, source)
+	})
+	return moves
+}
+
+/** The files of the base the change deletes, relative to the root. */
+function listDeletedSince(params: { root: string; base: string }): string[] {
 	return readGit({
 		root: params.root,
 		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=D', params.base],
 	})
 		.split('\n')
-		.filter((file) => file && TEST_FILE_PATTERN.test(file))
+		.filter(Boolean)
 }
 
 /** The file as the base holds it; undefined when the base has no such file. */

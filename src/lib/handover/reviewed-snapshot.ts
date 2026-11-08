@@ -27,6 +27,11 @@ export function differingSnapshotLines(params: {
 	})
 }
 
+/** The reviewed sha256 of each file of the snapshot, by its repository path. */
+export function reviewedHashes(snapshotLines: readonly string[]): Map<string, string> {
+	return new Map(snapshotLines.map((line) => [snapshotPathOf(line), line.split('  ')[0]]))
+}
+
 /** The repository path a snapshot line names (a path may hold two spaces itself). */
 export function snapshotPathOf(line: string): string {
 	return line.split('  ').slice(1).join('  ')

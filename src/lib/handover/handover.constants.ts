@@ -110,6 +110,17 @@ export const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/
 /** The lock whose packages `node_modules` must hold before a commit that stages a change of it. */
 export const PACKAGE_LOCK_FILE = 'package-lock.json'
 
+/** The guard that finds the lots already committed on top of the recorded HEAD. */
+export const HEAD_GUARD_NAME = 'head'
+
+/** The head guard's detail when every lot is on HEAD as reviewed: the guards after it are not run. */
+export const ALREADY_COMMITTED_DETAIL =
+	'every lot is committed already: the hand-over is already committed, the guards after head are not run'
+
+/** `lot close` run from inside the worktree it would close: kept, never moved from under its own feet. */
+export const CLOSE_FROM_INSIDE =
+	'lot close runs from inside {worktree}: run it from another folder, such as cd {main}'
+
 /**
  * What installs the staged lock's packages exactly (the lock is never rewritten), running no install script:
  * a script (the root's `prepare`, a package's `postinstall`) could change git config, hooks or any file.

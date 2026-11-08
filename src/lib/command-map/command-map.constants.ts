@@ -127,6 +127,30 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: [],
 		example: 'dialecte explain CONCURRENT_TRANSACTION',
 	},
+	standard: {
+		family: 'Discover',
+		summary:
+			'Index and search the standards kept on this machine (DIALECTE_STANDARD: one folder per standard); the index lives in the cache',
+		usage: [
+			'dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]',
+			'dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]',
+			'dialecte standard show <file id>:<from>-<to> [--json]',
+			'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]',
+		],
+		notes: [
+			'the vocabulary - the tags, attributes and enumeration values of the installed dialectes (--package <name>: that one only); index, find and eval print it first',
+			'index - builds (or reuses) the index of each standard folder, prints its quality per file',
+			'find - the ranked slices of whole lines that hold the terms, then the clauses they refer to [linked]; --about <Tag> adds a tag of the installed dialectes',
+			'show - the normalised text of a range of original lines; a file id is <standard id>/<file name without .md>',
+			'eval - recall at 5 and 10 of find over a local gold file of { question, about?, expected: [{ file, quote }] } lines; the expected quotes are alternatives',
+			'the standard is never copied into a repository: its index is in $XDG_CACHE_HOME/dialecte (else ~/.cache/dialecte)',
+		],
+		exitCodes: [
+			'1  index: no indexable file · find: nothing matched · show: only blank or dropped lines · eval: no item with an expected quote · a file changed during the build',
+			'2  usage · no standard configured · a root or cache inside a git work tree · colliding ids · an unknown standard, file, --package or --about tag',
+		],
+		example: 'dialecte standard find "data object" --limit 5',
+	},
 	run: {
 		family: 'Use',
 		summary:
@@ -199,7 +223,7 @@ export const COMMAND_MAP: CommandMap = {
 			"standard - writes <folder>/standard.json (state, note, time), read by the card's standard line",
 			'delta - per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a throwaway worktree holding round n-1 and prints its removal command',
 			"recap - the <details> part of a pull request from the hand-over's records only; writes nothing",
-			"close - for a committed or abandoned hand-over of the registry (by name or index): its worktree moved to .worktrees/_trash/ and removed in the background, its node_modules parked in .worktrees/_pool-<repository>-<n>; kept with why when it is the main checkout, on another branch than the hand-over's, locked, dirty, a process or a mutation run works there, or the processes are not known; the branch never touched; exit 1 when one is kept, 2 for a name or index the registry does not hold",
+			"close - for a committed or abandoned hand-over of the registry (by name or index): its worktree moved to .worktrees/_trash/ and removed in the background, its node_modules parked in .worktrees/_pool-<repository>-<n>; kept with why when it is the main checkout, on another branch than the hand-over's, locked, dirty, a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known; the branch never touched; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
 		exitCodes: [],
 		example:
@@ -213,7 +237,7 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte gate --hook [--no-reuse]',
 		],
 		notes: [
-			'steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults; refuses while a hand-over script holds the repository',
+			'steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults; --full then runs npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it); refuses while a hand-over script holds the repository',
 			"--fast - the default; starts with the worktree's hygiene (nothing staged, no stash on its branch, new files declared)",
 			'a failing vitest test step is rerun once, serially, on its failing files: passing there it is flagged flaky in parallel',
 			'a green record of the same tree, install and steps answers the steps after a fresh tdd step; --no-reuse runs them',
@@ -255,7 +279,7 @@ export const COMMAND_MAP: CommandMap = {
 		summary: 'The contributor checks of a dialecte package (profile contributor)',
 		usage: ['dialecte contrib [--no-reuse] [--json]'],
 		notes: [
-			'after gate --full and before handover: rules on the changed files, the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), no dependency named by a local folder, the mutation line when a scope is declared',
+			'after gate --full and before handover: rules on the changed files, the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it), no dependency named by a local folder, the mutation line when a scope is declared',
 			'a step a green gate --full of this tree and install passed with the same command is not run again; --no-reuse runs every row',
 		],
 		exitCodes: ['2  refused in a consumer (nothing written)'],

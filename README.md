@@ -25,7 +25,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
 ```
-Discover    api  members  schema  explain
+Discover    api  members  schema  explain  standard
 Use         run  fixture  new
 Grow        lot
 Check       gate  tdd  rules  contrib  mutants
@@ -39,6 +39,7 @@ dialecte api find "<need>" # find a method by what you need; api show <path>: on
 dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
+dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -221,6 +222,87 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
 
 Run outside a package (no `package.json`), each answers a usage error.
 
+## The standard index
+
+`dialecte standard` indexes the standards you hold on your machine and answers from them, in slices of whole
+lines with their original line numbers. The cli ships no standard and never copies one into a repository.
+
+**Where the standards are.** `DIALECTE_STANDARD` names one root folder holding one folder per standard; the
+folder's name, lowercased, is the standard's id, and its top-level, non-hidden `.md` files are the standard
+(subfolders are ignored; a symlink to a folder or a file counts). A file's id is `<standard id>/<file name
+without .md>`, lowercased.
+
+```
+$DIALECTE_STANDARD/
+  <standard id>/
+    <part>.md
+    <amendment>.md
+  <other standard id>/
+    <part>.md
+```
+
+Refused with exit 2, nothing built: `DIALECTE_STANDARD` not set, empty or naming a path that does not exist; a
+root that is a file, that holds `.md` files directly (they are named, with the expected layout) or that holds no
+standard folder; two folders,
+or two files of a folder, whose ids differ only by case (both named); a `--standard <id>` with no folder (the
+known ids named); the root, a standard folder or the cache inside a git work tree. A folder with no `.md` file
+is reported as `no indexable file` and skipped.
+
+**Where the index is.** In the cache only: `$XDG_CACHE_HOME/dialecte/standard/<standard id>/<manifest hash>/`
+(else `~/.cache/dialecte/...`), one folder per standard and per set of file contents (the manifest hash is the
+sha256 of the index format and each file's id and sha256). A folder is built into `<hash>.tmp-<pid>/` and renamed
+into place once complete: a file changed during the build aborts it (exit 1, the file named, nothing kept); a
+second builder reuses the first one's folder; a temporary folder left by a process that is gone is removed at the
+next build. A complete folder is reused, never rebuilt, unless `--rebuild` (the old folder is moved aside, the new
+one renamed in, then the old one removed: a reader never sees a half-removed index); the links to the vocabulary of the
+installed dialectes are a file of their own, written beside the rest when the selected dialectes change.
+Old folders are kept. While a build runs, a running line with its elapsed time goes to stderr on a terminal.
+
+**The vocabulary.** The tags, attributes and enumeration values of the dialectes installed where the command runs
+(every one, or the one `--package <name>` names) are exact names: case kept, never stemmed, then scored like a
+word (1 per clause or table, doubled in its heading or caption, weighted by the lines naming it). An attribute under three
+characters counts only as `@name`, `name=` or a table cell equal to it, an enumeration value under three
+characters only as a table cell equal to it; a name in lowercase letters only, from three characters, is searched
+as an ordinary word. The tags file is named by the hash of the selected dialectes' `name@version` list. `index`,
+`find` and `eval` print `vocabulary <name@version>[, ...]` (or `vocabulary none (no dialecte installed)`) as their
+first line, and `vocabulary: { packages }` in `--json`. A `--package` that is not installed answers exit 2 with
+the installed ones named.
+
+**Words.** Other words are searched by their stem: lowercased, the plural removed, then `-ied` and `-ying` to `-y`,
+a final `-ing` or `-ed` (with its doubled consonant) and a final `e` removed; common English, modal and question
+words are not searched. A word in capitals and digits with two capitals or more (an acronym) is kept from two
+characters, never split nor stemmed; its plural (the acronym and one lowercase `s`) is searched as the acronym.
+
+- `dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]`: builds or reuses the index of each standard
+  (or of `--standard <id>` only), then per standard `<id>  <n> files  built|reused in <time>  manifest <hash>`,
+  per file its lines, quality verdict, noise share, headings kept over candidates, tables and definitions, and
+  the lines repeated often enough to be a watermark (information only: nothing is dropped for being repeated).
+  Exit 1 when no selected folder holds a `.md` file.
+- `dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]`:
+  the slices that hold the terms, ranked over every selected standard (each slice names its file id): a header
+  `<file id>:<from>-<to>  <clause> <title>  score <s>`, then the normalised text. A slice starts at the first hit
+  of its clause's or table's densest run of terms (at most 60 lines holding the most distinct terms, weighted as
+  in the score) and runs to the last hit, 60 lines at most; a table starts at its caption when that run ends
+  within 60 lines of it. After the `--limit` (10)
+  direct slices come the clauses and tables they refer to, marked `[linked]`. `--about <Tag>` adds a tag of the
+  installed dialectes (an unknown one answers the closest; none installed is a usage error). Exit 1 when nothing
+  matches.
+- `dialecte standard show <file id>:<from>-<to> [--json]`: the normalised text of the logical lines overlapping
+  the range, each with its original lines. Exit 1 when the range holds only blank or dropped lines; 2 for a
+  malformed range, an unknown file id (the known ones named), a start after its end or an end after the file's
+  last line.
+- `dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]`: recall at 5 and at 10 of `find` over a gold
+  file you keep, one `{ "question": ..., "about"?: ..., "expected": [{ "file": "<file id>", "quote": ... }] }` per
+  line (other fields are ignored). The expected quotes of an item are alternatives: the item is found at the best
+  rank of any of them. A quote is matched in plain words: table pipes, `<br>` tags, `**`/`__` and a leading `#`
+  run are left out on both sides, then the text is normalised and case is ignored. Each missed item names its
+  closest quote and why (`ranked <r>`, `not found by find`, `not in the text`, `unknown file <id>`). Items with
+  no expected quote are counted apart. Exit 1 when no item has one; 2 for a gold file that cannot be read or a
+  malformed line (its number named).
+
+`show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
+`DIALECTE_STANDARD` when no standard is configured.
+
 ## MCP server
 
 The MCP server of the read-only lookups is its own package: [`@dialecte/mcp`](https://github.com/dialecte/mcp) (`npx @dialecte/mcp`). It builds on the pure answer functions this package exports at `@dialecte/cli/lookups`.
@@ -306,7 +388,10 @@ the answer.
   and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
-  runner's defaults: every file in parallel). The docs build and the type bench are contributor checks:
+  runner's defaults: every file in parallel), then the steps derived from the package's scripts after its
+  own (declared or default): `type-narrowing` (`npm run type-narrowing`, a check a publish workflow runs)
+  when the package has that script and no step runs it; without the script, one line
+  `skip  type-narrowing  no npm script "type-narrowing"` and no step of the record. The docs build and the type bench are contributor checks:
   `dialecte contrib` runs them (see [Profiles](#profiles)). Each step runs unfiltered, with
   `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
@@ -410,7 +495,9 @@ the answer.
   changed against HEAD (recorded as `dialecte rules` records it), the package's `dialecte.contrib.steps`
   (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
   `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a missing
-  npm script skips the step), `release` (no dependency named by a local folder), then `mutation` when the
+  npm script skips the step), `type-narrowing` (`npm run type-narrowing`) when the package has that script and
+  none of its steps runs it (without the script, one line `skip  type-narrowing  no npm script
+  "type-narrowing"` before `release`, no row), `release` (no dependency named by a local folder), then `mutation` when the
   package declares a mutation scope (read from the mutation store now, never recorded). A package step a
   green `gate --full` record of this tree and install passed with the same name and command is not run
   again: its row says `reused from gate --full at <time>`. The run is recorded as `dialecte-gate-contrib.json`
@@ -469,8 +556,19 @@ the answer.
     (`fixtures/scan.ts`, a full path): it brings the files it imports (`import type` included). A bare
     file name (`index.ts`) may be another file: the changed file it names is a dependency, not followed. A
     helper no red covers stays unfrozen, and the gate fails on it, unless a `revised` entry names it
-    (below). An import that looks local (`@/`, `~/`,
-    `#`, a `paths` or alias prefix) and resolves nowhere refuses its file, naming the import.
+    (below). A Vite import query or fragment (`./x.worker?worker&url`, `?raw`, `?url`, `?inline`, `#part`) is
+    left out of the file the import names; a specifier starting with `#` is a subpath import. The files of
+    the change an `import.meta.glob(...)` of its test code matches (a pattern relative to the file, `/` for
+    the package root, or a vite alias; a negated `!pattern` leaves its files out and names none) are
+    dependencies too, followed like an import. An import that looks local (`@/`, `~/`,
+    `#`, a `paths` or alias prefix) and resolves nowhere refuses its file, naming the import as written.
+  - A test-code file moved with its bytes as at the base (git's R100: a deleted path and a new one,
+    added or untracked, holding the same blob) is no change: a moved test file's cases are `unchanged`
+    with no receipt to hold, its old path lists no deleted case, a moved helper or fixture waits for no
+    freeze. A move stays within one kind (a test file to a test file, other test code to other test code;
+    an empty file never pairs): a test file renamed off (`a.test.ts.off`) lists its cases deleted, one
+    renamed on is a new file. A move with an edit is a new file and a deleted one. A change that only
+    deletes test files lists their cases `deleted` in the gate's `tdd` step.
   - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
     test code as frozen, production changed since its red ("nothing in production changed since red"),
     and a pass.
@@ -737,8 +835,11 @@ the answer.
   `hook ✗`) and the log's path; a repository with no commit hook prints none of it (in husky's `.husky/_`,
   which holds a wrapper for every hook name, a hook counts only when its script exists in `.husky/`). Then the commit with
   its stat; the total time and the card at the end. A lot whose `git add` or commit fails is unstaged again: once the cause is fixed, the same command
-  finds the lots already committed on top of the recorded HEAD (same message, same paths, same content)
-  and resumes at the next one; anything else on top of HEAD is refused with what was found. It never
+  finds the lots already committed on top of the recorded HEAD (same message, same paths, the bytes of the
+  reviewed snapshot `files.sha256`, not the working tree) and resumes at the next one; anything else on top
+  of HEAD is refused with what was found. When every lot is committed, the `head` line says the hand-over is
+  already committed and the guards after it (they read the working tree, which later work may change) are
+  not run: the run exits 0. It never
   pushes. `--rehearse` first decides, per lot and before any clone, whether rehearsing it can find
   something new, and prints one line per lot: `lot <n>/<N>  reused  <reason>` or
   `lot <n>/<N>  rehearse  <reason>`. A plain lot is reused when the store holds a green `gate --full` of
@@ -872,7 +973,8 @@ the answer.
 - `dialecte worktree add <repository> <branch> [--from <ref>] [--json]` makes a worktree under the
   workspace's `.worktrees/<index>-<repository>-<branch tail>` (the last segment of the branch:
   `0171-core-depth` for `feat/depth`; a new branch starts from `--from`, else the base
-  branch): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
+  branch; a `<repository>` that is no folder, or a folder in no git repository, is refused in one line, exit
+  2): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
   plain worktree misses it), takes a `node_modules` from the workspace's pool when one matches (below), else
   copies the main checkout's `node_modules` copy-on-write where the file system
   can (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
@@ -890,7 +992,8 @@ the answer.
   `package-lock.json` it was checked against), at most two entries per repository (parking a third sends
   the oldest to the trash). A park (`lot close`, the end of a rehearsal) takes only a `node_modules` that
   matches its `package-lock.json` (as `worktree add` reads it), rewrites absolute, in place, every link inside
-  it whose relative target leaves `node_modules`, renames the folder into a new entry (no file is copied),
+  it whose relative target leaves its checkout (a sibling repository; a link into the checkout itself, an npm
+  workspace package, stays relative and reaches the taker's own package), renames the folder into a new entry (no file is copied),
   sends `node_modules/.vite` and `node_modules/.cache` to the trash (or leaves them in the folder already
   going there), then writes `pool.json`; a `_pool-*` folder without one is a park that never finished,
   never taken, and `worktree prune` names it as left over. `worktree add` takes the newest entry of the
@@ -1020,7 +1123,8 @@ the answer.
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
     (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); a mutation
-    run started from it that still runs or died before reporting; a process whose working folder is in it;
+    run started from it that still runs or died before reporting; `lot close` itself run from inside it
+    (run it from another folder); a process whose working folder is in it;
     the processes not known (`lsof` failed or took longer than 20 s); a `dirty` worktree (anything
     `git status --porcelain --untracked-files=normal` lists, untracked files included whatever
     `status.showUntrackedFiles` says). The branch is never touched (`worktree prune` still lists the merged

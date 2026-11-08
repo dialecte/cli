@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+	existsSync,
+	mkdirSync,
+	readlinkSync,
+	realpathSync,
+	renameSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import {
@@ -68,6 +77,36 @@ describe('parkNodeModules', { timeout: POOL_UNIT_CASE_MS }, () => {
 		const parked = join(worktreesFolder, entry, 'node_modules')
 		expect(readlinkSync(join(parked, '@dialecte/core'))).toBe(target)
 		expect(readlinkSync(join(parked, '.bin/demo'))).toBe('../demo/index.js')
+	})
+
+	it('a link reaching inside its own checkout (@s/pkg → ../../packages/pkg) → parked relative, and taken for another worktree it reaches that worktree’s packages/pkg', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: LOCK_TEXT })
+		mkdirSync(join(worktree, 'node_modules/@s'), { recursive: true })
+		symlinkSync('../../packages/pkg', join(worktree, 'node_modules/@s/pkg'))
+		const next = createBareWorktreeFolder({ worktreesFolder, name: '0002-cli-y', lock: LOCK_TEXT })
+		mkdirSync(join(next, 'packages/pkg'), { recursive: true })
+		const { spawner } = createRecordingSpawner()
+
+		parkNodeModules({
+			worktree,
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			now: PARK_TIMES[0],
+			spawner,
+		})
+		const [entry] = poolEntriesOf(worktreesFolder)
+		const parkedLink = readlinkSync(join(worktreesFolder, entry, 'node_modules/@s/pkg'))
+		takePooledNodeModules({
+			worktree: next,
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+		})
+
+		expect(parkedLink).toBe('../../packages/pkg')
+		expect(realpathSync(join(next, 'node_modules/@s/pkg'))).toBe(
+			realpathSync(join(next, 'packages/pkg')),
+		)
 	})
 
 	it('.vite and .cache removed; every other file kept byte for byte; the entry holds pool.json with repository and lockHash', () => {

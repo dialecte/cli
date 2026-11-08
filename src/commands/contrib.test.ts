@@ -28,6 +28,7 @@ import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.
 import { addWorktree, treeOfWorkingFiles } from '../../test/scratch-tree.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
 import { RULES_RECORD_FILE } from '../lib/gate-records/gate-records.constants.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -91,7 +92,13 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 		const result = await runContribIn({ cwd: root, argv: ['--no-reuse'] })
 		const record = contribRecordOf(root)
-		expect(rowNamesOf(result.output)).toEqual(['rules', 'docs', 'type-bench', 'release'])
+		expect(rowNamesOf(result.output)).toEqual([
+			'rules',
+			'docs',
+			'type-bench',
+			'type-narrowing',
+			'release',
+		])
 		expect(rulesRecordOf(root)).toMatchObject({ errors: 0, warnings: 0 })
 		expect(record).toMatchObject({ mode: 'contrib', head: expect.stringMatching(/^[0-9a-f]{40}$/) })
 		expect(record?.steps.map((step) => [step.name, step.status])).toEqual([
@@ -170,6 +177,66 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			status: 'skipped',
 			detail: expect.stringContaining('no npm script "doc:build"'),
 		})
+	})
+
+	it('a package with a type-narrowing script → a type-narrowing row runs it after the declared steps, once; a declared step already running it → once, not twice', async () => {
+		const counter = createCounter()
+		const declaredCounter = createCounter()
+		const derived = createContribPackage({
+			steps: [counterStep({ counter: createCounter(), name: 'docs' })],
+			packageJson: { scripts: { 'type-narrowing': `echo run >> ${shellQuote(counter)}` } },
+		})
+		const declared = createContribPackage({
+			steps: [{ name: 'narrowing', run: 'npm run type-narrowing' }],
+			packageJson: {
+				scripts: { 'type-narrowing': `echo run >> ${shellQuote(declaredCounter)}` },
+			},
+		})
+
+		const derivedResult = await runContribIn({ cwd: derived, argv: ['--json', '--no-reuse'] })
+		const declaredResult = await runContribIn({ cwd: declared, argv: ['--json', '--no-reuse'] })
+
+		expect(
+			parseContribJson(derivedResult.output).rows.map((row) => [row.name, row.status]),
+		).toEqual([
+			['rules', 'passed'],
+			['docs', 'passed'],
+			['type-narrowing', 'passed'],
+			['release', 'passed'],
+		])
+		expect(countRuns(counter)).toBe(1)
+		expect(parseContribJson(declaredResult.output).rows.map((row) => row.name)).toEqual([
+			'rules',
+			'narrowing',
+			'release',
+		])
+		expect(countRuns(declaredCounter)).toBe(1)
+	})
+
+	it('a package without a type-narrowing script → one skip line saying so in the text, no row for it in the --json rows nor in the record, exit 0', async () => {
+		const root = createContribPackage({ steps: [] })
+
+		const result = await runContribIn({ cwd: root, argv: ['--no-reuse'] })
+		const json = await runContribIn({ cwd: root, argv: ['--json', '--no-reuse'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toContain('skip  type-narrowing  no npm script "type-narrowing"')
+		expect(parseContribJson(json.output).rows.map((row) => row.name)).toEqual(['rules', 'release'])
+		expect(contribRecordOf(root)?.steps.map((step) => step.name)).toEqual(['rules', 'release'])
+	})
+
+	it('a package whose type-narrowing script fails → its contrib row failed, exit 1, the verdict names it', async () => {
+		const root = createContribPackage({
+			steps: [],
+			packageJson: { scripts: { 'type-narrowing': 'exit 1' } },
+		})
+
+		const result = await runContribIn({ cwd: root, argv: ['--json', '--no-reuse'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(parseContribJson(result.output).rows).toContainEqual(
+			expect.objectContaining({ name: 'type-narrowing', status: 'failed' }),
+		)
 	})
 
 	it('the docs step rewrites a generatedDocs file → restored byte for byte after the run', async () => {

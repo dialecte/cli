@@ -103,7 +103,6 @@ export async function runHandoverFolder(params: {
 			head: guarded.head,
 			tip: 'HEAD',
 			lots,
-			compareContent: false,
 		}).commits
 	if (committed && !params.skipCommits) {
 		if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })

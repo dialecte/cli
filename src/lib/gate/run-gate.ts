@@ -26,6 +26,7 @@ import {
 	FLAKY_NOTE,
 	NO_AFFECTED_TEST_NOTE,
 	NO_AFFECTED_TEST_PATTERN,
+	NO_NPM_SCRIPT_REASON,
 	NO_TEST_RAN_REASON,
 	NPM_RUN_PATTERN,
 	REAL_FAILURE_PREFIX,
@@ -66,7 +67,7 @@ export async function runGateSteps(params: {
 				status: 'skipped',
 				counts: {},
 				restored: [],
-				reason: `no npm script "${script}"`,
+				reason: NO_NPM_SCRIPT_REASON.replace('{script}', script),
 			})
 			continue
 		}

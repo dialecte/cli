@@ -3,6 +3,10 @@ import type { FailureKind } from './tdd.types.ts'
 /** The receipts of a worktree, in its git folder: never in the tree, never committed. */
 export const TDD_LEDGER_FILE = 'dialecte-tdd.json'
 
+/** The kinds a move stays within: a test file moves to a test file, other test code to other test code. */
+export const TEST_FILE_KIND = 'test file'
+export const TEST_CODE_KIND = 'test code'
+
 /**
  * The message a stub throws until the implement station writes it: `throw new Error('not implemented: add')`.
  * Any error whose message starts with it is the stub's, whatever its class.
@@ -143,6 +147,18 @@ export const MODULE_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.mts', '.js
 
 /** The tsconfig files of a package root that may map `paths`. */
 export const TSCONFIG_FILE_PATTERN = /^tsconfig(\..+)?\.json$/
+
+/**
+ * A Vite import query or fragment after a specifier's file (`?worker&url`, `?raw`, `#part`): never at its first
+ * character, where `#` starts a subpath import (`#internal/x`).
+ */
+export const SPECIFIER_QUERY_PATTERN = /(?<=.)[?#].*$/
+
+/** `import.meta.<name>(...)`: Vite's glob import, whose patterns name the files a test reads. */
+export const META_GLOB_NAME = 'glob'
+
+/** Before a pattern of `import.meta.glob` that leaves the files it matches out. */
+export const NEGATED_GLOB_PREFIX = '!'
 
 /** A specifier that names a file of the package, not a dependency: `#imports`, `~/`, `@/`. */
 export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/

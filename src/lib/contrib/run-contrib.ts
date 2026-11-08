@@ -26,6 +26,7 @@ import {
 	STEP_DETAIL_INDENT,
 	STEP_LINE_MARKS,
 } from '../gate/gate-config.constants.ts'
+import { renderAbsentDerivedLines } from '../gate/gate-config.ts'
 import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { currentBranchOf, readGit } from '../git.ts'
@@ -46,6 +47,7 @@ import { readReferencePatterns } from '../rules/committed-text.ts'
 import { contribCommandHash } from './contrib-key.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
 import {
+	CONTRIB_BUILTIN_STEPS,
 	CONTRIB_CONSUMER_REFUSAL,
 	CONTRIB_FAILED_VERDICT,
 	CONTRIB_GREEN_VERDICT,
@@ -104,6 +106,15 @@ export async function runContrib(params: {
 		else for (const line of lines) live?.writeLine(line)
 		shownLive.add(shown.result)
 	}
+	// a derived step the package has no script for: one skip line where it would run (before release), no row
+	const absentLines = renderAbsentDerivedLines({ packageJson, steps: packageStepsOf(steps) })
+	/** The absent lines, live, once: before the release row, or after the last row when none comes. */
+	let absentShown = false
+	function showAbsentLive(): void {
+		if (absentShown || !progress) return
+		absentShown = true
+		for (const line of absentLines) live?.writeLine(line)
+	}
 	if (found && progress)
 		live?.writeLine(renderReuseLine({ command: CONTRIB_COMMAND, record: found }))
 	const results = found
@@ -115,8 +126,14 @@ export async function runContrib(params: {
 				gate: reusable ? readFullGateRecords({ root: cwd, packageJson }) : undefined,
 				progress,
 				showLive,
+				beforeRelease: showAbsentLive,
 			})
-	if (found && progress) for (const result of results) showLive({ result })
+	if (found && progress)
+		for (const result of results) {
+			if (isReleaseRow(result.step)) showAbsentLive()
+			showLive({ result })
+		}
+	showAbsentLive()
 	const original = found && originOfRecord(found)
 	const { changedWhileRunning } = recordCheckedRun({
 		root: cwd,
@@ -156,7 +173,12 @@ export async function runContrib(params: {
 			// on a terminal a row's line is on the screen already: the summary does not repeat it
 			...results
 				.filter((result) => !(live?.tty && shownLive.has(result)))
-				.flatMap(renderResultLines),
+				.flatMap((result) => [
+					...(isReleaseRow(result.step) ? absentLines : []),
+					...renderResultLines(result),
+				]),
+			// no release row to stand before (a reused record): after the rows
+			...(live?.tty || results.some((result) => isReleaseRow(result.step)) ? [] : absentLines),
 			...(mutation && !live?.tty ? renderContribLines(mutation) : []),
 			...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
 			failed.length
@@ -216,6 +238,8 @@ async function runRows(params: {
 	gate: FullGateRecords | undefined
 	progress: StepProgress | undefined
 	showLive: (shown: { result: StepResult; finish?: (...lines: string[]) => void }) => void
+	/** Called before the release row starts. */
+	beforeRelease: () => void
 }): Promise<StepResult[]> {
 	const { root, packageJson, gate, progress, showLive } = params
 	const results: StepResult[] = []
@@ -223,6 +247,7 @@ async function runRows(params: {
 	let packageStepFailed = false
 	for (const step of params.steps) {
 		if ('builtin' in step) {
+			if (isReleaseRow(step)) params.beforeRelease()
 			const running = progress?.start({ name: step.name, detail: `dialecte ${step.builtin}` })
 			const result = step.builtin === 'rules' ? rulesResult(root) : releaseResult(root)
 			results.push(result)
@@ -313,6 +338,11 @@ function gateReusedResult(params: {
 		restored: [],
 		note: GATE_STEP_REUSED_NOTE.replace('{at}', params.origin.at),
 	}
+}
+
+/** The row is the built-in release row, the last of every run. */
+function isReleaseRow(step: { name: string }): boolean {
+	return step.name === CONTRIB_BUILTIN_STEPS.last.name
 }
 
 /** The package steps among the rows: those with a shell command. */

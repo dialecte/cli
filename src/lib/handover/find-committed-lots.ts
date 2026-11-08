@@ -1,11 +1,14 @@
 /**
  * Which lots are already committed on top of the recorded HEAD: commit after commit, each must carry the
- * next lot's message and exactly that lot's paths with the content of the working tree (the reviewed
- * snapshot); a merge lot, its subject, the recorded tip as second parent and the recorded tree. The first commit that does not is reported as foreign.
+ * next lot's message and exactly that lot's paths with the bytes of the reviewed snapshot (`files.sha256`,
+ * not the working tree, which later work may change); a merge lot, its subject, the recorded tip as second
+ * parent and the recorded tree. The first commit that does not is reported as foreign.
  */
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
+import { GIT_READ_ENVIRONMENT } from '../git.constants.ts'
 import { isAncestorCommit, readGit } from '../git.ts'
-import { gitBlobIds } from './committed-bytes.ts'
 
 import type { CommittedLots, MergeLot, ResolvedLot } from './handover.types.ts'
 
@@ -16,8 +19,11 @@ export function findCommittedLots(params: {
 	/** The commit the lots are looked for under: HEAD, or the tip of the branch. */
 	tip: string
 	lots: readonly ResolvedLot[]
-	/** Also compare each committed file with the working tree (`run`); `list` sees later edits as normal. */
-	compareContent: boolean
+	/**
+	 * The reviewed sha256 of each file, by path (`run`): each committed file must hold those bytes; none (`list`,
+	 * the card): paths and messages only.
+	 */
+	reviewed?: ReadonlyMap<string, string>
 }): CommittedLots {
 	const { root, head, lots } = params
 	const tip = readGit({ root, args: ['rev-parse', params.tip] }).trim()
@@ -38,7 +44,7 @@ export function findCommittedLots(params: {
 		const lot = lots[found.length]
 		// every lot found: what came after them is later work, not a hand-over matter
 		if (!lot) break
-		const mismatch = describeMismatch({ root, commit, lot, compareContent: params.compareContent })
+		const mismatch = describeMismatch({ root, commit, lot, reviewed: params.reviewed })
 		if (mismatch) {
 			const subject = readGit({ root, args: ['log', '-1', '--format=%s', commit] }).trim()
 			return {
@@ -77,7 +83,7 @@ function describeMismatch(params: {
 	root: string
 	commit: string
 	lot: ResolvedLot
-	compareContent: boolean
+	reviewed: ReadonlyMap<string, string> | undefined
 }): string | undefined {
 	const { root, commit, lot } = params
 	if (lot.merge) return describeMergeMismatch({ root, commit, lot, merge: lot.merge })
@@ -92,15 +98,24 @@ function describeMismatch(params: {
 		.sort()
 	const expected = [...lot.files, ...lot.deletedFiles].sort()
 	if (changed.join('\n') !== expected.join('\n')) return 'other paths'
-	if (!params.compareContent || lot.files.length === 0) return undefined
-	const committedBlobs = readGit({
-		root,
-		args: ['rev-parse', ...lot.files.map((file) => `${commit}:${file}`)],
+	const { reviewed } = params
+	if (!reviewed) return undefined
+	const asReviewed = lot.files.every(
+		(file) => committedHash({ root, commit, file }) === reviewed.get(file),
+	)
+	return asReviewed ? undefined : 'other content than the reviewed files'
+}
+
+/** sha256 of the bytes the commit holds for the file, as the reviewed snapshot hashes them. */
+function committedHash(params: { root: string; commit: string; file: string }): string {
+	const shown = spawnSync('git', ['cat-file', 'blob', `${params.commit}:${params.file}`], {
+		cwd: params.root,
+		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
+		maxBuffer: Number.POSITIVE_INFINITY,
 	})
-		.split('\n')
-		.filter(Boolean)
-	const workingBlobs = gitBlobIds({ root, files: lot.files })
-	return committedBlobs.join('\n') === workingBlobs.join('\n')
-		? undefined
-		: 'other content than the reviewed files'
+	if (shown.status !== 0)
+		throw new Error(
+			`git cat-file ${params.commit}:${params.file}: ${shown.stderr.toString().trim()}`,
+		)
+	return createHash('sha256').update(shown.stdout).digest('hex')
 }
