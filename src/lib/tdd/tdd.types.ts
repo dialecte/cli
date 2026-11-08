@@ -286,8 +286,18 @@ export type ModuleResolution =
 	| { kind: 'package' }
 	| { kind: 'unresolved' }
 
-/** Resolves a specifier imported by a file (both relative to the package root). */
-export type ModuleResolver = (params: { specifier: string; from: string }) => ModuleResolution
+/**
+ * Resolves a specifier imported by a file (both relative to the package root); `resolveGlob`, a pattern of
+ * `import.meta.glob` written in that file, to a glob relative to the package root (undefined when it names no
+ * folder of the package: no `./`, `../`, `/` or alias at its start, or outside the root).
+ */
+export type ModuleResolver = {
+	(params: { specifier: string; from: string }): ModuleResolution
+	resolveGlob: (params: { pattern: string; from: string }) => string | undefined
+}
+
+/** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */
+export type MetaGlob = { include: string[]; exclude: string[] }
 
 /** A vite alias: the specifier prefix and the absolute folder it stands for. */
 export type ModuleAlias = { find: string; replacement: string }

@@ -2,6 +2,8 @@ import {
 	ASSERTION_CALLEE,
 	CASE_FUNCTIONS,
 	CONDITION_MODIFIERS,
+	META_GLOB_NAME,
+	NEGATED_GLOB_PREFIX,
 	ONLY_MARKER,
 	SUITE_FUNCTIONS,
 	TABLE_MODIFIERS,
@@ -11,7 +13,7 @@ import {
 /** Questions about a test file's source, answered from its syntax tree (never from lines or greps). */
 import ts from 'typescript'
 
-import type { SourceLocation, TestCall } from './tdd.types.ts'
+import type { MetaGlob, SourceLocation, TestCall } from './tdd.types.ts'
 
 /**
  * The position is inside an argument of an `expect(...)` (or `expect.soft(...)`) call that asserts: the
@@ -303,4 +305,42 @@ export function moduleSpecifiers(params: { text: string; file: string }): string
 	}
 	visit(source)
 	return specifiers
+}
+
+/**
+ * The `import.meta.glob(...)` calls of a file: per call, its patterns (a string or an array of strings), a
+ * negated one (`!./skip.xml`) without its `!` in `exclude`.
+ */
+export function metaGlobs(params: { text: string; file: string }): MetaGlob[] {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	const globs: MetaGlob[] = []
+	function visit(node: ts.Node): void {
+		if (ts.isCallExpression(node) && isMetaGlob(node.expression) && node.arguments[0]) {
+			const argument = node.arguments[0]
+			const patterns = ts.isArrayLiteralExpression(argument)
+				? argument.elements.filter(ts.isStringLiteralLike).map((element) => element.text)
+				: ts.isStringLiteralLike(argument)
+					? [argument.text]
+					: []
+			globs.push({
+				include: patterns.filter((pattern) => !pattern.startsWith(NEGATED_GLOB_PREFIX)),
+				exclude: patterns
+					.filter((pattern) => pattern.startsWith(NEGATED_GLOB_PREFIX))
+					.map((pattern) => pattern.slice(NEGATED_GLOB_PREFIX.length)),
+			})
+		}
+		ts.forEachChild(node, visit)
+	}
+	visit(source)
+	return globs
+}
+
+/** `import.meta.glob`. */
+function isMetaGlob(expression: ts.Expression): boolean {
+	return (
+		ts.isPropertyAccessExpression(expression) &&
+		expression.name.text === META_GLOB_NAME &&
+		ts.isMetaProperty(expression.expression) &&
+		expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+	)
 }

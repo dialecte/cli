@@ -25,6 +25,7 @@ import { shellQuote } from '../shell-quote.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import {
+	ALREADY_COMMITTED_DETAIL,
 	CONSUMER_REFERENCES_DETAIL,
 	CONTRIB_GUARD_NAME,
 	CONTRIBUTOR_REFERENCES_DETAIL,
@@ -32,6 +33,7 @@ import {
 	GREEN_CONTRIB_DETAIL,
 	GUARD_NAME_WIDTH,
 	HANDOVER_FILES,
+	HEAD_GUARD_NAME,
 	NO_GREEN_CONTRIB_DETAIL,
 	REHEARSAL_CONTRIB_DETAIL,
 } from './handover.constants.ts'
@@ -40,6 +42,7 @@ import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
 import {
 	differingSnapshotLines,
 	isLotsFileAsReviewed,
+	reviewedHashes,
 	snapshotPathOf,
 } from './reviewed-snapshot.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
@@ -136,7 +139,7 @@ export function checkHandoverGuards(params: {
 			},
 		},
 		{
-			name: 'head',
+			name: HEAD_GUARD_NAME,
 			check: function onTheRecordedHead() {
 				const resolved = resolveCommit({ root, revision: lotsFile.head })
 				if (!resolved) return { ok: false, detail: `${lotsFile.head} is not a commit of ${root}` }
@@ -146,7 +149,7 @@ export function checkHandoverGuards(params: {
 					head: resolved,
 					tip: 'HEAD',
 					lots,
-					compareContent: true,
+					reviewed: reviewedHashes(handover.snapshotLines),
 				})
 				run.commits = found.commits
 				if (found.foreign)
@@ -164,7 +167,7 @@ export function checkHandoverGuards(params: {
 					ok: true,
 					detail:
 						count === lots.length
-							? `${resolved.slice(0, 12)}, every lot is committed already`
+							? `${resolved.slice(0, 12)}, ${ALREADY_COMMITTED_DETAIL}`
 							: `${resolved.slice(0, 12)}, ${count} of ${lots.length} lot(s) committed already: resuming at lot ${count + 1}`,
 				}
 			},
@@ -298,6 +301,9 @@ export function checkHandoverGuards(params: {
 		)
 		for (const line of verdict.lines ?? []) write(`    ${line}`)
 		if (!verdict.ok) return undefined
+		// every lot on HEAD as reviewed: the guards after head read the working tree, which later work may change
+		if (name === HEAD_GUARD_NAME && lots.length > 0 && run.commits.length === lots.length)
+			return run
 	}
 	return run
 }

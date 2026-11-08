@@ -4,6 +4,10 @@ export const HYGIENE_BASELINE_FILE = 'dialecte-hygiene.json'
 /** The branch a package's work is merged into, unless its package.json says otherwise. */
 export const DEFAULT_BASE_BRANCH = 'main'
 
+/** `worktree add <repository>` whose path is no folder (the repository named from inside itself), or in no git repository. */
+export const REPOSITORY_NO_FOLDER = '{path} is no folder: name the repository from where you stand'
+export const REPOSITORY_NO_GIT = '{path} is in no git repository'
+
 /** Ignored folders a worktree may lose: rebuilt by an install, a build or a docs build. */
 export const REBUILT_IGNORED_FOLDERS = [
 	'node_modules/',

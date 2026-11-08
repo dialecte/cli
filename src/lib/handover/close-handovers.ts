@@ -11,7 +11,7 @@
  * touched.
  */
 import { existsSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
@@ -25,6 +25,7 @@ import { mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.t
 import { isParked, trashWorktree } from '../worktree/trash.ts'
 import { WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
 import { entryOfArgument, findHandoverStore } from './handover-store.ts'
+import { CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
@@ -39,6 +40,8 @@ import type { CloseResult, CloseTarget } from './handover.types.ts'
 export function closeHandovers(params: {
 	/** Where the registry is looked for (a worktree or the main checkout of the repository). */
 	cwd: string
+	/** The folder the command runs from: a worktree holding it is kept (never moved from under the caller). */
+	runFrom: string
 	/** Hand-over names or worktree indexes. */
 	names: string[]
 	now: Date
@@ -75,7 +78,7 @@ export function closeHandovers(params: {
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
 	const decisions = targets.map(function decide(target) {
-		return decideTarget({ target, main, worktreesFolder, runs, processes })
+		return decideTarget({ target, main, runFrom: params.runFrom, worktreesFolder, runs, processes })
 	})
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order
 	const owners = new Map<string, CloseTarget>()
@@ -98,7 +101,7 @@ export function closeHandovers(params: {
 			const moved: string[] = []
 			try {
 				const nodeModules = closeWorktree({
-					worktree: target.worktree?.path ?? '',
+					worktree: decision.worktree.path,
 					check: decision.check,
 					checkedLockHash: decision.checkedLockHash,
 					main,
@@ -150,24 +153,34 @@ export function closeHandovers(params: {
 function decideTarget(params: {
 	target: CloseTarget
 	main: string
+	/** Where the close runs from: a worktree it stands in is kept. */
+	runFrom: string
 	worktreesFolder: string
 	runs: readonly RunEntry[]
 	processes: readonly ProcessFolder[] | string
 }):
 	| { kept: string }
-	| { check: NodeModulesCheck | undefined; checkedLockHash: string | undefined } {
+	| {
+			worktree: ListedWorktree
+			check: NodeModulesCheck | undefined
+			checkedLockHash: string | undefined
+	  } {
 	try {
-		const kept =
-			whyKeep(params) ??
-			(existsSync(params.worktreesFolder)
-				? undefined
-				: `no ${WORKTREES_FOLDER}/ beside ${params.main}: the pool and the trash live there`)
-		if (kept) return { kept }
-		const worktree = params.target.worktree?.path
-		if (!worktree || !existsSync(join(worktree, 'node_modules')))
-			return { check: undefined, checkedLockHash: undefined }
+		const why = whyKeep(params)
+		if ('kept' in why) return why
+		if (!existsSync(params.worktreesFolder))
+			return {
+				kept: `no ${WORKTREES_FOLDER}/ beside ${params.main}: the pool and the trash live there`,
+			}
+		const { worktree } = why
+		if (!existsSync(join(worktree.path, 'node_modules')))
+			return { worktree, check: undefined, checkedLockHash: undefined }
 		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
-		return { checkedLockHash: lockHashOf(worktree), check: checkNodeModules({ worktree }) }
+		return {
+			worktree,
+			checkedLockHash: lockHashOf(worktree.path),
+			check: checkNodeModules({ worktree: worktree.path }),
+		}
 	} catch (error) {
 		return { kept: (error as Error).message.trim() }
 	}
@@ -182,38 +195,57 @@ function readProcesses(listProcesses: () => ProcessFolder[] | string): ProcessFo
 	}
 }
 
-/** Why the hand-over's worktree stays, or undefined when it may close. */
+/** Why the hand-over's worktree stays, or the worktree itself when it may close. */
 function whyKeep(params: {
 	target: CloseTarget
 	main: string
+	/** Where the close runs from. */
+	runFrom: string
 	runs: readonly RunEntry[]
 	/** The processes and their working folders, or why the system could not tell (then nothing closes). */
 	processes: readonly ProcessFolder[] | string
-}): string | undefined {
+}): { kept: string } | { worktree: ListedWorktree } {
 	const { target } = params
 	const entry = target.entry
-	if (!entry) return 'no hand-over of that name or index'
+	if (!entry) return { kept: 'no hand-over of that name or index' }
 	if (entry.state !== 'committed' && entry.state !== 'abandoned')
-		return `${entry.state}: only a committed or abandoned hand-over closes`
+		return { kept: `${entry.state}: only a committed or abandoned hand-over closes` }
 	if (realPathOf(entry.worktree) === realPathOf(params.main))
-		return `its worktree is the main checkout ${params.main}: never parked, moved or trashed`
-	const worktree: ListedWorktree | undefined = target.worktree
+		return {
+			kept: `its worktree is the main checkout ${params.main}: never parked, moved or trashed`,
+		}
+	const worktree = target.worktree
 	if (!worktree)
-		return `${entry.worktree} is no worktree of the repository (closed already, moved, or in the trash): nothing to close`
+		return {
+			kept: `${entry.worktree} is no worktree of the repository (closed already, moved, or in the trash): nothing to close`,
+		}
 	if (worktree.branch !== entry.branch)
-		return `on ${worktree.branch ?? 'a detached HEAD'}, not on the hand-over's branch ${entry.branch}: the worktree holds other work now`
+		return {
+			kept: `on ${worktree.branch ?? 'a detached HEAD'}, not on the hand-over's branch ${entry.branch}: the worktree holds other work now`,
+		}
 	if (worktree.locked)
-		return `locked: ${worktree.path} (git worktree unlock it first, if it may go)`
+		return { kept: `locked: ${worktree.path} (git worktree unlock it first, if it may go)` }
 	const run = mutationRunKeeping({ runs: params.runs, folder: worktree.path })
-	if (run) return `${run} (from ${worktree.path})`
-	if (typeof params.processes === 'string') return params.processes
+	if (run) return { kept: `${run} (from ${worktree.path})` }
+	if (isInside({ path: params.runFrom, folder: worktree.path }))
+		return {
+			kept: CLOSE_FROM_INSIDE.replace('{worktree}', worktree.path).replace('{main}', params.main),
+		}
+	if (typeof params.processes === 'string') return { kept: params.processes }
 	const working = processWorkingIn({ processes: params.processes, folder: worktree.path })
-	if (working) return `a process works in ${worktree.path}: pid ${working.pid}`
+	if (working) return { kept: `a process works in ${worktree.path}: pid ${working.pid}` }
 	const status = readGit({ root: worktree.path, args: [...WORKTREE_STATUS_ARGUMENTS] })
 		.split('\n')
 		.filter(Boolean)
-	if (status.length) return `dirty: ${status.length} path(s) git status lists in ${worktree.path}`
-	return undefined
+	if (status.length)
+		return { kept: `dirty: ${status.length} path(s) git status lists in ${worktree.path}` }
+	return { worktree }
+}
+
+/** `path` is `folder` or inside it, by their real paths. */
+function isInside(params: { path: string; folder: string }): boolean {
+	const from = relative(realPathOf(params.folder), realPathOf(params.path))
+	return from === '' || (!from.startsWith('..') && !isAbsolute(from))
 }
 
 /**

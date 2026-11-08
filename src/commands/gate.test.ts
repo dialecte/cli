@@ -10,6 +10,8 @@ import {
 	RUN_THE_HANDOVER,
 	TOUCH_THE_GIT_FOLDER,
 } from '../../test/refusal-wording.constants.ts'
+import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
+import { countRuns, createCounter } from '../../test/scratch-checks.ts'
 import {
 	createScratchRepository,
 	git,
@@ -18,6 +20,7 @@ import {
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 import { runGate } from './gate.ts'
 import { runTdd } from './tdd.ts'
 
@@ -785,3 +788,100 @@ describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
 		])
 	})
 })
+
+describe(
+	'runGate: the type-narrowing step of --full',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		const CHECK_STEP = { name: 'check', run: 'true' }
+
+		/** The mark and name of each step line of a gate output, in order: `ok check`, `skip type-narrowing`. */
+		function stepLinesOf(output: string): string[] {
+			return output.split('\n').flatMap(function stepLine(line) {
+				const match = /^(ok|skip|FAIL|--) +(\S+)/.exec(line)
+				return match ? [`${match[1]} ${match[2]}`] : []
+			})
+		}
+
+		/** A package with a `type-narrowing` script that appends a line to `counter` per run, then exits with `exitCode`. */
+		function narrowingPackage(params: {
+			counter: string
+			full: GateStep[]
+			fast?: GateStep[]
+			exitCode?: number
+		}): string {
+			return packageWith({
+				fast: params.fast,
+				full: params.full,
+				scripts: {
+					'type-narrowing': `echo run >> ${shellQuote(params.counter)}; exit ${params.exitCode ?? 0}`,
+				},
+			})
+		}
+
+		it('--full in a package with a type-narrowing script, its declared full steps without it → a type-narrowing step runs npm run type-narrowing after them, its line shown, once', async () => {
+			const counter = createCounter()
+			const root = narrowingPackage({ counter, full: [CHECK_STEP] })
+
+			const result = await gate({ cwd: root, argv: ['--full'] })
+
+			expect(result.exitCode).toBe(0)
+			expect(stepLinesOf(result.output)).toEqual(['skip tdd', 'ok check', 'ok type-narrowing'])
+			expect(result.output).toContain('ok    type-narrowing  exit 0')
+			expect(countRuns(counter)).toBe(1)
+		})
+
+		it('--full, the type-narrowing script failing → FAIL type-narrowing, exit 1, the verdict names it', async () => {
+			const root = narrowingPackage({ counter: createCounter(), full: [CHECK_STEP], exitCode: 1 })
+
+			const result = await gate({ cwd: root, argv: ['--full'] })
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain('FAIL  type-narrowing  exit 1')
+			expect(result.output).toContain('gate --full: failed at type-narrowing')
+		})
+
+		it('--full in a package without a type-narrowing script → a skip line for it saying so, the gate stays green', async () => {
+			const root = packageWith({ full: [CHECK_STEP] })
+
+			const result = await gate({ cwd: root, argv: ['--full'] })
+
+			expect(result.exitCode).toBe(0)
+			expect(stepLinesOf(result.output)).toEqual(['skip tdd', 'ok check', 'skip type-narrowing'])
+			expect(result.output).toContain('skip  type-narrowing  no npm script "type-narrowing"')
+			expect(result.output).toContain('gate --full: green')
+			expect(
+				readRecordFile<GateRecord>({ root, name: 'dialecte-gate-full.json' })?.steps.map(
+					(step) => step.name,
+				),
+			).toEqual(['tdd', 'check'])
+		})
+
+		it('--fast then --full of a package with the script → fast has no type-narrowing step, full runs it once; a declared step already running it → once, not twice', async () => {
+			const counter = createCounter()
+			const derived = narrowingPackage({
+				counter,
+				fast: [CHECK_STEP],
+				full: [CHECK_STEP],
+			})
+			const declaredCounter = createCounter()
+			const declared = narrowingPackage({
+				counter: declaredCounter,
+				full: [{ name: 'narrowing', run: 'npm run type-narrowing' }],
+			})
+
+			const fast = await gate({ cwd: derived, argv: ['--fast'] })
+			const countAfterFast = countRuns(counter)
+			const full = await gate({ cwd: derived, argv: ['--full'] })
+			const alreadyDeclared = await gate({ cwd: declared, argv: ['--full'] })
+
+			expect(stepLinesOf(fast.output)).not.toContain('ok type-narrowing')
+			expect(stepLinesOf(fast.output)).not.toContain('skip type-narrowing')
+			expect(countAfterFast).toBe(0)
+			expect(countRuns(counter)).toBe(1)
+			expect(full.exitCode).toBe(0)
+			expect(stepLinesOf(alreadyDeclared.output)).toEqual(['skip tdd', 'ok narrowing'])
+			expect(countRuns(declaredCounter)).toBe(1)
+		})
+	},
+)

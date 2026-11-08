@@ -116,6 +116,28 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(data.verdict).toBe('READY')
 	})
 
+	it('a package with a type-narrowing script, every contrib row green → the one contrib line names type-narrowing among its rows, verdict READY', async () => {
+		const root = editedPackage({
+			steps: passingSteps(),
+			packageJson: { scripts: { 'type-narrowing': 'true' } },
+		})
+		await recordGateAndContrib(root)
+
+		const { data, text } = cardOf({ root })
+
+		expect(gateLinesOf(text)).toContain(
+			'✓ contrib rules · docs · type-bench · type-narrowing · release',
+		)
+		expect(data.contrib?.map((row) => row.name)).toEqual([
+			'rules',
+			'docs',
+			'type-bench',
+			'type-narrowing',
+			'release',
+		])
+		expect(data.verdict).toBe('READY')
+	})
+
 	it('one ! contrib row (a skipped step) → one line per row, verdict READY', async () => {
 		const root = editedPackage({ steps: skippedBenchSteps() })
 		await recordGateAndContrib(root)

@@ -28,10 +28,27 @@ import { claimWorktreeIndex, worktreeFolderName } from './worktree-index.ts'
 import {
 	DEFAULT_BASE_BRANCH,
 	LOT_FOLDER_EXCLUDE,
+	REPOSITORY_NO_FOLDER,
+	REPOSITORY_NO_GIT,
 	WORKTREE_INDEX_FOLDER,
 } from './worktree.constants.ts'
 
 import type { AddedWorktree, ListedWorktree, NodeModulesSource } from './worktree.types.ts'
+
+/**
+ * Why `worktree add` cannot take the path as its repository: no folder there (a repository named from inside
+ * itself), or a folder in no git repository; undefined when it is in one.
+ */
+export function refuseRepositoryPath(path: string): string | undefined {
+	if (!existsSync(path) || !statSync(path).isDirectory())
+		return REPOSITORY_NO_FOLDER.replace('{path}', path)
+	try {
+		readGit({ root: path, args: ['rev-parse', '--is-inside-work-tree'] })
+		return undefined
+	} catch {
+		return REPOSITORY_NO_GIT.replace('{path}', path)
+	}
+}
 
 /** The worktree made, or why it was not. */
 export function addWorktree(params: {

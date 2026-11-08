@@ -2755,6 +2755,42 @@ describe(
 			expect(again.exitCode).toBe(0)
 			expect(verdictLines(again.text)[0]).toMatch(/^DONE {2}2 lots · /)
 		})
+
+		it('every lot committed on HEAD as reviewed, the working tree edited since (a later edit, a new file) → run says the hand-over is already committed, exit 0, no guard failed, no commit added', async () => {
+			const { root, lotsPath, out } = prepare()
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			await runFolder({ out })
+			const committed = headOf(root)
+			writeFiles({
+				root,
+				files: {
+					'src/read.ts': 'export function read() {\n\treturn 2\n}\n',
+					'src/later.ts': 'export {}\n',
+				},
+			})
+
+			const again = await runFolder({ out })
+
+			expect(again.exitCode).toBe(0)
+			expect(again.text).toMatch(/already committed/)
+			expect(again.text).not.toMatch(/^✗/m)
+			expect(again.text).not.toMatch(/^[✓!✗] (snapshot|deleted|outside) /m)
+			expect(headOf(root)).toBe(committed)
+		})
+
+		it('a lot committed by hand with other bytes than the reviewed ones, the working tree edited to match them → the head guard refuses it: other content than the reviewed files', async () => {
+			const { root, lotsPath, out } = prepare()
+			expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+			writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 2\n}\n' } })
+			git({ root, args: ['add', '--', 'src/'] })
+			git({ root, args: ['commit', '-q', '-m', 'feat(read): read answers one\n\nThe body.'] })
+
+			const result = await runFolder({ out })
+
+			expect(result.exitCode).toBe(1)
+			expect(result.text).toMatch(/^✗ head +something else is on top of [0-9a-f]{12}/m)
+			expect(result.text).toContain(`is not ${LOT} 1: other content than the reviewed files`)
+		})
 	},
 )
 

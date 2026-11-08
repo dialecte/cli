@@ -26,6 +26,7 @@ import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { readHygieneBaseline } from './hygiene.ts'
 import { listPoolEntries } from './node-modules-pool.ts'
+import { isParked } from './trash.ts'
 import {
 	DEFAULT_BASE_BRANCH,
 	IGNORED_FILES_SHOWN,
@@ -123,12 +124,6 @@ function countTrashed(worktreesFolder: string): number {
 	return isDirectory(trash) ? readdirSync(trash).length : 0
 }
 
-/** The path is in the workspace's `.worktrees/_trash/`: a worktree on its way out, never listed. */
-function isTrashed(params: { path: string; workspace: string }): boolean {
-	const fromTrash = relative(join(params.workspace, WORKTREES_FOLDER, TRASH_FOLDER), params.path)
-	return fromTrash !== '' && !fromTrash.startsWith('..') && !isAbsolute(fromTrash)
-}
-
 /**
  * Why a run of the repository keeps `folder`: one still running, or one that died before reporting, was
  * started from it; undefined when none was.
@@ -193,8 +188,8 @@ function planRepository(params: {
 			name: spellUnder({ path: worktree.path, folder: dirname(repository) }),
 		}))
 		.filter(function listed(worktree) {
-			if (!isTrashed({ path: worktree.name, workspace: dirname(repository) })) return true
-			// in the trash: its background removal frees its branch; until then git refuses to delete it
+			if (!isParked({ path: worktree.path, main: repository })) return true
+			// in the trash (or the pool): its background removal frees its branch; until then git refuses to delete it
 			if (worktree.branch) keptBranches.add(worktree.branch)
 			return false
 		})

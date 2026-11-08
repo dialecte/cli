@@ -312,6 +312,40 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 		expect(calls).toEqual([])
 	})
 
+	for (const { name, folder } of [
+		{ name: 'the worktree itself', folder: '' },
+		{ name: 'a folder inside it', folder: 'src' },
+	])
+		it(`lot close run with the working folder of the cli in ${name} → kept, the reason says it runs from inside that worktree and to run it from another folder; nothing moved, exit 1`, () => {
+			const scenario = createScenario()
+			const { name: handover, worktree } = createLot({
+				scenario,
+				index: '0001',
+				tail: 'x',
+				state: 'committed',
+			})
+			const here = join(worktree, folder)
+			const { call, calls } = closing({ scenario, argv: [handover] })
+
+			const result = runLotClose({
+				...call,
+				cwd: here,
+				// the system lists the cli itself in its own working folder
+				listProcesses: () => [{ pid: process.pid, folder: here }],
+			})
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain(handover)
+			expect(result.output).toContain(worktree)
+			expect(result.output).toMatch(/from inside/)
+			expect(result.output).toMatch(/from another folder/)
+			expect(result.output).not.toContain('a process works in')
+			expect(existsSync(join(worktree, 'node_modules'))).toBe(true)
+			expect(poolEntriesOf(scenario.worktreesFolder)).toEqual([])
+			expect(trashedNamesOf(scenario.worktreesFolder)).toEqual([])
+			expect(calls).toEqual([])
+		})
+
 	it('a run-store entry with a live pid started from the worktree → kept (a mutation run), nothing moved, exit 1', () => {
 		const scenario = createScenario()
 		const { name, worktree } = createLot({

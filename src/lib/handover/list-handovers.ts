@@ -105,7 +105,7 @@ export function committedLotsOnBranch(handover: HandoverFolder): CommittedLots |
 	const head = revisionOf({ root, revision: `${lotsFile.head}^{commit}` })
 	const tip = revisionOf({ root, revision: `refs/heads/${lotsFile.branch}` })
 	if (!head || !tip) return undefined
-	return findCommittedLots({ root, head, tip, lots, compareContent: false })
+	return findCommittedLots({ root, head, tip, lots })
 }
 
 export function revisionOf(params: { root: string; revision: string }): string | undefined {

@@ -1643,3 +1643,237 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 		expect(freezes(root).at(-1)?.revised).toEqual([HELPER])
 	})
 })
+
+describe(
+	'a test file importing a vite worker with a query',
+	{ timeout: HELPER_SCENARIO_TIMEOUT },
+	() => {
+		it('a new test file importing ./x.worker?worker&url, its case failing on the stub → red recorded, the import is not refused as unresolvable', async () => {
+			const root = createVitestPackage({})
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': STUB,
+					'src/x.worker.ts': 'export {}\n',
+					'src/add.test.ts': [
+						"import { add } from './add.ts'",
+						"import workerUrl from './x.worker?worker&url'",
+						"import { describe, expect, it } from 'vitest'",
+						"describe('add', () => {",
+						"\tit('one plus two → three', () => { expect(workerUrl).toBeTypeOf('string'); expect(add(1, 2)).toBe(3) })",
+						'})',
+						'',
+					].join('\n'),
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([
+				'red      src/add.test.ts::add > one plus two → three  not-implemented: not implemented: add',
+			])
+		})
+	},
+)
+
+describe('test code moved without an edit', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
+	const SELF_CONTAINED_TEST = [
+		"import { describe, expect, it } from 'vitest'",
+		"describe('one', () => {",
+		"\tit('one is one', () => { expect(1).toBe(1) })",
+		'})',
+		'',
+	].join('\n')
+
+	/** The package with `base` committed; each `from` then removed and its text written at its `to` (nothing committed). */
+	function movedPackage(params: {
+		base: Record<string, string>
+		moves: Array<{ from: string; to: string; text?: string }>
+	}): string {
+		const root = createVitestPackage({ files: params.base })
+		for (const move of params.moves) {
+			const text = readFileSync(join(root, move.from), 'utf8')
+			unlinkSync(join(root, move.from))
+			writeFiles({ root, files: { [move.to]: move.text ?? text } })
+		}
+		return root
+	}
+
+	const MOVED_TEST_FILES: Array<{
+		name: string
+		base: Record<string, string>
+		from: string
+		to: string
+		caseName: string
+	}> = [
+		{
+			name: 'renamed in its folder',
+			base: { 'src/add.ts': IMPLEMENTED, 'src/add.test.ts': ADD_TEST },
+			from: 'src/add.test.ts',
+			to: 'src/add-moved.test.ts',
+			caseName: 'add > one plus two → three',
+		},
+		{
+			name: 'moved to another folder',
+			base: { 'src/a/one.test.ts': SELF_CONTAINED_TEST },
+			from: 'src/a/one.test.ts',
+			to: 'src/b/one.test.ts',
+			caseName: 'one > one is one',
+		},
+	]
+
+	for (const { name, base, from, to, caseName } of MOVED_TEST_FILES)
+		it(`a test file ${name}, its bytes as at the base → its case unchanged, no deleted case for the old path, the gate's tdd check passes, no red or green recorded`, async () => {
+			const root = movedPackage({ base, moves: [{ from, to }] })
+
+			const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+			const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+			expect(JSON.parse(status.output)).toMatchObject({
+				cases: [{ file: to, name: caseName, status: 'unchanged' }],
+				unfrozen: [],
+				findings: [],
+			})
+			expect(check).toMatchObject({ status: 'passed' })
+			expect(readLedger(root).entries).toEqual([])
+		})
+
+	const MOVED_HELPERS = [
+		{
+			name: 'helper',
+			from: 'src/test/helper.ts',
+			to: 'src/test/support/helper.ts',
+			text: 'export const HELPER = 1\n',
+		},
+		{
+			name: 'fixture',
+			from: 'src/test/fixtures/a.xml',
+			to: 'src/test/fixtures/old/a.xml',
+			text: '<a/>\n',
+		},
+	]
+
+	for (const { name, from, to, text } of MOVED_HELPERS)
+		it(`a test ${name} moved without an edit → not test code waiting for a freeze: status lists no unfrozen file, the gate's tdd check passes`, async () => {
+			const root = movedPackage({ base: { [from]: text }, moves: [{ from, to }] })
+
+			const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+			const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+			expect(JSON.parse(status.output)).toMatchObject({ unfrozen: [], findings: [] })
+			expect(check).toMatchObject({ status: 'passed' })
+		})
+
+	it('a helper and a fixture moved, the helper with an edit → only the edited helper is test code waiting for a freeze; the unchanged fixture is not, the gate check fails naming the helper', async () => {
+		const root = movedPackage({
+			base: {
+				'src/test/helper.ts': 'export const HELPER = 1\n',
+				'src/test/fixtures/a.xml': '<a/>\n',
+			},
+			moves: [
+				{
+					from: 'src/test/helper.ts',
+					to: 'src/test/support/helper.ts',
+					text: 'export const HELPER = 2\n',
+				},
+				{ from: 'src/test/fixtures/a.xml', to: 'src/test/fixtures/old/a.xml' },
+			],
+		})
+
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(JSON.parse(status.output)).toMatchObject({ unfrozen: ['src/test/support/helper.ts'] })
+		expect(check).toMatchObject({
+			status: 'failed',
+			reason: expect.stringContaining('src/test/support/helper.ts'),
+		})
+		expect(check).not.toMatchObject({ reason: expect.stringContaining('a.xml') })
+	})
+
+	it('a test file renamed to a non-test name with its bytes (src/a.test.ts → src/a.test.ts.off) → its base case listed deleted, the gate check reports the deleted file', async () => {
+		const root = movedPackage({
+			base: { 'src/a.test.ts': SELF_CONTAINED_TEST },
+			moves: [{ from: 'src/a.test.ts', to: 'src/a.test.ts.off' }],
+		})
+
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(JSON.parse(status.output)).toMatchObject({
+			findings: [{ verb: 'deleted', file: 'src/a.test.ts' }],
+		})
+		expect(check).toMatchObject({
+			details: [expect.stringContaining('deleted  src/a.test.ts')],
+		})
+	})
+
+	it('a non-test file renamed to a test name with its bytes (src/b.test.ts.off → src/b.test.ts) → its cases are a new file needing red and green: missing receipt, the gate check fails', async () => {
+		const root = movedPackage({
+			base: { 'src/b.test.ts.off': SELF_CONTAINED_TEST },
+			moves: [{ from: 'src/b.test.ts.off', to: 'src/b.test.ts' }],
+		})
+
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(JSON.parse(status.output)).toMatchObject({
+			cases: [{ file: 'src/b.test.ts', name: 'one > one is one', status: 'missing receipt' }],
+		})
+		expect(check).toMatchObject({ status: 'failed' })
+	})
+
+	const SUB_TEST_BASE = [
+		"import { sub } from './sub.ts'",
+		"import { describe, expect, it } from 'vitest'",
+		"describe('sub', () => {",
+		"\tit('three minus one → two', () => { expect(sub(3, 1)).toBe(2) })",
+		"\tit('five minus two → three', () => { expect(sub(5, 2)).toBe(3) })",
+		'})',
+		'',
+	].join('\n')
+
+	const SUB_IMPLEMENTED =
+		'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n'
+
+	it('two test files moved, one with its bytes and one with a case edited → the first unchanged; the second a new file whose cases need red and green, its old path listed deleted', async () => {
+		const root = movedPackage({
+			base: {
+				'src/add.ts': IMPLEMENTED,
+				'src/add.test.ts': ADD_TEST,
+				'src/sub.ts': SUB_IMPLEMENTED,
+				'src/sub.test.ts': SUB_TEST_BASE,
+			},
+			moves: [
+				{ from: 'src/add.test.ts', to: 'src/add-moved.test.ts' },
+				{
+					from: 'src/sub.test.ts',
+					to: 'src/sub-moved.test.ts',
+					text: SUB_TEST_BASE.replace('toBe(2)', 'toBe(3 - 1)'),
+				},
+			],
+		})
+
+		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+		expect(JSON.parse(status.output)).toMatchObject({
+			cases: [
+				{ file: 'src/add-moved.test.ts', name: 'add > one plus two → three', status: 'unchanged' },
+				{
+					file: 'src/sub-moved.test.ts',
+					name: 'sub > three minus one → two',
+					status: 'missing receipt',
+				},
+				{
+					file: 'src/sub-moved.test.ts',
+					name: 'sub > five minus two → three',
+					status: 'missing receipt',
+				},
+			],
+			findings: [{ verb: 'deleted', file: 'src/sub.test.ts' }],
+		})
+		expect(check).toMatchObject({ status: 'failed' })
+	})
+})

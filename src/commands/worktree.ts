@@ -21,7 +21,7 @@ import { rehearsalScratchRoot } from '../lib/handover/rehearse-handover.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
-import { addWorktree } from '../lib/worktree/add-worktree.ts'
+import { addWorktree, refuseRepositoryPath } from '../lib/worktree/add-worktree.ts'
 import { planPrune } from '../lib/worktree/prune-worktrees.ts'
 import {
 	NODE_MODULES_PROBLEMS_SHOWN,
@@ -80,8 +80,11 @@ export function runWorktreeAdd(params: {
 	const [repository, branch] = positionalArguments({ argv, valueOptions: ['from'] })
 	if (!repository || !branch)
 		return { exitCode: 2, output: 'worktree add: expected <repository> <branch> [--from <ref>]' }
+	const repositoryPath = resolve(params.cwd, repository)
+	const refusal = refuseRepositoryPath(repositoryPath)
+	if (refusal) return { exitCode: 2, output: `worktree add: ${refusal}` }
 	const added = addWorktree({
-		repository: resolve(params.cwd, repository),
+		repository: repositoryPath,
 		branch,
 		from: getArg(argv, 'from'),
 		now: params.now,

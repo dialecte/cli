@@ -22,7 +22,13 @@ import {
  * that does not test with vitest skips the step.
  */
 import { caseLabel } from './select-cases.ts'
-import { countChangedFiles, hashChangedTestCode, readLedger, resolveBase } from './tdd-files.ts'
+import {
+	countChangedFiles,
+	hashChangedTestCode,
+	listDeletedTestFiles,
+	readLedger,
+	resolveBase,
+} from './tdd-files.ts'
 import { findingLine, readTddState } from './tdd-state.ts'
 import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
 
@@ -66,7 +72,8 @@ export async function checkTddReceipts(params: {
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
 	const testCode = hashChangedTestCode({ root, base, packageJson })
-	if (testCode.size === 0)
+	// a change that only deletes test files still lists their cases, as deleted
+	if (testCode.size === 0 && listDeletedTestFiles({ root, base }).length === 0)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
 	const state = await readTddState({ root, packageJson, ledger, base })
 	if ('failure' in state) return { status: 'failed', reason: state.failure }

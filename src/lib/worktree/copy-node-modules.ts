@@ -49,7 +49,8 @@ function runCp(args: string[]): CopyRun {
 
 /**
  * Packages (`name` and `@scope/name`) of `to` (a copy of `from`, or `from` renamed) linked by a relative path
- * that leaves `node_modules`: re-pointed absolute to where the link reached from `from`.
+ * that leaves the checkout holding `from` (a sibling repository): re-pointed absolute to where the link reached
+ * from `from`. A link into the checkout itself (an npm workspace package) stays relative.
  */
 export function relinkEscapingLinks(params: {
 	from: string
@@ -67,7 +68,9 @@ export function relinkEscapingLinks(params: {
 		const target = readlinkSync(copy)
 		if (isAbsolute(target)) continue
 		const resolved = resolve(dirname(join(params.from, entry)), target)
-		if (!relative(params.from, resolved).startsWith('..')) continue
+		// inside node_modules, or inside its own checkout (an npm workspace package): it reaches the same
+		// package from wherever node_modules lands in a checkout of the repository
+		if (!relative(dirname(params.from), resolved).startsWith('..')) continue
 		rmSync(copy, { force: true })
 		symlinkSync(params.real ? realPathOf(resolved) : resolved, copy)
 		relinked.push(entry)
