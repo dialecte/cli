@@ -78,15 +78,15 @@ without a verb lists every form that replaced it. Asked with `--help`, an old fo
 stdout, with the words given before `--help`, exit 0; with `--help --json` it prints
 `{ renamed: [{ old, new }] }`, the words after `dialecte` (`record` lists its five forms).
 
-| 1.0                                                                                   | Before                     |
-| ------------------------------------------------------------------------------------- | -------------------------- |
-| `dialecte lot finding <folder> --round <n> --severity <s> --at <file:line> <finding>` | `dialecte record review`   |
-| `dialecte lot decide <folder> <id> <state>`                                           | `dialecte record decision` |
-| `dialecte lot snapshot <folder> --round <n>`                                          | `dialecte record snapshot` |
-| `dialecte lot choice <folder> --by <who> <decision>`                                  | `dialecte record choice`   |
-| `dialecte lot standard <folder> consulted <note> \| not-consulted <reason>`           | `dialecte record standard` |
-| `dialecte lot delta <folder> --round <n> [--worktree] [--json]`                       | `dialecte review delta`    |
-| `dialecte lot recap <folder>`                                                         | `dialecte recap`           |
+| 1.0                                                                                       | Before                     |
+| ----------------------------------------------------------------------------------------- | -------------------------- |
+| `dialecte lot finding <id\|folder> --round <n> --severity <s> --at <file:line> <finding>` | `dialecte record review`   |
+| `dialecte lot decide <id\|folder> <finding> <state>`                                      | `dialecte record decision` |
+| `dialecte lot snapshot <id\|folder> --round <n>`                                          | `dialecte record snapshot` |
+| `dialecte lot choice <id\|folder> --by <who> <decision>`                                  | `dialecte record choice`   |
+| `dialecte lot standard <id\|folder> consulted <note> \| not-consulted <reason>`           | `dialecte record standard` |
+| `dialecte lot delta <id\|folder> --round <n> [--worktree] [--json]`                       | `dialecte review delta`    |
+| `dialecte lot recap <id\|folder>`                                                         | `dialecte recap`           |
 
 `dialecte handover write <lots.json>` names what `dialecte handover <lots.json>` does; the old form stays.
 
@@ -367,7 +367,7 @@ The hand-over follows the profile:
   install, the linked dependencies), no record can answer the real run: the rehearsal says which part, and
   does not run contrib.
 - Both profiles get the card's `standard` line (see the hand-over card below) and
-  `dialecte lot standard <folder> consulted <note> | not-consulted <reason>`.
+  `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>`.
 
 ## Contributing to a Dialecte package
 
@@ -634,7 +634,7 @@ the answer.
   iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover write <lots.json> [--out <dir>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
+- `dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
   hand-over a human runs. The lots file names the repository, the branch and HEAD expected, and the lots
   (paths, message):
 
@@ -662,7 +662,16 @@ the answer.
   `commit.sh` that runs
   `npx --no-install @dialecte/cli handover run <folder>` (bash, also run with `sh`; when the repository
   installs no cli that can, it says so in one line with the fix) - and prints the hand-over card, the
-  command with its absolute `cd` under it. The folder is the lots file's, or `--out <dir>`. Every hand-over
+  command with its absolute `cd` under it. The folder is the lots file's, or `--out <id|folder>`: a lot (its
+  index, full name, a path to its folder or `.dialecte/lot`) writes into the lot folder, any other word is a
+  folder; either way the folder is taken by its real path (a folder not made yet: the real path of its nearest
+  existing ancestor, then the rest) before anything is written, so `commit.sh`, the lock, the card, `--json`'s
+  `folder` and the registry all hold it. A word naming both an existing folder and a lot is the folder: the
+  card's output starts with the note saying so (`outNote` in `--json`). Refused (exit 2, nothing written), when the folder is a lot folder, in
+  this order: a simulated lot (`a simulated lot has no hand-over`), a `canceled` or `failed` lot, an open
+  question (`answer q<k> first: dialecte lot answer <full name> q<k> "<answer>" ...`), a lots file whose
+  repository is not the lot's worktree or whose branch is not the lot's (both named); and for any folder whose
+  registered hand-over is `committed` (`<name> is committed: a committed hand-over is never rewritten`). Every hand-over
   written is registered in the repository's store, `<git common dir>/dialecte-handover/`: shared by every
   worktree of the repository, kept when a worktree is removed, never in the working tree. The store holds
   one entry per hand-over, `<name>.json` = `{ folder, branch, worktree, index, written, state }` (the folder's
@@ -672,8 +681,10 @@ the answer.
   `handover abandon`); the folder stays where it was written. The name is `<yyyy-mm-dd>-<branch slug>[-<n>]` -
   the local date, the branch with every run of characters outside `[A-Za-z0-9._-]` (the `/` included)
   turned into one `-`, then `-2`, `-3`... when that name has an entry already. A folder registered already
-  (the same real path) keeps its name: `--rehash` updates its entry, never a second one. A rehearsal and
-  `show` write no entry. `--json` answers the card as data: the verdict, `profile`,
+  (the same real path) keeps its name: `--rehash` updates its entry, never a second one, and never one
+  recorded `committed`. An entry is written whole (a reader sees the old entry or the new one; on a file
+  system without hard links a new entry is written exclusively instead) and stays writable, so an older cli
+  can still record its state. A rehearsal and `show` write no entry. `--json` answers the card as data: the verdict, `profile`,
   `failedGates`, `otherTreeGates`, `declarations` (the entries to read), `gates` (the gate lines: name,
   status, detail), `contrib` (a contributor's contrib rows, one per row: name, status, detail, and `stale`
   or `source` - `rehearsal`, `from <commit>` - when they apply), `tdd` (the tdd lines as the text a person reads, no layout and no padding), `notes`, `name` (the
@@ -745,7 +756,8 @@ the answer.
     `✗ standard  configured, not consulted: dialecte lot standard <folder> consulted <note>` (blocks) when
     one is configured and none is recorded; `! standard  not consulted: none configured (DIALECTE_STANDARD)`
     otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. The station records it
-    with `dialecte lot standard <folder> consulted <note>` or `not-consulted <reason>`.
+    with `dialecte lot standard <id|folder> consulted <note>` or `not-consulted <reason>` (the card's line
+    names the hand-over's folder).
   - `contrib` (a contributor's): the rows of the `dialecte contrib` record of the tree the hand-over commits,
     read as gate lines (`rules` with its errors and warnings, the package's steps, `release`), then the live
     `mutation` row. A stored record counts when its key is the one the `contrib` guard asks for: a run at
@@ -953,13 +965,16 @@ the answer.
   pending or partly committed; `--rehearse` too): an abandoned, committed, stale or gone one is skipped.
   Two or more: refused, nothing run and no run marker, one `name  branch  verdict` line each (`READY` or
   `BLOCKED`, computed as `show` does), exit 2; none: says so, exit 1. `handover run <name>` runs that
-  registered hand-over (a gone one: exit 2, naming its folder).
+  registered hand-over (a gone one: exit 2, naming its folder). A hand-over in the folder of a `canceled` lot
+  is not run, however it is named (exit 2 before any guard, naming the lot, nothing written).
 - `dialecte handover abandon [<name|folder>]` gives up a hand-over that will not run: it writes
   `abandoned.json` (when) in its folder, records its entry `abandoned`, then removes the lock of its worktree when the lock names this
   folder's `commit.sh` (a lock naming another hand-over is left, said in one line). Without an argument:
   the hand-over the current worktree's lock names; no lock: says nothing is held, exit 1. Refused (exit 2,
   nothing written) while a real run of it is in progress, and once every lot is committed; a partly
-  committed one may be abandoned, its commits stay. It never touches the index, a ref or a commit. An
+  committed one may be abandoned, its commits stay. A lot folder is refused too (exit 2, nothing written):
+  `<full name> is a lot: its hand-over is redone with dialecte handover write --rehash --out <full name>; to
+  end the lot: dialecte lot stop <full name>`. It never touches the index, a ref or a commit. An
   abandoned hand-over is `abandoned` in `list` and `show`'s listing, `ABANDONED` on its card (no run
   command); `run` without a folder skips it, `run <it>` refuses (exit 2, naming the marker); abandoning it
   again says it already is (exit 0), and `dialecte handover <lots.json> --rehash` of its folder is refused
@@ -1037,22 +1052,28 @@ the answer.
   (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`).
   Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
-  a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it, no
+  a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it
+  (a lot path is inside a scope entry by path segments: `lib/x` is inside `lib/`, `lib-other/x` and `libx` are
+  not; an entry whose glob cuts a name, `src/data*`, compares by string prefix), no
   overlap with an open lot of the same store. Then it claims the next worktree index, publishes the lot folder
   `<git common folder>/dialecte-lots/<index>-<repository>-<branch tail>/` (the brief, a copy of the plan, the
   first transition, `identity.json` last; every record written once, read-only), makes the numbered worktree at
   the recorded base commit and its `.dialecte/lot` link to the lot folder. The store is appended to the user's
   store list (`$XDG_STATE_HOME/dialecte/lot-stores`, else `~/.local/state/dialecte/lot-stores`), refused when
   that list sits inside a git work tree. `--dry-run` runs the checks (the store-list refusal included, no
-  hard-link probe) and names the lot, writing and claiming nothing. A worktree that cannot be made leaves the lot
+  hard-link probe), names the lot and the start to run next (`next: dialecte lot start <brief path as given>`),
+  writing and claiming nothing. A worktree that cannot be made leaves the lot
   `failed` (exit 1), nothing removed, with `next: dialecte lot stop <full name> --reason <text>`; a link that
   cannot be made leaves the lot working (exit 0, a `note:` line, `notes` in JSON; `lot status` reports the link
   missing). Every `--json` exit is JSON: `{ lot, folder, worktree, runner, notes, next }` started,
-  `{ lot, folder, state, reason, next }` failed, `{ error, next: null }` before any lot exists.
+  `{ dryRun: true, lot, worktree, next }` dry run, `{ lot, folder, state, reason, next }` failed,
+  `{ refused, next: null }` a refused brief, `{ error, usage, next: null }` a usage error (exit 2),
+  `{ error, next: null }` any other exit before a lot exists.
 - `dialecte lot status <id> [--json]` derives the lot's state from its records (`working`, `input-required`,
   `ready`, `committed`, `canceled`, `failed`), with the worktree and link checks and the exact next command (the
   text form adds an `also:` line when there is one, five lines at most); it
-  reads files only, runs no git and writes nothing. Exit 0 for a lot found, 2 for an unknown or ambiguous id. An
+  reads files only, runs no git and writes nothing. Exit 0 for a lot found, 2 for an unknown or ambiguous id
+  (`{ error, next: null }` with `--json`) or a usage error (`{ error, usage, next: null }`). An
   `<id>` is an index (`171` = `0171`), a full name, a lot folder or `.dialecte/lot`; a word naming an existing
   folder is that folder. The review rounds' verbs take `<id|folder>` the same way (a write needs an index
   unique across every store of the list), and a lot folder is accepted as their hand-over folder although it
@@ -1068,27 +1089,28 @@ the answer.
 - `dialecte lot mutation <off|changed|audit|gate>` writes the lot's mutation switch (`"mutation"`, no
   reason). Without it, `dialecte mutants run` mutates the changed lines when the lot's diff touches the
   declared scope and nothing otherwise; `audit` mutates the whole scope; `gate` runs as `changed`.
-- `dialecte lot standard <folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
+- `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
   (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
   references of what was read stay in the findings ledger. Another state, or no note, is a usage error
   (exit 2); a folder inside a repository is refused as below.
 - `dialecte lot finding`, `decide`, `snapshot`, `choice` and `delta` keep a lot's review rounds in its
   lot folder, or in a hand-over folder (`_commit-plan/<topic>-<date>/`) that stays outside every repository:
   each refuses any other folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
-  words after it are taken as they are, so a finding or a reason may start with `--`.
-  - `lot finding <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
+  words after it are taken as they are, so a finding or a reason may start with `--`. Each writes its file
+  whole (a temporary file renamed over it), so a reader never sees half a ledger.
+  - `lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`
     appends the row `| R<n>-<k> | <n> | <severity> | <file:line> | <finding> | open |` to
     `<folder>/findings-ledger.md` (the folder, the file and its table made when absent; k one past the
     highest of the round). A `|` is written `\|`; a line break is refused. A hand-written ledger keeps
     every other byte.
-  - `lot decide <folder> <id> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
+  - `lot decide <id|folder> <finding> <state>` rewrites that row's state cell: `open`, `fix-to-verify`,
     `fixed <round> [note]` (a round after the one that raised it), `accepted <reason>`, `logged <where>`.
     An id not in the ledger is refused, naming the ids it holds.
-  - `lot choice <folder> --by <who> <decision>` appends `| <decision> | <who> | <yyyy-mm-dd> |` to
+  - `lot choice <id|folder> --by <who> <decision>` appends `| <decision> | <who> | <yyyy-mm-dd> |` to
     `<folder>/decisions.md` (made with its title and table when absent): a decision made outside the
     findings ledger, the user's above all. A `|` is written `\|`; an empty `--by`, a line break, or more
     than one decision word (quote it) is refused.
-  - `lot snapshot <folder> --round <n>` copies every file `git status --porcelain -z
+  - `lot snapshot <id|folder> --round <n>` copies every file `git status --porcelain -z
     --untracked-files=all` lists at the worktree root (the old path of a rename included) to
     `round-<n>/` at its repository-relative path - bytes, mode, a symlink as a symlink; a path gone from
     disk (or now a folder) that HEAD holds goes in `round-<n>.deleted`, NUL-separated, sorted; HEAD in
@@ -1096,7 +1118,7 @@ the answer.
     index or at HEAD) are refused; a run that
     stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
     never part of it.
-  - `lot delta <folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
+  - `lot delta <id|folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
     `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
     in the form that fits where the file is: the snapshot copy against the worktree file (or
     `/dev/null` when it is gone), `/dev/null` against a file deleted then and back now or new and absent
@@ -1119,7 +1141,9 @@ the answer.
     made absolute where they are, the worktree moved to the trash (`.worktrees/_trash/`, by
     `git worktree move`), its `node_modules` parked in the pool (`.worktrees/_pool-<repository>-<n>`) from
     there, its caches left in the trashed folder, and the trashed worktree removed in the background. Kept,
-    with why and nothing done for that hand-over: a hand-over still `pending`; its worktree is the main
+    with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
+    (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
+    store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
     (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); a mutation
@@ -1211,7 +1235,9 @@ the answer.
   earlier cli versions made in the system's temporary folder, each judged by its marker - with the
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
-  commands (or the `--yes` command) to a person. Kept, each with why: an unmerged branch; the branch the
+  commands (or the `--yes` command) to a person. Kept, each with why: first, a worktree a lot of the
+  repository's store names (by real path) while the lot is not `committed` nor `canceled`
+  (`<branch>: lot <full name> <state>`; the store read once per repository, no git process per lot); an unmerged branch; the branch the
   main checkout is on; a worktree a mutation run was started from while that run still runs
   (`mutation run <id> still running (pid <pid>)`) or after it died before reporting
   (`mutation run <id> died before reporting: rerun or dialecte mutants abandon <id>`; a reported or
@@ -1313,7 +1339,7 @@ Text written with an assistant tends to retell the diff and grow long. The pull 
 an expandable part made from records, and a short human part that is checked before it is posted. Both
 commands only print; the user posts.
 
-- `dialecte lot recap <hand-over folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
+- `dialecte lot recap <id|folder>` prints the expandable part (`<details>`) as GitHub markdown, from the
   records only: the commits of the lots (or `not committed yet`), the test cases the newest gate record of the
   current tree judged red then green, counted per test file, the gate and rules lines (and `mutation`), the
   lot's mutation runs (`Mutation`: each run of the branch and of the branches it merges, oldest first, with
@@ -1321,7 +1347,9 @@ commands only print; the user posts.
   on those branches and scheduled, with its follow-up; `No mutation run.`, or `No mutation scope declared.`
   for a package without one), the review rounds from
   the findings ledger, the decisions (accepted findings, the lot declaration's `accept` and `revised` entries,
-  the rows of `decisions.md`), the logged findings as follow-ups, and who reviewed and posted it (`git config
+  the rows of `decisions.md`, then, in a lot folder, one row per answer `answers/q<k>.json` in `k` order:
+  `q<k> <question text> -> <answer>`, by who answered, on the UTC day of the answer; an answer is never copied
+  into `decisions.md`), the logged findings as follow-ups, and who reviewed and posted it (`git config
   user.name`; no name set is refused). Every section is always there, saying so in one line when empty; a
   branch that does not hold the lots on top of the recorded base lists none as committed and says so. Each
   finding is printed with its id, its text without one leading reviewer tag `[...]`. The ledger is read whole:

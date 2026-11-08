@@ -11,6 +11,7 @@ import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 
 import { renderSectionCard } from '../card/render-section-card.ts'
+import { realPathOf } from '../file-system.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
@@ -178,12 +179,16 @@ function isEmptyDeclaration(text: string): boolean {
 	}
 }
 
-/** The repository's hand-over lock goes when it names this folder's script. */
+/**
+ * The repository's hand-over lock goes when it names this folder's script, by real path (the folder may be named
+ * through a link the lock does not hold).
+ */
 function releaseLock(params: { root: string; folder: string }): void {
 	const lockPath = handoverLockPath(params.root)
 	if (
 		existsSync(lockPath) &&
-		readFileSync(lockPath, 'utf8').trim() === join(params.folder, COMMIT_SCRIPT_FILE)
+		realPathOf(readFileSync(lockPath, 'utf8').trim()) ===
+			realPathOf(join(params.folder, COMMIT_SCRIPT_FILE))
 	)
 		rmSync(lockPath)
 }

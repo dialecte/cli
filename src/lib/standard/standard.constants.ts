@@ -8,7 +8,7 @@ export const STANDARD_ENVIRONMENT_VARIABLE = 'DIALECTE_STANDARD'
 export const STANDARD_STATES = ['consulted', 'not-consulted'] as const
 
 export const STANDARD_USAGE =
-	'lot standard: expected <folder> consulted <note> | not-consulted <reason>'
+	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason>'
 
 /** The card's line name. */
 export const STANDARD_LINE_NAME = 'standard'

@@ -3,10 +3,11 @@
  * process, so every reader of a state (the overlap, `status`) builds its input the same way.
  */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { readAbandonedMarker, readRunMarker } from '../handover/handover-marker-read.ts'
 import { registeredEntryOf } from '../handover/handover-store-read.ts'
+import { HANDOVER_STORE_FOLDER } from '../handover/handover.constants.ts'
 import { readAnswers } from './answers.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
 import { readIdentity } from './identity.ts'
@@ -16,6 +17,11 @@ import { STORE_FILES } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
 import type { LotOverlap, LotStateInput } from './store.types.ts'
+
+/** The hand-over registry of the repository whose store holds `lotFolder`: beside the store in the git common folder. */
+export function registryOfLotFolder(lotFolder: string): string {
+	return join(dirname(dirname(lotFolder)), HANDOVER_STORE_FOLDER)
+}
 
 /**
  * The input of `lotState` for a lot folder: its identity, transitions and answers, the registry entry naming it,

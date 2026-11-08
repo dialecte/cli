@@ -1,13 +1,13 @@
 /**
  * The verbs of a lot's review rounds that write in its hand-over folder, run by `dialecte lot`:
- * `lot finding <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`,
- * `lot decide <folder> <id> <state...>`, `lot snapshot <folder> --round <n>`: the findings ledger and the
- * per-round snapshots; `lot choice <folder> --by <who> <decision>`: a decision made outside the ledger, in its
- * `decisions.md`; `lot standard <folder> consulted <note> | not-consulted <reason>`: the standard check.
+ * `lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`,
+ * `lot decide <id|folder> <finding> <state...>`, `lot snapshot <id|folder> --round <n>`: the findings ledger and
+ * the per-round snapshots; `lot choice <id|folder> --by <who> <decision>`: a decision made outside the ledger, in
+ * its `decisions.md`; `lot standard <id|folder> consulted <note> | not-consulted <reason>`: the standard check.
  * `runRecordVerb` runs one by its `lot` verb; `runRecord` takes it under the old word the table of the renamed
  * forms gives it.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
@@ -40,9 +40,11 @@ import {
 	workTreeTopOf,
 } from '../lib/review-rounds/worktree-state.ts'
 import { recordStandard } from '../lib/standard/record-standard.ts'
+import { replaceWhole } from '../lib/store/publish.ts'
 
 import type { RecordVerb } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { TemporaryFileSeam } from '../lib/store/store.types.ts'
 
 /** A review rounds' verb under its old word (`runRecord({ argv: [<old word>, ...] })`). */
 export function runRecord(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
@@ -58,20 +60,27 @@ export function runRecordVerb(params: {
 	cwd: string
 	argv: string[]
 	now?: Date
+	/** Called once the written file's temporary file is written and before it replaces the file. */
+	afterTemporaryWritten?: TemporaryFileSeam
 }): CommandResult {
-	const { verb, cwd, argv, now } = params
+	const { verb, cwd, argv, now, afterTemporaryWritten } = params
 	try {
-		if (verb === 'choice') return recordChoice({ cwd, argv, now })
-		if (verb === 'finding') return recordFinding({ cwd, argv })
-		if (verb === 'decide') return recordDecision({ cwd, argv })
+		if (verb === 'choice') return recordChoice({ cwd, argv, now, afterTemporaryWritten })
+		if (verb === 'finding') return recordFinding({ cwd, argv, afterTemporaryWritten })
+		if (verb === 'decide') return recordDecision({ cwd, argv, afterTemporaryWritten })
 		if (verb === 'snapshot') return recordSnapshot({ cwd, argv })
-		return recordStandard({ cwd, argv, now })
+		return recordStandard({ cwd, argv, now, afterTemporaryWritten })
 	} catch (error) {
 		return { exitCode: 1, output: `${verbPrefix(verb)}: ${(error as Error).message}` }
 	}
 }
 
-function recordChoice(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+function recordChoice(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	afterTemporaryWritten?: TemporaryFileSeam
+}): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: CHOICE_OPTIONS })
 	if (typeof read === 'string') return { exitCode: 2, output: `${CHOICE_USAGE} (${read})` }
 	const [folderWord, decision] = read.words
@@ -94,11 +103,16 @@ function recordChoice(params: { cwd: string; argv: string[]; now?: Date }): Comm
 		decision,
 		by,
 		when: dayOf(params.now ?? new Date()),
+		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
 	return { exitCode: 0, output: `${verbPrefix('choice')}: by ${by} - ${path}` }
 }
 
-function recordFinding(params: { cwd: string; argv: string[] }): CommandResult {
+function recordFinding(params: {
+	cwd: string
+	argv: string[]
+	afterTemporaryWritten?: TemporaryFileSeam
+}): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: FINDING_OPTIONS })
 	if (typeof read === 'string') return { exitCode: 2, output: `${FINDING_USAGE} (${read})` }
 	const usage = { exitCode: 2, output: FINDING_USAGE }
@@ -121,11 +135,23 @@ function recordFinding(params: { cwd: string; argv: string[] }): CommandResult {
 	if (refusal) return { exitCode: 1, output: `${verbPrefix('finding')}: ${refusal}` }
 	mkdirSync(folder, { recursive: true })
 	const ledger = join(folder, LEDGER_FILE)
-	const id = appendFinding({ path: ledger, title: basename(folder), round, severity, at, finding })
+	const id = appendFinding({
+		path: ledger,
+		title: basename(folder),
+		round,
+		severity,
+		at,
+		finding,
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
 	return { exitCode: 0, output: `${verbPrefix('finding')}: ${id} open - ${ledger}` }
 }
 
-function recordDecision(params: { cwd: string; argv: string[] }): CommandResult {
+function recordDecision(params: {
+	cwd: string
+	argv: string[]
+	afterTemporaryWritten?: TemporaryFileSeam
+}): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [] })
 	if (typeof read === 'string') return { exitCode: 2, output: `${DECIDE_USAGE} (${read})` }
 	const [folderWord, id, ...stateWords] = read.words
@@ -160,7 +186,11 @@ function recordDecision(params: { cwd: string; argv: string[] }): CommandResult 
 			output: `${verbPrefix('decide')}: ${id} was raised in round ${row.round}: the round that verified its fix comes after it`,
 		}
 	lines[row.line] = replaceStateCell({ line: lines[row.line], written: decision.written })
-	writeFileSync(ledger, lines.join('\n'))
+	replaceWhole({
+		path: ledger,
+		text: lines.join('\n'),
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
 	return {
 		exitCode: 0,
 		output: `${verbPrefix('decide')}: ${id} ${decision.written} - ${ledger}`,

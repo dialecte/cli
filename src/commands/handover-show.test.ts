@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import {
@@ -370,7 +370,7 @@ describe('handover show: changes since the review', { timeout: HANDOVER_CASE_TIM
 
 		writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 9\n}\n' } })
 		expect(cardOf(show({ cwd: root, argv: [STORE_FIRST_NAME] })).afterBox).toEqual([
-			`1 file(s) differ from the reviewed snapshot: re-gate, then dialecte handover ${folder}/lots.json --rehash`,
+			`1 file(s) differ from the reviewed snapshot: re-gate, then dialecte handover ${realpathSync(folder)}/lots.json --rehash`,
 			expect.stringMatching(new RegExp(`handover run .*${folder}`)),
 		])
 	})
@@ -396,7 +396,7 @@ describe('handover show: changes since the review', { timeout: HANDOVER_CASE_TIM
 		expect(show({ cwd: root, argv: [STORE_FIRST_NAME] })).toMatchObject({
 			exitCode: 0,
 			output: expect.stringContaining(
-				`2 file(s) differ from the reviewed snapshot: re-gate, then dialecte handover ${folder}/${HANDOVER_FILES.lots} --rehash`,
+				`2 file(s) differ from the reviewed snapshot: re-gate, then dialecte handover ${realpathSync(folder)}/${HANDOVER_FILES.lots} --rehash`,
 			),
 		})
 	})

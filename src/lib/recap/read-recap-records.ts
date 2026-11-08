@@ -1,7 +1,7 @@
 /**
  * The records a recap is built from, read and never written: the lots and their commits, the gate and rules
  * records of the repository, the lot's mutation runs, the findings ledger, the lot declaration and
- * `decisions.md` of the hand-over folder, the git user name.
+ * `decisions.md` of the hand-over folder (then a lot folder's answers), the git user name.
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -22,6 +22,7 @@ import { DECISIONS_FILE, LEDGER_FILE } from '../review-rounds/review-rounds.cons
 import { readDeclaredCases } from '../tdd/lot-declaration.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
+import { readLotAnswerDecisions } from './lot-answer-decisions.ts'
 import { readFindings } from './read-findings.ts'
 import { readRecapMutation } from './read-recap-mutation.ts'
 import { FOLDER_LOT_FILE, NO_USER_NAME } from './recap.constants.ts'
@@ -85,7 +86,11 @@ export function readRecapRecords(params: {
 		findings,
 		accepted,
 		revised,
-		decisions: readDecisions(join(folder, DECISIONS_FILE)),
+		// a lot's answers after the file's own rows: never copied into decisions.md
+		decisions: [
+			...readDecisions(join(folder, DECISIONS_FILE)),
+			...readLotAnswerDecisions({ folder }),
+		],
 		user,
 	}
 }

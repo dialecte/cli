@@ -26,7 +26,7 @@ import type { CaseStatus, LotCaseEntry } from '../lib/tdd/tdd.types.ts'
 const USER_NAME = 'Ada Lovelace'
 const USER_EMAIL = 'ada@example.com'
 
-const RECAP_USAGE = 'lot recap: expected <hand-over folder>'
+const RECAP_USAGE = 'lot recap: expected <id|folder>'
 
 const LEDGER_HEAD =
 	'# Findings ledger - lot\n\n| id | round | severity | file:line | finding | state |\n|---|---|---|---|---|---|\n'

@@ -1,7 +1,8 @@
 /**
  * `lot close`: for each named hand-over of the registry (by its name or its worktree's index), its worktree
  * (the path the registry entry holds) goes to the trash and its `node_modules` to the pool. Every keep rule
- * first, with no exemption: a hand-over not committed nor abandoned, the main checkout, a worktree that is no
+ * first, with no exemption: a worktree an open lot names (reason `lot <full name> <state>`), a hand-over not
+ * committed nor abandoned, the main checkout, a worktree that is no
  * registered worktree (or one already in the trash or the pool), one on another branch than the hand-over's, a
  * locked one, a mutation run from it, a process working in it, processes that cannot be listed, a dirty
  * worktree; nothing done for a hand-over kept. Every decision is taken for every argument before anything
@@ -15,6 +16,7 @@ import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
+import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
@@ -77,8 +79,18 @@ export function closeHandovers(params: {
 	}
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
+	// the lot keep rule: the repository's store read once for every argument
+	const lotKeeps = lotsKeepingWorktrees({ repository: main })
 	const decisions = targets.map(function decide(target) {
-		return decideTarget({ target, main, runFrom: params.runFrom, worktreesFolder, runs, processes })
+		return decideTarget({
+			target,
+			main,
+			runFrom: params.runFrom,
+			worktreesFolder,
+			runs,
+			processes,
+			lotKeeps,
+		})
 	})
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order
 	const owners = new Map<string, CloseTarget>()
@@ -158,6 +170,8 @@ function decideTarget(params: {
 	worktreesFolder: string
 	runs: readonly RunEntry[]
 	processes: readonly ProcessFolder[] | string
+	/** The worktrees the open lots name, by real path, with their reason. */
+	lotKeeps: ReadonlyMap<string, string>
 }):
 	| { kept: string }
 	| {
@@ -204,10 +218,14 @@ function whyKeep(params: {
 	runs: readonly RunEntry[]
 	/** The processes and their working folders, or why the system could not tell (then nothing closes). */
 	processes: readonly ProcessFolder[] | string
+	/** The worktrees the open lots name, by real path, with their reason: checked first. */
+	lotKeeps: ReadonlyMap<string, string>
 }): { kept: string } | { worktree: ListedWorktree } {
 	const { target } = params
 	const entry = target.entry
 	if (!entry) return { kept: 'no hand-over of that name or index' }
+	const lotKeep = params.lotKeeps.get(realPathOf(entry.worktree))
+	if (lotKeep) return { kept: lotKeep }
 	if (entry.state !== 'committed' && entry.state !== 'abandoned')
 		return { kept: `${entry.state}: only a committed or abandoned hand-over closes` }
 	if (realPathOf(entry.worktree) === realPathOf(params.main))

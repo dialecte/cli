@@ -6,7 +6,7 @@ export const HELP_FLAG = '--help'
 /** The short form of `--help`. */
 export const HELP_SHORT_FLAG = '-h'
 
-/** With a help flag, asks for the help as JSON. */
+/** Asks for JSON: with a help flag, the help; on a verb whose options could not be read, its usage error. */
 export const JSON_FLAG = '--json'
 
 /** The flags that ask for the help. */

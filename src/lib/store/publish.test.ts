@@ -9,8 +9,6 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
-import { deadPid } from '../../../test/dead-pid.ts'
-import { otherLivePid } from '../../../test/other-live-pid.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { publishOnce, replaceWhole } from './publish.ts'
@@ -83,17 +81,6 @@ describe('publishOnce', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(seen[0].finalExists).toBe(false)
 		expect(seen[0].text).toBe('the whole text')
 		expect(seen[0].name).toMatch(new RegExp(`^a\\.json\\.tmp-${process.pid}-\\d+$`))
-	})
-
-	it('a temporary of a dead pid in the folder → removed by this writer; one of another live pid kept', () => {
-		const folder = temporaryFolder('dialecte-publish-')
-		const dead = `000007.json.tmp-${deadPid()}-3`
-		const live = `000008.json.tmp-${otherLivePid()}-3`
-		writeFileSync(join(folder, dead), 'half')
-		writeFileSync(join(folder, live), 'half')
-
-		expect(publishOnce({ path: join(folder, '000001.json'), text: 'x', readOnly: true })).toBe(true)
-		expect(readdirSync(folder).sort()).toEqual(['000001.json', live])
 	})
 
 	it.skipIf(RUNS_AS_ROOT)(
@@ -191,16 +178,5 @@ describe('replaceWhole', { timeout: STORE_CASE_TIMEOUT }, () => {
 		).toBeUndefined()
 		expect(seen).toEqual([{ atPath: 'old', temporary: 'new' }])
 		expect(readFileSync(path, 'utf8')).toBe('new')
-	})
-
-	it('a temporary of a dead pid in the folder → removed; one of another live pid kept', () => {
-		const folder = temporaryFolder('dialecte-publish-')
-		const dead = `other.json.tmp-${deadPid()}-1`
-		const live = `other.json.tmp-${otherLivePid()}-1`
-		writeFileSync(join(folder, dead), 'half')
-		writeFileSync(join(folder, live), 'half')
-
-		expect(replaceWhole({ path: join(folder, 'entry.json'), text: 'x' })).toBeUndefined()
-		expect(readdirSync(folder).sort()).toEqual(['entry.json', live])
 	})
 })

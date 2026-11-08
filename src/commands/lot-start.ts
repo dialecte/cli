@@ -6,16 +6,18 @@
 import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
-import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { branchExists } from '../lib/git.ts'
 import { HANDOVER_STORE_FOLDER } from '../lib/handover/handover.constants.ts'
+import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
 import { checkBrief } from '../lib/store/brief.ts'
 import { readIdentity } from '../lib/store/identity.ts'
-import { failedNextOf, manualNextOf } from '../lib/store/lot-next.ts'
+import { lotUsageExit } from '../lib/store/lot-exits.ts'
+import { failedNextOf, manualNextOf, startNextOf } from '../lib/store/lot-next.ts'
 import { overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
+import { removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
 import { appendStoreList, storeListRefusal } from '../lib/store/store-list.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS, STORE_REFUSAL } from '../lib/store/store.constants.ts'
@@ -34,6 +36,7 @@ import {
 	IDENTITY_SCHEMA,
 	LINK_REFUSED_NOTE,
 	OVERLAP_REASON,
+	PROBE_NAME,
 	PROBE_SOURCE,
 	PROBE_TARGET,
 	START_FLAGS,
@@ -56,6 +59,10 @@ import type {
 	SymlinkFunction,
 } from './lot-start.types.ts'
 
+/**
+ * Starts the lot of a brief (or checks it with `--dry-run`); every exit is JSON under `--json`, a usage error and a
+ * refused brief included (exit 2, `next: null`).
+ */
 export function startLot(params: {
 	cwd: string
 	/** The words after the verb: `<brief.json>` and the options. */
@@ -69,20 +76,31 @@ export function startLot(params: {
 		valueOptions: START_VALUE_OPTIONS,
 		flags: START_FLAGS,
 	})
-	if (typeof read === 'string' || read.words.length !== 1)
-		return { exitCode: 2, output: renderLotUsage() }
+	if (typeof read === 'string')
+		return lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) })
+	const json = read.flags.has('json')
+	const [briefPath, ...extra] = read.words
+	if (briefPath === undefined)
+		return lotUsageExit({ reason: 'lot start takes one brief: none given', json })
+	if (extra.length > 0)
+		return lotUsageExit({
+			reason: `lot start takes one brief, not also ${extra.join(' ')}`,
+			json,
+		})
 	const effortFlag = read.values.get('effort')
 	if (effortFlag !== undefined && !BRIEF_EFFORTS.includes(effortFlag as BriefEffort))
-		return { exitCode: 2, output: renderLotUsage() }
-	const json = read.flags.has('json')
-	const checked = checkBrief({ briefPath: read.words[0], cwd: params.cwd })
+		return lotUsageExit({
+			reason: `--effort ${effortFlag} is not one of ${BRIEF_EFFORTS.join(', ')}`,
+			json,
+		})
+	const checked = checkBrief({ briefPath, cwd: params.cwd })
 	if (!checked.checked) return refusedOutput({ refused: checked.refused, json })
 	const brief = checked.checked
 	const worktreesFolder = join(dirname(brief.repository), WORKTREES_FOLDER)
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
 	if (listRefusal) return errorOutput({ exitCode: 2, message: listRefusal, json })
-	if (read.flags.has('dry-run')) return dryRunOutput({ brief, worktreesFolder, json })
+	if (read.flags.has('dry-run')) return dryRunOutput({ brief, briefPath, worktreesFolder, json })
 	try {
 		return startChecked({
 			brief,
@@ -191,7 +209,10 @@ export function probeHardLinks(params: {
 	}
 }
 
-/** The start after the checks: the store list, the probe, the claim, the lot folder, the re-check, the worktree. */
+/**
+ * The start after the checks: the dead probes' leftovers swept, the probe, the store list, the claim, the lot
+ * folder, the re-check, the worktree.
+ */
 function startChecked(params: {
 	brief: CheckedBrief
 	worktreesFolder: string
@@ -205,6 +226,11 @@ function startChecked(params: {
 	if (store === undefined)
 		return errorOutput({ exitCode: 2, message: `${brief.repository} holds no git folder`, json })
 	mkdirSync(store, { recursive: true })
+	removeDeadLeftovers({
+		folder: store,
+		pidOf: (name) => temporaryPidOf({ name, finalName: PROBE_NAME }),
+		kind: 'files',
+	})
 	const probe = probeHardLinks({ folder: store, link: seams.link })
 	if (probe) return errorOutput({ exitCode: 2, message: probe, json })
 	removeStoreLeftovers({ store })
@@ -215,6 +241,7 @@ function startChecked(params: {
 	})
 	const name = worktreeFolderName({ index, repository: brief.repository, branch: brief.branch })
 	const lotFolder = join(store, name)
+	seams.beforePublish?.()
 	const published = publishLotFolder({
 		store,
 		name,
@@ -403,39 +430,46 @@ function publishFailure(params: {
 	})
 }
 
-/** A refused brief: `{ refused }` with `--json`, else one line per refusal `<field>: <rule> - <detail>`. */
+/** A refused brief: `{ refused, next: null }` with `--json`, else one line per refusal `<field>: <rule> - <detail>`. */
 function refusedOutput(params: { refused: readonly Refusal[]; json: boolean }): CommandResult {
 	return {
 		exitCode: 2,
 		output: params.json
-			? JSON.stringify({ refused: params.refused }, null, 2)
+			? JSON.stringify({ refused: params.refused, next: null }, null, 2)
 			: params.refused
 					.map((refusal) => `${refusal.field}: ${refusal.rule} - ${refusal.detail}`)
 					.join('\n'),
 	}
 }
 
-/** `--dry-run`: the checks passed, the name the next index would give and the worktree; nothing written or claimed. */
+/**
+ * `--dry-run`: the checks passed, the lot the next index would name, its worktree and the real start to run next
+ * (the brief path as given); nothing written or claimed.
+ */
 function dryRunOutput(params: {
 	brief: CheckedBrief
+	/** The brief path as the command was given it. */
+	briefPath: string
 	worktreesFolder: string
 	json: boolean
 }): CommandResult {
 	const { brief } = params
-	const name = worktreeFolderName({
+	const lot = worktreeFolderName({
 		index: nextWorktreeIndex({ worktreesFolder: params.worktreesFolder }),
 		repository: brief.repository,
 		branch: brief.branch,
 	})
-	const worktree = join(params.worktreesFolder, name)
+	const worktree = join(params.worktreesFolder, lot)
+	const next = startNextOf(params.briefPath)
 	if (params.json)
-		return { exitCode: 0, output: JSON.stringify({ dryRun: true, name, worktree }, null, 2) }
+		return { exitCode: 0, output: JSON.stringify({ dryRun: true, lot, worktree, next }, null, 2) }
 	return {
 		exitCode: 0,
 		output: [
 			'checks: every check passed',
-			`name: ${name} (<next index>-${basename(brief.repository)}-${brief.branch.split('/').at(-1)}; no index claimed)`,
+			`name: ${lot} (<next index>-${basename(brief.repository)}-${brief.branch.split('/').at(-1)}; no index claimed)`,
 			`worktree: ${worktree}`,
+			`next: ${next}`,
 		].join('\n'),
 	}
 }

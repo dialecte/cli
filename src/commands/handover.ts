@@ -1,5 +1,5 @@
 /**
- * `dialecte handover write <lots.json> [--out <dir>] [--rehash] [--json]` (or `dialecte handover <lots.json>`)
+ * `dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`)
  * - the commit-by-lots hand-over a human runs. From a lots file (repository, expected branch and HEAD, lots with paths and messages) it checks
  * every guard, then writes the hand-over folder (the lots file, the snapshot and a one-line `commit.sh`)
  * and the card a person reviews, and takes the repository's hand-over lock.
@@ -25,14 +25,14 @@
  *
  * The agent never commits; the run never pushes.
  */
-import { existsSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
-import { realPathOf } from '../lib/file-system.ts'
+import { realPathOf, realPathThroughAncestors } from '../lib/file-system.ts'
 import { currentBranchOf } from '../lib/git.ts'
 import {
 	abandonedMarkerPath,
@@ -77,6 +77,12 @@ import {
 	RUNNABLE_STATES,
 } from '../lib/handover/handover.constants.ts'
 import { handoverState, listHandovers } from '../lib/handover/list-handovers.ts'
+import {
+	canceledLotRunRefusal,
+	handoverWriteRefusal,
+	lotAbandonRefusal,
+	resolveHandoverOut,
+} from '../lib/handover/lot-handover.ts'
 import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
@@ -94,6 +100,8 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
+import { lotFolderOf } from '../lib/store/lot-folder.ts'
+import { STORE_REFUSAL } from '../lib/store/store.constants.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 
@@ -170,6 +178,7 @@ function runHandoverVerb(params: {
 		colour,
 		columns,
 		probe: probeRepositoryCli,
+		cwd,
 	})
 }
 
@@ -188,8 +197,12 @@ export function runHandover(params: {
 	now?: Date
 	/** Called between the pick of the entry's name and the write of the entry (a test forces another writer there). */
 	afterNamePicked?: InterleavingSeam
+	/** Called between the refusal checks and the write of the folder (a test forces another writer there). */
+	afterChecks?: InterleavingSeam
 	/** The git version line (`git version 2.43.0`): merge lots need git 2.38 or later. Default: asks git. */
 	gitVersion?: () => string
+	/** Where the lots path and `--out` are read from (an id of `--out` too). Default: the process's folder. */
+	cwd?: string
 }): CommandResult {
 	const { argv } = params
 	if (hasFlag(argv, 'legend'))
@@ -202,10 +215,22 @@ export function runHandover(params: {
 		}
 	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
 	if (!lotsPath) return usage(HANDOVER_USAGE)
-	const absoluteLotsPath = resolve(lotsPath)
+	const cwd = params.cwd ?? process.cwd()
+	const absoluteLotsPath = resolve(cwd, lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)
-	const out = resolve(getArg(argv, 'out') ?? dirname(absoluteLotsPath))
+	const outWord = getArg(argv, 'out')
+	// the default out, the lots file's folder, is taken by its real path as --out is
+	const chosen =
+		outWord === undefined
+			? { out: realPathThroughAncestors(dirname(absoluteLotsPath)), outNote: undefined }
+			: resolveHandoverOut({ word: outWord, cwd })
+	if ('refusal' in chosen) return usage(`handover: ${chosen.refusal}`)
+	const { outNote } = chosen
+	// a lot folder reached through any path is written as its real path
+	const out = lotFolderOf({ folder: chosen.out }) ?? chosen.out
+	const outRefusal = handoverWriteRefusal({ out, lotsFile })
+	if (outRefusal) return usage(`handover: ${outRefusal}`)
 	const scriptPath = join(out, COMMIT_SCRIPT_FILE)
 	if (existsSync(scriptPath) && !hasFlag(argv, 'rehash'))
 		return usage(
@@ -221,7 +246,8 @@ export function runHandover(params: {
 		)
 
 	const heldBy = readHandoverLock(lotsFile.repository)
-	if (heldBy && heldBy !== scriptPath && existsSync(heldBy))
+	// the lock may hold the script by a path written before the folder was made real
+	if (heldBy && realPathOf(heldBy) !== realPathOf(scriptPath) && existsSync(heldBy))
 		return refused([
 			handoverHoldRefusal({
 				script: heldBy,
@@ -239,15 +265,25 @@ export function runHandover(params: {
 	})
 	if (refusals.length) return refused(refusals)
 
+	params.afterChecks?.()
+	const lockPath = handoverLockPath(plan.repository)
+	const lockBefore = existsSync(lockPath) ? readFileSync(lockPath) : undefined
 	writeHandover({ plan, lotsFile, lotsPath: absoluteLotsPath, out, cliPath: params.cliPath })
 	// before the card, which names the hand-over by its entry
-	registerHandover({
-		root: lotsFile.repository,
-		folder: out,
-		branch: lotsFile.branch,
-		now: params.now ?? new Date(),
-		afterNamePicked: params.afterNamePicked,
-	})
+	try {
+		registerHandover({
+			root: lotsFile.repository,
+			folder: out,
+			branch: lotsFile.branch,
+			now: params.now ?? new Date(),
+			afterNamePicked: params.afterNamePicked,
+		})
+	} catch (error) {
+		if ((error as Error).name !== STORE_REFUSAL) throw error
+		// committed by a run since the checks: this folder holds no lock, the registry stays committed
+		restoreLock({ lockPath, bytes: lockBefore, scriptPath })
+		return usage(`handover: ${(error as Error).message}`)
+	}
 	const card = buildHandoverCard({
 		root: plan.repository,
 		folder: out,
@@ -263,11 +299,16 @@ export function runHandover(params: {
 	if (hasFlag(argv, 'json'))
 		return {
 			exitCode: 0,
-			output: JSON.stringify({ folder: out, ...handoverCardData(card) }, null, 2),
+			output: JSON.stringify(
+				{ folder: out, ...handoverCardData(card), ...(outNote !== undefined && { outNote }) },
+				null,
+				2,
+			),
 		}
 	return {
 		exitCode: 0,
 		output: [
+			...(outNote === undefined ? [] : [outNote]),
 			renderSectionCard({
 				card: handoverCardSections(card),
 				colour: params.colour ?? false,
@@ -319,6 +360,11 @@ export async function runHandoverRun(params: {
 		? resolveHandoverArgument({ argument, store, cwd })
 		: pickHandoverToRun({ cwd, store, write, probe: params.probe })
 	if (typeof folder === 'number') return folder
+	const canceled = canceledLotRunRefusal({ folder })
+	if (canceled) {
+		write(canceled)
+		return 2
+	}
 	const gone = argument && goneEntryRefusal({ verb: 'run', argument, store })
 	if (gone) {
 		write(gone)
@@ -482,6 +528,8 @@ export function runHandoverAbandon(params: {
 	})
 	if ('exitCode' in chosen) return chosen
 	const { folder, lotsFile } = chosen.handover
+	const lotRefusal = lotAbandonRefusal({ folder })
+	if (lotRefusal) return usage(lotRefusal)
 	const abandoned = readAbandonedMarker(folder)
 	if (abandoned)
 		return {
@@ -521,6 +569,24 @@ export function runHandoverAbandon(params: {
 			...releaseLockOf({ repository: lotsFile.repository, folder }),
 		].join('\n'),
 	}
+}
+
+/**
+ * The lock at `lockPath` after a write refused as committed: removed when there was none, or when it named this
+ * folder's `scriptPath` (by real path: a committed hand-over never holds the lock); else its earlier `bytes`.
+ */
+function restoreLock(params: {
+	lockPath: string
+	bytes: Buffer | undefined
+	scriptPath: string
+}): void {
+	const { bytes } = params
+	if (
+		bytes === undefined ||
+		realPathOf(bytes.toString('utf8').trim()) === realPathOf(params.scriptPath)
+	)
+		rmSync(params.lockPath, { force: true })
+	else writeFileSync(params.lockPath, bytes)
 }
 
 /** The lock of `repository` removed when it names the script of `folder`; one line saying what became of it. */

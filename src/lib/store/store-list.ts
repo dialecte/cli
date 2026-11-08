@@ -6,8 +6,8 @@ import { dirname, join } from 'node:path'
 import { workTreeHolding } from './store-folder.ts'
 import {
 	DEFAULT_STATE_SEGMENTS,
+	LINE_SEPARATOR_PATTERN,
 	STATE_HOME_VARIABLE,
-	STORE_LIST_LINE_SEPARATOR,
 	STORE_LIST_SEGMENTS,
 } from './store.constants.ts'
 
@@ -58,7 +58,7 @@ export function storeListRefusal(params: { listPath?: string }): string | undefi
 /** The non-blank lines of the list, trimmed. */
 function linesOf(text: string): string[] {
 	return text
-		.split(STORE_LIST_LINE_SEPARATOR)
+		.split(LINE_SEPARATOR_PATTERN)
 		.map((line) => line.trim())
 		.filter((line) => line !== '')
 }

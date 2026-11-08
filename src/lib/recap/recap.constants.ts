@@ -2,7 +2,17 @@
 import type { CaseStatus } from '../tdd/tdd.types.ts'
 import type { FindingOutcome } from './recap.types.ts'
 
-export const RECAP_USAGE = 'lot recap: expected <hand-over folder>'
+export const RECAP_USAGE = 'lot recap: expected <id|folder>'
+
+/** The decision cell of a lot's answer, with the question's text and without one. */
+export const ANSWER_DECISION = '{question} {text} -> {answer}'
+export const ANSWER_DECISION_WITHOUT_QUESTION = '{question} -> {answer}'
+
+/** A placeholder of an answer's decision cell; the group is its name. */
+export const ANSWER_PLACEHOLDER_PATTERN = /\{(question|text|answer)\}/g
+
+/** The characters of an ISO time that name its UTC day (`yyyy-mm-dd`). */
+export const UTC_DAY_LENGTH = 10
 
 export const RECAP_OPEN = ['<details>', '<summary>How this change was made</summary>'] as const
 

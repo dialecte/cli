@@ -5,10 +5,12 @@
  * lots file's folder, or `--out`). The name is `<yyyy-mm-dd>-<branch slug>[-<n>]`; a folder registered already
  * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { commonGitFolderOf } from '../git.ts'
+import { publishOnce, recordText, replaceWhole, storeRefusal } from '../store/publish.ts'
+import { HARD_LINK_UNSUPPORTED_CODES, WRITABLE_MODE } from '../store/store.constants.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import {
 	entryPathOf,
@@ -18,6 +20,7 @@ import {
 	registeredEntryOf,
 } from './handover-store-read.ts'
 import {
+	HANDOVER_LOT_REFUSALS,
 	HANDOVER_STORE_FOLDER,
 	STORE_INDEX_ARGUMENT_PATTERN,
 	STORE_NAME_COUNTER_PATTERN,
@@ -27,6 +30,7 @@ import {
 	STORE_NAME_REPLACED_CHARACTERS,
 } from './handover.constants.ts'
 
+import type { LinkFunction, TemporaryFileSeam } from '../store/store.types.ts'
 import type {
 	HandoverEntryState,
 	HandoverStoreEntry,
@@ -112,7 +116,8 @@ export function registeredNameOf(params: { root: string; folder: string }): stri
 
 /**
  * Registers the hand-over just written in `folder` (state `pending`, written at `now`): its entry updated when
- * the folder has one already, else a new entry under the next free name. The name it is registered under.
+ * the folder has one already, else a new entry under the next free name. The name it is registered under. Throws a
+ * refusal naming the entry, writing nothing, when the folder's entry (by real path) is `committed`.
  */
 export function registerHandover(params: {
 	root: string
@@ -121,6 +126,10 @@ export function registerHandover(params: {
 	now: Date
 	/** Called between the pick of the name and the write of the entry. */
 	afterNamePicked?: InterleavingSeam
+	/** Called once the entry's temporary file is written and before it is published. */
+	afterTemporaryWritten?: TemporaryFileSeam
+	/** The hard link that creates the entry. Default: `linkSync`. */
+	link?: LinkFunction
 }): string {
 	const store = handoverStoreOf(params.root)
 	const index = worktreeIndexOf(params.root)
@@ -133,8 +142,15 @@ export function registerHandover(params: {
 		state: 'pending',
 	}
 	const registered = registeredEntryOf({ store, folder: params.folder })
+	if (registered?.state === 'committed')
+		throw storeRefusal(HANDOVER_LOT_REFUSALS.committed.replace('{entry}', registered.name))
 	if (registered) {
-		writeStoreEntry({ store, name: registered.name, entry })
+		writeStoreEntry({
+			store,
+			name: registered.name,
+			entry,
+			afterTemporaryWritten: params.afterTemporaryWritten,
+		})
 		return registered.name
 	}
 	mkdirSync(store, { recursive: true })
@@ -144,7 +160,16 @@ export function registerHandover(params: {
 		const name = nextHandoverName({ store, branch: params.branch, now: params.now })
 		seam?.()
 		seam = undefined
-		if (createStoreEntry({ store, name, entry })) return name
+		if (
+			createStoreEntry({
+				store,
+				name,
+				entry,
+				afterTemporaryWritten: params.afterTemporaryWritten,
+				link: params.link,
+			})
+		)
+			return name
 	}
 }
 
@@ -153,12 +178,19 @@ export function recordHandoverState(params: {
 	store: string | undefined
 	folder: string
 	state: HandoverEntryState
+	/** Called once the entry's temporary file is written and before it replaces the entry. */
+	afterTemporaryWritten?: TemporaryFileSeam
 }): void {
 	if (!params.store) return
 	const registered = registeredEntryOf({ store: params.store, folder: params.folder })
 	if (!registered) return
 	const { name, ...entry } = registered
-	writeStoreEntry({ store: params.store, name, entry: { ...entry, state: params.state } })
+	writeStoreEntry({
+		store: params.store,
+		name,
+		entry: { ...entry, state: params.state },
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
 }
 
 /** The newest entry of `branch` among `entries`: the latest date, then the highest counter, from the name. */
@@ -182,28 +214,60 @@ function newestByName(entries: readonly StoreEntry[]): StoreEntry | undefined {
 	}, undefined)
 }
 
-/** Creates the entry `name`, never over one: false when it exists already (taken by another writer). */
+/**
+ * Creates the entry `name` whole, never over one, writable (an older cli rewrites entries in place): false when it
+ * exists already (taken by another writer). On a file system without hard links, an exclusive write of the whole
+ * entry instead.
+ */
 function createStoreEntry(params: {
 	store: string
 	name: string
 	entry: HandoverStoreEntry
+	afterTemporaryWritten?: TemporaryFileSeam
+	link?: LinkFunction
 }): boolean {
+	const path = entryPathOf(params)
+	const text = recordText(params.entry)
 	try {
-		writeFileSync(entryPathOf(params), entryText(params.entry), { flag: 'wx' })
-		return true
+		return publishOnce({
+			path,
+			text,
+			readOnly: false,
+			afterTemporaryWritten: params.afterTemporaryWritten,
+			link: params.link,
+		})
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		if (code === undefined || !HARD_LINK_UNSUPPORTED_CODES.includes(code)) throw error
+		return createExclusively({ path, text })
+	}
+}
+
+/** Writes `text` at `path` only where nothing is (0644): false when the name is taken. */
+function createExclusively(params: { path: string; text: string }): boolean {
+	try {
+		writeFileSync(params.path, params.text, { flag: 'wx', mode: WRITABLE_MODE })
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
 		throw error
 	}
+	chmodSync(params.path, WRITABLE_MODE)
+	return true
 }
 
-function entryText(entry: HandoverStoreEntry): string {
-	return `${JSON.stringify(entry, null, 2)}\n`
-}
-
-function writeStoreEntry(params: { store: string; name: string; entry: HandoverStoreEntry }): void {
+/** Replaces the entry `name` whole: a reader sees the old entry or the new one, never half. */
+function writeStoreEntry(params: {
+	store: string
+	name: string
+	entry: HandoverStoreEntry
+	afterTemporaryWritten?: TemporaryFileSeam
+}): void {
 	mkdirSync(params.store, { recursive: true })
-	writeFileSync(entryPathOf(params), entryText(params.entry))
+	replaceWhole({
+		path: entryPathOf(params),
+		text: recordText(params.entry),
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
 }
 
 /**

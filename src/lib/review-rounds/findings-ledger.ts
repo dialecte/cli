@@ -4,8 +4,9 @@
  * decision rewrites one row's state cell; every other byte of the file stays as it was, so a ledger
  * written or annotated by hand stays readable.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
+import { replaceWhole } from '../store/publish.ts'
 import {
 	CELL_SEPARATOR_PATTERN,
 	DECISION_STATES,
@@ -14,6 +15,7 @@ import {
 	ROUND_PATTERN,
 } from './review-rounds.constants.ts'
 
+import type { TemporaryFileSeam } from '../store/store.types.ts'
 import type { DecisionState, LedgerTable, MarkdownTable } from './review-rounds.types.ts'
 
 /** A value as a ledger cell writes it: `|` escaped. */
@@ -92,6 +94,8 @@ export function appendFinding(params: {
 	severity: string
 	at: string
 	finding: string
+	/** Called once the ledger's temporary file is written and before it replaces the ledger. */
+	afterTemporaryWritten?: TemporaryFileSeam
 }): string {
 	const text = existsSync(params.path) ? readFileSync(params.path, 'utf8') : ''
 	const lines = text.split('\n')
@@ -109,6 +113,7 @@ export function appendFinding(params: {
 		title: `# Findings ledger - ${params.title}`,
 		head: LEDGER_TABLE_HEAD,
 		row,
+		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
 	return id
 }
@@ -127,17 +132,34 @@ export function appendTableRow(params: {
 	/** The table's header row and separator, each followed by a line feed. */
 	head: string
 	row: string
+	/** Called once the file's temporary file is written and before it replaces the file. */
+	afterTemporaryWritten?: TemporaryFileSeam
 }): void {
+	replaceWhole({
+		path: params.path,
+		text: textWithRow(params),
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
+}
+
+/** The file's text with `row` written in: after the table's last row, else the header (and the title) first. */
+function textWithRow(params: {
+	lines: string[]
+	table: Pick<MarkdownTable, 'lastLine'> | undefined
+	title: string
+	head: string
+	row: string
+}): string {
 	const { lines, table, row } = params
 	const text = lines.join('\n')
 	if (table) {
 		const lineEnd = lines[table.lastLine].endsWith('\r') ? '\r' : ''
 		const written = [...lines]
 		written.splice(table.lastLine + 1, 0, `${row}${lineEnd}`)
-		writeFileSync(params.path, written.join('\n'))
-	} else if (text === '') writeFileSync(params.path, `${params.title}\n\n${params.head}${row}\n`)
-	else
-		writeFileSync(params.path, `${text}${text.endsWith('\n') ? '' : '\n'}\n${params.head}${row}\n`)
+		return written.join('\n')
+	}
+	if (text === '') return `${params.title}\n\n${params.head}${row}\n`
+	return `${text}${text.endsWith('\n') ? '' : '\n'}\n${params.head}${row}\n`
 }
 
 /**

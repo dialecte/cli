@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import {
@@ -48,7 +48,7 @@ describe('handover <lots.json> registers the hand-over', { timeout: HANDOVER_CAS
 		const root = createBranchRepository()
 		writeFiles({ root, files: CHANGES })
 		const lotsPath = writeLotsFile({ root, name: 'one' })
-		const folder = dirname(lotsPath)
+		const folder = realpathSync(dirname(lotsPath))
 		const statusBefore = statusOf(root)
 
 		expect(write({ lotsPath })).toMatchObject({
@@ -79,7 +79,7 @@ describe('handover <lots.json> registers the hand-over', { timeout: HANDOVER_CAS
 
 		expect(existsSync(join(out, COMMIT_SCRIPT_FILE))).toBe(true)
 		expect(readEntry({ root, name: STORE_FIRST_NAME })).toMatchObject({
-			folder: out,
+			folder: realpathSync(out),
 			state: 'pending',
 		})
 	})
@@ -133,7 +133,7 @@ describe('handover <lots.json> registers the hand-over', { timeout: HANDOVER_CAS
 		expect(readFileSync(join(folder, HANDOVER_FILES.hashes), 'utf8')).not.toBe(hashesBefore)
 		expect(entryNamesOf(root)).toEqual([STORE_FIRST_NAME])
 		expect(readEntry({ root, name: STORE_FIRST_NAME })).toMatchObject({
-			folder,
+			folder: realpathSync(folder),
 			written: STORE_NEXT_DAY.toISOString(),
 			state: 'pending',
 		})

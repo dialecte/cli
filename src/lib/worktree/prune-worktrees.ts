@@ -1,7 +1,8 @@
 /**
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
  * commits are all in the base branch, the hand-over folders already committed, and the rehearsal clones
- * left behind - each with the command that removes it, with its absolute `cd`. Never an unmerged branch,
+ * left behind - each with the command that removes it, with its absolute `cd`. Never a worktree an open lot names
+ * (checked first, reason `lot <full name> <state>`), an unmerged branch,
  * a dirty worktree, one a pending hand-over commits in, or one a mutation run that still runs (or died before
  * reporting) was started from; never a symbolic link (the sibling link
  * `.worktrees/core -> ../core` among them) nor a folder a link reaches. The pool entries (`_pool-*`) and the
@@ -11,6 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
+import { realPathOf } from '../file-system.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
@@ -22,6 +24,7 @@ import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { readHygieneBaseline } from './hygiene.ts'
@@ -198,8 +201,20 @@ function planRepository(params: {
 	const linkedWorktrees = worktrees
 		.map((worktree) => worktree.name)
 		.filter((name) => isLink(name) && !existsSync(join(name, '.git')))
+	// the lot keep rule first: the store read once for the repository
+	const lotKeeps = lotsKeepingWorktrees({ repository })
 	for (const worktree of worktrees) {
 		const { name } = worktree
+		const lotKeep = lotKeeps.get(realPathOf(name))
+		if (lotKeep) {
+			if (worktree.branch) keptBranches.add(worktree.branch)
+			items.push({
+				kind: 'worktree',
+				name,
+				kept: worktree.branch ? `${worktree.branch}: ${lotKeep}` : lotKeep,
+			})
+			continue
+		}
 		if (isLink(name)) {
 			if (worktree.branch) keptBranches.add(worktree.branch)
 			items.push({ kind: 'worktree', name, kept: PRUNE_LINK_REASON })

@@ -133,6 +133,12 @@ export type LotFolderSeam = (temporaryFolder: string) => void
 /** What a seam of `publishOnce` and `replaceWhole` receives: the temporary file written, not yet published. */
 export type TemporaryFileSeam = (temporaryPath: string) => void
 
+/** What a dead writer's leftovers are: temporary files of a record, or folders of a lot being built. */
+export type LeftoverKind = 'files' | 'folders'
+
+/** The hard link `publishOnce` publishes with: `linkSync` by default, a test passes one the file system refuses. */
+export type LinkFunction = (existingPath: string, newPath: string) => void
+
 /** The rule tokens a refused brief carries (33S section 5, D9). */
 export type RefusalRule =
 	| 'shape'
