@@ -1,7 +1,8 @@
 /**
- * `dialecte handover run <folder>`: the guards, then the lots not committed yet, then the card. With a
- * rehearsal, the guards read the repository and the lots are committed in its scratch clone, or not at all
- * when a green record answers for every lot. A real run
+ * `dialecte handover run <folder>`: the gate config (`resolveHandoverGateScope`: refused when invalid, the
+ * hand-over base handed to the hooks when they run a scoped step), the guards, then the lots not committed yet,
+ * then the card. With a rehearsal, the guards read the repository and the lots are committed in its scratch clone,
+ * or not at all when a green record answers for every lot. A real run
  * that leaves every lot committed then records the hand-over `committed` in the store (when it is registered)
  * and moves the lot file (`.dialecte/lot.json`) into the folder: the next lot on the branch starts from an
  * empty declaration, not from this lot's entries. The card after a real run
@@ -18,6 +19,7 @@ import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard, handoverCardSections } from './handover-card.ts'
+import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import { handoverLockPath } from './handover-lock.ts'
 import { findHandoverStore, recordHandoverState } from './handover-store.ts'
 import {
@@ -30,9 +32,13 @@ import {
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
+import type { HandoverGateScope } from './handover-gate-scope.types.ts'
 import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.ts'
 
-/** The exit code: 0 when every lot is committed, 1 when a guard or a commit refused. */
+/**
+ * The exit code: 0 when every lot is committed, 1 when a guard or a commit refused, 2 when the gate config is one
+ * the cli cannot run (read before the guards, nothing staged).
+ */
 export async function runHandoverFolder(params: {
 	handover: HandoverFolder
 	/** Where the lots are committed: the repository (default), or a rehearsal clone at its HEAD. */
@@ -65,12 +71,20 @@ export async function runHandoverFolder(params: {
 	storeRoot?: string
 	/** A rehearsal whose contrib run in the clone cannot answer the real run: why, for the `contrib` guard. */
 	contribUnanswerable?: string
+	/** The gate scope a rehearsal read before its clone; default: read here, before the guards. */
+	gateScope?: HandoverGateScope
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
 	const startedAt = clock.now()
 	const commitRoot = params.commitRoot ?? lotsFile.repository
 	const rehearsal = params.rehearsal ?? commitRoot !== lotsFile.repository
+	// a gate config the cli cannot run stops the run before anything is staged
+	const gateScope = params.gateScope ?? resolveHandoverGateScope({ handover })
+	if ('refusal' in gateScope) {
+		write(gateScope.refusal)
+		return 2
+	}
 	const guarded = checkHandoverGuards({
 		handover,
 		write,
@@ -95,6 +109,8 @@ export async function runHandoverFolder(params: {
 				tty: params.tty,
 				withoutHook: params.withoutHook,
 				storeRoot: params.storeRoot,
+				scoped: gateScope.scoped,
+				handoverBase: gateScope.handoverBase,
 			})
 	// a stopped run: the lots it did commit, for the card (the hand-over is partly committed)
 	const commits =
@@ -126,6 +142,7 @@ export async function runHandoverFolder(params: {
 		probe: params.probe,
 		// the repository's hand-over is done only by a real run that committed every lot
 		done: !rehearsal && commits.length === lots.length,
+		release: lotsFile.release === true,
 	})
 	const box = renderSectionCard({
 		card: handoverCardSections(card),

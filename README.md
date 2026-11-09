@@ -669,9 +669,10 @@ the answer.
   iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
-  hand-over a human runs. The lots file names the repository, the branch and HEAD expected, and the lots
-  (paths, message):
+- `dialecte handover write <lots.json> [--release] [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
+  hand-over a human runs. `--release` marks it a release hand-over (`"release": true` in the lots file): its card
+  then holds a required `gate release` row, green only with a green `gate --release` record of the tree it commits.
+  The lots file names the repository, the branch and HEAD expected, and the lots (paths, message):
 
   ```json
   {
@@ -1370,6 +1371,41 @@ opt-out: it lifts generic tags a contributor commits on purpose - `ticket number
 allows every tag already, so `allowReferences` changes nothing there (`dialecte doctor` says to remove it). A lot may hold a symbolic link, a link to a
 folder included: it is hashed and scanned as its target text and committed as a link, the way git stores it (a
 rehearsal copies it as the same relative link).
+
+**Scoped steps, heavy steps, the release list.** A step of `fast`, `full` or `release` may say `"scoped": true`
+(never with `changedOnly`, never in `contrib.steps`): the gate resolves one base per run - `--base <ref>`, else the
+merge-base of HEAD and `baseBranch` (local, else `origin/`), else the empty tree (everything changed) - and hands the
+step `DIALECTE_GATE_BASE`, `DIALECTE_GATE_TREE`, `DIALECTE_GATE_CHANGED` (a file of the changed paths byte for byte,
+NUL-separated, both paths of a rename, relative to the repository top as `git diff --name-only` names them, while a
+declared `failing` path is relative to the package root) and `DIALECTE_GATE_SELECTION` (a path to write). The step writes there
+`{ "schema": 1, "base", "tree", "changed": <paths judged>, "selected": [{ "id", "reasons": [...] }], "skipped": [{ "id", "reason" }] }`:
+`selected` and `skipped` are both required lists, each selected id has at least one reason, the file is at most 1 MiB
+and an id matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. A missing or invalid selection, another base or tree, or another
+count fails the step. An empty selection should exit 0 without starting vitest: it passes with
+`nothing selected since <base> (<n> paths changed)` (`1 path changed` for one); a non-empty selection on a
+`counts: "tests"` step that runs no test fails (`no test ran`). The step selects from the working files (never
+`git show <tree>:`), so what it selects and what it runs are the same code. A failing step counting tests is rerun
+once, serially, with its failing files appended as plain arguments (after one added `--` only when the step runs
+through `npm run` and its command holds none), then `--no-file-parallelism`, with the same base, tree and changed file
+and a new selection path: the rerun must select the same ids, and a script running vitest more than once passes
+`--passWithNoTests` to each invocation (or runs one). A scoped step whose command (or the npm script it runs) does not
+name vitest is rerun whatever runs it, when it exited non-zero on a test failure (a failed test counted, a `FAIL` line,
+vitest's `Unhandled Errors` or `Errors  <n> error` summary); for such a step a plain script error fails as itself. A
+scoped step that names vitest keeps the rule of any vitest step: rerun on any failure. A first run whose selection is
+not valid is never rerun.
+The selection may declare `"failing": ["<path>", ...]` (relative to the package root, no `..`, no backslash; a leading
+`./` and repeated `/` are normalised away): a failed step records those files with the ones its output names
+(`failing` in the record and in `--json`; the card's row ends `· failing <n>: <first 3>`).
+Run outside the gate (no `DIALECTE_GATE_SELECTION`), a scoped script selects everything. The base enters the record's
+key, so a run at another base never reuses. `"heavy": true` marks a heavy suite (a browser suite); it is outside the
+command hash. `gate.release` is the list `gate --release` runs (default: the `full` steps, derived ones included),
+every scoped step against the empty tree (`--base` with `--release` feeds only the tdd step); it _covers full_ when
+every `full` step is in it with the same `name`, `run`, `counts` and `changedOnly`, and only then does its green
+record answer a commit hook, a rehearsal, contrib and the card. An environment switch that changes what runs belongs
+in the step's `run`. A gate config the cli cannot run (a list that
+is no list of steps, a step without `name` or `run`, a `scoped` or `heavy` that is no boolean, `scoped` with
+`changedOnly`) is refused naming the list and the step: `gate`, `contrib` and `handover run` exit 2, `gate --hook`
+exits 1, the card prints `✗ gate  invalid gate config: <message>`.
 
 ### GitHub text: lot recap and text check
 

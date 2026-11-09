@@ -12,6 +12,7 @@ import {
 	GATE_RECORD_FILE,
 	HOOK_RECORD_MODE,
 	REHEARSAL_ORIGIN,
+	RELEASE_RECORD_MODE,
 	RULES_RECORD_FILE,
 	UNRECORDED_STEPS,
 } from './gate-records.constants.ts'
@@ -80,6 +81,8 @@ export function recordGate(params: {
 	reused?: { at: string; head: string }
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
+	/** The gate base the run resolved for its scoped steps; absent without one. */
+	base?: GateRecord['base']
 }): boolean {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
@@ -95,6 +98,7 @@ export function recordGate(params: {
 			.map(recordedStepOf),
 		...(params.key && { key: params.key }),
 		...(params.reused && { reused: params.reused }),
+		...(params.base && { base: params.base }),
 		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(params.mode), record })
@@ -121,6 +125,9 @@ function recordedStepOf(result: StepResult): RecordedStep {
 		...(result.reason && { reason: result.reason }),
 		...(result.cases && { cases: result.cases }),
 		...(result.moved?.length && { moved: result.moved }),
+		...(result.selection && { selection: result.selection }),
+		...(result.failing && { failing: result.failing }),
+		...(result.step.heavy === true && { heavy: true as const }),
 	}
 }
 
@@ -128,11 +135,17 @@ function recordedStepOf(result: StepResult): RecordedStep {
  * Records a commit's hook as a gate run of the tree it ran on: `key` taken before the commit (the hook runs
  * on the working files), `head` the commit it let through or HEAD when it failed, the steps its summary
  * names with their counts. The record goes to the worktree's git folder and to the store of `storeRoot`
- * (default `root`): a rehearsal stores it in the repository it cloned, marked as a rehearsal's.
+ * (default `root`): a rehearsal stores it in the repository it cloned, marked as a rehearsal's. A record
+ * without a key goes to the worktree's git folder only.
  */
 export function recordHook(params: {
 	root: string
-	key: CheckKey
+	/** The tree the commit records. */
+	tree: string
+	/** What the hook checked; absent when it cannot be told (a scoped hook that printed no base): never stored. */
+	key?: CheckKey
+	/** The base the hook printed it used, when its test steps hold a scoped step. */
+	base?: GateRecord['base']
 	steps: RecordedStep[]
 	/** The repository whose store holds the record, when the commit ran in a scratch clone of it. */
 	storeRoot?: string
@@ -141,9 +154,10 @@ export function recordHook(params: {
 		mode: HOOK_RECORD_MODE,
 		at: new Date().toISOString(),
 		head: readHead(params.root),
-		stateHash: hashStateTree(params.key.tree),
+		stateHash: hashStateTree(params.tree),
 		steps: params.steps,
-		key: params.key,
+		...(params.key && { key: params.key }),
+		...(params.base && { base: params.base }),
 		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(HOOK_RECORD_MODE), record })
@@ -207,6 +221,14 @@ function judgedTddStep(params: { root: string; stateHash: string }): RecordedSte
 		if (step?.cases) return step
 	}
 	return undefined
+}
+
+/**
+ * The last `dialecte gate --release` record of the worktree `root` is in; undefined when none. Kept apart from
+ * `readGateRecords`: a failed release run never turns the card's ordinary gate lines red.
+ */
+export function readReleaseRecord(root: string): GateRecord | undefined {
+	return readRecord<GateRecord>({ root, name: gateRecordName(RELEASE_RECORD_MODE) })
 }
 
 /** The last `dialecte contrib` record of the worktree `root` is in; undefined when none. */

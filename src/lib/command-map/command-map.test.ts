@@ -4,6 +4,7 @@ import {
 } from '../../../test/command-families.constants.ts'
 import { COMMANDS } from '../../cli.constants.ts'
 import { COMMAND_MAP } from './command-map.constants.ts'
+import { commandSurfaceOf } from './command-surface.ts'
 import { renderCommandSection } from './render-help.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -125,6 +126,33 @@ describe('the command map', () => {
 		it(`the review-round line says <id|folder>: ${line}`, () => {
 			expect(COMMAND_MAP.lot.usage).toContain(line)
 		})
+
+	it('gate lists --release in a usage line, in the map and in gate --help, and the surface derived from it has the flag', () => {
+		const releaseLines = COMMAND_MAP.gate.usage.filter((line) => line.includes('--release'))
+
+		expect(releaseLines).not.toEqual([])
+		expect(releaseLines.every((line) => line.startsWith('dialecte gate'))).toBe(true)
+		expect(renderCommandSection({ name: 'gate', entry: COMMAND_MAP.gate })).toContain(
+			releaseLines[0],
+		)
+		expect(commandSurfaceOf({ name: 'gate', entry: COMMAND_MAP.gate }).flags).toContain('--release')
+	})
+
+	it('handover write lists --release in its usage line, and the handover surface has the flag', () => {
+		const writeLines = COMMAND_MAP.handover.usage.filter((line) =>
+			line.startsWith('dialecte handover write '),
+		)
+
+		const releaseLine = writeLines.find((line) => line.includes('--release'))
+
+		expect(releaseLine).toBeDefined()
+		expect(renderCommandSection({ name: 'handover', entry: COMMAND_MAP.handover })).toContain(
+			releaseLine ?? '--release',
+		)
+		expect(commandSurfaceOf({ name: 'handover', entry: COMMAND_MAP.handover }).flags).toContain(
+			'--release',
+		)
+	})
 
 	it('the worktree section names the node_modules pool and the trash, and no longer says add copies node_modules on write only', () => {
 		const worktree = COMMAND_MAP.worktree

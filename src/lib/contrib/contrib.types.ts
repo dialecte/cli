@@ -11,10 +11,20 @@ export type BuiltinStep = {
 /** A row of `dialecte contrib`: a package step, or a built-in one. */
 export type ContribStep = GateStep | BuiltinStep
 
-/** The `gate --full` records current for the worktree, and the steps today's `gate --full` runs. */
+/**
+ * The gate records current for the worktree that answer contrib's steps: those of `gate --full`, then those of a
+ * `gate --release` whose list covers full; each with the steps its list runs today.
+ */
 export type FullGateRecords = {
-	fullSteps: GateStep[]
+	sources: AnsweringGateRecords[]
+}
+
+/** One gate list's current green records, the steps it runs today, and whether a scoped step of it answers. */
+export type AnsweringGateRecords = {
+	steps: GateStep[]
 	records: GateRecord[]
+	/** False for `full`: a scoped pass checked only what changed since its base; true for a release (everything). */
+	scopedAnswers: boolean
 }
 
 /** One row of `dialecte contrib`, as `--json` prints it. */

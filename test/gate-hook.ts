@@ -122,5 +122,5 @@ export function reuseLineOf(params: { tree: string; record: GateRecord }): strin
 
 /** The first line of a hook that found no record to answer from. */
 export function runningLineOf(tree: string): string {
-	return `gate --hook: no green gate --full of tree ${tree.slice(0, HOOK_TREE_LENGTH)} with this install: running the tests`
+	return `gate --hook: no green gate --full or --release of tree ${tree.slice(0, HOOK_TREE_LENGTH)} with this install: running the tests`
 }

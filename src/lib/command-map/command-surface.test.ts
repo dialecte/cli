@@ -195,7 +195,16 @@ describe('dialecte <command> --help --json', () => {
 			{
 				name: 'gate',
 				verbs: [],
-				flags: ['--fast', '--full', '--base', '--no-reuse', '--declare', '--json', '--hook'],
+				flags: [
+					'--fast',
+					'--full',
+					'--base',
+					'--no-reuse',
+					'--declare',
+					'--json',
+					'--hook',
+					'--release',
+				],
 			},
 		])
 	})

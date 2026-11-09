@@ -6,20 +6,27 @@
  * `package-lock.json` and the commit hook stages no files of its own. A merge lot is reused when the tree it
  * leaves is its tip's tree and a green record of that tree (the branch commit's hook, or a `gate --full`)
  * matches what is installed now, under the same conditions. A contributor's last lot also says when the tree the
- * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone.
+ * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone. A green
+ * `gate --release` record of a release list that covers `full` answers a plain or a merge lot as a full record would.
+ * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
+ * rehearsed saying the base moved.
  */
 import { readFileSync } from 'node:fs'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
-import { gateCommandHash, hashHookCommand, readInstalledKey } from '../gate-records/check-key.ts'
+import { readInstalledKey } from '../gate-records/check-key.ts'
 import {
 	isGreenRecord,
 	isSameKey,
 	originOfRecord,
 	readTreeRecords,
 } from '../gate-records/check-store.ts'
-import { HOOK_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
-import { resolveGateSteps } from '../gate/gate-config.ts'
+import {
+	HOOK_RECORD_MODE,
+	RELEASE_RECORD_MODE,
+	SHORT_SHA_LENGTH,
+} from '../gate-records/gate-records.constants.ts'
+import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
 import { listCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -38,27 +45,36 @@ import type {
 	ResolvedLot,
 } from './handover.types.ts'
 
-/** One decision per lot, in order. */
+/**
+ * One decision per lot, in order. `base` is the hand-over base `handover run` resolved once (absent without a
+ * scoped step): the full and hook records are keyed with it, a release record with the empty tree.
+ */
 export function planRehearsal(params: {
 	handover: HandoverFolder
 	full: boolean
+	base?: string
 }): RehearsalDecision[] {
 	const root = params.handover.lotsFile.repository
 	const trees = listLotTrees({ root, lots: params.handover.lots })
 	const hookText = listCommitHookFiles(root)
 		.map((file) => readFileSync(file, 'utf8'))
 		.join('\n')
+	const hashes = readModeCommandHashes({
+		root,
+		packageJson: readPackageJson(root),
+		gateBase: params.base,
+	})
 	const context: RehearsalPlanContext = {
 		root,
 		branch: params.handover.lotsFile.branch,
 		installed: readInstalledKey(root),
 		commands: {
-			full: gateCommandHash({
-				root,
-				steps: resolveGateSteps({ packageJson: readPackageJson(root), mode: 'full' }),
-			}),
-			hook: hashHookCommand(root),
+			full: hashes.full,
+			hook: hashes.hook,
+			// a release list that does not cover full answers no lot
+			...(hashes.releaseCoversFull && { release: hashes.release }),
 		},
+		...(params.base !== undefined && { base: params.base }),
 		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
 	}
 	const contribRun = needsContribRun({
@@ -106,7 +122,11 @@ function decidePlain(params: {
 	tree: string
 }): LotDecision {
 	const { context, lot, tree } = params
-	const records = greenRecords({ context, tree, modes: ['full'] })
+	const records = greenRecords({
+		context,
+		tree,
+		modes: answeringModes({ context, modes: ['full'] }),
+	})
 	if (records.length === 0)
 		return rehearsed(fillReason({ template: REHEARSAL_REASONS.noFullGate, values: { tree } }))
 	if ([...lot.files, ...lot.deletedFiles].includes(PACKAGE_LOCK_FILE))
@@ -133,7 +153,11 @@ function decideMerge(params: {
 				values: { branch: context.branch, tree, tip: tipTree },
 			}),
 		)
-	const records = greenRecords({ context, tree, modes: [HOOK_RECORD_MODE, 'full'] })
+	const records = greenRecords({
+		context,
+		tree,
+		modes: answeringModes({ context, modes: [HOOK_RECORD_MODE, 'full'] }),
+	})
 	if (records.length === 0)
 		return rehearsed(fillReason({ template: REHEARSAL_REASONS.noTipRecord, values: { tree } }))
 	const lockChanged = readGit({
@@ -166,11 +190,31 @@ function reuseOrMismatch(params: {
 		const { at, head } = originOfRecord(matching)
 		return {
 			decision: 'reused',
-			reason: fillReason({ template: params.reason, values: { tree, mode: matching.mode } }),
+			reason: fillReason({
+				template:
+					matching.mode === RELEASE_RECORD_MODE ? REHEARSAL_REASONS.releaseGate : params.reason,
+				values: { tree, mode: matching.mode },
+			}),
 			record: { mode: matching.mode, at, head },
 		}
 	}
 	const [newest] = records
+	// a record of another base selected another diff; a release record's base is the empty tree, never a lot's
+	if (
+		context.base !== undefined &&
+		newest.mode !== RELEASE_RECORD_MODE &&
+		newest.base !== undefined &&
+		newest.base.commit !== context.base
+	)
+		return rehearsed(
+			fillReason({
+				template: REHEARSAL_REASONS.baseChanged,
+				values: {
+					record: newest.base.commit.slice(0, SHORT_SHA_LENGTH),
+					handover: context.base.slice(0, SHORT_SHA_LENGTH),
+				},
+			}),
+		)
 	if (newest.key?.lockHash !== context.installed.lockHash)
 		return rehearsed(REHEARSAL_REASONS.installChanged)
 	if (newest.key?.linked !== context.installed.linked)
@@ -190,8 +234,23 @@ function expectedKey(params: {
 	return {
 		tree: params.tree,
 		...context.installed,
-		commandHash: record.mode === HOOK_RECORD_MODE ? context.commands.hook : context.commands.full,
+		commandHash:
+			record.mode === HOOK_RECORD_MODE
+				? context.commands.hook
+				: record.mode === RELEASE_RECORD_MODE
+					? (context.commands.release ?? '')
+					: context.commands.full,
 	}
+}
+
+/** `modes`, and `release` when the release list covers `full`: a green release record answers as a full one. */
+function answeringModes(params: {
+	context: RehearsalPlanContext
+	modes: readonly string[]
+}): string[] {
+	return params.context.commands.release === undefined
+		? [...params.modes]
+		: [...params.modes, RELEASE_RECORD_MODE]
 }
 
 /** The green records of `tree` of those modes that hold a key, the newest first. */

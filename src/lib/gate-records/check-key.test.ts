@@ -16,6 +16,7 @@ import {
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
 import { treeOfWorkingFiles } from '../../../test/scratch-tree.ts'
+import { contribCommandHash } from '../contrib/contrib-key.ts'
 import { computeCheckKey, hashGateCommand, hashHookCommand, readTreeOf } from './check-key.ts'
 import { computeStateHash } from './state-hash.ts'
 
@@ -235,6 +236,135 @@ describe('hashGateCommand', () => {
 		expect(hashGateCommand({ steps: STEPS, base: 'a'.repeat(40) })).toBe(
 			hashGateCommand({ steps: STEPS, base: 'a'.repeat(40) }),
 		)
+	})
+})
+
+/** sha256 of main's `JSON.stringify({ steps: [[name, run]...], base })`, computed from main's function on fixed inputs. */
+const GOLDEN_STEPS_NO_BASE = '03028b9eae699bdcbf4a275fa16aec5b04bd03d9e8b6afe7e095545d4c7e56ed'
+const GOLDEN_STEPS_WITH_BASE = '9f20d598f338b3e1378ace0d7ef42266bdf01cb5eeb6e40daa281c9ab5dfe2d3'
+const GOLDEN_CONTRIB_STEPS = [{ name: 'lint', run: 'npm run lint' }]
+const GOLDEN_CONTRIB_HEAD = 'b'.repeat(40)
+const GOLDEN_CONTRIB_HASH = '456e02d935847184dd75a959bf19abdd00a63135d2d15e12fd047ad0a05125a0'
+const GOLDEN_HOOK_SCRIPT = '#!/bin/sh\nexit 0\n'
+const GOLDEN_HOOK_HASH = 'fbf9f4d4d8fc6a63abbec90225742530f0c7f77db8abb99ed64592f34c92cd8f'
+/** sha256 of `JSON.stringify({ steps: [["check","npm run check"],["tests","npm run test:run","scoped"]], base, gateBase })`, gateBase 'd' x 40. */
+const GOLDEN_SCOPED_NO_BASE = '258c98b5f25d6932637fdb7b9f2d850233de64390ca3575d2bff4213c68dbf66'
+const GOLDEN_SCOPED_WITH_BASE = 'd497f2b1738340d1372561046a239d255553f9cebdc9162c75312a605d339431'
+const BASE = 'a'.repeat(40)
+const GATE_BASE = 'd'.repeat(40)
+
+describe('hashGateCommand with scoped and heavy steps', () => {
+	const scopedTests: GateStep = { ...STEPS[1], scoped: true }
+
+	it('steps without a scoped step → byte-identical to main: golden values, with and without a base', () => {
+		expect(hashGateCommand({ steps: STEPS })).toBe(GOLDEN_STEPS_NO_BASE)
+		expect(hashGateCommand({ steps: STEPS, base: BASE })).toBe(GOLDEN_STEPS_WITH_BASE)
+	})
+
+	it('heavy added or removed on a step → the hash is unchanged, with a scoped step beside it too', () => {
+		const heavyStep: GateStep = { ...STEPS[0], heavy: true }
+		const scopedSteps: GateStep[] = [STEPS[0], scopedTests]
+
+		expect(hashGateCommand({ steps: [heavyStep, STEPS[1]] })).toBe(GOLDEN_STEPS_NO_BASE)
+		expect(hashGateCommand({ steps: [heavyStep, STEPS[1]], base: BASE })).toBe(
+			GOLDEN_STEPS_WITH_BASE,
+		)
+		expect(hashGateCommand({ steps: [heavyStep, scopedTests], gateBase: GATE_BASE })).toBe(
+			hashGateCommand({ steps: scopedSteps, gateBase: GATE_BASE }),
+		)
+	})
+
+	it('a step made scoped → another hash, with a gateBase given or not', () => {
+		expect(hashGateCommand({ steps: [STEPS[0], scopedTests], gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps: STEPS, gateBase: GATE_BASE }),
+		)
+		expect(hashGateCommand({ steps: [STEPS[0], scopedTests] })).not.toBe(
+			hashGateCommand({ steps: STEPS }),
+		)
+	})
+
+	it('a scoped step → another gateBase gives another hash; the same one twice gives the same hash', () => {
+		const steps = [STEPS[0], scopedTests]
+
+		expect(hashGateCommand({ steps, gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps, gateBase: 'e'.repeat(40) }),
+		)
+		expect(hashGateCommand({ steps, gateBase: GATE_BASE })).toBe(
+			hashGateCommand({ steps, gateBase: GATE_BASE }),
+		)
+	})
+
+	it('no scoped step → a gateBase leaves the hash unchanged', () => {
+		expect(hashGateCommand({ steps: STEPS, gateBase: GATE_BASE })).toBe(GOLDEN_STEPS_NO_BASE)
+		expect(hashGateCommand({ steps: STEPS, base: BASE, gateBase: GATE_BASE })).toBe(
+			GOLDEN_STEPS_WITH_BASE,
+		)
+	})
+
+	it('a scoped step hashes as [name, run, "scoped"]: not as the same step without the mark, nor as another name or run', () => {
+		const markedLikeAStep: GateStep = { name: STEPS[1].name, run: `${STEPS[1].run}scoped` }
+
+		expect(hashGateCommand({ steps: [STEPS[0], scopedTests] })).not.toBe(GOLDEN_STEPS_NO_BASE)
+		expect(hashGateCommand({ steps: [STEPS[0], scopedTests], gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps: [STEPS[0], markedLikeAStep], gateBase: GATE_BASE }),
+		)
+		expect(
+			hashGateCommand({
+				steps: [STEPS[0], { name: 'tests', run: 'npm run test:run', scoped: false }],
+				gateBase: GATE_BASE,
+			}),
+		).toBe(GOLDEN_STEPS_NO_BASE)
+	})
+
+	it('a scoped step → the golden hash of spec section 8: steps, then base ?? null, then gateBase', () => {
+		const steps = [STEPS[0], scopedTests]
+
+		expect(hashGateCommand({ steps, gateBase: GATE_BASE })).toBe(GOLDEN_SCOPED_NO_BASE)
+		expect(hashGateCommand({ steps, base: BASE, gateBase: GATE_BASE })).toBe(
+			GOLDEN_SCOPED_WITH_BASE,
+		)
+	})
+
+	it('a scoped step, another base → another hash; the same base twice → the same hash', () => {
+		const steps = [STEPS[0], scopedTests]
+
+		expect(hashGateCommand({ steps, base: BASE, gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps, base: 'f'.repeat(40), gateBase: GATE_BASE }),
+		)
+		expect(hashGateCommand({ steps, base: BASE, gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps, gateBase: GATE_BASE }),
+		)
+	})
+
+	it('a changedOnly step beside a scoped one → the base (HEAD) is still in the hash', () => {
+		const steps: GateStep[] = [{ ...STEPS[0], changedOnly: true }, scopedTests]
+
+		expect(hashGateCommand({ steps, base: BASE, gateBase: GATE_BASE })).not.toBe(
+			hashGateCommand({ steps, base: 'f'.repeat(40), gateBase: GATE_BASE }),
+		)
+		expect(hashGateCommand({ steps, base: BASE, gateBase: GATE_BASE })).toBe(
+			GOLDEN_SCOPED_WITH_BASE,
+		)
+	})
+})
+
+describe('contribCommandHash', () => {
+	it('fixed contrib rows and head → the golden hash of main (unchanged by this lot)', () => {
+		expect(contribCommandHash({ steps: GOLDEN_CONTRIB_STEPS, head: GOLDEN_CONTRIB_HEAD })).toBe(
+			GOLDEN_CONTRIB_HASH,
+		)
+	})
+})
+
+describe('hashHookCommand golden', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('a repository whose only commit hook is a fixed pre-commit → the golden hash of main (unchanged by this lot)', () => {
+		const root = createScratchRepository({ 'src/a.ts': 'export {}\n' })
+		const hook = join(root, '.git/hooks/pre-commit')
+		mkdirSync(join(root, '.git/hooks'), { recursive: true })
+		writeFileSync(hook, GOLDEN_HOOK_SCRIPT)
+		chmodSync(hook, 0o755)
+
+		expect(hashHookCommand(root)).toBe(GOLDEN_HOOK_HASH)
 	})
 })
 

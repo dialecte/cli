@@ -80,6 +80,8 @@ export function readRecapRecords(params: {
 						}),
 						branch: lotsFile.branch,
 						mergedBranches: mergedBranchesOf(handover.lots),
+						// as the card: the base resolved on the lots file's HEAD, never HEAD
+						head: lotsFile.head,
 					})
 				: [],
 		mutation: readRecapMutation({ handover, repositoryExists }),
@@ -151,6 +153,8 @@ function readChecks(params: {
 	tree: string
 	branch: string
 	mergedBranches: readonly string[]
+	/** The lots file's HEAD: the gate base is resolved there. */
+	head: string
 }): CardGateLine[] {
 	if (readGateRecords(params.root).length === 0 && !readRulesRecord(params.root)) return []
 	return [...buildCardGateLines(params), buildRulesLine(params), ...buildMutationLines(params)]
