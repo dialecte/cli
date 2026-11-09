@@ -115,7 +115,7 @@ describe('the command map', () => {
 
 	const REVIEW_ROUND_LINES = [
 		'dialecte lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>',
-		'dialecte lot decide <id|folder> <id> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',
+		'dialecte lot decide <id|folder> <finding> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',
 		'dialecte lot snapshot <id|folder> --round <n>',
 		'dialecte lot choice <id|folder> --by <who> <decision>',
 		'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>',

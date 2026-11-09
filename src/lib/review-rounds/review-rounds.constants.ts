@@ -39,7 +39,7 @@ export const DECISION_STATES = [
 /** The command the review rounds' verbs live under, and the first word of what each prints (`lot <verb>: `). */
 export const LOT_COMMAND = 'lot'
 
-export const CHOICE_USAGE = 'lot choice: expected <folder> --by <who> <decision>'
+export const CHOICE_USAGE = 'lot choice: expected <id|folder> --by <who> <decision>'
 
 /** The options `lot choice` takes followed by a value, without the dashes. */
 export const CHOICE_OPTIONS = ['by'] as const
@@ -54,14 +54,14 @@ export const DECISIONS_FIRST_CELL = 'decision'
 export const DECISIONS_TABLE_HEAD = '| decision | by | when |\n|---|---|---|\n'
 
 export const FINDING_USAGE =
-	'lot finding: expected <folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>'
+	'lot finding: expected <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>'
 
-export const DECIDE_USAGE = `lot decide: expected <folder> <id> <state...>; states: ${DECISION_STATES.join(', ')}`
+export const DECIDE_USAGE = `lot decide: expected <id|folder> <finding> <state...>; states: ${DECISION_STATES.join(', ')}`
 
-export const SNAPSHOT_USAGE = 'lot snapshot: expected <folder> --round <n>'
+export const SNAPSHOT_USAGE = 'lot snapshot: expected <id|folder> --round <n>'
 
 export const DELTA_USAGE =
-	'lot delta: expected <folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
+	'lot delta: expected <id|folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
 
 /** The options each verb takes followed by a value, without the dashes. */
 export const FINDING_OPTIONS = ['round', 'severity', 'at'] as const

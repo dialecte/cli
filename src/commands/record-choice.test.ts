@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 const NOW = new Date('2026-11-01T12:00:00')
 
 /** The usage `record choice` answers a refused call with, a reason in parentheses allowed after it. */
-const CHOICE_USAGE_PATTERN = /^lot choice: expected <folder> --by <who> <decision>( \(.+\))?$/
+const CHOICE_USAGE_PATTERN = /^lot choice: expected <id\|folder> --by <who> <decision>( \(.+\))?$/
 
 const DECISIONS_HEAD = '| decision | by | when |\n|---|---|---|\n'
 

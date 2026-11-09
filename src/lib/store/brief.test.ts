@@ -240,9 +240,27 @@ const FIELD_ROWS: FieldRow[] = [
 		refused: ['lots-outside-scope:lots'],
 	},
 	{
-		name: 'a lot path that only shares a string prefix with the scope entry is inside it',
+		name: 'a lot path that only shares a string prefix with the scope entry is outside it, and covers nothing',
 		overrides: withScopeAndLots({ scope: ['src/a'], paths: ['src/ab'] }),
-		refused: [],
+		refused: ['lots-outside-scope:lots', 'scope-not-covered:scope'],
+	},
+	{
+		name: 'scope lib/ with the lot path lib-other/x',
+		overrides: withScopeAndLots({ scope: ['lib/'], paths: ['lib-other/x'] }),
+		refused: ['lots-outside-scope:lots', 'scope-not-covered:scope'],
+	},
+	{
+		name: 'scope lib/ with the lot path libx',
+		overrides: withScopeAndLots({ scope: ['lib/'], paths: ['libx'] }),
+		refused: ['lots-outside-scope:lots', 'scope-not-covered:scope'],
+	},
+	{
+		name: 'a glob scope entry cut after a slash with the lot paths src/a and srcx: srcx is outside',
+		overrides: withScopeAndLots({
+			scope: ['src/a', 'src/**/*.test.ts'],
+			paths: ['src/a', 'srcx'],
+		}),
+		refused: ['lots-outside-scope:lots'],
 	},
 	{
 		name: 'a lot path above the repository',

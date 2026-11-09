@@ -93,7 +93,11 @@ export function publishLotFolder(params: {
 
 /** Removes the `.tmp-` folders of `store` whose builder's pid no process holds; a live builder's is kept. */
 export function removeStoreLeftovers(params: { store: string }): void {
-	removeDeadLeftovers({ folder: params.store, pattern: TEMPORARY_FOLDER_PATTERN })
+	removeDeadLeftovers({
+		folder: params.store,
+		pidOf: (name) => TEMPORARY_FOLDER_PATTERN.exec(name)?.[1],
+		kind: 'folders',
+	})
 }
 
 /**

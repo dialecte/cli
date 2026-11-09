@@ -1,4 +1,5 @@
 /** The exact next command of a lot (33S section 7, D18), with its full name: one rule for `start` and `status`. */
+import { shellQuote } from '../shell-quote.ts'
 import { NEXT_COMMANDS } from './store.constants.ts'
 
 import type { LotStateInput, LotStateReport, NextCommands } from './store.types.ts'
@@ -6,6 +7,11 @@ import type { LotStateInput, LotStateReport, NextCommands } from './store.types.
 /** The manual line: what a real working lot asks for while no runner exists (S). */
 export function manualNextOf(name: string): string {
 	return NEXT_COMMANDS.manual.replace('{name}', name)
+}
+
+/** The real start a dry run asks for: the brief path as it was given, shell-quoted. */
+export function startNextOf(briefPath: string): string {
+	return NEXT_COMMANDS.start.replace('{brief}', shellQuote(briefPath))
 }
 
 /** The stop line: what a failed lot asks for. */

@@ -14,6 +14,7 @@ import {
 } from './findings-ledger.ts'
 import { DECISIONS_FIRST_CELL, DECISIONS_TABLE_HEAD } from './review-rounds.constants.ts'
 
+import type { TemporaryFileSeam } from '../store/store.types.ts'
 import type { DecisionRow } from './review-rounds.types.ts'
 
 /** Appends `| <decision> | <by> | <when> |` to the decisions file at `path` (made when absent). */
@@ -25,6 +26,8 @@ export function appendDecision(params: {
 	by: string
 	/** The day, `yyyy-mm-dd`. */
 	when: string
+	/** Called once the file's temporary file is written and before it replaces the file. */
+	afterTemporaryWritten?: TemporaryFileSeam
 }): void {
 	const lines = (existsSync(params.path) ? readFileSync(params.path, 'utf8') : '').split('\n')
 	appendTableRow({
@@ -34,6 +37,7 @@ export function appendDecision(params: {
 		title: `# Decisions - ${params.title}`,
 		head: DECISIONS_TABLE_HEAD,
 		row: `| ${escapeCell(params.decision)} | ${escapeCell(params.by)} | ${params.when} |`,
+		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
 }
 

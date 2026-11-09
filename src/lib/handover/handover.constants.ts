@@ -1,3 +1,4 @@
+import type { LotStateName } from '../store/store.types.ts'
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
 import type { HandoverState } from './handover.types.ts'
 
@@ -75,11 +76,30 @@ export const HANDOVER_RUN_TEXTS = {
 
 /** `handover` without a lots file or a verb: its verbs, `write` first. */
 export const HANDOVER_USAGE =
-	'handover: expected a verb: write <lots.json> [--out <dir>] [--rehash] [--json] | show [<name|folder>] | run [<name|folder>] | abandon [<name|folder>] | list | --legend (handover <lots.json> is handover write <lots.json>)'
+	'handover: expected a verb: write <lots.json> [--out <id|folder>] [--rehash] [--json] | show [<name|folder>] | run [<name|folder>] | abandon [<name|folder>] | list | --legend (handover <lots.json> is handover write <lots.json>)'
 
 /** `handover <lots.json> --rehash` of an abandoned folder: refused, nothing written. */
 export const HANDOVER_REHASH_ABANDONED_REFUSAL =
 	'handover: {folder} is abandoned ({marker}): nothing written; write the hand-over into a new folder (--out <dir>)'
+
+/**
+ * What a hand-over verb refuses on a lot folder, and a committed hand-over for any folder (exit 2, nothing
+ * written); `{name}` is the lot's full name. The write's refusals take the `handover: ` prefix where printed.
+ */
+export const HANDOVER_LOT_REFUSALS = {
+	simulated: 'a simulated lot has no hand-over ({name})',
+	ended: '{name} is {state}: its folder takes no hand-over',
+	question: 'answer {question} first: {answer}',
+	repository: "repository {repository} is not the lot's worktree {worktree}",
+	branch: "branch {branch} is not the lot's branch {lotBranch}",
+	committed: '{entry} is committed: a committed hand-over is never rewritten',
+	runCanceled: 'handover run: {name} is canceled: its hand-over is not run',
+	abandon:
+		'{name} is a lot: its hand-over is redone with dialecte handover write --rehash --out {name}; to end the lot: dialecte lot stop {name}',
+} as const
+
+/** The lot states whose folder takes no hand-over. */
+export const HANDOVER_REFUSED_LOT_STATES: readonly LotStateName[] = ['canceled', 'failed']
 
 /** A run and an abandon that crossed: each refuses once it finds the other's marker after writing its own. */
 export const HANDOVER_INTERLEAVING_REFUSALS = {

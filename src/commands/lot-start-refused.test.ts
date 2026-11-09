@@ -20,6 +20,7 @@ import {
 import { git } from '../../test/scratch-repository.ts'
 import { writeRecordFile } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 import { startLot } from './lot-start.ts'
 import { runLot } from './lot.ts'
 
@@ -197,7 +198,7 @@ describe('lot start --dry-run', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(existsSync(start.store)).toBe(false)
 	})
 
-	it('--json: { dryRun: true, name, worktree }', () => {
+	it('--json: { dryRun: true, lot, worktree, next } and no name key (E3)', () => {
 		const start = createStartWorkspace()
 
 		expect(
@@ -208,12 +209,13 @@ describe('lot start --dry-run', { timeout: STORE_CASE_TIMEOUT }, () => {
 					now: START_NOW,
 				}),
 			),
-		).toMatchObject({
+		).toEqual({
 			exitCode: 0,
 			json: {
 				dryRun: true,
-				name: LOT_NAME,
+				lot: LOT_NAME,
 				worktree: join(start.worktreesFolder, LOT_NAME),
+				next: `dialecte lot start ${shellQuote(start.workspace.briefPath)}`,
 			},
 		})
 	})

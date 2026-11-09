@@ -5,13 +5,13 @@
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
-import { HANDOVER_STORE_FOLDER } from '../lib/handover/handover.constants.ts'
+import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
-import { readLotStateInput } from '../lib/store/lot-records.ts'
+import { readLotStateInput, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { requireLot } from '../lib/store/resolve-lot.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
@@ -26,25 +26,31 @@ import type {
 } from '../lib/store/store.types.ts'
 import type { LotStatusJson } from './lot-status.types.ts'
 
+/**
+ * The status of the lot `<id>` names, as text or `--json`; a usage error or a refusal exits 2 (JSON with
+ * `next: null` under `--json`).
+ */
 export function lotStatus(params: {
 	cwd: string
 	/** The words after the verb: `<id>` and the options. */
 	argv: string[]
 }): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: STATUS_FLAGS })
-	if (typeof read === 'string' || read.words.length !== 1)
-		return { exitCode: 2, output: renderLotUsage() }
-	const required = requireLot({ argument: read.words[0], cwd: params.cwd, mode: 'read' })
-	if ('exitCode' in required) return required
+	if (typeof read === 'string')
+		return lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) })
+	const json = read.flags.has('json')
+	const [id, ...extra] = read.words
+	if (id === undefined) return lotUsageExit({ reason: 'lot status takes one id: none given', json })
+	if (extra.length > 0)
+		return lotUsageExit({ reason: `lot status takes one id, not also ${extra.join(' ')}`, json })
+	const required = requireLot({ argument: id, cwd: params.cwd, mode: 'read' })
+	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
 	const lotFolder = required.lot
-	const registry = join(dirname(dirname(lotFolder)), HANDOVER_STORE_FOLDER)
+	const registry = registryOfLotFolder(lotFolder)
 	const input = readLotStateInput({ lotFolder, registry })
-	if (!input) return { exitCode: 2, output: `no lot ${read.words[0]}` }
+	if (!input) return lotRefusalExit({ message: `no lot ${id}`, json })
 	const status = statusOf({ input, lotFolder, registry })
-	return {
-		exitCode: 0,
-		output: read.flags.has('json') ? JSON.stringify(status, null, 2) : statusText(status),
-	}
+	return { exitCode: 0, output: json ? JSON.stringify(status, null, 2) : statusText(status) }
 }
 
 /** The status JSON of a lot (33S section 7, D17). */

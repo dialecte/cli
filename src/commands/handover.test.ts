@@ -709,7 +709,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const box = boxLines(result.output)
 		expect(box.filter((line) => line.includes(root))).toEqual([])
 		expect(box.map((line) => line.length)).toEqual(Array(box.length).fill(lines[0].length))
-		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
+		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${realpathSync(out)}'`)
 	})
 
 	it('written → above the command: the repository held until every lot is committed, the gate still running under this hand-over, a late edit re-gated then --rehash on the lots file written (its path quoted)', () => {
@@ -1053,7 +1053,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = writeHandover({ lotsPath, argv: ['--json'] })
 
 		expect(JSON.parse(result.output)).toMatchObject({
-			folder: out,
+			folder: realpathSync(out),
 			repository: root,
 			worktree: root,
 			branch: 'main',
@@ -1068,7 +1068,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				},
 				{ index: 2, fileCount: 1, insertions: 3, deletions: 0, subject: 'docs(changelog): read' },
 			],
-			command: `node '${WRITER_CLI}' handover run '${out}'`,
+			command: `node '${WRITER_CLI}' handover run '${realpathSync(out)}'`,
 		})
 		expect(JSON.parse(result.output).gates).toEqual([
 			{ name: 'gate', status: 'failed', detail: 'never run on this tree' },
@@ -1241,7 +1241,7 @@ describe('commit.sh', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(result.status).toBe(1)
 		expect(result.stderr.trim().split('\n')).toEqual([
-			`>> no @dialecte/cli with \`handover run\` installed in ${root}: npm install --save-dev @dialecte/cli@latest there, or run: node '${WRITER_CLI}' handover run '${out}'`,
+			`>> no @dialecte/cli with \`handover run\` installed in ${root}: npm install --save-dev @dialecte/cli@latest there, or run: node '${WRITER_CLI}' handover run '${realpathSync(out)}'`,
 		])
 		expect(git({ root, args: ['log', '--format=%s', '-1'] }).trim()).toBe('chore: start')
 	})
@@ -1252,7 +1252,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 		const lockPath = join(root, '.git', 'dialecte-handover.lock')
-		expect(readFileSync(lockPath, 'utf8')).toBe(`${join(out, 'commit.sh')}\n`)
+		expect(readFileSync(lockPath, 'utf8')).toBe(`${join(realpathSync(out), 'commit.sh')}\n`)
 
 		const result = await runFolder({ out })
 
@@ -2147,8 +2147,8 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 			.output.split('\n')
 			.at(-1)
 
-		expect(lackingCard).toBe(`node '${WRITER_CLI}' handover run '${lacking.out}'`)
-		expect(havingCard).toBe(`cd '${having.out}' && bash commit.sh`)
+		expect(lackingCard).toBe(`node '${WRITER_CLI}' handover run '${realpathSync(lacking.out)}'`)
+		expect(havingCard).toBe(`cd '${realpathSync(having.out)}' && bash commit.sh`)
 	})
 
 	it('the probe given to runHandover is the one the card uses → a probe answering true: the run line is bash commit.sh, asked once, for the repository', () => {
@@ -2157,7 +2157,7 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 
 		const result = writeHandover({ lotsPath, probe: asked.probe })
 
-		expect(result.output.split('\n').at(-1)).toBe(`cd '${out}' && bash commit.sh`)
+		expect(result.output.split('\n').at(-1)).toBe(`cd '${realpathSync(out)}' && bash commit.sh`)
 		expect(asked.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
 	})
 
@@ -2167,7 +2167,9 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 
 		const result = writeHandover({ lotsPath, probe: asked.probe })
 
-		expect(result.output.split('\n').at(-1)).toBe(`node '${WRITER_CLI}' handover run '${out}'`)
+		expect(result.output.split('\n').at(-1)).toBe(
+			`node '${WRITER_CLI}' handover run '${realpathSync(out)}'`,
+		)
 		expect(asked.calls).toEqual([{ root, timeout: DEFAULT_PROBE_TIMEOUT_MILLISECONDS }])
 	})
 
@@ -2178,7 +2180,7 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 
 		const result = writeHandover({ lotsPath, argv: ['--rehash'], probe: asked.probe })
 
-		expect(result.output.split('\n').at(-1)).toBe(`cd '${out}' && bash commit.sh`)
+		expect(result.output.split('\n').at(-1)).toBe(`cd '${realpathSync(out)}' && bash commit.sh`)
 		expect(asked.calls).toHaveLength(1)
 	})
 
@@ -2415,7 +2417,7 @@ describe('handover: the card width', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, ()
 
 			const result = writeHandover({ lotsPath, argv: ['--out', folder], columns })
 
-			const command = `node '${WRITER_CLI}' handover run '${folder}'`
+			const command = `node '${WRITER_CLI}' handover run '${realpathSync(folder)}'`
 			expect(command.length).toBeGreaterThan(columns)
 			expect(result.output.split('\n')).toContain(command)
 			expect(cardLines(result.output).filter((line) => line.length > columns)).toEqual([])
@@ -2619,7 +2621,7 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 		const result = writeHandover({ lotsPath })
 
 		const lines = result.output.split('\n')
-		const command = `node '${WRITER_CLI}' handover run '${out}'`
+		const command = `node '${WRITER_CLI}' handover run '${realpathSync(out)}'`
 		const box = lines.filter((line) => /^[┌│└]/.test(line))
 		expect(lines.filter((line) => line === command)).toHaveLength(1)
 		expect(box.filter((line) => /^│ (run|see below)\b/.test(line))).toEqual([])
@@ -2656,7 +2658,9 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 		const elapsed = Date.now() - startedAt
 
 		expect(elapsed).toBeLessThan(5_000)
-		expect(result.output.split('\n')).toContain(`node '${WRITER_CLI}' handover run '${out}'`)
+		expect(result.output.split('\n')).toContain(
+			`node '${WRITER_CLI}' handover run '${realpathSync(out)}'`,
+		)
 	})
 })
 

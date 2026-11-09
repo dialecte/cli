@@ -1,3 +1,5 @@
+import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
+
 import type { BriefEffort } from '../lib/store/brief.types.ts'
 
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
@@ -20,6 +22,10 @@ export const BRANCH_MADE_SUFFIX = '; the branch {branch} was made: a retry meets
 export const LINK_REFUSED_NOTE =
 	'the link {link} to the lot folder could not be made: {reason}; open the lot by its id'
 
-/** The two files of the hard-link probe, below the store folder (a temporary's name: never a record). */
-export const PROBE_SOURCE = '.link-probe.tmp-{pid}-1'
-export const PROBE_TARGET = '.link-probe.tmp-{pid}-2'
+/**
+ * The final name the hard-link probe's files are temporaries of, and its two files below the store folder
+ * (`<final name>.tmp-<pid>-<n>`: never a record; a dead pid's are swept as any temporary of that name).
+ */
+export const PROBE_NAME = '.link-probe'
+export const PROBE_SOURCE = `${PROBE_NAME}${TEMPORARY_INFIX}{pid}-1`
+export const PROBE_TARGET = `${PROBE_NAME}${TEMPORARY_INFIX}{pid}-2`

@@ -23,6 +23,8 @@ export type StartSeams = {
 	symlink?: SymlinkFunction
 	/** Called between the pick of the index and the creation of its claim (`claimWorktreeIndex`'s `afterPick`). */
 	afterClaimPick?: () => void
+	/** Called just before the lot folder is published (`publishLotFolder`), once the store list holds the store. */
+	beforePublish?: () => void
 }
 
 /**

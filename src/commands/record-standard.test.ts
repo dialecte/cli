@@ -22,7 +22,8 @@ function standardOf(folder: string): unknown {
 }
 
 /** The usage a refused call answers with, under its new name. */
-const STANDARD_USAGE = 'lot standard: expected <folder> consulted <note> | not-consulted <reason>'
+const STANDARD_USAGE =
+	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason>'
 
 describe('record standard', () => {
 	it('consulted <note> → exit 0, standard.json with the state, the note and the time', () => {

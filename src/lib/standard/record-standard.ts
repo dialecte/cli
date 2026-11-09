@@ -1,21 +1,30 @@
 /**
- * `dialecte lot standard <folder> consulted <note> | not-consulted <reason>`: writes `standard.json` in the
+ * `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>`: writes `standard.json` in the
  * hand-over folder - the state, the note (a reason for `not-consulted`) and the time. The line references of
  * what was read stay in the findings ledger.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { verbPrefix } from '../review-rounds/review-round-verbs.ts'
 import { LINE_BREAK_PATTERN } from '../review-rounds/review-rounds.constants.ts'
 import { readArguments } from '../review-rounds/round-arguments.ts'
 import { handoverFolderRefusal } from '../review-rounds/worktree-state.ts'
+import { recordText, replaceWhole } from '../store/publish.ts'
 import { STANDARD_USAGE, STANDARD_FILE, STANDARD_STATES } from './standard.constants.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
+import type { TemporaryFileSeam } from '../store/store.types.ts'
 import type { StandardRecord } from './standard.types.ts'
 
-export function recordStandard(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+/** `lot standard`: writes `standard.json` whole (a temporary file renamed over it); exit 2 on a usage error. */
+export function recordStandard(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	/** Called once standard.json's temporary file is written and before it replaces the file. */
+	afterTemporaryWritten?: TemporaryFileSeam
+}): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [] })
 	if (typeof read === 'string') return { exitCode: 2, output: `${STANDARD_USAGE} (${read})` }
 	const [folderWord, stateWord, ...noteWords] = read.words
@@ -33,6 +42,10 @@ export function recordStandard(params: { cwd: string; argv: string[]; now?: Date
 		note,
 		at: (params.now ?? new Date()).toISOString(),
 	}
-	writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
+	replaceWhole({
+		path,
+		text: recordText(record),
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
 	return { exitCode: 0, output: `${verbPrefix('standard')}: ${state} - ${path}` }
 }
