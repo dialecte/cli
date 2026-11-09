@@ -1,6 +1,6 @@
 import type { PackageJson } from '../package-json.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { TDD_SUBCOMMANDS } from './tdd.constants.ts'
+import type { SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
 
 /**
  * A test case: its file, relative to the package root, its full name as vitest prints it
@@ -110,6 +110,22 @@ export type TddReceipt = TestCaseId & {
 	at: string
 }
 
+/** Why a receipt of a case does not count: its declaration left the lot file, or a proof already stands before it. */
+export type SkippedReceiptReason =
+	(typeof SKIPPED_RECEIPT_REASONS)[keyof typeof SKIPPED_RECEIPT_REASONS]
+
+/**
+ * The receipts of a case split by the read rule: those that count (oldest first) and those skipped, each with
+ * why. Nothing of the ledger is rewritten: the skip is only how the receipts are read.
+ */
+export type CountingReceipts = {
+	counting: TddReceipt[]
+	skipped: SkippedReceipt[]
+}
+
+/** A receipt the read rule skips, with why. */
+export type SkippedReceipt = { receipt: TddReceipt; reason: SkippedReceiptReason }
+
 /** The test code a red run froze: each file (test files, helpers, fixtures, snapshots) with its sha256. */
 export type TddFreeze = {
 	kind: 'freeze'
@@ -151,7 +167,12 @@ export type CaseStatus =
 	| 'missing receipt'
 	| 'test edited after red'
 
-export type CaseStatusLine = TestCaseId & { status: CaseStatus; flags: ReceiptFlag[] }
+export type CaseStatusLine = TestCaseId & {
+	status: CaseStatus
+	flags: ReceiptFlag[]
+	/** The receipts of the case the read rule skips (`countingReceipts`); absent when none is. */
+	skipped?: SkippedReceipt[]
+}
 
 /** A test file of the change: its text now, and at the base (undefined when the file is new). */
 export type ChangedTestFile = { file: string; text: string; baseText: string | undefined }
@@ -208,6 +229,8 @@ export type TddCheck = {
 	lines?: string[]
 	/** Evidence shown under a passed step: flags, deleted cases. */
 	details?: string[]
+	/** The grouped lines of the cases moved from the base (`moved`, `moved by name`): the card shows them. */
+	moved?: string[]
 }
 
 export type TddExemption =
@@ -266,6 +289,8 @@ export type TddState = {
 	unfrozen: string[]
 	findings: TddFinding[]
 	unlisted: UnlistedFile[]
+	/** What the cases of the change moved from; absent when nothing moved and no base collect ran. */
+	moves?: TddMoves
 }
 
 /** A case as a run of its file saw it, with what `tdd` needs to judge it. */
@@ -278,6 +303,18 @@ export type RunCase = TestCaseId & {
 	ofChange: boolean
 	/** The base provably holds it (its file, its own title and every title written now), whatever its call. */
 	ofBase: boolean
+	/** Where the run located it in its file (its test call, or the runner call a helper registers it through). */
+	location?: SourceLocation
+}
+
+/** What a red run makes of one case: the kind it records (a kept without flags records none) and its line. */
+export type RedJudgement = {
+	testCase: RunCase
+	kind: 'red' | 'unchanged' | 'accepted' | 'kept' | 'revised' | 'refused'
+	detail: string
+	message?: string
+	reason?: string
+	flags: ReceiptFlag[]
 }
 
 /** Where an import of a test file leads. */
@@ -306,4 +343,78 @@ export type ModuleAlias = { find: string; replacement: string }
 export type PackageVitest = {
 	command: string
 	arguments: readonly string[]
+}
+
+/** A case of a run with where its test call is in its file (undefined when the run gave none). */
+export type MovedCaseInput = TestCaseId & { location: SourceLocation | undefined }
+
+/** A test file the change deletes, as the base held it. */
+export type DeletedTestFile = { file: string; baseText: string }
+
+/**
+ * The cases moved out of one source file (deleted, or changed so that it no longer holds them) into
+ * `targets`, and whether a target's code around its test calls differs from the source's.
+ */
+export type MovedGroup = {
+	source: string
+	cases: TestCaseId[]
+	targets: string[]
+	surroundingsChanged: boolean
+	/** The keys (describe path, call tokens) of the source's test calls the moved cases carry; exact moves only. */
+	callKeys?: string[]
+}
+
+/** A case matched to the one source holding its test call, with that call's key (describe path, tokens). */
+export type MoveCandidate = { testCase: TestCaseId; source: string; key: string }
+
+/** A case written, with the same name and project, in several files: moved from none of them. */
+export type AmbiguousMove = { name: string; project: string; files: string[] }
+
+/** What the cases of a change moved from: grouped per source, and the ones that cannot be told apart. */
+export type MovedCases = { groups: MovedGroup[]; ambiguous: AmbiguousMove[] }
+
+/**
+ * A case with the runner call that registered it (the call in its file that is no test call: a helper's),
+ * undefined when it is registered by a direct test call.
+ */
+export type NamedRegistration = TestCaseId & { runner: string | undefined }
+
+/** A group moved by name: the runner calls at the base and now, for the reviewer. */
+export type MovedByNameGroup = MovedGroup & { runnerFrom: string[]; runnerTo: string[] }
+
+export type MovedByNameCases = { groups: MovedByNameGroup[]; ambiguous: AmbiguousMove[] }
+
+/**
+ * What the cases of a change moved from (`readMoves`): exactly by their test call, by name when a helper
+ * registers them, and the collect-only run of the base the by-name match needed (absent when none ran).
+ */
+export type TddMoves = {
+	exact: MovedCases
+	byName: MovedByNameCases
+	baseCollect?: BaseCollect
+}
+
+/** The collect-only run of the base sources: how many files, how long it took, why it failed. */
+export type BaseCollect = { files: number; milliseconds: number; failure?: string }
+
+/** A test call of a file with its offsets in the text: where it starts, ends, and where its callee ends. */
+export type LocatedTestCall = TestCall & { start: number; end: number; calleeEnd: number }
+
+/** The test calls of a file, to answer which one a reported location points at. */
+export type TestCallIndex = {
+	calls: LocatedTestCall[]
+	byStart: ReadonlyMap<number, LocatedTestCall>
+	lineStarts: readonly number[]
+	/** Any call at the location, as `testCallTextAt` reads it, from the file parsed once (a runner's call). */
+	callTextAt: (location: SourceLocation) => string | undefined
+}
+
+/**
+ * The code of a test file outside its test calls: each statement holding no test call, with the describe
+ * path around it (a key), recursing into the suites; and every describe path the file has.
+ */
+export type Surroundings = {
+	/** `calls`: the statement holds a call (it may register cases through a runner). */
+	statements: Array<{ path: string; text: string; calls: boolean }>
+	paths: string[]
 }

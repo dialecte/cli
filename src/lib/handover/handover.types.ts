@@ -1,7 +1,7 @@
 import type { CardLine } from '../card/card.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
-import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
+import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
 import type { HANDOVER_ENTRY_STATES } from './handover.constants.ts'
 
@@ -16,6 +16,8 @@ export type LotsFile = {
 	/** The gates run before the hand-over, with their real counts: written in the script's header. */
 	gates?: string
 	lots: Array<LotPlan | MergeLotPlan>
+	/** A release hand-over (`handover write --release`): its card requires a green `gate --release` of the tree. */
+	release?: boolean
 }
 
 export type LotPlan = {
@@ -295,6 +297,9 @@ export type TddProof = 'red' | 'proven' | 'unchanged' | 'kept'
 /** An accepted or revised receipt with the lot file entry that names its case. */
 export type DeclaredReceipt = { receipt: TddReceipt; entry: LotCaseEntry }
 
+/** A case of the change with the receipts the read rule skips (`countingReceipts`), for the card's entries to read. */
+export type CaseSkippedReceipts = { testCase: TestCaseId; skipped: SkippedReceipt[] }
+
 /**
  * Whether a gate may run while the repository's hand-over lock is held: free (no lock), under the hand-over
  * written for this repository (its folder), or refused (why).
@@ -336,8 +341,13 @@ export type RehearsalPlanContext = {
 	/** The branch the hand-over commits on. */
 	branch: string
 	installed: Pick<CheckKey, 'lockHash' | 'linked'>
-	/** The command hash a record of each mode must hold to be reused. */
-	commands: { full: string; hook: string }
+	/**
+	 * The command hash a record of each mode must hold to be reused, at the hand-over base; `release` only when the
+	 * release list covers `full` (its scoped steps against the empty tree).
+	 */
+	commands: { full: string; hook: string; release?: string }
+	/** The hand-over base a record's own base must equal; absent when no gate list holds a scoped step. */
+	base?: string
 	/** What the commit hook's text names that stages files, if anything. */
 	stages: string | undefined
 }

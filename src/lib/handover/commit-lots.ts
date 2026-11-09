@@ -8,8 +8,9 @@
  * failing step's last lines (failed), then the full log's path; then the commit's sha and stat. A
  * repository with no commit hook prints none of it. A hook that ended (passed or failed, not stalled) is
  * recorded as a gate record of the tree it ran on (`dialecte-gate-hook.json`, and the repository's store of
- * records by tree), which the card reads. A rehearsal may commit a lot without its hook (`--no-verify`, in
- * its scratch clone only) when a green record of the lot's tree answers for it. A lot
+ * records by tree), which the card reads; when the hook's test steps hold a scoped step, keyed with the base the
+ * hook printed it used (none printed: no key, never stored). A rehearsal may commit a lot without its hook
+ * (`--no-verify`, in its scratch clone only) when a green record of the lot's tree answers for it. A lot
  * whose commit fails is unstaged again (a merge lot's merge aborted), so the same command resumes at it
  * once the cause is fixed. A merge lot merges its recorded tip with its resolutions, checked against what
  * was reviewed and rehearsed. Before any commit that stages a change of the lock, `node_modules` are
@@ -20,9 +21,10 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { computeCommitKey, hashHookCommand } from '../gate-records/check-key.ts'
+import { computeCommitKey, foldHookBase, hashHookCommand } from '../gate-records/check-key.ts'
 import { HOOK_REUSED_NOTE } from '../gate-records/gate-records.constants.ts'
 import { recordHook } from '../gate-records/gate-records.ts'
+import { HANDOVER_BASE_VARIABLES } from '../gate/gate-base.constants.ts'
 import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -37,12 +39,13 @@ import {
 	STILL_STAGED_INDEX_LOCK,
 } from './handover.constants.ts'
 import { createHookLiveView } from './hook-live-view.ts'
-import { hookOutcomeLines, hookSummarySteps, readHookSteps } from './hook-output.ts'
+import { hookOutcomeLines, hookSummarySteps, readHookBase, readHookSteps } from './hook-output.ts'
 import { removeMergeMarker, runMergeLot, undoMerge } from './merge-lot.ts'
 import { syncNodeModules } from './sync-node-modules.ts'
 import { unstageLot } from './unstage-lot.ts'
 
-import type { RecordedStep } from '../gate-records/gate-records.types.ts'
+import type { CheckKey, GateRecord, RecordedStep } from '../gate-records/gate-records.types.ts'
+import type { HandoverBase } from '../gate/gate-base.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { Installer, ResolvedLot, WriteLine } from './handover.types.ts'
@@ -71,9 +74,24 @@ export async function commitLots(params: {
 	withoutHook?: ReadonlySet<number>
 	/** The repository whose store holds the hook records, when `root` is a rehearsal clone of it. */
 	storeRoot?: string
+	/**
+	 * The test steps the hook's `gate --hook` runs hold a scoped step: a hook record's command hash folds the base the
+	 * hook printed, and a hook that printed none is recorded without a key.
+	 */
+	scoped?: boolean
+	/** The hand-over base and folder each commit's hook gets (`DIALECTE_HANDOVER_BASE`, `DIALECTE_HANDOVER_FOLDER`). */
+	handoverBase?: HandoverBase
 }): Promise<string[] | undefined> {
 	const { root, lots, write, clock } = params
 	const tty = params.tty ?? false
+	const scoped = params.scoped ?? false
+	const hookEnvironment = params.handoverBase
+		? {
+				...params.hookEnvironment,
+				[HANDOVER_BASE_VARIABLES.base]: params.handoverBase.commit,
+				[HANDOVER_BASE_VARIABLES.folder]: params.handoverBase.folder,
+			}
+		: params.hookEnvironment
 	const progress =
 		params.progress ??
 		createStepProgress({
@@ -150,7 +168,7 @@ export async function commitLots(params: {
 			clock,
 			every: HEARTBEAT_INTERVAL_MILLISECONDS,
 			onProcessGroup: params.onProcessGroup,
-			environment: params.hookEnvironment,
+			environment: hookEnvironment,
 			step: { running, tty },
 			onText: (text) => appendFileSync(hookLog, text),
 			onLine: hookView.read,
@@ -171,7 +189,8 @@ export async function commitLots(params: {
 		if (key !== undefined && !commit.stalled)
 			recordHook({
 				root,
-				key,
+				tree: key.tree,
+				...(scoped ? scopedHookKey({ key, output: commit.output }) : { key }),
 				...(params.storeRoot && { storeRoot: params.storeRoot }),
 				steps: hookSummarySteps({
 					steps: readHookSteps(commit.output),
@@ -228,6 +247,26 @@ export async function commitLots(params: {
 		}
 	}
 	return commits
+}
+
+/**
+ * The key and base of a scoped hook's record: the base the hook printed it used (never the one handed down: a hook
+ * that refused it selected another diff), folded into the command hash; neither when it printed no base line (an
+ * older cli's hook), so the record is never stored nor reused.
+ */
+function scopedHookKey(params: {
+	key: CheckKey
+	output: string
+}): Pick<GateRecord, 'key' | 'base'> {
+	const base = readHookBase(params.output)
+	if (base === undefined) return {}
+	return {
+		key: {
+			...params.key,
+			commandHash: foldHookBase({ hook: params.key.commandHash, gateBase: base.commit }),
+		},
+		base,
+	}
 }
 
 /** A step of the hook's summary as its gate record holds it. */

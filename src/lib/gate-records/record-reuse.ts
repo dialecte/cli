@@ -22,7 +22,9 @@ export function renderReuseLine(params: { command: string; record: GateRecord })
 
 /**
  * The steps of a reused record as results, but those named in `leftOut` (a step this run made its own): each with
- * its configured step when `steps` holds one of its name, else a step of that name with no command.
+ * its configured step when `steps` holds one of its name, else a step of that name with no command. A scoped
+ * step's selection, a failed or flaky step's failing files and the heavy mark are the record's (`heavy` stays
+ * outside the key, so the record says it).
  */
 export function reusedResults(params: {
 	record: GateRecord
@@ -33,16 +35,18 @@ export function reusedResults(params: {
 	return params.record.steps
 		.filter((step) => !leftOut.includes(step.name))
 		.map(function resultOf(recorded: RecordedStep): StepResult {
+			const { heavy: _configuredHeavy, ...configured } = params.steps.find(
+				(step) => step.name === recorded.name,
+			) ?? { name: recorded.name, run: '' }
 			return {
-				step: params.steps.find((step) => step.name === recorded.name) ?? {
-					name: recorded.name,
-					run: '',
-				},
+				step: { ...configured, ...(recorded.heavy && { heavy: true }) },
 				status: recorded.status,
 				counts: recorded.counts,
 				restored: [],
 				...(recorded.note && { note: recorded.note }),
 				...(recorded.reason && { reason: recorded.reason }),
+				...(recorded.selection && { selection: recorded.selection }),
+				...(recorded.failing && { failing: recorded.failing }),
 			}
 		})
 }
@@ -64,6 +68,8 @@ export function recordCheckedRun(params: {
 	reused?: GateRecord
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
+	/** The gate base the run resolved for its scoped steps; absent without one. */
+	base?: GateRecord['base']
 }): { stored: boolean; changedWhileRunning: boolean } {
 	const { keyBefore, keyAfter } = params
 	const changedTree =
@@ -77,6 +83,7 @@ export function recordCheckedRun(params: {
 		...(changedTree === undefined ? { key: keyAfter } : { checkedTree: changedTree }),
 		...(params.reused && { reused: originOfRecord(params.reused) }),
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
+		...(params.base && { base: params.base }),
 	})
 	return { stored, changedWhileRunning: changedTree !== undefined }
 }

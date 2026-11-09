@@ -138,6 +138,55 @@ export const ONLY_REFUSAL =
 
 export const TEST_CODE_CHANGED_SINCE_RED = 'test code changed since its red and it passes'
 
+/**
+ * Why the read rule skips a receipt: its lot file entry is gone, or a red then a green of its case hash
+ * precede it. `SkippedReceiptReason` is derived from it.
+ */
+export const SKIPPED_RECEIPT_REASONS = {
+	undeclared: 'no longer declared',
+	proven: 'proven red → green before it',
+} as const
+
+/** What a red run adds to a proven case's line when an `accept` entry still names it: no receipt is recorded. */
+export const ACCEPTANCE_NOT_NEEDED =
+	'acceptance not needed (proven red → green): it can be removed from the lot file'
+
+/**
+ * What a red run adds to a proven, unchanged case's line when a `revised` entry covers it: no receipt is
+ * recorded; `{reason}` the entry's reason.
+ */
+export const REVISION_NOT_NEEDED = 'revision not needed (nothing changed since its proof): {reason}'
+
+/** The label of the grouped line of the cases moved exactly from one source file. */
+export const MOVED_LABEL = 'moved'
+
+/** The label of the grouped line of the cases a runner registers, moved by name from one source file. */
+export const MOVED_BY_NAME_LABEL = 'moved by name'
+
+/** The end of a moved line when a target's code around its test calls differs from the source's. */
+export const MOVED_SURROUNDINGS_CHANGED = ' · test code changed around them'
+
+/** The end of a moved by name line: the runner calls at the base and now. */
+export const MOVED_RUNNER_CHANGED = ' · runner changed: {from} → {to}'
+
+/** A case several files hold now (or held at the base) under one name and project: moved from none. */
+export const AMBIGUOUS_MOVE_LINE = 'ambiguous  {case}  in {files}: moved from none of them'
+
+/** The collect-only run of the base sources the by-name match needed, and how long it took. */
+export const BASE_COLLECT_LINE = 'base collect  {files} file(s)  {duration}'
+
+/** Added to the base collect line when the run failed: nothing moved by name. */
+export const BASE_COLLECT_FAILED_LINE = 'failed, nothing moved by name: {failure}'
+
+/**
+ * The bound of the collect-only run of the base sources: a guard against a hang. Collecting a few files
+ * takes seconds even on a loaded machine; five minutes is far above it.
+ */
+export const BASE_COLLECT_TIMEOUT_MS = 300_000
+
+/** The label of a `tdd status` or gate line naming the receipts of a case the read rule skips. */
+export const SKIPPED_RECEIPTS_LABEL = 'skipped'
+
 /** What `"accept"` or `"revised"` of the lot file must hold, `{list}` the list's name. */
 export const CASE_LIST_SHAPE =
 	'each "{list}" entry must be { "case": "<file>::<name>", "reason": "<why>" }'

@@ -13,7 +13,14 @@ import {
 /** Questions about a test file's source, answered from its syntax tree (never from lines or greps). */
 import ts from 'typescript'
 
-import type { MetaGlob, SourceLocation, TestCall } from './tdd.types.ts'
+import type {
+	LocatedTestCall,
+	MetaGlob,
+	SourceLocation,
+	Surroundings,
+	TestCall,
+	TestCallIndex,
+} from './tdd.types.ts'
 
 /**
  * The position is inside an argument of an `expect(...)` (or `expect.soft(...)`) call that asserts: the
@@ -70,6 +77,15 @@ export function testCallTextAt(params: {
 	location: SourceLocation
 }): string | undefined {
 	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	return callTextAt({ source, location: params.location })
+}
+
+/** `testCallTextAt` on a file already parsed. */
+function callTextAt(params: {
+	source: ts.SourceFile
+	location: SourceLocation
+}): string | undefined {
+	const { source } = params
 	const start = positionOf({ source, location: params.location })
 	if (start === undefined) return undefined
 	const position: number = start
@@ -175,27 +191,203 @@ function isCalled(access: ts.PropertyAccessExpression): boolean {
  * the `describe` / `suite` calls around it.
  */
 export function listTestCalls(params: { text: string; file: string }): TestCall[] {
-	const { text } = params
-	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
-	const calls: TestCall[] = []
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	return testCallNodesOf(source).map((node) => testCallOf({ node, source }))
+}
+
+/**
+ * The test calls of the file (as `listTestCalls` lists them) with their offsets, indexed by where they
+ * start: the file is parsed once, a reported location is then answered in O(1) (`testCallAt`).
+ */
+export function indexTestCalls(params: { text: string; file: string }): TestCallIndex {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	const calls = testCallNodesOf(source).map((node): LocatedTestCall => ({
+		...testCallOf({ node, source }),
+		start: node.getStart(source),
+		end: node.end,
+		calleeEnd: node.expression.end,
+	}))
+	return {
+		calls,
+		byStart: new Map(calls.map((call) => [call.start, call])),
+		lineStarts: source.getLineStarts(),
+		callTextAt: (location) => callTextAt({ source, location }),
+	}
+}
+
+/**
+ * The test call a reported location points at, as `testCallTextAt` reads it: the one starting there; else,
+ * as vitest locates an `it.each` case at the parenthesis of the call taking its title, the innermost one
+ * whose arguments hold the location. Undefined when the location is no test call (a runner's call).
+ */
+export function testCallAt(params: {
+	index: TestCallIndex
+	location: SourceLocation
+}): LocatedTestCall | undefined {
+	const { index, location } = params
+	if (location.line < 1 || location.line > index.lineStarts.length) return undefined
+	const position = index.lineStarts[location.line - 1] + Math.max(location.column - 1, 0)
+	const starting = index.byStart.get(position)
+	if (starting) return starting
+	let holding: LocatedTestCall | undefined
+	for (const call of index.calls)
+		if (
+			call.calleeEnd <= position &&
+			position < call.end &&
+			(!holding || call.start > holding.start)
+		)
+			holding = call
+	return holding
+}
+
+/**
+ * The code of the file outside its test calls: each statement holding no test call, keyed by the describe
+ * path around it, the suites walked into; a statement holding a test call that is no suite (a loop over
+ * rows, the call itself) registers cases and is left out. With every describe path the file has.
+ */
+export function listSurroundings(params: { text: string; file: string }): Surroundings {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	const testCalls = testCallNodesOf(source)
+	// a call of a function of the file holding a test call registers cases as the test call does
+	const registrars = localRegistrarsOf({ source, testCalls })
+	const starts = [...testCalls, ...callsOf({ source, names: registrars })]
+		.map((node) => node.getStart(source))
+		.sort((first, second) => first - second)
+	/** A test call (or a call registering one) starts within the node: a binary search over the sorted starts. */
+	function holdsTestCall(node: ts.Node): boolean {
+		const from = node.getStart(source)
+		let low = 0
+		let high = starts.length
+		while (low < high) {
+			const middle = (low + high) >> 1
+			if (starts[middle] < from) low = middle + 1
+			else high = middle
+		}
+		return low < starts.length && starts[low] < node.end
+	}
+	const statements: Surroundings['statements'] = []
+	const paths = [JSON.stringify([])]
+	function walk(params: { nodes: readonly ts.Statement[]; path: (string | undefined)[] }): void {
+		const key = JSON.stringify(params.path)
+		for (const statement of params.nodes) {
+			if (!holdsTestCall(statement)) {
+				statements.push({
+					path: key,
+					text: statement.getText(source),
+					calls: isRunStatement(statement) && holdsCall(statement),
+				})
+				continue
+			}
+			const body = suiteBodyOf(statement)
+			if (!body) continue
+			const path = [...params.path, suiteTitleOf(body.call)]
+			paths.push(JSON.stringify(path))
+			walk({ nodes: body.statements, path })
+		}
+	}
+	walk({ nodes: source.statements, path: [] })
+	return { statements, paths }
+}
+
+/** A statement that runs when the file loads (an expression, a loop, an `if`), not a declaration. */
+function isRunStatement(statement: ts.Statement): boolean {
+	return (
+		ts.isExpressionStatement(statement) ||
+		ts.isIterationStatement(statement, false) ||
+		ts.isIfStatement(statement) ||
+		ts.isBlock(statement)
+	)
+}
+
+/** The node holds a call expression (itself included). */
+function holdsCall(node: ts.Node): boolean {
+	return ts.isCallExpression(node) || (ts.forEachChild(node, holdsCall) ?? false)
+}
+
+/**
+ * The names of the functions the file declares (`function check() {}`, `const check = () => {}`) whose body
+ * holds a test call: calling one registers cases.
+ */
+function localRegistrarsOf(params: {
+	source: ts.SourceFile
+	testCalls: readonly ts.CallExpression[]
+}): Set<string> {
+	const names = new Set<string>()
+	for (const call of params.testCalls)
+		for (let node: ts.Node | undefined = call.parent; node; node = node.parent) {
+			if (ts.isFunctionDeclaration(node) && node.name) names.add(node.name.text)
+			if (
+				(ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+				ts.isVariableDeclaration(node.parent) &&
+				ts.isIdentifier(node.parent.name)
+			)
+				names.add(node.parent.name.text)
+		}
+	return names
+}
+
+/** The calls of the file whose callee is one of `names`. */
+function callsOf(params: {
+	source: ts.SourceFile
+	names: ReadonlySet<string>
+}): ts.CallExpression[] {
+	const calls: ts.CallExpression[] = []
+	if (params.names.size === 0) return calls
+	function visit(node: ts.Node): void {
+		if (
+			ts.isCallExpression(node) &&
+			ts.isIdentifier(node.expression) &&
+			params.names.has(node.expression.text)
+		)
+			calls.push(node)
+		ts.forEachChild(node, visit)
+	}
+	visit(params.source)
+	return calls
+}
+
+/** A `describe(title, () => { ... })` statement: its call and the statements of its body. */
+function suiteBodyOf(
+	statement: ts.Statement,
+): { call: ts.CallExpression; statements: readonly ts.Statement[] } | undefined {
+	if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression))
+		return undefined
+	const call = statement.expression
+	if (!isSuiteCallee(call.expression)) return undefined
+	const callback = call.arguments.find(
+		(argument): argument is ts.ArrowFunction | ts.FunctionExpression =>
+			ts.isArrowFunction(argument) || ts.isFunctionExpression(argument),
+	)
+	if (!callback || !ts.isBlock(callback.body)) return undefined
+	return { call, statements: callback.body.statements }
+}
+
+/** The test call nodes of the file, in source order: the call that takes the title, never its callee. */
+function testCallNodesOf(source: ts.SourceFile): ts.CallExpression[] {
+	const nodes: ts.CallExpression[] = []
 	function visit(node: ts.Node): void {
 		const takesTitleLater =
 			node.parent !== undefined &&
 			ts.isCallExpression(node.parent) &&
 			node.parent.expression === node
-		if (ts.isCallExpression(node) && !takesTitleLater && isTestCallee(node.expression)) {
-			const title = node.arguments[0]
-			calls.push({
-				title: title && ts.isStringLiteralLike(title) ? title.text : undefined,
-				text: node.getText(source),
-				each: takesFormatTitle(node.expression),
-				describePath: describePathOf(node),
-			})
-		}
+		if (ts.isCallExpression(node) && !takesTitleLater && isTestCallee(node.expression))
+			nodes.push(node)
 		ts.forEachChild(node, visit)
 	}
 	visit(source)
-	return calls
+	return nodes
+}
+
+/** A test call node as `listTestCalls` answers it. */
+function testCallOf(params: { node: ts.CallExpression; source: ts.SourceFile }): TestCall {
+	const { node, source } = params
+	const title = node.arguments[0]
+	return {
+		title: title && ts.isStringLiteralLike(title) ? title.text : undefined,
+		text: node.getText(source),
+		each: takesFormatTitle(node.expression),
+		describePath: describePathOf(node),
+	}
 }
 
 /**

@@ -1,6 +1,9 @@
+import { GateConfigError } from '../gate/gate-config.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
 
 import { describe, expect, it } from 'vitest'
+
+import type { PackageJson } from '../package-json.types.ts'
 
 const RULES_ROW = { name: 'rules', builtin: 'rules' }
 const RELEASE_ROW = { name: 'release', builtin: 'release' }
@@ -9,6 +12,26 @@ const TYPE_BENCH_STEP = { name: 'type-bench', run: 'npm run type-bench:check' }
 const TYPE_NARROWING_RUN = 'npm run type-narrowing'
 const TYPE_NARROWING_STEP = { name: 'type-narrowing', run: TYPE_NARROWING_RUN }
 const NARROWING_SCRIPTS = { 'type-narrowing': 'tsc -p tsconfig.narrowing.json' }
+
+describe('resolveContribSteps scoped', () => {
+	it.each([
+		{ label: 'scoped', step: { name: 'bench', run: 'npm run bench', scoped: true } },
+		{ label: 'a non-boolean heavy', step: { name: 'bench', run: 'npm run bench', heavy: 'yes' } },
+	])('a contrib step with $label → a GateConfigError naming contrib and the step', ({ step }) => {
+		const packageJson = { dialecte: { contrib: { steps: [step] } } } as PackageJson
+
+		expect(() => resolveContribSteps({ packageJson })).toThrow(GateConfigError)
+		expect(() => resolveContribSteps({ packageJson })).toThrow(/contrib.*bench|bench.*contrib/s)
+	})
+
+	it('a contrib step with heavy only → accepted as declared', () => {
+		const heavy = { name: 'bench', run: 'npm run bench', heavy: true }
+
+		expect(
+			resolveContribSteps({ packageJson: { dialecte: { contrib: { steps: [heavy] } } } }),
+		).toEqual([RULES_ROW, heavy, RELEASE_ROW])
+	})
+})
 
 describe('resolveContribSteps', () => {
 	it('without dialecte.contrib → rules, docs, type-bench, release', () => {

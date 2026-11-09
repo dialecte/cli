@@ -26,6 +26,27 @@ export function readGit(params: {
 	return result.stdout
 }
 
+/** `readGit`, undefined instead of a throw when git fails (an unknown ref, a missing object). */
+export function tryReadGit(params: { root: string; args: string[] }): string | undefined {
+	try {
+		return readGit(params)
+	} catch {
+		return undefined
+	}
+}
+
+/** `readGit`'s output as git wrote it, bytes never decoded (a path that is no UTF-8 kept byte for byte). */
+export function readGitBytes(params: { root: string; args: string[] }): Buffer {
+	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {
+		cwd: params.root,
+		maxBuffer: 1e8,
+		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
+	})
+	if (result.status !== 0)
+		throw new Error(`git ${params.args.join(' ')}: ${result.stderr.toString().trim()}`)
+	return result.stdout
+}
+
 /**
  * Files changed against HEAD, staged or not, and new files git does not ignore; deleted files left out
  * unless asked. Relative to the repository root, sorted. The lot declaration (`.dialecte/lot.json`) is

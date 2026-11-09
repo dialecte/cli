@@ -26,7 +26,7 @@ import {
 	STEP_DETAIL_INDENT,
 	STEP_LINE_MARKS,
 } from '../gate/gate-config.constants.ts'
-import { renderAbsentDerivedLines } from '../gate/gate-config.ts'
+import { renderAbsentDerivedLines, validateGateConfig } from '../gate/gate-config.ts'
 import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { currentBranchOf, readGit } from '../git.ts'
@@ -203,6 +203,8 @@ function readConfiguration(
 		if (repositoryRefusal) return { refusal: repositoryRefusal }
 		const packageJson = readPackageJson(root)
 		const steps = resolveContribSteps({ packageJson })
+		// the gate lists contrib's lookup of gate records reads: refused before any row runs
+		validateGateConfig(packageJson)
 		// the rules row would throw on an invalid allowReferences: refused before any row runs
 		readReferencePatterns(root)
 		return { packageJson, steps }

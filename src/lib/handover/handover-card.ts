@@ -18,13 +18,14 @@ import {
 	CONTRIB_LINE_NAME,
 	DETAIL_SEPARATOR,
 } from '../gate-records/gate-records.constants.ts'
-import { readJudgedCases } from '../gate-records/gate-records.ts'
+import { readJudgedCases, readJudgedMoves } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { readStandardLine } from '../standard/read-standard-line.ts'
+import { countingReceipts, describeSkippedReceipts } from '../tdd/counting-receipts.ts'
 import {
 	entryNamesCase,
 	findCaseEntry,
@@ -88,10 +89,13 @@ import type {
 	LotCaseList,
 	LotGoneEntry,
 	RevisedHelper,
+	TddLedger,
 	TddReceipt,
+	TestCaseId,
 } from '../tdd/tdd.types.ts'
 import type {
 	CardLot,
+	CaseSkippedReceipts,
 	DeclaredReceipt,
 	HandoverCard,
 	HandoverCardData,
@@ -132,6 +136,8 @@ export function buildHandoverCard(params: {
 	abandoned?: boolean
 	/** Asks whether the repository's own cli runs hand-overs. */
 	probe: HandoverProbe
+	/** A release hand-over (the lots file's `"release": true`): the card requires a `gate release` row. */
+	release?: boolean
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
@@ -158,7 +164,8 @@ export function buildHandoverCard(params: {
 	}
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
-		...buildCardGateLines(checked),
+		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
+		...buildCardGateLines({ ...checked, head: params.head, release: params.release }),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
 		buildReviewLine(params.folder),
 		readStandardLine({ folder: params.folder }),
@@ -170,7 +177,11 @@ export function buildHandoverCard(params: {
 	const otherTreeGates = allLines
 		.filter((line) => line.stale && line.status !== 'failed')
 		.map((line) => line.name)
-	const tdd = tddSection({ root, judged: readJudgedCases({ root, stateHash }) })
+	const tdd = tddSection({
+		root,
+		judged: readJudgedCases({ root, stateHash }),
+		moved: readJudgedMoves({ root, stateHash }),
+	})
 	const lots = params.lots.map(function cardLot(lot, index): CardLot {
 		const commit = params.commits[index]
 		const subject = lot.message.trim().split('\n')[0]
@@ -273,10 +284,11 @@ function mergeLine(merge: MergeLot): string {
 /**
  * The test receipts as the reviewer of the hand-over needs them: the lot's exemption (with what the change
  * touches); each case counted once by its last proof (proven red → green, unchanged, kept); the cases its
- * lot file accepts without a red, one count per reason; the receipts of earlier lots, which the lot file no
- * longer names, as one count per kind; then the entries a person must read - the revised cases, the test
- * calls declared gone, the unused entries - and how many cases each kind of flag marks, the flagged
- * unchanged cases counted apart as noise. With how many entries are to read (revised, gone, unused).
+ * lot file accepts without a red, one count per reason; the receipts of earlier lots (cases outside the
+ * change), which the lot file no longer names, as one count per kind; then the entries a person must read -
+ * the revised cases, the test calls declared gone, the unused entries, the cases of the change whose
+ * receipts the read rule skips - and how many cases each kind of flag marks, the flagged unchanged cases
+ * counted apart as noise. With how many entries are to read (revised, gone, unused, skipped).
  * Only the cases of the change count: those the gate's tdd step judged on this tree (`judged`), each
  * classified by the status the gate gave it, so the counts are the gate step's; without
  * them (no gate on this tree) one line asks for the gate instead of the counts, groups, entries and flags.
@@ -284,6 +296,8 @@ function mergeLine(merge: MergeLot): string {
 function tddSection(params: {
 	root: string
 	judged: ReadonlyMap<string, CaseStatus> | undefined
+	/** The grouped lines of the cases moved from the base, as the same gate record holds them. */
+	moved: readonly string[]
 }): {
 	lines: CardLine[]
 	declarations: number
@@ -315,19 +329,27 @@ function tddSection(params: {
 	const ledger = readLedger(root)
 	if ('failure' in ledger) {
 		lines.push(plainLine(ledger.failure))
-		lines.push(...toReadLines({ revised: [], revisedHelpers: [], gone, unused: [] }))
+		lines.push(...toReadLines({ revised: [], revisedHelpers: [], gone, unused: [], skipped: [] }))
 		return { lines, declarations: gone.length }
 	}
 	const receipts = ledger.entries.filter((entry): entry is TddReceipt => entry.kind !== 'freeze')
 	const ofChange = judged ? receipts.filter((receipt) => judged.has(caseLabel(receipt))) : []
+	const declaredAcceptances = 'failure' in acceptances ? [] : acceptances
+	const declaredRevisions = 'failure' in revisions ? [] : revisions
 	const accepted = caseEntryLines({
 		receipts,
 		ofChange: ofChange.filter((receipt) => judged?.get(caseLabel(receipt)) === 'accepted'),
-		declared: 'failure' in acceptances ? [] : acceptances,
+		judged,
+		declared: declaredAcceptances,
 		kind: 'accepted',
 		list: 'accept',
 	})
-	const declaredRevisions = 'failure' in revisions ? [] : revisions
+	const skipped = skippedReceiptsOf({
+		ledger,
+		ofChange,
+		acceptances: declaredAcceptances,
+		revisions: declaredRevisions,
+	})
 	// the helpers a red run froze for a `revised` entry read as revised cases; with the gate's cases only
 	const revisedHelpers =
 		judged && typeof base === 'string'
@@ -340,6 +362,7 @@ function tddSection(params: {
 	const revised = caseEntryLines({
 		receipts,
 		ofChange: ofChange.filter((receipt) => judged?.get(caseLabel(receipt)) === 'revised'),
+		judged,
 		declared: declaredRevisions,
 		// an entry a helper used is no unused entry, as at the gate
 		used: (entry) => namesRevisedHelper({ entry, helpers: revisedHelpers }),
@@ -349,13 +372,10 @@ function tddSection(params: {
 	if (!judged && receipts.length) lines.push(plainLine(TDD_COUNTS_FROM_GATE_LINE))
 	const counts = judged && proofCountsLine({ receipts: ofChange, judged })
 	if (counts) lines.push(counts)
+	// one grouped line per source file cases moved out of, under the counts that read them unchanged
+	if (judged) lines.push(...params.moved.map(plainLine))
 	if (accepted.listed.length)
-		lines.push(
-			...acceptedLines({
-				listed: accepted.listed,
-				declared: 'failure' in acceptances ? [] : acceptances,
-			}),
-		)
+		lines.push(...acceptedLines({ listed: accepted.listed, declared: declaredAcceptances }))
 	const earlier = [
 		accepted.earlier ? `${accepted.earlier} accepted` : '',
 		revised.earlier ? `${revised.earlier} revised` : '',
@@ -365,13 +385,39 @@ function tddSection(params: {
 	// without the gate's cases, no entry can be told unused
 	const unused = judged ? [...accepted.unused, ...revised.unused] : []
 	lines.push(
-		...toReadLines({ revised: revised.listed, revisedHelpers, gone, unused }),
+		...toReadLines({ revised: revised.listed, revisedHelpers, gone, unused, skipped }),
 		...flagLines(ofChange),
 	)
 	return {
 		lines,
-		declarations: revised.listed.length + revisedHelpers.length + gone.length + unused.length,
+		declarations:
+			revised.listed.length + revisedHelpers.length + gone.length + unused.length + skipped.length,
 	}
+}
+
+/**
+ * The cases of the change (the gate's judged cases) the read rule skips receipts of (`countingReceipts`):
+ * an acceptance or a revision the lot file no longer declares, an acceptance after a proof. One per case,
+ * in ledger order.
+ */
+function skippedReceiptsOf(params: {
+	ledger: TddLedger
+	/** The receipts of the cases of the change. */
+	ofChange: readonly TddReceipt[]
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+}): CaseSkippedReceipts[] {
+	const cases = new Map<string, TestCaseId>()
+	for (const receipt of params.ofChange)
+		cases.set(caseLabel(receipt), {
+			file: receipt.file,
+			name: receipt.name,
+			project: receipt.project,
+		})
+	return [...cases.values()].flatMap(function skippedOf(testCase): CaseSkippedReceipts[] {
+		const { skipped } = countingReceipts({ ...params, testCase })
+		return skipped.length ? [{ testCase, skipped }] : []
+	})
 }
 
 /** A tdd line that wraps under its first column. */
@@ -461,13 +507,16 @@ function toReadLines(params: {
 	revisedHelpers: readonly RevisedHelper[]
 	gone: readonly LotGoneEntry[]
 	unused: readonly string[]
+	/** The cases of the change with receipts the read rule skips: `skipped <file> › <case title>: <receipts>`. */
+	skipped: readonly CaseSkippedReceipts[]
 }): CardLine[] {
-	const { revised, revisedHelpers, gone, unused } = params
+	const { revised, revisedHelpers, gone, unused, skipped } = params
 	const revisedCount = revised.length + revisedHelpers.length
 	const head = [
 		revisedCount ? `${revisedCount} ${TO_READ_LABELS.revised}` : '',
 		gone.length ? `${gone.length} ${TO_READ_LABELS.gone}` : '',
 		unused.length ? `${unused.length} ${TO_READ_LABELS.unused}` : '',
+		skipped.length ? `${skipped.length} ${TO_READ_LABELS.skipped}` : '',
 	].filter(Boolean)
 	if (!head.length) return []
 	function entryLead(label: string): string {
@@ -501,6 +550,12 @@ function toReadLines(params: {
 			entryLine({ label: TO_READ_LABELS.gone, text: `${entry.file} (${entry.reason})` }),
 		),
 		...unused.map((text) => entryLine({ label: TO_READ_LABELS.unused, text })),
+		...skipped.map(({ testCase, skipped: receipts }) =>
+			entryLine({
+				label: TO_READ_LABELS.skipped,
+				text: `${testCase.file}${CASE_TITLE_SEPARATOR}${testCase.name}${testCase.project ? ` [${testCase.project}]` : ''}: ${describeSkippedReceipts(receipts)}`,
+			}),
+		),
 	]
 }
 
@@ -543,7 +598,8 @@ function flagLines(receipts: readonly TddReceipt[]): CardLine[] {
 
 /**
  * The accepted (or revised) receipts of the cases of the change whose case the lot file names, each with
- * the file's entry; how many cases of the ledger the file does not name (earlier lots') there are; then
+ * the file's entry; how many cases of the ledger outside the change the file does not name (earlier lots')
+ * there are; then
  * the entries of the file no red run of a case of the change used (nor `used` otherwise), as their lines.
  */
 function caseEntryLines(params: {
@@ -551,6 +607,8 @@ function caseEntryLines(params: {
 	receipts: readonly TddReceipt[]
 	/** The receipts of the cases of the change (the gate's judged cases); none without a gate. */
 	ofChange: readonly TddReceipt[]
+	/** The cases of the change, by label, as the gate judged them: never counted among earlier lots'. */
+	judged: ReadonlyMap<string, CaseStatus> | undefined
 	declared: readonly LotCaseEntry[]
 	/** An entry used otherwise than by a case (a helper a red run froze for it): never unused. */
 	used?: (entry: LotCaseEntry) => boolean
@@ -572,7 +630,9 @@ function caseEntryLines(params: {
 		if (entry) listed.push({ receipt, entry })
 	}
 	const earlier = lastOfKind(params.receipts).filter(
-		(receipt) => !findCaseEntry({ entries: params.declared, testCase: receipt, list }),
+		(receipt) =>
+			!params.judged?.has(caseLabel(receipt)) &&
+			!findCaseEntry({ entries: params.declared, testCase: receipt, list }),
 	).length
 	const unused = params.declared
 		.filter(

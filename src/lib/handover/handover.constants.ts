@@ -290,16 +290,18 @@ export const GREEN_CONTRIB_DETAIL = 'green on this tree at {at}'
 export const REHEARSAL_CONTRIB_DETAIL = '{detail} (the real run refuses; the rehearsal goes on)'
 
 /**
- * The script a hand-over writes. People run it with `sh` (macOS: bash 3.2), so it re-executes itself
- * with bash. It runs the cli the repository installs; a cli without `handover run` (missing, or older)
- * gets one line saying how to run the hand-over anyway.
+ * The script a hand-over writes. People run it with `sh` (macOS: bash 3.2 in posix mode), so its second
+ * line re-executes it with bash when the shell is not bash or is bash in posix mode, `POSIXLY_CORRECT`
+ * unset (it would put the new bash back in posix mode, re-executing forever). It runs the cli the
+ * repository installs; a cli without `handover run` (missing, or older) gets one line saying how to run
+ * the hand-over anyway.
  *
  * Placeholders: `__HEADER__`, `__REPOSITORY__`, `__FALLBACK__` (the command with the cli that wrote the
  * script).
  */
 export const COMMIT_SCRIPT_TEMPLATE = `#!/usr/bin/env bash
+if [ -z "\${BASH_VERSION:-}" ] || shopt -oq posix 2>/dev/null; then exec env -u POSIXLY_CORRECT bash "$0" "$@"; fi
 __HEADER__
-if [ -z "\${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd __REPOSITORY__
@@ -376,7 +378,13 @@ export const TDD_COUNT_WORDS = {
 export const TO_READ_MARK = 'to read ↓'
 
 /** The label of each kind of entry to read, in the head line and before each entry. */
-export const TO_READ_LABELS = { revised: 'revised', gone: 'gone', unused: 'unused' } as const
+export const TO_READ_LABELS = {
+	revised: 'revised',
+	gone: 'gone',
+	unused: 'unused',
+	/** A case of the change whose receipts the read rule skips (a stale acceptance or revision). */
+	skipped: 'skipped',
+} as const
 
 /** The indent of an entry to read, before its label. */
 export const TO_READ_INDENT = '  '
@@ -530,6 +538,8 @@ export const REHEARSAL_SKIPPED_LINE = "rehearsal skipped: every lot's tree has a
 /** Why a lot is reused or rehearsed; `{tree}`, `{tip}` are short tree ids. */
 export const REHEARSAL_REASONS = {
 	fullGate: 'green gate --full on tree {tree}',
+	releaseGate: 'green gate --release on tree {tree}',
+	baseChanged: 'the base moved: record {record}, hand-over {handover}',
 	tipRecord: "green {mode} record of the tip's tree {tree}",
 	noFullGate: 'no green gate --full on tree {tree}',
 	noTipRecord: "no green record of the tip's tree {tree}",

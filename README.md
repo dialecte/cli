@@ -526,7 +526,10 @@ the answer.
     still waiting for its green whose test file, or test code it imports, changed since its red ("test
     code changed since its red and it passes"); a failure on a missing export, a type or syntax error, a
     timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
-    case the same as at the base is marked unchanged; a case the lot accepts is marked accepted; a green
+    case the same as at the base is marked unchanged; a case the lot accepts is marked accepted, unless
+    it is proven red then green at its current test call (an acceptance never overrides a proof: it goes
+    the normal path, no accepted receipt, and the line adds `acceptance not needed (proven red → green): it
+    can be removed from the lot file`); a green
     case whose test code changed around it is kept and flagged `test code changed around it` (the next
     step adding a case to a green file); a case never proven green (only unchanged, accepted or revised)
     is kept without a flag, and no receipt. A file with a refusal still records its other cases'
@@ -574,11 +577,34 @@ the answer.
     an empty file never pairs): a test file renamed off (`a.test.ts.off`) lists its cases deleted, one
     renamed on is a new file. A move with an edit is a new file and a deleted one. A change that only
     deletes test files lists their cases `deleted` in the gate's `tdd` step.
+  - Cases moved out of a test file (a file split in several, a case cut out into another file) keep the
+    base's proof with no declaration. A case of a new or changed test file is `moved` when its test call,
+    by tokens (those its case hash reads), under the same describe path, is in the base text of a test
+    file the change deletes, or of a changed one that no longer holds that call under that path, and its
+    own file's base did not hold it; a case of the same name and project matched in two files is moved
+    from neither (`ambiguous  <case>  in <files>: moved from none of them`). A moved case is a case of the
+    base: `tdd red` records it `unchanged` when it passes (and freezes the helpers its file depends on),
+    and with no receipt yet `status`, the gate and the card read it `unchanged`. `status` and the gate's
+    details print one line per source file, `moved  <n> case(s)  <old file> → <k> file(s)`, with
+    ` · test code changed around them` when a target's code outside its test calls (imports, hooks, helpers,
+    under the describe paths it keeps) differs from the source's base, read by the same tokens; the card's
+    tdd section shows the line, and a deleted source is reported by it instead of as deleted. A case a
+    helper registers (the call at its location is no test call: `checkRow(row)`) is `moved by name` when a
+    test file the change deletes, or that registers fewer cases now, registered one case of the same name
+    and project through a runner at the base:
+    `moved by name  <n> case(s)  <old file> → <k> file(s) · runner changed: <base call> → <new call>`. Those
+    base names come from one collect-only run of the base files (no test executes), paid only when a split
+    is detected statically (a test file deleted, or a changed one whose base ran a registering statement
+    outside its test calls, by tokens, that it no longer runs; a row added to a table is no split), in a
+    scratch copy of the base tree outside the worktree removed after it, bounded
+    at 5 minutes; `status` prints its duration (`base collect  <n> file(s)  <duration>`).
   - `green` runs the changed test files: each case needs a red receipt, its file, its test call and its
     test code as frozen, production changed since its red ("nothing in production changed since red"),
     and a pass.
   - `status` prints each case (red, green, unchanged, accepted, missing receipt, test edited after red,
-    with its flags), the test code changed outside `tdd red`, and the cases the change deletes. A test
+    with its flags), one `skipped  <case>  <receipts>` line per case with receipts the read rule skips
+    (below; the gate's details too), the test code changed outside `tdd red`, and the cases the change
+    deletes. A test
     call of the base gone without a title (an `it(name, ...)` whose title is a variable: an edited call
     looks deleted) prints `deleted <file> a test call of the base is gone`; when a `gone` entry of
     `.dialecte/lot.json` names its file (a path or a glob), it prints
@@ -628,7 +654,16 @@ the answer.
     cases' earlier green stale: `tdd green` proves them again. Without that red run the gate fails on the
     edit; `status` lists the revised cases, the gate and the hand-over card list the revisions (cases
     and helpers) with their reason, an entry (exact, file or glob) no revised case or helper used as a
-    note.
+    note. A `revised` entry covering a proven case nothing changed since its proof (same test call, test
+    code as frozen) records nothing: the line reads `kept  <case>  proven before (<kind>)  revision not
+    needed (nothing changed since its proof): <reason>`, and the entry stays unused.
+  - A receipt counts only while its declaration holds (the read rule of `tdd red`, `tdd green`,
+    `tdd status`, the gate and the card): an `accepted` receipt whose `accept` entry the lot file no longer
+    holds, or that a red then a green of the same test call precede, and a `revised` receipt no `revised`
+    entry (exact, file or glob) covers any more, are skipped, and the case reads from its earlier proof (a
+    case whose file was frozen again after its green owes a fresh `tdd green`). Nothing in the ledger is
+    rewritten; the flags are read from every receipt. A skipped receipt is named:
+    `skipped  <case>  1 accepted receipt (no longer declared)`, or `(proven red → green before it)`.
   - What it cannot see: the receipts can be written by an agent with a shell; a deliberate throw in
     production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
     be told from an honest red (at the first step the red's production is the base's). The flags and the
@@ -639,9 +674,10 @@ the answer.
   iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
-  hand-over a human runs. The lots file names the repository, the branch and HEAD expected, and the lots
-  (paths, message):
+- `dialecte handover write <lots.json> [--release] [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
+  hand-over a human runs. `--release` marks it a release hand-over (`"release": true` in the lots file): its card
+  then holds a required `gate release` row, green only with a green `gate --release` record of the tree it commits.
+  The lots file names the repository, the branch and HEAD expected, and the lots (paths, message):
 
   ```json
   {
@@ -781,12 +817,13 @@ the answer.
     (`<n> proven red → green · <m> unchanged`, and `· <k> kept` when any); the accepted cases: a head
     line `<n> accepted`, then one row per reason of the lot file (`<count>  <reason>`, the largest group
     first, a tie in the lot file's order, each reason wrapped under itself); the accepted and revised receipts
-    of earlier lots, which the lot file no longer names, on one line
+    of earlier lots (cases outside the change), which the lot file no longer names, on one line
     (`earlier lots: 410 accepted, 12 revised (not in the lot file)`); then
-    `<n> revised · <m> gone · <k> unused` with `to read ↓` at its right edge and one entry each: a revised case `<file> › <title>` (named by the lot file exactly, or by a file or glob entry)
+    `<n> revised · <m> gone · <k> unused · <j> skipped` with `to read ↓` at its right edge and one entry each: a revised case `<file> › <title>` (named by the lot file exactly, or by a file or glob entry)
     with its reason under it, a helper a red run froze for a `revised` entry as `revised <helper>` with its
     reason under it, a `gone` entry with its reason (whether one covers a finding is the gate's
-    to say), an `accept` or `revised` entry no case used. Then one line per kind of flag with its count of
+    to say), an `accept` or `revised` entry no case used, a case of the change whose receipts the read
+    rule skips (`skipped <file> › <title>: 1 accepted receipt (no longer declared)`). Then one line per kind of flag with its count of
     cases (`dialecte tdd status --flags` lists them); cases whose only flag is `test code changed around it`
     and whose receipts are otherwise only unchanged are counted apart (a case flagged rollback or red after
     green never is), as
@@ -1351,7 +1388,9 @@ changed since the base (test files, helpers, fixtures, snapshots) must be as the
 others fail the gate with the list. The flags of the receipts and the deleted cases are printed under the
 step. The lot file may also accept cases without a red - a new test of behaviour that already exists, an honest
 cut of an assertion: `"accept": [{ "case": "<file>::<name> [project]", "reason": "..." }]`. An accepted
-case passes `tdd red` as accepted and does not block its file; the gate lists each acceptance with its
+case passes `tdd red` as accepted and does not block its file (a case already proven red then green keeps
+its proof: an acceptance never overrides one, and an accepted receipt counts only while its entry stays in
+the file); the gate lists each acceptance with its
 reason, the hand-over card counts them by reason from the receipts (those of earlier lots, which the file
 no longer names, counted on one line), and both report an acceptance or a `revised` entry no case used. The card
 lists every `gone` entry with its reason; only the gate reports a `gone` entry that covers no finding. The file is strict: an unknown key, at the top or in
@@ -1394,6 +1433,41 @@ opt-out: it lifts generic tags a contributor commits on purpose - `ticket number
 allows every tag already, so `allowReferences` changes nothing there (`dialecte doctor` says to remove it). A lot may hold a symbolic link, a link to a
 folder included: it is hashed and scanned as its target text and committed as a link, the way git stores it (a
 rehearsal copies it as the same relative link).
+
+**Scoped steps, heavy steps, the release list.** A step of `fast`, `full` or `release` may say `"scoped": true`
+(never with `changedOnly`, never in `contrib.steps`): the gate resolves one base per run - `--base <ref>`, else the
+merge-base of HEAD and `baseBranch` (local, else `origin/`), else the empty tree (everything changed) - and hands the
+step `DIALECTE_GATE_BASE`, `DIALECTE_GATE_TREE`, `DIALECTE_GATE_CHANGED` (a file of the changed paths byte for byte,
+NUL-separated, both paths of a rename, relative to the repository top as `git diff --name-only` names them, while a
+declared `failing` path is relative to the package root) and `DIALECTE_GATE_SELECTION` (a path to write). The step writes there
+`{ "schema": 1, "base", "tree", "changed": <paths judged>, "selected": [{ "id", "reasons": [...] }], "skipped": [{ "id", "reason" }] }`:
+`selected` and `skipped` are both required lists, each selected id has at least one reason, the file is at most 1 MiB
+and an id matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. A missing or invalid selection, another base or tree, or another
+count fails the step. An empty selection should exit 0 without starting vitest: it passes with
+`nothing selected since <base> (<n> paths changed)` (`1 path changed` for one); a non-empty selection on a
+`counts: "tests"` step that runs no test fails (`no test ran`). The step selects from the working files (never
+`git show <tree>:`), so what it selects and what it runs are the same code. A failing step counting tests is rerun
+once, serially, with its failing files appended as plain arguments (after one added `--` only when the step runs
+through `npm run` and its command holds none), then `--no-file-parallelism`, with the same base, tree and changed file
+and a new selection path: the rerun must select the same ids, and a script running vitest more than once passes
+`--passWithNoTests` to each invocation (or runs one). A scoped step whose command (or the npm script it runs) does not
+name vitest is rerun whatever runs it, when it exited non-zero on a test failure (a failed test counted, a `FAIL` line,
+vitest's `Unhandled Errors` or `Errors  <n> error` summary); for such a step a plain script error fails as itself. A
+scoped step that names vitest keeps the rule of any vitest step: rerun on any failure. A first run whose selection is
+not valid is never rerun.
+The selection may declare `"failing": ["<path>", ...]` (relative to the package root, no `..`, no backslash; a leading
+`./` and repeated `/` are normalised away): a failed step records those files with the ones its output names
+(`failing` in the record and in `--json`; the card's row ends `· failing <n>: <first 3>`).
+Run outside the gate (no `DIALECTE_GATE_SELECTION`), a scoped script selects everything. The base enters the record's
+key, so a run at another base never reuses. `"heavy": true` marks a heavy suite (a browser suite); it is outside the
+command hash. `gate.release` is the list `gate --release` runs (default: the `full` steps, derived ones included),
+every scoped step against the empty tree (`--base` with `--release` feeds only the tdd step); it _covers full_ when
+every `full` step is in it with the same `name`, `run`, `counts` and `changedOnly`, and only then does its green
+record answer a commit hook, a rehearsal, contrib and the card. An environment switch that changes what runs belongs
+in the step's `run`. A gate config the cli cannot run (a list that
+is no list of steps, a step without `name` or `run`, a `scoped` or `heavy` that is no boolean, `scoped` with
+`changedOnly`) is refused naming the list and the step: `gate`, `contrib` and `handover run` exit 2, `gate --hook`
+exits 1, the card prints `✗ gate  invalid gate config: <message>`.
 
 ### GitHub text: lot recap and text check
 

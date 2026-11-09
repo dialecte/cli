@@ -17,6 +17,9 @@ export const CONTRIB_BUILTIN_STEPS: Readonly<Record<'first' | 'last', BuiltinSte
 export const CONTRIB_CONSUMER_REFUSAL =
 	'contrib: no contributor checks in the consumer profile ("dialecte": { "profile": "contributor" } in a dialecte package)'
 
+/** How the contrib step list is named in a `GateConfigError`. */
+export const CONTRIB_STEPS_LABEL = 'dialecte.contrib.steps'
+
 /** A `dialecte.contrib.steps` that is no list. */
 export const INVALID_CONTRIB_STEPS =
 	'dialecte.contrib.steps: a list of steps, such as [{ "name": "docs", "run": "npm run doc:build" }]'

@@ -35,11 +35,12 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
 import { runContrib } from '../contrib/run-contrib.ts'
-import { isPresent } from '../file-system.ts'
+import { isPresent, realPathOf } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
+import { processStartTime } from '../process-start-time.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
@@ -50,6 +51,7 @@ import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
+import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
 	CONTRIB_KEY_PARTS,
@@ -86,6 +88,7 @@ import type {
 	RehearsalPool,
 	WriteLine,
 } from './handover.types.ts'
+import type { RehearsalMarker } from './live-handover-run.types.ts'
 
 export async function rehearseHandover(params: {
 	handover: HandoverFolder
@@ -115,7 +118,17 @@ export async function rehearseHandover(params: {
 	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): Promise<number> {
 	const { handover, write } = params
-	const decisions = decideLots({ handover, full: params.full ?? false })
+	// read once, before the plan, the clone and its contrib run: an invalid gate config stops here
+	const gateScope = resolveHandoverGateScope({ handover })
+	if ('refusal' in gateScope) {
+		write(gateScope.refusal)
+		return 2
+	}
+	const decisions = decideLots({
+		handover,
+		full: params.full ?? false,
+		...(gateScope.base && { base: gateScope.base.commit }),
+	})
 	writeFileSync(
 		join(handover.folder, REHEARSAL_DECISIONS_FILE),
 		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
@@ -155,6 +168,7 @@ export async function rehearseHandover(params: {
 			resumeMerge: params.resumeMerge,
 			rehearsal: true,
 			skipCommits: true,
+			gateScope,
 		})
 	const progress =
 		params.progress ??
@@ -192,7 +206,14 @@ export async function rehearseHandover(params: {
 			...(params.tty && { detail: 'the repository, your working tree, hooks, node_modules' }),
 		})
 		try {
-			prepareClone({ repository, clone, branch: handover.lotsFile.branch, write, pool })
+			prepareClone({
+				repository,
+				clone,
+				branch: handover.lotsFile.branch,
+				handoverFolder: handover.folder,
+				write,
+				pool,
+			})
 			const siblings = linkRehearsalSiblings({ repository, folder, clone })
 			links.push(...siblings.links)
 			for (const line of siblings.lines) write(line)
@@ -236,6 +257,7 @@ export async function rehearseHandover(params: {
 			),
 			storeRoot: repository,
 			contribUnanswerable,
+			gateScope,
 		})
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
@@ -335,7 +357,12 @@ function trashRehearsalFolder(params: {
  * Each lot's decision; when the plan cannot be made (git cannot build a lot's tree), every lot is rehearsed
  * and the guards say what is wrong.
  */
-function decideLots(params: { handover: HandoverFolder; full: boolean }): RehearsalDecision[] {
+function decideLots(params: {
+	handover: HandoverFolder
+	full: boolean
+	/** The hand-over base, resolved once by the run (absent without a scoped step). */
+	base?: string
+}): RehearsalDecision[] {
 	try {
 		return planRehearsal(params)
 	} catch (error) {
@@ -392,10 +419,17 @@ function shortList(entries: readonly string[]): string {
 	return more > 0 ? `${shown} and ${more} more` : shown
 }
 
+/**
+ * The scratch clone at the repository's HEAD on `branch`, its marker naming this run (`RehearsalMarker`: a hook in
+ * the clone reads it as a live hand-over run of `handoverFolder` while this process runs), git's identity, the
+ * working tree on top, the hooks folder and `node_modules`.
+ */
 function prepareClone(params: {
 	repository: string
 	clone: string
 	branch: string
+	/** The hand-over folder the rehearsal runs for: the marker holds its real path. */
+	handoverFolder: string
 	write: WriteLine
 	/** Where the clone's `node_modules` is taken from first; none: a copy, as before. */
 	pool: RehearsalPool | undefined
@@ -407,10 +441,15 @@ function prepareClone(params: {
 		args: ['clone', '-q', '--shared', '--no-checkout', repository, clone],
 	})
 	readGit({ root: clone, args: ['checkout', '-q', '-B', params.branch, head] })
-	writeFileSync(
-		join(clone, '.git', REHEARSAL_MARKER_FILE),
-		`${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`,
-	)
+	const startTime = processStartTime(process.pid)
+	const marker: RehearsalMarker = {
+		pid: process.pid,
+		startedAt: new Date().toISOString(),
+		handover: realPathOf(params.handoverFolder),
+		// no start time read: no `startTime`, and the marker reads as no live run
+		...(startTime !== undefined && { startTime }),
+	}
+	writeFileSync(join(clone, '.git', REHEARSAL_MARKER_FILE), `${JSON.stringify(marker)}\n`)
 	for (const key of ['user.name', 'user.email', 'commit.gpgsign']) {
 		const value = readGitConfig({ root: repository, key })
 		if (value !== undefined) readGit({ root: clone, args: ['config', key, value] })

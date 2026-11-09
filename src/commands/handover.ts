@@ -82,6 +82,7 @@ import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
 import { rehearsalScratchRoot, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
+import { markReleaseHandover } from '../lib/handover/release-handover.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { countChangedSinceReview, recomputeHandoverCard } from '../lib/handover/show-handover.ts'
@@ -264,7 +265,16 @@ export function runHandover(params: {
 	params.afterChecks?.()
 	const lockPath = handoverLockPath(plan.repository)
 	const lockBefore = existsSync(lockPath) ? readFileSync(lockPath) : undefined
-	writeHandover({ plan, lotsFile, lotsPath: absoluteLotsPath, out, cliPath: params.cliPath })
+	const written = hasFlag(argv, 'release')
+		? markReleaseHandover({ lotsPath: absoluteLotsPath, lotsFile })
+		: lotsFile
+	writeHandover({
+		plan,
+		lotsFile: written,
+		lotsPath: absoluteLotsPath,
+		out,
+		cliPath: params.cliPath,
+	})
 	// before the card, which names the hand-over by its entry
 	try {
 		registerHandover({
@@ -291,6 +301,7 @@ export function runHandover(params: {
 		cliPath: params.cliPath,
 		probeTimeout: params.probeTimeout,
 		probe: params.probe,
+		release: written.release === true,
 	})
 	if (hasFlag(argv, 'json'))
 		return {

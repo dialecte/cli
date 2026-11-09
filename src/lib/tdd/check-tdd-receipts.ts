@@ -10,14 +10,16 @@ import {
 	readRevisions,
 	readTddExemption,
 } from './lot-declaration.ts'
+import { movedLines } from './moved-cases.ts'
 /**
  * The `tdd` step of `dialecte gate`: every test-code file changed since the base (HEAD: the uncommitted
  * lot; a `--base` ref or `--full`: the whole branch) is as the red run that last froze it left it, and
  * every case of the change holds a red receipt and a later green one (or passed at a red run as the same
  * case as at the base, accepted or revised by the lot file, each with its reason shown; a helper a red run
- * froze for a `revised` entry is shown with its reason too). The flags
- * of the receipts, the cases the change deletes (the untitled test calls the lot file declares gone, with
- * its reason) and the entries of the lot file nothing used are shown for the review. A lot the orchestrator
+ * froze for a `revised` entry is shown with its reason too). The flags of the receipts, the receipts the
+ * read rule skips (one line per case), the moved cases (one line per source), the cases the change deletes
+ * (the untitled test calls the lot file declares gone, with its reason) and the entries of the lot file
+ * nothing used are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
  * that does not test with vitest skips the step.
  */
@@ -29,7 +31,7 @@ import {
 	readLedger,
 	resolveBase,
 } from './tdd-files.ts'
-import { findingLine, readTddState } from './tdd-state.ts'
+import { findingLine, movesLines, readTddState, skippedReceiptsLine } from './tdd-state.ts'
 import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -78,6 +80,8 @@ export async function checkTddReceipts(params: {
 	const state = await readTddState({ root, packageJson, ledger, base })
 	if ('failure' in state) return { status: 'failed', reason: state.failure }
 	const cases = state.cases.map((line) => ({ label: caseLabel(line), status: line.status }))
+	// the grouped moved lines, kept in the gate record for the hand-over card
+	const moved = state.moves ? movedLines(state.moves).grouped : []
 	const open = state.cases.filter(
 		(line) =>
 			line.status !== 'green' &&
@@ -101,6 +105,8 @@ export async function checkTddReceipts(params: {
 					`accepted  ${caseLabel(line)}  ${findCaseEntry({ entries: acceptances, testCase: line, list: 'accept' })?.reason ?? '(no longer in the lot file)'}`,
 			),
 		...state.findings.map(findingLine),
+		...movesLines(state.moves),
+		...state.cases.flatMap((line) => skippedReceiptsLine(line) ?? []),
 		...state.cases
 			.filter((line) => line.flags.length)
 			.map((line) => `flag  ${caseLabel(line)}  ${line.flags.join(', ')}`),
@@ -184,6 +190,7 @@ export async function checkTddReceipts(params: {
 			? `${state.cases.length} case(s) of the change: ${counts.join(', ')}`
 			: 'no test case of the change',
 		...(evidence.length && { details: evidence }),
+		...(moved.length && { moved }),
 	}
 }
 
