@@ -184,7 +184,8 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 	},
 	{
 		term: 'earlier lots',
-		meaning: 'receipts of earlier lots the lot file no longer names, counted per kind',
+		meaning:
+			'receipts of cases outside the change (earlier lots) the lot file no longer names, counted per kind',
 		look: "look only if you expected this lot's file to name them",
 	},
 	{
@@ -202,6 +203,12 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 		term: 'unused',
 		meaning: 'an accept or revised entry of the lot file that no red run used',
 		look: 'look: each one; fix or remove it in the lot file',
+	},
+	{
+		term: 'skipped',
+		meaning:
+			'a case of the change with a receipt the read rule no longer counts: its acceptance or revision is no longer declared, or an acceptance came after a red → green proof',
+		look: 'look: the to-read entry; nothing to remove: the ledger keeps the receipt, the card names it',
 	},
 	{
 		term: 'rollback',

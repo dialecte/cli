@@ -9,11 +9,15 @@
  * - revised: edited at review, it passed at a red run and the lot declares the revision;
  * - green: a green receipt of this very case later than its red and than the last freeze of any test code;
  * - red: otherwise.
+ * Only the receipts that count are read (`countingReceipts`): an acceptance or a revision the lot file no
+ * longer declares, or an acceptance after a red then a green of the same case, stands for no proof.
  */
+import { countingReceipts, receiptsOf } from './counting-receipts.ts'
 import { PROOF_KINDS, TEST_FILE_PATTERN } from './tdd.constants.ts'
 
 import type {
 	CaseStatus,
+	LotCaseEntry,
 	ReceiptFlag,
 	TddEntry,
 	TddFreeze,
@@ -22,6 +26,7 @@ import type {
 	TestCaseId,
 } from './tdd.types.ts'
 
+/** Where the case stands now, from its receipts that count (see the module's JSDoc). */
 export function caseStatusOf(params: {
 	ledger: TddLedger
 	testCase: TestCaseId
@@ -31,19 +36,22 @@ export function caseStatusOf(params: {
 	caseHash: string
 	/** The test code the case's file depends on (helpers, fixtures); unknown: any changed helper counts. */
 	dependencies?: readonly string[]
+	/** The lot file's `accept` entries now (see `countingReceipts`). */
+	acceptances: readonly LotCaseEntry[]
+	/** The lot file's `revised` entries now (see `countingReceipts`). */
+	revisions: readonly LotCaseEntry[]
 }): CaseStatus {
 	const { entries } = params.ledger
-	const { testCase } = params
+	// the receipts the read rule counts: a stale acceptance or revision never stands for a proof
+	const counting = new Set<TddEntry>(countingReceipts(params).counting)
 	const proof = lastIndexOf({
 		entries,
 		matches: (entry) =>
-			isReceiptOf({ entry, testCase }) &&
-			entry.kind !== 'freeze' &&
-			PROOF_KINDS.includes(entry.kind),
+			counting.has(entry) && entry.kind !== 'freeze' && PROOF_KINDS.includes(entry.kind),
 	})
 	if (proof < 0) return 'missing receipt'
 	const proofReceipt = entries[proof] as TddReceipt
-	if (frozenHashOf({ ledger: params.ledger, file: testCase.file }) !== params.testFileHash)
+	if (frozenHashOf({ ledger: params.ledger, file: params.testCase.file }) !== params.testFileHash)
 		return 'test edited after red'
 	if (proofReceipt.caseHash !== params.caseHash) return 'test edited after red'
 	if (proofReceipt.kind === 'unchanged') return 'unchanged'
@@ -51,15 +59,13 @@ export function caseStatusOf(params: {
 	if (proofReceipt.kind === 'revised') return 'revised'
 	const lastFreeze = lastInvalidatingFreeze({
 		entries,
-		file: testCase.file,
+		file: params.testCase.file,
 		dependencies: params.dependencies,
 	})
 	const lastGreen = lastIndexOf({
 		entries,
 		matches: (entry) =>
-			isReceiptOf({ entry, testCase }) &&
-			entry.kind === 'green' &&
-			entry.caseHash === params.caseHash,
+			counting.has(entry) && entry.kind === 'green' && entry.caseHash === params.caseHash,
 	})
 	return lastGreen > proof && lastGreen > lastFreeze ? 'green' : 'red'
 }
@@ -103,27 +109,9 @@ export function frozenHashOf(params: { ledger: TddLedger; file: string }): strin
 	return index < 0 ? undefined : (entries[index] as TddFreeze).files[params.file]
 }
 
-/** Every flag the receipts of the case carry. */
+/** Every flag the receipts of the case carry: a flag is evidence, read from every receipt, skipped or not. */
 export function flagsOf(params: { ledger: TddLedger; testCase: TestCaseId }): ReceiptFlag[] {
 	return [...new Set(receiptsOf(params).flatMap((receipt) => receipt.flags ?? []))]
-}
-
-/** The receipts of a case, oldest first. */
-export function receiptsOf(params: { ledger: TddLedger; testCase: TestCaseId }): TddReceipt[] {
-	return params.ledger.entries.filter(
-		(entry): entry is TddReceipt =>
-			entry.kind !== 'freeze' && isReceiptOf({ entry, testCase: params.testCase }),
-	)
-}
-
-function isReceiptOf(params: { entry: TddEntry; testCase: TestCaseId }): boolean {
-	const { entry, testCase } = params
-	return (
-		entry.kind !== 'freeze' &&
-		entry.file === testCase.file &&
-		entry.name === testCase.name &&
-		entry.project === testCase.project
-	)
 }
 
 function lastIndexOf(params: {

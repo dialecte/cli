@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { formatDuration } from '../progress/format-duration.ts'
 import { runChild } from '../progress/run-child.ts'
 import { stallReason } from '../progress/stall-reason.ts'
 import { tailOf } from '../progress/tail-of.ts'
@@ -37,6 +38,8 @@ export async function runTestCases(params: {
 	clock?: Clock
 	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
 	watchdog?: Watchdog
+	/** A hard bound in milliseconds: the run's process group is killed past it, the run answers a failure. */
+	timeoutMs?: number
 }): Promise<ReportedModule[] | { failure: string }> {
 	const folder = mkdtempSync(join(tmpdir(), 'dialecte-tdd-'))
 	const reportPath = join(folder, 'report.json')
@@ -45,9 +48,21 @@ export async function runTestCases(params: {
 		filter === 'all'
 			? []
 			: ['-t', filter === 'collect' ? COLLECT_ONLY_PATTERN : namePattern(filter.names)]
+	let timer: ReturnType<typeof setTimeout> | undefined
+	let timedOut = false
 	try {
 		const { command, arguments: commandArguments } = resolvePackageVitest({ root: params.root })
+		const { timeoutMs } = params
 		const execution = await runChild({
+			// past the bound, the whole group is stopped: the run settles with what it printed
+			...(timeoutMs !== undefined && {
+				onProcessGroup: function boundRun(pid: number) {
+					timer = setTimeout(function stopRun() {
+						timedOut = true
+						killGroup(pid)
+					}, timeoutMs)
+				},
+			}),
 			command,
 			args: [
 				...commandArguments,
@@ -70,6 +85,11 @@ export async function runTestCases(params: {
 			watchdog: params.watchdog,
 		})
 		const tail = tailOf({ output: execution.output, lines: RUN_OUTPUT_TAIL_LINES })
+		if (timedOut)
+			return {
+				failure:
+					`vitest ran past its bound of ${formatDuration(params.timeoutMs ?? 0)}: stopped\n${tail}`.trimEnd(),
+			}
 		if (execution.stalled)
 			return {
 				failure:
@@ -81,7 +101,17 @@ export async function runTestCases(params: {
 			}
 		return JSON.parse(readFileSync(reportPath, 'utf8')) as ReportedModule[]
 	} finally {
+		if (timer) clearTimeout(timer)
 		rmSync(folder, { recursive: true, force: true })
+	}
+}
+
+/** Stops the run's process group (the child is its leader); a group already gone is no error. */
+function killGroup(pid: number): void {
+	try {
+		process.kill(-pid, 'SIGKILL')
+	} catch {
+		// the group ended on its own
 	}
 }
 

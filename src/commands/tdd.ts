@@ -13,7 +13,10 @@
  *   frozen; the files without a refusal are frozen, and the changed helpers, fixtures and snapshots a red
  *   or a revised case of theirs depends on, or a `revised` entry names when every test file depending on
  *   them is frozen without a red (recorded revised). The change is measured from HEAD (the
- *   uncommitted lot), or from where HEAD left `--base <ref>`.
+ *   uncommitted lot), or from where HEAD left `--base <ref>`. An acceptance never overrides a proof: a
+ *   case proven red → green keeps its proof, the line says the acceptance is not needed.
+ * - Every subcommand reads a case's receipts through `countingReceipts`: an acceptance or a revision the lot
+ *   file no longer declares stands for no proof.
  * - `green`: every case of the changed test files (or those named) must hold a red receipt, its file and
  *   its test call as frozen, the helpers untouched, production changed since its red, and pass.
  * - `status`: each case of the change, the test code changed since it was frozen, the deleted cases (and
@@ -30,8 +33,9 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
-import { frozenHashOf, receiptsOf } from '../lib/tdd/case-status.ts'
+import { frozenHashOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
+import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
 import {
 	findCaseEntry,
 	namesOneCase,
@@ -40,11 +44,13 @@ import {
 	revisionOfHelper,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
+import { movedCaseLabels } from '../lib/tdd/moved-cases.ts'
 import {
 	filesMovedBack,
 	isRollbackGreen,
 	readProductionState,
 } from '../lib/tdd/production-states.ts'
+import { applyMoves, readMoves } from '../lib/tdd/read-moves.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
 	caseLabel,
@@ -60,8 +66,9 @@ import {
 	readLedger,
 	resolveBase,
 } from '../lib/tdd/tdd-files.ts'
-import { findingLine, readTddState } from '../lib/tdd/tdd-state.ts'
+import { findingLine, movesLines, readTddState, skippedReceiptsLine } from '../lib/tdd/tdd-state.ts'
 import {
+	ACCEPTANCE_NOT_NEEDED,
 	CHANGED_AND_PASSES,
 	FROZEN_AFTER_RED,
 	HELPER_DEPENDENT_OUTSIDE_RUN,
@@ -72,6 +79,7 @@ import {
 	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
+	REVISION_NOT_NEEDED,
 	ROLLBACK_LINE,
 	TEST_CODE_CHANGED_SINCE_RED,
 	UNRESOLVED_IMPORT_HINT,
@@ -87,6 +95,7 @@ import type {
 	LotCaseEntry,
 	CaseFailure,
 	ReceiptFlag,
+	RedJudgement,
 	RevisedHelper,
 	RunCase,
 	TddContext,
@@ -209,12 +218,23 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 			})
 		: []
 	if ('failure' in modules) return { exitCode: 1, output: `tdd red: ${modules.failure}` }
-	const { cases, unlisted } = readRunCases({
+	const run = readRunCases({
 		root,
 		packageJson: context.packageJson,
 		modules,
 		files: runnable,
 	})
+	const { unlisted } = run
+	// a case moved out of a deleted or shrunk test file is a case of the base: unchanged when it passes
+	const moves = await readMoves({
+		root,
+		base: context.base,
+		packageJson: context.packageJson,
+		files: runnable,
+		cases: run.cases,
+	})
+	const cases = applyMoves({ cases: run.cases, moves })
+	const movedCases = movedCaseLabels(moves)
 	for (const file of unlisted) {
 		lines.push(
 			statusLine({
@@ -306,8 +326,16 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 		}
 		if (refused) continue
 		frozen[file.file] = testCode.get(file.file) ?? ''
-		// a helper, fixture or snapshot is frozen only by a red it can have shaped, or a revision declared
-		if (judged.some((judgement) => judgement.kind === 'red' || judgement.kind === 'revised'))
+		// a helper, fixture or snapshot is frozen only by a red it can have shaped, a revision declared, or a
+		// moved case (the helper a split registers its cases through)
+		if (
+			judged.some(
+				(judgement) =>
+					judgement.kind === 'red' ||
+					judgement.kind === 'revised' ||
+					movedCases.has(caseLabel(judgement.testCase)),
+			)
+		)
 			for (const dependency of dependencies)
 				if (testCode.has(dependency)) frozen[dependency] = testCode.get(dependency) ?? ''
 	}
@@ -400,20 +428,20 @@ function judgeRed(params: {
 	acceptances: readonly LotCaseEntry[]
 	/** The cases the lot declares revised at review. */
 	revisions: readonly LotCaseEntry[]
-}): {
-	testCase: RunCase
-	kind: 'red' | 'unchanged' | 'accepted' | 'kept' | 'revised' | 'refused'
-	detail: string
-	message?: string
-	reason?: string
-	flags: ReceiptFlag[]
-} {
+}): RedJudgement {
 	const { testCase, productionHash } = params
 	const { ledger } = params.context
 	const receipts = receiptsOf({ ledger, testCase: idOf(testCase) }).filter(
 		(receipt) => receipt.kind !== 'refused',
 	)
-	const prior = receipts.at(-1)
+	// the receipts the read rule counts: a stale acceptance or revision is no prior proof
+	const counted = countingReceipts({
+		ledger,
+		testCase: idOf(testCase),
+		acceptances: params.acceptances,
+		revisions: params.revisions,
+	}).counting.filter((receipt) => receipt.kind !== 'refused')
+	const prior = counted.at(-1)
 	if (testCase.state === 'failed' && testCase.failure) {
 		const { failure } = testCase
 		if (!RED_KINDS.includes(failure.kind)) {
@@ -445,7 +473,8 @@ function judgeRed(params: {
 			flags: [],
 		}
 	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
-	if (acceptance)
+	// an acceptance never overrides a proof: a case proven red → green goes the normal path, the line says so
+	if (acceptance && !isProvenRedThenGreen({ receipts: counted, caseHash: testCase.caseHash }))
 		return {
 			testCase,
 			kind: 'accepted',
@@ -453,9 +482,28 @@ function judgeRed(params: {
 			reason: acceptance.reason,
 			flags: [],
 		}
+	const judged = judgePass({ ...params, counted })
+	return acceptance
+		? { ...judged, detail: joinParts([judged.detail, ACCEPTANCE_NOT_NEEDED]) }
+		: judged
+}
+
+/** What a red run makes of a passing case no acceptance decides, from the receipts of it that count. */
+function judgePass(params: {
+	testCase: RunCase
+	context: TddContext
+	productionHash: string
+	testCodeChanged: boolean
+	revisions: readonly LotCaseEntry[]
+	/** The receipts of the case the read rule counts, refusals left out. */
+	counted: readonly TddReceipt[]
+}): RedJudgement {
+	const { testCase, productionHash, counted } = params
+	const { ledger } = params.context
+	const prior = counted.at(-1)
 	const revision = findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })
 	// a file or glob entry never stands for the green a red case still owes; an exact entry may
-	const covers = revision !== undefined && (namesOneCase(revision.case) || !awaitsGreen(receipts))
+	const covers = revision !== undefined && (namesOneCase(revision.case) || !awaitsGreen(counted))
 	// a proven case edited at review passes: the lot's reason stands for a new red
 	if (
 		revision &&
@@ -471,10 +519,19 @@ function judgeRed(params: {
 			flags: [],
 		}
 	if (prior && prior.caseHash === testCase.caseHash) {
+		// a revision declared on a case nothing changed since its proof: acknowledged, never a new proof
 		if (!params.testCodeChanged)
-			return { testCase, kind: 'kept', detail: `proven before (${prior.kind})`, flags: [] }
-		const lastRed = lastIndexOfKind({ receipts, kind: 'red' })
-		const lastGreen = lastIndexOfKind({ receipts, kind: 'green' })
+			return {
+				testCase,
+				kind: 'kept',
+				detail: joinParts([
+					`proven before (${prior.kind})`,
+					revision && covers ? REVISION_NOT_NEEDED.replace('{reason}', () => revision.reason) : '',
+				]),
+				flags: [],
+			}
+		const lastRed = lastIndexOfKind({ receipts: counted, kind: 'red' })
+		const lastGreen = lastIndexOfKind({ receipts: counted, kind: 'green' })
 		if (lastRed > lastGreen)
 			return {
 				testCase,
@@ -574,6 +631,10 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 			exitCode: 1,
 			output: 'tdd green: no test file new or changed since the base (or among the files named)',
 		}
+	const acceptances = readAcceptances(root)
+	if ('failure' in acceptances) return { exitCode: 1, output: `tdd green: ${acceptances.failure}` }
+	const revisions = readRevisions(root)
+	if ('failure' in revisions) return { exitCode: 1, output: `tdd green: ${revisions.failure}` }
 	const modules = await announcedRun({
 		context,
 		subcommand: 'green',
@@ -606,8 +667,9 @@ async function runGreen(context: TddContext): Promise<CommandResult> {
 				testCase.state !== 'skipped' && isTargeted({ testCase, targets: context.targets }),
 		)
 		.map(function judgeCase(testCase) {
-			const proof = receiptsOf({ ledger, testCase: idOf(testCase) })
-				.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
+			// the last proof the read rule counts: a stale acceptance or revision never stands in for the red
+			const proof = countingReceipts({ ledger, testCase: idOf(testCase), acceptances, revisions })
+				.counting.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
 				.at(-1)
 			const refusal = greenRefusal({ testCase, proof, ledger, testCode, productionHash })
 			return { testCase, proof, refusal }
@@ -706,6 +768,8 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 			(line) =>
 				`${line.status}  ${caseLabel(line)}${line.flags.length ? `  flags: ${line.flags.join(', ')}` : ''}`,
 		),
+		...state.cases.flatMap((line) => skippedReceiptsLine(line) ?? []),
+		...movesLines(state.moves),
 		...(helpersUnfrozen.length
 			? [`test code changed outside tdd red: ${helpersUnfrozen.join(', ')}`]
 			: []),
@@ -794,6 +858,11 @@ function countLines(params: { lines: readonly string[]; label: string }): number
 
 function statusLine(params: { label: string; id: string; detail: string }): string {
 	return [params.label.padEnd(7), params.id, params.detail].filter(Boolean).join('  ')
+}
+
+/** The parts of a line's detail that are not empty, two spaces apart. */
+function joinParts(parts: readonly string[]): string {
+	return parts.filter(Boolean).join('  ')
 }
 
 function firstLine(message: string): string {

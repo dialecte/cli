@@ -17,6 +17,8 @@ export type RecordedStep = {
 	reason?: string
 	/** The tdd step: the cases of the change it judged, what the card counts (`TddCheck.cases`). */
 	cases?: JudgedCase[]
+	/** The tdd step: the grouped lines of the cases moved from the base, what the card shows. */
+	moved?: string[]
 	/** A hook's test step `gate --hook` answered from the green `gate --full` record of this time and short HEAD. */
 	reused?: RecordOrigin
 }

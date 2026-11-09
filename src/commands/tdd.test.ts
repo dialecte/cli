@@ -2,6 +2,23 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import {
+	PROOF_KIND_ACCEPT_REASON,
+	PROOF_KIND_CASE_LABEL,
+	PROOF_KIND_CASE_NAME,
+	PROOF_KIND_REVISED_REASON,
+	PROOF_KIND_TEST_FILE,
+	PROOF_KIND_TEST_TEXT,
+} from '../../test/proof-kind-fixture.constants.ts'
+import {
+	createProofKindPackage,
+	provenLedgerEntries,
+	readProofKindLedger,
+	reportedLedgerEntries,
+	staleAcceptanceLedgerEntries,
+	writeProofKindLedger,
+	writeProofKindLot,
+} from '../../test/proof-kind-fixture.ts'
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -13,7 +30,7 @@ import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { TddFreeze, TddLedger, TddReceipt } from '../lib/tdd/tdd.types.ts'
+import type { TddEntry, TddFreeze, TddLedger, TddReceipt } from '../lib/tdd/tdd.types.ts'
 
 const NOW = new Date('2026-10-29T12:00:00.000Z')
 
@@ -1308,7 +1325,7 @@ describe('tdd status --legend', { timeout: 60_000 }, () => {
 		}).toEqual({
 			exitCodes: [0, 0],
 			first: true,
-			terms: 24,
+			terms: 26,
 		})
 		expect(legend.lines).toEqual(handover.lines.slice(first, last + 2))
 	})
@@ -1645,6 +1662,227 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 })
 
 describe(
+	'an acceptance never overrides a proof, a receipt counts only while its declaration holds',
+	{ timeout: HELPER_SCENARIO_TIMEOUT },
+	() => {
+		const REVISION_REASON = 'the review asked for the attribute to be read'
+		const PROVEN_BEFORE_IT = /proven red\W+(then\W+)?green before it/
+		const NO_LONGER_DECLARED = /no longer declared/
+		/** A second case in the fixture's test file: the file changes around the proven one. */
+		const SECOND_CASE =
+			"\tit('DD_2 keeps attribute a', () => { expect(keepAttribute({ a: 'x' })).toBe('y') })\n"
+
+		/** The fixture's package with its case proven red then green, frozen as it is, `lot` declared. */
+		function provenPackage(lot: {
+			accept?: Array<{ case: string; reason: string }>
+			revised?: Array<{ case: string; reason: string }>
+		}): { root: string; receiptsBefore: string[] } {
+			const fixture = createProofKindPackage()
+			writeProofKindLedger({ root: fixture.root, entries: provenLedgerEntries(fixture) })
+			writeProofKindLot({ root: fixture.root, ...lot })
+			return { root: fixture.root, receiptsBefore: receiptLines(fixture.root) }
+		}
+
+		/** The lines of an output that name the fixture's case and an accepted receipt: the skipped ones. */
+		function skippedAcceptanceLines(output: string): string[] {
+			return output
+				.split('\n')
+				.filter((line) => line.includes(PROOF_KIND_CASE_LABEL) && /accepted/.test(line))
+		}
+
+		/** The reported history in a scratch package whose lot file holds `lot`. */
+		function reportedPackage(params: {
+			accept?: Array<{ case: string; reason: string }>
+			revised?: Array<{ case: string; reason: string }>
+		}): { root: string; before: TddEntry[] } {
+			const fixture = createProofKindPackage()
+			const before = reportedLedgerEntries(fixture)
+			writeProofKindLedger({ root: fixture.root, entries: before })
+			writeProofKindLot({ root: fixture.root, ...params })
+			return { root: fixture.root, before }
+		}
+
+		/** The entries the ledger held before, as written, and the receipts a run appended since. */
+		function sinceTheRun(params: { root: string; before: TddEntry[] }): {
+			earlier: string[]
+			newReceipts: TddEntry[]
+		} {
+			const { entries } = readProofKindLedger(params.root)
+			return {
+				earlier: entries.slice(0, params.before.length).map((entry) => JSON.stringify(entry)),
+				newReceipts: entries.slice(params.before.length).filter((entry) => entry.kind !== 'freeze'),
+			}
+		}
+
+		/** The status of the fixture's case, from `tdd status --json`. */
+		async function fixtureStatus(root: string): Promise<string | undefined> {
+			const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+			return (JSON.parse(status.output) as { cases: Array<{ status: string }> }).cases[0]?.status
+		}
+
+		it('a case red then green, its accept entry still declared, a red run → kept, saying the acceptance is not needed and can be removed from the lot file; no accepted receipt appended', async () => {
+			const { root, receiptsBefore } = provenPackage({
+				accept: [{ case: PROOF_KIND_CASE_LABEL, reason: PROOF_KIND_ACCEPT_REASON }],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					/^kept {5}src\/dd-element\.test\.ts::D > DD_1 keeps attribute a {2}.*acceptance (is )?not needed.*lot file/i,
+				),
+			])
+			expect(receiptLines(root)).toEqual(receiptsBefore)
+		})
+
+		it('a case red then green, its test file changed around it since (a case added), its accept entry declared → still kept, flagged `test code changed around it`, no accepted receipt', async () => {
+			const { root } = provenPackage({
+				accept: [{ case: PROOF_KIND_CASE_LABEL, reason: PROOF_KIND_ACCEPT_REASON }],
+			})
+			writeFiles({
+				root,
+				files: {
+					[PROOF_KIND_TEST_FILE]: PROOF_KIND_TEST_TEXT.replace('\n})\n', `\n${SECOND_CASE}})\n`),
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(caseLines(red.output)).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(
+						/^kept {5}src\/dd-element\.test\.ts::D > DD_1 keeps attribute a {2}.*flags: test code changed around it/,
+					),
+				]),
+			)
+			expect(receiptLines(root).filter((line) => line.startsWith('accepted'))).toEqual([])
+		})
+
+		it('a proven case, unchanged, a `revised` entry naming it, a red run → kept carrying the entry reason and saying the revision is not needed; no receipt appended; the gate lists the entry as unused', async () => {
+			const { root, receiptsBefore } = provenPackage({
+				revised: [{ case: PROOF_KIND_CASE_LABEL, reason: REVISION_REASON }],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					/^kept {5}src\/dd-element\.test\.ts::D > DD_1 keeps attribute a {2}.*(revision (is )?not needed.*the review asked|the review asked.*revision (is )?not needed)/,
+				),
+			])
+			expect(receiptLines(root)).toEqual(receiptsBefore)
+			expect(check.details).toContain(
+				`unused revised entry  ${PROOF_KIND_CASE_LABEL}  no case of the change stands revised by a red run (${REVISION_REASON})`,
+			)
+		})
+
+		it('red, green, the file edited, a stale accepted receipt at its new hash, no entry → `tdd green` records a green for the case, no test edit', async () => {
+			const fixture = createProofKindPackage()
+			writeProofKindLedger({
+				root: fixture.root,
+				entries: staleAcceptanceLedgerEntries(fixture),
+			})
+			writeProofKindLot({ root: fixture.root })
+
+			const green = await tdd({ cwd: fixture.root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+			expect(caseLines(green.output)).toEqual([`green    ${PROOF_KIND_CASE_LABEL}`])
+			expect(receiptLines(fixture.root).at(-1)).toBe(`green ${PROOF_KIND_CASE_NAME}`)
+		})
+
+		it('red, green, the file edited, a revised receipt of the same case hash at its new hash (a whole-file entry, since removed) → `tdd green` records a green for the case', async () => {
+			const fixture = createProofKindPackage()
+			const entries = staleAcceptanceLedgerEntries(fixture).map((entry): TddEntry =>
+				entry.kind === 'accepted'
+					? { ...entry, kind: 'revised', reason: PROOF_KIND_REVISED_REASON }
+					: entry,
+			)
+			writeProofKindLedger({ root: fixture.root, entries })
+			writeProofKindLot({ root: fixture.root })
+
+			const green = await tdd({ cwd: fixture.root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+			expect(caseLines(green.output)).toEqual([`green    ${PROOF_KIND_CASE_LABEL}`])
+			expect(receiptLines(fixture.root).at(-1)).toBe(`green ${PROOF_KIND_CASE_NAME}`)
+		})
+
+		it('the reported history, the accept entry still declared → red: kept, acceptance not needed, no accepted receipt; green: green; status: green, the accepted receipt named as skipped (a proof stands before it); the earlier entries untouched', async () => {
+			const { root, before } = reportedPackage({
+				accept: [{ case: PROOF_KIND_CASE_LABEL, reason: PROOF_KIND_ACCEPT_REASON }],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const redLedger = sinceTheRun({ root, before })
+			const green = await tdd({ cwd: root, argv: ['green'] })
+			const status = await tdd({ cwd: root, argv: ['status'] })
+			const greenStatus = await fixtureStatus(root)
+			const afterGreen = sinceTheRun({ root, before })
+
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(/^kept {5}src\/dd-element\.test\.ts::.*acceptance (is )?not needed/i),
+			])
+			expect(redLedger.newReceipts).toEqual([])
+			expect(caseLines(green.output)).toEqual([`green    ${PROOF_KIND_CASE_LABEL}`])
+			expect(greenStatus).toBe('green')
+			expect(skippedAcceptanceLines(status.output)).toEqual([
+				expect.stringMatching(PROVEN_BEFORE_IT),
+			])
+			expect(afterGreen.earlier).toEqual(before.map((entry) => JSON.stringify(entry)))
+		})
+
+		it('the reported history, the accept entry removed and a `revised` entry declared for the case → red: kept, revision not needed, no receipt; green: green; status: green; the earlier entries untouched', async () => {
+			const { root, before } = reportedPackage({
+				revised: [{ case: PROOF_KIND_CASE_LABEL, reason: PROOF_KIND_REVISED_REASON }],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const redLedger = sinceTheRun({ root, before })
+			const green = await tdd({ cwd: root, argv: ['green'] })
+			const greenStatus = await fixtureStatus(root)
+			const afterGreen = sinceTheRun({ root, before })
+
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(/^kept {5}src\/dd-element\.test\.ts::.*revision (is )?not needed/i),
+			])
+			expect(redLedger.newReceipts).toEqual([])
+			expect(caseLines(green.output)).toEqual([`green    ${PROOF_KIND_CASE_LABEL}`])
+			expect(greenStatus).toBe('green')
+			expect(afterGreen.earlier).toEqual(before.map((entry) => JSON.stringify(entry)))
+		})
+
+		it('the reported history, the accept entry removed, nothing declared → status names the skipped accepted receipt (no longer declared); green: green; status: green; the gate counts it red then green and lists the skipped receipt; the earlier entries untouched', async () => {
+			const { root, before } = reportedPackage({})
+
+			const owed = await tdd({ cwd: root, argv: ['status'] })
+			const owedStatus = await fixtureStatus(root)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+			const greenStatus = await fixtureStatus(root)
+			const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
+			const { earlier } = sinceTheRun({ root, before })
+
+			expect(skippedAcceptanceLines(owed.output)).toEqual([
+				expect.stringMatching(NO_LONGER_DECLARED),
+			])
+			expect(owedStatus).toBe('red')
+			expect(caseLines(green.output)).toEqual([`green    ${PROOF_KIND_CASE_LABEL}`])
+			expect(greenStatus).toBe('green')
+			expect(check.status).toBe('passed')
+			expect(check.note).toContain('1 red then green')
+			expect(
+				(check.details ?? []).filter(
+					(line) => line.includes(PROOF_KIND_CASE_LABEL) && /accepted/.test(line),
+				),
+			).toEqual([expect.stringMatching(NO_LONGER_DECLARED)])
+			expect(earlier).toEqual(before.map((entry) => JSON.stringify(entry)))
+		})
+	},
+)
+
+describe(
 	'a test file importing a vite worker with a query',
 	{ timeout: HELPER_SCENARIO_TIMEOUT },
 	() => {
@@ -1856,6 +2094,7 @@ describe('test code moved without an edit', { timeout: HELPER_SCENARIO_TIMEOUT }
 		})
 
 		const status = await tdd({ cwd: root, argv: ['status', '--json'] })
+		const text = await tdd({ cwd: root, argv: ['status'] })
 		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
 
 		expect(JSON.parse(status.output)).toMatchObject({
@@ -1869,11 +2108,18 @@ describe('test code moved without an edit', { timeout: HELPER_SCENARIO_TIMEOUT }
 				{
 					file: 'src/sub-moved.test.ts',
 					name: 'sub > five minus two → three',
-					status: 'missing receipt',
+					status: 'unchanged',
 				},
 			],
-			findings: [{ verb: 'deleted', file: 'src/sub.test.ts' }],
+			findings: [
+				{
+					verb: 'deleted',
+					file: 'src/sub.test.ts',
+					detail: 'the test file of the base is deleted',
+				},
+			],
 		})
+		expect(text.output).toMatch(/^moved {2}1 case\(s\) {2}src\/sub\.test\.ts → 1 file\(s\)/m)
 		expect(check).toMatchObject({ status: 'failed' })
 	})
 })

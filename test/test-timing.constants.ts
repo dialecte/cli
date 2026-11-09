@@ -36,3 +36,17 @@ export const STORE_CASE_TIMEOUT = 120_000
  * a loaded one.
  */
 export const STANDARD_DISK_CASE_TIMEOUT = 120_000
+
+/**
+ * The bound of a case that spawns one `bash` on a few-line probe script: a guard against a hang, never a measure
+ * of speed. A start takes well under a second on a quiet machine and several on a loaded one; two minutes is far
+ * above both.
+ */
+export const COMMIT_SCRIPT_PROBE_TIMEOUT = 120_000
+
+/**
+ * The bound of the unit case that matches a large synthetic table (8,000 cases of 5 source files) to its
+ * sources: a guard against a quadratic match, never a measure of speed. A linear match takes well under a
+ * second on a quiet machine; five seconds is several times that, and far below a quadratic one.
+ */
+export const MOVED_CASES_LARGE_TABLE_BOUND_MS = 5_000

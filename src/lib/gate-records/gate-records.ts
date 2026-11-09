@@ -120,6 +120,7 @@ function recordedStepOf(result: StepResult): RecordedStep {
 		...(result.note && { note: result.note }),
 		...(result.reason && { reason: result.reason }),
 		...(result.cases && { cases: result.cases }),
+		...(result.moved?.length && { moved: result.moved }),
 	}
 }
 
@@ -181,12 +182,29 @@ export function readJudgedCases(params: {
 	root: string
 	stateHash: string
 }): ReadonlyMap<string, CaseStatus> | undefined {
+	const cases = judgedTddStep(params)?.cases
+	return cases && new Map(cases.map((judged) => [judged.label, judged.status]))
+}
+
+/**
+ * The grouped moved lines of the gate record `readJudgedCases` reads (the newest of the tree `stateHash`
+ * whose tdd step judged cases); none when it holds none.
+ */
+export function readJudgedMoves(params: { root: string; stateHash: string }): string[] {
+	return judgedTddStep(params)?.moved ?? []
+}
+
+/**
+ * The tdd step of the newest gate record of the tree `stateHash` whose tdd step judged cases; undefined
+ * when none.
+ */
+function judgedTddStep(params: { root: string; stateHash: string }): RecordedStep | undefined {
 	const newestFirst = readGateRecords(params.root)
 		.filter((record) => record.stateHash === params.stateHash)
 		.sort((first, second) => second.at.localeCompare(first.at))
 	for (const record of newestFirst) {
-		const cases = record.steps.find((step) => step.name === TDD_STEP.name)?.cases
-		if (cases) return new Map(cases.map((judged) => [judged.label, judged.status]))
+		const step = record.steps.find((each) => each.name === TDD_STEP.name)
+		if (step?.cases) return step
 	}
 	return undefined
 }

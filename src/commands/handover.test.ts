@@ -317,9 +317,11 @@ function toReadLine(params: { head: string; columns: number }): string {
 function writeLedger(params: {
 	root: string
 	receipts: Array<{ kind: string; name: string; reason?: string; flags?: string[] }>
+	/** The names of the lot's own cases: the gate judges only those (the other receipts are earlier lots'). */
+	judgedNames?: readonly string[]
 }): void {
 	writeLedgerOnly(params)
-	recordJudgedCases(params.root)
+	recordJudgedCasesWith({ root: params.root, statuses: {}, only: params.judgedNames })
 }
 
 /** The ledger of `writeLedger` alone: no gate judged its cases. */
@@ -354,7 +356,12 @@ function recordJudgedCases(root: string): void {
 }
 
 /** `recordJudgedCases`, a case named in `statuses` (by its name) judged with the status given there. */
-function recordJudgedCasesWith(params: { root: string; statuses: Record<string, string> }): void {
+function recordJudgedCasesWith(params: {
+	root: string
+	statuses: Record<string, string>
+	/** Judge only the cases with these names (the lot's own); every case of the ledger when not given. */
+	only?: readonly string[]
+}): void {
 	const { root } = params
 	const ledger = JSON.parse(readFileSync(join(root, '.git', 'dialecte-tdd.json'), 'utf8')) as {
 		entries: Array<{ kind: string; file: string; name: string; project: string }>
@@ -362,6 +369,7 @@ function recordJudgedCasesWith(params: { root: string; statuses: Record<string, 
 	const statusByLabel = new Map<string, string>()
 	for (const entry of ledger.entries) {
 		if (entry.kind === 'freeze') continue
+		if (params.only && !params.only.includes(entry.name)) continue
 		const label = `${entry.file}::${entry.name}${entry.project ? ` [${entry.project}]` : ''}`
 		const known = statusByLabel.get(label)
 		statusByLabel.set(
@@ -410,6 +418,10 @@ async function runGateIn(params: { root: string; argv: string[] }): Promise<numb
 
 /** The subject of the merge lot of `fullCardScenario`. */
 const MERGE_SUBJECT = 'merge: bring feat/x in'
+
+/** The second line of a commit.sh: it re-executes the script with bash, out of posix mode. */
+const REEXEC_GUARD =
+	'if [ -z "${BASH_VERSION:-}" ] || shopt -oq posix 2>/dev/null; then exec env -u POSIXLY_CORRECT bash "$0" "$@"; fi'
 
 /** The lots file's gates text of `fullCardScenario`: the card's notes. */
 const FULL_CARD_NOTES = 'Run it with the cli of this branch.'
@@ -688,7 +700,8 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			.split('\n')
 			.filter((line) => line && !line.startsWith('#'))
 		expect(commands.at(-1)).toBe('exec npx --no-install @dialecte/cli handover run "$HERE" "$@"')
-		expect(commands).toContain('if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi')
+		expect(commands).toContain(REEXEC_GUARD)
+		expect(readFileSync(join(out, 'commit.sh'), 'utf8').split('\n')[1]).toBe(REEXEC_GUARD)
 	})
 
 	it('written → the card: titled with the repository folder and the branch, the notes, a commit line per lot with files, +/− and subject, HEAD; no path in the box; the command under it', () => {
@@ -980,6 +993,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 		writeLedger({
 			root,
+			judgedNames: ['read > answers one'],
 			receipts: [
 				{ kind: 'accepted', name: 'read > answers one', reason: 'the reason the red run saw' },
 				{ kind: 'accepted', name: 'read > earlier one', reason: 'an earlier lot' },
@@ -1127,6 +1141,18 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(git({ root, args: ['show', 'HEAD~1:src/read.ts'] })).toContain('return 2')
 	})
 
+	it('--rehash after an edit → the rewritten commit.sh keeps the re-exec guard as its second line, the header after it', () => {
+		const { root, lotsPath, out } = prepare()
+		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
+		writeFiles({ root, files: { 'src/read.ts': 'export function read() {\n\treturn 2\n}\n' } })
+
+		expect(writeHandover({ lotsPath, argv: ['--rehash'] }).exitCode).toBe(0)
+
+		const lines = readFileSync(join(out, 'commit.sh'), 'utf8').split('\n')
+		expect(lines[1]).toBe(REEXEC_GUARD)
+		expect(lines[2]).toMatch(/^# \d+ commit\(s\) on main in /)
+	})
+
 	it('the repository held by another hand-over → refused', () => {
 		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
@@ -1148,7 +1174,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
-		const header = readFileSync(join(out, 'commit.sh'), 'utf8').split('\n').slice(1, 7)
+		const header = readFileSync(join(out, 'commit.sh'), 'utf8').split('\n').slice(2, 8)
 		spawnSync('sh', [join(out, 'commit.sh')], { cwd: out, encoding: 'utf8' })
 
 		expect(existsSync(join(out, 'INJECTED'))).toBe(false)
@@ -3628,6 +3654,30 @@ describe('handover: the tdd section', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		)
 	})
 
+	it('a case red then green, then an accepted receipt whose entry the lot file no longer holds, judged green by the gate → counted proven red → green, named as a case with a skipped receipt, not counted among the earlier lots accepted', () => {
+		const { root, lotsPath } = prepare()
+		writeLedgerOnly({
+			root,
+			receipts: [
+				{ kind: 'red', name: 'read > proven' },
+				{ kind: 'green', name: 'read > proven' },
+				{ kind: 'accepted', name: 'read > proven', reason: 'an acceptance since removed' },
+			],
+		})
+		recordJudgedCasesWith({ root, statuses: { 'read > proven': 'green' } })
+
+		const rows = tddRowLines(writeHandover({ lotsPath, columns: 200 }).output)
+
+		expect(rows[0]).toBe('1 proven red → green · 0 unchanged')
+		expect(rows.filter((row) => row.startsWith('earlier lots'))).toEqual([])
+		const head = rows.findIndex((row) => row.endsWith('to read ↓'))
+		const naming = rows.findIndex((row) => row.includes('read > proven') && /accepted/.test(row))
+		expect(head).toBeGreaterThanOrEqual(0)
+		expect(naming).toBeGreaterThan(head)
+		expect(rows[naming]).toMatch(/no longer declared/)
+		expect(rows.filter((row) => /^\d+ accepted/.test(row))).toEqual([])
+	})
+
 	it('a gate record of another tree → the counts replaced by one line: counts from the last gate: run the gate on this tree', () => {
 		const { root, lotsPath } = prepare()
 		writeLedger({
@@ -4095,7 +4145,8 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		},
 		{
 			term: 'earlier lots',
-			meaning: 'receipts of earlier lots the lot file no longer names, counted per kind',
+			meaning:
+				'receipts of cases outside the change (earlier lots) the lot file no longer names, counted per kind',
 			look: "look only if you expected this lot's file to name them",
 		},
 		{
@@ -4113,6 +4164,12 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			term: 'unused',
 			meaning: 'an accept or revised entry of the lot file that no red run used',
 			look: 'look: each one; fix or remove it in the lot file',
+		},
+		{
+			term: 'skipped',
+			meaning:
+				'a case of the change with a receipt the read rule no longer counts: its acceptance or revision is no longer declared, or an acceptance came after a red → green proof',
+			look: 'look: the to-read entry; nothing to remove: the ledger keeps the receipt, the card names it',
 		},
 		{
 			term: 'rollback',

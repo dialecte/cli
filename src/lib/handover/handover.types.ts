@@ -1,7 +1,7 @@
 import type { CardLine } from '../card/card.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
-import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
+import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
@@ -293,6 +293,9 @@ export type TddProof = 'red' | 'proven' | 'unchanged' | 'kept'
 
 /** An accepted or revised receipt with the lot file entry that names its case. */
 export type DeclaredReceipt = { receipt: TddReceipt; entry: LotCaseEntry }
+
+/** A case of the change with the receipts the read rule skips (`countingReceipts`), for the card's entries to read. */
+export type CaseSkippedReceipts = { testCase: TestCaseId; skipped: SkippedReceipt[] }
 
 /**
  * Whether a gate may run while the repository's hand-over lock is held: free (no lock), under the hand-over

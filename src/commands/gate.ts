@@ -380,6 +380,7 @@ async function tddStep(params: {
 		...(check.lines?.length && { tail: check.lines.join('\n') }),
 		...(check.details?.length && { details: check.details }),
 		...(check.cases && { cases: check.cases }),
+		...(check.moved?.length && { moved: check.moved }),
 	}
 }
 

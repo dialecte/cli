@@ -31,6 +31,8 @@ export type StepResult = {
 	details?: string[]
 	/** The tdd step: the cases of the change it judged (`TddCheck.cases`). */
 	cases?: JudgedCase[]
+	/** The tdd step: the grouped lines of the cases moved from the base (`TddCheck.moved`). */
+	moved?: string[]
 	/** A vitest test step that failed: its one serial rerun. */
 	rerun?: StepRerun
 }

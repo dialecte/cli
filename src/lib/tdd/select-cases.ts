@@ -100,6 +100,7 @@ export function readRunCases(params: {
 				}),
 				ofChange: isCaseOfChange({ file, name: reported.name, location: reported.location }),
 				ofBase: isCaseOfBase({ file, name: reported.name }),
+				...(reported.location && { location: reported.location }),
 			})
 		}
 	}
