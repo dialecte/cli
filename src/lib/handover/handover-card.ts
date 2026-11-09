@@ -132,6 +132,8 @@ export function buildHandoverCard(params: {
 	abandoned?: boolean
 	/** Asks whether the repository's own cli runs hand-overs. */
 	probe: HandoverProbe
+	/** A release hand-over (the lots file's `"release": true`): the card requires a `gate release` row. */
+	release?: boolean
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
@@ -158,7 +160,8 @@ export function buildHandoverCard(params: {
 	}
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
-		...buildCardGateLines(checked),
+		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
+		...buildCardGateLines({ ...checked, head: params.head, release: params.release }),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
 		buildReviewLine(params.folder),
 		readStandardLine({ folder: params.folder }),

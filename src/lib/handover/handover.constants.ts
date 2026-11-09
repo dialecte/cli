@@ -500,6 +500,8 @@ export const REHEARSAL_SKIPPED_LINE = "rehearsal skipped: every lot's tree has a
 /** Why a lot is reused or rehearsed; `{tree}`, `{tip}` are short tree ids. */
 export const REHEARSAL_REASONS = {
 	fullGate: 'green gate --full on tree {tree}',
+	releaseGate: 'green gate --release on tree {tree}',
+	baseChanged: 'the base moved: record {record}, hand-over {handover}',
 	tipRecord: "green {mode} record of the tip's tree {tree}",
 	noFullGate: 'no green gate --full on tree {tree}',
 	noTipRecord: "no green record of the tip's tree {tree}",

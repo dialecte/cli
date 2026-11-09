@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { gitFolderOf, listRepositoryFiles, readGit } from '../git.ts'
+import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts'
 import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { readHygieneBaseline } from '../worktree/hygiene.ts'
 import { DEFAULT_BASE_BRANCH, LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
@@ -168,22 +168,22 @@ export function resolveBase(params: {
 	wholeBranch?: boolean
 }): string | { failure: string } {
 	const { root } = params
-	const head = tryGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD'] })?.trim()
+	const head = tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD'] })?.trim()
 	if (!head)
 		return {
 			failure: `the repository at ${root} has no commit yet: the lot is measured from HEAD, commit a base first`,
 		}
 	if (params.ref !== undefined) {
 		const base =
-			tryGit({ root, args: ['merge-base', 'HEAD', params.ref] }) ??
-			tryGit({ root, args: ['rev-parse', '--verify', '--quiet', params.ref] })
+			tryReadGit({ root, args: ['merge-base', 'HEAD', params.ref] }) ??
+			tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', params.ref] })
 		return base ? base.trim() : { failure: `--base ${params.ref}: no such commit` }
 	}
 	if (!params.wholeBranch) return head
 	const recorded = readHygieneBaseline(root)?.head
 	if (recorded) return recorded
 	const baseBranch = params.packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
-	return tryGit({ root, args: ['merge-base', 'HEAD', baseBranch] })?.trim() ?? head
+	return tryReadGit({ root, args: ['merge-base', 'HEAD', baseBranch] })?.trim() ?? head
 }
 
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */
@@ -330,7 +330,7 @@ export function readAtBase(params: {
 	base: string
 	file: string
 }): string | undefined {
-	return tryGit({ root: params.root, args: ['show', `${params.base}:./${params.file}`] })
+	return tryReadGit({ root: params.root, args: ['show', `${params.base}:./${params.file}`] })
 }
 
 /** How many production and test-code files the change touches since the base (deleted ones included). */
@@ -357,13 +357,4 @@ export function countChangedFiles(params: {
 		isProductionPath({ file, packageJson: params.packageJson }),
 	).length
 	return { production, test }
-}
-
-/** git's output, or undefined when git fails (a path absent at a commit, no such branch). */
-function tryGit(params: { root: string; args: string[] }): string | undefined {
-	try {
-		return readGit(params)
-	} catch {
-		return undefined
-	}
 }

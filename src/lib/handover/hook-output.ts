@@ -6,7 +6,8 @@
 import { stripVTControlCharacters } from 'node:util'
 
 import { counted } from '../counted.ts'
-import { GATE_HOOK_REUSED_PATTERN } from '../gate/gate-config.constants.ts'
+import { GATE_BASE_SOURCES } from '../gate/gate-base.constants.ts'
+import { GATE_HOOK_BASE_PATTERN, GATE_HOOK_REUSED_PATTERN } from '../gate/gate-config.constants.ts'
 import { readStepCounts } from '../gate/step-counts.ts'
 import {
 	COMMAND_SEPARATORS,
@@ -33,6 +34,7 @@ import {
 } from './hook-output.constants.ts'
 
 import type { RecordOrigin } from '../gate-records/gate-records.types.ts'
+import type { UsedGateBase } from '../gate/gate-base.types.ts'
 import type { StepCounts } from '../gate/gate.types.ts'
 import type {
 	CountedFlaggedLine,
@@ -276,6 +278,18 @@ export function hookSummarySteps(params: {
 function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
 	const match = GATE_HOOK_REUSED_PATTERN.exec(stripVTControlCharacters(lines.join('\n')))
 	return match ? { at: match[2], head: match[3] } : undefined
+}
+
+/**
+ * The base a hook's `gate --hook` printed it used (`GATE_HOOK_BASE_LINE`), the last one printed; undefined when
+ * it printed none, or none of a source this cli knows.
+ */
+export function readHookBase(output: string): UsedGateBase | undefined {
+	const matches = [...stripVTControlCharacters(output).matchAll(GATE_HOOK_BASE_PATTERN)]
+	const last = matches.at(-1)
+	if (last === undefined) return undefined
+	const source = GATE_BASE_SOURCES.find((known) => known === last[2])
+	return source === undefined ? undefined : { commit: last[1], source }
 }
 
 /** The lines without a warning or error line printed already before (the same text). */

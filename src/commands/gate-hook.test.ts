@@ -140,6 +140,7 @@ describe(
 			expect(given).toEqual({ exitCode: 0, output: reuseLineOf({ tree: headTree, record }) })
 			expect(countAfterGiven).toBe(1)
 			expect(own.output.split('\n')[0]).toBe(runningLineOf(indexTreeOf({ root })))
+			expect(own.output.split('\n')[0]).toContain('no green gate --full or --release of tree')
 			expect(countRuns(testCounter)).toBe(2)
 		})
 
@@ -290,6 +291,7 @@ describe(
 				const lines = result.output.split('\n')
 				expect(result.exitCode).toBe(0)
 				expect(lines[0]).toBe(runningLineOf(tree))
+				expect(lines[0]).toContain('no green gate --full or --release of tree')
 				expect(lines.at(-1)).toBe(HOOK_GREEN_LINE)
 				expect(result.output).toMatch(RUN_STEP_WITH_SUMMARY)
 				expect(result.output).not.toMatch(NOT_A_HOOK_STEP_LINE)
@@ -305,6 +307,7 @@ describe(
 
 			expect(result.exitCode).toBe(1)
 			expect(result.output.split('\n')[0]).toBe(runningLineOf(tree))
+			expect(result.output.split('\n')[0]).toContain('no green gate --full or --release of tree')
 			expect(result.output).toMatch(/^FAIL +tests\b/m)
 			expect(result.output).toMatch(/^gate --hook: failed at tests$/m)
 			expect(countRuns(testCounter)).toBe(1)
@@ -445,6 +448,7 @@ describe('gate --hook: review round 1 fixes', { timeout: SCRATCH_REPOSITORY_TIME
 
 		expect(result).toEqual({ exitCode: 0, output: HOOK_GREEN_LINE })
 		expect(written[0]).toBe(runningLineOf(indexTreeOf({ root })))
+		expect(written[0]).toContain('no green gate --full or --release of tree')
 		expect(written.some((line) => /^ok +tests\b/.test(line))).toBe(true)
 	})
 })

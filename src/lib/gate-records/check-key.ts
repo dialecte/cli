@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 
+import { holdsScopedStep } from '../gate/gate-config.ts'
 import { listCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -26,6 +27,7 @@ import {
 	PACKAGE_FILES_EXCLUSION_PREFIX,
 	PACKAGE_FILES_GLOB_PATTERN,
 	COMMIT_INDEX_FOLDER_PREFIX,
+	SCOPED_STEP_HASH_MARK,
 } from './gate-records.constants.ts'
 import { computeStateTree } from './state-hash.ts'
 
@@ -55,22 +57,49 @@ export function readInstalledKey(root: string): Pick<CheckKey, 'lockHash' | 'lin
 
 /**
  * The command hash of a gate's steps in the worktree `root` is in: the steps, and HEAD's commit when a step
- * runs only the tests the change affects (which tests those are depends on the diff against HEAD).
+ * runs only the tests the change affects (which tests those are depends on the diff against HEAD), and the gate
+ * base its caller resolved once for the run (it counts only with a scoped step: `hashGateCommand`); it never
+ * resolves a base itself.
  */
-export function gateCommandHash(params: { root: string; steps: readonly GateStep[] }): string {
-	const { steps } = params
-	if (!steps.some((step) => step.changedOnly)) return hashGateCommand({ steps })
+export function gateCommandHash(params: {
+	root: string
+	steps: readonly GateStep[]
+	/** The base the caller resolved once for the run: a scoped step selects against it. */
+	gateBase?: string
+}): string {
+	const { steps, gateBase } = params
+	if (!steps.some((step) => step.changedOnly)) return hashGateCommand({ steps, gateBase })
 	const head = readGit({ root: params.root, args: ['rev-parse', 'HEAD'] }).trim()
-	return hashGateCommand({ steps, base: head })
+	return hashGateCommand({ steps, base: head, gateBase })
 }
 
-/** sha256 (hex) of the steps' `name` and `run` in order, plus a commit when given. */
-export function hashGateCommand(params: { steps: readonly GateStep[]; base?: string }): string {
+/**
+ * sha256 (hex) of the steps' `name` and `run` in order, plus a commit when given. Without a scoped step the hash
+ * is the same as before scoped steps existed, `gateBase` left out; with one, a scoped step hashes as
+ * `[name, run, "scoped"]` and `gateBase` enters. `heavy` never enters.
+ */
+export function hashGateCommand(params: {
+	steps: readonly GateStep[]
+	/** HEAD, for a `changedOnly` step and contrib. */
+	base?: string
+	/** The resolved commit a scoped step selects against; it counts only when a step is scoped. */
+	gateBase?: string
+}): string {
+	const base = params.base ?? null
 	// JSON keeps each value apart: `a` + `bc` and `ab` + `c` never hash alike
+	if (!holdsScopedStep(params.steps))
+		return sha256(
+			JSON.stringify({ steps: params.steps.map((step) => [step.name, step.run]), base }),
+		)
 	return sha256(
 		JSON.stringify({
-			steps: params.steps.map((step) => [step.name, step.run]),
-			base: params.base ?? null,
+			steps: params.steps.map(function hashedStep(step) {
+				return step.scoped === true
+					? [step.name, step.run, SCOPED_STEP_HASH_MARK]
+					: [step.name, step.run]
+			}),
+			base,
+			gateBase: params.gateBase,
 		}),
 	)
 }
@@ -84,6 +113,14 @@ export function hashHookCommand(root: string): string {
 		hash.update('\0')
 	}
 	return hash.digest('hex')
+}
+
+/**
+ * The command hash of a hook record whose hook ran a scoped step: sha256 (hex) of the hook files' hash
+ * (`hashHookCommand`) folded with the base the hook printed it used, so a record answers only a reader at that base.
+ */
+export function foldHookBase(params: { hook: string; gateBase: string }): string {
+	return sha256(JSON.stringify({ hook: params.hook, gateBase: params.gateBase }))
 }
 
 /**

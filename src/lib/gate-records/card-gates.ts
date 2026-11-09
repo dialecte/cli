@@ -25,7 +25,8 @@ import { join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { counted } from '../counted.ts'
-import { resolveGateSteps } from '../gate/gate-config.ts'
+import { resolveConfiguredBase } from '../gate/gate-base.ts'
+import { GateConfigError } from '../gate/gate-config.ts'
 import { isAncestorCommit, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
@@ -33,18 +34,26 @@ import { readPackageJson } from '../package-json.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
-import { gateCommandHash, hashHookCommand, readInstalledKey } from './check-key.ts'
-import { isSameKey, readTreeRecords } from './check-store.ts'
+import { readInstalledKey } from './check-key.ts'
+import { findReusableRecord, isGreenRecord, isSameKey, readTreeRecords } from './check-store.ts'
 import {
+	BASE_MOVED_SUFFIX,
 	CONTRIB_HEAD_MOVED_SUFFIX,
 	CONTRIB_KEY_CHANGED_SUFFIX,
 	CONTRIB_LINE_NAME,
 	CONTRIB_NEVER_RUN_DETAIL,
 	DETAIL_SEPARATOR,
+	FAILING_DETAIL,
+	FAILING_MORE,
+	FAILING_PATH_SEPARATOR,
+	FAILING_PATHS_SHOWN,
 	GATE_LINE_NAME,
+	GATE_RELEASE_LINE_NAME,
+	HOOK_BASE_DETAIL,
 	HOOK_RECORD_DETAIL,
 	HOOK_RECORD_MODE,
 	HOOK_REUSED_DETAIL,
+	INVALID_GATE_CONFIG_DETAIL,
 	MISSING_SCRIPT_DETAIL,
 	MISSING_SCRIPT_PATTERN,
 	NEVER_RUN_DETAIL,
@@ -54,22 +63,43 @@ import {
 	NOT_RUN_DETAIL,
 	NOT_RUN_HERE_DETAIL,
 	NOT_RUN_ON_CHECKED_TREE_DETAIL,
+	NOTHING_SELECTED_DETAIL,
+	OLDER_BASE_SUFFIX,
 	OPEN_LEDGER_STATES,
 	RECORD_FROM_DETAIL,
 	REHEARSAL_ORIGIN,
 	REHEARSAL_RECORD_DETAIL,
+	RELEASE_FAILED_DETAIL,
+	RELEASE_GREEN_DETAIL,
+	RELEASE_RECORD_MODE,
 	REVIEW_APPROVED_DETAIL,
 	REVIEW_LINE_NAME,
 	ROUND_FOLDER_PATTERN,
 	RULES_LINE_NAME,
+	SELECTED_DETAIL,
+	SELECTED_ID_SEPARATOR,
 	SHORT_SHA_LENGTH,
 	TREE_CHANGED_SUFFIX,
 } from './gate-records.constants.ts'
-import { readContribRecord, readGateRecords, readRulesRecord } from './gate-records.ts'
+import {
+	readContribRecord,
+	readGateRecords,
+	readReleaseRecord,
+	readRulesRecord,
+} from './gate-records.ts'
+import { readModeCommandHashes } from './mode-command-hashes.ts'
 import { computeStateTree, hashStateTree } from './state-hash.ts'
 
-import type { StepCounts } from '../gate/gate.types.ts'
-import type { CardGateLine, GateRecord, RecordedStep } from './gate-records.types.ts'
+import type { StepCounts, StepSelection } from '../gate/gate.types.ts'
+import type {
+	CardGateConfig,
+	CardGateLine,
+	CheckKey,
+	GateRecord,
+	GateRecordMode,
+	RecordBaseCheck,
+	RecordedStep,
+} from './gate-records.types.ts'
 
 export function buildCardGateLines(params: {
 	/** The worktree the records are of. */
@@ -84,23 +114,136 @@ export function buildCardGateLines(params: {
 	tree: string
 	/** The state hash of the worktree now, which the tdd line is checked against. Default: computed from `root`. */
 	stateHash?: string
+	/**
+	 * The commit the card resolves its gate base on, as the hand-over will (the lots file's HEAD); default HEAD.
+	 * Read only when a gate list holds a scoped step.
+	 */
+	head?: string
+	/** A release hand-over (`"release": true`): the required `gate release` row is added. */
+	release?: boolean
 }): CardGateLine[] {
 	const { root, tree } = params
+	const config = readCardGateConfig({ root, head: params.head })
 	const own = readGateRecords(root)
 	const others = readTreeRecords({ root, tree }).filter(
 		(record) => !own.some((ownRecord) => isSameRun({ record, other: ownRecord })),
 	)
-	// what a run here would hold now is read only when another run's record is there to compare with
-	const stored = others.length
-		? others.filter(currentStoredRecord({ root, tree })).map(withoutTddStep)
-		: []
+	const stored = others.filter(currentStoredRecord({ root, tree, config })).map(withoutTddStep)
 	const records = [...own, ...stored]
-	return gateStepLines({
-		records,
-		stateHash: hashStateTree(tree),
-		worktreeStateHash: params.stateHash ?? hashStateTree(computeStateTree(root)),
-		outsideHistory: commitsOutsideHistory({ root, records }),
-	})
+	return [
+		...gateStepLines({
+			records,
+			stateHash: hashStateTree(tree),
+			worktreeStateHash: params.stateHash ?? hashStateTree(computeStateTree(root)),
+			outsideHistory: commitsOutsideHistory({ root, records }),
+			baseCheck: recordBaseCheck({ root, base: config.base }),
+		}),
+		...(config.invalid === undefined
+			? []
+			: [
+					{
+						name: GATE_LINE_NAME,
+						status: 'failed' as const,
+						detail: INVALID_GATE_CONFIG_DETAIL.replace('{message}', config.invalid),
+					},
+				]),
+		...(params.release ? [releaseLine({ root, tree, config })] : []),
+	]
+}
+
+/**
+ * The package's gate config as the card reads it, once: the base resolved on `head` when a gate list holds a
+ * scoped step, the command hash of each mode at that base; the message of a config the cli cannot run; nothing
+ * of a package.json the gate itself could not read (no stored record can be told current then).
+ */
+function readCardGateConfig(params: { root: string; head: string | undefined }): CardGateConfig {
+	const { root } = params
+	try {
+		const packageJson = readPackageJson(root)
+		const base = resolveConfiguredBase({
+			root,
+			packageJson,
+			...(params.head !== undefined && { head: params.head }),
+		})
+		return {
+			...(base && { base }),
+			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit }),
+		}
+	} catch (error) {
+		if (error instanceof GateConfigError) return { invalid: error.message }
+		// a package.json that is no JSON: the card still prints
+		return {}
+	}
+}
+
+/**
+ * How a record's gate base reads against the card's `base`: undefined when the card has none (no scoped step), the
+ * record holds none or is a release record; `same`; `older` when it is an ancestor of the card's; else `moved`. Each base asked once.
+ */
+function recordBaseCheck(params: {
+	root: string
+	base: CardGateConfig['base']
+}): (record: GateRecord) => RecordBaseCheck | undefined {
+	const { root, base } = params
+	const answers = new Map<string, RecordBaseCheck>()
+	return function checkBase(record) {
+		// a release record selected against the empty tree: everything, whatever the card's base
+		if (base === undefined || record.base === undefined || record.mode === RELEASE_RECORD_MODE)
+			return undefined
+		const commit = record.base.commit
+		if (commit === base.commit) return 'same'
+		const known = answers.get(commit)
+		if (known) return known
+		const answer = isAncestorCommit({ root, ancestor: commit, descendant: base.commit })
+			? 'older'
+			: 'moved'
+		answers.set(commit, answer)
+		return answer
+	}
+}
+
+/**
+ * The `gate release` row of a release hand-over: ✓ when a green release record of `tree` holds the current release
+ * key (the worktree's or the store's); else from the worktree's last release record: none or another key → never
+ * run on this tree, another tree → stale, failed → the step it failed at.
+ */
+function releaseLine(params: { root: string; tree: string; config: CardGateConfig }): CardGateLine {
+	const { root, tree } = params
+	const releaseHash = params.config.hashes?.release
+	const key =
+		releaseHash === undefined
+			? undefined
+			: { tree, ...readInstalledKey(root), commandHash: releaseHash }
+	const green: CardGateLine = {
+		name: GATE_RELEASE_LINE_NAME,
+		status: 'passed',
+		detail: RELEASE_GREEN_DETAIL,
+	}
+	if (key && findReusableRecord({ root, mode: RELEASE_RECORD_MODE, key })) return green
+	const never: CardGateLine = {
+		name: GATE_RELEASE_LINE_NAME,
+		status: 'failed',
+		detail: NEVER_RUN_DETAIL,
+	}
+	const record = readReleaseRecord(root)
+	if (record === undefined) return never
+	if (record.stateHash !== hashStateTree(tree))
+		return staleLine({
+			line: isGreenRecord(record) ? green : failedReleaseLine(record),
+			suffix: TREE_CHANGED_SUFFIX,
+		})
+	if (key === undefined || !isSameKey({ key, other: record.key })) return never
+	return isGreenRecord(record) ? green : failedReleaseLine(record)
+}
+
+/** The `gate release` row of a failed release record: the step it failed at. */
+function failedReleaseLine(record: GateRecord): CardGateLine {
+	const failed = record.steps.find((step) => step.status === 'failed')
+	return {
+		name: GATE_RELEASE_LINE_NAME,
+		status: 'failed',
+		detail: RELEASE_FAILED_DETAIL.replace('{step}', failed?.name ?? ''),
+	}
 }
 
 /**
@@ -141,7 +284,7 @@ export function buildContribLines(params: {
 	return [
 		...record.steps.map(function contribLine(step): CardGateLine {
 			const line = {
-				...withRecordSource({ line: lineOfStep(step), record, outsideHistory }),
+				...withRecordSource({ line: lineOfStep({ step }), record, outsideHistory }),
 				...(source && { source }),
 			}
 			return staleSuffix === undefined ? line : staleLine({ line, suffix: staleSuffix })
@@ -203,39 +346,40 @@ function commitsOutsideHistory(params: {
 
 /**
  * Which stored records of `tree` count for the worktree `root`: those whose key is the key a run there would
- * have now - what is installed, the `file:` dependencies, the command of the record's mode.
+ * have now - what is installed, the `file:` dependencies, the command of the record's mode at the card's base
+ * (`readCommandHashes`); a release record only when green and its list covers `full`, standing in for a full one.
  */
 function currentStoredRecord(params: {
 	root: string
 	tree: string
+	config: CardGateConfig
 }): (record: GateRecord) => boolean {
 	const { root, tree } = params
-	const installed = readInstalledKey(root)
-	const commands = readCommandHashes(root)
+	// what a run here would hold now is read only when another run's record is there to compare with
+	let installed: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
+	const commands = readCommandHashes(params.config)
 	return function isCurrent(record) {
 		const commandHash = commands[record.mode]
-		return (
-			commandHash !== undefined &&
-			isSameKey({ key: { tree, ...installed, commandHash }, other: record.key })
-		)
+		if (commandHash === undefined) return false
+		if (record.mode === RELEASE_RECORD_MODE && !isGreenRecord(record)) return false
+		installed ??= readInstalledKey(root)
+		return isSameKey({ key: { tree, ...installed, commandHash }, other: record.key })
 	}
 }
 
 /**
- * The command hash of each record mode in the worktree `root`; none when the package's gate steps cannot be
- * read (a `dialecte.gate` that is no list of steps): no stored record counts then, and the card still prints.
+ * The command hash each record mode must hold to count, at the card's base: none when the package's gate config
+ * cannot be read (no stored record counts then, and the card still prints); release only when its list covers
+ * `full`.
  */
-function readCommandHashes(root: string): Record<string, string> {
-	try {
-		const packageJson = readPackageJson(root)
-		return {
-			fast: gateCommandHash({ root, steps: resolveGateSteps({ packageJson, mode: 'fast' }) }),
-			full: gateCommandHash({ root, steps: resolveGateSteps({ packageJson, mode: 'full' }) }),
-			[HOOK_RECORD_MODE]: hashHookCommand(root),
-		}
-	} catch {
-		// a package.json the gate itself would refuse: nothing stored can be told current
-		return {}
+function readCommandHashes(config: CardGateConfig): Partial<Record<GateRecordMode, string>> {
+	const { hashes } = config
+	if (hashes === undefined) return {}
+	return {
+		fast: hashes.fast,
+		full: hashes.full,
+		[HOOK_RECORD_MODE]: hashes.hook,
+		...(hashes.releaseCoversFull && { [RELEASE_RECORD_MODE]: hashes.release }),
 	}
 }
 
@@ -261,6 +405,8 @@ function gateStepLines(params: {
 	worktreeStateHash: string
 	/** The commits of records outside HEAD's history: a line of such a record says which. */
 	outsideHistory: ReadonlySet<string>
+	/** How a record's gate base reads against the card's (`recordBaseCheck`). */
+	baseCheck: (record: GateRecord) => RecordBaseCheck | undefined
 }): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
@@ -280,10 +426,13 @@ function gateStepLines(params: {
 			entry.step.status !== 'failed'
 		)
 			return { name: entry.step.name, status: 'warning', detail: NOT_RUN_ON_CHECKED_TREE_DETAIL }
-		const line = lineOfStep(entry.step)
-		return withTreeCheck({
+		// the tdd step judged the worktree's receipts: no base reads it
+		const based = entry.step.name === TDD_STEP.name ? undefined : params.baseCheck(entry.record)
+		const line = lineOfStep({ step: entry.step, olderBase: based === 'older' })
+		const checked = withTreeCheck({
 			line: withRecordSource({
-				line: entry.record.mode === HOOK_RECORD_MODE ? fromHook(line) : line,
+				line:
+					entry.record.mode === HOOK_RECORD_MODE ? fromHook({ line, record: entry.record }) : line,
 				record: entry.record,
 				outsideHistory: params.outsideHistory,
 			}),
@@ -292,6 +441,9 @@ function gateStepLines(params: {
 					? entry.record.stateHash === params.worktreeStateHash
 					: entry.record.stateHash === params.stateHash,
 		})
+		return based === 'moved' && !checked.stale
+			? staleLine({ line: checked, suffix: BASE_MOVED_SUFFIX })
+			: checked
 	})
 }
 
@@ -368,11 +520,17 @@ function withoutAnsweredSteps(params: {
 	}
 }
 
-/** A line read from a commit hook's record: its detail ends saying so (`✓ test:run  1214/1214 · commit hook`). */
-function fromHook(line: CardGateLine): CardGateLine {
+/**
+ * A line read from a commit hook's record: its detail ends saying so, after the base its hook used when it printed
+ * one (`✓ test:run  1214/1214 · base 1a2b3c4d5e6f · commit hook`).
+ */
+function fromHook(params: { line: CardGateLine; record: GateRecord }): CardGateLine {
+	const { line, record } = params
+	const base =
+		record.base && HOOK_BASE_DETAIL.replace('{base}', record.base.commit.slice(0, SHORT_SHA_LENGTH))
 	return {
 		...line,
-		detail: [line.detail, HOOK_RECORD_DETAIL].filter(Boolean).join(DETAIL_SEPARATOR),
+		detail: [line.detail, base, HOOK_RECORD_DETAIL].filter(Boolean).join(DETAIL_SEPARATOR),
 	}
 }
 
@@ -403,7 +561,44 @@ function recordSourceOf(params: {
 	return RECORD_FROM_DETAIL.replace('{head}', record.head.slice(0, SHORT_SHA_LENGTH))
 }
 
-function lineOfStep(step: RecordedStep): CardGateLine {
+/**
+ * The line of a recorded step; a scoped step's line holds its selection and says, after its counts, what it
+ * selected since its base (` (older base)` after it when `olderBase`).
+ */
+function lineOfStep(params: { step: RecordedStep; olderBase?: boolean }): CardGateLine {
+	const { step } = params
+	const line = lineOfUnscopedStep(step)
+	if (step.selection === undefined) return line
+	// a passed scoped step says its counts and its selection, never the note the selection already says
+	const selected =
+		line.status === 'passed'
+			? {
+					detail: [renderCardCounts(step.counts), selectionDetail({ selection: step.selection })]
+						.filter(Boolean)
+						.join(DETAIL_SEPARATOR)
+						.concat(params.olderBase ? OLDER_BASE_SUFFIX : ''),
+				}
+			: {}
+	return { ...line, ...selected, selection: step.selection }
+}
+
+/** `selected <ids> since <short base>`, or `nothing selected since <short base> (<n> paths)`. */
+function selectionDetail(params: { selection: StepSelection }): string {
+	const { selection } = params
+	const base = selection.base.slice(0, SHORT_SHA_LENGTH)
+	return selection.ids.length
+		? SELECTED_DETAIL.replace('{ids}', selection.ids.join(SELECTED_ID_SEPARATOR)).replace(
+				'{base}',
+				base,
+			)
+		: NOTHING_SELECTED_DETAIL.replace('{base}', base).replace(
+				'{paths}',
+				counted({ count: selection.changed, noun: 'path' }),
+			)
+}
+
+/** The line of a recorded step from its status, counts and reason. */
+function lineOfUnscopedStep(step: RecordedStep): CardGateLine {
 	const { name } = step
 	if (step.status === 'not-run') return { name, status: 'warning', detail: NOT_RUN_DETAIL }
 	if (step.status === 'skipped')
@@ -420,9 +615,24 @@ function lineOfStep(step: RecordedStep): CardGateLine {
 		return {
 			name,
 			status: 'failed',
-			detail: [counts, step.reason ?? ''].filter(Boolean).join(DETAIL_SEPARATOR),
+			detail: [counts, step.reason ?? '', step.failing && failingDetail(step.failing)]
+				.filter(Boolean)
+				.join(DETAIL_SEPARATOR),
+			...(step.failing && { failing: step.failing }),
 		}
 	return { name, status: 'passed', detail: counts || (step.note ?? '') }
+}
+
+/** `failing <n>: <first 3 paths>`, then `, +<k> more` when there are more. */
+function failingDetail(failing: readonly string[]): string {
+	const shown = failing.slice(0, FAILING_PATHS_SHOWN)
+	const more = failing.length - shown.length
+	return FAILING_DETAIL.replace('{count}', String(failing.length)).replace(
+		'{paths}',
+		[...shown, ...(more > 0 ? [FAILING_MORE.replace('{more}', String(more))] : [])].join(
+			FAILING_PATH_SEPARATOR,
+		),
+	)
 }
 
 /** A gate reason in a few words: a missing npm script named by itself. */

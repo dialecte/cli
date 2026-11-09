@@ -37,6 +37,7 @@ export function recomputeHandoverCard(params: {
 		probe: params.probe,
 		done,
 		abandoned: readAbandonedMarker(folder) !== undefined,
+		release: lotsFile.release === true,
 	})
 }
 

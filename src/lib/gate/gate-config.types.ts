@@ -13,4 +13,11 @@ export type GateStep = {
 	changedOnly?: boolean
 	/** The package's `generatedDocs` are restored byte for byte after this step, whatever its result. */
 	restoresGeneratedDocs?: boolean
+	/** The step runs only what the change affects; its hash carries the mark. Never with `changedOnly`. */
+	scoped?: boolean
+	/** The step is heavy: a mark for the reader, left out of the command hash. */
+	heavy?: boolean
 }
+
+/** The lists of `dialecte.gate`, by name. */
+export type GateListName = 'fast' | 'full' | 'release'

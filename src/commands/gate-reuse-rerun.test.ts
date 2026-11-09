@@ -6,6 +6,7 @@ import { FAKE_VITEST } from '../../test/fake-vitest.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import {
 	FAST_RECORD_FILE,
+	FULL_RECORD_FILE,
 	SCRATCH_REPOSITORY_TIMEOUT,
 } from '../../test/scratch-checks.constants.ts'
 import {
@@ -47,6 +48,29 @@ describe(
 				'run',
 				'run src/c.test.ts src/a.test.ts src/b.test.ts --no-file-parallelism',
 			])
+		})
+
+		it('a flaky green gate --full, then a second gate --full that reuses it → the second record still holds the failing files of the flaky step', async () => {
+			const root = createGatePackage({
+				full: [{ name: 'tests', run: 'sh ./vitest run', counts: 'tests' }],
+				files: { vitest: FAKE_VITEST, mode: 'flaky', '.gitignore': 'node_modules\ncalls.txt\n' },
+			})
+
+			const first = await runGateIn({ cwd: root, argv: ['--full'] })
+			const recordedFailing = readRecordFile<GateRecord>({
+				root,
+				name: FULL_RECORD_FILE,
+			})?.steps.find((step) => step.name === 'tests')?.failing
+			const second = await runGateIn({ cwd: root, argv: ['--full'] })
+
+			expect(first.exitCode).toBe(0)
+			expect(recordedFailing).toEqual(['src/a.test.ts', 'src/b.test.ts', 'src/c.test.ts'])
+			expect(second.output).toMatch(/^reused: gate --full green on this tree/m)
+			expect(
+				readRecordFile<GateRecord>({ root, name: FULL_RECORD_FILE })?.steps.find(
+					(step) => step.name === 'tests',
+				)?.failing,
+			).toEqual(recordedFailing)
 		})
 
 		it('a green record of the same tree made by another gate command (a default changed by an upgrade) → not reused, the steps run; the same record under this command → reused', async () => {

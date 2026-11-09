@@ -340,7 +340,7 @@ describe(
 	'handover run --rehearse: when the plan cannot be made or the store is damaged',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('the plan cannot be made (the gate steps are not a list in the committed package.json) → every lot is rehearsed with no plan: <the error>, the card printed, exit 0', async () => {
+		it('the gate steps are not a list in the committed package.json → refused before the guards: the gate config message, exit 2, no lot rehearsed', async () => {
 			const root = createHookedPackage({
 				hookCounter: createCounter(),
 				gateCounter: createCounter(),
@@ -361,12 +361,13 @@ describe(
 
 			const result = await runFolder({ out, argv: ['--rehearse'] })
 
-			expect(result.exitCode).toBe(0)
-			expect(result.text).toMatch(
-				lotLinePattern({ index: 1, count: 1, decision: 'rehearse', reason: /no plan: .+/ }),
+			expect(result.exitCode).toBe(2)
+			expect(result.text).toMatch(/full: a list of steps/)
+			expect(result.text).toMatch(/nothing staged, nothing committed/)
+			expect(result.text).not.toMatch(
+				lotLinePattern({ index: 1, count: 1, decision: 'rehearse', reason: /.+/ }),
 			)
 			expect(result.text).not.toContain(SKIPPED_LINE)
-			expect(result.text).toContain('hand-over:')
 		})
 
 		it('a malformed dialecte.gate in the package.json a hand-over commits → the written card is printed, no crash', async () => {

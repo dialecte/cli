@@ -2,8 +2,10 @@
  * What `dialecte gate` and `dialecte rules` record in the worktree's git folder (`git rev-parse --git-path
  * <file>`), and the gate lines the hand-over card prints from those records.
  */
-import type { GateMode, StepCounts, StepStatus } from '../gate/gate.types.ts'
+import type { UsedGateBase } from '../gate/gate-base.types.ts'
+import type { GateMode, StepCounts, StepSelection, StepStatus } from '../gate/gate.types.ts'
 import type { JudgedCase } from '../tdd/tdd.types.ts'
+import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
 
 /** One step of a gate run as recorded: the hygiene is no step, never recorded. */
 export type RecordedStep = {
@@ -19,6 +21,12 @@ export type RecordedStep = {
 	cases?: JudgedCase[]
 	/** A hook's test step `gate --hook` answered from the green `gate --full` record of this time and short HEAD. */
 	reused?: RecordOrigin
+	/** A scoped step that wrote a valid selection: what it recorded. */
+	selection?: StepSelection
+	/** The configured step is heavy (true only, never false). */
+	heavy?: true
+	/** A failed or flaky step: every file it named as failing, sorted, unique. */
+	failing?: string[]
 }
 
 /** The run a record names: when it ran (ISO 8601) and its HEAD (full, or the short sha a hook's line printed). */
@@ -66,6 +74,8 @@ export type GateRecord = {
 	key?: CheckKey
 	/** The run answered from the record of `at` and `head` (full sha) instead of running its steps. */
 	reused?: RecordOrigin
+	/** The gate base the run resolved; absent when no scoped step was configured. */
+	base?: UsedGateBase
 	/** A rehearsal's hook record: it ran in a scratch clone of the repository. */
 	origin?: 'rehearsal'
 }
@@ -111,4 +121,23 @@ export type CardGateLine = {
 	 * says it once. Absent on a gate line, a live row, and a record made at HEAD or a commit HEAD holds.
 	 */
 	source?: string
+	/** A scoped step's line: the selection its record holds (`--json`). */
+	selection?: StepSelection
+	/** A failed step's line: the whole list of files it named as failing (`--json`). */
+	failing?: string[]
 }
+
+/**
+ * What the card reads of the package's gate config once: the base it reads records at (absent without a scoped
+ * step), the command hash of each mode there, or the message of a config the cli cannot run.
+ */
+export type CardGateConfig = {
+	base?: UsedGateBase
+	/** Absent when the config cannot be read: no stored record can be told current then. */
+	hashes?: ModeCommandHashes
+	/** The `GateConfigError` message of a config the cli cannot run. */
+	invalid?: string
+}
+
+/** How a record's gate base reads against the card's: the same, an ancestor of it, or neither. */
+export type RecordBaseCheck = 'same' | 'older' | 'moved'

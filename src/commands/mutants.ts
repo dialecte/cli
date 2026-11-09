@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { computeStateTree } from '../lib/gate-records/state-hash.ts'
-import { currentBranchOf, listRepositoryFiles, readGit } from '../lib/git.ts'
+import { currentBranchOf, listRepositoryFiles, readGit, tryReadGit } from '../lib/git.ts'
 import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
 import { readMutationDeclaration } from '../lib/mutation/declaration.ts'
 import { seedIncrementalFile, storeIncrementalFile } from '../lib/mutation/incremental-cache.ts'
@@ -431,18 +431,9 @@ function baseOf(params: {
 function forkPointOf(params: { root: string; ref: string }): string | undefined {
 	const { root, ref } = params
 	return (
-		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] }) ??
-		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] })
+		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] })?.trim() ??
+		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] })?.trim()
 	)
-}
-
-/** git's answer, trimmed; undefined when git fails. */
-function tryReadGit(params: { root: string; args: string[] }): string | undefined {
-	try {
-		return readGit(params).trim()
-	} catch {
-		return undefined
-	}
 }
 
 function countsOf(report: MutationReport): RunCounts {

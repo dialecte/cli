@@ -235,13 +235,17 @@ export const COMMAND_MAP: CommandMap = {
 		usage: [
 			'dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]',
 			'dialecte gate --hook [--no-reuse]',
+			'dialecte gate --release [--base <ref>] [--no-reuse] [--json]',
 		],
 		notes: [
 			'steps from package.json "dialecte": { "gate", "generatedDocs" } or the defaults; --full then runs npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it); refuses while a hand-over script holds the repository',
 			"--fast - the default; starts with the worktree's hygiene (nothing staged, no stash on its branch, new files declared)",
 			'a failing vitest test step is rerun once, serially, on its failing files: passing there it is flagged flaky in parallel',
 			'a green record of the same tree, install and steps answers the steps after a fresh tdd step; --no-reuse runs them',
-			'--hook - in a commit hook, the test steps of --full, unless a green --full record of the committed tree, install and steps answers them',
+			'--hook - in a commit hook, the test steps of --full, unless a green --full record of the committed tree, install and steps answers them (or a green --release whose list covers full)',
+			'--release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json; its green record answers a hook, a rehearsal, contrib and the card when the list covers full (same name, run, counts and changedOnly for every full step)',
+			'scoped steps ("scoped": true) get DIALECTE_GATE_BASE, _TREE, _CHANGED (the changed paths byte for byte, NUL-separated, relative to the repository top as git diff --name-only names them; a declared failing path is relative to the package root) and _SELECTION, where they write { schema: 1, base, tree, changed, selected: [{ id, reasons }], skipped: [{ id, reason }] } (both lists required, reasons non-empty); the base is --base <ref>, else the merge-base with "dialecte.baseBranch" (default main), else the empty tree; select from the working files; without the gate (no DIALECTE_GATE_SELECTION): select everything',
+			'a scoped step: an empty selection exits 0 without starting vitest (nothing selected since <base> (<n> paths changed)); a non-empty one on a counts: "tests" step that runs no test fails; a failed scoped step counting tests is rerun once serially on a test failure (a failed test, a FAIL line, vitest\'s error markers), whatever runs it: the failing files (after -- through npm run), then --no-file-parallelism, and it must select the same ids (one vitest invocation, or --passWithNoTests on each); the selection may declare "failing": [paths relative to the package] the record keeps with the ones the output names; "heavy": true marks a heavy suite, outside the command hash',
 		],
 		exitCodes: [],
 		example: 'dialecte gate --full',
@@ -312,6 +316,7 @@ export const COMMAND_MAP: CommandMap = {
 		summary: 'The guarded commit-by-lots hand-over a human runs, from a lots file',
 		usage: [
 			'dialecte handover write <lots.json> [--out <dir>] [--rehash] [--json]',
+			'dialecte handover write <lots.json> --release [--out <dir>] [--rehash] [--json]',
 			'dialecte handover show [<name|folder>] [--json]',
 			'dialecte handover run [<name|folder>] [--rehearse [--keep] [--full]] [--resume-merge]',
 			'dialecte handover abandon [<name|folder>]',

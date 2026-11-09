@@ -249,3 +249,50 @@ describe('runChild', { timeout: 20_000 }, () => {
 		expect(pids.filter(isAlive)).toEqual([])
 	})
 })
+
+const PARENT_VARIABLE = 'DIALECTE_TEST_UNSET_PARENT_VARIABLE'
+const OTHER_VARIABLE = 'DIALECTE_TEST_UNSET_OTHER_VARIABLE'
+const PRINT_VARIABLES = `echo "parent=\${${PARENT_VARIABLE}-absent} other=\${${OTHER_VARIABLE}-absent}"`
+
+describe('runChild unset', { timeout: 20_000 }, () => {
+	it('a variable of the parent process named in unset → absent in the child; left alone without unset; another variable kept', async () => {
+		process.env[PARENT_VARIABLE] = 'present'
+		process.env[OTHER_VARIABLE] = 'kept'
+		try {
+			function run(unset?: string[]) {
+				return runChild({
+					command: 'sh',
+					args: ['-c', PRINT_VARIABLES],
+					cwd: temporaryFolder('dialecte-child-'),
+					unset,
+				})
+			}
+
+			const withUnset = await run([PARENT_VARIABLE])
+			const without = await run()
+
+			expect(withUnset.output.trim()).toBe('parent=absent other=kept')
+			expect(without.output.trim()).toBe('parent=present other=kept')
+		} finally {
+			delete process.env[PARENT_VARIABLE]
+			delete process.env[OTHER_VARIABLE]
+		}
+	})
+
+	it('unset beside an environment variable → the given variable is present in the child, the unset one absent', async () => {
+		process.env[PARENT_VARIABLE] = 'present'
+		try {
+			const result = await runChild({
+				command: 'sh',
+				args: ['-c', PRINT_VARIABLES],
+				cwd: temporaryFolder('dialecte-child-'),
+				environment: { [OTHER_VARIABLE]: '1' },
+				unset: [PARENT_VARIABLE],
+			})
+
+			expect(result.output.trim()).toBe('parent=absent other=1')
+		} finally {
+			delete process.env[PARENT_VARIABLE]
+		}
+	})
+})

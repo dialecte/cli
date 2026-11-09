@@ -12,6 +12,9 @@ export const UNRECORDED_STEPS: readonly string[] = ['hygiene']
 /** A path no state hash holds: the orchestrator's `.dialecte/` folder, at any depth. */
 export const STATE_EXCLUDED_PATTERN = /(^|\/)\.dialecte\//
 
+/** The third entry of a scoped step in a gate command hash: `[name, run, "scoped"]`. */
+export const SCOPED_STEP_HASH_MARK = 'scoped'
+
 /** The folder (in the system's temporary folder) a commit's index is copied to for `git write-tree`. */
 export const COMMIT_INDEX_FOLDER_PREFIX = 'dialecte-commit-index-'
 
@@ -42,6 +45,48 @@ export const CONTRIB_KEY_CHANGED_SUFFIX = ' (the install or the contrib rows cha
 /** A gate (or rules) never run on the worktree. */
 export const NEVER_RUN_DETAIL = 'never run on this tree'
 
+/** A scoped step's selection on its card line: `{ids}` joined by `, `, `{base}` the short base it selected against. */
+export const SELECTED_DETAIL = 'selected {ids} since {base}'
+
+/** A scoped step that selected nothing: `{paths}` how many changed paths it judged (`3 paths`). */
+export const NOTHING_SELECTED_DETAIL = 'nothing selected since {base} ({paths})'
+
+/** Between the ids of `SELECTED_DETAIL`. */
+export const SELECTED_ID_SEPARATOR = ', '
+
+/** After a selection made at an older base than the card's, an ancestor of it, on the tree the card checks. */
+export const OLDER_BASE_SUFFIX = ' (older base)'
+
+/** After a line of a record whose base is no ancestor of the card's: it no longer answers (stale). */
+export const BASE_MOVED_SUFFIX = ' (the base moved since)'
+
+/** The base a commit hook's record says its hook used: `{base}` short. */
+export const HOOK_BASE_DETAIL = 'base {base}'
+
+/** The card's failed gate line of a config the cli cannot run: `{message}` is the `GateConfigError`'s. */
+export const INVALID_GATE_CONFIG_DETAIL = 'invalid gate config: {message}'
+
+/** The required row of a release hand-over (`handover write --release`), apart from contrib's `release` row. */
+export const GATE_RELEASE_LINE_NAME = 'gate release'
+
+/** The `gate release` row when a green release record of the checked tree holds the current release key. */
+export const RELEASE_GREEN_DETAIL = 'green on this tree'
+
+/** The `gate release` row of a failed release record of the checked tree: `{step}` the step it failed at. */
+export const RELEASE_FAILED_DETAIL = 'failed at {step}'
+
+/** The end of a failed step's card row: `{count}` files it named failing, `{paths}` the first ones (and how many more). */
+export const FAILING_DETAIL = 'failing {count}: {paths}'
+
+/** How many of a failed step's failing files its card row names. */
+export const FAILING_PATHS_SHOWN = 3
+
+/** After the paths a failed step's card row names, when it named more: `{more}` how many. */
+export const FAILING_MORE = '+{more} more'
+
+/** Between the paths of `FAILING_DETAIL`. */
+export const FAILING_PATH_SEPARATOR = ', '
+
 /** The end of a gate line's detail read from a commit hook's record. */
 export const HOOK_RECORD_DETAIL = 'commit hook'
 
@@ -53,6 +98,9 @@ export const HOOK_REUSED_DETAIL = 'reused by the hook'
 
 /** The mode of the record `handover run` writes for a commit's hook. */
 export const HOOK_RECORD_MODE = 'hook'
+
+/** The mode of the record `gate --release` writes (`dialecte-gate-release.json`). */
+export const RELEASE_RECORD_MODE = 'release'
 
 /** After a record's detail when its state hash is not the worktree's now. */
 export const TREE_CHANGED_SUFFIX = ' (the tree changed since)'

@@ -29,6 +29,8 @@ export function runChild(params: {
 	input?: string
 	/** Added to this process's environment. */
 	environment?: Record<string, string>
+	/** Names of variables of this process's environment the child does not get (`environment` still adds its own). */
+	unset?: string[]
 	/** Each line the child prints, on either stream, as it comes. */
 	onLine?: (line: string) => void
 	/** Each time the child prints anything, a line or a part of one (a progress `\r`), with that text. */
@@ -56,7 +58,7 @@ export function runChild(params: {
 		const child = spawn(params.command, params.args, {
 			cwd: params.cwd,
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, ...params.environment },
+			env: { ...withoutVariables({ names: params.unset ?? [] }), ...params.environment },
 			detached: true,
 		})
 		const rootPid = child.pid
@@ -183,4 +185,11 @@ export function runChild(params: {
 		child.stdin.end(params.input ?? '')
 		schedule()
 	})
+}
+
+/** A copy of this process's environment without the variables `names`. */
+function withoutVariables(params: { names: readonly string[] }): NodeJS.ProcessEnv {
+	const environment = { ...process.env }
+	for (const name of params.names) delete environment[name]
+	return environment
 }

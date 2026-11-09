@@ -15,6 +15,8 @@ export type LotsFile = {
 	/** The gates run before the hand-over, with their real counts: written in the script's header. */
 	gates?: string
 	lots: Array<LotPlan | MergeLotPlan>
+	/** A release hand-over (`handover write --release`): its card requires a green `gate --release` of the tree. */
+	release?: boolean
 }
 
 export type LotPlan = {
@@ -335,8 +337,13 @@ export type RehearsalPlanContext = {
 	/** The branch the hand-over commits on. */
 	branch: string
 	installed: Pick<CheckKey, 'lockHash' | 'linked'>
-	/** The command hash a record of each mode must hold to be reused. */
-	commands: { full: string; hook: string }
+	/**
+	 * The command hash a record of each mode must hold to be reused, at the hand-over base; `release` only when the
+	 * release list covers `full` (its scoped steps against the empty tree).
+	 */
+	commands: { full: string; hook: string; release?: string }
+	/** The hand-over base a record's own base must equal; absent when no gate list holds a scoped step. */
+	base?: string
 	/** What the commit hook's text names that stages files, if anything. */
 	stages: string | undefined
 }
