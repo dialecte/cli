@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09
+
 ### Changed
 
 - **Breaking**: the review rounds' commands move under `lot`, with the same arguments: `record review` is now `lot finding`, `record decision` is now `lot decide`, `record snapshot` is now `lot snapshot`, `record choice` is now `lot choice`, `record standard` is now `lot standard`, `review delta` is now `lot delta`, and `recap` is now `lot recap`. What each prints starts with its new name (`lot finding: R1-1 open - ...`), and every hint the cli prints cites the new forms (the card's standard line: `dialecte lot standard <folder> consulted <note>`). The old forms run nothing and write nothing: each answers `renamed: dialecte <old> is now dialecte <new>` on stderr, then the full new command with the same arguments (with none, the new form's usage line), exit 2, until 2.0; `record` or `review` without a verb names every form that replaced it. Asked with `--help`, an old form prints that answer on stdout with the words given before `--help`, exit 0; with `--help --json`, `{ renamed: [{ old, new }] }`.

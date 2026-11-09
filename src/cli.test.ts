@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
+import { newestChangelogSection } from '../test/newest-changelog-section.ts'
 import { temporaryFolder } from '../test/scratch-repository.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -160,12 +161,8 @@ describe('the cli', { timeout: 30_000 }, () => {
 		expect(outside).toEqual([])
 	})
 
-	it('the CHANGELOG [Unreleased] has Breaking bullets naming the renames and the per-command help', () => {
-		const changelog = readFileSync(join(import.meta.dirname, '..', 'CHANGELOG.md'), 'utf8')
-		const start = changelog.indexOf('## [Unreleased]')
-		const end = changelog.indexOf('\n## [', start + 1)
-		const unreleased = start < 0 ? '' : changelog.slice(start, end < 0 ? undefined : end)
-		const breaking = unreleased
+	it('the newest CHANGELOG section has Breaking bullets naming the renames and the per-command help', () => {
+		const breaking = newestChangelogSection({ root: join(import.meta.dirname, '..') })
 			.split('\n')
 			.filter((line) => /^- \*\*Breaking:?\*\*/.test(line))
 			.join('\n')
