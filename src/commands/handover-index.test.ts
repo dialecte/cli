@@ -102,7 +102,9 @@ describe('a hand-over written from a numbered worktree', { timeout: HANDOVER_CAS
 		writeStoreHandover({ root: worktree, name: INDEXED_NAME, changes: CHANGES })
 
 		expect(boxLines(show({ cwd: worktree, argv: ['0171'] }).output)).toContainEqual(
-			expect.stringMatching(new RegExp(`^│ worktree ${worktree.replaceAll('.', '\\.')} +│$`)),
+			// relative to the workspace when the worktree is inside it (a shared temporary folder: Linux), else
+			// absolute (macOS, where the temporary folder is reached through a link): the line names the folder either way
+			expect.stringMatching(/^│ worktree (?:.*\/)?\.worktrees\/0171-repo-indexed +│$/),
 		)
 	})
 
