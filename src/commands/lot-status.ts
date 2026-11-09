@@ -13,13 +13,16 @@ import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
 import { readLotStateInput, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
-import { requireLot } from '../lib/store/resolve-lot.ts'
-import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
+import { noLotRefusal, requireLot } from '../lib/store/resolve-lot.ts'
+import { LINE_FEED, LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
+import { printableOf } from '../lib/store/text-escape.ts'
 import { STATUS_FLAGS, STATUS_MAX_LINES } from './lot-status.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { StoreEntry } from '../lib/handover/handover.types.ts'
 import type {
 	LinkCheck,
+	LotIdentity,
 	LotStateInput,
 	LotStateReport,
 	WorktreeCheck,
@@ -45,19 +48,35 @@ export function lotStatus(params: {
 		return lotUsageExit({ reason: `lot status takes one id, not also ${extra.join(' ')}`, json })
 	const required = requireLot({ argument: id, cwd: params.cwd, mode: 'read' })
 	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
-	const lotFolder = required.lot
-	const registry = registryOfLotFolder(lotFolder)
-	const input = readLotStateInput({ lotFolder, registry })
-	if (!input) return lotRefusalExit({ message: `no lot ${id}`, json })
-	const status = statusOf({ input, lotFolder, registry })
-	return { exitCode: 0, output: json ? JSON.stringify(status, null, 2) : statusText(status) }
+	const status = lotStatusOf({ lotFolder: required.lot })
+	if (!status) return lotRefusalExit({ message: noLotRefusal(id), json })
+	return { exitCode: 0, output: json ? JSON.stringify(status, null, 2) : lotStatusText(status) }
 }
 
-/** The status JSON of a lot (33S section 7, D17). */
-function statusOf(params: {
+/**
+ * The status JSON of the lot folder (33S section 7, D17), read from its records; undefined when it holds no
+ * readable identity. Reads files only.
+ */
+export function lotStatusOf(params: {
+	lotFolder: string
+	/** The registry's entries, read once by a reader of many lots; read here when left out. */
+	entries?: readonly StoreEntry[]
+}): LotStatusJson | undefined {
+	const { lotFolder } = params
+	const registry = registryOfLotFolder(lotFolder)
+	const entries = params.entries ?? readStoreEntries(registry)
+	const input = readLotStateInput({ lotFolder, registry, entries })
+	return input && lotStatusOfInput({ input, lotFolder, entries })
+}
+
+/**
+ * The status JSON of a lot (33S section 7, D17) from its records already read, with the registry's entries they
+ * were read with. Reads the worktree and its link only.
+ */
+export function lotStatusOfInput(params: {
 	input: LotStateInput
 	lotFolder: string
-	registry: string
+	entries: readonly StoreEntry[]
 }): LotStatusJson {
 	const { input, lotFolder } = params
 	const { identity } = input
@@ -86,7 +105,7 @@ function statusOf(params: {
 		effort: identity.effort,
 		simulated: identity.simulated,
 		scenario: identity.scenario,
-		checks: checksOf({ worktree: identity.worktree, lotFolder }),
+		checks: checksOf({ identity, lotFolder }),
 		notes: otherFolderNotes(params),
 		next,
 		also,
@@ -106,14 +125,19 @@ function questionsOf(params: {
 	}))
 }
 
-/** The worktree and its link as they are on disk; null for a simulated lot (no worktree). */
-function checksOf(params: { worktree: string | null; lotFolder: string }): LotStatusJson['checks'] {
-	if (params.worktree === null) return { worktree: null, link: null, wouldRefuse: [] }
-	const worktree: WorktreeCheck = isFolder(params.worktree) ? 'present' : 'missing'
+/**
+ * The worktree and its link as they are on disk; null for a simulated lot (no worktree), which carries instead the
+ * findings its start recorded (`wouldRefuse`); a real lot refuses at its start, so it holds none.
+ */
+function checksOf(params: { identity: LotIdentity; lotFolder: string }): LotStatusJson['checks'] {
+	const { identity } = params
+	if (identity.worktree === null)
+		return { worktree: null, link: null, wouldRefuse: identity.wouldRefuse ?? [] }
+	const worktree: WorktreeCheck = isFolder(identity.worktree) ? 'present' : 'missing'
 	return {
 		worktree,
 		link: linkCheckOf({
-			link: join(params.worktree, ...LOT_LINK_SEGMENTS),
+			link: join(identity.worktree, ...LOT_LINK_SEGMENTS),
 			lotFolder: params.lotFolder,
 		}),
 		wouldRefuse: [],
@@ -145,12 +169,12 @@ function linkCheckOf(params: { link: string; lotFolder: string }): LinkCheck {
 function otherFolderNotes(params: {
 	input: LotStateInput
 	lotFolder: string
-	registry: string
+	entries: readonly StoreEntry[]
 }): string[] {
 	const { identity } = params.input
 	if (identity.worktree === null) return []
 	const worktree = realPathOf(identity.worktree)
-	return readStoreEntries(params.registry)
+	return params.entries
 		.filter(
 			(entry) =>
 				entry.branch === identity.branch &&
@@ -163,10 +187,16 @@ function otherFolderNotes(params: {
 		)
 }
 
-/** The text form: the state line, the position, the open questions, the checks when not all present, next. */
-function statusText(status: LotStatusJson): string {
+/**
+ * The text form of a status, five lines at most: the state line, the position, the open questions, the checks
+ * when not all present, next and also.
+ */
+export function lotStatusText(json: LotStatusJson): string {
+	// every value the lines are made of, escaped once (a line feed in it prints as \u{a}, never as a line)
+	const status = printableOf(json)
+	const { station } = status.position ?? {}
 	const position = status.position
-		? `step ${status.position.step} of ${status.position.of}${status.position.station ? `, ${status.position.station}` : ''}${status.position.round === null ? '' : `, round ${status.position.round}`}`
+		? `step ${status.position.step} of ${status.position.of}${station ? `, ${station}` : ''}${status.position.round === null ? '' : `, round ${status.position.round}`}`
 		: undefined
 	const [first] = status.questions
 	const missing = checksText(status.checks)
@@ -179,7 +209,7 @@ function statusText(status: LotStatusJson): string {
 	const state = `${status.lot} ${status.state} since ${status.since}${status.limit ? ' (limit: run again)' : ''}`
 	// the position is the line given up when every other one is needed
 	const withPosition = position && rest.length + 2 <= STATUS_MAX_LINES ? [position] : []
-	return [state, ...withPosition, ...rest].join('\n')
+	return [state, ...withPosition, ...rest].join(LINE_FEED)
 }
 
 /** The checks that are not `present`, as `worktree missing, link dangling`; empty when all are. */

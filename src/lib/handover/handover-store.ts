@@ -6,7 +6,7 @@
  * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 import { commonGitFolderOf } from '../git.ts'
 import { publishOnce, recordText, replaceWhole, storeRefusal } from '../store/publish.ts'
@@ -18,10 +18,10 @@ import {
 	readStoreEntries,
 	readStoreEntry,
 	registeredEntryOf,
+	registryOfCommonFolder,
 } from './handover-store-read.ts'
 import {
 	HANDOVER_LOT_REFUSALS,
-	HANDOVER_STORE_FOLDER,
 	STORE_INDEX_ARGUMENT_PATTERN,
 	STORE_NAME_COUNTER_PATTERN,
 	STORE_NAME_DATE_PATTERN,
@@ -43,7 +43,7 @@ export { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
 
 /** The store of the repository `root` belongs to (a linked worktree answers its main repository's). */
 export function handoverStoreOf(root: string): string {
-	return join(commonGitFolderOf(root), HANDOVER_STORE_FOLDER)
+	return registryOfCommonFolder(commonGitFolderOf(root))
 }
 
 /** The store of `root`, or undefined when `root` is in no repository (gone, or never one). */

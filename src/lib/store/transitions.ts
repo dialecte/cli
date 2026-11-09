@@ -44,6 +44,22 @@ export function appendTransition(params: {
 	/** Called once, after the first read of the last transition and before its publish. */
 	afterRead?: InterleavingSeam
 }): Transition {
+	const transition = appendTransitionIfAny(params)
+	if (transition === undefined)
+		throw new Error(`no transition was published in ${params.lotFolder}`)
+	return transition
+}
+
+/**
+ * `appendTransition` for a writer that may find nothing to publish: `next` returns undefined when, the last
+ * transition read (again, after a lost number), there is nothing to add; then nothing is published.
+ */
+export function appendTransitionIfAny(params: {
+	lotFolder: string
+	next: (params: { last: Transition | undefined }) => TransitionDraft | undefined
+	/** Called once, after the first read of the last transition and before its publish. */
+	afterRead?: InterleavingSeam
+}): Transition | undefined {
 	mkdirSync(join(params.lotFolder, STORE_FILES.transitions), { recursive: true })
 	let seam = params.afterRead
 	for (;;) {
@@ -54,7 +70,9 @@ export function appendTransition(params: {
 				`the lot ${params.lotFolder} holds transition ${TRANSITION_CEILING.toLocaleString(NUMBER_LOCALE)}: a transition ${seq.toLocaleString(NUMBER_LOCALE)} is refused`,
 			)
 		const last = readTransitions(params).at(-1)
-		const transition: Transition = { seq, ...params.next({ last }) }
+		const draft = params.next({ last })
+		if (draft === undefined) return undefined
+		const transition: Transition = { seq, ...draft }
 		seam?.()
 		seam = undefined
 		const published = publishOnce({

@@ -192,8 +192,12 @@ export const COMMAND_MAP: CommandMap = {
 		summary:
 			'A lot: started from a brief into the lot store, its declaration .dialecte/lot.json, and its review rounds in its lot or hand-over folder',
 		usage: [
-			'dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--json]',
+			'dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--simulate <scenario>] [--json]',
 			'dialecte lot status <id> [--json]',
+			'dialecte lot wait <id> [--timeout <seconds>] [--json]',
+			'dialecte lot answer <id> <question> "<answer>" [--by <who>] [--json]',
+			'dialecte lot result <id> [--json]',
+			'dialecte lot stop <id> --reason <text> [--by <who>] [--json]',
 			'dialecte lot exempt <reason>',
 			'dialecte lot accept <case> <reason>',
 			'dialecte lot revised <case|file|glob> <reason>',
@@ -210,7 +214,13 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		notes: [
 			'start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base commit with its .dialecte/lot link; --dry-run checks (the store list included), names the lot and the start to run next, writing nothing; exit 1 when the worktree cannot be made (the lot failed, nothing removed, next: lot stop); a link that cannot be made leaves the lot working with a note; every --json exit is JSON, a usage error { error, usage, next: null } included',
+			'--simulate - start a simulated lot that plays one of the scenarios (ready, question, person, two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry entry; it never blocks a real lot',
 			'status - the state derived from the lot records (working, input-required, ready, committed, canceled, failed), the worktree and link checks, and the exact next command (and an also: line); reads only; exit 2 for an unknown or ambiguous id',
+			'wait - returns the status as soon as the lot needs someone (exit 0 ready or committed, 1 failed or canceled, 3 input-required, 4 a limit) or --timeout is reached (5); a real lot is read every second and nothing written, a simulated lot is played to its next blocking point',
+			'answer - records the answer to an open question once (the same answer again: already); a person question needs --by <who>; runs the onAnswered hooks; next: lot wait',
+			'result - never blocks, writes nothing: a ready or committed lot gives its hand-over (card, show and run lines), worktree, branch and answered questions; failed or canceled the last reason (exit 1); input-required the open questions (3); working exit 5',
+			'stop - ends the lot: refused once committed; a pending hand-over is abandoned first (refused while its run is in progress), then a canceled transition with the reason and --by (caller without it); already canceled exits 0 writing nothing; moves no worktree and deletes nothing',
+			'--by - one line, not empty, checked before the lot is read (answer and stop)',
 			'<id> - an index (171 = 0171), a full name, a lot folder or .dialecte/lot; a write verb needs an index unique across every store of the store list, a word naming an existing folder is that folder',
 			'exempt|accept|revised|gone|mutation - write .dialecte/lot.json at the package root (tab JSON), keeping the rest',
 			'accept - a case is <file>::<name>',
@@ -225,9 +235,27 @@ export const COMMAND_MAP: CommandMap = {
 			"recap - the <details> part of a pull request from the hand-over's records only; writes nothing",
 			"close - for a committed or abandoned hand-over of the registry (by name or index): its worktree moved to .worktrees/_trash/ and removed in the background, its node_modules parked in .worktrees/_pool-<repository>-<n>; kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, dirty, a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known; the branch never touched; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
-		exitCodes: [],
+		exitCodes: [
+			'3  wait, result: input-required',
+			'4  wait: an agent failed or hit a limit, run again',
+			'5  wait --timeout, result: still working',
+		],
 		example:
 			'dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"',
+	},
+	inbox: {
+		family: 'Grow',
+		summary:
+			'What waits on someone across every lot store: questions for a person, questions for a caller, ready hand-overs, failed lots',
+		usage: ['dialecte inbox [--repository <name>] [--simulated] [--json]'],
+		notes: [
+			'reads every store of the store list and the store of the current folder, files only: one line per waiting lot (one per open question), grouped person, caller, ready, failed and by index, each with its exact next command; then working <n> · simulated <m>; a lot whose records do not read is a damaged line',
+			'--repository - the lots of the repository folder of that name only (the basename, exactly), the counts too',
+			'--simulated - the simulated lots that wait are listed in their groups (they are only counted without it)',
+			'--json - { waiting: the status of each waiting lot, working, simulated, damaged }',
+		],
+		exitCodes: ['1  nothing waits and nothing is damaged'],
+		example: 'dialecte inbox --repository scl',
 	},
 	gate: {
 		family: 'Check',

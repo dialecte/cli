@@ -26,14 +26,14 @@ import type { BriefWorkspace } from './brief-workspace.types.ts'
  * A workspace with a repository on `main` (one commit), a brief folder holding `plan.md`, and `XDG_STATE_HOME`
  * pointing into the test's own folder. The caller restores the environment (`vi.unstubAllEnvs`).
  */
-export function createBriefWorkspace(): BriefWorkspace {
+export function createBriefWorkspace(params: { repositoryFolder?: string } = {}): BriefWorkspace {
 	isolateGitConfig()
 	const root = temporaryFolder('dialecte-brief-')
 	const state = join(root, 'state')
 	vi.stubEnv('XDG_STATE_HOME', state)
 	const workspace = join(root, 'ws')
 	const repository = initializeRepository({
-		root: join(workspace, REPOSITORY_FOLDER),
+		root: join(workspace, params.repositoryFolder ?? REPOSITORY_FOLDER),
 		files: { ...REPOSITORY_FILES },
 	})
 	const briefFolder = join(workspace, BRIEF_FOLDER)
@@ -99,6 +99,8 @@ export function writeStoreLot(params: {
 	simulated?: boolean
 	later?: Transition[]
 	registry?: StoreEntry['state']
+	/** The repository the identity names; the fixed `/work/repo` of the records when left out. */
+	repository?: string
 }): string {
 	const { workspace, name } = params
 	const simulated = params.simulated ?? false
@@ -115,6 +117,7 @@ export function writeStoreLot(params: {
 		firstTransition: { ...transitionOf({ seq: 1, kind: 'start' }), simulated },
 		identity: {
 			...identityOf({ name }),
+			...(params.repository !== undefined && { repository: params.repository }),
 			branch: params.branch ?? `feat/${name}`,
 			simulated,
 			worktree: simulated ? null : join(workspace.workspace, '.worktrees', name),

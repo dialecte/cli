@@ -2,8 +2,18 @@ import type { LotStateName } from '../store/store.types.ts'
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
 import type { HandoverState } from './handover.types.ts'
 
+/** The states an entry of the hand-over registry records; the entry state type derives from it. */
+export const HANDOVER_ENTRY_STATES = ['pending', 'committed', 'abandoned'] as const
+
 /** Name of the lock file, in the repository's git folder, while a hand-over script waits or runs. */
 export const HANDOVER_LOCK_FILE = 'dialecte-handover.lock'
+
+/**
+ * Where git keeps the folder of each linked worktree, in the git common folder, and the file of that folder
+ * naming the worktree's `.git` (so a worktree's own git folder is found without git, its worktree gone or not).
+ */
+export const LINKED_WORKTREES_FOLDER = 'worktrees'
+export const LINKED_WORKTREE_GITDIR_FILE = 'gitdir'
 
 export const COMMIT_SCRIPT_FILE = 'commit.sh'
 

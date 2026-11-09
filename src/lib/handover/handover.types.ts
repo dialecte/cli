@@ -3,6 +3,7 @@ import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gat
 import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, TddReceipt } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
+import type { HANDOVER_ENTRY_STATES } from './handover.constants.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
 export type LotsFile = {
@@ -222,7 +223,7 @@ export type HandoverState =
 	| 'legacy script, state unknown'
 
 /** The state an entry of the store records: as last written, read only once its folder is gone. */
-export type HandoverEntryState = 'pending' | 'committed' | 'abandoned'
+export type HandoverEntryState = (typeof HANDOVER_ENTRY_STATES)[number]
 
 /**
  * An entry of the store (`<name>.json`): the hand-over folder (absolute, as written), the lots file's branch

@@ -35,6 +35,7 @@ import {
 } from './brief.constants.ts'
 import { overlappingOpenLots, readLotStateInput } from './lot-records.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
+import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
 import type {
 	BriefEffort,
@@ -43,7 +44,13 @@ import type {
 	BriefStep,
 	CheckBriefResult,
 } from './brief.types.ts'
-import type { LotIdentity, Refusal, RefusalRule, StoreLocation } from './store.types.ts'
+import type {
+	LotIdentity,
+	Refusal,
+	RefusalRule,
+	StoreLocation,
+	SynchronousPause,
+} from './store.types.ts'
 
 /**
  * The checks that need no file system and no git: `shape`, `scope`, `behaviour`, `lots-outside-scope`,
@@ -100,13 +107,18 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 /**
  * Reads the brief file and runs every check (33S section 5): the fields, the repository (its main checkout), the
  * branch, the base, the plan and its headings, the overlap with the open real lots of the repository's store.
- * Creates nothing. A check a shape fault makes impossible is skipped, every other runs.
+ * Creates nothing. A check a shape fault makes impossible is skipped, every other runs. For a simulated start the
+ * overlap and branch findings are returned in `wouldRefuse` and refuse nothing (33S section 5).
  */
 export function checkBrief(params: {
 	briefPath: string
 	cwd?: string
 	/** Injected instead of probed (D11). */
 	caseInsensitive?: boolean
+	/** A simulated start: the overlap and branch findings go to `wouldRefuse`. */
+	simulated?: boolean
+	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
+	pause?: SynchronousPause
 }): CheckBriefResult {
 	const briefPath = resolve(params.cwd ?? process.cwd(), params.briefPath)
 	const briefFolder = dirname(briefPath)
@@ -128,15 +140,19 @@ export function checkBrief(params: {
 	const caseInsensitive =
 		params.caseInsensitive ??
 		(repository.main !== undefined && probeCaseInsensitive({ path: repository.main }))
-	const refused = [
+	const faults = [
 		...fields.refused,
 		...repository.refused,
 		...branch,
 		...base.refused,
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
-		...overlapFaults({ brief: value, location, caseInsensitive }),
+		...overlapFaults({ brief: value, location, caseInsensitive, pause: params.pause }),
 	]
+	const findings = params.simulated
+		? faults.filter((fault) => SIMULATED_FINDING_RULES.includes(fault.rule))
+		: []
+	const refused = faults.filter((fault) => !findings.includes(fault))
 	const { brief } = fields
 	if (
 		refused.length > 0 ||
@@ -164,6 +180,7 @@ export function checkBrief(params: {
 			lots: brief.lots,
 			effort: brief.effort,
 			caseInsensitive,
+			wouldRefuse: findings,
 		},
 	}
 }
@@ -633,6 +650,7 @@ function overlapFaults(params: {
 	brief: Record<string, unknown>
 	location: StoreLocation | undefined
 	caseInsensitive: boolean
+	pause: SynchronousPause | undefined
 }): Refusal[] {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
@@ -642,6 +660,7 @@ function overlapFaults(params: {
 		registry: location.registry,
 		scope: entries,
 		caseInsensitive: params.caseInsensitive,
+		pause: params.pause,
 	}).map((overlap) =>
 		refusalOf({
 			field: 'scope',

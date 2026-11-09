@@ -47,6 +47,8 @@ export type CheckedBrief = {
 	effort: BriefEffort | undefined
 	/** Whether the repository sits on a case-insensitive volume (probed, or the injected value). */
 	caseInsensitive: boolean
+	/** A simulated start's overlap and branch findings, which refused nothing; none for a real start. */
+	wouldRefuse: Refusal[]
 }
 
 /** `checked` is defined exactly when `refused` is empty. */

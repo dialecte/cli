@@ -45,6 +45,11 @@ dialecte fixture <Tag>     # the smallest valid XML document holding an element,
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte lot start <brief.json>   # a lot from its brief: the lot folder in the store, the numbered worktree, .dialecte/lot
 dialecte lot status <id>   # its state derived from the records, the checks, the exact next command; reads only
+dialecte lot wait <id> [--timeout <seconds>]   # until the lot needs someone: ready, a question, failed, a limit
+dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open question of the lot, once
+dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
+dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over abandoned first, then canceled
+dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
 dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
 dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
@@ -1048,7 +1053,7 @@ the answer.
   (`lockfile`, `notChecked`, `problems`: `package`, `problem`; `command` when there are problems). The
   exit code stays 0 whatever the links and the lockfile say: the worktree exists, and its card says what
   to run.
-- `dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--json]` starts a lot from its brief
+- `dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
   (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`).
   Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
@@ -1078,6 +1083,63 @@ the answer.
   folder is that folder. The review rounds' verbs take `<id|folder>` the same way (a write needs an index
   unique across every store of the list), and a lot folder is accepted as their hand-over folder although it
   sits in the git folder.
+- The host loop: `lot start -> lot wait -> (lot answer -> lot wait)* -> lot result`. Every output names the exact
+  next command with the lot's full name, and the exit code says what the host does next (section below). Every
+  answer of `status`, `wait`, `answer`, `result` and `stop` goes to standard output, whatever its exit code; only
+  a usage error or a refusal (exit 2), and an answer hook that threw (exit 1 of `answer`), go to standard error.
+  `inbox` follows the same rule (its exit 1, nothing waits, is an answer). `lot start` stays outside it: a
+  refused start (exit 2) or a failed one (exit 1, the lot `failed`) is an error on standard error, naming the lot
+  and its next command. The answer line of a caller's question carries no `--by` (it defaults to `caller`); a person's names
+  `--by <who>`.
+- `dialecte lot wait <id> [--timeout <seconds>] [--json]` returns the status as soon as the lot needs someone:
+  exit 0 `ready` or `committed`, 1 `failed` or `canceled`, 3 `input-required` (at once, every time, costing
+  nothing), 4 when the last transition is a limit (run again), 5 when `--timeout` is reached while the lot still
+  works. A real lot is looked at every second, by a stat of its folders and of the registry, and read again only
+  when one changed, nothing written; on a terminal a `waiting <name> (<state>,
+  <elapsed>)` line refreshes (never under `--json`). A simulated lot is played up to its next blocking point.
+- `dialecte lot answer <id> <question> "<answer>" [--by <who>] [--json]` records the answer to an open question
+  once, then prints the status with `next: dialecte lot wait <name>`. The answer is one line; a question with
+  options takes one of them (compared trimmed, case-folded, recorded as the option is written); the same answer
+  again is `already`, another one is refused. A person's question needs `--by <who>` (not `caller`); a caller's
+  defaults to `caller`. `--by` is one line, not empty, checked before the lot is read (exit 2 naming `--by`).
+  A refusal's text form escapes the options, answer and `--by` it quotes (a line feed in them prints as
+  `\u{a}`, the refusal stays one line); `--json` carries them as stored.
+- `dialecte lot result <id> [--json]` never blocks and writes nothing. A `ready` or `committed` lot exits 0 with
+  `{ lot, state, handover: { name, folder, state, card, show, run }, worktree, branch, questions, simulated }`:
+  the card is the one `handover show --json` computes, `handover.state` the hand-over's own state read from git
+  (`committed` once its lots are committed, even before the registry says so), `questions` the answered ones
+  (`{ id, text, answer, by }`); a simulated lot's `handover` is `{ simulated: true }`, nothing to show or run.
+  `failed` and `canceled` exit 1 with `{ state, reason, at, position }` of the last transition, `input-required`
+  exits 3 with the open questions, `working` exits 5. The text form prints agent text escaped.
+- `dialecte lot stop <id> --reason <text> [--by <who>] [--json]` ends a lot. A `committed` lot is refused
+  (exit 2). A pending hand-over is abandoned first, as `handover abandon` does (`abandoned.json`, the registry
+  entry `abandoned`, the lock released when it names that hand-over); while its run is in progress, or once it is
+  committed, the stop is refused (exit 2) and publishes nothing. Then a `canceled` transition (cause `stop`, the
+  reason, `--by` or `caller`), and the registry is read once more: a hand-over registered meanwhile is abandoned
+  at once. A lot already `canceled` exits 0 writing nothing; one whose entry is still `pending` (a crash inside an
+  earlier stop) is repaired. It moves no worktree and deletes nothing; `lot close` and `worktree prune` let the
+  worktree go once the lot is canceled. The reason and `--by` are one line, not empty (exit 2).
+- `dialecte lot start --simulate <scenario>` starts a simulated lot that plays one of the scenarios (`ready`,
+  `question`, `person`, `two-questions`, `limit`, `failure`, `slow`) under `lot wait`, publishing the records a
+  real run would: it writes only its lot folder, one line of the store list and one index claim, never a branch,
+  a worktree or a registry entry, and never blocks a real lot. A host proves its loop on it before a real run.
+  With `--dry-run` it is the dry run of that simulated start: exit 0, the findings a real start would refuse for
+  listed (`wouldRefuse` in JSON, `worktree: null`), no worktree named, and `next` the same start with
+  `--simulate <scenario>`; nothing claimed or written.
+- `dialecte inbox [--repository <name>] [--simulated] [--json]` lists what waits on someone across every store of
+  the store list and the store of the current folder: one line per open question (person questions first, then
+  caller questions), then the ready lots, then the failed ones, by index within a group, each line
+  `<index>  <repository>  <branch>  <what>  <next command>`, where `<what>` is `question q<k> (person|caller)
+  <question text>`, `READY` or `FAILED  <reason>` and the next command is the lot's own (the answer line of that
+  question, `handover show`, `lot result` or `lot stop`); then `working <n> · simulated <m> (listed with
+  --simulated)`. `--repository` keeps the lots whose repository folder has that name, `--simulated` lists the
+  simulated lots that wait. A lot folder whose `identity.json` does not read, or whose records do not hold, is a
+  `damaged <folder>: <reason>` line. The records are checked once, on read: a question id is `q<k>` (k 1 or
+  more), an audience `caller` or `person`, a position's step, of and round non-negative integers, a transition's
+  `at` a time, an answer file's question its file's `q<k>`. Every lot verb refuses such a lot (exit 2), so no
+  forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
+  `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
+  damaged, 1 when nothing does, 2 for a usage error.
 - `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
   included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
   folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).

@@ -14,7 +14,7 @@ import {
 import { dirname, join, resolve } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
-import { HANDOVER_STORE_FOLDER } from '../handover/handover.constants.ts'
+import { registryOfCommonFolder } from '../handover/handover-store-read.ts'
 import { readIdentity } from './identity.ts'
 import { publishOnce, recordText, removeDeadLeftovers } from './publish.ts'
 import {
@@ -50,13 +50,13 @@ export function locateStore(params: { from: string }): StoreLocation | undefined
 	return {
 		common,
 		store: join(common, STORE_FOLDER),
-		registry: join(common, HANDOVER_STORE_FOLDER),
+		registry: registryOfCommonFolder(common),
 	}
 }
 
 /**
- * Builds the lot folder `<store>/<name>`: `.<name>.tmp-<pid>/` holding `brief.json`, `plan.md` and the first
- * transition, then `identity.json` last, then renamed to `<name>`. False, nothing replaced, when `<name>`
+ * Builds the lot folder `<store>/<name>`: `.<name>.tmp-<pid>/` holding `brief.json`, `plan.md`, a simulated lot's
+ * `scenario.json` and the first transition, then `identity.json` last, then renamed to `<name>`. False, nothing replaced, when `<name>`
  * exists. Leftover `.tmp-` folders of dead pids in `store` are removed first; a live pid's is kept.
  */
 export function publishLotFolder(params: {
@@ -65,6 +65,8 @@ export function publishLotFolder(params: {
 	/** The brief and the plan as read (bytes are published as they are). */
 	brief: RecordContent
 	plan: RecordContent
+	/** A simulated lot's `scenario.json` text; none for a real lot. */
+	scenario?: string
 	firstTransition: Transition
 	identity: LotIdentity
 	/** Called with the temporary folder once everything but `identity.json` is in it. */
@@ -81,6 +83,8 @@ export function publishLotFolder(params: {
 	mkdirSync(join(temporary, STORE_FILES.transitions), { recursive: true })
 	publishRecord({ path: join(temporary, STORE_FILES.brief), text: params.brief })
 	publishRecord({ path: join(temporary, STORE_FILES.plan), text: params.plan })
+	if (params.scenario !== undefined)
+		publishRecord({ path: join(temporary, STORE_FILES.scenario), text: params.scenario })
 	publishRecord({
 		path: transitionPathOf({ lotFolder: temporary, seq: params.firstTransition.seq }),
 		text: recordText(params.firstTransition),

@@ -98,7 +98,7 @@ describe('the command map', () => {
 	})
 
 	const LOT_NEW_LINES = [
-		'dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--json]',
+		'dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--simulate <scenario>] [--json]',
 		'dialecte lot status <id> [--json]',
 	]
 	for (const line of LOT_NEW_LINES)

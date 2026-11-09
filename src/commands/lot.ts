@@ -6,10 +6,12 @@
  * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
  * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`;
  * `lot close <hand-over name|index>...` by `runLotClose`; `lot start <brief.json>` by `startLot`, `lot status <id>`
- * by `lotStatus`. A review rounds' verb takes `<id|folder>`: an id resolves to its lot folder first.
+ * by `lotStatus`, `lot answer <id> <question> "<answer>"` by `lotAnswer`, `lot result <id>` by `lotResult`, `lot stop <id> --reason
+ * <text>` by `lotStop`; `lot wait <id>` by `waitLot`, the one
+ * asynchronous verb (`run` awaits it; `runLot` stays synchronous for the others). A review rounds' verb takes `<id|folder>`: an id resolves to its lot folder first.
  * The usage is the map's lot section.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
@@ -21,29 +23,59 @@ import { resolveLot } from '../lib/store/resolve-lot.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
+import { lotAnswer } from './lot-answer.ts'
 import { runLotClose } from './lot-close.ts'
+import { lotResult } from './lot-result.ts'
 import { startLot } from './lot-start.ts'
 import { lotStatus } from './lot-status.ts'
+import { lotStop } from './lot-stop.ts'
+import { printsOnStandardError } from './lot-streams.ts'
+import { waitLot } from './lot-wait.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
 
 import type { DeclaredRenamedForm } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { HandoverProbe } from '../lib/handover/handover.types.ts'
 import type { ResolveMode } from '../lib/store/store.types.ts'
 import type { LotCaseEntry, LotCaseList, LotGoneEntry } from '../lib/tdd/tdd.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = runLot({ cwd: process.cwd(), argv })
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+	const [verb, ...words] = argv
+	// `wait` sleeps between its reads: the one verb that runs asynchronously
+	const result =
+		verb === 'wait'
+			? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
+			: runLot({ cwd: process.cwd(), argv, cliPath: realpathSync(process.argv[1]) })
+	;(printsOnStandardError({ verb, exitCode: result.exitCode }) ? console.error : console.log)(
+		result.output,
+	)
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runLot(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+export function runLot(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	/** The repository-cli probe of `lot result`'s card; the real one when left out. */
+	probe?: HandoverProbe
+	/** The cli named in `lot result`'s card when the repository's own cannot run hand-overs. */
+	cliPath?: string
+}): CommandResult {
 	const [verb, ...words] = params.argv
 	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
+	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'stop') return lotStop({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'result')
+		return lotResult({
+			cwd: params.cwd,
+			argv: words,
+			probe: params.probe,
+			cliPath: params.cliPath,
+		})
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined

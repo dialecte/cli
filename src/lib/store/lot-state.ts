@@ -19,6 +19,22 @@ export function lotState(input: LotStateInput): LotStateReport {
 	}
 }
 
+/**
+ * Whether `abandoned.json` is the only evidence of `canceled` (no registry entry `abandoned` or `committed`, no
+ * `canceled` transition, no live run marker): the residual seam of row 2, where a reader re-reads once after a
+ * pause before acting (33S section 4). Pure.
+ */
+export function isCanceledByMarkerOnly(input: LotStateInput): boolean {
+	const entryState = input.registryEntry?.state
+	return (
+		input.abandonedMarker !== undefined &&
+		input.runMarker === undefined &&
+		entryState !== 'abandoned' &&
+		entryState !== 'committed' &&
+		input.transitions.at(-1)?.state !== 'canceled'
+	)
+}
+
 /** The state, and whether the registry entry is what decided it. */
 function stateOf(params: { input: LotStateInput; hasOpenQuestion: boolean }): {
 	state: LotStateName

@@ -9,6 +9,7 @@ import { explain } from './commands/explain.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
+import { run as inbox } from './commands/inbox.ts'
 import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
 import { run as models } from './commands/models.ts'
@@ -48,6 +49,7 @@ export const COMMANDS = {
 	new: newVerb,
 	handover,
 	lot,
+	inbox,
 	mutants,
 	worktree,
 	record: renamedCommand('record'),

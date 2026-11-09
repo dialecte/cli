@@ -24,6 +24,7 @@ import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
+import { SCENARIOS } from '../lib/store/scenarios.constants.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -246,15 +247,30 @@ const OPTION_ROWS: OptionRow[] = [
 	{ title: 'no positional', words: () => [] },
 	{ title: 'two positionals', words: (briefPath) => [briefPath, `${briefPath}.more`] },
 	{ title: 'an unknown option', words: (briefPath) => [briefPath, '--bogus'] },
-	{
-		title: '--simulate is an unknown option until S2',
-		words: (briefPath) => [briefPath, '--simulate', 'x'],
-	},
 	{ title: 'a bad --effort', words: (briefPath) => [briefPath, '--effort', 'extreme'] },
 	{ title: '--effort without a value', words: (briefPath) => [briefPath, '--effort'] },
 ]
 
 describe('lot start, the options (D8)', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('--simulate with an unknown scenario -> exit 2 naming every scenario, nothing created', () => {
+		const start = createStartWorkspace()
+		const result = runLot({
+			cwd: start.cwd,
+			argv: ['start', start.workspace.briefPath, '--simulate', 'x'],
+			now: START_NOW,
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			named: Object.keys(SCENARIOS).filter((name) => result.output.includes(name)),
+			created: createdBy(start),
+		}).toEqual({
+			exitCode: 2,
+			named: Object.keys(SCENARIOS),
+			created: { claims: [], lots: [], worktrees: [], storeList: undefined },
+		})
+	})
+
 	for (const row of OPTION_ROWS)
 		it(`${row.title} -> exit 2 with the lot usage, nothing created`, () => {
 			const start = createStartWorkspace()

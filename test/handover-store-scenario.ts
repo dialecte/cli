@@ -25,6 +25,7 @@ import { handoverLockPath } from '../src/lib/handover/handover-lock.ts'
 import { HANDOVER_STORE_FOLDER } from '../src/lib/handover/handover.constants.ts'
 import { createFakeClock } from './fake-clock.ts'
 import {
+	ABANDONED_MARKER_TIME,
 	CLI_SOURCE,
 	STORE_BRANCH,
 	STORE_NOW,
@@ -245,7 +246,7 @@ export function commitLotByHand(params: { root: string; paths: string[]; message
 export function markAbandoned(params: { folder: string; file: string }): void {
 	writeFileSync(
 		join(params.folder, params.file),
-		`${JSON.stringify({ at: '2026-11-04T10:00:00.000Z' })}\n`,
+		`${JSON.stringify({ at: ABANDONED_MARKER_TIME })}\n`,
 	)
 }
 

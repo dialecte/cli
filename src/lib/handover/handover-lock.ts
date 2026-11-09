@@ -5,10 +5,10 @@
  * this repository (its lots file names this repository) and no real run of it is in progress; else it
  * refuses.
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
+import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { gitFolderOf, readGit } from '../git.ts'
 import { readRunMarker, runningRefusal } from './handover-run-marker.ts'
 import {
@@ -17,6 +17,8 @@ import {
 	HANDOVER_HOLD_REFUSAL,
 	HANDOVER_LOCK_FILE,
 	HANDOVER_RUNNING_REFUSAL,
+	LINKED_WORKTREE_GITDIR_FILE,
+	LINKED_WORKTREES_FOLDER,
 } from './handover.constants.ts'
 import { readLotsFile } from './read-lots-file.ts'
 
@@ -26,9 +28,46 @@ export function handoverLockPath(root: string): string {
 	return join(gitFolderOf(root), HANDOVER_LOCK_FILE)
 }
 
+/**
+ * The lock path of the linked worktree `worktree` of the repository whose git common folder is `commonFolder`,
+ * found without git: the folder of `<common>/worktrees/` whose `gitdir` names `<worktree>/.git`. Undefined when git
+ * keeps no folder for it any more (the worktree removed): there is no lock left to release.
+ */
+export function linkedWorktreeLockPath(params: {
+	commonFolder: string
+	worktree: string
+}): string | undefined {
+	const folder = join(params.commonFolder, LINKED_WORKTREES_FOLDER)
+	if (!existsSync(folder)) return undefined
+	// through the ancestors: a worktree removed by hand keeps its git folder, its path resolves no more
+	const worktree = realPathThroughAncestors(params.worktree)
+	const own = readdirSync(folder).find(function namesTheWorktree(name) {
+		const named = gitdirTargetOf(join(folder, name))
+		return named !== undefined && realPathThroughAncestors(dirname(named)) === worktree
+	})
+	return own === undefined ? undefined : join(folder, own, HANDOVER_LOCK_FILE)
+}
+
+/**
+ * The `.git` a linked worktree's git folder names in its `gitdir` file, resolved against that folder when relative;
+ * undefined when the file is missing or cannot be read (the entry is skipped, never a throw).
+ */
+function gitdirTargetOf(entryFolder: string): string | undefined {
+	try {
+		const text = readFileSync(join(entryFolder, LINKED_WORKTREE_GITDIR_FILE), 'utf8').trim()
+		return text === '' ? undefined : resolve(entryFolder, text)
+	} catch {
+		return undefined
+	}
+}
+
 /** The script holding the repository, or undefined when none does. */
 export function readHandoverLock(root: string): string | undefined {
-	const lockPath = handoverLockPath(root)
+	return readLockFile(handoverLockPath(root))
+}
+
+/** The script the lock file at `lockPath` names, or undefined when there is no such file. */
+export function readLockFile(lockPath: string): string | undefined {
 	return existsSync(lockPath) ? readFileSync(lockPath, 'utf8').trim() : undefined
 }
 

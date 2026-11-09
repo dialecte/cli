@@ -40,7 +40,7 @@ type StatusRow = {
 	expected: Record<string, unknown>
 }
 
-const TO_ANSWER = `dialecte lot answer ${LOT} q1 "<answer>" --by <who>`
+const TO_ANSWER = `dialecte lot answer ${LOT} q1 "<answer>"`
 
 function questionOf(number: number): Record<string, unknown> {
 	return {
@@ -109,7 +109,7 @@ const STATUS_ROWS: StatusRow[] = [
 			state: 'input-required',
 			questions: [questionOf(2)],
 			answered: 1,
-			next: `dialecte lot answer ${LOT} q2 "<answer>" --by <who>`,
+			next: `dialecte lot answer ${LOT} q2 "<answer>"`,
 		}),
 	},
 	{

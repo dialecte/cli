@@ -1,4 +1,5 @@
 import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
+import type { QUESTION_AUDIENCES } from './store.constants.ts'
 
 /** The states the engine writes in a transition. `input-required` and `committed` are derived, never written. */
 export type EngineState = 'working' | 'ready' | 'failed' | 'canceled'
@@ -28,10 +29,13 @@ export type TransitionPosition = {
 	round: number | null
 }
 
+/** Who a question asks, as `QUESTION_AUDIENCES` lists it. */
+export type QuestionAudience = (typeof QUESTION_AUDIENCES)[number]
+
 /** A question as a transition carries it (`id` is `q<k>`). */
 export type QuestionRecord = {
 	id: string
-	audience: 'caller' | 'person'
+	audience: QuestionAudience
 	station: string
 	text: string
 	options?: string[]
@@ -71,6 +75,8 @@ export type LotIdentity = {
 	effort: { level: string; source: string }
 	simulated: boolean
 	scenario: string | null
+	/** Simulated lots only: the overlap and branch findings a real start would have been refused for (33S section 5). */
+	wouldRefuse?: Refusal[]
 	cli: string
 	briefHash: string
 	planHash: string
@@ -97,6 +103,21 @@ export type LotStateInput = {
 	/** The run marker of a live process (the reader leaves a dead one out). */
 	runMarker: HandoverRunMarker | undefined
 }
+
+/** What the lot readers take: the lot folder, its repository's registry, the registry's entries when read already. */
+export type LotStateReadParams = {
+	lotFolder: string
+	/** The repository's hand-over registry (`<git common folder>/dialecte-handover`). */
+	registry: string
+	/** The registry's entries as a reader of many lots read them once; the registry is read here without them. */
+	entries?: readonly StoreEntry[]
+}
+
+/** A lot read and its records validated: the input when every record holds, else why the lot is damaged. */
+export type CheckedLotState = { input: LotStateInput } | { damage: string }
+
+/** An answer file read: the question its file name holds (`q<k>`) and its record. */
+export type AnswerFile = { question: string; record: AnswerRecord }
 
 /** What `lotState` derives. */
 export type LotStateReport = {
@@ -171,6 +192,9 @@ export type LotResolution =
 
 /** What a verb that needs a lot makes of a word: the lot's folder (real path), or the refusal (exit 2). */
 export type LotRequirement = { lot: string } | { exitCode: 2; output: string }
+
+/** A pause that blocks the thread for `milliseconds` (the overlap check is synchronous; a test records it). */
+export type SynchronousPause = (milliseconds: number) => void
 
 /** What `storeListPath` reads: the environment (`XDG_STATE_HOME`) and the person's home folder. */
 export type StoreListLocation = { environment?: NodeJS.ProcessEnv; home?: string }

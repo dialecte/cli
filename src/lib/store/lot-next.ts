@@ -2,7 +2,7 @@
 import { shellQuote } from '../shell-quote.ts'
 import { NEXT_COMMANDS } from './store.constants.ts'
 
-import type { LotStateInput, LotStateReport, NextCommands } from './store.types.ts'
+import type { LotStateInput, LotStateReport, NextCommands, QuestionRecord } from './store.types.ts'
 
 /** The manual line: what a real working lot asks for while no runner exists (S). */
 export function manualNextOf(name: string): string {
@@ -12,6 +12,29 @@ export function manualNextOf(name: string): string {
 /** The real start a dry run asks for: the brief path as it was given, shell-quoted. */
 export function startNextOf(briefPath: string): string {
 	return NEXT_COMMANDS.start.replace('{brief}', shellQuote(briefPath))
+}
+
+/** The simulated start a simulated dry run names: the same brief, the same scenario (a name of the scenario table). */
+export function simulatedStartNextOf(params: { briefPath: string; scenario: string }): string {
+	return NEXT_COMMANDS.simulatedStart
+		.replace('{brief}', shellQuote(params.briefPath))
+		.replace('{scenario}', params.scenario)
+}
+
+/** The wait line: what follows an answer, and a simulated working lot; a simulated lot's carries `--timeout 60`. */
+export function waitNextOf(params: { name: string; simulated: boolean }): string {
+	const template = params.simulated ? NEXT_COMMANDS.simulated : NEXT_COMMANDS.wait
+	return template.replace('{name}', params.name)
+}
+
+/**
+ * The answer line of an open question: a person's names who answers (`--by <who>`), a caller's leaves it out (it
+ * defaults to `caller`).
+ */
+export function answerNextOf(params: { name: string; question: QuestionRecord }): string {
+	const template =
+		params.question.audience === 'person' ? NEXT_COMMANDS.answerPerson : NEXT_COMMANDS.answer
+	return template.replace('{name}', params.name).replace('{question}', params.question.id)
 }
 
 /** The stop line: what a failed lot asks for. */
@@ -33,18 +56,12 @@ export function nextCommandsOf(params: {
 	const handover = input.registryEntry?.state === 'pending' ? input.registryEntry.name : undefined
 	if (report.state === 'working')
 		return {
-			next: input.identity.simulated
-				? NEXT_COMMANDS.simulated.replace('{name}', name)
-				: manualNextOf(name),
+			next: input.identity.simulated ? waitNextOf({ name, simulated: true }) : manualNextOf(name),
 			also: [],
 		}
-	if (report.state === 'input-required')
-		return {
-			next: NEXT_COMMANDS.answer
-				.replace('{name}', name)
-				.replace('{question}', report.openQuestions[0]?.id ?? ''),
-			also: [],
-		}
+	const [firstOpen] = report.openQuestions
+	if (report.state === 'input-required' && firstOpen !== undefined)
+		return { next: answerNextOf({ name, question: firstOpen }), also: [] }
 	if (report.state === 'ready' && handover !== undefined)
 		return {
 			next: NEXT_COMMANDS.show.replace('{handover}', handover),

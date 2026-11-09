@@ -4,6 +4,7 @@ import { counted } from '../counted.ts'
  * built from the records only - no free prose beyond its fixed sentences, no path outside the repository.
  */
 import { CARD_GATE_MARKS } from '../gate-records/gate-records.constants.ts'
+import { printableOf } from '../store/text-escape.ts'
 import {
 	ALSO_JUDGED,
 	ASSISTANT,
@@ -207,7 +208,8 @@ function decisionLines(records: RecapRecords): string[] {
 		...records.revised.map(
 			(entry) => `- ${DECISION_PREFIXES.revised} ${entry.case} - ${entry.reason} ${by}`,
 		),
-		...records.decisions.map((row) => `- ${row.decision} (by ${row.by})`),
+		// decision rows hold what agents and hosts wrote (decisions.md, the lot's answers): escaped once
+		...printableOf(records.decisions).map((row) => `- ${row.decision} (by ${row.by})`),
 	]
 	return lines.length ? lines : [EMPTY_SECTION.decisions]
 }

@@ -5,7 +5,8 @@
 import { join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
-import { readLotStateInput, registryOfLotFolder } from './lot-records.ts'
+import { readStoreEntries } from '../handover/handover-store-read.ts'
+import { readLotStateInput } from './lot-records.ts'
 import { lotState } from './lot-state.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { LOT_KEEP_REASON, LOTS_KEEPING_NOTHING } from './store.constants.ts'
@@ -17,11 +18,14 @@ import { LOT_KEEP_REASON, LOTS_KEEPING_NOTHING } from './store.constants.ts'
  */
 export function lotsKeepingWorktrees(params: { repository: string }): ReadonlyMap<string, string> {
 	const kept = new Map<string, string>()
-	const store = locateStore({ from: params.repository })?.store
-	if (store === undefined) return kept
+	const location = locateStore({ from: params.repository })
+	if (location === undefined) return kept
+	const { store, registry } = location
+	// the registry read once for every lot of the store
+	const entries = readStoreEntries(registry)
 	for (const name of listLotNames({ store })) {
 		const lotFolder = join(store, name)
-		const input = readLotStateInput({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+		const input = readLotStateInput({ lotFolder, registry, entries })
 		const worktree = input?.identity.worktree
 		if (input === undefined || worktree === null || worktree === undefined) continue
 		const { state } = lotState(input)

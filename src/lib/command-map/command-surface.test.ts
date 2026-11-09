@@ -1,5 +1,7 @@
 import { COMMAND_MAP } from './command-map.constants.ts'
 import { commandSurfaceOf } from './command-surface.ts'
+import { answerRenamed } from './renamed-answer.ts'
+import { RENAMED_FORMS, RENAMED_LINE } from './renamed.constants.ts'
 import { renderCommandJson, renderHelpJson } from './render-help.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -17,23 +19,10 @@ const ZERO_CONFIG_FLAGS = [
 	'--no-format',
 ]
 
-const LOT_VERBS = [
-	'start',
-	'status',
-	'exempt',
-	'accept',
-	'revised',
-	'gone',
-	'mutation',
-	'finding',
-	'decide',
-	'snapshot',
-	'choice',
-	'standard',
-	'delta',
-	'recap',
-	'close',
-]
+/** The verbs of the lot command as the map's own usage lines give them, in the map order. */
+function mapLotVerbs(): string[] {
+	return commandSurfaceOf({ name: 'lot', entry: COMMAND_MAP.lot }).verbs
+}
 
 /** An entry holding only the usage lines the derivation reads. */
 function entryOf(usage: string[]): CommandEntry {
@@ -119,8 +108,42 @@ describe('commandSurfaceOf', () => {
 })
 
 describe('dialecte --help --json, verbs and flags of the real map', () => {
-	it('lot → its 15 verbs, exactly, in the map order (start and status first)', () => {
-		expect(commandOf('lot')?.verbs).toEqual(LOT_VERBS)
+	it('lot → the verbs of --help --json are the verbs of the map usage lines, in the map order', () => {
+		expect(commandOf('lot')?.verbs).toEqual(mapLotVerbs())
+	})
+
+	it('lot → every verb of the map has a usage line and a note line, and the command has one example (the map holds no example per verb)', () => {
+		const verbs = mapLotVerbs()
+		const { usage, notes = [], example } = COMMAND_MAP.lot
+
+		expect({
+			withoutUsage: verbs.filter(
+				(verb) => !usage.some((line) => line.startsWith(`dialecte lot ${verb} `)),
+			),
+			withoutNote: verbs.filter(
+				(verb) => !notes.some((note) => note.split(' - ')[0].split('|').includes(verb)),
+			),
+			example: example.trim() === '',
+		}).toEqual({ withoutUsage: [], withoutNote: [], example: false })
+		expect(verbs).not.toEqual([])
+	})
+
+	it('the renamed old forms still answer renamed, naming the lot verb that replaced each', () => {
+		expect(
+			RENAMED_FORMS.map(
+				(form) =>
+					answerRenamed({ command: form.command, argv: 'verb' in form ? [form.verb] : [] }).split(
+						'\n',
+					)[0],
+			),
+		).toEqual(
+			RENAMED_FORMS.map((form) =>
+				RENAMED_LINE.replace(
+					'{old}',
+					'verb' in form ? `${form.command} ${form.verb}` : form.command,
+				).replace('{new}', `lot ${form.lotVerb}`),
+			),
+		)
 	})
 
 	it('api → find, show', () => {
@@ -200,9 +223,9 @@ describe('dialecte <command> --help --json', () => {
 		])
 	})
 
-	it('lot → its one command carries its 15 verbs', () => {
+	it('lot → its one command carries the verbs of the map usage lines', () => {
 		expect(
 			JSON.parse(renderCommandJson({ name: 'lot', entry: COMMAND_MAP.lot })).commands[0].verbs,
-		).toEqual(LOT_VERBS)
+		).toEqual(mapLotVerbs())
 	})
 })

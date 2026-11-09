@@ -4,6 +4,7 @@ import type {
 	LotIdentity,
 	LotStateName,
 	QuestionRecord,
+	Refusal,
 	TransitionPosition,
 	WorktreeCheck,
 } from '../lib/store/store.types.ts'
@@ -33,7 +34,8 @@ export type LotStatusJson = {
 	checks: {
 		worktree: WorktreeCheck | null
 		link: LinkCheck | null
-		wouldRefuse: string[]
+		/** The brief findings a simulated start recorded instead of refusing; none for a real lot. */
+		wouldRefuse: Refusal[]
 	}
 	notes: string[]
 	next: string | null

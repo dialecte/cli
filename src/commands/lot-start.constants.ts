@@ -3,7 +3,7 @@ import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
 import type { BriefEffort } from '../lib/store/brief.types.ts'
 
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
-export const START_VALUE_OPTIONS: readonly string[] = ['effort']
+export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate']
 export const START_FLAGS: readonly string[] = ['dry-run', 'json']
 
 /** The effort of a lot whose brief and flags name none (S; L1 replaces it by the risk class). */

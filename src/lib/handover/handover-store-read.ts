@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 
 import { isFolder, realPathOf } from '../file-system.ts'
-import { STORE_ENTRY_EXTENSION } from './handover.constants.ts'
+import { HANDOVER_STORE_FOLDER, STORE_ENTRY_EXTENSION } from './handover.constants.ts'
 
 import type { HandoverStoreEntry, StoreEntry } from './handover.types.ts'
 
@@ -43,13 +43,29 @@ export function readStoreEntry(params: { store: string; name: string }): StoreEn
 	}
 }
 
+/**
+ * The hand-over registry of the repository whose git common folder is `commonFolder`: the one place its path is
+ * written (the writers, the lot store and its readers all ask here).
+ */
+export function registryOfCommonFolder(commonFolder: string): string {
+	return join(commonFolder, HANDOVER_STORE_FOLDER)
+}
+
 /** The entry registering `folder` (compared by real path), or undefined when it has none. */
 export function registeredEntryOf(params: {
 	store: string
 	folder: string
 }): StoreEntry | undefined {
+	return entryOfFolder({ entries: readStoreEntries(params.store), folder: params.folder })
+}
+
+/** The entry among `entries` (a registry read once) registering `folder`, compared by real path; undefined for none. */
+export function entryOfFolder(params: {
+	entries: readonly StoreEntry[]
+	folder: string
+}): StoreEntry | undefined {
 	const folder = realPathOf(params.folder)
-	return readStoreEntries(params.store).find((entry) => realPathOf(entry.folder) === folder)
+	return params.entries.find((entry) => realPathOf(entry.folder) === folder)
 }
 
 /**

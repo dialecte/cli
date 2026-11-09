@@ -5,10 +5,10 @@
  */
 import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { lotFolderOf } from '../store/lot-folder.ts'
+import { answerNextOf } from '../store/lot-next.ts'
 import { readLotStateInput, registryOfLotFolder } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { resolveLot } from '../store/resolve-lot.ts'
-import { NEXT_COMMANDS } from '../store/store.constants.ts'
 import { findHandoverStore, registeredEntryOf } from './handover-store.ts'
 import { HANDOVER_LOT_REFUSALS, HANDOVER_REFUSED_LOT_STATES } from './handover.constants.ts'
 
@@ -85,10 +85,7 @@ function lotFolderWriteRefusal(params: { out: string; lotsFile: LotsFile }): str
 	if (question)
 		return HANDOVER_LOT_REFUSALS.question
 			.replace('{question}', question.id)
-			.replace(
-				'{answer}',
-				NEXT_COMMANDS.answer.replace('{name}', identity.name).replace('{question}', question.id),
-			)
+			.replace('{answer}', answerNextOf({ name: identity.name, question }))
 	if (realPathOf(params.lotsFile.repository) !== realPathOf(identity.worktree))
 		return HANDOVER_LOT_REFUSALS.repository
 			.replace('{repository}', params.lotsFile.repository)

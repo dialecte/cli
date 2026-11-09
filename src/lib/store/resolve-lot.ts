@@ -18,6 +18,7 @@ import {
 	LOT_LINK_SEGMENTS,
 	THROWAWAY_NAME_PATTERN,
 } from './store.constants.ts'
+import { printableOf } from './text-escape.ts'
 
 import type { LotRequirement, LotResolution, ResolveMode } from './store.types.ts'
 
@@ -41,7 +42,7 @@ export function resolveLot(params: {
 		if (matches.length === 0) return { folder }
 		return {
 			folder,
-			note: `${argument} is the folder ./${argument}, not lot ${matches.map((match) => basename(match)).join(', ')}`,
+			note: `${printableOf(argument)} is the folder ./${printableOf(argument)}, not lot ${matches.map((match) => basename(match)).join(', ')}`,
 		}
 	}
 	if (matches.length === 1) return { lot: matches[0] }
@@ -49,7 +50,7 @@ export function resolveLot(params: {
 	return {
 		exitCode: 2,
 		output: [
-			`${argument} names several lots: give the full name or the folder`,
+			`${printableOf(argument)} names several lots: give the full name or the folder`,
 			...matches.map((match) => `  ${basename(match)}  ${match}`),
 		].join('\n'),
 	}
@@ -69,12 +70,20 @@ export function requireLot(params: {
 	const { argument } = params
 	const named =
 		isPathArgument(argument) || isFolder(resolved.folder)
-			? `${argument} is no lot folder (${resolved.folder})`
-			: `no lot ${argument}`
+			? `${printableOf(argument)} is no lot folder (${printableOf(resolved.folder)})`
+			: noLotRefusal(argument)
 	return {
 		exitCode: 2,
 		output: resolved.note === undefined ? named : `${resolved.note}\n${named}`,
 	}
+}
+
+/**
+ * The refusal of an id that names no lot (any more): `no lot <id>`, the id as the caller typed it escaped once, so
+ * a word holding a line feed or an escape sequence prints as `\u{<hex>}`. Every lot verb refuses an unknown id by it.
+ */
+export function noLotRefusal(argument: string): string {
+	return `no lot ${printableOf(argument)}`
 }
 
 /**

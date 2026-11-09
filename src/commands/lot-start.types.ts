@@ -1,3 +1,9 @@
+import type { ScenarioStep, ScenarioTable } from '../lib/store/scenarios.types.ts'
+import type { SynchronousPause } from '../lib/store/store.types.ts'
+
+/** The scenario a `--simulate` start copies into its lot: its name and its steps. */
+export type Simulation = { name: string; steps: readonly ScenarioStep[] }
+
 /** The function that makes a hard link, as `fs.linkSync` has it (the tests stand in for it). */
 export type LinkFunction = (existingPath: string, newPath: string) => void
 
@@ -25,6 +31,13 @@ export type StartSeams = {
 	afterClaimPick?: () => void
 	/** Called just before the lot folder is published (`publishLotFolder`), once the store list holds the store. */
 	beforePublish?: () => void
+	/** The scenarios a `--simulate` start copies from; the built-in table when left out. */
+	scenarios?: ScenarioTable
+	/**
+	 * What the overlap check pauses with (milliseconds) before its one re-read of a lot whose only evidence of
+	 * `canceled` is `abandoned.json` (33S section 4, the residual seam of row 2).
+	 */
+	pause?: SynchronousPause
 }
 
 /**

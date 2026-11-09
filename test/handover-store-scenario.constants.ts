@@ -22,6 +22,9 @@ export const STORE_SLUG = 'feat-handover-show'
 /** The name the first hand-over of `STORE_BRANCH` takes at `STORE_NOW`. */
 export const STORE_FIRST_NAME = `${STORE_DATE}-${STORE_SLUG}`
 
+/** The time `markAbandoned` writes into `abandoned.json`, and what a reader of that marker shows. */
+export const ABANDONED_MARKER_TIME = '2026-11-04T10:00:00.000Z'
+
 /** The cli a hand-over names as its fallback: never run by these tests. */
 export const STORE_WRITER_CLI = '/opt/dialecte/dist/cli.js'
 

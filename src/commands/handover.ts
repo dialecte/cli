@@ -34,10 +34,10 @@ import { renderSectionCard, resolveCardColumns } from '../lib/card/render-sectio
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { realPathOf, realPathThroughAncestors } from '../lib/file-system.ts'
 import { currentBranchOf } from '../lib/git.ts'
+import { abandonHandover } from '../lib/handover/abandon-handover.ts'
 import {
 	abandonedMarkerPath,
 	readAbandonedMarker,
-	writeAbandonedMarker,
 } from '../lib/handover/handover-abandoned-marker.ts'
 import {
 	buildHandoverCard,
@@ -49,17 +49,12 @@ import {
 	handoverLockPath,
 	readHandoverLock,
 } from '../lib/handover/handover-lock.ts'
-import {
-	readRunMarker,
-	runningRefusal,
-	writeRunMarker,
-} from '../lib/handover/handover-run-marker.ts'
+import { writeRunMarker } from '../lib/handover/handover-run-marker.ts'
 import {
 	entryOfArgument,
 	findHandoverStore,
 	newestOfBranch,
 	readStoreEntries,
-	recordHandoverState,
 	registerHandover,
 	resolveHandoverArgument,
 } from '../lib/handover/handover-store.ts'
@@ -107,6 +102,7 @@ import { findWorkspace } from '../lib/workspace.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
+	HandoverCard,
 	HandoverFolder,
 	HandoverListing,
 	HandoverProbe,
@@ -463,7 +459,7 @@ export function runHandoverShow(params: {
 				.replace('{folder}', handover.folder)
 				.replace('{repository}', lotsFile.repository),
 		}
-	const card = recomputeHandoverCard({ handover, probe: params.probe, cliPath: params.cliPath })
+	const card = shownHandoverCard({ handover, probe: params.probe, cliPath: params.cliPath })
 	const runnable = !card.done && card.verdict !== 'ABANDONED'
 	const committed = card.lots.filter((lot) => lot.commit).length
 	const changed = runnable ? countChangedSinceReview({ handover, committed }) : 0
@@ -494,6 +490,23 @@ export function runHandoverShow(params: {
 			...(runnable ? [card.command] : []),
 		].join('\n'),
 	}
+}
+
+/**
+ * The card `handover show` prints for a hand-over, recomputed read-only; `lot result` carries the same. The
+ * repository's own cli is probed for the run line when no probe is given.
+ */
+export function shownHandoverCard(params: {
+	handover: HandoverFolder
+	probe?: HandoverProbe
+	/** The cli named in the run line when the repository's own cli cannot run hand-overs. */
+	cliPath?: string
+}): HandoverCard {
+	return recomputeHandoverCard({
+		handover: params.handover,
+		probe: params.probe ?? probeRepositoryCli,
+		cliPath: params.cliPath,
+	})
 }
 
 /**
@@ -530,45 +543,16 @@ export function runHandoverAbandon(params: {
 	const { folder, lotsFile } = chosen.handover
 	const lotRefusal = lotAbandonRefusal({ folder })
 	if (lotRefusal) return usage(lotRefusal)
-	const abandoned = readAbandonedMarker(folder)
-	if (abandoned)
-		return {
-			exitCode: 0,
-			output: HANDOVER_ABANDON_TEXTS.already
-				.replace('{folder}', folder)
-				.replace('{at}', abandoned.at),
-		}
-	const running = readRunMarker(folder)
-	if (running)
-		return usage(runningRefusal({ template: HANDOVER_ABANDON_TEXTS.running, folder, running }))
-	if (handoverState(chosen.handover) === 'committed')
-		return usage(HANDOVER_ABANDON_TEXTS.committed.replace('{folder}', folder))
-	params.afterCheck?.()
-	writeAbandonedMarker({ folder, now: params.now ?? new Date() })
-	// a run that checked before this marker existed: it goes on, so the abandon is taken back
-	const crossed = readRunMarker(folder)
-	if (crossed) {
-		rmSync(abandonedMarkerPath(folder))
-		return usage(
-			runningRefusal({
-				template: HANDOVER_INTERLEAVING_REFUSALS.abandon,
-				folder,
-				running: crossed,
-			}),
-		)
-	}
-	recordHandoverState({
-		store: findHandoverStore(lotsFile.repository) ?? (root && findHandoverStore(root)),
+	const result = abandonHandover({
 		folder,
-		state: 'abandoned',
+		// a hand-over of a worktree removed since: the store and the lock of the checkout it is abandoned from
+		repository: existsSync(lotsFile.repository) ? lotsFile.repository : root,
+		now: params.now ?? new Date(),
+		afterCheck: params.afterCheck,
 	})
-	return {
-		exitCode: 0,
-		output: [
-			HANDOVER_ABANDON_TEXTS.abandoned.replace('{folder}', folder),
-			...releaseLockOf({ repository: lotsFile.repository, folder }),
-		].join('\n'),
-	}
+	return result.state === 'refused'
+		? usage(result.message)
+		: { exitCode: 0, output: result.message }
 }
 
 /**
@@ -587,18 +571,6 @@ function restoreLock(params: {
 	)
 		rmSync(params.lockPath, { force: true })
 	else writeFileSync(params.lockPath, bytes)
-}
-
-/** The lock of `repository` removed when it names the script of `folder`; one line saying what became of it. */
-function releaseLockOf(params: { repository: string; folder: string }): string[] {
-	if (!existsSync(params.repository)) return []
-	const script = readHandoverLock(params.repository)
-	if (!script) return []
-	const lock = handoverLockPath(params.repository)
-	if (realPathOf(script) !== realPathOf(join(params.folder, COMMIT_SCRIPT_FILE)))
-		return [HANDOVER_ABANDON_TEXTS.lockKept.replace('{lock}', lock).replace('{script}', script)]
-	rmSync(lock)
-	return [HANDOVER_ABANDON_TEXTS.lockReleased.replace('{lock}', lock)]
 }
 
 /** The store of the repository `folder` is in; undefined outside every repository. */
