@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `dialecte lot close` no longer deletes what is only in a hand-over's worktree. It now keeps the worktree, with the reason, when the worktree holds ignored files its removal would delete and nothing else holds (`ignored files git worktree remove would delete: .env`; rebuilt folders, the `.dialecte/lot` link, an empty or archived `.dialecte/lot.json` and files byte-equal, mode included, to the main checkout's still go), when its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds (`its HEAD reflog reaches 1 commit(s) that neither feat/x, main nor a remote-tracking ref holds: ...`; a commit made on a detached HEAD), when a link from outside it points into it (a sibling's `node_modules/@dialecte/core` included), and when another hand-over of the same worktree is neither committed nor abandoned.
+- `dialecte lot close` deletes a closed worktree with `git worktree remove` without `--force`: a worktree written into after the check is refused by git and stays in `.worktrees/_trash/`, said in one line when something closed. The `node_modules` caches go to their own `_trash/` entries.
+- Paths are compared by their real path as spelled on disk: a hand-over registered with its worktree path in another letter case (a case-insensitive volume) is found and closed.
+
+### Added
+
+- `dialecte.rebuiltIgnored` in `package.json`: ignored folders (`coverage/`), relative to the package root of the main checkout, that `lot close` may delete with a worktree. An invalid entry is ignored.
+
 ## [0.4.0] - 2026-11-09
 
 ### Changed

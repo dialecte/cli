@@ -174,12 +174,13 @@ function otherFolderNotes(params: {
 	const { identity } = params.input
 	if (identity.worktree === null) return []
 	const worktree = realPathOf(identity.worktree)
+	const lotFolder = realPathOf(params.lotFolder)
 	return params.entries
 		.filter(
 			(entry) =>
 				entry.branch === identity.branch &&
 				realPathOf(entry.worktree) === worktree &&
-				realPathOf(entry.folder) !== params.lotFolder,
+				realPathOf(entry.folder) !== lotFolder,
 		)
 		.map(
 			(entry) =>

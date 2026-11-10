@@ -36,4 +36,10 @@ export type DialecteField = {
 	 * `*.script.ts` under them stay test code.
 	 */
 	tdd?: { production?: string[] }
+	/**
+	 * Ignored folders, relative to this package root and ending with `/` (`coverage/`), that a build or a run
+	 * rebuilds: a worktree removal may delete them. Read from the main checkout's package.json only; an entry of
+	 * another shape (absolute, climbing with `..`, without its trailing `/`, not a string) counts for nothing.
+	 */
+	rebuiltIgnored?: unknown[]
 }

@@ -4,18 +4,23 @@
  * first, with no exemption: a worktree an open lot names (reason `lot <full name> <state>`), a hand-over not
  * committed nor abandoned, the main checkout, a worktree that is no
  * registered worktree (or one already in the trash or the pool), one on another branch than the hand-over's, a
- * locked one, a mutation run from it, a process working in it, processes that cannot be listed, a dirty
- * worktree; nothing done for a hand-over kept. Every decision is taken for every argument before anything
+ * locked one, a mutation run from it, a process working in it, processes that cannot be listed, another
+ * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, commits only
+ * its HEAD reflog reaches, ignored files its removal would delete that nothing else holds; nothing done for a
+ * hand-over kept. Every decision is taken for every argument before anything
  * moves (one worktree, whichever arguments reach it, decided and closed once), `node_modules` checked against
  * the lockfile where it is. Then, per worktree: the links of its `node_modules` made absolute where they are,
  * the move into the trash, the park from the trashed folder, the background removal. The branch is never
  * touched.
  */
 import { existsSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
-import { mainCheckoutOf, readGit } from '../git.ts'
+import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
+import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
+import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
+import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
+import { readPackageJson } from '../package-json.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
@@ -23,20 +28,26 @@ import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules } from '../worktree/node-modules-pool.ts'
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
-import { mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
+import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
-import { WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
+import {
+	DEFAULT_BASE_BRANCH,
+	IGNORED_FILES_SHOWN,
+	WORKTREE_STATUS_ARGUMENTS,
+} from '../worktree/worktree.constants.ts'
+import { readStoreEntries } from './handover-store-read.ts'
 import { entryOfArgument, findHandoverStore } from './handover-store.ts'
-import { CLOSE_FROM_INSIDE } from './handover.constants.ts'
+import { CLOSE_FROM_INSIDE, HEAD_REFLOG_COMMITS_SHOWN } from './handover.constants.ts'
 
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
+	FolderLink,
 	ListedWorktree,
 	NodeModulesCheck,
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
-import type { CloseResult, CloseTarget } from './handover.types.ts'
+import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
 
 /** Each named hand-over closed or kept with why; the names the registry does not hold (nothing done then). */
 export function closeHandovers(params: {
@@ -50,6 +61,8 @@ export function closeHandovers(params: {
 	spawner: BackgroundSpawner
 	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. A throw is "not known". */
 	listProcesses?: () => ProcessFolder[] | string
+	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
+	scratchRoots?: readonly string[]
 }): CloseResult[] | { unknown: string[] } {
 	const main = mainCheckoutOf(params.cwd)
 	const store = findHandoverStore(params.cwd)
@@ -73,14 +86,22 @@ export function closeHandovers(params: {
 	const worktreesFolder = join(dirname(main), WORKTREES_FOLDER)
 	const runs = readOwnedRuns(main)
 	const processes = readProcesses(params.listProcesses ?? listProcessFolders)
-	// one worktree is closed once, whichever names and indexes reach it: keyed by its real path
-	function keyOf(target: CloseTarget): string {
+	// one worktree is closed once, whichever names and indexes reach it: keyed by its real path, read before
+	// anything moves (a moved worktree has no real path left: its registered spelling would be another key)
+	const keys = targets.map(function keyOf(target): string {
 		return target.entry ? realPathOf(target.entry.worktree) : target.argument
-	}
+	})
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
 	// the lot keep rule: the repository's store read once for every argument
 	const lotKeeps = lotsKeepingWorktrees({ repository: main })
+	// read once for every argument: the registry's entries, the links around the workspace, the base branch
+	const registered = store ? readStoreEntries(store) : []
+	const links = readLinkScanSet({
+		workspace: dirname(main),
+		scratchRoots: params.scratchRoots ?? [],
+	})
+	const baseBranch = readPackageJson(main).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
 	const decisions = targets.map(function decide(target) {
 		return decideTarget({
 			target,
@@ -90,13 +111,16 @@ export function closeHandovers(params: {
 			runs,
 			processes,
 			lotKeeps,
+			registered,
+			links,
+			baseBranch,
 		})
 	})
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order
 	const owners = new Map<string, CloseTarget>()
 	const keeps = new Map<string, { argument: CloseTarget; kept: string }>()
 	targets.forEach(function group(target, index) {
-		const key = keyOf(target)
+		const key = keys[index]
 		if (!owners.has(key)) owners.set(key, target)
 		const decision = decisions[index]
 		if ('kept' in decision && !keeps.has(key))
@@ -134,7 +158,7 @@ export function closeHandovers(params: {
 	)
 	// one outcome per argument: its own reason when it keeps the worktree, else the reason that keeps it
 	return targets.map(function outcomeOf(target, index): CloseResult {
-		const key = keyOf(target)
+		const key = keys[index]
 		const decision = decisions[index]
 		const keep = keeps.get(key)
 		const result = results.get(key)
@@ -172,6 +196,12 @@ function decideTarget(params: {
 	processes: readonly ProcessFolder[] | string
 	/** The worktrees the open lots name, by real path, with their reason. */
 	lotKeeps: ReadonlyMap<string, string>
+	/** Every entry of the registry. */
+	registered: readonly StoreEntry[]
+	/** The links around the workspace (`readLinkScanSet`). */
+	links: readonly FolderLink[]
+	/** The branch the repository's work is merged into. */
+	baseBranch: string
 }):
 	| { kept: string }
 	| {
@@ -209,8 +239,12 @@ function readProcesses(listProcesses: () => ProcessFolder[] | string): ProcessFo
 	}
 }
 
-/** Why the hand-over's worktree stays, or the worktree itself when it may close. */
-function whyKeep(params: {
+/**
+ * Why the hand-over's worktree stays, or the worktree itself when it may close. The cheap rules first, then the
+ * links reaching it, then git: its status, the commits only its HEAD reflog reaches, the ignored files its removal
+ * would delete. The first reason that keeps it wins.
+ */
+export function whyKeep(params: {
 	target: CloseTarget
 	main: string
 	/** Where the close runs from. */
@@ -220,6 +254,12 @@ function whyKeep(params: {
 	processes: readonly ProcessFolder[] | string
 	/** The worktrees the open lots name, by real path, with their reason: checked first. */
 	lotKeeps: ReadonlyMap<string, string>
+	/** Every entry of the registry: another hand-over of the same worktree still open keeps it. */
+	registered: readonly StoreEntry[]
+	/** The links around the workspace: one from outside the worktree reaching into it keeps it. */
+	links: readonly FolderLink[]
+	/** The branch the repository's work is merged into. */
+	baseBranch: string
 }): { kept: string } | { worktree: ListedWorktree } {
 	const { target } = params
 	const entry = target.entry
@@ -228,6 +268,11 @@ function whyKeep(params: {
 	if (lotKeep) return { kept: lotKeep }
 	if (entry.state !== 'committed' && entry.state !== 'abandoned')
 		return { kept: `${entry.state}: only a committed or abandoned hand-over closes` }
+	const open = openHandoverOfWorktree({ entry, registered: params.registered })
+	if (open)
+		return {
+			kept: `another hand-over of this worktree is ${open.state}: ${open.name} (only committed or abandoned ones let it close)`,
+		}
 	if (realPathOf(entry.worktree) === realPathOf(params.main))
 		return {
 			kept: `its worktree is the main checkout ${params.main}: never parked, moved or trashed`,
@@ -245,34 +290,108 @@ function whyKeep(params: {
 		return { kept: `locked: ${worktree.path} (git worktree unlock it first, if it may go)` }
 	const run = mutationRunKeeping({ runs: params.runs, folder: worktree.path })
 	if (run) return { kept: `${run} (from ${worktree.path})` }
-	if (isInside({ path: params.runFrom, folder: worktree.path }))
+	if (isAtOrInsideReal({ path: params.runFrom, folder: worktree.path }))
 		return {
 			kept: CLOSE_FROM_INSIDE.replace('{worktree}', worktree.path).replace('{main}', params.main),
 		}
 	if (typeof params.processes === 'string') return { kept: params.processes }
 	const working = processWorkingIn({ processes: params.processes, folder: worktree.path })
 	if (working) return { kept: `a process works in ${worktree.path}: pid ${working.pid}` }
+	const link = linkFromOutside({ worktree: worktree.path, links: params.links })
+	if (link) return { kept: `the link ${link} points to it` }
 	const status = readGit({ root: worktree.path, args: [...WORKTREE_STATUS_ARGUMENTS] })
 		.split('\n')
 		.filter(Boolean)
 	if (status.length)
 		return { kept: `dirty: ${status.length} path(s) git status lists in ${worktree.path}` }
+	const unreached = commitsOnlyInHeadReflog({
+		worktree: worktree.path,
+		branch: entry.branch,
+		baseBranch: params.baseBranch,
+	})
+	if (unreached.length)
+		return {
+			kept: `its HEAD reflog reaches ${unreached.length} commit(s) that neither ${entry.branch}, ${params.baseBranch} nor a remote-tracking ref holds: ${unreached.slice(0, HEAD_REFLOG_COMMITS_SHOWN).join(', ')} (look: git -C ${worktree.path} reflog HEAD)`,
+		}
+	const { kept } = removableIgnored({
+		worktree: worktree.path,
+		main: params.main,
+		archivedDeclarations: archivedDeclarationsOf({
+			worktree: worktree.path,
+			entries: params.registered,
+		}),
+	})
+	if (kept.length > IGNORED_FILES_SHOWN)
+		return {
+			kept: `${kept.length} ignored files git worktree remove would delete, first: ${kept.slice(0, IGNORED_FILES_SHOWN).join(', ')}`,
+		}
+	if (kept.length)
+		return { kept: `ignored files git worktree remove would delete: ${kept.join(', ')}` }
 	return { worktree }
 }
 
-/** `path` is `folder` or inside it, by their real paths. */
-function isInside(params: { path: string; folder: string }): boolean {
-	const from = relative(realPathOf(params.folder), realPathOf(params.path))
-	return from === '' || (!from.startsWith('..') && !isAbsolute(from))
+/** Another hand-over registered for the same worktree (by real path) that is neither committed nor abandoned. */
+function openHandoverOfWorktree(params: {
+	entry: StoreEntry
+	registered: readonly StoreEntry[]
+}): StoreEntry | undefined {
+	const worktree = realPathOf(params.entry.worktree)
+	return params.registered.find(
+		(other) =>
+			other.name !== params.entry.name &&
+			other.state !== 'committed' &&
+			other.state !== 'abandoned' &&
+			realPathOf(other.worktree) === worktree,
+	)
+}
+
+/** A link lying outside the worktree that reaches it or something inside it; its own links never count. */
+function linkFromOutside(params: {
+	worktree: string
+	links: readonly FolderLink[]
+}): string | undefined {
+	const outside = params.links.filter(
+		(link) => !isAtOrInsideReal({ path: dirname(link.link), folder: params.worktree }),
+	)
+	return linkReaching({ folder: params.worktree, links: outside })
+}
+
+/**
+ * The commits (short) the worktree's HEAD reflog reaches that neither the hand-over's branch, the base branch nor
+ * a remote-tracking ref holds: deleted with the worktree, its reflog the only way back to them. A ref the
+ * repository does not hold is left out of the comparison.
+ */
+function commitsOnlyInHeadReflog(params: {
+	worktree: string
+	branch: string
+	baseBranch: string
+}): string[] {
+	const root = params.worktree
+	// a reflog git cannot read throws: the worktree is kept with git's message
+	const reflog = readGit({ root, args: ['reflog', 'show', '--format=%H', 'HEAD', '--'] })
+	const commits = [...new Set(reflog.split('\n').filter(Boolean))]
+	if (commits.length === 0) return []
+	const held = [`refs/heads/${params.branch}`, `refs/heads/${params.baseBranch}`].filter(
+		(ref) => tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', ref] }) !== undefined,
+	)
+	// the reflog's commits on standard input (read as wanted, whatever `--not` says): no argument-length limit
+	return readGit({
+		root,
+		args: ['rev-list', '--abbrev-commit', '--stdin', '--not', ...held, '--remotes'],
+		input: `${commits.join('\n')}\n`,
+	})
+		.split('\n')
+		.filter(Boolean)
 }
 
 /**
  * The links of the worktree's `node_modules` made absolute where they are (before any move changes what a
  * relative link reaches), the worktree moved to the trash, its `node_modules` parked from there with the check
- * made before the move (its caches left in the trashed folder), then the background removal. `moved` collects
- * the folder name once moved. Answers where `node_modules` went.
+ * made before the move (its caches sent to their own trash entries, each with its own removal), then, last, the
+ * background `git worktree remove` without `--force` (git refuses a worktree written into since the decision: it
+ * stays in the trash). `moved` collects the folder name once moved. Answers where `node_modules` went.
  */
-function closeWorktree(params: {
+export function closeWorktree(params: {
 	worktree: string
 	/** `node_modules` read against the lockfile where it was, before the move. */
 	check: NodeModulesCheck | undefined
@@ -292,12 +411,14 @@ function closeWorktree(params: {
 	function recordRemoval(call: { command: string; args: string[]; cwd?: string }): void {
 		removals.push(call)
 	}
+	// without --force: git refuses a worktree something was written into since the decision; it waits in the trash
 	const { trashed } = trashWorktree({
 		worktree,
 		repository: main,
 		worktreesFolder,
 		now,
 		spawner: recordRemoval,
+		force: false,
 	})
 	params.moved.push(basename(worktree))
 	let where: string | undefined
@@ -308,8 +429,8 @@ function closeWorktree(params: {
 			repository: main,
 			worktreesFolder,
 			now,
+			// the caches go to their own trash entries: a folder of them left in the worktree would make git refuse it
 			spawner: params.spawner,
-			discardInto: trashed,
 			check: params.check,
 			checkedLockHash: params.checkedLockHash,
 		})

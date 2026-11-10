@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { newestChangelogSection } from './newest-changelog-section.ts'
+import { changelogSection } from './newest-changelog-section.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -20,7 +20,7 @@ describe('the docs of the worktree pool', () => {
 		expect(readFileSync(join(PACKAGE_ROOT, 'README.md'), 'utf8')).toContain(word)
 	})
 
-	it.each(NAMED)('the newest CHANGELOG section names $thing ($word)', ({ word }) => {
-		expect(newestChangelogSection({ root: PACKAGE_ROOT })).toContain(word)
+	it.each(NAMED)('the 0.4.0 CHANGELOG section names $thing ($word)', ({ word }) => {
+		expect(changelogSection({ root: PACKAGE_ROOT, version: '0.4.0' })).toContain(word)
 	})
 })

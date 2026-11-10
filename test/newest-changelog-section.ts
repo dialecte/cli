@@ -2,12 +2,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
- * The newest section of the changelog at `root` that holds entries: `## [Unreleased]` while it has any, else the
- * version released last. A docs test reads this one, so it holds before and after a release moves the entries
- * under a version heading.
+ * The section of the changelog at `root` headed `## [<version>]`: the release that shipped a feature, whatever
+ * newer sections sit above it; empty when there is none.
  */
-export function newestChangelogSection(params: { root: string }): string {
+export function changelogSection(params: { root: string; version: string }): string {
 	const changelog = readFileSync(join(params.root, 'CHANGELOG.md'), 'utf8')
 	const sections = changelog.split(/\n(?=## \[)/).slice(1)
-	return sections.find((section) => section.split('\n').slice(1).join('').trim() !== '') ?? ''
+	return sections.find((section) => section.startsWith(`## [${params.version}]`)) ?? ''
 }

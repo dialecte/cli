@@ -1239,18 +1239,34 @@ the answer.
     `node_modules` read against the lockfile where it is; then the links of its `node_modules`
     made absolute where they are, the worktree moved to the trash (`.worktrees/_trash/`, by
     `git worktree move`), its `node_modules` parked in the pool (`.worktrees/_pool-<repository>-<n>`) from
-    there, its caches left in the trashed folder, and the trashed worktree removed in the background. Kept,
+    there, its caches (`.vite`, `.cache`) sent to their own `_trash/` entries, and last the trashed worktree
+    removed in the background by `git worktree remove` without `--force`: git refuses a worktree written into
+    since the check, which then stays registered in `.worktrees/_trash/` for you to look at (one line says so
+    when something closed). Paths are compared by their real path as spelled on disk (a path typed in another
+    case on a case-insensitive volume matches). Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
     store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
-    (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); a mutation
+    (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); another
+    hand-over registered for the same worktree that is neither `committed` nor `abandoned` (named); a mutation
     run started from it that still runs or died before reporting; `lot close` itself run from inside it
     (run it from another folder); a process whose working folder is in it;
-    the processes not known (`lsof` failed or took longer than 20 s); a `dirty` worktree (anything
+    the processes not known (`lsof` failed or took longer than 20 s); a link from outside the worktree
+    pointing into it (`the link <path> points to it`: the links directly in the workspace, `.worktrees/`,
+    `_commit-plan/` and the scratch roots, and those in `node_modules/` and `node_modules/@*/` of every
+    worktree and main checkout of the workspace's repositories, read once per call; the worktree's own links
+    never count); a `dirty` worktree (anything
     `git status --porcelain --untracked-files=normal` lists, untracked files included whatever
-    `status.showUntrackedFiles` says). The branch is never touched (`worktree prune` still lists the merged
+    `status.showUntrackedFiles` says); a HEAD reflog reaching commits that neither the hand-over's branch, the
+    base branch nor a remote-tracking ref holds (a commit made on a detached HEAD: the reflog goes with the
+    worktree); ignored files its removal would delete that nothing else holds (`ignored files git worktree
+    remove would delete: .env`, the first three named past three): rebuilt folders (`node_modules/`, `dist/`,
+    the VitePress caches, the hooks folder, the `dialecte.rebuiltIgnored` folders), `.DS_Store`, the
+    `.dialecte/lot` link, a `.dialecte/lot.json` that is empty or byte-equal to the one archived by a
+    committed hand-over of this worktree, and files byte-equal, mode included, to the same path in the main
+    checkout go; anything else keeps it, `.dialecte/notes.md` included. The branch is never touched (`worktree prune` still lists the merged
     ones). Each line names the folder it moved and where `node_modules` went (`closed  <name>: 0007-cli-x;
     node_modules pooled in _pool-cli-1`, or `trashed: <why it was not parked>`); a failure part-way keeps
     that hand-over with the error and what was already moved, the others go on. Exit 0 when every named
@@ -1418,7 +1434,8 @@ A package tunes them in its package.json:
 	"generatedDocs": [".vitepress/data/elements-catalog.json"],
 	"referencePatterns": ["SPEC-[0-9]+"],
 	"allowReferences": ["ticket number"],
-	"baseBranch": "main"
+	"baseBranch": "main",
+	"rebuiltIgnored": ["coverage/"]
 }
 ```
 
@@ -1426,7 +1443,11 @@ A package tunes them in its package.json:
 when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
 it); `baseBranch` is the branch
-`worktree add` starts from and `worktree prune` compares with (default `main`); `referencePatterns` adds the package's own patterns (extended regular expressions) to the
+`worktree add` starts from and `worktree prune` compares with (default `main`); `rebuiltIgnored` lists ignored
+folders a build or a run rebuilds, which `lot close` may delete with a worktree: each a folder ending with `/`,
+relative to the package root, read from the `package.json` of the main checkout nearest the ignored path (a
+worktree's own declaration counts for nothing); an invalid entry (empty, absolute, holding `.` or `..`, without its
+trailing `/`, not a string) is ignored, and an ignored folder nobody declares keeps the worktree; `referencePatterns` adds the package's own patterns (extended regular expressions) to the
 citations (and, in a contributor, the tags) `rules` and `handover` refuse; `allowReferences` is the contributor's
 opt-out: it lifts generic tags a contributor commits on purpose - `ticket number`, `acceptance criterion`,
 `plan tag` - and refuses any other label in either profile: a citation of a standard is never allowed. A consumer

@@ -147,6 +147,9 @@ export const HEAD_GUARD_NAME = 'head'
 export const ALREADY_COMMITTED_DETAIL =
 	'every lot is committed already: the hand-over is already committed, the guards after head are not run'
 
+/** How many commits only a worktree's HEAD reflog reaches `lot close` names when it keeps it; the rest are counted. */
+export const HEAD_REFLOG_COMMITS_SHOWN = 3
+
 /** `lot close` run from inside the worktree it would close: kept, never moved from under its own feet. */
 export const CLOSE_FROM_INSIDE =
 	'lot close runs from inside {worktree}: run it from another folder, such as cd {main}'

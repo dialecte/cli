@@ -192,7 +192,7 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 				`worktree ${join(worktreesFolder, '_trash', trashed[0])}\n`,
 			)
 			expect(calls.filter((entryCall) => entryCall.args[0] === 'worktree')).toEqual([
-				expect.objectContaining({ args: ['worktree', 'remove', '--force', expect.any(String)] }),
+				expect.objectContaining({ args: ['worktree', 'remove', expect.any(String)] }),
 			])
 			// the branch is never touched
 			expect(git({ root: repository, args: ['branch', '--list', 'feat/x'] })).toContain('feat/x')

@@ -12,11 +12,14 @@ export function readGit(params: {
 	args: string[]
 	/** Variables set for this command only, over the cli's environment (`GIT_INDEX_FILE`). */
 	environment?: NodeJS.ProcessEnv
+	/** What git reads on its standard input (`--stdin`): no limit on the length of an argument list. */
+	input?: string
 }): string {
 	// paths as they are (`été.ts`), not octal-quoted
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {
 		cwd: params.root,
 		encoding: 'utf8',
+		input: params.input,
 		maxBuffer: 1e8,
 		// a status or diff never refreshes the index behind a commit running at the same time
 		env: { ...process.env, ...GIT_READ_ENVIRONMENT, ...params.environment },

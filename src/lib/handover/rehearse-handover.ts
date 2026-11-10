@@ -30,7 +30,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { constants } from 'node:os'
+import { constants, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
@@ -86,6 +86,7 @@ import type {
 	HandoverProbe,
 	RehearsalDecision,
 	RehearsalPool,
+	ScratchRoots,
 	WriteLine,
 } from './handover.types.ts'
 import type { RehearsalMarker } from './live-handover-run.types.ts'
@@ -390,6 +391,18 @@ export function rehearsalScratchRoot(params: {
 }): string {
 	// a Windows temporary folder has no short fixed counterpart: it stays
 	return params.platform === 'win32' ? params.systemTemporaryFolder : POSIX_REHEARSAL_SCRATCH_ROOT
+}
+
+/**
+ * Where rehearsal clones are looked for on this machine: the folder rehearsals are made in now, and the system's
+ * temporary folder, where earlier cli versions made them.
+ */
+export function machineScratchRoots(): ScratchRoots {
+	const systemTemporaryFolder = tmpdir()
+	return {
+		scratchRoot: rehearsalScratchRoot({ platform: process.platform, systemTemporaryFolder }),
+		formerScratchRoot: systemTemporaryFolder,
+	}
 }
 
 /**
