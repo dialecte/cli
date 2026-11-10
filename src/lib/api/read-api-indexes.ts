@@ -11,6 +11,8 @@ import type { ApiJson } from './api-json.types.ts'
 /**
  * Every `api.json` an agent can search from `cwd`: the package's own skills (inside a dialecte repository)
  * and the skills of its installed dependencies, one per package, sorted by package name.
+ *
+ * @intent list the api indexes searchable from a folder, find which installed packages ship an api.json
  */
 export function readApiIndexes(params: { cwd: string }): ApiJson[] {
 	const { cwd } = params

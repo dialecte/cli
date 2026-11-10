@@ -16,7 +16,12 @@ export async function run(argv: string[]): Promise<void> {
 	process.exitCode = result.exitCode
 }
 
-/** The answer, and the warning lines for stderr (an unknown or disagreeing vendor in the manifests). */
+/**
+ * What `dialecte models` prints for `argv` run in `cwd`, and the warning lines for stderr (an unknown or disagreeing
+ * vendor in the manifests).
+ *
+ * @intent learn which model a tier means without the command line, map the fast, standard, strong and frontier tiers to the project's vendor
+ */
 export function runModels(params: {
 	argv: readonly string[]
 	cwd: string
