@@ -2,7 +2,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** The version of this cli: the nearest package.json above this file (dist/ in the bundle, src/lib/ in the sources). */
+/**
+ * The `version` of the nearest package.json above `startFolder`; by default this file's folder (dist/ in the bundle,
+ * src/lib/ in the sources), so the cli's own version. Throws when no package.json is above it.
+ *
+ * @intent read the installed cli's version, read a package's version from the folder it runs in, report the version a program serves its lookups with
+ */
 export function readCliVersion(params: { startFolder?: string } = {}): string {
 	const startFolder = params.startFolder ?? dirname(fileURLToPath(import.meta.url))
 	let folder = startFolder

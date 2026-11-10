@@ -1,4 +1,3 @@
-/** What `dialecte members <expression>` prints: the members one step below, or the closest ones one level up. */
 import { closestNames } from '../closest-names.ts'
 import { MEMBER_SUGGESTION_LIMIT } from './api-json.constants.ts'
 import { listMembers } from './list-members.ts'
@@ -8,6 +7,11 @@ import type { CommandOutput } from '../command-output.types.ts'
 import type { MethodEntry } from '../discover.types.ts'
 import type { Member } from './api-json.types.ts'
 
+/**
+ * What `dialecte members <expression>` prints: the members one step below, or the closest ones one level up.
+ *
+ * @intent answer a members lookup from method entries already read, list what a doc.query or tx expression holds
+ */
 export function answerMembers(params: {
 	entries: readonly MethodEntry[]
 	expression: string
