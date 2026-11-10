@@ -149,6 +149,7 @@ describe('lot start, the worktree cannot be made', { timeout: STORE_CASE_TIMEOUT
 				from: start.workspace.commit,
 				index: '0001',
 				now: START_NOW,
+				onPlanned: expect.any(Function),
 			},
 		])
 	})

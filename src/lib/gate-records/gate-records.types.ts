@@ -52,6 +52,9 @@ export type CheckKey = {
 	linked: string
 }
 
+/** What recording a run did: whether the record went to the store, and the state hash it holds (null: none written). */
+export type RecordedRun = { stored: boolean; stateHash: string | null }
+
 /**
  * `dialecte-gate-fast.json` / `dialecte-gate-full.json`: the last gate run of that mode that reached its
  * steps (a run refused at the hygiene leaves the file as it was).

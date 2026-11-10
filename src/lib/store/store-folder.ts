@@ -31,6 +31,7 @@ import { transitionPathOf } from './transitions.ts'
 import type {
 	LotFolderSeam,
 	LotIdentity,
+	LotIdentityEntry,
 	RecordContent,
 	StoreLocation,
 	Transition,
@@ -108,14 +109,41 @@ export function removeStoreLeftovers(params: { store: string }): void {
  * The names of the lots of `store`: folders holding a readable `identity.json` that names them; a `.tmp-` folder
  * is none.
  */
-export function listLotNames(params: { store: string }): string[] {
+export function listLotNames(params: {
+	store: string
+	/** Only the folders whose name starts with it; filtered before any identity is read. */
+	prefix?: string
+}): string[] {
+	return listLotIdentities(params).map(function nameOf(entry) {
+		return entry.name
+	})
+}
+
+/**
+ * The lots of `store` with their identities, each `identity.json` read once, sorted by name: folders holding a
+ * readable identity that names them, a `.tmp-` folder none; with `prefix`, only the folders whose name starts with
+ * it, filtered before any identity is read.
+ */
+export function listLotIdentities(params: { store: string; prefix?: string }): LotIdentityEntry[] {
 	if (!existsSync(params.store)) return []
-	return readdirSync(params.store, { withFileTypes: true })
-		.filter(
-			(entry) => entry.isDirectory() && namesItself({ store: params.store, name: entry.name }),
-		)
-		.map((entry) => entry.name)
+	const entries: LotIdentityEntry[] = []
+	const names = readdirSync(params.store, { withFileTypes: true })
+		.filter(function isCandidate(entry) {
+			return (
+				entry.isDirectory() &&
+				entry.name.startsWith(params.prefix ?? '') &&
+				!TEMPORARY_FOLDER_PATTERN.test(entry.name)
+			)
+		})
+		.map(function nameOf(entry) {
+			return entry.name
+		})
 		.sort()
+	for (const name of names) {
+		const identity = readIdentity({ lotFolder: join(params.store, name) })
+		if (identity?.name === name) entries.push({ name, identity })
+	}
+	return entries
 }
 
 /** The folder `<store>/<name>` holds a readable identity naming it, and is no folder being built (`.tmp-`). */

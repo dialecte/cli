@@ -8,6 +8,9 @@
 import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
+import { NODE_MODULES_WORDS } from '../lib/events/record-step.constants.ts'
+import { startStep } from '../lib/events/record-step.ts'
+import { realPathThroughAncestors } from '../lib/file-system.ts'
 import { branchExists } from '../lib/git.ts'
 import { registryOfCommonFolder } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
@@ -54,6 +57,7 @@ import {
 } from './lot-start.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
 import type { ScenarioFile } from '../lib/store/scenarios.types.ts'
 import type {
@@ -63,6 +67,7 @@ import type {
 	Transition,
 	TransitionCauseKind,
 } from '../lib/store/store.types.ts'
+import type { NodeModulesSource } from '../lib/worktree/worktree.types.ts'
 import type {
 	LinkFunction,
 	LotWorktreeResult,
@@ -186,6 +191,8 @@ export function makeLotWorktree(params: {
 	if (identity === undefined) throw new Error(`${params.lotFolder} holds no readable identity.json`)
 	const make = params.seams?.addWorktree ?? addWorktree
 	let failure: string
+	// the step's events: in the lot being started (passed in, never found from a folder), once the path is decided
+	let recorder: StepHandle | undefined
 	try {
 		const made = make({
 			repository: identity.repository,
@@ -193,6 +200,24 @@ export function makeLotWorktree(params: {
 			from: identity.base.commit,
 			index: identity.index,
 			now: params.now,
+			onPlanned: function startWorktreeStep(worktree) {
+				recorder = startStep({
+					cwd: identity.repository,
+					step: 'worktree-add',
+					heavy: false,
+					place: {
+						lot: params.lotFolder,
+						worktree: realPathThroughAncestors(worktree),
+						throwaway: false,
+					},
+				})
+			},
+		})
+		// after the worktree exists (D12); the cli never runs `npm ci`
+		recorder?.end({
+			exit: typeof made === 'string' ? 1 : 0,
+			...(typeof made !== 'string' && { parts: worktreeAddPartsOf(made) }),
+			stateHash: null,
 		})
 		if (typeof made !== 'string')
 			return linkLotFolder({
@@ -202,6 +227,7 @@ export function makeLotWorktree(params: {
 			})
 		failure = made
 	} catch (error) {
+		recorder?.end({ exit: 1, stateHash: null })
 		failure = (error as Error).message
 	}
 	const reason = branchExists({ root: identity.repository, branch: identity.branch })
@@ -209,6 +235,18 @@ export function makeLotWorktree(params: {
 		: failure
 	publishFailure({ lotFolder: params.lotFolder, kind: 'fail', reason, now: params.now })
 	return { failed: reason }
+}
+
+/** The parts of a `worktree-add` event: how `node_modules` came (none when a seam made the worktree without one). */
+function worktreeAddPartsOf(made: {
+	worktree: string
+	nodeModules?: NodeModulesSource
+}): WorktreeAddParts {
+	return {
+		nodeModules:
+			made.nodeModules === undefined ? 'none' : NODE_MODULES_WORDS[made.nodeModules.method],
+		npmCi: false,
+	}
 }
 
 /**

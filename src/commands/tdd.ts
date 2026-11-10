@@ -26,6 +26,7 @@
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
+import { startStep } from '../lib/events/record-step.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -99,6 +100,7 @@ import type {
 	RevisedHelper,
 	RunCase,
 	TddContext,
+	TddRunAdmission,
 	TddEntry,
 	TddReceipt,
 	TddSubcommand,
@@ -166,27 +168,82 @@ export async function runTdd(params: {
 			progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
 		}),
 	}
-	if (subcommand === 'red') return await runRed(context)
-	if (subcommand === 'green') return await runGreen(context)
+	if (subcommand === 'red' || subcommand === 'green') {
+		const admission = admitRun({ context, subcommand })
+		if ('refusal' in admission) return admission.refusal
+		// the step's events: its lot from the worktree; a refused run writes none; the end after the ledger entry (D12)
+		const recorder = startStep({ cwd: root, step: `tdd-${subcommand}`, heavy: false })
+		try {
+			const result =
+				subcommand === 'red'
+					? await runRed({ context, admission })
+					: await runGreen({ context, admission })
+			recorder.end({ exit: result.exitCode, stateHash: null })
+			return result
+		} catch (error) {
+			recorder.end({ exit: 1, stateHash: null })
+			throw error
+		}
+	}
 	return await runStatus(context)
 }
 
-async function runRed(context: TddContext): Promise<CommandResult> {
-	const { root } = context
+/**
+ * What a `red` or `green` run reads before it runs, or the refusal that stops it there: test code changed since the
+ * last red (`green` only), no test file new or changed, an unreadable lot file.
+ */
+function admitRun(params: {
+	context: TddContext
+	subcommand: 'red' | 'green'
+}): TddRunAdmission | { refusal: CommandResult } {
+	const { context, subcommand } = params
+	const { root, ledger } = context
+	const testCode = hashChangedTestCode(context)
+	if (subcommand === 'green') {
+		const changedHelpers = [...testCode]
+			.filter(
+				([file, hash]) => !TEST_FILE_PATTERN.test(file) && frozenHashOf({ ledger, file }) !== hash,
+			)
+			.map(([file]) => file)
+		if (changedHelpers.length)
+			return {
+				refusal: {
+					exitCode: 1,
+					output: `tdd green: test code changed since the last red run: ${changedHelpers.join(', ')} - ${FROZEN_AFTER_RED}`,
+				},
+			}
+	}
 	const changed = listChangedTestFiles(context)
 	const files = targetFiles({ changed, targets: context.targets })
 	if (files.length === 0)
 		return {
-			exitCode: 1,
-			output: 'tdd red: no test file new or changed since the base (or among the files named)',
+			refusal: {
+				exitCode: 1,
+				output: `tdd ${subcommand}: no test file new or changed since the base (or among the files named)`,
+			},
 		}
+	const acceptances = readAcceptances(root)
+	if ('failure' in acceptances)
+		return { refusal: { exitCode: 1, output: `tdd ${subcommand}: ${acceptances.failure}` } }
+	const revisions = readRevisions(root)
+	if ('failure' in revisions)
+		return { refusal: { exitCode: 1, output: `tdd ${subcommand}: ${revisions.failure}` } }
+	return { testCode, changed, files, acceptances, revisions }
+}
+
+async function runRed(params: {
+	context: TddContext
+	admission: TddRunAdmission
+}): Promise<CommandResult> {
+	const { context } = params
+	const { root } = context
+	const { testCode, changed, files, acceptances, revisions } = params.admission
 	const lines: string[] = []
 	const entries: TddEntry[] = []
 	const at = context.now().toISOString()
 	const production = readProductionState(context)
 	const productionHash = production.hash
 	const movedBack = filesMovedBack({ ledger: context.ledger, current: production })
-	const testCode = hashChangedTestCode(context)
 	const focused = files.filter(
 		(file) => findOnlyMarkers({ text: file.text, file: file.file }).length > 0,
 	)
@@ -205,10 +262,6 @@ async function runRed(context: TddContext): Promise<CommandResult> {
 			fileRefusal({ file: file.file, reason: 'focus markers', productionHash, testCode, at }),
 		)
 	}
-	const acceptances = readAcceptances(root)
-	if ('failure' in acceptances) return { exitCode: 1, output: `tdd red: ${acceptances.failure}` }
-	const revisions = readRevisions(root)
-	if ('failure' in revisions) return { exitCode: 1, output: `tdd red: ${revisions.failure}` }
 	const runnable = files.filter((file) => !focused.includes(file))
 	const modules = runnable.length
 		? await announcedRun({
@@ -612,29 +665,13 @@ function isRolledBack(params: {
 	)
 }
 
-async function runGreen(context: TddContext): Promise<CommandResult> {
+async function runGreen(params: {
+	context: TddContext
+	admission: TddRunAdmission
+}): Promise<CommandResult> {
+	const { context } = params
 	const { root, ledger } = context
-	const testCode = hashChangedTestCode(context)
-	const changedHelpers = [...testCode]
-		.filter(
-			([file, hash]) => !TEST_FILE_PATTERN.test(file) && frozenHashOf({ ledger, file }) !== hash,
-		)
-		.map(([file]) => file)
-	if (changedHelpers.length)
-		return {
-			exitCode: 1,
-			output: `tdd green: test code changed since the last red run: ${changedHelpers.join(', ')} - ${FROZEN_AFTER_RED}`,
-		}
-	const files = targetFiles({ changed: listChangedTestFiles(context), targets: context.targets })
-	if (files.length === 0)
-		return {
-			exitCode: 1,
-			output: 'tdd green: no test file new or changed since the base (or among the files named)',
-		}
-	const acceptances = readAcceptances(root)
-	if ('failure' in acceptances) return { exitCode: 1, output: `tdd green: ${acceptances.failure}` }
-	const revisions = readRevisions(root)
-	if ('failure' in revisions) return { exitCode: 1, output: `tdd green: ${revisions.failure}` }
+	const { testCode, files, acceptances, revisions } = params.admission
 	const modules = await announcedRun({
 		context,
 		subcommand: 'green',

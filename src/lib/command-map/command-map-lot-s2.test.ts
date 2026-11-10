@@ -69,7 +69,7 @@ describe('the lot section, S2', () => {
 		const section = renderCommandSection({ name: 'lot', entry: COMMAND_MAP.lot })
 
 		expect({
-			codes: COMMAND_MAP.lot.exitCodes,
+			codes: COMMAND_MAP.lot.exitCodes.filter((line) => /^[345] /.test(line)),
 			printed: EXIT_CODE_LINES.map((line) => section.includes(line)),
 		}).toEqual({ codes: EXIT_CODE_LINES, printed: [true, true, true] })
 	})

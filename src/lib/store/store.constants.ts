@@ -14,6 +14,7 @@ export const STORE_FILES: StoreFileNames = {
 	transitions: 'transitions',
 	answers: 'answers',
 	asks: 'asks',
+	events: 'events.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

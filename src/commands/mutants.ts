@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { startStep } from '../lib/events/record-step.ts'
 import { computeStateTree } from '../lib/gate-records/state-hash.ts'
 import { currentBranchOf, listRepositoryFiles, readGit, tryReadGit } from '../lib/git.ts'
 import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
@@ -218,46 +219,54 @@ async function runVerb(params: {
 			output: `mutants run: ${NOTHING_TO_MUTATE} (${mode === 'audit' ? 'the scope holds no mutable file' : since})`,
 		}
 
-	const tree = computeStateTree(root)
-	const entry = startRun({
-		root,
-		pid: process.pid,
-		lot,
-		tree,
-		mode,
-		...(mode === 'changed' && changed ? { base: changed.base } : {}),
-		targets,
-		startTimeOf,
-	})
-	const workDir = `${MUTANTS_WORK_FOLDER}/${entry.runId}`
-	mkdirSync(join(root, workDir), { recursive: true })
-	writeFileSync(join(root, workDir, EMPTY_STRYKER_CONFIG_FILE), '{}\n')
-	const records = readRecordsFile({ root })
-	const tiers = await runTiers({
-		root,
-		declaration,
-		targets,
-		records,
-		workDir,
-		tree,
-		runStryker,
-	})
-	if ('failure' in tiers)
-		return {
-			exitCode: 1,
-			output: `mutants run: ${tiers.failure}\nrun ${entry.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${entry.runId}`,
-		}
-	const finished = finishRun({
-		root,
-		runId: entry.runId,
-		counts: countsOf(tiers.report),
-		survivors: tiers.survivors,
-		...mutantKeysOf({ report: tiers.report }),
-	})
-	updateLedger({ root, run: finished, records, targets })
-	// the reports and sandboxes of a reported run: its entry and the ledger hold what it found
-	rmSync(join(root, workDir), { recursive: true, force: true })
-	return { exitCode: 0, output: renderRun({ root, run: finished }) }
+	// the step's events: its lot from the worktree, never the branch the run is filed under; the end after the run file
+	const recorder = startStep({ cwd: root, step: 'mutation', heavy: true })
+	let stepExit = 1
+	try {
+		const tree = computeStateTree(root)
+		const entry = startRun({
+			root,
+			pid: process.pid,
+			lot,
+			tree,
+			mode,
+			...(mode === 'changed' && changed ? { base: changed.base } : {}),
+			targets,
+			startTimeOf,
+		})
+		const workDir = `${MUTANTS_WORK_FOLDER}/${entry.runId}`
+		mkdirSync(join(root, workDir), { recursive: true })
+		writeFileSync(join(root, workDir, EMPTY_STRYKER_CONFIG_FILE), '{}\n')
+		const records = readRecordsFile({ root })
+		const tiers = await runTiers({
+			root,
+			declaration,
+			targets,
+			records,
+			workDir,
+			tree,
+			runStryker,
+		})
+		if ('failure' in tiers)
+			return {
+				exitCode: 1,
+				output: `mutants run: ${tiers.failure}\nrun ${entry.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${entry.runId}`,
+			}
+		const finished = finishRun({
+			root,
+			runId: entry.runId,
+			counts: countsOf(tiers.report),
+			survivors: tiers.survivors,
+			...mutantKeysOf({ report: tiers.report }),
+		})
+		updateLedger({ root, run: finished, records, targets })
+		// the reports and sandboxes of a reported run: its entry and the ledger hold what it found
+		rmSync(join(root, workDir), { recursive: true, force: true })
+		stepExit = 0
+		return { exitCode: 0, output: renderRun({ root, run: finished }) }
+	} finally {
+		recorder.end({ exit: stepExit, stateHash: null })
+	}
 }
 
 /** The fast tier, the timed-out mutants alone, the full tier on the unlisted survivors when declared: the merged report and its survivors. */

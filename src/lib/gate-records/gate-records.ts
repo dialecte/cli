@@ -24,6 +24,7 @@ import type {
 	CheckKey,
 	GateRecord,
 	GateRecordMode,
+	RecordedRun,
 	RecordedStep,
 	RulesRecord,
 } from './gate-records.types.ts'
@@ -64,7 +65,7 @@ function readHead(root: string): string {
  * configured steps ran also goes to the repository's store of records by tree (a rehearsal's to the store of the
  * repository it cloned, marked as a rehearsal's); a run answered from a
  * record (`reused`) and a run stopped at its tdd step do not: they checked nothing of the tree. Answers
- * whether the record went to the store.
+ * whether the record went to the store, and the state hash the record holds (null when none was written).
  */
 export function recordGate(params: {
 	root: string
@@ -83,11 +84,11 @@ export function recordGate(params: {
 	storeRoot?: string
 	/** The gate base the run resolved for its scoped steps; absent without one. */
 	base?: GateRecord['base']
-}): boolean {
+}): RecordedRun {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
 	)
-	if (refused) return false
+	if (refused) return { stored: false, stateHash: null }
 	const record: GateRecord = {
 		mode: params.mode,
 		at: new Date().toISOString(),
@@ -107,7 +108,7 @@ export function recordGate(params: {
 	)
 	const stored = Boolean(params.key) && !params.reused && !tddFailed
 	if (stored) storeCheckRecord({ root: params.storeRoot ?? params.root, record })
-	return stored
+	return { stored, stateHash: record.stateHash }
 }
 
 /** The state hash a gate record holds: of the tree its key names, else of the tree its steps started on. */

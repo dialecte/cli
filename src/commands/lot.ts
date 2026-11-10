@@ -27,6 +27,7 @@ import { lotAnswer } from './lot-answer.ts'
 import { runLotClose } from './lot-close.ts'
 import { lotResult } from './lot-result.ts'
 import { startLot } from './lot-start.ts'
+import { lotStation } from './lot-station.ts'
 import { lotStatus } from './lot-status.ts'
 import { lotStop } from './lot-stop.ts'
 import { printsOnStandardError } from './lot-streams.ts'
@@ -69,6 +70,7 @@ export function runLot(params: {
 	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'stop') return lotStop({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'station') return lotStation({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'result')
 		return lotResult({
 			cwd: params.cwd,

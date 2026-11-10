@@ -75,6 +75,7 @@
 			"production": [
 				"test/suite-guard"
 			]
-		}
+		},
+		"stepEvents": 1
 	}
 }

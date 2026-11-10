@@ -10,3 +10,6 @@ export const SUITE_FOLDER_PREFIX = 'dlt-'
  * npm turns on for every npx it runs (`<TMPDIR>/node-compile-cache`). They go with the folder.
  */
 export const SUITE_FOLDER_CACHES: readonly string[] = ['node-compile-cache']
+
+/** The suite's state folder (XDG_STATE_HOME) inside its temporary folder: removed before the leftover check. */
+export const SUITE_STATE_FOLDER = 'state'

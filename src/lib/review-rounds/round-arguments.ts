@@ -18,8 +18,11 @@ export function readArguments(params: {
 	argv: readonly string[]
 	valueOptions: readonly string[]
 	flags?: readonly string[]
+	/** Options that may be given several times: their values are collected into `lists`, never `values`. */
+	repeatable?: readonly string[]
 }): RoundArguments | string {
-	const read: RoundArguments = { values: new Map(), flags: new Set(), words: [] }
+	const read: RoundArguments = { values: new Map(), flags: new Set(), lists: new Map(), words: [] }
+	const repeatable = params.repeatable ?? []
 	for (let index = 0; index < params.argv.length; index++) {
 		const argument = params.argv[index]
 		if (argument === '--') {
@@ -31,13 +34,13 @@ export function readArguments(params: {
 			continue
 		}
 		const name = argument.slice(2)
+		const takesValue = params.valueOptions.includes(name) || repeatable.includes(name)
 		if (params.flags?.includes(name)) read.flags.add(name)
-		else if (params.valueOptions.includes(name) && index + 1 < params.argv.length)
-			read.values.set(name, params.argv[++index])
-		else
-			return params.valueOptions.includes(name)
-				? `${argument} needs a value`
-				: `unknown option ${argument}`
+		else if (takesValue && index + 1 < params.argv.length) {
+			const value = params.argv[++index]
+			if (repeatable.includes(name)) read.lists.set(name, [...(read.lists.get(name) ?? []), value])
+			else read.values.set(name, value)
+		} else return takesValue ? `${argument} needs a value` : `unknown option ${argument}`
 	}
 	return read
 }

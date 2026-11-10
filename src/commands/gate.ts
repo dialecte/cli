@@ -39,8 +39,11 @@
 import { join } from 'node:path'
 
 import { getArg, hasFlag } from '../lib/config.ts'
+import { GATE_STEP_KINDS, HEAVY_STEP_KINDS } from '../lib/events/record-step.constants.ts'
+import { partsOf, reuseOf, startStep } from '../lib/events/record-step.ts'
 import { computeCheckKey, gateCommandHash } from '../lib/gate-records/check-key.ts'
 import { findReusableRecord } from '../lib/gate-records/check-store.ts'
+import { HYGIENE_STEP_NAME } from '../lib/gate-records/gate-records.constants.ts'
 import {
 	recordCheckedRun,
 	renderReuseLine,
@@ -129,6 +132,8 @@ export async function runGate(params: {
 	handoverBase?: HandoverBase
 	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
 	handoverIgnored?: string
+	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
+	warn?: (line: string) => void
 }): Promise<CommandResult> {
 	const { cwd, argv } = params
 	if (
@@ -148,6 +153,7 @@ export async function runGate(params: {
 				live: params.live,
 				handoverBase: params.handoverBase,
 				handoverIgnored: params.handoverIgnored,
+				warn: params.warn,
 			})
 		} catch (error) {
 			// a broken gate config stops the commit, as any broken gate does
@@ -214,20 +220,34 @@ export async function runGate(params: {
 	const results: StepResult[] = []
 	let reused: { record: GateRecord; key: CheckKey } | undefined
 	let keyBefore: CheckKey | undefined
+	// the run's events: its start before any step, its end after the record (D12)
+	const kind = GATE_STEP_KINDS[mode]
+	const recorder = startStep({
+		cwd,
+		step: kind,
+		heavy: HEAVY_STEP_KINDS.includes(kind),
+		warn: params.warn,
+	})
+	const durations = new Map<StepResult, number>()
+	const reusedParts = new Set<StepResult>()
 	if (mode === 'fast') {
+		const finishHygiene = recorder.startPart({ name: HYGIENE_STEP_NAME, heavy: false })
 		const hygiene = hygieneStep({ cwd, declared: declaredPaths(argv) })
+		durations.set(hygiene, finishHygiene())
 		results.push(hygiene)
 		if (progress) showLive({ result: hygiene })
 	}
 	if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
 	else {
 		const running = progress?.start({ name: TDD_STEP.name, detail: 'the receipts of the change' })
+		const finishTdd = recorder.startPart({ name: TDD_STEP.name, heavy: false })
 		const tdd = await tddStep({
 			cwd,
 			packageJson,
 			ref: getArg(argv, 'base'),
 			wholeBranch: mode !== 'fast',
 		})
+		durations.set(tdd, finishTdd())
 		results.push(tdd)
 		if (running) showLive({ result: tdd, running })
 	}
@@ -250,6 +270,7 @@ export async function runGate(params: {
 			leftOut: [TDD_STEP.name],
 		})) {
 			results.push(result)
+			reusedParts.add(result)
 			if (progress) showLive({ result })
 		}
 	} else {
@@ -259,14 +280,15 @@ export async function runGate(params: {
 			packageJson,
 			// the tree the key holds: the one the scoped steps select on
 			...(gateBase && keyBefore && { scope: { base: gateBase.commit, tree: keyBefore.tree } }),
-			...(progress && {
-				announce: function announce(step) {
-					const running = progress.start({ name: step.name, detail: step.run })
-					return function finished(result) {
-						showLive({ result, running })
-					}
-				},
-			}),
+			// always: the run's events time each part, progress shown or not (D8)
+			announce: function announce(step) {
+				const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
+				const running = progress?.start({ name: step.name, detail: step.run })
+				return function finished(result) {
+					durations.set(result, finishPart())
+					if (running) showLive({ result, running })
+				}
+			},
 		})
 		results.push(...stepResults)
 	}
@@ -276,7 +298,7 @@ export async function runGate(params: {
 	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
 	if (progress) for (const line of absentLines) live?.writeLine(line)
 	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
-	const { stored, changedWhileRunning } = recordCheckedRun({
+	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode,
 		results,
@@ -289,6 +311,8 @@ export async function runGate(params: {
 
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
+	const parts = partsOf({ results, durations, reused: reusedParts })
+	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash })
 	if (json)
 		return {
 			exitCode,
@@ -373,7 +397,7 @@ function notCoveringLines(packageJson: PackageJson): string[] {
 /** The worktree's hygiene as the first step of `--fast`. */
 function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 	const report = checkHygiene({ root: params.cwd, declared: params.declared })
-	const step: GateStep = { name: 'hygiene', run: '' }
+	const step: GateStep = { name: HYGIENE_STEP_NAME, run: '' }
 	const note = [...report.notes, ...report.warnings.map((warning) => `warning: ${warning}`)].join(
 		'; ',
 	)

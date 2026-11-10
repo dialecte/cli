@@ -35,6 +35,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
 import { runContrib } from '../contrib/run-contrib.ts'
+import { startStep } from '../events/record-step.ts'
 import { isPresent, realPathOf } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
@@ -77,6 +78,7 @@ import {
 import { planRehearsal } from './rehearsal-plan.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
+import type { StepExplicitPlace, StepHandle } from '../events/record-step.types.ts'
 import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
@@ -92,6 +94,8 @@ import type {
 import type { RehearsalMarker } from './live-handover-run.types.ts'
 
 export async function rehearseHandover(params: {
+	/** The lot whose events record the rehearsal (the hand-over folder's), the commit root as its worktree; null: none. */
+	stepPlace: StepExplicitPlace | null
 	handover: HandoverFolder
 	write: WriteLine
 	clock: Clock
@@ -125,6 +129,29 @@ export async function rehearseHandover(params: {
 		write(gateScope.refusal)
 		return 2
 	}
+	// the step's events and its whole-run marker: a rehearsal answered whole from records is a run too
+	const recorder = startStep({
+		cwd: params.stepPlace?.worktree ?? realPathOf(handover.lotsFile.repository),
+		step: 'rehearsal',
+		heavy: true,
+		place: params.stepPlace,
+	})
+	try {
+		return await rehearseRecorded({ ...params, gateScope, recorder })
+	} finally {
+		// a throw ends the run as failed; a normal end was written already (end writes once)
+		recorder.end({ exit: 1, reuse: 'none', stateHash: null })
+	}
+}
+
+/** The rehearsal once its gate scope reads: the plan, then the run with no clone or in one; its end recorded. */
+async function rehearseRecorded(
+	params: Parameters<typeof rehearseHandover>[0] & {
+		gateScope: Exclude<ReturnType<typeof resolveHandoverGateScope>, { refusal: string }>
+		recorder: StepHandle
+	},
+): Promise<number> {
+	const { handover, write, gateScope, recorder } = params
 	const decisions = decideLots({
 		handover,
 		full: params.full ?? false,
@@ -155,8 +182,8 @@ export async function rehearseHandover(params: {
 					.replace('{tree}', decision.tree.slice(0, SHORT_SHA_LENGTH)),
 			)
 	}
-	if (everyLotReused)
-		return runHandoverFolder({
+	if (everyLotReused) {
+		const exit = await runHandoverFolder({
 			handover,
 			write,
 			clock: params.clock,
@@ -171,6 +198,9 @@ export async function rehearseHandover(params: {
 			skipCommits: true,
 			gateScope,
 		})
+		recorder.end({ exit, reuse: 'whole', stateHash: null })
+		return exit
+	}
 	const progress =
 		params.progress ??
 		createStepProgress({
@@ -187,6 +217,8 @@ export async function rehearseHandover(params: {
 	const links: string[] = []
 	/** The hook's process group is stopped first (SIGKILL after its grace), then the rehearsal folder goes. */
 	function interrupted(signal: NodeJS.Signals): void {
+		// this handler owns the exit: the interrupted end is written here, before the process ends (D10)
+		recorder.end({ outcome: 'interrupted', parts: [], reuse: 'none', stateHash: null })
 		void stopLiveGroups(signal).then(function cleanUp() {
 			removeRehearsalFolder({ folder, links })
 			write(`interrupted (${signal}): the hook stopped, the rehearsal folder removed`)
@@ -238,7 +270,7 @@ export async function rehearseHandover(params: {
 					clock: params.clock,
 				})
 			: undefined
-		return await runHandoverFolder({
+		const exit = await runHandoverFolder({
 			handover,
 			commitRoot: clone,
 			write,
@@ -260,6 +292,9 @@ export async function rehearseHandover(params: {
 			contribUnanswerable,
 			gateScope,
 		})
+		// after the hook record the clone's run left (D12)
+		recorder.end({ exit, reuse: 'none', stateHash: null })
+		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
 		if (params.keep) write(`kept the rehearsal folder: ${folder}`)
