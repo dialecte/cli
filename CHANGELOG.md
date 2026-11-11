@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `dialecte.rebuiltIgnored` in `package.json`: ignored folders (`coverage/`), relative to the package root of the main checkout, that `lot close` may delete with a worktree. An invalid entry is ignored.
+- `dialecte plan next <plan.md> [--json] [--all]`, in a new `Plan` family of the help: reads a plan's lot block (a fenced `json dialecte-lots` block, or `<plan>.lots.json` beside it) and proposes what can start now, writing nothing. Each entry's state is read from the stores, the hand-over registries and the worktrees (files only); the answer lists the open lots, the lots that can start in critical-path order (with `merge:`, `after`, `unverified`, `stacks:` and the next command), the ones held by an open lot with each scope pair met, the spec work, what each entry waits for, and the machine's heavy steps, load and memory (advice only). Exit 0 when a lot or fix can start, 1 when none can, 2 for a usage error, an invalid block or a repository that is not a git checkout. `dialecte plan check <plan.md>` checks the block alone, every fault at once; `dialecte plan mark <plan.md> <id> done --by <who>` records a person entry's mark in the machine's state folder.
 
 ## [0.4.0] - 2026-11-09
 

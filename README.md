@@ -28,6 +28,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 Discover    api  members  schema  explain  standard
 Use         run  fixture  new
 Grow        lot
+Plan        plan
 Check       gate  tdd  rules  contrib  mutants
 Hand over   handover
 Workspace   worktree  doctor  models  skills
@@ -50,6 +51,7 @@ dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open q
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
 dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over abandoned first, then canceled
 dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
+dialecte plan next|check|mark <plan.md>   # what can start now in a plan's lot block; the block checked; a person's mark
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
 dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
 dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
@@ -1177,6 +1179,29 @@ the answer.
   forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
   `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
   damaged, 1 when nothing does, 2 for a usage error.
+- `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
+  `json dialecte-lots` in the plan, or `<plan without .md>.lots.json` beside it; both or neither is refused) and proposes what can
+  start now; it starts, claims and writes nothing. Each entry declares an `id`, a `kind` (`lot`, `fix`, `spec`,
+  `person`), `dependsOn`, a `scope` per repository (`"."` is the whole repository), extra `heavy` steps
+  (`mutation`, `browser`, `release`), a `brief`, and a `match` (`branch`, `handover`, `feature`) by which its
+  records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
+  An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
+  pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process). The text
+  says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
+  `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
+  <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
+  each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
+  waits for, the parked ones, then the machine: the live heavy steps with their worktree and age, the load against
+  twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
+  proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps
+  would wait (advice only). `--all` lists the done entries; `--json` answers `{ plan, repositories, counts,
+  entries, proposals, held, specWork, heavy, unknown }`. Exit 0 when a lot or fix can start, 1 when none can, 2
+  for a usage error, no block or an invalid one (every fault listed), or a repository that is not a git checkout.
+  `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
+  2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
+  the machine's state folder (`<state>/dialecte/plans/`); a `lot` entry's state comes from its records and is
+  refused.
 - `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
   included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
   folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).
