@@ -15,7 +15,7 @@ import {
 	SCRATCH_REPOSITORY_TIMEOUT,
 } from '../../test/scratch-checks.constants.ts'
 import { countRuns, countingStep, createCounter, runGateIn } from '../../test/scratch-checks.ts'
-import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
+import { createSharedScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
 import { treeOfWorkingFiles } from '../../test/scratch-tree.ts'
 import { gateCommandHash, hashGateCommand } from '../lib/gate-records/check-key.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
@@ -50,6 +50,9 @@ function scopedGatePackage(params: { heavy?: boolean } = {}) {
 	const root = createScopedPackage({ gate: { fast: steps, full: steps } })
 	return { root, counter, scoped, steps }
 }
+
+/** The repository the `gateCommandHash` cases read: they only hash, so they share one. */
+const sharedPlainRepository = createSharedScratchRepository()
 
 function mergeBaseOf(root: string): string {
 	return git({ root, args: ['merge-base', 'HEAD', 'main'] }).trim()
@@ -186,7 +189,7 @@ describe(
 		})
 
 		it('gateCommandHash takes the base its caller resolved: the same hash as hashGateCommand with it, another base another hash', () => {
-			const root = createScratchRepository()
+			const root = sharedPlainRepository()
 			const steps = [createScopedStep().step]
 
 			const hashes = ['a'.repeat(40), 'b'.repeat(40)].map((gateBase) => ({
@@ -200,7 +203,7 @@ describe(
 		})
 
 		it('gateCommandHash beside a changedOnly step: HEAD as base and the given gate base, no base resolved by itself', () => {
-			const root = createScratchRepository()
+			const root = sharedPlainRepository()
 			const steps = [createScopedStep().step, { name: 'only', run: 'true', changedOnly: true }]
 			const gateBase = 'a'.repeat(40)
 			const head = rev({ root, revision: 'HEAD' })
@@ -479,17 +482,16 @@ describe('A11: an invalid gate config', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 		.replace('{step}', '"both"')
 		.replace('{problem}', INVALID_STEP_PROBLEMS.scopedWithChangedOnly)
 
-	function invalidPackage(): string {
-		return createScratchRepository({
-			'package.json': `${JSON.stringify({
-				name: 'demo',
-				scripts: {},
-				dialecte: {
-					gate: { fast: [{ name: 'both', run: 'true', scoped: true, changedOnly: true }] },
-				},
-			})}\n`,
-		})
-	}
+	// refused before anything runs or is written: the cases share one repository
+	const invalidPackage = createSharedScratchRepository({
+		'package.json': `${JSON.stringify({
+			name: 'demo',
+			scripts: {},
+			dialecte: {
+				gate: { fast: [{ name: 'both', run: 'true', scoped: true, changedOnly: true }] },
+			},
+		})}\n`,
+	})
 
 	it.each([
 		{ label: 'gate (fast)', argv: [] as string[] },

@@ -1,7 +1,7 @@
 /**
- * `lot wait` on a real lot notices what its stat signature could miss (R2-4, R2-5): a registry entry rewritten in
- * place with the same size and its mtime restored, a transition file added to a folder whose mtime is restored, and
- * a run marker whose process died while no file changed. Each move is made inside the injected sleep, so the order
+ * `lot wait` on a real lot notices what its stat signature could miss (R2-4, R2-5): a transition file added to a
+ * folder whose mtime is restored, and a run marker whose process died while no file changed. (A registry entry
+ * naming the lot ends the wait at its first read, so an in-place rewrite of one is never waited through.) Each move is made inside the injected sleep, so the order
  * is forced; the wait's timeout is the only thing that would end a missed change.
  */
 import { spawn, spawnSync } from 'node:child_process'
@@ -15,7 +15,7 @@ import { createQuestionLot } from '../../test/lot-questions.ts'
 import { RUN_STARTED_AT } from '../../test/lot-stop-workspace.constants.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { createWaitTime, waitJson } from '../../test/simulated-lot.ts'
-import { entryOf, transitionOf, writeRecordFile } from '../../test/store-records.ts'
+import { transitionOf, writeRecordFile } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { HANDOVER_FILES, HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 
@@ -60,42 +60,10 @@ function copyTimes(params: { from: string; to: string }): void {
 	if (touched.status !== 0) throw new Error(`touch -r failed: ${String(touched.stderr)}`)
 }
 
-/** A folder path as long as the lot's but not it: the entry naming it registers another lot. */
-function otherFolderOf(lot: QuestionLot): string {
-	const last = lot.lotFolder.length - 1
-	return `${lot.lotFolder.slice(0, last)}${lot.lotFolder[last] === 'x' ? 'y' : 'x'}`
-}
-
 describe(
 	'lot wait on a real lot: changes a stat signature could miss',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		it('the registry entry rewritten in place, same size, mtime restored, during the first sleep -> read again: exit 0 at ready', async () => {
-			const lot = createQuestionLot()
-			const name = `${QUESTION_LOT}.json`
-			const entryPath = writeRecordFile({
-				folder: lot.workspace.registry,
-				name,
-				text: JSON.stringify(entryOf({ state: 'pending', folder: otherFolderOf(lot) })),
-			})
-			const time = createWaitTime({
-				onSleep(call) {
-					if (call !== 1) return
-					changeKeepingTimes({
-						path: entryPath,
-						change() {
-							writeFileSync(
-								entryPath,
-								JSON.stringify(entryOf({ state: 'pending', folder: lot.lotFolder })),
-							)
-						},
-					})
-				},
-			})
-
-			await expect(endedUnder({ lot, time })).resolves.toEqual({ exitCode: 0, state: 'ready' })
-		})
-
 		it('a transition file added during the first sleep, the transitions folder mtime restored -> read again: exit 0 at ready', async () => {
 			const lot = createQuestionLot()
 			const folder = join(lot.lotFolder, 'transitions')

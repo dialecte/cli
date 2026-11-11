@@ -4,6 +4,7 @@
  * changed while its steps ran.
  */
 
+import { textOf } from '../print/print.ts'
 import { isSameKey, originOfRecord } from './check-store.ts'
 import { RECORD_REUSED_LINE, SHORT_SHA_LENGTH } from './gate-records.constants.ts'
 import { recordGate } from './gate-records.ts'
@@ -18,12 +19,17 @@ import type {
 	RecordedStep,
 } from './gate-records.types.ts'
 
-/** `reused: <command> green on this tree at <time> (HEAD <short>)`, naming the run that checked. */
+/**
+ * `reused: <command> green on this tree at <time> (HEAD <short>)`, naming the run that checked: escaped here, it
+ * quotes a record's values and a live output keeps colours.
+ */
 export function renderReuseLine(params: { command: string; record: GateRecord }): string {
 	const { at, head } = originOfRecord(params.record)
-	return RECORD_REUSED_LINE.replace('{command}', params.command)
-		.replace('{at}', at)
-		.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
+	return textOf([
+		RECORD_REUSED_LINE.replace('{command}', params.command)
+			.replace('{at}', at)
+			.replace('{head}', head.slice(0, SHORT_SHA_LENGTH)),
+	])
 }
 
 /**
@@ -76,6 +82,8 @@ export function recordCheckedRun(params: {
 	storeRoot?: string
 	/** The gate base the run resolved for its scoped steps; absent without one. */
 	base?: GateRecord['base']
+	/** How long the machine slept during the run, when it did. */
+	sleptMs?: number
 }): RecordedRun & { changedWhileRunning: boolean } {
 	const { keyBefore, keyAfter } = params
 	const changedTree =
@@ -90,6 +98,7 @@ export function recordCheckedRun(params: {
 		...(params.reused && { reused: originOfRecord(params.reused) }),
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
 		...(params.base && { base: params.base }),
+		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
 	})
 	return { ...recorded, changedWhileRunning: changedTree !== undefined }
 }

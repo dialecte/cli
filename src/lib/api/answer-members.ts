@@ -1,4 +1,5 @@
 import { closestNames } from '../closest-names.ts'
+import { endedOf, jsonOf, textOf } from '../print/print.ts'
 import { MEMBER_SUGGESTION_LIMIT } from './api-json.constants.ts'
 import { listMembers } from './list-members.ts'
 import { shortSummary } from './short-summary.ts'
@@ -21,11 +22,11 @@ export function answerMembers(params: {
 	const members = listMembers(params)
 	if (params.json)
 		return {
-			output: `${JSON.stringify({ expression, members }, null, '\t')}\n`,
+			output: endedOf(jsonOf({ expression, members }, '\t')),
 			exitCode: members.length ? 0 : 1,
 		}
 	if (members.length)
-		return { output: `${[expression, ...members.map(memberLine)].join('\n')}\n`, exitCode: 0 }
+		return { output: textOf([expression, ...members.map(memberLine), '']), exitCode: 0 }
 
 	const parent = expression.slice(0, Math.max(0, expression.lastIndexOf('.')))
 	const neighbours = parent
@@ -39,7 +40,7 @@ export function answerMembers(params: {
 	const hint = parent
 		? ` - under ${parent}: ${(closest.length ? closest : neighbours).join(', ') || 'nothing'}`
 		: ''
-	return { output: `nothing at ${expression}${hint}\n`, exitCode: 1 }
+	return { output: textOf([`nothing at ${expression}${hint}`, '']), exitCode: 1 }
 }
 
 function memberLine(member: Member): string {

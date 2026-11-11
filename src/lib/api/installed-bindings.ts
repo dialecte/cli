@@ -4,6 +4,7 @@
  * binding comes from its own `src/<version>/definition`; in an app it comes from here.
  */
 import { namespaceOf } from '../namespace-of.ts'
+import { textOf } from '../print/print.ts'
 import { isBuiltOnCore, readManifest } from '../schema/load-dialectes.ts'
 import { dependencyNames, findInstalledPackage } from '../skills/sync-skills.ts'
 import {
@@ -51,7 +52,8 @@ export function chooseInstalledBinding(params: {
 	packageName: string | undefined
 	version: string | undefined
 }): InstalledBindingChoice {
-	if (params.bindings.length === 0) return { kind: 'output', message: NO_DIALECTE_INSTALLED }
+	if (params.bindings.length === 0)
+		return { kind: 'output', message: textOf([NO_DIALECTE_INSTALLED, '']) }
 	const matching = params.bindings.filter(
 		(binding) =>
 			(params.packageName === undefined || binding.packageName === params.packageName) &&
@@ -65,17 +67,23 @@ export function chooseInstalledBinding(params: {
 		].join(' ')
 		return {
 			kind: 'output',
-			message: `no installed dialecte matches ${named}; installed:\n${listLines(params.bindings)}`,
+			message: textOf([
+				`no installed dialecte matches ${named}; installed:`,
+				...listLines(params.bindings),
+				'',
+			]),
 		}
 	}
 	return {
 		kind: 'output',
-		message: `several dialectes are installed: pass --package <name> [--version <v>]\n${listLines(matching)}`,
+		message: textOf([
+			'several dialectes are installed: pass --package <name> [--version <v>]',
+			...listLines(matching),
+			'',
+		]),
 	}
 }
 
-function listLines(bindings: readonly InstalledBinding[]): string {
-	return bindings
-		.map((binding) => `  ${binding.packageName} --version ${binding.version}\n`)
-		.join('')
+function listLines(bindings: readonly InstalledBinding[]): string[] {
+	return bindings.map((binding) => `  ${binding.packageName} --version ${binding.version}`)
 }

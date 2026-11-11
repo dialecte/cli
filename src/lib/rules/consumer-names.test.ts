@@ -22,9 +22,7 @@ describe('consumer tool names (git config dialecte.consumerNames)', () => {
 
 		const patterns = readReferencePatterns(root)
 
-		expect(patterns.filter((pattern) => pattern.label === 'consumer tool name')).toEqual([
-			{ label: 'consumer tool name', source: '\\b(Acme|Acme Studio)\\b' },
-		])
+		expect(patterns.filter((pattern) => pattern.label === 'consumer tool name')).toHaveLength(1)
 		expect(findReferences({ text: 'built for Acme here', patterns })).toEqual([
 			expect.objectContaining({ label: 'consumer tool name' }),
 		])

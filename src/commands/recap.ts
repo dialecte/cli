@@ -4,6 +4,7 @@
  */
 import { resolve } from 'node:path'
 
+import { resultOf } from '../lib/command-result.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readRecapRecords } from '../lib/recap/read-recap-records.ts'
 import { RECAP_USAGE } from '../lib/recap/recap.constants.ts'
@@ -15,17 +16,18 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 
 export function runRecap(params: { cwd: string; argv: string[] }): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [] })
-	if (typeof read === 'string') return { exitCode: 2, output: `${RECAP_USAGE} (${read})` }
-	if (read.words.length !== 1) return { exitCode: 2, output: RECAP_USAGE }
+	if (typeof read === 'string')
+		return resultOf({ exitCode: 2, lines: [`${RECAP_USAGE} (${read})`] })
+	if (read.words.length !== 1) return resultOf({ exitCode: 2, lines: [RECAP_USAGE] })
 	try {
 		const handover = readHandoverFolder(resolve(params.cwd, read.words[0]))
 		if (typeof handover === 'string')
-			return { exitCode: 1, output: `${verbPrefix('recap')}: ${handover}` }
+			return resultOf({ exitCode: 1, lines: [`${verbPrefix('recap')}: ${handover}`] })
 		const records = readRecapRecords({ handover, cwd: params.cwd })
 		if (typeof records === 'string')
-			return { exitCode: 1, output: `${verbPrefix('recap')}: ${records}` }
+			return resultOf({ exitCode: 1, lines: [`${verbPrefix('recap')}: ${records}`] })
 		return { exitCode: 0, output: renderRecap(records) }
 	} catch (error) {
-		return { exitCode: 1, output: `${verbPrefix('recap')}: ${(error as Error).message}` }
+		return resultOf({ exitCode: 1, lines: [`${verbPrefix('recap')}: ${(error as Error).message}`] })
 	}
 }

@@ -1,33 +1,40 @@
 /**
  * The hand-over card: the verdict (READY, BLOCKED, DONE, ABANDONED) with the size and what to read, what is
  * committed (each lot, a merge with its tree, HEAD), the gates as their records say (with the review and the
- * standard check), a contributor's contrib rows, the test receipts, the notes (before a run only), the command,
+ * standard check), a contributor's contrib rows, a READY card's review row (the command that opens it in an
+ * editor), the test receipts, the notes (before a run only), the command,
  * before and after the run, and a closing rule naming the hand-over (its registered name, else its folder).
  */
 import { basename, dirname, relative } from 'node:path'
 
 import { counted } from '../counted.ts'
+import { DEFAULT_EDITOR, EDITOR_CONFIG_KEY } from '../editor/editor.constants.ts'
+import { findExecutable } from '../editor/find-executable.ts'
+import { resolveEditor } from '../editor/resolve-editor.ts'
 import { formatAgentTime } from '../events/format-agent-time.ts'
 import { formatLotTokens } from '../events/format-tokens.ts'
 import { readHandoverUsage } from '../events/handover-usage.ts'
+import { realPathThroughAncestors } from '../file-system.ts'
 import {
 	buildCardGateLines,
 	buildContribLines,
 	buildMutationLines,
 	buildReviewLine,
+	sleptLineOf,
 } from '../gate-records/card-gates.ts'
 import {
 	CARD_GATE_MARKS,
 	CONTRIB_LINE_NAME,
 	DETAIL_SEPARATOR,
+	SLEPT_HANDOVER_RUN,
 } from '../gate-records/gate-records.constants.ts'
 import { readJudgedCases, readJudgedMoves } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
-import { shellQuote } from '../shell-quote.ts'
-import { readStandardLine } from '../standard/read-standard-line.ts'
+import { shellQuote, shellWord } from '../shell-quote.ts'
+import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
 import { countingReceipts, describeSkippedReceipts } from '../tdd/counting-receipts.ts'
 import {
 	entryNamesCase,
@@ -48,6 +55,7 @@ import {
 } from '../tdd/tdd-files.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
+import { readHandoverRunRecord } from './handover-run-record.ts'
 import { registeredNameOf } from './handover-store.ts'
 import {
 	ACCEPTED_REASON_INDENT,
@@ -60,11 +68,13 @@ import {
 	FLAG_ORDER,
 	HANDOVER_CARD_FOOTER,
 	HANDOVER_CARD_NAMED_FOOTER,
-	SHELL_PLAIN_WORD,
 	HANDOVER_CARD_NUMBERED_TITLE,
 	HANDOVER_CARD_SECTIONS,
 	HANDOVER_CARD_TITLE,
 	HANDOVER_PROBE_TIMEOUT_MILLISECONDS,
+	HANDOVER_REVIEW_COMMAND,
+	HANDOVER_REVIEW_NO_EDITOR_ROW,
+	HANDOVER_REVIEW_ROW,
 	MERGE_NOT_SIZED,
 	MINUS_SIGN,
 	NOISE_FLAG_LINE,
@@ -84,7 +94,7 @@ import {
 	WORKTREE_LINE_LABEL,
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
-import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
+import { checkedTree, mergedBranchesOf, ownLotTreeOf } from './lot-trees.ts'
 
 import type { CardLine, CardSection, SectionCard } from '../card/card.types.ts'
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
@@ -105,6 +115,7 @@ import type {
 	HandoverCard,
 	HandoverCardData,
 	HandoverProbe,
+	HandoverReviewRow,
 	HandoverVerdict,
 	MergeLot,
 	ResolvedLot,
@@ -133,7 +144,7 @@ export function buildHandoverCard(params: {
 	 * (`handover run --probe`, as `commit.sh` asks). Without it, the run line is `commit.sh`.
 	 */
 	cliPath?: string
-	/** How long the repository's cli gets to answer the probe; past it, it counts as none. Default 10 s. */
+	/** How long the repository's cli gets to answer the probe; past it, it counts as none. Default 60 s. */
 	probeTimeout?: number
 	/** Every lot is committed in the repository: the card says done, no command. */
 	done?: boolean
@@ -167,13 +178,28 @@ export function buildHandoverCard(params: {
 		branch: params.branch,
 		mergedBranches: mergedBranchesOf(params.lots),
 	}
+	// a committed merge hand-over judges tdd on the worktree's own lot tree, as its READY card did
+	const ownLotTree = params.done
+		? ownLotTreeOf({ root: commitRoot, lots: params.lots, commits: params.commits })
+		: undefined
+	const ownLotStateHash = ownLotTree === undefined ? undefined : hashStateTree(ownLotTree)
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
-		...buildCardGateLines({ ...checked, head: params.head, release: params.release }),
+		...buildCardGateLines({
+			...checked,
+			head: params.head,
+			release: params.release,
+			...(ownLotStateHash !== undefined && { ownLotStateHash }),
+		}),
+		// a committed hand-over whose run spanned a sleep says so
+		...(params.done ? sleptRunLines(params.folder) : []),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
 		buildReviewLine(params.folder),
-		readStandardLine({ folder: params.folder }),
+		// a committed card shows the state recorded on the lot, never the runner's environment
+		params.done
+			? readRecordedStandardLine({ folder: params.folder })
+			: readStandardLine({ folder: params.folder }),
 	]
 	const contrib =
 		profile === 'contributor' ? buildContribLines({ ...checked, head: params.head }) : undefined
@@ -182,10 +208,11 @@ export function buildHandoverCard(params: {
 	const otherTreeGates = allLines
 		.filter((line) => line.stale && line.status !== 'failed')
 		.map((line) => line.name)
+	const tddStateHash = ownLotStateHash ?? stateHash
 	const tdd = tddSection({
 		root,
-		judged: readJudgedCases({ root, stateHash }),
-		moved: readJudgedMoves({ root, stateHash }),
+		judged: readJudgedCases({ root, stateHash: tddStateHash }),
+		moved: readJudgedMoves({ root, stateHash: tddStateHash }),
 	})
 	const lots = params.lots.map(function cardLot(lot, index): CardLot {
 		const commit = params.commits[index]
@@ -230,6 +257,7 @@ export function buildHandoverCard(params: {
 	const index = worktreeIndexOf(root)
 	// the lot folder's events only: no probe, no git
 	const usage = readHandoverUsage({ folder: params.folder })
+	const review = verdict === 'READY' ? reviewRowOf({ root, id: name ?? params.folder }) : undefined
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
@@ -248,6 +276,7 @@ export function buildHandoverCard(params: {
 		lots,
 		...(params.commits.length && { tip: params.commits.at(-1) }),
 		...(merges.length && { merges }),
+		...(review && { review }),
 		...(params.done && { done: true }),
 		...(name && { name }),
 		folder: params.folder,
@@ -256,6 +285,27 @@ export function buildHandoverCard(params: {
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
 	}
+}
+
+/** The warning row of the folder's last run when it spanned a sleep of the machine; none otherwise. */
+function sleptRunLines(folder: string): CardGateLine[] {
+	const sleptMs = readHandoverRunRecord(folder)?.sleptMs
+	return sleptMs === undefined ? [] : [sleptLineOf({ sleptMs, run: SLEPT_HANDOVER_RUN })]
+}
+
+/**
+ * A READY card's `review` row: the command that opens the hand-over `id` (its name, else its folder, as one shell
+ * word) and the word of the editor it would open from `root`, the search path read now, nothing started.
+ */
+function reviewRowOf(params: { root: string; id: string }): HandoverReviewRow {
+	const cwd = params.root
+	const searchPath = process.env.PATH
+	const { editor, command } = resolveEditor({ cwd, searchPath, paths: [] })
+	const row = { command: HANDOVER_REVIEW_COMMAND.replace('{id}', shellWord(params.id)) }
+	// the fallback word and not on the path: the verb would refuse, the row says so
+	const noneFound =
+		editor === DEFAULT_EDITOR.word && !findExecutable({ word: command[0], searchPath, cwd })
+	return noneFound ? row : { ...row, editor }
 }
 
 /**
@@ -662,8 +712,8 @@ function caseEntryLines(params: {
 
 /**
  * The card in sections: the verdict with the size and the declarations to read, then the commit, gates, the
- * usage row (a lot folder's stations),
- * contrib (a contributor's), tdd and notes (before a run only) sections; the command is printed under the box, whole.
+ * usage row (a lot folder's stations), contrib (a contributor's), review (READY only), tdd and notes (before a run
+ * only) sections; the command is printed under the box, whole.
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
 	return {
@@ -679,6 +729,9 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 			...usageSection(card),
 			...(card.contrib
 				? [{ name: HANDOVER_CARD_SECTIONS.contrib, lines: gateLines(contribLines(card.contrib)) }]
+				: []),
+			...(card.review
+				? [{ name: HANDOVER_CARD_SECTIONS.review, lines: reviewLines(card.review) }]
 				: []),
 			...(card.tdd?.length ? [{ name: HANDOVER_CARD_SECTIONS.tdd, lines: card.tdd }] : []),
 			...optionalSection({ name: HANDOVER_CARD_SECTIONS.notes, text: card.notes }),
@@ -711,8 +764,7 @@ function footerOf(card: HandoverCard): string {
 	const id = card.name ?? card.folder
 	if (!id) return HANDOVER_CARD_FOOTER
 	// one shell word, so the footer's commands run as copied; a plain path stays as it reads
-	const word = SHELL_PLAIN_WORD.test(id) ? id : shellQuote(id)
-	return HANDOVER_CARD_NAMED_FOOTER.replaceAll('{id}', word)
+	return HANDOVER_CARD_NAMED_FOOTER.replaceAll('{id}', shellWord(id))
 }
 
 /**
@@ -813,12 +865,14 @@ function commitLines(card: HandoverCard): CardLine[] {
 
 /**
  * The worktree as the card names it: relative to the workspace (the main checkout's folder) when it is inside
- * it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path.
+ * it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path. Both sides compared as real
+ * paths, so a side reached through a link (`/var` -> `/private/var`) reads the same as one reached directly.
  */
 function worktreeShown(card: HandoverCard): string {
-	const workspace = dirname(card.repository)
-	return isInside({ path: card.worktree, folder: workspace })
-		? relative(workspace, card.worktree)
+	const workspace = realPathThroughAncestors(dirname(card.repository))
+	const worktree = realPathThroughAncestors(card.worktree)
+	return isInside({ path: worktree, folder: workspace })
+		? relative(workspace, worktree)
 		: card.worktree
 }
 
@@ -850,6 +904,25 @@ function contribLines(lines: readonly CardGateLine[]): readonly CardGateLine[] {
 			detail: [...lines.map((line) => line.name), ...(source ? [source] : [])].join(
 				DETAIL_SEPARATOR,
 			),
+		},
+	]
+}
+
+/** The `review` section's one line: the command, then the editor it opens; a wrap hangs under the command. */
+function reviewLines(review: HandoverReviewRow): CardLine[] {
+	return [
+		{
+			text:
+				review.editor === undefined
+					? HANDOVER_REVIEW_NO_EDITOR_ROW.replace('{command}', review.command).replace(
+							'{key}',
+							EDITOR_CONFIG_KEY,
+						)
+					: HANDOVER_REVIEW_ROW.replace('{command}', review.command).replace(
+							'{editor}',
+							review.editor,
+						),
+			hang: 0,
 		},
 	]
 }

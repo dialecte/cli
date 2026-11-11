@@ -19,8 +19,12 @@ export type AbandonHandoverParams = {
 export type AbandonHandoverResult = {
 	state: 'abandoned' | 'already' | 'refused'
 	message: string
+	/** The lines `handover abandon` prints, one entry per printed line, once the abandon reached the lock; else `message`. */
+	lines?: string[]
 	/** Whether the repository's lock was removed (it named this hand-over). */
 	released: boolean
+	/** The line saying what became of the lock, once the abandon reached it; none without a lock or before it. */
+	lockLines?: string[]
 }
 
 /** What became of a repository's lock: the line saying so (none without a lock), and whether it was removed. */

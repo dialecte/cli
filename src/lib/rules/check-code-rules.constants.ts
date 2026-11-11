@@ -19,6 +19,7 @@ export const RULE_NAMES = [
 	'abbreviation',
 	'committed-text-reference',
 	'temporary-root-shared',
+	'unreadable-file',
 ] as const
 
 /** A module constant by its name: `MAX_DEPTH`, `ROOTS`. */

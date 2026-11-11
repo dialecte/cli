@@ -1,10 +1,11 @@
 /**
- * The text of the lot report and of the feature report (33L0 section 7), as arrays of lines: every value printed
- * once through `printableOf`, tokens through `formatTokens`, unknown as `unknown`, a lower bound as `≥ n`.
+ * The text of the lot report and of the feature report (33L0 section 7), as arrays of lines the print boundary
+ * escapes (the station table's cells escaped first: the table is laid out on what prints), tokens through
+ * `formatTokens`, unknown as `unknown`, a lower bound as `≥ n`.
  */
 import { counted } from '../counted.ts'
+import { escapeControlCharacters } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { printableOf } from '../store/text-escape.ts'
 import { MS_PER_SECOND } from './attribute-steps.constants.ts'
 import { OUTSIDE_OWNER, SHARED_OWNER } from './attribute-steps.constants.ts'
 import { formatAgentTime } from './format-agent-time.ts'
@@ -69,7 +70,7 @@ export function renderLotReport(params: { report: ReportedLot }): string[] {
 		labelled({ label: 'events', value: eventsText({ report }) }),
 		labelled({
 			label: 'next',
-			value: report.next === null ? NOTHING_TEXT : printableOf(report.next),
+			value: report.next === null ? NOTHING_TEXT : report.next,
 		}),
 		...LEGEND_LINES.map((line, index) =>
 			labelled({ label: index === 0 ? LEGEND_LABEL : '', value: line }),
@@ -86,7 +87,7 @@ export function renderFeatureReport(params: {
 	const simulatedCount = report.simulated.count
 	const lines = [
 		[
-			`feature ${printableOf(report.feature)}`,
+			`feature ${report.feature}`,
 			counted({ count: report.lots.length, noun: 'lot' }),
 			...(simulatedCount > 0 && !params.simulated
 				? [`${simulatedCount} simulated (--simulated lists them)`]
@@ -120,9 +121,9 @@ function headerLine(params: { report: ReportedLot }): string {
 	const steps =
 		report.steps === null ? `steps ${UNKNOWN_TEXT}` : counted({ count: report.steps, noun: 'step' })
 	return [
-		`lot ${printableOf(report.lot)}  ${printableOf(report.state)}`,
-		`feature ${report.feature === null ? NOTHING_TEXT : printableOf(report.feature)}`,
-		`effort ${printableOf(report.effort ?? UNKNOWN_TEXT)} (${printableOf(report.effortSource ?? UNKNOWN_EFFORT_SOURCE)})`,
+		`lot ${report.lot}  ${report.state}`,
+		`feature ${report.feature === null ? NOTHING_TEXT : report.feature}`,
+		`effort ${report.effort ?? UNKNOWN_TEXT} (${report.effortSource ?? UNKNOWN_EFFORT_SOURCE})`,
 		steps,
 		counted({ count: report.rounds, noun: 'round' }),
 	].join(PART_SEPARATOR)
@@ -168,7 +169,7 @@ function alignedRow(params: { cells: readonly string[]; widths: readonly number[
 function runCells(params: { run: StationRunRow; suites: string }): string[] {
 	const { run } = params
 	return [
-		printableOf(run.station),
+		escapedCell(run.station),
 		run.step === null ? EMPTY_CELL : String(run.step),
 		run.round === null ? EMPTY_CELL : String(run.round),
 		textCell({ value: run.agent }),
@@ -179,13 +180,18 @@ function runCells(params: { run: StationRunRow; suites: string }): string[] {
 		params.suites,
 		run.skills.length === 0
 			? EMPTY_CELL
-			: run.skills.map((skill) => printableOf(skill.name)).join(ITEM_SEPARATOR),
+			: run.skills.map((skill) => escapedCell(skill.name)).join(ITEM_SEPARATOR),
 	]
 }
 
 /** A host text cell, escaped; `-` when not given. */
 function textCell(params: { value: string | null }): string {
-	return params.value === null ? EMPTY_CELL : printableOf(params.value)
+	return params.value === null ? EMPTY_CELL : escapedCell(params.value)
+}
+
+/** A table cell as the boundary prints it, so the columns are measured on what prints (escaping again changes nothing). */
+function escapedCell(text: string): string {
+	return escapeControlCharacters({ text })
 }
 
 /**
@@ -204,7 +210,7 @@ function suitesCell(params: {
 	if (counts.size === 0) return EMPTY_CELL
 	return [...counts]
 		.map(
-			([step, runs]) => `${STATION_SUITE_LABELS[step as SuiteFamily] ?? printableOf(step)} ${runs}`,
+			([step, runs]) => `${STATION_SUITE_LABELS[step as SuiteFamily] ?? escapedCell(step)} ${runs}`,
 		)
 		.join(ITEM_SEPARATOR)
 }
@@ -248,7 +254,7 @@ function moneyText(params: { money: readonly MoneySum[]; stations: number }): st
 			? ` ${MONEY_UNKNOWN_STATIONS.replace('{unknown}', String(first.unknownStations)).replace('{stations}', String(params.stations))}`
 			: ''
 	return `money ${params.money
-		.map((sum) => `${sum.amount} ${printableOf(sum.currency)}`)
+		.map((sum) => `${sum.amount} ${sum.currency}`)
 		.join(ITEM_SEPARATOR)}${unknown}`
 }
 
@@ -269,13 +275,12 @@ function skillsText(params: { skills: readonly SkillCount[] }): string {
 	if (params.skills.length === 0) return NOTHING_TEXT
 	return params.skills
 		.map((skill) => {
-			const hash =
-				skill.hash === null ? '' : ` ${printableOf(skill.hash.slice(0, SKILL_HASH_LENGTH))}`
+			const hash = skill.hash === null ? '' : ` ${skill.hash.slice(0, SKILL_HASH_LENGTH)}`
 			const counts = [
 				...(skill.seen > 0 ? [`${skill.seen} seen`] : []),
 				...(skill.askedNotSeen ? [`${skill.asked} asked not seen`] : []),
 			]
-			return `${printableOf(skill.name)}${hash} (${counts.join(ITEM_SEPARATOR)})`
+			return `${skill.name}${hash} (${counts.join(ITEM_SEPARATOR)})`
 		})
 		.join(PART_SEPARATOR)
 }
@@ -341,7 +346,7 @@ function reportedText(params: { reported: Record<string, number> }): string[] {
 	const entries = Object.entries(params.reported)
 	if (entries.length === 0) return []
 	return [
-		`reported by agents: ${entries.map(([name, runs]) => `${printableOf(name)} ${runs}`).join(ITEM_SEPARATOR)}`,
+		`reported by agents: ${entries.map(([name, runs]) => `${name} ${runs}`).join(ITEM_SEPARATOR)}`,
 	]
 }
 
@@ -351,8 +356,8 @@ function heavyText(params: { report: ReportedLot }): string {
 	return params.report.heavy
 		.map((heavy) => {
 			const [step = '', ...part] = heavy.step.split(HEAVY_PART_SEPARATOR)
-			const label = SUITE_LINE_LABELS[step as SuiteFamily] ?? printableOf(step)
-			const name = [label, ...part.map((piece) => printableOf(piece))].join(HEAVY_PART_SEPARATOR)
+			const label = SUITE_LINE_LABELS[step as SuiteFamily] ?? step
+			const name = [label, ...part].join(HEAVY_PART_SEPARATOR)
 			return `${name} ${durationText({ seconds: heavy.seconds })}`
 		})
 		.join(PART_SEPARATOR)
@@ -368,8 +373,8 @@ function reviewText(params: { report: ReportedLot }): string {
 			const states = Object.entries(round.byState)
 			const detail =
 				states.length === 1
-					? printableOf(states[0]?.[0] ?? '')
-					: states.map(([state, count]) => `${count} ${printableOf(state)}`).join(ITEM_SEPARATOR)
+					? (states[0]?.[0] ?? '')
+					: states.map(([state, count]) => `${count} ${state}`).join(ITEM_SEPARATOR)
 			const findings =
 				index === 0 ? counted({ count: round.findings, noun: 'finding' }) : String(round.findings)
 			return `round ${round.round}: ${findings} (${detail})`
@@ -383,17 +388,14 @@ function foldersText(params: { report: ReportedLot }): string {
 	const parts: string[] = []
 	if (worktreeAdd.count > 0) {
 		const sources = Object.keys(worktreeAdd.nodeModules).map((source) =>
-			Object.hasOwn(WORKTREE_ADD_SOURCE_TEXTS, source)
-				? WORKTREE_ADD_SOURCE_TEXTS[source]
-				: printableOf(source),
+			Object.hasOwn(WORKTREE_ADD_SOURCE_TEXTS, source) ? WORKTREE_ADD_SOURCE_TEXTS[source] : source,
 		)
 		const how = sources.length === 0 ? '' : ` (${sources.join(ITEM_SEPARATOR)})`
 		parts.push(`worktree add ${durationText({ seconds: worktreeAdd.seconds })}${how}`)
 	}
 	if (throwaways.count > 0)
 		parts.push(`throwaways ${throwaways.count} (${durationText({ seconds: throwaways.seconds })})`)
-	for (const [action, done] of Object.entries(actions))
-		parts.push(`${printableOf(action)} ${done.count}`)
+	for (const [action, done] of Object.entries(actions)) parts.push(`${action} ${done.count}`)
 	return parts.length === 0 ? NOTHING_TEXT : parts.join(PART_SEPARATOR)
 }
 
@@ -418,7 +420,7 @@ function featureLotLine(params: { lot: FeatureLot }): string {
 		.filter(([, runs]) => runs !== 0)
 		.map(
 			([family, runs]) =>
-				`${STATION_SUITE_LABELS[family as SuiteFamily] ?? printableOf(family)} ${runs ?? UNKNOWN_TEXT}`,
+				`${STATION_SUITE_LABELS[family as SuiteFamily] ?? family} ${runs ?? UNKNOWN_TEXT}`,
 		)
 	const suitesValue =
 		lot.suites === null
@@ -427,7 +429,7 @@ function featureLotLine(params: { lot: FeatureLot }): string {
 				? EMPTY_CELL
 				: suites.join(ITEM_SEPARATOR)
 	return [
-		`${printableOf(lot.lot)}  ${printableOf(lot.state)}`,
+		`${lot.lot}  ${lot.state}`,
 		`tokens ${lotTokensText({ total: lot.tokens })}`,
 		`time ${durationText({ seconds: lot.elapsed })}`,
 		lot.runs === null ? `runs ${UNKNOWN_TEXT}` : counted({ count: lot.runs, noun: 'run' }),
@@ -463,15 +465,11 @@ function featureTotalsLines(params: { totals: FeatureTotals; prefix: string }): 
 function tokensByName(params: { totals: FeatureTotals['byStation'] }): string {
 	const entries = Object.entries(params.totals)
 	if (entries.length === 0) return NOTHING_TEXT
-	return entries
-		.map(([name, total]) => `${printableOf(name)} ${formatTokenTotal(total)}`)
-		.join(ITEM_SEPARATOR)
+	return entries.map(([name, total]) => `${name} ${formatTokenTotal(total)}`).join(ITEM_SEPARATOR)
 }
 
 /** `agent-a (2) · agent-b (1)`, or `none`. */
 function agentsListText(params: { agents: readonly AgentCount[] }): string {
 	if (params.agents.length === 0) return NOTHING_TEXT
-	return params.agents
-		.map((agent) => `${printableOf(agent.name)} (${agent.runs})`)
-		.join(PART_SEPARATOR)
+	return params.agents.map((agent) => `${agent.name} (${agent.runs})`).join(PART_SEPARATOR)
 }

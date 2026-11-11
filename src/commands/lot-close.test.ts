@@ -5,11 +5,13 @@ import {
 	readFileSync,
 	readlinkSync,
 	realpathSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
+import { readEntry } from '../../test/handover-store-scenario.ts'
 import {
 	cardLinesOf,
 	registerCommittedHandover,
@@ -41,6 +43,7 @@ import {
 } from '../../test/worktree-pool.ts'
 import {
 	handoverStoreOf,
+	recordHandoverClosed,
 	recordHandoverState,
 	registerHandover,
 } from '../lib/handover/handover-store.ts'
@@ -754,6 +757,189 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 		expect(existsSync(second.worktree)).toBe(true)
 		expect(poolEntriesOf(scenario.worktreesFolder)).toHaveLength(1)
 	})
+
+	it('a hand-over closed by an earlier run, closed again → <name> already closed, exit 0, nothing moved again', () => {
+		const scenario = createScenario()
+		const { name } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
+		expect(runLotClose(closing({ scenario, argv: [name] }).call).exitCode).toBe(0)
+		const trashedBefore = trashedNamesOf(scenario.worktreesFolder)
+		const again = closing({ scenario, argv: [name] })
+
+		const result = runLotClose(again.call)
+
+		expect({
+			exitCode: result.exitCode,
+			says: result.output.includes(`${name} already closed`),
+			refusal: result.output.includes('nothing to close'),
+			trashed: trashedNamesOf(scenario.worktreesFolder),
+			calls: again.calls,
+		}).toEqual({
+			exitCode: 0,
+			says: true,
+			refusal: false,
+			trashed: trashedBefore,
+			calls: [],
+		})
+	})
+
+	it('the first close of a hand-over → its registry entry holds closed, the time of the close', () => {
+		const scenario = createScenario()
+		const { name } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
+		expect(readEntry({ root: scenario.repository, name })).not.toHaveProperty('closed')
+
+		runLotClose(closing({ scenario, argv: [name] }).call)
+
+		expect(readEntry({ root: scenario.repository, name })).toMatchObject({
+			closed: expect.stringMatching(/^2026-11-06T10:00:00/),
+		})
+	})
+
+	it('a hand-over closed, then the _trash/ folder emptied, closed again → still <name> already closed, exit 0', () => {
+		const scenario = createScenario()
+		const { name } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
+		expect(runLotClose(closing({ scenario, argv: [name] }).call).exitCode).toBe(0)
+		rmSync(join(scenario.worktreesFolder, '_trash'), { recursive: true, force: true })
+		git({ root: scenario.repository, args: ['worktree', 'prune'] })
+
+		const result = runLotClose(closing({ scenario, argv: [name] }).call)
+
+		expect({
+			exitCode: result.exitCode,
+			says: result.output.includes(`${name} already closed`),
+		}).toEqual({ exitCode: 0, says: true })
+	})
+
+	it('a committed hand-over whose worktree was removed by hand (never closed) → still kept, nothing to close, exit 1', () => {
+		const scenario = createScenario()
+		const { name, worktree } = createLot({
+			scenario,
+			index: '0001',
+			tail: 'x',
+			state: 'committed',
+		})
+		rmSync(worktree, { recursive: true, force: true })
+		git({ root: scenario.repository, args: ['worktree', 'prune'] })
+
+		const result = runLotClose(closing({ scenario, argv: [name] }).call)
+
+		expect({
+			exitCode: result.exitCode,
+			refusal: result.output.includes('nothing to close'),
+			says: result.output.includes('already closed'),
+		}).toEqual({ exitCode: 1, refusal: true, says: false })
+	})
+
+	it.each([
+		{ order: 'A then B', bFirst: false },
+		{ order: 'B then A', bFirst: true },
+	])(
+		'A already closed and B not closed, both registered on one live worktree, named $order → A already closed, B decided on its own and closed now (never "the same worktree as"), closed recorded on B only, exit 0',
+		({ bFirst }) => {
+			const scenario = createScenario()
+			// both are written, committed hand-overs with a located lot: each one's final record can be kept
+			const first = createLot({
+				scenario,
+				index: '0001',
+				tail: 'x',
+				state: 'committed',
+				written: true,
+			})
+			const second = registerCommittedHandover({ worktree: first.worktree, tail: 'y' }).name
+			recordHandoverClosed({
+				store: handoverStoreOf(scenario.repository),
+				name: first.name,
+				at: new Date('2026-11-05T09:00:00Z'),
+			})
+			const { call } = closing({
+				scenario,
+				argv: bFirst ? [second, first.name] : [first.name, second],
+			})
+
+			const result = runLotClose(call)
+
+			expect({
+				exitCode: result.exitCode,
+				firstAlreadyClosed: result.output.includes(`${first.name} already closed`),
+				secondClosedNow: new RegExp(`closed +${second}(?! already)`).test(result.output),
+				sameWorktree: result.output.includes('the same worktree as'),
+				worktreeGone: !existsSync(first.worktree),
+				pooled: poolEntriesOf(scenario.worktreesFolder).length,
+				firstClosed: readEntry({ root: scenario.repository, name: first.name }),
+				secondRecorded: readEntry({ root: scenario.repository, name: second }),
+			}).toEqual({
+				exitCode: 0,
+				firstAlreadyClosed: true,
+				secondClosedNow: true,
+				sameWorktree: false,
+				worktreeGone: true,
+				pooled: 1,
+				firstClosed: expect.objectContaining({ closed: '2026-11-05T09:00:00.000Z' }),
+				secondRecorded: expect.objectContaining({ closed: '2026-11-06T10:00:00.000Z' }),
+			})
+		},
+	)
+
+	it.each([
+		{ order: 'A then B', bFirst: false },
+		{ order: 'B then A', bFirst: true },
+	])(
+		'A already closed and B not closed, both registered on one dirty worktree, named $order → A already closed, B kept with its own reason (dirty), closed not recorded on B, nothing moved, exit 1',
+		({ bFirst }) => {
+			const scenario = createScenario()
+			const first = createLot({
+				scenario,
+				index: '0001',
+				tail: 'x',
+				state: 'committed',
+				untracked: true,
+			})
+			const folder = realpathSync(temporaryFolder('dialecte-handover-'))
+			const second = registerHandover({
+				root: first.worktree,
+				folder,
+				branch: 'feat/x',
+				now: NOW,
+			})
+			recordHandoverState({
+				store: handoverStoreOf(scenario.repository),
+				folder,
+				state: 'committed',
+			})
+			recordHandoverClosed({
+				store: handoverStoreOf(scenario.repository),
+				name: first.name,
+				at: new Date('2026-11-05T09:00:00Z'),
+			})
+			const { call, calls } = closing({
+				scenario,
+				argv: bFirst ? [second, first.name] : [first.name, second],
+			})
+
+			const result = runLotClose(call)
+
+			expect({
+				exitCode: result.exitCode,
+				firstAlreadyClosed: result.output.includes(`${first.name} already closed`),
+				secondDirty: new RegExp(`${second}[^\\n]*dirty`).test(result.output),
+				sameWorktree: result.output.includes('the same worktree as'),
+				worktreeKept: existsSync(join(first.worktree, 'node_modules')),
+				pooled: poolEntriesOf(scenario.worktreesFolder),
+				trashed: trashedNamesOf(scenario.worktreesFolder),
+				calls,
+				secondRecorded: readEntry({ root: scenario.repository, name: second }),
+			}).toEqual({
+				exitCode: 1,
+				firstAlreadyClosed: true,
+				secondDirty: true,
+				sameWorktree: false,
+				worktreeKept: true,
+				pooled: [],
+				trashed: [],
+				calls: [],
+				secondRecorded: expect.not.objectContaining({ closed: expect.anything() }),
+			})
+		},
+	)
 
 	it('--json → one outcome per named hand-over, { handover, closed: true }', () => {
 		const scenario = createScenario()

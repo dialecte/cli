@@ -9,6 +9,12 @@ export const HANDOVER_ENTRY_STATES = ['pending', 'committed', 'abandoned'] as co
 /** Name of the lock file, in the repository's git folder, while a hand-over script waits or runs. */
 export const HANDOVER_LOCK_FILE = 'dialecte-handover.lock'
 
+/** What the name of a stale lock set aside holds after the lock's: a taker's own name, removed once it is read. */
+export const LOCK_ASIDE_INFIX = '.aside-'
+
+/** How many times a writer tries to take the lock before it answers with whoever holds it. */
+export const LOCK_TAKE_ATTEMPTS = 8
+
 /**
  * Where git keeps the folder of each linked worktree, in the git common folder, and the file of that folder
  * naming the worktree's `.git` (so a worktree's own git folder is found without git, its worktree gone or not).
@@ -32,6 +38,8 @@ export const HANDOVER_FILES = {
 	mergesHash: 'merges.sha256',
 	/** Written by `handover abandon`: the hand-over will not run (`{ "at" }`, the time it was abandoned). */
 	abandoned: 'abandoned.json',
+	/** Written when a run (`--rehearse` or not) ends: `{ "sleptMs"? }`, the sleep it spanned; the DONE card reads it. */
+	lastRun: 'last-run.json',
 } as const
 
 /** The folder, in the repository's shared git folder, registering every hand-over written (one entry each). */
@@ -87,7 +95,7 @@ export const HANDOVER_RUN_TEXTS = {
 
 /** `handover` without a lots file or a verb: its verbs, `write` first. */
 export const HANDOVER_USAGE =
-	'handover: expected a verb: write <lots.json> [--out <id|folder>] [--rehash] [--json] | show [<name|folder>] | run [<name|folder>] | abandon [<name|folder>] | list | --legend (handover <lots.json> is handover write <lots.json>)'
+	'handover: expected a verb: write <lots.json> [--out <id|folder>] [--rehash] [--json] | show [<name|folder>] | review <name|index|folder> [--json] [--print] | run [<name|folder>] | abandon [<name|folder>] | list | --legend (handover <lots.json> is handover write <lots.json>)'
 
 /** `handover <lots.json> --rehash` of an abandoned folder: refused, nothing written. */
 export const HANDOVER_REHASH_ABANDONED_REFUSAL =
@@ -98,6 +106,8 @@ export const HANDOVER_REHASH_ABANDONED_REFUSAL =
  * written); `{name}` is the lot's full name. The write's refusals take the `handover: ` prefix where printed.
  */
 export const HANDOVER_LOT_REFUSALS = {
+	damaged:
+		'{name} is damaged ({damage}): its folder takes no hand-over; to move it aside: dialecte lot stop {name} --reason <text>',
 	simulated: 'a simulated lot has no hand-over ({name})',
 	ended: '{name} is {state}: its folder takes no hand-over',
 	question: 'answer {question} first: {answer}',
@@ -107,6 +117,8 @@ export const HANDOVER_LOT_REFUSALS = {
 	runCanceled: 'handover run: {name} is canceled: its hand-over is not run',
 	abandon:
 		'{name} is a lot: its hand-over is redone with dialecte handover write --rehash --out {name}; to end the lot: dialecte lot stop {name}',
+	danglingLink:
+		'--out leads through {link}, a symbolic link to nothing ({target}): name the folder itself, or remove the link',
 } as const
 
 /** The lot states whose folder takes no hand-over. */
@@ -147,6 +159,9 @@ export const HEAD_GUARD_NAME = 'head'
 /** The head guard's detail when every lot is on HEAD as reviewed: the guards after it are not run. */
 export const ALREADY_COMMITTED_DETAIL =
 	'every lot is committed already: the hand-over is already committed, the guards after head are not run'
+
+/** `lot close` of a hand-over its registry entry records closed by an earlier close: nothing moved, exit 0. */
+export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed'
 
 /** How many commits only a worktree's HEAD reflog reaches `lot close` names when it keeps it; the rest are counted. */
 export const HEAD_REFLOG_COMMITS_SHOWN = 3
@@ -326,8 +341,8 @@ export const HANDOVER_PROBE_COMMAND = [
 /** How many untracked entries the rehearsal's warning names before `and N more`. */
 export const UNTRACKED_WARNING_LIMIT = 10
 
-/** How long the repository's cli gets to answer the probe. */
-export const HANDOVER_PROBE_TIMEOUT_MILLISECONDS = 10_000
+/** How long the repository's cli gets to answer the probe: wide, a loaded machine must not read as no repository cli. */
+export const HANDOVER_PROBE_TIMEOUT_MILLISECONDS = 60_000
 
 /** The folder (in the system's temporary folder) the probe's answer is written to. */
 export const HANDOVER_PROBE_FOLDER_PREFIX = 'dialecte-probe-'
@@ -443,8 +458,44 @@ export const SHORTSTAT_PATTERNS = {
 /** The text of the card's closing rule: where its terms and the receipts are explained. */
 export const HANDOVER_CARD_FOOTER = 'dialecte handover --legend · details: dialecte tdd status'
 
-/** A word the shell reads as it is, unquoted (the footer quotes any other). */
-export const SHELL_PLAIN_WORD = /^[A-Za-z0-9._/@%+=:,-]+$/
+/** The command a READY card's `review` row names; `{id}` the hand-over's name, else its folder, as one shell word. */
+export const HANDOVER_REVIEW_COMMAND = 'dialecte handover review {id}'
+
+/** The card's `review` row: the command, two spaces, the editor it opens. */
+export const HANDOVER_REVIEW_ROW = '{command}  (opens {editor})'
+
+/** The row when no editor is found: `{key}` the git config key that names one. */
+export const HANDOVER_REVIEW_NO_EDITOR_ROW = '{command}  (no editor found: set git config {key})'
+
+/** Where `handover review` writes a merge hand-over's own change, under the hand-over folder. */
+export const REVIEW_DIFF_FOLDER = 'review'
+export const REVIEW_DIFF_FILE = 'lot.diff'
+
+/** The prefix of the scratch folder holding the index the review diff is read through. */
+export const REVIEW_INDEX_FOLDER_PREFIX = 'dialecte-review-index-'
+
+/**
+ * The git options the review diff is read with, whatever the person's git config: no colour, no external diff
+ * nor text conversion, the `a/` `b/` prefixes, paths from the repository's top, no rename folding.
+ */
+export const REVIEW_DIFF_CONFIG = [
+	'-c',
+	'color.ui=never',
+	'-c',
+	'diff.noprefix=false',
+	'-c',
+	'diff.mnemonicPrefix=false',
+	'-c',
+	'diff.relative=false',
+] as const
+export const REVIEW_DIFF_OPTIONS = [
+	'--no-color',
+	'--no-ext-diff',
+	'--no-textconv',
+	'--no-renames',
+	'--src-prefix=a/',
+	'--dst-prefix=b/',
+] as const
 
 /**
  * The closing rule of the card of a known hand-over: `{id}` its registered name, or its folder without an entry
@@ -506,6 +557,7 @@ export const HANDOVER_CARD_SECTIONS = {
 	commit: 'commit',
 	gates: 'gates',
 	contrib: 'contrib',
+	review: 'review',
 	tdd: 'tdd',
 	notes: 'notes',
 } as const

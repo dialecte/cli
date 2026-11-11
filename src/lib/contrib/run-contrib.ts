@@ -35,6 +35,8 @@ import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
+import { jsonOf, joinedOf, textOf } from '../print/print.ts'
+import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { readProfile } from '../profile/profile.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
@@ -45,7 +47,7 @@ import {
 } from '../release/local-dependencies.ts'
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
-import { contribCommandHash } from './contrib-key.ts'
+import { contribKeyHash } from './contrib-key.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
 import {
 	CONTRIB_BUILTIN_STEPS,
@@ -90,14 +92,15 @@ export async function runContrib(params: {
 	const json = hasFlag(argv, 'json')
 	const reusable = !hasFlag(argv, 'no-reuse')
 	const configuration = readConfiguration(cwd)
-	if ('refusal' in configuration) return { exitCode: 2, output: configuration.refusal }
+	if ('refusal' in configuration) return { exitCode: 2, output: textOf([configuration.refusal]) }
 	const { packageJson, steps } = configuration
 	// the run's events: its start before any row, its end after the record (D12); contrib is heavy as a whole
 	const recorder = startStep({ cwd, step: 'contrib', heavy: true, warn: params.warn })
 	const durations = new Map<StepResult, number>()
 	const reusedParts = new Set<StepResult>()
 
-	const commandHash = contribCommandHash({
+	const commandHash = contribKeyHash({
+		root: cwd,
 		steps,
 		head: readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim(),
 	})
@@ -109,7 +112,7 @@ export async function runContrib(params: {
 	const shownLive = new Set<StepResult>()
 	/** The row's line (and the lines under it), live, in run order. */
 	function showLive(shown: { result: StepResult; finish?: (...lines: string[]) => void }): void {
-		const lines = renderResultLines(shown.result)
+		const lines = renderResultLines(shown.result).map((line) => textOf([line]))
 		if (shown.finish) shown.finish(...lines)
 		else for (const line of lines) live?.writeLine(line)
 		shownLive.add(shown.result)
@@ -121,7 +124,7 @@ export async function runContrib(params: {
 	function showAbsentLive(): void {
 		if (absentShown || !progress) return
 		absentShown = true
-		for (const line of absentLines) live?.writeLine(line)
+		for (const line of absentLines) live?.writeLine(textOf([line]))
 	}
 	if (found && progress)
 		live?.writeLine(renderReuseLine({ command: CONTRIB_COMMAND, record: found }))
@@ -158,7 +161,8 @@ export async function runContrib(params: {
 	})
 
 	const mutation = mutationLine(cwd)
-	if (mutation && progress) for (const line of renderContribLines(mutation)) live?.writeLine(line)
+	if (mutation && progress)
+		for (const line of renderContribLines(mutation)) live?.writeLine(textOf([line]))
 	const lines = [...results.map(contribLineOf), ...(mutation ? [mutation] : [])]
 	const failed = lines.filter((line) => line.row.status === 'failed').map((line) => line.row.name)
 	const exitCode = failed.length ? 1 : 0
@@ -167,43 +171,42 @@ export async function runContrib(params: {
 	if (json)
 		return {
 			exitCode,
-			output: JSON.stringify(
+			output: jsonOf(
 				{
 					profile: 'contributor',
 					rows: lines.map((line) => line.row),
 					...(original && { reused: original }),
 				},
-				null,
 				2,
 			),
 		}
 	const failedStep = results.find((result) => result.status === 'failed' && result.tail)
+	const summary = textOf([
+		...(found && !live?.tty ? [renderReuseLine({ command: CONTRIB_COMMAND, record: found })] : []),
+		// on a terminal a row's line is on the screen already: the summary does not repeat it
+		...results
+			.filter((result) => !(live?.tty && shownLive.has(result)))
+			.flatMap((result) => [
+				...(isReleaseRow(result.step) ? absentLines : []),
+				...renderResultLines(result),
+			]),
+		// no release row to stand before (a reused record): after the rows
+		...(live?.tty || results.some((result) => isReleaseRow(result.step)) ? [] : absentLines),
+		...(mutation && !live?.tty ? renderContribLines(mutation) : []),
+		...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
+		failed.length
+			? CONTRIB_FAILED_VERDICT.replace('{rows}', failed.join(', '))
+			: found
+				? CONTRIB_REUSED_VERDICT
+				: CONTRIB_GREEN_VERDICT,
+		...(failedStep?.tail ? [`--- last lines of ${failedStep.step.name} ---`] : []),
+	])
+	// the failed step's last lines are its own output, relayed line by line
 	return {
 		exitCode,
-		output: [
-			...(found && !live?.tty
-				? [renderReuseLine({ command: CONTRIB_COMMAND, record: found })]
-				: []),
-			// on a terminal a row's line is on the screen already: the summary does not repeat it
-			...results
-				.filter((result) => !(live?.tty && shownLive.has(result)))
-				.flatMap((result) => [
-					...(isReleaseRow(result.step) ? absentLines : []),
-					...renderResultLines(result),
-				]),
-			// no release row to stand before (a reused record): after the rows
-			...(live?.tty || results.some((result) => isReleaseRow(result.step)) ? [] : absentLines),
-			...(mutation && !live?.tty ? renderContribLines(mutation) : []),
-			...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
-			failed.length
-				? CONTRIB_FAILED_VERDICT.replace('{rows}', failed.join(', '))
-				: found
-					? CONTRIB_REUSED_VERDICT
-					: CONTRIB_GREEN_VERDICT,
-			...(failedStep?.tail
-				? [`--- last lines of ${failedStep.step.name} ---`, failedStep.tail]
-				: []),
-		].join('\n'),
+		output: failedStep?.tail
+			? joinedOf([summary, relayedTextOf(childLinesOf(failedStep.tail))])
+			: summary,
 	}
 }
 

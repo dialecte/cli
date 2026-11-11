@@ -13,6 +13,8 @@ import { RELEASE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-reco
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
 import { reusedResults } from '../gate-records/record-reuse.ts'
 import { readPackageJson } from '../package-json.ts'
+import { joinedOf, textOf } from '../print/print.ts'
+import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
 import { resolveGateBase } from './gate-base.ts'
@@ -66,7 +68,7 @@ export async function runHookGate(params: {
 	const packageJson = readPackageJson(cwd)
 	const fullSteps = resolveGateSteps({ packageJson, mode: 'full' })
 	const testSteps = listHookTestSteps(fullSteps)
-	if (testSteps.length === 0) return { exitCode: 0, output: GATE_HOOK_NO_TEST_STEP_LINE }
+	if (testSteps.length === 0) return { exitCode: 0, output: textOf([GATE_HOOK_NO_TEST_STEP_LINE]) }
 	// the full gate's key holds its base whenever a full step is scoped; the hook says it only when it runs one
 	const hookBase = holdsScopedStep(fullSteps)
 		? resolveHookBase({
@@ -106,20 +108,20 @@ export async function runHookGate(params: {
 		})
 		return {
 			exitCode: 0,
-			output: [
+			output: textOf([
 				...baseLines,
 				reuse.line,
 				...(shown
 					? [renderHookBaseLine({ base: shown.base, selection: GATE_HOOK_SELECTION_WORDS.reused })]
 					: []),
-			].join('\n'),
+			]),
 		}
 	}
 	const runningLine = GATE_HOOK_RUNNING_LINE.replace('{tree}', key.tree.slice(0, SHORT_SHA_LENGTH))
 	const { live } = params
 	const progress = live ? createStepProgress({ live, clock: createSystemClock() }) : undefined
 	// off a terminal the result holds them: each said once
-	if (live?.tty) for (const line of baseLines) live.writeLine(line)
+	if (live?.tty) for (const line of baseLines) live.writeLine(textOf([line]))
 	live?.writeLine(runningLine)
 	const durations = new Map<StepResult, number>()
 	const results = await runGateSteps({
@@ -134,7 +136,7 @@ export async function runHookGate(params: {
 			const running = progress?.start({ name: step.name, detail: step.run })
 			return function finished(result) {
 				durations.set(result, finishPart())
-				running?.finish(...hookStepLines(result))
+				running?.finish(...hookStepLines(result).map((line) => textOf([line])))
 			}
 		},
 	})
@@ -153,16 +155,18 @@ export async function runHookGate(params: {
 		? renderHookBaseLine({ base: shown.base, selection: selectionWords(results) })
 		: undefined
 	if (baseLine && live?.tty) live.writeLine(baseLine)
+	const own = textOf([
+		// on a terminal the lines are on the screen already
+		...(live?.tty ? [] : [...baseLines, runningLine, ...results.flatMap(hookStepLines)]),
+		...(summary && !live?.tty ? [summary] : []),
+		...(baseLine && !live?.tty ? [baseLine] : []),
+		failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
+		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
+	])
 	return {
 		exitCode: failed ? 1 : 0,
-		output: [
-			// on a terminal the lines are on the screen already
-			...(live?.tty ? [] : [...baseLines, runningLine, ...results.flatMap(hookStepLines)]),
-			...(summary && !live?.tty ? [summary] : []),
-			...(baseLine && !live?.tty ? [baseLine] : []),
-			failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
-			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
-		].join('\n'),
+		// the failed step's last lines are its own output, relayed line by line
+		output: failed?.tail ? joinedOf([own, relayedTextOf(childLinesOf(failed.tail))]) : own,
 	}
 }
 

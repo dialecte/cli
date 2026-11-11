@@ -52,6 +52,7 @@ async function loadDialecte(params: {
 	manifest: PackageManifest
 	packageName: string
 }): Promise<LoadedDialecte | undefined> {
+	const standard = readStandard(params.manifest)
 	let config: AnyDialecteConfig | undefined
 	for (const file of entryFiles(params)) {
 		const exported: Record<string, unknown> = await import(pathToFileURL(file).href)
@@ -65,7 +66,22 @@ async function loadDialecte(params: {
 		throw new Error(
 			`its core (${readersFile}) lacks ${CORE_READER_NAMES.filter((name) => typeof readers[name] !== 'function').join(', ')}: update @dialecte/core`,
 		)
-	return { packageName: params.packageName, config, readers }
+	return { packageName: params.packageName, config, readers, standard }
+}
+
+/**
+ * The standard a dialecte implements, its manifest's `dialecte.standard` as written: undefined when there is no
+ * `dialecte` object or it names none; one that is not a string, or is blank, throws (the dialecte is skipped).
+ */
+function readStandard(manifest: PackageManifest): string | undefined {
+	const field: unknown = manifest.dialecte
+	if (typeof field !== 'object' || field === null || !('standard' in field)) return undefined
+	const { standard } = field
+	if (typeof standard !== 'string' || standard.trim() === '')
+		throw new Error(
+			`dialecte.standard must be a non-empty string, found ${JSON.stringify(standard) ?? String(standard)}`,
+		)
+	return standard
 }
 
 /** A folder's package.json, undefined when it has none. */

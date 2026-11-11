@@ -6,6 +6,7 @@ import {
 	createScratchRepository as scratchRepository,
 	temporaryFolder,
 } from './scratch-repository.ts'
+import { GATE_REAL_TOOLS_CASE_TIMEOUT } from './test-timing.constants.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -19,7 +20,7 @@ function scratchFolder(files: Record<string, string>): string {
 }
 
 // each case spawns the real tools through npx: slower than a unit test when the suite runs in parallel
-describe('runGateSteps on the real tools', { timeout: 30_000 }, () => {
+describe('runGateSteps on the real tools', { timeout: GATE_REAL_TOOLS_CASE_TIMEOUT }, () => {
 	it('vitest: 2 passed and 1 skipped → passed with those counts; 1 failing → failed', async () => {
 		const green = scratchFolder({
 			'demo.test.js': "test('a', () => {})\ntest('b', () => {})\ntest.skip('c', () => {})\n",

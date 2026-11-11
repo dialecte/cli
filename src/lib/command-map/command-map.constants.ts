@@ -1,5 +1,5 @@
 /** The declared map of the commands: family, summary, usage lines, exit codes and one example each. */
-import { lotFormsOf } from '../review-rounds/review-round-verbs.ts'
+import { renamedEntriesOf } from '../review-rounds/review-round-verbs.ts'
 
 import type { CommandFamily, CommandMap } from './command-map.types.ts'
 
@@ -8,6 +8,7 @@ export const COMMAND_FAMILIES: readonly CommandFamily[] = [
 	'Discover',
 	'Use',
 	'Grow',
+	'Plan',
 	'Check',
 	'Hand over',
 	'Workspace',
@@ -114,8 +115,11 @@ export const COMMAND_MAP: CommandMap = {
 	schema: {
 		family: 'Discover',
 		summary: 'What an element may hold and where: parents, children, attributes',
-		usage: ['dialecte schema <Tag> [--package <name>] [--json]'],
-		notes: ['parents, children with how often, attributes; an unknown tag answers the closest'],
+		usage: ['dialecte schema <Tag> [--under <Parent>] [--package <name>] [--json]'],
+		notes: [
+			'parents, children with how often, attributes, type, documentation; an unknown tag answers the closest',
+			'a tag declared several ways is printed per declaration, with the parents holding each; --under <Parent> picks the one that parent holds',
+		],
 		exitCodes: [],
 		example: 'dialecte schema Bay',
 	},
@@ -221,11 +225,11 @@ export const COMMAND_MAP: CommandMap = {
 		notes: [
 			'start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base commit with its .dialecte/lot link; --dry-run checks (the store list included), names the lot and the start to run next, writing nothing; exit 1 when the worktree cannot be made (the lot failed, nothing removed, next: lot stop); a link that cannot be made leaves the lot working with a note; every --json exit is JSON, a usage error { error, usage, next: null } included',
 			'--simulate - start a simulated lot that plays one of the scenarios (ready, question, person, two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry entry; it never blocks a real lot',
-			'status - the state derived from the lot records (working, input-required, ready, committed, canceled, failed), the worktree and link checks, and the exact next command (and an also: line); reads only; exit 2 for an unknown or ambiguous id',
-			'wait - returns the status as soon as the lot needs someone (exit 0 ready or committed, 1 failed or canceled, 3 input-required, 4 a limit) or --timeout is reached (5); a real lot is read every second and nothing written, a simulated lot is played to its next blocking point',
-			'answer - records the answer to an open question once (the same answer again: already); a person question needs --by <who>; runs the onAnswered hooks; next: lot wait',
-			'result - never blocks, writes nothing: a ready or committed lot gives its hand-over (card, show and run lines), worktree, branch and answered questions; failed or canceled the last reason (exit 1); input-required the open questions (3); working exit 5',
-			'stop - ends the lot: refused once committed; a pending hand-over is abandoned first (refused while its run is in progress), then a canceled transition with the reason and --by (caller without it); already canceled exits 0 writing nothing; moves no worktree and deletes nothing',
+			'status - the state derived from the lot records (working, input-required, ready, committed, canceled, failed), the worktree and link checks, and the exact next command (and an also: line); a lot whose records do not hold reads damaged with its reason and next: lot stop (exit 6); reads only; exit 2 for an unknown or ambiguous id',
+			'wait - returns the status as soon as the lot needs someone (exit 0 ready or committed, 1 failed or canceled, 3 input-required, 4 a limit) or --timeout is reached (5); a damaged lot at once (6); a real lot is read every second and nothing written, a simulated lot is played to its next blocking point, and answered at once when nothing is left to play (5 while it works)',
+			'answer - records the answer to an open question once (the same answer again: already); a person question needs --by <who>; a damaged lot takes none (exit 2); runs the onAnswered hooks; next: lot wait',
+			'result - never blocks, writes nothing: a ready or committed lot gives its hand-over (card, show and run lines), worktree, branch and answered questions; failed or canceled the last reason (exit 1); input-required the open questions (3); working exit 5; damaged exit 6',
+			'stop - ends the lot: refused once committed; a pending hand-over is abandoned first (refused while its run is in progress), then a canceled transition with the reason and --by (caller without it); already canceled exits 0 writing nothing; moves no worktree and deletes nothing; a damaged lot has its folder moved to <git common folder>/dialecte-lots-aside/ with a stopped.json (refused while a live run marker holds it), its index kept claimed',
 			"station - appends one station event (by: host) to the lot's events.jsonl, never rewriting a line: start answers its run and the end command; end pairs with --run, else with the one open start of its station, step, round and attempt (several: refused), else repeats the last such end carrying a cost field with the same fields (already, nothing written), else is recorded alone (started: null); --event <id> again answers the first event (already) or is refused when its fields differ; start is refused on a committed, canceled or failed lot, end is accepted in every state; a simulated lot writes simulated: true; text fields refuse control, line-break and direction characters, vendor, model, tier, effort and session at most 80 characters, step, round and attempt 1-999, tokens, runs and duration non-negative, at most 50 skills (hash: sha256 of the path or of the synced <folder>/<name>/SKILL.md, else null), a verdict of approve, back, fix-then-repass, fixed, disagreed, answered, failed, limit; a line over 4,096 bytes is refused; --from takes the same fields plus phase (start|end) as one JSON object, unknown keys refused, every fault at once; --json { recorded: new|already, run, next }",
 			'--by - one line, not empty, checked before the lot is read (answer and stop)',
 			'<id> - an index (171 = 0171), a full name, a lot folder or .dialecte/lot; a write verb needs an index unique across every store of the store list, a word naming an existing folder is that folder',
@@ -242,7 +246,7 @@ export const COMMAND_MAP: CommandMap = {
 			"recap - the <details> part of a pull request from the hand-over's records only; writes nothing",
 			"report - reads files only (no git, no process, nothing written): the lot's stations, tokens, money, time, suites per station by time, heavy steps, folders and review rounds from its events.jsonl, transitions, ledger and cards.log; a number nobody reported is unknown, never 0, and a step family whose runs may be unrecorded reads unknown with the reason; --feature lists every lot of that feature in every store (simulated ones counted apart, listed by --simulated; a lot whose folder is gone is read from its cards.log line); next: the lot's own next command",
 			"export - copies a lot folder to <dir>/<full name>/ without asks/ (links kept as links, those pointing outside it named), adding the lot's cards.log lines and registry entry; refused for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied file compared by size and sha256 (events.jsonl as a prefix) before the rename, one more copy on a difference; the source is never written",
-			"close - for a committed or abandoned hand-over of the registry (by name or index): its final record first, the card line in the repository's cards.log (a catch-up one when none exists, for every hand-over of the worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed line (trashed or kept); kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known, or the final record cannot be kept or the lot's commit is not known; the branch never touched; exit 1 when one is kept, 2 for a name or index the registry does not hold",
+			"close - for a committed or abandoned hand-over of the registry (by name or index): its final record first, the card line in the repository's cards.log (a catch-up one when none exists, for every hand-over of the worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed line (trashed or kept); kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known, or the final record cannot be kept or the lot's commit is not known; the branch never touched; a hand-over already closed answers already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
 		exitCodes: [
 			'1  station: the event could not be written',
@@ -254,6 +258,7 @@ export const COMMAND_MAP: CommandMap = {
 			'3  wait, result: input-required',
 			'4  wait: an agent failed or hit a limit, run again',
 			'5  wait --timeout, result: still working',
+			'6  status, wait, result: the lot is damaged: a person must look',
 		],
 		example:
 			'dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"',
@@ -272,6 +277,27 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: ['1  nothing waits and nothing is damaged'],
 		example: 'dialecte inbox --repository scl',
 	},
+	plan: {
+		family: 'Plan',
+		summary:
+			"What can start now in a plan's lot block, whether the block is valid, a person's mark",
+		usage: [
+			'dialecte plan next <plan.md> [--json] [--all]',
+			'dialecte plan check <plan.md> [--json]',
+			'dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]',
+		],
+		notes: [
+			"the block - one fenced ```json dialecte-lots block in the plan, or the file <plan without .md>.lots.json beside it (both or neither: refused); each entry's id, kind (lot, fix, spec, person), dependsOn, scope per repository, heavy steps, brief and match (branch, handover, feature); unknown keys refused, every fault at once",
+			'next - proposes only, starts and writes nothing: the state of each entry read from the stores, the hand-over registries and the worktrees of its repositories (files only, no git process), the open lots, the lots that can start in critical-path order (merge:, after, unverified, stacks, next command), the held ones with each scope pair met, person entries without a mark, the spec work, what each entry waits for, the parked ones, the live heavy steps with the load against twice the cores and the available memory against 2 GB (advice only); --all lists the done entries; --json { plan, repositories, counts, entries, proposals, held, specWork, heavy, unknown }',
+			'check - the block parses and every repository is a git main checkout (two names for one common folder refused); one line when valid; --json { plan, valid, faults }',
+			"mark - a person entry only: appends { plan, id, state: done, by, reason, at } to <state>/dialecte/plans/<sha256 of the plan's real path, 16 hex>.jsonl, once (again: already); per machine",
+		],
+		exitCodes: [
+			'1  next: no lot or fix can start now (spec work may still be listed)',
+			'2  usage; no block or an invalid one (every fault listed); a repository that is not a git checkout; mark: not a person entry, an unknown id',
+		],
+		example: 'dialecte plan next 33-LOT-ENGINE.md',
+	},
 	gate: {
 		family: 'Check',
 		summary: "The package's Definition of Done with the real counts",
@@ -285,6 +311,7 @@ export const COMMAND_MAP: CommandMap = {
 			"--fast - the default; starts with the worktree's hygiene (nothing staged, no stash on its branch, new files declared)",
 			'a failing vitest test step is rerun once, serially, on its failing files: passing there it is flagged flaky in parallel',
 			'a green record of the same tree, install and steps answers the steps after a fresh tdd step; --no-reuse runs them',
+			'--full and --release hold the machine awake while they run (macOS: caffeinate -i -w <pid>; DIALECTE_KEEP_AWAKE=0 turns it off); a run that spanned a sleep keeps sleptMs on its record and the card says it',
 			'--hook - in a commit hook, the test steps of --full, unless a green --full record of the committed tree, install and steps answers them (or a green --release whose list covers full)',
 			'--release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json; its green record answers a hook, a rehearsal, contrib and the card when the list covers full (same name, run, counts and changedOnly for every full step)',
 			'scoped steps ("scoped": true) get DIALECTE_GATE_BASE, _TREE, _CHANGED (the changed paths byte for byte, NUL-separated, relative to the repository top as git diff --name-only names them; a declared failing path is relative to the package root) and _SELECTION, where they write { schema: 1, base, tree, changed, selected: [{ id, reasons }], skipped: [{ id, reason }] } (both lists required, reasons non-empty); the base is --base <ref>, else the merge-base with "dialecte.baseBranch" (default main), else the empty tree; select from the working files; without the gate (no DIALECTE_GATE_SELECTION): select everything',
@@ -317,6 +344,8 @@ export const COMMAND_MAP: CommandMap = {
 		usage: ['dialecte rules [<files...>] [--json]'],
 		notes: [
 			'types / constants in their files, named functions, no await in an argument, object parameters, full words, no standard citation (nor, in a contributor profile, a plan tag, acceptance criterion or ticket number)',
+			'a contributor: no consumer name nor forbidden word (git config dialecte.forbiddenWords and $XDG_CONFIG_HOME/dialecte/forbidden-words, else ~/.config/dialecte/forbidden-words; whole words, any case); no list: one line, and the check is not run',
+			'without files: the changed list a scoped gate step hands (DIALECTE_GATE_CHANGED), else the files changed against HEAD and the new ones; a file it cannot read or parse is an error',
 		],
 		exitCodes: [],
 		example: 'dialecte rules src/commands/lot.ts',
@@ -361,6 +390,7 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]',
 			'dialecte handover write <lots.json> --release [--out <id|folder>] [--rehash] [--json]',
 			'dialecte handover show [<name|folder>] [--json]',
+			'dialecte handover review <name|index|folder> [--json] [--print]',
 			'dialecte handover run [<name|folder>] [--rehearse [--keep] [--full]] [--resume-merge]',
 			'dialecte handover abandon [<name|folder>]',
 			'dialecte handover list [--root <dir>] [--json]',
@@ -369,7 +399,8 @@ export const COMMAND_MAP: CommandMap = {
 		notes: [
 			'write - the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card, registered in <git common dir>/dialecte-handover/<name>.json under the real path of the folder; handover <lots.json> is the same; --out <id> writes into the lot folder, refused (exit 2, nothing written) for a simulated, canceled or failed lot, an open question, a lots file of another worktree or branch; any folder whose hand-over is committed is refused',
 			'show - the card again, recomputed, nothing written; without an argument the newest of the branch',
-			'run - what commit.sh runs: each guard with its time, each lot announced, the hook live, the card; without a folder the one registered hand-over still to run; --rehearse commits in a scratch clone; refuses a canceled lot (exit 2)',
+			"review - opens the hand-over's worktree in a new editor window, started detached (a hand-over holding a merge lot first writes review/lot.diff, the lot's change against head, and opens it too); the editor: git config dialecte.editor in the worktree (its words, no flag added), else the first known editor found on PATH, else code; never $EDITOR; --print prints the command line and starts nothing, --json answers { editor, command, opened }; refused (exit 2) for an unknown hand-over, a worktree that is gone, an editor not found",
+			'run - what commit.sh runs: each guard with its time, each lot announced, the hook live, the card; without a folder the one registered hand-over still to run; --rehearse commits in a scratch clone; refuses a canceled lot (exit 2); holds the machine awake while it runs, and a run that spanned a sleep says so on the DONE card',
 			'abandon - marks a hand-over that will not run (abandoned.json) and releases its lock; refuses a lot folder (exit 2): rewrite it with write --rehash --out <full name>, end the lot with lot stop',
 			'list - every hand-over folder: repository, worktree, branch, lots, age, state',
 			'--legend - every term of the card, what it means, whether to look',
@@ -474,7 +505,6 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: [],
 		example: 'dialecte text check pr.md --kind pr',
 	},
-	record: { renamedTo: lotFormsOf('record') },
-	review: { renamedTo: lotFormsOf('review') },
-	recap: { renamedTo: lotFormsOf('recap') },
+	// the renamed commands: one key per command of the renamed forms, derived from that table
+	...renamedEntriesOf(),
 }

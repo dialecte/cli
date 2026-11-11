@@ -47,3 +47,11 @@ export const FAILURE_REASON = 'worktree: could not be made'
 
 /** The count line the inbox ends with, `{working}` and `{simulated}` the counts. */
 export const COUNT_LINE = 'working {working} · simulated {simulated} (listed with --simulated)'
+
+/** The lots of the hostile and damaged stores of `inbox-store.test.ts`, and the text an agent wrote, as stored and as printed. */
+export const HOSTILE_LOT = '0171-scl-hostile'
+export const HOSTILE_FAILED_LOT = '0175-scl-broken'
+export const HOSTILE_REASON = 'broke \u001b[31m\nthen \u{202e}again'
+export const ESCAPED_QUESTION = 'Keep \\u{1b}[2Jthe entry \\u{202e}or not?'
+export const ESCAPED_REASON = 'broke \\u{1b}[31m\\u{a}then \\u{202e}again'
+export const DAMAGED_LOT = '0110-scl-damaged'

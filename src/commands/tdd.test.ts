@@ -188,7 +188,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		expect(readLedger(root).entries.map((entry) => entry.kind)).toEqual(['refused'])
 	})
 
-	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; the red case of a file with refusals is recorded, nothing frozen', async () => {
+	it('failures that are not a red, a matcher-less expect, a .only → refused with their kind; the red case of a file with refusals is recorded, its file frozen for it', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -245,7 +245,11 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				.entries.filter((entry) => entry.kind === 'red')
 				.map((entry) => (entry as TddReceipt).name),
 		).toEqual(['add > asserts'])
-		expect(readLedger(root).entries.filter((entry) => entry.kind === 'freeze')).toEqual([])
+		expect(
+			readLedger(root).entries.flatMap((entry) =>
+				entry.kind === 'freeze' ? Object.keys(entry.files) : [],
+			),
+		).toEqual(['src/add.test.ts'])
 	})
 
 	it('red runs every case of the changed files: a new failing case red, a base case unchanged; a named case of an unchanged file is not run', async () => {
@@ -272,7 +276,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 		])
 	})
 
-	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the other case red again, recorded; the file stays unfrozen, green refused', async () => {
+	it('a case weakened after its red, then a re-red of the file → refused: its test changed and it passes; the other case red again, recorded; the file frozen again for it, green passes it and refuses the weakened one', async () => {
 		const root = createVitestPackage({})
 		const both = addTest([
 			"it('A one plus two', () => { expect(add(1, 2)).toBe(3) })",
@@ -304,7 +308,7 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 			'refused add > A one plus two',
 			'red add > B two plus two',
 			'refused add > A one plus two',
-			'refused add > B two plus two',
+			'green add > B two plus two',
 		])
 	})
 

@@ -1,4 +1,5 @@
 import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
+import type { PrintedText } from '../print/print.types.ts'
 import type { QUESTION_AUDIENCES } from './store.constants.ts'
 
 /** The states the engine writes in a transition. `input-required` and `committed` are derived, never written. */
@@ -113,8 +114,13 @@ export type LotStateReadParams = {
 	entries?: readonly StoreEntry[]
 }
 
-/** A lot read and its records validated: the input when every record holds, else why the lot is damaged. */
-export type CheckedLotState = { input: LotStateInput } | { damage: string }
+/**
+ * A lot read and its records validated: the input when every record holds, else why the lot is damaged, with its
+ * identity when that reads (a simulated one holds no scope).
+ */
+export type CheckedLotState =
+	| { input: LotStateInput }
+	| { damage: string; identity: LotIdentity | undefined }
 
 /** An answer file read: the question its file name holds (`q<k>`) and its record. */
 export type AnswerFile = { question: string; record: AnswerRecord }
@@ -147,8 +153,18 @@ export type StoreFileNames = Readonly<
 	>
 >
 
-/** An open real lot a scope overlaps: its name, and each pair of entries that meet (`<ours> meets <theirs>`). */
-export type LotOverlap = { name: string; met: string[] }
+/**
+ * An open real lot a scope overlaps: its name, and each pair of entries that meet (`<ours> meets <theirs>`). A
+ * damaged lot (P2.2) carries why it is damaged; one whose scope cannot be read holds every path (`met` empty).
+ */
+export type LotOverlap = {
+	name: string
+	met: string[]
+	/** Why the lot reads damaged; none for a lot whose records hold. */
+	damage?: string
+	/** A lot whose scope cannot be read: it holds every path. */
+	everyPath?: boolean
+}
 
 /** What `lot status` reports of the worktree and its `.dialecte/lot` link; null for a simulated lot. */
 export type WorktreeCheck = 'present' | 'missing'
@@ -200,10 +216,28 @@ export type ResolveMode = 'read' | 'write'
 export type LotResolution =
 	| { lot: string }
 	| { folder: string; note?: string }
-	| { exitCode: 2; output: string }
+	| { exitCode: 2; output: PrintedText }
+
+/** What `status`, `wait` and `result --json` answer of a damaged lot (P2.3). */
+export type DamagedLotJson = {
+	/** The lot folder's name. */
+	lot: string
+	state: 'damaged'
+	reason: string
+	next: string
+}
+
+/** What lists the lot names of a store an id is matched against: the lots whose records hold, or every lot folder. */
+export type LotNamesLister = (params: { store: string }) => string[]
+
+/** A refusal of a lot verb, exit 2, as its lines as written (JSON quotes them; the text form prints them). */
+export type LotRefusalLines = { exitCode: 2; lines: string[] }
+
+/** `LotResolution` with its refusal as lines. */
+export type ResolvedLot = { lot: string } | { folder: string; note?: string } | LotRefusalLines
 
 /** What a verb that needs a lot makes of a word: the lot's folder (real path), or the refusal (exit 2). */
-export type LotRequirement = { lot: string } | { exitCode: 2; output: string }
+export type LotRequirement = { lot: string } | { exitCode: 2; output: PrintedText }
 
 /** A pause that blocks the thread for `milliseconds` (the overlap check is synchronous; a test records it). */
 export type SynchronousPause = (milliseconds: number) => void

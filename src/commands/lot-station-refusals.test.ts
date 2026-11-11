@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { STATION } from '../../test/lot-station-workspace.constants.ts'
 import { createStationLot, recordedAfter, station } from '../../test/lot-station-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { DISPLAY_ESCAPED_RANGES } from '../lib/store/store.constants.ts'
+import { DISPLAY_ESCAPED_RANGES } from '../lib/print/print.constants.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

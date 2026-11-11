@@ -7,11 +7,17 @@ import { stripVTControlCharacters } from 'node:util'
 
 import { counted } from '../counted.ts'
 import { GATE_BASE_SOURCES } from '../gate/gate-base.constants.ts'
-import { GATE_HOOK_BASE_PATTERN, GATE_HOOK_REUSED_PATTERN } from '../gate/gate-config.constants.ts'
+import {
+	FLAKY_NOTE,
+	GATE_HOOK_BASE_PATTERN,
+	GATE_HOOK_REUSED_PATTERN,
+} from '../gate/gate-config.constants.ts'
 import { readStepCounts } from '../gate/step-counts.ts'
+import { textOf } from '../print/print.ts'
 import {
 	COMMAND_SEPARATORS,
 	FAILING_TAIL_LINES,
+	HOOK_FLAKY_FILE_PATTERN,
 	HOOK_LINE_PATTERNS,
 	HOOK_WARNING_KINDS,
 	NPM_COMMAND_LINE,
@@ -198,7 +204,7 @@ export function hookOutcomeLines(params: {
 		const counts = renderHookCounts(entry.counts)
 		return `${entry.name} ${entry.failed ? '✗' : '✓'}${counts ? ` ${counts}` : ''}`
 	})
-	const logLine = `full log: ${params.logPath}`
+	const logLine = textOf([`full log: ${params.logPath}`])
 	if (params.passed) {
 		const shown = distinctFlaggedLines(flagged.map((entry) => entry.flagged))
 		return [
@@ -270,8 +276,32 @@ export function hookSummarySteps(params: {
 				? failedTasks(step.lines).map((task) => ({ name: task, failed: true, counts: {} }))
 				: []
 		const reused = readHookReuse(step.lines)
-		return [{ name: step.name, failed: stepFailed, counts, ...(reused && { reused }) }, ...tasks]
+		const flaky = stepFailed ? [] : readFlakyFiles(step.lines)
+		return [
+			{
+				name: step.name,
+				failed: stepFailed,
+				counts,
+				...(reused && { reused }),
+				...(flaky.length && { flaky }),
+			},
+			...tasks,
+		]
 	})
+}
+
+/**
+ * The files `gate --hook` named flaky under a step that failed in parallel and passed on its serial rerun (its line
+ * says `flaky in parallel`), sorted and each once; none when no line says so.
+ */
+function readFlakyFiles(lines: readonly string[]): string[] {
+	const visible = lines.map((line) => stripVTControlCharacters(line))
+	if (!visible.some((line) => line.includes(FLAKY_NOTE))) return []
+	const files = visible.flatMap((line) => {
+		const match = HOOK_FLAKY_FILE_PATTERN.exec(line)
+		return match ? [match[1].trim()] : []
+	})
+	return [...new Set(files)].sort()
 }
 
 /** The record `gate --hook` says it answered from (`GATE_HOOK_REUSED_LINE`): its time and short HEAD. */

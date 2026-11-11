@@ -23,6 +23,7 @@ import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { rawLinesOfLot } from '../events/cards-log.ts'
 import { isAtOrInside, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { entryPathOf, registeredEntryOf } from '../handover/handover-store-read.ts'
+import { LINE_FEED } from '../print/print.constants.ts'
 import {
 	COPY_ATTEMPTS,
 	COPY_DIFFERS,
@@ -31,7 +32,7 @@ import {
 	PERMISSION_BITS,
 } from './export-lot.constants.ts'
 import { registryOfLotFolder } from './lot-records.ts'
-import { LINE_FEED, STORE_FILES } from './store.constants.ts'
+import { STORE_FILES } from './store.constants.ts'
 
 import type { LotExportJson } from '../../commands/lot-export.types.ts'
 import type { CopiedEntry, ExportLotParams, ExportOutcome } from './export-lot.types.ts'

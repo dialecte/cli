@@ -18,6 +18,7 @@ import { listCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
+import { readMachineLists } from '../rules/committed-text.ts'
 import {
 	FILE_DEPENDENCY_PREFIX,
 	INSTALLED_LOCK_FILE,
@@ -27,6 +28,7 @@ import {
 	PACKAGE_FILES_EXCLUSION_PREFIX,
 	PACKAGE_FILES_GLOB_PATTERN,
 	COMMIT_INDEX_FOLDER_PREFIX,
+	RULES_STEP_PATTERN,
 	SCOPED_STEP_HASH_MARK,
 } from './gate-records.constants.ts'
 import { computeStateTree } from './state-hash.ts'
@@ -67,10 +69,29 @@ export function gateCommandHash(params: {
 	/** The base the caller resolved once for the run: a scoped step selects against it. */
 	gateBase?: string
 }): string {
-	const { steps, gateBase } = params
-	if (!steps.some((step) => step.changedOnly)) return hashGateCommand({ steps, gateBase })
-	const head = readGit({ root: params.root, args: ['rev-parse', 'HEAD'] }).trim()
-	return hashGateCommand({ steps, base: head, gateBase })
+	const { root, steps, gateBase } = params
+	const hash = steps.some((step) => step.changedOnly)
+		? hashGateCommand({
+				steps,
+				base: readGit({ root, args: ['rev-parse', 'HEAD'] }).trim(),
+				gateBase,
+			})
+		: hashGateCommand({ steps, gateBase })
+	return steps.some((step) => RULES_STEP_PATTERN.test(step.run))
+		? foldMachineLists({ root, hash })
+		: hash
+}
+
+/**
+ * A command hash whose run checks the rules, folded with what the rules read from the machine besides the tree (a
+ * contributor's consumer names and forbidden words, `readMachineLists`): sha256 (hex) of the hash and a hash of the
+ * lists, never the words themselves; the hash unchanged when there is no list, so a list set or changed after a
+ * green record runs the check again.
+ */
+export function foldMachineLists(params: { root: string; hash: string }): string {
+	const lists = readMachineLists(params.root)
+	if (lists === undefined) return params.hash
+	return sha256(JSON.stringify({ command: params.hash, lists: sha256(JSON.stringify(lists)) }))
 }
 
 /**

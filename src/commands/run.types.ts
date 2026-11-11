@@ -1,7 +1,9 @@
+import type { PrintedText } from '../lib/print/print.types.ts'
+
 /** Where a command writes: its answer on `stdout`, usage errors and the script's own logs on `stderr`. */
 export type CommandOutput = {
-	stdout(text: string): void
-	stderr(text: string): void
+	stdout(text: PrintedText): void
+	stderr(text: PrintedText): void
 }
 
 export type RunCommandParams = {

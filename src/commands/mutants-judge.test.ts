@@ -50,6 +50,22 @@ describe('mutants judge', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 	})
 
+	it('a pending survivor on a tab-indented line → the window shows the tab as four spaces, no \\u{9}', async () => {
+		const root = mutationPackage({
+			files: { [OTHER_FILE]: NUMBERED.replace('const v5 = 5', '\tconst v5 = 5') },
+		})
+		storedReportedRun({
+			root,
+			startedAt: '2026-11-02T10:00:00.000Z',
+			survivors: [survivorOf({ key: 'in-b', file: OTHER_FILE, line: 5 })],
+		})
+
+		const { output } = await runMutantsIn({ root, argv: ['judge'] })
+
+		expect(output).toMatch(/5 \|     const v5 = 5/)
+		expect(output).not.toContain('\\u{9}')
+	})
+
 	it.each([[SCOPE_FILE], [`./${SCOPE_FILE}`]])(
 		'--file %s → that file’s packet only',
 		async (file) => {

@@ -6,11 +6,16 @@ import {
 	CONSUMER_NAME_LABEL,
 	CONSUMER_NAMES_KEY,
 	GENERIC_REFERENCE_PATTERNS,
-	REGEX_SPECIAL_PATTERN,
 	REFERENCE_FREE_EXTENSIONS,
 } from './committed-text.constants.ts'
+import {
+	ForbiddenWordsListError,
+	forbiddenWordPatterns,
+	readForbiddenWords,
+	wholeWordsPatternOf,
+} from './forbidden-words.ts'
 
-import type { ReferenceMatch, ReferencePattern } from './committed-text.types.ts'
+import type { MachineLists, ReferenceMatch, ReferencePattern } from './committed-text.types.ts'
 
 export function findReferences(params: {
 	text: string
@@ -18,7 +23,10 @@ export function findReferences(params: {
 }): ReferenceMatch[] {
 	const expressions = params.patterns.map((pattern) => ({
 		label: pattern.label,
-		expression: new RegExp(pattern.source, 'g'),
+		expression: new RegExp(
+			pattern.source,
+			`g${pattern.ignoreCase ? 'i' : ''}${pattern.unicode ? 'u' : ''}`,
+		),
 		leadingBoundary: pattern.leadingBoundary ?? false,
 	}))
 	const matches: ReferenceMatch[] = []
@@ -38,12 +46,23 @@ export function findReferences(params: {
 }
 
 /**
+ * Every pattern a package's committed text may not hold (`readListedPatterns`), and for a contributor the words of
+ * its machine's forbidden list (`readForbiddenWords`: a list file that cannot be read throws).
+ */
+export function readReferencePatterns(root: string): ReferencePattern[] {
+	const patterns = readListedPatterns(root)
+	if (readProfile(root) !== 'contributor') return patterns
+	return [...patterns, ...forbiddenWordPatterns(readForbiddenWords({ root }))]
+}
+
+/**
  * The generic patterns a package's committed text may not hold, then those it declares
- * (`"dialecte": { "referencePatterns" }`). A consumer allows every tag; a contributor allows only those it lists
+ * (`"dialecte": { "referencePatterns" }`), then a contributor's consumer names; never the forbidden words (read
+ * apart: `readReferencePatterns`). A consumer allows every tag; a contributor allows only those it lists
  * (`"dialecte": { "allowReferences" }`). Allowing a pattern that is not allowable (a citation of a standard) throws,
  * in either profile.
  */
-export function readReferencePatterns(root: string): ReferencePattern[] {
+export function readListedPatterns(root: string): ReferencePattern[] {
 	const packageJson = readPackageJson(root)
 	const declared = packageJson.dialecte?.referencePatterns ?? []
 	const allowed = packageJson.dialecte?.allowReferences ?? []
@@ -75,13 +94,36 @@ export function readReferencePatterns(root: string): ReferencePattern[] {
  * committed. Whole words, case kept; none when the key is unset.
  */
 function consumerNamePatterns(root: string): ReferencePattern[] {
-	const names = (readGitConfig({ root, key: CONSUMER_NAMES_KEY }) ?? '')
+	const names = readConsumerNames(root)
+	if (names.length === 0) return []
+	return [{ label: CONSUMER_NAME_LABEL, ...wholeWordsPatternOf({ words: names }) }]
+}
+
+/** The consumer names of the machine's git config, trimmed, empty entries dropped; none when the key is unset. */
+function readConsumerNames(root: string): string[] {
+	return (readGitConfig({ root, key: CONSUMER_NAMES_KEY }) ?? '')
 		.split(',')
 		.map((name) => name.trim())
 		.filter(Boolean)
-	if (names.length === 0) return []
-	const alternatives = names.map((name) => name.replace(REGEX_SPECIAL_PATTERN, '\\$&')).join('|')
-	return [{ label: CONSUMER_NAME_LABEL, source: `\\b(${alternatives})\\b` }]
+}
+
+/**
+ * What a contributor's rules check reads from its machine besides the tree, as a reuse key holds it: its consumer
+ * names and forbidden words (`unreadable` and the file for a list file that cannot be read); undefined for a
+ * consumer and for a contributor with neither list, so a key without a list stays the one it was.
+ */
+export function readMachineLists(root: string): MachineLists | undefined {
+	if (readProfile(root) !== 'contributor') return undefined
+	const consumerNames = readConsumerNames(root)
+	let forbiddenWords: MachineLists['forbiddenWords']
+	try {
+		forbiddenWords = readForbiddenWords({ root })
+	} catch (error) {
+		if (!(error instanceof ForbiddenWordsListError)) throw error
+		forbiddenWords = { unreadable: error.file }
+	}
+	const none = consumerNames.length === 0 && Array.isArray(forbiddenWords) && !forbiddenWords.length
+	return none ? undefined : { consumerNames, forbiddenWords }
 }
 
 /** Whether references are looked for in the file: not in style and image files, where a `#` number is a colour. */

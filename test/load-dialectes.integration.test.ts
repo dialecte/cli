@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 
 import { describeElement } from '../src/lib/schema/describe-element.ts'
 import { loadDialectes } from '../src/lib/schema/load-dialectes.ts'
+import { GADGET_PACKAGE, WIDGET_PACKAGE } from './installed-test-dialecte.constants.ts'
+import { installTestDialecte } from './installed-test-dialecte.ts'
 import { coreEntries } from './real-core.ts'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -102,6 +104,98 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(root, { recursive: true, force: true })
+})
+
+describe('loadDialectes dialecte.standard (installed test dialecte)', () => {
+	type LoadedCase = {
+		description: string
+		manifestFields: Record<string, unknown>
+		expected: string | undefined
+	}
+	type SkippedCase = { description: string; standard: unknown }
+
+	/** The widget under test, installed beside a gadget that declares `Example 0000`. */
+	const LOADED_CASES: LoadedCase[] = [
+		{
+			description: 'a dialecte declaring a standard → loaded with it',
+			manifestFields: { dialecte: { standard: 'Example 0000' } },
+			expected: 'Example 0000',
+		},
+		{
+			description: 'no dialecte field → loaded, standard undefined (its neighbour keeps its own)',
+			manifestFields: {},
+			expected: undefined,
+		},
+		{
+			description:
+				'a dialecte field without standard → loaded, standard undefined (its neighbour keeps its own)',
+			manifestFields: { dialecte: {} },
+			expected: undefined,
+		},
+		{
+			description: 'standard at the manifest top level → not read, standard undefined',
+			manifestFields: { standard: 'Example 0000' },
+			expected: undefined,
+		},
+		{
+			description: '"dialecte" a string → loaded, standard undefined',
+			manifestFields: { dialecte: 'Example 0000' },
+			expected: undefined,
+		},
+		{
+			description: '"dialecte" null → loaded, standard undefined',
+			manifestFields: { dialecte: null },
+			expected: undefined,
+		},
+	]
+	const SKIPPED_CASES: SkippedCase[] = [
+		{ description: 'an empty standard', standard: '' },
+		{ description: 'a blank standard', standard: '   ' },
+		{ description: 'a number as standard', standard: 7 },
+		{ description: 'an object as standard', standard: {} },
+	]
+
+	function installApp(params: { manifestFields: Record<string, unknown> }): string {
+		const cwd = join(root, 'standard-app')
+		write('standard-app/package.json', '{}')
+		installTestDialecte({
+			cwd,
+			packageName: GADGET_PACKAGE,
+			manifestFields: { dialecte: { standard: 'Example 0000' } },
+		})
+		installTestDialecte({ cwd, manifestFields: params.manifestFields })
+		return cwd
+	}
+
+	it.each(LOADED_CASES)('$description', async ({ manifestFields, expected }) => {
+		const cwd = installApp({ manifestFields })
+
+		const { dialectes } = await loadDialectes({ cwd })
+
+		expect(
+			Object.fromEntries(dialectes.map((dialecte) => [dialecte.packageName, dialecte.standard])),
+		).toEqual({ [GADGET_PACKAGE]: 'Example 0000', [WIDGET_PACKAGE]: expected })
+	})
+
+	it.each(SKIPPED_CASES)(
+		'$description → skipped, dialecte.standard named',
+		async ({ standard }) => {
+			const cwd = installApp({ manifestFields: { dialecte: { standard } } })
+
+			const { dialectes, skipped } = await loadDialectes({ cwd })
+
+			expect({
+				loaded: dialectes.map((dialecte) => dialecte.packageName),
+				skipped: skipped.map((entry) => ({
+					packageName: entry.packageName,
+					names: entry.reason.includes('dialecte.standard'),
+				})),
+			}).toEqual({
+				loaded: [GADGET_PACKAGE],
+				skipped: [{ packageName: WIDGET_PACKAGE, names: true }],
+			})
+		},
+	)
 })
 
 describe('loadDialectes (real core)', () => {

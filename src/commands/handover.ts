@@ -15,6 +15,9 @@
  * `dialecte handover show [<name|folder>] [--json]` - the card again, recomputed, nothing written; without an
  * argument the newest hand-over of the current branch.
  *
+ * `dialecte handover review <name|index|folder> [--json] [--print]` - opens the lot's worktree in a new editor
+ * window (a merge hand-over: its `review/lot.diff` too), the editor started detached.
+ *
  * `dialecte handover run` without a folder runs the store's one hand-over still to run (refused with two).
  *
  * `dialecte handover abandon [<name|folder>]` - marks a hand-over that will not run and releases its lock.
@@ -25,12 +28,13 @@
  *
  * The agent never commits; the run never pushes.
  */
-import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf, realPathThroughAncestors } from '../lib/file-system.ts'
@@ -49,11 +53,15 @@ import { resolveHandoverGateScope } from '../lib/handover/handover-gate-scope.ts
 import {
 	handoverHoldRefusal,
 	handoverLockPath,
+	lockHeldAgainst,
 	readHandoverLock,
+	removeOwnLock,
+	restoreLock,
+	takeHandoverLock,
 } from '../lib/handover/handover-lock.ts'
 import { writeRunMarker } from '../lib/handover/handover-run-marker.ts'
+import { writeHandoverRunRecord } from '../lib/handover/handover-run-record.ts'
 import {
-	entryOfArgument,
 	findHandoverStore,
 	newestOfBranch,
 	readStoreEntries,
@@ -80,6 +88,11 @@ import {
 	lotAbandonRefusal,
 	resolveHandoverOut,
 } from '../lib/handover/lot-handover.ts'
+import {
+	goneEntryRefusal,
+	readNamedHandover,
+	storeOfFolder,
+} from '../lib/handover/named-handover.ts'
 import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
@@ -89,8 +102,10 @@ import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { countChangedSinceReview, recomputeHandoverCard } from '../lib/handover/show-handover.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
+import { startLongRun } from '../lib/keep-awake/long-run.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
+import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
@@ -102,6 +117,7 @@ import { lotFolderOf } from '../lib/store/lot-folder.ts'
 import { STORE_REFUSAL } from '../lib/store/store.constants.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
+import { runHandoverReview } from './handover-review.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
@@ -110,12 +126,15 @@ import type {
 	HandoverListing,
 	HandoverProbe,
 	InterleavingSeam,
+	LotsFile,
 	RegisteredState,
 	StoreEntry,
 	WriteLine,
 } from '../lib/handover/handover.types.ts'
+import type { AwakeHolder } from '../lib/keep-awake/keep-awake.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
-import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
+import type { RunClocks } from '../lib/progress/slept.types.ts'
+import type { LiveOutput, StepProgress } from '../lib/progress/step-progress.types.ts'
 import type { BackgroundSpawner } from '../lib/worktree/worktree.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -144,7 +163,7 @@ export async function run(argv: string[]): Promise<void> {
 		return
 	}
 	const result = runHandoverVerb({ argv, colour, columns })
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -160,6 +179,7 @@ function runHandoverVerb(params: {
 	const rest = argv.slice(1)
 	if (argv[0] === 'list') return runHandoverList({ argv: rest, cwd, now: Date.now() })
 	if (argv[0] === 'abandon') return runHandoverAbandon({ argv: rest, cwd })
+	if (argv[0] === 'review') return runHandoverReview({ argv: rest, cwd })
 	if (argv[0] === 'show')
 		return runHandoverShow({
 			argv: rest,
@@ -244,9 +264,13 @@ export function runHandover(params: {
 			),
 		)
 
-	const heldBy = readHandoverLock(lotsFile.repository)
 	// the lock may hold the script by a path written before the folder was made real
-	if (heldBy && realPathOf(heldBy) !== realPathOf(scriptPath) && existsSync(heldBy))
+	const heldBy = lockHeldAgainst({
+		lockPath: handoverLockPath(lotsFile.repository),
+		scriptPath,
+	})
+	// a live writer whose script is not written yet is answered when the lock is taken, as one that crossed the checks
+	if (heldBy && existsSync(heldBy))
 		return refused([
 			handoverHoldRefusal({
 				script: heldBy,
@@ -266,17 +290,35 @@ export function runHandover(params: {
 
 	params.afterChecks?.()
 	const lockPath = handoverLockPath(plan.repository)
-	const lockBefore = existsSync(lockPath) ? readFileSync(lockPath) : undefined
-	const written = hasFlag(argv, 'release')
-		? markReleaseHandover({ lotsPath: absoluteLotsPath, lotsFile })
-		: lotsFile
-	writeHandover({
-		plan,
-		lotsFile: written,
-		lotsPath: absoluteLotsPath,
-		out,
-		cliPath: params.cliPath,
-	})
+	// committed by a run since the checks: refused before the lock is touched; a lock naming this folder's script goes
+	const lateRefusal = handoverWriteRefusal({ out, lotsFile })
+	if (lateRefusal) {
+		removeOwnLock({ lockPath, scriptPath })
+		return usage(`handover: ${lateRefusal}`)
+	}
+	// the lock first, exclusively: a hand-over that took it since the checks keeps it, nothing here is written
+	const lock = takeHandoverLock({ lockPath, scriptPath })
+	if ('heldBy' in lock)
+		return usage(
+			`handover: ${handoverHoldRefusal({ script: lock.heldBy, lock: lockPath, why: '' })}`,
+		)
+	const lockBefore = lock.before
+	let written: LotsFile
+	try {
+		written = hasFlag(argv, 'release')
+			? markReleaseHandover({ lotsPath: absoluteLotsPath, lotsFile })
+			: lotsFile
+		writeHandover({
+			plan,
+			lotsFile: written,
+			lotsPath: absoluteLotsPath,
+			out,
+			cliPath: params.cliPath,
+		})
+	} catch (error) {
+		restoreLock({ lockPath, bytes: lockBefore, scriptPath })
+		throw error
+	}
 	// before the card, which names the hand-over by its entry
 	try {
 		registerHandover({
@@ -289,7 +331,7 @@ export function runHandover(params: {
 	} catch (error) {
 		if ((error as Error).name !== STORE_REFUSAL) throw error
 		// committed by a run since the checks: this folder holds no lock, the registry stays committed
-		restoreLock({ lockPath, bytes: lockBefore, scriptPath })
+		restoreLock({ lockPath, bytes: lockBefore, scriptPath, committed: true })
 		return usage(`handover: ${(error as Error).message}`)
 	}
 	const card = buildHandoverCard({
@@ -308,24 +350,23 @@ export function runHandover(params: {
 	if (hasFlag(argv, 'json'))
 		return {
 			exitCode: 0,
-			output: JSON.stringify(
+			output: jsonOf(
 				{ folder: out, ...handoverCardData(card), ...(outNote !== undefined && { outNote }) },
-				null,
 				2,
 			),
 		}
+	const box = renderSectionCard({
+		card: handoverCardSections(card),
+		colour: params.colour ?? false,
+		width: params.columns,
+	})
 	return {
 		exitCode: 0,
-		output: [
-			...(outNote === undefined ? [] : [outNote]),
-			renderSectionCard({
-				card: handoverCardSections(card),
-				colour: params.colour ?? false,
-				width: params.columns,
-			}),
-			HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)),
-			card.command,
-		].join('\n'),
+		output: joinedOf([
+			...(outNote === undefined ? [] : [textOf([outNote])]),
+			box,
+			textOf([HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)), card.command]),
+		]),
 	}
 }
 
@@ -353,6 +394,10 @@ export async function runHandoverRun(params: {
 	spawner?: BackgroundSpawner
 	/** Re-points the clone's `node_modules` links at the end of a rehearsal (the tests stand in for it, to make it throw). */
 	relink?: (params: { from: string; to: string; real: boolean }) => void
+	/** Called once at the start of a run (`--rehearse` or not; never for `--probe`). Default: holds the machine awake. */
+	holdAwake?: AwakeHolder
+	/** The clock pair the run measures a sleep with. Default: the process's. */
+	runClocks?: RunClocks
 }): Promise<number> {
 	const { argv, write } = params
 	const live = params.live ?? { tty: false, writeLine: write, rewriteLines: () => undefined }
@@ -362,6 +407,11 @@ export async function runHandoverRun(params: {
 		write('handover run')
 		return 0
 	}
+	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
+	const sleptSinceStart = startLongRun({
+		holdAwake: params.holdAwake,
+		runClocks: params.runClocks,
+	})
 	const [argument] = positionalArguments({ argv, valueOptions: [] })
 	const cwd = params.cwd ?? process.cwd()
 	const store = storeOfFolder(cwd)
@@ -371,28 +421,68 @@ export async function runHandoverRun(params: {
 	if (typeof folder === 'number') return folder
 	const canceled = canceledLotRunRefusal({ folder })
 	if (canceled) {
-		write(canceled)
+		write(textOf([canceled]))
 		return 2
 	}
 	const gone = argument && goneEntryRefusal({ verb: 'run', argument, store })
 	if (gone) {
-		write(gone)
+		write(textOf([gone]))
 		return 2
 	}
 	const handover = readHandoverFolder(folder)
 	if (typeof handover === 'string') {
-		write(`handover run: ${handover}`)
+		write(textOf([`handover run: ${handover}`]))
 		return 2
 	}
 	if (readAbandonedMarker(handover.folder)) {
 		write(
-			HANDOVER_RUN_TEXTS.abandoned
-				.replace('{folder}', handover.folder)
-				.replace('{marker}', abandonedMarkerPath(handover.folder)),
+			textOf([
+				HANDOVER_RUN_TEXTS.abandoned
+					.replace('{folder}', handover.folder)
+					.replace('{marker}', abandonedMarkerPath(handover.folder)),
+			]),
 		)
 		return 2
 	}
-	write(`handover run ${handover.folder}`)
+	write(textOf([`handover run ${handover.folder}`]))
+	const runFolder = handover.folder
+	let recorded = false
+	/** Writes the folder's run record once: before a real run's card, else when the run returns. */
+	function recordRun(): void {
+		if (recorded) return
+		recorded = true
+		const sleptMs = sleptSinceStart()
+		writeHandoverRunRecord({
+			folder: runFolder,
+			record: sleptMs === undefined ? {} : { sleptMs },
+		})
+	}
+	try {
+		return await runHandoverOf({ ...params, handover, progress, live, cliPath, recordRun })
+	} finally {
+		recordRun()
+	}
+}
+
+/** A hand-over read and not abandoned, run for real or rehearsed; `recordRun` writes its run record before the card. */
+async function runHandoverOf(params: {
+	argv: string[]
+	write: WriteLine
+	clock: Clock
+	colour: boolean
+	probe: HandoverProbe
+	scratchRoot: string
+	columns?: number
+	afterCheck?: InterleavingSeam
+	spawner?: BackgroundSpawner
+	relink?: (params: { from: string; to: string; real: boolean }) => void
+	handover: HandoverFolder
+	progress: StepProgress
+	live: LiveOutput
+	cliPath: string
+	recordRun: () => void
+}): Promise<number> {
+	const { argv, write, handover, progress, live, cliPath } = params
 	// the step's lot is the hand-over folder's (none outside every store); its worktree the commit root
 	const lotFolder = lotFolderOf({ folder: handover.folder })
 	const commitRoot = realPathOf(handover.lotsFile.repository)
@@ -421,7 +511,7 @@ export async function runHandoverRun(params: {
 	// read before the marker and the step, as the rehearsal does: an invalid gate config writes nothing
 	const gateScope = resolveHandoverGateScope({ handover })
 	if ('refusal' in gateScope) {
-		write(gateScope.refusal)
+		write(textOf([gateScope.refusal]))
 		return 2
 	}
 	// a real run marks its folder: a gate does not run under a hand-over committing now
@@ -430,9 +520,11 @@ export async function runHandoverRun(params: {
 	if (readAbandonedMarker(handover.folder)) {
 		releaseRunMarker()
 		write(
-			HANDOVER_INTERLEAVING_REFUSALS.run
-				.replace('{folder}', handover.folder)
-				.replace('{marker}', abandonedMarkerPath(handover.folder)),
+			textOf([
+				HANDOVER_INTERLEAVING_REFUSALS.run
+					.replace('{folder}', handover.folder)
+					.replace('{marker}', abandonedMarkerPath(handover.folder)),
+			]),
 		)
 		return 2
 	}
@@ -456,6 +548,8 @@ export async function runHandoverRun(params: {
 			columns: params.columns ?? live.columns,
 			cliPath,
 			resumeMerge: hasFlag(argv, 'resume-merge'),
+			// the DONE card reads the run record: written before it
+			beforeCard: params.recordRun,
 		})
 		return stepExit
 	} finally {
@@ -489,12 +583,14 @@ export function runHandoverShow(params: {
 	const { handover } = chosen
 	const { lotsFile } = handover
 	if (!existsSync(lotsFile.repository))
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: HANDOVER_SHOW_TEXTS.repositoryMissing
-				.replace('{folder}', handover.folder)
-				.replace('{repository}', lotsFile.repository),
-		}
+			lines: [
+				HANDOVER_SHOW_TEXTS.repositoryMissing
+					.replace('{folder}', handover.folder)
+					.replace('{repository}', lotsFile.repository),
+			],
+		})
 	const card = shownHandoverCard({ handover, probe: params.probe, cliPath: params.cliPath })
 	const runnable = !card.done && card.verdict !== 'ABANDONED'
 	const committed = card.lots.filter((lot) => lot.commit).length
@@ -502,30 +598,27 @@ export function runHandoverShow(params: {
 	if (hasFlag(argv, 'json'))
 		return {
 			exitCode: 0,
-			output: JSON.stringify(
+			output: jsonOf(
 				{ folder: handover.folder, ...handoverCardData(card), changedSinceReview: changed },
-				null,
 				2,
 			),
 		}
-	return {
-		exitCode: 0,
-		output: [
-			renderSectionCard({
-				card: handoverCardSections(card),
-				colour: params.colour ?? false,
-				width: params.columns,
-			}),
-			...(changed
-				? [
-						HANDOVER_SHOW_TEXTS.changed
-							.replace('{count}', String(changed))
-							.replace('{lots}', join(handover.folder, HANDOVER_FILES.lots)),
-					]
-				: []),
-			...(runnable ? [card.command] : []),
-		].join('\n'),
-	}
+	const after = [
+		...(changed
+			? [
+					HANDOVER_SHOW_TEXTS.changed
+						.replace('{count}', String(changed))
+						.replace('{lots}', join(handover.folder, HANDOVER_FILES.lots)),
+				]
+			: []),
+		...(runnable ? [card.command] : []),
+	]
+	const box = renderSectionCard({
+		card: handoverCardSections(card),
+		colour: params.colour ?? false,
+		width: params.columns,
+	})
+	return { exitCode: 0, output: after.length ? joinedOf([box, textOf(after)]) : box }
 }
 
 /**
@@ -566,7 +659,10 @@ export function runHandoverAbandon(params: {
 		if (!root) return usage(storeRefusal({ verb: 'abandon', cwd }))
 		const held = readHandoverLock(root)
 		if (!held)
-			return { exitCode: 1, output: HANDOVER_ABANDON_TEXTS.nothingHeld.replace('{root}', root) }
+			return resultOf({
+				exitCode: 1,
+				lines: [HANDOVER_ABANDON_TEXTS.nothingHeld.replace('{root}', root)],
+			})
 		target = dirname(held)
 	}
 	const chosen = readNamedHandover({
@@ -588,68 +684,7 @@ export function runHandoverAbandon(params: {
 	})
 	return result.state === 'refused'
 		? usage(result.message)
-		: { exitCode: 0, output: result.message }
-}
-
-/**
- * The lock at `lockPath` after a write refused as committed: removed when there was none, or when it named this
- * folder's `scriptPath` (by real path: a committed hand-over never holds the lock); else its earlier `bytes`.
- */
-function restoreLock(params: {
-	lockPath: string
-	bytes: Buffer | undefined
-	scriptPath: string
-}): void {
-	const { bytes } = params
-	if (
-		bytes === undefined ||
-		realPathOf(bytes.toString('utf8').trim()) === realPathOf(params.scriptPath)
-	)
-		rmSync(params.lockPath, { force: true })
-	else writeFileSync(params.lockPath, bytes)
-}
-
-/** The store of the repository `folder` is in; undefined outside every repository. */
-function storeOfFolder(folder: string): string | undefined {
-	const root = workTreeTopOf(folder)
-	return root && findHandoverStore(root)
-}
-
-/** The refusal of an argument naming an entry whose folder is gone (it names the folder); none otherwise. */
-function goneEntryRefusal(params: {
-	verb: string
-	argument: string
-	store: string | undefined
-}): string | undefined {
-	const entry = entryOfArgument(params)
-	if (!entry || existsSync(entry.folder)) return undefined
-	return HANDOVER_STORE_REFUSALS.folderGone
-		.replace('{verb}', params.verb)
-		.replace('{name}', entry.name)
-		.replace('{folder}', entry.folder)
-}
-
-/**
- * The hand-over an argument of `show` or `abandon` names; an entry whose folder is gone: exit 1 naming the
- * folder; else the refusal naming the argument (exit 2).
- */
-function readNamedHandover(params: {
-	verb: string
-	argument: string
-	store: string | undefined
-	cwd: string
-}): { handover: HandoverFolder } | CommandResult {
-	const gone = goneEntryRefusal(params)
-	if (gone) return { exitCode: 1, output: gone }
-	const folder = resolveHandoverArgument(params)
-	const handover = readHandoverFolder(folder)
-	if (typeof handover !== 'string') return { handover }
-	return usage(
-		HANDOVER_STORE_REFUSALS.noHandover
-			.replace('{verb}', params.verb)
-			.replace('{argument}', params.argument)
-			.replace('{reason}', handover),
-	)
+		: resultOf({ exitCode: 0, lines: result.lines ?? [result.message] })
 }
 
 /**
@@ -665,17 +700,22 @@ function newestHandoverOfBranch(params: {
 	if (!root || !store) return usage(storeRefusal({ verb: 'show', cwd }))
 	const entries = readStoreEntries(store)
 	if (entries.length === 0)
-		return { exitCode: 1, output: HANDOVER_SHOW_TEXTS.emptyStore.replace('{store}', store) }
+		return resultOf({
+			exitCode: 1,
+			lines: [HANDOVER_SHOW_TEXTS.emptyStore.replace('{store}', store)],
+		})
 	const branch = currentBranchOf(root)
 	const newest = newestOfBranch({ entries, branch })
 	if (newest) return readNamedHandover({ verb: 'show', argument: newest.name, store, cwd })
-	return {
+	return resultOf({
 		exitCode: 1,
-		output: [
+		lines: [
 			HANDOVER_SHOW_TEXTS.noneForBranch.replace('{branch}', branch).replace('{store}', store),
-			renderColumns(entries.map((entry) => [entry.name, entry.branch, registeredStateOf(entry)])),
-		].join('\n'),
-	}
+			...renderColumns(
+				entries.map((entry) => [entry.name, entry.branch, registeredStateOf(entry)]),
+			),
+		],
+	})
 }
 
 /** Where a registered hand-over stands: its folder's state while the folder reads back, else `gone`. */
@@ -697,7 +737,7 @@ function pickHandoverToRun(params: {
 }): string | number {
 	const { cwd, store, write } = params
 	if (!store) {
-		write(storeRefusal({ verb: 'run', cwd }))
+		write(textOf([storeRefusal({ verb: 'run', cwd })]))
 		return 2
 	}
 	const candidates = readStoreEntries(store).flatMap(function runnable(entry) {
@@ -707,13 +747,15 @@ function pickHandoverToRun(params: {
 	})
 	if (candidates.length === 1) return candidates[0].handover.folder
 	if (candidates.length === 0) {
-		write(HANDOVER_RUN_TEXTS.nothingToRun.replace('{store}', store))
+		write(textOf([HANDOVER_RUN_TEXTS.nothingToRun.replace('{store}', store)]))
 		return 1
 	}
 	write(
-		HANDOVER_RUN_TEXTS.several
-			.replace('{count}', String(candidates.length))
-			.replace('{store}', store),
+		textOf([
+			HANDOVER_RUN_TEXTS.several
+				.replace('{count}', String(candidates.length))
+				.replace('{store}', store),
+		]),
 	)
 	const rows = renderColumns(
 		candidates.map(({ entry, handover }) => [
@@ -723,7 +765,7 @@ function pickHandoverToRun(params: {
 			recomputeHandoverCard({ handover, probe: params.probe }).verdict,
 		]),
 	)
-	for (const row of rows.split('\n')) write(row)
+	for (const row of rows) write(textOf([row]))
 	return 2
 }
 
@@ -748,13 +790,13 @@ export function runHandoverList(params: {
 		getArg(argv, 'root') ?? (commitPlan && existsSync(commitPlan) ? commitPlan : cwd),
 	)
 	const listings = listHandovers({ root, now: params.now })
-	if (hasFlag(argv, 'json')) return { exitCode: 0, output: JSON.stringify(listings, null, 2) }
+	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(listings, 2) }
 	if (listings.length === 0)
-		return { exitCode: 0, output: `handover list: no hand-over under ${root}` }
-	return { exitCode: 0, output: renderListings(listings) }
+		return resultOf({ exitCode: 0, lines: [`handover list: no hand-over under ${root}`] })
+	return resultOf({ exitCode: 0, lines: renderListings(listings) })
 }
 
-function renderListings(listings: readonly HandoverListing[]): string {
+function renderListings(listings: readonly HandoverListing[]): string[] {
 	return renderColumns([
 		['folder', 'repository', 'worktree', 'branch', 'lots', 'age', 'state'],
 		...listings.map((listing) => [
@@ -770,28 +812,23 @@ function renderListings(listings: readonly HandoverListing[]): string {
 }
 
 /** Rows of cells, each column as wide as its widest cell, two spaces between columns. */
-function renderColumns(rows: readonly string[][]): string {
+function renderColumns(rows: readonly string[][]): string[] {
 	const widths = rows[0].map((_cell, column) => Math.max(...rows.map((row) => row[column].length)))
-	return rows
-		.map((row) =>
-			row
-				.map((cell, column) => cell.padEnd(widths[column]))
-				.join('  ')
-				.trimEnd(),
-		)
-		.join('\n')
+	return rows.map((row) =>
+		row
+			.map((cell, column) => cell.padEnd(widths[column]))
+			.join('  ')
+			.trimEnd(),
+	)
 }
 
 function usage(message: string): CommandResult {
-	return { exitCode: 2, output: message }
+	return resultOf({ exitCode: 2, lines: [message] })
 }
 
 function refused(reasons: string[]): CommandResult {
-	return {
+	return resultOf({
 		exitCode: 1,
-		output: [
-			'handover refused, nothing written:',
-			...reasons.map((reason) => `  - ${reason}`),
-		].join('\n'),
-	}
+		lines: ['handover refused, nothing written:', ...reasons.map((reason) => `  - ${reason}`)],
+	})
 }

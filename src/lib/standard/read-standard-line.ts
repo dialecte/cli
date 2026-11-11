@@ -16,6 +16,8 @@ import {
 	STANDARD_LINE_NAME,
 	STANDARD_NOT_CONFIGURED_DETAIL,
 	STANDARD_NOT_CONSULTED_DETAIL,
+	STANDARD_NOT_RECORDED_DETAIL,
+	STANDARD_RECORDED_NOT_CONSULTED_DETAIL,
 	STANDARD_STATES,
 } from './standard.constants.ts'
 
@@ -44,6 +46,27 @@ export function readStandardLine(params: { folder: string }): CardGateLine {
 		name: STANDARD_LINE_NAME,
 		status: 'failed',
 		detail: STANDARD_NOT_CONSULTED_DETAIL.replace('{folder}', shellQuote(params.folder)),
+	}
+}
+
+/**
+ * A committed (DONE) card's standard line: the state recorded on the lot, never one recomputed from the
+ * environment of the shell that ran the hand-over. Consulted passes; not consulted, or nothing recorded, warns.
+ */
+export function readRecordedStandardLine(params: { folder: string }): CardGateLine {
+	const record = readStandardRecord(params.folder)
+	if (record?.state === 'consulted')
+		return {
+			name: STANDARD_LINE_NAME,
+			status: 'passed',
+			detail: STANDARD_CONSULTED_DETAIL.replace('{note}', record.note),
+		}
+	return {
+		name: STANDARD_LINE_NAME,
+		status: 'warning',
+		detail: record
+			? STANDARD_RECORDED_NOT_CONSULTED_DETAIL.replace('{note}', record.note)
+			: STANDARD_NOT_RECORDED_DETAIL,
 	}
 }
 

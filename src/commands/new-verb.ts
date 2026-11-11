@@ -7,8 +7,10 @@
  */
 import { join } from 'node:path'
 
+import { resultOf } from '../lib/command-result.ts'
 import { discoverNamespace, discoverVersions, getArg } from '../lib/config.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
+import { printOut } from '../lib/print/print.ts'
 import {
 	OPTIONS_WITH_VALUE,
 	VERB_KINDS,
@@ -21,7 +23,7 @@ import type { VerbKind } from '../lib/scaffold/new-verb.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runNewVerb({ cwd: process.cwd(), argv })
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -54,26 +56,28 @@ export function runNewVerb(params: { cwd: string; argv: string[] }): CommandResu
 		name,
 	})
 	if (typeof result === 'string')
-		return { exitCode: 1, output: `new verb: ${result}, nothing written` }
+		return resultOf({ exitCode: 1, lines: [`new verb: ${result}, nothing written`] })
 	const formatted = formatFiles({
 		root: cwd,
 		files: [...result.written, ...result.edited].map((path) => join(cwd, path)),
 		options: formatOptsFromArgv(argv),
 	})
 	if (!formatted)
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: `new verb: the files are written but the formatter failed on them (${[...result.written, ...result.edited].join(', ')}): run the package's formatter, then read the placeholders`,
-		}
-	return {
+			lines: [
+				`new verb: the files are written but the formatter failed on them (${[...result.written, ...result.edited].join(', ')}): run the package's formatter, then read the placeholders`,
+			],
+		})
+	return resultOf({
 		exitCode: 0,
-		output: [
+		lines: [
 			...result.written.map((path) => `written  ${path}`),
 			...result.edited.map((path) => `edited   ${path}`),
 			...findPlaceholders({ root: cwd, paths: result.written }).map((place) => `fill     ${place}`),
 			`Then: fill the case, prove it red (npx dialecte tdd red ${result.written.find((path) => path.endsWith('.test.ts'))}; while iterating, npx vitest run <file> -t "<case>"), implement until npx dialecte tdd green, and \`dialecte gate\`.`,
-		].join('\n'),
-	}
+		],
+	})
 }
 
 function isVerbKind(value: string | undefined): value is VerbKind {
@@ -81,5 +85,5 @@ function isVerbKind(value: string | undefined): value is VerbKind {
 }
 
 function usage(message: string): CommandResult {
-	return { exitCode: 2, output: message }
+	return resultOf({ exitCode: 2, lines: [message] })
 }

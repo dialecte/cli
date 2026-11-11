@@ -28,6 +28,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 Discover    api  members  schema  explain  standard
 Use         run  fixture  new
 Grow        lot
+Plan        plan
 Check       gate  tdd  rules  contrib  mutants
 Hand over   handover
 Workspace   worktree  doctor  models  skills
@@ -50,6 +51,7 @@ dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open q
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
 dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over abandoned first, then canceled
 dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
+dialecte plan next|check|mark <plan.md>   # what can start now in a plan's lot block; the block checked; a person's mark
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
 dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
 dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
@@ -62,7 +64,7 @@ dialecte rules             # code-rules self-check of the changed files
 dialecte contrib           # the contributor checks, after gate --full and before the hand-over
 dialecte mutants run|status|schedule|abandon|migrate|judge|record|drop   # mutation testing of the declared scope
 dialecte handover write <lots.json>   # the guarded commit-by-lots hand-over a human runs (handover <lots.json> too)
-dialecte handover show|run|abandon|list|--legend
+dialecte handover show|review|run|abandon|list|--legend
 dialecte worktree add|prune     # a worktree ready to work in; what a merge left behind
 dialecte doctor            # versions, core API generation, skills and station agents in sync, local checkouts
 dialecte models            # which model each tier (fast, standard, strong, frontier) means for your vendor
@@ -173,16 +175,31 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
   intent quotes a sentence, since the generated pages republish the JSDoc. A page about several
   repositories declares `<!-- dialecte-skills workspace -->` and is fully verified with
   `--workspace <folder>`; a deliberate outside mention goes in `<!-- dialecte-skills ignore: token -->`.
-  It also verifies every cli invocation a page cites in code (inline code and fenced blocks of any language,
-  never prose; generated blocks left out): one starting with `dialecte` or `@dialecte/cli`, after `npx`, a
+  It also verifies every cli invocation a page cites in code (inline code, fenced blocks tagged `sh`, `bash` or
+  `shell`, and in an untagged fence only a line starting `dialecte ` and a command of the map; a fence with any
+  other tag - `text`, `mermaid`, a diagram, a sample - is never read; never prose; generated blocks left out): one starting with `dialecte` or `@dialecte/cli`, after `npx`, a
   `$ ` prompt or a shell operator. Its command, its verb and each `--flag` must be in the command map of the
   cli the package uses (the cli's own map in the cli itself, else what the installed `@dialecte/cli` answers to
   `dialecte --help --json`); an unknown one, or an old form of a command renamed in 1.0 (see "Renamed in
   1.0"), is an error at `page:line` naming the closest valid form, or the new form, on a workspace page too. A quoted word, a
   `<placeholder>` and what follows a bare `--` are not checked; `ignore:` takes the offending word (`record`,
   `--fats`). With no installed cli, or one before the map, the invocations are not checked: one warning says
-  why and the summary line says so. A versioned `@dialecte/cli@<version>` and what follows an unclosed `<` are
-  not read.
+  why and the summary line says so. Inside a `<placeholder>`, an option group `[...]` or a flag group
+  `(--a | --b)` a `|` is no pipe; each kind of group is counted on its own (a `)` never closes a `<`), and a
+  process substitution `<(dialecte ...)` is read like any invocation. A versioned `@dialecte/cli@<version>` and
+  what follows an unclosed `<`, `[` or `(--` are not read.
+
+## What the cli prints
+
+Every text the cli prints passes one boundary: each printed line is escaped once, so a value from a record, a
+brief, an argument or an agent can never forge a line nor act on the terminal. Every C0 control (a tab and a line
+feed included), DEL, the C1 controls, the bidi marks, embeddings, overrides and isolates and the line and
+paragraph separators print as `\u{<hex>}` (`\u{a}` for a line feed, `\u{1b}` for an escape). A lot verb's
+refusal, a recap row, a card line and an error the cli catches all print that way. Quoted source (`lot delta`'s
+diff, `mutants judge`'s window) shows a tab as four spaces. `--json` is never escaped: JSON encodes its control
+characters itself and holds every value as written. The lines the cli relays from its own child processes (a
+gate step's, a hook's, a test runner's) keep their colours (SGR sequences, the conceal parameter dropped);
+every other control in them is escaped.
 
 ## Lookups for agents (and people)
 
@@ -205,10 +222,18 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   installed dialecte (a dependency built on `@dialecte/core` exporting `./<version>` with its `./<version>/test`
   entry: its namespace is its name capitalized, `Scl` from `@dialecte/scl/v2019C1`); with several, it lists them and
   `--package <name>` / `--version <v>` picks one. `--namespace <Name> --entry <module>` override.
-- `dialecte schema <Tag> [--package <name>]`: parents, children in order with how often each may appear,
-  attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants - read
-  through the readers of the core each installed dialecte depends on (how often a child may appear is core's
-  `childOccurrences`). An unknown tag answers the closest; a dialecte not built is reported as skipped.
+- `dialecte schema <Tag> [--under <Parent>] [--package <name>]`: parents, children in order with how often each
+  may appear, attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants,
+  the declared type and documentation - read through the readers of the core each installed dialecte depends on
+  (how often a child may appear is core's `childOccurrences`). A tag declared several ways prints each declaration
+  with the parents that hold it; `--under <Parent>` prints the one that parent holds (or those it holds, when it
+  does not decide), and a tag that is not a child of that parent answers its parents (exit 1). With `--json` each
+  element carries `declarations` and `resolved`, and when known `type`, `documentation`, `declaration` (the key
+  of the declaration described, when the tag is declared several ways) and `ways` (when unresolved). A dialecte
+  names the standard it implements in its `package.json`, `"dialecte": { "standard": "<public name>" }` (the
+  usual public name, no part or clause); a value that is not a non-empty string skips the dialecte, naming
+  `dialecte.standard`. An unknown tag
+  answers the closest; a dialecte not built is reported as skipped.
 - `dialecte doctor`: installed `@dialecte/*` versions, the core API generation of each dialecte (read from
   the core it resolves; a dialecte on another core than your app's is a warning), whether the synced skills match node_modules (a skill missing; a copied skill of
   another version than the one installed - linked skills follow node_modules), local checkouts (siblings,
@@ -330,7 +355,17 @@ One field of package.json says what the package is to the cli:
   the type bench and the release guard, and `skills sync` installs the contributor skills (`--no-contributing`
   is refused). A contributor never names the tools that consume it: list them once on the machine with
   `git config --global dialecte.consumerNames "<name>, <name>"` (never committed, so the names stay out of the
-  repository) and `rules` and `handover` refuse them as whole words (`consumer tool name`).
+  repository) and `rules` and `handover` refuse them as whole words (`consumer tool name`). The words a
+  contributor never commits at all are listed on the machine the same way, never in the repository:
+  `git config --global dialecte.forbiddenWords "<word>, <word>"` and the user file
+  `$XDG_CONFIG_HOME/dialecte/forbidden-words` (else `~/.config/dialecte/forbidden-words`; one word per line,
+  `#` comments, blank lines skipped), both read and merged. `rules`, `contrib` (its rules row) and the hand-over's
+  `references` guard (lot messages and files) refuse them as whole words, whatever the case (`forbidden word`).
+  With no list anywhere the check is not run and `rules` says so in one line,
+  `forbidden words: no list (git config dialecte.forbiddenWords or <the user file>)`, and passes (a CI machine has
+  no list); a user file that cannot be read (a folder at its path, no read permission) is an error, never no list.
+  A gate or contrib record of a run that checked the rules is keyed with a hash of the consumer names and the
+  forbidden words (never the words), so a list set or changed after a green record runs the check again.
 - Any other value is refused by every command that reads it:
   `dialecte.profile: "<value>" is not a profile; profiles: contributor, consumer`.
 
@@ -388,9 +423,13 @@ the answer.
   its root (`tmpdir()` handed to a call that lists or scans a folder, or given as `root` / `cwd` /
   `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
   gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
-  symmetric pair aside) and abbreviated names are warnings. Without file arguments it records its result
-  in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the files, the errors
-  and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
+  symmetric pair aside) and abbreviated names are warnings. A file it cannot read (a file given that is not
+  there, no read permission) or a script that does not parse is an error of that file (`unreadable-file`),
+  never a silent skip. Without file arguments it reads the changed list a scoped gate step hands
+  (`DIALECTE_GATE_CHANGED`: its text files still on disk; a list it cannot read is an error) and writes the
+  gate's selection (the files it checked); outside a gate, the files changed against HEAD and the new ones,
+  that result recorded in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the
+  files, the errors and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
   runner's defaults: every file in parallel), then the steps derived from the package's scripts after its
@@ -444,7 +483,12 @@ the answer.
   serial rerun is green: it is reused with its `flaky in parallel` note. `--no-reuse` runs the steps
   whatever the store holds. The key leaves out the Node version and the environment (a path given
   through an environment variable); a `file:` dependency edited and restored to the same size within
-  the same modification time is not seen either.
+  the same modification time is not seen either. `--full` and `--release` hold the machine awake while they
+  run (on macOS a `caffeinate -i -w <the cli's pid>` started at their start, detached, ending with the cli;
+  nothing on another system, nor when `caffeinate` is not on `PATH`, nor with `DIALECTE_KEEP_AWAKE=0`), and
+  measure their wall and monotonic time: a run whose wall time passed its monotonic time by over 60 s spanned
+  a sleep of the machine all the same, its record keeps `sleptMs`, and the hand-over card's gates print
+  `! slept <duration> during gate --full` for a record of the tree it checks.
 - `dialecte gate --hook [--no-reuse]` runs in a commit hook: the test steps of `--full` (its steps counting
   tests), unless a green `--full` record of what is committed answers them. Its key is the one a `--full` run of
   that state stores - the tree, what npm installed, the `file:` dependencies, the full gate's command hash - with
@@ -476,7 +520,7 @@ the answer.
   terminal (and never with `NO_COLOR`); the `✓` `!` `✗` marks read the same without it. The command
   follows the box whole on one line, to copy: `cd <folder> && bash commit.sh`, or
   `node <this cli> handover run <folder>` when the repository's own cli does not answer
-  `handover run --probe` within 10 s. "This cli" is the script that runs: when it is a temporary one
+  `handover run --probe` within 60 s. "This cli" is the script that runs: when it is a temporary one
   (`npx` from the registry, `tsx` on the sources), install `@dialecte/cli` in the repository so the
   card names its own bin.
 - No runner hangs silently. Every child that `dialecte gate` (its steps), `tdd` (its vitest runs) and
@@ -533,8 +577,8 @@ the answer.
     case whose test code changed around it is kept and flagged `test code changed around it` (the next
     step adding a case to a green file); a case never proven green (only unchanged, accepted or revised)
     is kept without a flag, and no receipt. A file with a refusal still records its other cases'
-    receipts, the refusals kept as evidence, but is not frozen: the gate fails on it until no case of
-    it is refused.
+    receipts, the refusals kept as evidence; it is frozen when one of its cases is red (those need no re-red;
+    the refused case stays unproven), else not frozen; the gate fails on it until no case of it is refused.
   - A red records the case (file, full name, project), the hashes of its test file, of its own test call
     and of the production files, the failing message and the time. It is flagged `rollback` at a
     production state the case, or the lot, had already left: a production file moved back from the
@@ -562,8 +606,10 @@ the answer.
     into production, never further, and the module itself is production), its own snapshot. Every
     dependency found by import is followed in turn, and one found by a name written with its folder
     (`fixtures/scan.ts`, a full path): it brings the files it imports (`import type` included). A bare
-    file name (`index.ts`) may be another file: the changed file it names is a dependency, not followed. A
-    helper no red covers stays unfrozen, and the gate fails on it, unless a `revised` entry names it
+    file name (`index.ts`) may be another file: the changed file it names is a dependency, not followed. The
+    `setupFiles` of the package's vite or vitest configs (test code no test imports) are a dependency of every
+    test file, followed as an import: a red freezes a changed one, a `revised` entry naming it lets a red
+    freeze it. A helper no red covers stays unfrozen, and the gate fails on it, unless a `revised` entry names it
     (below). A Vite import query or fragment (`./x.worker?worker&url`, `?raw`, `?url`, `?inline`, `#part`) is
     left out of the file the import names; a specifier starting with `#` is a subpath import. The files of
     the change an `import.meta.glob(...)` of its test code matches (a pattern relative to the file, `/` for
@@ -709,7 +755,7 @@ the answer.
   existing ancestor, then the rest) before anything is written, so `commit.sh`, the lock, the card, `--json`'s
   `folder` and the registry all hold it. A word naming both an existing folder and a lot is the folder: the
   card's output starts with the note saying so (`outNote` in `--json`). Refused (exit 2, nothing written), when the folder is a lot folder, in
-  this order: a simulated lot (`a simulated lot has no hand-over`), a `canceled` or `failed` lot, an open
+  this order: a damaged lot (`<name> is damaged (<reason>): ...`, naming `lot stop`), a simulated lot (`a simulated lot has no hand-over`), a `canceled` or `failed` lot, an open
   question (`answer q<k> first: dialecte lot answer <full name> q<k> "<answer>" ...`), a lots file whose
   repository is not the lot's worktree or whose branch is not the lot's (both named); and for any folder whose
   registered hand-over is `committed` (`<name> is committed: a committed hand-over is never rewritten`). Every hand-over
@@ -740,7 +786,8 @@ the answer.
   is `hand-over: <repository folder> <branch>`, with the worktree's index first from a numbered worktree
   (`hand-over: 0171 cli feat/x`: the repository's own folder name, so the number is shown once). The commit
   section ends with the `worktree` line: the worktree the lots are committed in, relative to the workspace
-  when it is inside it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path. Its
+  when it is inside it (`.worktrees/0171-cli-x`, `cli` for the main checkout), else its absolute path; both
+  compared by real path, so a side reached through a link (`/var` and `/private/var`) reads the same. Its
   first line is the verdict: `READY` when no gate line failed and none ran on another tree, `BLOCKED` with
   `<n> gates failed: <names>` and `gates ran on another tree: <names>`, `DONE` once a real run committed
   every lot; then the lots, files and `+<added> −<removed>` (`all gates green` when nothing blocks), and
@@ -759,7 +806,10 @@ the answer.
     the hook counts tests: a merge hand-over rehearsed or committed reads the hook's lines of the merged
     tree, the worktree's `tests` of its tree before the merge left out. No check leaves silently: a step
     the hook did not run reads `! skills  not run on the merged tree` (a warning, not of another tree), a
-    failed one stays `✗ ... (the tree changed since)`, and `tdd` stays the worktree's), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
+    failed one stays `✗ ... (the tree changed since)`, and `tdd` stays the worktree's: on the DONE card of a
+    merge hand-over the tdd verdict is judged on the worktree's own lot tree (the tree its first merge lot
+    merged onto), current while the hook record of the merged tree stands, so no `gates ran on another tree`
+    for it), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots, then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
@@ -796,7 +846,10 @@ the answer.
     it). `✓ standard  consulted · <note>` when one is configured and the station recorded a consultation;
     `✗ standard  configured, not consulted: dialecte lot standard <folder> consulted <note>` (blocks) when
     one is configured and none is recorded; `! standard  not consulted: none configured (DIALECTE_STANDARD)`
-    otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. The station records it
+    otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. A DONE card
+    (committed) shows the state recorded on the lot, never one read from the shell that ran the hand-over:
+    `✓ standard  consulted · <note>`, `! standard  not consulted · <reason>`, or
+    `! standard  not consulted: none recorded on the lot`. The station records it
     with `dialecte lot standard <id|folder> consulted <note>` or `not-consulted <reason>` (the card's line
     names the hand-over's folder).
   - `contrib` (a contributor's): the rows of the `dialecte contrib` record of the tree the hand-over commits,
@@ -839,6 +892,10 @@ the answer.
   rehearsal's. The command stays under the box until every lot is committed. `dialecte handover --legend` prints every term the card can
   print, each in two lines: what it means, and whether to look.
 
+- `dialecte handover run <folder>` (and `--rehearse`) holds the machine awake while it runs, as `gate --full`
+  does, and writes `last-run.json` in the hand-over folder when it ends (before the card of a real run):
+  `sleptMs` when its wall time passed its monotonic time by over 60 s; the DONE card then prints
+  `! slept <duration> during handover run` in its gates.
 - `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
@@ -1003,6 +1060,22 @@ the answer.
   card. An unknown name, or a folder that is no hand-over: exit 2, naming it. `--json` answers the card
   as data with its `folder` and `name`, as `dialecte handover --json` does, and `changedSinceReview` (the
   count of that line).
+- `dialecte handover review <name|index|folder> [--json] [--print]` opens the hand-over's worktree (the lots
+  file's `repository`) in one new editor window and returns at once: the editor is started detached, its output
+  ignored, never waited for. The hand-over is named as `show` names it. For a hand-over holding a merge lot it
+  first writes `<hand-over folder>/review/lot.diff`, the lot's own change against the lots file's `head` (what is
+  committed on top of it, staged, unstaged, and the untracked files git would add; ignored files left out; no
+  colour whatever the git config), read through a scratch index so the repository is left as it was, and opens it
+  in the same window. The editor: the worktree's `git config dialecte.editor` when set (its words, split as a
+  shell splits them, then the paths; no flag added), else the first editor of a fixed list the cli knows found as
+  an executable file on `PATH` (searched by the cli, no shell; opened with its new-window flag), else
+  `code --new-window`; `$EDITOR` and `$VISUAL` are never read. `--print` prints the command line it would run (each word that needs it shell-quoted, so
+  it runs as copied) and starts nothing; with `--json` too it prints that answer and starts nothing; `--json` answers `{ editor, command, opened }`. Exit 2: no
+  argument, an unknown hand-over, a worktree that is gone (naming it), or an editor that is no executable file
+  (`editor <word> not found: set git config dialecte.editor`), nothing started; with `--json` a refusal answers
+  `{ error }`, the message as written. Every READY card gets a `review`
+  section after the gates, `dialecte handover review <name>  (opens <editor>)` (`review: { command, editor }` in
+  `--json`), read from `PATH` when the card is built; BLOCKED, DONE and ABANDONED cards have none.
 - `dialecte handover run` without a folder runs the one registered hand-over still to run (its folder
   pending or partly committed; `--rehearse` too): an abandoned, committed, stale or gone one is skipped.
   Two or more: refused, nothing run and no run marker, one `name  branch  verdict` line each (`READY` or
@@ -1114,12 +1187,18 @@ the answer.
 - `dialecte lot status <id> [--json]` derives the lot's state from its records (`working`, `input-required`,
   `ready`, `committed`, `canceled`, `failed`), with the worktree and link checks and the exact next command (the
   text form adds an `also:` line when there is one, five lines at most); it
-  reads files only, runs no git and writes nothing. Exit 0 for a lot found, 2 for an unknown or ambiguous id
+  reads files only, runs no git and writes nothing. A damaged lot (a folder of the store whose name has a lot
+  name's shape and whose records do not hold: no readable `identity.json`, one naming another folder, or a record
+  that fails its check) answers `<name> damaged: <reason>` then `next: dialecte lot stop <name> --reason <text>`
+  (`{ lot, state: "damaged", reason, next }` with `--json`), exit 6, never `no lot`; the reason is a fixed word
+  of the cli, never a field of the record, and a lot with an unreadable identity is named by its folder. Exit 0 for a lot found, 2 for an unknown or ambiguous id
   (`{ error, next: null }` with `--json`) or a usage error (`{ error, usage, next: null }`). An
   `<id>` is an index (`171` = `0171`), a full name, a lot folder or `.dialecte/lot`; a word naming an existing
-  folder is that folder. The review rounds' verbs take `<id|folder>` the same way (a write needs an index
+  folder is that folder; a damaged lot is named by its id (index or full name), a path to it does not find it. The review rounds' verbs take `<id|folder>` the same way (a write needs an index
   unique across every store of the list), and a lot folder is accepted as their hand-over folder although it
-  sits in the git folder.
+  sits in the git folder. Two workspaces of the store list may give the same full name (the same index,
+  repository folder name and branch tail): that name is then ambiguous (exit 2 listing both); give the lot
+  folder instead.
 - The host loop: `lot start -> lot wait -> (lot answer -> lot wait)* -> lot result`. Every output names the exact
   next command with the lot's full name, and the exit code says what the host does next (section below). Every
   answer of `status`, `wait`, `answer`, `result` and `stop` goes to standard output, whatever its exit code; only
@@ -1133,21 +1212,26 @@ the answer.
   nothing), 4 when the last transition is a limit (run again), 5 when `--timeout` is reached while the lot still
   works. A real lot is looked at every second, by a stat of its folders and of the registry, and read again only
   when one changed, nothing written; on a terminal a `waiting <name> (<state>,
-  <elapsed>)` line refreshes (never under `--json`). A simulated lot is played up to its next blocking point.
+  <elapsed>)` line refreshes (never under `--json`). A simulated lot is played up to its next blocking point; one
+  with nothing left to play (no `scenario.json`, or every step played) never waits: it answers its state at once,
+  as `lot result` does (a working lot: exit 5), whatever `--timeout`. A damaged lot answers at once with exit 6,
+  as `lot status` prints it.
 - `dialecte lot answer <id> <question> "<answer>" [--by <who>] [--json]` records the answer to an open question
   once, then prints the status with `next: dialecte lot wait <name>`. The answer is one line; a question with
   options takes one of them (compared trimmed, case-folded, recorded as the option is written); the same answer
   again is `already`, another one is refused. A person's question needs `--by <who>` (not `caller`); a caller's
   defaults to `caller`. `--by` is one line, not empty, checked before the lot is read (exit 2 naming `--by`).
   A refusal's text form escapes the options, answer and `--by` it quotes (a line feed in them prints as
-  `\u{a}`, the refusal stays one line); `--json` carries them as stored.
+  `\u{a}`, the refusal stays one line); `--json` carries them as stored. A damaged lot takes no answer (exit 2,
+  naming the lot, its damage and the stop to run; nothing written).
 - `dialecte lot result <id> [--json]` never blocks and writes nothing. A `ready` or `committed` lot exits 0 with
   `{ lot, state, handover: { name, folder, state, card, show, run }, worktree, branch, questions, simulated }`:
   the card is the one `handover show --json` computes, `handover.state` the hand-over's own state read from git
   (`committed` once its lots are committed, even before the registry says so), `questions` the answered ones
   (`{ id, text, answer, by }`); a simulated lot's `handover` is `{ simulated: true }`, nothing to show or run.
   `failed` and `canceled` exit 1 with `{ state, reason, at, position }` of the last transition, `input-required`
-  exits 3 with the open questions, `working` exits 5. The text form prints agent text escaped.
+  exits 3 with the open questions, `working` exits 5, a damaged lot exits 6 (as `lot status` prints it). The text
+  form prints agent text escaped.
 - `dialecte lot stop <id> --reason <text> [--by <who>] [--json]` ends a lot. A `committed` lot is refused
   (exit 2). A pending hand-over is abandoned first, as `handover abandon` does (`abandoned.json`, the registry
   entry `abandoned`, the lock released when it names that hand-over); while its run is in progress, or once it is
@@ -1155,7 +1239,19 @@ the answer.
   reason, `--by` or `caller`), and the registry is read once more: a hand-over registered meanwhile is abandoned
   at once. A lot already `canceled` exits 0 writing nothing; one whose entry is still `pending` (a crash inside an
   earlier stop) is repaired. It moves no worktree and deletes nothing; `lot close` and `worktree prune` let the
-  worktree go once the lot is canceled. The reason and `--by` are one line, not empty (exit 2).
+  worktree go once the lot is canceled. The reason and `--by` are one line, not empty (exit 2). A damaged lot is
+  stopped by moving its folder aside, never deleted and nothing written into its broken records first: to
+  `<git common folder>/dialecte-lots-aside/<name>` (`-2`, `-3`, ... appended when the name is taken, an empty
+  folder included), with a `stopped.json` (`reason`, `by`, `at`, `damage`) inside the moved folder (a lot folder
+  that is a symbolic link: the link is moved, never its target, and the record is `<aside name>.stopped.json`
+  beside it). It prints `stopped <name>: damaged (<reason>); its folder is now <path>` (`{ lot, state:
+  "moved-aside", damage, folder }` with `--json`). Its index stays claimed, its worktree and branch stay; refused
+  (exit 2, nothing moved) while a live run marker holds the folder or a pending registry entry names it (first:
+  `handover abandon <entry>`); a stop that finds the folder gone (another
+  stop moved it) says `no lot <id>`. Until it is moved aside, a damaged lot holds its paths: the scope of its
+  `brief.json` when that reads as a list of texts, else every path, so `lot start` refuses an overlap with it
+  (`overlap with <name> (damaged: <reason>): ...`, or `its scope cannot be read: it holds every path`); one whose
+  identity reads simulated holds none.
 - `dialecte lot start --simulate <scenario>` starts a simulated lot that plays one of the scenarios (`ready`,
   `question`, `person`, `two-questions`, `limit`, `failure`, `slow`) under `lot wait`, publishing the records a
   real run would: it writes only its lot folder, one line of the store list and one index claim, never a branch,
@@ -1171,12 +1267,36 @@ the answer.
   question, `handover show`, `lot result` or `lot stop`); then `working <n> · simulated <m> (listed with
   --simulated)`. `--repository` keeps the lots whose repository folder has that name, `--simulated` lists the
   simulated lots that wait. A lot folder whose `identity.json` does not read, or whose records do not hold, is a
-  `damaged <folder>: <reason>` line. The records are checked once, on read: a question id is `q<k>` (k 1 or
+  `damaged <folder>: <reason>; next: dialecte lot stop <name> --reason <text>` line (a `.tmp-` folder being built,
+  or a folder whose name has no lot name's shape, is no lot). The records are checked once, on read: a question id is `q<k>` (k 1 or
   more), an audience `caller` or `person`, a position's step, of and round non-negative integers, a transition's
-  `at` a time, an answer file's question its file's `q<k>`. Every lot verb refuses such a lot (exit 2), so no
-  forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
+  `at` a time, an answer file's question its file's `q<k>`. Every lot verb names such a lot damaged (exit 6 for
+  `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
   `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
   damaged, 1 when nothing does, 2 for a usage error.
+- `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
+  `json dialecte-lots` in the plan, or `<plan without .md>.lots.json` beside it; both or neither is refused) and proposes what can
+  start now; it starts, claims and writes nothing. Each entry declares an `id`, a `kind` (`lot`, `fix`, `spec`,
+  `person`), `dependsOn`, a `scope` per repository (`"."` is the whole repository), extra `heavy` steps
+  (`mutation`, `browser`, `release`), a `brief`, and a `match` (`branch`, `handover`, `feature`) by which its
+  records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
+  An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
+  pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process). The text
+  says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
+  `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
+  <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
+  each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
+  waits for, the parked ones, then the machine: the live heavy steps with their worktree and age, the load against
+  twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
+  proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps
+  would wait (advice only). `--all` lists the done entries; `--json` answers `{ plan, repositories, counts,
+  entries, proposals, held, specWork, heavy, unknown }`. Exit 0 when a lot or fix can start, 1 when none can, 2
+  for a usage error, no block or an invalid one (every fault listed), or a repository that is not a git checkout.
+  `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
+  2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
+  the machine's state folder (`<state>/dialecte/plans/`); a `lot` entry's state comes from its records and is
+  refused.
 - `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
   included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
   folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).
@@ -1277,9 +1397,12 @@ the answer.
     checkout go; anything else keeps it, `.dialecte/notes.md` included. The branch is never touched (`worktree prune` still lists the merged
     ones). Each line names the folder it moved and where `node_modules` went (`closed  <name>: 0007-cli-x;
     node_modules pooled in _pool-cli-1`, or `trashed: <why it was not parked>`); a failure part-way keeps
-    that hand-over with the error and what was already moved, the others go on. Exit 0 when every named
-    hand-over closed, 1 when one was kept, 2 for a name or index the registry does not hold (then nothing is
-    closed); `--json` prints `[{ handover, closed: true } | { handover, kept }]`.
+    that hand-over with the error and what was already moved, the others go on. A hand-over it closes gets
+    `closed` (the time) on its registry entry; closing it again prints `<name> already closed`, nothing
+    decided nor moved (an entry without it, a worktree removed by hand, is still kept: `nothing to close`).
+    Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
+    index the registry does not hold (then nothing is closed); `--json` prints
+    `[{ handover, closed: true, already?: true } | { handover, kept }]`.
 - Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
   it cannot parse, and counts them.
   - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`
@@ -1468,7 +1591,9 @@ on its exit code or its counts is run once more with `--no-file-parallelism`, on
 run named (through `npm run <script>` after one `--`; the whole step when the output names no file). The
 rerun passes when it exits 0, counts no failed test and at least one passed: the step then passes,
 flagged - `serial rerun of <n> file(s): exit 0, <counts>  flaky in parallel` on its line, one
-`flaky <file>` line under it per file, the note kept in the gate record. Otherwise the step fails as a
+`flaky <file>` line under it per file, the note kept in the gate record; the hand-over card's row of such a step,
+or of a hook's test step `gate --hook` flagged so, reads `✓ <step>  <passed> passed · <n> flaky, passed serially`
+(n the flaky files), never a failed count. Otherwise the step fails as a
 `real failure: <why>`, each file listed under it as `failed <file>` when it failed again or `flaky <file>`
 when it passed serially, the rerun's last lines as the tail. While the rerun runs, the step's line still
 shows its own command. A step that stalled, counts no tests, runs no vitest, or already runs one file at a time
@@ -1485,7 +1610,10 @@ case passes `tdd red` as accepted and does not block its file (a case already pr
 its proof: an acceptance never overrides one, and an accepted receipt counts only while its entry stays in
 the file); the gate lists each acceptance with its
 reason, the hand-over card counts them by reason from the receipts (those of earlier lots, which the file
-no longer names, counted on one line), and both report an acceptance or a `revised` entry no case used. The card
+no longer names, counted on one line), and both report an acceptance or a `revised` entry no case used (the
+gate's `unused accept` line adds `; the closest: <file>::<name>` when a case title of the change is close). An
+entry names a title with its quotes folded: a straight `'` or `"` matches a curly one (`’`, `‘`, `“`, `”`) and
+the reverse; nothing else (a backtick, a prime, the letter case) compares alike. The card
 lists every `gone` entry with its reason; only the gate reports a `gone` entry that covers no finding. The file is strict: an unknown key, at the top or in
 an `accept` entry, and an exemption without a reason are refused, naming what is wrong. A lot the orchestrator declares exempt - a wording, rename or doc-only lot - passes with its reason
 and what the change touches: `{ "tdd": "exempt: <reason>" }` in `.dialecte/lot.json` at the package root
@@ -1765,6 +1893,14 @@ suite only for a tree no green `gate --full` checked. A hook
 runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the suite's setup file
 (`test/git-environment.setup.ts`, vitest `setupFiles`) clears them before any test, so a test's git acts on
 its scratch repository only, and the cli clears git's repository variables at its start.
+
+The cli gates itself with its own `dialecte.gate` (package.json). `--fast`: `check`, a scoped `tests` step
+(`node src/scoped-tests.ts`: `vitest related` over the paths changed between the gate base and the tree that a
+test can import, and an empty selection exits 0 without starting vitest) and a scoped `rules` step on the same
+changed list. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
+changes since the gate base. The suite's setup file also points `XDG_CONFIG_HOME` at a folder that does not exist
+(no person's forbidden words list is read) and sets `DIALECTE_KEEP_AWAKE=0` (no run of the suite holds the machine
+awake); a case that wants either sets it itself.
 
 The suite leaves no temporary folder behind: every test removes what it makes in its own teardown, also
 when it fails. A vitest global setup (`test/suite-guard/temp-folder-guard.setup.ts`, `globalSetup`) gives

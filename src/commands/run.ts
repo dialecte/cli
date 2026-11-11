@@ -8,11 +8,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { formatRunOutcome } from '../lib/run/format-run-outcome.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
+import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
+import { runOutcomeLines } from '../lib/run/format-run-outcome.ts'
 import { loadRunEnvironment } from '../lib/run/load-run-environment.ts'
 import { runScript } from '../lib/run/run-script.ts'
 import { DEFAULT_RUN_SEED, DEFAULT_RUN_TIMEOUT_IN_MILLISECONDS } from '../lib/run/run.constants.ts'
 import { splitArguments } from '../lib/split-arguments.ts'
+import { processOutput } from './process-output.ts'
 import {
 	EXIT_FAILED,
 	EXIT_OK,
@@ -30,10 +33,7 @@ export async function run(argv: string[]): Promise<void> {
 	const exitCode = await runCommand({
 		argv,
 		cwd: process.cwd(),
-		output: {
-			stdout: (text) => process.stdout.write(`${text}\n`),
-			stderr: (text) => process.stderr.write(`${text}\n`),
-		},
+		output: processOutput(),
 	})
 	if (exitCode !== EXIT_OK) process.exit(exitCode)
 }
@@ -43,7 +43,7 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 	const { argv, cwd, output } = params
 	const parsed = parseRunOptions({ argv })
 	if (typeof parsed === 'string') {
-		output.stderr(`run: ${parsed}\n${RUN_USAGE}`)
+		output.stderr(textOf([`run: ${parsed}`, RUN_USAGE]))
 		return EXIT_USAGE
 	}
 	const options = parsed
@@ -59,7 +59,7 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 			packageName: options.packageName,
 		})
 	} catch (thrown) {
-		output.stderr(thrown instanceof Error ? thrown.message : String(thrown))
+		output.stderr(textOf([thrown instanceof Error ? thrown.message : String(thrown)]))
 		return EXIT_USAGE
 	}
 
@@ -81,7 +81,7 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 		})
 	} catch (thrown) {
 		// only loading the script throws: anything the script does is in the outcome
-		output.stderr(thrown instanceof Error ? thrown.message : String(thrown))
+		output.stderr(textOf([thrown instanceof Error ? thrown.message : String(thrown)]))
 		return EXIT_USAGE
 	} finally {
 		restoreConsole()
@@ -93,7 +93,7 @@ export async function runCommand(params: RunCommandParams): Promise<number> {
 		writeFileSync(resolve(cwd, options.outPath), Buffer.from(bytes))
 	}
 
-	output.stdout(options.json ? JSON.stringify(outcome, null, 2) : formatRunOutcome({ outcome }))
+	output.stdout(options.json ? jsonOf(outcome, 2) : textOf(runOutcomeLines({ outcome })))
 	return outcome.ok ? EXIT_OK : EXIT_FAILED
 }
 
@@ -170,10 +170,15 @@ function sendScriptLogsTo(params: { output: CommandOutput }): () => void {
 	const { output } = params
 	const { log, info, debug } = console
 	function toStderr(...loggedArguments: unknown[]): void {
+		// the person's script logs: relayed line by line, its colours kept
 		output.stderr(
-			loggedArguments
-				.map((argument) => (typeof argument === 'string' ? argument : JSON.stringify(argument)))
-				.join(' '),
+			relayedTextOf(
+				childLinesOf(
+					loggedArguments
+						.map((argument) => (typeof argument === 'string' ? argument : JSON.stringify(argument)))
+						.join(' '),
+				),
+			),
 		)
 	}
 	console.log = toStderr

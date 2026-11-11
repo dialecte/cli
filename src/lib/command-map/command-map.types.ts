@@ -6,6 +6,7 @@ export type CommandFamily =
 	| 'Discover'
 	| 'Use'
 	| 'Grow'
+	| 'Plan'
 	| 'Check'
 	| 'Hand over'
 	| 'Workspace'

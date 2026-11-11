@@ -5,9 +5,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { DISPLAY_ESCAPED_RANGES } from '../print/print.constants.ts'
 import { readArguments } from '../review-rounds/round-arguments.ts'
-import { DISPLAY_ESCAPED_RANGES } from '../store/store.constants.ts'
-import { printableOf } from '../store/text-escape.ts'
 import { REPORT_OWNER_LABELS } from './attribute-steps.constants.ts'
 import {
 	DECIMAL_PATTERN,
@@ -122,7 +121,7 @@ function takeMoney(params: {
 		}
 		if (index + 2 >= params.argv.length) return `${MONEY_OPTION} needs <amount> <currency>`
 		if (params.argv[index + 2].startsWith(OPTION_PREFIX))
-			return `${MONEY_OPTION} needs <amount> <currency>: ${printableOf(params.argv[index + 2])} is an option`
+			return `${MONEY_OPTION} needs <amount> <currency>: ${params.argv[index + 2]} is an option`
 		money = [params.argv[index + 1], params.argv[index + 2]]
 		index += 2
 	}
@@ -140,10 +139,10 @@ function valuesOfFlags(params: {
 		return usageFault('lot station needs start <station>, end <station> or --from <file.json>')
 	const [phase, station, ...extra] = words
 	if (phase !== 'start' && phase !== 'end')
-		return usageFault(`lot station: ${printableOf(phase)} is neither start nor end`)
+		return usageFault(`lot station: ${phase} is neither start nor end`)
 	if (station === undefined) return usageFault(`lot station ${phase} needs a station`)
 	if (extra.length > 0)
-		return usageFault(`lot station takes one station, not also ${printableOf(extra.join(' '))}`)
+		return usageFault(`lot station takes one station, not also ${extra.join(' ')}`)
 	const values: StationValues = { phase, station }
 	const faults: string[] = []
 	for (const [name, value] of read.values) {
@@ -183,7 +182,7 @@ function valuesOfFile(params: {
 		text = readFileSync(params.file, 'utf8')
 	} catch (error) {
 		return {
-			faults: [`lot station: cannot read ${printableOf(params.file)}: ${(error as Error).message}`],
+			faults: [`lot station: cannot read ${params.file}: ${(error as Error).message}`],
 			usage: false,
 		}
 	}
@@ -192,13 +191,13 @@ function valuesOfFile(params: {
 		parsed = JSON.parse(text)
 	} catch (error) {
 		return {
-			faults: [`lot station: ${printableOf(params.file)} is no JSON: ${(error as Error).message}`],
+			faults: [`lot station: ${params.file} is no JSON: ${(error as Error).message}`],
 			usage: false,
 		}
 	}
 	if (!isPlainObject(parsed))
 		return {
-			faults: [`lot station: ${printableOf(params.file)} holds no JSON object`],
+			faults: [`lot station: ${params.file} holds no JSON object`],
 			usage: false,
 		}
 	return { values: parsed, faults: [] }
@@ -445,7 +444,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-/** A value as a fault names it: a text escaped once, anything else as JSON. */
+/** A value as a fault names it: a text as written (the print boundary escapes it), anything else as JSON. */
 function shown(value: unknown): string {
-	return typeof value === 'string' ? printableOf(value) : String(JSON.stringify(value))
+	return typeof value === 'string' ? value : String(JSON.stringify(value))
 }

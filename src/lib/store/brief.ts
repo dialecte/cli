@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
+import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { findWorkspace } from '../workspace.ts'
 import {
@@ -33,7 +33,12 @@ import {
 	SCOPE_SEPARATOR,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
-import { overlappingOpenLots, readLotStateInput } from './lot-records.ts'
+import {
+	overlapLotLabelOf,
+	overlapMetText,
+	overlappingOpenLots,
+	readLotStateInput,
+} from './lot-records.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
@@ -511,7 +516,8 @@ function namedRepositoryOf(params: { name: string; briefFolder: string }): strin
 function mainCheckoutAt(params: { folder: string; topLevelOnly: boolean }): string | undefined {
 	try {
 		const top = readGit({ root: params.folder, args: ['rev-parse', '--show-toplevel'] }).trim()
-		if (params.topLevelOnly && realPathOf(top) !== realPathOf(params.folder)) return undefined
+		// the folder as the file system holds it: a brief may name it in another case where case folds
+		if (params.topLevelOnly && onDiskPathOf(top) !== onDiskPathOf(params.folder)) return undefined
 		return realPathOf(mainCheckoutOf(top))
 	} catch {
 		return undefined
@@ -643,8 +649,8 @@ function realLotIdentities(location: StoreLocation | undefined): LotIdentity[] {
 
 /**
  * One `overlap` refusal per open real lot of the store a scope entry of the brief overlaps (D12: not committed, not
- * canceled, not simulated, not failed by an overlap). Skipped when the scope's shape fails; refused entries are left
- * out.
+ * canceled, not simulated, not failed by an overlap), a damaged lot named with its damage (P2.2). Skipped when the
+ * scope's shape fails; refused entries are left out.
  */
 function overlapFaults(params: {
 	brief: Record<string, unknown>
@@ -665,7 +671,7 @@ function overlapFaults(params: {
 		refusalOf({
 			field: 'scope',
 			rule: 'overlap',
-			detail: `overlap with ${overlap.name}: ${overlap.met.join('; ')}`,
+			detail: `overlap with ${overlapLotLabelOf(overlap)}: ${overlapMetText(overlap)}`,
 		}),
 	)
 }

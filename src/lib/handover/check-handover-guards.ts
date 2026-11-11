@@ -18,9 +18,11 @@ import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
+import { textOf } from '../print/print.ts'
 import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
+import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
@@ -49,6 +51,7 @@ import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { hashFile } from './write-handover.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
+import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	GuardedRun,
 	GuardVerdict,
@@ -80,7 +83,11 @@ export function checkHandoverGuards(params: {
 	// an install a signal or a crash interrupted left the working package files in a backup
 	const leftover = existsSync(root) ? restoreLeftoverBackup(root) : undefined
 	if (leftover) {
-		write(`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`)
+		write(
+			textOf([
+				`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`,
+			]),
+		)
 		if (!leftover.ok) return undefined
 	}
 	// read once the working package files are the person's again
@@ -247,12 +254,16 @@ export function checkHandoverGuards(params: {
 		},
 		{
 			name: 'references',
-			check: function noTagNorCitation() {
-				const found = findLotReferences({
-					root,
-					lots,
-					referencePatterns: readReferencePatterns(root),
-				})
+			check: function noTagNorCitation(): GuardVerdict {
+				let referencePatterns: ReferencePattern[]
+				try {
+					referencePatterns = readReferencePatterns(root)
+				} catch (error) {
+					// a forbidden words list that cannot be read: refused, never read as no list
+					if (error instanceof ForbiddenWordsListError) return { ok: false, detail: error.message }
+					throw error
+				}
+				const found = findLotReferences({ root, lots, referencePatterns })
 				const fileCount = lots.reduce((total, lot) => total + lot.files.length, 0)
 				return found.length
 					? {
@@ -297,9 +308,11 @@ export function checkHandoverGuards(params: {
 		const startedAt = clock.now()
 		const verdict = check()
 		write(
-			`${verdict.ok ? (verdict.warning ? '!' : '✓') : '✗'} ${name.padEnd(GUARD_NAME_WIDTH)} ${verdict.detail}  ${formatDuration(clock.now() - startedAt)}`,
+			textOf([
+				`${verdict.ok ? (verdict.warning ? '!' : '✓') : '✗'} ${name.padEnd(GUARD_NAME_WIDTH)} ${verdict.detail}  ${formatDuration(clock.now() - startedAt)}`,
+			]),
 		)
-		for (const line of verdict.lines ?? []) write(`    ${line}`)
+		for (const line of verdict.lines ?? []) write(textOf([`    ${line}`]))
 		if (!verdict.ok) return undefined
 		// every lot on HEAD as reviewed: the guards after head read the working tree, which later work may change
 		if (name === HEAD_GUARD_NAME && lots.length > 0 && run.commits.length === lots.length)

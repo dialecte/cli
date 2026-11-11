@@ -6,14 +6,14 @@ import { handoverCardData } from '../lib/handover/handover-card.ts'
 import { handoverState } from '../lib/handover/list-handovers.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { exitCodeOfState } from '../lib/store/exit-code-of-state.ts'
-import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
-import { readLotStateInput, registryOfLotFolder } from '../lib/store/lot-records.ts'
+import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
-import { noLotRefusal, requireLot } from '../lib/store/resolve-lot.ts'
+import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { NEXT_COMMANDS } from '../lib/store/store.constants.ts'
-import { printableOf } from '../lib/store/text-escape.ts'
 import { shownHandoverCard } from './handover.ts'
 import {
 	RESULT_ABANDONED_REASON,
@@ -38,7 +38,7 @@ import type {
  * The result of the lot `<id>` names, as text or `--json`: `ready` or `committed` exit 0 with the hand-over (its
  * card, show and run lines), the worktree, the branch and the answered questions; `failed` or `canceled` exit 1
  * with the last transition's reason, time and position; `input-required` exit 3 with the open questions;
- * `working` exit 5; a usage error or an unknown id exit 2. Agent text is printed escaped in the text form.
+ * `working` exit 5; a damaged lot exit 6 with its reason and the stop to run; a usage error or an unknown id exit 2. Agent text is printed escaped in the text form.
  */
 export function lotResult(params: LotResultParams): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: RESULT_FLAGS })
@@ -49,11 +49,13 @@ export function lotResult(params: LotResultParams): CommandResult {
 	if (id === undefined) return lotUsageExit({ reason: 'lot result takes one id: none given', json })
 	if (extra.length > 0)
 		return lotUsageExit({ reason: `lot result takes one id, not also ${extra.join(' ')}`, json })
-	const required = requireLot({ argument: id, cwd: params.cwd, mode: 'read' })
-	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
+	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: 'read' })
+	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
 	const lotFolder = required.lot
-	const input = readLotStateInput({ lotFolder, registry: registryOfLotFolder(lotFolder) })
-	if (!input) return lotRefusalExit({ message: noLotRefusal(id), json })
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
+	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
+	const { input } = checked
 	const report = lotState(input)
 	const exitCode = exitCodeOfState({
 		verb: 'result',
@@ -62,24 +64,18 @@ export function lotResult(params: LotResultParams): CommandResult {
 		timedOut: false,
 	})
 	const { state } = report
-	// the text forms take every value escaped once (printableOf); JSON takes them as stored
+	// the text forms print their lines through the boundary; JSON takes the values as stored
 	if (state === 'ready' || state === 'committed') {
 		const ready = readyResultOf({ input, report, probe: params.probe, cliPath: params.cliPath })
-		return { exitCode, output: json ? jsonText(ready) : readyText(printableOf(ready)) }
+		return { exitCode, output: json ? jsonOf(ready, 2) : textOf(readyLines(ready)) }
 	}
-	const name = printableOf(input.identity.name)
+	const { name } = input.identity
 	if (state === 'failed' || state === 'canceled') {
 		const ended = endedResultOf({ input, report })
-		return {
-			exitCode,
-			output: json ? jsonText(ended) : endedText({ name, ended: printableOf(ended) }),
-		}
+		return { exitCode, output: json ? jsonOf(ended, 2) : textOf([endedLine({ name, ended })]) }
 	}
 	const busy: BusyResultJson = { state, questions: report.openQuestions }
-	return {
-		exitCode,
-		output: json ? jsonText(busy) : busyText({ name, busy: printableOf(busy) }),
-	}
+	return { exitCode, output: json ? jsonOf(busy, 2) : textOf(busyLines({ name, busy })) }
 }
 
 /** The result of a `ready` or `committed` lot: its hand-over (none for a simulated lot), worktree, branch, answers. */
@@ -181,12 +177,8 @@ function readableHandoverOf(folder: string): HandoverFolder | string {
 	}
 }
 
-function jsonText(result: unknown): string {
-	return JSON.stringify(result, null, 2)
-}
-
 /** The text form of a ready result: the hand-over, its show line, its run line while it is ready; the answers. */
-function readyText(ready: ReadyResultJson): string {
+function readyLines(ready: ReadyResultJson): string[] {
 	const { handover } = ready
 	const named = { name: ready.lot, state: ready.state }
 	const head =
@@ -218,11 +210,11 @@ function readyText(ready: ReadyResultJson): string {
 			},
 		}),
 	)
-	return [head, ...commands, ...answers].join('\n')
+	return [head, ...commands, ...answers]
 }
 
-/** The text form of a failed or canceled result, its values escaped already: one line. */
-function endedText(params: { name: string; ended: EndedResultJson }): string {
+/** The text form of a failed or canceled result: one line. */
+function endedLine(params: { name: string; ended: EndedResultJson }): string {
 	const { ended } = params
 	return fill({
 		template: RESULT_TEXTS.ended,
@@ -235,8 +227,8 @@ function endedText(params: { name: string; ended: EndedResultJson }): string {
 	})
 }
 
-/** The text form of a lot still at work, its values escaped already: its state, then each open question. */
-function busyText(params: { name: string; busy: BusyResultJson }): string {
+/** The text form of a lot still at work: its state, then each open question. */
+function busyLines(params: { name: string; busy: BusyResultJson }): string[] {
 	const { busy } = params
 	return [
 		fill({ template: RESULT_TEXTS.busy, values: { name: params.name, state: busy.state } }),
@@ -246,7 +238,7 @@ function busyText(params: { name: string; busy: BusyResultJson }): string {
 				values: { id: question.id, text: question.text },
 			}),
 		),
-	].join('\n')
+	]
 }
 
 /**

@@ -21,13 +21,11 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
+import { WORKSPACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runHandover } from './handover.ts'
 import { runWorktreeAdd, runWorktreePrune } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
-
-/** Scratch repositories, worktrees, copies: seconds on a loaded machine, never a measure of speed. */
-const SCRATCH_WORKSPACE_TIMEOUT = 60_000
 
 /** A workspace holding `core` (husky hooks folder, node_modules with a link to a sibling) and `cli`. */
 function createWorkspace(): { workspace: string; core: string } {
@@ -68,7 +66,7 @@ function addOrThrown(params: { argv: string[]; cwd: string }): {
 	}
 }
 
-describe('worktree add', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
+describe('worktree add', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 	it('a new branch → under .worktrees/, hooks folder copied, node_modules copied with its links, baseline written, card printed', () => {
 		const { workspace, core } = createWorkspace()
 
@@ -391,7 +389,7 @@ function createPruneWorkspace(): {
 	return { workspace, core, worktrees }
 }
 
-describe('worktree prune', { timeout: SCRATCH_WORKSPACE_TIMEOUT }, () => {
+describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 	it('without --yes → merged clean worktree and merged branch listed with their commands; unmerged, dirty, pending kept; nothing removed', async () => {
 		const { workspace, core, worktrees } = createPruneWorkspace()
 		const scratchRoot = temporaryFolder('dialecte-scratch-root-')

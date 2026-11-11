@@ -6,11 +6,10 @@
 import { readFeatureReport, readLotReport } from '../lib/events/read-lot-report.ts'
 import { renderFeatureReport, renderLotReport } from '../lib/events/render-report.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
-import { noLotRefusal, requireLot } from '../lib/store/resolve-lot.ts'
-import { LINE_FEED } from '../lib/store/store.constants.ts'
-import { printableOf } from '../lib/store/text-escape.ts'
+import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { FEATURE_OPTION, REPORT_FLAGS, REPORT_VALUE_OPTIONS } from './lot-report.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -54,15 +53,13 @@ export function lotReport(params: {
 		return lotUsageExit({ reason: `lot report takes one id, not also ${extra.join(' ')}`, json })
 	if (read.flags.has('simulated'))
 		return lotUsageExit({ reason: 'lot report --simulated goes with --feature', json })
-	const required = requireLot({ argument: id, cwd: params.cwd, mode: 'read' })
-	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
+	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: 'read' })
+	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
 	const report = readLotReport({ lotFolder: required.lot, now })
-	if (report === undefined) return lotRefusalExit({ message: noLotRefusal(id), json })
+	if (report === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
 	return {
 		exitCode: 0,
-		output: json
-			? JSON.stringify(lotReportJson({ report }), null, 2)
-			: renderLotReport({ report }).join(LINE_FEED),
+		output: json ? jsonOf(lotReportJson({ report }), 2) : textOf(renderLotReport({ report })),
 	}
 }
 
@@ -77,14 +74,14 @@ function featureReport(params: {
 	const report = readFeatureReport({ feature: params.feature, cwd: params.cwd, now: params.now })
 	if (report.lots.length === 0 && report.simulated.count === 0)
 		return lotFailureExit({
-			message: `no lot of the feature ${printableOf(params.feature)}`,
+			lines: [`no lot of the feature ${params.feature}`],
 			json: params.json,
 		})
 	return {
 		exitCode: 0,
 		output: params.json
-			? JSON.stringify(report, null, 2)
-			: renderFeatureReport({ report, simulated: params.simulated }).join(LINE_FEED),
+			? jsonOf(report, 2)
+			: textOf(renderFeatureReport({ report, simulated: params.simulated })),
 	}
 }
 

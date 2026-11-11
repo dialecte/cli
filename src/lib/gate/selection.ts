@@ -12,6 +12,7 @@ import { readGitBytes } from '../git.ts'
 import {
 	CHANGED_FILE_NAME,
 	GATE_SCOPE_FOLDER_PREFIX,
+	GATE_SCOPE_VARIABLES,
 	INVALID_SELECTION_REASON,
 	INVALID_SELECTION_WHY,
 	NO_IDS,
@@ -31,6 +32,7 @@ import {
 } from './selection.constants.ts'
 
 import type { GateScope, ReadSelection, ScopeRun, StepSelection } from './gate.types.ts'
+import type { ScopedTestsEnvironment } from './scoped-tests.types.ts'
 
 /**
  * Makes the run's temporary folder (outside the package) and writes its changed file: the paths of
@@ -76,6 +78,49 @@ function splitNulSeparated(bytes: Buffer): Buffer[] {
 	}
 	if (start < bytes.length) entries.push(bytes.subarray(start))
 	return entries
+}
+
+/**
+ * What the gate handed a scoped step, read from its environment (`DIALECTE_GATE_*`); undefined when one is missing:
+ * the step was not started by a gate.
+ */
+export function readGateScopeEnvironment(
+	environment: Readonly<NodeJS.ProcessEnv>,
+): ScopedTestsEnvironment | undefined {
+	const base = environment[GATE_SCOPE_VARIABLES.base]
+	const tree = environment[GATE_SCOPE_VARIABLES.tree]
+	const changed = environment[GATE_SCOPE_VARIABLES.changed]
+	const selection = environment[GATE_SCOPE_VARIABLES.selection]
+	if (!base || !tree || !changed || !selection) return undefined
+	return { base, tree, changed, selection }
+}
+
+/** The paths of a changed file the gate wrote (NUL-separated, decoded as UTF-8), each as written, empty entries left out. */
+export function readChangedPaths(changedFile: string): string[] {
+	return readFileSync(changedFile, 'utf8')
+		.split(String.fromCharCode(NUL_BYTE))
+		.filter((path) => path !== '')
+}
+
+/**
+ * Writes a scoped step's selection where the gate asked (schema 1): the gate's base and tree, the number of changed
+ * paths judged, the selected ids with their reasons, nothing skipped.
+ */
+export function writeSelectionFile(params: {
+	scope: ScopedTestsEnvironment
+	changed: number
+	selected: readonly { id: string; reasons: readonly string[] }[]
+}): void {
+	const { scope } = params
+	const selection = {
+		schema: SELECTION_SCHEMA,
+		base: scope.base,
+		tree: scope.tree,
+		changed: params.changed,
+		selected: params.selected,
+		skipped: [],
+	}
+	writeFileSync(scope.selection, `${JSON.stringify(selection)}\n`)
 }
 
 /** Removes the run's temporary folder: its changed file and every selection path. */

@@ -11,22 +11,23 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { childLinesOf } from '../print/relayed.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { runChild } from '../progress/run-child.ts'
 import { stallReason } from '../progress/stall-reason.ts'
-import { tailOf } from '../progress/tail-of.ts'
 import { resolvePackageVitest } from './package-vitest.ts'
 import {
 	CASE_NAME_SEPARATOR,
 	COLLECT_ONLY_PATTERN,
 	REPORT_ENVIRONMENT_VARIABLE,
+	REPORT_LINE_SEPARATOR,
 	REPORTER_FILE_NAMES,
 	RUN_OUTPUT_TAIL_LINES,
 } from './tdd.constants.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { Watchdog } from '../progress/run-child.types.ts'
-import type { ReportedModule } from './tdd.types.ts'
+import type { ReportedModule, TestRunFailure } from './tdd.types.ts'
 
 export async function runTestCases(params: {
 	root: string
@@ -40,7 +41,7 @@ export async function runTestCases(params: {
 	watchdog?: Watchdog
 	/** A hard bound in milliseconds: the run's process group is killed past it, the run answers a failure. */
 	timeoutMs?: number
-}): Promise<ReportedModule[] | { failure: string }> {
+}): Promise<ReportedModule[] | TestRunFailure> {
 	const folder = mkdtempSync(join(tmpdir(), 'dialecte-tdd-'))
 	const reportPath = join(folder, 'report.json')
 	const { filter } = params
@@ -84,26 +85,38 @@ export async function runTestCases(params: {
 			clock: params.clock,
 			watchdog: params.watchdog,
 		})
-		const tail = tailOf({ output: execution.output, lines: RUN_OUTPUT_TAIL_LINES })
+		const tail = tailLinesOf(execution.output)
 		if (timedOut)
 			return {
-				failure:
-					`vitest ran past its bound of ${formatDuration(params.timeoutMs ?? 0)}: stopped\n${tail}`.trimEnd(),
+				failure: `vitest ran past its bound of ${formatDuration(params.timeoutMs ?? 0)}: stopped`,
+				tail,
 			}
 		if (execution.stalled)
 			return {
-				failure:
-					`vitest ${stallReason({ watchdog: params.watchdog })}; its processes, killed:\n${execution.stalled.report}\n${tail}`.trimEnd(),
+				failure: `vitest ${stallReason({ watchdog: params.watchdog })}; its processes, killed: ${oneLineReport(execution.stalled.report)}`,
+				tail,
 			}
 		if (!existsSync(reportPath))
-			return {
-				failure: `vitest wrote no report (exit ${execution.exitCode ?? 'none'}):\n${tail}`,
-			}
+			return { failure: `vitest wrote no report (exit ${execution.exitCode ?? 'none'}):`, tail }
 		return JSON.parse(readFileSync(reportPath, 'utf8')) as ReportedModule[]
 	} finally {
 		if (timer) clearTimeout(timer)
 		rmSync(folder, { recursive: true, force: true })
 	}
+}
+
+/** The last lines vitest printed, as it printed them: they are relayed, their colours kept. */
+function tailLinesOf(output: string): string[] {
+	const text = output.trimEnd()
+	return text === '' ? [] : childLinesOf(text).slice(-RUN_OUTPUT_TAIL_LINES)
+}
+
+/** The report of the killed processes, one line per process folded into the one line of the failure. */
+function oneLineReport(report: string): string {
+	return childLinesOf(report)
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.join(REPORT_LINE_SEPARATOR)
 }
 
 /** Stops the run's process group (the child is its leader); a group already gone is no error. */

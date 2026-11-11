@@ -14,6 +14,18 @@ export function installTestDialecte(params: {
 	cwd: string
 	version?: string
 	packageName?: string
+	/** Fields added to the dialecte's `package.json` (a `dialecte` field, as a dialecte declares its standard). */
+	manifestFields?: Record<string, unknown>
+	/**
+	 * Parts of the test config to replace (plain data, written into the module): its `elements`, and entries of
+	 * its `parents`, `children` and `definition`, as `AAA_1` declared several ways.
+	 */
+	configPatch?: {
+		elements: unknown
+		parents: Record<string, unknown>
+		children: Record<string, unknown>
+		definition: Record<string, unknown>
+	}
 }): void {
 	const { cwd } = params
 	const packageName = params.packageName ?? WIDGET_PACKAGE
@@ -33,12 +45,26 @@ export function installTestDialecte(params: {
 			type: 'module',
 			dependencies: { '@dialecte/core': '1' },
 			exports: { './v1': { default: './dist/v1/index.js' } },
+			...params.manifestFields,
 		},
 	})
 	mkdirSync(join(folder, 'dist/v1'), { recursive: true })
 	writeFileSync(
 		join(folder, 'dist/v1/index.js'),
-		"export { TEST_DIALECTE_CONFIG as WIDGET_DIALECTE_CONFIG } from '@dialecte/core/test'\n",
+		params.configPatch === undefined
+			? "export { TEST_DIALECTE_CONFIG as WIDGET_DIALECTE_CONFIG } from '@dialecte/core/test'\n"
+			: [
+					"import { TEST_DIALECTE_CONFIG } from '@dialecte/core/test'",
+					`const patch = ${JSON.stringify(params.configPatch)}`,
+					'export const WIDGET_DIALECTE_CONFIG = {',
+					'\t...TEST_DIALECTE_CONFIG,',
+					'\telements: patch.elements,',
+					'\tparents: { ...TEST_DIALECTE_CONFIG.parents, ...patch.parents },',
+					'\tchildren: { ...TEST_DIALECTE_CONFIG.children, ...patch.children },',
+					'\tdefinition: { ...TEST_DIALECTE_CONFIG.definition, ...patch.definition },',
+					'}',
+					'',
+				].join('\n'),
 	)
 	mkdirSync(join(folder, 'node_modules/@dialecte'), { recursive: true })
 	const coreLink = join(folder, 'node_modules/@dialecte/core')

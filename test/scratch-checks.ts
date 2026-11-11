@@ -40,6 +40,8 @@ import { expect } from 'vitest'
 import type { CommandResult } from '../src/lib/command-result.types.ts'
 import type { GateStep } from '../src/lib/gate/gate-config.types.ts'
 import type { HandoverFolder, LotsFile, MergeLotPlan } from '../src/lib/handover/handover.types.ts'
+import type { AwakeHolder } from '../src/lib/keep-awake/keep-awake.types.ts'
+import type { RunClocks } from '../src/lib/progress/slept.types.ts'
 import type { RehearsedVariant } from './scratch-checks.types.ts'
 
 /** A counter file in a folder of its own, outside every repository: a step or hook appends a line per run. */
@@ -214,7 +216,14 @@ export function writeReadLotHandover(root: string): { out: string; output: strin
  * `handover run` on the folder, every line it printed kept, and every rehearsal folder (`dialecte-rehearse-`)
  * seen under the scratch root at any line of the run or after it.
  */
-export async function runFolder(params: { out: string; argv?: string[] }): Promise<{
+export async function runFolder(params: {
+	out: string
+	argv?: string[]
+	/** Stands in for the hold that keeps the machine awake (the suite never starts a real one). */
+	holdAwake?: AwakeHolder
+	/** The clock pair the run measures a sleep with. */
+	runClocks?: RunClocks
+}): Promise<{
 	exitCode: number
 	text: string
 	rehearsalFolders: string[]
@@ -241,6 +250,8 @@ export async function runFolder(params: { out: string; argv?: string[] }): Promi
 		scratchRoot,
 		// no run of these cases may start a real background delete
 		spawner: createRecordingSpawner().spawner,
+		...(params.holdAwake && { holdAwake: params.holdAwake }),
+		...(params.runClocks && { runClocks: params.runClocks }),
 	})
 	noteRehearsalFolders()
 	return { exitCode, text: lines.join('\n'), rehearsalFolders: [...seen], scratchRoot }

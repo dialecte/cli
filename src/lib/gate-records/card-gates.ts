@@ -6,8 +6,9 @@
  * merged tree, so each step of the worktree's gate of its tree before the merge that the hook answers (a step of
  * the same name, or a test step when the hook counts tests) leaves the card, even when the worktree gated its own
  * tree again after the rehearsal. No check is dropped silently: a step the hook did not run reads
- * `! <step>  not run on the merged tree` (a warning, not stale), a failed one stays `✗ ... (the tree changed
- * since)`, and the tdd step stays.
+ * `! <step>  not run on the merged tree` (a warning, not stale; `not run by the commit hook on this tree` when
+ * the tree checked is the worktree's own), a failed one stays `✗ ... (the tree changed since)`, and the tdd step
+ * stays. The worktree's own hook record counts, like a stored one, only when it ran against what is installed now.
  * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
  * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
  * So the tdd line is the worktree's: stale only when its record is of another tree than the worktree's now, never
@@ -26,11 +27,13 @@ import { join } from 'node:path'
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { counted } from '../counted.ts'
 import { resolveConfiguredBase } from '../gate/gate-base.ts'
+import { FLAKY_NOTE } from '../gate/gate-config.constants.ts'
 import { GateConfigError } from '../gate/gate-config.ts'
 import { isAncestorCommit, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
+import { formatDuration } from '../progress/format-duration.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
@@ -47,6 +50,8 @@ import {
 	FAILING_MORE,
 	FAILING_PATH_SEPARATOR,
 	FAILING_PATHS_SHOWN,
+	FLAKY_DETAIL,
+	FLAKY_PASSED_DETAIL,
 	GATE_LINE_NAME,
 	GATE_RELEASE_LINE_NAME,
 	HOOK_BASE_DETAIL,
@@ -60,6 +65,7 @@ import {
 	NIT_SEVERITY,
 	NO_FINDINGS_DETAIL,
 	NO_LEDGER_DETAIL,
+	NOT_RUN_BY_HOOK_DETAIL,
 	NOT_RUN_DETAIL,
 	NOT_RUN_HERE_DETAIL,
 	NOT_RUN_ON_CHECKED_TREE_DETAIL,
@@ -79,6 +85,9 @@ import {
 	SELECTED_DETAIL,
 	SELECTED_ID_SEPARATOR,
 	SHORT_SHA_LENGTH,
+	SLEPT_GATE_RUN,
+	SLEPT_LINE_DETAIL,
+	SLEPT_LINE_NAME,
 	TREE_CHANGED_SUFFIX,
 } from './gate-records.constants.ts'
 import {
@@ -115,6 +124,12 @@ export function buildCardGateLines(params: {
 	/** The state hash of the worktree now, which the tdd line is checked against. Default: computed from `root`. */
 	stateHash?: string
 	/**
+	 * A committed merge hand-over: the state hash of the worktree's own lot tree (the tree before its first merge
+	 * lot), which the worktree's tdd verdict was taken on. While a hook record of `tree` stands (the hook proved
+	 * the merge), a tdd line of that tree is current too.
+	 */
+	ownLotStateHash?: string
+	/**
 	 * The commit the card resolves its gate base on, as the hand-over will (the lots file's HEAD); default HEAD.
 	 * Read only when a gate list holds a scoped step.
 	 */
@@ -129,15 +144,21 @@ export function buildCardGateLines(params: {
 		(record) => !own.some((ownRecord) => isSameRun({ record, other: ownRecord })),
 	)
 	const stored = others.filter(currentStoredRecord({ root, tree, config })).map(withoutTddStep)
-	const records = [...own, ...stored]
+	const records = [...own.filter(ownHookOfThisInstall(root)), ...stored]
+	const stateHash = hashStateTree(tree)
+	const worktreeStateHash = params.stateHash ?? hashStateTree(computeStateTree(root))
 	return [
 		...gateStepLines({
 			records,
-			stateHash: hashStateTree(tree),
-			worktreeStateHash: params.stateHash ?? hashStateTree(computeStateTree(root)),
+			stateHash,
+			worktreeStateHash,
+			notRunDetail:
+				stateHash === worktreeStateHash ? NOT_RUN_BY_HOOK_DETAIL : NOT_RUN_ON_CHECKED_TREE_DETAIL,
+			ownLotStateHash: params.ownLotStateHash,
 			outsideHistory: commitsOutsideHistory({ root, records }),
 			baseCheck: recordBaseCheck({ root, base: config.base }),
 		}),
+		...sleptGateLines({ root, tree }),
 		...(config.invalid === undefined
 			? []
 			: [
@@ -149,6 +170,38 @@ export function buildCardGateLines(params: {
 				]),
 		...(params.release ? [releaseLine({ root, tree, config })] : []),
 	]
+}
+
+/**
+ * A warning row for each of the worktree's gate records of the checked tree (`--fast`, `--full`, `--release`) whose
+ * run spanned a sleep of the machine; none for a record of another tree.
+ */
+function sleptGateLines(params: { root: string; tree: string }): CardGateLine[] {
+	const stateHash = hashStateTree(params.tree)
+	const release = readReleaseRecord(params.root)
+	return [...readGateRecords(params.root), ...(release ? [release] : [])].flatMap(
+		function sleptLines(record) {
+			if (record.sleptMs === undefined || record.stateHash !== stateHash) return []
+			return [
+				sleptLineOf({
+					sleptMs: record.sleptMs,
+					run: SLEPT_GATE_RUN.replace('{mode}', record.mode),
+				}),
+			]
+		},
+	)
+}
+
+/** The warning row of a run that spanned a sleep: `slept <duration> during <run>`. */
+export function sleptLineOf(params: { sleptMs: number; run: string }): CardGateLine {
+	return {
+		name: SLEPT_LINE_NAME,
+		status: 'warning',
+		detail: SLEPT_LINE_DETAIL.replace('{duration}', formatDuration(params.sleptMs)).replace(
+			'{run}',
+			params.run,
+		),
+	}
 }
 
 /**
@@ -368,6 +421,21 @@ function currentStoredRecord(params: {
 }
 
 /**
+ * Which of the worktree's own records count: every gate record, and a commit hook's record only when it ran against
+ * what is installed now (the same `node_modules`, the same `file:` dependencies), as a stored record must; a hook
+ * record of another install supersedes nothing and gives no line.
+ */
+function ownHookOfThisInstall(root: string): (record: GateRecord) => boolean {
+	// what is installed is read only when an own hook record is there to compare with
+	let installed: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
+	return function isOfThisInstall(record) {
+		if (record.mode !== HOOK_RECORD_MODE || record.key === undefined) return true
+		installed ??= readInstalledKey(root)
+		return record.key.lockHash === installed.lockHash && record.key.linked === installed.linked
+	}
+}
+
+/**
  * The command hash each record mode must hold to count, at the card's base: none when the package's gate config
  * cannot be read (no stored record counts then, and the card still prints); release only when its list covers
  * `full`.
@@ -403,6 +471,10 @@ function gateStepLines(params: {
 	stateHash: string
 	/** The state hash of the worktree's tree now: the tdd line is checked against it. */
 	worktreeStateHash: string
+	/** What a step the standing hook did not run reads: of the merged tree, or of the worktree's own tree. */
+	notRunDetail: string
+	/** A committed merge hand-over's own lot tree: its tdd line is current while the hook proved the merge. */
+	ownLotStateHash: string | undefined
 	/** The commits of records outside HEAD's history: a line of such a record says which. */
 	outsideHistory: ReadonlySet<string>
 	/** How a record's gate base reads against the card's (`recordBaseCheck`). */
@@ -416,6 +488,7 @@ function gateStepLines(params: {
 		first.at.localeCompare(second.at),
 	)
 	const superseded = isSuperseded({ records: oldestFirst, stateHash })
+	const tddStateHashes = currentTddStateHashes({ ...params, records: oldestFirst })
 	for (const record of oldestFirst)
 		for (const step of record.steps) latest.set(step.name, { step, record })
 	return [...latest.values()].map(function stepLine(entry) {
@@ -425,7 +498,7 @@ function gateStepLines(params: {
 			entry.step.name !== TDD_STEP.name &&
 			entry.step.status !== 'failed'
 		)
-			return { name: entry.step.name, status: 'warning', detail: NOT_RUN_ON_CHECKED_TREE_DETAIL }
+			return { name: entry.step.name, status: 'warning', detail: params.notRunDetail }
 		// the tdd step judged the worktree's receipts: no base reads it
 		const based = entry.step.name === TDD_STEP.name ? undefined : params.baseCheck(entry.record)
 		const line = lineOfStep({ step: entry.step, olderBase: based === 'older' })
@@ -438,13 +511,34 @@ function gateStepLines(params: {
 			}),
 			current:
 				entry.step.name === TDD_STEP.name
-					? entry.record.stateHash === params.worktreeStateHash
+					? tddStateHashes.has(entry.record.stateHash)
 					: entry.record.stateHash === params.stateHash,
 		})
 		return based === 'moved' && !checked.stale
 			? staleLine({ line: checked, suffix: BASE_MOVED_SUFFIX })
 			: checked
 	})
+}
+
+/**
+ * The trees a tdd line is current on: the worktree's now; for a committed merge hand-over whose merge a standing
+ * hook record of the checked tree proved, the worktree's own lot tree too (its verdict was taken there).
+ */
+function currentTddStateHashes(params: {
+	records: readonly GateRecord[]
+	stateHash: string
+	worktreeStateHash: string
+	ownLotStateHash: string | undefined
+}): ReadonlySet<string> {
+	const { ownLotStateHash } = params
+	const mergeProven =
+		ownLotStateHash !== undefined &&
+		params.records.some(
+			(record) => record.mode === HOOK_RECORD_MODE && record.stateHash === params.stateHash,
+		)
+	return new Set(
+		mergeProven ? [params.worktreeStateHash, ownLotStateHash] : [params.worktreeStateHash],
+	)
 }
 
 /**
@@ -610,6 +704,8 @@ function lineOfUnscopedStep(step: RecordedStep): CardGateLine {
 	// a hook's test step answered from a green `gate --full` record ran no test: it says so instead of counts
 	if (step.status === 'passed' && step.reused)
 		return { name, status: 'passed', detail: HOOK_REUSED_DETAIL }
+	// a test step that failed in parallel and passed serially: flaky, never a failed count beside its check mark
+	if (step.status === 'passed' && step.note === FLAKY_NOTE) return flakyLineOf(step)
 	const counts = renderCardCounts(step.counts)
 	if (step.status === 'failed')
 		return {
@@ -621,6 +717,25 @@ function lineOfUnscopedStep(step: RecordedStep): CardGateLine {
 			...(step.failing && { failing: step.failing }),
 		}
 	return { name, status: 'passed', detail: counts || (step.note ?? '') }
+}
+
+/**
+ * The line of a step flaky in parallel: the tests that passed, then `<n> flaky, passed serially` (n the files it
+ * named failing in parallel, else the tests that failed there).
+ */
+function flakyLineOf(step: RecordedStep): CardGateLine {
+	const passed = step.counts.tests?.passed
+	const flaky = step.failing?.length ?? step.counts.tests?.failed ?? 0
+	return {
+		name: step.name,
+		status: 'passed',
+		detail: [
+			passed === undefined ? '' : FLAKY_PASSED_DETAIL.replace('{passed}', String(passed)),
+			FLAKY_DETAIL.replace('{count}', String(flaky)),
+		]
+			.filter(Boolean)
+			.join(DETAIL_SEPARATOR),
+	}
 }
 
 /** `failing <n>: <first 3 paths>`, then `, +<k> more` when there are more. */

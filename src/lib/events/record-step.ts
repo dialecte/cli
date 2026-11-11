@@ -3,10 +3,10 @@
  * and `step.end` of a gate or contrib run in its lot's `events.jsonl`, the heavy markers, and the interrupted end.
  * It never throws and never changes an exit: every failure becomes one warning line.
  */
-import { writeSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
+import { printOut, textOf } from '../print/print.ts'
 import { onSignalExit } from '../progress/interrupt-forwarding.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { readIdentity } from '../store/identity.ts'
@@ -22,7 +22,6 @@ import {
 	FOREIGN_STEP_LINE,
 	MARKERS_NOT_WRITTEN_PREFIX,
 	NOT_RECORDED_PREFIX,
-	STANDARD_ERROR_DESCRIPTOR,
 } from './record-step.constants.ts'
 import { worktreeCliOf } from './worktree-cli.ts'
 import { cutEvent, makeEnvelope, writeEvent } from './write-event.ts'
@@ -320,12 +319,12 @@ function onceWarner(warn: (line: string) => void): (line: string) => void {
 
 /**
  * The default warning channel: one line on standard error, so `--json` output stays one document (a step's events,
- * `handover run`'s card line).
+ * `handover run`'s card line); printed through the boundary (a reason or a path it quotes escaped).
  */
 export function warnOnStandardError(line: string): void {
 	// one synchronous write: a closed pipe throws here (caught) instead of raising an async EPIPE that ends the process
 	try {
-		writeSync(STANDARD_ERROR_DESCRIPTOR, `${line}\n`)
+		printOut({ stream: 'stderr', text: textOf([line]), synchronous: true })
 	} catch {
 		// a warning nobody can read changes nothing
 	}

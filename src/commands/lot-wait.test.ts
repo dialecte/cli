@@ -8,6 +8,16 @@ import { outcomeOf } from '../../test/call-outcome.ts'
 import { recordOf, snapshotOf } from '../../test/lot-start-workspace.ts'
 import { LOT_NAME, START_NOW } from '../../test/lot-start.constants.ts'
 import {
+	ANSWER_LINE,
+	BEFORE_QUESTION,
+	CUSTOM_STEPS,
+	CUSTOM_SUMMARY,
+	FLOW_ROWS,
+	RESULT_LINE,
+	STOP_LINE,
+	USAGE_ROWS,
+} from '../../test/lot-wait-cases.constants.ts'
+import {
 	CALLER_QUESTION,
 	FAILURE_REASON,
 	READY_SUMMARY,
@@ -31,126 +41,11 @@ import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { FlowStep } from '../../test/simulated-lot.types.ts'
 import type { ScenarioStep, ScenarioTable } from '../lib/store/scenarios.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-const ANSWER_LINE = `dialecte lot answer ${LOT_NAME} q1 "<answer>"`
-const STOP_LINE = `dialecte lot stop ${LOT_NAME} --reason <text>`
-const RESULT_LINE = `dialecte lot result ${LOT_NAME}`
-
-const BEFORE_QUESTION = [
-	'1:working:start:null',
-	'2:working:station:test-writer',
-	'3:working:station:test-reviewer',
-]
-
-type FlowRow = {
-	scenario: string
-	steps: FlowStep[]
-	observed: string[]
-	summary: string[]
-}
-
-const FLOW_ROWS: FlowRow[] = [
-	{
-		scenario: 'ready',
-		steps: [{ wait: [] }],
-		observed: ['wait 0 ready'],
-		summary: READY_SUMMARY.slice(),
-	},
-	{
-		scenario: 'question',
-		steps: [{ wait: [] }, { answer: [LOT_NAME, 'q1', 'keep'] }, { wait: [] }],
-		observed: ['wait 3 input-required q1', 'answer 0', 'wait 0 ready'],
-		summary: [
-			...BEFORE_QUESTION,
-			'4:working:question:test-reviewer',
-			'5:working:answer:implementer',
-			'6:working:station:reviewer',
-			'7:working:station:hand-over',
-			'8:ready:ready:hand-over',
-		],
-	},
-	{
-		scenario: 'person',
-		steps: [
-			{ wait: [] },
-			{ answer: [LOT_NAME, 'q1', 'accept'] },
-			{ wait: [] },
-			{ answer: [LOT_NAME, 'q1', 'accept', '--by', 'a-person'] },
-			{ wait: [] },
-		],
-		observed: [
-			'wait 3 input-required q1',
-			'answer 2',
-			'wait 3 input-required q1',
-			'answer 0',
-			'wait 0 ready',
-		],
-		summary: [
-			...BEFORE_QUESTION,
-			'4:working:station:implementer',
-			'5:working:station:reviewer',
-			'6:working:question:reviewer',
-			'7:working:answer:hand-over',
-			'8:ready:ready:hand-over',
-		],
-	},
-	{
-		scenario: 'two-questions',
-		steps: [
-			{ wait: [] },
-			{ answer: [LOT_NAME, 'q2', 'accept', '--by', 'a-person'] },
-			{ wait: [] },
-			{ answer: [LOT_NAME, 'q1', 'keep'] },
-			{ wait: [] },
-		],
-		observed: [
-			'wait 3 input-required q1,q2',
-			'answer 0',
-			'wait 3 input-required q1',
-			'answer 0',
-			'wait 0 ready',
-		],
-		summary: [
-			...BEFORE_QUESTION,
-			'4:working:question:test-reviewer',
-			'5:working:question:test-reviewer',
-			'6:working:answer:implementer',
-			'7:working:station:reviewer',
-			'8:working:station:hand-over',
-			'9:ready:ready:hand-over',
-		],
-	},
-	{
-		scenario: 'limit',
-		steps: [{ wait: [] }, { wait: [] }, { wait: [] }],
-		observed: ['wait 4 working', 'wait 0 ready', 'wait 0 ready'],
-		summary: [
-			...BEFORE_QUESTION,
-			'4:working:station:implementer',
-			'5:working:limit:implementer',
-			'6:working:station:reviewer',
-			'7:working:station:hand-over',
-			'8:ready:ready:hand-over',
-		],
-	},
-	{
-		scenario: 'failure',
-		steps: [{ wait: [] }, { wait: [] }],
-		observed: ['wait 1 failed', 'wait 1 failed'],
-		summary: [
-			...BEFORE_QUESTION,
-			'4:working:station:implementer',
-			'5:working:station:reviewer',
-			'6:failed:fail:full-gate',
-		],
-	},
-]
 
 describe(
 	'lot wait on a simulated lot: every scenario to its end',
@@ -518,28 +413,6 @@ describe(
 	},
 )
 
-/** A two-step scenario whose steps are none of the built-in ones. */
-const CUSTOM_STEPS: ScenarioStep[] = [
-	{
-		kind: 'station',
-		station: 'test-writer',
-		position: { step: 1, of: 1, station: 'test-writer', round: null },
-		durationMs: 0,
-	},
-	{
-		kind: 'ready',
-		station: 'hand-over',
-		position: { step: 1, of: 1, station: 'hand-over', round: null },
-		durationMs: 0,
-	},
-]
-
-const CUSTOM_SUMMARY = [
-	'1:working:start:null',
-	'2:working:station:test-writer',
-	'3:ready:ready:hand-over',
-]
-
 describe(
 	"lot wait plays the lot's own scenario.json (case 56)",
 	{ timeout: STORE_CASE_TIMEOUT },
@@ -612,16 +485,6 @@ describe('lot wait: the line on a terminal', { timeout: STORE_CASE_TIMEOUT }, ()
 		).resolves.toEqual({ exitCode: 5, written: '' })
 	})
 })
-
-type UsageRow = { title: string; argv: string[] }
-
-const USAGE_ROWS: UsageRow[] = [
-	{ title: 'no id', argv: ['--json'] },
-	{ title: 'an unknown id', argv: ['9999', '--json'] },
-	{ title: 'a timeout that is no number', argv: [LOT_NAME, '--timeout', 'abc', '--json'] },
-	{ title: 'a negative timeout', argv: [LOT_NAME, '--timeout', '-1', '--json'] },
-	{ title: 'a second id', argv: [LOT_NAME, '0002', '--json'] },
-]
 
 describe(
 	'lot wait: usage and unknown ids exit 2 (section 6)',

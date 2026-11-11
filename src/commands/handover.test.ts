@@ -31,10 +31,17 @@ import {
 	temporaryFolder,
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
-import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import {
+	HANDOVER_CASE_TIMEOUT,
+	HANGING_CLI_SLEEP_SECONDS,
+	HANGING_PROBE_ELAPSED_BOUND_MS,
+} from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
-import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
+import {
+	HANDOVER_PROBE_TIMEOUT_MILLISECONDS,
+	HANDOVER_RUN_MARKER_FILE,
+} from '../lib/handover/handover.constants.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { STANDARD_ENVIRONMENT_VARIABLE, STANDARD_FILE } from '../lib/standard/standard.constants.ts'
@@ -1278,7 +1285,8 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const { root, lotsPath, out } = prepare()
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 		const lockPath = join(root, '.git', 'dialecte-handover.lock')
-		expect(readFileSync(lockPath, 'utf8')).toBe(`${join(realpathSync(out), 'commit.sh')}\n`)
+		// the lock's first line names the script (a later line names the writer)
+		expect(readFileSync(lockPath, 'utf8').split('\n')[0]).toBe(join(realpathSync(out), 'commit.sh'))
 
 		const result = await runFolder({ out })
 
@@ -2172,6 +2180,8 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 		const havingCard = writeHandover({ lotsPath: having.lotsPath, probe: probeRepositoryCli })
 			.output.split('\n')
 			.at(-1)
+		// the card's own wait for the repository's cli: a loaded machine must not read as "no repository cli"
+		expect(HANDOVER_PROBE_TIMEOUT_MILLISECONDS).toBe(DEFAULT_PROBE_TIMEOUT_MILLISECONDS)
 
 		expect(lackingCard).toBe(`node '${WRITER_CLI}' handover run '${realpathSync(lacking.out)}'`)
 		expect(havingCard).toBe(`cd '${realpathSync(having.out)}' && bash commit.sh`)
@@ -2666,7 +2676,7 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 					name: '@dialecte/cli',
 					bin: { dialecte: 'cli.js' },
 				}),
-				'node_modules/@dialecte/cli/cli.js': '#!/bin/sh\nsleep 8\n',
+				'node_modules/@dialecte/cli/cli.js': `#!/bin/sh\nexec sleep ${HANGING_CLI_SLEEP_SECONDS}\n`,
 			},
 		})
 		chmodSync(join(cli, 'cli.js'), 0o755)
@@ -2683,7 +2693,7 @@ describe('handover: the card run command', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 		const result = writeHandover({ lotsPath, probeTimeout: 300, probe: probeRepositoryCli })
 		const elapsed = Date.now() - startedAt
 
-		expect(elapsed).toBeLessThan(5_000)
+		expect(elapsed).toBeLessThan(HANGING_PROBE_ELAPSED_BOUND_MS)
 		expect(result.output.split('\n')).toContain(
 			`node '${WRITER_CLI}' handover run '${realpathSync(out)}'`,
 		)

@@ -2,15 +2,19 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { commandSurfaceOf } from '../lib/command-map/command-surface.ts'
 import { checkPages } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { StreamSpies } from '../../test/stream-spies.types.ts'
+
 const FRONTMATTER = '---\nname: demo\ndescription: Use it.\n---\n'
 
 let root: string
+let streams: StreamSpies
 
 function write(path: string, content: string): void {
 	mkdirSync(dirname(join(root, path)), { recursive: true })
@@ -19,9 +23,7 @@ function write(path: string, content: string): void {
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'dialecte-cli-skills-check-'))
-	vi.spyOn(console, 'log').mockImplementation(() => undefined)
-	vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-	vi.spyOn(console, 'error').mockImplementation(() => undefined)
+	streams = spyStreams()
 })
 
 afterEach(() => {
@@ -35,7 +37,7 @@ describe('checkPages, the summary line (R1-9)', () => {
 		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte gate --fast\`.\n`)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
-		expect(vi.mocked(console.log).mock.calls.map((call) => String(call[0]))).toEqual([
+		expect(linesWritten(streams.stdout)).toEqual([
 			expect.stringMatching(/^✅ 1 skill page\(s\).*\(cli invocations not checked\)$/),
 		])
 	})
@@ -57,8 +59,8 @@ describe('checkPages, no page cites the cli (R2-2)', () => {
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(0)
 		expect(existsSync(join(root, 'ran'))).toBe(false)
-		expect(vi.mocked(console.warn)).not.toHaveBeenCalled()
-		expect(vi.mocked(console.log).mock.calls.map((call) => String(call[0]))).toEqual([
+		expect(streams.stderr).not.toHaveBeenCalled()
+		expect(linesWritten(streams.stdout)).toEqual([
 			expect.not.stringContaining('cli invocations not checked'),
 		])
 	})

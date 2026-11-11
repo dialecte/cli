@@ -144,14 +144,20 @@ export const MUTANTS_VERBS = [
 	'drop',
 ] as const
 
-export const MUTANTS_USAGE = `usage: dialecte mutants run [--mode changed|audit] [--base <ref>]
-       dialecte mutants status [--json]
-       dialecte mutants schedule <follow-up> <survivor key>... | schedule <follow-up> --all-new [--json]
-       dialecte mutants abandon <run id> [--json]
-       dialecte mutants migrate [--json]
-       dialecte mutants judge [--file <file>] [--json]
-       dialecte mutants record (--key <survivor key>... | --file <file>) --family <family> --reason <text> [--removable] [--json]
-       dialecte mutants drop <run id> [--json]`
+/** The usage of `mutants`, one entry per printed line. */
+export const MUTANTS_USAGE_LINES: readonly string[] = [
+	'usage: dialecte mutants run [--mode changed|audit] [--base <ref>]',
+	'       dialecte mutants status [--json]',
+	'       dialecte mutants schedule <follow-up> <survivor key>... | schedule <follow-up> --all-new [--json]',
+	'       dialecte mutants abandon <run id> [--json]',
+	'       dialecte mutants migrate [--json]',
+	'       dialecte mutants judge [--file <file>] [--json]',
+	'       dialecte mutants record (--key <survivor key>... | --file <file>) --family <family> --reason <text> [--removable] [--json]',
+	'       dialecte mutants drop <run id> [--json]',
+]
+
+/** The usage of `mutants` as one text (the reason of a JSON refusal). */
+export const MUTANTS_USAGE = MUTANTS_USAGE_LINES.join('\n')
 
 /** The lock every ledger reader and writer holds while it folds runs in or writes, beside the ledger. */
 export const MUTATION_LEDGER_LOCK_FILE = 'ledger.lock'

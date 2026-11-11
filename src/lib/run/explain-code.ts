@@ -100,7 +100,7 @@ function isDiagnosticCatalogue(
 }
 
 /** An explained code as a few lines: the heading, the message, when, fix, docs. */
-export function formatExplainedCode(params: { explained: ExplainedCode }): string {
+export function explainedCodeLines(params: { explained: ExplainedCode }): string[] {
 	const { explained } = params
 	const heading =
 		explained.kind === 'error'
@@ -113,5 +113,5 @@ export function formatExplainedCode(params: { explained: ExplainedCode }): strin
 		lines.push(`  when: ${explanation.when}`, `  fix: ${explanation.fix}`)
 		if (explanation.docs) lines.push(`  docs: ${explanation.docs}`)
 	}
-	return lines.join('\n')
+	return lines
 }

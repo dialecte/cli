@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { onTestFinished, vi } from 'vitest'
+import { afterAll, onTestFinished, vi } from 'vitest'
 
 /** A new empty folder under the system's temporary folder, removed when the current test ends. */
 export function temporaryFolder(prefix: string): string {
@@ -29,6 +29,23 @@ export function isolateGitConfig(params: { userName?: string } = {}): void {
 /** A repository on `main` with one commit holding `files`, removed when the current test ends. */
 export function createScratchRepository(files: Record<string, string> = {}): string {
 	return initializeRepository({ root: temporaryFolder('dialecte-scratch-'), files })
+}
+
+/**
+ * One repository on `main` with one commit holding `files`, shared by the cases of the file that never change it
+ * (they only read it, or are refused before anything is written): made when the first case asks, removed when the
+ * file's cases are done. Call it where the cases are declared; each call to the returned function gives the same
+ * repository.
+ */
+export function createSharedScratchRepository(files: Record<string, string> = {}): () => string {
+	let root: string | undefined
+	afterAll(function removeSharedRepository() {
+		if (root) rmSync(root, { recursive: true, force: true })
+	})
+	return function sharedRepository(): string {
+		root ??= initializeRepository({ root: mkdtempSync(join(tmpdir(), 'dialecte-shared-')), files })
+		return root
+	}
 }
 
 /** A repository on `main` with one commit holding `files`, made in `root` (a folder of the test's own). */

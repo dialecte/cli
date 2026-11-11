@@ -9,8 +9,9 @@
  *   `expect(...)`) gets a red receipt; a passing case that is new or changed is refused (it proves
  *   nothing), one the same as at the base is marked unchanged, one with a receipt and the same test call is
  *   kept, one the lot declares revised at review (a proven case, or an edited case the base provably
- *   holds) is recorded revised. A file with a refusal still records its other cases' receipts but is not
- *   frozen; the files without a refusal are frozen, and the changed helpers, fixtures and snapshots a red
+ *   holds) is recorded revised. A file with a refusal still records its other cases' receipts, and is frozen
+ *   only when one of them is red (the refused case stays unproven); the files without a refusal are frozen,
+ *   and the changed helpers, fixtures and snapshots (the vitest config's setup files among them) a red
  *   or a revised case of theirs depends on, or a `revised` entry names when every test file depending on
  *   them is frozen without a red (recorded revised). The change is measured from HEAD (the
  *   uncommitted lot), or from where HEAD left `--base <ref>`. An acceptance never overrides a proof: a
@@ -25,11 +26,14 @@
  */
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { joinedOf, jsonOf, printOut, textOf } from '../lib/print/print.ts'
+import { relayedTextOf } from '../lib/print/relayed.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
@@ -105,6 +109,7 @@ import type {
 	TddReceipt,
 	TddSubcommand,
 	TestCaseId,
+	TestRunFailure,
 } from '../lib/tdd/tdd.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -119,7 +124,7 @@ export async function run(argv: string[]): Promise<void> {
 		}),
 		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
 	})
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -136,11 +141,12 @@ export async function runTdd(params: {
 	const { cwd: root, argv } = params
 	const [subcommand, ...words] = positionalArguments({ argv, valueOptions: ['base'] })
 	if (!isSubcommand(subcommand))
-		return {
+		return resultOf({
 			exitCode: 2,
-			output:
+			lines: [
 				'tdd: red | green | status [<test file> | <test file>::<case name>]... [--base <ref>] [--json] | status --legend',
-		}
+			],
+		})
 	// the legend needs no package: printed before any is looked up
 	if (subcommand === 'status' && hasFlag(argv, 'legend'))
 		return {
@@ -152,9 +158,11 @@ export async function runTdd(params: {
 		}
 	const packageJson = readPackageJson(root)
 	const ledger = readLedger(root)
-	if ('failure' in ledger) return { exitCode: 1, output: `tdd ${subcommand}: ${ledger.failure}` }
+	if ('failure' in ledger)
+		return resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${ledger.failure}`] })
 	const base = resolveBase({ root, packageJson, ref: getArg(argv, 'base') })
-	if (typeof base !== 'string') return { exitCode: 1, output: `tdd ${subcommand}: ${base.failure}` }
+	if (typeof base !== 'string')
+		return resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${base.failure}`] })
 	const context: TddContext = {
 		root,
 		packageJson,
@@ -207,27 +215,35 @@ function admitRun(params: {
 			.map(([file]) => file)
 		if (changedHelpers.length)
 			return {
-				refusal: {
+				refusal: resultOf({
 					exitCode: 1,
-					output: `tdd green: test code changed since the last red run: ${changedHelpers.join(', ')} - ${FROZEN_AFTER_RED}`,
-				},
+					lines: [
+						`tdd green: test code changed since the last red run: ${changedHelpers.join(', ')} - ${FROZEN_AFTER_RED}`,
+					],
+				}),
 			}
 	}
 	const changed = listChangedTestFiles(context)
 	const files = targetFiles({ changed, targets: context.targets })
 	if (files.length === 0)
 		return {
-			refusal: {
+			refusal: resultOf({
 				exitCode: 1,
-				output: `tdd ${subcommand}: no test file new or changed since the base (or among the files named)`,
-			},
+				lines: [
+					`tdd ${subcommand}: no test file new or changed since the base (or among the files named)`,
+				],
+			}),
 		}
 	const acceptances = readAcceptances(root)
 	if ('failure' in acceptances)
-		return { refusal: { exitCode: 1, output: `tdd ${subcommand}: ${acceptances.failure}` } }
+		return {
+			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${acceptances.failure}`] }),
+		}
 	const revisions = readRevisions(root)
 	if ('failure' in revisions)
-		return { refusal: { exitCode: 1, output: `tdd ${subcommand}: ${revisions.failure}` } }
+		return {
+			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${revisions.failure}`] }),
+		}
 	return { testCode, changed, files, acceptances, revisions }
 }
 
@@ -270,7 +286,7 @@ async function runRed(params: {
 				files: runnable.map((file) => file.file),
 			})
 		: []
-	if ('failure' in modules) return { exitCode: 1, output: `tdd red: ${modules.failure}` }
+	if ('failure' in modules) return runFailureResult({ subcommand: 'red', failure: modules })
 	const run = readRunCases({
 		root,
 		packageJson: context.packageJson,
@@ -362,7 +378,7 @@ async function runRed(params: {
 						at,
 					}
 				: undefined
-			// a refusal keeps the file unfrozen, not the other cases' receipts
+			// a refusal never drops the other cases' receipts
 			if (receipt) entries.push(receipt)
 			lines.push(
 				statusLine({
@@ -377,7 +393,9 @@ async function runRed(params: {
 				}),
 			)
 		}
-		if (refused) continue
+		// a file with a refused case is frozen for its cases proven red: they need no re-red; the refused case,
+		// with no red receipt, stays unproven
+		if (refused && !judged.some((judgement) => judgement.kind === 'red')) continue
 		frozen[file.file] = testCode.get(file.file) ?? ''
 		// a helper, fixture or snapshot is frozen only by a red it can have shaped, a revision declared, or a
 		// moved case (the helper a split registers its cases through)
@@ -677,7 +695,7 @@ async function runGreen(params: {
 		subcommand: 'green',
 		files: files.map((file) => file.file),
 	})
-	if ('failure' in modules) return { exitCode: 1, output: `tdd green: ${modules.failure}` }
+	if ('failure' in modules) return runFailureResult({ subcommand: 'green', failure: modules })
 	const { cases, unlisted } = readRunCases({
 		root,
 		packageJson: context.packageJson,
@@ -784,18 +802,18 @@ function greenRefusal(params: {
 
 async function runStatus(context: TddContext): Promise<CommandResult> {
 	const state = await readTddState(context)
-	if ('failure' in state) return { exitCode: 1, output: `tdd status: ${state.failure}` }
-	if (context.json) return { exitCode: 0, output: JSON.stringify(state, null, 2) }
+	if ('failure' in state) return runFailureResult({ subcommand: 'status', failure: state })
+	if (context.json) return { exitCode: 0, output: jsonOf(state, 2) }
 	if (context.flagsOnly) {
 		const flagged = state.cases.filter((line) => line.flags.length)
-		return {
+		return resultOf({
 			exitCode: 0,
-			output: flagged.length
-				? flagged
-						.map((line) => `${line.status}  ${caseLabel(line)}  flags: ${line.flags.join(', ')}`)
-						.join('\n')
-				: 'tdd status: no case of the change carries a flag',
-		}
+			lines: flagged.length
+				? flagged.map(
+						(line) => `${line.status}  ${caseLabel(line)}  flags: ${line.flags.join(', ')}`,
+					)
+				: ['tdd status: no case of the change carries a flag'],
+		})
 	}
 	// a test file with cases already says so on each case line
 	const listed = new Set(state.cases.map((line) => line.file))
@@ -816,12 +834,20 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 				`cannot list  ${file.file}  ${file.failure.kind}: ${firstLine(file.failure.message)}`,
 		),
 	]
-	return {
+	return resultOf({
 		exitCode: 0,
-		output: lines.length
-			? lines.join('\n')
-			: 'tdd status: no test code new or changed since the base',
-	}
+		lines: lines.length ? lines : ['tdd status: no test code new or changed since the base'],
+	})
+}
+
+/** A run that answered no report, exit 1: the cli's reason on its line, then vitest's last lines, relayed. */
+function runFailureResult(params: {
+	subcommand: TddSubcommand
+	failure: TestRunFailure
+}): CommandResult {
+	const { failure, tail } = params.failure
+	const own = textOf([`tdd ${params.subcommand}: ${failure}`])
+	return { exitCode: 1, output: tail?.length ? joinedOf([own, relayedTextOf(tail)]) : own }
 }
 
 /** Every case of the files, run by vitest, the run announced first (a start line or a spinner). */
@@ -883,9 +909,9 @@ function finish(params: {
 	if (params.context.json)
 		return {
 			exitCode,
-			output: JSON.stringify({ lines: params.lines, refused: params.refused }, null, 2),
+			output: jsonOf({ lines: params.lines, refused: params.refused }, 2),
 		}
-	return { exitCode, output: [...params.lines, params.summary].join('\n') }
+	return resultOf({ exitCode, lines: [...params.lines, params.summary] })
 }
 
 /** How many output lines report `label` (red, green, refused...). */

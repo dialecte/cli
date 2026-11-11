@@ -25,8 +25,10 @@ import { computeCommitKey, foldHookBase, hashHookCommand } from '../gate-records
 import { HOOK_REUSED_NOTE } from '../gate-records/gate-records.constants.ts'
 import { recordHook } from '../gate-records/gate-records.ts'
 import { HANDOVER_BASE_VARIABLES } from '../gate/gate-base.constants.ts'
+import { FLAKY_NOTE } from '../gate/gate-config.constants.ts'
 import { hasCommitHook } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
+import { textOf } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { HEARTBEAT_INTERVAL_MILLISECONDS } from '../progress/progress.constants.ts'
 import { stallReason } from '../progress/stall-reason.ts'
@@ -115,16 +117,18 @@ export async function commitLots(params: {
 		const startedAt = clock.now()
 		/** Puts the repository back as before the lot: the merge aborted, or the lot's files unstaged. */
 		function undo(): string {
-			if (lot.merge) return undoMerge({ root, number })
+			if (lot.merge) return textOf([undoMerge({ root, number })])
 			const unstaged = unstageLot({ root, paths, clock })
-			return unstaged.unstaged
-				? `    its files are unstaged again, nothing else changed; fix the cause, then run the same command: it resumes at lot ${number}`
-				: stillStaged({ unstaged, lot: number })
+			return textOf([
+				unstaged.unstaged
+					? `    its files are unstaged again, nothing else changed; fix the cause, then run the same command: it resumes at lot ${number}`
+					: stillStaged({ unstaged, lot: number }),
+			])
 		}
 		if (lot.merge) {
 			const prepared = runMergeLot({ root, merge: lot.merge })
 			if ('refusal' in prepared) {
-				running.finish(`✗ lot ${number} not committed: ${prepared.refusal}`)
+				running.finish(textOf([`✗ lot ${number} not committed: ${prepared.refusal}`]))
 				for (const line of prepared.lines ?? []) write(`    ${line}`)
 				write(undo())
 				return undefined
@@ -135,21 +139,23 @@ export async function commitLots(params: {
 			} catch (error) {
 				const unstaged = unstageLot({ root, paths, clock })
 				const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0]
-				running.finish(`✗ lot ${number} not committed: git add failed: ${reason}`)
+				running.finish(textOf([`✗ lot ${number} not committed: git add failed: ${reason}`]))
 				write(
-					unstaged.unstaged
-						? `    nothing of it stays staged; fix the cause, then run the same command: it resumes at lot ${number}`
-						: stillStaged({ unstaged, lot: number }),
+					textOf([
+						unstaged.unstaged
+							? `    nothing of it stays staged; fix the cause, then run the same command: it resumes at lot ${number}`
+							: stillStaged({ unstaged, lot: number }),
+					]),
 				)
 				return undefined
 			}
 		const synced = await syncNodeModules({ root, clock, install: params.install })
 		if ('refusal' in synced) {
-			running.finish(`✗ lot ${number} not committed: ${synced.refusal}`)
+			running.finish(textOf([`✗ lot ${number} not committed: ${synced.refusal}`]))
 			write(undo())
 			return undefined
 		}
-		if (synced.note) write(`  ${synced.note}`)
+		if (synced.note) write(textOf([`  ${synced.note}`]))
 		const skipsHook = params.withoutHook?.has(number) ?? false
 		// the record is of the tree the commit records: the index, the lot's files or the merge staged in it
 		const hooked = !skipsHook && hasCommitHook(root)
@@ -218,7 +224,7 @@ export async function commitLots(params: {
 		commits.push(sha)
 		running.finish(
 			...hookOutcome,
-			`✓ ${sha.slice(0, 12)} ${subject}  ${formatDuration(clock.now() - startedAt)}`,
+			textOf([`✓ ${sha.slice(0, 12)} ${subject}  ${formatDuration(clock.now() - startedAt)}`]),
 		)
 		// a merge commit's own diff is empty: its stat is against its first parent
 		for (const line of readGit({
@@ -279,6 +285,8 @@ function recordedHookStep(step: HookSummaryStep): RecordedStep {
 			note: HOOK_REUSED_NOTE.replace('{at}', step.reused.at).replace('{head}', step.reused.head),
 			reused: step.reused,
 		}),
+		// a test step that passed on its serial rerun: flaky, as a gate record says it
+		...(step.flaky && { note: FLAKY_NOTE, failing: step.flaky }),
 	}
 }
 

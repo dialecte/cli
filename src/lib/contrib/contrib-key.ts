@@ -3,16 +3,36 @@
  * plan: the tree, what is installed, and a command hash of the contrib rows (a built-in row by its name and the cli's
  * version) with HEAD folded in, which the rules row reads the changed files against.
  */
-import { readInstalledKey, hashGateCommand } from '../gate-records/check-key.ts'
+import { foldMachineLists, hashGateCommand, readInstalledKey } from '../gate-records/check-key.ts'
 import { isSameKey, readTreeRecords } from '../gate-records/check-store.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
-import { BUILTIN_STEP_COMMAND, CONTRIB_RECORD_MODE } from './contrib.constants.ts'
+import {
+	BUILTIN_STEP_COMMAND,
+	CONTRIB_BUILTIN_STEPS,
+	CONTRIB_RECORD_MODE,
+} from './contrib.constants.ts'
 
 import type { CheckKey, GateRecord } from '../gate-records/gate-records.types.ts'
 import type { GateStep } from '../gate/gate-config.types.ts'
 import type { ContribStep } from './contrib.types.ts'
+
+/**
+ * The command hash a contrib record of the package at `root` is keyed with: `contribCommandHash`, folded with the
+ * machine's lists its rules row reads (`foldMachineLists`), so a list set or changed after a green record runs it again.
+ */
+export function contribKeyHash(params: {
+	root: string
+	steps: readonly ContribStep[]
+	head: string
+}): string {
+	const hash = contribCommandHash({ steps: params.steps, head: params.head })
+	const rules = CONTRIB_BUILTIN_STEPS.first.builtin
+	return params.steps.some((step) => 'builtin' in step && step.builtin === rules)
+		? foldMachineLists({ root: params.root, hash })
+		: hash
+}
 
 /** The command hash of a contrib run of `steps` at the commit `head`. */
 export function contribCommandHash(params: {
@@ -39,7 +59,7 @@ export function contribKeyOf(params: { root: string; tree: string; head: string 
 	return {
 		tree: params.tree,
 		...readInstalledKey(params.root),
-		commandHash: contribCommandHash({ steps, head: params.head }),
+		commandHash: contribKeyHash({ root: params.root, steps, head: params.head }),
 	}
 }
 

@@ -41,6 +41,7 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
+import { textOf } from '../print/print.ts'
 import { processStartTime } from '../process-start-time.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
@@ -126,7 +127,7 @@ export async function rehearseHandover(params: {
 	// read once, before the plan, the clone and its contrib run: an invalid gate config stops here
 	const gateScope = resolveHandoverGateScope({ handover })
 	if ('refusal' in gateScope) {
-		write(gateScope.refusal)
+		write(textOf([gateScope.refusal]))
 		return 2
 	}
 	// the step's events and its whole-run marker: a rehearsal answered whole from records is a run too
@@ -167,10 +168,12 @@ async function rehearseRecorded(
 		!contribRun && decisions.every((decision) => decision.decision === 'reused')
 	for (const decision of decisions) {
 		write(
-			REHEARSAL_DECISION_LINE.replace('{number}', String(decision.lot))
-				.replace('{count}', String(decisions.length))
-				.replace('{decision}', REHEARSAL_DECISION_WORDS[decision.decision])
-				.replace('{reason}', decision.reason),
+			textOf([
+				REHEARSAL_DECISION_LINE.replace('{number}', String(decision.lot))
+					.replace('{count}', String(decisions.length))
+					.replace('{decision}', REHEARSAL_DECISION_WORDS[decision.decision])
+					.replace('{reason}', decision.reason),
+			]),
 		)
 		// no clone commits the merge: its tree, which the real run requires in the lot, is said here
 		if (everyLotReused && handover.lots[decision.lot - 1].merge)
@@ -213,7 +216,7 @@ async function rehearseRecorded(
 	const clone = join(folder, basename(repository))
 	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
 	mkdirSync(hookTemporary)
-	write(`rehearsal in ${clone}`)
+	write(textOf([`rehearsal in ${clone}`]))
 	const links: string[] = []
 	/** The hook's process group is stopped first (SIGKILL after its grace), then the rehearsal folder goes. */
 	function interrupted(signal: NodeJS.Signals): void {
@@ -231,7 +234,9 @@ async function rehearseRecorded(
 		const unseen = untrackedOutsideLots(handover)
 		if (unseen.length)
 			write(
-				`warning: untracked file(s) a hook could read in the repository, absent from the rehearsal clone (list them in .gitignore or .git/info/exclude): ${shortList(unseen)}`,
+				textOf([
+					`warning: untracked file(s) a hook could read in the repository, absent from the rehearsal clone (list them in .gitignore or .git/info/exclude): ${shortList(unseen)}`,
+				]),
 			)
 		const startedAt = params.clock.now()
 		const running = progress.start({
@@ -297,7 +302,7 @@ async function rehearseRecorded(
 		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
-		if (params.keep) write(`kept the rehearsal folder: ${folder}`)
+		if (params.keep) write(textOf([`kept the rehearsal folder: ${folder}`]))
 		else if (pool)
 			for (const line of trashRehearsalFolder({
 				folder,
@@ -364,13 +369,15 @@ function trashRehearsalFolder(params: {
 				checkedLockHash,
 			})
 			lines.push(
-				typeof parked === 'string'
-					? `node_modules not parked: ${parked}`
-					: `node_modules parked in ${parked.entry}`,
+				textOf([
+					typeof parked === 'string'
+						? `node_modules not parked: ${parked}`
+						: `node_modules parked in ${parked.entry}`,
+				]),
 			)
 		}
 	} catch (error) {
-		lines.push(`node_modules not parked: ${(error as Error).message}`)
+		lines.push(textOf([`node_modules not parked: ${(error as Error).message}`]))
 	}
 	try {
 		const { trashed } = trashFolder({
@@ -379,7 +386,7 @@ function trashRehearsalFolder(params: {
 			now,
 			spawner: params.spawner,
 		})
-		lines.push(`sent the rehearsal folder to the trash: ${trashed}`)
+		lines.push(textOf([`sent the rehearsal folder to the trash: ${trashed}`]))
 	} catch {
 		// another file system (a rename cannot cross it): removed here, as without a trash
 		// the links still there when the park failed before unlinking them
@@ -515,7 +522,7 @@ function prepareClone(params: {
 		readGit({ root: clone, args: ['config', 'core.hooksPath', hooks.configured] })
 	} else if (existsSync(hooks.folder))
 		cpSync(hooks.folder, join(clone, '.git', 'hooks'), { recursive: true })
-	write(`  hooks: ${hooks.configured ?? 'git hooks folder'} copied`)
+	write(textOf([`  hooks: ${hooks.configured ?? 'git hooks folder'} copied`]))
 
 	const provided = provideNodeModules({
 		checkout: clone,
@@ -525,9 +532,11 @@ function prepareClone(params: {
 	})
 	if (provided)
 		write(
-			provided.method === 'pooled'
-				? `  node_modules: pooled ${provided.from}`
-				: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
+			textOf([
+				provided.method === 'pooled'
+					? `  node_modules: pooled ${provided.from}`
+					: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
+			]),
 		)
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 }

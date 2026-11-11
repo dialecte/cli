@@ -5,6 +5,7 @@
 import { QUESTION_NOW, QUESTION_TEXT } from '../../../test/lot-questions.constants.ts'
 import { createQuestionLot } from '../../../test/lot-questions.ts'
 import { snapshotOf } from '../../../test/lot-start-workspace.ts'
+import { LINE_BREAK_ROWS } from '../../../test/questions-line-breaks.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { thrownBy } from '../../../test/thrown-by.ts'
 import { raiseQuestion } from './questions.ts'
@@ -18,20 +19,11 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-const ROWS = [
-	{ title: 'an option with a line feed', overrides: { options: ['accept', 'fix\nit'] } },
-	{ title: 'an option with a CRLF', overrides: { options: ['accept', 'fix\r\nit'] } },
-	{ title: 'an option with a lone CR', overrides: { options: ['accept', 'fix\rit'] } },
-	{ title: 'a station with a line feed', overrides: { station: 'test-reviewer\nnext: x' } },
-	{ title: 'a station with a CRLF', overrides: { station: 'test-reviewer\r\nnext: x' } },
-	{ title: 'a station with a lone CR', overrides: { station: 'test-reviewer\rnext: x' } },
-]
-
 describe(
 	'raiseQuestion: line breaks in options and station',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		for (const row of ROWS)
+		for (const row of LINE_BREAK_ROWS)
 			it(`${row.title} -> refused as a store refusal, nothing published`, () => {
 				const { lotFolder } = createQuestionLot()
 				const before = snapshotOf(lotFolder)
