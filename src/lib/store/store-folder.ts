@@ -166,7 +166,7 @@ export function workTreeHolding(params: { from: string }): string | undefined {
 }
 
 /** The git folder of the first `.git` entry at or above `folder`: the folder itself, or where a `.git` file points. */
-function gitFolderAbove(folder: string): string | undefined {
+export function gitFolderAbove(folder: string): string | undefined {
 	const workTree = workTreeHolding({ from: folder })
 	if (workTree === undefined) return undefined
 	const entry = join(workTree, GIT_ENTRY)

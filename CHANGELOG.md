@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `dialecte.rebuiltIgnored` in `package.json`: ignored folders (`coverage/`), relative to the package root of the main checkout, that `lot close` may delete with a worktree. An invalid entry is ignored.
+- `dialecte lot station <id> start|end <station>` records one station of a lot (the agent, its step, round, attempt, vendor, model, tier, effort, session, skills, and at its end tokens, money, time, exit, verdict and the suites it ran itself) as an event in the lot's `events.jsonl`, appended and never rewritten; `--event <id>` makes a retry safe, `--from <file.json>` takes the same fields as one object. Nothing but the station is required, and what nobody gave stays unknown.
+- The cli writes step events into the lot's `events.jsonl` for `gate`, `contrib`, `tdd red` and `green`, `mutants run`, `handover run`, `lot delta --worktree` and `worktree add`: the run, its exit, its time and, for a gate, each step's status, counts, time and reuse. A write that fails prints one `events:` line and never changes the step's exit.
+- A heavy step (`gate --full`, `contrib`, `mutants run`, a rehearsal, a gate step declared heavy) writes a live marker in `$XDG_STATE_HOME/dialecte/heavy/` (else `~/.local/state/dialecte/heavy/`), removed when it ends; a marker whose process is gone is ignored.
+- `dialecte.stepEvents` in the cli's `package.json` tells a host that this cli writes step events; a worktree with an older cli leaves its step counts unknown in the report.
+- `dialecte lot report <id> [--json]` reads one lot's records (no git, no process, nothing written): its stations, tokens, money, time, suites per station by time, heavy steps, folders and review rounds. A number nobody reported is `unknown` (`null` in `--json`), never 0. `dialecte lot report --feature <name> [--simulated] [--json]` gives one line per lot of the feature and the totals by station and tier.
+- The hand-over card gains a `usage` row when the hand-over is a lot's and holds a station event; `--json` carries `usage`.
+- `cards.log` in `<git common folder>/dialecte-handover/`: an append-only log of each lot's final record (its card), and a `removing` then a `removed` line around each worktree `lot close` moves. `handover run` writes the final record when it commits; `lot close` writes one when none exists, and says `recomputed`.
+- `dialecte lot export <id> <dir>` copies a lot folder (`asks/` left out) to `<dir>/<full name>/` with its `cards.log` lines and registry entry, checking every file by size and checksum before the copy is put in place.
+
+### Changed
+
+- `dialecte lot close` keeps a hand-over's worktree, with the reason, when its final record cannot be kept (`final record not kept: <reason>`) or the commit a committed lot ended at is not known (`the lot's commit is not known`, with the way out).
 
 ## [0.4.0] - 2026-11-09
 

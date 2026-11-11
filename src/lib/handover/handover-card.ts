@@ -7,6 +7,9 @@
 import { basename, dirname, relative } from 'node:path'
 
 import { counted } from '../counted.ts'
+import { formatAgentTime } from '../events/format-agent-time.ts'
+import { formatLotTokens } from '../events/format-tokens.ts'
+import { readHandoverUsage } from '../events/handover-usage.ts'
 import {
 	buildCardGateLines,
 	buildContribLines,
@@ -76,6 +79,8 @@ import {
 	TO_READ_LABELS,
 	TO_READ_MARK,
 	TREE_NOT_RECORDED,
+	USAGE_AGENT_TIME,
+	USAGE_ROW,
 	WORKTREE_LINE_LABEL,
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
@@ -223,6 +228,8 @@ export function buildHandoverCard(params: {
 				: 'READY'
 	const name = registeredNameOf({ root, folder: params.folder })
 	const index = worktreeIndexOf(root)
+	// the lot folder's events only: no probe, no git
+	const usage = readHandoverUsage({ folder: params.folder })
 	return {
 		repository: mainCheckoutOf(root),
 		worktree: root,
@@ -244,6 +251,7 @@ export function buildHandoverCard(params: {
 		...(params.done && { done: true }),
 		...(name && { name }),
 		folder: params.folder,
+		...(usage && { usage }),
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
@@ -653,7 +661,8 @@ function caseEntryLines(params: {
 }
 
 /**
- * The card in sections: the verdict with the size and the declarations to read, then the commit, gates,
+ * The card in sections: the verdict with the size and the declarations to read, then the commit, gates, the
+ * usage row (a lot folder's stations),
  * contrib (a contributor's), tdd and notes (before a run only) sections; the command is printed under the box, whole.
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
@@ -667,6 +676,7 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 			{ lines: verdictLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.commit, lines: commitLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.gates, lines: gateLines(card.gates) },
+			...usageSection(card),
 			...(card.contrib
 				? [{ name: HANDOVER_CARD_SECTIONS.contrib, lines: gateLines(contribLines(card.contrib)) }]
 				: []),
@@ -675,6 +685,25 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 		],
 		footer: footerOf(card),
 	}
+}
+
+/**
+ * The usage row in a section of its own, no rule: what the lot's stations cost and the report that details it,
+ * the lot named by its folder; none without a usage. Never a gate line: it plays no part in the verdict.
+ */
+function usageSection(card: HandoverCard): CardSection[] {
+	const { usage, folder } = card
+	if (usage === undefined || folder === undefined) return []
+	const text = USAGE_ROW.replace('{tokens}', formatLotTokens({ total: usage.tokens.total }))
+		.replace('{agents}', counted({ count: usage.agents, noun: 'agent' }))
+		.replace('{runs}', counted({ count: usage.runs, noun: 'run' }))
+		.replace(
+			'{time}',
+			formatAgentTime({ agentTime: usage.agentTime, runs: usage.runs, texts: USAGE_AGENT_TIME }),
+		)
+		.replace('{lot}', basename(folder))
+	// a wrapped row continues under its value, after the label
+	return [{ lines: [{ text, hang: USAGE_ROW.indexOf('{tokens}') }] }]
 }
 
 /** The closing rule: the hand-over's registered name, else its folder, so a partial copy still names it. */

@@ -133,7 +133,16 @@ export type LotStateReport = {
 /** The names inside a lot folder that the store itself writes, by what they hold. */
 export type StoreFileNames = Readonly<
 	Record<
-		'brief' | 'plan' | 'scenario' | 'identity' | 'transitions' | 'answers' | 'asks' | 'events',
+		| 'brief'
+		| 'plan'
+		| 'scenario'
+		| 'identity'
+		| 'transitions'
+		| 'answers'
+		| 'asks'
+		| 'events'
+		| 'cardsLog'
+		| 'registry',
 		string
 	>
 >

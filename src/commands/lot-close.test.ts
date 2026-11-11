@@ -11,6 +11,11 @@ import {
 import { isAbsolute, join, resolve } from 'node:path'
 
 import {
+	cardLinesOf,
+	registerCommittedHandover,
+	writeHookRecordAtHead,
+} from '../../test/lot-close-final-record.ts'
+import {
 	git,
 	initializeRepository,
 	temporaryFolder,
@@ -98,25 +103,33 @@ function createLot(params: {
 	lockText?: string
 	/** A `file:../sib` dependency: the sibling beside the repository, its link under `.worktrees/`, the lot's link to it. */
 	sibling?: boolean
-}): { name: string; worktree: string } {
+	/**
+	 * Committed with a written hand-over folder and a located lot (the store's writers make its commit): `head` is the
+	 * commit it ended at. For the cases where another hand-over of the worktree is committed after it.
+	 */
+	written?: boolean
+}): { name: string; worktree: string; head?: string } {
 	const { repository, worktreesFolder } = params.scenario
 	const tail = params.main ? 'main' : params.tail
 	const branch = params.main ? 'main' : `feat/${tail}`
 	const worktree = params.main ? repository : join(worktreesFolder, `${params.index}-repo-${tail}`)
 	if (!params.main) {
 		git({ root: repository, args: ['worktree', 'add', '-q', '-b', branch, worktree] })
-		writeFiles({
-			root: worktree,
-			files: {
-				[`src/${tail}.ts`]: 'export {}\n',
-				...(params.lockText && { 'package-lock.json': params.lockText }),
-				...(params.sibling && { 'package-lock.json': SIBLING_LOCK_TEXT }),
-			},
-		})
-		git({ root: worktree, args: ['add', '-A'] })
-		git({ root: worktree, args: ['commit', '-q', '-m', `feat: ${tail}`] })
+		if (!params.written) {
+			writeFiles({
+				root: worktree,
+				files: {
+					[`src/${tail}.ts`]: 'export {}\n',
+					...(params.lockText && { 'package-lock.json': params.lockText }),
+					...(params.sibling && { 'package-lock.json': SIBLING_LOCK_TEXT }),
+				},
+			})
+			git({ root: worktree, args: ['add', '-A'] })
+			git({ root: worktree, args: ['commit', '-q', '-m', `feat: ${tail}`] })
+		}
 	}
 	createFakeNodeModules({ folder: join(worktree, 'node_modules'), marker: `lot ${tail}\n` })
+	if (params.written) return { ...registerCommittedHandover({ worktree, tail }), worktree }
 	if (params.sibling) {
 		const workspace = join(repository, '..')
 		mkdirSync(join(workspace, 'sib'), { recursive: true })
@@ -131,6 +144,7 @@ function createLot(params: {
 	const name = registerHandover({ root: worktree, folder, branch, now: NOW })
 	if (params.state !== 'pending')
 		recordHandoverState({ store: handoverStoreOf(repository), folder, state: params.state })
+	if (params.state === 'committed') writeHookRecordAtHead(worktree)
 	return { name, worktree }
 }
 
@@ -465,19 +479,16 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 		'two committed hand-overs registered on one worktree, named by their name and then their %s → the worktree closed once, one outcome per argument, no raw error, exit 0',
 		(second) => {
 			const scenario = createScenario()
-			const first = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
-			const folder = realpathSync(temporaryFolder('dialecte-handover-'))
-			const secondName = registerHandover({
-				root: first.worktree,
-				folder,
-				branch: 'feat/x',
-				now: NOW,
-			})
-			recordHandoverState({
-				store: handoverStoreOf(scenario.repository),
-				folder,
+			// both are written, committed hand-overs with a located lot: each closes on its own commit
+			const first = createLot({
+				scenario,
+				index: '0001',
+				tail: 'x',
 				state: 'committed',
+				written: true,
 			})
+			const secondHandover = registerCommittedHandover({ worktree: first.worktree, tail: 'y' })
+			const secondName = secondHandover.name
 			const argument = second === 'name' ? secondName : '0001'
 			const { call, calls } = closing({ scenario, argv: [first.name, argument] })
 
@@ -491,6 +502,17 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 			expect(existsSync(first.worktree)).toBe(false)
 			expect(poolEntriesOf(scenario.worktreesFolder)).toHaveLength(1)
 			expect(calls.filter((entryCall) => entryCall.args[0] === 'worktree')).toHaveLength(1)
+			// R3-1: the owner's card is at the owner's own commit (the hook record names the later one)
+			expect(
+				cardLinesOf({ repository: scenario.repository })
+					.map((line) => [line.name, line.head])
+					.sort(),
+			).toEqual(
+				[
+					[first.name, first.head],
+					[secondName, secondHandover.head],
+				].sort(),
+			)
 		},
 	)
 

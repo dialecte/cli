@@ -1243,7 +1243,15 @@ the answer.
     removed in the background by `git worktree remove` without `--force`: git refuses a worktree written into
     since the check, which then stays registered in `.worktrees/_trash/` for you to look at (one line says so
     when something closed). Paths are compared by their real path as spelled on disk (a path typed in another
-    case on a case-insensitive volume matches). Kept,
+    case on a case-insensitive volume matches). Before the move, the lot's final record is kept: the card line
+    of its `cards.log` (the one `handover run` wrote when it committed; else a recomputed one, marked
+    `recomputed`, built without the probe), read back and parsed, then a `removing` line naming the worktree,
+    its branch and the branch tip; after the move a `removed` line says `trashed` or `kept`. Kept also, with
+    why: `final record not kept: <reason>` when the record cannot be written or read back, and `the lot's
+    commit is not known` (with where to look and how to remove the worktree by hand) when a committed lot's
+    commit can be found neither among its lot commits nor in the worktree's hook record (read only when no
+    other committed hand-over shares the worktree). Every other hand-over of the worktree gets its card line
+    too, `head` its last lot commit or `null`. Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
     store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
@@ -1272,6 +1280,75 @@ the answer.
     that hand-over with the error and what was already moved, the others go on. Exit 0 when every named
     hand-over closed, 1 when one was kept, 2 for a name or index the registry does not hold (then nothing is
     closed); `--json` prints `[{ handover, closed: true } | { handover, kept }]`.
+- Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
+  it cannot parse, and counts them.
+  - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`
+    append one station event to the lot's `events.jsonl` (`by: host`): the host says which station ran, with
+    which step, round, attempt, agent, vendor, model, tier, effort, session and skills (`--skill` seen,
+    `--skill-asked` asked by the brief), and, at its end, tokens (`--tokens-in`, `--tokens-out`,
+    `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`), `--money <amount> <currency>`,
+    `--duration`, `--exit`, `--verdict` and `--suite <name>=<runs>` for suites the agent ran itself. Nothing but
+    the station is required; a field nobody gave stays unknown. `start` answers a `run` and the `end` command to
+    run; `end` pairs with `--run`, else with the one open start of its station whose step, round and attempt match
+    the ones it gives (several: refused), else is recorded alone. `--event <id>` makes a retry safe: the same id
+    with the same fields answers the first event (`already`) and writes nothing, other fields are refused.
+    `start` is refused on a committed, canceled or failed lot, `end` is accepted in every state. The station
+    names `shared` and `outside` are the report's own labels and are refused. `lot station <id> --from
+    <file.json>` takes the same fields as one JSON object, plus `phase` (`start` or `end`); an unknown key
+    is refused, every fault at once. A line over 4,096 bytes is refused. Exit 1 when the event cannot be written, 2
+    for a usage error or a refusal.
+  - Step events: the cli writes `step.start` and `step.end` events (`by: cli`) into the lot's `events.jsonl` for
+    `gate --fast`, `--full`, `--release` and `--hook`, `contrib`, `tdd red`, `tdd green`, `mutants run`,
+    `handover run` (real and rehearsal), `lot delta --worktree` and `worktree add`: the step, whether it is heavy,
+    its exit, its time, whether a gate reused records, and per gate step its status, counts, time and selection. A
+    step in a worktree that links no lot, or none matching, writes nothing. A write that fails prints one
+    `events: not recorded: <reason>` line and never changes the step's exit; a step killed after its start writes
+    its end as interrupted where it can. Long lists are cut, failing parts first. A step run in a worktree whose
+    link names a lot that lives elsewhere (a copied or moved worktree) is written to that lot as `step.foreign`.
+  - `dialecte.stepEvents` in the cli's own `package.json` (`"stepEvents": 1`) tells a host that this cli writes step
+    events. Each event notes the capability of the cli installed in the lot's worktree; a cli without it (an
+    older release or source) writes none, so the report shows the step counts of such a lot as unknown rather
+    than 0.
+  - Heavy steps (`gate --full`, `--release`, `contrib`, `mutants run`, a rehearsal, a gate step the package
+    declares heavy, and for the last only while that part runs) write a live marker in
+    `<state folder>/dialecte/heavy/` (`$XDG_STATE_HOME`, else `~/.local/state`): the step, the lot, the
+    worktree, the process and its start time. The step removes it at its end; a marker whose process is gone, or
+    runs with another start time, is dead and ignored. A person's run outside any lot writes the marker too, and
+    no event. This is how a host sees which heavy step runs now, and since when.
+  - `dialecte lot report <id> [--json]` reads files only (no git, no process, nothing written) and prints one lot:
+    its state, feature, effort, steps and rounds; per station run the agent, tier, model, tokens, time, suites
+    and skills; totals for tokens (each field with how many stations did not report it, a lower bound when a
+    total is not exact), money per currency (with how many stations reported none), and time (the lot's elapsed time as agents, cli steps, waiting for
+    answers, waiting for the machine and the rest); the suites per step family with their counts, reuse and
+    reruns, attributed to the station whose time holds the step (`shared` when several, `outside stations`
+    when none, and always for the steps the orchestration runs; a step a person runs by hand during a
+    station lands on that station); the heavy steps, the folders (worktree add, throwaways, trash), the review
+    rounds from the findings ledger, the events counted (damaged, duplicates, unknown kinds) and the next
+    command. A number nobody reported is `unknown` in the text and `null` in `--json`, never 0. A step family
+    reads unknown, with the reason, when the worktree's cli writes no step events, when a record of a step has
+    no run in the events, or when nothing of the lot's steps left a trace. `dialecte lot report --feature <name>
+    [--simulated] [--json]` gives one line per lot of the feature, in every store of the store list and the
+    current folder, then the totals by station and by tier; simulated lots are counted apart and listed by
+    `--simulated`; a lot whose folder is gone is listed from its `cards.log` line. Exit 1 when the feature names
+    no lot, 2 for an unknown or ambiguous id.
+  - The hand-over card gains a `usage` row (tokens, agents, runs, agent time, and the report's command) when the
+    hand-over folder is a lot folder holding a station event; `handover show --json` carries `usage`. A folder
+    with no station event shows no row.
+  - `cards.log`, in `<git common folder>/dialecte-handover/`, one per repository: one JSON line per record,
+    appended in one write, never rewritten, never rotated. A `card` line is a lot's final record: its hand-over
+    card, usage and the times of its gate, tdd and hook records (a worktree's records go with it), written by
+    `handover run` once a commit is recorded, or by `lot close` when none exists. A `removing` line is written
+    before a worktree moves (its path, branch, branch tip and record times), a `removed` line after it (the same
+    id; `trashed` or `kept`). A `removing` without its `removed` reads as unknown. The report reads these lines
+    for lots whose worktree or folder is gone.
+  - `dialecte lot export <id> <dir> [--json]` copies a lot folder to `<dir>/<full name>/`, `asks/` left out, links
+    kept as links (one pointing outside the folder is named), with the lot's `cards.log` lines and registry
+    entry added as `cards.log` and `registry.json`. It is refused (exit 2, nothing written) for an unknown or
+    ambiguous id, for a `<dir>` inside a git work tree or a git folder, and when `<dir>/<full name>` exists.
+    The copy is made into a temporary folder beside it and each file's size and checksum compared with the
+    source's (`events.jsonl` as a prefix, since a running lot appends); a difference makes one more copy of
+    that file, a second one removes the temporary folder and exits 1 naming the file; a match renames it. The
+    source is never written; another run's temporary folder is named, never removed.
 - `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
   its devDependency) on the scope `package.json` declares:
   `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.

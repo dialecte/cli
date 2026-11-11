@@ -36,6 +36,16 @@ export function pairRuns(params: { events: LotEvent[] }): PairRunsResult {
 	return result
 }
 
+/** The runs whose events' kind starts with the prefix (`station.` or `step.`), in their order. */
+export function runsOfKind(params: { runs: readonly EventRun[]; prefix: string }): EventRun[] {
+	return params.runs.filter((run) => firstEventOf({ run }).kind.startsWith(params.prefix))
+}
+
+/** The first event a run holds: its start, else its end (a run always holds one). */
+export function firstEventOf(params: { run: EventRun }): LotEvent {
+	return (params.run.start ?? params.run.end) as LotEvent
+}
+
 /** Which side of a run an event is: `start`, `end`, or undefined for a kind that is neither. */
 function runSideOf(params: { event: LotEvent }): 'start' | 'end' | undefined {
 	if (RUN_START_KINDS.includes(params.event.kind)) return 'start'

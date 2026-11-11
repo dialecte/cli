@@ -132,15 +132,6 @@ export function worktreeStateRefusal(params: {
 	return `${repositories.join(', ')} in ${params.root}: a nested repository or a submodule is no file of the lot`
 }
 
-/** Whether `path` is on disk as a file or a symlink (a folder is no file; a dangling symlink is one). */
-export function isFileOrLink(path: string): boolean {
-	try {
-		return !lstatSync(path).isDirectory()
-	} catch {
-		return false
-	}
-}
-
 /** The files and symlinks under `folder`, relative to it with `/`, sorted; folders walked, not listed. */
 export function listTreeFiles(folder: string): string[] {
 	const found: string[] = []

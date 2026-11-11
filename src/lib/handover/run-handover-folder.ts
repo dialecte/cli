@@ -5,7 +5,8 @@
  * or not at all when a green record answers for every lot. A real run
  * that leaves every lot committed then records the hand-over `committed` in the store (when it is registered)
  * and moves the lot file (`.dialecte/lot.json`) into the folder: the next lot on the branch starts from an
- * empty declaration, not from this lot's entries. The card after a real run
+ * empty declaration, not from this lot's entries, and appends the lot's final record (its `card` line) to the
+ * repository's `cards.log`. The card after a real run
  * has no notes: they were written for the person about to run it, and what the run proved is in its gates.
  */
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -30,6 +31,7 @@ import {
 	REHEARSAL_SKIPPED_LINE,
 } from './handover.constants.ts'
 import { isEmptyDeclaration } from './is-empty-declaration.ts'
+import { recordCardLine } from './record-card-line.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
@@ -160,6 +162,8 @@ export async function runHandoverFolder(params: {
 		})
 		const archived = archiveLotFile({ root: lotsFile.repository, folder: handover.folder })
 		if (archived) write(LOT_FILE_ARCHIVED.replace('{path}', archived))
+		// the lot's final record: a failure warns and changes no exit, the commit is made
+		recordCardLine({ handover, card, commitRoot })
 	}
 	// whole on one line, whatever the width: a person copies it
 	if (!card.done) write(card.command)

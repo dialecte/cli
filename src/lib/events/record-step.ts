@@ -318,8 +318,11 @@ function onceWarner(warn: (line: string) => void): (line: string) => void {
 	}
 }
 
-/** The default warning channel: one line on standard error, so `--json` output stays one document. */
-function warnOnStandardError(line: string): void {
+/**
+ * The default warning channel: one line on standard error, so `--json` output stays one document (a step's events,
+ * `handover run`'s card line).
+ */
+export function warnOnStandardError(line: string): void {
 	// one synchronous write: a closed pipe throws here (caught) instead of raising an async EPIPE that ends the process
 	try {
 		writeSync(STANDARD_ERROR_DESCRIPTOR, `${line}\n`)

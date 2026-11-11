@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { copyFileOrLink, isFileOrLink } from '../copy-file-or-link.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { addWorktree, checkoutOf } from '../worktree/add-worktree.ts'
@@ -16,8 +17,8 @@ import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { verbPrefix } from './review-round-verbs.ts'
 import { DELTA_FILE_MARK, NO_FILE, PLAIN_DIFF_OPTIONS } from './review-rounds.constants.ts'
-import { copyFileOrLink, roundNames } from './snapshot-round.ts'
-import { isFileOrLink, listTreeFiles } from './worktree-state.ts'
+import { roundNames } from './snapshot-round.ts'
+import { listTreeFiles } from './worktree-state.ts'
 
 import type { AddedWorktree } from '../worktree/worktree.types.ts'
 import type {

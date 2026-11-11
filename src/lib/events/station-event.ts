@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import { readArguments } from '../review-rounds/round-arguments.ts'
 import { DISPLAY_ESCAPED_RANGES } from '../store/store.constants.ts'
 import { printableOf } from '../store/text-escape.ts'
+import { REPORT_OWNER_LABELS } from './attribute-steps.constants.ts'
 import {
 	DECIMAL_PATTERN,
 	DEFAULT_EXECUTOR,
@@ -242,9 +243,13 @@ function valueFaults(params: { values: StationValues }): string[] {
 	return faults
 }
 
-/** The faults of a station's name: `[a-z][a-z0-9-]*`, at most 60 characters. */
+/** The faults of a station's name: `[a-z][a-z0-9-]*`, at most 60 characters, and none of the report's owner labels. */
 function stationNameFaults(params: { station: unknown }): string[] {
 	const { station } = params
+	if (typeof station === 'string' && REPORT_OWNER_LABELS.includes(station))
+		return [
+			`station ${shown(station)}: a name the report gives steps (${REPORT_OWNER_LABELS.join(', ')}), not a station's`,
+		]
 	if (
 		typeof station === 'string' &&
 		STATION_NAME_PATTERN.test(station) &&
