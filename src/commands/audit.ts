@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'node:path'
 
 import { resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
+import { printLines } from '../lib/print/print.ts'
 
 /**
  * `dialecte audit` — render the public type surface (NoTruncation, editor-hover fidelity) and
@@ -309,9 +310,12 @@ function auditTarget(params: {
 	mkdirSync(dirname(outputPath), { recursive: true })
 	writeFileSync(outputPath, `${markdownLines.join('\n')}\n`)
 	rmSync(entryFile, { force: true })
-	console.log(
-		`  [${namespace}] ${methodPaths.length} methods, ${namespaceMembers.length} types, ${all.filter((row) => row.flags.length).length} flagged → ${outputPath}`,
-	)
+	printLines({
+		stream: 'stdout',
+		lines: [
+			`  [${namespace}] ${methodPaths.length} methods, ${namespaceMembers.length} types, ${all.filter((row) => row.flags.length).length} flagged → ${outputPath}`,
+		],
+	})
 }
 
 /** Where a target's audit is written: next to its version directory; an absolute `--out` is used as is. */

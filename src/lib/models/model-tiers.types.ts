@@ -1,3 +1,4 @@
+import type { PrintedText } from '../print/print.types.ts'
 import type { TIER_NAMES, VENDOR_IDS } from './model-tiers.constants.ts'
 
 export type ModelTierName = (typeof TIER_NAMES)[number]
@@ -53,5 +54,5 @@ export type VendorChoice = {
 	/** To remember; undefined when the sync goes on without one. */
 	vendor: VendorId | undefined
 	/** Lines for stderr. */
-	output: string
+	output: PrintedText
 }

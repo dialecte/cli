@@ -10,6 +10,7 @@ import {
 	existsSync,
 	fsyncSync,
 	linkSync,
+	lstatSync,
 	openSync,
 	readdirSync,
 	renameSync,
@@ -20,7 +21,9 @@ import { basename, dirname, join } from 'node:path'
 
 import { isProcessAlive } from '../process-alive.ts'
 import {
+	PERMISSION_BITS,
 	READ_ONLY_MODE,
+	REPLACED_LINK_REFUSAL,
 	STORE_REFUSAL,
 	TEMPORARY_FILE_SUFFIX_PATTERN,
 	TEMPORARY_INFIX,
@@ -66,14 +69,48 @@ export function publishOnce(params: {
 	return true
 }
 
-/** Replaces the whole file at `path` with `text` (a temporary file renamed over it). */
+/**
+ * Publishes `text` under `path` whole, never over an existing name, on a file system that makes no hard link: false
+ * when it exists (its bytes kept). The whole text is written to a temporary first, the name is then claimed
+ * exclusively (an empty file) and the temporary renamed over the claim, so a crash leaves at most an empty claim,
+ * never a half-written one.
+ */
+export function publishOnceByClaim(params: {
+	path: string
+	text: RecordContent
+	mode: number
+}): boolean {
+	const temporary = writeTemporary(params)
+	try {
+		writeFileSync(params.path, '', { flag: 'wx', mode: params.mode })
+	} catch (error) {
+		rmSync(temporary, { force: true })
+		if (isErrorCode({ error, code: 'EEXIST' })) return false
+		throw error
+	}
+	try {
+		renameSync(temporary, params.path)
+	} catch (error) {
+		throw vanishedOr({ error, temporary })
+	}
+	return true
+}
+
+/**
+ * Replaces the whole file at `path` with `text` (a temporary file renamed over it), keeping the mode of the file
+ * replaced (0644 for a new one). A symbolic link at `path` is refused: the rename would replace the link, not the
+ * file it names.
+ */
 export function replaceWhole(params: {
 	path: string
 	text: string
 	/** Called once the temporary file is written and before it replaces the file. */
 	afterTemporaryWritten?: TemporaryFileSeam
 }): void {
-	const temporary = writeTemporary({ path: params.path, text: params.text, mode: WRITABLE_MODE })
+	const existing = lstatSync(params.path, { throwIfNoEntry: false })
+	if (existing?.isSymbolicLink()) throw new Error(`${REPLACED_LINK_REFUSAL}: ${params.path}`)
+	const mode = existing ? existing.mode & PERMISSION_BITS : WRITABLE_MODE
+	const temporary = writeTemporary({ path: params.path, text: params.text, mode })
 	params.afterTemporaryWritten?.(temporary)
 	try {
 		renameSync(temporary, params.path)

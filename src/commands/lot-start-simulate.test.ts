@@ -5,12 +5,14 @@
  * simulated lot never blocks a real start. The overlap check re-reads once after 100 ms a lot whose only evidence
  * of `canceled` is `abandoned.json` (case 62).
  */
-import { rmSync, statSync, writeFileSync } from 'node:fs'
+import { rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { briefWith, writeStoreLot } from '../../test/brief-workspace.ts'
 import { outcomeOf } from '../../test/call-outcome.ts'
-import { markAbandoned } from '../../test/handover-store-scenario.ts'
+import { markerOnlyLot } from '../../test/lot-start-pause-lots.ts'
+import { PAUSE_ROWS } from '../../test/lot-start-pause-rows.constants.ts'
+import { SECOND_LOT, TAKEN_LOT, WAIT_LINE } from '../../test/lot-start-simulate-cases.constants.ts'
 import {
 	createdBy,
 	createStartWorkspace,
@@ -27,9 +29,7 @@ import {
 	REREAD_PAUSE_MS,
 } from '../../test/simulated-lot.constants.ts'
 import { repositoryFactsOf } from '../../test/simulated-lot.ts'
-import { transitionOf } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { SCENARIOS } from '../lib/store/scenarios.constants.ts'
 import { startLot } from './lot-start.ts'
 import { runLot } from './lot.ts'
@@ -41,12 +41,6 @@ import type { StartWorkspace } from '../../test/lot-start-workspace.types.ts'
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-const WAIT_LINE = `dialecte lot wait ${LOT_NAME} --timeout 60`
-const SECOND_LOT = '0002-repo-dataflow-subscribe'
-const ENDED_LOT = '0003-repo-ended'
-const MARKER_LOT = '0004-repo-marker'
-const TAKEN_LOT = '0003-repo-taken'
 
 /** `lot start <brief> --simulate <scenario>` through `runLot` from the workspace folder; the options after it as given. */
 function simulate(params: { start: StartWorkspace; scenario: string; extra?: string[] }) {
@@ -351,185 +345,6 @@ describe(
 		})
 	},
 )
-
-type PauseRow = {
-	title: string
-	/** Writes the lot the brief's scope meets, returning its folder. */
-	lot: (start: StartWorkspace) => string
-	/** Whether the pause seam removes the marker (the run took it back). */
-	removeMarker: boolean
-	/** The start checked: a dry run, or a simulated one (its findings go to `wouldRefuse`). */
-	run?: 'dry-run' | 'simulate'
-	exitCode: number
-	pauses: number[]
-	/** The rules in `wouldRefuse` of a simulated start. */
-	findings?: string[]
-}
-
-/** A lot on the brief's scope that is open (no marker), and one canceled by a transition alone. */
-function plainOpenLot(start: StartWorkspace): string {
-	return writeStoreLot({
-		workspace: start.workspace,
-		name: ENDED_LOT,
-		scope: ['src/dataflow/'],
-		branch: 'feat/ended',
-	})
-}
-function transitionCanceledLot(start: StartWorkspace): string {
-	return writeStoreLot({
-		workspace: start.workspace,
-		name: ENDED_LOT,
-		scope: ['src/dataflow/'],
-		branch: 'feat/ended',
-		later: [transitionOf({ seq: 2, state: 'canceled', kind: 'stop' })],
-	})
-}
-
-/** A lot whose `abandoned.json` stands beside the run marker of a live process (a run takes the abandon back). */
-function markerBesideLiveRunLot(start: StartWorkspace): string {
-	const folder = markerOnlyLot(start)
-	writeFileSync(
-		join(folder, HANDOVER_RUN_MARKER_FILE),
-		`${JSON.stringify({ pid: process.pid, startedAt: '2026-11-08T10:00:00.000Z' })}\n`,
-	)
-	return folder
-}
-
-/** An open real lot on the brief's scope that `abandoned.json` alone marks canceled; its folder. */
-function markerOnlyLot(start: StartWorkspace): string {
-	const folder = writeStoreLot({
-		workspace: start.workspace,
-		name: MARKER_LOT,
-		scope: ['src/dataflow/'],
-		branch: 'feat/ended',
-	})
-	markAbandoned({ folder, file: 'abandoned.json' })
-	return folder
-}
-
-const PAUSE_ROWS: PauseRow[] = [
-	{
-		title:
-			'abandoned.json alone, taken back during the pause -> the lot is open again: refused as an overlap',
-		lot: markerOnlyLot,
-		removeMarker: true,
-		exitCode: 2,
-		pauses: [REREAD_PAUSE_MS],
-	},
-	{
-		title:
-			'abandoned.json alone, still there after the pause -> the lot is canceled: the check passes',
-		lot: markerOnlyLot,
-		removeMarker: false,
-		exitCode: 0,
-		pauses: [REREAD_PAUSE_MS],
-	},
-	{
-		title:
-			'a lot canceled by a transition beside a marker-only lot -> one re-read, for the marker-only lot alone',
-		lot: (start) => {
-			writeStoreLot({
-				workspace: start.workspace,
-				name: ENDED_LOT,
-				scope: ['src/dataflow/'],
-				branch: 'feat/ended',
-				later: [transitionOf({ seq: 2, state: 'canceled', kind: 'stop' })],
-			})
-			return markerOnlyLot(start)
-		},
-		removeMarker: false,
-		exitCode: 0,
-		pauses: [REREAD_PAUSE_MS],
-	},
-	{
-		title:
-			'a lot whose registry entry is abandoned beside a marker-only lot -> one re-read, for the marker-only lot alone',
-		lot: (start) => {
-			writeStoreLot({
-				workspace: start.workspace,
-				name: ENDED_LOT,
-				scope: ['src/dataflow/'],
-				branch: 'feat/ended',
-				registry: 'abandoned',
-			})
-			return markerOnlyLot(start)
-		},
-		removeMarker: false,
-		exitCode: 0,
-		pauses: [REREAD_PAUSE_MS],
-	},
-	{
-		title: 'an open lot with no marker -> refused as an overlap with no re-read',
-		lot: plainOpenLot,
-		removeMarker: false,
-		exitCode: 2,
-		pauses: [],
-	},
-	{
-		title: 'a lot canceled by a transition alone -> canceled with no re-read: the check passes',
-		lot: transitionCanceledLot,
-		removeMarker: false,
-		exitCode: 0,
-		pauses: [],
-	},
-	{
-		title:
-			'abandoned.json beside a live run marker -> the lot is open: no re-read, refused as an overlap',
-		lot: markerBesideLiveRunLot,
-		removeMarker: false,
-		exitCode: 2,
-		pauses: [],
-	},
-	{
-		title:
-			'a simulated start, an open lot with no marker -> no re-read, the overlap is a finding and the start goes on',
-		lot: plainOpenLot,
-		removeMarker: false,
-		run: 'simulate',
-		exitCode: 0,
-		pauses: [],
-		findings: ['overlap'],
-	},
-	{
-		title: 'a simulated start, a lot canceled by a transition alone -> no re-read, no finding',
-		lot: transitionCanceledLot,
-		removeMarker: false,
-		run: 'simulate',
-		exitCode: 0,
-		pauses: [],
-		findings: [],
-	},
-	{
-		title:
-			'a simulated start, abandoned.json beside a live run marker -> no re-read, the open lot is an overlap finding',
-		lot: markerBesideLiveRunLot,
-		removeMarker: false,
-		run: 'simulate',
-		exitCode: 0,
-		pauses: [],
-		findings: ['overlap'],
-	},
-	{
-		title:
-			'a simulated start, abandoned.json alone still there after the pause -> one re-read, the lot is canceled: no finding',
-		lot: markerOnlyLot,
-		removeMarker: false,
-		run: 'simulate',
-		exitCode: 0,
-		pauses: [REREAD_PAUSE_MS],
-		findings: [],
-	},
-	{
-		title:
-			'a simulated start, abandoned.json alone taken back during the pause -> one re-read, the open lot is an overlap finding, the start goes on',
-		lot: markerOnlyLot,
-		removeMarker: true,
-		run: 'simulate',
-		exitCode: 0,
-		pauses: [REREAD_PAUSE_MS],
-		findings: ['overlap'],
-	},
-]
 
 /**
  * `lot start` (a dry run, or `--simulate ready`) with a pause seam that records its calls (and takes the marker

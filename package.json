@@ -68,6 +68,49 @@
 	},
 	"dialecte": {
 		"profile": "contributor",
+		"gate": {
+			"fast": [
+				{
+					"name": "check",
+					"run": "npm run check"
+				},
+				{
+					"name": "tests",
+					"run": "node src/scoped-tests.ts",
+					"counts": "tests",
+					"scoped": true
+				},
+				{
+					"name": "rules",
+					"run": "node src/cli.ts rules",
+					"scoped": true
+				}
+			],
+			"full": [
+				{
+					"name": "check",
+					"run": "npm run check"
+				},
+				{
+					"name": "skills",
+					"run": "npm run skills:check"
+				},
+				{
+					"name": "build",
+					"run": "npm run build"
+				},
+				{
+					"name": "tests",
+					"run": "npx vitest run",
+					"counts": "tests"
+				},
+				{
+					"name": "rules",
+					"run": "node src/cli.ts rules",
+					"scoped": true
+				}
+			]
+		},
 		"contrib": {
 			"steps": []
 		},

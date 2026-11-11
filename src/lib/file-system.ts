@@ -31,15 +31,44 @@ export function realPathOf(path: string): string {
 }
 
 /**
+ * A path with its links resolved and, on a file system that folds case, each name in the case the folder holds it
+ * (`REPO` for a folder `repo`); as it is when it does not exist.
+ */
+export function onDiskPathOf(path: string): string {
+	try {
+		return realpathSync.native(path)
+	} catch {
+		return path
+	}
+}
+
+/**
  * The real path of an absolute path that may not exist yet: its own when it exists, else the real path of its
  * nearest existing ancestor joined with the rest (a folder about to be made under a link).
  */
 export function realPathThroughAncestors(path: string): string {
+	const { existing, missing } = nearestPresentOf(path)
+	return join(realPathOf(existing), ...missing)
+}
+
+/**
+ * The symbolic link to nothing an absolute path leads through: the path itself or its nearest existing ancestor
+ * when that is a link whose target does not exist; undefined otherwise. A folder made at the path would be made
+ * where the link points.
+ */
+export function danglingLinkOf(path: string): string | undefined {
+	const { existing } = nearestPresentOf(path)
+	if (!lstatSync(existing, { throwIfNoEntry: false })?.isSymbolicLink()) return undefined
+	return statSync(existing, { throwIfNoEntry: false }) ? undefined : existing
+}
+
+/** The nearest entry of `path` or its ancestors that is present (a dangling link included), and the names below it. */
+function nearestPresentOf(path: string): { existing: string; missing: string[] } {
 	const missing: string[] = []
 	let existing = path
 	while (!isPresent(existing) && dirname(existing) !== existing) {
 		missing.unshift(basename(existing))
 		existing = dirname(existing)
 	}
-	return join(realPathOf(existing), ...missing)
+	return { existing, missing }
 }

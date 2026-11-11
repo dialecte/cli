@@ -24,6 +24,7 @@ import { askVendor } from '../lib/models/ask-vendor.ts'
 import { listManifestFolders, readRememberedVendor } from '../lib/models/remembered-vendor.ts'
 import { resolveSyncVendor } from '../lib/models/resolve-sync-vendor.ts'
 import { isVendorId } from '../lib/models/vendor-id.ts'
+import { printLines, printOut, textOf } from '../lib/print/print.ts'
 import { readProfile } from '../lib/profile/profile.ts'
 import {
 	findQuotedSentences,
@@ -85,6 +86,7 @@ import type { CommandOutput } from '../lib/command-output.types.ts'
 import type { MethodEntry } from '../lib/discover.types.ts'
 import type { FormatOpts } from '../lib/format.types.ts'
 import type { VendorChoice, VendorId } from '../lib/models/model-tiers.types.ts'
+import type { PrintedText } from '../lib/print/print.types.ts'
 import type { Profile } from '../lib/profile/profile.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
 import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
@@ -104,13 +106,13 @@ export async function run(argv: string[]): Promise<void> {
 			input: process.stdin,
 			output: process.stdout,
 		})
-		process.stderr.write(result.output)
+		printOut({ stream: 'stderr', text: result.output, ending: 'as-is' })
 		process.exitCode = result.exitCode
 		return
 	}
 	if (subcommand === 'changed') {
 		const result = runSkillsChanged({ cwd, argv: rest })
-		process.stdout.write(result.output)
+		printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 		process.exitCode = result.exitCode
 		return
 	}
@@ -120,6 +122,16 @@ export async function run(argv: string[]): Promise<void> {
 			? generatePages({ cwd, methods, formatOptions: formatOptsFromArgv(rest) })
 			: checkPages({ cwd, methods, workspace: getArg(rest, 'workspace') })
 	if (exitCode !== 0) process.exit(exitCode)
+}
+
+/** One line of what sync, generate or check did, on standard output. */
+function printInfo(line: string): void {
+	printLines({ stream: 'stdout', lines: [line] })
+}
+
+/** One warning or error line, on standard error. */
+function printProblem(line: string): void {
+	printLines({ stream: 'stderr', lines: [line] })
 }
 
 function isSubcommand(value: string | undefined): value is SkillsSubcommand {
@@ -156,22 +168,31 @@ export async function chooseVendor(params: {
 	const remembered = readRememberedVendor(params.cwd)
 	// an explicit --vendor wins and is written everywhere: what the manifests said no longer matters
 	const given = getArg(params.argv, 'vendor') !== undefined
-	const warnings = (given ? [] : remembered.warnings).map((warning) => `⚠️  ${warning}\n`).join('')
+	const warnings = (given ? [] : remembered.warnings).map((warning) => `⚠️  ${warning}`)
 	const resolution = resolveSyncVendor({
 		given: getArg(params.argv, 'vendor'),
 		remembered: remembered.vendor,
 		cwd: params.cwd,
 		interactive: params.interactive,
 	})
-	if (resolution.kind === 'set') return { vendor: resolution.vendor, output: warnings }
+	if (resolution.kind === 'set')
+		return { vendor: resolution.vendor, output: endedLinesOf(warnings) }
 	if (resolution.kind === 'unset')
-		return { vendor: undefined, output: warnings + resolution.notice }
+		return {
+			vendor: undefined,
+			output: endedLinesOf([...warnings, resolution.notice.replace(/\n$/, '')]),
+		}
 	const vendor = await askVendor({
 		candidates: resolution.candidates,
 		input: params.input,
 		output: params.output,
 	})
-	return { vendor, output: warnings }
+	return { vendor, output: endedLinesOf(warnings) }
+}
+
+/** The lines, each ended by a line feed; no line at all is the empty text. */
+function endedLinesOf(lines: readonly string[]): PrintedText {
+	return textOf(lines.length === 0 ? [] : [...lines, ''])
 }
 
 /** Installs the skills for the agents; throws on an unknown `--agent`. */
@@ -211,16 +232,16 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		contributing,
 	})
 
-	for (const source of sources) console.log(`✅ ${source.name}  (${source.origin})`)
+	for (const source of sources) printInfo(`✅ ${source.name}  (${source.origin})`)
 	for (const name of report.removed)
-		console.log(
+		printInfo(
 			leftOutNames.includes(name)
 				? `🗑  ${name}  (contributor skill: --contributing installs it)`
 				: `🗑  ${name}  (no longer shipped)`,
 		)
 	const notInstalled = leftOutNames.filter((name) => !report.removed.includes(name))
 	if (notInstalled.length)
-		console.log(
+		printInfo(
 			`contributor skills not installed: ${notInstalled.join(', ')} (to change a dialecte package: --contributing)`,
 		)
 	syncClaudeCodeExtras({
@@ -237,13 +258,13 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		enabled: targetFolders.some((folder) => readSyncManifest(folder).installed.includes(LOT_SKILL)),
 	})
 	for (const path of report.conflicts)
-		console.warn(`⚠️  ${path} exists and was not installed by sync: left untouched`)
+		printProblem(`⚠️  ${path} exists and was not installed by sync: left untouched`)
 	if (missingDependencies.length)
-		console.warn(
+		printProblem(
 			`⚠️  not installed, skipped (nothing removed): ${missingDependencies.join(', ')} - run npm install, then sync again`,
 		)
 	if (sources.length === 0 && missingDependencies.length === 0)
-		console.log('No dependency ships skills (look for skills/<name>/SKILL.md).')
+		printInfo('No dependency ships skills (look for skills/<name>/SKILL.md).')
 }
 
 /** The package's profile; `--no-contributing` in a contributor, which always installs the contributor skills, throws. */
@@ -290,36 +311,36 @@ function syncClaudeCodeExtras(params: {
 		? planStationAgents({ vendor: vendor !== undefined && isVendorId(vendor) ? vendor : undefined })
 		: { kind: 'files' as const, files: [] }
 	const agents = syncStationAgents({ cwd, plan })
-	for (const name of agents.written) console.log(`✅ ${CLAUDE_AGENTS_FOLDER}/${name}`)
+	for (const name of agents.written) printInfo(`✅ ${CLAUDE_AGENTS_FOLDER}/${name}`)
 	for (const name of agents.removed)
-		console.log(`🗑  ${CLAUDE_AGENTS_FOLDER}/${name}  (no longer produced)`)
+		printInfo(`🗑  ${CLAUDE_AGENTS_FOLDER}/${name}  (no longer produced)`)
 	for (const path of agents.conflicts)
-		console.warn(`⚠️  ${path} exists and was not written by sync: left untouched`)
+		printProblem(`⚠️  ${path} exists and was not written by sync: left untouched`)
 	if (claudeIsTarget && !hasLot)
-		console.log(
+		printInfo(
 			params.lotLeftOut
 				? 'no station agents: they come with the contributor skills (--contributing)'
 				: `no station agents: no dependency ships the ${LOT_SKILL} skill`,
 		)
-	if (hasLot && agents.skippedReason) console.log(agents.skippedReason)
+	if (hasLot && agents.skippedReason) printInfo(agents.skippedReason)
 
 	const session = syncSessionCheck({
 		cwd,
 		enabled: hasLot && !hasFlag(argv, 'no-session-check'),
 	})
 	if (session === 'added')
-		console.log(`✅ ${CLAUDE_SETTINGS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
-	if (session === 'removed') console.log(`🗑  ${CLAUDE_SETTINGS_FILE}: session-start check removed`)
+		printInfo(`✅ ${CLAUDE_SETTINGS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
+	if (session === 'removed') printInfo(`🗑  ${CLAUDE_SETTINGS_FILE}: session-start check removed`)
 	if (session === 'invalid')
-		console.warn(
+		printProblem(
 			`⚠️  ${CLAUDE_SETTINGS_FILE} is not valid JSON: session-start check not added or removed`,
 		)
 	if (session === 'not-removed')
-		console.warn(
+		printProblem(
 			`⚠️  ${CLAUDE_SETTINGS_FILE} was edited: the session-start check could not be removed cleanly, left as it is - remove its hook by hand`,
 		)
 	if (session === 'invalid-hooks')
-		console.warn(
+		printProblem(
 			`⚠️  ${CLAUDE_SETTINGS_FILE}: "hooks" is not an object or "hooks.SessionStart" is not a list: session-start check not added or removed`,
 		)
 }
@@ -331,11 +352,11 @@ function syncAgentsCheck(params: { argv: string[]; cwd: string; enabled: boolean
 		enabled: params.enabled && !hasFlag(params.argv, 'no-session-check'),
 	})
 	if (state === 'added')
-		console.log(`✅ ${AGENTS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
-	if (state === 'updated') console.log(`✅ ${AGENTS_FILE}: session-start check updated`)
-	if (state === 'removed') console.log(`🗑  ${AGENTS_FILE}: session-start check removed`)
+		printInfo(`✅ ${AGENTS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
+	if (state === 'updated') printInfo(`✅ ${AGENTS_FILE}: session-start check updated`)
+	if (state === 'removed') printInfo(`🗑  ${AGENTS_FILE}: session-start check removed`)
 	if (state === 'unclosed')
-		console.warn(
+		printProblem(
 			`⚠️  ${AGENTS_FILE}: the dialecte session-check section is not closed: left as it is`,
 		)
 }
@@ -354,7 +375,7 @@ export function generatePages(params: {
 		const markdown = readPage({ cwd, page })
 		const unclosed = findUnclosedGeneratedBlocks(markdown)
 		for (const kind of unclosed)
-			console.error(`❌ ${page.file}: generated block "${kind}" has no end marker`)
+			printProblem(`❌ ${page.file}: generated block "${kind}" has no end marker`)
 		if (unclosed.length) {
 			failed = true
 			continue
@@ -362,17 +383,17 @@ export function generatePages(params: {
 		const result = replaceGeneratedBlocks({ markdown, blocks })
 		for (const kind of result.unknownKinds) {
 			failed = true
-			console.error(`❌ ${page.file}: unknown generated block "${kind}"`)
+			printProblem(`❌ ${page.file}: unknown generated block "${kind}"`)
 		}
 		if (findStaleGeneratedKinds({ markdown, blocks }).length === 0) continue
 		writeFileSync(join(cwd, page.file), result.markdown)
 		written.push(page.file)
-		console.log(`✏️  ${page.file}`)
+		printInfo(`✏️  ${page.file}`)
 	}
 	for (const apiJson of staleApiJsonFiles({ cwd, methods: params.methods })) {
 		writeFileSync(join(cwd, apiJson.file), apiJson.content)
 		written.push(apiJson.file)
-		console.log(`✏️  ${apiJson.file}`)
+		printInfo(`✏️  ${apiJson.file}`)
 	}
 	formatFiles({ root: cwd, files: written, options: params.formatOptions })
 	return failed ? 1 : 0
@@ -410,11 +431,11 @@ export function checkPages(params: {
 	const markdowns = new Map(pages.map((page) => [page, readPage({ cwd, page })]))
 	// the map of the cli the package uses, read once when a page cites the cli; without one, said once, not counted
 	const citesCli = [...markdowns.values()].some(
-		(markdown) => citedInvocationsOf(markdown).length > 0,
+		(markdown) => citedInvocationsOf({ markdown }).length > 0,
 	)
 	const cliSurface = citesCli ? readCliSurface({ cwd }) : undefined
 	if (cliSurface && 'unavailable' in cliSurface)
-		console.warn(`⚠️  ${NOT_CHECKED_LINE.replace('{reason}', cliSurface.unavailable)}`)
+		printProblem(`⚠️  ${NOT_CHECKED_LINE.replace('{reason}', cliSurface.unavailable)}`)
 	for (const [page, markdown] of markdowns) {
 		if (cliSurface && 'surface' in cliSurface)
 			findings.push(
@@ -460,7 +481,7 @@ export function checkPages(params: {
 		})
 
 	for (const finding of findings)
-		(finding.severity === 'error' ? console.error : console.warn)(
+		printProblem(
 			`${finding.severity === 'error' ? '❌' : '⚠️ '} ${finding.file}${finding.line === undefined ? '' : `:${finding.line}`}: ${finding.message}`,
 		)
 	const errors = findings.filter((finding) => finding.severity === 'error').length
@@ -469,7 +490,7 @@ export function checkPages(params: {
 	const exportCount = indexedMethods(methods).filter(
 		({ entry }) => entry.entry !== undefined,
 	).length
-	console.log(
+	printInfo(
 		`${errors ? '❌' : '✅'} ${pages.length} skill page(s), ${methodCount} method(s) and ${exportCount} export(s) checked: ${errors} error(s), ${findings.length - errors} warning(s)${cliSurface && 'unavailable' in cliSurface ? NOT_CHECKED_SUMMARY : ''}`,
 	)
 	return errors ? 1 : 0

@@ -19,6 +19,8 @@ import {
 	CASE_ARGUMENT_SEPARATOR,
 	CASE_ENTRY_KEYS,
 	CASE_LIST_SHAPE,
+	CURLY_QUOTE_PATTERN,
+	FOLDED_QUOTES,
 	GONE_ENTRY_KEYS,
 	GONE_LIST_SHAPE,
 	LOT_KEYS,
@@ -97,16 +99,24 @@ export function findCaseEntry(params: {
 	)
 }
 
-/** The entry of the list names the case: exactly, or (`revised` only) by a file or glob matching its file. */
+/**
+ * The entry of the list names the case: exactly, curly and straight quotes compared alike, or (`revised` only) by a
+ * file or glob matching its file.
+ */
 export function entryNamesCase(params: {
 	entry: string
 	testCase: TestCaseId
 	list: LotCaseList
 }): boolean {
-	if (params.entry === caseLabel(params.testCase)) return true
+	if (foldQuotes(params.entry) === foldQuotes(caseLabel(params.testCase))) return true
 	return (
 		params.list === 'revised' && entryNamesFile({ entry: params.entry, file: params.testCase.file })
 	)
+}
+
+/** The text with each curly quote as its straight counterpart (`FOLDED_QUOTES`). */
+function foldQuotes(text: string): string {
+	return text.replace(CURLY_QUOTE_PATTERN, (quote) => FOLDED_QUOTES.get(quote) ?? quote)
 }
 
 /** An entry with no `::` names files: a path or a glob, relative to the package root, matching the file. */

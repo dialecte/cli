@@ -5,6 +5,7 @@
  */
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { missingPackage } from '../lib/missing-package.ts'
+import { printOut, textOf } from '../lib/print/print.ts'
 import { answerSchema } from '../lib/schema/answer-schema.ts'
 import { loadDialectes } from '../lib/schema/load-dialectes.ts'
 import { SCHEMA_USAGE, SCHEMA_VALUE_OPTIONS } from './schema.constants.ts'
@@ -14,7 +15,7 @@ import type { SchemaDialectesRead } from './schema.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = await runSchema({ argv, cwd: process.cwd() })
-	process.stdout.write(result.output)
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -36,7 +37,8 @@ export async function readSchemaDialectes(params: {
 	const missing = missingPackage({ cwd: params.cwd })
 	if (missing) return { kind: 'output', output: missing }
 	const [tagName] = positionalArguments({ argv: params.argv, valueOptions: SCHEMA_VALUE_OPTIONS })
-	if (!tagName) return { kind: 'output', output: { output: `${SCHEMA_USAGE}\n`, exitCode: 2 } }
+	if (!tagName)
+		return { kind: 'output', output: { output: textOf([SCHEMA_USAGE, '']), exitCode: 2 } }
 	const packageName = getArg(params.argv, 'package')
 	const loaded = await loadDialectes({ cwd: params.cwd })
 	return {

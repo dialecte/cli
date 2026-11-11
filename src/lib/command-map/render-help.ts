@@ -1,3 +1,4 @@
+import { jsonOf, textOf } from '../print/print.ts'
 /** The help the cli prints, rendered from the declared command map. */
 import {
 	COMMAND_FAMILIES,
@@ -16,10 +17,11 @@ import {
 import { commandSurfaceOf } from './command-surface.ts'
 import { allRenamedWords } from './renamed-answer.ts'
 
+import type { PrintedText } from '../print/print.types.ts'
 import type { CommandEntry, HelpJson, HelpJsonCommand, RenamedEntry } from './command-map.types.ts'
 
 /** The global help: the title, one line per family, the footer lines and the notes of every command. */
-export function renderGlobalHelp(): string {
+export function renderGlobalHelp(): PrintedText {
 	const listed = listedCommands()
 	const familyLines = COMMAND_FAMILIES.map((family) =>
 		[
@@ -30,7 +32,7 @@ export function renderGlobalHelp(): string {
 				.join(FAMILY_COMMAND_SEPARATOR),
 		].join(''),
 	)
-	return [
+	return textOf([
 		GLOBAL_HELP_TITLE,
 		'',
 		...familyLines,
@@ -38,14 +40,14 @@ export function renderGlobalHelp(): string {
 		...GLOBAL_HELP_FOOTER,
 		'',
 		...GLOBAL_HELP_NOTES,
-	].join('\n')
+	])
 }
 
 /** One command's section: summary, usage lines, exit codes when they differ, example. */
-export function renderCommandSection(params: { name: string; entry: CommandEntry }): string {
+export function renderCommandSection(params: { name: string; entry: CommandEntry }): PrintedText {
 	const { name, entry } = params
 	const notes = entry.notes ?? []
-	return [
+	return textOf([
 		`${name} - ${entry.summary}`,
 		'',
 		...entry.usage.map((line) => `${SECTION_INDENT}${line}`),
@@ -55,22 +57,22 @@ export function renderCommandSection(params: { name: string; entry: CommandEntry
 			? [SECTION_HEADINGS.exitCodes, ...entry.exitCodes.map((line) => `${SECTION_INDENT}${line}`)]
 			: []),
 		`${SECTION_HEADINGS.example} ${entry.example}`,
-	].join('\n')
+	])
 }
 
 /** `dialecte --help --json`: every command with its entry, verbs and flags, then every renamed form. */
-export function renderHelpJson(): string {
+export function renderHelpJson(): PrintedText {
 	const json: HelpJson = {
 		commands: listedCommands().map((command) => helpJsonCommandOf(command)),
 		renamed: allRenamedWords(),
 	}
-	return JSON.stringify(json, null, 2)
+	return jsonOf(json, 2)
 }
 
 /** One command's entry as `dialecte <command> --help --json` prints it: the shape of `--help --json`. */
-export function renderCommandJson(params: { name: string; entry: CommandEntry }): string {
+export function renderCommandJson(params: { name: string; entry: CommandEntry }): PrintedText {
 	const json: Omit<HelpJson, 'renamed'> = { commands: [helpJsonCommandOf(params)] }
-	return JSON.stringify(json, null, 2)
+	return jsonOf(json, 2)
 }
 
 /** A command as `--help --json` prints it: its name, its entry, the verbs and flags derived from its usage. */
@@ -80,7 +82,12 @@ function helpJsonCommandOf(params: { name: string; entry: CommandEntry }): HelpJ
 }
 
 /** What `lot` answers to no verb or an unknown one: every usage line of the map's lot section, after `lot: `. */
-export function renderLotUsage(): string {
+export function renderLotUsage(): PrintedText {
+	return textOf([lotUsageLine()])
+}
+
+/** The one line of every usage line of the map's lot section, after `lot: `. */
+export function lotUsageLine(): string {
 	const lotPrefix = `${USAGE_PREFIX}lot `
 	return `lot: ${COMMAND_MAP.lot.usage.map((line) => line.replace(lotPrefix, '')).join(' | ')}`
 }

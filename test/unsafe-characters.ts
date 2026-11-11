@@ -1,9 +1,10 @@
 /** What a command's printed text shows of the characters a terminal acts on (or that reorder it). */
-import { DISPLAY_ESCAPED_RANGES } from '../src/lib/store/store.constants.ts'
+import { DISPLAY_ESCAPED_RANGES } from '../src/lib/print/print.constants.ts'
 import {
 	ESCAPED_ESCAPE,
 	ESCAPED_LINE_FEED,
 	ESCAPED_OVERRIDE,
+	RAW_HOSTILE_CHARACTERS,
 } from './unsafe-characters.constants.ts'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
@@ -22,6 +23,11 @@ export function unsafeCharactersIn(params: { text: string; lines: number }): str
 		return DISPLAY_ESCAPED_RANGES.some(([first, last]) => code >= first && code <= last)
 	})
 	return [...forged, ...unsafe]
+}
+
+/** The raw right-to-left override and escape character `text` holds (each once, in that order); none when it holds neither. */
+export function rawHostileCharactersIn(text: string): string[] {
+	return RAW_HOSTILE_CHARACTERS.filter((character) => text.includes(character))
 }
 
 /**

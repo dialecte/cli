@@ -38,14 +38,14 @@ export function recordVerb(params: { root: string; argv: string[] } & OwnerCheck
 	})
 	if (!result.ok) return refused({ verb: 'record', json, reason: result.reason })
 	const count = result.items.length
-	const text = [
+	const lines = [
 		`mutants record: ${count} survivor${count === 1 ? '' : 's'} recorded as ${result.family} in ${MUTATION_RECORDS_PATH}`,
 		...result.items.map(renderItem),
-	].join('\n')
+	]
 	return answered({
 		verb: 'record',
 		json,
-		text,
+		lines,
 		fields: { family: result.family, path: MUTATION_RECORDS_PATH, items: result.items },
 	})
 }

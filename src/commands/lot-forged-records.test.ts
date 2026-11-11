@@ -86,20 +86,45 @@ async function printedBy(cwd: string): Promise<Record<string, CommandResult>> {
 	}
 }
 
-/** What each verb showed: its exit code and whether a forged field reached its output. */
+/** Whether the output says the lot is damaged: the two lines of the text form, `state: damaged` in the JSON form. */
+function showsDamaged(params: { verb: string; output: string }): boolean {
+	if (params.verb.endsWith('--json')) {
+		try {
+			return (JSON.parse(params.output) as { state?: string }).state === 'damaged'
+		} catch {
+			return false
+		}
+	}
+	const [first, second] = params.output.split('\n')
+	return (
+		first.startsWith(`${QUESTION_LOT} damaged: `) &&
+		second === `next: dialecte lot stop ${QUESTION_LOT} --reason <text>`
+	)
+}
+
+/** What each verb showed: its exit code, whether it says damaged, and whether a forged field reached its output. */
 function summaryOf(printed: Record<string, CommandResult>): Record<string, unknown> {
 	return Object.fromEntries(
 		Object.entries(printed).map(([verb, result]) => [
 			verb,
-			{ exitCode: result.exitCode, printsForged: result.output.includes(FORGED) },
+			{
+				exitCode: result.exitCode,
+				showsDamaged: showsDamaged({ verb, output: result.output }),
+				printsForged: result.output.includes(FORGED),
+			},
 		]),
 	)
 }
 
-/** What a damaged lot shows on every verb: refused (exit 2), nothing forged. */
+/** What a damaged lot shows: status, wait and result answer damaged (exit 6), answer refuses (exit 2); nothing forged. */
 function refusedEverywhere(printed: Record<string, CommandResult>): Record<string, unknown> {
 	return Object.fromEntries(
-		Object.keys(printed).map((verb) => [verb, { exitCode: 2, printsForged: false }]),
+		Object.keys(printed).map((verb) => [
+			verb,
+			verb.startsWith('answer')
+				? { exitCode: 2, showsDamaged: false, printsForged: false }
+				: { exitCode: 6, showsDamaged: true, printsForged: false },
+		]),
 	)
 }
 
@@ -119,7 +144,7 @@ function inboxSummaryOf(cwd: string): Record<string, unknown> {
 
 describe('forged records read as a damaged lot', { timeout: STORE_CASE_TIMEOUT }, () => {
 	for (const row of FORGED_TRANSITIONS)
-		it(`${row.title} -> every verb refuses, nothing forged is printed, the inbox lists it damaged`, async () => {
+		it(`${row.title} -> status, wait and result answer damaged (exit 6), answer refuses (exit 2), nothing forged is printed, the inbox lists it damaged`, async () => {
 			const repository = forgedLot({ transition: forgedTransition(row.patch) })
 			const printed = await printedBy(repository)
 
@@ -128,7 +153,7 @@ describe('forged records read as a damaged lot', { timeout: STORE_CASE_TIMEOUT }
 		})
 
 	for (const row of FORGED_ANSWERS)
-		it(`${row.title} -> every verb refuses, nothing forged is printed, the inbox lists it damaged`, async () => {
+		it(`${row.title} -> status, wait and result answer damaged (exit 6), answer refuses (exit 2), nothing forged is printed, the inbox lists it damaged`, async () => {
 			const repository = forgedLot({ answer: row })
 			const printed = await printedBy(repository)
 

@@ -14,4 +14,4 @@ export const NAMES_SEPARATOR = '/'
 export const SYSTEM_CLOCK: WaitClock = { now: Date.now }
 
 /** The line `lot wait` refreshes on a terminal; `{name}` the lot, `{state}` its state, `{elapsed}` the time waited. */
-export const WAITING_LINE = '\rwaiting {name} ({state}, {elapsed})'
+export const WAITING_LINE = 'waiting {name} ({state}, {elapsed})'

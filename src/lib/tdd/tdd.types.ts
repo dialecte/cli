@@ -217,6 +217,12 @@ export type TddSubcommand = (typeof TDD_SUBCOMMANDS)[number]
 /** A case the gate's tdd step judged: its label (`file::name [project]`) and its status there. */
 export type JudgedCase = { label: string; status: CaseStatus }
 
+/** A vitest run that answered no report: the cli's reason (one line), and the last lines vitest printed, to relay. */
+export type TestRunFailure = {
+	failure: string
+	tail?: readonly string[]
+}
+
 export type TddCheck = {
 	status: 'passed' | 'failed' | 'skipped'
 	/**
@@ -331,6 +337,11 @@ export type ModuleResolution =
 export type ModuleResolver = {
 	(params: { specifier: string; from: string }): ModuleResolution
 	resolveGlob: (params: { pattern: string; from: string }) => string | undefined
+	/**
+	 * The files the package's vitest config names in `setupFiles` (relative to the package root, each a file of
+	 * the package): test code no test imports, which runs before every test file.
+	 */
+	setupFiles: readonly string[]
 }
 
 /** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */

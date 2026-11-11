@@ -12,14 +12,18 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
+import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import { CLI_SURFACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { diagnose } from '../lib/doctor/diagnose.ts'
 import { chooseVendor, checkPages, generatePages, run, runSync, runSyncCommand } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { StreamSpies } from '../../test/stream-spies.types.ts'
+
 let parent: string
 let root: string
+let streams: StreamSpies
 
 function write(path: string, content: string): void {
 	mkdirSync(dirname(join(root, path)), { recursive: true })
@@ -53,9 +57,7 @@ beforeEach(() => {
 	parent = mkdtempSync(join(tmpdir(), 'dialecte-cli-skills-'))
 	root = join(parent, 'project')
 	mkdirSync(root)
-	vi.spyOn(console, 'log').mockImplementation(() => undefined)
-	vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-	vi.spyOn(console, 'error').mockImplementation(() => undefined)
+	streams = spyStreams()
 })
 
 afterEach(() => {
@@ -188,7 +190,7 @@ describe('checkPages, api.json', () => {
 		const renamed = { ...API_METHOD, summary: 'The name of a bay.' }
 
 		expect(checkPages({ cwd: root, methods: [renamed], workspace: undefined })).toBe(1)
-		expect(console.error).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			'❌ skills/demo/references/api.json: missing or stale: run `dialecte skills generate`',
 		)
 		generatePages({ cwd: root, methods: [renamed], formatOptions: { skip: true } })
@@ -230,7 +232,7 @@ describe('checkPages, JSDoc quoting a sentence', () => {
 		}
 
 		expect(checkPages({ cwd: root, methods: [method], workspace: undefined })).toBe(0)
-		expect(console.warn).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			'⚠️  src: `doc.query.bay.name` summary quotes a sentence: rephrase it, generated pages republish JSDoc',
 		)
 	})
@@ -277,7 +279,7 @@ describe('runSync audience', () => {
 
 		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte'])
 		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
-		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		const lines = linesWritten(streams.stdout)
 		expect(
 			lines.some((line) => line.includes('dialecte-lot') && line.includes('--contributing')),
 		).toBe(true)
@@ -295,13 +297,13 @@ describe('runSync audience', () => {
 
 	it('--no-contributing after --contributing -> the contributor skill removed, its line says why', () => {
 		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
-		vi.mocked(console.log).mockClear()
+		streams.stdout.mockClear()
 
 		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
 
 		expect(manifestOf('.agents/skills').installed).toEqual(['dialecte'])
 		expect(existsSync(join(root, '.agents/skills/dialecte-lot'))).toBe(false)
-		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		const lines = linesWritten(streams.stdout)
 		expect(
 			lines.some((line) => line.includes('dialecte-lot') && line.includes('contributor')),
 		).toBe(true)
@@ -310,12 +312,12 @@ describe('runSync audience', () => {
 	it('--no-contributing after a contributing sync -> the AGENTS.md section removed, the removal line printed', () => {
 		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
 		expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
-		vi.mocked(console.log).mockClear()
+		streams.stdout.mockClear()
 
 		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
 
 		expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
-		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		const lines = linesWritten(streams.stdout)
 		expect(lines).toContain('🗑  AGENTS.md: session-start check removed')
 	})
 
@@ -331,7 +333,7 @@ describe('runSync audience', () => {
 	it('a consumer sync for Claude Code -> the station agents line says they come with --contributing', () => {
 		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
 
-		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		const lines = linesWritten(streams.stdout)
 		expect(lines.some((line) => line.includes('no dependency ships'))).toBe(false)
 		expect(
 			lines.some((line) => line.includes('station agents') && line.includes('--contributing')),
@@ -450,7 +452,7 @@ describe('runSync profile', () => {
 
 		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
 
-		const lines = vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+		const lines = linesWritten(streams.stdout)
 		expect(manifestOf('.claude/skills').installed).toEqual(['dialecte'])
 		expect(lines).toContain(
 			'no station agents: they come with the contributor skills (--contributing)',
@@ -520,7 +522,7 @@ describe('runSync station agents and the session check', () => {
 		}
 
 		function logLines(): string[] {
-			return vi.mocked(console.log).mock.calls.map((call) => String(call[0]))
+			return linesWritten(streams.stdout)
 		}
 
 		it('a contributing sync with the claude target -> AGENTS.md holds the section, the line is printed, the Claude hook stays', () => {
@@ -549,7 +551,7 @@ describe('runSync station agents and the session check', () => {
 
 		it('--no-session-check after it was added -> the section removed (a file left empty deleted), the removal line printed', () => {
 			runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
-			vi.mocked(console.log).mockClear()
+			streams.stdout.mockClear()
 
 			runSync({ argv: ['--agent', 'claude', '--no-session-check'], cwd: root })
 
@@ -591,7 +593,7 @@ describe('runSync station agents and the session check', () => {
 			runSync({ argv: ['--agent', 'agents'], cwd: root })
 
 			expect(read('AGENTS.md')).toBe(`${AGENTS_START}\nold\n`)
-			expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toContain(
+			expect(linesWritten(streams.stderr).join('\n')).toContain(
 				'AGENTS.md: the dialecte session-check section is not closed: left as it is',
 			)
 		})
@@ -640,14 +642,14 @@ describe('runSync station agents and the session check', () => {
 		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
 
 		expect(read('.claude/settings.json')).toBe('{"hooks": []}')
-		expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toMatch(/hooks/)
+		expect(linesWritten(streams.stderr).join('\n')).toMatch(/hooks/)
 	})
 
 	it('another vendor -> no Claude Code agent file, one line saying why', () => {
 		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'openai' })
 
 		expect(existsSync(join(root, '.claude/agents'))).toBe(false)
-		expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toMatch(/openai/)
+		expect(linesWritten(streams.stdout).join('\n')).toMatch(/openai/)
 	})
 
 	it("a user's own dialecte-reviewer.md -> warned, never overwritten", () => {
@@ -656,7 +658,7 @@ describe('runSync station agents and the session check', () => {
 		runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
 
 		expect(read('.claude/agents/dialecte-reviewer.md')).toBe('mine\n')
-		expect(vi.mocked(console.warn).mock.calls.flat().join('\n')).toMatch(/dialecte-reviewer\.md/)
+		expect(linesWritten(streams.stderr).join('\n')).toMatch(/dialecte-reviewer\.md/)
 	})
 })
 
@@ -834,18 +836,18 @@ describe('skills check and generate, package exports', { timeout: EXPORTS_COMMAN
 		writeExportingPackage()
 
 		const generateExitCode = await runInRoot('generate')
-		vi.mocked(console.error).mockClear()
-		vi.mocked(console.log).mockClear()
+		streams.stderr.mockClear()
+		streams.stdout.mockClear()
 		const checkExitCode = await runInRoot('check')
 
 		expect(generateExitCode).toBe(0)
 		expect(checkExitCode).toBe(1)
 
-		expect(vi.mocked(console.error).mock.calls.map((call) => String(call[0]))).toEqual([
+		expect(linesWritten(streams.stderr)).toEqual([
 			expect.stringContaining('`@acme/widget.frobnicate` has no JSDoc summary'),
 			expect.stringContaining('`@acme/widget.frobnicate` has no @intent tag'),
 		])
-		expect(vi.mocked(console.log).mock.calls.map((call) => String(call[0]))).toContain(
+		expect(linesWritten(streams.stdout)).toContain(
 			'❌ 1 skill page(s), 0 method(s) and 1 export(s) checked: 2 error(s), 0 warning(s)',
 		)
 	})
@@ -940,7 +942,7 @@ describe('checkPages, the dialecte-lot station definitions', () => {
 		write('skills/dialecte-lot/references/stations.md', wrong)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
-		const errors = vi.mocked(console.error).mock.calls.flat().join('\n')
+		const errors = linesWritten(streams.stderr).join('\n')
 		expect(errors).toContain('grader')
 		expect(errors).toContain('read')
 		expect(errors).toContain('edit')
@@ -959,10 +961,9 @@ describe('checkPages, a package that does not ship dialecte-lot', () => {
 describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CASE_TIMEOUT }, () => {
 	/** The warnings printed so far that say the invocations were not checked. */
 	function notCheckedWarnings(): unknown[] {
-		return vi
-			.mocked(console.warn)
-			.mock.calls.map((call) => String(call[0]))
-			.filter((line) => line.includes('cli invocations not checked'))
+		return linesWritten(streams.stderr).filter((line) =>
+			line.includes('cli invocations not checked'),
+		)
 	}
 
 	it('a page citing an old form in the cli package → exit 1, the error printed as file:line', () => {
@@ -971,7 +972,7 @@ describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CAS
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
 		// the frontmatter takes lines 1-4: the citation is on line 5
-		expect(console.error).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:5: .*dialecte lot finding/),
 		)
 	})
@@ -984,7 +985,7 @@ describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CAS
 		)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
-		expect(console.error).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:6: /),
 		)
 	})
@@ -1001,8 +1002,8 @@ describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CAS
 		)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
-		expect(console.error).toHaveBeenCalledTimes(1)
-		expect(console.error).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toHaveLength(1)
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			expect.stringMatching(/^❌ skills\/other\/SKILL\.md:5: /),
 		)
 	})
@@ -1025,7 +1026,7 @@ describe('checkPages, the cli invocations of a page', { timeout: CLI_SURFACE_CAS
 		write('skills/demo/SKILL.md', `${FRONTMATTER}Run \`dialecte lot nothing\`.\n`)
 
 		expect(checkPages({ cwd: root, methods: [], workspace: undefined })).toBe(1)
-		expect(console.error).toHaveBeenCalledWith(
+		expect(linesWritten(streams.stderr)).toContainEqual(
 			expect.stringMatching(/^❌ skills\/demo\/SKILL\.md:5: /),
 		)
 	})

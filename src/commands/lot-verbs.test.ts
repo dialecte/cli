@@ -126,6 +126,19 @@ describe('dialecte lot - the review rounds verbs', { timeout: 60_000 }, () => {
 		expect(result.output).toContain('-b\n+c')
 	})
 
+	it('delta <folder> --round 2 over a tab-indented source → the diff lines show the tab as four spaces, no \\u{9}', () => {
+		const root = createScratchRepository({ 'a.ts': '\tb\n' })
+		const folder = handoverFolder()
+		expect(runLot({ cwd: root, argv: ['snapshot', folder, '--round', '1'] }).exitCode).toBe(0)
+		writeFiles({ root, files: { 'a.ts': '\tc\n' } })
+
+		const result = runLot({ cwd: root, argv: ['delta', folder, '--round', '2'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toContain('-    b\n+    c')
+		expect(result.output).not.toContain('\\u{9}')
+	})
+
 	it('recap <folder> → the <details> block', () => {
 		const root = createScratchRepository({
 			'package.json': `${JSON.stringify({ name: 'scratch' })}\n`,
@@ -181,25 +194,15 @@ describe('dialecte lot - the review rounds verbs', { timeout: 60_000 }, () => {
 		'an unknown verb': { argv: ['nope'] },
 	}
 	for (const [title, usageCase] of Object.entries(usageCases))
-		it(`${title} → usage, exit 2, listing exempt, accept, revised, gone, mutation and the seven new verbs`, () => {
+		it(`${title} → usage, exit 2, listing every verb of the map's lot usage`, () => {
 			const result = runLot({ cwd: temporaryFolder('dialecte-lot-usage-'), argv: usageCase.argv })
 
+			const verbs = COMMAND_MAP.lot.usage.map(
+				(line) => line.replace('dialecte lot ', '').split(' ')[0],
+			)
 			expect(result.exitCode).toBe(2)
-			for (const verb of [
-				'exempt',
-				'accept',
-				'revised',
-				'gone',
-				'mutation',
-				'finding',
-				'decide',
-				'snapshot',
-				'choice',
-				'standard',
-				'delta',
-				'recap',
-			])
-				expect(result.output).toMatch(new RegExp(`\\b${verb}\\b`))
+			expect(verbs.length).toBeGreaterThan(0)
+			expect(verbs.filter((verb) => !new RegExp(`\\b${verb}\\b`).test(result.output))).toEqual([])
 		})
 
 	for (const [title, usageCase] of Object.entries(usageCases))

@@ -8,9 +8,11 @@
 import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
+import { resultOf } from '../lib/command-result.ts'
 import { branchExists } from '../lib/git.ts'
 import { registryOfCommonFolder } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
@@ -24,7 +26,7 @@ import {
 	startNextOf,
 	waitNextOf,
 } from '../lib/store/lot-next.ts'
-import { overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
+import { overlapLotLabelOf, overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
@@ -50,6 +52,7 @@ import {
 	PROBE_TARGET,
 	START_FLAGS,
 	START_REASON,
+	START_USAGE_REASONS,
 	START_VALUE_OPTIONS,
 } from './lot-start.constants.ts'
 
@@ -92,17 +95,18 @@ export function startLot(params: {
 		return lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) })
 	const json = read.flags.has('json')
 	const [briefPath, ...extra] = read.words
-	if (briefPath === undefined)
-		return lotUsageExit({ reason: 'lot start takes one brief: none given', json })
+	if (briefPath === undefined) return lotUsageExit({ reason: START_USAGE_REASONS.noBrief, json })
 	if (extra.length > 0)
 		return lotUsageExit({
-			reason: `lot start takes one brief, not also ${extra.join(' ')}`,
+			reason: START_USAGE_REASONS.extra.replace('{extra}', extra.join(' ')),
 			json,
 		})
 	const effortFlag = read.values.get('effort')
 	if (effortFlag !== undefined && !BRIEF_EFFORTS.includes(effortFlag as BriefEffort))
 		return lotUsageExit({
-			reason: `--effort ${effortFlag} is not one of ${BRIEF_EFFORTS.join(', ')}`,
+			reason: START_USAGE_REASONS.effort
+				.replace('{effort}', effortFlag)
+				.replace('{efforts}', BRIEF_EFFORTS.join(', ')),
 			json,
 		})
 	const seams = params.seams ?? {}
@@ -134,11 +138,7 @@ export function startLot(params: {
 			simulation,
 		})
 	} catch (error) {
-		return errorOutput({
-			exitCode: (error as Error).name === STORE_REFUSAL ? 2 : 1,
-			message: (error as Error).message,
-			json,
-		})
+		return thrownOutput({ error, json })
 	}
 }
 
@@ -154,6 +154,18 @@ export function recheckOverlap(params: {
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
 }): string | undefined {
+	return recheckedFailure(params)?.name
+}
+
+/**
+ * `recheckOverlap` with the reason it published: the lot overlapped (a damaged one named with its damage, P2.2).
+ */
+function recheckedFailure(params: {
+	lotFolder: string
+	caseInsensitive: boolean
+	now: Date
+	pause?: SynchronousPause
+}): { name: string; reason: string } | undefined {
 	const store = dirname(params.lotFolder)
 	const [overlap] = overlappingOpenLots({
 		store,
@@ -164,13 +176,9 @@ export function recheckOverlap(params: {
 		pause: params.pause,
 	})
 	if (overlap === undefined) return undefined
-	publishFailure({
-		lotFolder: params.lotFolder,
-		kind: 'overlap',
-		reason: OVERLAP_REASON.replace('{lot}', overlap.name),
-		now: params.now,
-	})
-	return overlap.name
+	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
+	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })
+	return { name: overlap.name, reason }
 }
 
 /**
@@ -301,19 +309,31 @@ function startChecked(params: {
 		})
 	// a simulated lot holds no lock and no branch: never re-checked, no worktree made
 	if (simulation) return startedOutput({ name, lotFolder, worktree: null, notes: [], json })
-	const overlap = recheckOverlap({
+	try {
+		return startPublished({ name, lotFolder, brief, now, seams, json })
+	} catch (error) {
+		// the lot exists from here on: the exit names it
+		return thrownOutput({ error, json, lot: name })
+	}
+}
+
+/** The start of a published real lot: the race re-check, then the worktree and its link. */
+function startPublished(params: {
+	name: string
+	lotFolder: string
+	brief: CheckedBrief
+	now: Date
+	seams: StartSeams
+	json: boolean
+}): CommandResult {
+	const { name, lotFolder, brief, now, seams, json } = params
+	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
 		now,
 		pause: seams.pause,
 	})
-	if (overlap)
-		return failedOutput({
-			name,
-			lotFolder,
-			reason: OVERLAP_REASON.replace('{lot}', overlap),
-			json,
-		})
+	if (overlap) return failedOutput({ name, lotFolder, reason: overlap.reason, json })
 	const made = makeLotWorktree({ lotFolder, now, seams })
 	if ('failed' in made) return failedOutput({ name, lotFolder, reason: made.failed, json })
 	return startedOutput({
@@ -350,14 +370,34 @@ function linkLotFolder(params: {
 	}
 }
 
-/** An exit before any lot exists (or a step that broke): the message, and no next command. */
-function errorOutput(params: { exitCode: number; message: string; json: boolean }): CommandResult {
+/**
+ * An exit before any lot exists (or a step that broke): the message, and no next command; once the lot folder
+ * exists, the lot it happened to (`lot` in the JSON, `lot start: <lot>: <message>` as text).
+ */
+function errorOutput(params: {
+	exitCode: number
+	message: string
+	json: boolean
+	lot?: string
+}): CommandResult {
+	const { lot } = params
 	return {
 		exitCode: params.exitCode,
 		output: params.json
-			? JSON.stringify({ error: params.message, next: null }, null, 2)
-			: `lot start: ${params.message}`,
+			? jsonOf({ error: params.message, ...(lot !== undefined && { lot }), next: null }, 2)
+			: textOf([`lot start: ${lot === undefined ? '' : `${lot}: `}${params.message}`]),
 	}
+}
+
+/** The exit of an error thrown during a start: exit 2 for a store refusal, else 1; the lot when it exists. */
+function thrownOutput(params: { error: unknown; json: boolean; lot?: string }): CommandResult {
+	const error = params.error as Error
+	return errorOutput({
+		exitCode: error.name === STORE_REFUSAL ? 2 : 1,
+		message: error.message,
+		json: params.json,
+		lot: params.lot,
+	})
 }
 
 /** A lot published then failed: its name, folder, the reason, and the stop line. */
@@ -371,7 +411,7 @@ function failedOutput(params: {
 	if (params.json)
 		return {
 			exitCode: 1,
-			output: JSON.stringify(
+			output: jsonOf(
 				{
 					lot: params.name,
 					folder: params.lotFolder,
@@ -379,18 +419,17 @@ function failedOutput(params: {
 					reason: params.reason,
 					next,
 				},
-				null,
 				2,
 			),
 		}
-	return {
+	return resultOf({
 		exitCode: 1,
-		output: [
+		lines: [
 			`${params.name} failed: ${params.reason}`,
 			`folder: ${params.lotFolder}`,
 			`next: ${next}`,
-		].join('\n'),
-	}
+		],
+	})
 }
 
 /** `--effort`, else the brief's, else the default; with where it came from. */
@@ -502,8 +541,8 @@ function refusedOutput(params: { refused: readonly Refusal[]; json: boolean }): 
 	return {
 		exitCode: 2,
 		output: params.json
-			? JSON.stringify({ refused: params.refused, next: null }, null, 2)
-			: params.refused.map(refusalLineOf).join('\n'),
+			? jsonOf({ refused: params.refused, next: null }, 2)
+			: textOf(params.refused.map(refusalLineOf)),
 	}
 }
 
@@ -531,40 +570,37 @@ function dryRunOutput(params: {
 		repository: brief.repository,
 		branch: brief.branch,
 	})
-	const name = `name: ${lot} (<next index>-${basename(brief.repository)}-${brief.branch.split('/').at(-1)}; no index claimed)`
+	const lotLine = `lot: ${lot} (<next index>-${basename(brief.repository)}-${brief.branch.split('/').at(-1)}; no index claimed)`
 	if (simulation !== undefined) {
 		const next = simulatedStartNextOf({ briefPath: params.briefPath, scenario: simulation.name })
 		const { wouldRefuse } = brief
 		if (params.json)
 			return {
 				exitCode: 0,
-				output: JSON.stringify({ dryRun: true, lot, worktree: null, wouldRefuse, next }, null, 2),
+				output: jsonOf({ dryRun: true, lot, worktree: null, wouldRefuse, next }, 2),
 			}
-		return {
+		return resultOf({
 			exitCode: 0,
-			output: [
+			lines: [
 				...(wouldRefuse.length === 0
 					? ['checks: every check passed']
 					: [
 							`checks: ${wouldRefuse.length} a real start would refuse for (wouldRefuse)`,
 							...wouldRefuse.map(refusalLineOf),
 						]),
-				name,
+				lotLine,
 				'worktree: none (simulated)',
 				`next: ${next}`,
-			].join('\n'),
-		}
+			],
+		})
 	}
 	const worktree = join(params.worktreesFolder, lot)
 	const next = startNextOf(params.briefPath)
-	if (params.json)
-		return { exitCode: 0, output: JSON.stringify({ dryRun: true, lot, worktree, next }, null, 2) }
-	return {
+	if (params.json) return { exitCode: 0, output: jsonOf({ dryRun: true, lot, worktree, next }, 2) }
+	return resultOf({
 		exitCode: 0,
-		output: ['checks: every check passed', name, `worktree: ${worktree}`, `next: ${next}`].join(
-			'\n',
-		),
-	}
+		lines: ['checks: every check passed', lotLine, `worktree: ${worktree}`, `next: ${next}`],
+	})
 }
 
 /**
@@ -584,7 +620,7 @@ function startedOutput(params: {
 	if (params.json)
 		return {
 			exitCode: 0,
-			output: JSON.stringify(
+			output: jsonOf(
 				{
 					lot: params.name,
 					folder: params.lotFolder,
@@ -593,19 +629,18 @@ function startedOutput(params: {
 					notes: params.notes,
 					next,
 				},
-				null,
 				2,
 			),
 		}
-	return {
+	return resultOf({
 		exitCode: 0,
-		output: [
+		lines: [
 			`${params.name} started`,
 			`folder: ${params.lotFolder}`,
 			`worktree: ${params.worktree ?? 'none (simulated)'}`,
 			`runner: ${runner}`,
 			...params.notes.map((note) => `note: ${note}`),
 			`next: ${next}`,
-		].join('\n'),
-	}
+		],
+	})
 }

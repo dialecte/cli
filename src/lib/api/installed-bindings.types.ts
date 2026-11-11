@@ -1,4 +1,5 @@
 import type { Binding } from '../config.ts'
+import type { PrintedText } from '../print/print.types.ts'
 
 /** A dialecte installed in an app, bound the way the lookups read it: namespace name and the entry exporting it. */
 export type InstalledBinding = {
@@ -12,4 +13,4 @@ export type InstalledBinding = {
 export type InstalledBindingChoice =
 	| { kind: 'binding'; binding: InstalledBinding }
 	/** Several match, none matches, or none is installed: what to print, exit 2. */
-	| { kind: 'output'; message: string }
+	| { kind: 'output'; message: PrintedText }

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { waitLot } from '../src/commands/lot-wait.ts'
 import { runLot } from '../src/commands/lot.ts'
 import { HANDOVER_FILES, HANDOVER_RUN_MARKER_FILE } from '../src/lib/handover/handover.constants.ts'
+import { textOf } from '../src/lib/print/print.ts'
 import { registryOfLotFolder } from '../src/lib/store/lot-records.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../src/lib/store/scenarios.constants.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
@@ -191,7 +192,10 @@ async function runVerb(params: { lot: PrintedLot; verb: PrintedVerb }): Promise<
 	try {
 		return await runVerbUnguarded(params)
 	} catch (error) {
-		return { exitCode: -1, output: `${THREW_PREFIX}${(error as Error).message}` }
+		return {
+			exitCode: -1,
+			output: textOf(`${THREW_PREFIX}${(error as Error).message}`.split('\n')),
+		}
 	}
 }
 

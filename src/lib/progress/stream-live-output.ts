@@ -3,8 +3,11 @@
  * reading its width and height at each draw (it can be resized while a step runs); anything else only
  * appends finished lines and has no width. Each region line is reduced to its plain text and fitted to
  * the width by the cells it takes, so it takes one row and the region can be erased exactly; the region
- * never fills the screen (one row is left), and closing leaves an open region on its own line.
+ * never fills the screen (one row is left), and closing leaves an open region on its own line. A finished
+ * line passes the relayed boundary: its colours kept, every other control escaped (a line the cli composes
+ * from outside values is escaped whole before, by `textOf`).
  */
+import { relayedTextOf } from '../print/relayed.ts'
 import { ERASE_LINE, ERASE_LINE_ABOVE } from './progress.constants.ts'
 import { fitToCells } from './terminal-text.ts'
 
@@ -16,7 +19,7 @@ export function createStreamLiveOutput(stream: LiveStream): LiveOutput {
 		return {
 			tty: false,
 			writeLine(line) {
-				stream.write(`${line}\n`)
+				stream.write(`${relayedTextOf([line])}\n`)
 			},
 			rewriteLines() {},
 			close() {},
@@ -35,7 +38,7 @@ export function createStreamLiveOutput(stream: LiveStream): LiveOutput {
 		},
 		writeLine(line) {
 			erase()
-			stream.write(`${line}\n`)
+			stream.write(`${relayedTextOf([line])}\n`)
 		},
 		rewriteLines(lines) {
 			erase()

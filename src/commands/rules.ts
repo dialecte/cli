@@ -1,32 +1,93 @@
 /**
  * `dialecte rules [<files...>] [--json]` - the code-rules self-check before a hand-over, on the syntax
  * tree of each file: types and constants in their own files, named functions, no `await` inside an
- * argument, object parameters, full words, no plan tag or standard citation. Without files, the files
- * changed against HEAD and the new ones, and the result recorded in the worktree's git folder
- * (`dialecte-rules.json`) for the hand-over card. Exit 1 on an error; warnings alone exit 0.
+ * argument, object parameters, full words, no plan tag or standard citation, and in a contributor package no
+ * consumer name nor word of the machine's forbidden list. Without files, the changed list a scoped gate step hands
+ * (`DIALECTE_GATE_CHANGED`), else the files changed against HEAD and the new ones, that result recorded in the
+ * worktree's git folder (`dialecte-rules.json`) for the hand-over card. A file it cannot read or parse is an error.
+ * Exit 1 on an error; warnings alone exit 0. Run as a scoped gate step, it writes the gate's selection: the files
+ * it checked.
  */
+import { existsSync } from 'node:fs'
+
+import { resultOf } from '../lib/command-result.ts'
 import { hasFlag } from '../lib/config.ts'
+import { GATE_SCOPE_VARIABLES } from '../lib/gate/selection.constants.ts'
+import {
+	readChangedPaths,
+	readGateScopeEnvironment,
+	writeSelectionFile,
+} from '../lib/gate/selection.ts'
+import { jsonOf, printOut } from '../lib/print/print.ts'
+import {
+	RULES_NOTHING_LINE,
+	RULES_SELECTION_ID,
+	RULES_SUMMARY_LINE,
+} from '../lib/rules/check-rules.constants.ts'
 import { checkRules, renderRuleFinding } from '../lib/rules/check-rules.ts'
+import { NO_FORBIDDEN_WORDS_LINE } from '../lib/rules/forbidden-words.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { RulesCheck } from '../lib/rules/check-rules.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runRules({ cwd: process.cwd(), argv })
-	console.log(result.output)
+	printOut({ stream: 'stdout', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runRules(params: { cwd: string; argv: string[] }): CommandResult {
+export function runRules(params: {
+	cwd: string
+	argv: string[]
+	/** `DIALECTE_GATE_CHANGED` and the user's config folders are read from it. Default: the process's environment. */
+	environment?: Readonly<NodeJS.ProcessEnv>
+}): CommandResult {
 	const { cwd, argv } = params
+	const environment = params.environment ?? process.env
 	const json = hasFlag(argv, 'json')
 	const givenFiles = argv.filter((argument) => !argument.startsWith('--'))
-	const check = checkRules({ root: cwd, givenFiles })
+	const changedList = givenFiles.length ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
+	const check = checkRules({
+		root: cwd,
+		givenFiles,
+		...(changedList !== undefined && { changedList }),
+		environment,
+	})
+	if (changedList !== undefined) writeScopedSelection({ environment, check })
 	const { files, errors, warnings, findings } = check
-	if (json) return { exitCode: errors ? 1 : 0, output: JSON.stringify(check, null, 2) }
-	if (files.length === 0) return { exitCode: 0, output: 'rules: no changed file to check' }
-	const output = [
-		...findings.map(renderRuleFinding),
-		`rules: ${files.length} file(s), ${errors} error(s), ${warnings} warning(s)`,
-	].join('\n')
-	return { exitCode: errors ? 1 : 0, output }
+	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(check, 2) }
+	const noList =
+		check.noForbiddenWordsList === undefined
+			? []
+			: [NO_FORBIDDEN_WORDS_LINE.replace('{file}', check.noForbiddenWordsList)]
+	if (files.length === 0 && findings.length === 0)
+		return resultOf({ exitCode: 0, lines: [...noList, RULES_NOTHING_LINE] })
+	return resultOf({
+		exitCode: errors ? 1 : 0,
+		lines: [
+			...noList,
+			...findings.map(renderRuleFinding),
+			RULES_SUMMARY_LINE.replace('{files}', String(files.length))
+				.replace('{errors}', String(errors))
+				.replace('{warnings}', String(warnings)),
+		],
+	})
+}
+
+/**
+ * Run as a scoped gate step (every `DIALECTE_GATE_*` variable set, its changed list readable): the selection the gate
+ * judges it on, the files it checked as the reasons of one id, none when it checked none.
+ */
+function writeScopedSelection(params: {
+	environment: Readonly<NodeJS.ProcessEnv>
+	check: RulesCheck
+}): void {
+	const scope = readGateScopeEnvironment(params.environment)
+	if (scope === undefined || !existsSync(scope.changed)) return
+	const { files } = params.check
+	writeSelectionFile({
+		scope,
+		changed: readChangedPaths(scope.changed).length,
+		selected: files.length ? [{ id: RULES_SELECTION_ID, reasons: files }] : [],
+	})
 }

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import { renderSectionCard } from '../card/render-section-card.ts'
 import { realPathOf } from '../file-system.ts'
+import { linesOf, textOf } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
@@ -20,7 +21,7 @@ import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard, handoverCardSections } from './handover-card.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
-import { handoverLockPath } from './handover-lock.ts'
+import { handoverLockPath, readLockFile } from './handover-lock.ts'
 import { findHandoverStore, recordHandoverState } from './handover-store.ts'
 import {
 	ARCHIVED_LOT_FILE,
@@ -73,6 +74,8 @@ export async function runHandoverFolder(params: {
 	contribUnanswerable?: string
 	/** The gate scope a rehearsal read before its clone; default: read here, before the guards. */
 	gateScope?: HandoverGateScope
+	/** Called once the lots are committed (or the run stopped), before the card is built: what the card reads. */
+	beforeCard?: () => void
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -82,7 +85,7 @@ export async function runHandoverFolder(params: {
 	// a gate config the cli cannot run stops the run before anything is staged
 	const gateScope = params.gateScope ?? resolveHandoverGateScope({ handover })
 	if ('refusal' in gateScope) {
-		write(gateScope.refusal)
+		write(textOf([gateScope.refusal]))
 		return 2
 	}
 	const guarded = checkHandoverGuards({
@@ -125,9 +128,12 @@ export async function runHandoverFolder(params: {
 		if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })
 		const made = committed.length - guarded.commits.length
 		write(
-			`${rehearsal ? 'rehearsed' : 'done'}: ${made} commit(s) on ${lotsFile.branch} in ${formatDuration(clock.now() - startedAt)}${rehearsal ? ' in the scratch clone' : ''}. Nothing pushed.`,
+			textOf([
+				`${rehearsal ? 'rehearsed' : 'done'}: ${made} commit(s) on ${lotsFile.branch} in ${formatDuration(clock.now() - startedAt)}${rehearsal ? ' in the scratch clone' : ''}. Nothing pushed.`,
+			]),
 		)
 	}
+	params.beforeCard?.()
 	const card = buildHandoverCard({
 		root: lotsFile.repository,
 		commitRoot,
@@ -149,7 +155,7 @@ export async function runHandoverFolder(params: {
 		colour: params.colour,
 		width: params.columns,
 	})
-	for (const line of box.split('\n')) write(line)
+	for (const line of linesOf(box)) write(line)
 	// after the card, which shows the entries the lot file held
 	if (card.done) {
 		recordHandoverState({
@@ -158,10 +164,10 @@ export async function runHandoverFolder(params: {
 			state: 'committed',
 		})
 		const archived = archiveLotFile({ root: lotsFile.repository, folder: handover.folder })
-		if (archived) write(LOT_FILE_ARCHIVED.replace('{path}', archived))
+		if (archived) write(textOf([LOT_FILE_ARCHIVED.replace('{path}', archived)]))
 	}
 	// whole on one line, whatever the width: a person copies it
-	if (!card.done) write(card.command)
+	if (!card.done) write(textOf([card.command]))
 	return committed ? 0 : 1
 }
 
@@ -202,10 +208,10 @@ function isEmptyDeclaration(text: string): boolean {
  */
 function releaseLock(params: { root: string; folder: string }): void {
 	const lockPath = handoverLockPath(params.root)
+	const script = readLockFile(lockPath)
 	if (
-		existsSync(lockPath) &&
-		realPathOf(readFileSync(lockPath, 'utf8').trim()) ===
-			realPathOf(join(params.folder, COMMIT_SCRIPT_FILE))
+		script !== undefined &&
+		realPathOf(script) === realPathOf(join(params.folder, COMMIT_SCRIPT_FILE))
 	)
 		rmSync(lockPath)
 }

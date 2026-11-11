@@ -18,3 +18,7 @@ export const STANDARD_CONSULTED_DETAIL = 'consulted · {note}'
 export const STANDARD_NOT_CONSULTED_DETAIL =
 	'configured, not consulted: dialecte lot standard {folder} consulted <note>'
 export const STANDARD_NOT_CONFIGURED_DETAIL = 'not consulted: none configured (DIALECTE_STANDARD)'
+
+/** A committed (DONE) card's standard line, from the lot's record only: not consulted with its reason, none recorded. */
+export const STANDARD_RECORDED_NOT_CONSULTED_DETAIL = 'not consulted · {note}'
+export const STANDARD_NOT_RECORDED_DETAIL = 'not consulted: none recorded on the lot'

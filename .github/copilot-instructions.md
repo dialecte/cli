@@ -1,3 +1,3 @@
-# SeptKit SET
+# Instructions
 
 See `AGENTS.md` for further instructions.

@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
+import { isFolder, realPathOf } from '../file-system.ts'
 import { registryOfCommonFolder } from '../handover/handover-store-read.ts'
 import { readIdentity } from './identity.ts'
 import { publishOnce, recordText, removeDeadLeftovers } from './publish.ts'
@@ -21,6 +21,7 @@ import {
 	COMMONDIR_FILE,
 	GIT_ENTRY,
 	GITDIR_LINE_PATTERN,
+	LOT_FOLDER_NAME_PATTERN,
 	STORE_FILES,
 	STORE_FOLDER,
 	TEMPORARY_FOLDER_PATTERN,
@@ -113,6 +114,24 @@ export function listLotNames(params: { store: string }): string[] {
 	return readdirSync(params.store, { withFileTypes: true })
 		.filter(
 			(entry) => entry.isDirectory() && namesItself({ store: params.store, name: entry.name }),
+		)
+		.map((entry) => entry.name)
+		.sort()
+}
+
+/**
+ * The names of the lot folders of `store`, whatever their records hold (P2.1): every folder, or link (to a folder or
+ * to nothing), whose name has a lot name's shape (`LOT_FOLDER_NAME_PATTERN`: a hidden `.tmp-` folder being built is
+ * none). A lot whose records do not hold is among them: its readers name it damaged, a link to nothing as an identity
+ * that does not read.
+ */
+export function listLotFolderNames(params: { store: string }): string[] {
+	if (!existsSync(params.store)) return []
+	return readdirSync(params.store, { withFileTypes: true })
+		.filter(
+			(entry) =>
+				LOT_FOLDER_NAME_PATTERN.test(entry.name) &&
+				(entry.isSymbolicLink() || isFolder(join(params.store, entry.name))),
 		)
 		.map((entry) => entry.name)
 		.sort()

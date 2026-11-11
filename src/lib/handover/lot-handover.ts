@@ -3,10 +3,17 @@
  * it refuses there, the canceled lot `handover run` does not run, and the lot `handover abandon` never ends. One
  * place decides whether a folder is a lot folder and what a verb refuses on it; reads files only.
  */
-import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
-import { lotFolderOf } from '../store/lot-folder.ts'
+import { readlinkSync } from 'node:fs'
+import { basename } from 'node:path'
+
+import { danglingLinkOf, realPathOf, realPathThroughAncestors } from '../file-system.ts'
+import { lotFolderOf, storeEntryOf } from '../store/lot-folder.ts'
 import { answerNextOf } from '../store/lot-next.ts'
-import { readLotStateInput, registryOfLotFolder } from '../store/lot-records.ts'
+import {
+	readCheckedLotState,
+	readLotStateInput,
+	registryOfLotFolder,
+} from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { resolveLot } from '../store/resolve-lot.ts'
 import { findHandoverStore, registeredEntryOf } from './handover-store.ts'
@@ -28,6 +35,13 @@ export function resolveHandoverOut(params: {
 	const resolved = resolveLot({ argument: params.word, cwd: params.cwd, mode: 'write' })
 	if ('exitCode' in resolved) return { refusal: resolved.output }
 	if ('lot' in resolved) return { out: resolved.lot, outNote: undefined }
+	const link = danglingLinkOf(resolved.folder)
+	if (link !== undefined)
+		return {
+			refusal: HANDOVER_LOT_REFUSALS.danglingLink
+				.replace('{link}', link)
+				.replace('{target}', readlinkSync(link)),
+		}
 	return { out: realPathThroughAncestors(resolved.folder), outNote: resolved.note }
 }
 
@@ -70,8 +84,24 @@ function lotOfFolder(params: {
 	return input && { input, report: lotState(input) }
 }
 
+/** The damage of the lot folder `folder` and its folder's name, its identity read or not; undefined for any other. */
+function damagedLotOfFolder(params: {
+	folder: string
+}): { name: string; damage: string } | undefined {
+	const lotFolder = storeEntryOf(params)
+	if (lotFolder === undefined) return undefined
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	if (checked === undefined || !('damage' in checked)) return undefined
+	return { name: basename(lotFolder), damage: checked.damage }
+}
+
 /** The refusals of a hand-over written into a lot folder, in their order; undefined for a folder that is no lot. */
 function lotFolderWriteRefusal(params: { out: string; lotsFile: LotsFile }): string | undefined {
+	const damaged = damagedLotOfFolder({ folder: params.out })
+	if (damaged)
+		return HANDOVER_LOT_REFUSALS.damaged
+			.replaceAll('{name}', damaged.name)
+			.replace('{damage}', damaged.damage)
 	const lot = lotOfFolder({ folder: params.out })
 	if (lot === undefined) return undefined
 	const { identity } = lot.input

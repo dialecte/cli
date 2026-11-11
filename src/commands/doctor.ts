@@ -7,6 +7,7 @@ import { hasFlag } from '../lib/config.ts'
 import { answerDoctor, answerDoctorBrief } from '../lib/doctor/answer-doctor.ts'
 import { diagnose } from '../lib/doctor/diagnose.ts'
 import { missingPackage } from '../lib/missing-package.ts'
+import { printOut, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
@@ -19,7 +20,7 @@ export async function run(argv: string[]): Promise<void> {
 		dialecteRoot: process.env.DIALECTE_ROOT,
 		cliVersion: readCliVersion,
 	})
-	process.stdout.write(result.output)
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -49,7 +50,7 @@ function runBrief(
 			diagnose({ ...context, cliVersion: resolveVersion(context.cliVersion), brief: true }),
 		)
 	} catch {
-		return { output: '', exitCode: 0 }
+		return { output: textOf([]), exitCode: 0 }
 	}
 }
 

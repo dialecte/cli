@@ -156,6 +156,27 @@ export type CardLot = DiffSize & {
 	notSized?: true
 }
 
+/** Why an argument names no hand-over a verb can read: the exit code and the message, not printed yet. */
+export type NamedHandoverRefusal = {
+	exitCode: number
+	refusal: string
+}
+
+/** Who a lock file names: the hand-over's script, its writer's pid and that process's start time (older locks: none). */
+export type HandoverLockHolder = {
+	script: string
+	pid: number | undefined
+	started: string | undefined
+}
+
+/** The card's `review` row of a READY hand-over: the command that opens it in an editor, and the editor's word. */
+export type HandoverReviewRow = {
+	/** `dialecte handover review <name>`. */
+	command: string
+	/** The first word of the editor that command opens (`code`); none when no editor is found. */
+	editor?: string
+}
+
 /** The card's first word: every gate green, a gate blocking it, every lot committed, or abandoned. */
 export type HandoverVerdict = 'READY' | 'BLOCKED' | 'DONE' | 'ABANDONED'
 
@@ -201,6 +222,8 @@ export type HandoverCard = {
 	lots: CardLot[]
 	/** The merges of the hand-over, one line each: the tip merged, the conflicts resolved, the tree. */
 	merges?: string[]
+	/** READY only: how to open the hand-over in an editor (its `review` row). */
+	review?: HandoverReviewRow
 	/** The command that runs the hand-over, with its absolute `cd`. */
 	command: string
 	/** Every lot is committed: the card says done instead of the command. */
@@ -239,6 +262,8 @@ export type HandoverStoreEntry = {
 	index?: string
 	written: string
 	state: HandoverEntryState
+	/** When `lot close` closed its worktree (ISO 8601): a later close says `already closed`, nothing else does. */
+	closed?: string
 }
 
 /** An entry of the store with its name. */
@@ -377,8 +402,14 @@ export type CloseTarget = {
 	worktree: ListedWorktree | undefined
 }
 
-/** What `lot close` did with one named hand-over: closed, or kept with why. */
-export type CloseOutcome = { handover: string } & ({ closed: true } | { kept: string })
+/**
+ * What `lot close` did with one named hand-over: closed (`already` when an earlier close did it: the registry
+ * entry says so, nothing moved now), or kept with why.
+ */
+export type CloseOutcome = { handover: string } & (
+	| { closed: true; already?: true }
+	| { kept: string }
+)
 
 /**
  * One outcome of `lot close`, with the folders it sent to the trash (by name) and where the parked

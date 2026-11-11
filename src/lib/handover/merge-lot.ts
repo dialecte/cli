@@ -17,6 +17,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { dirname, isAbsolute, join } from 'node:path'
 
 import { listChangedFiles, readGit } from '../git.ts'
+import { textOf } from '../print/print.ts'
 import { readCommittedBytes } from './committed-bytes.ts'
 import {
 	BINARY_PROBE_LENGTH,
@@ -178,8 +179,8 @@ export function runMergeLot(params: {
 		return {
 			refusal: 'the merge conflicts in other files than reviewed',
 			lines: [
-				`now: ${conflicts.join(', ') || 'none'}`,
-				`reviewed: ${merge.conflicts.join(', ') || 'none'}`,
+				textOf([`now: ${conflicts.join(', ') || 'none'}`]),
+				textOf([`reviewed: ${merge.conflicts.join(', ') || 'none'}`]),
 			],
 		}
 	for (const resolution of merge.resolutions) {
@@ -189,7 +190,9 @@ export function runMergeLot(params: {
 		}
 		if (!existsSync(resolution.file) || hashFile(resolution.file) !== resolution.sha256)
 			return {
-				refusal: `the resolution of ${resolution.path} changed since the review: ${resolution.file}`,
+				refusal: textOf([
+					`the resolution of ${resolution.path} changed since the review: ${resolution.file}`,
+				]),
 			}
 		const target = join(root, resolution.path)
 		mkdirSync(dirname(target), { recursive: true })
@@ -197,9 +200,14 @@ export function runMergeLot(params: {
 		readGit({ root, args: ['add', '--', resolution.path] })
 	}
 	const unmerged = listNul({ root, args: ['diff', '--name-only', '-z', '--diff-filter=U'] })
-	if (unmerged.length) return { refusal: 'files left unmerged', lines: unmerged }
+	if (unmerged.length)
+		return { refusal: 'files left unmerged', lines: unmerged.map((path) => textOf([path])) }
 	const marked = stagedFilesWithMarkers(root)
-	if (marked.length) return { refusal: 'conflict markers left in the merge', lines: marked }
+	if (marked.length)
+		return {
+			refusal: 'conflict markers left in the merge',
+			lines: marked.map((path) => textOf([path])),
+		}
 	const tree = readGit({ root, args: ['write-tree'] }).trim()
 	if (merge.tree && tree !== merge.tree)
 		return {

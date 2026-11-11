@@ -84,12 +84,18 @@ export function writeForeignBranchLotsFile(lot: LotHandoverWorkspace): string {
 }
 
 /** The cli run as a process in `cwd`, the environment of the test (so its `XDG_STATE_HOME`) passed on. */
-export function runCliSplit(params: { argv: string[]; cwd: string }): CliRun {
+export function runCliSplit(params: {
+	argv: string[]
+	cwd: string
+	/** A bound in milliseconds: the process is killed past it and its exit code is null. */
+	timeoutMs?: number
+}): CliRun {
 	const { COLUMNS: _callerColumns, ...environment } = process.env
 	const result = spawnSync(process.execPath, [CLI_SOURCE, ...params.argv], {
 		cwd: params.cwd,
 		encoding: 'utf8',
 		env: environment,
+		timeout: params.timeoutMs,
 	})
 	return {
 		exitCode: result.status,

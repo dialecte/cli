@@ -6,6 +6,11 @@ import type { RunError, RunOutcome } from './run.types.ts'
  * transaction, the expectations, the export, what the script returned.
  */
 export function formatRunOutcome(params: { outcome: RunOutcome }): string {
+	return runOutcomeLines(params).join('\n')
+}
+
+/** The outcome's lines, one entry per printed line. */
+export function runOutcomeLines(params: { outcome: RunOutcome }): string[] {
 	const { outcome } = params
 	const lines: string[] = []
 
@@ -43,7 +48,7 @@ export function formatRunOutcome(params: { outcome: RunOutcome }): string {
 	if (outcome.result !== undefined)
 		lines.push(`result: ${JSON.stringify(outcome.result)}${noted({ note: outcome.resultNote })}`)
 
-	return lines.join('\n')
+	return lines
 }
 
 function formatError(params: { error: RunError }): string[] {

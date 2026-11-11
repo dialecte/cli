@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { resultOf } from '../lib/command-result.ts'
 import { computeStateTree } from '../lib/gate-records/state-hash.ts'
 import { currentBranchOf, listRepositoryFiles, readGit, tryReadGit } from '../lib/git.ts'
 import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
@@ -57,6 +58,7 @@ import { isMutable, changedRanges } from '../lib/mutation/scope.ts'
 import { buildStrykerOptions } from '../lib/mutation/stryker-options.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { packageRootOf } from '../lib/package-root.ts'
+import { jsonOf, printLines, printOut } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { processStartTime } from '../lib/process-start-time.ts'
 import { readProfile } from '../lib/profile/profile.ts'
@@ -100,7 +102,10 @@ export async function run(argv: string[]): Promise<void> {
 	// a --json result is one JSON object on stdout, whatever its exit code
 	const printsJson =
 		MUTANTS_JSON_VERBS.some((known) => known === argv[0]) && asksJson(argv.slice(1))
-	;(result.exitCode === 0 || printsJson ? console.log : console.error)(result.output)
+	printOut({
+		stream: result.exitCode === 0 || printsJson ? 'stdout' : 'stderr',
+		text: result.output,
+	})
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -116,7 +121,9 @@ export async function runMutants(params: {
 	const root = packageRootOf(params.cwd)
 	if (!root) {
 		const reason = `no package.json at or above ${params.cwd}`
-		return json ? refused({ verb, json, reason }) : { exitCode: 1, output: `mutants: ${reason}` }
+		return json
+			? refused({ verb, json, reason })
+			: resultOf({ exitCode: 1, lines: [`mutants: ${reason}`] })
 	}
 	const isAlive = params.dependencies.isAlive ?? isProcessAlive
 	const startTimeOf = params.dependencies.startTimeOf ?? processStartTime
@@ -157,33 +164,33 @@ async function runVerb(params: {
 	if (typeof read === 'string' || read.words.length > 0) return usage(read)
 	const askedMode = read.values.get('mode')
 	if (askedMode !== undefined && !RUN_MODES.some((mode) => mode === askedMode))
-		return {
+		return runLine({
 			exitCode: 2,
-			output: `mutants run: --mode takes ${RUN_MODES.join(' or ')}, not ${JSON.stringify(askedMode)}`,
-		}
+			line: `--mode takes ${RUN_MODES.join(' or ')}, not ${JSON.stringify(askedMode)}`,
+		})
 
 	const packageJson = readPackageJson(root)
 	const declared = readMutationDeclaration({ packageJson })
 	if (declared.kind === 'none' && readProfile(root) === 'consumer')
-		return { exitCode: 1, output: `mutants run: ${MUTATION_CONSUMER_OPT_IN}` }
+		return runLine({ exitCode: 1, line: MUTATION_CONSUMER_OPT_IN })
 	if (declared.kind === 'none')
-		return {
+		return runLine({
 			exitCode: 1,
-			output: `mutants run: ${join(root, 'package.json')} declares no dialecte.mutation: declare its scope and fast tier first`,
-		}
-	if (declared.kind === 'invalid') return { exitCode: 1, output: `mutants run: ${declared.reason}` }
+			line: `${join(root, 'package.json')} declares no dialecte.mutation: declare its scope and fast tier first`,
+		})
+	if (declared.kind === 'invalid') return runLine({ exitCode: 1, line: declared.reason })
 	const { declaration } = declared
 
 	const setting = readMutationMode({ root })
 	if (askedMode === undefined && setting.kind === 'invalid')
-		return { exitCode: 2, output: `mutants run: ${setting.reason}` }
+		return runLine({ exitCode: 2, line: setting.reason })
 
 	const lot = currentBranchOf(root)
 	if (lot === 'HEAD')
-		return {
+		return runLine({
 			exitCode: 1,
-			output: `mutants run: HEAD is detached: check out the lot's branch first (git switch <branch>); a run is filed under its branch`,
-		}
+			line: `HEAD is detached: check out the lot's branch first (git switch <branch>); a run is filed under its branch`,
+		})
 
 	const auditOnly = askedMode === 'audit' || (askedMode === undefined && setting.kind === 'audit')
 	const base = auditOnly
@@ -193,7 +200,7 @@ async function runVerb(params: {
 				asked: read.values.get('base'),
 				branch: packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH,
 			})
-	if (typeof base === 'object') return { exitCode: 2, output: `mutants run: ${base.refused}` }
+	if (typeof base === 'object') return runLine({ exitCode: 2, line: base.refused })
 	const changed = base === undefined ? undefined : changedTargets({ root, declaration, base })
 	const mode = runModeOf({
 		asked: askedMode,
@@ -202,10 +209,10 @@ async function runVerb(params: {
 	})
 	const since = `no file of the scope changed since ${changed?.base.slice(0, SHORT_TREE_LENGTH)}`
 	if (mode === 'off')
-		return {
+		return runLine({
 			exitCode: 0,
-			output: `mutants run: ${MUTATION_OFF} (${(changed?.targets.length ?? 0) > 0 ? 'the lot declares it off' : `${NOTHING_TO_MUTATE}: ${since}`})`,
-		}
+			line: `${MUTATION_OFF} (${(changed?.targets.length ?? 0) > 0 ? 'the lot declares it off' : `${NOTHING_TO_MUTATE}: ${since}`})`,
+		})
 	const targets =
 		mode === 'audit'
 			? listRepositoryFiles({ root, folder: '.' }).filter((file) =>
@@ -213,10 +220,10 @@ async function runVerb(params: {
 				)
 			: (changed?.targets ?? [])
 	if (targets.length === 0)
-		return {
+		return runLine({
 			exitCode: 0,
-			output: `mutants run: ${NOTHING_TO_MUTATE} (${mode === 'audit' ? 'the scope holds no mutable file' : since})`,
-		}
+			line: `${NOTHING_TO_MUTATE} (${mode === 'audit' ? 'the scope holds no mutable file' : since})`,
+		})
 
 	const tree = computeStateTree(root)
 	const entry = startRun({
@@ -243,10 +250,13 @@ async function runVerb(params: {
 		runStryker,
 	})
 	if ('failure' in tiers)
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: `mutants run: ${tiers.failure}\nrun ${entry.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${entry.runId}`,
-		}
+			lines: [
+				`mutants run: ${tiers.failure}`,
+				`run ${entry.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${entry.runId}`,
+			],
+		})
 	const finished = finishRun({
 		root,
 		runId: entry.runId,
@@ -257,7 +267,12 @@ async function runVerb(params: {
 	updateLedger({ root, run: finished, records, targets })
 	// the reports and sandboxes of a reported run: its entry and the ledger hold what it found
 	rmSync(join(root, workDir), { recursive: true, force: true })
-	return { exitCode: 0, output: renderRun({ root, run: finished }) }
+	return resultOf({ exitCode: 0, lines: renderRun({ root, run: finished }) })
+}
+
+/** A line of `mutants run`, after its `mutants run: ` prefix. */
+function runLine(params: { exitCode: number; line: string }): CommandResult {
+	return resultOf({ exitCode: params.exitCode, lines: [`mutants run: ${params.line}`] })
 }
 
 /** The fast tier, the timed-out mutants alone, the full tier on the unlisted survivors when declared: the merged report and its survivors. */
@@ -287,9 +302,12 @@ async function runTiers(params: {
 	try {
 		storeIncrementalFile({ root, packageHash, key, incrementalFile })
 	} catch (error) {
-		process.stderr.write(
-			`mutants run: the incremental cache was not written (${(error as Error).message}); the next run of this tree starts cold\n`,
-		)
+		printLines({
+			stream: 'stderr',
+			lines: [
+				`mutants run: the incremental cache was not written (${(error as Error).message}); the next run of this tree starts cold`,
+			],
+		})
 	}
 	let report = withinTargets({
 		report: fast.report,
@@ -452,7 +470,7 @@ function countsOf(report: MutationReport): RunCounts {
 }
 
 /** The last lines of a run: package, lot, tree, mode, counts, each survivor the ledger now holds as new, and each item the run moved to killed or recorded. */
-function renderRun(params: { root: string; run: RunEntry }): string {
+function renderRun(params: { root: string; run: RunEntry }): string[] {
 	const { root, run } = params
 	const items = itemsOf({ ledger: readLedger({ root }), packageName: run.package })
 	const pendingKeys = new Set(items.filter((item) => item.state === 'new').map((item) => item.key))
@@ -473,7 +491,7 @@ function renderRun(params: { root: string; run: RunEntry }): string {
 					`${moved.length} ledger item${moved.length === 1 ? '' : 's'} moved by this run:`,
 					...moved.map((item) => `  ${item.key}  ${item.file}:${item.line}  ${item.state}`),
 				]),
-	].join('\n')
+	]
 }
 
 function renderCounts(counts: RunCounts | undefined): string {
@@ -503,11 +521,11 @@ function statusVerb(params: {
 		new: groupBy({ items: pending.new, by: (item) => item.firstSeen.lot }),
 		scheduled: groupBy({ items: scheduled, by: (item) => item.followUp ?? '' }),
 	}
-	if (read.flags.has('json')) return { exitCode: 0, output: JSON.stringify(status, null, 2) }
-	return { exitCode: 0, output: renderStatus({ packageName, status, now: now() }) }
+	if (read.flags.has('json')) return { exitCode: 0, output: jsonOf(status, 2) }
+	return resultOf({ exitCode: 0, lines: renderStatus({ packageName, status, now: now() }) })
 }
 
-function renderStatus(params: { packageName: string; status: MutantsStatus; now: Date }): string {
+function renderStatus(params: { packageName: string; status: MutantsStatus; now: Date }): string[] {
 	const { packageName, status, now } = params
 	const lines = [`mutants status: ${packageName}`]
 	for (const run of status.running)
@@ -523,7 +541,7 @@ function renderStatus(params: { packageName: string; status: MutantsStatus; now:
 	for (const [followUp, items] of Object.entries(status.scheduled))
 		lines.push(`  scheduled for ${followUp}:`, ...items.map(renderItem))
 	if (lines.length === 1) lines.push('  nothing pending')
-	return lines.join('\n')
+	return lines
 }
 
 function renderItem(item: KeyedLedgerItem): string {
@@ -566,7 +584,10 @@ function scheduleVerb(params: { root: string; argv: string[] }): CommandResult {
 	return answered({
 		verb: 'schedule',
 		json,
-		text: `mutants schedule: ${result.scheduled.length} survivor${result.scheduled.length === 1 ? '' : 's'} scheduled for ${followUp}${result.scheduled.map((key) => `\n  ${key}`).join('')}`,
+		lines: [
+			`mutants schedule: ${result.scheduled.length} survivor${result.scheduled.length === 1 ? '' : 's'} scheduled for ${followUp}`,
+			...result.scheduled.map((key) => `  ${key}`),
+		],
 		fields: { followUp, scheduled: result.scheduled },
 	})
 }
@@ -588,7 +609,7 @@ function abandonVerb(params: {
 	return answered({
 		verb: 'abandon',
 		json,
-		text: `mutants abandon: run ${runId} abandoned (its entry is kept)`,
+		lines: [`mutants abandon: run ${runId} abandoned (its entry is kept)`],
 		fields: { runId },
 	})
 }
@@ -618,7 +639,9 @@ function migrateVerb(params: { root: string; argv: string[] }): CommandResult {
 	return answered({
 		verb: 'migrate',
 		json,
-		text: `mutants migrate: ${count} record${count === 1 ? '' : 's'} written to ${MUTATION_RECORDS_PATH} (${LEGACY_RECORDS_PATH} kept)`,
+		lines: [
+			`mutants migrate: ${count} record${count === 1 ? '' : 's'} written to ${MUTATION_RECORDS_PATH} (${LEGACY_RECORDS_PATH} kept)`,
+		],
 		fields: { path: MUTATION_RECORDS_PATH, written: count },
 	})
 }

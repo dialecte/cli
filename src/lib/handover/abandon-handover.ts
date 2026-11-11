@@ -108,11 +108,16 @@ function recordAbandoned(params: {
 	folder: string
 	lock: string | undefined
 	first: string
-}): { message: string; released: boolean } {
+}): Omit<AbandonHandoverResult, 'state'> {
 	const { folder } = params
 	recordHandoverState({ store: params.store, folder, state: 'abandoned' })
 	const lock = releaseLockOf({ lock: params.lock, folder })
-	return { message: [params.first, ...lock.lines].join('\n'), released: lock.released }
+	return {
+		message: [params.first, ...lock.lines].join('\n'),
+		lines: [params.first, ...lock.lines],
+		released: lock.released,
+		lockLines: lock.lines,
+	}
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
 	DeclaredRenamedForm,
 	RecordVerb,
 	RenamedCommandName,
+	RenamedEntry,
 	ReviewRoundVerb,
 } from '../command-map/command-map.types.ts'
 
@@ -37,6 +38,18 @@ export function lotFormsOf(command: RenamedCommandName): string {
 	return RENAMED_FORMS.filter((form) => form.command === command)
 		.map((form) => `${LOT_COMMAND} ${form.lotVerb}`)
 		.join(' | ')
+}
+
+/**
+ * The command map's entries of the renamed commands, each naming the `lot` forms the one table says replaced it: a
+ * command of `RenamedCommandName` left out here does not compile.
+ */
+export function renamedEntriesOf(): Record<RenamedCommandName, RenamedEntry> {
+	return {
+		record: { renamedTo: lotFormsOf('record') },
+		review: { renamedTo: lotFormsOf('review') },
+		recap: { renamedTo: lotFormsOf('recap') },
+	} satisfies Record<RenamedCommandName, RenamedEntry>
 }
 
 /** The renamed form a `lot` verb replaced, or undefined for a verb that is no review rounds' verb. */

@@ -33,8 +33,14 @@ const RESULT_ROWS: Row[] = [
 	{ verb: 'result', state: 'working', limit: true, timedOut: false, code: 5 },
 ]
 
+const DAMAGED_ROWS: Row[] = [
+	{ verb: 'wait', state: 'damaged', limit: false, timedOut: false, code: 6 },
+	{ verb: 'wait', state: 'damaged', limit: false, timedOut: true, code: 6 },
+	{ verb: 'result', state: 'damaged', limit: false, timedOut: false, code: 6 },
+]
+
 describe('exitCodeOfState', () => {
-	for (const row of [...WAIT_ROWS, ...RESULT_ROWS])
+	for (const row of [...WAIT_ROWS, ...RESULT_ROWS, ...DAMAGED_ROWS])
 		it(`${row.verb}, ${row.state}${row.limit ? ', last transition a limit' : ''}${row.timedOut ? ', timed out' : ''} -> exit ${row.code}`, () => {
 			const { code, ...params } = row
 

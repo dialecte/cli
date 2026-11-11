@@ -2,9 +2,12 @@
 import { dirname, join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { mainCheckoutOf } from '../lib/git.ts'
 import { closeHandovers } from '../lib/handover/close-handovers.ts'
+import { LOT_CLOSE_ALREADY_CLOSED } from '../lib/handover/handover.constants.ts'
+import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
 import { TRASH_FOLDER } from '../lib/worktree/worktree.constants.ts'
@@ -27,7 +30,7 @@ export function runLotClose(params: {
 	try {
 		main = mainCheckoutOf(params.cwd)
 	} catch {
-		return { exitCode: 2, output: `lot close: ${params.cwd} is in no git repository` }
+		return resultOf({ exitCode: 2, lines: [`lot close: ${params.cwd} is in no git repository`] })
 	}
 	const results = closeHandovers({
 		cwd: main,
@@ -38,22 +41,24 @@ export function runLotClose(params: {
 		listProcesses: params.listProcesses,
 	})
 	if ('unknown' in results)
-		return {
+		return resultOf({
 			exitCode: 2,
-			output: `lot close: the registry holds no hand-over named or indexed ${results.unknown.join(', ')}: nothing closed`,
-		}
+			lines: [
+				`lot close: the registry holds no hand-over named or indexed ${results.unknown.join(', ')}: nothing closed`,
+			],
+		})
 	const outcomes = results.map((result) => result.outcome)
 	const exitCode = outcomes.every((outcome) => 'closed' in outcome) ? 0 : 1
-	if (hasFlag(params.argv, 'json')) return { exitCode, output: JSON.stringify(outcomes, null, 2) }
+	if (hasFlag(params.argv, 'json')) return { exitCode, output: jsonOf(outcomes, 2) }
 	// each line names what moved and where node_modules went
-	const lines = results.map(({ outcome, moved, nodeModules }) =>
-		'closed' in outcome
-			? `closed  ${outcome.handover}: ${moved.join(', ')}${nodeModules ? `; node_modules ${nodeModules}` : ''}`
-			: `kept    ${outcome.handover}  (${outcome.kept})`,
-	)
-	if (outcomes.some((outcome) => 'closed' in outcome))
+	const lines = results.map(function closeLine({ outcome, moved, nodeModules }) {
+		if (!('closed' in outcome)) return `kept    ${outcome.handover}  (${outcome.kept})`
+		if (outcome.already) return LOT_CLOSE_ALREADY_CLOSED.replace('{handover}', outcome.handover)
+		return `closed  ${outcome.handover}: ${moved.join(', ')}${nodeModules ? `; node_modules ${nodeModules}` : ''}`
+	})
+	if (outcomes.some((outcome) => 'closed' in outcome && !outcome.already))
 		lines.push(
 			`the closed worktrees wait in ${join(dirname(main), WORKTREES_FOLDER, TRASH_FOLDER)}, removed in the background; their branches are kept`,
 		)
-	return { exitCode, output: lines.join('\n') }
+	return resultOf({ exitCode, lines })
 }

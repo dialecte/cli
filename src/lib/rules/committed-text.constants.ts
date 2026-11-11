@@ -7,8 +7,8 @@ import type { ReferencePattern } from './committed-text.types.ts'
  * allow the tags it commits on purpose under `"dialecte": { "allowReferences": [<label>...] }` (an app's tickets);
  * a citation of a standard is never allowed.
  *
- * One list for `dialecte rules` and the `dialecte handover` scripts, which read it with `grep -E`:
- * each source stays an extended regular expression both read alike.
+ * One list for `dialecte rules` and the `dialecte handover` guards; each source stays an extended regular expression
+ * `grep -E` reads alike, so a person can run it by hand.
  */
 export const GENERIC_REFERENCE_PATTERNS: readonly ReferencePattern[] = [
 	{ label: 'plan tag', source: '\\blot [A-Z0-9]', allowable: true },
@@ -37,3 +37,7 @@ export const CONSUMER_NAME_LABEL = 'consumer tool name'
 
 /** Characters escaped in a consumer name so it matches literally. */
 export const REGEX_SPECIAL_PATTERN = /[.*+?^${}()|[\]\\]/g
+
+/** What may not touch a whole word on either side, read with the `u` flag: a letter, a mark or a digit of any script, `_`. */
+export const WHOLE_WORD_START = '(?<![\\p{L}\\p{M}\\p{N}_])'
+export const WHOLE_WORD_END = '(?![\\p{L}\\p{M}\\p{N}_])'

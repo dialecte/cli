@@ -27,6 +27,7 @@ import { standardCacheRoot } from '../lib/knowledge/standard/standard-cache-root
 import { MANIFEST_HASH_PREFIX } from '../lib/knowledge/standard/standard-cache.constants.ts'
 import { NAME_LIST_SEPARATOR } from '../lib/knowledge/standard/standard-input.constants.ts'
 import { DEFAULT_FIND_LIMIT } from '../lib/knowledge/standard/standard-search.constants.ts'
+import { endedOf, jsonOf, printOut, textOf } from '../lib/print/print.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createStreamLiveOutput } from '../lib/progress/stream-live-output.ts'
@@ -65,6 +66,7 @@ import type {
 	StandardSearchIndex,
 	StandardSlice,
 } from '../lib/knowledge/standard/standard-search.types.ts'
+import type { PrintedText } from '../lib/print/print.types.ts'
 import type {
 	OpenedStandards,
 	OpenedStandardsAnswer,
@@ -78,7 +80,7 @@ import type {
 
 export async function run(argv: string[]): Promise<void> {
 	const result = await runStandard({ argv, cwd: process.cwd() })
-	process.stdout.write(result.output)
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -86,11 +88,11 @@ export async function runStandard(params: RunStandardParams): Promise<CommandOut
 	const [verbWord, ...rest] = params.argv
 	if (!isStandardVerb(verbWord))
 		return {
-			output: [
+			output: textOf([
 				`${STANDARD_COMMAND}: ${STANDARD_MESSAGES.unknownVerb}`,
 				...COMMAND_MAP.standard.usage,
 				'',
-			].join('\n'),
+			]),
 			exitCode: 2,
 		}
 	const options = STANDARD_VERB_OPTIONS[verbWord]
@@ -130,8 +132,8 @@ async function runIndex(params: StandardVerbParams): Promise<CommandOutput> {
 	const { installed } = opened.opened
 	return {
 		output: read.flags.has('json')
-			? jsonOf({ vocabulary: vocabularyJsonOf(installed), ...indexJsonOf(opened.opened) })
-			: `${vocabularyLineOf(installed)}\n${indexTextOf(opened.opened)}`,
+			? jsonAnswerOf({ vocabulary: vocabularyJsonOf(installed), ...indexJsonOf(opened.opened) })
+			: textOf([vocabularyLineOf(installed), ...indexLinesOf(opened.opened), '']),
 		exitCode: opened.opened.indexes.length === 0 ? 1 : 0,
 	}
 }
@@ -167,7 +169,7 @@ async function runFind(params: StandardVerbParams): Promise<CommandOutput> {
 	})
 	if (read.flags.has('json'))
 		return {
-			output: jsonOf({
+			output: jsonAnswerOf({
 				vocabulary: vocabularyJsonOf(installed),
 				query,
 				about: about ?? null,
@@ -182,7 +184,7 @@ async function runFind(params: StandardVerbParams): Promise<CommandOutput> {
 			exitCode: 1,
 		})
 	return {
-		output: `${vocabularyLineOf(installed)}\n${findTextOf({ slices, indexes })}`,
+		output: textOf([vocabularyLineOf(installed), ...findLinesOf({ slices, indexes }), '']),
 		exitCode: 0,
 	}
 }
@@ -236,11 +238,12 @@ async function runShow(params: StandardVerbParams): Promise<CommandOutput> {
 			exitCode: 1,
 		})
 	if (params.read.flags.has('json'))
-		return { output: jsonOf({ file: fileId, from, to, lines: answer.lines }), exitCode: 0 }
+		return { output: jsonAnswerOf({ file: fileId, from, to, lines: answer.lines }), exitCode: 0 }
 	return {
-		output: answer.lines
-			.map((line) => `${rangeOf(line)}${COLUMN_SEPARATOR}${line.text}\n`)
-			.join(''),
+		output: textOf([
+			...answer.lines.map((line) => `${rangeOf(line)}${COLUMN_SEPARATOR}${line.text}`),
+			'',
+		]),
 		exitCode: 0,
 	}
 }
@@ -270,8 +273,8 @@ async function runEval(params: StandardVerbParams): Promise<CommandOutput> {
 	const { installed } = opened.opened
 	return {
 		output: params.read.flags.has('json')
-			? jsonOf({ vocabulary: vocabularyJsonOf(installed), ...evaluation })
-			: `${vocabularyLineOf(installed)}\n${evalTextOf(evaluation)}`,
+			? jsonAnswerOf({ vocabulary: vocabularyJsonOf(installed), ...evaluation })
+			: textOf([vocabularyLineOf(installed), ...evalLinesOf(evaluation), '']),
 		exitCode: evaluation.items === 0 ? 1 : 0,
 	}
 }
@@ -301,7 +304,14 @@ async function openStandards(options: OpenStandardsParams): Promise<OpenedStanda
 		environment: params.environment,
 		standardId: options.standardId,
 	})
-	if (input.kind === 'refused') return stopped(verbError({ verb, message: input.message }))
+	if (input.kind === 'refused')
+		return stopped(
+			verbError({
+				verb,
+				message: input.message,
+				...(input.layout === undefined ? {} : { more: [input.layout] }),
+			}),
+		)
 	const cacheRoot = standardCacheRoot({ environment: params.environment })
 	const cacheRefusal = workTreeRefusal({ path: cacheRoot })
 	if (cacheRefusal) return stopped(verbError({ verb, message: cacheRefusal }))
@@ -467,7 +477,7 @@ function goldItemOf(params: { line: string }): StandardGoldItem | string {
 }
 
 /** `index` as text: per standard its line, its files' lines, their repeated lines; the skipped folders. */
-function indexTextOf(opened: OpenedStandards): string {
+function indexLinesOf(opened: OpenedStandards): string[] {
 	const lines: string[] = []
 	for (const index of opened.indexes) {
 		const files = index.search.files
@@ -497,7 +507,7 @@ function indexTextOf(opened: OpenedStandards): string {
 	}
 	for (const standard of opened.skipped)
 		lines.push(`${standard.id}${COLUMN_SEPARATOR}${STANDARD_MESSAGES.noIndexableFile}`)
-	return `${lines.join('\n')}\n`
+	return lines
 }
 
 function fileLineOf(file: StandardFileIndex): string {
@@ -557,32 +567,29 @@ function indexJsonOf(opened: OpenedStandards): { standards: StandardIndexJsonEnt
 }
 
 /** `find` as text: per slice its header, then the normalised text of its logical lines. */
-function findTextOf(params: { slices: StandardSlice[]; indexes: StandardReadyIndex[] }): string {
+function findLinesOf(params: { slices: StandardSlice[]; indexes: StandardReadyIndex[] }): string[] {
 	const files = new Map(
 		params.indexes.flatMap((index) => index.search.files.map((file) => [file.fileId, file])),
 	)
-	return params.slices
-		.map((slice) => {
-			const header = [
-				`${slice.file}:${slice.from}-${slice.to}`,
-				[slice.clause, slice.title].filter((part) => part !== null).join(' '),
-				`score ${slice.score}`,
-				slice.linked ? '[linked]' : '',
-			]
-				.filter((part) => part !== '')
-				.join(COLUMN_SEPARATOR)
-			const file = files.get(slice.file)
-			const text = (file ? logicalLinesIn({ file, from: slice.from, to: slice.to }) : []).map(
-				(line) => `  ${line.text}`,
-			)
-			return [header, ...text].join('\n')
-		})
-		.join('\n\n')
-		.concat('\n')
+	return params.slices.flatMap((slice, index) => {
+		const header = [
+			`${slice.file}:${slice.from}-${slice.to}`,
+			[slice.clause, slice.title].filter((part) => part !== null).join(' '),
+			`score ${slice.score}`,
+			slice.linked ? '[linked]' : '',
+		]
+			.filter((part) => part !== '')
+			.join(COLUMN_SEPARATOR)
+		const file = files.get(slice.file)
+		const text = (file ? logicalLinesIn({ file, from: slice.from, to: slice.to }) : []).map(
+			(line) => `  ${line.text}`,
+		)
+		return [...(index === 0 ? [] : ['']), header, ...text]
+	})
 }
 
 /** `eval` as text: the recall line, then one line per miss. */
-function evalTextOf(evaluation: StandardEvaluation): string {
+function evalLinesOf(evaluation: StandardEvaluation): string[] {
 	const lines = [
 		[
 			`recall@5 ${evaluation.recallAt5.toFixed(RECALL_DECIMALS)}`,
@@ -594,7 +601,7 @@ function evalTextOf(evaluation: StandardEvaluation): string {
 			['miss', miss.file, miss.why, miss.question].join(COLUMN_SEPARATOR),
 		),
 	]
-	return `${lines.join('\n')}\n`
+	return lines
 }
 
 /** The first line of a text answer: the dialectes whose definition is the vocabulary, or none. */
@@ -628,10 +635,16 @@ function unexpectedWords(params: { verb: StandardVerb; words: string[] }): Comma
 function verbError(params: {
 	verb: StandardVerb
 	message: string
+	/** The lines under the message (the expected layout of the root). */
+	more?: readonly string[]
 	exitCode?: CommandOutput['exitCode']
 }): CommandOutput {
 	return {
-		output: `${STANDARD_COMMAND} ${params.verb}: ${params.message}\n`,
+		output: textOf([
+			`${STANDARD_COMMAND} ${params.verb}: ${params.message}`,
+			...(params.more ?? []),
+			'',
+		]),
 		exitCode: params.exitCode ?? 2,
 	}
 }
@@ -640,6 +653,7 @@ function stopped(output: CommandOutput): OpenedStandardsAnswer {
 	return { kind: 'output', output }
 }
 
-function jsonOf(content: unknown): string {
-	return `${JSON.stringify(content, null, '\t')}\n`
+/** `content` as the JSON a verb answers: tab-indented, its last line ended. */
+function jsonAnswerOf(content: unknown): PrintedText {
+	return endedOf(jsonOf(content, '\t'))
 }

@@ -4,7 +4,7 @@ import { counted } from '../counted.ts'
  * built from the records only - no free prose beyond its fixed sentences, no path outside the repository.
  */
 import { CARD_GATE_MARKS } from '../gate-records/gate-records.constants.ts'
-import { printableOf } from '../store/text-escape.ts'
+import { textOf } from '../print/print.ts'
 import {
 	ALSO_JUDGED,
 	ASSISTANT,
@@ -28,10 +28,11 @@ import {
 } from './recap.constants.ts'
 
 import type { KeyedLedgerItem, RunEntry } from '../mutation/mutation.types.ts'
+import type { PrintedText } from '../print/print.types.ts'
 import type { RecapFinding, RecapMutation, RecapRecords } from './recap.types.ts'
 
-export function renderRecap(records: RecapRecords): string {
-	return [
+export function renderRecap(records: RecapRecords): PrintedText {
+	return textOf([
 		...RECAP_OPEN,
 		'',
 		SECTION_TITLES.commits,
@@ -58,7 +59,7 @@ export function renderRecap(records: RecapRecords): string {
 		PREPARED_BY.replace('{user}', records.user),
 		'',
 		RECAP_CLOSE,
-	].join('\n')
+	])
 }
 
 /** Each lot with its commit or not committed yet; when the branch was rewritten, the line saying so. */
@@ -208,8 +209,7 @@ function decisionLines(records: RecapRecords): string[] {
 		...records.revised.map(
 			(entry) => `- ${DECISION_PREFIXES.revised} ${entry.case} - ${entry.reason} ${by}`,
 		),
-		// decision rows hold what agents and hosts wrote (decisions.md, the lot's answers): escaped once
-		...printableOf(records.decisions).map((row) => `- ${row.decision} (by ${row.by})`),
+		...records.decisions.map((row) => `- ${row.decision} (by ${row.by})`),
 	]
 	return lines.length ? lines : [EMPTY_SECTION.decisions]
 }

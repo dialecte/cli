@@ -22,4 +22,5 @@ export type {
 	ApiMethodFields,
 	ApiRootMethod,
 } from './lib/api/api-json.types.ts'
-export type { CommandOutput } from './lib/command-output.types.ts'
+export type { LookupOutput as CommandOutput } from './lib/command-output.types.ts'
+export type { PrintedText } from './lib/print/print.types.ts'

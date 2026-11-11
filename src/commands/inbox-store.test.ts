@@ -9,7 +9,16 @@ import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { setEntryState } from '../../test/handover-store-scenario.ts'
-import { CALLER_QUESTION, SCL_REPOSITORY } from '../../test/inbox-workspace.constants.ts'
+import {
+	CALLER_QUESTION,
+	DAMAGED_LOT,
+	ESCAPED_QUESTION,
+	ESCAPED_REASON,
+	HOSTILE_FAILED_LOT,
+	HOSTILE_LOT,
+	HOSTILE_REASON,
+	SCL_REPOSITORY,
+} from '../../test/inbox-workspace.constants.ts'
 import {
 	failedTransitionFor,
 	inboxIn,
@@ -25,8 +34,8 @@ import { readyLot } from '../../test/lot-stop-workspace.ts'
 import { writeStoreListFile } from '../../test/lot-stores.ts'
 import { transitionOf, writeRecordFile } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { DISPLAY_ESCAPED_RANGES } from '../lib/print/print.constants.ts'
 import { lotsKeepingWorktrees } from '../lib/store/lot-keep.ts'
-import { DISPLAY_ESCAPED_RANGES } from '../lib/store/store.constants.ts'
 import { lotStatusOf } from './lot-status.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -37,13 +46,6 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-const HOSTILE_LOT = '0171-scl-hostile'
-const HOSTILE_FAILED_LOT = '0175-scl-broken'
-const HOSTILE_REASON = 'broke \u001b[31m\nthen ‮again'
-const ESCAPED_QUESTION = 'Keep \\u{1b}[2Jthe entry \\u{202e}or not?'
-const ESCAPED_REASON = 'broke \\u{1b}[31m\\u{a}then \\u{202e}again'
-const DAMAGED_LOT = '0110-scl-damaged'
 
 /** The characters of `text` that a terminal would act on (or that reorder it): none when it is safe to print. */
 function unsafeCharactersIn(text: string): string[] {

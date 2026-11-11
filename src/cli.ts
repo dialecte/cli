@@ -24,6 +24,9 @@ import {
 import { GIVEN_ENVIRONMENT } from './lib/given-environment.constants.ts'
 import { HELP_FLAGS } from './lib/parse-invocation.constants.ts'
 import { parseInvocation } from './lib/parse-invocation.ts'
+import { printLines, printOut } from './lib/print/print.ts'
+
+import type { PrintedText } from './lib/print/print.types.ts'
 
 async function main(): Promise<void> {
 	// run from a commit hook, git's GIT_DIR and GIT_INDEX_FILE would point every git command at the
@@ -31,18 +34,26 @@ async function main(): Promise<void> {
 	// GIVEN_ENVIRONMENT was taken when the imports above were evaluated, before this clearing
 	const cleared = clearRepositoryEnvironment(process.env)
 	if (namesAnotherRepository({ given: GIVEN_ENVIRONMENT, folder: process.cwd() }))
-		console.error(ignoredRepositoryEnvironmentLine(cleared))
+		printLines({ stream: 'stderr', lines: [ignoredRepositoryEnvironmentLine(cleared)] })
 	const argv = process.argv.slice(2)
 	const invocation = parseInvocation({ argv, commandNames: Object.keys(COMMANDS) })
 	if (invocation.kind === 'help') {
-		console.log(
-			helpText({ command: invocation.command, json: invocation.json, words: helpWords(argv) }),
-		)
+		printOut({
+			stream: 'stdout',
+			text: helpText({
+				command: invocation.command,
+				json: invocation.json,
+				words: helpWords(argv),
+			}),
+		})
 		return
 	}
 	if (invocation.kind === 'unknown') {
-		console.error(`dialecte: unknown command "${invocation.command}"\n`)
-		console.log(renderGlobalHelp())
+		printLines({
+			stream: 'stderr',
+			lines: [`dialecte: unknown command "${invocation.command}"`, ''],
+		})
+		printOut({ stream: 'stdout', text: renderGlobalHelp() })
 		process.exit(1)
 	}
 	await COMMANDS_BY_NAME[invocation.command](invocation.argv)
@@ -52,7 +63,7 @@ async function main(): Promise<void> {
  * The help asked for: one command's section, else the global help; a renamed command answers what replaced it,
  * with the words given before `--help`.
  */
-function helpText(params: { command?: string; json: boolean; words: string[] }): string {
+function helpText(params: { command?: string; json: boolean; words: string[] }): PrintedText {
 	const { command, json } = params
 	const entry = command === undefined ? undefined : listedEntryOf(command)
 	if (command !== undefined && entry)
@@ -76,7 +87,11 @@ function helpWords(argv: string[]): string[] {
 		)
 }
 
-main().catch((error) => {
-	console.error(error instanceof Error ? error.message : error)
+main().catch(function printFailure(error: unknown) {
+	// the message is one value (it may quote a record): one escaped line, a line feed in it printed as \u{a}
+	printLines({
+		stream: 'stderr',
+		lines: [error instanceof Error ? error.message : String(error)],
+	})
 	process.exit(1)
 })

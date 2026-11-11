@@ -11,6 +11,7 @@ import { readApiIndexes } from '../lib/api/read-api-indexes.ts'
 import { renderFound, renderShown } from '../lib/api/render-api.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { missingPackage } from '../lib/missing-package.ts'
+import { printOut, textOf } from '../lib/print/print.ts'
 import {
 	API_SUBCOMMANDS,
 	API_USAGE,
@@ -23,7 +24,7 @@ import type { CommandOutput } from '../lib/command-output.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runApi({ argv, cwd: process.cwd() })
-	process.stdout.write(result.output)
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -34,7 +35,7 @@ export function runApi(params: { argv: readonly string[]; cwd: string }): Comman
 	const words = positionalArguments({ argv: rest, valueOptions: API_VALUE_OPTIONS })
 	const limit = Number(getArg([...rest], 'limit') ?? DEFAULT_FIND_LIMIT)
 	if (!isSubcommand(subcommand) || words.length === 0 || !Number.isInteger(limit) || limit < 1)
-		return { output: `${API_USAGE}\n`, exitCode: 2 }
+		return { output: textOf([API_USAGE, '']), exitCode: 2 }
 
 	const packageName = getArg([...rest], 'package')
 	const indexes = readApiIndexes({ cwd: params.cwd }).filter(
@@ -59,7 +60,10 @@ function find(params: {
 	const found = findMethods(params)
 	if (found.length === 0 && !params.json)
 		return {
-			output: `no method found for "${params.need}" in ${packagesText(params.indexes)}: try other words, or \`npx @dialecte/cli members <expression>\` for the live types\n`,
+			output: textOf([
+				`no method found for "${params.need}" in ${packagesText(params.indexes)}: try other words, or \`npx @dialecte/cli members <expression>\` for the live types`,
+				'',
+			]),
 			exitCode: 1,
 		}
 	return {
@@ -72,7 +76,10 @@ function show(params: { indexes: ApiJson[]; path: string; json: boolean }): Comm
 	const methods = findByPath(params)
 	if (methods.length === 0 && !params.json)
 		return {
-			output: `no method "${params.path}" in ${packagesText(params.indexes)}: \`npx @dialecte/cli api find "<what you need>"\` lists the routes\n`,
+			output: textOf([
+				`no method "${params.path}" in ${packagesText(params.indexes)}: \`npx @dialecte/cli api find "<what you need>"\` lists the routes`,
+				'',
+			]),
 			exitCode: 1,
 		}
 	return { output: renderShown({ methods, json: params.json }), exitCode: methods.length ? 0 : 1 }

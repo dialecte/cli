@@ -6,6 +6,8 @@
 import { resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
+import { resultOf } from '../lib/command-result.ts'
+import { jsonOf } from '../lib/print/print.ts'
 import {
 	addThrowaway,
 	computeDelta,
@@ -43,7 +45,7 @@ export function runDelta(params: { cwd: string; argv: string[]; now: Date }): Co
 	try {
 		return reviewDelta(params)
 	} catch (error) {
-		return { exitCode: 1, output: `${verbPrefix('delta')}: ${(error as Error).message}` }
+		return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${(error as Error).message}`] })
 	}
 }
 
@@ -53,32 +55,38 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 		valueOptions: ROUND_OPTIONS,
 		flags: DELTA_FLAGS,
 	})
-	if (typeof read === 'string') return { exitCode: 2, output: `${DELTA_USAGE} (${read})` }
+	if (typeof read === 'string')
+		return resultOf({ exitCode: 2, lines: [`${DELTA_USAGE} (${read})`] })
 	const { words, flags } = read
 	const round = parseRound(read.values.get('round'))
 	if (words.length !== 1 || round === undefined || round < 2)
-		return { exitCode: 2, output: DELTA_USAGE }
+		return resultOf({ exitCode: 2, lines: [DELTA_USAGE] })
 	const previous = round - 1
 	const root = workTreeTopOf(params.cwd)
 	if (!root)
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: `${verbPrefix('delta')}: ${params.cwd} is in no git work tree: run it inside the lot's worktree`,
-		}
+			lines: [
+				`${verbPrefix('delta')}: ${params.cwd} is in no git work tree: run it inside the lot's worktree`,
+			],
+		})
 	const folder = resolve(params.cwd, words[0])
 	const folderRefusal = handoverFolderRefusal(folder)
-	if (folderRefusal) return { exitCode: 1, output: `${verbPrefix('delta')}: ${folderRefusal}` }
+	if (folderRefusal)
+		return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${folderRefusal}`] })
 	const state = readWorktreeState(root)
 	const refusal =
 		previousRoundRefusal({ root, folder, previous }) ?? worktreeStateRefusal({ root, state })
-	if (refusal) return { exitCode: 1, output: `${verbPrefix('delta')}: ${refusal}` }
+	if (refusal) return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${refusal}`] })
 	const withWorktree = flags.has('worktree')
 	const branch = withWorktree ? currentBranchOf(root) : undefined
 	if (withWorktree && !branch)
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: `${verbPrefix('delta')}: HEAD is detached in ${root}: --worktree starts its branch from the lot's branch`,
-		}
+			lines: [
+				`${verbPrefix('delta')}: HEAD is detached in ${root}: --worktree starts its branch from the lot's branch`,
+			],
+		})
 	const delta: ReviewDelta = {
 		round,
 		previous: resolve(folder, `round-${previous}`),
@@ -88,11 +96,11 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 	if (branch) {
 		const throwaway = addThrowaway({ root, folder, previous, branch, now: params.now })
 		if (typeof throwaway === 'string')
-			return { exitCode: 1, output: `${verbPrefix('delta')}: ${throwaway}` }
+			return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${throwaway}`] })
 		delta.throwaway = throwaway
 	}
 	return {
 		exitCode: 0,
-		output: flags.has('json') ? JSON.stringify(delta, null, 2) : renderDelta(delta),
+		output: flags.has('json') ? jsonOf(delta, 2) : renderDelta(delta),
 	}
 }

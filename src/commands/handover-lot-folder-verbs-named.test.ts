@@ -12,6 +12,7 @@ import {
 import { LATER_TIME } from '../../test/store-records.constants.ts'
 import { transitionOf } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { textOf } from '../lib/print/print.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -46,7 +47,7 @@ describe(
 
 				expect(
 					resultMentioning({
-						result: { exitCode: outcome.exitCode, output: outcome.text },
+						result: { exitCode: outcome.exitCode, output: textOf(outcome.text.split('\n')) },
 						needles: [lot.lotName, 'canceled'],
 					}),
 				).toEqual({ exitCode: 2, mentioned: [lot.lotName, 'canceled'] })

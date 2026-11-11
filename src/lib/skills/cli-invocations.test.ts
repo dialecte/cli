@@ -170,8 +170,12 @@ describe('checkCliInvocations, an unknown command → error, line, closest comma
 	const moreCases: Record<string, { markdown: string; line: number }> = {
 		'after || → checked': { markdown: 'Run `false || dialecte gat`.\n', line: 1 },
 		'inside parentheses → checked': { markdown: 'Run `(dialecte gat)`.\n', line: 1 },
-		'a bad invocation in a bare ``` fence': { markdown: '```\ndialecte gat\n```\n', line: 2 },
+		'a bad invocation in a bare ``` fence': {
+			markdown: '```\ndialecte gate --fats\n```\n',
+			line: 2,
+		},
 		'a bad invocation in a ```sh fence': { markdown: '```sh\ndialecte gat\n```\n', line: 2 },
+		'a bad invocation in a ```shell fence': { markdown: '```shell\ndialecte gat\n```\n', line: 2 },
 		'a bad invocation in a fence indented in a list item': {
 			markdown: '- step:\n\n  ```bash\n  dialecte gat\n  ```\n',
 			line: 4,
@@ -201,6 +205,32 @@ describe('checkCliInvocations, an unknown command → error, line, closest comma
 			expect(checkCliInvocations(pageOf({ markdown: testCase.markdown }))).toMatchObject([
 				{ severity: 'error', line: testCase.line },
 			])
+		})
+})
+
+describe('checkCliInvocations, a fence that is no shell script → never read', () => {
+	const testCases: Record<string, string> = {
+		'a text fence holding a diagram label (dialecte <unknown command>)':
+			'```text\ndialecte package\n```\n',
+		'a text fence holding a known command with an unknown flag':
+			'```text\ndialecte gate --nope\n```\n',
+		'a mermaid fence holding a line starting dialecte': [
+			'```mermaid',
+			'graph LR',
+			'  dialecte package --> gate',
+			'```',
+			'',
+		].join('\n'),
+		'a fence tagged diagram holding dialecte <unknown verb>':
+			'```diagram\ndialecte lot nope\n```\n',
+		'a fence tagged json holding dialecte <unknown command>': '```json\ndialecte nope\n```\n',
+		'an untagged fence, a line starting dialecte and an unknown command':
+			'```\ndialecte package\n```\n',
+	}
+
+	for (const [title, markdown] of Object.entries(testCases))
+		it(`${title} → no finding`, () => {
+			expect(checkCliInvocations(pageOf({ markdown }))).toEqual([])
 		})
 })
 

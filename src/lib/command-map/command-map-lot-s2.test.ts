@@ -1,6 +1,6 @@
 /**
  * The map and the help lines S2 adds (33S section 10, G18): the lot usage gains wait, answer, result and stop and
- * `start --simulate`, one note line per verb, the exit codes 3, 4 and 5; `inbox` is a command of the Grow family,
+ * `start --simulate`, one note line per verb, the exit codes 3, 4, 5 and 6; `inbox` is a command of the Grow family,
  * listed by `dialecte --help` and printed alone by `dialecte inbox --help`.
  */
 import { spawnSync } from 'node:child_process'
@@ -31,6 +31,7 @@ const EXIT_CODE_LINES = [
 	'3  wait, result: input-required',
 	'4  wait: an agent failed or hit a limit, run again',
 	'5  wait --timeout, result: still working',
+	'6  status, wait, result: the lot is damaged: a person must look',
 ]
 
 /** The map's entry of `name` whatever the type says: undefined when the map holds none. */
@@ -65,13 +66,13 @@ describe('the lot section, S2', () => {
 			)
 		})
 
-	it('the exit codes are 3, 4 and 5 of the wait and result verbs, in the map and in lot --help under exit codes:', () => {
+	it('the exit codes are 3, 4, 5 and 6 of the status, wait and result verbs, in the map and in lot --help under exit codes:', () => {
 		const section = renderCommandSection({ name: 'lot', entry: COMMAND_MAP.lot })
 
 		expect({
 			codes: COMMAND_MAP.lot.exitCodes,
 			printed: EXIT_CODE_LINES.map((line) => section.includes(line)),
-		}).toEqual({ codes: EXIT_CODE_LINES, printed: [true, true, true] })
+		}).toEqual({ codes: EXIT_CODE_LINES, printed: [true, true, true, true] })
 	})
 })
 

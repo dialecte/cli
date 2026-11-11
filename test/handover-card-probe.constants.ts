@@ -2,7 +2,7 @@
 export const CARD_CLI_PATH = '/opt/dialecte/dist/cli.js'
 
 /** The card's default bound on the probe, in milliseconds. */
-export const DEFAULT_PROBE_TIMEOUT_MILLISECONDS = 10_000
+export const DEFAULT_PROBE_TIMEOUT_MILLISECONDS = 60_000
 
 /** The real probe, as a test file would name it. */
 export const REAL_PROBE_NAME = 'probeRepositoryCli'

@@ -37,6 +37,7 @@ export function readStoreEntry(params: { store: string; name: string }): StoreEn
 			...(typeof entry.index === 'string' && { index: entry.index }),
 			written: String(entry.written ?? ''),
 			state: entry.state ?? 'pending',
+			...(typeof entry.closed === 'string' && { closed: entry.closed }),
 		}
 	} catch {
 		return undefined

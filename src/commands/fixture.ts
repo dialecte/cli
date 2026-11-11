@@ -13,12 +13,19 @@ import { createFixtureScript } from '../lib/fixture/create-fixture-script.ts'
 import { FIXTURE_NOW, FIXTURE_SEED } from '../lib/fixture/fixture.constants.ts'
 import { planFixture } from '../lib/fixture/plan-fixture.ts'
 import { readFixtureSchema } from '../lib/fixture/read-fixture-schema.ts'
-import { formatRunOutcome } from '../lib/run/format-run-outcome.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
+import { runOutcomeLines } from '../lib/run/format-run-outcome.ts'
 import { findDialecteEntry, loadRunEnvironment } from '../lib/run/load-run-environment.ts'
 import { runScript } from '../lib/run/run-script.ts'
 import { DEFAULT_RUN_TIMEOUT_IN_MILLISECONDS } from '../lib/run/run.constants.ts'
 import { splitArguments } from '../lib/split-arguments.ts'
-import { FIXTURE_BOOLEAN_FLAGS, FIXTURE_USAGE, FIXTURE_VALUE_FLAGS } from './fixture.constants.ts'
+import {
+	FIXTURE_BOOLEAN_FLAGS,
+	FIXTURE_USAGE,
+	FIXTURE_VALUE_FLAGS,
+	XML_LINE_BREAK_PATTERN,
+} from './fixture.constants.ts'
+import { processOutput } from './process-output.ts'
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from './run.constants.ts'
 
 import type { FixtureDialecte } from '../lib/fixture/fixture.types.ts'
@@ -29,10 +36,7 @@ export async function run(argv: string[]): Promise<void> {
 	const exitCode = await runFixtureCommand({
 		argv,
 		cwd: process.cwd(),
-		output: {
-			stdout: (text) => process.stdout.write(`${text}\n`),
-			stderr: (text) => process.stderr.write(`${text}\n`),
-		},
+		output: processOutput(),
 	})
 	if (exitCode !== EXIT_OK) process.exit(exitCode)
 }
@@ -42,7 +46,7 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 	const { argv, cwd, output } = params
 	const parsed = parseFixtureOptions({ argv })
 	if (typeof parsed === 'string') {
-		output.stderr(`fixture: ${parsed}\n${FIXTURE_USAGE}`)
+		output.stderr(textOf([`fixture: ${parsed}`, FIXTURE_USAGE]))
 		return EXIT_USAGE
 	}
 	const options = parsed
@@ -59,7 +63,7 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 		environment = await loadRunEnvironment({ projectDirectory: cwd, packageName })
 		dialecte = readFixtureSchema({ environment, packageName })
 	} catch (thrown) {
-		output.stderr(thrown instanceof Error ? thrown.message : String(thrown))
+		output.stderr(textOf([thrown instanceof Error ? thrown.message : String(thrown)]))
 		return EXIT_USAGE
 	}
 
@@ -67,8 +71,8 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 	if ('problem' in planned) {
 		output.stdout(
 			options.json
-				? JSON.stringify({ ok: false, problem: planned.problem }, null, 2)
-				: `fixture: ${planned.problem}`,
+				? jsonOf({ ok: false, problem: planned.problem }, 2)
+				: textOf([`fixture: ${planned.problem}`]),
 		)
 		return EXIT_FAILED
 	}
@@ -89,8 +93,11 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 	if (!outcome.ok || !file) {
 		output.stdout(
 			options.json
-				? JSON.stringify({ ok: false, outcome }, null, 2)
-				: `fixture: the engine could not build ${plan.chain.join('/')}\n${formatRunOutcome({ outcome })}`,
+				? jsonOf({ ok: false, outcome }, 2)
+				: textOf([
+						`fixture: the engine could not build ${plan.chain.join('/')}`,
+						...runOutcomeLines({ outcome }),
+					]),
 		)
 		return EXIT_FAILED
 	}
@@ -103,7 +110,7 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 
 	if (options.json)
 		output.stdout(
-			JSON.stringify(
+			jsonOf(
 				{
 					ok: true,
 					packageName: dialecte.packageName,
@@ -112,11 +119,18 @@ export async function runFixtureCommand(params: FixtureCommandParams): Promise<n
 					bytes,
 					...(outPath ? { out: outPath } : { xml }),
 				},
-				null,
 				2,
 			),
 		)
-	else output.stdout(outPath ? `fixture: ${path} - ${bytes} bytes written to ${outPath}` : xml)
+	else
+		output.stdout(
+			textOf(
+				// the document the engine exported, printed line by line
+				outPath
+					? [`fixture: ${path} - ${bytes} bytes written to ${outPath}`]
+					: xml.split(XML_LINE_BREAK_PATTERN),
+			),
+		)
 	return EXIT_OK
 }
 

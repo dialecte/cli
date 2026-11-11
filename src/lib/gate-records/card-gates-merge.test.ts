@@ -333,23 +333,16 @@ function writeFastRecord(params: {
 	/** A tdd step of its own, with this detail, ahead of check and tests. */
 	tddNote?: string
 }): void {
+	const tddStep: RecordedStep | undefined = params.tddNote
+		? { name: 'tdd', status: 'passed', counts: {}, note: params.tddNote, cases: [] }
+		: undefined
 	const record: GateRecord = {
 		mode: 'fast',
 		at: params.at,
 		head: headOf(params.root),
 		stateHash: hashStateTree(params.tree),
 		steps: [
-			...(params.tddNote
-				? [
-						{
-							name: 'tdd',
-							status: 'passed',
-							counts: {},
-							note: params.tddNote,
-							cases: [],
-						} as RecordedStep,
-					]
-				: []),
+			...(tddStep ? [tddStep] : []),
 			...GATE_STEPS.filter((step) => ['check', 'tests'].includes(step.name)),
 		],
 	}

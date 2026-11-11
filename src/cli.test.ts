@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import { newestChangelogSection } from '../test/newest-changelog-section.ts'
+import { changelogSection } from '../test/newest-changelog-section.ts'
 import { temporaryFolder } from '../test/scratch-repository.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -161,8 +161,8 @@ describe('the cli', { timeout: 30_000 }, () => {
 		expect(outside).toEqual([])
 	})
 
-	it('the newest CHANGELOG section has Breaking bullets naming the renames and the per-command help', () => {
-		const breaking = newestChangelogSection({ root: join(import.meta.dirname, '..') })
+	it('the 0.4.0 CHANGELOG section has Breaking bullets naming the renames and the per-command help', () => {
+		const breaking = changelogSection({ root: join(import.meta.dirname, '..'), version: '0.4.0' })
 			.split('\n')
 			.filter((line) => /^- \*\*Breaking:?\*\*/.test(line))
 			.join('\n')

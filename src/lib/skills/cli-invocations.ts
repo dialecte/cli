@@ -1,6 +1,7 @@
 /**
  * Verifies the cli invocations a skill page cites against the command map of the cli: read only in code (inline
- * spans and fences of any language, generated blocks left out), each invocation's command, verb and flags must
+ * spans, shell fences, and the `dialecte <command>` lines of untagged fences; a fence with another tag, a diagram
+ * or a sample, never; generated blocks left out), each invocation's command, verb and flags must
  * be ones the map holds; an old renamed form names its new one.
  */
 import { closestNames } from '../closest-names.ts'
@@ -13,7 +14,7 @@ import {
 	COMMENT_START,
 	DOUBLE_OPERATORS,
 	END_OF_OPTIONS,
-	GROUP_CLOSERS,
+	GROUP_OPENER_OF_CLOSER,
 	GROUP_OPENERS,
 	INVOCATION_MESSAGES,
 	LINE_CONTINUATION_PATTERN,
@@ -21,7 +22,10 @@ import {
 	NPX_OPTIONS_WITH_VALUE,
 	NPX_WORD,
 	ENVIRONMENT_ASSIGNMENT_PATTERN,
-	SUBSHELL_CLOSE,
+	FENCE_TAG_PATTERN,
+	SHELL_FENCE_TAGS,
+	UNTAGGED_FENCE_INVOCATION_PATTERN,
+	PROCESS_SUBSTITUTION_OPENERS,
 	SUBSHELL_OPEN,
 	FLAG_START,
 	LONG_FLAG_PREFIX_PATTERN,
@@ -38,9 +42,13 @@ import { ANY_FENCE_PATTERN, INLINE_CODE_PATTERN } from './skill-file.constants.t
 import type { CommandSurface } from '../command-map/command-map.types.ts'
 import type {
 	CheckCliInvocationsParams,
+	CitedInvocationsParams,
+	CliSurface,
 	CodePiece,
 	CodeToken,
 	CodeWord,
+	GroupDepths,
+	GroupOpener,
 	InvocationContext,
 	PendingWord,
 } from './cli-invocations.types.ts'
@@ -48,7 +56,7 @@ import type { SkillFinding } from './skill-file.types.ts'
 
 /** One finding per invocation of code spans and fences that the cli's surface does not accept, by page line. */
 export function checkCliInvocations(params: CheckCliInvocationsParams): SkillFinding[] {
-	return citedInvocationsOf(params.markdown)
+	return citedInvocationsOf({ markdown: params.markdown, surface: params.surface })
 		.flatMap((words) =>
 			checkInvocation({
 				file: params.file,
@@ -62,10 +70,12 @@ export function checkCliInvocations(params: CheckCliInvocationsParams): SkillFin
 
 /**
  * The words after `dialecte` of every cli invocation a page cites in code, generated blocks left out: what the
- * check reads, and whether a page cites any.
+ * check reads, and whether a page cites any. Without a surface, every `dialecte <word>` line of an untagged
+ * fence counts (whether to read the surface at all); with one, only those naming one of its commands.
  */
-export function citedInvocationsOf(markdown: string): CodeWord[][] {
-	return codeGroupsOf(blankGeneratedBlocks(markdown.replace(/\r\n/g, '\n'))).flatMap((group) =>
+export function citedInvocationsOf(params: CitedInvocationsParams): CodeWord[][] {
+	const markdown = blankGeneratedBlocks(params.markdown.replace(/\r\n/g, '\n'))
+	return codeGroupsOf({ markdown, surface: params.surface }).flatMap((group) =>
 		invocationsOf(tokensOf(group)),
 	)
 }
@@ -79,10 +89,19 @@ function onlyLineBreaks(text: string): string {
 	return text.replace(NOT_LINE_BREAK_PATTERN, '')
 }
 
-/** The code of the page: each fenced line with its continuations, then each inline code span of the prose. */
-function codeGroupsOf(markdown: string): CodePiece[][] {
+/**
+ * The code of the page: each fenced line with its continuations of a shell fence (`sh`, `bash`, `shell`), of an
+ * untagged fence only a line `dialecte <command of the map>` (any `dialecte <word>` line when no surface is given),
+ * never a line of a fence with another tag (a diagram, a sample); then each inline code span of the prose.
+ */
+function codeGroupsOf(params: { markdown: string; surface?: CliSurface }): CodePiece[][] {
+	const { markdown, surface } = params
 	const fenced = [...markdown.matchAll(ANY_FENCE_PATTERN)].flatMap((fence) =>
-		fencedGroupsOf({ fence: fence[0], firstLine: lineAt({ markdown, index: fence.index }) }),
+		readFencedGroups({
+			fence: fence[0],
+			firstLine: lineAt({ markdown, index: fence.index }),
+			surface,
+		}),
 	)
 	const prose = markdown.replace(ANY_FENCE_PATTERN, (fence) => onlyLineBreaks(fence))
 	const inline = prose
@@ -96,6 +115,28 @@ function codeGroupsOf(markdown: string): CodePiece[][] {
 /** The 1-based page line of an offset. */
 function lineAt(params: { markdown: string; index: number }): number {
 	return params.markdown.slice(0, params.index).split('\n').length
+}
+
+/** The groups of a fence read for invocations, by its tag: all of a shell fence, some of an untagged one, else none. */
+function readFencedGroups(params: {
+	fence: string
+	firstLine: number
+	surface?: CliSurface
+}): CodePiece[][] {
+	const tag = (FENCE_TAG_PATTERN.exec(params.fence)?.[1] ?? '').toLowerCase()
+	if (SHELL_FENCE_TAGS.has(tag)) return fencedGroupsOf(params)
+	if (tag) return []
+	return fencedGroupsOf(params).filter((group) =>
+		isUntaggedInvocation({ group, surface: params.surface }),
+	)
+}
+
+/** Whether a group of an untagged fence starts `dialecte <command>`, the command one of the surface when given. */
+function isUntaggedInvocation(params: { group: CodePiece[]; surface?: CliSurface }): boolean {
+	const command = UNTAGGED_FENCE_INVOCATION_PATTERN.exec(params.group[0]?.text ?? '')?.[1]
+	if (command === undefined) return false
+	if (!params.surface) return true
+	return params.surface.commands.some((candidate) => candidate.name === command)
 }
 
 /** The lines inside a fence, a line ending in a backslash grouped with the next one. */
@@ -119,12 +160,13 @@ function fencedGroupsOf(params: { fence: string; firstLine: number }): CodePiece
 
 /**
  * The words and operators of a group of code: a quoted string is one word; `&&`, `||`, `;`, `|`, `&`, a
- * backtick, `(` and `)` are operators except inside `<...>`, `[...]` or a flag group `(--a | --b)`; a `#`
- * starting a word comments out the rest of its line.
+ * backtick, `(`, `)` and a process substitution's `<(` / `>(` are operators except inside `<...>`, `[...]` or a
+ * flag group `(--a | --b)`, each kind counted on its own (a `)` never closes a `<`); a `#` starting a word
+ * comments out the rest of its line.
  */
 function tokensOf(group: CodePiece[]): CodeToken[] {
 	const tokens: CodeToken[] = []
-	let depth = 0
+	const depths: GroupDepths = { '<': 0, '[': 0, '(': 0 }
 	for (const piece of group) {
 		const { text, line } = piece
 		const pending: PendingWord = { text: '', quoted: false }
@@ -142,21 +184,31 @@ function tokensOf(group: CodePiece[]): CodeToken[] {
 				flushWord({ tokens, pending, line })
 				continue
 			}
-			if (depth === 0 && !pending.text && character === COMMENT_START) {
+			const outside = isOutsideGroups(depths)
+			if (outside && !pending.text && character === COMMENT_START) {
 				tokens.push({ kind: 'operator', text: character, line })
 				break
 			}
-			if (opensGroup({ text, index })) {
-				depth++
+			const substitution = text.slice(index, index + 2)
+			if (outside && PROCESS_SUBSTITUTION_OPENERS.has(substitution)) {
+				flushWord({ tokens, pending, line })
+				tokens.push({ kind: 'operator', text: substitution, line })
+				index += substitution.length - 1
+				continue
+			}
+			const opened = groupOpenedAt({ text, index })
+			if (opened) {
+				depths[opened]++
 				pending.text += character
 				continue
 			}
-			if (depth > 0 && (GROUP_CLOSERS.has(character) || character === SUBSHELL_CLOSE)) {
-				depth--
+			const closed = GROUP_OPENER_OF_CLOSER.get(character)
+			if (closed && depths[closed] > 0) {
+				depths[closed]--
 				pending.text += character
 				continue
 			}
-			const operator = depth === 0 ? operatorAt({ text, index }) : undefined
+			const operator = outside ? operatorAt({ text, index }) : undefined
 			if (operator) {
 				flushWord({ tokens, pending, line })
 				tokens.push({ kind: 'operator', text: operator, line })
@@ -170,11 +222,20 @@ function tokensOf(group: CodePiece[]): CodeToken[] {
 	return tokens
 }
 
-/** Whether the character at an offset opens a placeholder or a group: `<`, `[`, or a `(` right before a flag. */
-function opensGroup(params: { text: string; index: number }): boolean {
+/**
+ * The kind of group the character at an offset opens: `<` a placeholder, `[` an option group, a `(` right before a
+ * flag a flag group; undefined for any other character.
+ */
+function groupOpenedAt(params: { text: string; index: number }): GroupOpener | undefined {
 	const character = params.text[params.index]
-	if (GROUP_OPENERS.has(character)) return true
-	return character === SUBSHELL_OPEN && params.text[params.index + 1] === FLAG_START
+	if (character === SUBSHELL_OPEN)
+		return params.text[params.index + 1] === FLAG_START ? SUBSHELL_OPEN : undefined
+	return GROUP_OPENERS.find((opener) => opener === character)
+}
+
+/** Whether no group of any kind is open: only there is an operator one. */
+function isOutsideGroups(depths: GroupDepths): boolean {
+	return Object.values(depths).every((depth) => depth === 0)
 }
 
 /** Ends the word being read, if any: pushed as a token, the pending word emptied. */

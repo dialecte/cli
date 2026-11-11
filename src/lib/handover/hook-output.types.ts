@@ -60,6 +60,8 @@ export type HookSummaryStep = {
 	counts: StepCounts
 	/** `gate --hook` answered the step from the green `gate --full` record of this time and short HEAD. */
 	reused?: RecordOrigin
+	/** A passed step whose tests failed in parallel and passed on the serial rerun: the files `gate --hook` named flaky. */
+	flaky?: string[]
 }
 
 /** The npm scripts a command line runs. */

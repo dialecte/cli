@@ -2,9 +2,11 @@
  * `dialecte explain <code>` - what an error or diagnostic code means, when it is raised, the usual fix
  * and the docs page, read from the catalogues of the installed core and dialecte.
  */
-import { collectCatalogues, explainCode, formatExplainedCode } from '../lib/run/explain-code.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
+import { collectCatalogues, explainCode, explainedCodeLines } from '../lib/run/explain-code.ts'
 import { loadInstalledPackages } from '../lib/run/load-run-environment.ts'
 import { EXPLAIN_USAGE } from './explain.constants.ts'
+import { processOutput } from './process-output.ts'
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from './run.constants.ts'
 
 import type { RunCommandParams } from './run.types.ts'
@@ -13,10 +15,7 @@ export async function explain(argv: string[]): Promise<void> {
 	const exitCode = await explainCommand({
 		argv,
 		cwd: process.cwd(),
-		output: {
-			stdout: (text) => process.stdout.write(`${text}\n`),
-			stderr: (text) => process.stderr.write(`${text}\n`),
-		},
+		output: processOutput(),
 	})
 	if (exitCode !== EXIT_OK) process.exit(exitCode)
 }
@@ -39,7 +38,7 @@ export async function explainCommand(params: RunCommandParams): Promise<number> 
 		unknownOptions.length > 0 ||
 		(packageIndex >= 0 && !packageName)
 	) {
-		output.stderr(EXPLAIN_USAGE)
+		output.stderr(textOf([EXPLAIN_USAGE]))
 		return EXIT_USAGE
 	}
 	const [code] = positionals
@@ -53,15 +52,23 @@ export async function explainCommand(params: RunCommandParams): Promise<number> 
 		})
 		catalogues = collectCatalogues({ coreIndex: installed.coreIndex, dialecte: installed.dialecte })
 	} catch (thrown) {
-		output.stderr(thrown instanceof Error ? thrown.message : String(thrown))
+		output.stderr(textOf([thrown instanceof Error ? thrown.message : String(thrown)]))
 		return EXIT_USAGE
 	}
 
 	const found = explainCode({ code, catalogues })
-	if (json) output.stdout(JSON.stringify(found, null, 2))
+	if (json) output.stdout(jsonOf(found, 2))
 	else if (found.length === 0) {
 		const searched = [...catalogues.errors, ...catalogues.diagnostics].map(({ name }) => name)
-		output.stdout(`no code "${code}" in the catalogues of ${searched.join(', ')}`)
-	} else output.stdout(found.map((explained) => formatExplainedCode({ explained })).join('\n\n'))
+		output.stdout(textOf([`no code "${code}" in the catalogues of ${searched.join(', ')}`]))
+	} else
+		output.stdout(
+			textOf(
+				found.flatMap((explained, index) => [
+					...(index === 0 ? [] : ['']),
+					...explainedCodeLines({ explained }),
+				]),
+			),
+		)
 	return found.length > 0 ? EXIT_OK : EXIT_FAILED
 }

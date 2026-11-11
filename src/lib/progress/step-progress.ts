@@ -6,6 +6,7 @@
  * warnings, rendered again at each redraw when they carry a time), replaced by the step's result
  * line. The result line is never the last visible line while work continues.
  */
+import { textOf } from '../print/print.ts'
 import { formatDuration } from './format-duration.ts'
 import {
 	HEARTBEAT_HINT_AFTER_BEATS,
@@ -65,7 +66,9 @@ export function createStepProgress(params: {
 						? ` - silent for ${formatDuration(silence)}: ${SILENT_HOOK_HINT}`
 						: ''
 				if (hint) hinted = true
-				live.writeLine(`  … ${step.name} running ${formatDuration(now - startedAt)}${hint}`)
+				live.writeLine(
+					textOf([`  … ${step.name} running ${formatDuration(now - startedAt)}${hint}`]),
+				)
 				timer = clock.setTimeout({ callback: beat, milliseconds: every })
 			}
 			function stop(): void {
@@ -76,7 +79,7 @@ export function createStepProgress(params: {
 				draw()
 				timer = clock.setTimeout({ callback: tick, milliseconds: tickEvery })
 			} else {
-				live.writeLine(`▶ ${label}`)
+				live.writeLine(textOf([`▶ ${label}`]))
 				timer = clock.setTimeout({ callback: beat, milliseconds: every })
 			}
 			return {

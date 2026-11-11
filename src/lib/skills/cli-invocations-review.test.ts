@@ -23,9 +23,9 @@ function findingsOf(markdown: string): ReturnType<typeof checkCliInvocations> {
 	})
 }
 
-/** A fenced block of no language holding the lines. */
+/** A fenced bash block holding the lines. */
 function fenced(...lines: string[]): string {
-	return ['```', ...lines, '```', ''].join('\n')
+	return ['```bash', ...lines, '```', ''].join('\n')
 }
 
 describe('checkCliInvocations, round 1 fixes → no finding', () => {
@@ -59,7 +59,7 @@ describe('checkCliInvocations, round 1 fixes → one error, its line and word', 
 			line: 1,
 			word: '--fats',
 		},
-		'an inline span inside a bare fence (R1-3)': {
+		'an inline span inside a bash fence (R1-3)': {
 			markdown: fenced('brief:', 'Run `dialecte gat` first.'),
 			line: 3,
 			word: '`gat`',

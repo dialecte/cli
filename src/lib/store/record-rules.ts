@@ -2,11 +2,19 @@
  * The rules a question and an answer share (33S section 4): a text of one line within a length, options compared
  * trimmed and case-folded, and a lot that still takes them (not `committed`, `canceled` nor `failed`).
  */
+import { basename } from 'node:path'
+
 import { LINE_BREAK_PATTERN } from './brief.constants.ts'
-import { readLotStateInput, registryOfLotFolder } from './lot-records.ts'
+import { readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
 import { lotState } from './lot-state.ts'
 import { storeRefusal } from './publish.ts'
-import { BY_OPTION, NUMBER_LOCALE, QUESTIONS_CLOSED_STATES } from './store.constants.ts'
+import {
+	BY_OPTION,
+	DAMAGED_LOT_REFUSAL,
+	NEXT_COMMANDS,
+	NUMBER_LOCALE,
+	QUESTIONS_CLOSED_STATES,
+} from './store.constants.ts'
 
 import type { LotStateInput, LotStateReport } from './store.types.ts'
 
@@ -45,15 +53,26 @@ export function foldedOf(text: string): string {
 
 /**
  * The records and the state of the lot folder, refused (a store refusal naming the state) when the lot is
- * `committed`, `canceled` or `failed`, or holds no readable identity; `takes` names what it would have taken.
+ * `committed`, `canceled` or `failed`, damaged (named by its folder, with the reason and the stop to run), or gone;
+ * `takes` names what it would have taken.
  */
 export function readLotTaking(params: { lotFolder: string; takes: string }): {
 	input: LotStateInput
 	report: LotStateReport
 } {
 	const { lotFolder } = params
-	const input = readLotStateInput({ lotFolder, registry: registryOfLotFolder(lotFolder) })
-	if (!input) throw storeRefusal(`no lot in ${lotFolder}`)
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	if (checked === undefined) throw storeRefusal(`no lot in ${lotFolder}`)
+	if ('damage' in checked) {
+		const name = basename(lotFolder)
+		throw storeRefusal(
+			DAMAGED_LOT_REFUSAL.replace('{name}', name)
+				.replace('{reason}', checked.damage)
+				.replace('{takes}', params.takes)
+				.replace('{stop}', NEXT_COMMANDS.stop.replace('{name}', name)),
+		)
+	}
+	const { input } = checked
 	const report = lotState(input)
 	if (QUESTIONS_CLOSED_STATES.includes(report.state))
 		throw closedLotRefusal({ name: input.identity.name, state: report.state, takes: params.takes })

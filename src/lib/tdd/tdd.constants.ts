@@ -79,6 +79,26 @@ export const CASE_NAME_SEPARATOR = ' > '
 /** Separates a test file from a case name on the command line: `src/add.test.ts::add > one plus two`. */
 export const CASE_ARGUMENT_SEPARATOR = '::'
 
+/**
+ * The curly quotes a lot declaration entry and a test title compare as their straight counterparts: an entry
+ * typed with `'` names a title written with `’`, and the reverse. Nothing else folds (no backtick, prime or case).
+ */
+export const FOLDED_QUOTES: ReadonlyMap<string, string> = new Map([
+	['\u{2018}', "'"],
+	['\u{2019}', "'"],
+	['\u{201C}', '"'],
+	['\u{201D}', '"'],
+])
+
+/** The curly quotes `FOLDED_QUOTES` folds, as one pattern. */
+export const CURLY_QUOTE_PATTERN = /[\u{2018}\u{2019}\u{201C}\u{201D}]/gu
+
+/** After an `unused accept` line's entry: the closest case title of the change, `{label}`. */
+export const UNUSED_ACCEPT_CLOSEST = '; the closest: {label}'
+
+/** How many closest titles an `unused accept` line names. */
+export const UNUSED_ACCEPT_CLOSEST_LIMIT = 1
+
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
 export const TDD_EXEMPT_PATTERN = /^exempt:\s*(.+)$/
 
@@ -112,6 +132,9 @@ export const REPOSITORY_MARKER = '.git'
 
 /** How many last lines of a run that wrote no report are shown. */
 export const RUN_OUTPUT_TAIL_LINES = 20
+
+/** What separates the killed processes in the one line of a stalled run's failure. */
+export const REPORT_LINE_SEPARATOR = ' / '
 
 export const NO_RED_RECEIPT = 'no red receipt: the test station runs tdd red first'
 
@@ -279,6 +302,9 @@ export const DELETED_PRODUCTION_FILE = 'deleted'
  */
 export const ROLLBACK_LINE =
 	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte lot delta --worktree)"
+
+/** The vitest option naming the files run before every test file: a dependency of each test file for tdd. */
+export const SETUP_FILES_PROPERTY = 'setupFiles'
 
 /** Config files a test project is declared in: where a test file's import aliases come from. */
 export const TEST_CONFIG_FILES = [

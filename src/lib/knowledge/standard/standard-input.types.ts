@@ -36,7 +36,8 @@ export type StandardInput = {
 /** The input read from the environment, or why it is refused (a usage refusal: exit 2). */
 export type StandardInputAnswer =
 	| { kind: 'input'; input: StandardInput }
-	| { kind: 'refused'; message: string }
+	/** `message`, then the expected layout of the root when the refusal is about the root. */
+	| { kind: 'refused'; message: string; layout?: string }
 
 export type ReadStandardInputParams = {
 	environment: NodeJS.ProcessEnv
