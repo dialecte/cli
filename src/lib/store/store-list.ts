@@ -1,11 +1,10 @@
 /** The user's store list: one absolute store path per line, so ids see every store of the machine. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { stateFolder } from './state-folder.ts'
 import { workTreeHolding } from './store-folder.ts'
 import {
-	DEFAULT_STATE_SEGMENTS,
 	LINE_SEPARATOR_PATTERN,
 	STATE_HOME_VARIABLE,
 	STORE_LIST_SEGMENTS,
@@ -18,11 +17,7 @@ import type { StoreListLocation } from './store.types.ts'
  * home default to the process's.
  */
 export function storeListPath(params: StoreListLocation): string {
-	const environment = params.environment ?? process.env
-	// an empty variable is an unset one
-	const state =
-		environment[STATE_HOME_VARIABLE] || join(params.home ?? homedir(), ...DEFAULT_STATE_SEGMENTS)
-	return join(state, ...STORE_LIST_SEGMENTS)
+	return join(stateFolder(params), ...STORE_LIST_SEGMENTS)
 }
 
 /**

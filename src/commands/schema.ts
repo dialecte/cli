@@ -29,7 +29,11 @@ export async function runSchema(params: { argv: string[]; cwd: string }): Promis
 	})
 }
 
-/** The dialectes (filtered by `--package`) the tag is looked up in, or the answer that says why not. */
+/**
+ * The dialectes (filtered by `--package`) the tag is looked up in, or the answer that says why not.
+ *
+ * @intent load the installed dialectes a schema lookup answers from, read an element's schema without the command line
+ */
 export async function readSchemaDialectes(params: {
 	argv: string[]
 	cwd: string

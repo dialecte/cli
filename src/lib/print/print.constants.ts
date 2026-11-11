@@ -21,3 +21,6 @@ export const LINE_FEED = '\n'
 
 /** What puts the cursor back at the start of a line refreshed in place. */
 export const CARRIAGE_RETURN = '\r'
+
+/** The descriptor of each stream, for a synchronous write (`printOut` with `synchronous`). */
+export const STREAM_DESCRIPTORS = { stdout: 1, stderr: 2 } as const

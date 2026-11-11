@@ -392,6 +392,9 @@ export type InterleavingSeam = () => void
 /** A rehearsal's workspace: the repository's main checkout and its `.worktrees/` (the pool and the trash). */
 export type RehearsalPool = { main: string; worktreesFolder: string }
 
+/** Where rehearsal clones are made now, and where earlier cli versions made them (the system's temporary folder). */
+export type ScratchRoots = { scratchRoot: string; formerScratchRoot: string }
+
 /**
  * What `lot close` closes for one argument: the hand-over's registry entry, and the registered worktree at the
  * path it holds (none when no worktree of the repository is there, or only one in the trash or the pool).

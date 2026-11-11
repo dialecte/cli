@@ -3,6 +3,7 @@ import type { GateStep } from './gate/gate-config.types.ts'
 /** The part of a package.json the contributor commands read. */
 export type PackageJson = {
 	name?: string
+	version?: string
 	scripts?: Record<string, string>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
@@ -36,4 +37,12 @@ export type DialecteField = {
 	 * `*.script.ts` under them stay test code.
 	 */
 	tdd?: { production?: string[] }
+	/**
+	 * Ignored folders, relative to this package root and ending with `/` (`coverage/`), that a build or a run
+	 * rebuilds: a worktree removal may delete them. Read from the main checkout's package.json only; an entry of
+	 * another shape (absolute, climbing with `..`, without its trailing `/`, not a string) counts for nothing.
+	 */
+	rebuiltIgnored?: unknown[]
+	/** The cli's step-events capability: 1 or higher when it writes step events (read by `worktreeCli`; any other value counts for nothing). */
+	stepEvents?: unknown
 }

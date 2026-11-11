@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
+import { isAtOrInside, realPathOf } from '../file-system.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
@@ -71,17 +71,12 @@ export function planPrune(params: {
 		if (typeof handover === 'string') return []
 		return [{ handover, commonFolder: commonFolderOf(handover.lotsFile.repository) }]
 	})
-	const links = [
-		params.workspace,
-		join(params.workspace, WORKTREES_FOLDER),
-		join(params.workspace, COMMIT_PLAN_FOLDER),
-		...scratchRoots,
-	].flatMap((folder) => findLinks(folder))
-	const repositories = readdirSync(params.workspace, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && isMainCheckout(join(params.workspace, entry.name)))
-		.map((entry) =>
-			planRepository({ repository: join(params.workspace, entry.name), handovers, links }),
-		)
+	const links = linkRootsOf({ workspace: params.workspace, scratchRoots }).flatMap((folder) =>
+		findLinks(folder),
+	)
+	const repositories = listMainCheckouts(params.workspace).map((repository) =>
+		planRepository({ repository, handovers, links }),
+	)
 	const scratch = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
 		if (!existsSync(scratchRoot)) return []
 		return readdirSync(scratchRoot)
@@ -97,6 +92,29 @@ export function planPrune(params: {
 		poolLeftOver: listPoolLeftOver(worktreesFolder),
 		trash: countTrashed(worktreesFolder),
 	}
+}
+
+/** The repositories of the workspace: its folders (not links) that are a main checkout, in directory order. */
+export function listMainCheckouts(workspace: string): string[] {
+	return readdirSync(workspace, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory() && isMainCheckout(join(workspace, entry.name)))
+		.map((entry) => join(workspace, entry.name))
+}
+
+/**
+ * The folders whose links (one level, never followed) may reach a worktree or a folder of the workspace: the
+ * workspace, its `.worktrees/` and `_commit-plan/`, and the scratch roots.
+ */
+export function linkRootsOf(params: {
+	workspace: string
+	scratchRoots: readonly string[]
+}): string[] {
+	return [
+		params.workspace,
+		join(params.workspace, WORKTREES_FOLDER),
+		join(params.workspace, COMMIT_PLAN_FOLDER),
+		...params.scratchRoots,
+	]
 }
 
 /** The `_pool-*` folders without a `pool.json`: a park that never finished, never taken nor evicted. */
@@ -308,14 +326,15 @@ function planRepository(params: {
 }
 
 /** The symbolic links directly in `folder`, each with the real path it reaches (a dangling one left out). */
-function findLinks(folder: string): FolderLink[] {
+export function findLinks(folder: string): FolderLink[] {
 	if (!existsSync(folder)) return []
 	return readdirSync(folder, { withFileTypes: true })
 		.filter((entry) => entry.isSymbolicLink())
 		.flatMap(function reach(entry): FolderLink[] {
 			const link = join(folder, entry.name)
 			try {
-				return [{ link, target: realpathSync(link) }]
+				// spelled as on disk, as `realPathOf` spells the folders it is compared with; a dangling link throws
+				return [{ link, target: realpathSync.native(link) }]
 			} catch {
 				return []
 			}
@@ -323,18 +342,12 @@ function findLinks(folder: string): FolderLink[] {
 }
 
 /** A link that reaches the folder or something inside it: removing the folder would break it. */
-function linkReaching(params: {
+export function linkReaching(params: {
 	folder: string
 	links: readonly FolderLink[]
 }): string | undefined {
-	const real = realpathSync(params.folder)
-	return params.links.find(function reaches(link) {
-		const fromFolder = relative(real, link.target)
-		return (
-			fromFolder === '' ||
-			(fromFolder !== '..' && !fromFolder.startsWith(`..${sep}`) && !isAbsolute(fromFolder))
-		)
-	})?.link
+	const real = realpathSync.native(params.folder)
+	return params.links.find((link) => isAtOrInside({ path: link.target, folder: real }))?.link
 }
 
 /**

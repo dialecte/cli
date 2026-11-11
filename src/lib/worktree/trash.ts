@@ -33,7 +33,11 @@ export function isParked(params: {
 	return first === TRASH_FOLDER || first.startsWith(POOL_FOLDER_PREFIX)
 }
 
-/** `git worktree move` into `_trash/<folder name>-<time>`, then a background `git worktree remove --force`. */
+/**
+ * `git worktree move` into `_trash/<folder name>-<time>`, then a background `git worktree remove`: with
+ * `--force` by default; without it, git refuses a worktree holding an untracked or modified file, which then
+ * stays registered in the trash.
+ */
 export function trashWorktree(params: {
 	worktree: string
 	/** The repository's main checkout: git runs from it. */
@@ -41,6 +45,8 @@ export function trashWorktree(params: {
 	worktreesFolder: string
 	now: Date
 	spawner: BackgroundSpawner
+	/** `git worktree remove --force` (default true); false: without it, so git refuses a worktree holding anything uncommitted. */
+	force?: boolean
 }): TrashedFolder {
 	const trashed = trashPathOf({
 		worktreesFolder: params.worktreesFolder,
@@ -51,7 +57,7 @@ export function trashWorktree(params: {
 	readGit({ root: params.repository, args: ['worktree', 'move', params.worktree, trashed] })
 	params.spawner({
 		command: 'git',
-		args: ['worktree', 'remove', '--force', trashed],
+		args: ['worktree', 'remove', ...(params.force === false ? [] : ['--force']), trashed],
 		cwd: params.repository,
 	})
 	return { trashed }

@@ -145,7 +145,8 @@ export function modulesOf(params: {
 	modules: readonly ReportedModule[]
 	file: string
 }): ReportedModule[] {
-	const realRoot = realpathSync(params.root)
+	// spelled as on disk, as `realPathOf` spells the files: a root typed in another case still matches
+	const realRoot = realpathSync.native(params.root)
 	return params.modules.filter(
 		(testModule) => relative(realRoot, realPathOf(testModule.file)) === params.file,
 	)
@@ -181,7 +182,7 @@ function productionFileJudge(params: {
 	root: string
 	packageJson: PackageJson
 }): (path: string) => boolean {
-	const realRoot = realpathSync(params.root)
+	const realRoot = realpathSync.native(params.root)
 	return function isProductionFile(path) {
 		const file = relative(realRoot, realPathOf(path))
 		return (

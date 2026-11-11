@@ -9,9 +9,14 @@ import { isPathArgument } from '../handover/handover-store-read.ts'
 import { textOf } from '../print/print.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { WORKTREE_INDEX_DIGITS } from '../worktree/worktree.constants.ts'
-import { readIdentity } from './identity.ts'
 import { lotFolderOf } from './lot-folder.ts'
-import { listLotFolderNames, listLotNames, locateStore, workTreeHolding } from './store-folder.ts'
+import {
+	listLotFolderNames,
+	listLotIdentities,
+	listLotNames,
+	locateStore,
+	workTreeHolding,
+} from './store-folder.ts'
 import { readStoreList } from './store-list.ts'
 import {
 	ID_PATTERNS,
@@ -143,24 +148,30 @@ export function noLotRefusal(argument: string): string {
 /**
  * The real path of the folder of the lot whose worktree holds `cwd` (through `.dialecte/lot`, or the identities of
  * the store of `cwd`), or whose review throwaway of the same index in the same store holds it; undefined for none.
+ * Without a link, only the lots of the worktree's index are read (every worktree name starts with its index), each
+ * identity once; a worktree named from no index reads none.
  */
 export function lotOfWorktree(params: { cwd: string }): string | undefined {
 	const workTree = workTreeHolding({ from: params.cwd })
 	if (workTree === undefined) return undefined
 	const linked = lotFolderOf({ folder: join(workTree, ...LOT_LINK_SEGMENTS) })
 	if (linked) return linked
+	const own = realPathOf(workTree)
+	const index = worktreeIndexOf(own)
+	if (index === undefined) return undefined
 	const store = locateStore({ from: workTree })?.store
 	if (store === undefined) return undefined
-	const lots = listLotNames({ store }).map((name) => join(store, name))
-	const own = realPathOf(workTree)
-	const holder = lots.find(function isOwnWorktree(lotFolder) {
-		const worktree = readIdentity({ lotFolder })?.worktree
-		return worktree !== null && worktree !== undefined && realPathOf(worktree) === own
+	const lots = listLotIdentities({ store, prefix: `${index}-` })
+	const holder = lots.find(function isOwnWorktree(entry) {
+		const { worktree } = entry.identity
+		return worktree !== null && realPathOf(worktree) === own
 	})
-	if (holder) return holder
-	const index = worktreeIndexOf(workTree)
-	if (index === undefined || !THROWAWAY_NAME_PATTERN.test(basename(workTree))) return undefined
-	return lots.find((lotFolder) => readIdentity({ lotFolder })?.index === index)
+	if (holder) return join(store, holder.name)
+	if (!THROWAWAY_NAME_PATTERN.test(basename(own))) return undefined
+	const throwawayLot = lots.find(function isOfIndex(entry) {
+		return entry.identity.index === index
+	})
+	return throwawayLot === undefined ? undefined : join(store, throwawayLot.name)
 }
 
 /** A word of an id's shape: digits, or four digits or more, a dash and the rest. */

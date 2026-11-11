@@ -24,6 +24,13 @@ export async function run(argv: string[]): Promise<void> {
 	process.exitCode = result.exitCode
 }
 
+/**
+ * What `dialecte doctor` prints for `argv` run in `cwd`: each check of the installed `@dialecte/*` packages, their
+ * skills, the local checkouts (`dialecteRoot`) and the cli, ✅, ⚠️ or ❌ with the command that fixes it, exit 1 when a
+ * check is not ok; with `--brief`, one line per problem, nothing when in sync, always exit 0.
+ *
+ * @intent check a Dialecte install without the command line, tell whether the installed packages and their skills are in sync
+ */
 export function runDoctor(params: {
 	argv: readonly string[]
 	cwd: string

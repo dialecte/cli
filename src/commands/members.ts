@@ -34,7 +34,11 @@ export function runMembers(params: { argv: string[]; cwd: string }): CommandOutp
 	})
 }
 
-/** The method entries of the live types the expression is read from, or the answer that says why not. */
+/**
+ * The method entries of the live types the expression is read from, or the answer that says why not.
+ *
+ * @intent read the live members of a package without the command line, get the method entries a members lookup answers from
+ */
 export function readMemberEntries(params: { argv: string[]; cwd: string }): MemberEntriesRead {
 	const missing = missingPackage({ cwd: params.cwd })
 	if (missing) return { kind: 'output', output: missing }

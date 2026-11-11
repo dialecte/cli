@@ -1,6 +1,20 @@
 /** What is on disk at a path: whether something is there, where its links lead. */
 import { lstatSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
+
+/** `path` is `folder` or lies inside it, both compared as given (resolve them first when links may differ). */
+export function isAtOrInside(params: { path: string; folder: string }): boolean {
+	const fromFolder = relative(params.folder, params.path)
+	return (
+		fromFolder === '' ||
+		(fromFolder !== '..' && !fromFolder.startsWith(`..${sep}`) && !isAbsolute(fromFolder))
+	)
+}
+
+/** `isAtOrInside` by real paths: links resolved, spelled as on disk. */
+export function isAtOrInsideReal(params: { path: string; folder: string }): boolean {
+	return isAtOrInside({ path: realPathOf(params.path), folder: realPathOf(params.folder) })
+}
 
 /** Something at the path, a dangling link included. */
 export function isPresent(path: string): boolean {
@@ -21,10 +35,13 @@ export function isFolder(path: string): boolean {
 	}
 }
 
-/** A path with its links resolved; as it is when it does not exist. */
+/**
+ * A path with its links resolved, spelled as on disk (on a case-insensitive volume, `repo/src` answers `Repo/Src`:
+ * two spellings of one folder compare equal); as it is when it does not exist.
+ */
 export function realPathOf(path: string): string {
 	try {
-		return realpathSync(path)
+		return realpathSync.native(path)
 	} catch {
 		return path
 	}

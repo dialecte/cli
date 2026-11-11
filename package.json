@@ -33,6 +33,7 @@
 		"test": "vitest",
 		"test:run": "vitest run",
 		"test:hook": "node src/cli.ts gate --hook",
+		"skills:check": "node src/cli.ts skills check",
 		"check": "npm run type-check && npm run lint:check && npm run format:check",
 		"prepublishOnly": "node src/release-check.ts && npm run build",
 		"prepare": "husky"
@@ -118,6 +119,7 @@
 			"production": [
 				"test/suite-guard"
 			]
-		}
+		},
+		"stepEvents": 1
 	}
 }

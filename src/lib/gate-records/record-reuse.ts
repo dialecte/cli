@@ -11,7 +11,13 @@ import { recordGate } from './gate-records.ts'
 
 import type { GateStep } from '../gate/gate-config.types.ts'
 import type { StepResult } from '../gate/gate.types.ts'
-import type { CheckKey, GateRecord, GateRecordMode, RecordedStep } from './gate-records.types.ts'
+import type {
+	CheckKey,
+	GateRecord,
+	GateRecordMode,
+	RecordedRun,
+	RecordedStep,
+} from './gate-records.types.ts'
 
 /**
  * `reused: <command> green on this tree at <time> (HEAD <short>)`, naming the run that checked: escaped here, it
@@ -61,7 +67,7 @@ export function reusedResults(params: {
  * Records a run with the key of what it checked. A state changed while the steps ran (a step edited a file, an
  * install, a rebuilt dependency) was not the state they checked: the run is then recorded without a key, holding
  * the tree its steps started on (never current for the one they left), and never stored. Answers whether the
- * record went to the store and whether the state changed.
+ * record went to the store, the state hash it holds (null when none was written) and whether the state changed.
  */
 export function recordCheckedRun(params: {
 	root: string
@@ -78,13 +84,13 @@ export function recordCheckedRun(params: {
 	base?: GateRecord['base']
 	/** How long the machine slept during the run, when it did. */
 	sleptMs?: number
-}): { stored: boolean; changedWhileRunning: boolean } {
+}): RecordedRun & { changedWhileRunning: boolean } {
 	const { keyBefore, keyAfter } = params
 	const changedTree =
 		keyBefore !== undefined && !isSameKey({ key: keyBefore, other: keyAfter })
 			? keyBefore.tree
 			: undefined
-	const stored = recordGate({
+	const recorded = recordGate({
 		root: params.root,
 		mode: params.mode,
 		results: params.results,
@@ -94,5 +100,5 @@ export function recordCheckedRun(params: {
 		...(params.base && { base: params.base }),
 		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
 	})
-	return { stored, changedWhileRunning: changedTree !== undefined }
+	return { ...recorded, changedWhileRunning: changedTree !== undefined }
 }

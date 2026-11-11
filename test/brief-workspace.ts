@@ -101,6 +101,8 @@ export function writeStoreLot(params: {
 	registry?: StoreEntry['state']
 	/** The repository the identity names; the fixed `/work/repo` of the records when left out. */
 	repository?: string
+	/** The worktree the identity names; `<workspace>/.worktrees/<name>` when left out. */
+	worktree?: string
 }): string {
 	const { workspace, name } = params
 	const simulated = params.simulated ?? false
@@ -120,7 +122,9 @@ export function writeStoreLot(params: {
 			...(params.repository !== undefined && { repository: params.repository }),
 			branch: params.branch ?? `feat/${name}`,
 			simulated,
-			worktree: simulated ? null : join(workspace.workspace, '.worktrees', name),
+			worktree: simulated
+				? null
+				: (params.worktree ?? join(workspace.workspace, '.worktrees', name)),
 		},
 	})
 	if (!published) throw new Error(`the lot ${name} exists already`)

@@ -6,10 +6,12 @@
  * hook says the base it used and what was selected on one line.
  */
 import { hasFlag } from '../config.ts'
+import { partsOf, startStep } from '../events/record-step.ts'
 import { computeCommitKey } from '../gate-records/check-key.ts'
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { RELEASE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
+import { reusedResults } from '../gate-records/record-reuse.ts'
 import { readPackageJson } from '../package-json.ts'
 import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
@@ -59,6 +61,8 @@ export async function runHookGate(params: {
 	handoverBase: HandoverBase | undefined
 	/** Why a hand-over variable given without the other was ignored. */
 	handoverIgnored: string | undefined
+	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
+	warn?: (line: string) => void
 }): Promise<CommandResult> {
 	const { cwd } = params
 	const packageJson = readPackageJson(cwd)
@@ -81,43 +85,69 @@ export async function runHookGate(params: {
 		...(params.indexFile && { indexFile: params.indexFile }),
 	})
 	const baseLines = shown?.lines ?? []
-	const reuseLine =
+	// the run's events: a hook answered from a record is a run too (reuse whole)
+	const recorder = startStep({ cwd, step: 'gate-hook', heavy: false, warn: params.warn })
+	const reuse =
 		!params.reusable || hasFlag(params.argv, 'no-reuse')
 			? undefined
-			: findHookReuseLine({ cwd, key, hashes })
-	if (reuseLine)
+			: findHookReuse({ cwd, key, hashes })
+	if (reuse) {
+		const testNames = testSteps.map(function nameOf(step) {
+			return step.name
+		})
+		const answered = reusedResults({ record: reuse.record, steps: testSteps }).filter(
+			function isTestStep(result) {
+				return testNames.includes(result.step.name)
+			},
+		)
+		recorder.end({
+			exit: 0,
+			parts: partsOf({ results: answered, durations: new Map(), reused: new Set(answered) }),
+			reuse: 'whole',
+			stateHash: null,
+		})
 		return {
 			exitCode: 0,
 			output: textOf([
 				...baseLines,
-				reuseLine,
+				reuse.line,
 				...(shown
 					? [renderHookBaseLine({ base: shown.base, selection: GATE_HOOK_SELECTION_WORDS.reused })]
 					: []),
 			]),
 		}
+	}
 	const runningLine = GATE_HOOK_RUNNING_LINE.replace('{tree}', key.tree.slice(0, SHORT_SHA_LENGTH))
 	const { live } = params
 	const progress = live ? createStepProgress({ live, clock: createSystemClock() }) : undefined
 	// off a terminal the result holds them: each said once
 	if (live?.tty) for (const line of baseLines) live.writeLine(textOf([line]))
 	live?.writeLine(runningLine)
+	const durations = new Map<StepResult, number>()
 	const results = await runGateSteps({
 		root: cwd,
 		steps: testSteps,
 		packageJson,
 		// the scoped steps select on the tree the commit records, against the hook base
 		...(shown && { scope: { base: shown.base.commit, tree: key.tree } }),
-		...(progress && {
-			announce: function announce(step) {
-				const running = progress.start({ name: step.name, detail: step.run })
-				return function finished(result) {
-					running.finish(...hookStepLines(result).map((line) => textOf([line])))
-				}
-			},
-		}),
+		// always: the run's events time each part, progress shown or not (D8)
+		announce: function announce(step) {
+			const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
+			const running = progress?.start({ name: step.name, detail: step.run })
+			return function finished(result) {
+				durations.set(result, finishPart())
+				running?.finish(...hookStepLines(result).map((line) => textOf([line])))
+			}
+		},
 	})
 	const failed = results.find((result) => result.status === 'failed')
+	// the hook stores no record: no state hash
+	recorder.end({
+		exit: failed ? 1 : 0,
+		parts: partsOf({ results, durations, reused: new Set() }),
+		reuse: 'none',
+		stateHash: null,
+	})
 	// one line for every step: a hook's reader reads the last summary line of the hook's step
 	const summary = renderVitestTestsLine(sumStepCounts(results.map((result) => result.counts)))
 	if (summary && live?.tty) live.writeLine(summary)
@@ -164,18 +194,22 @@ function resolveHookBase(params: {
 }
 
 /**
- * The line of the green record answering the hook's key: a `--full` record of it, else a `--release` record of the
- * same tree and install with the release command hash when the release list covers `full`; undefined when none
+ * The green record answering the hook's key, with its line: a `--full` record of it, else a `--release` record of
+ * the same tree and install with the release command hash when the release list covers `full`; undefined when none
  * answers.
  */
-function findHookReuseLine(params: {
+function findHookReuse(params: {
 	cwd: string
 	key: CheckKey
 	hashes: ModeCommandHashes
-}): string | undefined {
+}): { line: string; record: GateRecord } | undefined {
 	const { cwd, key, hashes } = params
 	const full = findReusableRecord({ root: cwd, mode: 'full', key })
-	if (full) return renderHookReuseLine({ template: GATE_HOOK_REUSED_LINE, key, record: full })
+	if (full)
+		return {
+			line: renderHookReuseLine({ template: GATE_HOOK_REUSED_LINE, key, record: full }),
+			record: full,
+		}
 	if (!hashes.releaseCoversFull) return undefined
 	const release = findReusableRecord({
 		root: cwd,
@@ -183,7 +217,14 @@ function findHookReuseLine(params: {
 		key: { ...key, commandHash: hashes.release },
 	})
 	return release
-		? renderHookReuseLine({ template: GATE_HOOK_RELEASE_REUSED_LINE, key, record: release })
+		? {
+				line: renderHookReuseLine({
+					template: GATE_HOOK_RELEASE_REUSED_LINE,
+					key,
+					record: release,
+				}),
+				record: release,
+			}
 		: undefined
 }
 

@@ -1,4 +1,3 @@
-/** What `dialecte schema <Tag>` prints: one block per installed dialecte holding the tag, or the closest tags. */
 import { closestNames } from '../closest-names.ts'
 import { endedOf, jsonOf, textOf } from '../print/print.ts'
 import { describeElement } from './describe-element.ts'
@@ -7,6 +6,11 @@ import { SUGGESTION_LIMIT } from './schema.constants.ts'
 import type { CommandOutput } from '../command-output.types.ts'
 import type { AttributeDescription, ElementDescription, LoadedDialectes } from './schema.types.ts'
 
+/**
+ * What `dialecte schema <Tag>` prints: one block per installed dialecte holding the tag, or the closest tags.
+ *
+ * @intent answer a schema lookup from dialectes already loaded, tell what an element may hold and where
+ */
 export function answerSchema(params: {
 	loaded: LoadedDialectes
 	tagName: string

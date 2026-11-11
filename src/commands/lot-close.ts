@@ -7,6 +7,7 @@ import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { mainCheckoutOf } from '../lib/git.ts'
 import { closeHandovers } from '../lib/handover/close-handovers.ts'
 import { LOT_CLOSE_ALREADY_CLOSED } from '../lib/handover/handover.constants.ts'
+import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
@@ -23,6 +24,11 @@ export function runLotClose(params: {
 	spawner?: BackgroundSpawner
 	/** Lists the processes and their working folders (the tests stand in for it); a throw is "not known". */
 	listProcesses?: () => ProcessFolder[] | string
+	/**
+	 * Where rehearsal clones are made, and were made by earlier cli versions: a link there may reach a worktree.
+	 * Default: this machine's (`machineScratchRoots`).
+	 */
+	scratchRoots?: readonly string[]
 }): CommandResult {
 	const names = positionalArguments({ argv: params.argv, valueOptions: [] })
 	if (names.length === 0) return { exitCode: 2, output: renderLotUsage() }
@@ -39,6 +45,7 @@ export function runLotClose(params: {
 		now: params.now ?? new Date(),
 		spawner: params.spawner ?? spawnDetached,
 		listProcesses: params.listProcesses,
+		scratchRoots: params.scratchRoots ?? Object.values(machineScratchRoots()),
 	})
 	if ('unknown' in results)
 		return resultOf({
@@ -56,9 +63,11 @@ export function runLotClose(params: {
 		if (outcome.already) return LOT_CLOSE_ALREADY_CLOSED.replace('{handover}', outcome.handover)
 		return `closed  ${outcome.handover}: ${moved.join(', ')}${nodeModules ? `; node_modules ${nodeModules}` : ''}`
 	})
+	const trash = join(dirname(main), WORKTREES_FOLDER, TRASH_FOLDER)
 	if (outcomes.some((outcome) => 'closed' in outcome && !outcome.already))
 		lines.push(
-			`the closed worktrees wait in ${join(dirname(main), WORKTREES_FOLDER, TRASH_FOLDER)}, removed in the background; their branches are kept`,
+			`the closed worktrees wait in ${trash}, removed in the background; their branches are kept`,
+			`the deletion is git's own git worktree remove, without --force: git may refuse a worktree written into since the check, and a refused one stays registered in ${trash} for you to look at`,
 		)
 	return resultOf({ exitCode, lines })
 }

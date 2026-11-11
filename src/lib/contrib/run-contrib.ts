@@ -17,6 +17,7 @@
  * written), a value no command accepts in package.json.
  */
 import { hasFlag } from '../config.ts'
+import { partsOf, reuseOf, startStep } from '../events/record-step.ts'
 import { computeCheckKey } from '../gate-records/check-key.ts'
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { recordCheckedRun, renderReuseLine, reusedResults } from '../gate-records/record-reuse.ts'
@@ -68,6 +69,7 @@ import {
 import { findPassedGateStep, readFullGateRecords } from './gate-step-reuse.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
+import type { StepHandle } from '../events/record-step.types.ts'
 import type { RecordedStep } from '../gate-records/gate-records.types.ts'
 import type { GateStep } from '../gate/gate-config.types.ts'
 import type { StepResult } from '../gate/gate.types.ts'
@@ -83,6 +85,8 @@ export async function runContrib(params: {
 	live?: LiveOutput
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
+	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
+	warn?: (line: string) => void
 }): Promise<CommandResult> {
 	const { cwd, argv, live } = params
 	const json = hasFlag(argv, 'json')
@@ -90,6 +94,10 @@ export async function runContrib(params: {
 	const configuration = readConfiguration(cwd)
 	if ('refusal' in configuration) return { exitCode: 2, output: textOf([configuration.refusal]) }
 	const { packageJson, steps } = configuration
+	// the run's events: its start before any row, its end after the record (D12); contrib is heavy as a whole
+	const recorder = startStep({ cwd, step: 'contrib', heavy: true, warn: params.warn })
+	const durations = new Map<StepResult, number>()
+	const reusedParts = new Set<StepResult>()
 
 	const commandHash = contribKeyHash({
 		root: cwd,
@@ -130,7 +138,11 @@ export async function runContrib(params: {
 				progress,
 				showLive,
 				beforeRelease: showAbsentLive,
+				recorder,
+				durations,
+				reusedParts,
 			})
+	if (found) for (const result of results) reusedParts.add(result)
 	if (found && progress)
 		for (const result of results) {
 			if (isReleaseRow(result.step)) showAbsentLive()
@@ -138,7 +150,7 @@ export async function runContrib(params: {
 		}
 	showAbsentLive()
 	const original = found && originOfRecord(found)
-	const { changedWhileRunning } = recordCheckedRun({
+	const { changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode: CONTRIB_RECORD_MODE,
 		results,
@@ -154,6 +166,8 @@ export async function runContrib(params: {
 	const lines = [...results.map(contribLineOf), ...(mutation ? [mutation] : [])]
 	const failed = lines.filter((line) => line.row.status === 'failed').map((line) => line.row.name)
 	const exitCode = failed.length ? 1 : 0
+	const parts = partsOf({ results, durations, reused: reusedParts })
+	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash })
 	if (json)
 		return {
 			exitCode,
@@ -245,8 +259,14 @@ async function runRows(params: {
 	showLive: (shown: { result: StepResult; finish?: (...lines: string[]) => void }) => void
 	/** Called before the release row starts. */
 	beforeRelease: () => void
+	/** The run's recorder: each row that runs is timed as a part. */
+	recorder: StepHandle
+	/** Filled: how long each row ran. */
+	durations: Map<StepResult, number>
+	/** Filled: the rows a green `gate --full` answered. */
+	reusedParts: Set<StepResult>
 }): Promise<StepResult[]> {
-	const { root, packageJson, gate, progress, showLive } = params
+	const { root, packageJson, gate, progress, showLive, recorder, durations } = params
 	const results: StepResult[] = []
 	// as the gate does: after a package step that failed, the next ones are not run
 	let packageStepFailed = false
@@ -254,7 +274,9 @@ async function runRows(params: {
 		if ('builtin' in step) {
 			if (isReleaseRow(step)) params.beforeRelease()
 			const running = progress?.start({ name: step.name, detail: `dialecte ${step.builtin}` })
+			const finishPart = recorder.startPart({ name: step.name, heavy: false })
 			const result = step.builtin === 'rules' ? rulesResult(root) : releaseResult(root)
+			durations.set(result, finishPart())
 			results.push(result)
 			if (running) showLive({ result, finish: running.finish })
 			continue
@@ -265,6 +287,7 @@ async function runRows(params: {
 				? gateReusedResult({ step, ...passed })
 				: { step, status: 'not-run', counts: {}, restored: [] }
 			results.push(result)
+			if (passed) params.reusedParts.add(result)
 			if (progress) showLive({ result })
 			continue
 		}
@@ -272,14 +295,18 @@ async function runRows(params: {
 			root,
 			steps: [step],
 			packageJson,
-			...(progress && {
-				announce: function announce(announced) {
-					const running = progress.start({ name: announced.name, detail: announced.run })
-					return function finished(finishedResult) {
-						showLive({ result: finishedResult, finish: running.finish })
-					}
-				},
-			}),
+			// always: the run's events time each part, progress shown or not (D8)
+			announce: function announce(announced) {
+				const finishPart = recorder.startPart({
+					name: announced.name,
+					heavy: announced.heavy === true,
+				})
+				const running = progress?.start({ name: announced.name, detail: announced.run })
+				return function finished(finishedResult) {
+					durations.set(finishedResult, finishPart())
+					if (running) showLive({ result: finishedResult, finish: running.finish })
+				}
+			},
 		})
 		results.push(result)
 		packageStepFailed = result.status === 'failed'

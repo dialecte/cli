@@ -93,6 +93,8 @@ export type RoundArguments = {
 	/** Value options by name, without the dashes. */
 	values: Map<string, string>
 	flags: Set<string>
+	/** Repeatable options by name, without the dashes: every value given, in order. */
+	lists: Map<string, string[]>
 	/** The positional words, those after `--` included. */
 	words: string[]
 }

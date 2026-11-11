@@ -186,6 +186,8 @@ export function addThrowaway(params: {
 	previous: number
 	branch: string
 	now: Date
+	/** Told the throwaway's path once it is decided, before anything is made. */
+	onPlanned?: (worktree: string) => void
 }): ReviewThrowaway | string {
 	const branch = `${params.branch}-round-${params.previous}`
 	let added: AddedWorktree | string
@@ -197,6 +199,7 @@ export function addThrowaway(params: {
 			// the lot's own index when its worktree is numbered, else the workspace's next
 			index: worktreeIndexOf(params.root),
 			now: params.now,
+			onPlanned: params.onPlanned,
 		})
 	} catch (error) {
 		// git worktree add may have made it before a later step failed (the node_modules copy, the baseline)

@@ -259,6 +259,18 @@ export type TddContext = {
 	progress?: StepProgress
 }
 
+/** What a `red` or `green` run read before it runs: nothing refused it, its step is recorded from here. */
+export type TddRunAdmission = {
+	/** Every test-code file changed since the base, with its hash. */
+	testCode: Map<string, string>
+	/** Every changed test file. */
+	changed: ChangedTestFile[]
+	/** The changed test files the command line points at. */
+	files: ChangedTestFile[]
+	acceptances: LotCaseEntry[]
+	revisions: LotCaseEntry[]
+}
+
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */
 export type RunnerError = {
 	name?: string

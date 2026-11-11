@@ -138,7 +138,10 @@ export type LotStateReport = {
 
 /** The names inside a lot folder that the store itself writes, by what they hold. */
 export type StoreFileNames = Readonly<
-	Record<'brief' | 'plan' | 'scenario' | 'identity' | 'transitions' | 'answers' | 'asks', string>
+	Record<
+		'brief' | 'plan' | 'scenario' | 'identity' | 'transitions' | 'answers' | 'asks' | 'events',
+		string
+	>
 >
 
 /**
@@ -230,5 +233,14 @@ export type LotRequirement = { lot: string } | { exitCode: 2; output: PrintedTex
 /** A pause that blocks the thread for `milliseconds` (the overlap check is synchronous; a test records it). */
 export type SynchronousPause = (milliseconds: number) => void
 
-/** What `storeListPath` reads: the environment (`XDG_STATE_HOME`) and the person's home folder. */
-export type StoreListLocation = { environment?: NodeJS.ProcessEnv; home?: string }
+/** Where the state folder comes from: the environment (`XDG_STATE_HOME`) and the person's home folder. */
+export type StateFolderLocation = {
+	environment?: Record<string, string | undefined>
+	home?: string
+}
+
+/** What `storeListPath` reads: the state folder's location. */
+export type StoreListLocation = StateFolderLocation
+
+/** A lot folder's name and the identity it holds, read once. */
+export type LotIdentityEntry = { name: string; identity: LotIdentity }

@@ -58,6 +58,8 @@ export function addWorktree(params: {
 	/** The index the folder takes (a review throwaway keeps its lot's); none: the next of the workspace. */
 	index?: string
 	now: Date
+	/** Told the worktree's path once it is decided, before anything is made (a step records its start there). */
+	onPlanned?: (worktree: string) => void
 }): AddedWorktree | string {
 	const { branch } = params
 	const repository = mainCheckoutOf(params.repository)
@@ -75,6 +77,7 @@ export function addWorktree(params: {
 	const index = params.index ?? claimWorktreeIndex({ worktreesFolder })
 	const worktree = join(worktreesFolder, worktreeFolderName({ index, repository, branch }))
 	if (existsSync(worktree)) return `${worktree} exists already`
+	params.onPlanned?.(worktree)
 	const from = branchExists
 		? branch
 		: (params.from ?? readPackageJson(repository).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH)

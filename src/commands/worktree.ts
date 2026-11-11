@@ -9,7 +9,6 @@
  * its absolute `cd`; runs them only with `--yes`, after a confirmation on a terminal.
  */
 import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
@@ -18,7 +17,7 @@ import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { LIST_DEPTH } from '../lib/handover/handover.constants.ts'
 import { findHandoverFolders } from '../lib/handover/list-handovers.ts'
-import { rehearsalScratchRoot } from '../lib/handover/rehearse-handover.ts'
+import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
@@ -55,11 +54,7 @@ export async function run(argv: string[]): Promise<void> {
 				? await runWorktreePrune({
 						argv: rest,
 						cwd: process.cwd(),
-						scratchRoot: rehearsalScratchRoot({
-							platform: process.platform,
-							systemTemporaryFolder: tmpdir(),
-						}),
-						formerScratchRoot: tmpdir(),
+						...machineScratchRoots(),
 						isTerminal: Boolean(process.stdin.isTTY && process.stdout.isTTY),
 						confirm: askOnTerminal,
 					})

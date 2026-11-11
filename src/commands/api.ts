@@ -28,6 +28,13 @@ export async function run(argv: string[]): Promise<void> {
 	process.exitCode = result.exitCode
 }
 
+/**
+ * What `dialecte api <find|show> ...` prints for `argv` (the words after `api`) run in `cwd`: the methods found for a
+ * need, or one method's contract, read from the `api.json` of the installed packages; the usage with exit code 2 on
+ * a bad call.
+ *
+ * @intent answer an api lookup without the command line, find a Dialecte method by what it is for, show a method's contract from another program
+ */
 export function runApi(params: { argv: readonly string[]; cwd: string }): CommandOutput {
 	const missing = missingPackage({ cwd: params.cwd })
 	if (missing) return missing
@@ -85,6 +92,12 @@ function show(params: { indexes: ApiJson[]; path: string; json: boolean }): Comm
 	return { output: renderShown({ methods, json: params.json }), exitCode: methods.length ? 0 : 1 }
 }
 
+/**
+ * The packages an api lookup searched, as its not-found answer names them: their names joined by commas, or the line
+ * that says no installed package ships an `api.json`.
+ *
+ * @intent name the packages an api lookup searched, word a not-found api answer
+ */
 export function packagesText(indexes: readonly ApiJson[]): string {
 	return indexes.length
 		? indexes.map((index) => index.package).join(', ')

@@ -7,6 +7,8 @@ import { resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { startStep } from '../lib/events/record-step.ts'
+import { realPathThroughAncestors } from '../lib/file-system.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import {
 	addThrowaway,
@@ -28,8 +30,10 @@ import {
 	workTreeTopOf,
 	worktreeStateRefusal,
 } from '../lib/review-rounds/worktree-state.ts'
+import { lotFolderOf } from '../lib/store/lot-folder.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { StepHandle } from '../lib/events/record-step.types.ts'
 import type { ReviewDelta } from '../lib/review-rounds/review-rounds.types.ts'
 
 /** `lot delta` under its old word (`runReview({ argv: [<old word>, ...] })`). */
@@ -94,7 +98,33 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 		files: computeDelta({ root, folder, previous, state }),
 	}
 	if (branch) {
-		const throwaway = addThrowaway({ root, folder, previous, branch, now: params.now })
+		// the step's events: in the lot `<id>` names (none for a folder that is no lot), once the path is decided
+		const lotFolder = lotFolderOf({ folder })
+		let recorder: StepHandle | undefined
+		const throwaway = addThrowaway({
+			root,
+			folder,
+			previous,
+			branch,
+			now: params.now,
+			onPlanned: function startThrowawayStep(worktree) {
+				recorder = startStep({
+					cwd: root,
+					step: 'throwaway-add',
+					heavy: false,
+					place:
+						lotFolder === undefined
+							? null
+							: {
+									lot: lotFolder,
+									worktree: realPathThroughAncestors(worktree),
+									throwaway: true,
+								},
+				})
+			},
+		})
+		// after the throwaway exists (D12)
+		recorder?.end({ exit: typeof throwaway === 'string' ? 1 : 0, stateHash: null })
 		if (typeof throwaway === 'string')
 			return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${throwaway}`] })
 		delta.throwaway = throwaway

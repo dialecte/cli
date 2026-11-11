@@ -1,9 +1,12 @@
 /** The print boundary: the one place that escapes a text for a terminal and the one writer of standard output and error. */
+import { writeSync } from 'node:fs'
+
 import {
 	CARRIAGE_RETURN,
 	DISPLAY_ESCAPED_RANGES,
 	ESCAPE_RADIX,
 	LINE_FEED,
+	STREAM_DESCRIPTORS,
 } from './print.constants.ts'
 
 import type { PrintEnding, PrintedText, PrintStream } from './print.types.ts'
@@ -52,18 +55,38 @@ export function refreshedOf(text: PrintedText): PrintedText {
 
 /**
  * Writes `text` to the stream: with a line feed after it (`ending: 'line'`, the default), or `as-is` (an answer
- * that ends its own last line, a line refreshed in place); an empty text `as-is` writes nothing.
+ * that ends its own last line, a line refreshed in place); an empty text `as-is` writes nothing. `synchronous`:
+ * `writeSync` on the stream's descriptor until every byte is written (a short write loses nothing), so a closed pipe throws here (for the caller to catch) instead of raising
+ * an asynchronous EPIPE that ends the process.
  */
 export function printOut(params: {
 	stream: PrintStream
 	text: PrintedText
 	ending?: PrintEnding
+	synchronous?: boolean
 }): void {
 	const { text } = params
 	const asIs = params.ending === 'as-is'
 	if (asIs && text === '') return
+	const written = asIs ? text : `${text}${LINE_FEED}`
+	if (params.synchronous) {
+		writeAllSync({ descriptor: STREAM_DESCRIPTORS[params.stream], text: written })
+		return
+	}
 	const stream = params.stream === 'stdout' ? process.stdout : process.stderr
-	stream.write(asIs ? text : `${text}${LINE_FEED}`)
+	stream.write(written)
+}
+
+/**
+ * Writes every byte of `text` (UTF-8) to `descriptor`: the text itself first (one write in the common case), then the
+ * bytes a short write left, calling `writeSync` again until none is left.
+ */
+function writeAllSync(params: { descriptor: number; text: string }): void {
+	const bytes = Buffer.from(params.text, 'utf8')
+	let offset = writeSync(params.descriptor, params.text)
+	while (offset < bytes.length) {
+		offset += writeSync(params.descriptor, bytes.subarray(offset))
+	}
 }
 
 /** Writes the escaped `lines`, joined, and a line feed to the stream. */

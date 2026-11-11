@@ -162,6 +162,9 @@ export const ALREADY_COMMITTED_DETAIL =
 /** `lot close` of a hand-over its registry entry records closed by an earlier close: nothing moved, exit 0. */
 export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed'
 
+/** How many commits only a worktree's HEAD reflog reaches `lot close` names when it keeps it; the rest are counted. */
+export const HEAD_REFLOG_COMMITS_SHOWN = 3
+
 /** `lot close` run from inside the worktree it would close: kept, never moved from under its own feet. */
 export const CLOSE_FROM_INSIDE =
 	'lot close runs from inside {worktree}: run it from another folder, such as cd {main}'

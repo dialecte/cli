@@ -36,7 +36,8 @@ import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
-import { realPathThroughAncestors } from '../lib/file-system.ts'
+import { startStep } from '../lib/events/record-step.ts'
+import { realPathOf, realPathThroughAncestors } from '../lib/file-system.ts'
 import { currentBranchOf } from '../lib/git.ts'
 import { abandonHandover } from '../lib/handover/abandon-handover.ts'
 import {
@@ -48,6 +49,7 @@ import {
 	handoverCardData,
 	handoverCardSections,
 } from '../lib/handover/handover-card.ts'
+import { resolveHandoverGateScope } from '../lib/handover/handover-gate-scope.ts'
 import {
 	handoverHoldRefusal,
 	handoverLockPath,
@@ -481,8 +483,14 @@ async function runHandoverOf(params: {
 	recordRun: () => void
 }): Promise<number> {
 	const { argv, write, handover, progress, live, cliPath } = params
+	// the step's lot is the hand-over folder's (none outside every store); its worktree the commit root
+	const lotFolder = lotFolderOf({ folder: handover.folder })
+	const commitRoot = realPathOf(handover.lotsFile.repository)
+	const stepPlace =
+		lotFolder === undefined ? null : { lot: lotFolder, worktree: commitRoot, throwaway: false }
 	if (hasFlag(argv, 'rehearse'))
 		return rehearseHandover({
+			stepPlace,
 			handover,
 			write,
 			clock: params.clock,
@@ -500,6 +508,12 @@ async function runHandoverOf(params: {
 			relink: params.relink,
 		})
 	params.afterCheck?.()
+	// read before the marker and the step, as the rehearsal does: an invalid gate config writes nothing
+	const gateScope = resolveHandoverGateScope({ handover })
+	if ('refusal' in gateScope) {
+		write(textOf([gateScope.refusal]))
+		return 2
+	}
 	// a real run marks its folder: a gate does not run under a hand-over committing now
 	const releaseRunMarker = writeRunMarker({ folder: handover.folder, now: new Date() })
 	// an abandon that checked before this marker existed: its marker wins, nothing is committed
@@ -514,9 +528,17 @@ async function runHandoverOf(params: {
 		)
 		return 2
 	}
+	const recorder = startStep({
+		cwd: commitRoot,
+		step: 'handover-run',
+		heavy: false,
+		place: stepPlace,
+	})
+	let stepExit = 1
 	try {
-		return await runHandoverFolder({
+		stepExit = await runHandoverFolder({
 			handover,
+			gateScope,
 			write,
 			clock: params.clock,
 			colour: params.colour,
@@ -529,8 +551,11 @@ async function runHandoverOf(params: {
 			// the DONE card reads the run record: written before it
 			beforeCard: params.recordRun,
 		})
+		return stepExit
 	} finally {
 		releaseRunMarker()
+		// after the hook record the run left (D12)
+		recorder.end({ exit: stepExit, stateHash: null })
 	}
 }
 
