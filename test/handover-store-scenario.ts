@@ -336,7 +336,13 @@ export function footerOf(id: string): string {
 }
 
 /** The cli as a process whose output is a pipe, `$COLUMNS` set only when given. */
-export function runCli(params: { cwd: string; argv: string[]; columns?: number }): {
+export function runCli(params: {
+	cwd: string
+	argv: string[]
+	columns?: number
+	/** A bound in milliseconds: the process is killed past it and its exit code is null. */
+	timeoutMs?: number
+}): {
 	exitCode: number | null
 	output: string
 } {
@@ -344,6 +350,7 @@ export function runCli(params: { cwd: string; argv: string[]; columns?: number }
 	const result = spawnSync(process.execPath, [CLI_SOURCE, ...params.argv], {
 		cwd: params.cwd,
 		encoding: 'utf8',
+		timeout: params.timeoutMs,
 		env: {
 			...environment,
 			...(params.columns !== undefined && { COLUMNS: String(params.columns) }),

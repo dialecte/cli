@@ -1,4 +1,5 @@
 import { closestNames } from '../closest-names.ts'
+import { endedOf, jsonOf, textOf } from '../print/print.ts'
 import { describeElement } from './describe-element.ts'
 import { SUGGESTION_LIMIT } from './schema.constants.ts'
 
@@ -21,16 +22,29 @@ export function answerSchema(params: {
 	)
 	if (params.json)
 		return {
-			output: `${JSON.stringify({ elements, skipped: loaded.skipped }, null, '\t')}\n`,
+			output: endedOf(jsonOf({ elements, skipped: loaded.skipped }, '\t')),
 			exitCode: elements.length ? 0 : 1,
 		}
-	if (elements.length) return { output: elements.map(renderElement).join('\n'), exitCode: 0 }
+	if (elements.length)
+		return {
+			output: textOf([
+				...elements.flatMap((element, index) => [
+					...(index === 0 ? [] : ['']),
+					...renderElement(element),
+				]),
+				'',
+			]),
+			exitCode: 0,
+		}
 
 	const skipped = loaded.skipped.length
 		? ` (skipped ${loaded.skipped.map((entry) => `${entry.packageName}: ${entry.reason}`).join('; ')})`
 		: ''
 	if (loaded.dialectes.length === 0)
-		return { output: `no installed dialecte holds "${tagName}"${skipped}\n`, exitCode: 1 }
+		return {
+			output: textOf([`no installed dialecte holds "${tagName}"${skipped}`, '']),
+			exitCode: 1,
+		}
 	const suggestions = loaded.dialectes.map((dialecte) => {
 		const closest = closestNames({
 			name: tagName,
@@ -39,10 +53,17 @@ export function answerSchema(params: {
 		})
 		return `no element "${tagName}" in ${dialecte.packageName}${closest.length ? ` - closest: ${closest.join(', ')}` : ''}`
 	})
-	return { output: `${suggestions.join('\n')}${skipped}\n`, exitCode: 1 }
+	const lastIndex = suggestions.length - 1
+	return {
+		output: textOf([
+			...suggestions.map((line, index) => (index === lastIndex ? `${line}${skipped}` : line)),
+			'',
+		]),
+		exitCode: 1,
+	}
 }
 
-function renderElement(element: ElementDescription): string {
+function renderElement(element: ElementDescription): string[] {
 	const lines = [
 		`${element.tag}  ${element.packageName}  {${element.namespace}}`,
 		`parents: ${element.parents.join(', ') || 'none (the root)'}`,
@@ -56,7 +77,7 @@ function renderElement(element: ElementDescription): string {
 	for (const attribute of element.attributes) lines.push(`  ${renderAttribute(attribute)}`)
 	lines.push(`text: ${element.text ?? 'none'}`)
 	if (element.xsiTypes.length) lines.push(`xsi:type: ${element.xsiTypes.join(', ')}`)
-	return `${lines.join('\n')}\n`
+	return lines
 }
 
 function renderAttribute(attribute: AttributeDescription): string {

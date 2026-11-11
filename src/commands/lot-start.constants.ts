@@ -6,6 +6,13 @@ import type { BriefEffort } from '../lib/store/brief.types.ts'
 export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate']
 export const START_FLAGS: readonly string[] = ['dry-run', 'json']
 
+/** Why `lot start` is a usage error: `{extra}` the words beyond the brief, `{effort}` and `{efforts}` the flag's. */
+export const START_USAGE_REASONS = {
+	noBrief: 'lot start takes one brief: none given',
+	extra: 'lot start takes one brief, not also {extra}',
+	effort: '--effort {effort} is not one of {efforts}',
+} as const
+
 /** The effort of a lot whose brief and flags name none (S; L1 replaces it by the risk class). */
 export const DEFAULT_EFFORT: BriefEffort = 'medium'
 

@@ -373,7 +373,7 @@ describe(
 )
 
 describe('a test file with a refused case', { timeout: 240_000 }, () => {
-	it('one case refused (a missing export), another red → the red is recorded, the refusal too, nothing frozen, no "not recorded"', async () => {
+	it('one case refused (a missing export), another red → the red is recorded, the refusal too, the file frozen for the red case, no "not recorded"', async () => {
 		const root = createVitestPackage({})
 		writeFiles({
 			root,
@@ -399,7 +399,47 @@ describe('a test file with a refused case', { timeout: 240_000 }, () => {
 			'red add > asserts',
 			'refused add > calls a missing export',
 		])
-		expect(readLedger(root).entries.some((entry) => entry.kind === 'freeze')).toBe(false)
+		expect(
+			readLedger(root).entries.flatMap((entry) =>
+				entry.kind === 'freeze' ? Object.keys(entry.files) : [],
+			),
+		).toEqual(['src/add.test.ts'])
+	})
+
+	it('one case refused (a missing export), another red, then the refused case accepted and red run again → the red case is kept (no re-red), the refused case accepted', async () => {
+		const root = createVitestPackage({})
+		const testFile = [
+			"import { add, multiply } from './add.ts'",
+			"import { describe, expect, it } from 'vitest'",
+			"describe('add', () => {",
+			"\tit('asserts', () => { expect(add(1, 2)).toBe(3) })",
+			"\tit('calls a missing export', () => { expect(multiply(1, 2)).toBe(2) })",
+			'})',
+			'',
+		].join('\n')
+		writeFiles({ root, files: { 'src/add.ts': ADD_STUB, 'src/add.test.ts': testFile } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': `${ADD}export function multiply(left: number, right: number): number {\n\treturn left * right\n}\n`,
+				'.dialecte/lot.json': JSON.stringify({
+					accept: [
+						{
+							case: 'src/add.test.ts::add > calls a missing export',
+							reason: 'pins existing behaviour',
+						},
+					],
+				}),
+			},
+		})
+
+		const again = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(again.output)).toEqual([
+			expect.stringMatching(/^kept +src\/add\.test\.ts::add > asserts\b/),
+			expect.stringMatching(/^accepted +src\/add\.test\.ts::add > calls a missing export\b/),
+		])
 	})
 
 	it('green on that file → the recorded red goes green, the refused case stays refused, the gate fails on it', async () => {

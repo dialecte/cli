@@ -15,8 +15,10 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
+import { linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
 import { REVIEW_ROUND_VALUE_OPTIONS } from '../lib/review-rounds/review-rounds.constants.ts'
 import { resolveLot } from '../lib/store/resolve-lot.ts'
@@ -49,9 +51,10 @@ export async function run(argv: string[]): Promise<void> {
 		verb === 'wait'
 			? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
 			: runLot({ cwd: process.cwd(), argv, cliPath: realpathSync(process.argv[1]) })
-	;(printsOnStandardError({ verb, exitCode: result.exitCode }) ? console.error : console.log)(
-		result.output,
-	)
+	printOut({
+		stream: printsOnStandardError({ verb, exitCode: result.exitCode }) ? 'stderr' : 'stdout',
+		text: result.output,
+	})
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -81,41 +84,46 @@ export function runLot(params: {
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
-	if (mutationRefusal) return { exitCode: 2, output: `lot: ${mutationRefusal}` }
+	if (mutationRefusal) return resultOf({ exitCode: 2, lines: [`lot: ${mutationRefusal}`] })
 	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
 	const gone = verb === 'gone'
 	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone ? 2 : 1))
 		return { exitCode: 2, output: renderLotUsage() }
 	if (list === 'accept' && !namesOneCase(words[0]))
-		return {
+		return resultOf({
 			exitCode: 2,
-			output: `lot: a case is <file>::<name> (the file, then the full name vitest prints), not ${JSON.stringify(words[0])}`,
-		}
+			lines: [
+				`lot: a case is <file>::<name> (the file, then the full name vitest prints), not ${JSON.stringify(words[0])}`,
+			],
+		})
 	if ((list || gone) && words[0].trim() === '')
-		return { exitCode: 2, output: `lot: ${verb} needs a case, a file or a glob first` }
+		return resultOf({ exitCode: 2, lines: [`lot: ${verb} needs a case, a file or a glob first`] })
 	if (gone && namesOneCase(words[0]))
-		return {
+		return resultOf({
 			exitCode: 2,
-			output: `lot: gone names a test file or a glob over test files, not a case: ${JSON.stringify(words[0])}`,
-		}
+			lines: [
+				`lot: gone names a test file or a glob over test files, not a case: ${JSON.stringify(words[0])}`,
+			],
+		})
 	const root = packageRootOf(params.cwd)
-	if (!root) return { exitCode: 1, output: `lot: no package.json at or above ${params.cwd}` }
+	if (!root)
+		return resultOf({ exitCode: 1, lines: [`lot: no package.json at or above ${params.cwd}`] })
 	const path = join(root, LOT_FILE)
 	let read: unknown = {}
 	if (existsSync(path))
 		try {
 			read = JSON.parse(readFileSync(path, 'utf8'))
 		} catch (error) {
-			return {
+			return resultOf({
 				exitCode: 1,
-				output: `lot: ${path} is not JSON (${(error as Error).message}); fix or remove it first`,
-			}
+				lines: [`lot: ${path} is not JSON (${(error as Error).message}); fix or remove it first`],
+			})
 		}
 	if (typeof read !== 'object' || read === null || Array.isArray(read))
-		return {
+		return resultOf({
 			exitCode: 1,
-			output: `lot: ${path} holds no object (${JSON.stringify(read)}); fix or remove it first`,
-		}
+			lines: [`lot: ${path} holds no object (${JSON.stringify(read)}); fix or remove it first`],
+		})
 	const declaration = read as Record<string, unknown>
 	if (list) {
 		const [testCase, reason] = words
@@ -135,7 +143,7 @@ export function runLot(params: {
 	else declaration.tdd = `exempt: ${words[0]}`
 	mkdirSync(dirname(path), { recursive: true })
 	writeFileSync(path, `${JSON.stringify(declaration, null, '\t')}\n`)
-	return { exitCode: 0, output: `lot: ${path} written` }
+	return resultOf({ exitCode: 0, lines: [`lot: ${path} written`] })
 }
 
 /** Why `lot mutation <mode>` refuses its words: no mode, a mode it does not know, or a reason after it. */
@@ -167,7 +175,7 @@ function runReviewRoundVerb(params: {
 	if ('exitCode' in resolved) return resolved
 	const result = runResolvedVerb({ form, cwd, words: resolved.words, now: params.now })
 	if (resolved.note === undefined) return result
-	return { ...result, output: `${resolved.note}\n${result.output}` }
+	return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
 }
 
 /** A review rounds' verb run on its words, the folder word already resolved. */
@@ -199,7 +207,7 @@ function resolveFolderWord(params: {
 	const position = firstPositionalIndex(words)
 	if (position === undefined) return { words }
 	const resolved = resolveLot({ argument: words[position], cwd: params.cwd, mode: params.mode })
-	if ('exitCode' in resolved) return resolved
+	if ('exitCode' in resolved) return { exitCode: resolved.exitCode, output: resolved.output }
 	const folder = 'lot' in resolved ? resolved.lot : resolved.folder
 	const replaced = words.map((word, index) => (index === position ? folder : word))
 	return 'note' in resolved && resolved.note !== undefined

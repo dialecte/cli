@@ -24,16 +24,17 @@ export const INBOX_COLUMN_SEPARATOR = '  '
 export const INBOX_COUNT_LINE =
 	'working {working} · simulated {simulated} (listed with --simulated)'
 
-/** The line of a damaged lot. */
-export const INBOX_DAMAGED_LINE = 'damaged {folder}: {reason}'
+/** The line of a damaged lot: its folder, the reason (`RECORD_DAMAGE_REASONS`), the stop to run. */
+export const INBOX_DAMAGED_LINE = 'damaged {folder}: {reason}; next: {stop}'
 
-/** Why a folder of a store is a damaged lot. */
-export const INBOX_DAMAGE_REASONS = {
-	missing: 'identity.json is missing',
-	unreadable: 'identity.json does not read as a lot identity',
-	// the name it holds is never printed: a forged one would print with it
-	otherName: 'identity.json names another lot than its folder',
+/** The line of a store the store list names that cannot be listed: its path and why. */
+export const INBOX_SKIPPED_LINE = 'skipped store {store}: {reason}'
+
+/** Why a store is skipped; `{detail}` the error code (or message) of the listing. */
+export const INBOX_SKIPPED_REASONS = {
+	notFolder: 'not a folder',
+	unreadable: 'cannot be read ({detail})',
 } as const
 
-/** A folder of a store that is no lot: hidden, a folder being built among them. */
-export const HIDDEN_NAME_PREFIX = '.'
+/** The error code of a listing of a path that is no folder. */
+export const NOT_A_FOLDER_CODE = 'ENOTDIR'

@@ -10,6 +10,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 
 import { isPresent } from '../file-system.ts'
 import { readPackageJson } from '../package-json.ts'
+import { textOf } from '../print/print.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { DEPENDENCY_SECTIONS, LOCAL_DEPENDENCY_PATTERN } from '../worktree/worktree.constants.ts'
 
@@ -33,13 +34,13 @@ export function linkRehearsalSiblings(params: {
 			const link = resolve(clone, path)
 			if (link === clone || isInside({ path: link, folder: clone })) continue
 			if (!isInside({ path: link, folder })) {
-				lines.push(`  not linked: ${path} leaves the rehearsal folder`)
+				lines.push(textOf([`  not linked: ${path} leaves the rehearsal folder`]))
 				continue
 			}
 			const target = resolve(repository, path)
 			if (isPresent(link)) continue
 			if (!existsSync(target)) {
-				lines.push(`  not linked: ${path} (${target} missing)`)
+				lines.push(textOf([`  not linked: ${path} (${target} missing)`]))
 				continue
 			}
 			mkdirSync(dirname(link), { recursive: true })
@@ -47,7 +48,7 @@ export function linkRehearsalSiblings(params: {
 			links.push(link)
 			linked.push(path)
 		}
-	if (linked.length) lines.unshift(`  links beside the clone: ${linked.join(', ')}`)
+	if (linked.length) lines.unshift(textOf([`  links beside the clone: ${linked.join(', ')}`]))
 	return { links, lines }
 }
 

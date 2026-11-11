@@ -3,8 +3,9 @@
  * process, so every reader of a state (the overlap, `status`) builds its input the same way.
  */
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
+import { isPresent } from '../file-system.ts'
 import { readAbandonedMarker, readRunMarker } from '../handover/handover-marker-read.ts'
 import {
 	entryOfFolder,
@@ -24,12 +25,20 @@ import {
 	transitionDamageOf,
 } from './record-checks.ts'
 import { readScenario } from './scenario-file.ts'
-import { listLotNames } from './store-folder.ts'
-import { REREAD_PAUSE_MS, STORE_FILES } from './store.constants.ts'
+import { listLotFolderNames } from './store-folder.ts'
+import {
+	DAMAGED_OVERLAP_LABEL,
+	MET_PAIRS_SEPARATOR,
+	RECORD_DAMAGE_REASONS,
+	REREAD_PAUSE_MS,
+	SCOPE_UNREADABLE,
+	STORE_FILES,
+} from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
 import type {
 	CheckedLotState,
+	LotIdentity,
 	LotOverlap,
 	LotStateInput,
 	LotStateReadParams,
@@ -48,8 +57,8 @@ export function commonFolderOfLotFolder(lotFolder: string): string {
 
 /**
  * The input of `lotState` for a lot folder: its identity, transitions and answers, the registry entry naming it,
- * its markers; a run marker counts only while its pid runs. Undefined when the folder holds no readable identity
- * (no lot) or a record that does not hold (a damaged lot, as one with an unreadable identity).
+ * its markers; a run marker counts only while its pid runs. Undefined when nothing is at the folder (no lot) or a
+ * record does not hold (a damaged lot, one with an unreadable identity included).
  */
 export function readLotStateInput(params: LotStateReadParams): LotStateInput | undefined {
 	const checked = readCheckedLotState(params)
@@ -57,13 +66,19 @@ export function readLotStateInput(params: LotStateReadParams): LotStateInput | u
 }
 
 /**
- * The lot of a folder read once, its records validated once (`record-checks.ts`): its `lotState` input, or why a
- * transition or an answer file does not hold. Undefined when the folder holds no readable identity.
+ * The lot of a folder read once, its records validated once (`record-checks.ts`): its `lotState` input, or why it is
+ * damaged (P2.1) - an identity that does not read, one naming another folder, a record that does not hold - with
+ * its identity when that reads. Undefined only when nothing is at the folder.
  */
 export function readCheckedLotState(params: LotStateReadParams): CheckedLotState | undefined {
-	const identity = readIdentity({ lotFolder: params.lotFolder })
-	if (identity === undefined) return undefined
 	const { lotFolder } = params
+	if (!isPresent(lotFolder)) return undefined
+	const identity = readIdentity({ lotFolder })
+	if (identity === undefined)
+		return { damage: RECORD_DAMAGE_REASONS.identityUnreadable, identity: undefined }
+	// the name it holds is never printed: the folder's own name stands for the lot
+	if (identity.name !== basename(lotFolder))
+		return { damage: RECORD_DAMAGE_REASONS.identityName, identity }
 	const transitions = readTransitions({ lotFolder })
 	const answerFiles = readAnswerFiles({ lotFolder })
 	const registryEntry = entryOfFolder({
@@ -81,7 +96,7 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 		markerDamageOf(abandoned?.at) ??
 		markerDamageOf(runMarker?.startedAt) ??
 		(identity.simulated ? scenarioDamageOf(readScenario({ lotFolder })) : undefined)
-	if (damage !== undefined) return { damage }
+	if (damage !== undefined) return { damage, identity }
 	return {
 		input: {
 			identity,
@@ -131,7 +146,10 @@ export function isOpenRealLot(input: LotStateInput): boolean {
 
 /**
  * The open real lots of `store` (D12) a normalised `scope` overlaps, each with the pairs of entries that meet;
- * `except` (a lot name) is left out.
+ * `except` (a lot name) is left out. Every lot folder is read (P2.2): a damaged lot is open until a person moves it
+ * aside, with the scope of its `brief.json` when that reads as a list of texts, else holding every path; one whose
+ * identity reads simulated holds none, as every simulated lot. An open lot whose records hold and whose brief gives
+ * no scope holds every path too. The check never fails open on a record it cannot read.
  */
 export function overlappingOpenLots(params: {
 	store: string
@@ -142,45 +160,110 @@ export function overlappingOpenLots(params: {
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
 }): LotOverlap[] {
-	const { store, caseInsensitive } = params
+	const { store } = params
 	// the registry read once for every lot; the one re-read of a marker-only lot reads it again
 	const entries = readStoreEntries(params.registry)
-	return listLotNames({ store }).flatMap(function overlapOf(name): LotOverlap[] {
+	return listLotFolderNames({ store }).flatMap(function overlapOf(name): LotOverlap[] {
 		if (name === params.except) return []
 		const lotFolder = join(store, name)
-		const first = readLotStateInput({ lotFolder, registry: params.registry, entries })
+		const checked = readCheckedLotState({ lotFolder, registry: params.registry, entries })
+		if (checked === undefined) return []
+		if ('damage' in checked)
+			return damagedOverlapOf({ ...params, name, lotFolder, damage: checked.damage, checked })
+		const first = checked.input
 		// a simulated lot is never open: no re-read can change that
-		const input =
-			first && !first.identity.simulated
-				? settledLotStateInput({
-						input: first,
-						lotFolder,
-						registry: params.registry,
-						pause: params.pause,
-					})
-				: first
+		const input = first.identity.simulated
+			? first
+			: settledLotStateInput({
+					input: first,
+					lotFolder,
+					registry: params.registry,
+					pause: params.pause,
+				})
 		if (!input || !isOpenRealLot(input)) return []
-		const theirs = readLotScope({ lotFolder })
-		const met = params.scope.flatMap((entry) =>
-			theirs
-				.filter((other) => overlaps({ a: entry, b: other, caseInsensitive }))
-				.map((other) => `${entry} meets ${other}`),
-		)
+		const theirs = readBriefScope({ lotFolder })
+		// a brief that gives no scope holds every path: the check never fails open
+		if (theirs === undefined) return [{ name, met: [], everyPath: true }]
+		const met = metPairsOf({ ...params, theirs })
 		return met.length === 0 ? [] : [{ name, met }]
 	})
 }
 
+/**
+ * The overlap of a damaged lot: none when its identity reads simulated; every path when its brief gives no scope;
+ * else the pairs that meet, as for any open lot.
+ */
+function damagedOverlapOf(params: {
+	name: string
+	lotFolder: string
+	damage: string
+	checked: { identity: LotIdentity | undefined }
+	scope: readonly string[]
+	caseInsensitive: boolean
+}): LotOverlap[] {
+	const { name, damage } = params
+	if (params.checked.identity?.simulated === true) return []
+	const theirs = readBriefScope({ lotFolder: params.lotFolder })
+	if (theirs === undefined) return [{ name, met: [], damage, everyPath: true }]
+	const met = metPairsOf({ ...params, theirs })
+	return met.length === 0 ? [] : [{ name, met, damage }]
+}
+
+/** Each pair of an entry of `scope` and an entry of `theirs` that overlap, as `<ours> meets <theirs>`. */
+function metPairsOf(params: {
+	scope: readonly string[]
+	theirs: readonly string[]
+	caseInsensitive: boolean
+}): string[] {
+	const { caseInsensitive } = params
+	return params.scope.flatMap((entry) =>
+		params.theirs
+			.filter((other) => overlaps({ a: entry, b: other, caseInsensitive }))
+			.map((other) => `${entry} meets ${other}`),
+	)
+}
+
+/**
+ * How a refusal or a failure names the lot an overlap met: its name, with `(damaged: <reason>)` for a damaged lot.
+ */
+export function overlapLotLabelOf(overlap: LotOverlap): string {
+	return overlap.damage === undefined
+		? overlap.name
+		: DAMAGED_OVERLAP_LABEL.replace('{name}', overlap.name).replace('{reason}', overlap.damage)
+}
+
+/** What met in an overlap: the pairs joined by `; `, or that the damaged lot's scope cannot be read. */
+export function overlapMetText(overlap: LotOverlap): string {
+	return overlap.everyPath === true ? SCOPE_UNREADABLE : overlap.met.join(MET_PAIRS_SEPARATOR)
+}
+
 /** The scope of the lot's `brief.json`, each entry normalised; none when the brief does not parse. */
 export function readLotScope(params: { lotFolder: string }): string[] {
-	let brief: unknown
-	try {
-		brief = JSON.parse(readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'))
-	} catch {
-		return []
-	}
-	const scope = (brief as { scope?: unknown } | null)?.scope
+	const scope = briefScopeValueOf(params)
 	if (!Array.isArray(scope)) return []
 	return scope
 		.filter((entry): entry is string => typeof entry === 'string')
 		.map(normaliseScopeEntry)
+}
+
+/**
+ * The scope of the lot's `brief.json` when it reads as a list of texts, each entry normalised; undefined when the
+ * brief is missing, does not parse, or its scope is no such list.
+ */
+function readBriefScope(params: { lotFolder: string }): string[] | undefined {
+	const scope = briefScopeValueOf(params)
+	if (!Array.isArray(scope) || !scope.every((entry) => typeof entry === 'string')) return undefined
+	return (scope as string[]).map(normaliseScopeEntry)
+}
+
+/** The `scope` value of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
+function briefScopeValueOf(params: { lotFolder: string }): unknown {
+	try {
+		const brief: unknown = JSON.parse(
+			readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'),
+		)
+		return (brief as { scope?: unknown } | null)?.scope
+	} catch {
+		return undefined
+	}
 }

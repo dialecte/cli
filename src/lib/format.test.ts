@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import { formatFiles, formatOptsFromArgv } from './format.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,14 +41,11 @@ function rootWithOxfmt(params: { script: string; executable?: boolean }): {
 	return { root, oxfmt }
 }
 
-/** Every line `console.warn` printed while `run` ran, and what `run` answered. */
+/** Every line written to standard error while `run` ran, and what `run` answered. */
 function warnedLines(run: () => boolean): { answer: boolean; lines: string[] } {
-	const printed: string[] = []
-	vi.spyOn(console, 'warn').mockImplementation(function captureWarning(...values: unknown[]) {
-		printed.push(values.map(String).join(' '))
-	})
+	const streams = spyStreams()
 	const answer = run()
-	return { answer, lines: printed.join('\n').split('\n') }
+	return { answer, lines: linesWritten(streams.stderr).join('\n').split('\n') }
 }
 
 /** The leading spaces of a line. */

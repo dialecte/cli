@@ -32,4 +32,4 @@ export type StationCall = {
 export type StationDecision =
 	| { write: LotEvent; outcome: StationOutcome }
 	| { outcome: StationOutcome }
-	| { refusal: string }
+	| { refusal: string[] }

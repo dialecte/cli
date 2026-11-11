@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { textOf } from '../print/print.ts'
 import { verbPrefix } from '../review-rounds/review-round-verbs.ts'
 import { LINE_BREAK_PATTERN } from '../review-rounds/review-rounds.constants.ts'
 import { readArguments } from '../review-rounds/round-arguments.ts'
@@ -26,15 +27,16 @@ export function recordStandard(params: {
 	afterTemporaryWritten?: TemporaryFileSeam
 }): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [] })
-	if (typeof read === 'string') return { exitCode: 2, output: `${STANDARD_USAGE} (${read})` }
+	if (typeof read === 'string')
+		return { exitCode: 2, output: textOf([`${STANDARD_USAGE} (${read})`]) }
 	const [folderWord, stateWord, ...noteWords] = read.words
 	const state = STANDARD_STATES.find((known) => known === stateWord)
 	const note = noteWords.join(' ').trim()
 	if (!folderWord || !state || !note || LINE_BREAK_PATTERN.test(note))
-		return { exitCode: 2, output: STANDARD_USAGE }
+		return { exitCode: 2, output: textOf([STANDARD_USAGE]) }
 	const folder = resolve(params.cwd, folderWord)
 	const refusal = handoverFolderRefusal(folder)
-	if (refusal) return { exitCode: 1, output: `${verbPrefix('standard')}: ${refusal}` }
+	if (refusal) return { exitCode: 1, output: textOf([`${verbPrefix('standard')}: ${refusal}`]) }
 	mkdirSync(folder, { recursive: true })
 	const path = join(folder, STANDARD_FILE)
 	const record: StandardRecord = {
@@ -47,5 +49,5 @@ export function recordStandard(params: {
 		text: recordText(record),
 		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
-	return { exitCode: 0, output: `${verbPrefix('standard')}: ${state} - ${path}` }
+	return { exitCode: 0, output: textOf([`${verbPrefix('standard')}: ${state} - ${path}`]) }
 }

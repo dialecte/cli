@@ -11,9 +11,6 @@ export const NOT_RECORDED_PREFIX = 'events: not recorded: '
 /** The start of the one line a step prints when its heavy marker could not be written or removed (its own slot). */
 export const MARKERS_NOT_WRITTEN_PREFIX = 'markers: not written: '
 
-/** The descriptor of standard error, written synchronously by the warning (a closed pipe then throws, caught). */
-export const STANDARD_ERROR_DESCRIPTOR = 2
-
 /** The line of a step run in a worktree whose link names another lot's: `{step}`, `{worktree}`, `{lot}`. */
 export const FOREIGN_STEP_LINE =
 	'events: {step} ran in {worktree}, which links the lot {lot} but is not its worktree: recorded there as step.foreign only'

@@ -32,12 +32,16 @@ export type InboxItem = {
 /** A folder of a store that holds no readable lot, and why. */
 export type DamagedLot = { folder: string; reason: string }
 
+/** A store the store list names that cannot be listed (a file, a folder that cannot be read), and why. */
+export type SkippedStore = { store: string; reason: string }
+
 /** What the inbox found across the stores. */
 export type InboxListing = {
 	items: InboxItem[]
 	working: number
 	simulated: number
 	damaged: DamagedLot[]
+	skipped: SkippedStore[]
 }
 
 /** `inbox --json`. */
@@ -46,6 +50,8 @@ export type InboxJson = {
 	working: number
 	simulated: number
 	damaged: DamagedLot[]
+	/** The stores of the store list that could not be listed; only when there is one. */
+	skipped?: SkippedStore[]
 }
 
 /** What the inbox reads a store with: the options that filter it and the listing it adds to. */

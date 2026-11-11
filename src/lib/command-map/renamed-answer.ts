@@ -1,4 +1,5 @@
 /** What a command renamed in 1.0 answers: its new name and the full new command, or every form that replaced it. */
+import { jsonOf, textOf } from '../print/print.ts'
 import { LOT_COMMAND } from '../review-rounds/review-rounds.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { COMMAND_MAP, SECTION_INDENT, USAGE_PREFIX } from './command-map.constants.ts'
@@ -9,6 +10,7 @@ import {
 	SHELL_SAFE_WORD_PATTERN,
 } from './renamed.constants.ts'
 
+import type { PrintedText } from '../print/print.types.ts'
 import type {
 	DeclaredRenamedForm,
 	RenamedCommandName,
@@ -21,36 +23,39 @@ import type {
  * with the same arguments (its usage line when there are none); without an old verb it names, every form that
  * replaced the command.
  */
-export function answerRenamed(params: { command: RenamedCommandName; argv: string[] }): string {
+export function answerRenamed(params: {
+	command: RenamedCommandName
+	argv: string[]
+}): PrintedText {
 	const named = namedForm(params)
 	if (!named)
-		return [
+		return textOf([
 			RENAMED_COMMAND_LINE.replace('{command}', params.command),
 			...formsOf(params.command).map(
 				(form) =>
 					`${SECTION_INDENT}${USAGE_PREFIX}${oldWordsOf(form)} → ${USAGE_PREFIX}${newWordsOf(form)}`,
 			),
-		].join('\n')
+		])
 	const { form, words } = named
 	const newWords = newWordsOf(form)
 	const command = words.length
 		? [`${USAGE_PREFIX}${newWords}`, ...words.map(shellWord)].join(' ')
 		: (COMMAND_MAP.lot.usage.find((line) => line.startsWith(`${USAGE_PREFIX}${newWords}`)) ??
 			`${USAGE_PREFIX}${newWords}`)
-	return [
+	return textOf([
 		RENAMED_LINE.replace('{old}', oldWordsOf(form)).replace('{new}', newWords),
 		`${SECTION_INDENT}${command}`,
-	].join('\n')
+	])
 }
 
 /** `dialecte <renamed command> [verb] --help --json`: the old forms it names with their new ones, words after `dialecte`. */
-export function renamedJson(params: { command: RenamedCommandName; argv: string[] }): string {
+export function renamedJson(params: { command: RenamedCommandName; argv: string[] }): PrintedText {
 	const named = namedForm(params)
 	const forms = named ? [named.form] : formsOf(params.command)
 	const json: RenamedJson = {
 		renamed: forms.map(renamedWordsOf),
 	}
-	return JSON.stringify(json, null, 2)
+	return jsonOf(json, 2)
 }
 
 /** Every old form with its new one, words after `dialecte`, in the table's order. */

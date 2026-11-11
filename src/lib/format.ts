@@ -19,6 +19,8 @@ import {
 	NOT_STARTED_WARNING_END,
 	WARNING_INDENT,
 } from './format.constants.ts'
+import { joinedOf, printLines, printOut, textOf } from './print/print.ts'
+import { relayedTextOf } from './print/relayed.ts'
 
 import type { FormatFilesParams, FormatOpts } from './format.types.ts'
 
@@ -36,27 +38,37 @@ export function formatFiles(params: FormatFilesParams): boolean {
 	if (options.skip || !files.length) return true
 	const oxfmt = resolveBin('oxfmt', 'oxfmt', root)
 	if (!oxfmt) {
-		console.warn('  ⚠ oxfmt not found (project nor @dialecte/cli) — emitted files left unformatted')
+		printLines({
+			stream: 'stderr',
+			lines: ['  ⚠ oxfmt not found (project nor @dialecte/cli) — emitted files left unformatted'],
+		})
 		return true
 	}
 	const args = [...(options.config ? ['--config', options.config] : []), ...files]
 	const res = spawnSync(oxfmt.path, args, { cwd: root, encoding: 'utf8' })
 	if (res.status === 0) return true
 	if (res.error) {
-		console.warn(
-			`${WARNING_INDENT}⚠ oxfmt could not start (${res.error.message}) ${NOT_STARTED_WARNING_END}`,
-		)
+		printLines({
+			stream: 'stderr',
+			lines: [
+				`${WARNING_INDENT}⚠ oxfmt could not start (${res.error.message}) ${NOT_STARTED_WARNING_END}`,
+			],
+		})
 		return false
 	}
-	const details = [...namedFiles(files), ...outputLines({ stderr: res.stderr, stdout: res.stdout })]
-	console.warn(
-		[
-			`${WARNING_INDENT}⚠ oxfmt exited ${res.status ?? '?'} ${EXITED_WARNING_END}`,
-			...details.map(function indentDetail(line) {
-				return `${FAILURE_DETAIL_INDENT}${line}`
-			}),
-		].join('\n'),
-	)
+	function indentDetail(line: string): string {
+		return `${FAILURE_DETAIL_INDENT}${line}`
+	}
+	const own = textOf([
+		`${WARNING_INDENT}⚠ oxfmt exited ${res.status ?? '?'} ${EXITED_WARNING_END}`,
+		...namedFiles(files).map(indentDetail),
+	])
+	// oxfmt's own lines are relayed: its colours kept, every other control escaped
+	const relayed = outputLines({ stderr: res.stderr, stdout: res.stdout }).map(indentDetail)
+	printOut({
+		stream: 'stderr',
+		text: relayed.length ? joinedOf([own, relayedTextOf(relayed)]) : own,
+	})
 	return false
 }
 

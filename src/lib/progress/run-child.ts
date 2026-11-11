@@ -188,7 +188,7 @@ export function runChild(params: {
 }
 
 /** A copy of this process's environment without the variables `names`. */
-function withoutVariables(params: { names: readonly string[] }): NodeJS.ProcessEnv {
+export function withoutVariables(params: { names: readonly string[] }): NodeJS.ProcessEnv {
 	const environment = { ...process.env }
 	for (const name of params.names) delete environment[name]
 	return environment

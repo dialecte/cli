@@ -18,6 +18,13 @@ export type CheckCliInvocationsParams = {
 	ignored: ReadonlySet<string>
 }
 
+/** What `citedInvocationsOf` reads: the page, and the surface whose commands an untagged fence line must name. */
+export type CitedInvocationsParams = {
+	markdown: string
+	/** Without one, every `dialecte <word>` line of an untagged fence counts. */
+	surface?: CliSurface
+}
+
 /** A piece of code read for invocations: one inline code span, or one fenced line (with its continuations). */
 export type CodePiece = { text: string; line: number }
 
@@ -39,3 +46,9 @@ export type InvocationContext = {
 
 /** The word the tokenizer is reading: its characters so far, and whether it holds a quoted string. */
 export type PendingWord = { text: string; quoted: boolean }
+
+/** What opens a group a `|` inside is no pipe of: a placeholder, an option group, a flag group. */
+export type GroupOpener = '<' | '[' | '('
+
+/** How many groups of each kind are open at the tokenizer's position. */
+export type GroupDepths = Record<GroupOpener, number>

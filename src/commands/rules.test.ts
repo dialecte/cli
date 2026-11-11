@@ -3,13 +3,14 @@ import { join } from 'node:path'
 import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
+import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runRules } from './rules.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { RulesRecord } from '../lib/gate-records/gate-records.types.ts'
 
-describe('runRules', () => {
+describe('runRules', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('no file given → the changed and new files are checked, unchanged ones and binaries are not', () => {
 		const root = createScratchRepository({
 			'src/old.ts': 'export const read = () => 1\n',
@@ -109,7 +110,7 @@ describe('runRules', () => {
 	})
 })
 
-describe('runRules: the record in the git folder', () => {
+describe('runRules: the record in the git folder', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	/** The rules record as the last run left it; undefined when there is none. */
 	function readRecord(root: string): RulesRecord | undefined {
 		return readRecordFile<RulesRecord>({ root, name: 'dialecte-rules.json' })
@@ -168,7 +169,7 @@ describe('runRules: the record in the git folder', () => {
 	})
 })
 
-describe('runRules: references by profile', () => {
+describe('runRules: references by profile', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	// built from parts, so this file never matches the patterns it tests
 	const TICKET_AND_CRITERION = `fixes ${'#'}1234, see ${'AC'}1`
 	const CLAUSE = `as ${'Clause'} 5 says`

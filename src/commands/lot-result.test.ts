@@ -28,6 +28,7 @@ import { startSimulated, createWaitTime, waitSimulated } from '../../test/simula
 import { LATER_TIME } from '../../test/store-records.constants.ts'
 import { transitionOf } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { rawHostileCharactersIn } from '../../test/unsafe-characters.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -235,7 +236,7 @@ describe('lot result of a simulated lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 	})
 })
 
-const HOSTILE_TEXT = 'ok‮evil\u001B[2J'
+const HOSTILE_TEXT = 'ok\u{202e}evil\u001B[2J'
 const HOSTILE_ESCAPED = 'ok\\u{202e}evil\\u{1b}[2J'
 
 describe('lot result, the text form', { timeout: STORE_CASE_TIMEOUT }, () => {
@@ -257,7 +258,9 @@ describe('lot result, the text form', { timeout: STORE_CASE_TIMEOUT }, () => {
 			text: expect.stringContaining(HOSTILE_ESCAPED),
 			json: { reason: HOSTILE_TEXT },
 		})
-		expect(resultOf({ cwd, id: QUESTION_LOT, json: false }).output).not.toMatch(/[‮\u001B]/)
+		expect(rawHostileCharactersIn(resultOf({ cwd, id: QUESTION_LOT, json: false }).output)).toEqual(
+			[],
+		)
 	})
 
 	it('an input-required lot whose open question holds the same characters -> the text prints them escaped, --json carries the text as stored', () => {
@@ -273,7 +276,9 @@ describe('lot result, the text form', { timeout: STORE_CASE_TIMEOUT }, () => {
 			text: expect.stringContaining(HOSTILE_ESCAPED),
 			json: { questions: [{ id: 'q1', text: HOSTILE_TEXT }] },
 		})
-		expect(resultOf({ cwd, id: QUESTION_LOT, json: false }).output).not.toMatch(/[‮\u001B]/)
+		expect(rawHostileCharactersIn(resultOf({ cwd, id: QUESTION_LOT, json: false }).output)).toEqual(
+			[],
+		)
 	})
 
 	it('a ready lot -> exit 0, the text names the hand-over and holds its show line and its run line', () => {

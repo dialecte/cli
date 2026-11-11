@@ -13,6 +13,7 @@ import { join, dirname } from 'node:path'
 import { resolveBin } from '../lib/bin.ts'
 import { hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
+import { printLines } from '../lib/print/print.ts'
 import { METRICS, STABLE_METRICS, THRESHOLD } from './bench.constants.ts'
 
 import type { Metrics } from './bench.types.ts'
@@ -102,9 +103,12 @@ export async function run(argv: string[]): Promise<void> {
 	const tsc = resolveBin('tsc', 'typescript', ROOT)
 	if (!tsc) throw new Error('bench: no TypeScript compiler found (project nor @dialecte/cli).')
 	if (tsc.source === 'own')
-		console.warn(
-			"  ⚠ using @dialecte/cli's own tsc — counts may differ from the project's pinned TypeScript",
-		)
+		printLines({
+			stream: 'stderr',
+			lines: [
+				"  ⚠ using @dialecte/cli's own tsc — counts may differ from the project's pinned TypeScript",
+			],
+		})
 	const TSC = tsc.path
 	const RUNS = Number(process.env.RUNS || 3)
 	const CHECK = hasFlag(argv, 'check')
@@ -142,7 +146,7 @@ export async function run(argv: string[]): Promise<void> {
 	}
 
 	// Whole-program is package-level → measure once, share across versions.
-	console.log(`bench — ${RUNS} runs (min) — whole program …`)
+	printLines({ stream: 'stdout', lines: [`bench — ${RUNS} runs (min) — whole program …`] })
 	const wholeCheck = measure(wholeProgramArgs({ tsconfig, mode: 'check' }))
 	const wholeEmit = measure(wholeProgramArgs({ tsconfig, mode: 'emit' }))
 	rmSync(join(ROOT, '.bench-dts'), { recursive: true, force: true })
@@ -156,7 +160,7 @@ export async function run(argv: string[]): Promise<void> {
 		}
 		function addIfPresent(key: string, relativePath: string) {
 			if (existsSync(join(ROOT, relativePath))) {
-				process.stdout.write(`  [${target.version}] ${key} …\n`)
+				printLines({ stream: 'stdout', lines: [`  [${target.version}] ${key} …`] })
 				results[key] = measureFile(relativePath)
 			}
 		}
@@ -170,20 +174,22 @@ export async function run(argv: string[]): Promise<void> {
 				if (fileName.endsWith('.ts') && !fileName.endsWith('.test-d.ts'))
 					addIfPresent(`consumer: ${fileName.replace(/\.ts$/, '')}`, `${versionDir}/${fileName}`)
 
-		console.log(
-			`\n[${target.version}]  | ${pad({ value: 'Scenario', width: 26 })} | ${pad({ value: 'Instantiations', width: 14 })} | ${pad({ value: 'Check', width: 7 })} |`,
-		)
-		for (const [key, metrics] of Object.entries(results))
-			console.log(
-				`           | ${pad({ value: key, width: 26 })} | ${pad({ value: formatCount(metrics.Instantiations), width: 14 })} | ${pad({ value: `${metrics['Check time'] ?? '?'}s`, width: 7 })} |`,
-			)
+		const table = [
+			'',
+			`[${target.version}]  | ${pad({ value: 'Scenario', width: 26 })} | ${pad({ value: 'Instantiations', width: 14 })} | ${pad({ value: 'Check', width: 7 })} |`,
+			...Object.entries(results).map(
+				([key, metrics]) =>
+					`           | ${pad({ value: key, width: 26 })} | ${pad({ value: formatCount(metrics.Instantiations), width: 14 })} | ${pad({ value: `${metrics['Check time'] ?? '?'}s`, width: 7 })} |`,
+			),
+		]
 		const baseline = results['baseline (import)']?.Instantiations
 		if (baseline != null)
 			for (const [key, metrics] of Object.entries(results))
 				if (key.startsWith('coverage:') || key.startsWith('consumer:'))
-					console.log(
+					table.push(
 						`             ${pad({ value: key, width: 26 })} +${formatCount((metrics.Instantiations ?? 0) - baseline)}`,
 					)
+		printLines({ stream: 'stdout', lines: table })
 
 		const baselinePath = join(ROOT, versionDir, 'baseline.json')
 		if (CHECK) {
@@ -191,9 +197,12 @@ export async function run(argv: string[]): Promise<void> {
 			for (const [key, metrics] of Object.entries(results)) {
 				const base = prior.results?.[key]?.Instantiations
 				if (checkRegression({ current: metrics.Instantiations, baseline: base })) {
-					console.error(
-						`❌ [${target.version}] ${key}: ${formatCount(metrics.Instantiations)} > baseline ${formatCount(base)} (+${((metrics.Instantiations / base - 1) * 100).toFixed(1)}%)`,
-					)
+					printLines({
+						stream: 'stderr',
+						lines: [
+							`❌ [${target.version}] ${key}: ${formatCount(metrics.Instantiations)} > baseline ${formatCount(base)} (+${((metrics.Instantiations / base - 1) * 100).toFixed(1)}%)`,
+						],
+					})
 					failed = true
 				}
 			}
@@ -206,13 +215,17 @@ export async function run(argv: string[]): Promise<void> {
 				`${JSON.stringify({ tool: 'dialecte bench', version: target.version, runs: RUNS, results: stableResults(results) }, null, '\t')}\n`,
 			)
 			formatFiles({ root: ROOT, files: [baselinePath], options: formatOptsFromArgv(argv) })
-			console.log(`  wrote ${versionDir}/baseline.json`)
+			printLines({ stream: 'stdout', lines: [`  wrote ${versionDir}/baseline.json`] })
 		}
 	}
 	if (CHECK) {
 		if (failed) process.exit(1)
-		console.log(
-			`\n✅ No instantiation regression > ${THRESHOLD * 100}% across ${targets.length} version(s).`,
-		)
+		printLines({
+			stream: 'stdout',
+			lines: [
+				'',
+				`✅ No instantiation regression > ${THRESHOLD * 100}% across ${targets.length} version(s).`,
+			],
+		})
 	}
 }

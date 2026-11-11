@@ -1,4 +1,5 @@
 /** The words, operators and messages of the check of a skill page's cli invocations. */
+import type { GroupOpener } from './cli-invocations.types.ts'
 
 /** The cli's package name: also a word an invocation starts with (`npx --no-install @dialecte/cli doctor`). */
 export const CLI_PACKAGE = '@dialecte/cli'
@@ -33,8 +34,11 @@ export const SINGLE_OPERATORS: ReadonlySet<string> = new Set([';', '|', '&', '('
 /** A subshell opener (an operator); right before a flag, it opens a flag group (`(--key | --file)`). */
 export const SUBSHELL_OPEN = '('
 
-/** What closes a group a `(` opened after a word. */
+/** What closes a flag group `(--key | --file)`; outside one, a subshell closer (an operator). */
 export const SUBSHELL_CLOSE = ')'
+
+/** What opens a process substitution (`<(dialecte gate)`, `>(sort)`): an operator, its `)` one too. */
+export const PROCESS_SUBSTITUTION_OPENERS: ReadonlySet<string> = new Set(['<(', '>('])
 
 /** What a flag starts with: a `(` right before it opens a flag group. */
 export const FLAG_START = '-'
@@ -49,10 +53,20 @@ export const WHITESPACE_PATTERN = /\s/
 export const NOT_LINE_BREAK_PATTERN = /[^\n]/g
 
 /** What opens a placeholder or an option group: a `|` inside it is no pipe. */
-export const GROUP_OPENERS: ReadonlySet<string> = new Set(['<', '['])
+export const GROUP_OPENERS: readonly GroupOpener[] = ['<', '[']
 
-/** What closes a placeholder or an option group. */
-export const GROUP_CLOSERS: ReadonlySet<string> = new Set(['>', ']'])
+/**
+ * The opener each group closer closes, one depth per kind: a placeholder `<...>`, an option group `[...]`, a flag
+ * group `(--a | --b)`. A closer of a kind with no group open closes nothing.
+ */
+export const GROUP_OPENER_OF_CLOSER: ReadonlyMap<string, GroupOpener> = new Map<
+	string,
+	GroupOpener
+>([
+	['>', '<'],
+	[']', '['],
+	[SUBSHELL_CLOSE, SUBSHELL_OPEN],
+])
 
 /** The quotes of a shell string: one word, never checked. */
 export const QUOTES: ReadonlySet<string> = new Set(['"', "'"])
@@ -62,6 +76,18 @@ export const COMMENT_START = '#'
 
 /** What a placeholder word holds (`<command>`): its position is not checked. */
 export const PLACEHOLDER_MARK = '<'
+
+/** The fence tags of a shell script: every line of such a fence is read for invocations. */
+export const SHELL_FENCE_TAGS: ReadonlySet<string> = new Set(['sh', 'bash', 'shell'])
+
+/** The info string of a fence (group 1): the first word after its opening backticks, empty when untagged. */
+export const FENCE_TAG_PATTERN = /^[ \t]*```[ \t]*([^\s`]*)/
+
+/**
+ * A line of an untagged fence read as an invocation: `dialecte ` then a word (group 1), read only when that word
+ * is a command of the map; any other untagged line (a diagram label, a sample) is never read.
+ */
+export const UNTAGGED_FENCE_INVOCATION_PATTERN = new RegExp(`^\\s*${CLI_BIN}\\s+(\\S+)`)
 
 /** A fenced line ending in a backslash continues on the next. */
 export const LINE_CONTINUATION_PATTERN = /\\\s*$/

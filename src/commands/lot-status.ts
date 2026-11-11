@@ -8,15 +8,19 @@ import { dirname, join, resolve } from 'node:path'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
-import { readLotStateInput, registryOfLotFolder } from '../lib/store/lot-records.ts'
+import {
+	readCheckedLotState,
+	readLotStateInput,
+	registryOfLotFolder,
+} from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
-import { noLotRefusal, requireLot } from '../lib/store/resolve-lot.ts'
-import { LINE_FEED, LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
-import { printableOf } from '../lib/store/text-escape.ts'
-import { STATUS_FLAGS, STATUS_MAX_LINES } from './lot-status.constants.ts'
+import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
+import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
+import { STATUS_FLAGS, STATUS_MAX_LINES, STATUS_USAGE_REASONS } from './lot-status.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
@@ -30,8 +34,8 @@ import type {
 import type { LotStatusJson } from './lot-status.types.ts'
 
 /**
- * The status of the lot `<id>` names, as text or `--json`; a usage error or a refusal exits 2 (JSON with
- * `next: null` under `--json`).
+ * The status of the lot `<id>` names, as text or `--json`; a damaged lot answers `damaged` with its reason and the
+ * stop to run (exit 6); a usage error or a refusal exits 2 (JSON with `next: null` under `--json`).
  */
 export function lotStatus(params: {
 	cwd: string
@@ -43,14 +47,22 @@ export function lotStatus(params: {
 		return lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) })
 	const json = read.flags.has('json')
 	const [id, ...extra] = read.words
-	if (id === undefined) return lotUsageExit({ reason: 'lot status takes one id: none given', json })
+	if (id === undefined) return lotUsageExit({ reason: STATUS_USAGE_REASONS.noId, json })
 	if (extra.length > 0)
-		return lotUsageExit({ reason: `lot status takes one id, not also ${extra.join(' ')}`, json })
-	const required = requireLot({ argument: id, cwd: params.cwd, mode: 'read' })
-	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
-	const status = lotStatusOf({ lotFolder: required.lot })
-	if (!status) return lotRefusalExit({ message: noLotRefusal(id), json })
-	return { exitCode: 0, output: json ? JSON.stringify(status, null, 2) : lotStatusText(status) }
+		return lotUsageExit({
+			reason: STATUS_USAGE_REASONS.extra.replace('{extra}', extra.join(' ')),
+			json,
+		})
+	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: 'read' })
+	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
+	const lotFolder = required.lot
+	const registry = registryOfLotFolder(lotFolder)
+	const entries = readStoreEntries(registry)
+	const checked = readCheckedLotState({ lotFolder, registry, entries })
+	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
+	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
+	const status = lotStatusOfInput({ input: checked.input, lotFolder, entries })
+	return { exitCode: 0, output: json ? jsonOf(status, 2) : textOf(lotStatusLines(status)) }
 }
 
 /**
@@ -192,9 +204,7 @@ function otherFolderNotes(params: {
  * The text form of a status, five lines at most: the state line, the position, the open questions, the checks
  * when not all present, next and also.
  */
-export function lotStatusText(json: LotStatusJson): string {
-	// every value the lines are made of, escaped once (a line feed in it prints as \u{a}, never as a line)
-	const status = printableOf(json)
+export function lotStatusLines(status: LotStatusJson): string[] {
 	const { station } = status.position ?? {}
 	const position = status.position
 		? `step ${status.position.step} of ${status.position.of}${station ? `, ${station}` : ''}${status.position.round === null ? '' : `, round ${status.position.round}`}`
@@ -210,7 +220,7 @@ export function lotStatusText(json: LotStatusJson): string {
 	const state = `${status.lot} ${status.state} since ${status.since}${status.limit ? ' (limit: run again)' : ''}`
 	// the position is the line given up when every other one is needed
 	const withPosition = position && rest.length + 2 <= STATUS_MAX_LINES ? [position] : []
-	return [state, ...withPosition, ...rest].join(LINE_FEED)
+	return [state, ...withPosition, ...rest]
 }
 
 /** The checks that are not `present`, as `worktree missing, link dangling`; empty when all are. */

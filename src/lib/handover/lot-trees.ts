@@ -3,6 +3,7 @@
  * `trial-base.ts` builds it - a plain lot's files as they are in the working tree, a merge lot's trial merge
  * with its resolutions. Nothing in the repository changes (git objects no ref points to).
  */
+import { readGit } from '../git.ts'
 import { trialMerge } from './merge-lot.ts'
 import { addMerge, addWorkingFiles, readHeadBase } from './trial-base.ts'
 
@@ -41,6 +42,28 @@ export function checkedTree(params: {
 	} catch {
 		// the guards and the run say what git refused
 		return params.stateTree
+	}
+}
+
+/**
+ * A committed merge hand-over's own lot tree: the tree its first merge lot's commit merged onto (its first
+ * parent's), which the worktree held and gated before the merge. Undefined for a hand-over without a committed
+ * merge lot, or when git cannot read that commit. Known limit, logged: when the merge lot comes after no plain lot
+ * but before some, the worktree's own tree also held those later lots, so this tree is not the one that was gated.
+ */
+export function ownLotTreeOf(params: {
+	root: string
+	lots: readonly ResolvedLot[]
+	commits: readonly string[]
+}): string | undefined {
+	const index = params.lots.findIndex((lot) => lot.merge)
+	const commit = index === -1 ? undefined : params.commits[index]
+	if (commit === undefined) return undefined
+	try {
+		return readGit({ root: params.root, args: ['rev-parse', `${commit}^1^{tree}`] }).trim()
+	} catch {
+		// a commit git does not hold: the tdd line is judged on the worktree's tree, as before
+		return undefined
 	}
 }
 

@@ -7,15 +7,21 @@ import { statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { readMachineLoad } from '../lib/heavy/machine-load.ts'
 import { entryStates } from '../lib/plan/entry-state.ts'
 import { readPlanBlock } from '../lib/plan/plan-block.ts'
 import { readPlanHeavy } from '../lib/plan/plan-heavy.ts'
 import { appendPlanMark, readPlanMarks } from '../lib/plan/plan-marks.ts'
-import { LINE_BREAK_PATTERN, PLAN_MARKS_SEGMENTS } from '../lib/plan/plan.constants.ts'
+import {
+	LINE_BREAK_PATTERN,
+	PLAN_JSON_INDENT,
+	PLAN_MARKS_SEGMENTS,
+} from '../lib/plan/plan.constants.ts'
 import { proposePlan } from '../lib/plan/propose.ts'
 import { readPlanFacts } from '../lib/plan/read-plan-facts.ts'
 import { renderPlanNext } from '../lib/plan/render-plan-next.ts'
+import { jsonOf, printOut } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { stateFolder } from '../lib/store/state-folder.ts'
 import {
@@ -36,7 +42,10 @@ import type { PlanSeams, RunPlanParams } from './plan.types.ts'
 /** Runs `dialecte plan` in the current folder: an answer (exit 0 or 1) on stdout, a refusal (exit 2) on stderr. */
 export async function run(argv: string[]): Promise<void> {
 	const result = runPlan({ cwd: process.cwd(), argv })
-	;(result.exitCode === PLAN_EXIT.refused ? console.error : console.log)(result.output)
+	printOut({
+		stream: result.exitCode === PLAN_EXIT.refused ? 'stderr' : 'stdout',
+		text: result.output,
+	})
 	if (result.exitCode !== PLAN_EXIT.answered) process.exit(result.exitCode)
 }
 
@@ -102,12 +111,17 @@ function runCheck(params: RunPlanParams): CommandResult {
 	if ('refusal' in loaded) return loaded.refusal
 	const { block } = loaded
 	const repositories = Object.keys(block.repositories)
-	return {
+	if (json)
+		return {
+			exitCode: PLAN_EXIT.answered,
+			output: jsonOf({ plan, valid: true, faults: [] }, PLAN_JSON_INDENT),
+		}
+	return resultOf({
 		exitCode: PLAN_EXIT.answered,
-		output: json
-			? JSON.stringify({ plan, valid: true, faults: [] }, null, 2)
-			: `${PLAN_COMMAND_NAME} check: ${plan} - valid (${String(block.lots.length)} entries, repositories ${repositories.join(', ')})`,
-	}
+		lines: [
+			`${PLAN_COMMAND_NAME} check: ${plan} - valid (${String(block.lots.length)} entries, repositories ${repositories.join(', ')})`,
+		],
+	})
 }
 
 /** `plan mark <plan.md> <id> done --by <who> [--reason <text>]`: a person entry only, once. */
@@ -122,23 +136,25 @@ function runMark(params: RunPlanParams): CommandResult {
 		return usageOf({ problem: `mark takes a plan file, an id and ${PLAN_MARK_STATE}` })
 	const optionFault = markOptionFaultOf({ read })
 	if (optionFault !== undefined)
-		return refusalOf({ text: `${PLAN_COMMAND_NAME} mark: ${optionFault}` })
+		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: ${optionFault}`] })
 	const loaded = loadBlock({ cwd: params.cwd, plan, verb: PLAN_VERBS.mark, json: false })
 	if ('refusal' in loaded) return loaded.refusal
 	const entry = loaded.block.lots.find((candidate) => candidate.id === id)
 	if (entry === undefined)
-		return refusalOf({ text: `${PLAN_COMMAND_NAME} mark: no entry ${id} in ${plan}` })
+		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: no entry ${id} in ${plan}`] })
 	if (entry.kind !== 'person')
 		return refusalOf({
-			text: `${PLAN_COMMAND_NAME} mark: ${id} is a ${entry.kind} entry; only a person entry takes a mark (its state comes from its records)`,
+			lines: [
+				`${PLAN_COMMAND_NAME} mark: ${id} is a ${entry.kind} entry; only a person entry takes a mark (its state comes from its records)`,
+			],
 		})
 	const location = params.seams?.state
 	const by = read.values.get(PLAN_MARK_OPTIONS.by) as string
 	if (readPlanMarks({ planPath: loaded.planPath, location }).some((mark) => mark.id === id))
-		return {
+		return resultOf({
 			exitCode: PLAN_EXIT.answered,
-			output: `${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - already recorded`,
-		}
+			lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - already recorded`],
+		})
 	try {
 		appendPlanMark({
 			planPath: loaded.planPath,
@@ -150,13 +166,15 @@ function runMark(params: RunPlanParams): CommandResult {
 		})
 	} catch (error) {
 		return refusalOf({
-			text: `${PLAN_COMMAND_NAME} mark: the marks file under ${join(stateFolder(location), ...PLAN_MARKS_SEGMENTS)} cannot be written: ${(error as Error).message}`,
+			lines: [
+				`${PLAN_COMMAND_NAME} mark: the marks file under ${join(stateFolder(location), ...PLAN_MARKS_SEGMENTS)} cannot be written: ${(error as Error).message}`,
+			],
 		})
 	}
-	return {
+	return resultOf({
 		exitCode: PLAN_EXIT.answered,
-		output: `${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by})`,
-	}
+		lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by})`],
+	})
 }
 
 /** What is wrong with `--by` and `--reason`: `--by` given, not empty, one line; `--reason` one line. */
@@ -200,30 +218,30 @@ function faultsOf(params: {
 	if (params.json)
 		return {
 			exitCode: PLAN_EXIT.refused,
-			output: JSON.stringify({ plan, valid: false, faults }, null, 2),
+			output: jsonOf({ plan, valid: false, faults }, PLAN_JSON_INDENT),
 		}
 	return refusalOf({
-		text: [
+		lines: [
 			`${PLAN_COMMAND_NAME} ${params.verb}: ${plan} - ${String(faults.length)} fault${faults.length === 1 ? '' : 's'}`,
 			...faults.map((fault) => `  ${fault.at}: ${fault.detail}`),
-		].join('\n'),
+		],
 	})
 }
 
 /** The usage of `plan` with what was wrong; exit 2. */
 function usageOf(params: { problem: string }): CommandResult {
 	return refusalOf({
-		text: [
+		lines: [
 			`${PLAN_COMMAND_NAME}: ${params.problem}`,
 			'usage:',
 			...COMMAND_MAP.plan.usage.map((line) => `  ${line}`),
-		].join('\n'),
+		],
 	})
 }
 
-/** A refusal, exit 2. */
-function refusalOf(params: { text: string }): CommandResult {
-	return { exitCode: PLAN_EXIT.refused, output: params.text }
+/** A refusal of `lines` (one entry per printed line, each escaped once), exit 2. */
+function refusalOf(params: { lines: readonly string[] }): CommandResult {
+	return resultOf({ exitCode: PLAN_EXIT.refused, lines: params.lines })
 }
 
 /** Whether the path is a file. */

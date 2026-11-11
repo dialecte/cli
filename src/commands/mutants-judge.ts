@@ -1,5 +1,5 @@
 /** `dialecte mutants judge [--file <f>] [--json]`: the packets of the package's pending survivors, to judge them. */
-import { judgePackets, renderPacket } from '../lib/mutation/judge-packet.ts'
+import { judgePackets, packetLines } from '../lib/mutation/judge-packet.ts'
 import { JUDGE_OPTIONS, LEADING_DOT_SLASH } from '../lib/mutation/mutation-agent.constants.ts'
 import { packageNameOf } from '../lib/mutation/run-store.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -29,9 +29,14 @@ export function judgeVerb(params: { root: string; argv: string[] } & OwnerCheck)
 	const file = given?.replace(LEADING_DOT_SLASH, '')
 	const packageName = packageNameOf(root)
 	const packets = judgePackets({ root, ...(file === undefined ? {} : { file }) })
-	const text =
+	const lines =
 		packets.length > 0
-			? packets.map((packet) => renderPacket({ packet })).join('\n\n')
-			: `mutants judge: nothing pending ${file === undefined ? `for ${packageName}` : `in ${file}`}`
-	return answered({ verb: 'judge', json, text, fields: { package: packageName, packets } })
+			? packets.flatMap((packet, index) => [
+					...(index === 0 ? [] : ['']),
+					...packetLines({ packet }),
+				])
+			: [
+					`mutants judge: nothing pending ${file === undefined ? `for ${packageName}` : `in ${file}`}`,
+				]
+	return answered({ verb: 'judge', json, lines, fields: { package: packageName, packets } })
 }

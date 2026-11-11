@@ -83,6 +83,8 @@ export type GateRecord = {
 	base?: UsedGateBase
 	/** A rehearsal's hook record: it ran in a scratch clone of the repository. */
 	origin?: 'rehearsal'
+	/** The run spanned a sleep of the machine of this many milliseconds (over 60 s); absent otherwise. */
+	sleptMs?: number
 }
 
 /** `dialecte-rules.json`: the last `dialecte rules` run on the changed files (a run on named files records nothing). */

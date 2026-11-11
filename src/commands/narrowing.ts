@@ -13,6 +13,8 @@ import { join, resolve } from 'node:path'
 
 import { resolveBin } from '../lib/bin.ts'
 import { resolveTargets, tsconfigOf } from '../lib/config.ts'
+import { joinedOf, printLines, printOut, textOf } from '../lib/print/print.ts'
+import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { genNarrowing, loadSchema } from './coverage.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -64,14 +66,22 @@ export async function run(argv: string[]): Promise<void> {
 		rmSync(join(ROOT, tmp), { force: true })
 
 		if (res.status === 0) {
-			console.log(
-				`✅ [${target.version}] narrowing holds — ${schema.elements.length} elements asserted`,
-			)
+			printLines({
+				stream: 'stdout',
+				lines: [
+					`✅ [${target.version}] narrowing holds — ${schema.elements.length} elements asserted`,
+				],
+			})
 		} else {
 			failed = true
-			console.error(
-				`❌ [${target.version}] narrowing assertion(s) failed:\n${res.stdout || ''}${res.stderr || ''}`,
-			)
+			// tsc's own lines are relayed: its colours kept, every other control escaped
+			printOut({
+				stream: 'stderr',
+				text: joinedOf([
+					textOf([`❌ [${target.version}] narrowing assertion(s) failed:`]),
+					relayedTextOf(childLinesOf(`${res.stdout || ''}${res.stderr || ''}`)),
+				]),
+			})
 		}
 	}
 	if (failed) process.exit(1)

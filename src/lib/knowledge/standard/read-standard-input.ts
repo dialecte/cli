@@ -31,7 +31,7 @@ export function readStandardInput(params: ReadStandardInputParams): StandardInpu
 	const root = readStandardRoot({ environment: params.environment })
 	const rootRefusal = refusalOfRoot({ root })
 	if (rootRefusal !== undefined || root === undefined)
-		return refused(`${rootRefusal ?? INPUT_MESSAGES.notSet}\n${STANDARD_LAYOUT}`)
+		return refused(rootRefusal ?? INPUT_MESSAGES.notSet, STANDARD_LAYOUT)
 	const workTree = workTreeRefusal({ path: root })
 	if (workTree) return refused(workTree)
 	const entries = entriesOf({ folder: root })
@@ -42,10 +42,11 @@ export function readStandardInput(params: ReadStandardInputParams): StandardInpu
 		.sort()
 	if (topLevelFiles.length > 0)
 		return refused(
-			`${fillMessage({
+			fillMessage({
 				template: INPUT_MESSAGES.topLevelFiles,
 				values: { path: root, names: topLevelFiles.join(NAME_LIST_SEPARATOR) },
-			})}\n${STANDARD_LAYOUT}`,
+			}),
+			STANDARD_LAYOUT,
 		)
 	const folders = standardFoldersOf({ entries })
 	if (folders.kind === 'collision')
@@ -57,7 +58,8 @@ export function readStandardInput(params: ReadStandardInputParams): StandardInpu
 		)
 	if (folders.kept.length === 0)
 		return refused(
-			`${fillMessage({ template: INPUT_MESSAGES.noStandard, values: { path: root } })}\n${STANDARD_LAYOUT}`,
+			fillMessage({ template: INPUT_MESSAGES.noStandard, values: { path: root } }),
+			STANDARD_LAYOUT,
 		)
 	const known = folders.kept.map((folder) => folder.id)
 	const wanted = params.standardId?.toLowerCase()
@@ -121,6 +123,6 @@ function entriesOf(params: { folder: string }): StandardEntry[] {
 	})
 }
 
-function refused(message: string): StandardInputAnswer {
-	return { kind: 'refused', message }
+function refused(message: string, layout?: string): StandardInputAnswer {
+	return layout === undefined ? { kind: 'refused', message } : { kind: 'refused', message, layout }
 }

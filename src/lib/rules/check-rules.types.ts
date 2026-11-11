@@ -6,4 +6,6 @@ export type RulesCheck = {
 	errors: number
 	warnings: number
 	findings: RuleFinding[]
+	/** A contributor whose machine holds no forbidden words list: the user file the list would be read from. */
+	noForbiddenWordsList?: string
 }

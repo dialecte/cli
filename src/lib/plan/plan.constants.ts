@@ -171,3 +171,6 @@ export const SECONDS_PER_MINUTE = 60
 
 /** The commands `plan next` names. */
 export const PLAN_COMMAND = 'dialecte plan'
+
+/** The indent of every `plan` JSON answer. */
+export const PLAN_JSON_INDENT = 2

@@ -20,6 +20,19 @@ export const STORE_FILES: StoreFileNames = {
 /** The folder of the store in the repository's git common folder. */
 export const STORE_FOLDER = 'dialecte-lots'
 
+/** The folder beside the store, in the git common folder, that holds the damaged lots a stop moved aside. */
+export const ASIDE_FOLDER = 'dialecte-lots-aside'
+
+/** The record a stop writes into a lot folder it moved aside; beside a moved link it is `<name>.stopped.json`. */
+export const STOPPED_FILE = 'stopped.json'
+export const STOPPED_LINK_SUFFIX = '.stopped.json'
+
+/** The number of a lot's own name in the aside folder; a taken name gets the next one appended (`<name>-2`, ...). */
+export const BARE_NAME_NUMBER = 1
+
+/** The name of a lot folder: the index's digits, a dash, the rest (a `.tmp-` folder being built is hidden: none). */
+export const LOT_FOLDER_NAME_PATTERN = /^\d+-.+$/
+
 /** A transition's file name inside `transitions/`: six digits. */
 export const TRANSITION_FILE_PATTERN = /^\d{6}\.json$/
 
@@ -61,6 +74,9 @@ export const WRITABLE_MODE = 0o644
 
 /** The permission bits of a mode. */
 export const PERMISSION_BITS = 0o777
+
+/** Why a file the store replaces whole is refused when it is a symbolic link; the path follows. */
+export const REPLACED_LINK_REFUSAL = 'refused to replace a symbolic link'
 
 /** The entry of a `.git` file pointing to the git folder of a linked worktree. */
 export const GITDIR_LINE_PATTERN = /^gitdir:\s*(.+?)\s*$/m
@@ -170,7 +186,31 @@ export const RECORD_DAMAGE_REASONS = {
 	marker: 'a hand-over marker holds a time the store does not write',
 	scenario:
 		'scenario.json is no scenario the simulator plays (unreadable, no steps, or a step it cannot play)',
+	identityUnreadable: 'identity.json is missing or does not read as a lot identity',
+	identityName: 'identity.json names another lot than its folder',
 } as const
+
+/**
+ * How an overlap names a damaged lot (P2.2), what it says of one whose scope cannot be read, and what joins the
+ * pairs of entries that meet.
+ */
+export const DAMAGED_OVERLAP_LABEL = '{name} (damaged: {reason})'
+export const SCOPE_UNREADABLE = 'its scope cannot be read: it holds every path'
+export const MET_PAIRS_SEPARATOR = '; '
+
+/** What every reader prints of a damaged lot (P2.3): its state with the reason, then the stop to run. */
+export const DAMAGED_TEXTS = {
+	state: '{name} damaged: {reason}',
+	next: 'next: {command}',
+} as const
+
+/** Why a damaged lot takes no answer nor question: `{takes}` what it would have taken, `{stop}` the stop to run. */
+export const DAMAGED_LOT_REFUSAL =
+	'the lot {name} is damaged ({reason}): it takes no {takes}; next: {stop}'
+
+/** The state a damaged lot reads as, and the state of a damaged lot a stop moved aside. */
+export const DAMAGED_STATE = 'damaged' as const
+export const MOVED_ASIDE_STATE = 'moved-aside' as const
 
 /** Who answers a caller question when `--by` is left out; a person's answer never takes it. */
 export const CALLER = 'caller'
@@ -183,21 +223,6 @@ export const NO_POSITION: TransitionPosition = { step: 0, of: 0, station: null, 
 
 /** The reason of a question transition; `{id}` is the question's id. */
 export const QUESTION_REASON = 'question {id} asked'
-
-/**
- * The characters a text an agent wrote prints escaped (33S case 40), as ranges of code points, both ends included:
- * C0 controls, DEL and C1 controls, the Arabic letter mark, the bidi marks, the line and paragraph separators, the
- * bidi embeddings and overrides, the bidi isolates.
- */
-export const DISPLAY_ESCAPED_RANGES: ReadonlyArray<readonly [number, number]> = [
-	[0x00, 0x1f],
-	[0x7f, 0x9f],
-	[0x61c, 0x61c],
-	[0x200e, 0x200f],
-	[0x2028, 0x2029],
-	[0x202a, 0x202e],
-	[0x2066, 0x2069],
-]
 
 /** The station whose steps a scenario plays at round 1 (every other step is at no round). */
 export const ROUND_STATION = 'reviewer'
@@ -231,9 +256,3 @@ export const MILLISECONDS_PER_SECOND = 1000
 
 /** The brief checks a simulated start records in `wouldRefuse` instead of refusing (33S section 5). */
 export const SIMULATED_FINDING_RULES: readonly RefusalRule[] = ['overlap', 'branch-exists']
-
-/** The radix an escaped character's code is written in. */
-export const ESCAPE_RADIX = 16
-
-/** What separates the lines of a text form: kept when each line is escaped. */
-export const LINE_FEED = '\n'

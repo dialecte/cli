@@ -11,7 +11,8 @@
  * moves (one worktree, whichever arguments reach it, decided and closed once), `node_modules` checked against
  * the lockfile where it is. Then, per worktree: the links of its `node_modules` made absolute where they are,
  * the move into the trash, the park from the trashed folder, the background removal. The branch is never
- * touched.
+ * touched. Each hand-over closed records `closed` (the time) on its registry entry; a hand-over whose entry holds
+ * it is already closed, nothing decided nor moved (a worktree removed by hand, never closed, is still kept).
  */
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -36,7 +37,7 @@ import {
 	WORKTREE_STATUS_ARGUMENTS,
 } from '../worktree/worktree.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
-import { entryOfArgument, findHandoverStore } from './handover-store.ts'
+import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
 import { CLOSE_FROM_INSIDE, HEAD_REFLOG_COMMITS_SHOWN } from './handover.constants.ts'
 
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -116,13 +117,15 @@ export function closeHandovers(params: {
 			baseBranch,
 		})
 	})
-	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order
+	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order;
+	// a hand-over already closed never owns the worktree (the others reaching it are decided on their own)
 	const owners = new Map<string, CloseTarget>()
 	const keeps = new Map<string, { argument: CloseTarget; kept: string }>()
 	targets.forEach(function group(target, index) {
 		const key = keys[index]
-		if (!owners.has(key)) owners.set(key, target)
 		const decision = decisions[index]
+		if ('alreadyClosed' in decision) return
+		if (!owners.has(key)) owners.set(key, target)
 		if ('kept' in decision && !keeps.has(key))
 			keeps.set(key, { argument: target, kept: decision.kept })
 	})
@@ -134,6 +137,8 @@ export function closeHandovers(params: {
 			const keep = keeps.get(key)
 			if (keep || 'kept' in decision)
 				return [key, { outcome: { handover, kept: keep?.kept ?? 'not decided' }, moved: [] }]
+			if ('alreadyClosed' in decision)
+				return [key, { outcome: { handover, closed: true, already: true }, moved: [] }]
 			const moved: string[] = []
 			try {
 				const nodeModules = closeWorktree({
@@ -157,13 +162,15 @@ export function closeHandovers(params: {
 		}),
 	)
 	// one outcome per argument: its own reason when it keeps the worktree, else the reason that keeps it
-	return targets.map(function outcomeOf(target, index): CloseResult {
+	const outcomes = targets.map(function outcomeOf(target, index): CloseResult {
 		const key = keys[index]
 		const decision = decisions[index]
 		const keep = keeps.get(key)
 		const result = results.get(key)
 		const handover = target.entry?.name ?? target.argument
 		if ('kept' in decision) return { outcome: { handover, kept: decision.kept }, moved: [] }
+		if ('alreadyClosed' in decision)
+			return { outcome: { handover, closed: true, already: true }, moved: [] }
 		if (keep && keep.argument !== target)
 			return {
 				outcome: {
@@ -179,6 +186,14 @@ export function closeHandovers(params: {
 			? { outcome: { handover, closed: true }, moved: [same] }
 			: { outcome: { handover, kept: `${same}: ${result.outcome.kept}` }, moved: [] }
 	})
+	// each hand-over closed now says so in its registry entry: the one thing a later close reads as closed
+	if (store)
+		targets.forEach(function recordClosed(target, index) {
+			const { outcome } = outcomes[index]
+			if (target.entry && 'closed' in outcome && !outcome.already)
+				recordHandoverClosed({ store, name: target.entry.name, at: params.now })
+		})
+	return outcomes
 }
 
 /**
@@ -204,11 +219,14 @@ function decideTarget(params: {
 	baseBranch: string
 }):
 	| { kept: string }
+	| { alreadyClosed: true }
 	| {
 			worktree: ListedWorktree
 			check: NodeModulesCheck | undefined
 			checkedLockHash: string | undefined
 	  } {
+	// an earlier close recorded it on the entry: nothing to decide, nothing to move
+	if (params.target.entry?.closed !== undefined) return { alreadyClosed: true }
 	try {
 		const why = whyKeep(params)
 		if ('kept' in why) return why

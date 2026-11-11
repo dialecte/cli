@@ -154,8 +154,11 @@ describe('dialecte --help --json, verbs and flags of the real map', () => {
 		expect(commandOf('tdd')?.verbs).toEqual(['red', 'green', 'status'])
 	})
 
-	it('handover → write, show, run, abandon, list', () => {
-		expect(commandOf('handover')?.verbs).toEqual(['write', 'show', 'run', 'abandon', 'list'])
+	it('handover → write, show, review, run, abandon, list', () => {
+		// review (P3.4) joins the verbs; where it stands in the usage lines is the map's to say
+		expect([...(commandOf('handover')?.verbs ?? [])].sort()).toEqual(
+			['write', 'show', 'review', 'run', 'abandon', 'list'].sort(),
+		)
 	})
 
 	it('gate → no verb, every flag of its usage lines, the global --help and -h left out', () => {

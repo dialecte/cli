@@ -15,6 +15,7 @@ import { resolveTargets, tsconfigOf, type Binding } from '../lib/config.ts'
 import { discoverMethodPaths } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
+import { printLines } from '../lib/print/print.ts'
 import { ELEMENT_GENERICS } from './coverage.constants.ts'
 
 import type { AttributeDetail, DialecteSchema } from './coverage.types.ts'
@@ -320,7 +321,10 @@ export function generateCoverage(params: {
 		(total, kids) => total + (kids?.length ?? 0),
 		0,
 	)
-	console.log(`coverage: ${schema.elements.length} elements, ${edges} child edges → ${outDir}`)
+	printLines({
+		stream: 'stdout',
+		lines: [`coverage: ${schema.elements.length} elements, ${edges} child edges → ${outDir}`],
+	})
 	return written.map(([path]) => path)
 }
 
@@ -334,7 +338,7 @@ export async function run(argv: string[]): Promise<void> {
 	const tsconfig = tsconfigOf(argv)
 	for (const target of targets) {
 		const schema = await loadSchema(resolve(process.cwd(), target.constantsDir))
-		console.log(`[${target.version}]`)
+		printLines({ stream: 'stdout', lines: [`[${target.version}]`] })
 		// Discover the full method surface (incl. extension/domain groups) → the coverage.api probe.
 		let methodPaths: string[] | undefined
 		try {
@@ -344,9 +348,12 @@ export async function run(argv: string[]): Promise<void> {
 				root: process.cwd(),
 			})
 		} catch {
-			console.warn(
-				`  ⚠ [${target.version}] method-surface discovery failed — skipping coverage.api probe`,
-			)
+			printLines({
+				stream: 'stderr',
+				lines: [
+					`  ⚠ [${target.version}] method-surface discovery failed — skipping coverage.api probe`,
+				],
+			})
 		}
 		const written = generateCoverage({
 			schema,

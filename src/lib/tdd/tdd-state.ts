@@ -47,6 +47,7 @@ import type {
 	TddLedger,
 	TddMoves,
 	TddState,
+	TestRunFailure,
 } from './tdd.types.ts'
 
 export async function readTddState(params: {
@@ -54,7 +55,7 @@ export async function readTddState(params: {
 	packageJson: PackageJson
 	ledger: TddLedger
 	base: string
-}): Promise<TddState | { failure: string }> {
+}): Promise<TddState | TestRunFailure> {
 	const { root, ledger, base } = params
 	const testCode = hashChangedTestCode({ root, base, packageJson: params.packageJson })
 	const unfrozen = [...testCode]

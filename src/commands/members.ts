@@ -10,6 +10,7 @@ import { getArg, hasFlag, positionalArguments, resolveTargets, tsconfigOf } from
 import { discoverMethods } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { missingPackage } from '../lib/missing-package.ts'
+import { printOut, textOf } from '../lib/print/print.ts'
 import { MEMBERS_USAGE, MEMBERS_VALUE_OPTIONS } from './members.constants.ts'
 import { METHOD_DISCOVERY_DEPTH } from './skills.constants.ts'
 
@@ -19,7 +20,7 @@ import type { MemberEntriesRead } from './members.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runMembers({ argv, cwd: process.cwd() })
-	process.stdout.write(result.output)
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -45,7 +46,7 @@ export function readMemberEntries(params: { argv: string[]; cwd: string }): Memb
 	const [expression] = positionalArguments({ argv, valueOptions: MEMBERS_VALUE_OPTIONS })
 	const usage: MemberEntriesRead = {
 		kind: 'output',
-		output: { output: `${MEMBERS_USAGE}\n`, exitCode: 2 },
+		output: { output: textOf([MEMBERS_USAGE, '']), exitCode: 2 },
 	}
 	if (!expression) return usage
 	const binding = readBinding({ argv, cwd })

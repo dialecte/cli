@@ -6,13 +6,15 @@ import { getArg, hasFlag } from '../lib/config.ts'
 import { missingPackage } from '../lib/missing-package.ts'
 import { answerModels } from '../lib/models/answer-models.ts'
 import { readRememberedVendor } from '../lib/models/remembered-vendor.ts'
+import { printOut, textOf } from '../lib/print/print.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { PrintedText } from '../lib/print/print.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runModels({ argv, cwd: process.cwd() })
-	process.stderr.write(result.warnings)
-	process.stdout.write(result.output)
+	printOut({ stream: 'stderr', text: result.warnings, ending: 'as-is' })
+	printOut({ stream: 'stdout', text: result.output, ending: 'as-is' })
 	process.exitCode = result.exitCode
 }
 
@@ -25,14 +27,15 @@ export async function run(argv: string[]): Promise<void> {
 export function runModels(params: {
 	argv: readonly string[]
 	cwd: string
-}): CommandOutput & { warnings: string } {
+}): CommandOutput & { warnings: PrintedText } {
 	const missing = missingPackage({ cwd: params.cwd })
-	if (missing) return { ...missing, warnings: '' }
+	if (missing) return { ...missing, warnings: textOf([]) }
 	const argv = [...params.argv]
 	const remembered = readRememberedVendor(params.cwd)
 	const answer = answerModels({
 		vendor: getArg(argv, 'vendor') ?? remembered.vendor,
 		json: hasFlag(argv, 'json'),
 	})
-	return { ...answer, warnings: remembered.warnings.map((warning) => `⚠️  ${warning}\n`).join('') }
+	const warnings = remembered.warnings.map((warning) => `⚠️  ${warning}`)
+	return { ...answer, warnings: textOf(warnings.length === 0 ? [] : [...warnings, '']) }
 }

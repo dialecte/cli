@@ -11,6 +11,7 @@ import { markAbandoned } from '../../test/handover-store-scenario.ts'
 import { QUESTION_LOT } from '../../test/lot-questions.constants.ts'
 import { createQuestionLot, questionWith } from '../../test/lot-questions.ts'
 import { snapshotOf } from '../../test/lot-start-workspace.ts'
+import { AT_ONCE_ROWS } from '../../test/lot-wait-real-cases.constants.ts'
 import {
 	POLL_MS,
 	REAL_WAITING_LINE_PATTERN,
@@ -24,22 +25,14 @@ import { waitLot } from './lot-wait.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { QuestionLot, QuestionLotParams } from '../../test/lot-questions.types.ts'
+import type { QuestionLot } from '../../test/lot-questions.types.ts'
+import type { Observed } from '../../test/lot-wait-real-cases.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
 import type { EngineState, TransitionCauseKind } from '../lib/store/store.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-/** What a wait of a real lot reported, and what it left behind. */
-type Observed = {
-	exitCode: number
-	state: unknown
-	sleeps: number[]
-	/** Nothing but what the test itself wrote was written. */
-	onlyTheTestWrote: boolean
-}
 
 /** Everything the store holds for the lot: its folder and the registry. */
 function bytesOf(lot: QuestionLot): string {
@@ -98,65 +91,6 @@ async function waitObserved(params: {
 		onlyTheTestWrote: bytesOf(params.lot) === afterTheTest,
 	}
 }
-
-type AtOnceRow = { title: string; lot: QuestionLotParams; exitCode: number; state: string }
-
-const AT_ONCE_ROWS: AtOnceRow[] = [
-	{
-		title: 'ready by its last transition',
-		lot: { later: [transitionOf({ seq: 2, state: 'ready', kind: 'ready' })] },
-		exitCode: 0,
-		state: 'ready',
-	},
-	{
-		title: 'ready by a pending registry entry',
-		lot: { registry: 'pending' },
-		exitCode: 0,
-		state: 'ready',
-	},
-	{
-		title: 'committed by its registry entry',
-		lot: { registry: 'committed' },
-		exitCode: 0,
-		state: 'committed',
-	},
-	{
-		title: 'failed',
-		lot: { later: [transitionOf({ seq: 2, state: 'failed', kind: 'fail' })] },
-		exitCode: 1,
-		state: 'failed',
-	},
-	{
-		title: 'canceled by its last transition',
-		lot: { later: [transitionOf({ seq: 2, state: 'canceled', kind: 'stop' })] },
-		exitCode: 1,
-		state: 'canceled',
-	},
-	{
-		title: 'a simulated lot with a hand-written canceled transition',
-		lot: { simulated: true, later: [transitionOf({ seq: 2, state: 'canceled', kind: 'stop' })] },
-		exitCode: 1,
-		state: 'canceled',
-	},
-	{
-		title: 'canceled by an abandoned registry entry',
-		lot: { registry: 'abandoned' },
-		exitCode: 1,
-		state: 'canceled',
-	},
-	{
-		title: 'input-required, a question open',
-		lot: { question: questionWith() },
-		exitCode: 3,
-		state: 'input-required',
-	},
-	{
-		title: 'working with a limit as its last transition',
-		lot: { later: [transitionOf({ seq: 2, kind: 'limit' })] },
-		exitCode: 4,
-		state: 'working',
-	},
-]
 
 describe(
 	'lot wait on a real lot: it returns at once, spends nothing, writes nothing (case 12)',

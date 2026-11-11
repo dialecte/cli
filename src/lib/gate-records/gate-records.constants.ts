@@ -18,6 +18,9 @@ export const STATE_EXCLUDED_PATTERN = /(^|\/)\.dialecte\//
 /** The third entry of a scoped step in a gate command hash: `[name, run, "scoped"]`. */
 export const SCOPED_STEP_HASH_MARK = 'scoped'
 
+/** A gate step whose command checks the rules (`dialecte rules`): its key folds in the machine's lists. */
+export const RULES_STEP_PATTERN = /\brules\b/
+
 /** The folder (in the system's temporary folder) a commit's index is copied to for `git write-tree`. */
 export const COMMIT_INDEX_FOLDER_PREFIX = 'dialecte-commit-index-'
 
@@ -36,6 +39,15 @@ export const GATE_LINE_NAME = 'gate'
 /** The names of the rules and review lines. */
 export const RULES_LINE_NAME = 'rules'
 export const REVIEW_LINE_NAME = 'review'
+
+/**
+ * The warning row of a run that spanned a sleep of the machine: `! slept <duration> during <run>`, the run being
+ * `gate --<mode>` for a gate record, `handover run` for a hand-over folder's run record.
+ */
+export const SLEPT_LINE_NAME = 'slept'
+export const SLEPT_LINE_DETAIL = '{duration} during {run}'
+export const SLEPT_GATE_RUN = 'gate --{mode}'
+export const SLEPT_HANDOVER_RUN = 'handover run'
 
 /** The card's line of a contributor without a contrib record of the checked tree, and its detail. */
 export const CONTRIB_LINE_NAME = 'contrib'
@@ -90,6 +102,12 @@ export const FAILING_MORE = '+{more} more'
 /** Between the paths of `FAILING_DETAIL`. */
 export const FAILING_PATH_SEPARATOR = ', '
 
+/** The card row of a step that failed in parallel and passed on its serial rerun: `{count}` the flaky files. */
+export const FLAKY_DETAIL = '{count} flaky, passed serially'
+
+/** Before `FLAKY_DETAIL`: the tests that passed in parallel. */
+export const FLAKY_PASSED_DETAIL = '{passed} passed'
+
 /** The end of a gate line's detail read from a commit hook's record. */
 export const HOOK_RECORD_DETAIL = 'commit hook'
 
@@ -116,6 +134,12 @@ export const NOT_RUN_HERE_DETAIL = 'not run here ({reason})'
  * run (no step of its name, no test step answering a test step): it warns, never blocks.
  */
 export const NOT_RUN_ON_CHECKED_TREE_DETAIL = 'not run on the merged tree'
+
+/**
+ * The same step when the tree checked is the worktree's own (a hand-over that merges nothing): the standing hook
+ * record of that tree did not run it.
+ */
+export const NOT_RUN_BY_HOOK_DETAIL = 'not run by the commit hook on this tree'
 
 /** A step the gate did not run because an earlier one failed. */
 export const NOT_RUN_DETAIL = 'not run (an earlier step failed)'

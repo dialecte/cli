@@ -20,15 +20,15 @@ import {
 } from '../lib/events/write-event.ts'
 import { isPathArgument } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { SKILL_NAME_PATTERN } from '../lib/skills/skill-file.constants.ts'
 import { AGENT_SKILL_FOLDERS } from '../lib/skills/sync-skills.constants.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { readLotStateInput, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
-import { noLotRefusal, requireLot } from '../lib/store/resolve-lot.ts'
+import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
-import { printableOf } from '../lib/store/text-escape.ts'
 import { hashFile } from '../lib/tdd/tdd-files.ts'
 import {
 	NOT_HOST_GIVEN_FIELDS,
@@ -55,12 +55,12 @@ export function lotStation(params: LotStationParams): CommandResult {
 	if ('faults' in request)
 		return request.usage
 			? lotUsageExit({ reason: request.faults.join('; '), json })
-			: lotRefusalExit({ message: ['lot station: refused', ...request.faults].join('\n'), json })
-	const required = requireLot({ argument: request.id, cwd: params.cwd, mode: 'write' })
-	if ('exitCode' in required) return lotRefusalExit({ message: required.output, json })
+			: lotRefusalExit({ lines: ['lot station: refused', ...request.faults], json })
+	const required = requiredLotOf({ argument: request.id, cwd: params.cwd, mode: 'write' })
+	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
 	const lotFolder = required.lot
 	const input = readLotStateInput({ lotFolder, registry: registryOfLotFolder(lotFolder) })
-	if (!input) return lotRefusalExit({ message: noLotRefusal(request.id), json })
+	if (!input) return lotRefusalExit({ lines: [noLotRefusal(request.id)], json })
 	const { identity } = input
 	const { state } = lotState(input)
 	const file = join(lotFolder, STORE_FILES.events)
@@ -72,12 +72,12 @@ export function lotStation(params: LotStationParams): CommandResult {
 			event: eventOf({ request, identity, cwd: params.cwd, now: params.now }),
 			events: needsEvents(request) ? readEvents({ file }).events : [],
 		})
-		if ('refusal' in decision) return lotRefusalExit({ message: decision.refusal, json })
+		if ('refusal' in decision) return lotRefusalExit({ lines: decision.refusal, json })
 		if ('write' in decision) {
 			const bytes = eventLineOf({ event: decision.write }).length
 			if (bytes > EVENT_LINE_LIMIT)
 				return lotRefusalExit({
-					message: `lot station: refused: ${overLimitMessage({ bytes, limit: EVENT_LINE_LIMIT })}`,
+					lines: [`lot station: refused: ${overLimitMessage({ bytes, limit: EVENT_LINE_LIMIT })}`],
 					json,
 				})
 			writeEvent({ file, event: decision.write, limit: EVENT_LINE_LIMIT })
@@ -85,7 +85,9 @@ export function lotStation(params: LotStationParams): CommandResult {
 		return answerOf({ outcome: decision.outcome, request, identity, json })
 	} catch (error) {
 		return lotFailureExit({
-			message: `lot station: the event could not be written in ${printableOf(file)}: ${(error as Error).message}`,
+			lines: [
+				`lot station: the event could not be written in ${file}: ${(error as Error).message}`,
+			],
 			json,
 		})
 	}
@@ -150,7 +152,9 @@ function decide(call: StationCall): StationDecision {
 				(request.run !== undefined && request.run !== runOf(first))
 			)
 				return {
-					refusal: `lot station: --event ${printableOf(request.hostEvent)} is the event ${first.id} already, with other fields`,
+					refusal: [
+						`lot station: --event ${request.hostEvent} is the event ${first.id} already, with other fields`,
+					],
 				}
 			return { outcome: outcomeOf({ call, recorded: 'already', run: runOf(first) }) }
 		}
@@ -158,7 +162,7 @@ function decide(call: StationCall): StationDecision {
 	if (request.phase === 'start') {
 		if (STATION_START_REFUSED_STATES.includes(state))
 			return {
-				refusal: `lot station: the lot ${printableOf(identity.name)} is ${state}: no station starts on it`,
+				refusal: [`lot station: the lot ${identity.name} is ${state}: no station starts on it`],
 			}
 		const write = { ...event, run: event.id }
 		return { write: orderedOf(write), outcome: outcomeOf({ call, recorded: 'new', run: event.id }) }
@@ -179,11 +183,13 @@ function endOfRun(params: { call: StationCall; run: string }): StationDecision {
 	})
 	if (start === undefined)
 		return {
-			refusal: `lot station: --run ${printableOf(run)} names no start of the lot ${printableOf(call.identity.name)}`,
+			refusal: [`lot station: --run ${run} names no start of the lot ${call.identity.name}`],
 		}
 	if (!keyGivenMatches({ start, end: call.event }))
 		return {
-			refusal: `lot station: --run ${printableOf(run)} is the start ${start.id} of another station, step, round or attempt`,
+			refusal: [
+				`lot station: --run ${run} is the start ${start.id} of another station, step, round or attempt`,
+			],
 		}
 	const firstEnd = call.events.find(function isEndOfRun(each) {
 		return each.kind === 'station.end' && each.run === run
@@ -191,7 +197,9 @@ function endOfRun(params: { call: StationCall; run: string }): StationDecision {
 	if (firstEnd !== undefined) {
 		if (!isDeepStrictEqual(hostGivenOf(firstEnd), hostGivenOf(call.event)))
 			return {
-				refusal: `lot station: the run ${printableOf(run)} has the end ${firstEnd.id} already, with other fields`,
+				refusal: [
+					`lot station: the run ${run} has the end ${firstEnd.id} already, with other fields`,
+				],
 			}
 		return { outcome: outcomeOf({ call, recorded: 'already', run }) }
 	}
@@ -218,11 +226,11 @@ function endWithoutRun(call: StationCall): StationDecision {
 	if (open.length > 1)
 		return {
 			refusal: [
-				`lot station: ${open.length} starts of ${printableOf(event.station)} are open: give --run <run>`,
+				`lot station: ${open.length} starts of ${event.station} are open: give --run <run>`,
 				...open.map(function runLine(run) {
 					return `  ${run}`
 				}),
-			].join('\n'),
+			],
 		}
 	if (open.length === 1)
 		return {
@@ -279,9 +287,9 @@ function answerOf(params: {
 	const { outcome, request } = params
 	if (params.json) {
 		const { recorded, run, next } = outcome
-		return { exitCode: 0, output: JSON.stringify({ recorded, run, next }, null, 2) }
+		return { exitCode: 0, output: jsonOf({ recorded, run, next }, 2) }
 	}
-	const named = `lot station: ${printableOf(params.identity.name)} ${request.station}`
+	const named = `lot station: ${params.identity.name} ${request.station}`
 	const lines =
 		outcome.recorded === 'already'
 			? [`${named} ${request.phase}: already recorded, run ${outcome.run}`]
@@ -289,7 +297,7 @@ function answerOf(params: {
 					`${named} ${request.phase === 'start' ? 'started' : 'ended'}, run ${outcome.run}${outcome.alone ? ' (no open start: recorded alone)' : ''}`,
 				]
 	if (outcome.next !== null) lines.push(`next: ${outcome.next}`)
-	return { exitCode: 0, output: lines.join('\n') }
+	return { exitCode: 0, output: textOf(lines) }
 }
 
 /** The fields the host gave: every field but the envelope, the run and `started`; a skill as its name and how. */

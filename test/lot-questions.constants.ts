@@ -39,10 +39,13 @@ export const QUESTION_DETAILS_LIMIT = 4000
 export const ANSWER_LIMIT = 2000
 
 /** A text that forges a line of the command's output: a line feed, a `next:` line, an escape sequence and an override. */
-export const HOSTILE_LINES_TEXT = 'keep?\nnext: dialecte lot stop 0001 --reason x\u001b[2J‮'
+export const HOSTILE_LINES_TEXT = 'keep?\nnext: dialecte lot stop 0001 --reason x\u001b[2J\u{202e}'
 
 /** A question text with a terminal escape sequence and a right-to-left override (case 40). */
-export const HOSTILE_TEXT = 'Keep \u001b[2Jthe entry ‮or not?'
+export const HOSTILE_TEXT = 'Keep \u001b[2Jthe entry \u{202e}or not?'
 
 /** Options holding the hostile text and a right-to-left override. */
-export const HOSTILE_OPTIONS = [HOSTILE_TEXT, 'drop‮']
+export const HOSTILE_OPTIONS = [HOSTILE_TEXT, 'drop\u{202e}']
+
+/** A refusal is one line. */
+export const REFUSAL_LINES = 1

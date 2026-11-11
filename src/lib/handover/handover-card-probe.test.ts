@@ -20,6 +20,7 @@ import {
 } from '../../../test/repository-cli-probe.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { SOURCE_TREE_SCAN_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { buildHandoverCard } from './handover-card.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -68,7 +69,7 @@ describe(
 			expect(card.command).toBe(`node '${CARD_CLI_PATH}' handover run '${folder}'`)
 		})
 
-		it('no probeTimeout → the probe is asked with the repository root and the default 10 000 ms', () => {
+		it('no probeTimeout → the probe is asked with the repository root and the default 60 000 ms', () => {
 			const asked = recordingProbe({ answer: false })
 
 			const { root } = cardWith({ probe: asked.probe })
@@ -137,7 +138,7 @@ function namingTheRealProbe(params: { root: string; keep: (file: string) => bool
 		.sort()
 }
 
-describe('the real repository-cli probe', () => {
+describe('the real repository-cli probe', { timeout: SOURCE_TREE_SCAN_CASE_TIMEOUT }, () => {
 	const root = join(import.meta.dirname, '../../..')
 
 	it('in the tests: only the real-probe cases name probeRepositoryCli, and handover.test.ts passes it exactly three times (installed cli, cli lacking handover run, hanging cli)', () => {

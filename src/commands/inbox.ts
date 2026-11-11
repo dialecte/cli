@@ -3,7 +3,7 @@
  * every store of the store list and the store of the current folder. Reads files only, writes nothing, starts no
  * process (nothing this module reaches imports a child process).
  */
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
@@ -11,25 +11,25 @@ import { renderCommandSection } from '../lib/command-map/render-help.ts'
 import { realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries, registryOfCommonFolder } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
+import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { readIdentity } from '../lib/store/identity.ts'
 import { answerNextOf } from '../lib/store/lot-next.ts'
 import { readCheckedLotState } from '../lib/store/lot-records.ts'
-import { locateStore } from '../lib/store/store-folder.ts'
+import { listLotFolderNames, locateStore } from '../lib/store/store-folder.ts'
 import { readStoreList } from '../lib/store/store-list.ts'
-import { STORE_FILES } from '../lib/store/store.constants.ts'
-import { printableOf } from '../lib/store/text-escape.ts'
+import { NEXT_COMMANDS } from '../lib/store/store.constants.ts'
 import {
-	HIDDEN_NAME_PREFIX,
 	INBOX_COMMAND,
 	INBOX_COLUMN_SEPARATOR,
 	INBOX_COUNT_LINE,
-	INBOX_DAMAGE_REASONS,
 	INBOX_DAMAGED_LINE,
 	INBOX_FLAGS,
 	INBOX_GROUPS,
+	INBOX_SKIPPED_LINE,
+	INBOX_SKIPPED_REASONS,
 	INBOX_VALUE_OPTIONS,
 	INBOX_WHAT,
+	NOT_A_FOLDER_CODE,
 } from './inbox.constants.ts'
 import { lotStatusOfInput } from './lot-status.ts'
 import { printsOnStandardError } from './lot-streams.ts'
@@ -49,9 +49,12 @@ import type { LotStatusJson } from './lot-status.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runInbox({ cwd: process.cwd(), argv })
-	;(printsOnStandardError({ verb: INBOX_COMMAND, exitCode: result.exitCode })
-		? console.error
-		: console.log)(result.output)
+	printOut({
+		stream: printsOnStandardError({ verb: INBOX_COMMAND, exitCode: result.exitCode })
+			? 'stderr'
+			: 'stdout',
+		text: result.output,
+	})
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -71,7 +74,7 @@ export function runInbox(params: InboxParams): CommandResult {
 	const json = read.flags.has('json')
 	if (read.words.length > 0)
 		return inboxUsageExit({ reason: `inbox takes no word: ${read.words.join(' ')}`, json })
-	const listing: InboxListing = { items: [], working: 0, simulated: 0, damaged: [] }
+	const listing: InboxListing = { items: [], working: 0, simulated: 0, damaged: [], skipped: [] }
 	const reading: InboxReading = {
 		repository: read.values.get('repository'),
 		withSimulated: read.flags.has('simulated'),
@@ -81,8 +84,8 @@ export function runInbox(params: InboxParams): CommandResult {
 	for (const store of storesOf(params.cwd)) readStore({ store, reading })
 	const items = [...listing.items].sort(compareItems)
 	const exitCode = items.length > 0 || listing.damaged.length > 0 ? 0 : 1
-	if (json) return { exitCode, output: JSON.stringify(inboxJsonOf({ items, listing }), null, 2) }
-	return { exitCode, output: inboxText({ items, listing }) }
+	if (json) return { exitCode, output: jsonOf(inboxJsonOf({ items, listing }), 2) }
+	return { exitCode, output: textOf(inboxLines({ items, listing })) }
 }
 
 /** The stores read: the current folder's, then those of the store list, each once by real path, a gone one skipped. */
@@ -95,25 +98,22 @@ function storesOf(cwd: string): string[] {
 /** Adds the lots of `store` to the listing: its registry read once, every folder read as a lot or a damaged one. */
 function readStore(params: { store: string; reading: InboxReading }): void {
 	const { store, reading } = params
+	const names = lotFolderNamesOf({ store, listing: reading.listing })
+	if (names === undefined) return
 	const common = dirname(store)
 	const registry = registryOfCommonFolder(common)
 	const entries = readRegistry({ registry, seams: reading.seams })
-	for (const name of lotFolderNamesOf(store)) {
+	for (const name of names) {
 		const lotFolder = join(store, name)
 		// an identity that does not read, or a record that does not hold (its fields never printed)
-		const identityDamage = damageOf({ lotFolder, name })
-		const checked =
-			identityDamage === undefined
-				? readCheckedLotState({ lotFolder, registry, entries })
-				: undefined
-		const damage = identityDamage ?? (checked && 'damage' in checked ? checked.damage : undefined)
-		if (damage !== undefined) {
+		const checked = readCheckedLotState({ lotFolder, registry, entries })
+		if (checked === undefined) continue
+		if ('damage' in checked) {
 			// a damaged lot names no repository: the store's own repository folder stands for it
 			if (matchesRepository({ repository: dirname(common), wanted: reading.repository }))
-				reading.listing.damaged.push({ folder: lotFolder, reason: damage })
+				reading.listing.damaged.push({ folder: lotFolder, reason: checked.damage })
 			continue
 		}
-		if (checked === undefined || !('input' in checked)) continue
 		const { input } = checked
 		if (!matchesRepository({ repository: input.identity.repository, wanted: reading.repository }))
 			continue
@@ -121,27 +121,28 @@ function readStore(params: { store: string; reading: InboxReading }): void {
 	}
 }
 
+/**
+ * The lot folder names of `store`; undefined when it cannot be listed (a line of the store list naming a file, or a
+ * folder that cannot be read), the store then skipped with its reason in the listing.
+ */
+function lotFolderNamesOf(params: { store: string; listing: InboxListing }): string[] | undefined {
+	try {
+		return listLotFolderNames({ store: params.store })
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		const reason =
+			code === NOT_A_FOLDER_CODE
+				? INBOX_SKIPPED_REASONS.notFolder
+				: INBOX_SKIPPED_REASONS.unreadable.replace('{detail}', code ?? (error as Error).message)
+		params.listing.skipped.push({ store: params.store, reason })
+		return undefined
+	}
+}
+
 /** The registry's entries, read once for every lot of its store; the read the seam reports. */
 function readRegistry(params: { registry: string; seams: InboxSeams | undefined }): StoreEntry[] {
 	params.seams?.onRegistryRead?.(params.registry)
 	return readStoreEntries(params.registry)
-}
-
-/** The folders of a store that may be lots: every folder but a hidden one (a folder being built among them). */
-function lotFolderNamesOf(store: string): string[] {
-	return readdirSync(store, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && !entry.name.startsWith(HIDDEN_NAME_PREFIX))
-		.map((entry) => entry.name)
-		.sort()
-}
-
-/** Why the folder `name` of a store is no readable lot; undefined when its identity reads and names it. */
-function damageOf(params: { lotFolder: string; name: string }): string | undefined {
-	if (!existsSync(join(params.lotFolder, STORE_FILES.identity))) return INBOX_DAMAGE_REASONS.missing
-	const identity = readIdentity({ lotFolder: params.lotFolder })
-	if (identity === undefined) return INBOX_DAMAGE_REASONS.unreadable
-	if (identity.name !== params.name) return INBOX_DAMAGE_REASONS.otherName
-	return undefined
 }
 
 /** A repository folder matches `--repository <name>` by its basename exactly; every one matches without it. */
@@ -171,10 +172,10 @@ function addLot(params: {
 
 /** The lines of a lot that waits on someone; none for a working lot. */
 function itemsOf(params: { input: LotStateInput; status: LotStatusJson }): InboxItem[] {
-	// the item keeps the status as stored (the JSON form); its columns take every value escaped once
+	// the item keeps the status as stored (the JSON form); its columns are escaped by the print boundary
 	const item = { index: params.status.index, name: params.status.lot, status: params.status }
-	const status = printableOf(params.status)
-	const reason = printableOf(params.input.transitions.at(-1)?.cause.reason ?? '')
+	const { status } = params
+	const reason = params.input.transitions.at(-1)?.cause.reason ?? ''
 	const first = [status.index, basename(status.repository), status.branch]
 	if (status.state === 'input-required')
 		return status.questions.map((question, order) => ({
@@ -227,23 +228,28 @@ function inboxJsonOf(params: { items: InboxItem[]; listing: InboxListing }): Inb
 		seen.add(item.status.folder)
 		return [item.status]
 	})
-	const { working, simulated, damaged } = params.listing
-	return { waiting, working, simulated, damaged }
+	const { working, simulated, damaged, skipped } = params.listing
+	return { waiting, working, simulated, damaged, ...(skipped.length > 0 && { skipped }) }
 }
 
-/** The text: one line per item, one per damaged lot, then the count line. */
-function inboxText(params: { items: InboxItem[]; listing: InboxListing }): string {
+/** The text: one line per item, one per damaged lot, one per store skipped, then the count line. */
+function inboxLines(params: { items: InboxItem[]; listing: InboxListing }): string[] {
 	const { listing } = params
 	return [
 		...params.items.map((item) => item.columns.join(INBOX_COLUMN_SEPARATOR)),
-		...printableOf(listing.damaged).map((damaged) =>
-			INBOX_DAMAGED_LINE.replace('{folder}', damaged.folder).replace('{reason}', damaged.reason),
+		...listing.damaged.map((damaged) =>
+			INBOX_DAMAGED_LINE.replace('{folder}', damaged.folder)
+				.replace('{reason}', damaged.reason)
+				.replace('{stop}', NEXT_COMMANDS.stop.replace('{name}', basename(damaged.folder))),
+		),
+		...listing.skipped.map((skipped) =>
+			INBOX_SKIPPED_LINE.replace('{store}', skipped.store).replace('{reason}', skipped.reason),
 		),
 		INBOX_COUNT_LINE.replace('{working}', String(listing.working)).replace(
 			'{simulated}',
 			String(listing.simulated),
 		),
-	].join('\n')
+	]
 }
 
 /** A usage error, exit 2: the reason and the inbox section; `{ error, usage, next: null }` with `--json`. */
@@ -252,8 +258,8 @@ function inboxUsageExit(params: { reason: string; json: boolean }): CommandResul
 	if (params.json)
 		return {
 			exitCode: 2,
-			output: JSON.stringify({ error: params.reason, usage, next: null }, null, 2),
+			output: jsonOf({ error: params.reason, usage, next: null }, 2),
 		}
-	// the reason quotes a word as typed: escaped once in the text form
-	return { exitCode: 2, output: `inbox: ${printableOf(params.reason)}\n\n${usage}` }
+	// the reason quotes a word as typed: one line, escaped by the boundary; the section's lines spliced
+	return { exitCode: 2, output: textOf([`inbox: ${params.reason}`, '', ...linesOf(usage)]) }
 }

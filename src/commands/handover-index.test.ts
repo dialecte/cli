@@ -96,15 +96,16 @@ describe('a hand-over written from a numbered worktree', { timeout: HANDOVER_CAS
 		})
 	})
 
-	it('the card holds a worktree line naming the numbered folder', () => {
+	it('the card holds a worktree line naming the numbered folder, relative to the workspace', () => {
 		const root = createBranchRepository()
 		const worktree = createNumberedWorktree({ root, index: '0171' })
 		writeStoreHandover({ root: worktree, name: INDEXED_NAME, changes: CHANGES })
 
+		// the workspace folder is the repository's parent: the worktree reads relative to it, as on every system
 		expect(boxLines(show({ cwd: worktree, argv: ['0171'] }).output)).toContainEqual(
-			// relative to the workspace when the worktree is inside it (a shared temporary folder: Linux), else
-			// absolute (macOS, where the temporary folder is reached through a link): the line names the folder either way
-			expect.stringMatching(/^│ worktree (?:.*\/)?\.worktrees\/0171-repo-indexed +│$/),
+			expect.stringMatching(
+				/^│ worktree dialecte-workspace-[^/ ]+\/\.worktrees\/0171-repo-indexed +│$/,
+			),
 		)
 	})
 

@@ -118,7 +118,7 @@ describe('an unusable scenario file (R6-7)', { timeout: STORE_CASE_TIMEOUT }, ()
 	]
 
 	for (const scenario of BAD_SCENARIOS)
-		it(`a scenario.json ${scenario.title} -> status exits 2, wait exits 2 without timing out, the inbox lists the lot damaged`, async () => {
+		it(`a scenario.json ${scenario.title} -> status exits 6, wait exits 6 without timing out, the inbox lists the lot damaged`, async () => {
 			if (SIMULATED === undefined) throw new Error('no simulated kind')
 			const lot = buildPrintedLot(SIMULATED)
 			replaceFile({ folder: lot.lotFolder, name: 'scenario.json', text: scenario.text })
@@ -139,6 +139,6 @@ describe('an unusable scenario file (R6-7)', { timeout: STORE_CASE_TIMEOUT }, ()
 				status: status.exitCode,
 				wait: waited,
 				damaged: inbox.output.split('\n').some((line) => line.startsWith('damaged ')),
-			}).toEqual({ status: 2, wait: 2, damaged: true })
+			}).toEqual({ status: 6, wait: 6, damaged: true })
 		})
 })

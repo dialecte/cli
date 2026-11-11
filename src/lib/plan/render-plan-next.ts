@@ -6,6 +6,7 @@ import { dirname, relative } from 'node:path'
 
 import { MEMORY_LIMIT_BYTES } from '../heavy/machine-load.constants.ts'
 import { loadLimitOf, gigabytesOf } from '../heavy/machine-load.ts'
+import { jsonOf, textOf } from '../print/print.ts'
 import { clockTimeOf, stepTextOf } from './plan-heavy.ts'
 import {
 	HEAD_SEPARATOR,
@@ -18,6 +19,7 @@ import {
 	PART_SEPARATOR,
 	PLAN_COMMAND,
 	PLAN_ID_WIDTH,
+	PLAN_JSON_INDENT,
 	PLAN_LABEL_WIDTH,
 	REASON_SEPARATOR,
 	SECONDS_PER_MINUTE,
@@ -37,8 +39,8 @@ export function renderPlanNext(params: { report: PlanNextReport; json: boolean }
 	return {
 		exitCode: report.proposals.proposals.length > 0 ? 0 : 1,
 		output: params.json
-			? JSON.stringify(planNextJsonOf({ report }), null, 2)
-			: planNextLinesOf({ report }).join('\n'),
+			? jsonOf(planNextJsonOf({ report }), PLAN_JSON_INDENT)
+			: textOf(planNextLinesOf({ report })),
 	}
 }
 

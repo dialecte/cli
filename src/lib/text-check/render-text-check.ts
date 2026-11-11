@@ -1,4 +1,5 @@
 /** What `dialecte text check` prints: the count when the text holds, else one line per problem. */
+import { resultOf } from '../command-result.ts'
 import { counted } from '../counted.ts'
 import { HEADED_KINDS, PROBLEM_TEXT } from './text-check.constants.ts'
 
@@ -14,13 +15,15 @@ export function renderTextCheck(params: {
 	const { overCap } = check
 	const problemCount = check.problems.length + (overCap ? 1 : 0)
 	if (problemCount === 0)
-		return {
+		return resultOf({
 			exitCode: 0,
-			output: `text check: ${file} - ${kind}, ${check.words} of ${check.cap} words${HEADED_KINDS.includes(kind) ? ', headings ok' : ''}`,
-		}
-	return {
+			lines: [
+				`text check: ${file} - ${kind}, ${check.words} of ${check.cap} words${HEADED_KINDS.includes(kind) ? ', headings ok' : ''}`,
+			],
+		})
+	return resultOf({
 		exitCode: 1,
-		output: [
+		lines: [
 			`text check: ${file} - ${kind}: ${counted({ count: problemCount, noun: 'problem' })}`,
 			...check.problems.map((problem) => problemLine({ file, problem })),
 			...(overCap
@@ -31,8 +34,8 @@ export function renderTextCheck(params: {
 						),
 					]
 				: []),
-		].join('\n'),
-	}
+		],
+	})
 }
 
 /**

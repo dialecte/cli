@@ -84,6 +84,8 @@ export function recordGate(params: {
 	storeRoot?: string
 	/** The gate base the run resolved for its scoped steps; absent without one. */
 	base?: GateRecord['base']
+	/** How long the machine slept during the run, when it did (`sleptMsOf`): kept on the record. */
+	sleptMs?: number
 }): RecordedRun {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
@@ -101,6 +103,7 @@ export function recordGate(params: {
 		...(params.reused && { reused: params.reused }),
 		...(params.base && { base: params.base }),
 		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
+		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(params.mode), record })
 	const tddFailed = params.results.some(

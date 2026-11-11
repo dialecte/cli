@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } f
 import {
 	LOCAL_SPECIFIER_PATTERN,
 	MODULE_EXTENSIONS,
+	SETUP_FILES_PROPERTY,
 	SPECIFIER_QUERY_PATTERN,
 	TEST_CONFIG_FILES,
 	TSCONFIG_FILE_PATTERN,
@@ -50,7 +51,7 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 		const glob = relative(root, absolute).split(sep).join(posix.sep)
 		return glob.startsWith('..') ? undefined : glob
 	}
-	return Object.assign(resolveModule, { resolveGlob })
+	return Object.assign(resolveModule, { resolveGlob, setupFiles: readSetupFiles(root) })
 	function resolveModule(params: { specifier: string; from: string }): ModuleResolution {
 		// the file a Vite query or fragment names (`./x.worker?worker&url`): the query is no part of its path
 		const specifier = params.specifier.replace(SPECIFIER_QUERY_PATTERN, '')
@@ -101,9 +102,32 @@ function readPathsOptions(root: string): ts.CompilerOptions[] {
 
 /** `resolve.alias` of the package's vite or vitest config: an object of string keys, or `{ find, replacement }` entries. */
 function readViteAliases(root: string): ModuleAlias[] {
-	const aliases: ModuleAlias[] = []
+	return configPropertiesOf({ root, property: 'alias' }).flatMap((value) =>
+		aliasesOf({ root, value }),
+	)
+}
+
+/**
+ * `setupFiles` of the package's vite or vitest configs (every project's): a path or a list of paths, each relative
+ * to the package root, as the files of the package they name, sorted, each once; a path naming no file is left out.
+ */
+function readSetupFiles(root: string): string[] {
+	const files = configPropertiesOf({ root, property: SETUP_FILES_PROPERTY }).flatMap((value) => {
+		const paths = ts.isArrayLiteralExpression(value) ? [...value.elements] : [value]
+		return paths.flatMap(function setupFileOf(path) {
+			if (!ts.isStringLiteralLike(path)) return []
+			const resolution = localOrUnresolved({ root, path: resolve(root, path.text) })
+			return resolution.kind === 'local' ? [resolution.file.split(sep).join(posix.sep)] : []
+		})
+	})
+	return [...new Set(files)].sort()
+}
+
+/** The value of every assignment of `property` in the package's vite and vitest config files, in file order. */
+function configPropertiesOf(params: { root: string; property: string }): ts.Expression[] {
+	const values: ts.Expression[] = []
 	for (const name of TEST_CONFIG_FILES) {
-		const path = join(root, name)
+		const path = join(params.root, name)
 		if (!existsSync(path)) continue
 		const source = ts.createSourceFile(
 			name,
@@ -112,13 +136,13 @@ function readViteAliases(root: string): ModuleAlias[] {
 			true,
 		)
 		function visit(node: ts.Node): void {
-			if (ts.isPropertyAssignment(node) && propertyName(node.name) === 'alias')
-				aliases.push(...aliasesOf({ root, value: node.initializer }))
+			if (ts.isPropertyAssignment(node) && propertyName(node.name) === params.property)
+				values.push(node.initializer)
 			ts.forEachChild(node, visit)
 		}
 		visit(source)
 	}
-	return aliases
+	return values
 }
 
 function aliasesOf(params: { root: string; value: ts.Expression }): ModuleAlias[] {

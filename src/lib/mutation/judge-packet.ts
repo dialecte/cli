@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { tabsExpanded } from '../expand-tabs.ts'
 import { classifyFamily } from './classify-family.ts'
 import { hashLine, parseTarget } from './judge.ts'
 import { itemsOf, readLedger } from './ledger.ts'
@@ -57,6 +58,11 @@ export function packetOf(params: {
 
 /** A packet as text. */
 export function renderPacket(params: { packet: JudgePacket }): string {
+	return packetLines(params).join('\n')
+}
+
+/** A packet's lines, one entry per printed line. */
+export function packetLines(params: { packet: JudgePacket }): string[] {
 	const { packet } = params
 	const pending = packet.survivors.length + packet.more
 	return [
@@ -65,7 +71,7 @@ export function renderPacket(params: { packet: JudgePacket }): string {
 		...(packet.more > 0 ? ['', `…and ${packet.more} more survivors`] : []),
 		'',
 		`every survivor of the file under one family: ${packet.recordFile}`,
-	].join('\n')
+	]
 }
 
 /** The packets of the package's pending (`new`) survivors, one per file, files sorted; `file` keeps that file only. */
@@ -186,7 +192,8 @@ function renderSurvivor(survivor: PacketSurvivor): string[] {
 		`  guess: ${survivor.familyGuess} (${survivor.guessReason})`,
 		`  tests: ${shownTests}`,
 		...window.lines.map(
-			({ line, text, mutated }) => `${mutated ? '>' : ' '} ${String(line).padStart(5)} | ${text}`,
+			({ line, text, mutated }) =>
+				`${mutated ? '>' : ' '} ${String(line).padStart(5)} | ${tabsExpanded(text)}`,
 		),
 		...(window.more > 0 ? [`  …and ${window.more} more lines`] : []),
 		...(survivor.lineChanged ? ['  line changed since the run'] : []),

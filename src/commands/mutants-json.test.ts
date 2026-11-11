@@ -17,6 +17,7 @@ import {
 } from '../../test/mutation-package.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import { writeFiles } from '../../test/scratch-repository.ts'
+import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import { startRun } from '../lib/mutation/run-store.ts'
 import { run } from './mutants.ts'
 
@@ -203,8 +204,7 @@ describe(
 		function watchedRun(params: { root: string; argv: string[] }) {
 			const original = process.cwd()
 			process.chdir(params.root)
-			const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-			const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+			const { stdout: log, stderr: error } = spyStreams()
 			const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
 				throw new Error(`exit ${code}`)
 			}) as never)
@@ -226,7 +226,7 @@ describe(
 			await expect(watched.finished()).resolves.toBeUndefined()
 			expect(watched.error).not.toHaveBeenCalled()
 			expect(watched.log).toHaveBeenCalledTimes(1)
-			expect(parsedOutput(String(watched.log.mock.calls[0][0]))).toEqual({
+			expect(parsedOutput(linesWritten(watched.log).join('\n'))).toEqual({
 				verb: 'schedule',
 				ok: true,
 				followUp: 'later',
@@ -243,7 +243,7 @@ describe(
 			await expect(watched.finished()).rejects.toThrow('exit 1')
 			expect(watched.error).not.toHaveBeenCalled()
 			expect(watched.log).toHaveBeenCalledTimes(1)
-			expect(parsedOutput(String(watched.log.mock.calls[0][0]))).toMatchObject({
+			expect(parsedOutput(linesWritten(watched.log).join('\n'))).toMatchObject({
 				verb: 'schedule',
 				ok: false,
 				reason: expect.stringContaining('nope'),

@@ -9,6 +9,7 @@ import {
 	HOSTILE_TEXT,
 	QUESTION_LOT,
 	QUESTION_NOW,
+	REFUSAL_LINES,
 } from '../../test/lot-questions.constants.ts'
 import {
 	createQuestionLot,
@@ -32,9 +33,6 @@ import type { QuestionLot } from '../../test/lot-questions.types.ts'
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-/** A refusal is one line. */
-const REFUSAL_LINES = 1
 
 /** `lot answer q1 <answer>` from the lot's repository, with the options `--json` when asked. */
 function answerWith(params: { lot: QuestionLot; answer: string; json?: boolean }) {
@@ -64,7 +62,7 @@ describe('lot answer refusals print agent text escaped', { timeout: STORE_CASE_T
 
 	it('an answer holding an override matching no option -> exit 2, the answer escaped too', () => {
 		const lot = createQuestionLot({ question: questionWith({ options: ['keep', 'drop'] }) })
-		const result = answerWith({ lot, answer: 'ke‮p' })
+		const result = answerWith({ lot, answer: 'ke\u{202e}p' })
 
 		expect({
 			exitCode: result.exitCode,
@@ -76,7 +74,7 @@ describe('lot answer refusals print agent text escaped', { timeout: STORE_CASE_T
 		const lot = createQuestionLot({ question: questionWith() })
 		writeAnswerFile({
 			lotFolder: lot.lotFolder,
-			record: recordedOf({ answer: HOSTILE_TEXT, by: 'a-person‮' }),
+			record: recordedOf({ answer: HOSTILE_TEXT, by: 'a-person\u{202e}' }),
 		})
 		const result = answerWith({ lot, answer: 'another' })
 

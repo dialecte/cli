@@ -22,7 +22,7 @@ export function dropVerb(params: { root: string; argv: string[] } & OwnerCheck):
 	return answered({
 		verb: 'drop',
 		json,
-		text: `mutants drop: run ${runId} removed`,
+		lines: [`mutants drop: run ${runId} removed`],
 		fields: { runId },
 	})
 }

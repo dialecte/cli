@@ -1,3 +1,4 @@
+import { closestNames } from '../closest-names.ts'
 import { shortMessage } from './classify-failure.ts'
 import {
 	entryNamesCase,
@@ -32,7 +33,12 @@ import {
 	resolveBase,
 } from './tdd-files.ts'
 import { findingLine, movesLines, readTddState, skippedReceiptsLine } from './tdd-state.ts'
-import { TDD_NEXT_STEPS, VITEST_PACKAGE } from './tdd.constants.ts'
+import {
+	TDD_NEXT_STEPS,
+	UNUSED_ACCEPT_CLOSEST,
+	UNUSED_ACCEPT_CLOSEST_LIMIT,
+	VITEST_PACKAGE,
+} from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { TddCheck, TddState } from './tdd.types.ts'
@@ -78,7 +84,12 @@ export async function checkTddReceipts(params: {
 	if (testCode.size === 0 && listDeletedTestFiles({ root, base }).length === 0)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
 	const state = await readTddState({ root, packageJson, ledger, base })
-	if ('failure' in state) return { status: 'failed', reason: state.failure }
+	if ('failure' in state)
+		return {
+			status: 'failed',
+			reason: state.failure,
+			...(state.tail && { lines: [...state.tail] }),
+		}
 	const cases = state.cases.map((line) => ({ label: caseLabel(line), status: line.status }))
 	// the grouped moved lines, kept in the gate record for the hand-over card
 	const moved = state.moves ? movedLines(state.moves).grouped : []
@@ -119,10 +130,15 @@ export async function checkTddReceipts(params: {
 						entryNamesCase({ entry: acceptance.case, testCase: line, list: 'accept' }),
 					),
 			)
-			.map(
-				(acceptance) =>
-					`unused accept  ${acceptance.case}  no case of the change has that name (${acceptance.reason})`,
-			),
+			.map(function unusedAcceptLine(acceptance) {
+				const [closest] = closestNames({
+					name: acceptance.case,
+					candidates: state.cases.map((line) => caseLabel(line)),
+					limit: UNUSED_ACCEPT_CLOSEST_LIMIT,
+				})
+				const named = closest === undefined ? '' : UNUSED_ACCEPT_CLOSEST.replace('{label}', closest)
+				return `unused accept  ${acceptance.case}  no case of the change has that name${named} (${acceptance.reason})`
+			}),
 	)
 	const revisedCases = state.cases.filter((line) => line.status === 'revised')
 	evidence.push(

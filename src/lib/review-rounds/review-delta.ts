@@ -9,7 +9,9 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { tabsExpanded } from '../expand-tabs.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
+import { textOf } from '../print/print.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { addWorktree, checkoutOf } from '../worktree/add-worktree.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
@@ -19,6 +21,7 @@ import { DELTA_FILE_MARK, NO_FILE, PLAIN_DIFF_OPTIONS } from './review-rounds.co
 import { copyFileOrLink, roundNames } from './snapshot-round.ts'
 import { isFileOrLink, listTreeFiles } from './worktree-state.ts'
 
+import type { PrintedText } from '../print/print.types.ts'
 import type { AddedWorktree } from '../worktree/worktree.types.ts'
 import type {
 	DeltaSides,
@@ -243,15 +246,16 @@ function removalCommand(params: { main: string; path: string; branch: string }):
 }
 
 /** The text `lot delta` prints. */
-export function renderDelta(delta: ReviewDelta): string {
+export function renderDelta(delta: ReviewDelta): PrintedText {
 	const previous = `round-${delta.round - 1}`
 	const lines = delta.files.length
 		? [
 				`${verbPrefix('delta')}: ${previous} → worktree ${delta.root} - ${delta.files.length} file(s) changed`,
-				...delta.files.map(
-					(file) =>
-						`${DELTA_FILE_MARK} ${file.path} (${file.form})\n${file.diff.replace(/\n$/, '')}`,
-				),
+				// the diff is git's output, split into its lines here: tabs as four spaces, each line escaped
+				...delta.files.flatMap((file) => [
+					`${DELTA_FILE_MARK} ${file.path} (${file.form})`,
+					...file.diff.replace(/\n$/, '').split('\n').map(tabsExpanded),
+				]),
 			]
 		: [`${verbPrefix('delta')}: nothing changed since ${previous}`]
 	if (delta.throwaway)
@@ -259,5 +263,5 @@ export function renderDelta(delta: ReviewDelta): string {
 			`throwaway worktree: ${delta.throwaway.path} (branch ${delta.throwaway.branch}, ${previous} applied)`,
 			`remove it: ${delta.throwaway.removal}`,
 		)
-	return lines.join('\n')
+	return textOf(lines)
 }

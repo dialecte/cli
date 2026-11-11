@@ -13,10 +13,12 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
 import { renderCard } from '../lib/card/render-card.ts'
+import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { LIST_DEPTH } from '../lib/handover/handover.constants.ts'
 import { findHandoverFolders } from '../lib/handover/list-handovers.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
+import { jsonOf, printOut } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
@@ -56,12 +58,13 @@ export async function run(argv: string[]): Promise<void> {
 						isTerminal: Boolean(process.stdin.isTTY && process.stdout.isTTY),
 						confirm: askOnTerminal,
 					})
-				: {
+				: resultOf({
 						exitCode: 2,
-						output:
+						lines: [
 							'worktree: add <repository> <branch> [--from <ref>] | prune [--root <dir>] [--yes]',
-					}
-	;(result.exitCode === 0 ? console.log : console.error)(result.output)
+						],
+					})
+	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -74,18 +77,21 @@ export function runWorktreeAdd(params: {
 	const { argv } = params
 	const [repository, branch] = positionalArguments({ argv, valueOptions: ['from'] })
 	if (!repository || !branch)
-		return { exitCode: 2, output: 'worktree add: expected <repository> <branch> [--from <ref>]' }
+		return resultOf({
+			exitCode: 2,
+			lines: ['worktree add: expected <repository> <branch> [--from <ref>]'],
+		})
 	const repositoryPath = resolve(params.cwd, repository)
 	const refusal = refuseRepositoryPath(repositoryPath)
-	if (refusal) return { exitCode: 2, output: `worktree add: ${refusal}` }
+	if (refusal) return resultOf({ exitCode: 2, lines: [`worktree add: ${refusal}`] })
 	const added = addWorktree({
 		repository: repositoryPath,
 		branch,
 		from: getArg(argv, 'from'),
 		now: params.now,
 	})
-	if (typeof added === 'string') return { exitCode: 1, output: `worktree add: ${added}` }
-	if (hasFlag(argv, 'json')) return { exitCode: 0, output: JSON.stringify(added, null, 2) }
+	if (typeof added === 'string') return resultOf({ exitCode: 1, lines: [`worktree add: ${added}`] })
+	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(added, 2) }
 	return { exitCode: 0, output: renderCard({ card: worktreeCard(added), colour: params.colour }) }
 }
 
@@ -119,32 +125,36 @@ export async function runWorktreePrune(params: {
 	const removals = [...plan.repositories.flatMap((repository) => repository.items), ...plan.scratch]
 		.filter((item) => item.command)
 		.sort((left, right) => removalOrder(left) - removalOrder(right))
-	if (hasFlag(argv, 'json')) return { exitCode: 0, output: JSON.stringify(plan, null, 2) }
+	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(plan, 2) }
 	const report = renderPrunePlan({ plan, removals })
 	if (!hasFlag(argv, 'yes') || removals.length === 0)
-		return {
+		return resultOf({
 			exitCode: 0,
-			output: removals.length
-				? `${report}\nRun them with --yes (asks first), or one by one.`
-				: `${report}\nNothing to remove.`,
-		}
+			lines: [
+				...report,
+				removals.length ? 'Run them with --yes (asks first), or one by one.' : 'Nothing to remove.',
+			],
+		})
 	if (!params.isTerminal)
-		return {
+		return resultOf({
 			exitCode: 2,
-			output: `${report}\nworktree prune --yes asks for a confirmation on a terminal: there is none here, run the commands above yourself.`,
-		}
+			lines: [
+				...report,
+				'worktree prune --yes asks for a confirmation on a terminal: there is none here, run the commands above yourself.',
+			],
+		})
 	if (!(await params.confirm(`Remove these ${removals.length} item(s)? [y/N] `)))
-		return { exitCode: 0, output: `${report}\nNothing removed.` }
+		return resultOf({ exitCode: 0, lines: [...report, 'Nothing removed.'] })
 	const outcomes = removals.map(function remove(item) {
 		const result = spawnSync('sh', ['-c', item.command ?? ''], { encoding: 'utf8' })
 		return result.status === 0
 			? `✓ ${item.command}`
 			: `✗ ${item.command}: ${(result.stderr || result.stdout).trim()}`
 	})
-	return {
+	return resultOf({
 		exitCode: outcomes.some((line) => line.startsWith('✗')) ? 1 : 0,
-		output: [report, ...outcomes].join('\n'),
-	}
+		lines: [...report, ...outcomes],
+	})
 }
 
 /** Worktrees first (a branch checked out in one cannot be deleted), then branches, folders, clones. */
@@ -152,7 +162,7 @@ function removalOrder(item: PruneItem): number {
 	return ['worktree', 'branch', 'hand-over', 'rehearsal clone'].indexOf(item.kind)
 }
 
-function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem[] }): string {
+function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem[] }): string[] {
 	const lines: string[] = []
 	for (const repository of params.plan.repositories) lines.push(...renderRepository(repository))
 	if (params.plan.scratch.length) {
@@ -176,7 +186,7 @@ function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem
 		)
 	if (params.removals.length)
 		lines.push('Removal commands:', ...params.removals.map((item) => item.command ?? ''))
-	return lines.join('\n')
+	return lines
 }
 
 function renderRepository(plan: PrunePlan): string[] {

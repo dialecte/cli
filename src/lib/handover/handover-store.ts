@@ -5,11 +5,17 @@
  * lots file's folder, or `--out`). The name is `<yyyy-mm-dd>-<branch slug>[-<n>]`; a folder registered already
  * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { commonGitFolderOf } from '../git.ts'
-import { publishOnce, recordText, replaceWhole, storeRefusal } from '../store/publish.ts'
+import {
+	publishOnce,
+	publishOnceByClaim,
+	recordText,
+	replaceWhole,
+	storeRefusal,
+} from '../store/publish.ts'
 import { HARD_LINK_UNSUPPORTED_CODES, WRITABLE_MODE } from '../store/store.constants.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import {
@@ -193,6 +199,18 @@ export function recordHandoverState(params: {
 	})
 }
 
+/** Records in the entry `name` of `store` that `lot close` closed its worktree at `at`; an entry gone is left so. */
+export function recordHandoverClosed(params: { store: string; name: string; at: Date }): void {
+	const registered = readStoreEntry({ store: params.store, name: params.name })
+	if (!registered) return
+	const { name, ...entry } = registered
+	writeStoreEntry({
+		store: params.store,
+		name,
+		entry: { ...entry, closed: params.at.toISOString() },
+	})
+}
+
 /** The newest entry of `branch` among `entries`: the latest date, then the highest counter, from the name. */
 export function newestOfBranch(params: {
 	entries: readonly StoreEntry[]
@@ -216,8 +234,8 @@ function newestByName(entries: readonly StoreEntry[]): StoreEntry | undefined {
 
 /**
  * Creates the entry `name` whole, never over one, writable (an older cli rewrites entries in place): false when it
- * exists already (taken by another writer). On a file system without hard links, an exclusive write of the whole
- * entry instead.
+ * exists already (taken by another writer). On a file system without hard links, the name is claimed exclusively and
+ * the whole entry renamed over the claim instead.
  */
 function createStoreEntry(params: {
 	store: string
@@ -239,20 +257,8 @@ function createStoreEntry(params: {
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code
 		if (code === undefined || !HARD_LINK_UNSUPPORTED_CODES.includes(code)) throw error
-		return createExclusively({ path, text })
+		return publishOnceByClaim({ path, text, mode: WRITABLE_MODE })
 	}
-}
-
-/** Writes `text` at `path` only where nothing is (0644): false when the name is taken. */
-function createExclusively(params: { path: string; text: string }): boolean {
-	try {
-		writeFileSync(params.path, params.text, { flag: 'wx', mode: WRITABLE_MODE })
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
-		throw error
-	}
-	chmodSync(params.path, WRITABLE_MODE)
-	return true
 }
 
 /** Replaces the entry `name` whole: a reader sees the old entry or the new one, never half. */

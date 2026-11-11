@@ -38,6 +38,7 @@
  */
 import { join } from 'node:path'
 
+import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag } from '../lib/config.ts'
 import { GATE_STEP_KINDS, HEAVY_STEP_KINDS } from '../lib/events/record-step.constants.ts'
 import { partsOf, reuseOf, startStep } from '../lib/events/record-step.ts'
@@ -75,7 +76,10 @@ import { namesAnotherRepository } from '../lib/git-environment.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
 import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
+import { startLongRun } from '../lib/keep-awake/long-run.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
+import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
@@ -88,7 +92,9 @@ import type { CheckKey, GateRecord } from '../lib/gate-records/gate-records.type
 import type { GateRunBase, HandoverBase } from '../lib/gate/gate-base.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepResult } from '../lib/gate/gate.types.ts'
+import type { AwakeHolder } from '../lib/keep-awake/keep-awake.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
+import type { RunClocks } from '../lib/progress/slept.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 import type { Refusal } from '../lib/refusal.types.ts'
 
@@ -112,7 +118,7 @@ export async function run(argv: string[]): Promise<void> {
 		...(given.handoverBase && { handoverBase: given.handoverBase }),
 		...(given.ignored && { handoverIgnored: given.ignored }),
 	})
-	console.log(result.output)
+	printOut({ stream: 'stdout', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
@@ -132,6 +138,10 @@ export async function runGate(params: {
 	handoverBase?: HandoverBase
 	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
 	handoverIgnored?: string
+	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
+	holdAwake?: AwakeHolder
+	/** The clock pair a `--full` or `--release` run measures a sleep with. Default: the process's. */
+	runClocks?: RunClocks
 	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
 	warn?: (line: string) => void
 }): Promise<CommandResult> {
@@ -140,10 +150,10 @@ export async function runGate(params: {
 		hasFlag(argv, 'release') &&
 		(hasFlag(argv, 'fast') || hasFlag(argv, 'full') || hasFlag(argv, 'hook'))
 	)
-		return { exitCode: 2, output: GATE_RELEASE_MODE_REFUSAL }
+		return resultOf({ exitCode: 2, lines: [GATE_RELEASE_MODE_REFUSAL] })
 	if (hasFlag(argv, 'hook')) {
 		if (hasFlag(argv, 'fast') || hasFlag(argv, 'full'))
-			return { exitCode: 2, output: GATE_HOOK_MODE_REFUSAL }
+			return resultOf({ exitCode: 2, lines: [GATE_HOOK_MODE_REFUSAL] })
 		try {
 			return await runHookGate({
 				cwd,
@@ -158,21 +168,29 @@ export async function runGate(params: {
 		} catch (error) {
 			// a broken gate config stops the commit, as any broken gate does
 			if (error instanceof GateConfigError)
-				return { exitCode: 1, output: GATE_CONFIG_REFUSAL.replace('{message}', error.message) }
+				return resultOf({
+					exitCode: 1,
+					lines: [GATE_CONFIG_REFUSAL.replace('{message}', error.message)],
+				})
 			throw error
 		}
 	}
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
-		return { exitCode: 2, output: 'gate: --fast or --full, not both' }
+		return resultOf({ exitCode: 2, lines: ['gate: --fast or --full, not both'] })
 	const mode: GateMode = hasFlag(argv, 'release')
 		? 'release'
 		: hasFlag(argv, 'full')
 			? 'full'
 			: 'fast'
 	const json = hasFlag(argv, 'json')
+	// a long run: the machine stays awake while it lasts, and its record says when it slept all the same
+	const sleptSinceStart =
+		mode === 'fast'
+			? undefined
+			: startLongRun({ holdAwake: params.holdAwake, runClocks: params.runClocks })
 
 	const hold = readHandoverHold(cwd)
-	if ('refusal' in hold) return { exitCode: 1, output: `gate: ${hold.refusal}` }
+	if ('refusal' in hold) return resultOf({ exitCode: 1, lines: [`gate: ${hold.refusal}`] })
 	const underHandover =
 		'folder' in hold
 			? [
@@ -185,7 +203,7 @@ export async function runGate(params: {
 
 	const packageJson = readPackageJson(cwd)
 	const resolved = resolveStepsOf({ packageJson, mode })
-	if ('refusal' in resolved) return { exitCode: 2, output: resolved.refusal }
+	if ('refusal' in resolved) return resultOf({ exitCode: 2, lines: [resolved.refusal] })
 	const { steps } = resolved
 	// the gate base, once per run and only for a list holding a scoped step; without one `--base` reads the tdd
 	// step only, which runs every time: it is no part of what the steps check
@@ -193,7 +211,10 @@ export async function runGate(params: {
 		? resolveScopeOf({ cwd, mode, ref: getArg(argv, 'base') })
 		: undefined
 	if (scope && 'refusal' in scope)
-		return { exitCode: 2, output: GATE_BASE_REFUSAL_LINE.replace('{refusal}', scope.refusal) }
+		return resultOf({
+			exitCode: 2,
+			lines: [GATE_BASE_REFUSAL_LINE.replace('{refusal}', scope.refusal)],
+		})
 	const gateBase = scope?.base
 	const commandHash = gateCommandHash({ root: cwd, steps, gateBase: gateBase?.commit })
 	const shownLive = new Set<StepResult>()
@@ -206,7 +227,7 @@ export async function runGate(params: {
 		const lines = [
 			renderStepLine(shown.result),
 			...(shown.result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
-		]
+		].map((line) => textOf([line]))
 		if (shown.running) shown.running.finish(...lines)
 		else for (const line of lines) live?.writeLine(line)
 		shownLive.add(shown.result)
@@ -216,7 +237,7 @@ export async function runGate(params: {
 		...(scope?.lines ?? []),
 		...(mode === 'release' ? notCoveringLines(packageJson) : []),
 	]
-	if (progress) for (const line of noticeLines) live?.writeLine(line)
+	if (progress) for (const line of noticeLines) live?.writeLine(textOf([line]))
 	const results: StepResult[] = []
 	let reused: { record: GateRecord; key: CheckKey } | undefined
 	let keyBefore: CheckKey | undefined
@@ -296,8 +317,9 @@ export async function runGate(params: {
 	const derives =
 		mode === 'full' || (mode === 'release' && packageJson.dialecte?.gate?.release === undefined)
 	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
-	if (progress) for (const line of absentLines) live?.writeLine(line)
+	if (progress) for (const line of absentLines) live?.writeLine(textOf([line]))
 	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
+	const sleptMs = sleptSinceStart?.()
 	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode,
@@ -306,6 +328,7 @@ export async function runGate(params: {
 		keyAfter,
 		...(reused && { reused: reused.record }),
 		...(gateBase && { base: gateBase }),
+		...(sleptMs !== undefined && { sleptMs }),
 	})
 	const notStored = changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []
 
@@ -316,36 +339,37 @@ export async function runGate(params: {
 	if (json)
 		return {
 			exitCode,
-			output: JSON.stringify(
+			output: jsonOf(
 				{ mode, ok: !failed, ...(reused && { reused: true }), stored, steps: results },
-				null,
 				2,
 			),
 		}
 	const reuseLine = reused && renderReuseLine({ command: `gate --${mode}`, record: reused.record })
+	const own = textOf([
+		...underHandover,
+		...(params.live?.tty ? [] : noticeLines),
+		// on a terminal a step's line is on the screen already: the summary does not repeat it
+		...results
+			.filter((result) => !(params.live?.tty && shownLive.has(result)))
+			.flatMap((result) => [
+				renderStepLine(result),
+				...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+				// the steps after the tdd step are the record's: said once, before them
+				...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
+			]),
+		...(params.live?.tty ? [] : absentLines),
+		...notStored,
+		failed
+			? `gate --${mode}: failed at ${failed.step.name}`
+			: reused
+				? GATE_REUSED_VERDICT.replace('{mode}', mode)
+				: `gate --${mode}: green`,
+		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
+	])
 	return {
 		exitCode,
-		output: [
-			...underHandover,
-			...(params.live?.tty ? [] : noticeLines),
-			// on a terminal a step's line is on the screen already: the summary does not repeat it
-			...results
-				.filter((result) => !(params.live?.tty && shownLive.has(result)))
-				.flatMap((result) => [
-					renderStepLine(result),
-					...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
-					// the steps after the tdd step are the record's: said once, before them
-					...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
-				]),
-			...(params.live?.tty ? [] : absentLines),
-			...notStored,
-			failed
-				? `gate --${mode}: failed at ${failed.step.name}`
-				: reused
-					? GATE_REUSED_VERDICT.replace('{mode}', mode)
-					: `gate --${mode}: green`,
-			...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`, failed.tail] : []),
-		].join('\n'),
+		// the failed step's last lines are its own output, relayed line by line
+		output: failed?.tail ? joinedOf([own, relayedTextOf(childLinesOf(failed.tail))]) : own,
 	}
 }
 

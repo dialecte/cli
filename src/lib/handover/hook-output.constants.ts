@@ -1,6 +1,12 @@
 /** How a hook's output is read: npm's script headers, the scripts a command runs, the lines worth showing. */
 import type { HookLineKind, HookLinePattern } from './hook-output.types.ts'
 
+/**
+ * A file `gate --hook` names under a test step that failed in parallel and passed on its serial rerun (the step's
+ * line ends `flaky in parallel`): `        flaky  <path>`, the path in group 1.
+ */
+export const HOOK_FLAKY_FILE_PATTERN = /^\s+flaky {2}(\S.*)$/
+
 /** npm's header of a script it runs: `> <package>@<version> <script>` (an older npm adds the folder). */
 export const NPM_SCRIPT_HEADER = /^> (?:@[^@\s/]+\/)?[^@\s]+@\S+ (\S+)(?: .*)?$/
 

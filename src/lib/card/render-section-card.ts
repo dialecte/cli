@@ -8,6 +8,8 @@
  * that room; a mark sits at the right edge of a line's first row. Colour only when asked for,
  * as on a terminal: a line's first word in its emphasis.
  */
+import { escapeControlCharacters } from '../print/print.ts'
+import { relayedTextOf } from '../print/relayed.ts'
 import {
 	BOLD_RESET_CODE,
 	COLOUR_RESET_CODE,
@@ -19,8 +21,13 @@ import {
 	TRAILING_GAP,
 } from './card.constants.ts'
 
+import type { PrintedText } from '../print/print.types.ts'
 import type { BoxRow, BoxRule, CardEmphasis, CardLine, SectionCard } from './card.types.ts'
 
+/**
+ * The card as printed: every value escaped first (the box is laid out on what prints), then the card's own colour
+ * sequences; the boundary keeps those colour sequences and nothing else.
+ */
 export function renderSectionCard(params: {
 	card: SectionCard
 	colour: boolean
@@ -29,7 +36,36 @@ export function renderSectionCard(params: {
 	 * wrapped.
 	 */
 	width?: number
-}): string {
+}): PrintedText {
+	return relayedTextOf(sectionCardLinesOf({ ...params, card: escapedSectionCardOf(params.card) }))
+}
+
+/** The card with its title, footer, section names, line texts and marks escaped as the boundary prints them. */
+function escapedSectionCardOf(card: SectionCard): SectionCard {
+	function escaped(text: string): string {
+		return escapeControlCharacters({ text })
+	}
+	return {
+		title: escaped(card.title),
+		footer: escaped(card.footer),
+		sections: card.sections.map((section) => ({
+			...section,
+			...(section.name === undefined ? {} : { name: escaped(section.name) }),
+			lines: section.lines.map((line) => ({
+				...line,
+				text: escaped(line.text),
+				...(line.trailing === undefined ? {} : { trailing: escaped(line.trailing) }),
+			})),
+		})),
+	}
+}
+
+/** The lines of a card whose values are escaped already. */
+function sectionCardLinesOf(params: {
+	card: SectionCard
+	colour: boolean
+	width?: number
+}): string[] {
 	const { card, colour, width } = params
 	function style(params: { text: string; emphasis?: CardEmphasis }): string {
 		if (!colour || !params.emphasis) return params.text
@@ -77,7 +113,7 @@ export function renderSectionCard(params: {
 		]),
 		...footerRows,
 		footer.border(inner),
-	].join('\n')
+	]
 }
 
 /** A rule `<left>─ <text> ─…<right>`; a text too long for it goes in rows under a plain rule. */
