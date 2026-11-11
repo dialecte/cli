@@ -6,6 +6,8 @@ export type SchemaDialectesRead =
 	| {
 			kind: 'dialectes'
 			tagName: string
+			/** The parent given with `--under`, when one was. */
+			under: string | undefined
 			/** Those the `--package` filter keeps. */
 			loaded: LoadedDialectes
 			/** The package filter, when one was given. */

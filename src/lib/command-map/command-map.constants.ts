@@ -115,8 +115,11 @@ export const COMMAND_MAP: CommandMap = {
 	schema: {
 		family: 'Discover',
 		summary: 'What an element may hold and where: parents, children, attributes',
-		usage: ['dialecte schema <Tag> [--package <name>] [--json]'],
-		notes: ['parents, children with how often, attributes; an unknown tag answers the closest'],
+		usage: ['dialecte schema <Tag> [--under <Parent>] [--package <name>] [--json]'],
+		notes: [
+			'parents, children with how often, attributes, type, documentation; an unknown tag answers the closest',
+			'a tag declared several ways is printed per declaration, with the parents holding each; --under <Parent> picks the one that parent holds',
+		],
 		exitCodes: [],
 		example: 'dialecte schema Bay',
 	},

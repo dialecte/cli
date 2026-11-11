@@ -15,5 +15,8 @@ export const CORE_READER_NAMES: readonly string[] = [
 	'orderByConfigSequence',
 ]
 
+/** The prefix of a definition hash: the algorithm its hex digest is of. */
+export const DEFINITION_HASH_PREFIX = 'sha256:'
+
 /** How many tag names an unknown tag suggests. */
 export const SUGGESTION_LIMIT = 5

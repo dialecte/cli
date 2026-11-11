@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { LOOKUP_EXPORTS } from './lookups-entry.constants.ts'
+import { LOOKUP_EXPORTS, LOOKUP_TYPE_EXPORTS } from './lookups-entry.constants.ts'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -68,6 +68,14 @@ describe('@dialecte/cli/lookups', () => {
 	it('ships declaration files that name them', () => {
 		const declarations = readFileSync(join(BUILT, 'dist/lookups.d.ts'), 'utf8')
 		for (const name of LOOKUP_EXPORTS) expect(declarations).toContain(name)
+	})
+
+	it('exports the types of the described element from its declaration file', () => {
+		const declarations = readFileSync(join(BUILT, 'dist/lookups.d.ts'), 'utf8')
+		const exportClause = declarations.slice(declarations.lastIndexOf('export {'))
+		const exportedTypes = [...exportClause.matchAll(/\btype (\w+)/gu)].map((match) => match[1])
+
+		expect(LOOKUP_TYPE_EXPORTS.filter((name) => !exportedTypes.includes(name))).toEqual([])
 	})
 
 	it('keeps the bin free of a runtime import of @dialecte/core', () => {

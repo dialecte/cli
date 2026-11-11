@@ -222,10 +222,18 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   installed dialecte (a dependency built on `@dialecte/core` exporting `./<version>` with its `./<version>/test`
   entry: its namespace is its name capitalized, `Scl` from `@dialecte/scl/v2019C1`); with several, it lists them and
   `--package <name>` / `--version <v>` picks one. `--namespace <Name> --entry <module>` override.
-- `dialecte schema <Tag> [--package <name>]`: parents, children in order with how often each may appear,
-  attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants - read
-  through the readers of the core each installed dialecte depends on (how often a child may appear is core's
-  `childOccurrences`). An unknown tag answers the closest; a dialecte not built is reported as skipped.
+- `dialecte schema <Tag> [--under <Parent>] [--package <name>]`: parents, children in order with how often each
+  may appear, attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants,
+  the declared type and documentation - read through the readers of the core each installed dialecte depends on
+  (how often a child may appear is core's `childOccurrences`). A tag declared several ways prints each declaration
+  with the parents that hold it; `--under <Parent>` prints the one that parent holds (or those it holds, when it
+  does not decide), and a tag that is not a child of that parent answers its parents (exit 1). With `--json` each
+  element carries `declarations` and `resolved`, and when known `type`, `documentation`, `declaration` (the key
+  of the declaration described, when the tag is declared several ways) and `ways` (when unresolved). A dialecte
+  names the standard it implements in its `package.json`, `"dialecte": { "standard": "<public name>" }` (the
+  usual public name, no part or clause); a value that is not a non-empty string skips the dialecte, naming
+  `dialecte.standard`. An unknown tag
+  answers the closest; a dialecte not built is reported as skipped.
 - `dialecte doctor`: installed `@dialecte/*` versions, the core API generation of each dialecte (read from
   the core it resolves; a dialecte on another core than your app's is a warning), whether the synced skills match node_modules (a skill missing; a copied skill of
   another version than the one installed - linked skills follow node_modules), local checkouts (siblings,
