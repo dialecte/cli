@@ -38,6 +38,14 @@ export function tryReadGit(params: { root: string; args: string[] }): string | u
 	}
 }
 
+/** HEAD's commit as a full sha; undefined in a repository with no commit yet. */
+export function readHeadOrNone(root: string): string | undefined {
+	return (
+		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'] })?.trim() ||
+		undefined
+	)
+}
+
 /** `readGit`'s output as git wrote it, bytes never decoded (a path that is no UTF-8 kept byte for byte). */
 export function readGitBytes(params: { root: string; args: string[] }): Buffer {
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {
@@ -85,6 +93,11 @@ export function listRepositoryFiles(params: { root: string; folder: string }): s
 export function gitFolderOf(root: string): string {
 	const folder = readGit({ root, args: ['rev-parse', '--git-dir'] }).trim()
 	return isAbsolute(folder) ? folder : join(root, folder)
+}
+
+/** `root` is inside a git work tree: the source reader lists its files through git and keeps a cache. */
+export function isInWorkTree(root: string): boolean {
+	return tryReadGit({ root, args: ['rev-parse', '--is-inside-work-tree'] })?.trim() === 'true'
 }
 
 /** The git folder every worktree of the repository `root` is in shares (absolute). */
