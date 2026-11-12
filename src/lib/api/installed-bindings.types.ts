@@ -1,4 +1,4 @@
-import type { Binding } from '../config.ts'
+import type { Binding } from '../config.types.ts'
 import type { PrintedText } from '../print/print.types.ts'
 
 /** A dialecte installed in an app, bound the way the lookups read it: namespace name and the entry exporting it. */

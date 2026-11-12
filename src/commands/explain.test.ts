@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 
-import { RUN_FIXTURES, testProjectDirectory } from '../../test/run/run-environment.ts'
+import { RUN_FIXTURES } from '../../test/run/run-environment.constants.ts'
+import { testProjectDirectory } from '../../test/run/run-environment.ts'
 import { explainCommand } from './explain.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -18,7 +19,7 @@ async function invoke(
 	return { exitCode, stdout: stdout.join('\n'), stderr: stderr.join('\n') }
 }
 
-const CATALOGUES = join(RUN_FIXTURES, 'catalogues.ts')
+const CATALOGUES = join(RUN_FIXTURES, 'catalogues.constants.ts')
 
 describe('dialecte explain', () => {
 	type TestCase = {

@@ -2,7 +2,7 @@ import { refsOf } from './binding-refs.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { Binding } from './config.ts'
+import type { Binding } from './config.types.ts'
 
 const NS: Binding = { kind: 'namespace', name: 'Scl', import: '@/v1' }
 const CORE: Binding = {

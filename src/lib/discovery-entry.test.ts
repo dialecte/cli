@@ -2,7 +2,7 @@ import { discoveryEntry } from './discovery-entry.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { Binding } from './config.ts'
+import type { Binding } from './config.types.ts'
 
 const NS: Binding = { kind: 'namespace', name: 'Scl', import: '@/v1' }
 

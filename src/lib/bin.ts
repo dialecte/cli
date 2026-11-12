@@ -10,6 +10,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
+import type { ResolvedBin } from './bin.types.ts'
+
 const requireHere = createRequire(import.meta.url)
 
 /** The CLI's own copy of `pkg`'s `binName`, via Node resolution from this package. */
@@ -24,8 +26,6 @@ function ownBin(pkg: string, binName: string): string | undefined {
 		return undefined
 	}
 }
-
-export type ResolvedBin = { path: string; source: 'consumer' | 'own' }
 
 /** Consumer's `node_modules/.bin/<name>` first; otherwise the CLI's own copy of `pkg`. */
 export function resolveBin(name: string, pkg: string, root: string): ResolvedBin | null {

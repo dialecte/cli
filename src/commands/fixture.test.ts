@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { TEST_DIALECTE_PACKAGE, testProjectDirectory } from '../../test/run/run-environment.ts'
+import { TEST_DIALECTE_PACKAGE } from '../../test/run/run-environment.constants.ts'
+import { testProjectDirectory } from '../../test/run/run-environment.ts'
 import { loadTestDialecteValidator } from '../../test/run/xml-validation.ts'
 import { runFixtureCommand } from './fixture.ts'
 
