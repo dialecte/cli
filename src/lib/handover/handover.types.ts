@@ -1,9 +1,12 @@
 import type { CardLine } from '../card/card.types.ts'
+import type { AgentTime } from '../events/attribute-steps.types.ts'
+import type { LotTokenTotals, MoneySum } from '../events/token-totals.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
 import type { HANDOVER_ENTRY_STATES } from './handover.constants.ts'
+import type { StrayProcesses } from './stray-processes.types.ts'
 
 /** `dialecte handover <lots.json>`: what the hand-over commits, where, on top of what. */
 export type LotsFile = {
@@ -18,6 +21,11 @@ export type LotsFile = {
 	lots: Array<LotPlan | MergeLotPlan>
 	/** A release hand-over (`handover write --release`): its card requires a green `gate --release` of the tree. */
 	release?: boolean
+	/**
+	 * The branch the lots land on (`handover write --target <branch>`); without it, the resolved base branch at write
+	 * time. A lots file written before it is judged against the resolved base branch.
+	 */
+	target?: string
 }
 
 export type LotPlan = {
@@ -180,6 +188,18 @@ export type HandoverReviewRow = {
 /** The card's first word: every gate green, a gate blocking it, every lot committed, or abandoned. */
 export type HandoverVerdict = 'READY' | 'BLOCKED' | 'DONE' | 'ABANDONED'
 
+/**
+ * What the lot's station events say it cost (the card's `usage` row, 33L0 section 8): the tokens as the report sums
+ * them, the distinct agents, the station runs, the agent time as the report gives it, the money per currency.
+ */
+export type HandoverUsage = {
+	tokens: LotTokenTotals
+	agents: number
+	runs: number
+	agentTime: AgentTime
+	money: MoneySum[]
+}
+
 /** What a person reviews before running a hand-over, and sees again at its end. */
 export type HandoverCard = {
 	/** The main checkout of the repository. */
@@ -194,13 +214,25 @@ export type HandoverCard = {
 	tip?: string
 	/**
 	 * `ABANDONED` when `handover abandon` marked it, `DONE` once every lot is committed, else `BLOCKED` when a
-	 * gate failed or ran on another tree, else `READY`.
+	 * gate failed or ran on another tree or the target branch moved past it (`targetLine`), else `READY`.
 	 */
 	verdict: HandoverVerdict
 	/** The gate lines that failed, by name, in card order. */
 	failedGates: string[]
 	/** The gate lines recorded on another tree than the worktree's now (not failed), by name, in card order. */
 	otherTreeGates: string[]
+	/**
+	 * The `!` line under the verdict when the target branch moved past the hand-over, or has no ref (the card is
+	 * BLOCKED): what to do, as the `target` guard says it.
+	 */
+	targetLine?: string
+	/** The target branch that moved past the hand-over: its ref, its tip (full sha), the commits the hand-over lacks. */
+	targetMoved?: { branch: string; ref: string; tip: string; behind: number }
+	/**
+	 * The processes working in the worktree, on a READY or BLOCKED card of `handover show <one>`: left behind (a
+	 * failed `processes` gate line), the person's tools, why the list is not known. Absent elsewhere.
+	 */
+	processes?: StrayProcesses
 	/** The entries a person must read: revised receipts, gone test files, unused lot file entries. */
 	declarations: number
 	/** The gate steps (the latest record of each) and the review, one line each. */
@@ -232,6 +264,8 @@ export type HandoverCard = {
 	name?: string
 	/** The hand-over folder (absolute): the footer names it when the hand-over has no entry in the store. */
 	folder?: string
+	/** The lot's usage: present only when the hand-over folder is a lot folder holding a station event. */
+	usage?: HandoverUsage
 }
 
 /** The card as `--json` answers it: the tdd lines as plain text, every other field as the card holds it. */
@@ -296,12 +330,35 @@ export type GuardVerdict = {
 	ok: boolean
 	/** The run goes on, and the line is marked `!`: a refusal a rehearsal tolerates. */
 	warning?: true
+	/** The exit code of a run this guard refuses (`handover run`); 1 when absent. */
+	exitCode?: 2
 	detail: string
 	lines?: string[]
 }
 
+/**
+ * Where the target branch stands against a hand-over: nothing to judge (`skip`), its tip held by the hand-over's
+ * `head` or a merge lot (`held`), not held (`moved`: `behind` commits of the target not in the hand-over; `resuming`
+ * when some lots are committed already), or no target branch to judge (`missing`, the refusal to print).
+ */
+export type TargetVerdict =
+	| { kind: 'skip' }
+	| { kind: 'held'; branch: string; ref: string }
+	| {
+			kind: 'moved'
+			branch: string
+			ref: string
+			tip: string
+			behind: number
+			resuming: boolean
+	  }
+	| { kind: 'missing'; refusal: string }
+
 /** Where the guards leave a run: the full recorded HEAD and the lots committed already. */
 export type GuardedRun = { head: string; commits: string[] }
+
+/** A run a guard refused (its lines written): the exit code of the failed guard, 1 unless it set one. */
+export type GuardRefusal = { exitCode: 1 | 2 }
 
 /** Brings `node_modules` to the lock of the repository at `root`: its exit code and what it printed. */
 export type Installer = (params: {
@@ -404,6 +461,12 @@ export type CloseTarget = {
 	entry: StoreEntry | undefined
 	worktree: ListedWorktree | undefined
 }
+
+/**
+ * A hand-over's place among those reaching a worktree `lot close` moves, for its catch-up head: the `sibling` (any but
+ * the first), the owner, the `sole-owner` (no other committed or abandoned hand-over reaches the worktree: the hook record is its).
+ */
+export type CatchUpRole = 'sibling' | 'owner' | 'sole-owner'
 
 /**
  * What `lot close` did with one named hand-over: closed (`already` when an earlier close did it: the registry

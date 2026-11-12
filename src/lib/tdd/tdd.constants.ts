@@ -318,3 +318,28 @@ export const TEST_CONFIG_FILES = [
 	'vite.config.js',
 	'vite.config.mjs',
 ] as const
+
+/** The refusal reason of a case whose id another case of the run shares: `{count}`, `{lines}` and `{hint}` filled in. */
+export const DUPLICATE_ID_REASON = '{count} cases share this id (lines {lines}): {hint}'
+
+/** The hint of a duplicate whose title is a table's format (an `.each` / `.for` call): vitest cuts a `$` field. */
+export const DUPLICATE_HINT_TABLE =
+	"spell each title in full (a `$` field of an each-title is cut by vitest's truncateThreshold, or set it to 0)"
+
+/** The hint of a duplicate whose title is a plain one. */
+export const DUPLICATE_HINT_RENAME = 'rename one'
+
+/** What a case without a location prints in the lines of a duplicate. */
+export const UNKNOWN_LINE = '?'
+
+/** The label of the line of a duplicate a run does not judge. */
+export const DUPLICATE_LABEL = 'duplicate'
+
+/** The detail of a group's line (the gate's tdd step, the hand-over card): `{lines}` its members' lines. */
+export const DUPLICATE_LINES_DETAIL = 'lines {lines}'
+
+/** The label of a group's line on the hand-over card, after its failed mark. */
+export const DUPLICATE_CARD_LABEL = 'duplicate id'
+
+/** The gate's tdd step reason when duplicate ids exist: `{count}` files, `{files}` their paths. */
+export const DUPLICATE_GATE_REASON = 'duplicate case ids in {count} file(s): {files}'

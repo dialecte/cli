@@ -13,6 +13,8 @@ export type ContribPackageParams = {
 	profile?: string | number | null
 	/** `dialecte.contrib.steps`; absent: the field is left out (the default steps). */
 	steps?: GateStep[]
+	/** `dialecte.contrib.skip`: default steps the package opts out of, by name, with a reason. */
+	contribSkip?: Record<string, string>
 	/** `dialecte.gate.fast`. */
 	gateFast?: GateStep[]
 	/** `dialecte.gate.full`. */

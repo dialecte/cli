@@ -1,6 +1,6 @@
 import { refsOf } from './binding-refs.ts'
 
-import type { Binding } from './config.ts'
+import type { Binding } from './config.types.ts'
 
 /** A self-contained entry that declares q/tx/doc/project, fed to `discoverMethods`. */
 export function discoveryEntry(binding: Binding): string {

@@ -15,7 +15,7 @@ import { MEMBERS_USAGE, MEMBERS_VALUE_OPTIONS } from './members.constants.ts'
 import { METHOD_DISCOVERY_DEPTH } from './skills.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
-import type { Binding } from '../lib/config.ts'
+import type { Binding } from '../lib/config.types.ts'
 import type { MemberEntriesRead } from './members.types.ts'
 
 export async function run(argv: string[]): Promise<void> {

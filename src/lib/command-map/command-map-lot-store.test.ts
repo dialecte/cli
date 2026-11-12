@@ -16,7 +16,8 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-const WRITE_LINE = 'dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]'
+const WRITE_LINE =
+	'dialecte handover write <lots.json> [--release] [--target <branch>] [--out <id|folder>] [--rehash] [--json]'
 
 /** The note of `entry` that starts with `<verb> - `, or an empty text. */
 function noteOf(params: { notes: readonly string[] | undefined; verb: string }): string {

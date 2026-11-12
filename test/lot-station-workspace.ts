@@ -1,11 +1,12 @@
 /** A scratch store with one lot, and the calls of `lot station` the station tests make against it. */
+import { mkdirSync, realpathSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runLot } from '../src/commands/lot.ts'
 import { readEvents } from '../src/lib/events/read-events.ts'
 import { STORE_FILES } from '../src/lib/store/store.constants.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
-import { STATION_LOT } from './lot-station-workspace.constants.ts'
+import { LINKED_WORKTREES_FOLDER, STATION_LOT } from './lot-station-workspace.constants.ts'
 import { entryOf, transitionOf, writeRecordFile } from './store-records.ts'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
@@ -21,17 +22,28 @@ export function createStationLot(
 		name?: string
 		state?: 'working' | 'committed' | 'canceled' | 'failed'
 		simulated?: boolean
+		/** The identity's feature; the records' fixed one when left out. */
+		feature?: string
+		/** The identity names the worktree through a link to the folder that holds it: not the real spelling. */
+		symlinkedWorktree?: boolean
 	} = {},
 ): StationLot {
 	const name = params.name ?? STATION_LOT
 	const state = params.state ?? 'working'
 	const workspace = createBriefWorkspace()
+	// the worktree is named by its real path, as `worktree add` names it (the step events name the same)
+	const realTop = realpathSync(workspace.workspace)
+	const worktree = params.symlinkedWorktree
+		? join(linkedFolderOf({ realTop }), name)
+		: join(realTop, '.worktrees', name)
 	const lotFolder = writeStoreLot({
 		workspace,
 		name,
 		scope: ['src/'],
 		branch: `feat/${name.split('-').slice(2).join('-')}`,
 		simulated: params.simulated,
+		feature: params.feature,
+		worktree,
 		repository: workspace.repository,
 		...(state === 'committed' && { registry: 'committed' as const }),
 		...((state === 'canceled' || state === 'failed') && {
@@ -44,8 +56,17 @@ export function createStationLot(
 		lotFolder,
 		cwd: workspace.repository,
 		eventsFile: join(lotFolder, STORE_FILES.events),
-		worktree: join(workspace.workspace, '.worktrees', name),
+		worktree,
 	}
+}
+
+/** A link beside `.worktrees` that leads to it: the worktrees reached through it have another spelling. */
+function linkedFolderOf(params: { realTop: string }): string {
+	const target = join(params.realTop, '.worktrees')
+	const link = join(params.realTop, LINKED_WORKTREES_FOLDER)
+	mkdirSync(target, { recursive: true })
+	symlinkSync(target, link)
+	return link
 }
 
 /** The lot, working so far, is committed now: its registry entry says so (what the hand-over run writes last). */

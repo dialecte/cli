@@ -177,5 +177,5 @@ export const LEDGER_LOCK_RETRY_MS = 10
 /** The config file every Stryker call names, holding `{}`, in the run's work folder: no config of the package is merged in. */
 export const EMPTY_STRYKER_CONFIG_FILE = 'stryker.empty.config.json'
 
-/** The remote's default branch, as a clone records it: a changed run's base when the package's base branch is missing. */
-export const REMOTE_DEFAULT_BRANCH = 'refs/remotes/origin/HEAD'
+/** Added to the base-branch resolver's refusal when a changed run finds no base branch to diff against. */
+export const BASE_FLAG_HINT = ', or pass --base <ref>'

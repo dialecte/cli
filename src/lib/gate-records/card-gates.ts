@@ -25,9 +25,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
+import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
 import { counted } from '../counted.ts'
 import { resolveConfiguredBase } from '../gate/gate-base.ts'
-import { FLAKY_NOTE } from '../gate/gate-config.constants.ts'
+import {
+	FLAKY_NOTE,
+	GATE_SKIP_LABEL,
+	UNWIRED_NOT_RUN_REASON,
+} from '../gate/gate-config.constants.ts'
 import { GateConfigError } from '../gate/gate-config.ts'
 import { isAncestorCommit, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
@@ -58,6 +63,7 @@ import {
 	HOOK_RECORD_DETAIL,
 	HOOK_RECORD_MODE,
 	HOOK_REUSED_DETAIL,
+	GATE_BASE_PROBLEM_DETAIL,
 	INVALID_GATE_CONFIG_DETAIL,
 	MISSING_SCRIPT_DETAIL,
 	MISSING_SCRIPT_PATTERN,
@@ -69,8 +75,11 @@ import {
 	NOT_RUN_DETAIL,
 	NOT_RUN_HERE_DETAIL,
 	NOT_RUN_ON_CHECKED_TREE_DETAIL,
+	NOT_WIRED_DETAIL,
+	NOT_WIRED_FAILED_DETAIL,
 	NOTHING_SELECTED_DETAIL,
 	OLDER_BASE_SUFFIX,
+	OPTED_OUT_DETAIL,
 	OPEN_LEDGER_STATES,
 	RECORD_FROM_DETAIL,
 	REHEARSAL_ORIGIN,
@@ -165,7 +174,16 @@ export function buildCardGateLines(params: {
 					{
 						name: GATE_LINE_NAME,
 						status: 'failed' as const,
-						detail: INVALID_GATE_CONFIG_DETAIL.replace('{message}', config.invalid),
+						detail: INVALID_GATE_CONFIG_DETAIL.replace('{message}', () => config.invalid ?? ''),
+					},
+				]),
+		...(config.baseRefusal === undefined
+			? []
+			: [
+					{
+						name: GATE_LINE_NAME,
+						status: 'failed' as const,
+						detail: GATE_BASE_PROBLEM_DETAIL.replace('{message}', () => config.baseRefusal ?? ''),
 					},
 				]),
 		...(params.release ? [releaseLine({ root, tree, config })] : []),
@@ -218,6 +236,8 @@ function readCardGateConfig(params: { root: string; head: string | undefined }):
 			packageJson,
 			...(params.head !== undefined && { head: params.head }),
 		})
+		// a set dialecte.baseBranch naming no branch: no stored record can be told current
+		if (base !== undefined && 'refusal' in base) return { baseRefusal: base.refusal }
 		return {
 			...(base && { base }),
 			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit }),
@@ -337,7 +357,11 @@ export function buildContribLines(params: {
 	return [
 		...record.steps.map(function contribLine(step): CardGateLine {
 			const line = {
-				...withRecordSource({ line: lineOfStep({ step }), record, outsideHistory }),
+				...withRecordSource({
+					line: lineOfStep({ step, skipLabel: CONTRIB_SKIP_LABEL }),
+					record,
+					outsideHistory,
+				}),
 				...(source && { source }),
 			}
 			return staleSuffix === undefined ? line : staleLine({ line, suffix: staleSuffix })
@@ -659,9 +683,14 @@ function recordSourceOf(params: {
  * The line of a recorded step; a scoped step's line holds its selection and says, after its counts, what it
  * selected since its base (` (older base)` after it when `olderBase`).
  */
-function lineOfStep(params: { step: RecordedStep; olderBase?: boolean }): CardGateLine {
+function lineOfStep(params: {
+	step: RecordedStep
+	olderBase?: boolean
+	/** The opt-out key of the record's run: `dialecte.gate.skip` (the default) or `dialecte.contrib.skip`. */
+	skipLabel?: string
+}): CardGateLine {
 	const { step } = params
-	const line = lineOfUnscopedStep(step)
+	const line = lineOfUnscopedStep({ step, skipLabel: params.skipLabel ?? GATE_SKIP_LABEL })
 	if (step.selection === undefined) return line
 	// a passed scoped step says its counts and its selection, never the note the selection already says
 	const selected =
@@ -691,10 +720,33 @@ function selectionDetail(params: { selection: StepSelection }): string {
 			)
 }
 
-/** The line of a recorded step from its status, counts and reason. */
-function lineOfUnscopedStep(step: RecordedStep): CardGateLine {
+/**
+ * The line of a recorded step from its status, counts and reason; `skipLabel` the opt-out key of the record's run,
+ * named by a failed unwired step's line.
+ */
+function lineOfUnscopedStep(params: { step: RecordedStep; skipLabel: string }): CardGateLine {
+	const { step, skipLabel } = params
 	const { name } = step
-	if (step.status === 'not-run') return { name, status: 'warning', detail: NOT_RUN_DETAIL }
+	// left not run by an unwired step of the list (none ran), not by an earlier failure: the recorded reason says so
+	if (step.status === 'not-run')
+		return {
+			name,
+			status: 'warning',
+			detail: step.reason === UNWIRED_NOT_RUN_REASON ? UNWIRED_NOT_RUN_REASON : NOT_RUN_DETAIL,
+		}
+	// an opted-out step warns with the package's reason, never blocks
+	const { optedOut } = step
+	if (optedOut !== undefined)
+		return { name, status: 'warning', detail: OPTED_OUT_DETAIL.replace('{reason}', () => optedOut) }
+	// an unwired step failed a full, release or contrib run, and was skipped in a fast one: a warning there
+	if (step.unwired)
+		return step.status === 'failed'
+			? {
+					name,
+					status: 'failed',
+					detail: NOT_WIRED_FAILED_DETAIL.replace('{label}', () => skipLabel),
+				}
+			: { name, status: 'warning', detail: NOT_WIRED_DETAIL }
 	if (step.status === 'skipped')
 		return {
 			name,

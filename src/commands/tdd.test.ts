@@ -1551,7 +1551,7 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 		expect(red.output).not.toContain(`revised  ${HELPER}`)
 	})
 
-	it('an entry naming a helper no changed test file of the run depends on (guard) → the helper is not frozen by the entry', async () => {
+	it('an entry naming a helper no changed test file depends on → the entry freezes it, the revised line printed', async () => {
 		const root = await helperEdited({
 			lot: [{ case: 'test/unused.ts', reason: REASON }],
 			files: { 'test/unused.ts': 'export const UNUSED = 1\n' },
@@ -1561,8 +1561,10 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 
 		const red = await tdd({ cwd: root, argv: ['red'] })
 
-		expect(red.output).not.toContain('revised  test/unused.ts')
-		expect(frozenHashes({ root, file: 'test/unused.ts' })).toEqual([])
+		expect(caseLines(red.output)).toContain(`revised  test/unused.ts  ${REASON}`)
+		expect(frozenHashes({ root, file: 'test/unused.ts' })).toContain(
+			hashTestCode({ root, file: 'test/unused.ts' }),
+		)
 	})
 
 	it('an entry whose freeze was superseded by a later freeze of the helper at another hash (guard) → the gate keeps `unused revised entry  <helper>  ...`', async () => {

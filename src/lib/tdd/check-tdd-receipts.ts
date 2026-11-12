@@ -1,5 +1,6 @@
 import { closestNames } from '../closest-names.ts'
 import { shortMessage } from './classify-failure.ts'
+import { writtenLinesOf } from './duplicate-case-ids.ts'
 import {
 	entryNamesCase,
 	entryNamesFile,
@@ -34,6 +35,9 @@ import {
 } from './tdd-files.ts'
 import { findingLine, movesLines, readTddState, skippedReceiptsLine } from './tdd-state.ts'
 import {
+	DUPLICATE_GATE_REASON,
+	DUPLICATE_LABEL,
+	DUPLICATE_LINES_DETAIL,
 	TDD_NEXT_STEPS,
 	UNUSED_ACCEPT_CLOSEST,
 	UNUSED_ACCEPT_CLOSEST_LIMIT,
@@ -171,6 +175,29 @@ export async function checkTddReceipts(params: {
 			`cannot list  ${file.file}  ${file.failure.kind}: ${shortMessage(file.failure.message).split('\n')[0]}`,
 	)
 	const caseLines = open.map((line) => `${line.status}  ${caseLabel(line)}`)
+	// a shared id names no single case: whatever else is wrong, the step says it first
+	if (state.duplicates.length) {
+		const files = [...new Set(state.duplicates.map((duplicate) => duplicate.file))]
+		return {
+			status: 'failed',
+			cases,
+			duplicates: state.duplicates,
+			reason: DUPLICATE_GATE_REASON.replace('{count}', () => String(files.length)).replace(
+				'{files}',
+				() => files.join(', '),
+			),
+			lines: [
+				...state.duplicates.map(
+					(duplicate) =>
+						`${DUPLICATE_LABEL}  ${caseLabel(duplicate)}  ${DUPLICATE_LINES_DETAIL.replace('{lines}', () => writtenLinesOf(duplicate))}`,
+				),
+				...caseLines,
+				...unlisted,
+				...evidence,
+				TDD_NEXT_STEPS,
+			],
+		}
+	}
 	if (state.unfrozen.length)
 		return {
 			status: 'failed',

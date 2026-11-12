@@ -5,6 +5,7 @@
  */
 import { join } from 'node:path'
 
+import { plainScopedRun } from '../../../test/plain-scoped-run.ts'
 import { scopeRunOf } from '../../../test/scope-run.ts'
 import {
 	SCRATCH_EXTRA_FILES,
@@ -15,7 +16,6 @@ import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts
 import { createVitestPackage } from '../../../test/scratch-vitest-package.ts'
 import { BASE, TREE } from '../../../test/step4-cases.constants.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { runScopedTests } from './scoped-tests.ts'
 import { judgeSelection } from './selection.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -59,7 +59,7 @@ describe(
 				const root = scratchPackage()
 				const handed = handedFor([change.path])
 
-				const run = runScopedTests({ root, environment: handed.environment })
+				const run = plainScopedRun({ root, environment: handed.environment })
 
 				expect(run.exitCode).toBe(0)
 				for (const file of SCRATCH_TEST_FILES) expect(run.output).toContain(file)
@@ -75,7 +75,7 @@ describe(
 			const root = scratchPackage()
 			const handed = handedFor(['src/a.ts'])
 
-			const run = runScopedTests({ root, environment: handed.environment })
+			const run = plainScopedRun({ root, environment: handed.environment })
 
 			expect(run.exitCode).toBe(0)
 			expect(run.output).toContain('src/a.test.ts')

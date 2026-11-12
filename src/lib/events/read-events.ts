@@ -19,6 +19,8 @@ export function readEvents(params: { file: string }): ReadEventsResult {
 	const torn = lines.pop()
 	if (torn !== undefined && torn !== '') result.damaged += 1
 	for (const line of lines) {
+		// an empty line holds no record: a torn-line check that saw another append mid-write left it
+		if (line === '') continue
 		const parsed = parseEvent({ line })
 		if (parsed === undefined) {
 			result.damaged += 1

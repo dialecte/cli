@@ -1,3 +1,4 @@
+import type { AgentTimeTexts } from '../events/attribute-steps.types.ts'
 import type { LotStateName } from '../store/store.types.ts'
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
 import type { HandoverState } from './handover.types.ts'
@@ -297,6 +298,36 @@ export const GUARD_NAME_WIDTH = 11
 export const CONTRIBUTOR_REFERENCES_DETAIL = 'a plan tag or a standard citation'
 export const CONSUMER_REFERENCES_DETAIL = 'a standard citation'
 
+/** The `target` guard: refused (exit 2) while the target branch's tip is held neither by the head nor by a merge lot. */
+export const TARGET_GUARD_NAME = 'target'
+
+/** What the card and the `target` guard say when the target branch moved: `{tip}` its new tip, the 8-character short sha. */
+export const TARGET_MOVED_LINE =
+	'{branch} moved: merge {branch} first ({count} commit(s) on {branch}, now {tip})'
+
+/** Added to the line when some lots are committed already: only a new hand-over can hold the target's tip. */
+export const TARGET_RESUME_SUFFIX =
+	': write a new hand-over on the current HEAD with a merge lot of {branch}'
+
+/** How many characters of the target's tip the card and the `target` guard print. */
+export const TARGET_TIP_LENGTH = 8
+
+/** A target branch (`lots.json`'s `target`, `--target`) with neither a local nor an origin ref. */
+export const TARGET_BRANCH_NOT_FOUND = '--target {branch}: no such branch, local or on origin'
+
+/** `handover write` given `--target` with no branch after it (last, or followed by another option): refused. */
+export const TARGET_WITHOUT_VALUE = 'handover: --target needs a branch'
+
+/** The `target` guard's pass: the target's tip is held by the head or by a merge lot. */
+export const TARGET_HELD_DETAIL = '{branch} held ({ref})'
+
+/** The merges guard's note for a merge lot of the target branch that moved since the review (the target guard judges it). */
+export const TARGET_MERGE_NOTE =
+	'lot {number}: merges {branch} at {tip}; {branch} is now {now} (see target)'
+
+/** How many characters of a sha the merges guard's notes print. */
+export const MERGE_NOTE_SHA_LENGTH = 12
+
 /** The `contrib` guard of a contributor: refused without a green record of the tree, or naming the failed rows. */
 export const CONTRIB_GUARD_NAME = 'contrib'
 export const NO_GREEN_CONTRIB_DETAIL =
@@ -512,6 +543,45 @@ export const HANDOVER_CARD_NUMBERED_TITLE = 'hand-over: {index} {repository} {br
 /** The commit section's line naming the worktree the lots are committed in. */
 export const WORKTREE_LINE_LABEL = 'worktree '
 
+/**
+ * The card's `usage` row (33L0 section 8): `{tokens}`, `{agents}`, `{runs}`, `{time}` (`USAGE_AGENT_TIME`), `{lot}`;
+ * a section of its own after the gates, with no rule (the row names itself).
+ */
+export const USAGE_ROW =
+	'usage    {tokens} · {agents} · {runs} · {time} · dialecte lot report {lot}'
+
+/** The usage row's agent time: every run timed, a lower bound with its unknown runs, or none timed. */
+export const USAGE_AGENT_TIME: AgentTimeTexts = {
+	known: '{time} agent time',
+	atLeast: '≥ {time} agent time ({unknown} of {runs} unknown)',
+	unknown: 'agent time unknown',
+}
+
+/** The line `handover run` prints on standard error when it could not append the card line: `{reason}`. */
+export const CARD_LINE_NOT_WRITTEN = 'cards.log: card line not written: {reason}'
+
+/** Why `lot close` keeps a worktree whose final record or intent line it could not keep: `{reason}`. */
+export const FINAL_RECORD_NOT_KEPT = 'final record not kept: {reason}'
+
+/** Why `lot close` keeps a worktree for another hand-over of it than the one closed: `{name}`, `{reason}`. */
+export const SIBLING_KEPT = '{name}: {reason}'
+
+/**
+ * Why `lot close` keeps a committed hand-over's worktree when neither its lot commits nor (no other committed hand-over
+ * reaching it) its hook record name a head, with the way out: `{worktree}`.
+ */
+export const LOT_COMMIT_NOT_KNOWN =
+	"the lot's commit is not known (look: git -C {worktree} log; the worktree can be removed by hand with git worktree remove {worktree}, its records are then gone)"
+
+/** The reason of a catch-up card line written but not found again in `cards.log`. */
+export const CARD_NOT_READ_BACK = 'the card line written to {file} is not read back from it'
+
+/** The line `lot close` prints on standard error when the moved worktree's `removed` line was not written: `{reason}`. */
+export const REMOVED_NOT_WRITTEN = 'cards.log: removed line not written: {reason}'
+
+/** The start of a removal's id (`rm-<uuid>`), shared by its `removing` and `removed` lines. */
+export const REMOVAL_ID_PREFIX = 'rm-'
+
 /** The card's sections, in order, each opened by its rule. */
 export const HANDOVER_CARD_SECTIONS = {
 	commit: 'commit',
@@ -527,6 +597,12 @@ export const CARD_PART_SEPARATOR = ' · '
 
 /** The verdict's tail when no gate line blocks it. */
 export const ALL_GATES_GREEN = 'all gates green'
+
+/** The verdict's tail when the target branch moved past the hand-over: its `!` line is under the verdict. */
+export const TARGET_MOVED_TAIL = 'target: {branch} moved (below)'
+
+/** The verdict's tail when the target branch has no ref: the refusal is the `!` line under the verdict. */
+export const TARGET_NOT_FOUND_TAIL = 'target: not found (below)'
 
 /** The verdict's tail for the lines recorded on another tree: `{names}` in card order. */
 export const OTHER_TREE_GATES = 'gates ran on another tree: {names}'

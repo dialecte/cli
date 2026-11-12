@@ -3,15 +3,16 @@
  * `node:child_process` in this module or what it imports.
  */
 import { existsSync, realpathSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
-import { isFolder } from '../file-system.ts'
+import { isFolder, realPathThroughAncestors } from '../file-system.ts'
 import { namesItself } from './store-folder.ts'
 import {
 	COMMON_FOLDER_FILE,
 	COMMON_FOLDER_FOLDERS,
 	LOT_FOLDER_NAME_PATTERN,
 	STORE_FOLDER,
+	TEMPORARY_FOLDER_PATTERN,
 } from './store.constants.ts'
 
 /**
@@ -43,11 +44,27 @@ function realStoreChildOf(params: { folder: string }): string | undefined {
 		return undefined
 	}
 	const store = dirname(real)
-	return basename(store) === STORE_FOLDER && isCommonFolder(dirname(store)) ? real : undefined
+	return isStoreFolder(store) ? real : undefined
+}
+
+/**
+ * The lot `folder`'s path names: its name when it sits directly under a `dialecte-lots` folder of a git common folder
+ * (a `.tmp-` folder is none), whether it still exists or not and without reading its identity. Undefined else.
+ */
+export function lotNameOfPath(params: { folder: string }): string | undefined {
+	const real = realPathThroughAncestors(resolve(params.folder))
+	if (!isStoreFolder(dirname(real))) return undefined
+	const name = basename(real)
+	return TEMPORARY_FOLDER_PATTERN.test(name) ? undefined : name
+}
+
+/** The folder is a store: a `dialecte-lots` folder of a git common folder. */
+function isStoreFolder(store: string): boolean {
+	return basename(store) === STORE_FOLDER && isCommonFolder(dirname(store))
 }
 
 /** The folder holds what every git common folder holds: `HEAD`, `objects/` and `refs/`. */
-function isCommonFolder(folder: string): boolean {
+export function isCommonFolder(folder: string): boolean {
 	if (!existsSync(join(folder, COMMON_FOLDER_FILE))) return false
 	return COMMON_FOLDER_FOLDERS.every((name) => isFolder(join(folder, name)))
 }

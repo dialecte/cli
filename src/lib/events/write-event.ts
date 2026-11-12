@@ -133,7 +133,11 @@ function currentTime(): Date {
 	return new Date()
 }
 
-/** True when the file holds bytes and its last one is not `\n` (a torn line a crash left). */
+/**
+ * True when the file holds bytes and its last one is not `\n` (a torn line a crash left). Not atomic with the append:
+ * Linux grows a file's size page by page while another process's append is still being written, so this check can
+ * see that line mid-write and the `\n` it adds makes an empty line. The readers skip an empty line: it holds no record.
+ */
 function endsTorn(params: { file: string }): boolean {
 	let descriptor: number
 	try {

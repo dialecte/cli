@@ -2,6 +2,9 @@
 export const STATION_LOT = '0171-repo-subscribe'
 export const STATION_LOT_INDEX = '0171'
 
+/** The folder of a workspace that links to its `.worktrees` folder (a lot's worktree named through it). */
+export const LINKED_WORKTREES_FOLDER = 'linked-worktrees'
+
 /** The station every case names unless it says another. */
 export const STATION = 'implement'
 

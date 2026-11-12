@@ -63,9 +63,9 @@ const ROWS: Row[] = [
 		expected: { ids: ['ev-a'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
-		name: 'an empty line → skipped and counted damaged',
+		name: 'an empty line → skipped, not damaged (it holds no record)',
 		content: `${line({ id: 'ev-a' })}\n\n${line({ id: 'ev-b' })}\n`,
-		expected: { ids: ['ev-a', 'ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
+		expected: { ids: ['ev-a', 'ev-b'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
 		name: 'an unparsable line in the middle → skipped and counted damaged',
@@ -73,9 +73,9 @@ const ROWS: Row[] = [
 		expected: { ids: ['ev-a', 'ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
-		name: 'two torn-line guards in a row → a torn line and an empty line, both skipped and counted',
+		name: 'two torn-line guards in a row → a torn line counted damaged, the empty line skipped, not counted',
 		content: `{"schema":1,"id":"ev-\n\n${line({ id: 'ev-b' })}\n`,
-		expected: { ids: ['ev-b'], damaged: 2, unknownKinds: 0, unknownFields: 0 },
+		expected: { ids: ['ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
 		name: 'a line that parses to a value that is no object → skipped and counted damaged',
@@ -120,6 +120,11 @@ const ROWS: Row[] = [
 	{
 		name: 'a folder event → a known kind, read',
 		content: `${line({ id: 'ev-a', kind: 'folder', action: 'trash', path: 'p', durationMs: 1 })}\n`,
+		expected: { ids: ['ev-a'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
+	},
+	{
+		name: 'a step.wait event with waitedMs and step → a known kind, read, no field unknown',
+		content: `${line({ id: 'ev-a', kind: 'step.wait', waitedMs: 1200, step: 'gate-full' })}\n`,
 		expected: { ids: ['ev-a'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
@@ -193,6 +198,22 @@ describe('readEvents', () => {
 			).toEqual(row.expected)
 		})
 	}
+
+	it(
+		'a step.wait event → its waitedMs comes back as written',
+		{ timeout: STORE_CASE_TIMEOUT },
+		() => {
+			const file = fileWith(
+				`${line({ id: 'ev-a', kind: 'step.wait', waitedMs: 1200, step: 'gate-full' })}\n`,
+			)
+
+			expect(readEvents({ file }).events[0]).toMatchObject({
+				kind: 'step.wait',
+				waitedMs: 1200,
+				step: 'gate-full',
+			})
+		},
+	)
 
 	it('an unknown field → absent from the event read', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const file = fileWith(`${line({ id: 'ev-a', zzzUnknown: 7 })}\n`)

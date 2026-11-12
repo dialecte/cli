@@ -11,13 +11,14 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { refsOf } from '../lib/binding-refs.ts'
-import { resolveTargets, tsconfigOf, type Binding } from '../lib/config.ts'
+import { resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { discoverMethodPaths } from '../lib/discover.ts'
 import { discoveryEntry } from '../lib/discovery-entry.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { printLines } from '../lib/print/print.ts'
 import { ELEMENT_GENERICS } from './coverage.constants.ts'
 
+import type { Binding } from '../lib/config.types.ts'
 import type { AttributeDetail, DialecteSchema } from './coverage.types.ts'
 import type { DataType } from '@dialecte/core'
 

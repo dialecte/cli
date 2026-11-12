@@ -28,9 +28,17 @@ export type DialecteField = {
 	/** `contributor` (a package of the Dialecte family) or `consumer` (an app; the default). */
 	profile?: string
 	/** The package steps of `dialecte contrib`, replacing the default ones (`docs`, `type-bench`). */
-	contrib?: { steps?: GateStep[] }
-	/** Steps that replace the default ones of `dialecte gate`. */
-	gate?: { fast?: GateStep[]; full?: GateStep[]; release?: GateStep[] }
+	contrib?: { steps?: GateStep[]; skip?: Record<string, string> }
+	/**
+	 * Steps that replace the default ones of `dialecte gate`; `skip` maps the name of a default step to the reason
+	 * the package opts out of it.
+	 */
+	gate?: {
+		fast?: GateStep[]
+		full?: GateStep[]
+		release?: GateStep[]
+		skip?: Record<string, string>
+	}
 	/**
 	 * `dialecte tdd`: `production` lists folders (`src/test`) whose files are production code although
 	 * their name says test (a package's test entry): only the test files, fixtures, snapshots and

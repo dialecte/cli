@@ -12,6 +12,15 @@ const TYPE_BENCH_STEP = { name: 'type-bench', run: 'npm run type-bench:check' }
 const TYPE_NARROWING_RUN = 'npm run type-narrowing'
 const TYPE_NARROWING_STEP = { name: 'type-narrowing', run: TYPE_NARROWING_RUN }
 const NARROWING_SCRIPTS = { 'type-narrowing': 'tsc -p tsconfig.narrowing.json' }
+/** The scripts the default steps and the declared `bench` step run: every step of these tests is wired. */
+const WIRED_SCRIPTS = {
+	'doc:build': 'node docs.js',
+	'type-bench:check': 'node bench.js',
+	bench: 'node bench.js',
+}
+/** The default steps as the resolution marks them. */
+const DOCS_DEFAULT = { ...DOCS_STEP, isDefault: true }
+const TYPE_BENCH_DEFAULT = { ...TYPE_BENCH_STEP, isDefault: true }
 
 describe('resolveContribSteps scoped', () => {
 	it.each([
@@ -28,19 +37,20 @@ describe('resolveContribSteps scoped', () => {
 		const heavy = { name: 'bench', run: 'npm run bench', heavy: true }
 
 		expect(
-			resolveContribSteps({ packageJson: { dialecte: { contrib: { steps: [heavy] } } } }),
+			resolveContribSteps({
+				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { contrib: { steps: [heavy] } } },
+			}),
 		).toEqual([RULES_ROW, heavy, RELEASE_ROW])
 	})
 })
 
 describe('resolveContribSteps', () => {
 	it('without dialecte.contrib → rules, docs, type-bench, release', () => {
-		expect(resolveContribSteps({ packageJson: { dialecte: { profile: 'contributor' } } })).toEqual([
-			RULES_ROW,
-			DOCS_STEP,
-			TYPE_BENCH_STEP,
-			RELEASE_ROW,
-		])
+		expect(
+			resolveContribSteps({
+				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { profile: 'contributor' } },
+			}),
+		).toEqual([RULES_ROW, DOCS_DEFAULT, TYPE_BENCH_DEFAULT, RELEASE_ROW])
 	})
 
 	it('with steps: [] → rules, release', () => {
@@ -54,7 +64,9 @@ describe('resolveContribSteps', () => {
 		const declared = { name: 'bench', run: 'npm run bench' }
 
 		expect(
-			resolveContribSteps({ packageJson: { dialecte: { contrib: { steps: [declared] } } } }),
+			resolveContribSteps({
+				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { contrib: { steps: [declared] } } },
+			}),
 		).toEqual([RULES_ROW, declared, RELEASE_ROW])
 	})
 
@@ -62,19 +74,25 @@ describe('resolveContribSteps', () => {
 		const declared = { name: 'bench', run: 'npm run bench' }
 
 		const defaults = resolveContribSteps({
-			packageJson: { scripts: NARROWING_SCRIPTS, dialecte: { profile: 'contributor' } },
+			packageJson: {
+				scripts: { ...NARROWING_SCRIPTS, ...WIRED_SCRIPTS },
+				dialecte: { profile: 'contributor' },
+			},
 		})
 		const empty = resolveContribSteps({
 			packageJson: { scripts: NARROWING_SCRIPTS, dialecte: { contrib: { steps: [] } } },
 		})
 		const one = resolveContribSteps({
-			packageJson: { scripts: NARROWING_SCRIPTS, dialecte: { contrib: { steps: [declared] } } },
+			packageJson: {
+				scripts: { ...NARROWING_SCRIPTS, ...WIRED_SCRIPTS },
+				dialecte: { contrib: { steps: [declared] } },
+			},
 		})
 
 		expect(defaults).toEqual([
 			RULES_ROW,
-			DOCS_STEP,
-			TYPE_BENCH_STEP,
+			DOCS_DEFAULT,
+			TYPE_BENCH_DEFAULT,
 			TYPE_NARROWING_STEP,
 			RELEASE_ROW,
 		])
@@ -86,7 +104,7 @@ describe('resolveContribSteps', () => {
 		const declared = { name: 'narrowing', run: TYPE_NARROWING_RUN }
 		const without = resolveContribSteps({
 			packageJson: {
-				scripts: NARROWING_SCRIPTS,
+				scripts: { ...NARROWING_SCRIPTS, ...WIRED_SCRIPTS },
 				dialecte: { contrib: { steps: [DOCS_STEP] } },
 			},
 		})
@@ -98,7 +116,7 @@ describe('resolveContribSteps', () => {
 		})
 		const beside = resolveContribSteps({
 			packageJson: {
-				scripts: NARROWING_SCRIPTS,
+				scripts: { ...NARROWING_SCRIPTS, ...WIRED_SCRIPTS },
 				dialecte: { contrib: { steps: [DOCS_STEP, declared] } },
 			},
 		})

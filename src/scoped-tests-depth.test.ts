@@ -6,6 +6,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 
 import { temporaryFolder } from '../test/scratch-repository.ts'
 import { createVitestPackage } from '../test/scratch-vitest-package.ts'
@@ -49,7 +50,10 @@ function entryAt(params: { depth?: string }): {
 	})
 	return {
 		status: run.status,
-		lines: `${run.stdout}${run.stderr}`.split('\n').filter((line) => line.trim() !== ''),
+		// vitest colours its lines unless the environment turns colour off: read without the escapes
+		lines: stripVTControlCharacters(`${run.stdout}${run.stderr}`)
+			.split('\n')
+			.filter((line) => line.trim() !== ''),
 		record: existsSync(record) ? readFileSync(record, 'utf8') : undefined,
 	}
 }

@@ -17,6 +17,12 @@ export type GateStep = {
 	scoped?: boolean
 	/** The step is heavy: a mark for the reader, left out of the command hash. */
 	heavy?: boolean
+	/** Set by the cli's resolution only, never read from package.json: the step comes from a default list. */
+	isDefault?: true
+	/** Set by the cli's resolution only: the reason `dialecte.gate.skip` / `dialecte.contrib.skip` gives for this default step. */
+	optedOut?: string
+	/** Set by the cli's resolution only: the step runs an npm script the package lacks. */
+	unwired?: true
 }
 
 /** The lists of `dialecte.gate`, by name. */

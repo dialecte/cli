@@ -21,7 +21,7 @@ import type { HandoverFolder } from './handover.types.ts'
 
 /**
  * The gate scope of the hand-over `handover`, read from its repository's package.json: a refusal when the gate
- * config is invalid; else the hand-over base resolved once on the lots file's HEAD when a gate list holds a scoped
+ * config is invalid or a set `dialecte.baseBranch` names no branch; else the hand-over base resolved once on the lots file's HEAD when a gate list holds a scoped
  * step (the base branch's merge-base with it, else the empty tree); whether the hook's test steps hold a scoped
  * step (the hook records fold their base then); and, when the full steps hold one (the hook keys with a base then),
  * that base with the real path of the hand-over folder to hand down. A package without a base branch hands nothing
@@ -39,10 +39,12 @@ export function resolveHandoverGateScope(params: {
 		validateGateConfig(packageJson)
 	} catch (error) {
 		if (error instanceof GateConfigError)
-			return { refusal: HANDOVER_GATE_CONFIG_REFUSAL.replace('{message}', error.message) }
+			return { refusal: HANDOVER_GATE_CONFIG_REFUSAL.replace('{message}', () => error.message) }
 		throw error
 	}
 	const base = resolveConfiguredBase({ root, packageJson, head: lotsFile.head })
+	// a set dialecte.baseBranch naming no branch: refused before any guard, nothing staged
+	if (base !== undefined && 'refusal' in base) return base
 	// the hook keys its full records with a base whenever a full step is scoped: it gets the hand-over's then
 	const handsDown = holdsScopedStep(resolveGateSteps({ packageJson, mode: 'full' }))
 	return {

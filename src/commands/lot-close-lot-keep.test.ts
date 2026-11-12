@@ -8,6 +8,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace } from '../../test/brief-workspace.ts'
+import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { KEEP_NOW } from '../../test/lot-keep-workspace.constants.ts'
 import { addLotWorktree } from '../../test/lot-keep-workspace.ts'
 import { snapshotOf } from '../../test/lot-start-workspace.ts'
@@ -47,6 +48,7 @@ function registerCommitted(params: { workspace: BriefWorkspace; lot: LotWorktree
 		folder,
 		state: 'committed',
 	})
+	writeHookRecordAtHead(params.lot.worktree)
 	return name
 }
 

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadRunEnvironment } from '../../src/lib/run/load-run-environment.ts'
+import { NAMESPACES, TEST_DIALECTE_PACKAGE } from './run-environment.constants.ts'
 
 import type { RunEnvironment } from '../../src/lib/run/run.types.ts'
 
@@ -16,9 +17,6 @@ export async function loadTestEnvironment(): Promise<RunEnvironment> {
 		packageName: TEST_DIALECTE_PACKAGE,
 	})
 }
-
-/** The package whose dialecte the run tests drive: core's own test dialecte. */
-export const TEST_DIALECTE_PACKAGE = '@dialecte/core/test'
 
 /**
  * Where the run tests resolve `@dialecte/core` from: `DIALECTE_CORE_DIR` (a built core checkout) when
@@ -36,12 +34,6 @@ export function testProjectDirectory(): string {
 	}
 	return cliRoot
 }
-
-/** The fixtures of the run command's tests. */
-export const RUN_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'run')
-
-const NAMESPACES =
-	'xmlns="http://dialecte.dev/XML/DEFAULT" xmlns:dev="http://dialecte.dev/XML/DEV" xmlns:ext="http://dialecte.dev/XML/DEV-EXT"'
 
 /** An XML file of core's test dialecte, its root's namespaces declared. */
 export function testFile(params: { body: string; name?: string }): File {

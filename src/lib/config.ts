@@ -14,29 +14,17 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-export type Binding =
-	| { kind: 'namespace'; name: string; import: string }
-	| {
-			kind: 'core'
-			coreAlias: string
-			coreImport: string
-			configType: string
-			configImport: string
-	  }
+import { CORE_PACKAGE, CORE_TEST_DIALECT } from './config.constants.ts'
 
-/** One thing to bench/cover/audit — a dialect version (or the single core test dialect). */
-export type Target = {
-	version: string
-	binding: Binding
-	constantsDir: string
-	outDir: string
-}
+import type { Pkg, Target } from './config.types.ts'
 
-export const getArg = (argv: string[], name: string): string | undefined => {
-	const i = argv.indexOf(`--${name}`)
-	return i >= 0 ? argv[i + 1] : undefined
+export function getArg(argv: string[], name: string): string | undefined {
+	const index = argv.indexOf(`--${name}`)
+	return index >= 0 ? argv[index + 1] : undefined
 }
-export const hasFlag = (argv: string[], name: string): boolean => argv.includes(`--${name}`)
+export function hasFlag(argv: string[], name: string): boolean {
+	return argv.includes(`--${name}`)
+}
 
 /** The words of a command line that are neither options nor the value of an option taking one. */
 export function positionalArguments(params: {
@@ -53,17 +41,21 @@ export function positionalArguments(params: {
 	return words
 }
 
-export const tsconfigOf = (argv: string[], cwd: string = process.cwd()): string =>
-	getArg(argv, 'tsconfig') ?? pkgConfig(cwd).tsconfig ?? 'tsconfig.build.json'
-
-type Pkg = { name?: string; dialecte?: Record<string, string> }
-const readPkg = (cwd: string): Pkg => {
-	const p = join(cwd, 'package.json')
-	return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : {}
+export function tsconfigOf(argv: string[], cwd: string = process.cwd()): string {
+	return getArg(argv, 'tsconfig') ?? pkgConfig(cwd).tsconfig ?? 'tsconfig.build.json'
 }
-const pkgConfig = (cwd: string): Record<string, string> => readPkg(cwd).dialecte ?? {}
 
-const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
+function readPkg(cwd: string): Pkg {
+	const packageJson = join(cwd, 'package.json')
+	return existsSync(packageJson) ? JSON.parse(readFileSync(packageJson, 'utf8')) : {}
+}
+function pkgConfig(cwd: string): Record<string, string> {
+	return readPkg(cwd).dialecte ?? {}
+}
+
+function capitalize(word: string): string {
+	return word.charAt(0).toUpperCase() + word.slice(1)
+}
 
 /** Namespace = Capitalized package name (`@dialecte/scl` → `Scl`). */
 export function discoverNamespace(cwd: string): string {
@@ -86,25 +78,6 @@ export function discoverVersions(cwd: string): string[] {
 				existsSync(join(src, v, 'definition', 'definition.generated.ts')),
 		)
 		.sort()
-}
-
-/**
- * Core benches its own engine through a generic *test* dialect (it has no `src/<v>/definition` layout).
- * Hard-coded and matched by package name, so core's package.json needs NO "dialecte" config — identical
- * in shape to every dialect's. CLI flags (--version/--constants-dir/--out) still override.
- */
-const CORE_PACKAGE = '@dialecte/core'
-const CORE_TEST_DIALECT: Target = {
-	version: 'core',
-	binding: {
-		kind: 'core',
-		coreAlias: 'Core',
-		coreImport: '@/index',
-		configType: 'TestDialecteConfig',
-		configImport: '@/test/config',
-	},
-	constantsDir: './src/test/generated',
-	outDir: './benchmarks/types/generated',
 }
 
 /** Resolve every target to operate on — discovered by convention, overridable via flags/config. */

@@ -170,7 +170,7 @@ export async function runGate(params: {
 			if (error instanceof GateConfigError)
 				return resultOf({
 					exitCode: 1,
-					lines: [GATE_CONFIG_REFUSAL.replace('{message}', error.message)],
+					lines: [GATE_CONFIG_REFUSAL.replace('{message}', () => error.message)],
 				})
 			throw error
 		}
@@ -213,7 +213,7 @@ export async function runGate(params: {
 	if (scope && 'refusal' in scope)
 		return resultOf({
 			exitCode: 2,
-			lines: [GATE_BASE_REFUSAL_LINE.replace('{refusal}', scope.refusal)],
+			lines: [GATE_BASE_REFUSAL_LINE.replace('{refusal}', () => scope.refusal)],
 		})
 	const gateBase = scope?.base
 	const commandHash = gateCommandHash({ root: cwd, steps, gateBase: gateBase?.commit })
@@ -301,6 +301,8 @@ export async function runGate(params: {
 			packageJson,
 			// the tree the key holds: the one the scoped steps select on
 			...(gateBase && keyBefore && { scope: { base: gateBase.commit, tree: keyBefore.tree } }),
+			// a default step without its npm script fails a full or release run; a fast one says it and goes on
+			failDefaultUnwired: mode !== 'fast',
 			// always: the run's events time each part, progress shown or not (D8)
 			announce: function announce(step) {
 				const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
@@ -382,7 +384,7 @@ function resolveStepsOf(params: {
 		return { steps: resolveGateSteps(params) }
 	} catch (error) {
 		if (error instanceof GateConfigError)
-			return { refusal: GATE_CONFIG_REFUSAL.replace('{message}', error.message) }
+			return { refusal: GATE_CONFIG_REFUSAL.replace('{message}', () => error.message) }
 		throw error
 	}
 }
@@ -462,6 +464,7 @@ async function tddStep(params: {
 		...(check.details?.length && { details: check.details }),
 		...(check.cases && { cases: check.cases }),
 		...(check.moved?.length && { moved: check.moved }),
+		...(check.duplicates?.length && { duplicates: check.duplicates }),
 	}
 }
 

@@ -30,6 +30,7 @@ import {
 	COMMIT_INDEX_FOLDER_PREFIX,
 	RULES_STEP_PATTERN,
 	SCOPED_STEP_HASH_MARK,
+	STEP_WIRING_HASH_MARKS,
 } from './gate-records.constants.ts'
 import { computeStateTree } from './state-hash.ts'
 
@@ -97,7 +98,9 @@ export function foldMachineLists(params: { root: string; hash: string }): string
 /**
  * sha256 (hex) of the steps' `name` and `run` in order, plus a commit when given. Without a scoped step the hash
  * is the same as before scoped steps existed, `gateBase` left out; with one, a scoped step hashes as
- * `[name, run, "scoped"]` and `gateBase` enters. `heavy` never enters.
+ * `[name, run, "scoped"]` and `gateBase` enters. An unwired step adds `"unwired"`, an opted-out one `"opted-out"`
+ * (never its reason), so a list judged otherwise never answers from a record of the same list wired; a step with
+ * neither keeps today's bytes. `heavy` and `isDefault` never enter.
  */
 export function hashGateCommand(params: {
 	steps: readonly GateStep[]
@@ -107,22 +110,26 @@ export function hashGateCommand(params: {
 	gateBase?: string
 }): string {
 	const base = params.base ?? null
+	const steps = params.steps.map(hashedStepOf)
 	// JSON keeps each value apart: `a` + `bc` and `ab` + `c` never hash alike
-	if (!holdsScopedStep(params.steps))
-		return sha256(
-			JSON.stringify({ steps: params.steps.map((step) => [step.name, step.run]), base }),
-		)
-	return sha256(
-		JSON.stringify({
-			steps: params.steps.map(function hashedStep(step) {
-				return step.scoped === true
-					? [step.name, step.run, SCOPED_STEP_HASH_MARK]
-					: [step.name, step.run]
-			}),
-			base,
-			gateBase: params.gateBase,
-		}),
-	)
+	if (!holdsScopedStep(params.steps)) return sha256(JSON.stringify({ steps, base }))
+	return sha256(JSON.stringify({ steps, base, gateBase: params.gateBase }))
+}
+
+/** A step as its gate command hash holds it: `[name, run]`, then its scoped mark, then its wiring mark. */
+function hashedStepOf(step: GateStep): string[] {
+	const wiring =
+		step.optedOut !== undefined
+			? STEP_WIRING_HASH_MARKS.optedOut
+			: step.unwired === true
+				? STEP_WIRING_HASH_MARKS.unwired
+				: undefined
+	return [
+		step.name,
+		step.run,
+		...(step.scoped === true ? [SCOPED_STEP_HASH_MARK] : []),
+		...(wiring === undefined ? [] : [wiring]),
+	]
 }
 
 /** sha256 (hex) of the commit hook files git runs in `root`. */

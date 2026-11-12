@@ -190,7 +190,10 @@ function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem
 }
 
 function renderRepository(plan: PrunePlan): string[] {
-	const header = `${plan.repository}  (base ${plan.baseBranch})`
+	const header =
+		plan.baseBranch === undefined
+			? plan.repository
+			: `${plan.repository}  (base ${plan.baseBranch})`
 	if (plan.skipped) return [`${header}: skipped, ${plan.skipped}`]
 	if (plan.items.length === 0) return [`${header}: nothing merged to remove`]
 	return [

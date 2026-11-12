@@ -15,6 +15,9 @@ export const STORE_FILES: StoreFileNames = {
 	answers: 'answers',
 	asks: 'asks',
 	events: 'events.jsonl',
+	// reserved: `lot export` adds them to a copy (the lot's `cards.log` lines, its registry entry)
+	cardsLog: 'cards.log',
+	registry: 'registry.json',
 }
 
 /** The folder of the store in the repository's git common folder. */
@@ -131,6 +134,7 @@ export const NEXT_COMMANDS = {
 	show: 'dialecte handover show {handover}',
 	run: 'dialecte handover run {handover}',
 	stop: 'dialecte lot stop {name} --reason <text>',
+	close: 'dialecte lot close {handover}',
 } as const
 
 /** What runs a lot in S: a person or a host runs the stations by hand, or the simulator plays a scenario. */

@@ -73,11 +73,12 @@ describe('findDialecteEntry', () => {
 		const declare = testCase.only ? it.only : it
 		declare(description, () => {
 			project({ packages: testCase.packages })
-			const find = () =>
-				findDialecteEntry({
+			function find(): string {
+				return findDialecteEntry({
 					projectDirectory: root,
 					resolveFromProject: createRequire(join(root, 'package.json')),
 				})
+			}
 			if ('entry' in testCase.expected) expect(find()).toBe(testCase.expected.entry)
 			else expect(find).toThrow(testCase.expected.error)
 		})

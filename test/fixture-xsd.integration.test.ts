@@ -14,7 +14,8 @@ import { pathToFileURL } from 'node:url'
 
 import { runFixtureCommand } from '../src/commands/fixture.ts'
 import { coreEntries, coreTestSchema } from './real-core.ts'
-import { TEST_DIALECTE_PACKAGE, testProjectDirectory } from './run/run-environment.ts'
+import { TEST_DIALECTE_PACKAGE } from './run/run-environment.constants.ts'
+import { testProjectDirectory } from './run/run-environment.ts'
 import { installSclProject } from './run/scl-project.ts'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

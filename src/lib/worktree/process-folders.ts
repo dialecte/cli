@@ -30,6 +30,20 @@ export function processWorkingIn(params: {
 	)
 }
 
+/**
+ * Every process whose working folder is `folder` or inside it, in the order given: `processWorkingIn`'s rule (the
+ * folder's real path, then equal or under it by whole folder names), all matches instead of the first.
+ */
+export function processesWorkingIn(params: {
+	processes: readonly ProcessFolder[]
+	folder: string
+}): ProcessFolder[] {
+	const folder = realPathOf(params.folder)
+	return params.processes.filter(
+		(entry) => entry.folder === folder || entry.folder.startsWith(`${folder}${sep}`),
+	)
+}
+
 function readProc(): ProcessFolder[] {
 	return readdirSync('/proc')
 		.filter((name) => /^\d+$/.test(name))

@@ -500,7 +500,19 @@ the answer.
   `GIT_OPTIONAL_LOCKS=0` (a `git status` inside it never takes the index lock), and is judged on its exit
   code and on the counts it printed: a step exiting non-zero fails whatever it says, a test step that
   counts no test fails - except `--fast` on a change that touches no test (a doc edit): the changed-tests
-  step passes with the note "no test file is affected by the change". A step whose npm script the package lacks is skipped. While a hand-over
+  step passes with the note "no test file is affected by the change". A step running an npm script the package lacks
+  is _not wired_, judged for the whole list before any step runs (every wiring problem shows at once, and a
+  failed one leaves every other step unrun): a step of the default list (the package declares no list for the
+  mode) fails `gate --full` and `--release` (`FAIL  skills  not wired (no npm script "skills:check")`, then the
+  line `add the script, or opt out with dialecte.gate.skip: "dialecte": { "gate": { "skip": { "skills": "<reason>" } } }` under it;
+  `dialecte contrib` names `"contrib"` there) and is skipped by `--fast` (`skip  skills  not wired (...)`, the gate stays green); a step the package declares
+  fails in every mode, `--fast` included (`declared but not wired (no npm script "<x>")`). The fix is the
+  script, the step removed from the list, or, for a default step, an opt-out with a reason (below). The
+  hand-over card shows `✗ <step>  not wired (no npm script; or dialecte.gate.skip)` for a full or release record
+  (`dialecte.contrib.skip` for a contrib one) and `! <step>  not
+  wired (no npm script)` for a fast one, and `! <step>  opted out: <reason>` for an opt-out (a warning). The
+  `type-narrowing` step is derived from the package's scripts and is never unwired. A gate record written
+  before this check is not reused for a package with an unwired or opted-out step (the key changes). While a hand-over
   holds the repository (`dialecte handover <lots.json>` wrote its lock), the gate runs only under the
   hand-over written for this repository - the script the lock names exists and the `lots.json` beside it
   names this repository, real paths compared - and says so in one line with the command that refreshes
@@ -603,8 +615,9 @@ the answer.
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
   changed against HEAD (recorded as `dialecte rules` records it), the package's `dialecte.contrib.steps`
   (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
-  `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a missing
-  npm script skips the step), `type-narrowing` (`npm run type-narrowing`) when the package has that script and
+  `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a default
+  step whose npm script is missing fails the run before any row, the built-in `rules` and `release` rows
+  included, unless `dialecte.contrib.skip` opts it out with a reason; a declared one fails too), `type-narrowing` (`npm run type-narrowing`) when the package has that script and
   none of its steps runs it (without the script, one line `skip  type-narrowing  no npm script
   "type-narrowing"` before `release`, no row), `release` (no dependency named by a local folder), then `mutation` when the
   package declares a mutation scope (read from the mutation store now, never recorded). A package step a
@@ -639,6 +652,18 @@ the answer.
     is kept without a flag, and no receipt. A file with a refusal still records its other cases'
     receipts, the refusals kept as evidence; it is frozen when one of its cases is red (those need no re-red;
     the refused case stays unproven), else not frozen; the gate fails on it until no case of it is refused.
+  - Two cases of one run sharing a file, a project and a name share one id, and a receipt names one case: every
+    case of such a group is refused (`red` and `green`), whatever its state, with `2 cases share this id
+    (lines 12, 12): <hint>` (a case without a location prints `?`). The hint is `rename one` for two plain
+    calls; for a case of an `.each` / `.for` table (or under one) it says to spell each title in full:
+    vitest cuts a `$` field of an each-title at its `truncateThreshold` and prints any array as `[ Array(n) ]`, so
+    two rows can read the same; `truncateThreshold: 0` in the package's vitest config is the other fix. A member
+    the run does not judge (skipped, filtered out by `-t`, not targeted by `green`) gets a `duplicate  <case>
+    <reason>` line and no receipt. The cases of the group stay out of the move matching, the rest of the file is
+    judged as usual, and the exit is 1. `--json` holds `duplicates: [{ file, project, name, lines }]` (empty when
+    none). The `gate`'s tdd step fails (`duplicate case ids in <n> file(s): <files>`) and the card's tdd section
+    lists `✗ duplicate id  <file>::<name>  lines 12, 12` per group, so the hand-over is BLOCKED. A receipt
+    recorded before under an id now shared never counts.
   - A red records the case (file, full name, project), the hashes of its test file, of its own test call
     and of the production files, the failing message and the time. It is flagged `rollback` at a
     production state the case, or the lot, had already left: a production file moved back from the
@@ -753,10 +778,11 @@ the answer.
     red when it fails) and freezes its file and the changed test code it depends on. A file or glob entry
     may also name a test helper (test code that is not a test file: a helper, a fixture, a constant beside
     the tests) edited at review while its dependent cases stay green: the next `tdd red` freezes it at its
-    new hash and prints `revised  <helper>  <reason>`, when every changed test file depending on it (at
-    least one) is in the run and frozen by it with no case red (a refused file, a red still waiting for
-    its green, or no dependent file in the run leaves it unfrozen; a changed dependent outside a targeted
-    run too, named on an `unfrozen  <helper>` line). The new freeze makes the dependent
+    new hash and prints `revised  <helper>  <reason>`, when every changed test file depending on it
+    is in the run and frozen by it with no case red (a refused file, a red still waiting for
+    its green, or a changed dependent outside a targeted run leaves it unfrozen, named on an
+    `unfrozen  <helper>` line). A helper that no changed test file depends on (its dependents are all
+    unchanged since the base) is frozen by any `tdd red` whatever its files, with the entry's reason. The new freeze makes the dependent
     cases' earlier green stale: `tdd green` proves them again. Without that red run the gate fails on the
     edit; `status` lists the revised cases, the gate and the hand-over card list the revisions (cases
     and helpers) with their reason, an entry (exact, file or glob) no revised case or helper used as a
@@ -780,8 +806,11 @@ the answer.
   iterating, run the case with `npx vitest run <file> -t "<case>"`), its barrel export and, for a new
   namespace, the namespace module and its registration. Its JSDoc summary and `@intent` start with
   `FILL:`, which `skills check` refuses until written; the command prints every placeholder left.
-- `dialecte handover write <lots.json> [--release] [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
-  hand-over a human runs. `--release` marks it a release hand-over (`"release": true` in the lots file): its card
+- `dialecte handover write <lots.json> [--release] [--target <branch>] [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
+  hand-over a human runs. `--target <branch>` names the branch the hand-over must not be behind (default: the
+  [base branch](#the-base-branch)); it is written as `target` in the lots file. A branch with no ref, local or on
+  origin (`--target nope: no such branch, local or on origin`), a `--target` with no branch after it, or no base
+  branch to default to, is refused (exit 2, nothing written). `--release` marks it a release hand-over (`"release": true` in the lots file): its card
   then holds a required `gate release` row, green only with a green `gate --release` record of the tree it commits.
   The lots file names the repository, the branch and HEAD expected, and the lots (paths, message):
 
@@ -956,7 +985,29 @@ the answer.
   does, and writes `last-run.json` in the hand-over folder when it ends (before the card of a real run):
   `sleptMs` when its wall time passed its monotonic time by over 60 s; the DONE card then prints
   `! slept <duration> during handover run` in its gates.
-- `dialecte handover run <folder>` is what `commit.sh` runs. Each guard prints one line with its result
+- A hand-over written behind its target branch is not run. The card (READY or BLOCKED, `handover show <one>`)
+  prints `! main moved: merge main first (3 commit(s) on main, now 1a2b3c4d)` under its verdict, which reads
+  BLOCKED (`--json`: `targetMoved: { branch, ref, tip, behind }`). The target is held when its tip is an
+  ancestor of the lots file's HEAD or of a merge lot's tip. When some lots are committed already the line adds
+  `: write a new hand-over on the current HEAD with a merge lot of main`. A hand-over onto the target itself, a
+  committed one and an abandoned one are not judged; a lots file written before `target` existed is judged
+  against the base branch; a `target` that names no ref gives a `!` line with the refusal and BLOCKED.
+- The card also lists the processes working in the worktree (`handover show <one>`, READY or BLOCKED; `lot
+  result`, the run picker and `handover list` never look): `✗ processes  2 left running in the worktree: 4123 node
+  …vitest --watch, 4177 npm run dev  (stop them: kill 4123 4177)` blocks, `! processes  open on the worktree:
+  code, zsh` and `! processes  not known (<why>)` warn (`--json`: `processes: { leftBehind, tools, unknown? }`).
+  The run itself, its shell or agent, what it started and every process of its own process group (the other
+  commands of its pipeline, such as a `| grep` after it) are never listed: a leftover started in the same process
+  group as the cli (the same non-interactive shell command) therefore counts as the run's own. A process with a terminal, one
+  whose command (or an ancestor's) is a known editor or the one `git config dialecte.editor` names, and one
+  named in `git config dialecte.personProcesses` (a comma list of command names, never committed) is one of the
+  person's tools; every other process is left behind.
+- `dialecte handover run <folder>` is what `commit.sh` runs. Two of its guards, `target` (the target branch's tip is held, as above) and
+  `processes` (read at run time, never from the card: a process left behind, or a list that cannot be read,
+  refuses; tools only pass with `!`), come after the merges guard. Either refusal
+  exits 2 with nothing committed, where every other guard exits 1; `--rehearse` prints `!` for each and goes
+  on. The merges guard's note for a merge lot of the target that moved reads `lot <n>: merges main at <sha>; main
+  is now <sha> (see target)`. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
   lots, references (citations, declared patterns, and the tags of a contributor), `contrib` in a contributor
@@ -1423,7 +1474,15 @@ the answer.
     removed in the background by `git worktree remove` without `--force`: git refuses a worktree written into
     since the check, which then stays registered in `.worktrees/_trash/` for you to look at (one line says so
     when something closed). Paths are compared by their real path as spelled on disk (a path typed in another
-    case on a case-insensitive volume matches). Kept,
+    case on a case-insensitive volume matches). Before the move, the lot's final record is kept: the card line
+    of its `cards.log` (the one `handover run` wrote when it committed; else a recomputed one, marked
+    `recomputed`, built without the probe), read back and parsed, then a `removing` line naming the worktree,
+    its branch and the branch tip; after the move a `removed` line says `trashed` or `kept`. Kept also, with
+    why: `final record not kept: <reason>` when the record cannot be written or read back, and `the lot's
+    commit is not known` (with where to look and how to remove the worktree by hand) when a committed lot's
+    commit can be found neither among its lot commits nor in the worktree's hook record (read only when no
+    other committed hand-over shares the worktree). Every other hand-over of the worktree gets its card line
+    too, `head` its last lot commit or `null`. Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
     store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
@@ -1455,11 +1514,80 @@ the answer.
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
     `[{ handover, closed: true, already?: true } | { handover, kept }]`.
+- Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
+  it cannot parse, and counts them.
+  - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`
+    append one station event to the lot's `events.jsonl` (`by: host`): the host says which station ran, with
+    which step, round, attempt, agent, vendor, model, tier, effort, session and skills (`--skill` seen,
+    `--skill-asked` asked by the brief), and, at its end, tokens (`--tokens-in`, `--tokens-out`,
+    `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`), `--money <amount> <currency>`,
+    `--duration`, `--exit`, `--verdict` and `--suite <name>=<runs>` for suites the agent ran itself. Nothing but
+    the station is required; a field nobody gave stays unknown. `start` answers a `run` and the `end` command to
+    run; `end` pairs with `--run`, else with the one open start of its station whose step, round and attempt match
+    the ones it gives (several: refused), else is recorded alone. `--event <id>` makes a retry safe: the same id
+    with the same fields answers the first event (`already`) and writes nothing, other fields are refused.
+    `start` is refused on a committed, canceled or failed lot, `end` is accepted in every state. The station
+    names `shared` and `outside` are the report's own labels and are refused. `lot station <id> --from
+    <file.json>` takes the same fields as one JSON object, plus `phase` (`start` or `end`); an unknown key
+    is refused, every fault at once. A line over 4,096 bytes is refused. Exit 1 when the event cannot be written, 2
+    for a usage error or a refusal.
+  - Step events: the cli writes `step.start` and `step.end` events (`by: cli`) into the lot's `events.jsonl` for
+    `gate --fast`, `--full`, `--release` and `--hook`, `contrib`, `tdd red`, `tdd green`, `mutants run`,
+    `handover run` (real and rehearsal), `lot delta --worktree` and `worktree add`: the step, whether it is heavy,
+    its exit, its time, whether a gate reused records, and per gate step its status, counts, time and selection. A
+    step in a worktree that links no lot, or none matching, writes nothing. A write that fails prints one
+    `events: not recorded: <reason>` line and never changes the step's exit; a step killed after its start writes
+    its end as interrupted where it can. Long lists are cut, failing parts first. A step run in a worktree whose
+    link names a lot that lives elsewhere (a copied or moved worktree) is written to that lot as `step.foreign`.
+  - `dialecte.stepEvents` in the cli's own `package.json` (`"stepEvents": 1`) tells a host that this cli writes step
+    events. Each event notes the capability of the cli installed in the lot's worktree; a cli without it (an
+    older release or source) writes none, so the report shows the step counts of such a lot as unknown rather
+    than 0.
+  - Heavy steps (`gate --full`, `--release`, `contrib`, `mutants run`, a rehearsal, a gate step the package
+    declares heavy, and for the last only while that part runs) write a live marker in
+    `<state folder>/dialecte/heavy/` (`$XDG_STATE_HOME`, else `~/.local/state`): the step, the lot, the
+    worktree, the process and its start time. The step removes it at its end; a marker whose process is gone, or
+    runs with another start time, is dead and ignored. A person's run outside any lot writes the marker too, and
+    no event. This is how a host sees which heavy step runs now, and since when.
+  - `dialecte lot report <id> [--json]` reads files only (no git, no process, nothing written) and prints one lot:
+    its state, feature, effort, steps and rounds; per station run the agent, tier, model, tokens, time, suites
+    and skills; totals for tokens (each field with how many stations did not report it, a lower bound when a
+    total is not exact), money per currency (with how many stations reported none), and time (the lot's elapsed time as agents, cli steps, waiting for
+    answers, waiting for the machine and the rest); the suites per step family with their counts, reuse and
+    reruns, attributed to the station whose time holds the step (`shared` when several, `outside stations`
+    when none, and always for the steps the orchestration runs; a step a person runs by hand during a
+    station lands on that station); the heavy steps, the folders (worktree add, throwaways, trash), the review
+    rounds from the findings ledger, the events counted (damaged, duplicates, unknown kinds) and the next
+    command. A number nobody reported is `unknown` in the text and `null` in `--json`, never 0. A step family
+    reads unknown, with the reason, when the worktree's cli writes no step events, when a record of a step has
+    no run in the events, or when nothing of the lot's steps left a trace. `dialecte lot report --feature <name>
+    [--simulated] [--json]` gives one line per lot of the feature, in every store of the store list and the
+    current folder, then the totals by station and by tier; simulated lots are counted apart and listed by
+    `--simulated`; a lot whose folder is gone is listed from its `cards.log` line. Exit 1 when the feature names
+    no lot, 2 for an unknown or ambiguous id.
+  - The hand-over card gains a `usage` row (tokens, agents, runs, agent time, and the report's command) when the
+    hand-over folder is a lot folder holding a station event; `handover show --json` carries `usage`. A folder
+    with no station event shows no row.
+  - `cards.log`, in `<git common folder>/dialecte-handover/`, one per repository: one JSON line per record,
+    appended in one write, never rewritten, never rotated. A `card` line is a lot's final record: its hand-over
+    card, usage and the times of its gate, tdd and hook records (a worktree's records go with it), written by
+    `handover run` once a commit is recorded, or by `lot close` when none exists. A `removing` line is written
+    before a worktree moves (its path, branch, branch tip and record times), a `removed` line after it (the same
+    id; `trashed` or `kept`). A `removing` without its `removed` reads as unknown. The report reads these lines
+    for lots whose worktree or folder is gone.
+  - `dialecte lot export <id> <dir> [--json]` copies a lot folder to `<dir>/<full name>/`, `asks/` left out, links
+    kept as links (one pointing outside the folder is named), with the lot's `cards.log` lines and registry
+    entry added as `cards.log` and `registry.json`. It is refused (exit 2, nothing written) for an unknown or
+    ambiguous id, for a `<dir>` inside a git work tree or a git folder, and when `<dir>/<full name>` exists.
+    The copy is made into a temporary folder beside it and each file's size and checksum compared with the
+    source's (`events.jsonl` as a prefix, since a running lot appends); a difference makes one more copy of
+    that file, a second one removes the temporary folder and exits 1 naming the file; a match renames it. The
+    source is never written; another run's temporary folder is named, never removed.
 - `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
   its devDependency) on the scope `package.json` declares:
   `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.
-  `changed` mutates the scope lines changed since the merge base with the base branch (`dialecte.baseBranch`,
-  `main` when not said; then the remote's default branch, `refs/remotes/origin/HEAD`; with neither the run
+  `changed` mutates the scope lines changed since the merge base with the base branch (found as
+  [the base branch](#the-base-branch) is; with none found, or a `dialecte.baseBranch` naming no branch, the run
   is refused, exit 2, naming `dialecte.baseBranch` and `--base`) or `--base <ref>`, untracked scope files
   whole; `audit` the whole scope (no base needed). Without `--mode` the lot's switch decides; with no switch,
   `changed` when the change touches the scope, else `mutation off for this lot` and exit 0. A detached HEAD is
@@ -1630,8 +1758,8 @@ A package tunes them in its package.json:
 `gate.fast` / `gate.full` replace the default steps of that mode (`counts: "tests"` makes a step fail
 when it counts no test; `changedOnly: true` marks a step that runs only the tests the change affects,
 so "No test files found" passes with a note instead of failing; `restoresGeneratedDocs: true` restores the `generatedDocs` byte for byte after
-it); `baseBranch` is the branch
-`worktree add` starts from and `worktree prune` compares with (default `main`); `rebuiltIgnored` lists ignored
+it); `baseBranch` optionally names
+[the base branch](#the-base-branch); `rebuiltIgnored` lists ignored
 folders a build or a run rebuilds, which `lot close` may delete with a worktree: each a folder ending with `/`,
 relative to the package root, read from the `package.json` of the main checkout nearest the ignored path (a
 worktree's own declaration counts for nothing); an invalid entry (empty, absolute, holding `.` or `..`, without its
@@ -1645,7 +1773,7 @@ rehearsal copies it as the same relative link).
 
 **Scoped steps, heavy steps, the release list.** A step of `fast`, `full` or `release` may say `"scoped": true`
 (never with `changedOnly`, never in `contrib.steps`): the gate resolves one base per run - `--base <ref>`, else the
-merge-base of HEAD and `baseBranch` (local, else `origin/`), else the empty tree (everything changed) - and hands the
+merge-base of HEAD and [the base branch](#the-base-branch), else the empty tree (everything changed) - and hands the
 step `DIALECTE_GATE_BASE`, `DIALECTE_GATE_TREE`, `DIALECTE_GATE_CHANGED` (a file of the changed paths byte for byte,
 NUL-separated, both paths of a rename, relative to the repository top as `git diff --name-only` names them, while a
 declared `failing` path is relative to the package root) and `DIALECTE_GATE_SELECTION` (a path to write). The step writes there
@@ -1677,6 +1805,47 @@ in the step's `run`. A gate config the cli cannot run (a list that
 is no list of steps, a step without `name` or `run`, a `scoped` or `heavy` that is no boolean, `scoped` with
 `changedOnly`) is refused naming the list and the step: `gate`, `contrib` and `handover run` exit 2, `gate --hook`
 exits 1, the card prints `✗ gate  invalid gate config: <message>`.
+
+**Opting out of a default step.** A package that has no use for a default step (no skills folder, no type
+benchmark yet) says so, with a reason, instead of wiring a script:
+
+```json
+"dialecte": {
+	"gate": { "skip": { "skills": "no skills folder in this package" } },
+	"contrib": { "skip": { "type-bench": "no type benchmark yet" } }
+}
+```
+
+`dialecte.gate.skip` serves the default steps of `fast`, `full` and the release list that follows `full`;
+`dialecte.contrib.skip` the default `contrib` steps (`docs`, `type-bench`) when `contrib.steps` is not declared.
+A skip is only for a default step the package cannot run: an `npm run <x>` step whose script `x` is missing. A reason
+is a non-empty string of one line and at most 200 characters. A name that is no default step of a mode with no
+declared list, a step the package can run (its script is there, or it runs no npm script, as the default `tests`:
+`"tests": skip is for a step the package cannot run; remove the skip`), an empty or too long reason, or a `skip`
+that is no map is refused like any gate config (exit 2, naming the key and the name): an opt-out cannot go stale
+unseen, and adding the script makes its skip refused until it is removed. An opted-out step runs in no mode (`skip  skills
+opted out: <reason>`; the card warns, never blocks), and a step the package declares has no opt-out: remove it or add its
+script. Adding or removing an opt-out changes the gate record's key, so the gate runs again.
+
+### The base branch
+
+Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `worktree add` and `worktree prune`,
+`lot close`, the hand-over's target) finds it the same way, the first rule that answers winning:
+
+1. `dialecte.baseBranch` when set (an optional override): the local branch, else origin's. Set to a branch that
+   exists nowhere, it is refused, never replaced by another: exit 2 for the gate's base, `mutants`, `handover write`
+   and `handover run`, exit 1 for `worktree add` of a new branch without `--from`; the commit hook fails, and the
+   tdd step of `gate --full` fails with the same text.
+2. The branch `origin/HEAD` names (recorded at clone), when that branch exists; the local one is preferred.
+3. `main`, local, else origin's.
+4. `master`, local, else origin's.
+5. Nothing found: refused with `no base branch found (no dialecte.baseBranch, no origin/HEAD, no main, no master):
+   name it as dialecte.baseBranch in package.json`. The gate alone keeps selecting everything (with a note) in that
+   case; `worktree add` without `--from` refuses, `worktree prune` skips the repository with the text, `lot close`
+   holds nothing through the base, and `tdd` measures from HEAD.
+
+The repository field of `package.json` is a URL and is never read for this. `mutants` finds `origin/<b>` through
+the same rule and no longer takes a tag named like the base branch.
 
 ### GitHub text: lot recap and text check
 

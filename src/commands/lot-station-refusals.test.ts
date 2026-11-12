@@ -66,6 +66,16 @@ const REFUSED: Row[] = [
 	{ name: 'station a_b (an underscore) → refused', words: ['start', 'a_b'] },
 	{ name: 'station of 61 characters → refused', words: ['start', 'a'.repeat(61)] },
 	{ name: 'an empty station → refused', words: ['start', ''] },
+	{
+		name: 'station shared (the report label of parallel stations) → refused',
+		words: ['start', 'shared'],
+	},
+	{
+		name: 'station outside (the report label of steps outside stations) → refused',
+		words: ['start', 'outside'],
+	},
+	{ name: 'an end of station shared → refused', words: ['end', 'shared'] },
+	{ name: 'an end of station outside → refused', words: ['end', 'outside'] },
 	{ name: 'a vendor of 81 characters → refused', words: [...START, '--vendor', 'v'.repeat(81)] },
 	{ name: 'a model of 81 characters → refused', words: [...START, '--model', 'm'.repeat(81)] },
 	{ name: 'a tier of 81 characters → refused', words: [...START, '--tier', 't'.repeat(81)] },

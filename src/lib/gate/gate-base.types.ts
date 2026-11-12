@@ -1,4 +1,15 @@
-import type { GATE_BASE_SOURCES } from './gate-base.constants.ts'
+import type { BASE_BRANCH_SOURCES, GATE_BASE_SOURCES } from './gate-base.constants.ts'
+
+/** Where the base branch was found (`findBaseBranchRef`). */
+export type BaseBranchSource = (typeof BASE_BRANCH_SOURCES)[number]
+
+/** The base branch of a repository: its full ref, its short name, and which rule found it. */
+export type BaseBranchRef = {
+	/** `refs/heads/<branch>` or `refs/remotes/origin/<branch>`. */
+	ref: string
+	branch: string
+	source: BaseBranchSource
+}
 
 /** Where the base of a gate came from. */
 export type GateBaseSource = (typeof GATE_BASE_SOURCES)[number]

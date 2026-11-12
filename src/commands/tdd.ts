@@ -42,6 +42,11 @@ import { frozenHashOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
 import {
+	duplicateReasonOf,
+	findDuplicateCaseIds,
+	isDuplicateMember,
+} from '../lib/tdd/duplicate-case-ids.ts'
+import {
 	findCaseEntry,
 	namesOneCase,
 	readAcceptances,
@@ -75,6 +80,7 @@ import { findingLine, movesLines, readTddState, skippedReceiptsLine } from '../l
 import {
 	ACCEPTANCE_NOT_NEEDED,
 	CHANGED_AND_PASSES,
+	DUPLICATE_LABEL,
 	FROZEN_AFTER_RED,
 	HELPER_DEPENDENT_OUTSIDE_RUN,
 	NO_RED_RECEIPT,
@@ -92,13 +98,15 @@ import {
 	TEST_FILE_PATTERN,
 } from '../lib/tdd/tdd.constants.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
-import { findOnlyMarkers } from '../lib/tdd/test-source.ts'
+import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
 	CaseFailure,
+	ChangedTestFile,
+	DuplicateCaseId,
 	ReceiptFlag,
 	RedJudgement,
 	RevisedHelper,
@@ -106,6 +114,7 @@ import type {
 	TddContext,
 	TddRunAdmission,
 	TddEntry,
+	TddLedger,
 	TddReceipt,
 	TddSubcommand,
 	TestCaseId,
@@ -225,15 +234,15 @@ function admitRun(params: {
 	}
 	const changed = listChangedTestFiles(context)
 	const files = targetFiles({ changed, targets: context.targets })
-	if (files.length === 0)
-		return {
-			refusal: resultOf({
-				exitCode: 1,
-				lines: [
-					`tdd ${subcommand}: no test file new or changed since the base (or among the files named)`,
-				],
-			}),
-		}
+	const noFileRefusal = {
+		refusal: resultOf({
+			exitCode: 1,
+			lines: [
+				`tdd ${subcommand}: no test file new or changed since the base (or among the files named)`,
+			],
+		}),
+	}
+	if (files.length === 0 && subcommand === 'green') return noFileRefusal
 	const acceptances = readAcceptances(root)
 	if ('failure' in acceptances)
 		return {
@@ -244,7 +253,23 @@ function admitRun(params: {
 		return {
 			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${revisions.failure}`] }),
 		}
+	// a red run with no test file still runs for a changed helper a `revised` entry names: it may freeze it
+	if (files.length === 0 && !hasHelperToRevise({ ledger, testCode, revisions }))
+		return noFileRefusal
 	return { testCode, changed, files, acceptances, revisions }
+}
+
+/** A changed helper a `revised` entry names differs from its last freeze: a red run may freeze it for the entry. */
+function hasHelperToRevise(params: {
+	ledger: TddLedger
+	testCode: ReadonlyMap<string, string>
+	revisions: readonly LotCaseEntry[]
+}): boolean {
+	return [...params.testCode].some(
+		([file, hash]) =>
+			revisionOfHelper({ revisions: params.revisions, file }) !== undefined &&
+			frozenHashOf({ ledger: params.ledger, file }) !== hash,
+	)
 }
 
 async function runRed(params: {
@@ -294,13 +319,16 @@ async function runRed(params: {
 		files: runnable,
 	})
 	const { unlisted } = run
-	// a case moved out of a deleted or shrunk test file is a case of the base: unchanged when it passes
+	const duplicates = findDuplicateCaseIds(run.cases)
+	const memberReasons = memberReasonsOf({ duplicates, cases: run.cases, files: runnable })
+	// a case moved out of a deleted or shrunk test file is a case of the base: unchanged when it passes; a
+	// name two cases share names no single case to move
 	const moves = await readMoves({
 		root,
 		base: context.base,
 		packageJson: context.packageJson,
 		files: runnable,
-		cases: run.cases,
+		cases: run.cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
 	})
 	const cases = applyMoves({ cases: run.cases, moves })
 	const movedCases = movedCaseLabels(moves)
@@ -349,10 +377,18 @@ async function runRed(params: {
 				testCode.has(path) &&
 				frozenHashOf({ ledger: context.ledger, file: path }) !== testCode.get(path),
 		)
-		const judged = cases
-			.filter((testCase) => testCase.file === file.file && testCase.state !== 'skipped')
-			.map((testCase) =>
-				judgeRed({
+		const ofFile = cases.filter((testCase) => testCase.file === file.file)
+		// a member of a duplicate group is never judged: refused when the run judges it, else only listed
+		const unjudged = ofFile.filter(
+			(testCase) => memberReasons.has(caseLabel(testCase)) && !isJudgedByRun({ testCase, context }),
+		)
+		const judged = ofFile
+			.filter((testCase) => testCase.state !== 'skipped' && !unjudged.includes(testCase))
+			.map(function judgeCase(testCase): RedJudgement {
+				const reason = memberReasons.get(caseLabel(testCase))
+				if (reason !== undefined)
+					return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+				return judgeRed({
 					testCase,
 					context,
 					productionHash,
@@ -360,8 +396,8 @@ async function runRed(params: {
 					testCodeChanged,
 					acceptances,
 					revisions,
-				}),
-			)
+				})
+			})
 		const refused = judged.some((judgement) => judgement.kind === 'refused')
 		for (const judgement of judged) {
 			const recordable = judgement.kind !== 'kept' || judgement.flags.length > 0
@@ -393,6 +429,8 @@ async function runRed(params: {
 				}),
 			)
 		}
+		// the members the run leaves unjudged: listed, no receipt (they still fail the run)
+		lines.push(...unjudged.map((testCase) => duplicateLine({ testCase, memberReasons })))
 		// a file with a refused case is frozen for its cases proven red: they need no re-red; the refused case,
 		// with no red receipt, stays unproven
 		if (refused && !judged.some((judgement) => judgement.kind === 'red')) continue
@@ -442,22 +480,24 @@ async function runRed(params: {
 			at,
 		})
 	appendEntries({ root, entries, production })
-	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'revised' })} revised, ${countLines({ lines, label: 'refused' })} refused; ${
+	const summary = `tdd red: ${countLines({ lines, label: 'red' })} red, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'kept' })} kept, ${countLines({ lines, label: 'accepted' })} accepted, ${countLines({ lines, label: 'revised' })} revised, ${countLines({ lines, label: 'refused' })} refused${duplicateCountOf(lines)}; ${
 		Object.keys(frozen).length ? `frozen: ${Object.keys(frozen).join(', ')}` : 'nothing frozen'
 	}`
 	const refused = countLines({ lines, label: 'refused' })
+	const unjudgedMembers = countLines({ lines, label: DUPLICATE_LABEL })
 	// counted before: the rollback line is no case line
 	if (movedBack.length && countLines({ lines, label: 'red' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
-	return finish({ context, lines, summary, refused })
+	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates })
 }
 
 /**
  * The changed helpers a `revised` entry of the lot file lets this red run freeze: changed since their last
- * freeze, not frozen by a red or a revised case of the run, and with at least one changed test file
- * depending on them, every such file in the run and frozen by it (none refused, none with a red: a red
- * freezes its helpers itself). The entry never excuses a red. With the helpers it leaves unfrozen only
- * because changed dependents of theirs are outside a targeted run, and those files.
+ * freeze, not frozen by a red or a revised case of the run, and either with no changed test file depending
+ * on them (whatever files the run names) or with every changed dependent in the run and frozen by it (none
+ * refused, none with a red: a red freezes its helpers itself). The entry never excuses a red. With the
+ * helpers it leaves unfrozen only because changed dependents of theirs are outside a targeted run, and
+ * those files.
  */
 function helpersToRevise(params: {
 	context: TddContext
@@ -480,7 +520,8 @@ function helpersToRevise(params: {
 		const dependents = params.dependents(file)
 		const inRun = dependents.filter((dependent) => params.inRun(dependent))
 		const outside = dependents.filter((dependent) => !params.inRun(dependent))
-		if (!inRun.length || !inRun.every((dependent) => dependent in frozen)) continue
+		// no changed dependent: nothing else can ever freeze the helper, the entry does
+		if (!inRun.every((dependent) => dependent in frozen)) continue
 		if (outside.length) outsideRun.push({ file, outside })
 		else revised.push({ file, entry })
 	}
@@ -716,17 +757,19 @@ async function runGreen(params: {
 				detail: `cannot list its cases: ${notARed(file.failure)}`,
 			}),
 		)
+	const duplicates = findDuplicateCaseIds(cases)
+	const memberReasons = memberReasonsOf({ duplicates, cases, files })
 	const verdicts = cases
-		.filter(
-			(testCase) =>
-				testCase.state !== 'skipped' && isTargeted({ testCase, targets: context.targets }),
-		)
+		.filter((testCase) => isJudgedByRun({ testCase, context }))
 		.map(function judgeCase(testCase) {
 			// the last proof the read rule counts: a stale acceptance or revision never stands in for the red
 			const proof = countingReceipts({ ledger, testCase: idOf(testCase), acceptances, revisions })
 				.counting.filter((receipt) => PROOF_KINDS.includes(receipt.kind))
 				.at(-1)
-			const refusal = greenRefusal({ testCase, proof, ledger, testCode, productionHash })
+			// a member of a duplicate group is refused whatever its receipts: they name no single case
+			const refusal =
+				memberReasons.get(caseLabel(testCase)) ??
+				greenRefusal({ testCase, proof, ledger, testCode, productionHash })
 			return { testCase, proof, refusal }
 		})
 	const proven = verdicts
@@ -760,13 +803,76 @@ async function runGreen(params: {
 			)
 		}
 	}
+	// the members the run leaves unjudged (skipped, not targeted): listed, no receipt (they still fail the run)
+	lines.push(
+		...cases
+			.filter(
+				(testCase) =>
+					memberReasons.has(caseLabel(testCase)) && !isJudgedByRun({ testCase, context }),
+			)
+			.map((testCase) => duplicateLine({ testCase, memberReasons })),
+	)
 	appendEntries({ root, entries, production })
-	const summary = `tdd green: ${countLines({ lines, label: 'green' })} green, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'refused' })} refused`
+	const summary = `tdd green: ${countLines({ lines, label: 'green' })} green, ${countLines({ lines, label: 'unchanged' })} unchanged, ${countLines({ lines, label: 'refused' })} refused${duplicateCountOf(lines)}`
 	const refused = countLines({ lines, label: 'refused' })
+	const unjudgedMembers = countLines({ lines, label: DUPLICATE_LABEL })
 	// counted before: the rollback line is no case line
 	if (flags.length && countLines({ lines, label: 'green' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
-	return finish({ context, lines, summary, refused })
+	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates })
+}
+
+/** The case is one the run judges: it ran (not skipped) and the command line targets it. */
+function isJudgedByRun(params: { testCase: RunCase; context: TddContext }): boolean {
+	const { testCase } = params
+	return testCase.state !== 'skipped' && isTargeted({ testCase, targets: params.context.targets })
+}
+
+/**
+ * The refusal reason of each member of the duplicate groups, by its case label: the hint names the cut of a
+ * table title when a member's title is one (`isTableTitledAt`).
+ */
+function memberReasonsOf(params: {
+	duplicates: readonly DuplicateCaseId[]
+	cases: readonly RunCase[]
+	files: readonly ChangedTestFile[]
+}): Map<string, string> {
+	const reasons = new Map<string, string>()
+	for (const duplicate of params.duplicates) {
+		const members = params.cases.filter((testCase) =>
+			isDuplicateMember({ testCase, duplicates: [duplicate] }),
+		)
+		const text = params.files.find((file) => file.file === duplicate.file)?.text
+		const tableTitled =
+			text !== undefined &&
+			members.some(
+				(member) =>
+					member.location !== undefined &&
+					isTableTitledAt({ text, file: duplicate.file, location: member.location }),
+			)
+		const reason = duplicateReasonOf({ duplicate, tableTitled })
+		for (const member of members) reasons.set(caseLabel(member), reason)
+	}
+	return reasons
+}
+
+/** The line of a member a run leaves unjudged: `duplicate  <case>  <reason>`. */
+function duplicateLine(params: {
+	testCase: RunCase
+	memberReasons: ReadonlyMap<string, string>
+}): string {
+	const id = caseLabel(params.testCase)
+	return statusLine({
+		label: DUPLICATE_LABEL,
+		id,
+		detail: params.memberReasons.get(id) ?? '',
+	})
+}
+
+/** `, <n> duplicate` for the summary when members were left unjudged; nothing otherwise. */
+function duplicateCountOf(lines: readonly string[]): string {
+	const count = countLines({ lines, label: DUPLICATE_LABEL })
+	return count ? `, ${count} ${DUPLICATE_LABEL}` : ''
 }
 
 /** Whether the case's last proof is one a green run only reports (no green receipt): unchanged, accepted, revised. */
@@ -899,17 +1005,24 @@ function notARed(failure: CaseFailure): string {
 	return `${failure.kind} (not a red): ${firstLine(failure.message)}`
 }
 
+/** A red or green run's result: exit 1 on a refusal or a duplicate member left unjudged; `--json` with the groups. */
 function finish(params: {
 	context: TddContext
 	lines: string[]
 	summary: string
 	refused: number
+	/** The duplicate members the run listed without judging them. */
+	unjudgedMembers: number
+	duplicates: readonly DuplicateCaseId[]
 }): CommandResult {
-	const exitCode = params.refused > 0 ? 1 : 0
+	const exitCode = params.refused + params.unjudgedMembers > 0 ? 1 : 0
 	if (params.context.json)
 		return {
 			exitCode,
-			output: jsonOf({ lines: params.lines, refused: params.refused }, 2),
+			output: jsonOf(
+				{ lines: params.lines, refused: params.refused, duplicates: params.duplicates },
+				2,
+			),
 		}
 	return resultOf({ exitCode, lines: [...params.lines, params.summary] })
 }

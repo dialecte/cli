@@ -201,7 +201,16 @@ export function listTestCalls(params: { text: string; file: string }): TestCall[
  */
 export function indexTestCalls(params: { text: string; file: string }): TestCallIndex {
 	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
-	const calls = testCallNodesOf(source).map((node): LocatedTestCall => ({
+	return testCallIndexOf({ source, nodes: testCallNodesOf(source) })
+}
+
+/** The index of the test call nodes of a parsed file (`indexTestCalls`). */
+function testCallIndexOf(params: {
+	source: ts.SourceFile
+	nodes: readonly ts.CallExpression[]
+}): TestCallIndex {
+	const { source } = params
+	const calls = params.nodes.map((node): LocatedTestCall => ({
 		...testCallOf({ node, source }),
 		start: node.getStart(source),
 		end: node.end,
@@ -213,6 +222,38 @@ export function indexTestCalls(params: { text: string; file: string }): TestCall
 		lineStarts: source.getLineStarts(),
 		callTextAt: (location) => callTextAt({ source, location }),
 	}
+}
+
+/**
+ * The title of the case a reported location points at is a table's format: its own call, or a suite call
+ * holding it, is an `.each` / `.for` call (vitest fills a `$` field of such a title and cuts it).
+ */
+export function isTableTitledAt(params: {
+	text: string
+	file: string
+	location: SourceLocation
+}): boolean {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	const nodes = testCallNodesOf(source)
+	// the call as `testCallAt` locates it: one rule for where vitest points
+	const call = testCallAt({ index: testCallIndexOf({ source, nodes }), location: params.location })
+	if (!call) return false
+	if (call.each) return true
+	const node = nodes.find((candidate) => candidate.getStart(source) === call.start)
+	return node !== undefined && isInsideTableSuite(node)
+}
+
+/** A `describe.each` / `describe.for` call holds the node in its arguments, at any depth. */
+function isInsideTableSuite(node: ts.Node): boolean {
+	for (let child = node, parent = node.parent; parent; child = parent, parent = parent.parent)
+		if (
+			ts.isCallExpression(parent) &&
+			parent.arguments.some((argument) => argument === child) &&
+			isSuiteCallee(parent.expression) &&
+			takesFormatTitle(parent.expression)
+		)
+			return true
+	return false
 }
 
 /**

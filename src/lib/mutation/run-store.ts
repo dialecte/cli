@@ -22,6 +22,7 @@ import { isProcessAlive } from '../process-alive.ts'
 import { processStartTime } from '../process-start-time.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { MUTATION_RUNS_FOLDER, MUTATION_STORE_FOLDER } from './mutation.constants.ts'
+import { isRunEntry } from './run-entry.ts'
 
 import type {
 	AbandonResult,
@@ -178,17 +179,6 @@ function parseRunEntry(path: string): RunEntry | undefined {
 		// broken by hand: no run of this store
 		return undefined
 	}
-}
-
-function isRunEntry(value: unknown): value is RunEntry {
-	if (typeof value !== 'object' || value === null) return false
-	const entry = value as Record<string, unknown>
-	return (
-		typeof entry.runId === 'string' &&
-		typeof entry.pid === 'number' &&
-		typeof entry.startedAt === 'string' &&
-		typeof entry.state === 'string'
-	)
 }
 
 function classifyRun(params: { entry: RunEntry; check: OwnerCheck }): RunEntry {

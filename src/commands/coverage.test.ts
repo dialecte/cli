@@ -10,7 +10,7 @@ import {
 
 import { describe, expect, it } from 'vitest'
 
-import type { Binding } from '../lib/config.ts'
+import type { Binding } from '../lib/config.types.ts'
 import type { DialecteSchema } from './coverage.types.ts'
 
 const NS: Binding = { kind: 'namespace', name: 'Scl', import: '@/v1' }

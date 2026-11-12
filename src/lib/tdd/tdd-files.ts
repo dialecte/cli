@@ -8,10 +8,11 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts'
 import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { readHygieneBaseline } from '../worktree/hygiene.ts'
-import { DEFAULT_BASE_BRANCH, LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
+import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import {
 	DELETED_PRODUCTION_FILE,
 	FIXTURE_FOLDER_PATTERN,
@@ -158,8 +159,8 @@ function ledgerPath(root: string): string {
  * The commit the change is measured from. By default HEAD: the lot is the uncommitted work, whatever
  * earlier lots the branch holds. `ref` (`--base <ref>`): where HEAD left that ref, the whole-branch view.
  * `wholeBranch` (the gate's `--full`, before a merge): the HEAD `worktree add` recorded, else where HEAD
- * left the package's base branch, else HEAD. Why there is none: a repository without a commit, an
- * unknown ref.
+ * left the base branch (`findBaseBranchRef`), else HEAD when no base branch is found. Why there is none: a
+ * repository without a commit, an unknown ref, a set `dialecte.baseBranch` naming no branch (the resolver's text).
  */
 export function resolveBase(params: {
 	root: string
@@ -182,8 +183,12 @@ export function resolveBase(params: {
 	if (!params.wholeBranch) return head
 	const recorded = readHygieneBaseline(root)?.head
 	if (recorded) return recorded
-	const baseBranch = params.packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
-	return tryReadGit({ root, args: ['merge-base', 'HEAD', baseBranch] })?.trim() ?? head
+	const found = findBaseBranchRef({ root, packageJson: params.packageJson })
+	if ('refusal' in found)
+		// a set dialecte.baseBranch naming no branch is refused, never replaced; nothing found: HEAD, as when the
+		// merge-base fails
+		return params.packageJson.dialecte?.baseBranch === undefined ? head : { failure: found.refusal }
+	return tryReadGit({ root, args: ['merge-base', 'HEAD', found.ref] })?.trim() ?? head
 }
 
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */

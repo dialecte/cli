@@ -33,6 +33,7 @@ import {
 import { PACKAGE_NAME, SCOPE_FILE } from './mutation-package.constants.ts'
 import { mutationPackage } from './mutation-package.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import { WRITER_CLI } from './scratch-checks.constants.ts'
 import { git, initializeRepository, temporaryFolder, writeFiles } from './scratch-repository.ts'
 
@@ -66,7 +67,7 @@ export function hooksRepository(params: { declared: boolean }): string {
 	return initializeRepository({
 		root: temporaryFolder('dialecte-hooks-'),
 		files: {
-			'package.json': `${JSON.stringify({ name: PACKAGE_NAME, scripts: {}, dialecte }, null, '\t')}\n`,
+			'package.json': `${JSON.stringify({ name: PACKAGE_NAME, scripts: WIRED_DEFAULT_SCRIPTS, dialecte }, null, '\t')}\n`,
 			'src/read.ts': 'export function read() {}\n',
 		},
 	})

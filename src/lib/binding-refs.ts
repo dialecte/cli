@@ -1,5 +1,5 @@
 /** The type expressions a generated probe writes for a binding: a dialecte's namespace, or core with a config type. */
-import type { Binding } from './config.ts'
+import type { Binding } from './config.types.ts'
 
 export function refsOf(binding: Binding) {
 	if (binding.kind === 'namespace') {

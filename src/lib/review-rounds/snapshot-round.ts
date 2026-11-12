@@ -5,24 +5,13 @@
  * under `.partial` names and renamed at the end, so a run that fails part-way leaves nothing a rerun
  * refuses on.
  */
-import {
-	chmodSync,
-	copyFileSync,
-	existsSync,
-	lstatSync,
-	mkdirSync,
-	readdirSync,
-	readlinkSync,
-	renameSync,
-	rmSync,
-	symlinkSync,
-	writeFileSync,
-} from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
+import { copyFileOrLink, isFileOrLink } from '../copy-file-or-link.ts'
 import { readGit } from '../git.ts'
 import { PARTIAL_SUFFIX } from './review-rounds.constants.ts'
-import { isFileOrLink, worktreeStateRefusal } from './worktree-state.ts'
+import { worktreeStateRefusal } from './worktree-state.ts'
 
 import type { TakenSnapshot, WorktreeState } from './review-rounds.types.ts'
 
@@ -32,18 +21,6 @@ export function roundNames(round: number): { folder: string; deleted: string; ba
 		folder: `round-${round}`,
 		deleted: `round-${round}.deleted`,
 		base: `round-${round}.base`,
-	}
-}
-
-/** Copies a file or a symlink: bytes and permission bits, or the link with the same target. */
-export function copyFileOrLink(params: { from: string; to: string }): void {
-	mkdirSync(dirname(params.to), { recursive: true })
-	const stats = lstatSync(params.from)
-	if (isFileOrLink(params.to)) rmSync(params.to)
-	if (stats.isSymbolicLink()) symlinkSync(readlinkSync(params.from), params.to)
-	else {
-		copyFileSync(params.from, params.to)
-		chmodSync(params.to, stats.mode & 0o7777)
 	}
 }
 

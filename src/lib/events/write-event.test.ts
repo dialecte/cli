@@ -326,7 +326,7 @@ describe('writeEvent', () => {
 
 describe('writeEvent from two processes', () => {
 	it(
-		'1,000 events each at once to one file → every line parses, 2,000 lines, none interleaved',
+		'1,000 events each at once to one file → every record parses, 2,000 records, none interleaved',
 		{ timeout: TWO_PROCESS_CASE_TIMEOUT },
 		async () => {
 			const file = join(makeFolder(), 'events.jsonl')
@@ -375,12 +375,14 @@ describe('writeEvent from two processes', () => {
 				for (const child of children) child.kill('SIGKILL')
 			}
 
+			// a writer's torn-line check may see the other's append mid-write and add an empty line: no record
 			const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n') : []
+			const records = lines.filter((text) => text !== '')
 			expect({
 				exits: outcomes,
-				lines: lines.length,
+				records: records.length,
 				lastLineEmpty: lines.at(-1) === '',
-				parsable: lines.length > 0 && lines.slice(0, -1).every(isJsonObject),
+				parsable: records.length > 0 && records.every(isJsonObject),
 				...((read) => ({
 					read: read.events.length,
 					damaged: read.damaged,
@@ -391,7 +393,7 @@ describe('writeEvent from two processes', () => {
 					{ exit: 0, stderr: '' },
 					{ exit: 0, stderr: '' },
 				],
-				lines: 2 * APPENDS_PER_PROCESS + 1,
+				records: 2 * APPENDS_PER_PROCESS,
 				lastLineEmpty: true,
 				parsable: true,
 				read: 2 * APPENDS_PER_PROCESS,

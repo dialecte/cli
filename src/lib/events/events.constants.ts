@@ -85,6 +85,7 @@ export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	'step.start': STEP_FIELDS,
 	'step.end': STEP_FIELDS,
 	'step.foreign': ['step', 'worktree'],
+	'step.wait': ['step', 'waitedMs'],
 	folder: ['action', 'path', 'branch', 'tip', 'durationMs'],
 }
 
@@ -105,6 +106,21 @@ export const ASK_KIND_PREFIX = 'ask.'
 
 /** The kinds that open a run: a start, paired with its end by `run`. */
 export const RUN_START_KINDS: readonly string[] = ['station.start', 'step.start']
+
+/** The prefix of the host's station kinds (`station.start`, `station.end`). */
+export const STATION_KIND_PREFIX = 'station.'
+
+/** The prefix of the cli's step kinds (`step.start`, `step.end`, `step.foreign`, `step.wait`). */
+export const STEP_KIND_PREFIX = 'step.'
+
+/** The kind of a step's wait for the machine: it waited `waitedMs` before its `at`. */
+export const STEP_WAIT_KIND = 'step.wait'
+
+/** The kind of a step run in a worktree whose link names this lot but which is not its worktree. */
+export const STEP_FOREIGN_KIND = 'step.foreign'
+
+/** The kind of a folder action (trash, park, branch delete). */
+export const FOLDER_KIND = 'folder'
 
 /** The kinds that close a run. */
 export const RUN_END_KINDS: readonly string[] = ['station.end', 'step.end']

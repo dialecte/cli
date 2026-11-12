@@ -2,12 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-	RUN_FIXTURES,
-	loadTestEnvironment,
-	TEST_DIALECTE_PACKAGE,
-	testProjectDirectory,
-} from '../../test/run/run-environment.ts'
+import { RUN_FIXTURES, TEST_DIALECTE_PACKAGE } from '../../test/run/run-environment.constants.ts'
+import { loadTestEnvironment, testProjectDirectory } from '../../test/run/run-environment.ts'
 import { runCommand } from './run.ts'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

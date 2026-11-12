@@ -57,6 +57,8 @@ export function reusedResults(params: {
 				restored: [],
 				...(recorded.note && { note: recorded.note }),
 				...(recorded.reason && { reason: recorded.reason }),
+				...(recorded.unwired && { unwired: true as const }),
+				...(recorded.optedOut !== undefined && { optedOut: recorded.optedOut }),
 				...(recorded.selection && { selection: recorded.selection }),
 				...(recorded.failing && { failing: recorded.failing }),
 			}

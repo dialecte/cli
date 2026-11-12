@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { runContrib } from '../src/commands/contrib.ts'
 import { CHECK_STORE_FOLDER } from '../src/lib/gate-records/gate-records.constants.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import { SOURCE_FILE, SOURCE_TEXT } from './scratch-contrib.constants.ts'
 import { createScratchRepository } from './scratch-repository.ts'
 import { commonGitDirOf } from './scratch-tree.ts'
@@ -38,7 +39,12 @@ export function createContribPackage(params: ContribPackageParams = {}): string 
 	const { profile = 'contributor' } = params
 	const dialecte = {
 		...(profile !== null && { profile }),
-		...(params.steps && { contrib: { steps: params.steps } }),
+		...((params.steps || params.contribSkip) && {
+			contrib: {
+				...(params.steps && { steps: params.steps }),
+				...(params.contribSkip && { skip: params.contribSkip }),
+			},
+		}),
 		...((params.gateFull || params.gateFast) && {
 			gate: {
 				...(params.gateFast && { fast: params.gateFast }),
@@ -51,7 +57,8 @@ export function createContribPackage(params: ContribPackageParams = {}): string 
 		...(params.generatedDocs && { generatedDocs: params.generatedDocs }),
 	}
 	return createScratchRepository({
-		'package.json': `${JSON.stringify({ name: 'demo', scripts: {}, ...params.packageJson, dialecte })}\n`,
+		// the default steps (docs, type-bench) are wired unless the package declares its own steps
+		'package.json': `${JSON.stringify({ name: 'demo', scripts: params.steps ? {} : WIRED_DEFAULT_SCRIPTS, ...params.packageJson, dialecte })}\n`,
 		'.gitignore': 'node_modules\n',
 		[SOURCE_FILE]: SOURCE_TEXT,
 		...params.files,

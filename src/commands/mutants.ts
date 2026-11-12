@@ -5,67 +5,27 @@
  * kills them, a committed record explains them (`judge` shows them, `record` writes the record), or they are
  * scheduled for a follow-up. Every verb but `run` prints one JSON object with `--json`.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-
 import { resultOf } from '../lib/command-result.ts'
-import { startStep } from '../lib/events/record-step.ts'
-import { computeStateTree } from '../lib/gate-records/state-hash.ts'
-import { currentBranchOf, listRepositoryFiles, readGit, tryReadGit } from '../lib/git.ts'
-import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
-import { readMutationDeclaration } from '../lib/mutation/declaration.ts'
-import { seedIncrementalFile, storeIncrementalFile } from '../lib/mutation/incremental-cache.ts'
-import {
-	judgeReport,
-	mutantKeysOf,
-	parseTarget,
-	rangesOf,
-	withFullRun,
-	withinTargets,
-	withLoneTimeouts,
-} from '../lib/mutation/judge.ts'
-import {
-	itemsOf,
-	pendingOf,
-	readLedger,
-	scheduleAllNew,
-	scheduleItems,
-	updateLedger,
-} from '../lib/mutation/ledger.ts'
-import { effectiveMode, readMutationMode } from '../lib/mutation/lot-mode.ts'
-import { migrateRecords } from '../lib/mutation/migrate-records.ts'
+import { scheduleAllNew, scheduleItems } from '../lib/mutation/ledger.ts'
+import { migrateLegacyRecords } from '../lib/mutation/migrate-legacy.ts'
 import { MUTANTS_JSON_VERBS } from '../lib/mutation/mutation-agent.constants.ts'
 import {
-	CLI_DIST_FOLDER,
-	EMPTY_STRYKER_CONFIG_FILE,
-	IGNORER_PLUGIN_FILE,
 	LEGACY_RECORDS_PATH,
 	MUTANTS_VERBS,
-	MUTATION_CONSUMER_OPT_IN,
-	MUTANTS_WORK_FOLDER,
-	MUTATION_OFF,
 	MUTATION_RECORDS_PATH,
-	REMOTE_DEFAULT_BRANCH,
-	NOTHING_TO_MUTATE,
 	RUN_MODES,
 	SHORT_TREE_LENGTH,
-	TIMEOUT_STATUS,
 } from '../lib/mutation/mutation.constants.ts'
-import { readRecordsFile, writeRecordsFile } from '../lib/mutation/records-file.ts'
-import { abandonRun, finishRun, packageNameOf, startRun } from '../lib/mutation/run-store.ts'
-import { isMutable, changedRanges } from '../lib/mutation/scope.ts'
-import { buildStrykerOptions } from '../lib/mutation/stryker-options.ts'
-import { readPackageJson } from '../lib/package-json.ts'
+import { runMutation } from '../lib/mutation/run-mutation.ts'
+import { planRun } from '../lib/mutation/run-plan.ts'
+import { abandonRun } from '../lib/mutation/run-store.ts'
+import { statusOf } from '../lib/mutation/status-of.ts'
+import { runStrykerOfPackage } from '../lib/mutation/stryker-of-package.ts'
 import { packageRootOf } from '../lib/package-root.ts'
-import { jsonOf, printLines, printOut } from '../lib/print/print.ts'
+import { jsonOf, printOut } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { processStartTime } from '../lib/process-start-time.ts'
-import { readProfile } from '../lib/profile/profile.ts'
-import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { DEFAULT_BASE_BRANCH } from '../lib/worktree/worktree.constants.ts'
 import { dropVerb } from './mutants-drop.ts'
 import { judgeVerb } from './mutants-judge.ts'
 import { answered, asksJson, refused, usageResult } from './mutants-output.ts'
@@ -74,20 +34,11 @@ import { recordVerb } from './mutants-record.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
 	KeyedLedgerItem,
-	LegacyRecords,
 	MutantsDependencies,
 	MutantsStatus,
-	MutationDeclaration,
-	MutationMode,
-	MutationRecords,
-	MutationReport,
-	MutationTier,
+	ReportedRun,
 	RunCounts,
-	RunEntry,
 	StartTimeReader,
-	StrykerModule,
-	StrykerOptions,
-	Survivor,
 } from '../lib/mutation/mutation.types.ts'
 
 /** The `mutants` command of the bin: runs in the package root, with the package's own StrykerJS. */
@@ -149,11 +100,6 @@ export async function runMutants(params: {
 	}
 }
 
-/** The ignorer plugin Stryker loads: the built JS under the cli's `dist/`, never the `.ts` source. */
-export function ignorerPluginPath(params: { distFolder: string }): string {
-	return join(params.distFolder, IGNORER_PLUGIN_FILE)
-}
-
 async function runVerb(params: {
 	root: string
 	argv: string[]
@@ -169,114 +115,18 @@ async function runVerb(params: {
 			exitCode: 2,
 			line: `--mode takes ${RUN_MODES.join(' or ')}, not ${JSON.stringify(askedMode)}`,
 		})
-
-	const packageJson = readPackageJson(root)
-	const declared = readMutationDeclaration({ packageJson })
-	if (declared.kind === 'none' && readProfile(root) === 'consumer')
-		return runLine({ exitCode: 1, line: MUTATION_CONSUMER_OPT_IN })
-	if (declared.kind === 'none')
-		return runLine({
+	const planned = planRun({ root, askedMode, askedBase: read.values.get('base') })
+	if ('stop' in planned) return runLine(planned.stop)
+	const result = await runMutation({ root, plan: planned.plan, runStryker, startTimeOf })
+	if ('failure' in result)
+		return resultOf({
 			exitCode: 1,
-			line: `${join(root, 'package.json')} declares no dialecte.mutation: declare its scope and fast tier first`,
+			lines: [
+				`mutants run: ${result.failure}`,
+				`run ${result.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${result.runId}`,
+			],
 		})
-	if (declared.kind === 'invalid') return runLine({ exitCode: 1, line: declared.reason })
-	const { declaration } = declared
-
-	const setting = readMutationMode({ root })
-	if (askedMode === undefined && setting.kind === 'invalid')
-		return runLine({ exitCode: 2, line: setting.reason })
-
-	const lot = currentBranchOf(root)
-	if (lot === 'HEAD')
-		return runLine({
-			exitCode: 1,
-			line: `HEAD is detached: check out the lot's branch first (git switch <branch>); a run is filed under its branch`,
-		})
-
-	const auditOnly = askedMode === 'audit' || (askedMode === undefined && setting.kind === 'audit')
-	const base = auditOnly
-		? undefined
-		: baseOf({
-				root,
-				asked: read.values.get('base'),
-				branch: packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH,
-			})
-	if (typeof base === 'object') return runLine({ exitCode: 2, line: base.refused })
-	const changed = base === undefined ? undefined : changedTargets({ root, declaration, base })
-	const mode = runModeOf({
-		asked: askedMode,
-		setting: setting.kind === 'invalid' ? { kind: 'default' } : setting,
-		touchesScope: (changed?.targets.length ?? 0) > 0,
-	})
-	const since = `no file of the scope changed since ${changed?.base.slice(0, SHORT_TREE_LENGTH)}`
-	if (mode === 'off')
-		return runLine({
-			exitCode: 0,
-			line: `${MUTATION_OFF} (${(changed?.targets.length ?? 0) > 0 ? 'the lot declares it off' : `${NOTHING_TO_MUTATE}: ${since}`})`,
-		})
-	const targets =
-		mode === 'audit'
-			? listRepositoryFiles({ root, folder: '.' }).filter((file) =>
-					isMutable({ declaration, file }),
-				)
-			: (changed?.targets ?? [])
-	if (targets.length === 0)
-		return runLine({
-			exitCode: 0,
-			line: `${NOTHING_TO_MUTATE} (${mode === 'audit' ? 'the scope holds no mutable file' : since})`,
-		})
-
-	// the step's events: its lot from the worktree, never the branch the run is filed under; the end after the run file
-	const recorder = startStep({ cwd: root, step: 'mutation', heavy: true })
-	let stepExit = 1
-	try {
-		const tree = computeStateTree(root)
-		const entry = startRun({
-			root,
-			pid: process.pid,
-			lot,
-			tree,
-			mode,
-			...(mode === 'changed' && changed ? { base: changed.base } : {}),
-			targets,
-			startTimeOf,
-		})
-		const workDir = `${MUTANTS_WORK_FOLDER}/${entry.runId}`
-		mkdirSync(join(root, workDir), { recursive: true })
-		writeFileSync(join(root, workDir, EMPTY_STRYKER_CONFIG_FILE), '{}\n')
-		const records = readRecordsFile({ root })
-		const tiers = await runTiers({
-			root,
-			declaration,
-			targets,
-			records,
-			workDir,
-			tree,
-			runStryker,
-		})
-		if ('failure' in tiers)
-			return resultOf({
-				exitCode: 1,
-				lines: [
-					`mutants run: ${tiers.failure}`,
-					`run ${entry.runId} stays running until this process ends, then reads as died: rerun, or dialecte mutants abandon ${entry.runId}`,
-				],
-			})
-		const finished = finishRun({
-			root,
-			runId: entry.runId,
-			counts: countsOf(tiers.report),
-			survivors: tiers.survivors,
-			...mutantKeysOf({ report: tiers.report }),
-		})
-		updateLedger({ root, run: finished, records, targets })
-		// the reports and sandboxes of a reported run: its entry and the ledger hold what it found
-		rmSync(join(root, workDir), { recursive: true, force: true })
-		stepExit = 0
-		return resultOf({ exitCode: 0, lines: renderRun({ root, run: finished }) })
-	} finally {
-		recorder.end({ exit: stepExit, stateHash: null })
-	}
+	return resultOf({ exitCode: 0, lines: renderRun(result) })
 }
 
 /** A line of `mutants run`, after its `mutants run: ` prefix. */
@@ -284,207 +134,9 @@ function runLine(params: { exitCode: number; line: string }): CommandResult {
 	return resultOf({ exitCode: params.exitCode, lines: [`mutants run: ${params.line}`] })
 }
 
-/** The fast tier, the timed-out mutants alone, the full tier on the unlisted survivors when declared: the merged report and its survivors. */
-async function runTiers(params: {
-	root: string
-	declaration: MutationDeclaration
-	targets: string[]
-	records: MutationRecords
-	workDir: string
-	tree: string
-	runStryker: MutantsDependencies['runStryker']
-}): Promise<{ report: MutationReport; survivors: readonly Survivor[] } | { failure: string }> {
-	const { root, declaration, targets, records, tree } = params
-	const fastOptions = strykerOptionsOf({ ...params, tier: 'fast', mutate: targets })
-	const key = computeIncrementalKey({
-		root,
-		tree,
-		options: fastOptions,
-		cliVersion: readCliVersion(),
-		ignorerPlugin: ignorerPluginPath({ distFolder: cliDistFolder() }),
-	})
-	const incrementalFile = resolve(root, fastOptions.incrementalFile as string)
-	const packageHash = packageHashOf({ root })
-	seedIncrementalFile({ root, packageHash, key, incrementalFile })
-	const fast = await runTier({ ...params, tier: 'fast', options: fastOptions })
-	if ('failure' in fast) return fast
-	try {
-		storeIncrementalFile({ root, packageHash, key, incrementalFile })
-	} catch (error) {
-		printLines({
-			stream: 'stderr',
-			lines: [
-				`mutants run: the incremental cache was not written (${(error as Error).message}); the next run of this tree starts cold`,
-			],
-		})
-	}
-	let report = withinTargets({
-		report: fast.report,
-		targets: targets.map((target) => parseTarget({ target })),
-	})
-
-	const timedOut = rangesOf({ report, select: (status) => status === TIMEOUT_STATUS })
-	if (timedOut.length > 0) {
-		const alone = await runTier({
-			...params,
-			tier: 'timeouts',
-			options: strykerOptionsOf({ ...params, tier: 'timeouts', mutate: timedOut }),
-		})
-		if ('failure' in alone) return alone
-		report = withLoneTimeouts({ report, alone: alone.report })
-	}
-
-	const { unlisted } = judgeReport({ report, records })
-	if (declaration.full !== undefined && unlisted.length > 0) {
-		const mutate = [...new Set(unlisted.map((survivor) => survivor.range))]
-		const full = await runTier({
-			...params,
-			tier: 'full',
-			options: strykerOptionsOf({ ...params, tier: 'full', mutate }),
-		})
-		if ('failure' in full) return full
-		report = withFullRun({ fast: report, full: full.report })
-	}
-	return { report, survivors: judgeReport({ report, records }).survivors }
-}
-
-/** The options of one tier's Stryker run, in memory (the empty config file keeps the package's own out). */
-function strykerOptionsOf(params: {
-	declaration: MutationDeclaration
-	workDir: string
-	tier: MutationTier
-	mutate: string[]
-}): StrykerOptions {
-	const { declaration, workDir, tier, mutate } = params
-	return buildStrykerOptions({
-		declaration,
-		tier,
-		mutate,
-		workDir,
-		ignorerPlugin: ignorerPluginPath({ distFolder: cliDistFolder() }),
-		configFile: `${workDir}/${EMPTY_STRYKER_CONFIG_FILE}`,
-	})
-}
-
-/** One Stryker run of a tier with its options, and the report it wrote; why it failed otherwise. */
-async function runTier(params: {
-	root: string
-	tier: MutationTier
-	options: StrykerOptions
-	runStryker: MutantsDependencies['runStryker']
-}): Promise<{ report: MutationReport } | { failure: string }> {
-	const { root, tier, options, runStryker } = params
-	let exitCode: number
-	try {
-		exitCode = await runStryker({ options })
-	} catch (error) {
-		return { failure: `Stryker failed in the ${tier} tier: ${(error as Error).message}` }
-	}
-	if (exitCode !== 0) return { failure: `Stryker exited ${exitCode} in the ${tier} tier` }
-	const reportPath = resolve(root, options.jsonReporter.fileName)
-	if (!existsSync(reportPath))
-		return { failure: `Stryker wrote no report in the ${tier} tier (${reportPath})` }
-	return { report: JSON.parse(readFileSync(reportPath, 'utf8')) as MutationReport }
-}
-
-/** The mode a run follows: the one asked, else the lot's switch (a gate lot runs as changed). */
-function runModeOf(params: {
-	asked: string | undefined
-	setting: Parameters<typeof effectiveMode>[0]['mode']
-	touchesScope: boolean
-}): MutationMode {
-	const { asked, setting, touchesScope } = params
-	if (asked === 'audit' || asked === 'changed') return asked
-	const mode = effectiveMode({ mode: setting, touchesScope })
-	return mode === 'gate' ? 'changed' : mode
-}
-
-/** The `--mutate` targets of the scope lines changed since `base`, and that base. */
-function changedTargets(params: { root: string; declaration: MutationDeclaration; base: string }): {
-	base: string
-	targets: string[]
-} {
-	const { root, declaration, base } = params
-	const diff = readGit({
-		root,
-		args: [
-			'diff',
-			'--relative',
-			'--no-color',
-			'--no-ext-diff',
-			'--no-renames',
-			'-U0',
-			base,
-			'--',
-			'.',
-		],
-	})
-	const untracked = readGit({
-		root,
-		args: ['ls-files', '--others', '--exclude-standard', '--', '.'],
-	})
-		.split('\n')
-		.filter(Boolean)
-	return { base, targets: changedRanges({ declaration, diff, untracked }) }
-}
-
-/**
- * The commit a changed run diffs against: where HEAD left `--base <ref>` (a ref git does not know refuses the run),
- * else where HEAD left the package's base branch, else where it left the remote's default branch
- * (`refs/remotes/origin/HEAD`). With neither, the run is refused: diffing against HEAD would see only the uncommitted
- * work and skip the lot's commits.
- */
-function baseOf(params: {
-	root: string
-	asked: string | undefined
-	branch: string
-}): string | { refused: string } {
-	const { root, asked, branch } = params
-	if (asked !== undefined) {
-		const base = forkPointOf({ root, ref: asked })
-		if (base === undefined) throw new Error(`--base ${asked}: no such commit`)
-		return base
-	}
-	const base =
-		forkPointOf({ root, ref: branch }) ?? forkPointOf({ root, ref: REMOTE_DEFAULT_BRANCH })
-	if (base === undefined)
-		return {
-			refused: `no base branch to diff against: no ${branch} and no ${REMOTE_DEFAULT_BRANCH}; name the branch the lot started from as dialecte.baseBranch in package.json, or pass --base <ref>`,
-		}
-	return base
-}
-
-/** Where HEAD left `ref` (their merge base), else the commit `ref` names; undefined when git knows no such ref. */
-function forkPointOf(params: { root: string; ref: string }): string | undefined {
-	const { root, ref } = params
-	return (
-		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] })?.trim() ??
-		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] })?.trim()
-	)
-}
-
-function countsOf(report: MutationReport): RunCounts {
-	const statuses = Object.values(report.files).flatMap(({ mutants }) =>
-		mutants.map((mutant) => mutant.status),
-	)
-	function count(status: string): number {
-		return statuses.filter((each) => each === status).length
-	}
-	return {
-		killed: count('Killed'),
-		survived: count('Survived'),
-		timedOut: count(TIMEOUT_STATUS),
-		noCoverage: count('NoCoverage'),
-	}
-}
-
 /** The last lines of a run: package, lot, tree, mode, counts, each survivor the ledger now holds as new, and each item the run moved to killed or recorded. */
-function renderRun(params: { root: string; run: RunEntry }): string[] {
-	const { root, run } = params
-	const items = itemsOf({ ledger: readLedger({ root }), packageName: run.package })
-	const pendingKeys = new Set(items.filter((item) => item.state === 'new').map((item) => item.key))
-	const fresh = (run.survivors ?? []).filter((survivor) => pendingKeys.has(survivor.key))
-	const moved = items.filter((item) => item.movedBy === run.runId)
+function renderRun(params: ReportedRun): string[] {
+	const { run, fresh, moved } = params
 	return [
 		`mutants run ${run.runId}: ${run.package} · lot ${run.lot} · tree ${run.tree.slice(0, SHORT_TREE_LENGTH)} · ${run.mode}`,
 		renderCounts(run.counts),
@@ -519,17 +171,7 @@ function statusVerb(params: {
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['json'] })
 	if (typeof read === 'string' || read.words.length > 0)
 		return usageResult({ verb: 'status', json: asksJson(params.argv), read })
-	const packageName = packageNameOf(root)
-	const pending = pendingOf({ root, isAlive, startTimeOf })
-	const scheduled = itemsOf({ ledger: readLedger({ root }), packageName }).filter(
-		(item) => item.state === 'scheduled',
-	)
-	const status: MutantsStatus = {
-		running: pending.running,
-		died: pending.died,
-		new: groupBy({ items: pending.new, by: (item) => item.firstSeen.lot }),
-		scheduled: groupBy({ items: scheduled, by: (item) => item.followUp ?? '' }),
-	}
+	const { packageName, status } = statusOf({ root, isAlive, startTimeOf })
 	if (read.flags.has('json')) return { exitCode: 0, output: jsonOf(status, 2) }
 	return resultOf({ exitCode: 0, lines: renderStatus({ packageName, status, now: now() }) })
 }
@@ -567,15 +209,6 @@ function ageOf(params: { since: string; now: Date }): string {
 	const minutes = Math.floor(seconds / 60)
 	if (minutes < 60) return `${minutes} m`
 	return `${Math.floor(minutes / 60)} h ${minutes % 60} m`
-}
-
-function groupBy(params: {
-	items: readonly KeyedLedgerItem[]
-	by: (item: KeyedLedgerItem) => string
-}): Record<string, KeyedLedgerItem[]> {
-	const groups: Record<string, KeyedLedgerItem[]> = {}
-	for (const item of params.items) (groups[params.by(item)] ??= []).push(item)
-	return groups
 }
 
 function scheduleVerb(params: { root: string; argv: string[] }): CommandResult {
@@ -629,22 +262,9 @@ function migrateVerb(params: { root: string; argv: string[] }): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: ['json'] })
 	if (typeof read === 'string' || read.words.length > 0)
 		return usageResult({ verb: 'migrate', json, read })
-	const legacyPath = join(root, LEGACY_RECORDS_PATH)
-	if (!existsSync(legacyPath))
-		return refused({ verb: 'migrate', json, reason: `no ${LEGACY_RECORDS_PATH} in ${root}` })
-	if (existsSync(join(root, MUTATION_RECORDS_PATH)))
-		return refused({
-			verb: 'migrate',
-			json,
-			reason: `${MUTATION_RECORDS_PATH} already exists in ${root}: nothing overwritten`,
-		})
-	const legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as LegacyRecords
-	const records = migrateRecords({ legacy, readLine: (line) => readLineOf({ root, ...line }) })
-	writeRecordsFile({ root, records })
-	const count = Object.values(records).reduce(
-		(total, mutants) => total + Object.keys(mutants).length,
-		0,
-	)
+	const migration = migrateLegacyRecords({ root })
+	if ('refused' in migration) return refused({ verb: 'migrate', json, reason: migration.refused })
+	const count = migration.written
 	return answered({
 		verb: 'migrate',
 		json,
@@ -655,33 +275,10 @@ function migrateVerb(params: { root: string; argv: string[] }): CommandResult {
 	})
 }
 
-/** The text of a line of a package file; empty when the file or the line is gone. */
-function readLineOf(params: { root: string; file: string; line: number }): string {
-	const path = join(params.root, params.file)
-	if (!existsSync(path)) return ''
-	return readFileSync(path, 'utf8').split('\n')[params.line - 1] ?? ''
-}
-
 function usage(read?: unknown): CommandResult {
 	return usageResult({ read })
 }
 
 function newDate(): Date {
 	return new Date()
-}
-
-/** The cli's build output folder: `dist/` beside the cli's package.json (the bundle sits in it, the sources under `src/`). */
-function cliDistFolder(): string {
-	const start = dirname(fileURLToPath(import.meta.url))
-	return join(packageRootOf(start) ?? start, CLI_DIST_FOLDER)
-}
-
-/** Runs StrykerJS as the package in the current folder installs it, with the options in memory. */
-async function runStrykerOfPackage(params: { options: StrykerOptions }): Promise<number> {
-	const requireFromPackage = createRequire(join(process.cwd(), 'package.json'))
-	const entry = requireFromPackage.resolve('@stryker-mutator/core')
-	const strykerModule = (await import(pathToFileURL(entry).href)) as StrykerModule
-	const stryker = new strykerModule.Stryker(params.options)
-	await stryker.runMutationTest()
-	return 0
 }

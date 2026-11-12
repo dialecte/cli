@@ -40,6 +40,7 @@ import type { CommandResult } from '../command-result.types.ts'
 import type { CheckKey, GateRecord } from '../gate-records/gate-records.types.ts'
 import type { ModeCommandHashes } from '../gate-records/mode-command-hashes.types.ts'
 import type { LiveOutput } from '../progress/step-progress.types.ts'
+import type { Refusal } from '../refusal.types.ts'
 import type { GateRunBase, HandoverBase, UsedGateBase } from './gate-base.types.ts'
 import type { StepResult } from './gate.types.ts'
 
@@ -47,7 +48,8 @@ import type { StepResult } from './gate.types.ts'
  * `gate --hook` in the worktree `cwd`: the line saying which record answered, or the test steps run (their lines,
  * one vitest summary line of their summed counts, then the verdict). With a scoped test step, the lines about the
  * base (a hand-over variable given alone, a hand-over base ignored, the note of rule 4) come first and the base line
- * before the verdict. Throws a `GateConfigError` for a gate config the cli cannot run.
+ * before the verdict. Throws a `GateConfigError` for a gate config the cli cannot run; a set `dialecte.baseBranch`
+ * naming no branch fails (exit 1) with its refusal, no step run.
  */
 export async function runHookGate(params: {
 	cwd: string
@@ -77,6 +79,9 @@ export async function runHookGate(params: {
 				handoverIgnored: params.handoverIgnored,
 			})
 		: undefined
+	// a set dialecte.baseBranch naming no branch: the commit fails with the refusal, no step run
+	if (hookBase !== undefined && 'refusal' in hookBase)
+		return { exitCode: 1, output: textOf([hookBase.refusal]) }
 	const shown = holdsScopedStep(testSteps) ? hookBase : undefined
 	const hashes = readModeCommandHashes({ root: cwd, packageJson, gateBase: hookBase?.base.commit })
 	const key = computeCommitKey({
@@ -178,13 +183,13 @@ function resolveHookBase(params: {
 	cwd: string
 	handoverBase: HandoverBase | undefined
 	handoverIgnored: string | undefined
-}): GateRunBase {
+}): GateRunBase | Refusal {
 	const resolved = resolveGateBase({
 		root: params.cwd,
 		...(params.handoverBase && { handoverBase: params.handoverBase }),
 	})
-	// only a `--base` ref is refused, and a hook has none
-	if ('refusal' in resolved) throw new Error(resolved.refusal)
+	// a hook has no `--base` ref: only a set dialecte.baseBranch naming no branch is refused, never read as no base
+	if ('refusal' in resolved) return resolved
 	return {
 		base: { commit: resolved.commit, source: resolved.source },
 		lines: [params.handoverIgnored, resolved.ignored, resolved.note].flatMap((line) =>

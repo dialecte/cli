@@ -6,6 +6,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 
 import { scopeRunOf } from '../../../test/scope-run.ts'
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
@@ -68,7 +69,10 @@ describe('the own package’s scoped fast steps, run as the gate runs them', () 
 		() => {
 			const ran = runScoped(commandOf('tests'))
 
-			expect({ status: ran.status, ranTests: /^\s*Tests\s/m.test(ran.output) }).toEqual({
+			expect({
+				status: ran.status,
+				ranTests: /^\s*Tests\s/m.test(stripVTControlCharacters(ran.output)),
+			}).toEqual({
 				status: 0,
 				ranTests: false,
 			})

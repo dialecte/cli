@@ -168,6 +168,16 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		json: ['station', FORGED_WORD, 'start', 'a-station', '--json'],
 	},
+	'lot report': {
+		argv: ['report', FORGED_WORD],
+		quotes: true,
+		json: ['report', FORGED_WORD, '--json'],
+	},
+	'lot export': {
+		argv: ['export', FORGED_WORD, 'a-folder'],
+		quotes: true,
+		json: ['export', FORGED_WORD, 'a-folder', '--json'],
+	},
 	'lot exempt': {
 		argv: ['exempt', '--bogus', FORGED_WORD],
 		quotes: false,
