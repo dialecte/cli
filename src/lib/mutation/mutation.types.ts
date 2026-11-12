@@ -269,3 +269,55 @@ export type MutantsStatus = {
 export type StrykerModule = {
 	Stryker: new (options: StrykerOptions) => { runMutationTest: () => Promise<unknown> }
 }
+
+/** Why `mutants run` stops before Stryker starts: its exit code and its line, after the `mutants run: ` prefix. */
+export type RunStop = { stop: { exitCode: number; line: string } }
+
+/** What a run mutates: the package's declaration, the lot it is filed under, its mode, base and targets. */
+export type RunPlan = {
+	declaration: MutationDeclaration
+	lot: string
+	mode: MutationMode
+	/** The commit a `changed` run diffs against; absent for an audit. */
+	base?: string
+	targets: string[]
+}
+
+/** The `--mutate` targets of the scope lines changed since `base`, and that base. */
+export type ChangedTargets = { base: string; targets: string[] }
+
+/** A run that reported: its entry, the survivors the ledger now holds as new, and the items it moved. */
+export type ReportedRun = {
+	run: RunEntry
+	fresh: readonly Survivor[]
+	moved: readonly KeyedLedgerItem[]
+}
+
+/** A run whose Stryker run failed: why, and the run that stays running until its process ends. */
+export type FailedRun = { failure: string; runId: string }
+
+/** The merged report of a run's tiers and its survivors, or why a tier failed. */
+export type MergedTiersResult =
+	| { report: MutationReport; survivors: readonly Survivor[] }
+	| { failure: string }
+
+/** One tier's report, or why its Stryker run failed. */
+export type TierResult = { report: MutationReport } | { failure: string }
+
+/** `mutants migrate`'s answer: the records written, or why nothing was. */
+export type LegacyMigration = { written: number } | { refused: string }
+
+/** A planned run, or why it stops before Stryker starts. */
+export type RunPlanResult = { plan: RunPlan } | RunStop
+
+/** A package's mutation declaration, or why a run cannot start without one. */
+export type RunDeclaration = { declaration: MutationDeclaration } | RunStop
+
+/** What a reported run found: the survivors the ledger now holds as new, and the items it moved. */
+export type RunFindings = Omit<ReportedRun, 'run'>
+
+/** A lot's mutation switch that names a mode or nothing: what `effectiveMode` reads. */
+export type ValidModeSetting = Exclude<MutationModeSetting, { kind: 'invalid' }>
+
+/** `mutants status` of a package: its name and what it still owes. */
+export type PackageStatus = { packageName: string; status: MutantsStatus }

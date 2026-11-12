@@ -20,9 +20,10 @@ import { commonGitDirOf } from '../../test/scratch-tree.ts'
 import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
 import { INCREMENTAL_STORE_FOLDER } from '../lib/mutation/incremental-cache.constants.ts'
 import { MUTATION_STORE_FOLDER } from '../lib/mutation/mutation.constants.ts'
+import { ignorerPluginPath } from '../lib/mutation/run-tiers.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
-import { ignorerPluginPath, runMutants } from './mutants.ts'
+import { runMutants } from './mutants.ts'
 
 import { describe, expect, it, vi } from 'vitest'
 
