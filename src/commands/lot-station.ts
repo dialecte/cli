@@ -210,7 +210,8 @@ function endOfRun(params: { call: StationCall; run: string }): StationDecision {
 }
 
 /**
- * An end without `--run`: the one open start of its station, step, round and attempt; several are refused; with
+ * An end without `--run`: the one open start of its station whose step, round and attempt are those the end gives
+ * (a field the end leaves out matches any); several are refused; with
  * none, a retry of the last end of that key when it carries a cost field and the same host-given fields, else an
  * end recorded alone (`run` its own id, `started: null`).
  */
@@ -218,7 +219,11 @@ function endWithoutRun(call: StationCall): StationDecision {
 	const { event, events } = call
 	const open = pairRuns({ events })
 		.runs.filter(function isOpenStartOfKey(run) {
-			return run.start !== undefined && run.end === undefined && sameKey(run.start, event)
+			return (
+				run.start !== undefined &&
+				run.end === undefined &&
+				keyGivenMatches({ start: run.start, end: event })
+			)
 		})
 		.map(function startId(run) {
 			return run.run

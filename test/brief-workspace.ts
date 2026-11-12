@@ -103,6 +103,8 @@ export function writeStoreLot(params: {
 	repository?: string
 	/** The worktree the identity names; `<workspace>/.worktrees/<name>` when left out. */
 	worktree?: string
+	/** The identity's feature; the fixed one of the records when left out. */
+	feature?: string
 }): string {
 	const { workspace, name } = params
 	const simulated = params.simulated ?? false
@@ -120,6 +122,7 @@ export function writeStoreLot(params: {
 		identity: {
 			...identityOf({ name }),
 			...(params.repository !== undefined && { repository: params.repository }),
+			...(params.feature !== undefined && { feature: params.feature }),
 			branch: params.branch ?? `feat/${name}`,
 			simulated,
 			worktree: simulated
@@ -135,12 +138,15 @@ export function writeStoreLot(params: {
 			name: `transitions/${String(transition.seq).padStart(6, '0')}.json`,
 			text: `${JSON.stringify({ ...transition, simulated })}\n`,
 		})
-	if (params.registry)
+	if (params.registry) {
+		// a registry entry is named after its file: `<entry name>.json`, the name field the same (here the lot's name)
+		const entry = { ...entryOf({ state: params.registry, folder: lotFolder }), name }
 		writeRecordFile({
 			folder: workspace.registry,
-			name: `${name}.json`,
-			text: JSON.stringify(entryOf({ state: params.registry, folder: lotFolder })),
+			name: `${entry.name}.json`,
+			text: JSON.stringify(entry),
 		})
+	}
 	return lotFolder
 }
 

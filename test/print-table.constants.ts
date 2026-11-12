@@ -156,6 +156,16 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		json: ['station', FORGED_WORD, 'start', 'a-station', '--json'],
 	},
+	'lot report': {
+		argv: ['report', FORGED_WORD],
+		quotes: true,
+		json: ['report', FORGED_WORD, '--json'],
+	},
+	'lot export': {
+		argv: ['export', FORGED_WORD, 'a-folder'],
+		quotes: true,
+		json: ['export', FORGED_WORD, 'a-folder', '--json'],
+	},
 	'lot exempt': {
 		argv: ['exempt', '--bogus', FORGED_WORD],
 		quotes: false,
@@ -230,6 +240,13 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		noJson: PLAIN_TEXT,
 	},
 	'text check': { argv: ['check', FORGED_WORD], quotes: true },
+	'plan next': { argv: ['next', FORGED_WORD], quotes: true, json: ['next', FORGED_WORD, '--json'] },
+	'plan check': {
+		argv: ['check', FORGED_WORD],
+		quotes: true,
+		json: ['check', FORGED_WORD, '--json'],
+	},
+	'plan mark': { argv: ['mark', FORGED_WORD, 'an-id', 'done', '--by', 'a-person'], quotes: true },
 	record: { argv: ['review', FORGED_WORD], quotes: true },
 	review: { argv: ['delta', FORGED_WORD], quotes: true },
 	recap: { argv: [FORGED_WORD], quotes: true },

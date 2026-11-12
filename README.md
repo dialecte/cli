@@ -28,6 +28,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 Discover    api  members  schema  explain  standard
 Use         run  fixture  new
 Grow        lot
+Plan        plan
 Check       gate  tdd  rules  contrib  mutants
 Hand over   handover
 Workspace   worktree  doctor  models  skills
@@ -50,6 +51,7 @@ dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open q
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
 dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over abandoned first, then canceled
 dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
+dialecte plan next|check|mark <plan.md>   # what can start now in a plan's lot block; the block checked; a person's mark
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
 dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
 dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
@@ -220,10 +222,18 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   installed dialecte (a dependency built on `@dialecte/core` exporting `./<version>` with its `./<version>/test`
   entry: its namespace is its name capitalized, `Scl` from `@dialecte/scl/v2019C1`); with several, it lists them and
   `--package <name>` / `--version <v>` picks one. `--namespace <Name> --entry <module>` override.
-- `dialecte schema <Tag> [--package <name>]`: parents, children in order with how often each may appear,
-  attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants - read
-  through the readers of the core each installed dialecte depends on (how often a child may appear is core's
-  `childOccurrences`). An unknown tag answers the closest; a dialecte not built is reported as skipped.
+- `dialecte schema <Tag> [--under <Parent>] [--package <name>]`: parents, children in order with how often each
+  may appear, attributes (required, identity, default, fixed, enumeration, pattern), text, xsi:type variants,
+  the declared type and documentation - read through the readers of the core each installed dialecte depends on
+  (how often a child may appear is core's `childOccurrences`). A tag declared several ways prints each declaration
+  with the parents that hold it; `--under <Parent>` prints the one that parent holds (or those it holds, when it
+  does not decide), and a tag that is not a child of that parent answers its parents (exit 1). With `--json` each
+  element carries `declarations` and `resolved`, and when known `type`, `documentation`, `declaration` (the key
+  of the declaration described, when the tag is declared several ways) and `ways` (when unresolved). A dialecte
+  names the standard it implements in its `package.json`, `"dialecte": { "standard": "<public name>" }` (the
+  usual public name, no part or clause); a value that is not a non-empty string skips the dialecte, naming
+  `dialecte.standard`. An unknown tag
+  answers the closest; a dialecte not built is reported as skipped.
 - `dialecte doctor`: installed `@dialecte/*` versions, the core API generation of each dialecte (read from
   the core it resolves; a dialecte on another core than your app's is a warning), whether the synced skills match node_modules (a skill missing; a copied skill of
   another version than the one installed - linked skills follow node_modules), local checkouts (siblings,
@@ -1315,6 +1325,29 @@ the answer.
   `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
   `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
   damaged, 1 when nothing does, 2 for a usage error.
+- `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
+  `json dialecte-lots` in the plan, or `<plan without .md>.lots.json` beside it; both or neither is refused) and proposes what can
+  start now; it starts, claims and writes nothing. Each entry declares an `id`, a `kind` (`lot`, `fix`, `spec`,
+  `person`), `dependsOn`, a `scope` per repository (`"."` is the whole repository), extra `heavy` steps
+  (`mutation`, `browser`, `release`), a `brief`, and a `match` (`branch`, `handover`, `feature`) by which its
+  records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
+  An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
+  pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process). The text
+  says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
+  `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
+  <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
+  each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
+  waits for, the parked ones, then the machine: the live heavy steps with their worktree and age, the load against
+  twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
+  proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps
+  would wait (advice only). `--all` lists the done entries; `--json` answers `{ plan, repositories, counts,
+  entries, proposals, held, specWork, heavy, unknown }`. Exit 0 when a lot or fix can start, 1 when none can, 2
+  for a usage error, no block or an invalid one (every fault listed), or a repository that is not a git checkout.
+  `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
+  2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
+  the machine's state folder (`<state>/dialecte/plans/`); a `lot` entry's state comes from its records and is
+  refused.
 - `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
   included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
   folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).
@@ -1381,7 +1414,15 @@ the answer.
     removed in the background by `git worktree remove` without `--force`: git refuses a worktree written into
     since the check, which then stays registered in `.worktrees/_trash/` for you to look at (one line says so
     when something closed). Paths are compared by their real path as spelled on disk (a path typed in another
-    case on a case-insensitive volume matches). Kept,
+    case on a case-insensitive volume matches). Before the move, the lot's final record is kept: the card line
+    of its `cards.log` (the one `handover run` wrote when it committed; else a recomputed one, marked
+    `recomputed`, built without the probe), read back and parsed, then a `removing` line naming the worktree,
+    its branch and the branch tip; after the move a `removed` line says `trashed` or `kept`. Kept also, with
+    why: `final record not kept: <reason>` when the record cannot be written or read back, and `the lot's
+    commit is not known` (with where to look and how to remove the worktree by hand) when a committed lot's
+    commit can be found neither among its lot commits nor in the worktree's hook record (read only when no
+    other committed hand-over shares the worktree). Every other hand-over of the worktree gets its card line
+    too, `head` its last lot commit or `null`. Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
     store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
@@ -1413,6 +1454,75 @@ the answer.
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
     `[{ handover, closed: true, already?: true } | { handover, kept }]`.
+- Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
+  it cannot parse, and counts them.
+  - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`
+    append one station event to the lot's `events.jsonl` (`by: host`): the host says which station ran, with
+    which step, round, attempt, agent, vendor, model, tier, effort, session and skills (`--skill` seen,
+    `--skill-asked` asked by the brief), and, at its end, tokens (`--tokens-in`, `--tokens-out`,
+    `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`), `--money <amount> <currency>`,
+    `--duration`, `--exit`, `--verdict` and `--suite <name>=<runs>` for suites the agent ran itself. Nothing but
+    the station is required; a field nobody gave stays unknown. `start` answers a `run` and the `end` command to
+    run; `end` pairs with `--run`, else with the one open start of its station whose step, round and attempt match
+    the ones it gives (several: refused), else is recorded alone. `--event <id>` makes a retry safe: the same id
+    with the same fields answers the first event (`already`) and writes nothing, other fields are refused.
+    `start` is refused on a committed, canceled or failed lot, `end` is accepted in every state. The station
+    names `shared` and `outside` are the report's own labels and are refused. `lot station <id> --from
+    <file.json>` takes the same fields as one JSON object, plus `phase` (`start` or `end`); an unknown key
+    is refused, every fault at once. A line over 4,096 bytes is refused. Exit 1 when the event cannot be written, 2
+    for a usage error or a refusal.
+  - Step events: the cli writes `step.start` and `step.end` events (`by: cli`) into the lot's `events.jsonl` for
+    `gate --fast`, `--full`, `--release` and `--hook`, `contrib`, `tdd red`, `tdd green`, `mutants run`,
+    `handover run` (real and rehearsal), `lot delta --worktree` and `worktree add`: the step, whether it is heavy,
+    its exit, its time, whether a gate reused records, and per gate step its status, counts, time and selection. A
+    step in a worktree that links no lot, or none matching, writes nothing. A write that fails prints one
+    `events: not recorded: <reason>` line and never changes the step's exit; a step killed after its start writes
+    its end as interrupted where it can. Long lists are cut, failing parts first. A step run in a worktree whose
+    link names a lot that lives elsewhere (a copied or moved worktree) is written to that lot as `step.foreign`.
+  - `dialecte.stepEvents` in the cli's own `package.json` (`"stepEvents": 1`) tells a host that this cli writes step
+    events. Each event notes the capability of the cli installed in the lot's worktree; a cli without it (an
+    older release or source) writes none, so the report shows the step counts of such a lot as unknown rather
+    than 0.
+  - Heavy steps (`gate --full`, `--release`, `contrib`, `mutants run`, a rehearsal, a gate step the package
+    declares heavy, and for the last only while that part runs) write a live marker in
+    `<state folder>/dialecte/heavy/` (`$XDG_STATE_HOME`, else `~/.local/state`): the step, the lot, the
+    worktree, the process and its start time. The step removes it at its end; a marker whose process is gone, or
+    runs with another start time, is dead and ignored. A person's run outside any lot writes the marker too, and
+    no event. This is how a host sees which heavy step runs now, and since when.
+  - `dialecte lot report <id> [--json]` reads files only (no git, no process, nothing written) and prints one lot:
+    its state, feature, effort, steps and rounds; per station run the agent, tier, model, tokens, time, suites
+    and skills; totals for tokens (each field with how many stations did not report it, a lower bound when a
+    total is not exact), money per currency (with how many stations reported none), and time (the lot's elapsed time as agents, cli steps, waiting for
+    answers, waiting for the machine and the rest); the suites per step family with their counts, reuse and
+    reruns, attributed to the station whose time holds the step (`shared` when several, `outside stations`
+    when none, and always for the steps the orchestration runs; a step a person runs by hand during a
+    station lands on that station); the heavy steps, the folders (worktree add, throwaways, trash), the review
+    rounds from the findings ledger, the events counted (damaged, duplicates, unknown kinds) and the next
+    command. A number nobody reported is `unknown` in the text and `null` in `--json`, never 0. A step family
+    reads unknown, with the reason, when the worktree's cli writes no step events, when a record of a step has
+    no run in the events, or when nothing of the lot's steps left a trace. `dialecte lot report --feature <name>
+    [--simulated] [--json]` gives one line per lot of the feature, in every store of the store list and the
+    current folder, then the totals by station and by tier; simulated lots are counted apart and listed by
+    `--simulated`; a lot whose folder is gone is listed from its `cards.log` line. Exit 1 when the feature names
+    no lot, 2 for an unknown or ambiguous id.
+  - The hand-over card gains a `usage` row (tokens, agents, runs, agent time, and the report's command) when the
+    hand-over folder is a lot folder holding a station event; `handover show --json` carries `usage`. A folder
+    with no station event shows no row.
+  - `cards.log`, in `<git common folder>/dialecte-handover/`, one per repository: one JSON line per record,
+    appended in one write, never rewritten, never rotated. A `card` line is a lot's final record: its hand-over
+    card, usage and the times of its gate, tdd and hook records (a worktree's records go with it), written by
+    `handover run` once a commit is recorded, or by `lot close` when none exists. A `removing` line is written
+    before a worktree moves (its path, branch, branch tip and record times), a `removed` line after it (the same
+    id; `trashed` or `kept`). A `removing` without its `removed` reads as unknown. The report reads these lines
+    for lots whose worktree or folder is gone.
+  - `dialecte lot export <id> <dir> [--json]` copies a lot folder to `<dir>/<full name>/`, `asks/` left out, links
+    kept as links (one pointing outside the folder is named), with the lot's `cards.log` lines and registry
+    entry added as `cards.log` and `registry.json`. It is refused (exit 2, nothing written) for an unknown or
+    ambiguous id, for a `<dir>` inside a git work tree or a git folder, and when `<dir>/<full name>` exists.
+    The copy is made into a temporary folder beside it and each file's size and checksum compared with the
+    source's (`events.jsonl` as a prefix, since a running lot appends); a difference makes one more copy of
+    that file, a second one removes the temporary folder and exits 1 naming the file; a match renames it. The
+    source is never written; another run's temporary folder is named, never removed.
 - `dialecte mutants run [--mode changed|audit] [--base <ref>]` runs StrykerJS (resolved from the package,
   its devDependency) on the scope `package.json` declares:
   `"dialecte": { "mutation": { "scope": [...], "exclude": [...], "errorFactories": [...], "fast": { "vitestConfig": "..." }, "full": { "command": "..." } } }`.

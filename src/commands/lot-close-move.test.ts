@@ -3,6 +3,7 @@ import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import {
 	git,
 	initializeRepository,
@@ -77,6 +78,7 @@ function createLot(params: {
 	})
 	if (params.state !== 'pending')
 		recordHandoverState({ store: handoverStoreOf(repository), folder, state: 'committed' })
+	if (params.state !== 'pending') writeHookRecordAtHead(worktree)
 	return { name, worktree }
 }
 

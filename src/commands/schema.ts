@@ -1,7 +1,8 @@
 /**
  * `dialecte schema <Tag>` - what an element may hold and where (parents, children in order with how often,
  * attributes with required / default / fixed / enumeration / pattern, text, namespace), read through core's
- * own readers from the installed dialectes. An unknown tag answers the closest tag names.
+ * own readers from the installed dialectes. An unknown tag answers the closest tag names. A tag declared several
+ * ways prints each declaration, or with `--under <Parent>` the one(s) that parent holds.
  */
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { missingPackage } from '../lib/missing-package.ts'
@@ -25,6 +26,7 @@ export async function runSchema(params: { argv: string[]; cwd: string }): Promis
 	return answerSchema({
 		loaded: read.loaded,
 		tagName: read.tagName,
+		under: read.under,
 		json: hasFlag(params.argv, 'json'),
 	})
 }
@@ -41,13 +43,18 @@ export async function readSchemaDialectes(params: {
 	const missing = missingPackage({ cwd: params.cwd })
 	if (missing) return { kind: 'output', output: missing }
 	const [tagName] = positionalArguments({ argv: params.argv, valueOptions: SCHEMA_VALUE_OPTIONS })
-	if (!tagName)
+	const under = getArg(params.argv, 'under')
+	// `--under` with no value, an empty one or the next option as its value is a usage error
+	const underWithoutValue =
+		hasFlag(params.argv, 'under') && (under === undefined || under === '' || under.startsWith('--'))
+	if (!tagName || underWithoutValue)
 		return { kind: 'output', output: { output: textOf([SCHEMA_USAGE, '']), exitCode: 2 } }
 	const packageName = getArg(params.argv, 'package')
 	const loaded = await loadDialectes({ cwd: params.cwd })
 	return {
 		kind: 'dialectes',
 		tagName,
+		under,
 		packageName,
 		installed: loaded.dialectes.map((dialecte) => dialecte.packageName),
 		loaded: {

@@ -8,6 +8,7 @@ export const COMMAND_FAMILIES: readonly CommandFamily[] = [
 	'Discover',
 	'Use',
 	'Grow',
+	'Plan',
 	'Check',
 	'Hand over',
 	'Workspace',
@@ -114,8 +115,11 @@ export const COMMAND_MAP: CommandMap = {
 	schema: {
 		family: 'Discover',
 		summary: 'What an element may hold and where: parents, children, attributes',
-		usage: ['dialecte schema <Tag> [--package <name>] [--json]'],
-		notes: ['parents, children with how often, attributes; an unknown tag answers the closest'],
+		usage: ['dialecte schema <Tag> [--under <Parent>] [--package <name>] [--json]'],
+		notes: [
+			'parents, children with how often, attributes, type, documentation; an unknown tag answers the closest',
+			'a tag declared several ways is printed per declaration, with the parents holding each; --under <Parent> picks the one that parent holds',
+		],
 		exitCodes: [],
 		example: 'dialecte schema Bay',
 	},
@@ -213,6 +217,9 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>',
 			'dialecte lot delta <id|folder> --round <n> [--worktree] [--json]',
 			'dialecte lot recap <id|folder>',
+			'dialecte lot report <id> [--json]',
+			'dialecte lot report --feature <name> [--simulated] [--json]',
+			'dialecte lot export <id> <dir> [--json]',
 			'dialecte lot close <hand-over name|index>... [--json]',
 		],
 		notes: [
@@ -237,11 +244,17 @@ export const COMMAND_MAP: CommandMap = {
 			"standard - writes <folder>/standard.json (state, note, time), read by the card's standard line",
 			'delta - per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a throwaway worktree holding round n-1 and prints its removal command',
 			"recap - the <details> part of a pull request from the hand-over's records only; writes nothing",
-			"close - for a committed or abandoned hand-over of the registry (by name or index): its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries; kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known; the branch never touched; a hand-over already closed answers already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not hold",
+			"report - reads files only (no git, no process, nothing written): the lot's stations, tokens, money, time, suites per station by time, heavy steps, folders and review rounds from its events.jsonl, transitions, ledger and cards.log; a number nobody reported is unknown, never 0, and a step family whose runs may be unrecorded reads unknown with the reason; --feature lists every lot of that feature in every store (simulated ones counted apart, listed by --simulated; a lot whose folder is gone is read from its cards.log line); next: the lot's own next command",
+			"export - copies a lot folder to <dir>/<full name>/ without asks/ (links kept as links, those pointing outside it named), adding the lot's cards.log lines and registry entry; refused for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied file compared by size and sha256 (events.jsonl as a prefix) before the rename, one more copy on a difference; the source is never written",
+			"close - for a committed or abandoned hand-over of the registry (by name or index): its final record first, the card line in the repository's cards.log (a catch-up one when none exists, for every hand-over of the worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed line (trashed or kept); kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known, or the final record cannot be kept or the lot's commit is not known; the branch never touched; a hand-over already closed answers already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
 		exitCodes: [
 			'1  station: the event could not be written',
 			'2  station: usage; refused (a field, the lot state, open starts, --event with other fields, over 4,096 bytes); --run naming no start',
+			'1  report: --feature names no lot',
+			'2  report: usage; unknown or ambiguous id',
+			'1  export: the check failed twice, nothing left',
+			'2  export: usage; refused',
 			'3  wait, result: input-required',
 			'4  wait: an agent failed or hit a limit, run again',
 			'5  wait --timeout, result: still working',
@@ -263,6 +276,27 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		exitCodes: ['1  nothing waits and nothing is damaged'],
 		example: 'dialecte inbox --repository scl',
+	},
+	plan: {
+		family: 'Plan',
+		summary:
+			"What can start now in a plan's lot block, whether the block is valid, a person's mark",
+		usage: [
+			'dialecte plan next <plan.md> [--json] [--all]',
+			'dialecte plan check <plan.md> [--json]',
+			'dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]',
+		],
+		notes: [
+			"the block - one fenced ```json dialecte-lots block in the plan, or the file <plan without .md>.lots.json beside it (both or neither: refused); each entry's id, kind (lot, fix, spec, person), dependsOn, scope per repository, heavy steps, brief and match (branch, handover, feature); unknown keys refused, every fault at once",
+			'next - proposes only, starts and writes nothing: the state of each entry read from the stores, the hand-over registries and the worktrees of its repositories (files only, no git process), the open lots, the lots that can start in critical-path order (merge:, after, unverified, stacks, next command), the held ones with each scope pair met, person entries without a mark, the spec work, what each entry waits for, the parked ones, the live heavy steps with the load against twice the cores and the available memory against 2 GB (advice only); --all lists the done entries; --json { plan, repositories, counts, entries, proposals, held, specWork, heavy, unknown }',
+			'check - the block parses and every repository is a git main checkout (two names for one common folder refused); one line when valid; --json { plan, valid, faults }',
+			"mark - a person entry only: appends { plan, id, state: done, by, reason, at } to <state>/dialecte/plans/<sha256 of the plan's real path, 16 hex>.jsonl, once (again: already); per machine",
+		],
+		exitCodes: [
+			'1  next: no lot or fix can start now (spec work may still be listed)',
+			'2  usage; no block or an invalid one (every fault listed); a repository that is not a git checkout; mark: not a person entry, an unknown id',
+		],
+		example: 'dialecte plan next 33-LOT-ENGINE.md',
 	},
 	gate: {
 		family: 'Check',

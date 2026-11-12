@@ -59,8 +59,14 @@ export const STATION_VERDICTS: readonly string[] = [
 	'limit',
 ]
 
+/** A skill the agent read. */
+export const SKILL_SEEN = 'seen'
+
+/** A skill the brief asked for. */
+export const SKILL_ASKED = 'asked'
+
 /** How a skill was met: seen by the agent, or asked by the brief. */
-export const SKILL_HOWS: readonly string[] = ['seen', 'asked']
+export const SKILL_HOWS: readonly string[] = [SKILL_SEEN, SKILL_ASKED]
 
 /** The parts of `tokens`, by the flag that gives each. */
 export const TOKEN_FLAG_PARTS: Readonly<Record<string, string>> = {

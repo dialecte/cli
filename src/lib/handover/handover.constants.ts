@@ -1,3 +1,4 @@
+import type { AgentTimeTexts } from '../events/attribute-steps.types.ts'
 import type { LotStateName } from '../store/store.types.ts'
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
 import type { HandoverState } from './handover.types.ts'
@@ -541,6 +542,45 @@ export const HANDOVER_CARD_NUMBERED_TITLE = 'hand-over: {index} {repository} {br
 
 /** The commit section's line naming the worktree the lots are committed in. */
 export const WORKTREE_LINE_LABEL = 'worktree '
+
+/**
+ * The card's `usage` row (33L0 section 8): `{tokens}`, `{agents}`, `{runs}`, `{time}` (`USAGE_AGENT_TIME`), `{lot}`;
+ * a section of its own after the gates, with no rule (the row names itself).
+ */
+export const USAGE_ROW =
+	'usage    {tokens} · {agents} · {runs} · {time} · dialecte lot report {lot}'
+
+/** The usage row's agent time: every run timed, a lower bound with its unknown runs, or none timed. */
+export const USAGE_AGENT_TIME: AgentTimeTexts = {
+	known: '{time} agent time',
+	atLeast: '≥ {time} agent time ({unknown} of {runs} unknown)',
+	unknown: 'agent time unknown',
+}
+
+/** The line `handover run` prints on standard error when it could not append the card line: `{reason}`. */
+export const CARD_LINE_NOT_WRITTEN = 'cards.log: card line not written: {reason}'
+
+/** Why `lot close` keeps a worktree whose final record or intent line it could not keep: `{reason}`. */
+export const FINAL_RECORD_NOT_KEPT = 'final record not kept: {reason}'
+
+/** Why `lot close` keeps a worktree for another hand-over of it than the one closed: `{name}`, `{reason}`. */
+export const SIBLING_KEPT = '{name}: {reason}'
+
+/**
+ * Why `lot close` keeps a committed hand-over's worktree when neither its lot commits nor (no other committed hand-over
+ * reaching it) its hook record name a head, with the way out: `{worktree}`.
+ */
+export const LOT_COMMIT_NOT_KNOWN =
+	"the lot's commit is not known (look: git -C {worktree} log; the worktree can be removed by hand with git worktree remove {worktree}, its records are then gone)"
+
+/** The reason of a catch-up card line written but not found again in `cards.log`. */
+export const CARD_NOT_READ_BACK = 'the card line written to {file} is not read back from it'
+
+/** The line `lot close` prints on standard error when the moved worktree's `removed` line was not written: `{reason}`. */
+export const REMOVED_NOT_WRITTEN = 'cards.log: removed line not written: {reason}'
+
+/** The start of a removal's id (`rm-<uuid>`), shared by its `removing` and `removed` lines. */
+export const REMOVAL_ID_PREFIX = 'rm-'
 
 /** The card's sections, in order, each opened by its rule. */
 export const HANDOVER_CARD_SECTIONS = {

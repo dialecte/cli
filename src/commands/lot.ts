@@ -27,6 +27,8 @@ import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
 import { lotAnswer } from './lot-answer.ts'
 import { runLotClose } from './lot-close.ts'
+import { lotExport } from './lot-export.ts'
+import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
 import { startLot } from './lot-start.ts'
 import { lotStation } from './lot-station.ts'
@@ -74,6 +76,8 @@ export function runLot(params: {
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'stop') return lotStop({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'station') return lotStation({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'report') return lotReport({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'export') return lotExport({ cwd: params.cwd, argv: words })
 	if (verb === 'result')
 		return lotResult({
 			cwd: params.cwd,

@@ -123,6 +123,11 @@ const ROWS: Row[] = [
 		expected: { ids: ['ev-a'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
+		name: 'a step.wait event with waitedMs and step → a known kind, read, no field unknown',
+		content: `${line({ id: 'ev-a', kind: 'step.wait', waitedMs: 1200, step: 'gate-full' })}\n`,
+		expected: { ids: ['ev-a'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
+	},
+	{
 		name: 'a step.foreign event → a known kind, read',
 		content: `${line({ id: 'ev-a', kind: 'step.foreign', step: 'gate-fast', worktree: '/w' })}\n`,
 		expected: { ids: ['ev-a'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
@@ -193,6 +198,22 @@ describe('readEvents', () => {
 			).toEqual(row.expected)
 		})
 	}
+
+	it(
+		'a step.wait event → its waitedMs comes back as written',
+		{ timeout: STORE_CASE_TIMEOUT },
+		() => {
+			const file = fileWith(
+				`${line({ id: 'ev-a', kind: 'step.wait', waitedMs: 1200, step: 'gate-full' })}\n`,
+			)
+
+			expect(readEvents({ file }).events[0]).toMatchObject({
+				kind: 'step.wait',
+				waitedMs: 1200,
+				step: 'gate-full',
+			})
+		},
+	)
 
 	it('an unknown field → absent from the event read', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const file = fileWith(`${line({ id: 'ev-a', zzzUnknown: 7 })}\n`)

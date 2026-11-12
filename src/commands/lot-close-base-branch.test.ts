@@ -2,6 +2,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { makeDevelopOriginDefault } from '../../test/rule-gaps-base-branch.ts'
 import {
 	git,
@@ -65,6 +66,8 @@ function createScenarioWithDetachedCommit(): Scenario & { detached: string } {
 	git({ root: worktree, args: ['commit', '-q', '-m', 'wip: detached'] })
 	const detached = git({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	git({ root: worktree, args: ['switch', '-q', 'feat/x'] })
+	// the committed lot ended at the branch's HEAD: lot close's final record reads it from the hook record
+	writeHookRecordAtHead(worktree)
 	return { repository, worktreesFolder, worktree, name, detached }
 }
 

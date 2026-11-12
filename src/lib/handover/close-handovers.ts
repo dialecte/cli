@@ -7,7 +7,9 @@
  * locked one, a mutation run from it, a process working in it, processes that cannot be listed, another
  * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, commits only
  * its HEAD reflog reaches, ignored files its removal would delete that nothing else holds; nothing done for a
- * hand-over kept. Every decision is taken for every argument before anything
+ * hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
+ * else a catch-up one read back) and the `removing` intent, any failure keeping the worktree; after it, the
+ * `removed` outcome. Every decision is taken for every argument before anything
  * moves (one worktree, whichever arguments reach it, decided and closed once), `node_modules` checked against
  * the lockfile where it is. Then, per worktree: the links of its `node_modules` made absolute where they are,
  * the move into the trash, the park from the trashed folder, the background removal. The branch is never
@@ -19,6 +21,7 @@ import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
 import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
+import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
@@ -33,6 +36,7 @@ import { listProcessFolders, processWorkingIn } from '../worktree/process-folder
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
 import { IGNORED_FILES_SHOWN, WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
+import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
 import { readStoreEntries } from './handover-store-read.ts'
 import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
 import { CLOSE_FROM_INSIDE, HEAD_REFLOG_COMMITS_SHOWN } from './handover.constants.ts'
@@ -103,6 +107,8 @@ export function closeHandovers(params: {
 	const found = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
 	// no base branch found: the reflog rule holds nothing through it, so a refusal never moves more than before
 	const baseBranch = 'refusal' in found ? undefined : found
+	// the final records and the removals of the repository, beside its registry
+	const cardsLog = store === undefined ? undefined : join(store, CARDS_LOG_FILE)
 	const decisions = targets.map(function decide(target) {
 		return decideTarget({
 			target,
@@ -140,8 +146,19 @@ export function closeHandovers(params: {
 			if ('alreadyClosed' in decision)
 				return [key, { outcome: { handover, closed: true, already: true }, moved: [] }]
 			const moved: string[] = []
+			// the final record of every hand-over reaching the worktree, then the intent line, before the move: a
+			// failure keeps the worktree, nothing moved
+			const record =
+				target.entry === undefined || cardsLog === undefined
+					? { kept: 'not decided' }
+					: keepFinalRecord({
+							entries: entriesReaching({ key, targets, keys, registered }),
+							worktree: decision.worktree.path,
+							file: cardsLog,
+						})
+			if ('kept' in record) return [key, { outcome: { handover, kept: record.kept }, moved }]
 			try {
-				const nodeModules = closeWorktree({
+				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
 					checkedLockHash: decision.checkedLockHash,
@@ -151,8 +168,17 @@ export function closeHandovers(params: {
 					spawner: params.spawner,
 					moved,
 				})
+				recordRemoved({ file: record.file, id: record.id, outcome: { trashed } })
 				return [key, { outcome: { handover, closed: true }, moved, nodeModules }]
 			} catch (error) {
+				// moved already: the worktree is in the trash whatever failed after; else the move failed and it stays
+				recordRemoved({
+					file: record.file,
+					id: record.id,
+					outcome: moved.length
+						? { trashed: undefined }
+						: { kept: (error as Error).message.trim() },
+				})
 				const done = moved.length ? ` (already in the trash: ${moved.join(', ')})` : ''
 				return [
 					key,
@@ -194,6 +220,32 @@ export function closeHandovers(params: {
 				recordHandoverClosed({ store, name: target.entry.name, at: params.now })
 		})
 	return outcomes
+}
+
+/**
+ * The registry entries leaving with the worktree of `key`, each once: the arguments reaching it in the order given
+ * (its owner first), then every other committed or abandoned entry of that worktree, named in the close or not (a
+ * pending one already keeps it).
+ */
+function entriesReaching(params: {
+	key: string
+	targets: readonly CloseTarget[]
+	keys: readonly string[]
+	registered: readonly StoreEntry[]
+}): StoreEntry[] {
+	const entries = new Map<string, StoreEntry>()
+	params.targets.forEach(function reaching(target, index) {
+		if (params.keys[index] === params.key && target.entry && !entries.has(target.entry.name))
+			entries.set(target.entry.name, target.entry)
+	})
+	for (const entry of params.registered)
+		if (
+			entry.state !== 'pending' &&
+			!entries.has(entry.name) &&
+			realPathOf(entry.worktree) === params.key
+		)
+			entries.set(entry.name, entry)
+	return [...entries.values()]
 }
 
 /**
@@ -412,7 +464,8 @@ function commitsOnlyInHeadReflog(params: {
  * relative link reaches), the worktree moved to the trash, its `node_modules` parked from there with the check
  * made before the move (its caches sent to their own trash entries, each with its own removal), then, last, the
  * background `git worktree remove` without `--force` (git refuses a worktree written into since the decision: it
- * stays in the trash). `moved` collects the folder name once moved. Answers where `node_modules` went.
+ * stays in the trash). `moved` collects the folder name once moved. Answers where the worktree went in the trash
+ * and where `node_modules` went.
  */
 export function closeWorktree(params: {
 	worktree: string
@@ -425,7 +478,7 @@ export function closeWorktree(params: {
 	now: Date
 	spawner: BackgroundSpawner
 	moved: string[]
-}): string | undefined {
+}): { trashed: string; nodeModules: string | undefined } {
 	const { worktree, main, worktreesFolder, now } = params
 	const nodeModules = join(worktree, 'node_modules')
 	if (existsSync(nodeModules)) relinkEscapingLinks({ from: nodeModules, to: nodeModules })
@@ -460,5 +513,5 @@ export function closeWorktree(params: {
 		where = typeof parked === 'string' ? `trashed: ${parked}` : `pooled in ${parked.entry}`
 	}
 	for (const removal of removals) params.spawner(removal)
-	return where
+	return { trashed, nodeModules: where }
 }

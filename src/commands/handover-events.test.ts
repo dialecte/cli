@@ -6,7 +6,7 @@
  * nothing. Every call runs from the worktree of another lot (the bystander): that lot's file stays without events.
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { gitPathOf } from '../../test/gate-records.ts'
@@ -218,7 +218,9 @@ describe('handover run outside a lot', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 
 		expect({
 			exitCode: result.exitCode,
-			eventWrites: vi.mocked(writeEvent).mock.calls.length,
+			eventWrites: vi
+				.mocked(writeEvent)
+				.mock.calls.filter(([written]) => basename(written.file) !== 'cards.log').length,
 			eventsFile: existsSync(lot.eventsFile),
 			bystander: bystanderEvents(lot),
 			warnings: warnings.lines,

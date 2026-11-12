@@ -12,6 +12,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+	cardLinesOf,
+	registerCommittedHandover,
+	writeHookRecordAtHead,
+} from '../../test/lot-close-final-record.ts'
+import {
 	git,
 	initializeRepository,
 	isolateGitConfig,
@@ -86,23 +91,30 @@ function createLot(params: {
 	tail: string
 	register?: boolean
 	coreTarget?: string
-}): { name: string; worktree: string; branch: string } {
+	/** Committed with a written hand-over folder and a located lot (the store's writers make its commit); `head` is that commit. */
+	written?: boolean
+}): { name: string; worktree: string; branch: string; head?: string } {
 	const { repository, worktreesFolder } = params.scenario
 	const branch = `feat/${params.tail}`
 	const worktree = join(worktreesFolder, `${params.index}-repo-${params.tail}`)
 	git({ root: repository, args: ['worktree', 'add', '-q', '-b', branch, worktree] })
-	writeFiles({ root: worktree, files: { [`src/${params.tail}.ts`]: 'export {}\n' } })
-	git({ root: worktree, args: ['add', '-A'] })
-	git({ root: worktree, args: ['commit', '-q', '-m', `feat: ${params.tail}`] })
+	if (!params.written) {
+		writeFiles({ root: worktree, files: { [`src/${params.tail}.ts`]: 'export {}\n' } })
+		git({ root: worktree, args: ['add', '-A'] })
+		git({ root: worktree, args: ['commit', '-q', '-m', `feat: ${params.tail}`] })
+	}
 	createFakeNodeModules({
 		folder: join(worktree, 'node_modules'),
 		marker: `lot ${params.tail}\n`,
 		outsideTarget: params.coreTarget,
 	})
+	if (params.written)
+		return { ...registerCommittedHandover({ worktree, tail: params.tail }), worktree, branch }
 	if (params.register === false) return { name: '', worktree, branch }
 	const folder = realpathSync(temporaryFolder('dialecte-handover-'))
 	const name = registerHandover({ root: worktree, folder, branch, now: NOW })
 	recordHandoverState({ store: handoverStoreOf(repository), folder, state: 'committed' })
+	writeHookRecordAtHead(worktree)
 	return { name, worktree, branch }
 }
 
@@ -544,14 +556,30 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 		'a second hand-over of the same worktree that is %s too → no reason, closed',
 		(state) => {
 			const scenario = createScenario()
-			const lot = createLot({ scenario, index: '0001', tail: 'x' })
-			registerAnother({ scenario, root: lot.worktree, branch: lot.branch, state })
+			// the owner is a written, committed hand-over (its head its own lot commit): R5-2, an abandoned sibling
+			// blocks the hook fallback; a committed pair is two of them
+			const lot = createLot({ scenario, index: '0001', tail: 'x', written: true })
+			const sibling =
+				state === 'committed'
+					? registerCommittedHandover({ worktree: lot.worktree, tail: 'y' })
+					: undefined
+			if (state !== 'committed')
+				registerAnother({ scenario, root: lot.worktree, branch: lot.branch, state })
 			const { close } = closing({ scenario, ...lot })
 
 			const outcome = close()
 
 			expect(outcome.exitCode).toBe(0)
 			expectClosed({ scenario, worktree: lot.worktree, tail: 'x' })
+			// R3-1: the owner's card head is its own located commit, the later sibling's its own
+			expect(
+				Object.fromEntries(
+					cardLinesOf({ repository: scenario.repository }).map((line) => [line.name, line.head]),
+				),
+			).toMatchObject({
+				[lot.name]: lot.head ?? expect.any(String),
+				...(sibling !== undefined && { [sibling.name]: sibling.head }),
+			})
 		},
 	)
 })
