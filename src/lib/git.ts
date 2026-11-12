@@ -95,6 +95,11 @@ export function gitFolderOf(root: string): string {
 	return isAbsolute(folder) ? folder : join(root, folder)
 }
 
+/** `root` is inside a git work tree: the source reader lists its files through git and keeps a cache. */
+export function isInWorkTree(root: string): boolean {
+	return tryReadGit({ root, args: ['rev-parse', '--is-inside-work-tree'] })?.trim() === 'true'
+}
+
 /** The git folder every worktree of the repository `root` is in shares (absolute). */
 export function commonGitFolderOf(root: string): string {
 	const common = readGit({
