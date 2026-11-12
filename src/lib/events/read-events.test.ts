@@ -63,9 +63,9 @@ const ROWS: Row[] = [
 		expected: { ids: ['ev-a'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
-		name: 'an empty line → skipped and counted damaged',
+		name: 'an empty line → skipped, not damaged (it holds no record)',
 		content: `${line({ id: 'ev-a' })}\n\n${line({ id: 'ev-b' })}\n`,
-		expected: { ids: ['ev-a', 'ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
+		expected: { ids: ['ev-a', 'ev-b'], damaged: 0, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
 		name: 'an unparsable line in the middle → skipped and counted damaged',
@@ -73,9 +73,9 @@ const ROWS: Row[] = [
 		expected: { ids: ['ev-a', 'ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
-		name: 'two torn-line guards in a row → a torn line and an empty line, both skipped and counted',
+		name: 'two torn-line guards in a row → a torn line counted damaged, the empty line skipped, not counted',
 		content: `{"schema":1,"id":"ev-\n\n${line({ id: 'ev-b' })}\n`,
-		expected: { ids: ['ev-b'], damaged: 2, unknownKinds: 0, unknownFields: 0 },
+		expected: { ids: ['ev-b'], damaged: 1, unknownKinds: 0, unknownFields: 0 },
 	},
 	{
 		name: 'a line that parses to a value that is no object → skipped and counted damaged',

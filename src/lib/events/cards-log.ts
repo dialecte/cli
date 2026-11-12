@@ -54,7 +54,8 @@ export function writeRemoved(params: { file: string; line: RemovedInput }): void
 }
 
 /**
- * Reads the log: damaged lines (and a final line without its newline) skipped and counted, the first `card` per key
+ * Reads the log: damaged lines (and a final line without its newline) skipped and counted, empty lines skipped
+ * (they hold no record), the first `card` per key
  * (name, lot, state, head) kept, each `removing` joined to its `removed` by id (`unknown` without one).
  */
 export function readCardsLog(params: { file: string }): CardsLogRead {
@@ -69,6 +70,8 @@ export function readCardsLog(params: { file: string }): CardsLogRead {
 	const removing: Record<string, unknown>[] = []
 	const outcomes = new Map<string, Record<string, unknown>>()
 	for (const text of lines) {
+		// an empty line holds no record: a torn-line check that saw another append mid-write left it
+		if (text === '') continue
 		const line = parseLine({ text })
 		if (line === undefined) {
 			read.damaged += 1

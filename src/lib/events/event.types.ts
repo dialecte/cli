@@ -53,7 +53,7 @@ export type WriteEventParams = {
 /** What the reader found in a file. */
 export type ReadEventsResult = {
 	events: LotEvent[]
-	/** Final lines without `\n`, empty lines and lines that do not parse. */
+	/** Final lines without `\n` and lines that do not parse (an empty line holds no record: not counted). */
 	damaged: number
 	unknownKinds: number
 	unknownFields: number

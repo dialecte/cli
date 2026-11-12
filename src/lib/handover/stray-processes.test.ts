@@ -42,6 +42,7 @@ function row(params: {
 	tty?: string
 	args?: string
 	pgid?: number
+	executable?: string
 }): ProcessRow {
 	return {
 		pid: params.pid,
@@ -49,6 +50,7 @@ function row(params: {
 		pgid: params.pgid ?? params.pid,
 		tty: params.tty ?? NO_TTY,
 		command: params.command,
+		...(params.executable === undefined ? {} : { executable: params.executable }),
 		args: params.args ?? params.command,
 	}
 }
@@ -179,6 +181,39 @@ const ROWS: ClassifyRow[] = [
 		expected: { leftBehind: [], tools: [420] },
 	},
 	{
+		title:
+			'P4 on Linux an editor run through a symlink (its command the link name, its executable the target) → a tool by its command name',
+		working: inWorktree(450),
+		rows: [
+			INIT,
+			row({
+				pid: 450,
+				ppid: 1,
+				command: CUSTOM_EDITOR,
+				executable: `/opt/scratch/${CUSTOM_EDITOR}.basic`,
+			}),
+		],
+		editorWords: [...EDITOR_WORDS, CUSTOM_EDITOR],
+		expected: { leftBehind: [], tools: [450] },
+	},
+	{
+		title:
+			'P4 on Linux a process whose command is its main thread name and whose executable is an editor word → a tool by its executable',
+		working: inWorktree(460, 461),
+		rows: [
+			INIT,
+			row({
+				pid: 460,
+				ppid: 1,
+				command: `${CUSTOM_EDITOR}-Main`,
+				executable: `/opt/scratch/${CUSTOM_EDITOR}`,
+			}),
+			row({ pid: 461, ppid: 460, command: '/usr/local/bin/node' }),
+		],
+		editorWords: [...EDITOR_WORDS, CUSTOM_EDITOR],
+		expected: { leftBehind: [], tools: [460, 461] },
+	},
+	{
 		title: 'P4 the same command name when it is not among the editor words → left behind',
 		working: inWorktree(430),
 		rows: [INIT, row({ pid: 430, ppid: 1, command: `/opt/scratch/${CUSTOM_EDITOR}` })],
@@ -224,6 +259,33 @@ const ROWS: ClassifyRow[] = [
 		rows: [INIT, row({ pid: 610, ppid: 1, command: `/opt/${HOST}/bin/${HOST}` })],
 		personWords: ['other-tool'],
 		expected: { leftBehind: [610], tools: [] },
+	},
+	{
+		title:
+			'P9 on Linux a process the person named whose command is its main thread name (node-MainThread) → a tool by its executable',
+		working: inWorktree(620),
+		rows: [
+			INIT,
+			row({
+				pid: 620,
+				ppid: 1,
+				command: `${HOST}-MainThread`,
+				executable: `/opt/${HOST}/bin/${HOST}`,
+			}),
+		],
+		personWords: [HOST],
+		expected: { leftBehind: [], tools: [620] },
+	},
+	{
+		title:
+			'P9 on Linux a process the person named run through a symlink (its executable a versioned target) → a tool by its command name',
+		working: inWorktree(630),
+		rows: [
+			INIT,
+			row({ pid: 630, ppid: 1, command: HOST, executable: `/opt/${HOST}/bin/${HOST}3.12` }),
+		],
+		personWords: [HOST],
+		expected: { leftBehind: [], tools: [630] },
 	},
 	{
 		title:

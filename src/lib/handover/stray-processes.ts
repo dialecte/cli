@@ -3,6 +3,7 @@
  * (a terminal, an editor and its helpers, a name from `git config dialecte.personProcesses`) or left behind.
  */
 import { spawnSync } from 'node:child_process'
+import { existsSync, readlinkSync } from 'node:fs'
 import { basename } from 'node:path'
 
 import { EDITOR_CANDIDATES, EDITOR_CONFIG_KEY } from '../editor/editor.constants.ts'
@@ -14,13 +15,16 @@ import { PROCESS_LIST_TIMEOUT_MS } from '../worktree/worktree.constants.ts'
 import {
 	COMMAND_CUT_MARK,
 	COMMAND_SHOWN_LENGTH,
+	DELETED_EXECUTABLE_SUFFIX,
 	LEFT_BEHIND_DETAIL,
 	NO_PROCESSES_DETAIL,
 	NO_TERMINAL_MARKS,
 	PERSON_PROCESSES_KEY,
+	PROC_EXECUTABLE_LINK,
 	PROCESSES_NOT_KNOWN_DETAIL,
 	PS_ARGS_HEADERS,
 	PS_ARGS_ROW_PATTERN,
+	PS_LOCALE,
 	PS_TREE_HEADERS,
 	PS_TREE_ROW_START_PATTERN,
 	TOOLS_DETAIL,
@@ -36,9 +40,9 @@ import type {
 
 /**
  * Classes the processes working in the worktree. Own (never listed): `ownPid`, its ancestors up to pid 1, its
- * descendants, every process of its process group. A tool: a controlling terminal, the process's or an ancestor's command basename an editor word, the
- * process's own command basename a person word (its children are not covered). Left behind: the rest. A working
- * pid without a row exited meanwhile and is dropped.
+ * descendants, every process of its process group. A tool: a controlling terminal, the process's or an ancestor's
+ * name (command or executable basename) an editor word, the process's own name a person word (its children are not
+ * covered). Left behind: the rest. A working pid without a row exited meanwhile and is dropped.
  */
 export function classifyProcesses(params: {
 	working: readonly ProcessFolder[]
@@ -63,7 +67,7 @@ export function classifyProcesses(params: {
 		}
 		const isTool =
 			!NO_TERMINAL_MARKS.includes(row.tty) ||
-			personWords.has(commandNameOf(row.command)) ||
+			namesOf(row).some((name) => personWords.has(name)) ||
 			isUnderEditor({ row, rowOf, editorWords })
 		;(isTool ? outcome.tools : outcome.leftBehind).push(shown)
 	}
@@ -87,6 +91,7 @@ export function readProcessRows(): ProcessRow[] | string {
 	if (commandStart < 0 || !argsHeader.includes(PS_ARGS_HEADERS.args))
 		return `ps printed an unexpected header (${treeHeader.slice(0, COMMAND_SHOWN_LENGTH)})`
 	const argsOf = argsByPid(argsRows)
+	const procExecutables = process.platform === 'linux' && existsSync('/proc')
 	return treeRows.flatMap(function rowOf(line): ProcessRow[] {
 		const start = PS_TREE_ROW_START_PATTERN.exec(line.slice(0, commandStart))
 		if (!start) return []
@@ -101,16 +106,39 @@ export function readProcessRows(): ProcessRow[] | string {
 				pgid: Number(start[3]),
 				tty: start[4],
 				command: line.slice(commandStart).trim(),
+				...executableOf({ pid, fromProc: procExecutables }),
 				args,
 			},
 		]
 	})
 }
 
+/**
+ * Linux only: the path `/proc/<pid>/exe` links to, ` (deleted)` cut. Linux's `comm` is the main thread's name, which a
+ * program may set (node names it `node-MainThread`) and the kernel cuts at 15 characters; the link resolves
+ * symlinks (`vim` runs `vim.basic`), so both names are matched. Nothing when the link cannot be read (another user's
+ * process, a kernel thread, gone meanwhile) or elsewhere, where `comm` is the executable's path.
+ */
+function executableOf(params: { pid: number; fromProc: boolean }): { executable?: string } {
+	if (!params.fromProc) return {}
+	try {
+		const path = readlinkSync(PROC_EXECUTABLE_LINK.replace('{pid}', String(params.pid)))
+		return {
+			executable: path.endsWith(DELETED_EXECUTABLE_SUFFIX)
+				? path.slice(0, -DELETED_EXECUTABLE_SUFFIX.length)
+				: path,
+		}
+	} catch {
+		return {}
+	}
+}
+
 /** The lines `ps` prints for the columns `headers` names (keyword to header), the header line first; or why not. */
 function readPsLines(params: { headers: Readonly<Record<string, string>> }): string[] | string {
 	const columns = Object.entries(params.headers).map(([keyword, header]) => `${keyword}=${header}`)
 	const answer = spawnSync('ps', ['-ww', '-A', '-o', columns.join(',')], {
+		// the caller's locale never shapes the list: without UTF-8, ps prints a byte beyond ASCII as `?` or an escape
+		env: { ...process.env, LC_ALL: PS_LOCALE },
 		encoding: 'utf8',
 		maxBuffer: 1e8,
 		timeout: PROCESS_LIST_TIMEOUT_MS,
@@ -228,16 +256,18 @@ function isUnderEditor(params: {
 	const seen = new Set<number>()
 	let current: ProcessRow | undefined = params.row
 	while (current !== undefined && !seen.has(current.pid)) {
-		if (params.editorWords.has(commandNameOf(current.command))) return true
+		if (namesOf(current).some((name) => params.editorWords.has(name))) return true
 		seen.add(current.pid)
 		current = params.rowOf.get(current.ppid)
 	}
 	return false
 }
 
-/** The command's basename, lower case: the name a word is compared with. */
-function commandNameOf(command: string): string {
-	return basename(command).toLowerCase()
+/** The names a word is compared with, lower case: the command's basename, and the executable's when there is one. */
+function namesOf(row: ProcessRow): string[] {
+	const names = [basename(row.command).toLowerCase()]
+	if (row.executable !== undefined) names.push(basename(row.executable).toLowerCase())
+	return names
 }
 
 /** The basename of a command line's first word: the name the card gives a tool. */

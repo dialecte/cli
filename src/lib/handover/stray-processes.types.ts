@@ -6,8 +6,13 @@ export type ProcessRow = {
 	pgid: number
 	/** The controlling terminal; `?`, `??` or empty when the process has none. */
 	tty: string
-	/** The executable (`comm`): a path, or a bare name. */
+	/** The executable (`comm`): a path, or a bare name; on Linux the main thread's name, cut at 15 characters. */
 	command: string
+	/**
+	 * Linux only: the path `/proc/<pid>/exe` links to (symlinks resolved), when it can be read. A word matches the
+	 * basename of `command` or of this.
+	 */
+	executable?: string
 	/** The command line (`args`). */
 	args: string
 }

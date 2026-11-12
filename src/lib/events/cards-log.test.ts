@@ -458,6 +458,19 @@ describe('readCardsLog: lines it cannot trust', { timeout: STORE_CASE_TIMEOUT },
 		})
 	})
 
+	it('an empty line between two cards → both cards read, not damaged (it holds no record)', () => {
+		const file = logFile()
+		writeFileSync(
+			file,
+			`${cardLine({ head: '1'.repeat(40) })}\n\n${cardLine({ head: '2'.repeat(40) })}\n`,
+		)
+
+		expect(readCardsLog({ file })).toMatchObject({
+			cards: [{ head: '1'.repeat(40) }, { head: '2'.repeat(40) }],
+			damaged: 0,
+		})
+	})
+
 	it('a full card line without its lot field → skipped and counted damaged (lot null is a different, valid card)', () => {
 		const withoutLot = Object.fromEntries(Object.entries(cardOf()).filter(([key]) => key !== 'lot'))
 		const file = fileWith([JSON.stringify({ schema: 1, kind: 'card', ...withoutLot })])
@@ -468,7 +481,7 @@ describe('readCardsLog: lines it cannot trust', { timeout: STORE_CASE_TIMEOUT },
 
 describe('cards.log from two processes (case 1, the 64 KiB half)', () => {
 	it(
-		'two processes each appending two cards of about 64 KiB at once → four lines, every one parses, none interleaved',
+		'two processes each appending two cards of about 64 KiB at once → four records, every one parses, none interleaved',
 		{ timeout: TWO_PROCESS_CASE_TIMEOUT },
 		async () => {
 			const file = logFile()
@@ -515,13 +528,18 @@ describe('cards.log from two processes (case 1, the 64 KiB half)', () => {
 				for (const child of children) child.kill('SIGKILL')
 			}
 
+			// a writer's torn-line check may see the other's append mid-write and add an empty line: no record
 			const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n') : []
-			expect({ exits: outcomes, lines: lines.length, lastLineEmpty: lines.at(-1) === '' }).toEqual({
+			expect({
+				exits: outcomes,
+				records: lines.filter((text) => text !== '').length,
+				lastLineEmpty: lines.at(-1) === '',
+			}).toEqual({
 				exits: [
 					{ exit: 0, stderr: '' },
 					{ exit: 0, stderr: '' },
 				],
-				lines: 5,
+				records: 4,
 				lastLineEmpty: true,
 			})
 			expect(readCardsLog({ file })).toMatchObject({ damaged: 0 })

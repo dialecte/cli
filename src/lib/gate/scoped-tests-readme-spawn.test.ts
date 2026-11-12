@@ -5,13 +5,13 @@
  */
 import { join } from 'node:path'
 
+import { plainScopedRun } from '../../../test/plain-scoped-run.ts'
 import { scopeRunOf } from '../../../test/scope-run.ts'
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../../test/scratch-vitest-package.ts'
 import { BASE, TREE } from '../../../test/step4-cases.constants.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { SPAWNING_TEST, WHOLE_SUITE_NOTES } from './scoped-tests-readme-spawn.constants.ts'
-import { runScopedTests } from './scoped-tests.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -55,7 +55,7 @@ describe(
 			it(`the root ${note} changed -> every test file runs`, () => {
 				const root = scratchPackage({ spawning: false })
 
-				const run = runScopedTests({ root, environment: handedFor([note]).environment })
+				const run = plainScopedRun({ root, environment: handedFor([note]).environment })
 
 				expect(run.exitCode).toBe(0)
 				expect(run.output).toContain('src/a.test.ts')
@@ -66,7 +66,7 @@ describe(
 		it('a production file under src changed, a test file spawns the cli entry and imports nothing of src -> it runs with the related test, the unrelated one does not', () => {
 			const root = scratchPackage({ spawning: true })
 
-			const run = runScopedTests({ root, environment: handedFor(['src/a.ts']).environment })
+			const run = plainScopedRun({ root, environment: handedFor(['src/a.ts']).environment })
 
 			expect(run.exitCode).toBe(0)
 			expect(run.output).toContain('src/a.test.ts')
@@ -78,7 +78,7 @@ describe(
 		it('an importable file changed, no test spawns the cli entry -> only its related test runs', () => {
 			const root = scratchPackage({ spawning: false })
 
-			const run = runScopedTests({ root, environment: handedFor(['src/a.ts']).environment })
+			const run = plainScopedRun({ root, environment: handedFor(['src/a.ts']).environment })
 
 			expect(run.exitCode).toBe(0)
 			expect(run.output).toContain('src/a.test.ts')

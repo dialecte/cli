@@ -122,9 +122,24 @@ describe('strayProcesses: the real system', { timeout: HANDOVER_CASE_TIMEOUT }, 
 
 		expect({
 			read: Array.isArray(rows),
-			command: basename(found?.command ?? ''),
+			// Linux's comm is the main thread's name (node-MainThread): the executable is read beside it there
+			command: basename(found?.executable ?? found?.command ?? ''),
 			args: found?.args.endsWith(NON_ASCII_WORD),
 		}).toEqual({ read: true, command: basename(process.execPath), args: true })
+	})
+
+	it("R3-2 the caller's locale without UTF-8 (LC_ALL=C) → the same row read whole: the command line still ends in the non-ASCII word", async () => {
+		const root = scratchWorktree()
+		const pid = await startLeftBehind({ cwd: root, argv0: 'node', lastWord: NON_ASCII_WORD })
+		vi.stubEnv('LC_ALL', 'C')
+
+		const rows = readProcessRows()
+		const found = Array.isArray(rows) ? rows.find((candidate) => candidate.pid === pid) : undefined
+
+		expect({ read: Array.isArray(rows), args: found?.args.endsWith(NON_ASCII_WORD) }).toEqual({
+			read: true,
+			args: true,
+		})
 	})
 
 	it('R3-2 the same process working in the worktree → listed left behind with its whole command line, ending in the non-ASCII word', async () => {

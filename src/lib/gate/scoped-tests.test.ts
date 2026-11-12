@@ -4,12 +4,12 @@
  */
 import { join } from 'node:path'
 
+import { plainScopedRun } from '../../../test/plain-scoped-run.ts'
 import { scopeRunOf } from '../../../test/scope-run.ts'
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../../test/scratch-vitest-package.ts'
 import { BASE, TREE } from '../../../test/step4-cases.constants.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { runScopedTests } from './scoped-tests.ts'
 import { judgeSelection, nothingSelectedNote } from './selection.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -65,7 +65,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor(['src/a.ts'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			exitCode: 0,
 			output: expect.stringMatching(/a\.test\.ts[\s\S]*Tests\s+1 passed \(1\)/),
 		})
@@ -79,7 +79,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor(['src/a.ts'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			output: expect.not.stringContaining('b.test.ts'),
 		})
 	})
@@ -88,7 +88,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor(['src/a.ts', 'src/b.ts'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			exitCode: 0,
 			output: expect.stringMatching(/Tests\s+2 passed \(2\)/),
 		})
@@ -98,7 +98,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor(['src/b.test.ts'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			output: expect.stringMatching(/b\.test\.ts[\s\S]*Tests\s+1 passed \(1\)/),
 		})
 	})
@@ -107,7 +107,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor(['docs/notes.md'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			exitCode: 0,
 			output: expect.not.stringMatching(/Tests\s/),
 		})
@@ -122,7 +122,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage()
 		const handed = handedFor([])
 
-		expect(runScopedTests({ root, environment: handed.environment }).exitCode).toBe(0)
+		expect(plainScopedRun({ root, environment: handed.environment }).exitCode).toBe(0)
 		expect(judgedBy(handed)).toMatchObject({ selection: { changed: 0, ids: [] } })
 	})
 
@@ -130,7 +130,7 @@ describe('the scoped tests step', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		const root = scratchPackage({ failing: 'a' })
 		const handed = handedFor(['src/a.ts'])
 
-		expect(runScopedTests({ root, environment: handed.environment })).toMatchObject({
+		expect(plainScopedRun({ root, environment: handed.environment })).toMatchObject({
 			exitCode: 1,
 			output: expect.stringMatching(/FAIL\s/),
 		})
