@@ -38,6 +38,14 @@ export function tryReadGit(params: { root: string; args: string[] }): string | u
 	}
 }
 
+/** HEAD's commit as a full sha; undefined in a repository with no commit yet. */
+export function readHeadOrNone(root: string): string | undefined {
+	return (
+		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'] })?.trim() ||
+		undefined
+	)
+}
+
 /** `readGit`'s output as git wrote it, bytes never decoded (a path that is no UTF-8 kept byte for byte). */
 export function readGitBytes(params: { root: string; args: string[] }): Buffer {
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {

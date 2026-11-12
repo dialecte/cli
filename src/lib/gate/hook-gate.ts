@@ -7,11 +7,13 @@
  */
 import { hasFlag } from '../config.ts'
 import { partsOf, startStep } from '../events/record-step.ts'
-import { computeCommitKey } from '../gate-records/check-key.ts'
+import { computeCommitKey, readIndexTree } from '../gate-records/check-key.ts'
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { RELEASE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
+import { GATE_NO_HEAD_LINE } from '../gate-records/no-head.constants.ts'
 import { reusedResults } from '../gate-records/record-reuse.ts'
+import { readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
@@ -83,17 +85,21 @@ export async function runHookGate(params: {
 	if (hookBase !== undefined && 'refusal' in hookBase)
 		return { exitCode: 1, output: textOf([hookBase.refusal]) }
 	const shown = holdsScopedStep(testSteps) ? hookBase : undefined
-	const hashes = readModeCommandHashes({ root: cwd, packageJson, gateBase: hookBase?.base.commit })
-	const key = computeCommitKey({
-		root: cwd,
-		commandHash: hashes.full,
-		...(params.indexFile && { indexFile: params.indexFile }),
-	})
+	// a record is keyed on HEAD: a repository with no commit yet has none to answer, the steps run on the index's tree
+	const headLines =
+		readHeadOrNone(cwd) === undefined ? [GATE_NO_HEAD_LINE.replace('{command}', 'gate --hook')] : []
+	const hashes =
+		headLines.length === 0
+			? readModeCommandHashes({ root: cwd, packageJson, gateBase: hookBase?.base.commit })
+			: undefined
+	const indexFile = params.indexFile && { indexFile: params.indexFile }
+	const key = hashes && computeCommitKey({ root: cwd, commandHash: hashes.full, ...indexFile })
+	const tree = key?.tree ?? readIndexTree({ root: cwd, ...indexFile })
 	const baseLines = shown?.lines ?? []
 	// the run's events: a hook answered from a record is a run too (reuse whole)
 	const recorder = startStep({ cwd, step: 'gate-hook', heavy: false, warn: params.warn })
 	const reuse =
-		!params.reusable || hasFlag(params.argv, 'no-reuse')
+		!key || !hashes || !params.reusable || hasFlag(params.argv, 'no-reuse')
 			? undefined
 			: findHookReuse({ cwd, key, hashes })
 	if (reuse) {
@@ -122,7 +128,7 @@ export async function runHookGate(params: {
 			]),
 		}
 	}
-	const runningLine = GATE_HOOK_RUNNING_LINE.replace('{tree}', key.tree.slice(0, SHORT_SHA_LENGTH))
+	const runningLine = GATE_HOOK_RUNNING_LINE.replace('{tree}', tree.slice(0, SHORT_SHA_LENGTH))
 	const { live } = params
 	const progress = live ? createStepProgress({ live, clock: createSystemClock() }) : undefined
 	// off a terminal the result holds them: each said once
@@ -134,7 +140,7 @@ export async function runHookGate(params: {
 		steps: testSteps,
 		packageJson,
 		// the scoped steps select on the tree the commit records, against the hook base
-		...(shown && { scope: { base: shown.base.commit, tree: key.tree } }),
+		...(shown && { scope: { base: shown.base.commit, tree } }),
 		// always: the run's events time each part, progress shown or not (D8)
 		announce: function announce(step) {
 			const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
@@ -165,6 +171,7 @@ export async function runHookGate(params: {
 		...(live?.tty ? [] : [...baseLines, runningLine, ...results.flatMap(hookStepLines)]),
 		...(summary && !live?.tty ? [summary] : []),
 		...(baseLine && !live?.tty ? [baseLine] : []),
+		...headLines,
 		failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
 		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
 	])
