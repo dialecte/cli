@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resultOf } from '../lib/command-result.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { computeStateTree } from '../lib/gate-records/state-hash.ts'
+import { findBaseBranchRef } from '../lib/gate/gate-base.ts'
 import { currentBranchOf, listRepositoryFiles, readGit, tryReadGit } from '../lib/git.ts'
 import { computeIncrementalKey, packageHashOf } from '../lib/mutation/cache-key.ts'
 import { readMutationDeclaration } from '../lib/mutation/declaration.ts'
@@ -47,7 +48,7 @@ import {
 	MUTANTS_WORK_FOLDER,
 	MUTATION_OFF,
 	MUTATION_RECORDS_PATH,
-	REMOTE_DEFAULT_BRANCH,
+	BASE_FLAG_HINT,
 	NOTHING_TO_MUTATE,
 	RUN_MODES,
 	SHORT_TREE_LENGTH,
@@ -65,7 +66,6 @@ import { processStartTime } from '../lib/process-start-time.ts'
 import { readProfile } from '../lib/profile/profile.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { DEFAULT_BASE_BRANCH } from '../lib/worktree/worktree.constants.ts'
 import { dropVerb } from './mutants-drop.ts'
 import { judgeVerb } from './mutants-judge.ts'
 import { answered, asksJson, refused, usageResult } from './mutants-output.ts'
@@ -89,6 +89,7 @@ import type {
 	StrykerOptions,
 	Survivor,
 } from '../lib/mutation/mutation.types.ts'
+import type { PackageJson } from '../lib/package-json.types.ts'
 
 /** The `mutants` command of the bin: runs in the package root, with the package's own StrykerJS. */
 export async function run(argv: string[]): Promise<void> {
@@ -199,7 +200,7 @@ async function runVerb(params: {
 		: baseOf({
 				root,
 				asked: read.values.get('base'),
-				branch: packageJson.dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH,
+				packageJson,
 			})
 	if (typeof base === 'object') return runLine({ exitCode: 2, line: base.refused })
 	const changed = base === undefined ? undefined : changedTargets({ root, declaration, base })
@@ -430,27 +431,25 @@ function changedTargets(params: { root: string; declaration: MutationDeclaration
 
 /**
  * The commit a changed run diffs against: where HEAD left `--base <ref>` (a ref git does not know refuses the run),
- * else where HEAD left the package's base branch, else where it left the remote's default branch
- * (`refs/remotes/origin/HEAD`). With neither, the run is refused: diffing against HEAD would see only the uncommitted
- * work and skip the lot's commits.
+ * else where HEAD left the base branch (`findBaseBranchRef`). Without one, the run is refused with the resolver's
+ * refusal: diffing against HEAD would see only the uncommitted work and skip the lot's commits.
  */
 function baseOf(params: {
 	root: string
 	asked: string | undefined
-	branch: string
+	packageJson: PackageJson
 }): string | { refused: string } {
-	const { root, asked, branch } = params
+	const { root, asked } = params
 	if (asked !== undefined) {
 		const base = forkPointOf({ root, ref: asked })
 		if (base === undefined) throw new Error(`--base ${asked}: no such commit`)
 		return base
 	}
-	const base =
-		forkPointOf({ root, ref: branch }) ?? forkPointOf({ root, ref: REMOTE_DEFAULT_BRANCH })
-	if (base === undefined)
-		return {
-			refused: `no base branch to diff against: no ${branch} and no ${REMOTE_DEFAULT_BRANCH}; name the branch the lot started from as dialecte.baseBranch in package.json, or pass --base <ref>`,
-		}
+	const found = findBaseBranchRef({ root, packageJson: params.packageJson })
+	if ('refusal' in found) return { refused: `${found.refusal}${BASE_FLAG_HINT}` }
+	const base = forkPointOf({ root, ref: found.ref })
+	// the resolver found the ref naming a commit
+	if (base === undefined) throw new Error(`${found.ref}: no such commit`)
 	return base
 }
 

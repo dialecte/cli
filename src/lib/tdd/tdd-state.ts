@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { isWrittenAsString } from './case-of-change.ts'
 import { caseStatusOf, flagsOf, frozenHashOf } from './case-status.ts'
 import { countingReceipts, describeSkippedReceipts } from './counting-receipts.ts'
+import { findDuplicateCaseIds, isDuplicateMember } from './duplicate-case-ids.ts'
 import {
 	entryNamesFile,
 	readAcceptances,
@@ -77,6 +78,7 @@ export async function readTddState(params: {
 	if (listed.length === 0)
 		return {
 			cases: [],
+			duplicates: [],
 			unfrozen,
 			findings: findDeletedCases({ root, base, ledger, changed, gone }),
 			unlisted: [],
@@ -94,13 +96,15 @@ export async function readTddState(params: {
 		files: listed,
 	})
 	const movedFiles = new Set(moved.map((file) => file.file))
-	// cases moved out of a deleted or shrunk test file keep the base's proof (no receipt needed)
+	const duplicates = findDuplicateCaseIds(cases)
+	// cases moved out of a deleted or shrunk test file keep the base's proof (no receipt needed); a name two
+	// cases share names no single case to move
 	const moves = await readMoves({
 		root,
 		base,
 		packageJson: params.packageJson,
 		files: changed,
-		cases,
+		cases: cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
 	})
 	const movedCases = movedCaseLabels(moves)
 	const findings = findDeletedCases({ root, base, ledger, changed, gone, moves })
@@ -143,6 +147,7 @@ export async function readTddState(params: {
 				...(skipped.length && { skipped }),
 			}
 		}),
+		duplicates,
 		unfrozen,
 		findings,
 		unlisted,

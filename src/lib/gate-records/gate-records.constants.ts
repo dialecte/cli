@@ -18,6 +18,12 @@ export const STATE_EXCLUDED_PATTERN = /(^|\/)\.dialecte\//
 /** The third entry of a scoped step in a gate command hash: `[name, run, "scoped"]`. */
 export const SCOPED_STEP_HASH_MARK = 'scoped'
 
+/**
+ * The last entry of a step that does not run as listed, in a gate command hash: `[name, run, "unwired"]`, or
+ * `[name, run, "opted-out"]` (the reason never enters). A step with neither hashes as `[name, run]`.
+ */
+export const STEP_WIRING_HASH_MARKS = { unwired: 'unwired', optedOut: 'opted-out' } as const
+
 /** A gate step whose command checks the rules (`dialecte rules`): its key folds in the machine's lists. */
 export const RULES_STEP_PATTERN = /\brules\b/
 
@@ -81,6 +87,9 @@ export const HOOK_BASE_DETAIL = 'base {base}'
 /** The card's failed gate line of a config the cli cannot run: `{message}` is the `GateConfigError`'s. */
 export const INVALID_GATE_CONFIG_DETAIL = 'invalid gate config: {message}'
 
+/** The card's failed `gate` row when the gate base is refused; `{message}` is the refusal. */
+export const GATE_BASE_PROBLEM_DETAIL = 'gate base: {message}'
+
 /** The required row of a release hand-over (`handover write --release`), apart from contrib's `release` row. */
 export const GATE_RELEASE_LINE_NAME = 'gate release'
 
@@ -140,6 +149,15 @@ export const NOT_RUN_ON_CHECKED_TREE_DETAIL = 'not run on the merged tree'
  * record of that tree did not run it.
  */
 export const NOT_RUN_BY_HOOK_DETAIL = 'not run by the commit hook on this tree'
+
+/** How the card says a recorded step that ran an npm script the package lacks. */
+export const NOT_WIRED_DETAIL = 'not wired (no npm script)'
+
+/** How the card says an unwired step that failed its run: `{label}` the run's opt-out key (`dialecte.gate.skip`, `dialecte.contrib.skip`). */
+export const NOT_WIRED_FAILED_DETAIL = 'not wired (no npm script; or {label})'
+
+/** How the card says a default step the package opted out of; `{reason}` is the package's own. */
+export const OPTED_OUT_DETAIL = 'opted out: {reason}'
 
 /** A step the gate did not run because an earlier one failed. */
 export const NOT_RUN_DETAIL = 'not run (an earlier step failed)'

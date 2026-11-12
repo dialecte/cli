@@ -165,17 +165,17 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 	})
 
-	it('no doc:build script → the docs row skipped with the missing-script detail, exit 0', async () => {
-		const root = createContribPackage()
+	it('no doc:build script → the docs row failed as not wired, exit 1', async () => {
+		const root = createContribPackage({ packageJson: { scripts: { 'type-bench:check': 'true' } } })
 
 		await expect(runContribIn({ cwd: root, argv: ['--json'] })).resolves.toMatchObject({
-			exitCode: 0,
+			exitCode: 1,
 		})
 		const result = await runContribIn({ cwd: root, argv: ['--json', '--no-reuse'] })
 		expect(parseContribJson(result.output).rows).toContainEqual({
 			name: 'docs',
-			status: 'skipped',
-			detail: expect.stringContaining('no npm script "doc:build"'),
+			status: 'failed',
+			detail: expect.stringContaining('not wired (no npm script "doc:build")'),
 		})
 	})
 

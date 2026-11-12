@@ -20,6 +20,9 @@ export const CONTRIB_CONSUMER_REFUSAL =
 /** How the contrib step list is named in a `GateConfigError`. */
 export const CONTRIB_STEPS_LABEL = 'dialecte.contrib.steps'
 
+/** How the key of contrib's opt-outs is named in a `GateConfigError`. */
+export const CONTRIB_SKIP_LABEL = 'dialecte.contrib.skip'
+
 /** A `dialecte.contrib.steps` that is no list. */
 export const INVALID_CONTRIB_STEPS =
 	'dialecte.contrib.steps: a list of steps, such as [{ "name": "docs", "run": "npm run doc:build" }]'

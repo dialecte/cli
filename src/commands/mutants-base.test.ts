@@ -25,9 +25,15 @@ function trunkPackageWithCommittedEdit(): { root: string; start: string } {
 
 describe('mutants run: the base of a changed run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('no main, but origin/HEAD names the default branch → the lines changed since where HEAD left it', async () => {
-		const { root, start } = trunkPackageWithCommittedEdit()
+		const root = mutationPackage()
+		git({ root, args: ['branch', '-m', 'main', 'trunk'] })
+		const start = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
 		git({ root, args: ['update-ref', 'refs/remotes/origin/trunk', start] })
 		git({ root, args: ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk'] })
+		git({ root, args: ['switch', '-q', '-c', 'feat/lot'] })
+		writeFiles({ root, files: { [SCOPE_FILE]: EDITED_SCOPE_SOURCE } })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: edit'] })
 		const calls: StrykerCall[] = []
 
 		await expect(

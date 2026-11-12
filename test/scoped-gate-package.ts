@@ -4,6 +4,7 @@ import { chmodSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { shellQuote } from '../src/lib/shell-quote.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import {
 	FEATURE_BRANCH,
 	GIT_RECORDER_SCRIPT,
@@ -55,7 +56,7 @@ export function createScopedPackage(params: {
 	gate: { fast?: GateStep[]; full?: GateStep[]; release?: GateStep[] }
 }): string {
 	const root = createScratchRepository({
-		'package.json': `${JSON.stringify({ name: 'demo', scripts: {}, dialecte: { gate: params.gate } })}\n`,
+		'package.json': `${JSON.stringify({ name: 'demo', scripts: WIRED_DEFAULT_SCRIPTS, dialecte: { gate: params.gate } })}\n`,
 		'.gitignore': 'node_modules\n',
 	})
 	git({ root, args: ['checkout', '-q', '-b', FEATURE_BRANCH] })

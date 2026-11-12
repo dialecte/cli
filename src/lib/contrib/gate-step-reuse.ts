@@ -41,6 +41,8 @@ export function readFullGateRecords(params: {
 }): FullGateRecords {
 	const { root, packageJson } = params
 	const base = resolveConfiguredBase({ root, packageJson })
+	// a refused gate base (a set dialecte.baseBranch naming no branch): no record answers, the steps run
+	if (base !== undefined && 'refusal' in base) return { sources: [] }
 	const hashes = readModeCommandHashes({ root, packageJson, gateBase: base?.commit })
 	// one key of the worktree now; the release lookup swaps in its command hash
 	const key = computeCheckKey({ root, commandHash: hashes.full })

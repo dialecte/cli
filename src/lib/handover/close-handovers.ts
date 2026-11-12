@@ -20,6 +20,7 @@ import { basename, dirname, join } from 'node:path'
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
 import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
+import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
@@ -31,15 +32,12 @@ import { parkNodeModules } from '../worktree/node-modules-pool.ts'
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
-import {
-	DEFAULT_BASE_BRANCH,
-	IGNORED_FILES_SHOWN,
-	WORKTREE_STATUS_ARGUMENTS,
-} from '../worktree/worktree.constants.ts'
+import { IGNORED_FILES_SHOWN, WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
 import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
 import { CLOSE_FROM_INSIDE, HEAD_REFLOG_COMMITS_SHOWN } from './handover.constants.ts'
 
+import type { BaseBranchRef } from '../gate/gate-base.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
@@ -102,7 +100,9 @@ export function closeHandovers(params: {
 		workspace: dirname(main),
 		scratchRoots: params.scratchRoots ?? [],
 	})
-	const baseBranch = readPackageJson(main).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
+	const found = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
+	// no base branch found: the reflog rule holds nothing through it, so a refusal never moves more than before
+	const baseBranch = 'refusal' in found ? undefined : found
 	const decisions = targets.map(function decide(target) {
 		return decideTarget({
 			target,
@@ -215,8 +215,8 @@ function decideTarget(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace (`readLinkScanSet`). */
 	links: readonly FolderLink[]
-	/** The branch the repository's work is merged into. */
-	baseBranch: string
+	/** The branch the repository's work is merged into (`findBaseBranchRef`); undefined when none was found. */
+	baseBranch: BaseBranchRef | undefined
 }):
 	| { kept: string }
 	| { alreadyClosed: true }
@@ -276,8 +276,8 @@ export function whyKeep(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace: one from outside the worktree reaching into it keeps it. */
 	links: readonly FolderLink[]
-	/** The branch the repository's work is merged into. */
-	baseBranch: string
+	/** The branch the repository's work is merged into (`findBaseBranchRef`); undefined when none was found. */
+	baseBranch: BaseBranchRef | undefined
 }): { kept: string } | { worktree: ListedWorktree } {
 	const { target } = params
 	const entry = target.entry
@@ -325,11 +325,12 @@ export function whyKeep(params: {
 	const unreached = commitsOnlyInHeadReflog({
 		worktree: worktree.path,
 		branch: entry.branch,
-		baseBranch: params.baseBranch,
+		baseRef: params.baseBranch?.ref,
 	})
+	const holders = [entry.branch, ...(params.baseBranch ? [params.baseBranch.branch] : [])]
 	if (unreached.length)
 		return {
-			kept: `its HEAD reflog reaches ${unreached.length} commit(s) that neither ${entry.branch}, ${params.baseBranch} nor a remote-tracking ref holds: ${unreached.slice(0, HEAD_REFLOG_COMMITS_SHOWN).join(', ')} (look: git -C ${worktree.path} reflog HEAD)`,
+			kept: `its HEAD reflog reaches ${unreached.length} commit(s) that neither ${holders.join(', ')} nor a remote-tracking ref holds: ${unreached.slice(0, HEAD_REFLOG_COMMITS_SHOWN).join(', ')} (look: git -C ${worktree.path} reflog HEAD)`,
 		}
 	const { kept } = removableIgnored({
 		worktree: worktree.path,
@@ -382,14 +383,18 @@ function linkFromOutside(params: {
 function commitsOnlyInHeadReflog(params: {
 	worktree: string
 	branch: string
-	baseBranch: string
+	/** The base branch's full ref; undefined when none was found (nothing held through it). */
+	baseRef: string | undefined
 }): string[] {
 	const root = params.worktree
 	// a reflog git cannot read throws: the worktree is kept with git's message
 	const reflog = readGit({ root, args: ['reflog', 'show', '--format=%H', 'HEAD', '--'] })
 	const commits = [...new Set(reflog.split('\n').filter(Boolean))]
 	if (commits.length === 0) return []
-	const held = [`refs/heads/${params.branch}`, `refs/heads/${params.baseBranch}`].filter(
+	const held = [
+		`refs/heads/${params.branch}`,
+		...(params.baseRef === undefined ? [] : [params.baseRef]),
+	].filter(
 		(ref) => tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', ref] }) !== undefined,
 	)
 	// the reflog's commits on standard input (read as wanted, whatever `--not` says): no argument-length limit

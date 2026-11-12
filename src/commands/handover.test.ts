@@ -404,11 +404,15 @@ function recordJudgedCasesWith(params: {
 }
 
 /** A committed package.json whose gate runs `fast` and `full`. */
-function gatedPackage(params: { fast?: GateStep[]; full?: GateStep[] }): Record<string, string> {
+function gatedPackage(params: {
+	fast?: GateStep[]
+	full?: GateStep[]
+	scripts?: Record<string, string>
+}): Record<string, string> {
 	return {
 		'package.json': JSON.stringify({
 			name: 'demo',
-			scripts: {},
+			scripts: params.scripts ?? {},
 			dialecte: { gate: { fast: params.fast, full: params.full } },
 		}),
 	}
@@ -1291,12 +1295,13 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runFolder({ out })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.lines.slice(1, 11)).toEqual([
+		expect(result.lines.slice(1, 12)).toEqual([
 			`✓ repository  ${root}  0.0 s`,
 			'✓ lots        2 lot(s) as reviewed  0.0 s',
 			'✓ hooks       git hooks folder  0.0 s',
 			'✓ branch      main  0.0 s',
 			expect.stringMatching(/^✓ head        [0-9a-f]{12}  0\.0 s$/),
+			'✓ processes   none running in the worktree  0.0 s',
 			'✓ index       empty  0.0 s',
 			'✓ snapshot    2 file(s)  0.0 s',
 			'✓ deleted     0 file(s) absent  0.0 s',
@@ -3001,6 +3006,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 	it('a fast gate run on this tree → one line per recorded step with its counts, no rules line, no findings ledger, the standard line', async () => {
 		const { root, lotsPath } = prepare({
 			committed: gatedPackage({
+				scripts: { 'skills:check': 'true' },
 				fast: [
 					{ name: 'check', run: `printf ' Tests  1056 passed | 4 skipped (1060)\\n'` },
 					{ name: 'tests', run: `printf ' Tests  397 passed (397)\\n'`, counts: 'tests' },
@@ -3020,7 +3026,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ check 1056 passed · 4 skipped',
 				'✓ tests 397/397',
 				'✓ build',
-				'! skills not run here (no skills:check script)',
+				'✓ skills',
 				'! review no findings ledger',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
@@ -3157,6 +3163,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		it(`gate ${row.order.join(' then gate ')}: a step both modes run → from the later record (${row.check}); a step only one mode runs → from that mode's record`, async () => {
 			const { root, lotsPath } = prepare({
 				committed: gatedPackage({
+					scripts: { 'skills:check': 'true' },
 					fast: [
 						{ name: 'check', run: `printf ' Tests  4 passed (4)\\n'` },
 						{ name: 'skills', run: 'npm run skills:check' },
@@ -3172,7 +3179,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 			const lines = gateLinesOf(writeHandover({ lotsPath }).output)
 
 			expect(lines.filter((line) => /^[✓!✗] (check|build|skills)\b/.test(line)).sort()).toEqual(
-				[row.check, '✓ build', '! skills not run here (no skills:check script)'].sort(),
+				[row.check, '✓ build', '✓ skills'].sort(),
 			)
 		})
 

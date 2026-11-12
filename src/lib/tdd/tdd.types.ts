@@ -237,6 +237,8 @@ export type TddCheck = {
 	details?: string[]
 	/** The grouped lines of the cases moved from the base (`moved`, `moved by name`): the card shows them. */
 	moved?: string[]
+	/** The case ids more than one case holds: the gate record keeps them for the card. */
+	duplicates?: DuplicateCaseId[]
 }
 
 export type TddExemption =
@@ -304,11 +306,21 @@ export type TddFinding = { verb: 'deleted' | 'gone'; file: string; detail: strin
  */
 export type TddState = {
 	cases: CaseStatusLine[]
+	/** The case ids more than one case of the change's files holds. */
+	duplicates: DuplicateCaseId[]
 	unfrozen: string[]
 	findings: TddFinding[]
 	unlisted: UnlistedFile[]
 	/** What the cases of the change moved from; absent when nothing moved and no base collect ran. */
 	moves?: TddMoves
+}
+
+/** One case id that more than one case of a run holds: `lines` is each member's line, in run order (undefined without a location). */
+export type DuplicateCaseId = {
+	file: string
+	project: string
+	name: string
+	lines: (number | undefined)[]
 }
 
 /** A case as a run of its file saw it, with what `tdd` needs to judge it. */

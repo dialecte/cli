@@ -4,7 +4,7 @@
  */
 import type { UsedGateBase } from '../gate/gate-base.types.ts'
 import type { GateMode, StepCounts, StepSelection, StepStatus } from '../gate/gate.types.ts'
-import type { JudgedCase } from '../tdd/tdd.types.ts'
+import type { DuplicateCaseId, JudgedCase } from '../tdd/tdd.types.ts'
 import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
 
 /** One step of a gate run as recorded: the hygiene is no step, never recorded. */
@@ -17,10 +17,16 @@ export type RecordedStep = {
 	note?: string
 	/** Why the step failed or was skipped. */
 	reason?: string
+	/** The step ran an npm script the package lacks (true only). */
+	unwired?: true
+	/** The step is a default step the package opted out of: the reason it gave. */
+	optedOut?: string
 	/** The tdd step: the cases of the change it judged, what the card counts (`TddCheck.cases`). */
 	cases?: JudgedCase[]
 	/** The tdd step: the grouped lines of the cases moved from the base, what the card shows. */
 	moved?: string[]
+	/** The tdd step: the case ids more than one case holds, what the card lists. */
+	duplicates?: DuplicateCaseId[]
 	/** A hook's test step `gate --hook` answered from the green `gate --full` record of this time and short HEAD. */
 	reused?: RecordOrigin
 	/** A scoped step that wrote a valid selection: what it recorded. */
@@ -144,6 +150,8 @@ export type CardGateConfig = {
 	hashes?: ModeCommandHashes
 	/** The `GateConfigError` message of a config the cli cannot run. */
 	invalid?: string
+	/** The refusal of the gate base: a set `dialecte.baseBranch` naming no branch. */
+	baseRefusal?: string
 }
 
 /** How a record's gate base reads against the card's: the same, an ancestor of it, or neither. */

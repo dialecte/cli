@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import type { PackageJson } from '../package-json.types.ts'
+import type { GateStep } from './gate-config.types.ts'
 
 const TYPE_NARROWING_RUN = 'npm run type-narrowing'
 const NARROWING_SCRIPTS = { 'type-narrowing': 'tsc -p tsconfig.narrowing.json' }
@@ -16,6 +17,15 @@ const NARROWING_SCRIPTS = { 'type-narrowing': 'tsc -p tsconfig.narrowing.json' }
 /** A package.json whose `dialecte.gate` is `gate`, as a hand-edited file may hold it (any shape). */
 function gatePackage(gate: unknown): PackageJson {
 	return { dialecte: { gate } } as PackageJson
+}
+
+const WIRED_DOCS_SCRIPTS = { 'doc:build': 'node docs.js' }
+
+/** Steps as a package.json writes them: the marks the resolution adds (default, opted out, unwired) left off. */
+function withoutMarks(steps: readonly GateStep[]): GateStep[] {
+	return steps.map(
+		({ isDefault: _isDefault, optedOut: _optedOut, unwired: _unwired, ...rest }) => rest,
+	)
 }
 
 const CHECK_STEP = { name: 'check', run: 'npm run check' }
@@ -120,7 +130,10 @@ describe('resolveGateSteps release', () => {
 
 		expect(
 			resolveGateSteps({
-				packageJson: { scripts: NARROWING_SCRIPTS, dialecte: { gate: { release } } },
+				packageJson: {
+					scripts: { ...NARROWING_SCRIPTS, check: 'tsc' },
+					dialecte: { gate: { release } },
+				},
 				mode: 'release',
 			}),
 		).toEqual(release)
@@ -141,7 +154,9 @@ describe('resolveGateSteps release', () => {
 	})
 
 	it('no dialecte.gate at all → release is the default full steps', () => {
-		expect(resolveGateSteps({ packageJson: {}, mode: 'release' })).toEqual(DEFAULT_GATE_STEPS.full)
+		expect(withoutMarks(resolveGateSteps({ packageJson: {}, mode: 'release' }))).toEqual(
+			DEFAULT_GATE_STEPS.full,
+		)
 	})
 })
 
@@ -263,7 +278,7 @@ describe('resolveGateSteps', () => {
 	it('full without dialecte.gate → check, skills, build, tests (no docs, no type-bench)', () => {
 		const steps = resolveGateSteps({ packageJson: {}, mode: 'full' })
 
-		expect(steps).toEqual(DEFAULT_GATE_STEPS.full)
+		expect(withoutMarks(steps)).toEqual(DEFAULT_GATE_STEPS.full)
 		expect(steps.map((step) => step.run)).toEqual([
 			'npm run check',
 			'npm run skills:check',
@@ -287,7 +302,10 @@ describe('resolveGateSteps', () => {
 		]
 
 		expect(
-			resolveGateSteps({ packageJson: { dialecte: { gate: { full } } }, mode: 'full' }),
+			resolveGateSteps({
+				packageJson: { scripts: WIRED_DOCS_SCRIPTS, dialecte: { gate: { full } } },
+				mode: 'full',
+			}),
 		).toEqual(full)
 	})
 
@@ -298,7 +316,9 @@ describe('resolveGateSteps', () => {
 			resolveGateSteps({ packageJson: { dialecte: { gate: { fast } } }, mode: 'fast' }),
 		).toEqual(fast)
 		expect(
-			resolveGateSteps({ packageJson: { dialecte: { gate: { fast } } }, mode: 'full' }),
+			withoutMarks(
+				resolveGateSteps({ packageJson: { dialecte: { gate: { fast } } }, mode: 'full' }),
+			),
 		).toEqual(DEFAULT_GATE_STEPS.full)
 	})
 
@@ -309,7 +329,10 @@ describe('resolveGateSteps', () => {
 		]
 
 		const declared = resolveGateSteps({
-			packageJson: { scripts: NARROWING_SCRIPTS, dialecte: { gate: { full } } },
+			packageJson: {
+				scripts: { ...NARROWING_SCRIPTS, ...WIRED_DOCS_SCRIPTS },
+				dialecte: { gate: { full } },
+			},
 			mode: 'full',
 		})
 		const defaults = resolveGateSteps({
@@ -321,7 +344,9 @@ describe('resolveGateSteps', () => {
 		expect(declared.slice(full.length)).toMatchObject([
 			{ name: 'type-narrowing', run: TYPE_NARROWING_RUN },
 		])
-		expect(defaults.slice(0, DEFAULT_GATE_STEPS.full.length)).toEqual(DEFAULT_GATE_STEPS.full)
+		expect(withoutMarks(defaults.slice(0, DEFAULT_GATE_STEPS.full.length))).toEqual(
+			DEFAULT_GATE_STEPS.full,
+		)
 		expect(defaults.slice(DEFAULT_GATE_STEPS.full.length)).toMatchObject([
 			{ name: 'type-narrowing', run: TYPE_NARROWING_RUN },
 		])

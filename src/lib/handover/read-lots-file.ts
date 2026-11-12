@@ -22,6 +22,9 @@ export function readLotsFile(path: string): LotsFile | string {
 		return `${path}: "head" must be a commit sha or a prefix of one (7 to 40 hexadecimal digits)`
 	if ([repository, branch].some((value) => !value || /[\r\n]/.test(value)))
 		return `${path}: "repository" and "branch" are one non-empty line each`
+	const { target } = parsed as { target?: unknown }
+	if (target !== undefined && (typeof target !== 'string' || !target || /[\r\n]/.test(target)))
+		return `${path}: "target" is one non-empty line, the branch the lots land on`
 	if (!Array.isArray(lots) || lots.length === 0 || !lots.every(isLotPlan))
 		return `${path} needs "lots": [{ "paths": [...], "message": "..." } or { "kind": "merge", "branch", "tip", "resolved": { "<path>": "<file>" or null }, "message", "tree"? }]`
 	return {

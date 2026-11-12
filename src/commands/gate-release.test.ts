@@ -86,7 +86,9 @@ describe('gate --release', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const lines = result.output.split('\n')
 		expect(result.exitCode).toBe(0)
 		// the tdd step measures the whole branch, as --full does: its one merge-base of HEAD and main
-		expect(spawned().filter((line) => /\bmerge-base HEAD main\b/.test(line))).toHaveLength(1)
+		expect(
+			spawned().filter((line) => /\bmerge-base HEAD (?:refs\/heads\/)?main\b/.test(line)),
+		).toHaveLength(1)
 		expect(lines.filter((line) => /^(ok|skip|FAIL) +tdd\b/.test(line))).toHaveLength(1)
 		expect(lines.filter((line) => /^(ok|skip|FAIL) +hygiene\b/.test(line))).toEqual([])
 		expect(lines.at(-1)).toBe('gate --release: green')

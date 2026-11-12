@@ -13,7 +13,8 @@ export function renderStepLine(result: StepResult): string {
 
 /** What a step's line says after its name: the exit code, the counts, the rerun, why it failed, its note, what was restored. */
 export function renderStepDetail(result: StepResult): string {
-	if (result.status === 'not-run') return NOT_RUN_STEP_DETAIL
+	// a step left unrun says why when its run says it (a step of the list unwired), else an earlier step failed
+	if (result.status === 'not-run') return result.reason ?? NOT_RUN_STEP_DETAIL
 	if (result.status === 'skipped') return result.reason ?? ''
 	const restored = result.restored.length ? `restored ${result.restored.join(', ')}` : ''
 	const failure = result.reason && result.reason !== `exit ${result.exitCode}` ? result.reason : ''

@@ -14,6 +14,7 @@ import {
 import { reportRun } from '../../../test/mutation-hooks.ts'
 import { survivorOf } from '../../../test/mutation-package.ts'
 import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
+import { WIRED_DEFAULT_SCRIPTS } from '../../../test/rule-gaps-unwired.constants.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT, WRITER_CLI } from '../../../test/scratch-checks.constants.ts'
 import { createCounter, gateLinesOf, runFolder, runGateIn } from '../../../test/scratch-checks.ts'
 import { SOURCE_FILE } from '../../../test/scratch-contrib.constants.ts'
@@ -44,12 +45,14 @@ function failingBenchSteps(): GateStep[] {
 	]
 }
 
-/** The package steps with a type bench the package has no script for: the row is skipped. */
-function skippedBenchSteps(): GateStep[] {
-	return [
-		counterStep({ counter: createCounter(), name: 'docs' }),
-		{ name: 'type-bench', run: 'npm run type-bench:check' },
-	]
+/** The default scripts but the type bench's: a package that cannot run that step, so it may opt out of it. */
+const { 'type-bench:check': _typeBenchScript, ...SCRIPTS_WITHOUT_TYPE_BENCH } =
+	WIRED_DEFAULT_SCRIPTS
+
+/** The default contrib steps with the type bench opted out of (the package has no `type-bench:check`): its row is skipped, a warning. */
+const SKIPPED_BENCH = {
+	contribSkip: { 'type-bench': 'no type bench yet' },
+	packageJson: { scripts: SCRIPTS_WITHOUT_TYPE_BENCH },
 }
 
 describe('the card of a consumer', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
@@ -139,7 +142,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 	})
 
 	it('one ! contrib row (a skipped step) → one line per row, verdict READY', async () => {
-		const root = editedPackage({ steps: skippedBenchSteps() })
+		const root = editedPackage(SKIPPED_BENCH)
 		await recordGateAndContrib(root)
 
 		const { data, text } = cardOf({ root })
@@ -268,7 +271,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		},
 	])
 		it(`the rules row with ${row.name} → the expanded contrib section prints it`, async () => {
-			const root = editedPackage({ steps: skippedBenchSteps() })
+			const root = editedPackage(SKIPPED_BENCH)
 			writeFiles({ root, files: { [SOURCE_FILE]: row.source } })
 			await recordGateAndContrib(root)
 
@@ -281,7 +284,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		})
 
 	it('--json → the profile and the contrib lines with name, status and detail', async () => {
-		const root = editedPackage({ steps: skippedBenchSteps() })
+		const root = editedPackage(SKIPPED_BENCH)
 		await recordGateAndContrib(root)
 
 		const { data } = cardOf({ root })

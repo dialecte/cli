@@ -123,10 +123,17 @@ export type PruneHandover = { handover: HandoverFolder; commonFolder: string | u
 /** A symbolic link prune found, and the real path it reaches. */
 export type FolderLink = { link: string; target: string }
 
+/**
+ * Where `worktree add` starts a new branch: the commit-ish, its name as the report says it (`main`,
+ * `origin/develop`) and the options it is added with (`--no-track`).
+ */
+export type NewBranchStart = { ref: string; name: string; options: string[] }
+
 /** `worktree prune` for one repository. */
 export type PrunePlan = {
 	repository: string
-	baseBranch: string
+	/** The base branch's name (`findBaseBranchRef`); undefined when none was found (the repository is skipped). */
+	baseBranch?: string
 	items: PruneItem[]
 	/** Why the repository was skipped as a whole. */
 	skipped?: string

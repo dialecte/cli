@@ -8,6 +8,7 @@ import { shellQuote } from '../src/lib/shell-quote.ts'
 import { STORE_FILES } from '../src/lib/store/store.constants.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
 import { addWorktreeFolder } from './lot-stores.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import { git, temporaryFolder, writeFiles } from './scratch-repository.ts'
 import { STEP_LOT } from './step-events-lot.constants.ts'
 
@@ -36,7 +37,8 @@ export function createStepLot(params: StepLotPackage = {}): StepLot {
 		files: {
 			'package.json': `${JSON.stringify({
 				name: 'demo',
-				scripts: {},
+				// the default steps of a list the lot does not declare are wired: this lot is not about wiring
+				scripts: WIRED_DEFAULT_SCRIPTS,
 				...params.extraPackage,
 				dialecte: {
 					...params.extraDialecte,

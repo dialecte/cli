@@ -1,4 +1,4 @@
-import type { JudgedCase } from '../tdd/tdd.types.ts'
+import type { DuplicateCaseId, JudgedCase } from '../tdd/tdd.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 
 export type GateMode = 'fast' | 'full' | 'release'
@@ -25,6 +25,10 @@ export type StepResult = {
 	restored: string[]
 	/** Why a passed step ran no test: nothing the change affects. */
 	note?: string
+	/** The step runs an npm script the package lacks: judged before any step ran. */
+	unwired?: true
+	/** The step is a default step the package opted out of: the reason it gave. */
+	optedOut?: string
 	/** The last lines of the output of a failed step. */
 	tail?: string
 	/** Lines shown under the step's line, for the review (the tdd step's flags and deleted cases). */
@@ -33,6 +37,8 @@ export type StepResult = {
 	cases?: JudgedCase[]
 	/** The tdd step: the grouped lines of the cases moved from the base (`TddCheck.moved`). */
 	moved?: string[]
+	/** The tdd step: the case ids more than one case holds (`TddCheck.duplicates`). */
+	duplicates?: DuplicateCaseId[]
 	/** A failed or flaky step: every file its output (and a scoped step's selection) names as failing, sorted, unique. */
 	failing?: string[]
 	/** A vitest test step that failed: its one serial rerun. */

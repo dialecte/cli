@@ -10,9 +10,14 @@ import {
 	GATE_LIST_NAMES,
 	INVALID_STEP,
 	INVALID_STEP_LIST,
+	INVALID_SKIP,
 	INVALID_STEP_PROBLEMS,
+	GATE_SKIP_LABEL,
+	LINE_BREAK_PATTERN,
 	NO_NPM_SCRIPT_REASON,
 	NPM_RUN_PATTERN,
+	SKIP_PROBLEMS,
+	SKIP_REASON_MAX_LENGTH,
 } from './gate-config.constants.ts'
 import { renderStepLine } from './step-line.ts'
 
@@ -26,8 +31,10 @@ export class GateConfigError extends Error {
 
 /**
  * Throws a `GateConfigError` for an invalid `dialecte.gate` of the package: a list that is no list of steps, a
- * step without `name` or `run`, a `scoped` or `heavy` that is not a boolean, `scoped` with `changedOnly`.
- * Every list is checked, whatever mode is resolved. No `dialecte.gate` is valid.
+ * step without `name` or `run`, a `scoped` or `heavy` that is not a boolean, `scoped` with `changedOnly`; a
+ * `skip` that is no map of a default step's name to a one-line reason, or names a step the package can run
+ * (`validateSkip`: a default step of `fast` or `full` when that list is not declared, release following full). Every list is checked, whatever mode is
+ * resolved. No `dialecte.gate` is valid.
  */
 export function validateGateConfig(packageJson: PackageJson): void {
 	const gate = packageJson.dialecte?.gate
@@ -40,6 +47,106 @@ export function validateGateConfig(packageJson: PackageJson): void {
 			scopedAllowed: true,
 		})
 	}
+	if (gate.skip === undefined) return
+	const defaultSteps = [
+		...(gate.fast === undefined ? DEFAULT_GATE_STEPS.fast : []),
+		...(gate.full === undefined ? DEFAULT_GATE_STEPS.full : []),
+	]
+	validateSkip({ label: GATE_SKIP_LABEL, skip: gate.skip, defaultSteps, packageJson })
+}
+
+/**
+ * Throws a `GateConfigError` naming `label` for an opt-out map that is no map, or names a step that is none of
+ * `defaultSteps`, or one the package can run (its `npm run` script there, or no `npm run` step at all), or gives a
+ * reason that is no string, an empty one, one longer than `SKIP_REASON_MAX_LENGTH` or one of several lines: an
+ * opt-out never goes stale silently.
+ */
+export function validateSkip(params: {
+	label: string
+	skip: unknown
+	defaultSteps: readonly GateStep[]
+	packageJson: PackageJson
+}): void {
+	const { label, skip } = params
+	if (typeof skip !== 'object' || skip === null || Array.isArray(skip))
+		throw new GateConfigError(
+			INVALID_SKIP.replace('{key}', () => label).replace('{problem}', SKIP_PROBLEMS.notAnObject),
+		)
+	for (const [name, reason] of Object.entries(skip)) {
+		const steps = params.defaultSteps.filter((step) => step.name === name)
+		const problem = findSkipProblem({
+			reason,
+			isDefault: steps.length > 0,
+			isUnwired: steps.some(
+				(step) => missingNpmScriptOf({ step, packageJson: params.packageJson }) !== undefined,
+			),
+		})
+		if (problem === undefined) continue
+		throw new GateConfigError(
+			INVALID_SKIP.replace('{key}', () => label).replace('{problem}', () =>
+				problem.replace('{name}', () => name),
+			),
+		)
+	}
+}
+
+/**
+ * What is wrong with one opt-out, as `SKIP_PROBLEMS` says it (`{name}` left to fill), or undefined when it is valid:
+ * it names a default step (`isDefault`) the package cannot run (`isUnwired`), with a one-line reason.
+ */
+function findSkipProblem(params: {
+	reason: unknown
+	isDefault: boolean
+	isUnwired: boolean
+}): string | undefined {
+	const { reason } = params
+	if (!params.isDefault) return SKIP_PROBLEMS.notADefaultStep
+	if (!params.isUnwired) return SKIP_PROBLEMS.runnable
+	if (typeof reason !== 'string') return SKIP_PROBLEMS.notAString
+	if (reason.trim() === '') return SKIP_PROBLEMS.emptyReason
+	if (reason.length > SKIP_REASON_MAX_LENGTH) return SKIP_PROBLEMS.tooLong
+	if (LINE_BREAK_PATTERN.test(reason)) return SKIP_PROBLEMS.multiLine
+	return undefined
+}
+
+/**
+ * The steps of a list as the cli's resolution marks them, the marks a package.json wrote dropped first: a step of
+ * a default list (`isDefault`) is `optedOut` with the reason `skip` gives its name, else `unwired` when it runs an
+ * npm script the package lacks; a declared step is only ever `unwired`. New objects: the lists given stay as they are.
+ */
+export function markResolvedSteps(params: {
+	steps: readonly GateStep[]
+	packageJson: PackageJson
+	isDefault: boolean
+	skip: Readonly<Record<string, string>> | undefined
+}): GateStep[] {
+	const { packageJson, skip } = params
+	return params.steps.map(function markedStep(written) {
+		const { isDefault: _isDefault, optedOut: _optedOut, unwired: _unwired, ...step } = written
+		const reason =
+			params.isDefault && skip !== undefined && Object.hasOwn(skip, step.name)
+				? skip[step.name]
+				: undefined
+		const unwired = reason === undefined && missingNpmScriptOf({ step, packageJson }) !== undefined
+		return {
+			...step,
+			...(params.isDefault && { isDefault: true as const }),
+			...(reason !== undefined && { optedOut: reason }),
+			...(unwired && { unwired: true as const }),
+		}
+	})
+}
+
+/**
+ * The npm script the step runs (`npm run <script>` at the start of its `run`) when the package has no such script
+ * (or an empty one); undefined when the step runs no npm script or the package has it.
+ */
+export function missingNpmScriptOf(params: {
+	step: { run: string }
+	packageJson: PackageJson
+}): string | undefined {
+	const script = npmScriptOf(params.step.run)
+	return script !== undefined && !params.packageJson.scripts?.[script] ? script : undefined
 }
 
 /**
@@ -100,23 +207,29 @@ export function listUncoveredFullSteps(params: { packageJson: PackageJson }): Ga
 
 /**
  * The steps of a gate list, the config validated first (`validateGateConfig`, every list): the declared list or
- * the default one; `full` adds the derived steps no step runs; `release` is the declared list as is, else the
- * resolved `full` steps.
+ * the default one; `full` adds the derived steps no step runs; `release` is the declared list, else the
+ * resolved `full` steps. Each step is marked (`markResolvedSteps`): a default one `isDefault`, opted out by
+ * `dialecte.gate.skip` or unwired; a declared one unwired only. A derived step carries no mark.
  */
 export function resolveGateSteps(params: {
 	packageJson: PackageJson
 	mode: GateListName
 }): GateStep[] {
-	validateGateConfig(params.packageJson)
-	const gate = params.packageJson.dialecte?.gate
+	const { packageJson } = params
+	validateGateConfig(packageJson)
+	const gate = packageJson.dialecte?.gate
 	if (params.mode === 'release')
 		return gate?.release
-			? [...gate.release]
-			: resolveGateSteps({ packageJson: params.packageJson, mode: 'full' })
-	const steps = [...(gate?.[params.mode] ?? DEFAULT_GATE_STEPS[params.mode])]
-	return params.mode === 'full'
-		? [...steps, ...derivedSteps({ packageJson: params.packageJson, steps }).added]
-		: steps
+			? markResolvedSteps({ steps: gate.release, packageJson, isDefault: false, skip: undefined })
+			: resolveGateSteps({ packageJson, mode: 'full' })
+	const declared = gate?.[params.mode]
+	const steps = markResolvedSteps({
+		steps: declared ?? DEFAULT_GATE_STEPS[params.mode],
+		packageJson,
+		isDefault: declared === undefined,
+		skip: gate?.skip,
+	})
+	return params.mode === 'full' ? [...steps, ...derivedSteps({ packageJson, steps }).added] : steps
 }
 
 /** Two steps that run the same command as a covering list reads it: same name, run, counts and changedOnly. */

@@ -15,6 +15,7 @@ import { shellQuote } from '../src/lib/shell-quote.ts'
 import { createFakeClock } from './fake-clock.ts'
 import { removeHookLogs } from './hook-logs.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import {
 	BRANCH_NAME,
 	HOOK_STEP_LINES,
@@ -89,7 +90,8 @@ export function createGatePackage(params: {
 	return createScratchRepository({
 		'package.json': `${JSON.stringify({
 			name: 'demo',
-			scripts: {},
+			// the default steps of a list the package does not declare are wired: this package is not about wiring
+			scripts: WIRED_DEFAULT_SCRIPTS,
 			dialecte: { gate: { fast: params.fast, full: params.full } },
 		})}\n`,
 		'.gitignore': 'node_modules\n',

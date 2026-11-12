@@ -215,7 +215,7 @@ describe('gate --fast in the lot worktree', { timeout: SCRATCH_REPOSITORY_TIMEOU
 		})
 	})
 
-	it('a step running a missing npm script → a skipped part', async () => {
+	it('a declared step running a missing npm script → a failed part', async () => {
 		const lot = createStepLot({ fast: [{ name: 'docs', run: 'npm run no-such-script' }] })
 
 		await runGate({ cwd: lot.worktree, argv: [] })
@@ -224,7 +224,7 @@ describe('gate --fast in the lot worktree', { timeout: SCRATCH_REPOSITORY_TIMEOU
 			partsOf(stepEventsOf(lot)[1])
 				.filter((part) => part.name === 'docs')
 				.map((part) => part.status),
-		).toEqual(['skipped'])
+		).toEqual(['failed'])
 	})
 })
 

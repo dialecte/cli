@@ -1,7 +1,8 @@
 /**
  * The guards `handover run` checks before its first commit, each announced on one line with its result
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
- * the merge lots (none in progress, trees recorded, resolutions as reviewed), an empty index, the files
+ * the merge lots (none in progress, trees recorded, resolutions as reviewed), the target branch's tip held by the
+ * hand-over (exit 2 when it moved), no process left running in the worktree (exit 2), an empty index, the files
  * against the reviewed snapshot, the deleted files, files outside the lots,
  * plan tags (a contributor's) or standard citations in the lots' files and messages, a contributor's green
  * `dialecte contrib` of the tree the lots leave, and what the package still owes its mutation runs.
@@ -18,6 +19,7 @@ import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
+import { readPackageJson } from '../package-json.ts'
 import { textOf } from '../print/print.ts'
 import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
@@ -36,8 +38,12 @@ import {
 	GUARD_NAME_WIDTH,
 	HANDOVER_FILES,
 	HEAD_GUARD_NAME,
+	MERGE_NOTE_SHA_LENGTH,
 	NO_GREEN_CONTRIB_DETAIL,
 	REHEARSAL_CONTRIB_DETAIL,
+	TARGET_GUARD_NAME,
+	TARGET_HELD_DETAIL,
+	TARGET_MERGE_NOTE,
 } from './handover.constants.ts'
 import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
@@ -47,13 +53,18 @@ import {
 	reviewedHashes,
 	snapshotPathOf,
 } from './reviewed-snapshot.ts'
+import { PROCESSES_GUARD_NAME } from './stray-processes.constants.ts'
+import { strayProcesses, strayProcessesLineOf } from './stray-processes.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
+import { findTargetRef, targetLineOf, targetMoved } from './target-moved.ts'
 import { hashFile } from './write-handover.ts'
 
+import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	GuardedRun,
+	GuardRefusal,
 	GuardVerdict,
 	HandoverFolder,
 	MergeLot,
@@ -61,7 +72,10 @@ import type {
 	WriteLine,
 } from './handover.types.ts'
 
-/** The run's HEAD and the lots committed already; undefined when a guard refused (its lines written). */
+/**
+ * The run's HEAD and the lots committed already; when a guard refused (its lines written), the exit code it sets
+ * (2 for `target`), else 1.
+ */
 export function checkHandoverGuards(params: {
 	handover: HandoverFolder
 	write: WriteLine
@@ -75,7 +89,7 @@ export function checkHandoverGuards(params: {
 	 * the install...). The `contrib` guard says that rather than advising a run.
 	 */
 	contribUnanswerable?: string
-}): GuardedRun | undefined {
+}): GuardedRun | GuardRefusal {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
 	const root = lotsFile.repository
@@ -88,12 +102,14 @@ export function checkHandoverGuards(params: {
 				`${leftover.ok ? '✓' : '✗'} ${'backup'.padEnd(GUARD_NAME_WIDTH)} ${leftover.detail}`,
 			]),
 		)
-		if (!leftover.ok) return undefined
+		if (!leftover.ok) return { exitCode: 1 }
 	}
 	// read once the working package files are the person's again
 	const profile = existsSync(root) ? readProfile(root) : undefined
+	const packageJson = existsSync(root) ? readPackageJson(root) : {}
 
-	const guards: { name: string; check: () => GuardVerdict }[] = [
+	// a check answering undefined has nothing to judge on this run: no line
+	const guards: { name: string; check: () => GuardVerdict | undefined }[] = [
 		{
 			name: 'repository',
 			check: function repositoryExists() {
@@ -184,17 +200,37 @@ export function checkHandoverGuards(params: {
 					{
 						name: 'merges',
 						check: function mergesAsReviewed(): GuardVerdict {
+							const target = findTargetRef({ root, lotsFile, packageJson })
 							return checkMerges({
 								root,
 								lots,
 								committed: run.commits.length,
 								rehearsal: params.rehearsal ?? false,
 								resumeMerge: params.resumeMerge ?? false,
+								...('branch' in target && { targetBranch: target.branch }),
 							})
 						},
 					},
 				]
 			: []),
+		{
+			name: TARGET_GUARD_NAME,
+			check: function targetHeld(): GuardVerdict | undefined {
+				return checkTarget({
+					root,
+					lotsFile,
+					packageJson,
+					committed: run.commits.length,
+					rehearsal: params.rehearsal ?? false,
+				})
+			},
+		},
+		{
+			name: PROCESSES_GUARD_NAME,
+			check: function nothingLeftRunning(): GuardVerdict {
+				return checkProcesses({ root, rehearsal: params.rehearsal ?? false })
+			},
+		},
 		{
 			name: 'index',
 			check: function nothingStaged() {
@@ -307,13 +343,14 @@ export function checkHandoverGuards(params: {
 	for (const { name, check } of guards) {
 		const startedAt = clock.now()
 		const verdict = check()
+		if (verdict === undefined) continue
 		write(
 			textOf([
 				`${verdict.ok ? (verdict.warning ? '!' : '✓') : '✗'} ${name.padEnd(GUARD_NAME_WIDTH)} ${verdict.detail}  ${formatDuration(clock.now() - startedAt)}`,
 			]),
 		)
 		for (const line of verdict.lines ?? []) write(textOf([`    ${line}`]))
-		if (!verdict.ok) return undefined
+		if (!verdict.ok) return { exitCode: verdict.exitCode ?? 1 }
 		// every lot on HEAD as reviewed: the guards after head read the working tree, which later work may change
 		if (name === HEAD_GUARD_NAME && lots.length > 0 && run.commits.length === lots.length)
 			return run
@@ -332,6 +369,8 @@ function checkMerges(params: {
 	committed: number
 	rehearsal: boolean
 	resumeMerge: boolean
+	/** The branch the lots land on: a merge lot of it that moved since is noted for the target guard. */
+	targetBranch?: string
 }): GuardVerdict {
 	const { root, lots } = params
 	const pending = lots
@@ -377,16 +416,75 @@ function checkMerges(params: {
 				),
 			}
 		const branchTip = commitOf({ root, revision: merge.branch })
-		if (branchTip !== merge.tip)
-			notes.push(
-				`lot ${number}: ${merge.branch} moved since the review (now ${branchTip?.slice(0, 12) ?? 'gone'}): the recorded tip ${merge.tip.slice(0, 12)} is merged`,
-			)
+		if (branchTip === merge.tip) continue
+		const now = branchTip?.slice(0, MERGE_NOTE_SHA_LENGTH) ?? 'gone'
+		const tip = merge.tip.slice(0, MERGE_NOTE_SHA_LENGTH)
+		// the target branch's move is the target guard's to judge: the note does not call the merge enough
+		notes.push(
+			merge.branch === params.targetBranch
+				? TARGET_MERGE_NOTE.replace('{number}', String(number))
+						.replaceAll('{branch}', () => merge.branch)
+						.replace('{tip}', tip)
+						.replace('{now}', now)
+				: `lot ${number}: ${merge.branch} moved since the review (now ${now}): the recorded tip ${tip} is merged`,
+		)
 	}
 	return {
 		ok: true,
 		detail: `${pending.length} merge(s) to commit, resolutions as reviewed`,
 		...(notes.length && { lines: notes }),
 	}
+}
+
+/**
+ * The target branch read now (never from the card): its tip held by the head or a merge lot passes; moved, or no
+ * target branch to judge, refuses with exit 2; a rehearsal goes on past it, marked `!`; lots that go on the target
+ * branch itself are not judged (undefined: no line).
+ */
+function checkTarget(params: {
+	root: string
+	lotsFile: HandoverFolder['lotsFile']
+	packageJson: PackageJson
+	/** The lots the head guard found committed already. */
+	committed: number
+	rehearsal: boolean
+}): GuardVerdict | undefined {
+	const verdict = targetMoved({
+		root: params.root,
+		lotsFile: params.lotsFile,
+		packageJson: params.packageJson,
+		committed: params.committed,
+	})
+	if (verdict.kind === 'held')
+		return {
+			ok: true,
+			detail: TARGET_HELD_DETAIL.replace('{branch}', () => verdict.branch).replace(
+				'{ref}',
+				() => verdict.ref,
+			),
+		}
+	const line = targetLineOf(verdict)
+	// the lots go on the target branch itself: the head guard judges what is on top
+	if (line === undefined) return undefined
+	return params.rehearsal
+		? { ok: true, warning: true, detail: line }
+		: { ok: false, exitCode: 2, detail: line }
+}
+
+/**
+ * The processes working in the worktree read now (never from the card): none passes; only the person's tools pass
+ * marked `!`; any left behind, or a list not known, refuses with exit 2; a rehearsal goes on past it, marked `!`.
+ */
+function checkProcesses(params: { root: string; rehearsal: boolean }): GuardVerdict {
+	const processes = strayProcesses({ worktree: params.root, root: params.root })
+	const line = strayProcessesLineOf(processes)
+	if (line.status === 'passed') return { ok: true, detail: line.detail }
+	// the person's tools only: shown, never refused
+	if (processes.unknown === undefined && processes.leftBehind.length === 0)
+		return { ok: true, warning: true, detail: line.detail }
+	return params.rehearsal
+		? { ok: true, warning: true, detail: line.detail }
+		: { ok: false, exitCode: 2, detail: line.detail }
 }
 
 /**

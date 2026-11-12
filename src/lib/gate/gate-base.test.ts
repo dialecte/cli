@@ -15,6 +15,7 @@ import {
 	REHEARSAL_MARKER_FILE,
 } from '../handover/handover.constants.ts'
 import { processStartTime } from '../process-start-time.ts'
+import { NO_CONFIGURED_BASE_BRANCH } from './gate-base.constants.ts'
 import { hasScopedStep, resolveGateBase } from './gate-base.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -389,7 +390,7 @@ describe('resolveGateBase rule 4: no base', { timeout: SCRATCH_REPOSITORY_TIMEOU
 		})
 	})
 
-	it('A14b: dialecte.baseBranch names a branch that does not exist → the empty tree, the note names that branch', () => {
+	it('B6: dialecte.baseBranch names a branch that does not exist → a refusal naming that branch and dialecte.baseBranch, no fall-through', () => {
 		const { root } = divergedRepository()
 		writeFiles({
 			root,
@@ -397,9 +398,7 @@ describe('resolveGateBase rule 4: no base', { timeout: SCRATCH_REPOSITORY_TIMEOU
 		})
 
 		expect(resolveGateBase({ root })).toEqual({
-			commit: emptyTreeOf(root),
-			source: 'none',
-			note: 'no base branch develop: everything selected',
+			refusal: NO_CONFIGURED_BASE_BRANCH.replace('{branch}', 'develop'),
 		})
 	})
 

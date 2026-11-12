@@ -14,6 +14,8 @@ import { spawnSync } from 'node:child_process'
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 
+import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
+import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { mainCheckoutOf, readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -26,14 +28,19 @@ import { takePooledNodeModules } from './node-modules-pool.ts'
 import { linkSiblings } from './sibling-links.ts'
 import { claimWorktreeIndex, worktreeFolderName } from './worktree-index.ts'
 import {
-	DEFAULT_BASE_BRANCH,
 	LOT_FOLDER_EXCLUDE,
 	REPOSITORY_NO_FOLDER,
 	REPOSITORY_NO_GIT,
 	WORKTREE_INDEX_FOLDER,
 } from './worktree.constants.ts'
 
-import type { AddedWorktree, ListedWorktree, NodeModulesSource } from './worktree.types.ts'
+import type { Refusal } from '../refusal.types.ts'
+import type {
+	AddedWorktree,
+	ListedWorktree,
+	NewBranchStart,
+	NodeModulesSource,
+} from './worktree.types.ts'
 
 /**
  * Why `worktree add` cannot take the path as its repository: no folder there (a repository named from inside
@@ -70,6 +77,8 @@ export function addWorktree(params: {
 	// the refusals that need no folder come before the claim: a refused add takes no number
 	if (branchExists && params.from)
 		return `${branch} exists already: --from only starts a new branch`
+	const start = branchExists ? undefined : newBranchStart({ repository, from: params.from })
+	if (start !== undefined && 'refusal' in start) return start.refusal
 	const worktreesFolder = join(dirname(repository), WORKTREES_FOLDER)
 	const claims = join(worktreesFolder, WORKTREE_INDEX_FOLDER)
 	if (params.index === undefined && existsSync(claims) && !statSync(claims).isDirectory())
@@ -78,14 +87,11 @@ export function addWorktree(params: {
 	const worktree = join(worktreesFolder, worktreeFolderName({ index, repository, branch }))
 	if (existsSync(worktree)) return `${worktree} exists already`
 	params.onPlanned?.(worktree)
-	const from = branchExists
-		? branch
-		: (params.from ?? readPackageJson(repository).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH)
 	readGit({
 		root: repository,
-		args: branchExists
-			? ['worktree', 'add', '--quiet', worktree, branch]
-			: ['worktree', 'add', '--quiet', '-b', branch, worktree, from],
+		args: start
+			? ['worktree', 'add', '--quiet', ...start.options, '-b', branch, worktree, start.ref]
+			: ['worktree', 'add', '--quiet', worktree, branch],
 	})
 
 	const hooks = readHooksFolder(repository)
@@ -120,7 +126,7 @@ export function addWorktree(params: {
 		worktree,
 		index,
 		branch,
-		from,
+		from: start ? start.name : branch,
 		head: baseline.head,
 		hooks: copiedHooks,
 		nodeModules: provided,
@@ -182,6 +188,28 @@ export function provideNodeModules(params: {
 	if (!existsSync(params.from)) return undefined
 	const copy = copyNodeModules({ from: params.from, to: join(params.checkout, 'node_modules') })
 	return { ...copy, seconds: secondsSince(startedAt) }
+}
+
+/**
+ * Where a new branch starts: `from` as given, else the base branch's ref (`findBaseBranchRef`), which may be
+ * origin's and is then never tracked; the resolver's refusal when there is neither.
+ */
+function newBranchStart(params: {
+	repository: string
+	from: string | undefined
+}): NewBranchStart | Refusal {
+	if (params.from !== undefined) return { ref: params.from, name: params.from, options: [] }
+	const found = findBaseBranchRef({
+		root: params.repository,
+		packageJson: readPackageJson(params.repository),
+	})
+	if ('refusal' in found) return found
+	const onOrigin = found.ref.startsWith(ORIGIN_BRANCH_REF_PREFIX)
+	return {
+		ref: found.ref,
+		name: onOrigin ? `origin/${found.branch}` : found.branch,
+		options: ['--no-track'],
+	}
 }
 
 /** Seconds since `startedAt` (`performance.now()`), to one decimal. */

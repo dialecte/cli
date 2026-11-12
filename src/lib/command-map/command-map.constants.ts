@@ -280,7 +280,8 @@ export const COMMAND_MAP: CommandMap = {
 			'--full and --release hold the machine awake while they run (macOS: caffeinate -i -w <pid>; DIALECTE_KEEP_AWAKE=0 turns it off); a run that spanned a sleep keeps sleptMs on its record and the card says it',
 			'--hook - in a commit hook, the test steps of --full, unless a green --full record of the committed tree, install and steps answers them (or a green --release whose list covers full)',
 			'--release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json; its green record answers a hook, a rehearsal, contrib and the card when the list covers full (same name, run, counts and changedOnly for every full step)',
-			'scoped steps ("scoped": true) get DIALECTE_GATE_BASE, _TREE, _CHANGED (the changed paths byte for byte, NUL-separated, relative to the repository top as git diff --name-only names them; a declared failing path is relative to the package root) and _SELECTION, where they write { schema: 1, base, tree, changed, selected: [{ id, reasons }], skipped: [{ id, reason }] } (both lists required, reasons non-empty); the base is --base <ref>, else the merge-base with "dialecte.baseBranch" (default main), else the empty tree; select from the working files; without the gate (no DIALECTE_GATE_SELECTION): select everything',
+			'scoped steps ("scoped": true) get DIALECTE_GATE_BASE, _TREE, _CHANGED (the changed paths byte for byte, NUL-separated, relative to the repository top as git diff --name-only names them; a declared failing path is relative to the package root) and _SELECTION, where they write { schema: 1, base, tree, changed, selected: [{ id, reasons }], skipped: [{ id, reason }] } (both lists required, reasons non-empty); the base is --base <ref>, else the merge-base with the base branch (the first found: "dialecte.baseBranch", origin/HEAD, main, master; each local, else on origin), else the empty tree; select from the working files; without the gate (no DIALECTE_GATE_SELECTION): select everything',
+			'a step whose run is npm run <script> the package lacks is not wired: a default step fails a --full or --release run (a --fast one says it and goes on), a declared step fails in every mode; then no step runs, the others read not run: a step of the list is not wired; "dialecte": { "gate": { "skip": { "<default step>": "<reason>" } } } (dialecte.gate.skip) opts a default step out, a warning with its reason',
 			'a scoped step: an empty selection exits 0 without starting vitest (nothing selected since <base> (<n> paths changed)); a non-empty one on a counts: "tests" step that runs no test fails; a failed scoped step counting tests is rerun once serially on a test failure (a failed test, a FAIL line, vitest\'s error markers), whatever runs it: the failing files (after -- through npm run), then --no-file-parallelism, and it must select the same ids (one vitest invocation, or --passWithNoTests on each); the selection may declare "failing": [paths relative to the package] the record keeps with the ones the output names; "heavy": true marks a heavy suite, outside the command hash',
 		],
 		exitCodes: [],
@@ -323,6 +324,7 @@ export const COMMAND_MAP: CommandMap = {
 		notes: [
 			'after gate --full and before handover: rules on the changed files, the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it), no dependency named by a local folder, the mutation line when a scope is declared',
 			'a step a green gate --full of this tree and install passed with the same command is not run again; --no-reuse runs every row',
+			'a step whose run is npm run <script> the package lacks is not wired: it fails, default or declared; then no row runs, the others read not run: a step of the list is not wired; "dialecte": { "contrib": { "skip": { "<default step>": "<reason>" } } } (dialecte.contrib.skip) opts a default step out, a warning with its reason',
 		],
 		exitCodes: ['2  refused in a consumer (nothing written)'],
 		example: 'dialecte contrib',
@@ -353,8 +355,7 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Hand over',
 		summary: 'The guarded commit-by-lots hand-over a human runs, from a lots file',
 		usage: [
-			'dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]',
-			'dialecte handover write <lots.json> --release [--out <id|folder>] [--rehash] [--json]',
+			'dialecte handover write <lots.json> [--release] [--target <branch>] [--out <id|folder>] [--rehash] [--json]',
 			'dialecte handover show [<name|folder>] [--json]',
 			'dialecte handover review <name|index|folder> [--json] [--print]',
 			'dialecte handover run [<name|folder>] [--rehearse [--keep] [--full]] [--resume-merge]',
@@ -364,14 +365,18 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		notes: [
 			'write - the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card, registered in <git common dir>/dialecte-handover/<name>.json under the real path of the folder; handover <lots.json> is the same; --out <id> writes into the lot folder, refused (exit 2, nothing written) for a simulated, canceled or failed lot, an open question, a lots file of another worktree or branch; any folder whose hand-over is committed is refused',
-			'show - the card again, recomputed, nothing written; without an argument the newest of the branch',
+			'write --target <branch> - the branch the lots land on, recorded as target in lots.json (default: the base branch resolved at write time); a branch with neither a local nor an origin ref is refused (exit 2, nothing written)',
+			'show - the card again, recomputed, nothing written; without an argument the newest of the branch; BLOCKED with a ! line when the target branch moved past the hand-over (merge it first); BLOCKED with a ✗ processes line naming the processes left running in the worktree (no terminal, not under an editor, not named in git config dialecte.personProcesses)',
 			"review - opens the hand-over's worktree in a new editor window, started detached (a hand-over holding a merge lot first writes review/lot.diff, the lot's change against head, and opens it too); the editor: git config dialecte.editor in the worktree (its words, no flag added), else the first known editor found on PATH, else code; never $EDITOR; --print prints the command line and starts nothing, --json answers { editor, command, opened }; refused (exit 2) for an unknown hand-over, a worktree that is gone, an editor not found",
 			'run - what commit.sh runs: each guard with its time, each lot announced, the hook live, the card; without a folder the one registered hand-over still to run; --rehearse commits in a scratch clone; refuses a canceled lot (exit 2); holds the machine awake while it runs, and a run that spanned a sleep says so on the DONE card',
 			'abandon - marks a hand-over that will not run (abandoned.json) and releases its lock; refuses a lot folder (exit 2): rewrite it with write --rehash --out <full name>, end the lot with lot stop',
 			'list - every hand-over folder: repository, worktree, branch, lots, age, state',
 			'--legend - every term of the card, what it means, whether to look',
 		],
-		exitCodes: [],
+		exitCodes: [
+			'2  run: the target branch moved past the hand-over (merge it first) or has no ref, a process left running in the worktree or a process list not known, a gate config the cli cannot run, a canceled lot; nothing committed',
+			'2  write: a --target branch with neither a local nor an origin ref, no base branch found without --target, an --out the lot folder refuses; nothing written',
+		],
 		example: 'dialecte handover write ../handover/lots.json',
 	},
 	worktree: {
@@ -385,7 +390,10 @@ export const COMMAND_MAP: CommandMap = {
 			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json (else a copy-on-write copy), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
 			'prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with their cd; a worktree an open lot names (working, input-required, ready, failed) is kept first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal; the pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never touched',
 		],
-		exitCodes: ['0  add: the worktree exists, whatever the links and the lockfile say'],
+		exitCodes: [
+			'0  add: the worktree exists, whatever the links and the lockfile say',
+			'1  add: a new branch without --from, and the base branch refused (a dialecte.baseBranch set to a branch that exists nowhere, local or on origin, or no base branch found); no worktree made',
+		],
 		example: 'dialecte worktree add cli feat/my-change',
 	},
 	doctor: {

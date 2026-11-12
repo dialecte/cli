@@ -297,6 +297,36 @@ export const GUARD_NAME_WIDTH = 11
 export const CONTRIBUTOR_REFERENCES_DETAIL = 'a plan tag or a standard citation'
 export const CONSUMER_REFERENCES_DETAIL = 'a standard citation'
 
+/** The `target` guard: refused (exit 2) while the target branch's tip is held neither by the head nor by a merge lot. */
+export const TARGET_GUARD_NAME = 'target'
+
+/** What the card and the `target` guard say when the target branch moved: `{tip}` its new tip, the 8-character short sha. */
+export const TARGET_MOVED_LINE =
+	'{branch} moved: merge {branch} first ({count} commit(s) on {branch}, now {tip})'
+
+/** Added to the line when some lots are committed already: only a new hand-over can hold the target's tip. */
+export const TARGET_RESUME_SUFFIX =
+	': write a new hand-over on the current HEAD with a merge lot of {branch}'
+
+/** How many characters of the target's tip the card and the `target` guard print. */
+export const TARGET_TIP_LENGTH = 8
+
+/** A target branch (`lots.json`'s `target`, `--target`) with neither a local nor an origin ref. */
+export const TARGET_BRANCH_NOT_FOUND = '--target {branch}: no such branch, local or on origin'
+
+/** `handover write` given `--target` with no branch after it (last, or followed by another option): refused. */
+export const TARGET_WITHOUT_VALUE = 'handover: --target needs a branch'
+
+/** The `target` guard's pass: the target's tip is held by the head or by a merge lot. */
+export const TARGET_HELD_DETAIL = '{branch} held ({ref})'
+
+/** The merges guard's note for a merge lot of the target branch that moved since the review (the target guard judges it). */
+export const TARGET_MERGE_NOTE =
+	'lot {number}: merges {branch} at {tip}; {branch} is now {now} (see target)'
+
+/** How many characters of a sha the merges guard's notes print. */
+export const MERGE_NOTE_SHA_LENGTH = 12
+
 /** The `contrib` guard of a contributor: refused without a green record of the tree, or naming the failed rows. */
 export const CONTRIB_GUARD_NAME = 'contrib'
 export const NO_GREEN_CONTRIB_DETAIL =
@@ -527,6 +557,12 @@ export const CARD_PART_SEPARATOR = ' · '
 
 /** The verdict's tail when no gate line blocks it. */
 export const ALL_GATES_GREEN = 'all gates green'
+
+/** The verdict's tail when the target branch moved past the hand-over: its `!` line is under the verdict. */
+export const TARGET_MOVED_TAIL = 'target: {branch} moved (below)'
+
+/** The verdict's tail when the target branch has no ref: the refusal is the `!` line under the verdict. */
+export const TARGET_NOT_FOUND_TAIL = 'target: not found (below)'
 
 /** The verdict's tail for the lines recorded on another tree: `{names}` in card order. */
 export const OTHER_TREE_GATES = 'gates ran on another tree: {names}'

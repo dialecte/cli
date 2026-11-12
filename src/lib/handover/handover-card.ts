@@ -25,7 +25,11 @@ import {
 	DETAIL_SEPARATOR,
 	SLEPT_HANDOVER_RUN,
 } from '../gate-records/gate-records.constants.ts'
-import { readJudgedCases, readJudgedMoves } from '../gate-records/gate-records.ts'
+import {
+	readJudgedCases,
+	readJudgedDuplicates,
+	readJudgedMoves,
+} from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -33,6 +37,7 @@ import { readProfile } from '../profile/profile.ts'
 import { shellQuote, shellWord } from '../shell-quote.ts'
 import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
 import { countingReceipts, describeSkippedReceipts } from '../tdd/counting-receipts.ts'
+import { writtenLinesOf } from '../tdd/duplicate-case-ids.ts'
 import {
 	entryNamesCase,
 	findCaseEntry,
@@ -50,6 +55,7 @@ import {
 	readLedger,
 	resolveBase,
 } from '../tdd/tdd-files.ts'
+import { DUPLICATE_CARD_LABEL, DUPLICATE_LINES_DETAIL } from '../tdd/tdd.constants.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { readHandoverRunRecord } from './handover-run-record.ts'
@@ -79,6 +85,8 @@ import {
 	NOTHING_PUSHED,
 	OTHER_TREE_GATES,
 	PENDING_COMMIT,
+	TARGET_MOVED_TAIL,
+	TARGET_NOT_FOUND_TAIL,
 	TDD_COUNT_WORDS,
 	TDD_COUNTS_FROM_GATE_LINE,
 	TO_READ_INDENT,
@@ -90,11 +98,15 @@ import {
 } from './handover.constants.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
 import { checkedTree, mergedBranchesOf, ownLotTreeOf } from './lot-trees.ts'
+import { PROCESSES_GUARD_NAME } from './stray-processes.constants.ts'
+import { strayProcessesLineOf } from './stray-processes.ts'
+import { targetLineOf } from './target-moved.ts'
 
 import type { CardLine, CardSection, SectionCard } from '../card/card.types.ts'
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
 import type {
 	CaseStatus,
+	DuplicateCaseId,
 	LotCaseEntry,
 	LotCaseList,
 	LotGoneEntry,
@@ -114,9 +126,11 @@ import type {
 	HandoverVerdict,
 	MergeLot,
 	ResolvedLot,
+	TargetVerdict,
 	TddProof,
 	TreeDiffSize,
 } from './handover.types.ts'
+import type { StrayProcesses } from './stray-processes.types.ts'
 
 export function buildHandoverCard(params: {
 	/** Where the lots are committed. */
@@ -149,6 +163,17 @@ export function buildHandoverCard(params: {
 	probe: HandoverProbe
 	/** A release hand-over (the lots file's `"release": true`): the card requires a `gate release` row. */
 	release?: boolean
+	/**
+	 * Where the target branch stands (`targetMoved`), on the cards that judge it (`handover show`): moved or missing
+	 * makes a READY or BLOCKED card BLOCKED with its `!` line; a DONE or ABANDONED card ignores it.
+	 */
+	target?: TargetVerdict
+	/**
+	 * The processes working in the worktree (`strayProcesses`), on the cards that judge them (`handover show` of one
+	 * hand-over): left behind makes a READY or BLOCKED card BLOCKED with a failed `processes` line; the person's tools
+	 * or a list not known add a warning line; a DONE or ABANDONED card ignores them.
+	 */
+	processes?: StrayProcesses
 }): HandoverCard {
 	const { root } = params
 	const commitRoot = params.commitRoot ?? root
@@ -178,6 +203,9 @@ export function buildHandoverCard(params: {
 		? ownLotTreeOf({ root: commitRoot, lots: params.lots, commits: params.commits })
 		: undefined
 	const ownLotStateHash = ownLotTree === undefined ? undefined : hashStateTree(ownLotTree)
+	const pending = !params.abandoned && !params.done
+	const processes = pending ? params.processes : undefined
+	const processesLine = processes && strayProcessesLineOf(processes)
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -195,6 +223,10 @@ export function buildHandoverCard(params: {
 		params.done
 			? readRecordedStandardLine({ folder: params.folder })
 			: readStandardLine({ folder: params.folder }),
+		// nothing working there: no line
+		...(processesLine && processesLine.status !== 'passed'
+			? [{ name: PROCESSES_GUARD_NAME, ...processesLine }]
+			: []),
 	]
 	const contrib =
 		profile === 'contributor' ? buildContribLines({ ...checked, head: params.head }) : undefined
@@ -208,6 +240,7 @@ export function buildHandoverCard(params: {
 		root,
 		judged: readJudgedCases({ root, stateHash: tddStateHash }),
 		moved: readJudgedMoves({ root, stateHash: tddStateHash }),
+		duplicates: readJudgedDuplicates({ root, stateHash: tddStateHash }),
 	})
 	const lots = params.lots.map(function cardLot(lot, index): CardLot {
 		const commit = params.commits[index]
@@ -241,11 +274,13 @@ export function buildHandoverCard(params: {
 		}
 	})
 	const merges = lots.flatMap((lot) => (lot.merge ? [`lot ${lot.index}: ${lot.merge}`] : []))
+	const target = pending && params.target ? params.target : undefined
+	const targetLine = target && targetLineOf(target)
 	const verdict: HandoverVerdict = params.abandoned
 		? 'ABANDONED'
 		: params.done
 			? 'DONE'
-			: failedGates.length || otherTreeGates.length
+			: failedGates.length || otherTreeGates.length || targetLine !== undefined
 				? 'BLOCKED'
 				: 'READY'
 	const name = registeredNameOf({ root, folder: params.folder })
@@ -260,6 +295,16 @@ export function buildHandoverCard(params: {
 		verdict,
 		failedGates,
 		otherTreeGates,
+		...(targetLine !== undefined && { targetLine }),
+		...(target?.kind === 'moved' && {
+			targetMoved: {
+				branch: target.branch,
+				ref: target.ref,
+				tip: target.tip,
+				behind: target.behind,
+			},
+		}),
+		...(processes && { processes }),
 		declarations: tdd.declarations,
 		gates,
 		profile,
@@ -348,6 +393,8 @@ function tddSection(params: {
 	judged: ReadonlyMap<string, CaseStatus> | undefined
 	/** The grouped lines of the cases moved from the base, as the same gate record holds them. */
 	moved: readonly string[]
+	/** The case ids more than one case holds, as the same gate record holds them. */
+	duplicates: readonly DuplicateCaseId[]
 }): {
 	lines: CardLine[]
 	declarations: number
@@ -424,6 +471,18 @@ function tddSection(params: {
 	if (counts) lines.push(counts)
 	// one grouped line per source file cases moved out of, under the counts that read them unchanged
 	if (judged) lines.push(...params.moved.map(plainLine))
+	// one failed line per shared id: the gate's tdd step failed on them, the card is blocked
+	lines.push(
+		...params.duplicates.map((duplicate) =>
+			plainLine(
+				[
+					`${CARD_GATE_MARKS.failed} ${DUPLICATE_CARD_LABEL}`,
+					caseLabel(duplicate),
+					DUPLICATE_LINES_DETAIL.replace('{lines}', () => writtenLinesOf(duplicate)),
+				].join('  '),
+			),
+		),
+	)
 	if (accepted.listed.length)
 		lines.push(...acceptedLines({ listed: accepted.listed, declared: declaredAcceptances }))
 	const earlier = [
@@ -713,7 +772,7 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 		title: (card.index ? HANDOVER_CARD_NUMBERED_TITLE : HANDOVER_CARD_TITLE)
 			.replace('{index}', card.index ?? '')
 			.replace('{repository}', basename(card.repository))
-			.replace('{branch}', card.branch),
+			.replace('{branch}', () => card.branch),
 		sections: [
 			{ lines: verdictLines(card) },
 			{ name: HANDOVER_CARD_SECTIONS.commit, lines: commitLines(card) },
@@ -759,7 +818,8 @@ function lineCounts(size: { insertions: number; deletions: number }): string {
 
 /**
  * The verdict line: the word, the lots, files and lines (the merges not sized yet counted apart), then
- * the gates' tail; the declarations to read on a second line under the size.
+ * the gates' and the target's tail; the declarations to read on a second line under the size, the target's `!` line
+ * last.
  */
 function verdictLines(card: HandoverCard): CardLine[] {
 	const sized = card.lots.filter((lot) => !lot.notSized)
@@ -771,6 +831,7 @@ function verdictLines(card: HandoverCard): CardLine[] {
 		card.otherTreeGates.length
 			? OTHER_TREE_GATES.replace('{names}', card.otherTreeGates.join(', '))
 			: '',
+		targetTailOf(card),
 	].filter(Boolean)
 	const size = [
 		counted({ count: card.lots.length, noun: 'lot' }),
@@ -783,6 +844,7 @@ function verdictLines(card: HandoverCard): CardLine[] {
 		...(tail.length ? tail : [ALL_GATES_GREEN]),
 	].join(CARD_PART_SEPARATOR)
 	const hang = card.verdict.length + 2
+	const targetLead = `${CARD_GATE_MARKS.warning} `
 	return [
 		{ text: `${card.verdict}  ${size}`, hang, emphasis: 'strong' },
 		...(card.declarations
@@ -793,7 +855,18 @@ function verdictLines(card: HandoverCard): CardLine[] {
 					},
 				]
 			: []),
+		...(card.targetLine === undefined
+			? []
+			: [{ text: `${targetLead}${card.targetLine}`, hang: targetLead.length }]),
 	]
+}
+
+/** The verdict's tail part for a target that blocks (its `!` line under the verdict), else empty. */
+function targetTailOf(card: HandoverCard): string {
+	if (card.targetLine === undefined) return ''
+	return card.targetMoved
+		? TARGET_MOVED_TAIL.replace('{branch}', () => card.targetMoved?.branch ?? '')
+		: TARGET_NOT_FOUND_TAIL
 }
 
 function sum(values: readonly number[]): number {

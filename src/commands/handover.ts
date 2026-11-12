@@ -1,5 +1,6 @@
 /**
- * `dialecte handover write <lots.json> [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`)
+ * `dialecte handover write <lots.json> [--release] [--target <branch>] [--out <id|folder>] [--rehash] [--json]` (or
+ * `dialecte handover <lots.json>`)
  * - the commit-by-lots hand-over a human runs. From a lots file (repository, expected branch and HEAD, lots with paths and messages) it checks
  * every guard, then writes the hand-over folder (the lots file, the snapshot and a one-line `commit.sh`)
  * and the card a person reviews, and takes the repository's hand-over lock.
@@ -80,6 +81,7 @@ import {
 	HANDOVER_USAGE,
 	HANDOVER_WRITTEN_NOTE,
 	RUNNABLE_STATES,
+	TARGET_WITHOUT_VALUE,
 } from '../lib/handover/handover.constants.ts'
 import { handoverState, listHandovers } from '../lib/handover/list-handovers.ts'
 import {
@@ -97,14 +99,16 @@ import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
 import { rehearsalScratchRoot, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
-import { markReleaseHandover } from '../lib/handover/release-handover.ts'
+import { markHandoverTarget, markReleaseHandover } from '../lib/handover/release-handover.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { countChangedSinceReview, recomputeHandoverCard } from '../lib/handover/show-handover.ts'
+import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
+import { readPackageJson } from '../lib/package-json.ts'
 import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
 import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
@@ -232,8 +236,12 @@ export function runHandover(params: {
 				width: params.columns ?? DEFAULT_CARD_COLUMNS,
 			}),
 		}
-	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out'] })
+	const [lotsPath] = positionalArguments({ argv, valueOptions: ['out', 'target'] })
 	if (!lotsPath) return usage(HANDOVER_USAGE)
+	// a --target with no branch after it is refused, never read as no --target
+	const targetWord = getArg(argv, 'target')
+	if (hasFlag(argv, 'target') && (targetWord === undefined || targetWord.startsWith('--')))
+		return usage(TARGET_WITHOUT_VALUE)
 	const cwd = params.cwd ?? process.cwd()
 	const absoluteLotsPath = resolve(cwd, lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
@@ -287,6 +295,13 @@ export function runHandover(params: {
 		gitVersion: params.gitVersion,
 	})
 	if (refusals.length) return refused(refusals)
+	// the branch the lots land on: --target, else the one recorded already (a rehash), else the base branch now
+	const target = findTargetRef({
+		root: plan.repository,
+		lotsFile: { target: targetWord ?? lotsFile.target },
+		packageJson: readPackageJson(plan.repository),
+	})
+	if ('refusal' in target) return usage(`handover: ${target.refusal}`)
 
 	params.afterChecks?.()
 	const lockPath = handoverLockPath(plan.repository)
@@ -305,9 +320,14 @@ export function runHandover(params: {
 	const lockBefore = lock.before
 	let written: LotsFile
 	try {
-		written = hasFlag(argv, 'release')
+		const released = hasFlag(argv, 'release')
 			? markReleaseHandover({ lotsPath: absoluteLotsPath, lotsFile })
 			: lotsFile
+		written = markHandoverTarget({
+			lotsPath: absoluteLotsPath,
+			lotsFile: released,
+			target: target.branch,
+		})
 		writeHandover({
 			plan,
 			lotsFile: written,
@@ -591,7 +611,12 @@ export function runHandoverShow(params: {
 					.replace('{repository}', lotsFile.repository),
 			],
 		})
-	const card = shownHandoverCard({ handover, probe: params.probe, cliPath: params.cliPath })
+	const card = shownHandoverCard({
+		handover,
+		probe: params.probe,
+		cliPath: params.cliPath,
+		judgeProcesses: true,
+	})
 	const runnable = !card.done && card.verdict !== 'ABANDONED'
 	const committed = card.lots.filter((lot) => lot.commit).length
 	const changed = runnable ? countChangedSinceReview({ handover, committed }) : 0
@@ -630,11 +655,14 @@ export function shownHandoverCard(params: {
 	probe?: HandoverProbe
 	/** The cli named in the run line when the repository's own cli cannot run hand-overs. */
 	cliPath?: string
+	/** Read the processes working in the worktree (`handover show` only). */
+	judgeProcesses?: boolean
 }): HandoverCard {
 	return recomputeHandoverCard({
 		handover: params.handover,
 		probe: params.probe ?? probeRepositoryCli,
 		cliPath: params.cliPath,
+		judgeProcesses: params.judgeProcesses,
 	})
 }
 

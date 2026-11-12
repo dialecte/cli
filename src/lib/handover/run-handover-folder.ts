@@ -39,7 +39,7 @@ import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.
 
 /**
  * The exit code: 0 when every lot is committed, 1 when a guard or a commit refused, 2 when the gate config is one
- * the cli cannot run (read before the guards, nothing staged).
+ * the cli cannot run (read before the guards, nothing staged) or a guard that sets it refused (`target`).
  */
 export async function runHandoverFolder(params: {
 	handover: HandoverFolder
@@ -97,7 +97,7 @@ export async function runHandoverFolder(params: {
 		resumeMerge: params.resumeMerge,
 		contribUnanswerable: params.contribUnanswerable,
 	})
-	if (!guarded) return 1
+	if ('exitCode' in guarded) return guarded.exitCode
 	if (params.skipCommits) write(REHEARSAL_SKIPPED_LINE)
 	const committed = params.skipCommits
 		? guarded.commits

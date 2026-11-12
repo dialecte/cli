@@ -40,12 +40,15 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-/** The card `handover show --json` gives for the lot's hand-over, without the two fields the result carries elsewhere. */
+/**
+ * The card `handover show --json` gives for the lot's hand-over, without the two fields the result carries elsewhere
+ * and without `processes` (the result never runs `lsof`).
+ */
 function cardOfShow(ready: ReadyLot): unknown {
 	const shown = JSON.parse(
 		show({ cwd: ready.lot.worktree, argv: [ready.name, '--json'] }).output,
 	) as Record<string, unknown>
-	const { folder: _folder, changedSinceReview: _changed, ...card } = shown
+	const { folder: _folder, changedSinceReview: _changed, processes: _processes, ...card } = shown
 	return card
 }
 
@@ -81,6 +84,16 @@ describe('lot result of a ready lot', { timeout: STORE_CASE_TIMEOUT }, () => {
 			},
 		})
 		expect(bytesOf(lot)).toEqual(before)
+	})
+
+	it('a ready lot with a written hand-over -> the card of the result holds no processes field (the result never runs lsof)', () => {
+		const { lot } = readyLot()
+
+		const { json } = withJson(resultOfLot({ lot })) as {
+			json: { handover: { card: Record<string, unknown> } }
+		}
+
+		expect(Object.keys(json.handover.card)).not.toContain('processes')
 	})
 
 	it('a question asked and answered before the hand-over was written -> listed with its answer and who gave it', () => {

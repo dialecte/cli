@@ -19,6 +19,7 @@ import {
 	writeFiles,
 } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { UNWIRED_NOT_RUN_REASON } from '../lib/gate/gate-config.constants.ts'
 import { HANDOVER_RUN_MARKER_FILE } from '../lib/handover/handover.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { runGate } from './gate.ts'
@@ -198,7 +199,7 @@ describe('runGate', { timeout: 30_000 }, () => {
 		expect(result.output).toContain('the serial run failed here')
 	})
 
-	it('an npm script the package lacks → skipped; the rest green → exit 0 with the counts', async () => {
+	it('a declared step whose npm script the package lacks → FAIL declared but not wired, the wired step not run, exit 1', async () => {
 		const root = packageWith({
 			scripts: { check: `printf 'Found 0 warnings and 0 errors.\n'` },
 			fast: [
@@ -209,13 +210,13 @@ describe('runGate', { timeout: 30_000 }, () => {
 
 		const result = await gate({ cwd: root, argv: [] })
 		expect(result).toEqual({
-			exitCode: 0,
+			exitCode: 1,
 			output: [
 				NO_BASELINE_LINE,
 				NO_VITEST_LINE,
-				'ok    check  exit 0  0 error(s), 0 warning(s)',
-				'skip  skills  no npm script "skills:check"',
-				'gate --fast: green',
+				`--    check  ${UNWIRED_NOT_RUN_REASON}`,
+				'FAIL  skills  declared but not wired (no npm script "skills:check")',
+				'gate --fast: failed at skills',
 			].join('\n'),
 		})
 	})
@@ -668,6 +669,7 @@ describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
 
 	it('--fast green → dialecte-gate-fast.json: when, HEAD, the state hash, each step with its status, counts and reason; no full record', async () => {
 		const root = packageWith({
+			scripts: { 'skills:check': 'true' },
 			fast: [
 				{ name: 'check', run: `printf ' Tests  1056 passed | 4 skipped (1060)\\n'` },
 				{ name: 'skills', run: 'npm run skills:check' },
@@ -689,7 +691,7 @@ describe('runGate: the record in the git folder', { timeout: 30_000 }, () => {
 					status: 'passed',
 					counts: { tests: { passed: 1056, failed: 0, skipped: 4, total: 1060 } },
 				},
-				{ name: 'skills', status: 'skipped', reason: 'no npm script "skills:check"' },
+				{ name: 'skills', status: 'passed' },
 			],
 		})
 		expect(readRecord({ root, mode: 'full' })).toBeUndefined()

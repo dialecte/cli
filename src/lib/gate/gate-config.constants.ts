@@ -59,6 +59,57 @@ export const DERIVED_STEPS: readonly GateStep[] = [
 /** Why a step running an npm script the package lacks is skipped. */
 export const NO_NPM_SCRIPT_REASON = 'no npm script "{script}"'
 
+/** Why a default step whose npm script the package lacks is not run (`{script}`): failed in a full run, skipped in a fast one. */
+export const NOT_WIRED_REASON = 'not wired (no npm script "{script}")'
+
+/**
+ * The line under a failed unwired default step: how to fix it. `{label}` is the opt-out key of the run
+ * (`dialecte.gate.skip`, `dialecte.contrib.skip`), `{optOut}` the package.json entry that opts the step out under
+ * it (`UNWIRED_OPT_OUT_REASON` as its reason).
+ */
+export const UNWIRED_FIX_LINE = 'add the script, or opt out with {label}: {optOut}'
+
+/** The reason the opt-out of `UNWIRED_FIX_LINE` shows: the package writes its own. */
+export const UNWIRED_OPT_OUT_REASON = '<reason>'
+
+/** Why a step the package declares, whose npm script it lacks, fails in every mode. */
+export const DECLARED_NOT_WIRED_REASON = 'declared but not wired (no npm script "{script}")'
+
+/** Why a default step the package opted out of is not run; `{reason}` is the package's own. */
+export const OPTED_OUT_REASON = 'opted out: {reason}'
+
+/** What the line of a step says when it was left unrun because a step of the list is unwired. */
+export const UNWIRED_NOT_RUN_REASON = 'not run: a step of the list is not wired'
+
+/** How the key of the opt-outs is named in a `GateConfigError`. */
+export const GATE_SKIP_LABEL = 'dialecte.gate.skip'
+
+/**
+ * Why an opt-out naming a step the package can run (its `npm run` script there, or no `npm run` step, as the default
+ * `tests`) is refused: an opt-out is only for a default step that is not wired.
+ */
+export const SKIP_FOR_UNRUNNABLE = 'skip is for a step the package cannot run; remove the skip'
+
+/** The longest reason an opt-out may give. */
+export const SKIP_REASON_MAX_LENGTH = 200
+
+/** What is wrong with an opt-out, as `{problem}` of a `GateConfigError` says it; `{name}` the step it names. */
+export const SKIP_PROBLEMS = {
+	notAnObject: 'a map of default step names to reasons, such as { "skills": "no skills folder" }',
+	notADefaultStep: '"{name}" is no default step of the lists it opts out of',
+	runnable: `"{name}": ${SKIP_FOR_UNRUNNABLE}`,
+	emptyReason: '"{name}": a reason is required (a non-empty string)',
+	notAString: '"{name}": the reason is a string',
+	tooLong: `"{name}": a reason of at most ${SKIP_REASON_MAX_LENGTH} characters`,
+	multiLine: '"{name}": a reason of one line',
+} as const
+
+/** An invalid opt-out: `{key}` the key's label (`dialecte.gate.skip`, `dialecte.contrib.skip`), `{problem}` one of `SKIP_PROBLEMS`. */
+export const INVALID_SKIP = '{key}: {problem}'
+
+/** A line break in an opt-out's reason: a reason is one line. */
+export const LINE_BREAK_PATTERN = /[\r\n]/
+
 /** `npm run <script>` at the start of a step: a package without that script skips the step. */
 export const NPM_RUN_PATTERN = /^npm run ([^\s;&|]+)/
 

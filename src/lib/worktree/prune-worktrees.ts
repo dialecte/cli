@@ -13,6 +13,8 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSyn
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import { isAtOrInside, realPathOf } from '../file-system.ts'
+import { LOCAL_BRANCH_REF } from '../gate/gate-base.constants.ts'
+import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
@@ -31,7 +33,6 @@ import { readHygieneBaseline } from './hygiene.ts'
 import { listPoolEntries } from './node-modules-pool.ts'
 import { isParked } from './trash.ts'
 import {
-	DEFAULT_BASE_BRANCH,
 	IGNORED_FILES_SHOWN,
 	PRUNE_LINK_REASON,
 	PRUNE_RUN_PREFIX,
@@ -173,8 +174,11 @@ function planRepository(params: {
 	links: readonly FolderLink[]
 }): PrunePlan {
 	const { repository } = params
-	const baseBranch = readPackageJson(repository).dialecte?.baseBranch ?? DEFAULT_BASE_BRANCH
-	if (!refExists({ root: repository, ref: `refs/heads/${baseBranch}` }))
+	const found = findBaseBranchRef({ root: repository, packageJson: readPackageJson(repository) })
+	if ('refusal' in found) return { repository, items: [], skipped: found.refusal }
+	const baseBranch = found.branch
+	// merged work is compared with the local branch: origin's alone is not enough
+	if (found.ref !== LOCAL_BRANCH_REF.replace('{branch}', () => baseBranch))
 		return { repository, baseBranch, items: [], skipped: `no local branch ${baseBranch}` }
 	const cd = `cd ${shellQuote(repository)} &&`
 	const commonFolder = commonFolderOf(repository)
@@ -595,11 +599,4 @@ function commonFolderOf(root: string): string | undefined {
 
 function handoverStateOf(handover: HandoverFolder): string {
 	return existsSync(handover.lotsFile.repository) ? handoverState(handover) : 'repository missing'
-}
-
-function refExists(params: { root: string; ref: string }): boolean {
-	return (
-		spawnSync('git', ['rev-parse', '--verify', '--quiet', params.ref], { cwd: params.root })
-			.status === 0
-	)
 }

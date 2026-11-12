@@ -19,7 +19,7 @@ import {
 import { computeStateHash, hashStateTree } from './state-hash.ts'
 
 import type { StepResult } from '../gate/gate.types.ts'
-import type { CaseStatus } from '../tdd/tdd.types.ts'
+import type { CaseStatus, DuplicateCaseId } from '../tdd/tdd.types.ts'
 import type {
 	CheckKey,
 	GateRecord,
@@ -127,8 +127,11 @@ function recordedStepOf(result: StepResult): RecordedStep {
 		counts: result.counts,
 		...(result.note && { note: result.note }),
 		...(result.reason && { reason: result.reason }),
+		...(result.unwired && { unwired: true as const }),
+		...(result.optedOut !== undefined && { optedOut: result.optedOut }),
 		...(result.cases && { cases: result.cases }),
 		...(result.moved?.length && { moved: result.moved }),
+		...(result.duplicates?.length && { duplicates: result.duplicates }),
 		...(result.selection && { selection: result.selection }),
 		...(result.failing && { failing: result.failing }),
 		...(result.step.heavy === true && { heavy: true as const }),
@@ -210,6 +213,17 @@ export function readJudgedCases(params: {
  */
 export function readJudgedMoves(params: { root: string; stateHash: string }): string[] {
 	return judgedTddStep(params)?.moved ?? []
+}
+
+/**
+ * The case ids more than one case holds, as the gate record `readJudgedCases` reads keeps them; none when it
+ * holds none.
+ */
+export function readJudgedDuplicates(params: {
+	root: string
+	stateHash: string
+}): DuplicateCaseId[] {
+	return judgedTddStep(params)?.duplicates ?? []
 }
 
 /**

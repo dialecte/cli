@@ -26,10 +26,12 @@ import {
 	GATE_STATE_CHANGED_LINE,
 	STEP_DETAIL_INDENT,
 	STEP_LINE_MARKS,
+	UNWIRED_NOT_RUN_REASON,
 } from '../gate/gate-config.constants.ts'
 import { renderAbsentDerivedLines, validateGateConfig } from '../gate/gate-config.ts'
 import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
+import { findUnwiredSteps } from '../gate/unwired-steps.ts'
 import { currentBranchOf, readGit } from '../git.ts'
 import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
@@ -55,6 +57,7 @@ import {
 	CONTRIB_FAILED_VERDICT,
 	CONTRIB_GREEN_VERDICT,
 	CONTRIB_REUSED_VERDICT,
+	CONTRIB_SKIP_LABEL,
 	CONTRIB_WARNING_MARK,
 	GATE_STEP_REUSED_NOTE,
 	CONTRIB_COMMAND,
@@ -267,6 +270,15 @@ async function runRows(params: {
 	reusedParts: Set<StepResult>
 }): Promise<StepResult[]> {
 	const { root, packageJson, gate, progress, showLive, recorder, durations } = params
+	// as the gate does: every package row judged for its wiring before any row runs, a default one failed too
+	const unwired = findUnwiredSteps({
+		steps: packageStepsOf(params.steps),
+		packageJson,
+		failDefault: true,
+		skipLabel: CONTRIB_SKIP_LABEL,
+	})
+	if ([...unwired.values()].some((result) => result.status === 'failed'))
+		return unwiredRows({ ...params, unwired })
 	const results: StepResult[] = []
 	// as the gate does: after a package step that failed, the next ones are not run
 	let packageStepFailed = false
@@ -279,6 +291,13 @@ async function runRows(params: {
 			durations.set(result, finishPart())
 			results.push(result)
 			if (running) showLive({ result, finish: running.finish })
+			continue
+		}
+		// an opted-out row: its result as judged, never announced
+		const judged = packageStepFailed ? undefined : unwired.get(step)
+		if (judged) {
+			results.push(judged)
+			if (progress) showLive({ result: judged })
 			continue
 		}
 		const passed = gate && !packageStepFailed ? findPassedGateStep({ gate, step }) : undefined
@@ -312,6 +331,32 @@ async function runRows(params: {
 		packageStepFailed = result.status === 'failed'
 	}
 	return results
+}
+
+/**
+ * The rows of a run with a failed unwired package row: each judged row its result, every other row (the built-in
+ * ones included) `not-run` with `UNWIRED_NOT_RUN_REASON`; nothing runs, each row shown live when progress is.
+ */
+function unwiredRows(params: {
+	steps: readonly ContribStep[]
+	unwired: ReadonlyMap<GateStep, StepResult>
+	progress: StepProgress | undefined
+	showLive: (shown: { result: StepResult }) => void
+	beforeRelease: () => void
+}): StepResult[] {
+	return params.steps.map(function rowOf(step): StepResult {
+		const judged = 'builtin' in step ? undefined : params.unwired.get(step)
+		const result: StepResult = judged ?? {
+			step: 'builtin' in step ? { name: step.name, run: '' } : step,
+			status: 'not-run',
+			counts: {},
+			restored: [],
+			reason: UNWIRED_NOT_RUN_REASON,
+		}
+		if (params.progress && isReleaseRow(step)) params.beforeRelease()
+		if (params.progress) params.showLive({ result })
+		return result
+	})
 }
 
 /** The rules row: the code rules on the files changed against HEAD, recorded as `dialecte rules` records them. */

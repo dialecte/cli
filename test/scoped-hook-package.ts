@@ -11,6 +11,7 @@ import {
 	HANDOVER_RUN_MARKER_FILE,
 } from '../src/lib/handover/handover.constants.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
+import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import { FEATURE_BRANCH } from './scoped-gate-package.constants.ts'
 import {
 	EMPTY_SELECTION_STEP_SCRIPT,
@@ -41,7 +42,7 @@ export function createScopedHookedPackage(params: {
 	onFeatureBranch?: boolean
 }): string {
 	const root = createScratchRepository({
-		'package.json': `${JSON.stringify({ name: 'demo', scripts: {}, dialecte: { gate: params.gate } })}\n`,
+		'package.json': `${JSON.stringify({ name: 'demo', scripts: WIRED_DEFAULT_SCRIPTS, dialecte: { gate: params.gate } })}\n`,
 		'.gitignore': `${HUSKY_WRAPPER_FOLDER}\nnode_modules\n`,
 		'.husky/pre-commit': `${params.hookScript}\n`,
 		'src/read.ts': 'export function read() {}\n',

@@ -28,14 +28,15 @@ import {
 	FAILED_OUTPUT_TAIL_LINES,
 	FAILING_FILE_PATTERN,
 	FLAKY_NOTE,
+	GATE_SKIP_LABEL,
 	NO_AFFECTED_TEST_NOTE,
 	NO_AFFECTED_TEST_PATTERN,
-	NO_NPM_SCRIPT_REASON,
 	NO_TEST_RAN_REASON,
 	NPM_RUN_PATTERN,
 	REAL_FAILURE_PREFIX,
 	SERIAL_FLAG,
 	SERIAL_RUN_PATTERN,
+	UNWIRED_NOT_RUN_REASON,
 	VITEST_COMMAND_PATTERN,
 	VITEST_ERROR_PATTERN,
 } from './gate-config.constants.ts'
@@ -53,6 +54,7 @@ import {
 	rerunIdsMismatch,
 } from './selection.ts'
 import { readStepCounts } from './step-counts.ts'
+import { findUnwiredSteps } from './unwired-steps.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
@@ -67,6 +69,12 @@ import type {
 	StepRun,
 } from './gate.types.ts'
 
+/**
+ * The results of `steps`, run in order as the module says. Every step is judged for its wiring first
+ * (`findUnwiredSteps`): a failed one (a declared step without its npm script, or a default one when
+ * `failDefaultUnwired`) runs no step at all, each other step `not-run` with `UNWIRED_NOT_RUN_REASON`; a skipped
+ * one (opted out, or a default step without its script otherwise) keeps its result and the others run.
+ */
 export async function runGateSteps(params: {
 	root: string
 	steps: readonly GateStep[]
@@ -79,21 +87,45 @@ export async function runGateSteps(params: {
 	announce?: StepAnnouncer
 	/** The run's base and tree, resolved once by the caller: what a scoped step selects against. */
 	scope?: GateScope
+	/** An unwired default step fails the run (full, release, contrib) instead of being skipped (fast, hook). */
+	failDefaultUnwired?: boolean
 }): Promise<StepResult[]> {
 	const { root, scope } = params
+	// every step judged for its wiring before the first runs: a failed one runs nothing, so every wiring is fixed at once
+	const unwired = findUnwiredSteps({
+		steps: params.steps,
+		packageJson: params.packageJson,
+		failDefault: params.failDefaultUnwired === true,
+		skipLabel: GATE_SKIP_LABEL,
+	})
+	if ([...unwired.values()].some((result) => result.status === 'failed'))
+		return params.steps.map(function unwiredOrNotRun(step): StepResult {
+			return (
+				unwired.get(step) ?? {
+					step,
+					status: 'not-run',
+					counts: {},
+					restored: [],
+					reason: UNWIRED_NOT_RUN_REASON,
+				}
+			)
+		})
 	// one changed file per run, written only when a step is scoped; removed whatever happens
 	const scopeRun =
 		scope !== undefined && holdsScopedStep(params.steps)
 			? createScopeRun({ root, scope })
 			: undefined
 	try {
-		return await runEachStep({ ...params, scopeRun })
+		return await runEachStep({ ...params, scopeRun, unwired })
 	} finally {
 		if (scopeRun) removeScopeRun(scopeRun)
 	}
 }
 
-/** The steps in order, the first failure stopping the rest (`runGateSteps`). */
+/**
+ * The steps in order, the first failure stopping the rest (`runGateSteps`); a step `unwired` holds (skipped: opted
+ * out, or a default step without its script in a run that does not fail it) takes that result, never announced.
+ */
 async function runEachStep(params: {
 	root: string
 	steps: readonly GateStep[]
@@ -102,6 +134,7 @@ async function runEachStep(params: {
 	watchdog?: Watchdog
 	announce?: StepAnnouncer
 	scopeRun: ScopeRun | undefined
+	unwired: ReadonlyMap<GateStep, StepResult>
 }): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const results: StepResult[] = []
@@ -110,15 +143,9 @@ async function runEachStep(params: {
 			results.push({ step, status: 'not-run', counts: {}, restored: [] })
 			continue
 		}
-		const script = NPM_RUN_PATTERN.exec(step.run)?.[1]
-		if (script && !packageJson.scripts?.[script]) {
-			results.push({
-				step,
-				status: 'skipped',
-				counts: {},
-				restored: [],
-				reason: NO_NPM_SCRIPT_REASON.replace('{script}', script),
-			})
+		const judged = params.unwired.get(step)
+		if (judged) {
+			results.push(judged)
 			continue
 		}
 		const finished = params.announce?.(step)
