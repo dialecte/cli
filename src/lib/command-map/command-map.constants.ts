@@ -92,12 +92,14 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Discover',
 		summary: 'Find a method by what you need (find), read its contract (show)',
 		usage: [
-			'dialecte api find "<need>" [--package <name>] [--limit 5] [--json]',
+			'dialecte api find "<need>" [--source] [--package <name>] [--limit 5] [--json]',
 			'dialecte api show <path> [--package <name>] [--json]',
+			'dialecte api show <file>#<name> [--json]',
 		],
 		notes: [
 			'find - the methods whose intents, summary or name match the need, best first',
 			'show - signature, summary, intents, routes, declaration, example (info.of, tx.addChild)',
+			'--source - also the exported functions of the own package src/ (show src/lib/git.ts#readGit), cached in the git folder',
 		],
 		exitCodes: [],
 		example: 'dialecte api find "add a child element"',

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `dialecte api find --source "<need>"`: the exported functions of the package `api find` runs in (the nearest `package.json` at or above the folder) are searched beside the installed `api.json` indexes: every exported function declaration, arrow or function-expression `const` of its tracked and untracked-not-ignored `src/**/*.ts` files, tests left out, read from the syntax alone; a local `export { name }` counts, a re-export does not, and an overload set is one function, declared at its first overload with the implementation's signature. A source row prints `<file>#<name>  source  <file>:<line>  <matching intent | short summary | (no summary)>  <package>`; with `--json` it holds `root: "source"` and `declaredAt`, and the answer gains `notes`. A function without `@intent` ranks on the words its summary and name hold together; at equal hits an indexed method comes before a source function; a function the package's own `api.json` lists at the same declaration is shown once, by its route. A file that does not parse is left out with the line `note: <file>: not parsed (<reason>)`. `--package` searches the own source only when it names the package. Without a package.json at or above the folder: exit 2, `api find --source: no package at <folder>`, and the fix. Without `--source`, `api find` answers as before.
+- `dialecte api show <file>#<name>` (`src/lib/git.ts#readGit`), with or without `--source`: one source function's signature, summary, intents and declaration; an unknown path exits 1: a name unknown in a file that was read names up to five of that file's functions, the closest by name first; an unknown file names the closest source paths, or the `api find --source` call that lists them.
+- The source index is cached in the worktree's git folder, `dialecte-source-index.json`: each file's entries kept under the hash of its bytes, so a second run parses only the files edited or added; the packages of one repository share it (keyed by path from the work tree top); a cache written by another cli version, or that cannot be read, is rebuilt and one that cannot be written changes nothing. Outside a git work tree every file is read.
+
+### Changed
+
+- `@dialecte/cli/lookups`: `ApiMethod` gains the kind `ApiSourceFunction` (`root: 'source'`, no `entry`), exported beside the other api types: a consumer switching on `root` sees a new case. `runApi` takes `--source` and a `<file>#<name>` path through its `argv`; with either it runs git in the package and may write the source index cache in the git folder.
+- `dialecte rules` reports a syntax error of a changed declaration file (`.d.ts`) as an `unreadable-file` finding at its place, and checks a valid one, instead of failing with `Debug Failure. Output generation failed`.
+
 ## [0.5.0] - 2026-11-12
 
 Breaking: one base-branch resolver for every command, and a default gate step without its npm script fails `--full` and `--release` (opt out with `dialecte.gate.skip`); hand-overs are blocked by duplicate case ids, a moved target branch and processes left running. Also: one print boundary for every printed line; damaged lots shown and moved aside; the lot's own records (step events, `lot station`, `lot report`, `lot export`, `cards.log`); `plan next`, `check` and `mark`; `schema` per declaration and `describeElement`; `handover review` and `handover write --target`; forbidden words.
