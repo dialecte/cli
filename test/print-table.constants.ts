@@ -94,6 +94,18 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 	},
 	'standard show': { argv: ['show', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	'standard eval': { argv: ['eval', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'facts list': {
+		argv: ['list', '--about', FORGED_WORD],
+		quotes: false,
+		reason: 'on an empty ledger it answers that there are no facts, naming no argument',
+		noJson: PLAIN_TEXT,
+	},
+	'facts show': { argv: ['show', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'facts forget': {
+		argv: ['forget', FORGED_WORD, '--reason', FORGED_WORD],
+		quotes: true,
+		noJson: PLAIN_TEXT,
+	},
 	rules: { argv: [FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	gate: {
 		argv: ['--fast', '--full', FORGED_WORD],
