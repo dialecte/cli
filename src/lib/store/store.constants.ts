@@ -256,3 +256,7 @@ export const MILLISECONDS_PER_SECOND = 1000
 
 /** The brief checks a simulated start records in `wouldRefuse` instead of refusing (33S section 5). */
 export const SIMULATED_FINDING_RULES: readonly RefusalRule[] = ['overlap', 'branch-exists']
+
+/** The variable naming the data folder, and the data folder below the home folder when it is unset or empty. */
+export const DATA_HOME_VARIABLE = 'XDG_DATA_HOME'
+export const DEFAULT_DATA_SEGMENTS: readonly string[] = ['.local', 'share']

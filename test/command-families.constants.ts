@@ -2,7 +2,7 @@ import type { CommandFamily } from '../src/lib/command-map/command-map.types.ts'
 
 /** The families in the order the help prints them, each with its commands in the order it lists them. */
 export const DECLARED_FAMILIES: Array<[CommandFamily, string[]]> = [
-	['Discover', ['api', 'members', 'schema', 'explain', 'standard']],
+	['Discover', ['api', 'members', 'schema', 'explain', 'standard', 'facts']],
 	['Use', ['run', 'fixture', 'new']],
 	['Grow', ['lot', 'inbox']],
 	['Plan', ['plan']],

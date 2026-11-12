@@ -155,6 +155,28 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		example: 'dialecte standard find "data object" --limit 5',
 	},
+	facts: {
+		family: 'Discover',
+		summary:
+			'List, show and forget the facts the agents recorded, kept in the data folder (one ledger per person, never in a repository)',
+		usage: [
+			'dialecte facts list [--about <Tag>] [--state <state>|all] [--json]',
+			'dialecte facts show <id> [--json]',
+			'dialecte facts forget <id> --reason <text> [--json]',
+		],
+		notes: [
+			'the ledger is $XDG_DATA_HOME/dialecte/facts (else ~/.local/share/dialecte/facts): one file per fact (F-<n>.json) and its history (F-<n>.history.jsonl); nothing is ever deleted',
+			"list - every question's current fact, whatever its state; --state valid | stale | unverifiable | unchecked | forgotten: the current facts in that state now; orphan: the fact files no question points to; all: every fact file, superseded and unreadable ones included; --about <Tag>: the facts about that tag",
+			"states - valid; stale (a source moved since: a standard's files, a dialecte's definition); unverifiable (a source cannot be compared now); unchecked (from outside the documents, or a person's answer given without them); forgotten",
+			'show - the question, the answer, its source and effort, its state now, its sources, how many pieces of evidence, and its history in order',
+			'forget - marks the fact forgotten, its reason in the history (cut at 200 characters); the file is kept; forgetting it again writes nothing',
+		],
+		exitCodes: [
+			'1  show, forget: no fact of that id (the closest ids named) or a fact file that is not readable JSON',
+			'2  usage · the ledger inside a git work tree (set XDG_DATA_HOME to a folder outside the repository)',
+		],
+		example: 'dialecte facts list --state stale',
+	},
 	run: {
 		family: 'Use',
 		summary:
