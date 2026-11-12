@@ -1,6 +1,7 @@
 /**
  * The facts `plan next` reads from disk, once and from files only: each repository's store lots, hand-over registry
- * and linked worktrees, the status of each spec, the plan's marks.
+ * and linked worktrees, the status of each spec, the plan's marks. The only git processes: the landed probe's, run
+ * only for a lot whose hand-over was committed outside its folder and not closed yet.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -11,13 +12,10 @@ import {
 	LINKED_WORKTREES_FOLDER,
 	STORE_ENTRY_EXTENSION,
 } from '../handover/handover.constants.ts'
+import { readPackageJson } from '../package-json.ts'
 import { probeCaseInsensitive } from '../store/brief.ts'
-import {
-	isOpenRealLot,
-	readLotScope,
-	readLotStateInput,
-	settledLotStateInput,
-} from '../store/lot-records.ts'
+import { createLandedProbe, readLandedLotState } from '../store/lot-entry.ts'
+import { isOpenRealLot, readLotScope, settledLotStateInput } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { STORE_FILES, TEMPORARY_FOLDER_PATTERN } from '../store/store.constants.ts'
@@ -31,11 +29,13 @@ import {
 	SPEC_STATUS_PREFIX,
 } from './plan.constants.ts'
 
+import type { LandedProbe } from '../store/lot-entry.types.ts'
 import type { StoreLocation } from '../store/store.types.ts'
 import type {
 	DamagedRecord,
 	FactsRead,
 	PlanFacts,
+	PlanLandedLot,
 	ReadPlanFactsParams,
 	RegistryFact,
 	RepositoryFacts,
@@ -103,7 +103,7 @@ function readRepositoryFacts(params: { path: string }): RepositoryFacts {
 	if (location === undefined)
 		return { readable: false, path, reason: `${path} is not a git main checkout` }
 	try {
-		const storeLots = readStoreLotFacts({ location })
+		const storeLots = readStoreLotFacts({ location, probe: landedProbeOf({ root: path }) })
 		const registry = readRegistryFacts({ location })
 		const worktrees = readWorktreeFacts({ common: location.common })
 		return {
@@ -131,7 +131,11 @@ function readRepositoryFacts(params: { path: string }): RepositoryFacts {
  * does not read (the shared reader leaves it out), an open lot whose state does not read or whose brief gives no
  * scope.
  */
-function readStoreLotFacts(params: { location: StoreLocation }): FactsRead<StoreLotFact> {
+function readStoreLotFacts(params: {
+	location: StoreLocation
+	/** The landed probe of the repository: run only for a lot whose hand-over was committed outside its folder. */
+	probe: LandedProbe | undefined
+}): FactsRead<StoreLotFact> {
 	const { store, registry } = params.location
 	const entries = readStoreEntries(registry)
 	const identities = listLotIdentities({ store })
@@ -141,7 +145,10 @@ function readStoreLotFacts(params: { location: StoreLocation }): FactsRead<Store
 		.map((name) => ({ kind: 'store', name, file: join(store, name, STORE_FILES.identity) }))
 	const facts = identities.map(function storeLotFactOf({ name, identity }): StoreLotFact {
 		const lotFolder = join(store, name)
-		const first = readLotStateInput({ lotFolder, registry, entries })
+		const checked = readLandedLotState({ lotFolder, registry, entries, probe: params.probe })
+		const first = checked !== undefined && 'input' in checked ? checked.input : undefined
+		const landed = checked?.landed
+		// a landed reading's committed entry is never a marker-only cancel: the settle hands it back as it is
 		const input =
 			first && !first.identity.simulated
 				? settledLotStateInput({ input: first, lotFolder, registry })
@@ -159,9 +166,37 @@ function readStoreLotFacts(params: { location: StoreLocation }): FactsRead<Store
 			open,
 			scope,
 			worktree: identity.worktree,
+			// named until `lot close` closes the hand-over the reading picked
+			...(landed !== undefined &&
+				landed.entry.closed === undefined && {
+					landed: { folder: landed.folder, target: landed.target },
+				}),
 		}
 	})
 	return { facts, damaged }
+}
+
+/**
+ * The landed probe of the repository at `root` (its main checkout), its target branch from its package.json; none
+ * when that file does not parse: every lot then reads from its own records.
+ */
+function landedProbeOf(params: { root: string }): LandedProbe | undefined {
+	try {
+		return createLandedProbe({ root: params.root, packageJson: readPackageJson(params.root) })
+	} catch {
+		return undefined
+	}
+}
+
+/** The landed lots of every readable repository of the facts, in the block's repository order. Pure. */
+export function landedLotsOf(params: { facts: PlanFacts }): PlanLandedLot[] {
+	return Object.entries(params.facts.repositories).flatMap(([repository, facts]) =>
+		facts.readable
+			? facts.storeLots.flatMap((lot) =>
+					lot.landed === undefined ? [] : [{ repository, lot: lot.name, ...lot.landed }],
+				)
+			: [],
+	)
 }
 
 /**

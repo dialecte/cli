@@ -1393,8 +1393,13 @@ the answer.
   records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
   An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
   pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
-  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process). The text
-  says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process, except
+  one probe per lot whose hand-over was committed outside its folder and not closed yet: once its branch is past
+  the lot's base commit and on the base branch that lot reads `committed`, is no longer open nor holds anything,
+  and is listed under `landed` as `lot <full name> committed: hand-over committed in <folder>, branch on
+  <target>`; once `lot close` closes that hand-over every reader reads it `committed`, files only, with no
+  `landed` line; a lot with a live run or a transition later than that hand-over reads from its own records). The
+  text says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
   `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
   <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
   each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
@@ -1402,7 +1407,8 @@ the answer.
   twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
   proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps
   would wait (advice only). `--all` lists the done entries; `--json` answers `{ plan, repositories, counts,
-  entries, proposals, held, specWork, heavy, unknown }`. Exit 0 when a lot or fix can start, 1 when none can, 2
+  entries, proposals, held, landed, specWork, heavy, unknown }`, `landed` always a list (`[{ repository, lot,
+  folder, target }]`, `[]` when none). Exit 0 when a lot or fix can start, 1 when none can, 2
   for a usage error, no block or an invalid one (every fault listed), or a repository that is not a git checkout.
   `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
   2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
@@ -1485,7 +1491,17 @@ the answer.
     too, `head` its last lot commit or `null`. Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
-    store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
+    store read once, no git process per lot but the one probe below). A lot whose hand-over was committed
+    outside its own folder (no registry entry for the lot folder, every entry naming its worktree and branch
+    `committed`) reads `committed` once its branch is past the lot's base commit (the base an ancestor of the
+    tip, the tip not the base) and on the base branch. Such a lot keeps nothing, and every outcome of its
+    worktree carries the line `lot <full name> committed: hand-over committed in <folder>, branch on <target>`
+    (under the outcome's line, indented; `landed` in `--json`); the other keep rules below still apply to it.
+    Once `lot close` has closed that hand-over, every reader (`lot status`, `lot wait`, the overlap at `lot
+    start`, `worktree prune`, `plan next` among them) reads the lot `committed`, files only and without the
+    probe, so a branch deleted afterwards never reopens it. A lot with a live run, or a transition later than
+    that hand-over (resumed after it), reads from its own records, never landed nor closed by it. A hand-over
+    still `pending`; its worktree is the main
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
     (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); another
@@ -1513,7 +1529,7 @@ the answer.
     decided nor moved (an entry without it, a worktree removed by hand, is still kept: `nothing to close`).
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
-    `[{ handover, closed: true, already?: true } | { handover, kept }]`.
+    `[{ handover, closed: true, already?: true, landed? } | { handover, kept, landed? }]`.
 - Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
   it cannot parse, and counts them.
   - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`

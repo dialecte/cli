@@ -26,7 +26,8 @@ import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
-import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
+import { createLandedProbe } from '../store/lot-entry.ts'
+import { readLotKeeps } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
@@ -96,17 +97,24 @@ export function closeHandovers(params: {
 	})
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
-	// the lot keep rule: the repository's store read once for every argument
-	const lotKeeps = lotsKeepingWorktrees({ repository: main })
-	// read once for every argument: the registry's entries, the links around the workspace, the base branch
+	// the lot keep rule: the repository's store read once for every argument, a lot whose hand-over was committed
+	// outside its folder probed once (its branch on the target branch: it reads committed and keeps nothing)
+	// the base branch resolved once, for the probe and the reflog rule: no base branch found, the reflog rule holds
+	// nothing through it and no lot reads landed, so a refusal never moves more than before
+	const packageJson = readPackageJson(main)
+	const found = findBaseBranchRef({ root: main, packageJson })
+	const baseBranch = 'refusal' in found ? undefined : found
+	const lotReading = readLotKeeps({
+		repository: main,
+		probe: createLandedProbe({ root: main, packageJson, target: { found: baseBranch } }),
+	})
+	const lotKeeps = lotReading.kept
+	// read once for every argument: the registry's entries, the links around the workspace
 	const registered = store ? readStoreEntries(store) : []
 	const links = readLinkScanSet({
 		workspace: dirname(main),
 		scratchRoots: params.scratchRoots ?? [],
 	})
-	const found = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
-	// no base branch found: the reflog rule holds nothing through it, so a refusal never moves more than before
-	const baseBranch = 'refusal' in found ? undefined : found
 	// the final records and the removals of the repository, beside its registry
 	const cardsLog = store === undefined ? undefined : join(store, CARDS_LOG_FILE)
 	const decisions = targets.map(function decide(target) {
@@ -219,7 +227,10 @@ export function closeHandovers(params: {
 			if (target.entry && 'closed' in outcome && !outcome.already)
 				recordHandoverClosed({ store, name: target.entry.name, at: params.now })
 		})
-	return outcomes
+	return outcomes.map(function withLanded(result, index): CloseResult {
+		const landed = targets[index].entry && lotReading.landed.get(keys[index])
+		return landed === undefined ? result : { ...result, outcome: { ...result.outcome, landed } }
+	})
 }
 
 /**
