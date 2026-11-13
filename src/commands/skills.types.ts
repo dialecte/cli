@@ -1,3 +1,4 @@
+import type { AgentsFileCheckState } from '../lib/stations/agents-file-check.types.ts'
 import type { SUBCOMMAND_NAMES } from './skills.constants.ts'
 
 export type SkillsSubcommand = (typeof SUBCOMMAND_NAMES)[number]
@@ -9,3 +10,6 @@ export type SkillPage = {
 	skillName: string
 	isSkillFile: boolean
 }
+
+/** What `runSync` reports back: what became of the `AGENTS.md` section (`left-alone`: `--no-agents-file`). */
+export type SyncResult = { agentsFile: AgentsFileCheckState | 'left-alone' }

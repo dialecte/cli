@@ -125,7 +125,7 @@ describe('resolveSyncVendor', () => {
 	})
 
 	describe('AGENTS.md and .codex', () => {
-		const SECTION = `${AGENTS_CHECK_START}\n${AGENTS_CHECK_LINE}\n${AGENTS_CHECK_END}\n`
+		const SECTION = `${AGENTS_CHECK_START}\n\n${AGENTS_CHECK_LINE}\n\n${AGENTS_CHECK_END}\n`
 
 		it('AGENTS.md holding only the sync section, with .codex/ -> no evidence of Codex', () => {
 			writeFileSync(join(root, 'AGENTS.md'), SECTION)

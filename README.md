@@ -151,10 +151,15 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
 - **Session-start check, every agent**: when `dialecte-lot` is installed by the sync (whatever the targets),
   `skills sync` writes a section in the project's root `AGENTS.md`, between `<!-- dialecte-skills:session-check -->`
   and `<!-- /dialecte-skills:session-check -->`, telling the agent to run `npx --no-install @dialecte/cli doctor --brief`
-  at a session start. It is created when there is no `AGENTS.md`, else appended after one blank line (every byte of
-  your text stays, line ends included), replaced when an older release wrote another sentence, and removed (with the
-  blank line it added, the file deleted when nothing else is left) by `--no-session-check`, `--no-contributing` or
-  a sync without `dialecte-lot`. A marker without its pair, or a doubled one, leaves the file alone with a warning.
+  at a session start. It is written with a blank line inside each marker, the form a markdown formatter keeps, so a
+  formatted `AGENTS.md` stays formatted. An existing `AGENTS.md` gets it appended after one blank line; the body
+  between the markers is compared tolerantly (whitespace does not matter: line ends, blank lines, a wrapped
+  sentence), and only the marked block is replaced when an older release wrote another sentence: every byte outside
+  it stays, line ends included. A missing `AGENTS.md` is created only when you answer yes on a terminal or pass `--agents-file`; without
+  either, the sync says it was not created. The section and the file are never removed nor deleted by a sync:
+  `--no-session-check`, `--no-contributing` or a sync without `dialecte-lot` leave them in place (delete the section
+  by hand if you do not want it). `--no-agents-file` leaves `AGENTS.md` alone altogether (it excludes
+  `--agents-file`). A marker without its pair, or a doubled one, leaves the file alone with a warning.
   An `AGENTS.md` holding only the section is no evidence of a vendor.
 - **Session-start check (Claude Code)**: the same check as an adapter: `skills sync` adds a `SessionStart` hook running
   `npx --no-install @dialecte/cli doctor --brief` (the installed cli: no download at a session start) to

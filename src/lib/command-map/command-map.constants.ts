@@ -476,13 +476,13 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Workspace',
 		summary: 'Agent skills shipped in skills/<name>/: sync | generate | check | changed',
 		usage: [
-			'dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing] [--vendor <id>] [--no-session-check]',
+			'dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing] [--vendor <id>] [--no-session-check] [--agents-file | --no-agents-file]',
 			'dialecte skills generate [zero-config flags]',
 			'dialecte skills check [--workspace <dir>] [zero-config flags]',
 			'dialecte skills changed [--base <ref>]',
 		],
 		notes: [
-			'sync - install the consumer skills of your dependencies (or of local checkouts) for your agents; --contributing adds the contributor skills, remembered until --no-contributing; remembers the model vendor; with the contributor skills, a doctor --brief session-start check in AGENTS.md and the station agents (--no-session-check leaves the check out)',
+			'sync - install the consumer skills of your dependencies (or of local checkouts) for your agents; --contributing adds the contributor skills, remembered until --no-contributing; remembers the model vendor; with the contributor skills, a doctor --brief session-start check in AGENTS.md and the station agents (--no-session-check leaves the check out); a missing AGENTS.md is created only on a yes or with --agents-file, the section is never removed, and --no-agents-file leaves AGENTS.md alone',
 			'generate - rewrite the generated blocks (verb map, method index, hook files) from the source',
 			'check - fail on a cited API / path / npm script / cli invocation that does not exist, or a stale block',
 			'changed - per skill, hand-written change (evals due) or generated blocks only',

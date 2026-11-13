@@ -3,7 +3,10 @@
  * package).
  *
  *   sync      install the skills of the app's dependencies (or of a local workspace) for the agents, and for
- *             Claude Code the station agents and the session-start check (`--no-session-check` leaves it out)
+ *             Claude Code the station agents and the session-start check (`--no-session-check` leaves it out);
+ *             the AGENTS.md section is written only when the check is on, a missing AGENTS.md created only
+ *             on a yes or with `--agents-file`, the section never removed (`--no-session-check` leaves it in
+ *             place, `--no-agents-file` leaves the file alone)
  *   generate  rewrite the generated blocks of the package's skills from its source
  *   changed   which skills the change touches, and whether their evals are due (hand-written text) or not
  *             (generated blocks only)
@@ -65,8 +68,18 @@ import {
 	selectAudience,
 	syncSkills,
 } from '../lib/skills/sync-skills.ts'
-import { AGENTS_FILE } from '../lib/stations/agents-file-check.constants.ts'
+import {
+	AGENTS_ADDED_LINE,
+	AGENTS_CREATED_LINE,
+	AGENTS_LEFT_ALONE_LINE,
+	AGENTS_LEFT_IN_PLACE_LINE,
+	AGENTS_NOT_CREATED_LINE,
+	AGENTS_UNCHANGED_LINE,
+	AGENTS_UNCLOSED_LINE,
+	AGENTS_UPDATED_LINE,
+} from '../lib/stations/agents-file-check.constants.ts'
 import { syncAgentsFileCheck } from '../lib/stations/agents-file-check.ts'
+import { askCreateAgentsFile } from '../lib/stations/ask-create-agents-file.ts'
 import { planStationAgents } from '../lib/stations/render-station-agent.ts'
 import {
 	CLAUDE_SETTINGS_FILE,
@@ -77,6 +90,7 @@ import { CLAUDE_AGENTS_FOLDER, LOT_SKILL } from '../lib/stations/station-agents.
 import { syncStationAgents } from '../lib/stations/sync-station-agents.ts'
 import { runSkillsChanged } from './skills-changed.ts'
 import {
+	AGENTS_FILE_FLAGS_REFUSAL,
 	CONTRIBUTOR_SYNC_REFUSAL,
 	METHOD_DISCOVERY_DEPTH,
 	SUBCOMMAND_NAMES,
@@ -89,7 +103,8 @@ import type { VendorChoice, VendorId } from '../lib/models/model-tiers.types.ts'
 import type { PrintedText } from '../lib/print/print.types.ts'
 import type { Profile } from '../lib/profile/profile.types.ts'
 import type { SkillFinding } from '../lib/skills/skill-file.types.ts'
-import type { SkillPage, SkillsSubcommand } from './skills.types.ts'
+import type { AgentsFileCheckState } from '../lib/stations/agents-file-check.types.ts'
+import type { SkillPage, SkillsSubcommand, SyncResult } from './skills.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const [subcommand, ...rest] = argv
@@ -149,9 +164,31 @@ export async function runSyncCommand(params: {
 }): Promise<CommandOutput> {
 	// refused before the vendor is asked: a person never answers a prompt for a sync that does not run
 	refuseNoContributing({ argv: params.argv, cwd: params.cwd })
+	refuseAgentsFileClash(params.argv)
 	const choice = await chooseVendor(params)
-	runSync({ argv: params.argv, cwd: params.cwd, vendor: choice.vendor })
+	const result = runSync({ argv: params.argv, cwd: params.cwd, vendor: choice.vendor })
+	if (result.agentsFile === 'missing') await offerAgentsFile(params)
 	return { output: choice.output, exitCode: 0 }
+}
+
+/**
+ * The sync would write the section but there is no `AGENTS.md`: on a terminal the person is asked, on a yes
+ * the file is created; otherwise it says it was not created.
+ */
+async function offerAgentsFile(params: {
+	cwd: string
+	interactive: boolean
+	input: NodeJS.ReadableStream
+	output: NodeJS.WritableStream
+}): Promise<void> {
+	const agreed = params.interactive
+		? await askCreateAgentsFile({ input: params.input, output: params.output })
+		: false
+	if (!agreed) {
+		printInfo(AGENTS_NOT_CREATED_LINE)
+		return
+	}
+	printAgentsFileState(syncAgentsFileCheck({ cwd: params.cwd, enabled: true, create: true }))
 }
 
 /**
@@ -196,7 +233,7 @@ function endedLinesOf(lines: readonly string[]): PrintedText {
 }
 
 /** Installs the skills for the agents; throws on an unknown `--agent`. */
-export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId }): void {
+export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId }): SyncResult {
 	const { argv, cwd } = params
 	const agents = getArg(argv, 'agent')?.split(',') ?? [...DEFAULT_AGENTS]
 	const unknownAgents = agents.filter((agent) => !AGENT_SKILL_FOLDERS[agent])
@@ -206,6 +243,7 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		)
 	if (hasFlag(argv, 'contributing') && hasFlag(argv, 'no-contributing'))
 		throw new Error('skills sync: --contributing and --no-contributing exclude each other')
+	refuseAgentsFileClash(argv)
 	const profile = refuseNoContributing({ argv, cwd })
 
 	// every manifest of the project says the same vendor, the folders of this sync or not
@@ -251,7 +289,7 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		vendor: params.vendor,
 		lotLeftOut: leftOutNames.includes(LOT_SKILL),
 	})
-	syncAgentsCheck({
+	const agentsFile = syncAgentsCheck({
 		argv,
 		cwd,
 		// the check points at the doctor of the cli: enabled while this sync keeps dialecte-lot in any target
@@ -265,6 +303,13 @@ export function runSync(params: { argv: string[]; cwd: string; vendor?: VendorId
 		)
 	if (sources.length === 0 && missingDependencies.length === 0)
 		printInfo('No dependency ships skills (look for skills/<name>/SKILL.md).')
+	return { agentsFile }
+}
+
+/** `--agents-file` with `--no-agents-file` throws. */
+function refuseAgentsFileClash(argv: string[]): void {
+	if (hasFlag(argv, 'agents-file') && hasFlag(argv, 'no-agents-file'))
+		throw new Error(AGENTS_FILE_FLAGS_REFUSAL)
 }
 
 /** The package's profile; `--no-contributing` in a contributor, which always installs the contributor skills, throws. */
@@ -346,19 +391,45 @@ function syncClaudeCodeExtras(params: {
 }
 
 /** The session-start check in the project's `AGENTS.md`, for every agent: independent of the claude target. */
-function syncAgentsCheck(params: { argv: string[]; cwd: string; enabled: boolean }): void {
+function syncAgentsCheck(params: {
+	argv: string[]
+	cwd: string
+	enabled: boolean
+}): SyncResult['agentsFile'] {
+	if (hasFlag(params.argv, 'no-agents-file')) {
+		printInfo(AGENTS_LEFT_ALONE_LINE)
+		return 'left-alone'
+	}
 	const state = syncAgentsFileCheck({
 		cwd: params.cwd,
 		enabled: params.enabled && !hasFlag(params.argv, 'no-session-check'),
+		create: hasFlag(params.argv, 'agents-file'),
 	})
-	if (state === 'added')
-		printInfo(`✅ ${AGENTS_FILE}: session-start check (${SESSION_CHECK_COMMAND})`)
-	if (state === 'updated') printInfo(`✅ ${AGENTS_FILE}: session-start check updated`)
-	if (state === 'removed') printInfo(`🗑  ${AGENTS_FILE}: session-start check removed`)
-	if (state === 'unclosed')
-		printProblem(
-			`⚠️  ${AGENTS_FILE}: the dialecte session-check section is not closed: left as it is`,
-		)
+	printAgentsFileState(state)
+	return state
+}
+
+/** The one line a state of the `AGENTS.md` section prints; `missing` and `absent` print none here. */
+function printAgentsFileState(state: AgentsFileCheckState): void {
+	switch (state) {
+		case 'created':
+			return printInfo(AGENTS_CREATED_LINE)
+		case 'added':
+			return printInfo(AGENTS_ADDED_LINE)
+		case 'updated':
+			return printInfo(AGENTS_UPDATED_LINE)
+		case 'unchanged':
+			return printInfo(AGENTS_UNCHANGED_LINE)
+		case 'kept':
+			return printInfo(AGENTS_LEFT_IN_PLACE_LINE)
+		case 'unclosed':
+			return printProblem(AGENTS_UNCLOSED_LINE)
+		case 'missing':
+		case 'absent':
+			return
+		default:
+			state satisfies never
+	}
 }
 
 /** Rewrites the stale generated blocks and formats the pages written; 1 on an unknown or unclosed block. */
