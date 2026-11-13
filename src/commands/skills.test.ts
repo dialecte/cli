@@ -15,6 +15,7 @@ import { PassThrough } from 'node:stream'
 import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import { CLI_SURFACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { diagnose } from '../lib/doctor/diagnose.ts'
+import { AGENTS_CREATE_QUESTION } from '../lib/stations/agents-file-check.constants.ts'
 import { chooseVendor, checkPages, generatePages, run, runSync, runSyncCommand } from './skills.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -309,25 +310,29 @@ describe('runSync audience', () => {
 		).toBe(true)
 	})
 
-	it('--no-contributing after a contributing sync -> the AGENTS.md section removed, the removal line printed', () => {
-		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
+	it('--no-contributing after a contributing sync -> AGENTS.md still there byte for byte, the left-in-place line printed', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing', '--agents-file'], cwd: root })
 		expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+		const before = read('AGENTS.md')
 		streams.stdout.mockClear()
 
 		runSync({ argv: ['--agent', 'agents', '--no-contributing'], cwd: root })
 
-		expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+		expect(existsSync(join(root, 'AGENTS.md')) ? read('AGENTS.md') : undefined).toBe(before)
 		const lines = linesWritten(streams.stdout)
-		expect(lines).toContain('🗑  AGENTS.md: session-start check removed')
+		expect(lines).toContain(
+			'AGENTS.md: session-start check left in place (sync never removes it; delete it by hand if you do not want it)',
+		)
+		expect(lines).not.toContain('🗑  AGENTS.md: session-start check removed')
 	})
 
-	it('--contributing then --no-session-check -> the AGENTS.md section removed', () => {
-		runSync({ argv: ['--agent', 'agents', '--contributing'], cwd: root })
-		expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+	it('--contributing then --no-session-check -> AGENTS.md still there byte for byte', () => {
+		runSync({ argv: ['--agent', 'agents', '--contributing', '--agents-file'], cwd: root })
+		const before = read('AGENTS.md')
 
 		runSync({ argv: ['--agent', 'agents', '--no-session-check'], cwd: root })
 
-		expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
+		expect(existsSync(join(root, 'AGENTS.md')) ? read('AGENTS.md') : undefined).toBe(before)
 	})
 
 	it('a consumer sync for Claude Code -> the station agents line says they come with --contributing', () => {
@@ -515,7 +520,13 @@ describe('runSync station agents and the session check', () => {
 	describe('the AGENTS.md session check', () => {
 		const AGENTS_START = '<!-- dialecte-skills:session-check -->'
 		const AGENTS_END = '<!-- /dialecte-skills:session-check -->'
-		const AGENTS_SECTION = `${AGENTS_START}\nAt the start of a session, run \`${SESSION_COMMAND}\`: nothing printed means the Dialecte skills are in sync; otherwise each line is a problem with its fix.\n${AGENTS_END}\n`
+		const AGENTS_SECTION = `${AGENTS_START}\n\nAt the start of a session, run \`${SESSION_COMMAND}\`: nothing printed means the Dialecte skills are in sync; otherwise each line is a problem with its fix.\n\n${AGENTS_END}\n`
+		const CREATED_LINE = `✅ AGENTS.md created with the session-start check (${SESSION_COMMAND})`
+		const NOT_CREATED_LINE =
+			'AGENTS.md: none here, not created (skills sync --agents-file creates it)'
+		const LEFT_ALONE_LINE = 'AGENTS.md: left alone (--no-agents-file)'
+		const LEFT_IN_PLACE_LINE =
+			'AGENTS.md: session-start check left in place (sync never removes it; delete it by hand if you do not want it)'
 
 		function agentsText(): string | undefined {
 			return existsSync(join(root, 'AGENTS.md')) ? read('AGENTS.md') : undefined
@@ -525,49 +536,252 @@ describe('runSync station agents and the session check', () => {
 			return linesWritten(streams.stdout)
 		}
 
-		it('a contributing sync with the claude target -> AGENTS.md holds the section, the line is printed, the Claude hook stays', () => {
-			runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+		/** What a sync wrote about AGENTS.md, whichever stream. */
+		function agentsLines(): string[] {
+			return [...logLines(), ...linesWritten(streams.stderr)].filter((line) =>
+				line.includes('AGENTS.md'),
+			)
+		}
+
+		/** A terminal whose person answers `answer` (no answer: the input closes), and what the sync asked on it. */
+		function terminalAnswering(answer: string | undefined) {
+			const input = new PassThrough()
+			const output = new PassThrough()
+			const asked: string[] = []
+			output.on('data', (chunk) => asked.push(String(chunk)))
+			if (answer === undefined) input.end()
+			else input.end(answer)
+			return { interactive: true, input, output, asked: () => asked.join('') }
+		}
+
+		it('a contributing sync with the claude target, --agents-file -> AGENTS.md holds the section, the created line is printed, the Claude hook stays', () => {
+			runSync({ argv: ['--agent', 'claude', '--agents-file'], cwd: root, vendor: 'anthropic' })
 
 			expect(agentsText()).toBe(AGENTS_SECTION)
-			expect(logLines()).toContain(`✅ AGENTS.md: session-start check (${SESSION_COMMAND})`)
+			expect(agentsLines()).toEqual([CREATED_LINE])
 			expect(sessionCommands()).toEqual([SESSION_COMMAND])
 		})
 
-		it('--agent agents only (no claude target) -> AGENTS.md still written, no Claude settings', () => {
-			runSync({ argv: ['--agent', 'agents'], cwd: root })
+		it('--agent agents only (no claude target), --agents-file -> AGENTS.md still written, no Claude settings', () => {
+			runSync({ argv: ['--agent', 'agents', '--agents-file'], cwd: root })
 
 			expect(agentsText()).toBe(AGENTS_SECTION)
-			expect(logLines()).toContain(`✅ AGENTS.md: session-start check (${SESSION_COMMAND})`)
+			expect(agentsLines()).toEqual([CREATED_LINE])
 			expect(existsSync(join(root, '.claude/settings.json'))).toBe(false)
 		})
 
-		it('an AGENTS.md of the user -> the section appended after one blank line', () => {
+		it('no AGENTS.md, no flag, not on a terminal -> no file, no question, the not-created line', async () => {
+			const output = new PassThrough()
+			const asked: string[] = []
+			output.on('data', (chunk) => asked.push(String(chunk)))
+
+			await runSyncCommand({
+				argv: ['--agent', 'agents', '--vendor', 'openai'],
+				cwd: root,
+				interactive: false,
+				input: new PassThrough(),
+				output,
+			})
+
+			expect(agentsText()).toBeUndefined()
+			expect(asked).toEqual([])
+			expect(agentsLines()).toEqual([NOT_CREATED_LINE])
+		})
+
+		it('no AGENTS.md, --agents-file, not on a terminal -> created without a question', async () => {
+			const output = new PassThrough()
+			const asked: string[] = []
+			output.on('data', (chunk) => asked.push(String(chunk)))
+
+			await runSyncCommand({
+				argv: ['--agent', 'agents', '--vendor', 'openai', '--agents-file'],
+				cwd: root,
+				interactive: false,
+				input: new PassThrough(),
+				output,
+			})
+
+			expect(agentsText()).toBe(AGENTS_SECTION)
+			expect(asked).toEqual([])
+			expect(agentsLines()).toEqual([CREATED_LINE])
+		})
+
+		const answers = {
+			y: { answer: 'y\n', created: true },
+			n: { answer: 'n\n', created: false },
+			'the input closed with no answer': { answer: undefined, created: false },
+		}
+		for (const [title, testCase] of Object.entries(answers))
+			it(`no AGENTS.md, no flag, on a terminal, answer ${title} -> the question asked once, ${testCase.created ? 'the file created' : 'no file, the not-created line'}`, async () => {
+				const terminal = terminalAnswering(testCase.answer)
+
+				await runSyncCommand({
+					argv: ['--agent', 'agents', '--vendor', 'openai'],
+					cwd: root,
+					...terminal,
+				})
+
+				expect(terminal.asked().split(AGENTS_CREATE_QUESTION).length - 1).toBe(1)
+				expect(agentsText()).toBe(testCase.created ? AGENTS_SECTION : undefined)
+				expect(agentsLines()).toEqual([testCase.created ? CREATED_LINE : NOT_CREATED_LINE])
+			})
+
+		const nothingToWrite = {
+			'no dependency ships dialecte-lot': { argv: [] as string[], lot: false },
+			'--no-session-check': { argv: ['--no-session-check'], lot: true },
+		}
+		for (const [title, testCase] of Object.entries(nothingToWrite))
+			it(`no AGENTS.md, on a terminal, the sync would not write the section (${title}) -> no question, no file, no AGENTS.md line`, async () => {
+				if (!testCase.lot) write('package.json', JSON.stringify({ dependencies: {} }))
+				const terminal = terminalAnswering('y\n')
+
+				await runSyncCommand({
+					argv: ['--agent', 'agents', '--vendor', 'openai', ...testCase.argv],
+					cwd: root,
+					...terminal,
+				})
+
+				expect(terminal.asked()).toBe('')
+				expect(agentsText()).toBeUndefined()
+				expect(agentsLines()).toEqual([])
+			})
+
+		const leftAlone = {
+			'no file, on a terminal': { before: undefined, interactive: true },
+			'no file, not on a terminal': { before: undefined, interactive: false },
+			'a file holding an older section': {
+				before: `${AGENTS_START}\nAn older sentence.\n${AGENTS_END}\n`,
+				interactive: false,
+			},
+			'a file of the user, on a terminal': { before: '# Mine\n', interactive: true },
+		}
+		for (const [title, testCase] of Object.entries(leftAlone))
+			it(`--no-agents-file, ${title} -> no question, the file byte for byte, the left-alone line`, async () => {
+				if (testCase.before !== undefined) write('AGENTS.md', testCase.before)
+				const terminal = {
+					...terminalAnswering('y\n'),
+					interactive: testCase.interactive,
+				}
+
+				await runSyncCommand({
+					argv: ['--agent', 'agents', '--vendor', 'openai', '--no-agents-file'],
+					cwd: root,
+					...terminal,
+				})
+
+				expect(terminal.asked()).toBe('')
+				expect(agentsText()).toBe(testCase.before)
+				expect(agentsLines()).toEqual([LEFT_ALONE_LINE])
+			})
+
+		it('--agents-file with --no-agents-file -> rejected, nothing installed', () => {
+			expect(() =>
+				runSync({ argv: ['--agent', 'agents', '--agents-file', '--no-agents-file'], cwd: root }),
+			).toThrow('skills sync: --agents-file and --no-agents-file exclude each other')
+			expect(existsSync(join(root, '.agents'))).toBe(false)
+		})
+
+		it('--agents-file with --no-agents-file on a terminal, no vendor known -> rejected before any question, nothing written', async () => {
+			const terminal = terminalAnswering('1\n')
+
+			await expect(
+				runSyncCommand({
+					argv: ['--agent', 'agents', '--agents-file', '--no-agents-file'],
+					cwd: root,
+					...terminal,
+				}),
+			).rejects.toThrow('skills sync: --agents-file and --no-agents-file exclude each other')
+
+			expect(terminal.asked()).toBe('')
+			expect(existsSync(join(root, '.agents'))).toBe(false)
+		})
+
+		// a terminal, the answer ready: a file or a flag that settles the matter means no question
+		const noQuestion = {
+			'--agents-file, no file': {
+				flags: ['--agents-file'],
+				before: undefined,
+				after: AGENTS_SECTION,
+				line: CREATED_LINE,
+			},
+			'an AGENTS.md of the user': {
+				flags: [],
+				before: '# Mine\n',
+				after: `# Mine\n\n${AGENTS_SECTION}`,
+				line: `✅ AGENTS.md: session-start check (${SESSION_COMMAND})`,
+			},
+			'a file holding an older section': {
+				flags: [],
+				before: `${AGENTS_START}\nAn older sentence.\n${AGENTS_END}\n`,
+				after: AGENTS_SECTION,
+				line: '✅ AGENTS.md: session-start check updated',
+			},
+			'a file holding the current section': {
+				flags: [],
+				before: AGENTS_SECTION,
+				after: AGENTS_SECTION,
+				line: 'AGENTS.md: session-start check unchanged',
+			},
+		}
+		for (const [title, testCase] of Object.entries(noQuestion))
+			it(`on a terminal, ${title} -> no question, the file as expected, the one line`, async () => {
+				if (testCase.before !== undefined) write('AGENTS.md', testCase.before)
+				const terminal = terminalAnswering('y\n')
+
+				await runSyncCommand({
+					argv: ['--agent', 'agents', '--vendor', 'openai', ...testCase.flags],
+					cwd: root,
+					...terminal,
+				})
+
+				expect(terminal.asked()).toBe('')
+				expect(agentsText()).toBe(testCase.after)
+				expect(agentsLines()).toEqual([testCase.line])
+			})
+
+		it('an AGENTS.md of the user -> the section appended after one blank line, no flag needed', () => {
 			write('AGENTS.md', '# Mine\n')
 
 			runSync({ argv: ['--agent', 'agents'], cwd: root })
 
 			expect(agentsText()).toBe(`# Mine\n\n${AGENTS_SECTION}`)
+			expect(agentsLines()).toEqual([`✅ AGENTS.md: session-start check (${SESSION_COMMAND})`])
 		})
 
-		it('--no-session-check after it was added -> the section removed (a file left empty deleted), the removal line printed', () => {
-			runSync({ argv: ['--agent', 'claude'], cwd: root, vendor: 'anthropic' })
+		it('a second sync -> the file unchanged, the unchanged line printed', () => {
+			write('AGENTS.md', '# Mine\n')
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+			const first = read('AGENTS.md')
+			streams.stdout.mockClear()
+
+			runSync({ argv: ['--agent', 'agents'], cwd: root })
+
+			expect(read('AGENTS.md')).toBe(first)
+			expect(agentsLines()).toEqual(['AGENTS.md: session-start check unchanged'])
+		})
+
+		it('--no-session-check after it was added (a file holding only the section) -> the file byte for byte, the left-in-place line printed', () => {
+			runSync({ argv: ['--agent', 'claude', '--agents-file'], cwd: root, vendor: 'anthropic' })
+			const before = read('AGENTS.md')
 			streams.stdout.mockClear()
 
 			runSync({ argv: ['--agent', 'claude', '--no-session-check'], cwd: root })
 
-			expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
-			expect(logLines()).toContain('🗑  AGENTS.md: session-start check removed')
+			expect(agentsText()).toBe(before)
+			expect(agentsLines()).toEqual([LEFT_IN_PLACE_LINE])
 			expect(sessionCommands()).toEqual([])
 		})
 
-		it('--no-session-check on a file with user text -> only the section goes', () => {
+		it('--no-session-check on a file with user text -> the file byte for byte, the left-in-place line printed', () => {
 			write('AGENTS.md', '# Mine\n')
 			runSync({ argv: ['--agent', 'agents'], cwd: root })
 			expect(agentsText()).toBe(`# Mine\n\n${AGENTS_SECTION}`)
+			streams.stdout.mockClear()
 
 			runSync({ argv: ['--agent', 'agents', '--no-session-check'], cwd: root })
 
-			expect(read('AGENTS.md')).toBe('# Mine\n')
+			expect(read('AGENTS.md')).toBe(`# Mine\n\n${AGENTS_SECTION}`)
+			expect(agentsLines()).toEqual([LEFT_IN_PLACE_LINE])
 		})
 
 		it('an older body between the markers -> replaced, the update line printed', () => {
@@ -576,13 +790,13 @@ describe('runSync station agents and the session check', () => {
 			runSync({ argv: ['--agent', 'agents'], cwd: root })
 
 			expect(agentsText()).toBe(AGENTS_SECTION)
-			expect(logLines()).toContain('✅ AGENTS.md: session-start check updated')
+			expect(agentsLines()).toEqual(['✅ AGENTS.md: session-start check updated'])
 		})
 
 		it('no dependency ships dialecte-lot -> no AGENTS.md written', () => {
 			write('package.json', JSON.stringify({ dependencies: {} }))
 
-			runSync({ argv: ['--agent', 'agents'], cwd: root })
+			runSync({ argv: ['--agent', 'agents', '--agents-file'], cwd: root })
 
 			expect(existsSync(join(root, 'AGENTS.md'))).toBe(false)
 		})

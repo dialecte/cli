@@ -6,6 +6,7 @@ import { run as contrib } from './commands/contrib.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
 import { explain } from './commands/explain.ts'
+import { run as facts } from './commands/facts.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
@@ -43,6 +44,7 @@ export const COMMANDS = {
 	fixture,
 	explain,
 	standard,
+	facts,
 	rules,
 	gate,
 	contrib,

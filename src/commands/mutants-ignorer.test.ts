@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { SMALL_CASE_TIMEOUT } from '../../test/mutation-package.constants.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
 import config from '../../tsup.config.ts'
-import { ignorerPluginPath } from './mutants.ts'
+import { ignorerPluginPath } from '../lib/mutation/run-tiers.ts'
 
 import { describe, expect, it } from 'vitest'
 

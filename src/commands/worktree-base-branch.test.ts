@@ -13,6 +13,7 @@ import {
 import { git, initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
 import { WORKSPACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NO_BASE_BRANCH_FOUND } from '../lib/gate/gate-base.constants.ts'
+import { readHygieneBaseline } from '../lib/worktree/hygiene.ts'
 import { runWorktreeAdd, runWorktreePrune } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -20,13 +21,17 @@ import { describe, expect, it } from 'vitest'
 const NOW = new Date('2026-11-11T10:00:00Z')
 
 /** `worktree add` of `feat/thing` in `core`, a throw coming back as the result it left. */
-function addThing(params: { workspace: string; core: string }): {
+function addThing(params: { workspace: string; core: string; from?: string }): {
 	exitCode: number | undefined
 	output: string
 } {
 	try {
 		return runWorktreeAdd({
-			argv: [params.core, 'feat/thing'],
+			argv: [
+				params.core,
+				'feat/thing',
+				...(params.from === undefined ? [] : ['--from', params.from]),
+			],
 			cwd: params.workspace,
 			now: NOW,
 			colour: false,
@@ -91,6 +96,46 @@ describe('worktree add: where a new branch starts', { timeout: WORKSPACE_CASE_TI
 		expect(existsSync(join(workspace, '.worktrees', '0001-core-thing'))).toBe(true)
 	})
 })
+
+describe(
+	'worktree add: the branch the worktree was cut from is recorded in its baseline',
+	{ timeout: WORKSPACE_CASE_TIMEOUT },
+	() => {
+		/** The hygiene baseline of the worktree `add` made. */
+		function baselineOf(workspace: string) {
+			return readHygieneBaseline(join(workspace, '.worktrees', '0001-core-thing'))
+		}
+
+		it('--from feat/x → the baseline’s from is feat/x', () => {
+			const workspace = temporaryFolder('dialecte-workspace-')
+			const core = initializeRepository({ root: join(workspace, 'core') })
+			git({ root: core, args: ['branch', 'feat/x'] })
+
+			expect(addThing({ workspace, core, from: 'feat/x' }).exitCode).toBe(0)
+			expect(baselineOf(workspace)).toMatchObject({ from: 'feat/x' })
+		})
+
+		it('no --from, main is the resolved base branch → the baseline’s from is main', () => {
+			const workspace = temporaryFolder('dialecte-workspace-')
+			const core = initializeRepository({ root: join(workspace, 'core') })
+
+			expect(addThing({ workspace, core }).exitCode).toBe(0)
+			expect(baselineOf(workspace)).toMatchObject({ from: 'main' })
+		})
+
+		it('no --from, the base branch is found on origin only → the baseline’s from is origin/develop', () => {
+			const workspace = temporaryFolder('dialecte-workspace-')
+			const core = join(workspace, 'core')
+			developAheadOfMain({ root: core })
+			makeDevelopOriginDefault(core)
+			git({ root: core, args: ['switch', '-q', 'main'] })
+			git({ root: core, args: ['branch', '-q', '-D', 'develop'] })
+
+			expect(addThing({ workspace, core }).exitCode).toBe(0)
+			expect(baselineOf(workspace)).toMatchObject({ from: 'origin/develop' })
+		})
+	},
+)
 
 describe(
 	'worktree prune: the branch merged work is compared with',

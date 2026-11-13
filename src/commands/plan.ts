@@ -1,7 +1,8 @@
 /**
  * `dialecte plan next | check | mark`: what can start now in a plan's lot block, whether the block is valid, a
- * person's mark on a person entry (33N). Reads files only (no git process, no network); the one `vm_stat` of the
- * machine reading lives behind its seam; `plan mark` appends one line to the state folder.
+ * person's mark on a person entry (33N). Reads files only (no network, no git process except the probe of a lot
+ * whose hand-over was committed outside its folder and not closed yet); the one `vm_stat` of the machine reading
+ * lives behind its seam; `plan mark` appends one line to the state folder.
  */
 import { statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -19,7 +20,7 @@ import {
 	PLAN_MARKS_SEGMENTS,
 } from '../lib/plan/plan.constants.ts'
 import { proposePlan } from '../lib/plan/propose.ts'
-import { readPlanFacts } from '../lib/plan/read-plan-facts.ts'
+import { landedLotsOf, readPlanFacts } from '../lib/plan/read-plan-facts.ts'
 import { renderPlanNext } from '../lib/plan/render-plan-next.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
@@ -95,6 +96,7 @@ function runNext(params: RunPlanParams): CommandResult {
 			machine,
 			now: seams.now ?? new Date(),
 			all: read.flags.has('all'),
+			landed: landedLotsOf({ facts }),
 		},
 		json,
 	})

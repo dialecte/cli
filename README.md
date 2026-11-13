@@ -25,7 +25,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
 ```
-Discover    api  members  schema  explain  standard
+Discover    api  members  schema  explain  standard  facts
 Use         run  fixture  new
 Grow        lot
 Plan        plan
@@ -41,6 +41,7 @@ dialecte members <expr>    # what an expression of the live types holds
 dialecte schema <Tag>      # what an element may hold and where
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
 dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
+dialecte facts list|show|forget   # the facts recorded in your data folder: their state now, their history; forget one
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -150,10 +151,15 @@ Every Dialecte package ships the agent skills that describe it in `skills/<name>
 - **Session-start check, every agent**: when `dialecte-lot` is installed by the sync (whatever the targets),
   `skills sync` writes a section in the project's root `AGENTS.md`, between `<!-- dialecte-skills:session-check -->`
   and `<!-- /dialecte-skills:session-check -->`, telling the agent to run `npx --no-install @dialecte/cli doctor --brief`
-  at a session start. It is created when there is no `AGENTS.md`, else appended after one blank line (every byte of
-  your text stays, line ends included), replaced when an older release wrote another sentence, and removed (with the
-  blank line it added, the file deleted when nothing else is left) by `--no-session-check`, `--no-contributing` or
-  a sync without `dialecte-lot`. A marker without its pair, or a doubled one, leaves the file alone with a warning.
+  at a session start. It is written with a blank line inside each marker, the form a markdown formatter keeps, so a
+  formatted `AGENTS.md` stays formatted. An existing `AGENTS.md` gets it appended after one blank line; the body
+  between the markers is compared tolerantly (whitespace does not matter: line ends, blank lines, a wrapped
+  sentence), and only the marked block is replaced when an older release wrote another sentence: every byte outside
+  it stays, line ends included. A missing `AGENTS.md` is created only when you answer yes on a terminal or pass `--agents-file`; without
+  either, the sync says it was not created. The section and the file are never removed nor deleted by a sync:
+  `--no-session-check`, `--no-contributing` or a sync without `dialecte-lot` leave them in place (delete the section
+  by hand if you do not want it). `--no-agents-file` leaves `AGENTS.md` alone altogether (it excludes
+  `--agents-file`). A marker without its pair, or a doubled one, leaves the file alone with a warning.
   An `AGENTS.md` holding only the section is no evidence of a vendor.
 - **Session-start check (Claude Code)**: the same check as an adapter: `skills sync` adds a `SessionStart` hook running
   `npx --no-install @dialecte/cli doctor --brief` (the installed cli: no download at a session start) to
@@ -212,6 +218,20 @@ Exit codes: 0 an answer, 1 nothing found (or a warning for `doctor`), 2 a usage 
   need the method's `@intent` tags hold, then its summary, then its name - one intent word beats any number
   of summary words; stop words dropped, word forms reduced to a light stem (`copied`, `copies`, `copying`
   → `copy`); ties put a dialecte's verb before core's, then sort by route.
+- `dialecte api find --source "<need>"` also searches the exported functions of the package you are in (the
+  nearest `package.json` at or above the folder): every exported function declaration, arrow or function-expression
+  `const` of its tracked and untracked-not-ignored `src/**/*.ts` files, tests left out, read from the syntax alone
+  (a local `export { name }` counts, a re-export does not; an overload set is one function, at its first overload).
+  A source row prints `<file>#<name>  source  <file>:<line>`, then the intent that matched, its summary or
+  `(no summary)`. A function without `@intent` ranks on the words its summary and name hold together; at equal
+  hits an indexed method comes first, and a function the package's `api.json` already lists is shown once, by its
+  route. A file that does not parse is left out with a `note:` line. What each file holds is cached by its content
+  hash in `dialecte-source-index.json` in the worktree's git folder, shared by the packages of the repository and
+  rebuilt by another cli version (outside a git work tree, every file is read).
+  `dialecte api show <file>#<name>` (`src/lib/git.ts#readGit`) prints one source function's signature, summary,
+  intents and declaration, with or without `--source`; an unknown name in a file that was read names up to five of
+  that file's functions, the closest first; an unknown file names the closest source paths, or the
+  `api find --source` call that lists them.
 - `dialecte api show <path>` (`info.of`, `doc.query.info.of`, `tx.reference.applyUuidRemap`): signature as
   declared, summary, intents, other routes, where it is declared in its repository, and one call: the
   method's JSDoc `@example` when it is short and calls the method, else a call from the test next to it
@@ -332,6 +352,65 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
 
 `show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
 `DIALECTE_STANDARD` when no standard is configured.
+
+## The facts ledger
+
+`dialecte facts` reads the facts an agent recorded when it answered a question about a dialecte or a standard,
+and retires the ones that no longer hold. A fact is a question (its words, its subject, its kind), its answer,
+where the answer comes from (`schema`, `dialecte`, `standard`, `person` or `outside`), the effort it took, the
+evidence and the sources it rests on. One question has one current fact; a better answer replaces it (an answer
+checked against the documents always replaces an unchecked one, whatever the efforts), and the replaced fact is
+kept, marked `superseded by F-<n>`.
+
+**Where the ledger is.** In your data folder only: `$XDG_DATA_HOME/dialecte/facts/` (else
+`$HOME/.local/share/dialecte/facts/`), one ledger per person, shared by every repository you work in. Each fact is a
+file `F-<n>.json` and its history `F-<n>.history.jsonl`, one line per event (`created`, `reused`, `stale`,
+`superseded`, `forgotten`, `rechecked`); `by-key/` holds one pointer per question to its current fact. Nothing is
+ever deleted: a fact file is written once, afterwards only its state, its `supersededBy` and its sources change,
+and its history only grows (a history line is at most 4,096 bytes: longer lists and strings in it are cut, and
+a line still too long has each list replaced by its length, `fromCount` for `from`; the line marked `cut`, the
+fact file always holding its sources whole). Every verb refuses (exit 2, nothing written) a ledger inside a git work tree, naming
+the folder, the work tree and the fix: set `XDG_DATA_HOME` to a folder outside the repository. Only the data
+folder counts, never the folder the command runs in.
+
+**States.** A fact's state is the state now, checked on every read:
+
+- `valid` - its sources still hold;
+- `stale` - a source moved since it was recorded: the files of the standard it quotes (any file changed, added or
+  removed), or the definition of the dialecte it read. Written to the fact once, with a `stale` line holding why
+  (the source that failed and the fix), which every later read shows;
+- `unverifiable` - a source cannot be compared now (no standard configured, its folder gone, the dialecte not
+  installed). Shown only, never written;
+- `unchecked` - an answer from outside the documents; a person's answer given without them is `valid` and marked
+  `unchecked` on its line;
+- `forgotten` - retired by `facts forget`.
+
+A person's fact is never checked. A fact file no question points to (a record a crash stopped) is an `orphan`; a
+file that is not readable JSON is `unreadable`. A read repairs what a crash or two writers at once left: the
+previous fact of a question gets its `supersededBy`, with a `superseded` line marked `repaired`.
+
+- `dialecte facts list [--about <Tag>] [--state <state>|all] [--json]`: one line per question, its current fact
+  whatever its state: `<id>  <state>  <effort>  <source>  <question>` (the question cut). A `stale` fact (found by
+  this read, or by an earlier one: the reason its `stale` line keeps) or one this read found `unverifiable` ends
+  its line with `- <why>`: the source that failed and the fix (for example: set `DIALECTE_STANDARD`, the expected
+  layout of a refused standard root, run from the package that installs the dialecte). `--state valid`, `stale`, `unverifiable`,
+  `unchecked` or `forgotten`: the current facts in that state now; `--state orphan`: the fact files no question
+  points to; `--state all`: every fact file, superseded, orphan and unreadable ones (with their path) included, a
+  superseded fact's line holding `superseded by F-<n>` before its question:
+  `<id>  <state>  <effort>  <source>  superseded by F-<n>  <question>`. `--about <Tag>`: the facts whose subject
+  holds that tag. `--json` answers `{ facts: [{ id, path, fact?, state, current, reason? }] }` (no `fact` for an
+  unreadable file). An unknown state is
+  a usage error naming the states. The schema sources are compared with the dialectes installed in the folder the
+  command runs in; run from a folder with no `package.json`, they are `unverifiable`, never an error.
+- `dialecte facts show <id> [--json]`: the fact's question, answer, source, effort, state now (with `- <why>` when
+  stale or unverifiable), sources and number of pieces of evidence, then its history in order; `--json` answers
+  `{ fact, state, current, reason?, history }`.
+- `dialecte facts forget <id> --reason <text> [--json]`: marks the fact `forgotten` and appends a `forgotten` line
+  holding the reason (cut at 200 characters, the line then marked `cut`); the file is kept. Forgetting it again says so and writes nothing.
+  `--json` answers `{ id, state, already }`. No reason, or a blank one, is a usage error.
+
+`show` and `forget` answer exit 1 for an id with no fact (the closest ids named) or a fact file that is not
+readable JSON (its path named).
 
 ## MCP server
 
@@ -582,7 +661,19 @@ the answer.
     test proves nothing yet"); a passing case with a receipt whose own test call changed; a passing case
     still waiting for its green whose test file, or test code it imports, changed since its red ("test
     code changed since its red and it passes"); a failure on a missing export, a type or syntax error, a
-    timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
+    timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`; a
+    file whose run reports no case, `red` and `green` alike, with why the package's vitest configs (every
+    `vitest*.config.*` and their `projects`, read as files) give: `ran no case: the file belongs to
+    <config>, which the default config does not list (projects)`, `ran no case of the file` (the default
+    config holds it: an empty describe, no test call; or a config cannot be fully read - an `include`,
+    `exclude` or `projects` entry that is no string literal or inline object, such as an imported constant,
+    a spread, a call or a glob of config files - and may hold it), `every case is skipped` (only `.skip` /
+    `.todo` / `.skipIf(true)` cases; the gate, which only collects, maps each case the run reports to its
+    test call, so a case a helper registers counts as run). A refused file is never frozen, and the gate's
+    tdd step fails on it with the same reason. A file
+    no vitest config includes (a Playwright spec, a type test) is no vitest test file: it leaves the
+    selection with `outside  <file>  not a vitest test file (no vitest config includes it)`, is never
+    refused nor frozen, and never fails the gate. A
     case the same as at the base is marked unchanged; a case the lot accepts is marked accepted, unless
     it is proven red then green at its current test call (an acceptance never overrides a proof: it goes
     the normal path, no accepted receipt, and the line adds `acceptance not needed (proven red → green): it
@@ -680,14 +771,30 @@ the answer.
     looks deleted) prints `deleted <file> a test call of the base is gone`; when a `gone` entry of
     `.dialecte/lot.json` names its file (a path or a glob), it prints
     `gone <file> a test call of the base is gone (<reason>)` instead, in the gate's details too. A titled
-    test gone and a deleted test file stay `deleted`. A ledger that cannot be read is refused with its
-    path.
+    test gone and a deleted test file stay `deleted`. A changed test file whose run reports no case prints
+    `refused  <file>  <reason>` (the reasons of `red` above), one no vitest config includes `outside  <file>
+    not a vitest test file (no vitest config includes it)`. A ledger that cannot be read is refused with its
+    path. `--json` answers the state: `cases`, `duplicates`, `unfrozen`, `findings`, `unlisted`, and, only
+    when there are some, `zeroCases: [{ file, reason }]` (the refused files) and `notVitest: [<file>]` (the
+    files out of the selection).
   - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
   - `status --legend` prints the tdd terms of the hand-over card, each in two lines: what it means, and
     whether to look. It needs no package: it works from any folder.
   - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
     committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
-    whole-branch view; `gate --full` measures from where the branch left its base branch.
+    whole-branch view; `gate --full` (and `--release`) measures the tdd step from the lot's base: the
+    branch the lot was started on (the store lot's base, else the branch `worktree add` recorded it was cut
+    from; a base given as a commit id stands for the resolved base branch), from where HEAD now leaves it,
+    so a lot that merged or rebased onto its base's new commits is not asked for them. When that base is
+    not found, is behind the cut, never held the cut (a stacked lot), was rewritten or has merged the lot's own commits, it measures from the
+    worktree's cut and says why; a worktree with no recorded base measures from its cut, one not made by
+    `worktree add` from where the branch left its base branch. The first details line of the gate's tdd step
+    (none when the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
+    `lot base <ref>`, `worktree from <ref>`, `base branch <b> (the lot's base is a commit)`, `worktree cut`,
+    `base branch <b>`, `HEAD`; a fallback reads `tdd base: the worktree's cut (<why>)`, the why one of `no
+    base branch recorded`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
+    stacked lot` (the ref's reflog never reached the cut), `<ref> was rewritten: the cut <sha>
+    is no ancestor of the merge-base <sha>`, `<ref> holds the lot's own commits`.
   - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
     (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
     `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,
@@ -1385,8 +1492,13 @@ the answer.
   records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
   An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
   pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
-  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process). The text
-  says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process, except
+  one probe per lot whose hand-over was committed outside its folder and not closed yet: once its branch is past
+  the lot's base commit and on the base branch that lot reads `committed`, is no longer open nor holds anything,
+  and is listed under `landed` as `lot <full name> committed: hand-over committed in <folder>, branch on
+  <target>`; once `lot close` closes that hand-over every reader reads it `committed`, files only, with no
+  `landed` line; a lot with a live run or a transition later than that hand-over reads from its own records). The
+  text says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
   `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
   <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
   each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
@@ -1394,7 +1506,8 @@ the answer.
   twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
   proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps
   would wait (advice only). `--all` lists the done entries; `--json` answers `{ plan, repositories, counts,
-  entries, proposals, held, specWork, heavy, unknown }`. Exit 0 when a lot or fix can start, 1 when none can, 2
+  entries, proposals, held, landed, specWork, heavy, unknown }`, `landed` always a list (`[{ repository, lot,
+  folder, target }]`, `[]` when none). Exit 0 when a lot or fix can start, 1 when none can, 2
   for a usage error, no block or an invalid one (every fault listed), or a repository that is not a git checkout.
   `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
   2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
@@ -1493,7 +1606,17 @@ the answer.
     too, `head` its last lot commit or `null`. Kept,
     with why and nothing done for that hand-over: first, a worktree a lot of the repository's store names
     (by real path) while the lot is not `committed` nor `canceled`, reason `lot <full name> <state>` (the
-    store read once, no git process per lot); a hand-over still `pending`; its worktree is the main
+    store read once, no git process per lot but the one probe below). A lot whose hand-over was committed
+    outside its own folder (no registry entry for the lot folder, every entry naming its worktree and branch
+    `committed`) reads `committed` once its branch is past the lot's base commit (the base an ancestor of the
+    tip, the tip not the base) and on the base branch. Such a lot keeps nothing, and every outcome of its
+    worktree carries the line `lot <full name> committed: hand-over committed in <folder>, branch on <target>`
+    (under the outcome's line, indented; `landed` in `--json`); the other keep rules below still apply to it.
+    Once `lot close` has closed that hand-over, every reader (`lot status`, `lot wait`, the overlap at `lot
+    start`, `worktree prune`, `plan next` among them) reads the lot `committed`, files only and without the
+    probe, so a branch deleted afterwards never reopens it. A lot with a live run, or a transition later than
+    that hand-over (resumed after it), reads from its own records, never landed nor closed by it. A hand-over
+    still `pending`; its worktree is the main
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's
     (both branches named: it holds other work now); a `locked` worktree (`git worktree lock`); another
@@ -1521,7 +1644,7 @@ the answer.
     decided nor moved (an entry without it, a worktree removed by hand, is still kept: `nothing to close`).
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
-    `[{ handover, closed: true, already?: true } | { handover, kept }]`.
+    `[{ handover, closed: true, already?: true, landed? } | { handover, kept, landed? }]`.
 - Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
   it cannot parse, and counts them.
   - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`

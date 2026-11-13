@@ -163,6 +163,9 @@ export const ALREADY_COMMITTED_DETAIL =
 /** `lot close` of a hand-over its registry entry records closed by an earlier close: nothing moved, exit 0. */
 export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed'
 
+/** What a landed lot's line of `lot close` starts with: it sits under the outcome's line. */
+export const LOT_CLOSE_LANDED_INDENT = '        '
+
 /** How many commits only a worktree's HEAD reflog reaches `lot close` names when it keeps it; the rest are counted. */
 export const HEAD_REFLOG_COMMITS_SHOWN = 3
 

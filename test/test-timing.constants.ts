@@ -129,6 +129,12 @@ export const SOURCE_TREE_SCAN_CASE_TIMEOUT = 120_000
  */
 export const GATE_REAL_TOOLS_CASE_TIMEOUT = 240_000
 
+/**
+ * The bound of a case that reads a few lines of a vitest config through the TypeScript AST: a guard against a reader
+ * that never returns, never a measure of speed. A read takes milliseconds; five seconds is far above it.
+ */
+export const CONFIG_READ_CASE_TIMEOUT = 5_000
+
 /** How many seconds the stand-in cli that hangs on the probe sleeps: far longer than any bound a case measures. */
 export const HANGING_CLI_SLEEP_SECONDS = 60
 

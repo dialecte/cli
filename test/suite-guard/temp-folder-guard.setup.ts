@@ -9,8 +9,9 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { STATE_HOME_VARIABLE } from '../../src/lib/store/store.constants.ts'
+import { DATA_HOME_VARIABLE, STATE_HOME_VARIABLE } from '../../src/lib/store/store.constants.ts'
 import {
+	SUITE_DATA_FOLDER,
 	SUITE_FOLDER_CACHES,
 	SUITE_FOLDER_PREFIX,
 	SUITE_STATE_FOLDER,
@@ -18,23 +19,29 @@ import {
 import { describeLeftovers, listLeftovers } from './temp-leftovers.ts'
 
 /**
- * Makes the suite's temporary folder and points TMPDIR at it, and XDG_STATE_HOME at a folder inside it (no test
- * writes into a person's state folder); returns the teardown that removes the state folder, then checks the rest.
+ * Makes the suite's temporary folder and points TMPDIR at it, and XDG_STATE_HOME and XDG_DATA_HOME at folders
+ * inside it (no test writes into a person's state or data folder); returns the teardown that removes the state and
+ * data folders, then checks the rest.
  */
 export default function setupTemporaryFolderGuard(): () => void {
 	const systemFolder = process.env.TMPDIR
 	const systemState = process.env[STATE_HOME_VARIABLE]
+	const systemData = process.env[DATA_HOME_VARIABLE]
 	const folder = mkdtempSync(join(tmpdir(), SUITE_FOLDER_PREFIX))
 	const state = join(folder, SUITE_STATE_FOLDER)
 	mkdirSync(state)
+	const data = join(folder, SUITE_DATA_FOLDER)
+	mkdirSync(data)
 	process.env.TMPDIR = folder
 	process.env[STATE_HOME_VARIABLE] = state
+	process.env[DATA_HOME_VARIABLE] = data
 
 	return function checkTemporaryFolder() {
 		try {
 			try {
-				// the state folder is the suite's own, not a leftover: removed before the check
+				// the state and data folders are the suite's own, not leftovers: removed before the check
 				rmSync(state, { recursive: true, force: true })
+				rmSync(data, { recursive: true, force: true })
 				const names = listLeftovers({ folder }).filter(
 					(name) => !SUITE_FOLDER_CACHES.includes(name),
 				)
@@ -53,6 +60,8 @@ export default function setupTemporaryFolderGuard(): () => void {
 			else process.env.TMPDIR = systemFolder
 			if (systemState === undefined) delete process.env[STATE_HOME_VARIABLE]
 			else process.env[STATE_HOME_VARIABLE] = systemState
+			if (systemData === undefined) delete process.env[DATA_HOME_VARIABLE]
+			else process.env[DATA_HOME_VARIABLE] = systemData
 		}
 	}
 }

@@ -13,3 +13,6 @@ export const SUITE_FOLDER_CACHES: readonly string[] = ['node-compile-cache']
 
 /** The suite's state folder (XDG_STATE_HOME) inside its temporary folder: removed before the leftover check. */
 export const SUITE_STATE_FOLDER = 'state'
+
+/** The suite's data folder (XDG_DATA_HOME) inside its temporary folder: removed before the leftover check. */
+export const SUITE_DATA_FOLDER = 'data'

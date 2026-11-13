@@ -57,13 +57,19 @@ export const SUITE_FUNCTIONS: readonly string[] = ['describe', 'suite']
 /** The modifiers called with a table before the call taking the title (`it.each(table)(...)`): a format title. */
 export const TABLE_MODIFIERS: readonly string[] = ['each', 'for']
 
+/** The condition modifier that skips a case when its argument is true (`it.skipIf(true)(...)`). */
+export const SKIP_IF_MARKER = 'skipIf'
+
 /** The modifiers called with a condition before the call taking the title (`it.skipIf(condition)(...)`). */
-export const CONDITION_MODIFIERS: readonly string[] = ['skipIf', 'runIf']
+export const CONDITION_MODIFIERS: readonly string[] = [SKIP_IF_MARKER, 'runIf']
 
 /** The functions a focus marker (`.only`) narrows a run with. */
 export const TEST_FUNCTIONS: readonly string[] = ['it', 'test', 'describe', 'suite', 'bench']
 
 export const ONLY_MARKER = 'only'
+
+/** The markers a call never runs through (`it.skip(...)`, `describe.todo(...)`, `test.skip.each(table)(...)`). */
+export const SKIP_MARKERS: readonly string[] = ['skip', 'todo']
 
 /** `http://localhost:63315/@fs/abs/path?v=1`, `file:///abs/path`: how a browser run may spell a file. */
 export const BROWSER_PATH_PREFIX_PATTERN = /^(?:https?:\/\/[^/]+(?:\/@fs)?|file:\/\/)/
@@ -343,3 +349,100 @@ export const DUPLICATE_CARD_LABEL = 'duplicate id'
 
 /** The gate's tdd step reason when duplicate ids exist: `{count}` files, `{files}` their paths. */
 export const DUPLICATE_GATE_REASON = 'duplicate case ids in {count} file(s): {files}'
+
+/**
+ * Where the whole-branch base came from (`TddBase.source`): `{ref}` the lot's base ref or the baseline's `from`,
+ * `{branch}` the resolved base branch's name.
+ */
+export const TDD_BASE_SOURCES = {
+	flag: '--base',
+	lotBase: 'lot base {ref}',
+	worktreeFrom: 'worktree from {ref}',
+	baseBranchOfCommit: "base branch {branch} (the lot's base is a commit)",
+	worktreeCut: 'worktree cut',
+	baseBranch: 'base branch {branch}',
+	head: 'HEAD',
+} as const
+
+/**
+ * Why the whole-branch base fell back to the worktree's cut (`TddBase.note`): `{ref}` the lot's base ref, `{cut}`
+ * and `{mergeBase}` short commit ids.
+ */
+export const TDD_BASE_NOTES = {
+	noneRecorded: "tdd base: the worktree's cut (no base branch recorded)",
+	notFound: "tdd base: the worktree's cut ({ref} not found)",
+	holdsOwnCommits: "tdd base: the worktree's cut ({ref} holds the lot's own commits)",
+	behind: "tdd base: the worktree's cut ({ref} is behind the cut)",
+	notOnRef: "tdd base: the worktree's cut ({ref} does not hold the cut: a stacked lot)",
+	rewritten:
+		"tdd base: the worktree's cut ({ref} was rewritten: the cut {cut} is no ancestor of the merge-base {mergeBase})",
+} as const
+
+/** The ref folders a recorded base ref may name (a branch, origin's branch, a tag); in none of them, it is a commit id. */
+export const TDD_BASE_NAMED_REF_PREFIXES: readonly string[] = [
+	'refs/heads/',
+	'refs/remotes/',
+	'refs/tags/',
+]
+
+/** The line the gate's tdd step shows beside the base it measured from: `{commit}` a short id, `{source}` as above. */
+export const TDD_BASE_LINE = 'tdd base: {commit} ({source})'
+
+/**
+ * Why a test file of a run reports no case (a refusal): `{config}` the vitest config that holds the file and that the
+ * default config does not list.
+ */
+export const ZERO_CASE_REASONS = {
+	otherConfig:
+		'ran no case: the file belongs to {config}, which the default config does not list (projects)',
+	noCase: 'ran no case of the file',
+	allSkipped: 'every case is skipped',
+} as const
+
+/** The line of a selected file no vitest config includes: it leaves the selection, never refused nor frozen. */
+export const NOT_A_VITEST_FILE_LINE = 'not a vitest test file (no vitest config includes it)'
+
+/** The label of a refused file's or case's line (`refused  <file>  <reason>`). */
+export const REFUSED_LABEL = 'refused'
+
+/** The label of that line (`outside  <file>  <line>`): no case line, never counted as a refusal. */
+export const NOT_A_VITEST_FILE_LABEL = 'outside'
+
+/** The case states of a run that ran no case: skipped (`.skip`, `.todo`) or never started. */
+export const NOT_RUN_CASE_STATES: readonly string[] = ['skipped', 'pending']
+
+/** A vitest config of the package root: `vitest.config.ts`, `vitest.unit.config.mts`... */
+export const VITEST_CONFIG_FILE_PATTERN = /^vitest(\.[^.]+)*\.config\.[cm]?[jt]s$/
+
+/** The vite config of the package root: vitest reads it when no `vitest.config.*` exists. */
+export const VITE_CONFIG_FILE_PATTERN = /^vite\.config\.[cm]?[jt]s$/
+
+/** The config a vitest run with no `--config` reads: the first of these that exists. */
+export const DEFAULT_CONFIG_FILES: readonly string[] = [
+	'vitest.config.ts',
+	'vitest.config.mts',
+	'vitest.config.cts',
+	'vitest.config.js',
+	'vitest.config.mjs',
+	'vitest.config.cjs',
+	'vite.config.ts',
+	'vite.config.mts',
+	'vite.config.cts',
+	'vite.config.js',
+	'vite.config.mjs',
+	'vite.config.cjs',
+]
+
+/** vitest's default `test.include` (`**\/*.{test,spec}.?(c|m)[jt]s?(x)`), its alternatives as braces. */
+export const DEFAULT_VITEST_INCLUDE: readonly string[] = ['**/*.{test,spec}.{,c,m}{j,t}s{,x}']
+
+/** vitest's default `test.exclude`. */
+export const DEFAULT_VITEST_EXCLUDE: readonly string[] = ['**/node_modules/**', '**/.git/**']
+
+/** The fields of a vitest config tdd reads to know which config holds a test file. */
+export const VITEST_CONFIG_PROPERTIES = {
+	test: 'test',
+	include: 'include',
+	exclude: 'exclude',
+	projects: 'projects',
+} as const

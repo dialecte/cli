@@ -92,12 +92,14 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Discover',
 		summary: 'Find a method by what you need (find), read its contract (show)',
 		usage: [
-			'dialecte api find "<need>" [--package <name>] [--limit 5] [--json]',
+			'dialecte api find "<need>" [--source] [--package <name>] [--limit 5] [--json]',
 			'dialecte api show <path> [--package <name>] [--json]',
+			'dialecte api show <file>#<name> [--json]',
 		],
 		notes: [
 			'find - the methods whose intents, summary or name match the need, best first',
 			'show - signature, summary, intents, routes, declaration, example (info.of, tx.addChild)',
+			'--source - also the exported functions of the own package src/ (show src/lib/git.ts#readGit), cached in the git folder',
 		],
 		exitCodes: [],
 		example: 'dialecte api find "add a child element"',
@@ -154,6 +156,28 @@ export const COMMAND_MAP: CommandMap = {
 			'2  usage · no standard configured · a root or cache inside a git work tree · colliding ids · an unknown standard, file, --package or --about tag',
 		],
 		example: 'dialecte standard find "data object" --limit 5',
+	},
+	facts: {
+		family: 'Discover',
+		summary:
+			'List, show and forget the facts the agents recorded, kept in the data folder (one ledger per person, never in a repository)',
+		usage: [
+			'dialecte facts list [--about <Tag>] [--state <state>|all] [--json]',
+			'dialecte facts show <id> [--json]',
+			'dialecte facts forget <id> --reason <text> [--json]',
+		],
+		notes: [
+			'the ledger is $XDG_DATA_HOME/dialecte/facts (else ~/.local/share/dialecte/facts): one file per fact (F-<n>.json) and its history (F-<n>.history.jsonl); nothing is ever deleted',
+			"list - every question's current fact, whatever its state; --state valid | stale | unverifiable | unchecked | forgotten: the current facts in that state now; orphan: the fact files no question points to; all: every fact file, superseded and unreadable ones included; --about <Tag>: the facts about that tag",
+			"states - valid; stale (a source moved since: a standard's files, a dialecte's definition); unverifiable (a source cannot be compared now); unchecked (from outside the documents, or a person's answer given without them); forgotten",
+			'show - the question, the answer, its source and effort, its state now, its sources, how many pieces of evidence, and its history in order',
+			'forget - marks the fact forgotten, its reason in the history (cut at 200 characters); the file is kept; forgetting it again writes nothing',
+		],
+		exitCodes: [
+			'1  show, forget: no fact of that id (the closest ids named) or a fact file that is not readable JSON',
+			'2  usage · the ledger inside a git work tree (set XDG_DATA_HOME to a folder outside the repository)',
+		],
+		example: 'dialecte facts list --state stale',
 	},
 	run: {
 		family: 'Use',
@@ -248,7 +272,7 @@ export const COMMAND_MAP: CommandMap = {
 			"verify - run inside the lot's worktree: appends { schema, at, by, note, state } to <folder>/verify.jsonl in one write, state the worktree's state hash; a change of the tree after the last round-<n>/ snapshot is a late fix: the card warns and handover run refuses it (exit 2) until a verify covers the current state (one later change needs a new verify); a snapshot with no round-<n>.state (an older cli) is not checked; no snapshot yet (nothing is late), --by or --note missing, blank or not one line, or holding a forbidden word are refused (exit 2), nothing written",
 			"report - reads files only (no git, no process, nothing written): the lot's stations, tokens, money, time, suites per station by time, heavy steps, folders and review rounds from its events.jsonl, transitions, ledger and cards.log; a number nobody reported is unknown, never 0, and a step family whose runs may be unrecorded reads unknown with the reason; --feature lists every lot of that feature in every store (simulated ones counted apart, listed by --simulated; a lot whose folder is gone is read from its cards.log line); next: the lot's own next command",
 			"export - copies a lot folder to <dir>/<full name>/ without asks/ (links kept as links, those pointing outside it named), adding the lot's cards.log lines and registry entry; refused for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied file compared by size and sha256 (events.jsonl as a prefix) before the rename, one more copy on a difference; the source is never written",
-			"close - for a committed or abandoned hand-over of the registry (by name or index): its final record first, the card line in the repository's cards.log (a catch-up one when none exists, for every hand-over of the worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed line (trashed or kept); kept first when an open lot names it (reason lot <name> <state>), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known, or the final record cannot be kept or the lot's commit is not known; the branch never touched; a hand-over already closed answers already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not hold",
+			"close - for a committed or abandoned hand-over of the registry (by name or index): its final record first, the card line in the repository's cards.log (a catch-up one when none exists, for every hand-over of the worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove without --force (git refuses one written into since the check: it stays in .worktrees/_trash/), its node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed line (trashed or kept); kept first when an open lot names it (reason lot <name> <state>; a lot whose hand-over was committed outside its folder reads committed once its branch is past the lot's base commit and on the base branch, and every outcome of its worktree carries the line lot <name> committed: hand-over committed in <folder>, branch on <target>, landed in --json; once closed, every reader reads that lot committed, files only; a lot with a live run or a transition later than that hand-over reads from its own records), then with why when it is the main checkout, on another branch than the hand-over's, locked, another hand-over of the same worktree is neither committed nor abandoned, a link from outside it points into it, dirty, its HEAD reflog reaches commits that neither the hand-over's branch, the base branch nor a remote-tracking ref holds, it holds ignored files its removal would delete that nothing else holds (rebuilt folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a mutation run works there, lot close itself runs from inside it, or the processes are not known, or the final record cannot be kept or the lot's commit is not known; the branch never touched; a hand-over already closed answers already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not hold",
 		],
 		exitCodes: [
 			'1  station: the event could not be written',
@@ -290,7 +314,7 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		notes: [
 			"the block - one fenced ```json dialecte-lots block in the plan, or the file <plan without .md>.lots.json beside it (both or neither: refused); each entry's id, kind (lot, fix, spec, person), dependsOn, scope per repository, heavy steps, brief and match (branch, handover, feature); unknown keys refused, every fault at once",
-			'next - proposes only, starts and writes nothing: the state of each entry read from the stores, the hand-over registries and the worktrees of its repositories (files only, no git process), the open lots, the lots that can start in critical-path order (merge:, after, unverified, stacks, next command), the held ones with each scope pair met, person entries without a mark, the spec work, what each entry waits for, the parked ones, the live heavy steps with the load against twice the cores and the available memory against 2 GB (advice only); --all lists the done entries; --json { plan, repositories, counts, entries, proposals, held, specWork, heavy, unknown }',
+			'next - proposes only, starts and writes nothing: the state of each entry read from the stores, the hand-over registries and the worktrees of its repositories (files only, no git process except one probe per lot whose hand-over was committed outside its folder: once its branch is past the base commit of the lot and on the base branch it reads committed; once lot close closed that hand-over every reader reads it committed, files only; a live run or a transition later than that hand-over reads from its own records), the open lots, the lots that can start in critical-path order (merge:, after, unverified, stacks, next command), the held ones with each scope pair met, the landed lots (lot <name> committed: hand-over committed in <folder>, branch on <target>; until lot close closes that hand-over), person entries without a mark, the spec work, what each entry waits for, the parked ones, the live heavy steps with the load against twice the cores and the available memory against 2 GB (advice only); --all lists the done entries; --json { plan, repositories, counts, entries, proposals, held, landed, specWork, heavy, unknown }',
 			'check - the block parses and every repository is a git main checkout (two names for one common folder refused); one line when valid; --json { plan, valid, faults }',
 			"mark - a person entry only: appends { plan, id, state: done, by, reason, at } to <state>/dialecte/plans/<sha256 of the plan's real path, 16 hex>.jsonl, once (again: already); per machine",
 		],
@@ -456,13 +480,13 @@ export const COMMAND_MAP: CommandMap = {
 		family: 'Workspace',
 		summary: 'Agent skills shipped in skills/<name>/: sync | generate | check | changed',
 		usage: [
-			'dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing] [--vendor <id>] [--no-session-check]',
+			'dialecte skills sync [--agent claude,copilot,agents] [--copy] [--from <workspace>] [--contributing | --no-contributing] [--vendor <id>] [--no-session-check] [--agents-file | --no-agents-file]',
 			'dialecte skills generate [zero-config flags]',
 			'dialecte skills check [--workspace <dir>] [zero-config flags]',
 			'dialecte skills changed [--base <ref>]',
 		],
 		notes: [
-			'sync - install the consumer skills of your dependencies (or of local checkouts) for your agents; --contributing adds the contributor skills, remembered until --no-contributing; remembers the model vendor; with the contributor skills, a doctor --brief session-start check in AGENTS.md and the station agents (--no-session-check leaves the check out)',
+			'sync - install the consumer skills of your dependencies (or of local checkouts) for your agents; --contributing adds the contributor skills, remembered until --no-contributing; remembers the model vendor; with the contributor skills, a doctor --brief session-start check in AGENTS.md and the station agents (--no-session-check leaves the check out); a missing AGENTS.md is created only on a yes or with --agents-file, the section is never removed, and --no-agents-file leaves AGENTS.md alone',
 			'generate - rewrite the generated blocks (verb map, method index, hook files) from the source',
 			'check - fail on a cited API / path / npm script / cli invocation that does not exist, or a stale block',
 			'changed - per skill, hand-written change (evals due) or generated blocks only',

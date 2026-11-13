@@ -1,6 +1,7 @@
 import type { MachineLoad, MemorySource } from '../heavy/machine-load.types.ts'
 import type { EntryStatus, PlanStates } from './entry-state.types.ts'
 import type { PlanBlock } from './plan-block.types.ts'
+import type { PlanLandedLot } from './plan.types.ts'
 import type {
 	Held,
 	PlanCounts,
@@ -26,6 +27,8 @@ export type PlanNextReport = {
 	now: Date
 	/** `--all`: the done entries are listed, not only counted. */
 	all: boolean
+	/** The lots whose hand-over was committed outside their folder and whose branch is on the target branch. */
+	landed: PlanLandedLot[]
 }
 
 /** One entry of `plan next --json` (33N section 9). */
@@ -42,6 +45,7 @@ export type PlanNextJson = {
 	entries: PlanNextEntryJson[]
 	proposals: Proposal[]
 	held: Held[]
+	landed: PlanLandedLot[]
 	specWork: SpecWork[]
 	heavy: {
 		markers: PlanHeavyMarker[]

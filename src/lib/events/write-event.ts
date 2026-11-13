@@ -86,8 +86,11 @@ export function cutEvent(params: { event: LotEvent }): LotEvent {
 	return cut ? { ...(value as LotEvent), cut: true } : params.event
 }
 
-/** A value with its lists after `CUT_LIST_LIMIT` entries and its strings after `CUT_STRING_LIMIT` characters cut. */
-function cutValue(value: unknown): { value: unknown; cut: boolean } {
+/**
+ * A value with its lists after `CUT_LIST_LIMIT` entries and its strings after `CUT_STRING_LIMIT` characters cut.
+ * Exported: a fact's history line is cut by the same rule.
+ */
+export function cutValue(value: unknown): { value: unknown; cut: boolean } {
 	if (typeof value === 'string') return cutString(value)
 	if (Array.isArray(value)) return cutList(value)
 	if (value !== null && typeof value === 'object')

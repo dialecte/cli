@@ -1,8 +1,11 @@
 /**
  * The vendor-neutral session-start check: a section of the project's root `AGENTS.md`, owned through its two
- * markers (no manifest field). Everything outside the markers stays byte for byte, line ends included.
+ * markers (no manifest field). Only the marked block is ours: everything outside the markers stays byte for byte,
+ * line ends included. The section is written with a blank line inside each marker, the form a markdown formatter
+ * keeps, and compared tolerantly (whitespace does not matter: line ends, blank lines, a wrapped sentence). A sync never
+ * removes the section nor the file; it creates a missing file only when asked to.
  */
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -17,6 +20,8 @@ import type { AgentsFileCheckState, SectionSpan } from './agents-file-check.type
 export function syncAgentsFileCheck(params: {
 	cwd: string
 	enabled: boolean
+	/** Grants making a missing `AGENTS.md`. */
+	create: boolean
 }): AgentsFileCheckState {
 	const { cwd, enabled } = params
 	const path = join(cwd, AGENTS_FILE)
@@ -24,12 +29,10 @@ export function syncAgentsFileCheck(params: {
 	const text = exists ? readFileSync(path, 'utf8') : ''
 	const found = findSection(text)
 	if (found === 'unclosed') return 'unclosed'
-	if (enabled) return addOrUpdate({ path, text, span: found })
-	if (found === undefined) return 'unchanged'
-	const without = withoutSection({ text, span: found })
-	if (without.trim() === '') unlinkSync(path)
-	else writeFileSync(path, without)
-	return 'removed'
+	if (!enabled) return found === undefined ? 'absent' : 'kept'
+	if (!exists && !params.create) return 'missing'
+	const state = addOrUpdate({ path, text, span: found })
+	return !exists && state === 'added' ? 'created' : state
 }
 
 /** True when the content outside the session-check section is whitespace only. */
@@ -69,14 +72,28 @@ function addOrUpdate(params: {
 }): AgentsFileCheckState {
 	const { path, text, span } = params
 	const eol = eolOf(text)
-	const section = `${AGENTS_CHECK_START}${eol}${AGENTS_CHECK_LINE}${eol}${AGENTS_CHECK_END}`
+	const section = `${AGENTS_CHECK_START}${eol}${eol}${AGENTS_CHECK_LINE}${eol}${eol}${AGENTS_CHECK_END}`
 	if (span === undefined) {
 		writeFileSync(path, `${text}${separatorBefore({ text, eol })}${section}${eol}`)
 		return 'added'
 	}
-	if (text.slice(span.start, span.end) === section) return 'unchanged'
+	if (holdsCurrentSentence(text.slice(span.start, span.end))) return 'unchanged'
 	writeFileSync(path, `${text.slice(0, span.start)}${section}${text.slice(span.end)}`)
 	return 'updated'
+}
+
+/**
+ * Whether the body between the markers is the current sentence, whitespace aside: line ends, blank lines around
+ * it, a sentence a formatter wrapped over several lines, doubled spaces.
+ */
+function holdsCurrentSentence(section: string): boolean {
+	const body = section.slice(AGENTS_CHECK_START.length, section.length - AGENTS_CHECK_END.length)
+	return wordsOf(body) === wordsOf(AGENTS_CHECK_LINE)
+}
+
+/** The words of a text joined by one space: every run of whitespace counts as one. */
+function wordsOf(text: string): string {
+	return text.split(/\s+/).filter(Boolean).join(' ')
 }
 
 /** One blank line between the user's text and the section; a file not ending with a line end is completed first. */
@@ -84,21 +101,4 @@ function separatorBefore(params: { text: string; eol: string }): string {
 	const { text, eol } = params
 	if (text === '') return ''
 	return text.endsWith('\n') ? eol : `${eol}${eol}`
-}
-
-/**
- * The text without the section and its own line end; then one blank line next to it, only if there is one: the
- * one before it (the add put it there), or, when the section opens the file, the one after it.
- */
-function withoutSection(params: { text: string; span: SectionSpan }): string {
-	const { text, span } = params
-	const eol = eolOf(text)
-	let before = text.slice(0, span.start)
-	let after = text.slice(span.end)
-	// the line end after the section is the section's own only when the section starts its line
-	const startsLine = before === '' || before.endsWith('\n')
-	if (startsLine && after.startsWith(eol)) after = after.slice(eol.length)
-	if (before.endsWith(`${eol}${eol}`)) before = before.slice(0, -eol.length)
-	else if (before === '' && after.startsWith(eol)) after = after.slice(eol.length)
-	return `${before}${after}`
 }

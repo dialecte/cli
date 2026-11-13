@@ -96,6 +96,7 @@ describe('worktree add', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		expect(JSON.parse(readFileSync(join(gitFolder, 'dialecte-hygiene.json'), 'utf8'))).toEqual({
 			stashCommits: [],
 			head: git({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim(),
+			from: 'main',
 			writtenAt: '2026-10-29T10:00:00.000Z',
 		})
 		expect(result.output).toMatch(/^│ branch +feat\/thing \(from main\) +│$/m)

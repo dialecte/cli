@@ -27,7 +27,15 @@ export type StoreLotFact = {
 	open: boolean
 	scope: string[]
 	worktree: string | null
+	/**
+	 * Set when the lot reads `committed` because its hand-over was committed outside its folder and its branch is on
+	 * the target branch, while that hand-over is not closed yet: the folder of the hand-over and the target branch.
+	 */
+	landed?: { folder: string; target: string }
 }
+
+/** A landed lot `plan next` names: its repository's name in the plan, the lot, its hand-over's folder, the target. */
+export type PlanLandedLot = { repository: string; lot: string; folder: string; target: string }
 
 /** An entry of a repository's hand-over registry. */
 export type RegistryFact = {

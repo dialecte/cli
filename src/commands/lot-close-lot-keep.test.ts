@@ -88,7 +88,7 @@ describe('lot close: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, () => 
 	for (const state of OPEN_STATES)
 		it(`a committed hand-over whose worktree a lot ${state} names → kept, reason "lot <name> ${state}", nothing moved, exit 1 (case 23)`, () => {
 			const workspace = createBriefWorkspace()
-			const lot = addLotWorktree({ workspace, name: WORKING_LOT, state })
+			const lot = addLotWorktree({ workspace, name: WORKING_LOT, state, merged: false })
 			const handover = registerCommitted({ workspace, lot })
 			const before = untouchedBy({ workspace, lot })
 
@@ -111,7 +111,13 @@ describe('lot close: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, () => 
 
 	it('the same worktree dirty (an untracked file) → the reason shown is the lot, not the dirty tree', () => {
 		const workspace = createBriefWorkspace()
-		const lot = addLotWorktree({ workspace, name: WORKING_LOT, state: 'working', dirty: true })
+		const lot = addLotWorktree({
+			workspace,
+			name: WORKING_LOT,
+			state: 'working',
+			dirty: true,
+			merged: false,
+		})
 		const handover = registerCommitted({ workspace, lot })
 
 		expect(closing({ workspace, names: [handover] })).toMatchObject({
@@ -123,7 +129,12 @@ describe('lot close: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, () => 
 
 	it('two committed hand-overs, one worktree named by a working lot and one by a canceled lot → the first kept, the second closed', () => {
 		const workspace = createBriefWorkspace()
-		const working = addLotWorktree({ workspace, name: WORKING_LOT, state: 'working' })
+		const working = addLotWorktree({
+			workspace,
+			name: WORKING_LOT,
+			state: 'working',
+			merged: false,
+		})
 		const canceled = addLotWorktree({ workspace, name: CANCELED_LOT, state: 'canceled' })
 		const keptHandover = registerCommitted({ workspace, lot: working })
 		const closedHandover = registerCommitted({ workspace, lot: canceled })

@@ -15,6 +15,7 @@ import {
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
 import { BRIEF_EFFORTS } from './brief.constants.ts'
+import { committedElsewhereEntry, isResumedAfterEntry } from './committed-elsewhere.ts'
 import { readIdentity } from './identity.ts'
 import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
@@ -37,6 +38,7 @@ import {
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
+import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
 import type { BriefEffort } from './brief.types.ts'
 import type {
 	CheckedLotState,
@@ -45,6 +47,7 @@ import type {
 	LotStateInput,
 	LotStateReadParams,
 	SynchronousPause,
+	Transition,
 } from './store.types.ts'
 
 /** The hand-over registry of the repository whose store holds `lotFolder`: beside the store in the git common folder. */
@@ -70,7 +73,8 @@ export function readLotStateInput(params: LotStateReadParams): LotStateInput | u
 /**
  * The lot of a folder read once, its records validated once (`record-checks.ts`): its `lotState` input, or why it is
  * damaged (P2.1) - an identity that does not read, one naming another folder, a record that does not hold - with
- * its identity when that reads. Undefined only when nothing is at the folder.
+ * its identity when that reads. Undefined only when nothing is at the folder. The registry entry is the one naming the
+ * lot folder, else a closed hand-over committed for its worktree and branch outside the folder (`closedElsewhereEntry`).
  */
 export function readCheckedLotState(params: LotStateReadParams): CheckedLotState | undefined {
 	const { lotFolder } = params
@@ -83,13 +87,13 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 		return { damage: RECORD_DAMAGE_REASONS.identityName, identity }
 	const transitions = readTransitions({ lotFolder })
 	const answerFiles = readAnswerFiles({ lotFolder })
-	const registryEntry = entryOfFolder({
-		entries: params.entries ?? readStoreEntries(params.registry),
-		folder: lotFolder,
-	})
+	const entries = params.entries ?? readStoreEntries(params.registry)
 	const abandoned = readAbandonedMarker(lotFolder)
 	// the reader leaves out a marker whose process is gone: row 2 counts only a live run
 	const runMarker = readRunMarker(lotFolder)
+	const registryEntry =
+		entryOfFolder({ entries, folder: lotFolder }) ??
+		closedElsewhereEntry({ entries, identity, lotFolder, transitions, runMarker })
 	const damage =
 		identityDamageOf(identity) ??
 		firstDamageOf(transitions.map(transitionDamageOf)) ??
@@ -109,6 +113,24 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			runMarker,
 		},
 	}
+}
+
+/**
+ * The entry a lot reads `committed` from, files only, when no entry registers its folder: the hand-over committed
+ * for its worktree and branch outside its folder (every such entry committed), whose worktree `lot close` closed.
+ * None when that entry does not hold, or the lot runs or was resumed after it (a live run marker, a later transition).
+ */
+function closedElsewhereEntry(params: {
+	entries: readonly StoreEntry[]
+	identity: LotIdentity
+	lotFolder: string
+	transitions: readonly Transition[]
+	runMarker: HandoverRunMarker | undefined
+}): StoreEntry | undefined {
+	const entry = committedElsewhereEntry(params)
+	if (entry === undefined || entry.closed === undefined || entryDamageOf(entry) !== undefined)
+		return undefined
+	return isResumedAfterEntry({ ...params, entry }) ? undefined : entry
 }
 
 /** The first reason among the checks of a lot's records; undefined when every record holds. */
