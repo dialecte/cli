@@ -18,11 +18,17 @@ import {
 
 import type { HygieneBaseline, HygieneReport, StashEntry } from './worktree.types.ts'
 
-export function writeHygieneBaseline(params: { root: string; now: Date }): HygieneBaseline {
+export function writeHygieneBaseline(params: {
+	root: string
+	now: Date
+	/** The branch the worktree was cut from, recorded beside `head` when given. */
+	from?: string
+}): HygieneBaseline {
 	const { root } = params
 	const baseline: HygieneBaseline = {
 		stashCommits: readStashEntries(root).map((entry) => entry.commit),
 		head: readGit({ root, args: ['rev-parse', 'HEAD'] }).trim(),
+		...(params.from !== undefined && { from: params.from }),
 		writtenAt: params.now.toISOString(),
 	}
 	writeFileSync(hygieneBaselinePath(root), `${JSON.stringify(baseline, null, '\t')}\n`)

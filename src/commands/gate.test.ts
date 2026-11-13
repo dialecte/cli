@@ -624,6 +624,29 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 		expect(full.output.split('\n')[0]).toBe('ok    tdd  no test code new or changed since the base')
 	})
 
+	it('--full with the step running → the first line under the step is the tdd base: the short commit and its source', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [], full: [{ name: 'check', run: 'true' }] } },
+		})
+
+		const result = await gate({ cwd: root, argv: ['--full'] })
+
+		const lines = result.output.split('\n')
+		const tddIndex = lines.findIndex((line) => line.startsWith('ok    tdd'))
+		expect(tddIndex).toBeGreaterThanOrEqual(0)
+		const short = git({ root, args: ['rev-parse', '--short', 'HEAD'] }).trim()
+		expect(lines[tddIndex + 1]).toMatch(new RegExp(`^\\s+tdd base: ${short} \\(.+\\)$`))
+	})
+
+	it('--full with the step skipped (the package does not test with vitest) → no tdd base line', async () => {
+		const root = packageWith({ full: [{ name: 'check', run: 'true' }] })
+
+		const result = await gate({ cwd: root, argv: ['--full'] })
+
+		expect(result.output).toContain(NO_VITEST_LINE)
+		expect(result.output).not.toContain('tdd base:')
+	})
+
 	it('the lot declared exempt → ok with the reason and what the change touches; the lot file not a new file to declare', async () => {
 		const root = tddPackage({ 'src/add.ts': IMPLEMENTED })
 		writeFiles({
