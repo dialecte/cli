@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `lot answer`, `lot stop` and `lot choice` refuse a `--by` holding a word of the forbidden list (git config `dialecte.forbiddenWords` and the user file), as `lot verify` and `lot snapshot --beyond-cap` already did: exit 2, `lot <verb>: --by holds a forbidden word: nothing written` (`{ error, next: null }` under `--json`), nothing written. A damaged lot is not moved aside and a pending hand-over is not abandoned. `lot answer` and `lot stop` read the git config of the lot's own repository, wherever they run from; `lot choice` reads the working folder's.
+
 ## [0.6.0] - 2026-11-13
 
 Breaking: the hand-over card is BLOCKED without an independent review after the last review round, `handover run` refuses late fixes nobody verified (`lot verify`), `lot snapshot` refuses a round above the cap of the lot's effort (`--beyond-cap`), `skills sync` creates `AGENTS.md` off a terminal only with `--agents-file`, a test file that runs no case fails the tdd step, and `ApiMethod` gains a source kind. Also: `lot status` names the next station from the lot's records; the facts ledger (`dialecte facts`); `api find --source` and `api show <file>#<name>`; the gate in a repository with no commit yet; store lots committed outside their folder; `rules` on a broken `.d.ts`; tdd and gate base fixes.
