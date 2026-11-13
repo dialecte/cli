@@ -80,6 +80,49 @@ export type TakenSnapshot = {
 	base: string
 }
 
+/** The go-ahead of `lot snapshot --beyond-cap` for a round above the cap. */
+export type SnapshotGoAhead = {
+	by: string
+	reason: string
+}
+
+/** An option a forbidden word is looked for in: its spelling (`--by`) and the text it was given. */
+export type ForbiddenWordOption = {
+	option: string
+	text: string
+}
+
+/** `round-<n>.state`: when the round was taken and the worktree's state hash then (33L1 D7). */
+export type RoundState = {
+	schema: 1
+	/** ISO time. */
+	at: string
+	/** `computeStateHash` of the worktree. */
+	stateHash: string
+}
+
+/** One line of a lot's `verify.jsonl`: a late fix verified, `state` the worktree's state hash it covers (33L1 D19). */
+export type VerifyLine = {
+	schema: 1
+	/** ISO time. */
+	at: string
+	by: string
+	note: string
+	/** `computeStateHash` of the worktree when `lot verify` ran. */
+	state: string
+}
+
+/**
+ * The late fixes of a lot (33L1 6b): changes of its tree after the last snapshot. `none`: no snapshot, or the tree is
+ * the last snapshot's; `not-checked`: the last snapshot has no `.state` (an older cli); `verified`: the last
+ * `verify.jsonl` line covering the current tree; `unverified`: `files` files differ from `round-<round>/`.
+ */
+export type LateFixes =
+	| { kind: 'none' }
+	| { kind: 'not-checked'; round: number }
+	| { kind: 'verified'; by: string; note: string }
+	| { kind: 'unverified'; round: number; files: number }
+
 /** Where a file is, for the form of its fix diff. */
 export type DeltaSides = {
 	inPrevious: boolean
@@ -112,3 +155,9 @@ export type WorktreeState = {
 	/** The submodules HEAD or the index holds as gitlinks. */
 	submodules: Set<string>
 }
+
+/** One row of a findings ledger as the review rounds read it: its round (when it names one) and, while open, its severity. */
+export type ReviewLedgerRow = { round: number | undefined; openSeverity: string | undefined }
+
+/** A hand-over folder's findings ledger as the review rounds read it; `exists` false without a readable file. */
+export type ReviewLedger = { exists: boolean; rows: ReviewLedgerRow[] }

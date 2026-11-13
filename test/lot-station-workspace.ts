@@ -26,6 +26,8 @@ export function createStationLot(
 		feature?: string
 		/** The identity names the worktree through a link to the folder that holds it: not the real spelling. */
 		symlinkedWorktree?: boolean
+		/** The identity names the workspace's repository as the lot's worktree (the tests run inside it). */
+		repositoryIsWorktree?: boolean
 	} = {},
 ): StationLot {
 	const name = params.name ?? STATION_LOT
@@ -33,9 +35,11 @@ export function createStationLot(
 	const workspace = createBriefWorkspace()
 	// the worktree is named by its real path, as `worktree add` names it (the step events name the same)
 	const realTop = realpathSync(workspace.workspace)
-	const worktree = params.symlinkedWorktree
-		? join(linkedFolderOf({ realTop }), name)
-		: join(realTop, '.worktrees', name)
+	const worktree = params.repositoryIsWorktree
+		? realpathSync(workspace.repository)
+		: params.symlinkedWorktree
+			? join(linkedFolderOf({ realTop }), name)
+			: join(realTop, '.worktrees', name)
 	const lotFolder = writeStoreLot({
 		workspace,
 		name,

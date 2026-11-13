@@ -46,6 +46,10 @@ describe('the names of the store (case 30)', () => {
 		}).toEqual({ empty: [], clashing: [], repeated: [] })
 	})
 
+	it('the late fixes file -> verify.jsonl: a store file, no hand-over file nor round name', () => {
+		expect(STORE_FILES.verify).toBe('verify.jsonl')
+	})
+
 	it('the store folder → a real name, not the registry folder', () => {
 		const folder: string = STORE_FOLDER
 		const registry: string = HANDOVER_STORE_FOLDER

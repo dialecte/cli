@@ -58,6 +58,22 @@ function lotAtStation(text: string): QuestionLot {
 	})
 }
 
+/**
+ * A failed lot whose last transition is at the station `text`: no open question and no station line, so the status
+ * text is short enough (state, position, checks, next) for the position line, which prints the station, to stay
+ * within the five lines.
+ */
+function failedLotAtStation(text: string): QuestionLot {
+	return createQuestionLot({
+		later: [
+			{
+				...transitionOf({ seq: 2, state: 'failed', kind: 'fail' }),
+				position: { step: 1, of: 3, station: text, round: null },
+			},
+		],
+	})
+}
+
 /** The verbs, each run on a lot from its repository. */
 const VERBS = {
 	status(lot: QuestionLot): Promise<CommandResult> {
@@ -95,7 +111,14 @@ const CASES = [
 		lotWith: lotWithQuestionText,
 		verb,
 	})),
-	...(['status', 'wait', 'stop', 'answer'] as const).map((verb) => ({
+	// the lot's text form prints the position line only while five lines are enough: a working lot with an open
+	// question also prints the station line, so status and wait read a failed lot, which prints fewer lines
+	...(['status', 'wait'] as const).map((verb) => ({
+		field: 'a station',
+		lotWith: failedLotAtStation,
+		verb,
+	})),
+	...(['stop', 'answer'] as const).map((verb) => ({
 		field: 'a station',
 		lotWith: lotAtStation,
 		verb,

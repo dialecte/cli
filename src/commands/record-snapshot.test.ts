@@ -90,7 +90,12 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 
 		expect(runRecord(snapshotCall({ cwd: root, folder })).exitCode).toBe(0)
-		expect(readdirSync(folder).sort()).toEqual(['round-1', 'round-1.base', 'round-1.deleted'])
+		expect(readdirSync(folder).sort()).toEqual([
+			'round-1',
+			'round-1.base',
+			'round-1.deleted',
+			'round-1.state',
+		])
 	})
 
 	it('nothing changed → round-<n>/ made empty, an empty .deleted, 0 copied', () => {
@@ -184,14 +189,23 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 		const folder = handoverFolder()
 		writeFiles({
 			root: folder,
-			files: { 'round-1.partial/junk.ts': 'junk\n', 'round-1.deleted.partial': 'junk\0' },
+			files: {
+				'round-1.partial/junk.ts': 'junk\n',
+				'round-1.deleted.partial': 'junk\0',
+				'round-1.state.partial': 'junk\n',
+			},
 		})
 
 		expect(runRecord(snapshotCall({ cwd: root, folder }))).toEqual({
 			exitCode: 0,
 			output: summary({ copied: 1, deleted: 0, root, folder }),
 		})
-		expect(readdirSync(folder).sort()).toEqual(['round-1', 'round-1.base', 'round-1.deleted'])
+		expect(readdirSync(folder).sort()).toEqual([
+			'round-1',
+			'round-1.base',
+			'round-1.deleted',
+			'round-1.state',
+		])
 		expect(listTree(join(folder, 'round-1'))).toEqual(['a.ts'])
 		expect(readFileSync(join(folder, 'round-1.deleted'), 'utf8')).toBe('')
 	})
@@ -325,6 +339,8 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 		const root = createScratchRepository({ 'a.ts': 'a\n' })
 		writeFiles({ root, files: { 'a.ts': 'one\n' } })
 		const folder = handoverFolder()
+		// the folder's brief gives the effort (medium: a cap of 2) that round 2 needs
+		writeFileSync(join(folder, 'brief.json'), '{"effort":"medium"}\n')
 
 		expect(runRecord(snapshotCall({ cwd: root, folder, round: '1' }))).toEqual({
 			exitCode: 0,
@@ -338,9 +354,24 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 		})
 		expect(readFileSync(join(folder, 'round-1/a.ts'), 'utf8')).toBe('one\n')
 		expect(readFileSync(join(folder, 'round-2/a.ts'), 'utf8')).toBe('two\n')
+		expect(existsSync(join(folder, 'round-2.state'))).toBe(true)
 	})
 
-	for (const existing of ['round-1', 'round-1.deleted', 'round-1.base'])
+	it('a plain folder with no identity and no brief → round 1 taken, round 2 refused (exit 2) with the no-effort line', () => {
+		const root = createScratchRepository({ 'a.ts': 'a\n' })
+		const folder = handoverFolder()
+
+		expect(runRecord(snapshotCall({ cwd: root, folder, round: '1' })).exitCode).toBe(0)
+		const before = readdirSync(folder).sort()
+
+		expect(runRecord(snapshotCall({ cwd: root, folder, round: '2' }))).toEqual({
+			exitCode: 2,
+			output: `lot snapshot: round 2 is beyond the cap of 1 (no effort recorded): dialecte lot snapshot ${folder} --round 2 --beyond-cap --by <who> --reason <text>`,
+		})
+		expect(readdirSync(folder).sort()).toEqual(before)
+	})
+
+	for (const existing of ['round-1', 'round-1.deleted', 'round-1.base', 'round-1.state'])
 		it(`${existing} exists already → refused, exit 1, nothing written or changed`, () => {
 			const root = createScratchRepository({ 'a.ts': 'a\n' })
 			writeFiles({ root, files: { 'a.ts': 'a2\n' } })

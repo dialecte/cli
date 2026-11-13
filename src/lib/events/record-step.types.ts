@@ -72,7 +72,11 @@ export type EndStepParams = {
 	parts?: StepPart[] | WorktreeAddParts
 	/** Left out by a step no record answers (tdd, mutation, a hand-over run, a throwaway, a worktree). */
 	reuse?: StepReuse
-	stateHash: string | null
+	/**
+	 * The state hash the end carries; a function is asked only when the end is written (a step with a lot), so a step
+	 * outside any lot does no hash work (R3-2).
+	 */
+	stateHash: string | null | (() => string | null)
 }
 
 /** A running recorded step: never throws, every failure becomes the one warning line. */

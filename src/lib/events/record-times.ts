@@ -7,6 +7,7 @@ import { isRunEntry } from '../mutation/run-entry.ts'
 import { GIT_ENTRY, GITDIR_LINE_PATTERN } from '../store/store.constants.ts'
 import { LEDGER_VERSION, TDD_LEDGER_FILE } from '../tdd/tdd.constants.ts'
 import {
+	FAILED_STEP_STATUS,
 	RECORD_MODES,
 	RUN_FILE_EXTENSION,
 	TDD_ENTRY_LIMIT,
@@ -15,7 +16,12 @@ import {
 import { GATE_RECORD_FAMILIES } from './unrecorded-steps.constants.ts'
 
 import type { FrozenRecords } from './cards-log.types.ts'
-import type { MutationRunFile, ReadRecordTimes, RecordTimesRead } from './record-times.types.ts'
+import type {
+	GateRecordResult,
+	MutationRunFile,
+	ReadRecordTimes,
+	RecordTimesRead,
+} from './record-times.types.ts'
 import type { SuiteFamily, TddEntryTime } from './unrecorded-steps.types.ts'
 
 /**
@@ -49,6 +55,32 @@ export function readRecordTimes(params: { worktree: string }): RecordTimesRead {
 			tdd: ledger.tdd,
 			...(unreadableGates.length > 0 && { unreadableGates }),
 		},
+	}
+}
+
+/**
+ * The gate record of `mode` (`fast`, `full`, `contrib`) of a worktree TOP with its result, read with file reads only
+ * beside `readRecordTimes` (whose shape stays its callers'): green when no recorded step has status `failed` (a
+ * skipped or not-run step fails nothing), with the state hash it ran on when it carries one. Null when the git folder, the record or its `at` is missing, or the record
+ * does not parse.
+ */
+export function readGateRecordResult(params: {
+	worktree: string
+	mode: string
+}): GateRecordResult | null {
+	const top = realPathOrUndefined({ path: params.worktree })
+	const gitFolder = top === undefined ? undefined : gitFolderOfTop({ top })
+	if (gitFolder === undefined) return null
+	const record = jsonOf({
+		path: join(gitFolder, GATE_RECORD_FILE.replace('{mode}', params.mode)),
+	}) as { at?: unknown; steps?: unknown; stateHash?: unknown } | null | undefined
+	const at = record?.at
+	if (typeof at !== 'string') return null
+	const steps = Array.isArray(record?.steps) ? (record.steps as { status?: unknown }[]) : []
+	return {
+		at,
+		green: !steps.some((step) => step?.status === FAILED_STEP_STATUS),
+		...(typeof record?.stateHash === 'string' && { stateHash: record.stateHash }),
 	}
 }
 

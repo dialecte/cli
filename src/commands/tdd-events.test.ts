@@ -19,7 +19,9 @@ import {
 } from '../../test/step-events-tdd.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { writeEvent } from '../lib/events/write-event.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { STORE_FOLDER } from '../lib/store/store.constants.ts'
+import { runLot } from './lot.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -94,7 +96,7 @@ describe('tdd red and green in a lot worktree', { timeout: HELPER_SCENARIO_TIMEO
 		})
 	})
 
-	it('tdd red → both events say not heavy, the worktree real path, not a throwaway; the end has exit, a duration, no state hash and no parts', async () => {
+	it('tdd red → both events say not heavy, the worktree real path, not a throwaway; the end has exit, a duration, the state hash of the worktree (D30) and no parts', async () => {
 		const lot = createTddLot()
 
 		await tdd({ cwd: lot.worktree, argv: ['red'] })
@@ -115,13 +117,13 @@ describe('tdd red and green in a lot worktree', { timeout: HELPER_SCENARIO_TIMEO
 			endPlace: [false, lot.worktree, false],
 			exit: 0,
 			duration: 'number',
-			stateHash: null,
+			stateHash: computeStateHash(lot.worktree),
 			parts: [],
 			outcome: undefined,
 		})
 	})
 
-	it('tdd green after a red and the production code → one more pair, of tdd-green, in the same lot', async () => {
+	it('tdd green after a red and the production code → one more pair, of tdd-green, in the same lot, its end carrying the worktree state hash (D30)', async () => {
 		const lot = createTddLot()
 		await tdd({ cwd: lot.worktree, argv: ['red'] })
 		writeFileSync(join(lot.worktree, ADD_FILE), ADD_CODE)
@@ -144,7 +146,7 @@ describe('tdd red and green in a lot worktree', { timeout: HELPER_SCENARIO_TIMEO
 			lots: [STEP_LOT, STEP_LOT],
 			heavy: [false, false],
 			exit: 0,
-			stateHash: null,
+			stateHash: computeStateHash(lot.worktree),
 			paired: true,
 			redEvents: 2,
 		})
@@ -166,6 +168,42 @@ describe('tdd red and green in a lot worktree', { timeout: HELPER_SCENARIO_TIMEO
 			kinds: ['step.start', 'step.end'],
 			exit: 1,
 			redReceipt: false,
+		})
+	})
+})
+
+describe('tdd red inside a station run (D29, D30)', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
+	it('lot station start, tdd red, lot station end on the same tree → the red is counted: the status asks the test-reviewer, not tdd red again', async () => {
+		const lot = createTddLot()
+		const cwd = lot.workspace.repository
+		function stationCall(words: string[]) {
+			return runLot({ cwd, argv: ['station', lot.name, ...words, '--json'] })
+		}
+
+		const started = stationCall(['start', 'test-writer', '--step', '1'])
+		const red = await tdd({ cwd: lot.worktree, argv: ['red'] })
+		const ended = stationCall(['end', 'test-writer', '--step', '1'])
+		const status = JSON.parse(runLot({ cwd, argv: ['status', lot.name, '--json'] }).output) as {
+			station: Record<string, unknown>
+		}
+
+		expect({
+			exits: [started.exitCode, red.exitCode, ended.exitCode],
+			redEnd: eventsOfStep({ lot, step: 'tdd-red' })[1]?.stateHash,
+			station: status.station,
+		}).toEqual({
+			exits: [0, 0, 0],
+			redEnd: computeStateHash(lot.worktree),
+			station: {
+				kind: 'station',
+				station: 'test-reviewer',
+				check: null,
+				step: 1,
+				round: null,
+				why: 'step 1: tests not reviewed',
+				unplaced: 0,
+				noEnd: [],
+			},
 		})
 	})
 })

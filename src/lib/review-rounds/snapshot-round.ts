@@ -1,7 +1,8 @@
 /**
  * The snapshot of a review round: every path `git status` lists in the lot's worktree copied to
  * `<folder>/round-<n>/` (bytes, executable bit, a symlink as a symlink), the paths gone from disk that HEAD
- * holds in `round-<n>.deleted` (sorted, each followed by a NUL), the HEAD sha in `round-<n>.base`. Built
+ * holds in `round-<n>.deleted` (sorted, each followed by a NUL), the HEAD sha in `round-<n>.base`, the time and the
+ * worktree's state hash in `round-<n>.state` (JSON `{ schema: 1, at, stateHash }`). Built
  * under `.partial` names and renamed at the end, so a run that fails part-way leaves nothing a rerun
  * refuses on.
  */
@@ -9,20 +10,13 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync }
 import { join } from 'node:path'
 
 import { copyFileOrLink, isFileOrLink } from '../copy-file-or-link.ts'
+import { computeStateHash } from '../gate-records/state-hash.ts'
 import { readGit } from '../git.ts'
-import { PARTIAL_SUFFIX } from './review-rounds.constants.ts'
+import { PARTIAL_SUFFIX, ROUND_STATE_SCHEMA } from './review-rounds.constants.ts'
+import { roundNames } from './round-names.ts'
 import { worktreeStateRefusal } from './worktree-state.ts'
 
-import type { TakenSnapshot, WorktreeState } from './review-rounds.types.ts'
-
-/** The names a round's snapshot is made of in the hand-over folder. */
-export function roundNames(round: number): { folder: string; deleted: string; base: string } {
-	return {
-		folder: `round-${round}`,
-		deleted: `round-${round}.deleted`,
-		base: `round-${round}.base`,
-	}
-}
+import type { RoundState, TakenSnapshot, WorktreeState } from './review-rounds.types.ts'
 
 /** Why the round cannot be taken (one of its names exists already, a nested repository or a submodule); undefined when it can. */
 export function snapshotRefusal(params: {
@@ -32,7 +26,7 @@ export function snapshotRefusal(params: {
 	state: WorktreeState
 }): string | undefined {
 	const names = roundNames(params.round)
-	const existing = [names.folder, names.deleted, names.base].find((name) =>
+	const existing = [names.folder, names.deleted, names.base, names.state].find((name) =>
 		existsSync(join(params.folder, name)),
 	)
 	if (existing)
@@ -40,12 +34,13 @@ export function snapshotRefusal(params: {
 	return worktreeStateRefusal({ root: params.root, state: params.state })
 }
 
-/** Takes the snapshot of round `round` of the worktree `root`, read as `state`, into `folder`. */
+/** Takes the snapshot of round `round` of the worktree `root`, read as `state`, into `folder`, taken at `at`. */
 export function takeSnapshot(params: {
 	root: string
 	folder: string
 	round: number
 	state: WorktreeState
+	at: Date
 }): TakenSnapshot {
 	const { root, folder } = params
 	const names = roundNames(params.round)
@@ -70,7 +65,13 @@ export function takeSnapshot(params: {
 			.join(''),
 	)
 	writeFileSync(join(folder, `${names.base}${PARTIAL_SUFFIX}`), `${base}\n`)
-	renameAll({ folder, names: [names.deleted, names.base, names.folder] })
+	const roundState: RoundState = {
+		schema: ROUND_STATE_SCHEMA,
+		at: params.at.toISOString(),
+		stateHash: computeStateHash(root),
+	}
+	writeFileSync(join(folder, `${names.state}${PARTIAL_SUFFIX}`), `${JSON.stringify(roundState)}\n`)
+	renameAll({ folder, names: [names.state, names.deleted, names.base, names.folder] })
 	return { copied: copied.length, deleted: deleted.length, base }
 }
 

@@ -18,6 +18,7 @@ import {
 	overLimitMessage,
 	writeEvent,
 } from '../lib/events/write-event.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { isPathArgument } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
@@ -132,6 +133,23 @@ function eventOf(params: {
 						},
 		}),
 		...fields,
+		...stateHashOf({ request, identity }),
+	}
+}
+
+/**
+ * The state hash an end carries (D29): the hash of the lot identity's worktree, the tree the station hands over;
+ * none at a start, for a lot with no worktree, or when the worktree cannot be read (the end is recorded all the same).
+ */
+function stateHashOf(params: { request: StationRequest; identity: LotIdentity }): {
+	stateHash?: string
+} {
+	const { worktree } = params.identity
+	if (params.request.phase !== 'end' || worktree === null) return {}
+	try {
+		return { stateHash: computeStateHash(worktree) }
+	} catch {
+		return {}
 	}
 }
 

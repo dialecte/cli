@@ -1,5 +1,6 @@
 import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
 import type { PrintedText } from '../print/print.types.ts'
+import type { NextStation } from './next-station.types.ts'
 import type { QUESTION_AUDIENCES } from './store.constants.ts'
 
 /** The states the engine writes in a transition. `input-required` and `committed` are derived, never written. */
@@ -148,7 +149,8 @@ export type StoreFileNames = Readonly<
 		| 'asks'
 		| 'events'
 		| 'cardsLog'
-		| 'registry',
+		| 'registry'
+		| 'verify',
 		string
 	>
 >
@@ -172,6 +174,9 @@ export type LinkCheck = 'present' | 'missing' | 'dangling' | 'wrong'
 
 /** The command a lot's state calls for next (null: none), and the further ones. */
 export type NextCommands = { next: string | null; also: string[] }
+
+/** The next station of a real lot as `lot status` reads it: the walk's answer and the run of a running station. */
+export type StationNext = { next: NextStation; run: string | null }
 
 /** What a record file holds when published: a text, or bytes written as they are (a brief or a plan as read). */
 export type RecordContent = string | Uint8Array

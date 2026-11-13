@@ -156,3 +156,6 @@ export type CardGateConfig = {
 
 /** How a record's gate base reads against the card's: the same, an ancestor of it, or neither. */
 export type RecordBaseCheck = 'same' | 'older' | 'moved'
+
+/** A part of the review line with the status it asks for. */
+export type ReviewLinePart = { status: CardGateStatus; detail: string }

@@ -45,7 +45,7 @@ dialecte run <script.ts>   # run a script on an in-memory project of the install
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte lot start <brief.json>   # a lot from its brief: the lot folder in the store, the numbered worktree, .dialecte/lot
-dialecte lot status <id>   # its state derived from the records, the checks, the exact next command; reads only
+dialecte lot status <id>   # its state derived from the records, the checks, the next station and its exact command; reads only
 dialecte lot wait <id> [--timeout <seconds>]   # until the lot needs someone: ready, a question, failed, a limit
 dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open question of the lot, once
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
@@ -53,7 +53,7 @@ dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over ab
 dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
 dialecte plan next|check|mark <plan.md>   # what can start now in a plan's lot block; the block checked; a person's mark
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
-dialecte lot finding|decide|snapshot|choice|standard <id|folder> ...   # a lot's review rounds, in its lot or hand-over folder
+dialecte lot finding|decide|snapshot|choice|standard|verify <id|folder> ...   # a lot's review rounds and late fixes, in its lot or hand-over folder
 dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --worktree: the old code to run a test on
 dialecte lot recap <id|folder>   # the pull request's expandable part, built from the hand-over's records only
 dialecte lot close <name|index>   # a finished lot: node_modules to the pool, its worktree to the trash
@@ -839,11 +839,34 @@ the answer.
     merge hand-over the tdd verdict is judged on the worktree's own lot tree (the tree its first merge lot
     merged onto), current while the hook record of the merged tree stands, so no `gates ran on another tree`
     for it), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
-    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots, then `standard`. `✓`
+    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `late
+    fixes` on a card still to run (below), then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
-    failed step, a blocking or should-fix finding open, `gate  never run on this tree` when there is no
-    record). The records read are the worktree's last runs and the store's records of the tree the
+    failed step, a blocking or should-fix finding open, no independent review after the last round, `gate
+    never run on this tree` when there is no record).
+  - `review`: the review rounds are the `round-<n>/` snapshots only, against the cap of the lot's effort
+    (low 1, medium 2, high 3; the identity's effort, else the folder's `brief.json`), then the independent
+    review, then the open findings: `✓ review  2 review rounds of 2 · independent review approve · approved`.
+    The independent review must come after the last snapshot: an `independent-reviewer` station end with a
+    verdict strictly after the snapshot's time (`round-<n>.state`'s `at`, else `round-<n>.base`'s mtime; a
+    tie is not after), shown `independent review <verdict>`; or, for a folder without step events (no
+    `events.jsonl`, or events saying the worktree's cli writes none), a ledger row of a round above it,
+    shown `independent review: round 3 in the ledger` (`rounds 3-4`). None: `✗ review  no independent
+    review after round <n>`, the card BLOCKED. Beyond the cap each round names its first go-ahead row
+    (`3 review rounds (cap 1, round 2 by <who>, round 3 by <who>)`), a round without one gives `! review
+    3 review rounds, cap 2, no go-ahead recorded` (a warning); no effort recorded: `2 review rounds (no
+    effort recorded)`. A folder with step events and no review round snapshot reads `✗ review  no review
+    round snapshot: dialecte lot snapshot <lot> --round 1` (the ledger never stands in there). A folder with
+    no snapshot, no ledger row and no independent end, a folder without step events and with no snapshot
+    (its ledger rows claim no independent review), and a release hand-over keep the ledger-only line
+    (`<n> rounds · approved · findings ledger`).
+  - `late fixes`: a change of the tree after the last snapshot (the worktree's state hash against
+    `round-<n>.state`'s) reads `! late fixes  unverified since round <n> (<k> files): dialecte lot verify
+    <lot> --by <who> --note <text>`, a `lot verify` of the current state `✓ late fixes  verified by <who>:
+    <note>`, a last snapshot without `.state` (an older cli) `! late fixes  not checked (round <n> has no
+    state)`; the last snapshot's tree, or no snapshot, prints no line. A warning only: `handover run`'s
+    `verify` guard refuses. The records read are the worktree's last runs and the store's records of the tree the
     hand-over commits - the worktree's tree, or for a hand-over holding a merge lot the tree its last lot
     leaves (the trial merge with its resolutions) - the newest record of each step winning; a tdd step
     another worktree recorded is left out (its verdict is that worktree's), and a stored record counts
@@ -942,9 +965,11 @@ the answer.
   whose command (or an ancestor's) is a known editor or the one `git config dialecte.editor` names, and one
   named in `git config dialecte.personProcesses` (a comma list of command names, never committed) is one of the
   person's tools; every other process is left behind.
-- `dialecte handover run <folder>` is what `commit.sh` runs. Two of its guards, `target` (the target branch's tip is held, as above) and
+- `dialecte handover run <folder>` is what `commit.sh` runs. Three of its guards, `target` (the target branch's tip is held, as above),
   `processes` (read at run time, never from the card: a process left behind, or a list that cannot be read,
-  refuses; tools only pass with `!`), come after the merges guard. Either refusal
+  refuses; tools only pass with `!`) and `verify` (late fixes nobody verified: `✗ verify  late fixes
+  unverified since round <n>`; `! verify  late fixes not checked (round <n> has no state)` never refuses;
+  `✓ verify  no late fixes`, or `verified by <who>: <note>`), come after the merges guard. Each refusal
   exits 2 with nothing committed, where every other guard exits 1; `--rehearse` prints `!` for each and goes
   on. The merges guard's note for a merge lot of the target that moved reads `lot <n>: merges main at <sha>; main
   is now <sha> (see target)`. Each guard prints one line with its result
@@ -1238,7 +1263,34 @@ the answer.
 - `dialecte lot status <id> [--json]` derives the lot's state from its records (`working`, `input-required`,
   `ready`, `committed`, `canceled`, `failed`), with the worktree and link checks and the exact next command (the
   text form adds an `also:` line when there is one, five lines at most); it
-  reads files only, runs no git and writes nothing. A damaged lot (a folder of the store whose name has a lot
+  reads files only, runs no git and writes nothing. A real working lot's next station is walked from its
+  records (`nextStation`: per step test-writer, `tdd red`, test-reviewer at medium or high effort,
+  implementer, `tdd green` and `gate --fast`; per review round its snapshot, reviewer, fixer or adjudicator
+  and `gate --fast`; then `gate --full` after the last edit station, `contrib` for a producer, the
+  independent review, the hand-over to write; the first unmet one wins): the text form prints it after the
+  state line, `station implementer step 2 of 3 · round -/2 · effort medium` (`<what>` may be `reviewer
+  round 1`, `tdd green and gate --fast (implementer step 2 ended, claim unchecked)`, `implementer running
+  since <at> (run <run>)`, `lot snapshot round 2`, `question to the person (round cap 2 reached)`, `handover write (no
+  hand-over written)`, `unknown (<why>)`), the position line given up first, and `next` is that station's
+  command (`dialecte lot station <name> start implementer --step 2`, `... end <station> --run <run>`, the
+  check's command, `dialecte lot snapshot <name> --round <r>`, at the cap its `--beyond-cap` form), `also`
+  keeping the manual line; a hand-over to write and an unknown position keep the manual line. A station
+  is ended by an end with exit 0 or none and a verdict other than `failed` or `limit`; a start with no end
+  is running until a later station start or end or a snapshot comes (a check never closes it: the
+  station's own `tdd red`, `tdd green` and `gate --fast` run inside it), `no end` after; an end that names
+  its run and gives no `--step`/`--round` takes its start's; an end of another name, or one with no start
+  that places it, is `unplaced`. A claim is checked by a later `step.end` of its kind with exit 0 in
+  the lot's own worktree (never `throwaway`, no later failed run of the kind, no newer failed gate
+  record), or by one inside the station's run whose `stateHash` is the one its end recorded (the tree it
+  handed over); when the events say the worktree's cli writes no step events, its tdd ledger and green gate
+  records after the end stand in (a later green record of a gate mode covers every earlier claim of that
+  mode), else `unknown (the worktree's cli records no steps)`. A reviewer or test-reviewer end approves only
+  with `approve`: none or another word reads `unknown (<station> ended without a verdict)` or `unknown
+  (<station> ended with <word>)`. `--json` adds `station` (`{ kind, station, check, step, round, why,
+  unplaced, noEnd }`, `null` for a simulated lot) and `rounds` (`{ review, cap, effort, steps, beyondCap:
+  [{ round, by, reason }], independent }`, `effort` the level the cap is taken from or `null`, `steps` the
+  brief's count; the text form prints from them). Other states, a
+  simulated lot and `lot start` keep their next. A damaged lot (a folder of the store whose name has a lot
   name's shape and whose records do not hold: no readable `identity.json`, one naming another folder, or a record
   that fails its check) answers `<name> damaged: <reason>` then `next: dialecte lot stop <name> --reason <text>`
   (`{ lot, state: "damaged", reason, next }` with `--json`), exit 6, never `no lot`; the reason is a fixed word
@@ -1363,7 +1415,7 @@ the answer.
   (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
   references of what was read stay in the findings ledger. Another state, or no note, is a usage error
   (exit 2); a folder inside a repository is refused as below.
-- `dialecte lot finding`, `decide`, `snapshot`, `choice` and `delta` keep a lot's review rounds in its
+- `dialecte lot finding`, `decide`, `snapshot`, `choice`, `delta` and `verify` keep a lot's review rounds in its
   lot folder, or in a hand-over folder (`_commit-plan/<topic>-<date>/`) that stays outside every repository:
   each refuses any other folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
   words after it are taken as they are, so a finding or a reason may start with `--`. Each writes its file
@@ -1387,7 +1439,23 @@ the answer.
     `round-<n>.base`. An existing round, an untracked nested repository and a submodule (a gitlink in the
     index or at HEAD) are refused; a run that
     stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
-    never part of it.
+    never part of it. `round-<n>.state` (`{ "schema": 1, "at", "stateHash" }`, the worktree's state hash)
+    is written and renamed with the others. A round above the cap of the lot's effort (low 1, medium 2,
+    high 3; the identity's effort, else the folder's `brief.json`, else none recorded and a cap of 1; an
+    interim read until the risk class lands) is refused, exit 2, naming `dialecte lot snapshot <folder>
+    --round <n> --beyond-cap --by <who> --reason <text>`. With them the row `| round <n> beyond the cap of
+    <cap>: <reason> | <who> | <day> |` goes to `decisions.md` first, then the snapshot (a retry finds the
+    row of that round and adds none; once it stands, the plain `--round <n>` takes the round too). `--beyond-cap` within the cap, `--by` or `--reason` without it or
+    blank, and a `--by` or `--reason` holding a forbidden word (`lot snapshot: --by holds a forbidden word:
+    nothing written`, the word never printed) are refused, exit 2, nothing written; an existing round
+    stays exit 1.
+  - `lot verify <id|folder> --by <who> --note <text>`, run inside the lot's worktree, appends `{ schema: 1,
+    at, by, note, state }` to `<folder>/verify.jsonl` in one write, `state` the worktree's state hash: the
+    late fixes of that tree verified (the card's `late fixes` line, the `verify` guard). One later change
+    needs a new verify. Exit 0 recorded; 2 for `--by` or `--note` missing, blank or not one line, a
+    forbidden word in either, a run in another work tree than the lot identity's worktree (both named), or
+    no snapshot yet (nothing is late), nothing written; 1 outside a git work tree, or a line over the event
+    line limit.
   - `lot delta <id|folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
     `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
     in the form that fits where the file is: the snapshot copy against the worktree file (or
@@ -1463,10 +1531,12 @@ the answer.
     `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`), `--money <amount> <currency>`,
     `--duration`, `--exit`, `--verdict` and `--suite <name>=<runs>` for suites the agent ran itself. Nothing but
     the station is required; a field nobody gave stays unknown. `start` answers a `run` and the `end` command to
-    run; `end` pairs with `--run`, else with the one open start of its station whose step, round and attempt match
+    run; `end` pairs with `--run` (an end that gives no `--step`/`--round` then takes its start's), else with the one open start of its station whose step, round and attempt match
     the ones it gives (several: refused), else is recorded alone. `--event <id>` makes a retry safe: the same id
     with the same fields answers the first event (`already`) and writes nothing, other fields are refused.
-    `start` is refused on a committed, canceled or failed lot, `end` is accepted in every state. The station
+    `start` is refused on a committed, canceled or failed lot, `end` is accepted in every state. An `end`
+    records `stateHash`, the state hash of the lot's worktree (left out when it cannot be read; a retry does
+    not compare it): a check the station ran on that tree inside its run counts for its claim. The station
     names `shared` and `outside` are the report's own labels and are refused. `lot station <id> --from
     <file.json>` takes the same fields as one JSON object, plus `phase` (`start` or `end`); an unknown key
     is refused, every fault at once. A line over 4,096 bytes is refused. Exit 1 when the event cannot be written, 2
@@ -1475,7 +1545,8 @@ the answer.
     `gate --fast`, `--full`, `--release` and `--hook`, `contrib`, `tdd red`, `tdd green`, `mutants run`,
     `handover run` (real and rehearsal), `lot delta --worktree` and `worktree add`: the step, whether it is heavy,
     its exit, its time, whether a gate reused records, and per gate step its status, counts, time and selection. A
-    step in a worktree that links no lot, or none matching, writes nothing. A write that fails prints one
+    step in a worktree that links no lot, or none matching, writes nothing. The `step.end` of `tdd red` and
+    `tdd green` carries `stateHash`, the worktree's state hash after the run (computed only in a lot). A write that fails prints one
     `events: not recorded: <reason>` line and never changes the step's exit; a step killed after its start writes
     its end as interrupted where it can. Long lists are cut, failing parts first. A step run in a worktree whose
     link names a lot that lives elsewhere (a copied or moved worktree) is written to that lot as `step.foreign`.

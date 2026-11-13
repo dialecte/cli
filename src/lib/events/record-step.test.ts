@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 
 import { addWorktreeFolder, linkLot } from '../../../test/lot-stores.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
+import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import {
 	createStepLot,
 	partsOf,
@@ -518,6 +519,51 @@ describe(
 					total: outcome.lines.length,
 				}))(heavyRunOf(lot)),
 			).toEqual({ markers: 1, events: 1, total: 2 })
+		})
+	},
+)
+
+describe(
+	'a lazy stateHash is asked only when the end is written (R3-2, R4-3)',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		/** Ends a gate-fast step in `cwd` with a state hash function that counts its calls; the count and the end's hash. */
+		function endWithCountingHash(cwd: string) {
+			let calls = 0
+			const handle = startStep({
+				cwd,
+				step: 'gate-fast',
+				heavy: false,
+				warn: () => undefined,
+			})
+			handle.end({
+				exit: 0,
+				parts: [],
+				reuse: 'none',
+				stateHash: function countedHash() {
+					calls += 1
+
+					return 'hash-1'
+				},
+			})
+
+			return () => calls
+		}
+
+		it('a step outside any lot → the function is never called', () => {
+			expect(endWithCountingHash(temporaryFolder('dialecte-no-lot-'))()).toBe(0)
+		})
+
+		it('a step with a lot place → the function is called once and its value is the end hash', () => {
+			const lot = createStepLot()
+			const callsOf = endWithCountingHash(lot.worktree)
+
+			expect({
+				calls: callsOf(),
+				hashes: stepEventsOf(lot)
+					.filter((event) => event.kind === 'step.end')
+					.map((event) => event.stateHash),
+			}).toEqual({ calls: 1, hashes: ['hash-1'] })
 		})
 	},
 )

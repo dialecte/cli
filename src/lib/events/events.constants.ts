@@ -58,6 +58,9 @@ const STATION_FIELDS: readonly string[] = [
 	'started',
 ]
 
+/** The fields a station end may carry: a start's, and the state hash of the worktree it handed over (D29). */
+const STATION_END_FIELDS: readonly string[] = [...STATION_FIELDS, 'stateHash']
+
 /** The fields a step event may carry beside the envelope (spec 4, "Step events"). */
 const STEP_FIELDS: readonly string[] = [
 	'run',
@@ -81,7 +84,7 @@ const STEP_FIELDS: readonly string[] = [
  */
 export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	'station.start': STATION_FIELDS,
-	'station.end': STATION_FIELDS,
+	'station.end': STATION_END_FIELDS,
 	'step.start': STEP_FIELDS,
 	'step.end': STEP_FIELDS,
 	'step.foreign': ['step', 'worktree'],

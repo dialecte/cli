@@ -58,7 +58,58 @@ export const FINDING_USAGE =
 
 export const DECIDE_USAGE = `lot decide: expected <id|folder> <finding> <state...>; states: ${DECISION_STATES.join(', ')}`
 
-export const SNAPSHOT_USAGE = 'lot snapshot: expected <id|folder> --round <n>'
+export const SNAPSHOT_USAGE =
+	'lot snapshot: expected <id|folder> --round <n> [--beyond-cap --by <who> --reason <text>]'
+
+/** The flag of `lot snapshot` that takes a round above the cap, without the dashes. */
+export const BEYOND_CAP_FLAG = 'beyond-cap'
+
+/** The options `lot snapshot` takes followed by a value, without the dashes. */
+export const SNAPSHOT_OPTIONS = ['round', 'by', 'reason'] as const
+
+/**
+ * A round above the cap refused without the go-ahead; `{effort}` is `effort <level>` or `no effort recorded`.
+ * Interim until L1b: the message then names `lot risk` (33L1 rev 8, Q-A).
+ */
+export const BEYOND_CAP_REFUSAL =
+	'lot snapshot: round {round} is beyond the cap of {cap} ({effort}): dialecte lot snapshot {folder} --round {round} --beyond-cap --by <who> --reason <text>'
+
+/** The effort part of `BEYOND_CAP_REFUSAL` when neither the identity nor the brief records one. */
+export const NO_EFFORT_RECORDED = 'no effort recorded'
+
+/** `--beyond-cap` given for a round the cap allows. */
+export const WITHIN_CAP_REFUSAL =
+	'lot snapshot: round {round} is within the cap of {cap}: drop --beyond-cap'
+
+/** The go-ahead row written to `decisions.md` before a round above the cap (its prefix is what a retry matches). */
+export const BEYOND_CAP_DECISION = 'round {round} beyond the cap of {cap}: {reason}'
+
+/**
+ * An option holding a word of the machine's forbidden list (shared by `lot snapshot` and `lot verify`); the word
+ * itself is never echoed.
+ */
+export const FORBIDDEN_WORD_REFUSAL = 'lot {verb}: {option} holds a forbidden word: nothing written'
+
+/** The schema of `round-<n>.state`. */
+export const ROUND_STATE_SCHEMA = 1
+
+export const VERIFY_USAGE = 'lot verify: expected <id|folder> --by <who> --note <text>'
+
+/** The options `lot verify` takes followed by a value, without the dashes. */
+export const VERIFY_OPTIONS = ['by', 'note'] as const
+
+/** How many characters of the state hash the `lot verify` line prints. */
+export const VERIFY_SHOWN_STATE_LENGTH = 12
+
+/** The schema of a `verify.jsonl` line. */
+export const VERIFY_LINE_SCHEMA = 1
+
+/** `lot verify` before any `round-<n>/` snapshot. */
+export const NOTHING_LATE_REFUSAL = 'lot verify: nothing is late before the first snapshot'
+
+/** `lot verify` run in another work tree than the lot identity's worktree (R1-8): nothing written. */
+export const OTHER_WORKTREE_REFUSAL =
+	"lot verify: {here} is not the lot's worktree {lot}: run lot verify inside it, nothing written"
 
 export const DELTA_USAGE =
 	'lot delta: expected <id|folder> --round <n> (n >= 2: round 1 is a full review) [--worktree] [--json]'
@@ -69,7 +120,13 @@ export const ROUND_OPTIONS = ['round'] as const
 
 /** Every option a review rounds' verb takes followed by a value: what skips to the folder word, the first positional one. */
 export const REVIEW_ROUND_VALUE_OPTIONS: readonly string[] = [
-	...new Set([...FINDING_OPTIONS, ...CHOICE_OPTIONS, ...ROUND_OPTIONS]),
+	...new Set([
+		...FINDING_OPTIONS,
+		...CHOICE_OPTIONS,
+		...ROUND_OPTIONS,
+		...SNAPSHOT_OPTIONS,
+		...VERIFY_OPTIONS,
+	]),
 ]
 
 /** The flags `lot delta` takes, without the dashes. */

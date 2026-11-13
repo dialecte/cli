@@ -1295,13 +1295,14 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runFolder({ out })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.lines.slice(1, 12)).toEqual([
+		expect(result.lines.slice(1, 13)).toEqual([
 			`✓ repository  ${root}  0.0 s`,
 			'✓ lots        2 lot(s) as reviewed  0.0 s',
 			'✓ hooks       git hooks folder  0.0 s',
 			'✓ branch      main  0.0 s',
 			expect.stringMatching(/^✓ head        [0-9a-f]{12}  0\.0 s$/),
 			'✓ processes   none running in the worktree  0.0 s',
+			'✓ verify      no late fixes  0.0 s',
 			'✓ index       empty  0.0 s',
 			'✓ snapshot    2 file(s)  0.0 s',
 			'✓ deleted     0 file(s) absent  0.0 s',
@@ -3207,19 +3208,19 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'| R2-1 | 2 | should fix | src/read.ts:3 | no test of the empty case | logged (the next lot) |',
 			],
 			snapshots: [3],
-			line: '✓ review 3 rounds · approved · findings ledger',
+			line: '✗ review no independent review after round 3',
 		},
 		{
-			name: 'every row closed, rows up to round 3, a round-2 snapshot',
+			name: 'every row closed, rows up to round 3, only a round-2 snapshot (no round-1)',
 			rows: [
 				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
 				'| R3-1 | 3 | nit | src/read.ts:2 | a long name | fixed 3 |',
 			],
 			snapshots: [2],
-			line: '✓ review 3 rounds · approved · findings ledger',
+			line: '✓ review 1 review round (no effort recorded) · independent review: round 3 in the ledger · approved',
 		},
 		{
-			name: 'only a nit open',
+			name: 'only a nit open, no step events and no snapshot: the ledger-only line (R2-2, D30)',
 			rows: [
 				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
 				'| R2-1 | 2 | nit | src/read.ts:2 | a long name | open |',
@@ -3235,13 +3236,13 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'| R1-3 | 1 | nit | src/read.ts:3 | a long name | open |',
 			],
 			snapshots: [2],
-			line: '✗ review 2 rounds · 2 open: blocking or should fix',
+			line: '✗ review no independent review after round 2',
 		},
 		{
 			name: 'no row yet (the reviewer has not answered), a round-1 snapshot',
 			rows: [],
 			snapshots: [1],
-			line: '! review 1 round · no findings recorded',
+			line: '✗ review no independent review after round 1',
 		},
 		{
 			name: 'no row and no snapshot',
@@ -3270,6 +3271,31 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 
 			expect(lines.filter((line) => /^[✓!✗] review\b/.test(line))).toEqual([row.line])
 		})
+
+	it('a release hand-over (lots file release) whose folder holds two snapshots and no independent review → the review line as before: rounds counted from the ledger and the snapshots, approved', () => {
+		const { lotsPath, out } = prepare({
+			committed: gatedPackage({ fast: [] }),
+			overrides: { release: true },
+		})
+		writeFileSync(
+			join(out, 'findings-ledger.md'),
+			[
+				'# Findings ledger - demo',
+				'',
+				'| id | round | severity | file:line | finding | state |',
+				'|---|---|---|---|---|---|',
+				'| R1-1 | 1 | blocking | src/read.ts:1 | reads nothing | fixed 2 |',
+				'',
+			].join('\n'),
+		)
+		for (const round of [1, 2]) mkdirSync(join(out, `round-${round}`, 'src'), { recursive: true })
+
+		const lines = gateLinesOf(writeHandover({ lotsPath }).output)
+
+		expect(lines.filter((line) => /^[✓!✗] review\b/.test(line))).toEqual([
+			'✓ review 2 rounds · approved · findings ledger',
+		])
+	})
 
 	it('a lots file without gates text → no notes in the card nor in its data', () => {
 		const { lotsPath } = prepare({ overrides: { gates: undefined } })

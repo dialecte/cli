@@ -50,6 +50,15 @@ export type WriteEventParams = {
 	writeBuffer?: WriteBuffer
 }
 
+/** What one line's append needs: the file, the whole line (its `\n` included), its limit, and the write. */
+export type AppendLineParams = {
+	file: string
+	line: Buffer
+	/** The most bytes the line may hold. */
+	limit: number
+	writeBuffer?: WriteBuffer
+}
+
 /** What the reader found in a file. */
 export type ReadEventsResult = {
 	events: LotEvent[]

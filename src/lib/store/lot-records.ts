@@ -14,6 +14,7 @@ import {
 } from '../handover/handover-store-read.ts'
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
+import { BRIEF_EFFORTS } from './brief.constants.ts'
 import { readIdentity } from './identity.ts'
 import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
@@ -36,6 +37,7 @@ import {
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
+import type { BriefEffort } from './brief.types.ts'
 import type {
 	CheckedLotState,
 	LotIdentity,
@@ -256,13 +258,49 @@ function readBriefScope(params: { lotFolder: string }): string[] | undefined {
 	return (scope as string[]).map(normaliseScopeEntry)
 }
 
+/**
+ * The number of steps of the lot's `brief.json` (33L1 D13): at least 1, and 1 when the brief is missing, does not
+ * parse, or its steps are no list or an empty one.
+ */
+export function readBriefStepCount(params: { lotFolder: string }): number {
+	const steps = briefValueOf({ lotFolder: params.lotFolder, field: 'steps' })
+	return Array.isArray(steps) && steps.length > 0 ? steps.length : 1
+}
+
+/**
+ * The effort of a lot for its review-round cap (33L1 D2): the identity's `effort.level`, else the folder's
+ * `brief.json` `effort`, else undefined (a value that is no effort counts as none).
+ */
+// interim until L1b: replaced by effectiveEffort (33L1 rev 8, Q-A)
+export function interimEffortOf(params: {
+	/** The hand-over folder holding `brief.json`. */
+	lotFolder: string
+	/** The identity's effort; undefined when the identity holds none. */
+	identityEffort: LotIdentity['effort'] | undefined
+}): BriefEffort | undefined {
+	return (
+		effortOf(params.identityEffort?.level) ??
+		effortOf(briefValueOf({ lotFolder: params.lotFolder, field: 'effort' }))
+	)
+}
+
+/** The value as an effort; undefined when it is none of `BRIEF_EFFORTS`. */
+function effortOf(value: unknown): BriefEffort | undefined {
+	return BRIEF_EFFORTS.find((effort) => effort === value)
+}
+
 /** The `scope` value of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
 function briefScopeValueOf(params: { lotFolder: string }): unknown {
+	return briefValueOf({ lotFolder: params.lotFolder, field: 'scope' })
+}
+
+/** A field of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
+function briefValueOf(params: { lotFolder: string; field: string }): unknown {
 	try {
 		const brief: unknown = JSON.parse(
 			readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'),
 		)
-		return (brief as { scope?: unknown } | null)?.scope
+		return (brief as Record<string, unknown> | null)?.[params.field]
 	} catch {
 		return undefined
 	}

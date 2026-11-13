@@ -301,6 +301,9 @@ export const CONSUMER_REFERENCES_DETAIL = 'a standard citation'
 /** The `target` guard: refused (exit 2) while the target branch's tip is held neither by the head nor by a merge lot. */
 export const TARGET_GUARD_NAME = 'target'
 
+/** The `handover run` guard that refuses late fixes nobody verified (33L1 6b). */
+export const VERIFY_GUARD_NAME = 'verify'
+
 /** What the card and the `target` guard say when the target branch moved: `{tip}` its new tip, the 8-character short sha. */
 export const TARGET_MOVED_LINE =
 	'{branch} moved: merge {branch} first ({count} commit(s) on {branch}, now {tip})'

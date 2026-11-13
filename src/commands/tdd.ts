@@ -29,6 +29,7 @@ import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { startStep } from '../lib/events/record-step.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -190,19 +191,36 @@ export async function runTdd(params: {
 		if ('refusal' in admission) return admission.refusal
 		// the step's events: its lot from the worktree; a refused run writes none; the end after the ledger entry (D12)
 		const recorder = startStep({ cwd: root, step: `tdd-${subcommand}`, heavy: false })
+		/** The end's state hash, asked by the recorder only when it writes the end (R3-2). */
+		function endStateHash(): string | null {
+			return stepEndStateHashOf(root)
+		}
 		try {
 			const result =
 				subcommand === 'red'
 					? await runRed({ context, admission })
 					: await runGreen({ context, admission })
-			recorder.end({ exit: result.exitCode, stateHash: null })
+			recorder.end({ exit: result.exitCode, stateHash: endStateHash })
 			return result
 		} catch (error) {
-			recorder.end({ exit: 1, stateHash: null })
+			recorder.end({ exit: 1, stateHash: endStateHash })
 			throw error
 		}
 	}
 	return await runStatus(context)
+}
+
+/**
+ * The state hash a `red` or `green` step end carries (D29, D30): the hash of the tree the run handed over, as the gate
+ * records it; null when it cannot be computed (the end is recorded all the same, never a refusal). Given to the
+ * recorder as a function: it runs only when the end is written, never outside a lot (R3-2).
+ */
+function stepEndStateHashOf(root: string): string | null {
+	try {
+		return computeStateHash(root)
+	} catch {
+		return null
+	}
 }
 
 /**
