@@ -3,6 +3,8 @@
  * members, doctor, models), for a program that serves them in another form (`@dialecte/mcp`). Each answers what
  * its command prints, as text and an exit code; none reads the command line or exits the process. The schema
  * description itself (`describeElement`: what an element may hold and where, as data) is exported beside them.
+ * `runApi` with `--source` or a `<file>#<name>` path also reads the package's `src/` through git and may write its
+ * cache, `<git folder>/dialecte-source-index.json`.
  */
 export { packagesText, runApi } from './commands/api.ts'
 export { runDoctor } from './commands/doctor.ts'
@@ -23,6 +25,7 @@ export type {
 	ApiMethod,
 	ApiMethodFields,
 	ApiRootMethod,
+	ApiSourceFunction,
 } from './lib/api/api-json.types.ts'
 export type { LookupOutput as CommandOutput } from './lib/command-output.types.ts'
 export type { PrintedText } from './lib/print/print.types.ts'

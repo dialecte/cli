@@ -1,12 +1,13 @@
 /**
- * What `plan next` prints (33N section 9): the text as plain lines (head, open, start, held, person, spec, waiting,
- * parked, unknown, heavy, next), or the `--json` object. Exit 0 when a lot or fix can start, else 1.
+ * What `plan next` prints (33N section 9): the text as plain lines (head, open, start, held, landed, person, spec,
+ * waiting, parked, unknown, heavy, next), or the `--json` object. Exit 0 when a lot or fix can start, else 1.
  */
 import { dirname, relative } from 'node:path'
 
 import { MEMORY_LIMIT_BYTES } from '../heavy/machine-load.constants.ts'
 import { loadLimitOf, gigabytesOf } from '../heavy/machine-load.ts'
 import { jsonOf, textOf } from '../print/print.ts'
+import { landedLineFrom } from '../store/lot-entry.ts'
 import { clockTimeOf, stepTextOf } from './plan-heavy.ts'
 import {
 	HEAD_SEPARATOR,
@@ -52,6 +53,7 @@ export function planNextLinesOf(params: { report: PlanNextReport }): string[] {
 		...labelled({ label: 'open', lines: openLinesOf({ report }) }),
 		...labelled({ label: 'start', lines: startLinesOf({ report }) }),
 		...labelled({ label: 'held', lines: heldLinesOf({ report }) }),
+		...labelled({ label: 'landed', lines: landedLinesOf({ report }) }),
 		...labelled({ label: 'person', lines: personLinesOf({ report }) }),
 		...labelled({ label: 'spec', lines: joinedOf({ parts: specPartsOf({ report }) }) }),
 		...labelled({ label: 'waiting', lines: joinedOf({ parts: waitingPartsOf({ report }) }) }),
@@ -90,6 +92,7 @@ export function planNextJsonOf(params: { report: PlanNextReport }): PlanNextJson
 		}),
 		proposals: report.proposals.proposals,
 		held: report.proposals.held,
+		landed: report.landed,
 		specWork: report.proposals.specWork,
 		heavy: {
 			markers: report.heavy.markers,
@@ -211,6 +214,14 @@ function listPartOf(params: { name: string; items: string[] }): string[] {
 function heldLinesOf(params: { report: PlanNextReport }): string[] {
 	return params.report.proposals.held.map(
 		(held) => `${cellOf({ text: held.id })}${held.met.join(PART_SEPARATOR)}`,
+	)
+}
+
+/** One line per landed lot: its repository, then the line that says why it reads committed. */
+function landedLinesOf(params: { report: PlanNextReport }): string[] {
+	return params.report.landed.map(
+		(landed) =>
+			`${cellOf({ text: landed.repository })}${landedLineFrom({ ...landed, name: landed.lot })}`,
 	)
 }
 

@@ -6,5 +6,8 @@ export const API_VALUE_OPTIONS: readonly string[] = ['package', 'limit']
 /** How many methods `api find` lists without `--limit`: enough to choose, few enough to read. */
 export const DEFAULT_FIND_LIMIT = 5
 
+/** The flag of `dialecte api` that adds the own package's exported source functions to the indexes searched. */
+export const SOURCE_FLAG = 'source'
+
 export const API_USAGE =
-	'usage: dialecte api find "<need>" [--package <name>] [--limit 5] [--json] | dialecte api show <path> [--json]'
+	'usage: dialecte api find "<need>" [--source] [--package <name>] [--limit 5] [--json] | dialecte api show <path> [--json] | dialecte api show <file>#<name> [--json]'
