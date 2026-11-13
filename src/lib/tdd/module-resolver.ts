@@ -7,7 +7,7 @@
  * package name is a dependency, never test code; a specifier that looks local (`#`, `~/`, `@/`, a paths
  * or alias prefix) and resolves nowhere is answered as unresolved.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } from 'node:path'
 
 import {
@@ -15,9 +15,9 @@ import {
 	MODULE_EXTENSIONS,
 	SETUP_FILES_PROPERTY,
 	SPECIFIER_QUERY_PATTERN,
-	TEST_CONFIG_FILES,
 	TSCONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
+import { configPropertiesOf, fieldOf, pathLiteralOf, propertyName } from './vitest-configs.ts'
 
 import ts from 'typescript'
 
@@ -123,28 +123,6 @@ function readSetupFiles(root: string): string[] {
 	return [...new Set(files)].sort()
 }
 
-/** The value of every assignment of `property` in the package's vite and vitest config files, in file order. */
-function configPropertiesOf(params: { root: string; property: string }): ts.Expression[] {
-	const values: ts.Expression[] = []
-	for (const name of TEST_CONFIG_FILES) {
-		const path = join(params.root, name)
-		if (!existsSync(path)) continue
-		const source = ts.createSourceFile(
-			name,
-			readFileSync(path, 'utf8'),
-			ts.ScriptTarget.Latest,
-			true,
-		)
-		function visit(node: ts.Node): void {
-			if (ts.isPropertyAssignment(node) && propertyName(node.name) === params.property)
-				values.push(node.initializer)
-			ts.forEachChild(node, visit)
-		}
-		visit(source)
-	}
-	return values
-}
-
 function aliasesOf(params: { root: string; value: ts.Expression }): ModuleAlias[] {
 	const { root, value } = params
 	const entries: Array<{ find: string | undefined; replacement: ts.Expression | undefined }> = []
@@ -165,32 +143,6 @@ function aliasesOf(params: { root: string; value: ts.Expression }): ModuleAlias[
 		const target = entry.replacement ? pathLiteralOf(entry.replacement) : undefined
 		return entry.find && target ? [{ find: entry.find, replacement: resolve(root, target) }] : []
 	})
-}
-
-function fieldOf(params: {
-	object: ts.ObjectLiteralExpression
-	key: string
-}): ts.Expression | undefined {
-	return params.object.properties.find(
-		(property): property is ts.PropertyAssignment =>
-			ts.isPropertyAssignment(property) && propertyName(property.name) === params.key,
-	)?.initializer
-}
-
-/** A path written in the expression: the string itself, or the last path-like string literal inside it. */
-function pathLiteralOf(expression: ts.Expression): string | undefined {
-	if (ts.isStringLiteralLike(expression)) return expression.text
-	let found: string | undefined
-	function visit(node: ts.Node): void {
-		if (ts.isStringLiteralLike(node) && /^\.{0,2}\//.test(node.text)) found = node.text
-		ts.forEachChild(node, visit)
-	}
-	visit(expression)
-	return found
-}
-
-function propertyName(name: ts.PropertyName): string | undefined {
-	return ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
 }
 
 /** The file a path names (with an extension added, or a folder's index), inside the root. */

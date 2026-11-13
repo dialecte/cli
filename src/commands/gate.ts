@@ -453,6 +453,11 @@ async function tddStep(params: {
 		ref: params.ref,
 		wholeBranch: params.wholeBranch,
 	})
+	// the whole-branch base under the step's line (a skipped step measured nothing from it)
+	const details = [
+		...(check.baseNote && check.status !== 'skipped' ? [check.baseNote] : []),
+		...(check.details ?? []),
+	]
 	return {
 		step: TDD_STEP,
 		status: check.status,
@@ -461,7 +466,7 @@ async function tddStep(params: {
 		...(check.reason && { reason: check.reason }),
 		...(check.note && { note: check.note }),
 		...(check.lines?.length && { tail: check.lines.join('\n') }),
-		...(check.details?.length && { details: check.details }),
+		...(details.length && { details }),
 		...(check.cases && { cases: check.cases }),
 		...(check.moved?.length && { moved: check.moved }),
 		...(check.duplicates?.length && { duplicates: check.duplicates }),

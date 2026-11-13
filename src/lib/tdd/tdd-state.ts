@@ -2,7 +2,8 @@
  * The state of the change's tests, as `tdd status` and the gate read it: every case of the changed test
  * files (a collect-only run) with its status, flags and the receipts the read rule skips; the test code
  * changed since the red run that last froze it; the test cases the change deletes (an untitled test call of the base, in a file a `gone` entry of
- * the lot file names, is declared gone with its reason); the files whose cases cannot be listed.
+ * the lot file names, is declared gone with its reason); the files whose cases cannot be listed; the files that ran
+ * no case (refused with why) and those no vitest config includes (no test code tdd measures).
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,6 +39,8 @@ import {
 import { SKIPPED_RECEIPTS_LABEL, UNTITLED_CALL_GONE } from './tdd.constants.ts'
 import { listTestDependencies } from './test-dependencies.ts'
 import { listTestCalls } from './test-source.ts'
+import { readVitestConfigs } from './vitest-configs.ts'
+import { judgeZeroCaseFiles } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type {
@@ -95,6 +98,15 @@ export async function readTddState(params: {
 		modules,
 		files: listed,
 	})
+	// read once for the state: why a changed test file ran no case
+	const zeroCases = judgeZeroCaseFiles({
+		root,
+		configs: readVitestConfigs({ root }),
+		modules,
+		files: changed,
+		unlisted,
+		collectOnly: true,
+	})
 	const movedFiles = new Set(moved.map((file) => file.file))
 	const duplicates = findDuplicateCaseIds(cases)
 	// cases moved out of a deleted or shrunk test file keep the base's proof (no receipt needed); a name two
@@ -148,9 +160,12 @@ export async function readTddState(params: {
 			}
 		}),
 		duplicates,
-		unfrozen,
+		// a file no vitest config includes is no test code tdd measures
+		unfrozen: unfrozen.filter((file) => !zeroCases.notVitest.includes(file)),
 		findings,
 		unlisted,
+		...(zeroCases.refused.length && { zeroCases: zeroCases.refused }),
+		...(zeroCases.notVitest.length && { notVitest: zeroCases.notVitest }),
 		...(hasMoves(moves) && { moves }),
 	}
 }

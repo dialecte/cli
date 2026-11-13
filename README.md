@@ -642,7 +642,19 @@ the answer.
     test proves nothing yet"); a passing case with a receipt whose own test call changed; a passing case
     still waiting for its green whose test file, or test code it imports, changed since its red ("test
     code changed since its red and it passes"); a failure on a missing export, a type or syntax error, a
-    timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`. A
+    timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`; a
+    file whose run reports no case, `red` and `green` alike, with why the package's vitest configs (every
+    `vitest*.config.*` and their `projects`, read as files) give: `ran no case: the file belongs to
+    <config>, which the default config does not list (projects)`, `ran no case of the file` (the default
+    config holds it: an empty describe, no test call; or a config cannot be fully read - an `include`,
+    `exclude` or `projects` entry that is no string literal or inline object, such as an imported constant,
+    a spread, a call or a glob of config files - and may hold it), `every case is skipped` (only `.skip` /
+    `.todo` / `.skipIf(true)` cases; the gate, which only collects, maps each case the run reports to its
+    test call, so a case a helper registers counts as run). A refused file is never frozen, and the gate's
+    tdd step fails on it with the same reason. A file
+    no vitest config includes (a Playwright spec, a type test) is no vitest test file: it leaves the
+    selection with `outside  <file>  not a vitest test file (no vitest config includes it)`, is never
+    refused nor frozen, and never fails the gate. A
     case the same as at the base is marked unchanged; a case the lot accepts is marked accepted, unless
     it is proven red then green at its current test call (an acceptance never overrides a proof: it goes
     the normal path, no accepted receipt, and the line adds `acceptance not needed (proven red → green): it
@@ -740,14 +752,30 @@ the answer.
     looks deleted) prints `deleted <file> a test call of the base is gone`; when a `gone` entry of
     `.dialecte/lot.json` names its file (a path or a glob), it prints
     `gone <file> a test call of the base is gone (<reason>)` instead, in the gate's details too. A titled
-    test gone and a deleted test file stay `deleted`. A ledger that cannot be read is refused with its
-    path.
+    test gone and a deleted test file stay `deleted`. A changed test file whose run reports no case prints
+    `refused  <file>  <reason>` (the reasons of `red` above), one no vitest config includes `outside  <file>
+    not a vitest test file (no vitest config includes it)`. A ledger that cannot be read is refused with its
+    path. `--json` answers the state: `cases`, `duplicates`, `unfrozen`, `findings`, `unlisted`, and, only
+    when there are some, `zeroCases: [{ file, reason }]` (the refused files) and `notVitest: [<file>]` (the
+    files out of the selection).
   - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
   - `status --legend` prints the tdd terms of the hand-over card, each in two lines: what it means, and
     whether to look. It needs no package: it works from any folder.
   - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
     committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
-    whole-branch view; `gate --full` measures from where the branch left its base branch.
+    whole-branch view; `gate --full` (and `--release`) measures the tdd step from the lot's base: the
+    branch the lot was started on (the store lot's base, else the branch `worktree add` recorded it was cut
+    from; a base given as a commit id stands for the resolved base branch), from where HEAD now leaves it,
+    so a lot that merged or rebased onto its base's new commits is not asked for them. When that base is
+    not found, is behind the cut, never held the cut (a stacked lot), was rewritten or has merged the lot's own commits, it measures from the
+    worktree's cut and says why; a worktree with no recorded base measures from its cut, one not made by
+    `worktree add` from where the branch left its base branch. The first details line of the gate's tdd step
+    (none when the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
+    `lot base <ref>`, `worktree from <ref>`, `base branch <b> (the lot's base is a commit)`, `worktree cut`,
+    `base branch <b>`, `HEAD`; a fallback reads `tdd base: the worktree's cut (<why>)`, the why one of `no
+    base branch recorded`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
+    stacked lot` (the ref's reflog never reached the cut), `<ref> was rewritten: the cut <sha>
+    is no ancestor of the merge-base <sha>`, `<ref> holds the lot's own commits`.
   - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
     (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
     `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,

@@ -223,8 +223,29 @@ export type TestRunFailure = {
 	tail?: readonly string[]
 }
 
+/** The commit the whole branch is measured from, where it came from, and why a fallback was taken. */
+export type TddBase = {
+	/** A full sha. */
+	commit: string
+	/** One of the `TDD_BASE_SOURCES` texts, its `{ref}` / `{branch}` filled. */
+	source: string
+	/** Said beside the base when a rule was passed over (`TDD_BASE_NOTES`, filled). */
+	note?: string
+}
+
+/** The lot's base ref as recorded (the store lot's `base.ref`, else the baseline's `from`), and its source text. */
+export type RecordedBaseRef = { ref: string; source: string }
+
+/**
+ * The ref the whole-branch base follows (`ref`, as git reads it), the name the notes give it and its source text;
+ * or the recorded ref, which names nothing.
+ */
+export type FollowedBaseRef = { ref: string; name: string; source: string } | { notFound: string }
+
 export type TddCheck = {
 	status: 'passed' | 'failed' | 'skipped'
+	/** `tdd base: <short sha> (<source>)`, the base the step measured from (the whole-branch form only). */
+	baseNote?: string
 	/**
 	 * The cases of the change the step judged; empty when it judged none (exempt, no test code changed);
 	 * absent when it stopped before listing them or skipped.
@@ -271,6 +292,8 @@ export type TddRunAdmission = {
 	files: ChangedTestFile[]
 	acceptances: LotCaseEntry[]
 	revisions: LotCaseEntry[]
+	/** The package's vitest configs, read once for the run: why a file ran no case. */
+	configs: VitestConfigs
 }
 
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */
@@ -311,6 +334,10 @@ export type TddState = {
 	unfrozen: string[]
 	findings: TddFinding[]
 	unlisted: UnlistedFile[]
+	/** The changed test files whose run reports no case, with why (`ZERO_CASE_REASONS`); absent when none. */
+	zeroCases?: ZeroCaseRefusal[]
+	/** The changed test files no vitest config includes: out of the selection; absent when none. */
+	notVitest?: string[]
 	/** What the cases of the change moved from; absent when nothing moved and no base collect ran. */
 	moves?: TddMoves
 }
@@ -452,4 +479,63 @@ export type Surroundings = {
 	/** `calls`: the statement holds a call (it may register cases through a runner). */
 	statements: Array<{ path: string; text: string; calls: boolean }>
 	paths: string[]
+}
+
+/**
+ * A vitest config of the package root (`vitest*.config.*`, or the vite config the default run reads): the globs its
+ * `test.include` and `test.exclude` hold (the default include when it sets none), the config files its `projects`
+ * name, and the inline projects of its `projects` (each its own include and exclude). What the reader cannot read (a
+ * constant, a spread, a call, a glob or a path to no config of the root) is flagged unread: the config may hold more.
+ */
+export type VitestConfig = VitestGlobs & {
+	/** The config's path, relative to the root. */
+	file: string
+	/** The config files its `projects` name, relative to the root. */
+	projects: string[]
+	inlineProjects: VitestGlobs[]
+	/** `projects` holds an entry that is neither a string literal path nor an inline object literal, or is no list. */
+	projectsUnread: boolean
+}
+
+/** The test globs of a config or an inline project: the string literals of its lists, and which list holds more. */
+export type VitestGlobs = {
+	include: string[]
+	exclude: string[]
+	/** The include (or the config's `test` itself) holds an element that is no string literal: it may name more. */
+	includeUnread: boolean
+	/** The exclude holds an element that is no string literal: it may leave more out. */
+	excludeUnread: boolean
+}
+
+/** A config's string list as read: its string literals, and `unread` when it holds more (or is no array literal). */
+export type ConfigList = { strings: string[]; unread: boolean }
+
+/** Whether a config runs a path: yes, no, or unknown (an unread list or project may hold it). */
+export type PathHolding = boolean | 'unknown'
+
+/** The vitest configs of a package: every config file found, and the one a run with no `--config` reads. */
+export type VitestConfigs = {
+	configs: VitestConfig[]
+	/** The path of the default config (first `vitest.config.*`, then `vite.config.*`); undefined when none exists. */
+	defaultConfig: string | undefined
+}
+
+/**
+ * Which config holds a test file: the default one (directly or through its projects), another one, none, or unknown
+ * (a config the reader cannot fully read, a list with an element that is no literal, may hold it).
+ */
+export type ConfigHolding =
+	| { kind: 'default' }
+	| { kind: 'other'; config: string }
+	| { kind: 'none' }
+	| { kind: 'unknown' }
+
+/** A test file of a run that ran no case of it, refused with the reason (`ZERO_CASE_REASONS`, filled). */
+export type ZeroCaseRefusal = { file: string; reason: string }
+
+/** The test files of a run that ran no case: refused with a reason, or no vitest test file at all. */
+export type ZeroCaseFiles = {
+	refused: ZeroCaseRefusal[]
+	/** No vitest config includes them: they leave the selection, never refused nor frozen. */
+	notVitest: string[]
 }

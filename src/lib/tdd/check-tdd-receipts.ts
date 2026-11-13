@@ -26,26 +26,28 @@ import { movedLines } from './moved-cases.ts'
  * that does not test with vitest skips the step.
  */
 import { caseLabel } from './select-cases.ts'
+import { resolveTddBase, shortCommitOf } from './tdd-base.ts'
 import {
 	countChangedFiles,
 	hashChangedTestCode,
 	listDeletedTestFiles,
 	readLedger,
-	resolveBase,
 } from './tdd-files.ts'
 import { findingLine, movesLines, readTddState, skippedReceiptsLine } from './tdd-state.ts'
 import {
 	DUPLICATE_GATE_REASON,
 	DUPLICATE_LABEL,
 	DUPLICATE_LINES_DETAIL,
+	TDD_BASE_LINE,
 	TDD_NEXT_STEPS,
 	UNUSED_ACCEPT_CLOSEST,
 	UNUSED_ACCEPT_CLOSEST_LIMIT,
 	VITEST_PACKAGE,
 } from './tdd.constants.ts'
+import { zeroCaseLines } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddCheck, TddState } from './tdd.types.ts'
+import type { TddBase, TddCheck, TddState } from './tdd.types.ts'
 
 export async function checkTddReceipts(params: {
 	root: string
@@ -56,13 +58,36 @@ export async function checkTddReceipts(params: {
 	wholeBranch?: boolean
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
-	const base = resolveBase({
+	const resolved = resolveTddBase({
 		root,
 		packageJson,
 		ref: params.ref,
 		wholeBranch: params.wholeBranch,
 	})
-	if (typeof base !== 'string') return { status: 'failed', reason: base.failure }
+	if ('failure' in resolved) return { status: 'failed', reason: resolved.failure }
+	const check = await judgeTddReceipts({ root, packageJson, base: resolved.commit })
+	if (!params.wholeBranch) return check
+	return { ...check, baseNote: baseNoteOf({ root, base: resolved }) }
+}
+
+/**
+ * The line the whole-branch step shows beside its base: a fallback note as it reads (it names the cut already), else
+ * `tdd base: <short> (<source>)`.
+ */
+function baseNoteOf(params: { root: string; base: TddBase }): string {
+	const { base } = params
+	if (base.note !== undefined) return base.note
+	const short = shortCommitOf({ root: params.root, commit: base.commit })
+	return TDD_BASE_LINE.replace('{commit}', () => short).replace('{source}', () => base.source)
+}
+
+/** The step's judgement of the change since `base`. */
+async function judgeTddReceipts(params: {
+	root: string
+	packageJson: PackageJson
+	base: string
+}): Promise<TddCheck> {
+	const { root, packageJson, base } = params
 	const exemption = readTddExemption(root)
 	if (exemption.kind === 'invalid') return { status: 'failed', reason: exemption.reason }
 	if (exemption.kind === 'exempt') {
@@ -170,10 +195,16 @@ export async function checkTddReceipts(params: {
 					`unused gone entry  ${entry.file}  no test call of the base gone without a title in a file it names (${entry.reason})`,
 			),
 	)
-	const unlisted = state.unlisted.map(
-		(file) =>
-			`cannot list  ${file.file}  ${file.failure.kind}: ${shortMessage(file.failure.message).split('\n')[0]}`,
-	)
+	const zeroCases = state.zeroCases ?? []
+	// a file that ran no case fails the step as a file whose cases cannot be listed; a non-vitest file only shows
+	const unlisted = [
+		...state.unlisted.map(
+			(file) =>
+				`cannot list  ${file.file}  ${file.failure.kind}: ${shortMessage(file.failure.message).split('\n')[0]}`,
+		),
+		...zeroCaseLines({ refused: zeroCases, notVitest: [] }),
+	]
+	evidence.push(...zeroCaseLines({ refused: [], notVitest: state.notVitest ?? [] }))
 	const caseLines = open.map((line) => `${line.status}  ${caseLabel(line)}`)
 	// a shared id names no single case: whatever else is wrong, the step says it first
 	if (state.duplicates.length) {
@@ -209,7 +240,7 @@ export async function checkTddReceipts(params: {
 		return {
 			status: 'failed',
 			cases,
-			reason: `${open.length} of ${state.cases.length} case(s) of the change without a red receipt then a green one${unlisted.length ? `; ${unlisted.length} test file(s) whose cases cannot be listed` : ''}`,
+			reason: `${open.length} of ${state.cases.length} case(s) of the change without a red receipt then a green one${state.unlisted.length ? `; ${state.unlisted.length} test file(s) whose cases cannot be listed` : ''}${zeroCases.length ? `; ${zeroCases.length} test file(s) that ran no case` : ''}`,
 			lines: [...caseLines, ...unlisted, ...evidence, TDD_NEXT_STEPS],
 		}
 	const counts = [

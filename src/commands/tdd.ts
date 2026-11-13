@@ -41,6 +41,7 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { frozenHashOf } from '../lib/tdd/case-status.ts'
 import { shortMessage } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
+import { isDataDependency } from '../lib/tdd/data-dependency.ts'
 import {
 	duplicateReasonOf,
 	findDuplicateCaseIds,
@@ -99,6 +100,8 @@ import {
 } from '../lib/tdd/tdd.constants.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
+import { readVitestConfigs } from '../lib/tdd/vitest-configs.ts'
+import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
@@ -256,7 +259,14 @@ function admitRun(params: {
 	// a red run with no test file still runs for a changed helper a `revised` entry names: it may freeze it
 	if (files.length === 0 && !hasHelperToRevise({ ledger, testCode, revisions }))
 		return noFileRefusal
-	return { testCode, changed, files, acceptances, revisions }
+	return {
+		testCode,
+		changed,
+		files,
+		acceptances,
+		revisions,
+		configs: readVitestConfigs({ root }),
+	}
 }
 
 /** A changed helper a `revised` entry names differs from its last freeze: a red run may freeze it for the entry. */
@@ -344,6 +354,25 @@ async function runRed(params: {
 			fileRefusal({ file: file.file, reason: notARed(file.failure), productionHash, testCode, at }),
 		)
 	}
+	const zeroCases = judgeZeroCaseFiles({
+		root,
+		configs: params.admission.configs,
+		modules,
+		files: runnable,
+		unlisted,
+		collectOnly: false,
+	})
+	lines.push(...zeroCaseLines(zeroCases))
+	for (const refusal of zeroCases.refused)
+		entries.push(
+			fileRefusal({ file: refusal.file, reason: refusal.reason, productionHash, testCode, at }),
+		)
+	// a file that ran no case is never judged nor frozen: refused, or no vitest test file at all
+	const ranNoCase = new Set([
+		...unlisted.map((file) => file.file),
+		...zeroCases.refused.map((refusal) => refusal.file),
+		...zeroCases.notVitest,
+	])
 	const changedTestCode = [...testCode.keys()]
 	const resolveModule = createModuleResolver({ root })
 	// listed once per file, for the run's files and, when a `revised` entry names a helper, every changed one
@@ -362,9 +391,7 @@ async function runRed(params: {
 		return listed
 	}
 	const frozen: Record<string, string> = {}
-	for (const file of runnable.filter(
-		(candidate) => !unlisted.some((file) => file.file === candidate.file),
-	)) {
+	for (const file of runnable.filter((candidate) => !ranNoCase.has(candidate.file))) {
 		const { dependencies, unresolved: unresolvedImports } = dependenciesOf(file.file)
 		if (unresolvedImports.length) {
 			const reason = `cannot resolve the import ${unresolvedImports.map((specifier) => `"${specifier}"`).join(', ')}: ${UNRESOLVED_IMPORT_HINT}`
@@ -436,17 +463,21 @@ async function runRed(params: {
 		if (refused && !judged.some((judgement) => judgement.kind === 'red')) continue
 		frozen[file.file] = testCode.get(file.file) ?? ''
 		// a helper, fixture or snapshot is frozen only by a red it can have shaped, a revision declared, or a
-		// moved case (the helper a split registers its cases through)
-		if (
-			judged.some(
-				(judgement) =>
-					judgement.kind === 'red' ||
-					judgement.kind === 'revised' ||
-					movedCases.has(caseLabel(judgement.testCase)),
-			)
+		// moved case (the helper a split registers its cases through); an accepted case freezes the data it reads
+		// (a fixture, a document, a snapshot), never a code helper
+		const shapesDependencies = judged.some(
+			(judgement) =>
+				judgement.kind === 'red' ||
+				judgement.kind === 'revised' ||
+				movedCases.has(caseLabel(judgement.testCase)),
 		)
-			for (const dependency of dependencies)
-				if (testCode.has(dependency)) frozen[dependency] = testCode.get(dependency) ?? ''
+		const hasAcceptedCase = judged.some((judgement) => judgement.kind === 'accepted')
+		for (const dependency of dependencies)
+			if (
+				testCode.has(dependency) &&
+				(shapesDependencies || (hasAcceptedCase && isDataDependency(dependency)))
+			)
+				frozen[dependency] = testCode.get(dependency) ?? ''
 	}
 	const { revised: revisedHelpers, outsideRun } = helpersToRevise({
 		context,
@@ -757,6 +788,18 @@ async function runGreen(params: {
 				detail: `cannot list its cases: ${notARed(file.failure)}`,
 			}),
 		)
+	lines.push(
+		...zeroCaseLines(
+			judgeZeroCaseFiles({
+				root,
+				configs: params.admission.configs,
+				modules,
+				files,
+				unlisted,
+				collectOnly: false,
+			}),
+		),
+	)
 	const duplicates = findDuplicateCaseIds(cases)
 	const memberReasons = memberReasonsOf({ duplicates, cases, files })
 	const verdicts = cases
@@ -939,6 +982,7 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 			(file) =>
 				`cannot list  ${file.file}  ${file.failure.kind}: ${firstLine(file.failure.message)}`,
 		),
+		...zeroCaseLines({ refused: state.zeroCases ?? [], notVitest: state.notVitest ?? [] }),
 	]
 	return resultOf({
 		exitCode: 0,
