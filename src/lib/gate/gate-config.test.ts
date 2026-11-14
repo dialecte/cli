@@ -31,6 +31,8 @@ function withoutMarks(steps: readonly GateStep[]): GateStep[] {
 const CHECK_STEP = { name: 'check', run: 'npm run check' }
 const TESTS_STEP = { name: 'tests', run: 'npx vitest run', counts: 'tests' as const }
 const BUILD_STEP = { name: 'build', run: 'npm run build' }
+const RULES_RUN = 'dialecte rules'
+const RULES_STEP = { name: 'rules', run: RULES_RUN, scoped: true }
 
 describe('validateGateConfig', () => {
 	it.each([
@@ -275,7 +277,7 @@ describe('releaseCoversFull', () => {
 })
 
 describe('resolveGateSteps', () => {
-	it('full without dialecte.gate → check, skills, build, tests (no docs, no type-bench)', () => {
+	it('full without dialecte.gate → check, skills, build, tests, rules (no docs, no type-bench)', () => {
 		const steps = resolveGateSteps({ packageJson: {}, mode: 'full' })
 
 		expect(withoutMarks(steps)).toEqual(DEFAULT_GATE_STEPS.full)
@@ -284,15 +286,25 @@ describe('resolveGateSteps', () => {
 			'npm run skills:check',
 			'npm run build',
 			'npx vitest run',
+			RULES_RUN,
 		])
 	})
 
-	it('fast without dialecte.gate → unchanged', () => {
+	it('fast without dialecte.gate → check, skills, changed tests, rules', () => {
 		expect(resolveGateSteps({ packageJson: {}, mode: 'fast' }).map((step) => step.run)).toEqual([
 			'npm run check',
 			'npm run skills:check',
 			'npx vitest run --changed',
+			RULES_RUN,
 		])
+	})
+
+	it('fast, full and release without dialecte.gate → each ends with the scoped rules step', () => {
+		const lastSteps = (['fast', 'full', 'release'] as const).map((mode) =>
+			withoutMarks(resolveGateSteps({ packageJson: {}, mode })).at(-1),
+		)
+
+		expect(lastSteps).toEqual([RULES_STEP, RULES_STEP, RULES_STEP])
 	})
 
 	it('a declared dialecte.gate.full holding docs → the declared steps, untouched', () => {

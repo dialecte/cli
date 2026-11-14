@@ -3,7 +3,7 @@ export const STANDARD_VERB_OPTIONS = {
 	index: { valueOptions: ['standard', 'package'], flags: ['rebuild', 'json'] },
 	find: { valueOptions: ['standard', 'package', 'about', 'limit'], flags: ['json'] },
 	show: { valueOptions: [], flags: ['json'] },
-	eval: { valueOptions: ['standard', 'package'], flags: ['json'] },
+	eval: { valueOptions: ['standard', 'package'], flags: ['angles', 'json'] },
 } as const
 
 /** The command's name, the start of every usage error (`standard <verb>: ...`). */
@@ -39,6 +39,12 @@ export const RANGE_ARGUMENT_PATTERN = /^([^/:]+\/[^:]+):(\d+)-(\d+)$/u
 
 /** A `--limit` value: a positive whole number. */
 export const LIMIT_PATTERN = /^[1-9]\d*$/u
+
+/** The line of `eval --angles` naming how many items only the slices the angles added hold (D27). */
+export const ADDED_LINE_PREFIX = 'added +'
+
+/** How a slice's logical lines are joined before a gold quote is looked for in them (as `evaluateGold` does). */
+export const QUOTE_LINE_SEPARATOR = ' '
 
 /** The find a miss of `eval` is placed with: its rank in a wider answer. */
 export const WIDE_FIND_LIMIT = 50

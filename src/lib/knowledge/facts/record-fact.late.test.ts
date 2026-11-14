@@ -25,7 +25,7 @@ type CheckedReplacementRow = {
 	next: Partial<FactDraft>
 }
 
-describe('recordFact: a checked fact replaces a current unchecked one (R4-11)', () => {
+describe('recordFact: a checked fact replaces a current unchecked one', () => {
 	const rows: Record<string, CheckedReplacementRow> = {
 		'current outside (unchecked) high, new schema low': {
 			current: {

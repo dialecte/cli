@@ -14,14 +14,19 @@
  * A scoped step gets the run's base and tree, the changed file the cli wrote for them and a selection path of its
  * own (`DIALECTE_GATE_*`), and is judged on the selection it writes there (`selection.ts`); no other step gets
  * those variables, and no step gets the hand-over's.
+ *
+ * A step whose command starts with the word `dialecte` runs as the cli running the gate (`ownCliCommand`), never as
+ * the one a package installed; its line and record note that cli's version.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { GIT_READ_ENVIRONMENT } from '../git.constants.ts'
+import { ownCliCommand } from '../own-cli-command.ts'
 import { runChild } from '../progress/run-child.ts'
 import { stallReason } from '../progress/stall-reason.ts'
 import { tailOf } from '../progress/tail-of.ts'
+import { readCliVersion } from '../read-cli-version.ts'
 import { shellQuote } from '../shell-quote.ts'
 import {
 	ARGUMENT_SEPARATOR_PATTERN,
@@ -34,6 +39,9 @@ import {
 	NO_TEST_RAN_REASON,
 	NPM_RUN_PATTERN,
 	REAL_FAILURE_PREFIX,
+	SELF_COMMAND_UNRESOLVED_REASON,
+	SELF_STEP_NOTE,
+	SELF_STEP_PATTERN,
 	SERIAL_FLAG,
 	SERIAL_RUN_PATTERN,
 	UNWIRED_NOT_RUN_REASON,
@@ -67,6 +75,7 @@ import type {
 	StepCounts,
 	StepResult,
 	StepRun,
+	StepShellCommand,
 } from './gate.types.ts'
 
 /**
@@ -89,6 +98,8 @@ export async function runGateSteps(params: {
 	scope?: GateScope
 	/** An unwired default step fails the run (full, release, contrib) instead of being skipped (fast, hook). */
 	failDefaultUnwired?: boolean
+	/** The words that run the cli itself for a self step; default: `ownCliCommand`. A throw fails that step, never the gate. */
+	resolveOwnCommand?: () => string[]
 }): Promise<StepResult[]> {
 	const { root, scope } = params
 	// every step judged for its wiring before the first runs: a failed one runs nothing, so every wiring is fixed at once
@@ -135,6 +146,7 @@ async function runEachStep(params: {
 	announce?: StepAnnouncer
 	scopeRun: ScopeRun | undefined
 	unwired: ReadonlyMap<GateStep, StepResult>
+	resolveOwnCommand?: () => string[]
 }): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const results: StepResult[] = []
@@ -155,6 +167,7 @@ async function runEachStep(params: {
 			clock: params.clock,
 			watchdog: params.watchdog,
 			scopeRun: params.scopeRun,
+			resolveOwnCommand: params.resolveOwnCommand,
 		}
 		const first = await runStep({ ...run, step })
 		// a first run whose selection failed its checks: no rerun can mend it, whatever its exit code
@@ -166,8 +179,9 @@ async function runEachStep(params: {
 			!isAlreadySerial({ step, packageJson })
 				? await rerunSerially({ ...run, step, first })
 				: withFailing({ result: first.result, runs: [first] })
-		results.push(result)
-		finished?.(result)
+		const noted = withSelfNote(result)
+		results.push(noted)
+		finished?.(noted)
 	}
 	return results
 }
@@ -240,6 +254,7 @@ async function rerunSerially(params: {
 	clock?: Clock
 	watchdog?: Watchdog
 	scopeRun: ScopeRun | undefined
+	resolveOwnCommand?: () => string[]
 	first: StepRun
 }): Promise<StepResult> {
 	const { step } = params
@@ -256,6 +271,7 @@ async function rerunSerially(params: {
 		clock: params.clock,
 		watchdog: params.watchdog,
 		scopeRun: params.scopeRun,
+		resolveOwnCommand: params.resolveOwnCommand,
 	})
 	const failing = failingFiles(rerun.output)
 	// a rerun that ran no test proves nothing, even one a `--changed` step lets pass
@@ -339,6 +355,8 @@ async function runStep(params: {
 	clock?: Clock
 	watchdog?: Watchdog
 	scopeRun: ScopeRun | undefined
+	/** The words that run the cli itself for a self step; default: `ownCliCommand`. */
+	resolveOwnCommand?: () => string[]
 }): Promise<StepRun> {
 	const { root, step, scopeRun } = params
 	if (step.scoped && scopeRun === undefined)
@@ -347,13 +365,16 @@ async function runStep(params: {
 			stalled: false,
 			result: { step, status: 'failed', counts: {}, restored: [], reason: NO_GATE_SCOPE_REASON },
 		}
+	const shell = shellCommandOf({ run: step.run, resolveOwnCommand: params.resolveOwnCommand })
+	// a self step whose cli cannot be resolved fails as a step, never as the gate
+	if ('failure' in shell) return unresolvedSelfStep({ step, failure: shell.failure })
 	const selectionPath = step.scoped ? scopeRun?.nextSelectionPath() : undefined
 	const snapshot = step.restoresGeneratedDocs
 		? snapshotFiles({ root, files: params.generatedDocs })
 		: new Map<string, Buffer | undefined>()
 	const execution = await runChild({
 		command: 'sh',
-		args: ['-c', step.run],
+		args: ['-c', shell.command],
 		cwd: root,
 		environment: {
 			FORCE_COLOR: '0',
@@ -410,6 +431,51 @@ async function runStep(params: {
 			...(reason && { reason, tail: tailOf({ output, lines: FAILED_OUTPUT_TAIL_LINES }) }),
 		},
 	}
+}
+
+/** A self step whose cli command could not be resolved: failed, the resolver's message in its tail. */
+function unresolvedSelfStep(params: { step: GateStep; failure: string }): StepRun {
+	return {
+		output: '',
+		stalled: false,
+		result: {
+			step: params.step,
+			status: 'failed',
+			counts: {},
+			restored: [],
+			reason: SELF_COMMAND_UNRESOLVED_REASON,
+			tail: params.failure,
+		},
+	}
+}
+
+/**
+ * The shell command of a step's `run`: a self step (`SELF_STEP_PATTERN`) runs as the cli running the gate, its first
+ * word replaced by the words `resolveOwnCommand` (default: `ownCliCommand`) gives, the rest of its words kept as
+ * written; any other runs as written. A resolver that throws gives its message as the `failure`.
+ */
+function shellCommandOf(params: {
+	run: string
+	resolveOwnCommand?: () => string[]
+}): StepShellCommand {
+	const { run } = params
+	if (!SELF_STEP_PATTERN.test(run)) return { command: run }
+	const resolve = params.resolveOwnCommand ?? ownCliCommand
+	let words: string[]
+	try {
+		words = resolve()
+	} catch (error) {
+		return { failure: error instanceof Error ? error.message : String(error) }
+	}
+	const ownCommand = words.map(shellQuote).join(' ')
+	return { command: run.replace(SELF_STEP_PATTERN, () => ownCommand) }
+}
+
+/** A self step's result with the version of the cli that ran it in its note (`SELF_STEP_NOTE`); any other as it is. */
+function withSelfNote(result: StepResult): StepResult {
+	if (!SELF_STEP_PATTERN.test(result.step.run)) return result
+	const versionNote = SELF_STEP_NOTE.replace('{version}', () => readCliVersion())
+	return { ...result, note: [result.note, versionNote].filter(Boolean).join('  ') }
 }
 
 /** The variables a scoped step gets: the run's base and tree, its changed file, its own selection path. */

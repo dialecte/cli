@@ -16,8 +16,14 @@ import {
 import type { CitationWord, SyntheticBlock } from './synthetic-standard.types.ts'
 
 export function buildSyntheticStandard(params: { blocks: SyntheticBlock[] }): string {
-	const fillerCounter = { next: 1 }
-	return params.blocks.flatMap((block) => linesOfBlock({ block, fillerCounter })).join('\n')
+	const lines: string[] = []
+	let nextFiller = 1
+	for (const block of params.blocks) {
+		const built = blockLines({ block, nextFiller })
+		for (const line of built.lines) lines.push(line)
+		nextFiller = built.nextFiller
+	}
+	return lines.join('\n')
 }
 
 /** `<word> <number>`: the citation shape, assembled at run time from the word and the number. */
@@ -56,11 +62,22 @@ export function letterSpaced(text: string): string {
 		.join(LETTER_SPACED_WORD_SEPARATOR)
 }
 
-function linesOfBlock(params: {
-	block: SyntheticBlock
-	fillerCounter: { next: number }
-}): string[] {
-	const { block, fillerCounter } = params
+/** A block's lines and the sequence number of the next filler sentence: filler numbers run across blocks. */
+function blockLines(params: { block: SyntheticBlock; nextFiller: number }): {
+	lines: string[]
+	nextFiller: number
+} {
+	const { block, nextFiller } = params
+	if (block.kind === 'filler')
+		return {
+			lines: fillerLines({ count: block.count, first: nextFiller }),
+			nextFiller: nextFiller + block.count,
+		}
+	if (block.kind === 'repeated') return repeatedLines({ block, nextFiller })
+	return { lines: linesOfBlock(block), nextFiller }
+}
+
+function linesOfBlock(block: Exclude<SyntheticBlock, { kind: 'filler' | 'repeated' }>): string[] {
 	switch (block.kind) {
 		case 'blank':
 			return Array.from({ length: block.count ?? 1 }, () => '')
@@ -82,14 +99,10 @@ function linesOfBlock(params: {
 			return [`${block.number}  ${block.title} ${DOT_LEADER} ${block.page}`]
 		case 'oneCharacterRun':
 			return oneCharacterLines(block.count)
-		case 'filler':
-			return fillerLines({ count: block.count, fillerCounter })
 		case 'letterSpaced':
 			return [letterSpaced(block.text)]
 		case 'fence':
 			return ['```', ...block.lines, '```']
-		case 'repeated':
-			return repeatedLines({ block, fillerCounter })
 	}
 }
 
@@ -124,9 +137,9 @@ function rowLine(cells: string[]): string {
 }
 
 /** Unique invented sentences naming a tag and an attribute of the test dialecte. */
-function fillerLines(params: { count: number; fillerCounter: { next: number } }): string[] {
-	return Array.from({ length: params.count }, () => {
-		const sequence = params.fillerCounter.next++
+function fillerLines(params: { count: number; first: number }): string[] {
+	return Array.from({ length: params.count }, (_unused, index) => {
+		const sequence = params.first + index
 		const tag = SYNTHETIC_TAGS[sequence % SYNTHETIC_TAGS.length]
 		const attribute = SYNTHETIC_ATTRIBUTES[sequence % SYNTHETIC_ATTRIBUTES.length]
 		return `Passage ${sequence} covers element ${tag} with attribute ${attribute}.`
@@ -135,16 +148,18 @@ function fillerLines(params: { count: number; fillerCounter: { next: number } })
 
 function repeatedLines(params: {
 	block: Extract<SyntheticBlock, { kind: 'repeated' }>
-	fillerCounter: { next: number }
-}): string[] {
-	const { block, fillerCounter } = params
+	nextFiller: number
+}): { lines: string[]; nextFiller: number } {
+	const { block } = params
 	const lines = block.isolated ? ['', block.line] : [block.line]
+	let nextFiller = params.nextFiller
 	for (const gap of block.gaps) {
-		const between = block.isolated
-			? ['', ...fillerLines({ count: gap - 3, fillerCounter }), '']
-			: fillerLines({ count: gap - 1, fillerCounter })
+		const count = block.isolated ? gap - 3 : gap - 1
+		const fillers = fillerLines({ count, first: nextFiller })
+		nextFiller += count
+		const between = block.isolated ? ['', ...fillers, ''] : fillers
 		lines.push(...between, block.line)
 	}
 	if (block.isolated) lines.push('')
-	return lines
+	return { lines, nextFiller }
 }

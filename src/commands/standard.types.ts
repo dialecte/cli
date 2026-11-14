@@ -1,4 +1,5 @@
 import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { AskStandard } from '../lib/knowledge/ask/ask.types.ts'
 import type {
 	StandardIndexState,
 	StandardInstalledVocabulary,
@@ -9,6 +10,10 @@ import type {
 	StandardRepeatedLine,
 } from '../lib/knowledge/standard/standard-index.types.ts'
 import type { StandardFolder } from '../lib/knowledge/standard/standard-input.types.ts'
+import type {
+	StandardGoldItem,
+	StandardSlice,
+} from '../lib/knowledge/standard/standard-search.types.ts'
 import type { RoundArguments } from '../lib/review-rounds/review-rounds.types.ts'
 import type { STANDARD_VERB_OPTIONS } from './standard.constants.ts'
 
@@ -38,7 +43,12 @@ export type OpenedStandards = {
 	indexes: StandardReadyIndex[]
 	skipped: StandardFolder[]
 	installed: StandardInstalledVocabulary
+	/** The same indexes as the ask ladder reads them, with each folder's files key (`eval --angles`). */
+	documents: Extract<AskStandard, { kind: 'documents' }>
 }
+
+/** How `eval` finds the slices of one gold item, at most `limit` direct ones. */
+export type GoldFind = (params: { item: StandardGoldItem; limit: number }) => StandardSlice[]
 
 /** The standards opened, or the answer that says why not (a refusal, an aborted build). */
 export type OpenedStandardsAnswer =

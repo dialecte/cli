@@ -3,14 +3,14 @@ import { endedOf, jsonOf, textOf } from '../print/print.ts'
 import { MODEL_TIERS, TIER_DEFINITIONS, TIER_NAMES, VENDOR_IDS } from './model-tiers.constants.ts'
 import { isVendorId } from './vendor-id.ts'
 
-import type { CommandOutput } from '../command-output.types.ts'
+import type { LookupCommandOutput } from '../command-output.types.ts'
 import type { TierModel } from './model-tiers.types.ts'
 
 export function answerModels(params: {
 	/** `--vendor`, else the vendor the skills manifest remembers. */
 	vendor: string | undefined
 	json: boolean
-}): CommandOutput {
+}): LookupCommandOutput {
 	const knownIds = VENDOR_IDS
 	if (params.vendor === undefined)
 		return {

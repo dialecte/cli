@@ -274,18 +274,19 @@ describe('reads: a fact file that is not JSON → unreadable, never an answer, n
 	})
 })
 
+const OLD_SOURCES = factDraft().sources
+const NEW_SOURCES = [{ kind: 'standard', standard: 'example-0000', files: 'sha256:bb' }]
+
 /** One row of the invalidation: what the check says of a valid fact, and what the reads then show and write. */
 type InvalidationRow = {
 	outcome: CheckOutcome
 	viewState: string
 	fileState: FactStoredState
-	sources: 'kept' | 'rewritten'
+	/** The sources the fact file holds after the reads. */
+	sources: typeof OLD_SOURCES
 	/** The history after two reads: each event, a `rechecked` one with its `from` and `to`. */
 	history: unknown[]
 }
-
-const OLD_SOURCES = factDraft().sources
-const NEW_SOURCES = [{ kind: 'standard', standard: 'example-0000', files: 'sha256:bb' }]
 
 describe('reads: invalidation of a valid fact by the injected check', () => {
 	const rows: Record<string, InvalidationRow> = {
@@ -293,28 +294,28 @@ describe('reads: invalidation of a valid fact by the injected check', () => {
 			outcome: { state: 'stale' },
 			viewState: 'stale',
 			fileState: 'stale',
-			sources: 'kept',
+			sources: OLD_SOURCES,
 			history: [{ event: 'created' }, { event: 'stale' }],
 		},
 		'unverifiable → shown unverifiable, the file unchanged, no line': {
 			outcome: { state: 'unverifiable' },
 			viewState: 'unverifiable',
 			fileState: 'valid',
-			sources: 'kept',
+			sources: OLD_SOURCES,
 			history: [{ event: 'created' }],
 		},
 		'valid with other sources → sources rewritten, one rechecked line { from, to }': {
 			outcome: { state: 'valid', sources: NEW_SOURCES },
 			viewState: 'valid',
 			fileState: 'valid',
-			sources: 'rewritten',
+			sources: NEW_SOURCES,
 			history: [{ event: 'created' }, { event: 'rechecked', from: OLD_SOURCES, to: NEW_SOURCES }],
 		},
 		'valid with the same sources → nothing written': {
 			outcome: { state: 'valid', sources: OLD_SOURCES },
 			viewState: 'valid',
 			fileState: 'valid',
-			sources: 'kept',
+			sources: OLD_SOURCES,
 			history: [{ event: 'created' }],
 		},
 	}
@@ -347,7 +348,7 @@ describe('reads: invalidation of a valid fact by the injected check', () => {
 					fact: {
 						...before,
 						state: row.fileState,
-						sources: row.sources === 'kept' ? OLD_SOURCES : NEW_SOURCES,
+						sources: row.sources,
 					},
 					history: row.history,
 				})
@@ -374,19 +375,36 @@ describe('reads: invalidation of a valid fact by the injected check', () => {
 })
 
 describe('reads: the check is called for a valid checked fact only', () => {
-	type CallRow = { draft: FactDraft; storedState?: FactStoredState; called: boolean }
+	type CallRow = { draft: FactDraft; called: boolean }
+	type StoredCallRow = { draft: FactDraft; storedState: FactStoredState; called: boolean }
+
+	/** Records the draft, rewrites its file to the stored state when there is one, reads it and tells if the check ran. */
+	function checkWasCalled(parameters: {
+		draft: FactDraft
+		storedState?: FactStoredState
+		readName: (typeof READ_NAMES)[number]
+	}): boolean {
+		const { draft, storedState, readName } = parameters
+		const folder = temporaryFolder('facts-read-check-calls-')
+		recordFact({ folder, draft, now: () => NOW })
+		if (storedState !== undefined)
+			writeFactFile({
+				folder,
+				fact: { ...readFactFile({ folder, id: 'F-0001' }), state: storedState },
+			})
+		const check = vi.fn((): CheckOutcome => ({ state: 'valid' }))
+
+		expect(readVia({ name: readName, folder, key: keyOfDraft(draft), check })).toHaveLength(1)
+
+		return check.mock.calls.length > 0
+	}
+
 	const rows: Record<string, CallRow> = {
 		'a valid standard fact → called (the control)': { draft: factDraft(), called: true },
 		'a person fact → never called': {
 			draft: factDraft({ source: 'person', sources: [] }),
 			called: false,
 		},
-		'a forgotten fact → never called': {
-			draft: factDraft(),
-			storedState: 'forgotten',
-			called: false,
-		},
-		'a stale fact → never called': { draft: factDraft(), storedState: 'stale', called: false },
 		'an unchecked (outside) fact → never called': {
 			draft: factDraft({
 				source: 'outside',
@@ -396,23 +414,27 @@ describe('reads: the check is called for a valid checked fact only', () => {
 		},
 	}
 
+	const storedRows: Record<string, StoredCallRow> = {
+		'a forgotten fact → never called': {
+			draft: factDraft(),
+			storedState: 'forgotten',
+			called: false,
+		},
+		'a stale fact → never called': { draft: factDraft(), storedState: 'stale', called: false },
+	}
+
 	for (const [name, row] of Object.entries(rows))
 		for (const readName of READ_NAMES)
 			it(`${name}, read by ${readName}`, () => {
-				const folder = temporaryFolder('facts-read-check-calls-')
-				recordFact({ folder, draft: row.draft, now: () => NOW })
-				if (row.storedState !== undefined)
-					writeFactFile({
-						folder,
-						fact: { ...readFactFile({ folder, id: 'F-0001' }), state: row.storedState },
-					})
-				const check = vi.fn((): CheckOutcome => ({ state: 'valid' }))
+				expect(checkWasCalled({ draft: row.draft, readName })).toBe(row.called)
+			})
 
-				expect(readVia({ name: readName, folder, key: keyOfDraft(row.draft), check })).toHaveLength(
-					1,
+	for (const [name, row] of Object.entries(storedRows))
+		for (const readName of READ_NAMES)
+			it(`${name}, read by ${readName}`, () => {
+				expect(checkWasCalled({ draft: row.draft, storedState: row.storedState, readName })).toBe(
+					row.called,
 				)
-
-				expect(check.mock.calls.length > 0).toBe(row.called)
 			})
 
 	it('a fact file is never created by a read of an empty ledger', () => {

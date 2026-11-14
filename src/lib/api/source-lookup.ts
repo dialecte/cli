@@ -17,7 +17,7 @@ import {
 } from './source-functions.constants.ts'
 import { readSourceFunctions } from './source-functions.ts'
 
-import type { CommandOutput } from '../command-output.types.ts'
+import type { LookupCommandOutput } from '../command-output.types.ts'
 import type { ApiJson, ApiMethod } from './api-json.types.ts'
 import type { SearchedIndexes, SourceIndex } from './source-functions.types.ts'
 
@@ -33,7 +33,7 @@ export function isSourcePath(path: string): boolean {
 export function sourceRootOf(params: {
 	cwd: string
 	command: string
-}): { root: string } | { refusal: CommandOutput } {
+}): { root: string } | { refusal: LookupCommandOutput } {
 	const root = packageRootOf(params.cwd)
 	if (root !== undefined) return { root }
 	return {
@@ -74,7 +74,7 @@ export function showSource(params: {
 	packageName: string | undefined
 	path: string
 	json: boolean
-}): CommandOutput {
+}): LookupCommandOutput {
 	const source = readSourceIndex(params)
 	const notes = source?.notes ?? []
 	const methods = findByPath({ indexes: source ? [source.index] : [], path: params.path })

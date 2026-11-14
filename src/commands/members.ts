@@ -14,7 +14,7 @@ import { printOut, textOf } from '../lib/print/print.ts'
 import { MEMBERS_USAGE, MEMBERS_VALUE_OPTIONS } from './members.constants.ts'
 import { METHOD_DISCOVERY_DEPTH } from './skills.constants.ts'
 
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 import type { Binding } from '../lib/config.types.ts'
 import type { MemberEntriesRead } from './members.types.ts'
 
@@ -24,7 +24,7 @@ export async function run(argv: string[]): Promise<void> {
 	process.exitCode = result.exitCode
 }
 
-export function runMembers(params: { argv: string[]; cwd: string }): CommandOutput {
+export function runMembers(params: { argv: string[]; cwd: string }): LookupCommandOutput {
 	const read = readMemberEntries(params)
 	if (read.kind === 'output') return read.output
 	return answerMembers({

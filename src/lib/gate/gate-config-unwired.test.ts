@@ -50,6 +50,7 @@ describe('resolveGateSteps marks the steps of a default list', () => {
 				{ name: 'check', isDefault: true },
 				{ name: 'skills', isDefault: true },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 		},
 		{
@@ -61,6 +62,7 @@ describe('resolveGateSteps marks the steps of a default list', () => {
 				{ name: 'skills', isDefault: true },
 				{ name: 'build', isDefault: true },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 		},
 		{
@@ -73,6 +75,7 @@ describe('resolveGateSteps marks the steps of a default list', () => {
 				{ name: 'skills', isDefault: true },
 				{ name: 'build', isDefault: true },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 		},
 		{
@@ -84,6 +87,7 @@ describe('resolveGateSteps marks the steps of a default list', () => {
 				{ name: 'skills', isDefault: true },
 				{ name: 'build', isDefault: true },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 		},
 	]) {
@@ -148,6 +152,7 @@ describe('resolveGateSteps marks no declared step as default', () => {
 			{ name: 'skills', isDefault: true },
 			{ name: 'build', isDefault: true },
 			{ name: 'tests', isDefault: true },
+			{ name: 'rules', isDefault: true },
 			{ name: 'type-narrowing' },
 		])
 	})
@@ -168,12 +173,14 @@ describe('resolveGateSteps marks an opted-out and an unwired step', () => {
 				{ name: 'check', isDefault: true },
 				{ name: 'skills', isDefault: true, optedOut: 'no skills folder' },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 			full: [
 				{ name: 'check', isDefault: true },
 				{ name: 'skills', isDefault: true, optedOut: 'no skills folder' },
 				{ name: 'build', isDefault: true },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 		})
 	})
@@ -191,6 +198,7 @@ describe('resolveGateSteps marks an opted-out and an unwired step', () => {
 			{ name: 'check', isDefault: true },
 			{ name: 'skills', isDefault: true },
 			{ name: 'tests', isDefault: true },
+			{ name: 'rules', isDefault: true },
 		])
 	})
 
@@ -202,6 +210,7 @@ describe('resolveGateSteps marks an opted-out and an unwired step', () => {
 			{ name: 'skills', isDefault: true, unwired: true },
 			{ name: 'build', isDefault: true },
 			{ name: 'tests', isDefault: true },
+			{ name: 'rules', isDefault: true },
 		])
 	})
 
@@ -213,6 +222,7 @@ describe('resolveGateSteps marks an opted-out and an unwired step', () => {
 			{ name: 'skills', isDefault: true, unwired: true },
 			{ name: 'build', isDefault: true, unwired: true },
 			{ name: 'tests', isDefault: true },
+			{ name: 'rules', isDefault: true },
 		])
 	})
 
@@ -346,6 +356,7 @@ describe('validateGateConfig refuses a dialecte.gate.skip that is stale or unwri
 				{ name: 'check', isDefault: true },
 				{ name: 'skills', isDefault: true, optedOut: 'no skills folder' },
 				{ name: 'tests', isDefault: true },
+				{ name: 'rules', isDefault: true },
 			],
 			full: [{ name: 'check' }, { name: 'skills', unwired: true }],
 		})

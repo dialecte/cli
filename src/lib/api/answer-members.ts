@@ -4,7 +4,7 @@ import { MEMBER_SUGGESTION_LIMIT } from './api-json.constants.ts'
 import { listMembers } from './list-members.ts'
 import { shortSummary } from './short-summary.ts'
 
-import type { CommandOutput } from '../command-output.types.ts'
+import type { LookupCommandOutput } from '../command-output.types.ts'
 import type { MethodEntry } from '../discover.types.ts'
 import type { Member } from './api-json.types.ts'
 
@@ -17,7 +17,7 @@ export function answerMembers(params: {
 	entries: readonly MethodEntry[]
 	expression: string
 	json: boolean
-}): CommandOutput {
+}): LookupCommandOutput {
 	const { expression } = params
 	const members = listMembers(params)
 	if (params.json)
