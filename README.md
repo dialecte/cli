@@ -919,16 +919,19 @@ the answer.
     whole-branch view; `gate --full` (and `--release`) measures the tdd step from the lot's base: the
     branch the lot was started on (the store lot's base, else the branch `worktree add` recorded it was cut
     from; a base given as a commit id stands for the resolved base branch), from where HEAD now leaves it,
-    so a lot that merged or rebased onto its base's new commits is not asked for them. When that base is
-    not found, is behind the cut, never held the cut (a stacked lot), was rewritten or has merged the lot's own commits, it measures from the
-    worktree's cut and says why; a worktree with no recorded base measures from its cut, one not made by
-    `worktree add` from where the branch left its base branch. The first details line of the gate's tdd step
+    so a lot that merged or rebased onto its base's new commits is not asked for them; a worktree with no
+    recorded base follows the resolved base branch the same way. Once the lot took its base's new commits, the
+    worktree's hygiene baseline moves to that merge-base, never onto HEAD itself (no command to run) and a store lot gets one
+    `hygiene.baseline-moved` event (`from`, `to`). When that base is not found, is behind the cut, never held the
+    cut (a stacked lot) or has merged the lot's own commits, it measures from the worktree's cut and says why; a
+    base rewritten under the lot (it once held the cut, now neither reaches the other) fails the step naming the
+    baseline and the merge-base, the baseline left as it is. With no base branch found, a worktree measures from
+    its cut. A worktree not made by `worktree add` measures from where the branch left its base branch. The first details line of the gate's tdd step
     (none when the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
     `lot base <ref>`, `worktree from <ref>`, `base branch <b> (the lot's base is a commit)`, `worktree cut`,
     `base branch <b>`, `HEAD`; a fallback reads `tdd base: the worktree's cut (<why>)`, the why one of `no
-    base branch recorded`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
-    stacked lot` (the ref's reflog never reached the cut), `<ref> was rewritten: the cut <sha>
-    is no ancestor of the merge-base <sha>`, `<ref> holds the lot's own commits`.
+    base branch recorded or found`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
+    stacked lot` (the ref's reflog never reached the cut), `<ref> holds the lot's own commits`.
   - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
     (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
     `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,

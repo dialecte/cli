@@ -1,3 +1,5 @@
+import { HYGIENE_BASELINE_MOVED_KIND } from '../worktree/worktree.constants.ts'
+
 import type { EventFieldsByKind } from './event.types.ts'
 
 /** The most bytes one event line may hold. */
@@ -90,6 +92,7 @@ export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	'step.foreign': ['step', 'worktree'],
 	'step.wait': ['step', 'waitedMs'],
 	folder: ['action', 'path', 'branch', 'tip', 'durationMs'],
+	[HYGIENE_BASELINE_MOVED_KIND]: ['from', 'to'],
 }
 
 /** Every field a reader knows: the envelope's and those of every known kind (a field is unknown when none holds it). */

@@ -7,7 +7,8 @@ import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { isAncestorCommit, readGit, tryReadGit } from '../git.ts'
 import { readIdentity } from '../store/identity.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
-import { readHygieneBaseline } from '../worktree/hygiene.ts'
+import { moveHygieneBaseline, readHygieneBaseline } from '../worktree/hygiene.ts'
+import { HYGIENE_BASELINE_REWRITTEN } from '../worktree/worktree.constants.ts'
 import { TDD_BASE_NAMED_REF_PREFIXES, TDD_BASE_NOTES, TDD_BASE_SOURCES } from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -19,7 +20,8 @@ import type { FollowedBaseRef, RecordedBaseRef, TddBase } from './tdd.types.ts'
  * 1. the lot's base ref (the store lot's identity `base.ref`, else the `from` `worktree add` recorded; a ref naming a
  *    commit, not a branch or tag, gives way to the resolved base branch), followed forward from the worktree's cut
  *    (`followLotBase`); the cut, with a note, when it cannot be;
- * 2. the worktree's cut, when no base ref is recorded (a note says so);
+ * 2. no base ref recorded: the resolved base branch, followed the same way; the worktree's cut with a note when none
+ *    is found;
  * 3. no baseline: where HEAD left the resolved base branch, else HEAD.
  * Failures: a repository without a commit, an unknown `--base` ref, a set `dialecte.baseBranch` naming no branch.
  */
@@ -43,11 +45,40 @@ export function resolveTddBase(params: {
 	if (baseline?.head === undefined) return resolveBaseBranchBase({ root, packageJson, head })
 	const cut = baseline.head
 	const recorded = readRecordedBaseRef({ root, from: baseline.from })
-	if (recorded === undefined)
+	const followed =
+		recorded === undefined
+			? resolveBaseBranchRef({ root, packageJson })
+			: resolveFollowedRef({ root, packageJson, recorded })
+	if (followed === undefined)
 		return { commit: cut, source: TDD_BASE_SOURCES.worktreeCut, note: TDD_BASE_NOTES.noneRecorded }
-	const followed = resolveFollowedRef({ root, packageJson, recorded })
 	if ('failure' in followed) return followed
-	return followLotBase({ root, cut, followed })
+	const base = followLotBase({ root, cut, followed })
+	// the lot took its base's new commits: the baseline moves there, with its event. Never onto HEAD: a base fast-forwarded
+	// onto the lot's own commits reads as the lot fast-forwarded onto it (the known limit of followLotBase), and a
+	// baseline at HEAD would tell prune the landed lot has no commit of its own
+	if ('commit' in base && base.commit !== cut && base.commit !== head)
+		moveHygieneBaseline({ root, to: base.commit })
+	return base
+}
+
+/**
+ * No base ref recorded: the resolved base branch (`dialecte.baseBranch`, origin/HEAD, main, master), followed like a
+ * recorded one; undefined when none is found, a failure when a set `dialecte.baseBranch` names no branch.
+ */
+function resolveBaseBranchRef(params: {
+	root: string
+	packageJson: PackageJson
+}): FollowedBaseRef | { failure: string } | undefined {
+	const found = findBaseBranchRef(params)
+	if ('refusal' in found)
+		return params.packageJson.dialecte?.baseBranch === undefined
+			? undefined
+			: { failure: found.refusal }
+	return {
+		ref: found.ref,
+		name: found.branch,
+		source: TDD_BASE_SOURCES.baseBranch.replace('{branch}', () => found.branch),
+	}
 }
 
 /** `--base <ref>`: the merge-base of HEAD and the ref, else the commit it names. */
@@ -130,7 +161,8 @@ function resolveFollowedRef(params: {
  * The followed ref R from the cut C: M = merge-base(HEAD, R), taken when C is an ancestor of (or equals) M (the base
  * only moves forward) and R reaches none of the lot's own commits (R has not merged the lot); else C with the note
  * naming why: R behind the cut (R's tip an ancestor of C), R not holding the cut (a stacked lot: R never reached C
- * in its reflog), R rewritten (R once reached C, now neither reaches the other), R holding the lot's own commits.
+ * in its reflog), R holding the lot's own commits. R rewritten (R once reached C, now neither reaches the other) is a
+ * failure naming C and M (`HYGIENE_BASELINE_REWRITTEN`), never a silent fall back.
  *
  * The lot's own commits: the first-parent commits of HEAD since C that are not on R's first-parent history. A lot
  * that merged R, rebased onto it or was fast-forwarded onto it keeps R's commits on R's first-parent line, so none of
@@ -138,7 +170,11 @@ function resolveFollowedRef(params: {
  * Known limit: R fast-forwarded onto the lot's own commits puts them on R's first-parent line, and that reads as the
  * lot fast-forwarded onto R: M (HEAD's own commits then count as R's).
  */
-function followLotBase(params: { root: string; cut: string; followed: FollowedBaseRef }): TddBase {
+function followLotBase(params: {
+	root: string
+	cut: string
+	followed: FollowedBaseRef
+}): TddBase | { failure: string } {
 	const { root, cut, followed } = params
 	if ('notFound' in followed) return fallBackToCut({ cut, note: notFoundNote(followed.notFound) })
 	const mergeBase = tryReadGit({ root, args: ['merge-base', 'HEAD', followed.ref] })?.trim()
@@ -161,11 +197,12 @@ function followLotBase(params: { root: string; cut: string; followed: FollowedBa
 			})
 		const shortCut = shortCommitOf({ root, commit: cut })
 		const shortMergeBase = shortCommitOf({ root, commit: mergeBase })
-		const note = TDD_BASE_NOTES.rewritten
-			.replace('{ref}', () => followed.name)
-			.replace('{cut}', () => shortCut)
-			.replace('{mergeBase}', () => shortMergeBase)
-		return fallBackToCut({ cut, note })
+		// rewritten under the lot: refused, never a silent reset of the baseline
+		return {
+			failure: HYGIENE_BASELINE_REWRITTEN.replaceAll('{ref}', () => followed.name)
+				.replace('{cut}', () => shortCut)
+				.replace('{mergeBase}', () => shortMergeBase),
+		}
 	}
 	if (refHoldsOwnCommits({ root, cut, ref: followed.ref }))
 		return fallBackToCut({
