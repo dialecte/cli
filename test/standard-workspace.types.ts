@@ -68,5 +68,7 @@ export type StandardEvalJson = {
 	notInText: number
 	recallAt5: number
 	recallAt10: number
+	/** `eval --angles` only: the items whose quote only the slices the angles added hold. */
+	added?: number
 	misses: Array<{ question: string; file: string; quote: string; why: string }>
 }

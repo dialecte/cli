@@ -9,21 +9,16 @@ import { resolve } from 'node:path'
 
 import { closestNames } from '../lib/closest-names.ts'
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
-import { ensureStandardIndex } from '../lib/knowledge/standard/ensure-standard-index.ts'
+import { ladderSlicesOf } from '../lib/knowledge/ask/ladder-slices-of.ts'
+import { loadAskSetup } from '../lib/knowledge/ask/load-ask-setup.ts'
+import { loadStandardIndexes } from '../lib/knowledge/ask/load-standard-indexes.ts'
+import { identityOf } from '../lib/knowledge/ask/merge-slices.ts'
 import { evaluateGold } from '../lib/knowledge/standard/evaluate-gold.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { findInStandard } from '../lib/knowledge/standard/find-in-standard.ts'
 import { logicalLinesIn } from '../lib/knowledge/standard/logical-lines-in.ts'
-import {
-	emptyInstalledVocabulary,
-	readInstalledVocabulary,
-} from '../lib/knowledge/standard/read-installed-vocabulary.ts'
-import {
-	readStandardInput,
-	workTreeRefusal,
-} from '../lib/knowledge/standard/read-standard-input.ts'
+import { matchableTextOf } from '../lib/knowledge/standard/matchable-text-of.ts'
 import { showStandardRange } from '../lib/knowledge/standard/show-standard-range.ts'
-import { standardCacheRoot } from '../lib/knowledge/standard/standard-cache-root.ts'
 import { MANIFEST_HASH_PREFIX } from '../lib/knowledge/standard/standard-cache.constants.ts'
 import { NAME_LIST_SEPARATOR } from '../lib/knowledge/standard/standard-input.constants.ts'
 import { DEFAULT_FIND_LIMIT } from '../lib/knowledge/standard/standard-search.constants.ts'
@@ -32,14 +27,15 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createStreamLiveOutput } from '../lib/progress/stream-live-output.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
-import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import {
+	ADDED_LINE_PREFIX,
 	CLOSEST_NAME_LIMIT,
 	COLUMN_SEPARATOR,
 	LIMIT_PATTERN,
 	NOISE_PERCENT_DECIMALS,
 	NOISE_RATIO_DECIMALS,
+	QUOTE_LINE_SEPARATOR,
 	RANGE_ARGUMENT_PATTERN,
 	RECALL_DECIMALS,
 	REPEATED_LINES_SHOWN,
@@ -54,6 +50,7 @@ import {
 } from './standard.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { AskSetup } from '../lib/knowledge/ask/ask.types.ts'
 import type {
 	StandardInstalledVocabulary,
 	StandardReadyIndex,
@@ -68,6 +65,7 @@ import type {
 } from '../lib/knowledge/standard/standard-search.types.ts'
 import type { PrintedText } from '../lib/print/print.types.ts'
 import type {
+	GoldFind,
 	OpenedStandards,
 	OpenedStandardsAnswer,
 	OpenStandardsParams,
@@ -264,18 +262,120 @@ async function runEval(params: StandardVerbParams): Promise<CommandOutput> {
 	})
 	if (opened.kind === 'output') return opened.output
 	const searches = opened.opened.indexes.map((index) => index.search)
+	const finds = await goldFindsOf({ params, opened: opened.opened, searches })
+	if ('output' in finds) return finds.output
 	const evaluation = evaluateGold({
 		items: gold,
-		find: ({ item }) => findForGold({ searches, item, limit: DEFAULT_FIND_LIMIT }),
-		findWide: ({ item }) => findForGold({ searches, item, limit: WIDE_FIND_LIMIT }),
+		find: ({ item }) => finds.find({ item, limit: DEFAULT_FIND_LIMIT }),
+		findWide: ({ item }) => finds.find({ item, limit: WIDE_FIND_LIMIT }),
 		files: searches.flatMap((search) => search.files),
 	})
 	const { installed } = opened.opened
+	const added = params.read.flags.has('angles')
+		? addedItemsOf({
+				items: gold,
+				plain: ({ item }) => findForGold({ searches, item, limit: DEFAULT_FIND_LIMIT }),
+				angled: ({ item }) => finds.find({ item, limit: DEFAULT_FIND_LIMIT }),
+				files: searches.flatMap((search) => search.files),
+			})
+		: undefined
+	const { misses, ...recalls } = evaluation
 	return {
 		output: params.read.flags.has('json')
-			? jsonAnswerOf({ vocabulary: vocabularyJsonOf(installed), ...evaluation })
-			: textOf([vocabularyLineOf(installed), ...evalLinesOf(evaluation), '']),
+			? jsonAnswerOf({
+					vocabulary: vocabularyJsonOf(installed),
+					...recalls,
+					...(added === undefined ? {} : { added }),
+					misses,
+				})
+			: textOf([vocabularyLineOf(installed), ...evalLinesOf({ evaluation, added }), '']),
 		exitCode: evaluation.items === 0 ? 1 : 0,
+	}
+}
+
+/**
+ * How many gold items only the slices the angles added hold (`eval --angles`, D27): a quote of the item is in a slice
+ * of the angled list that find's own list does not hold, and no slice of find's list holds any quote of it.
+ */
+function addedItemsOf(params: {
+	items: StandardGoldItem[]
+	plain: (params: { item: StandardGoldItem }) => StandardSlice[]
+	angled: (params: { item: StandardGoldItem }) => StandardSlice[]
+	files: StandardFileIndex[]
+}): number {
+	const files = new Map(params.files.map((file) => [file.fileId, file]))
+	return params.items.filter(function onlyAddedHold(item): boolean {
+		if (item.expected.length === 0) return false
+		const plain = params.plain({ item })
+		const known = new Set(plain.map((slice) => identityOf({ slice })))
+		const addedSlices = params.angled({ item }).filter((slice) => !known.has(identityOf({ slice })))
+		return (
+			holdsQuote({ slices: addedSlices, item, files }) &&
+			!holdsQuote({ slices: plain, item, files })
+		)
+	}).length
+}
+
+/** Whether a slice holds one of the item's quotes: of its file, its logical lines joined by one space, both folded. */
+function holdsQuote(params: {
+	slices: StandardSlice[]
+	item: StandardGoldItem
+	files: Map<string, StandardFileIndex>
+}): boolean {
+	const { slices, item, files } = params
+	return item.expected.some(function quoteHeld(expected): boolean {
+		const file = files.get(expected.file)
+		if (file === undefined) return false
+		const quote = matchableTextOf(expected.quote)
+		return slices.some(
+			(slice) =>
+				slice.file === file.fileId &&
+				logicalLinesIn({ file, from: slice.from, to: slice.to })
+					.map((line) => matchableTextOf(line.text))
+					.join(QUOTE_LINE_SEPARATOR)
+					.includes(quote),
+		)
+	})
+}
+
+/**
+ * How `eval` finds a gold item's slices: `find` alone, or with `--angles` the ask ladder (D21) over the same indexes,
+ * its setup loaded once; the answer that stops the verb when that setup cannot be read (exit 2).
+ */
+async function goldFindsOf(params: {
+	params: StandardVerbParams
+	opened: OpenedStandards
+	searches: StandardSearchIndex[]
+}): Promise<{ find: GoldFind } | { output: CommandOutput }> {
+	const { searches } = params
+	const verb = params.params
+	if (!verb.read.flags.has('angles'))
+		return {
+			find: function findAlone({ item, limit }) {
+				return findForGold({ searches, item, limit })
+			},
+		}
+	// no fact is read or written and no ask is kept: the gold run leaves nothing behind
+	const loaded = await loadAskSetup({
+		cwd: verb.cwd,
+		environment: verb.environment,
+		packageName: verb.read.values.get('package'),
+		facts: false,
+	})
+	if ('refused' in loaded) return { output: verbError({ verb: 'eval', message: loaded.refused }) }
+	const setup: AskSetup = { ...loaded.setup, standard: params.opened.documents }
+	// the recall and the `added` count read the same ladder run of an item: each item and limit runs once
+	const runs = new Map<StandardGoldItem, Map<number, StandardSlice[]>>()
+	return {
+		find: function findThroughLadder({ item, limit }) {
+			const ofItem = runs.get(item) ?? new Map<number, StandardSlice[]>()
+			runs.set(item, ofItem)
+			const known = ofItem.get(limit)
+			if (known !== undefined) return known
+			const slices = ladderSlicesOf({ setup, question: item.question, about: item.about, limit })
+			ofItem.set(limit, slices)
+			return slices
+		},
 	}
 }
 
@@ -300,73 +400,55 @@ function findForGold(params: {
  */
 async function openStandards(options: OpenStandardsParams): Promise<OpenedStandardsAnswer> {
 	const { verb, params } = options
-	const input = readStandardInput({
+	const { about } = options
+	const loaded = await loadStandardIndexes({
+		cwd: params.cwd,
 		environment: params.environment,
-		standardId: options.standardId,
+		standardIds: options.standardId === undefined ? undefined : [options.standardId],
+		packageName: params.read.values.get('package'),
+		rebuild: options.rebuild ?? false,
+		// only the verbs that score read the installed dialectes; show reads none (an empty vocabulary)
+		readVocabulary: options.scores,
+		checkVocabulary:
+			about === undefined
+				? undefined
+				: function aboutOfVocabulary({ installed }) {
+						return aboutRefusal({ about, tags: installed.vocabulary.tags, cwd: params.cwd })
+					},
+		progress: process.stderr.isTTY
+			? createStepProgress({
+					live: createStreamLiveOutput(process.stderr),
+					clock: createSystemClock(),
+				})
+			: undefined,
+		afterFileRead: params.afterFileRead,
 	})
-	if (input.kind === 'refused')
+	if (loaded.kind === 'refused')
 		return stopped(
 			verbError({
 				verb,
-				message: input.message,
-				...(input.layout === undefined ? {} : { more: [input.layout] }),
+				message: loaded.message,
+				...(loaded.layout === undefined ? {} : { more: [loaded.layout] }),
 			}),
 		)
-	const cacheRoot = standardCacheRoot({ environment: params.environment })
-	const cacheRefusal = workTreeRefusal({ path: cacheRoot })
-	if (cacheRefusal) return stopped(verbError({ verb, message: cacheRefusal }))
-	// only the verbs that score read the installed dialectes; show reads none (an empty vocabulary)
-	const vocabulary = options.scores
-		? await readInstalledVocabulary({
-				cwd: params.cwd,
-				packageName: params.read.values.get('package'),
-			})
-		: { kind: 'read' as const, installed: emptyInstalledVocabulary() }
-	if (vocabulary.kind === 'unknownPackage')
+	if (loaded.kind === 'unknownPackage')
 		return stopped(
 			verbError({
 				verb,
 				message: packageRefusal({
-					name: vocabulary.name,
-					installed: vocabulary.installed,
+					name: loaded.name,
+					installed: loaded.installed,
 					cwd: params.cwd,
 				}),
 			}),
 		)
-	const { installed } = vocabulary
-	if (options.about !== undefined) {
-		const refusal = aboutRefusal({
-			about: options.about,
-			tags: installed.vocabulary.tags,
-			cwd: params.cwd,
-		})
-		if (refusal) return stopped(verbError({ verb, message: refusal }))
-	}
-	const progress = process.stderr.isTTY
-		? createStepProgress({
-				live: createStreamLiveOutput(process.stderr),
-				clock: createSystemClock(),
-			})
-		: undefined
-	const cliVersion = readCliVersion()
-	const opened: OpenedStandards = { indexes: [], skipped: [], installed }
-	for (const standard of input.input.selected) {
-		if (standard.files.length === 0) {
-			opened.skipped.push(standard)
-			continue
-		}
-		const answer = await ensureStandardIndex({
-			standard,
-			cacheRoot,
-			installed,
-			rebuild: options.rebuild ?? false,
-			cliVersion,
-			progress,
-			afterFileRead: params.afterFileRead,
-		})
-		if (answer.kind === 'aborted')
-			return stopped(verbError({ verb, message: answer.message, exitCode: 1 }))
-		opened.indexes.push(answer.index)
+	if (loaded.kind === 'aborted')
+		return stopped(verbError({ verb, message: loaded.message, exitCode: 1 }))
+	const opened: OpenedStandards = {
+		indexes: loaded.ready,
+		skipped: loaded.skipped,
+		installed: loaded.installed,
+		documents: loaded.standard,
 	}
 	return { kind: 'opened', opened }
 }
@@ -588,8 +670,12 @@ function findLinesOf(params: { slices: StandardSlice[]; indexes: StandardReadyIn
 	})
 }
 
-/** `eval` as text: the recall line, then one line per miss. */
-function evalLinesOf(evaluation: StandardEvaluation): string[] {
+/** `eval` as text: the recall line, the `added +<n>` line with `--angles`, then one line per miss. */
+function evalLinesOf(params: {
+	evaluation: StandardEvaluation
+	added: number | undefined
+}): string[] {
+	const { evaluation, added } = params
 	const lines = [
 		[
 			`recall@5 ${evaluation.recallAt5.toFixed(RECALL_DECIMALS)}`,
@@ -597,6 +683,7 @@ function evalLinesOf(evaluation: StandardEvaluation): string[] {
 			`items ${evaluation.items}`,
 			`not in text ${evaluation.notInText}`,
 		].join(COLUMN_SEPARATOR),
+		...(added === undefined ? [] : [`${ADDED_LINE_PREFIX}${added}`]),
 		...evaluation.misses.map((miss) =>
 			['miss', miss.file, miss.why, miss.question].join(COLUMN_SEPARATOR),
 		),

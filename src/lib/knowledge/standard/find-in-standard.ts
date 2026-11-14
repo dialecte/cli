@@ -23,6 +23,8 @@ import type {
  * each direct slice in rank order, each resolved cross-reference inside it gives the slice of its target
  * unit (from its heading or caption, capped), once per unit, at most `limit` of them, after every direct
  * one. Pure, over search indexes already built.
+ *
+ * @intent find the passages of a standard that answer a question, search the standard text
  */
 export function findInStandard(params: FindInStandardParams): StandardSlice[] {
 	const { indexes, query, about } = params

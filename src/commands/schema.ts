@@ -11,7 +11,7 @@ import { answerSchema } from '../lib/schema/answer-schema.ts'
 import { loadDialectes } from '../lib/schema/load-dialectes.ts'
 import { SCHEMA_USAGE, SCHEMA_VALUE_OPTIONS } from './schema.constants.ts'
 
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 import type { SchemaDialectesRead } from './schema.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -20,7 +20,10 @@ export async function run(argv: string[]): Promise<void> {
 	process.exitCode = result.exitCode
 }
 
-export async function runSchema(params: { argv: string[]; cwd: string }): Promise<CommandOutput> {
+export async function runSchema(params: {
+	argv: string[]
+	cwd: string
+}): Promise<LookupCommandOutput> {
 	const read = await readSchemaDialectes(params)
 	if (read.kind === 'output') return read.output
 	return answerSchema({

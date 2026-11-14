@@ -25,7 +25,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
 ```
-Discover    api  members  schema  explain  standard  facts
+Discover    api  members  schema  explain  standard  facts  ask
 Use         run  fixture  new
 Grow        lot
 Plan        plan
@@ -42,6 +42,7 @@ dialecte schema <Tag>      # what an element may hold and where
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
 dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
 dialecte facts list|show|forget   # the facts recorded in your data folder: their state now, their history; forget one
+dialecte ask "<question>"  # answer from a fact, the definition, the catalogues and api indexes, else the standard's slices for readers
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -349,6 +350,12 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   closest quote and why (`ranked <r>`, `not found by find`, `not in the text`, `unknown file <id>`). Items with
   no expected quote are counted apart. Exit 1 when no item has one; 2 for a gold file that cannot be read or a
   malformed line (its number named).
+- `dialecte standard eval <gold.jsonl> --angles [...]`: the same recall, each question run through the `ask` ladder
+  instead of `find` alone (kind `semantic`, no fact read or written, no ask kept, no event): find's own list for
+  the whole question first and untouched, then at most 3 slices the angles found in clauses that list does not
+  cover, then the linked slices. A question the ladder refuses (an `about` no dialecte declares, a tag of several
+  dialectes without `--package`) scores find's own list. The answer adds `added +<n>` (`added` in `--json`): the
+  items whose quote only the added slices hold. Run from a package (exit 2 outside one).
 
 `show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
 `DIALECTE_STANDARD` when no standard is configured.
@@ -411,6 +418,77 @@ previous fact of a question gets its `supersededBy`, with a `superseded` line ma
 
 `show` and `forget` answer exit 1 for an id with no fact (the closest ids named) or a fact file that is not
 readable JSON (its path named).
+
+## Ask
+
+`dialecte ask "<question>" [--about [<Parent>/]<Tag>[@<attr>] | --code <code> | --method <path>] [--kind <kind>]
+[--decision] [--package <name>] [--effort low|medium|high] [--lot <id|folder>] [--limit <n>] [--no-facts]
+[--no-standard] [--person-only] [--json]` answers a question about the installed dialecte from the cheapest
+source that holds the answer, and never answers from anything else: past the dialecte's own files it hands the
+question on (to readers of the documents, or a person) instead of guessing.
+
+The question's subject is read from the names of the installed dialectes it holds (tags, attributes, catalogue
+codes, api methods: exact names, case kept; a name that is also an ordinary word counts only as `@name`, `name=`
+or through `--about`). `--about`, `--code` and `--method` name the subject instead; `--kind` forces the kind
+(`children`, `parents`, `required`, `values`, `default`, `fixed`, `type`, `variants`, `documentation`, `code`,
+`method`, `semantic`). A tag of several installed dialectes needs `--package` unless the folder is one of them.
+
+**The rungs**, in order; the first that answers ends the ask:
+
+- 0, a fact: the current fact of the same question in the facts ledger, reused when it is valid at the asked
+  effort or above (a person's fact at any effort). A fact that does not answer (lower effort, stale,
+  unverifiable, unchecked) is listed as a candidate, never the answer. `--no-facts` reads and records none.
+- 1, the definition: a structural question whose element resolves to one declaration (`--about <Parent>/<Tag>`
+  for a tag declared several ways), answered from the dialecte's definition. `--decision` skips it as an
+  answer and reads it as the boundary (below).
+- 2, the dialecte's files: a code answered by the one catalogue entry that explains it, a method by the api
+  index entry whose intents hold every content word of the need (else the closest five listed).
+- 3, the documents: the slices of the standard for the question (find's own list, then the slices its angles
+  add), handed to readers.
+
+A rung 1 or 2 answer is recorded as a fact at the ask's effort. A fact recorded from the definition is checked
+again when the definition changes: answering the same, it is kept with the new hash; else it is stale and a new
+fact replaces it.
+
+**The boundary (`--decision`).** The definition (the XSD) is what validates, so on a `--decision` ask it is the
+hard limit of what is valid, never the answer: it is read live (`boundary` in `--json`, `boundary: <answer>
+(definition)` in the text) when the question is structural and its element resolves to one declaration. A stored
+fact recorded from the definition is a candidate only; the answer comes from the prose inside the boundary (a
+standard or person fact, or the readers). The values of an attribute with no enumeration are open (any value of its
+type is valid): the prose values stand, no conflict. Prose naming what the definition rejects (a list item it does
+not hold, an enumeration value it does not list, another yes/no, another value) is answered within it: the list cut to the boundary's items, else the boundary's
+own answer; `conflict` in `--json` names the fact and what it named outside (`{ kind: 'standard-vs-xsd', fact,
+outside }`), the text adds `! conflict: the standard names <items> the XSD rejects; the XSD wins - fix the XSD and
+ask again`, and the ask still exits 0. Without `--decision` neither is read (`boundary` and `conflict` null).
+
+**The documents.** The `DIALECTE_STANDARD` folder whose id has the key of the dialecte's declared standard name
+(both lowercased, letters and digits only); every folder when the dialecte declares none. With none, the ask
+skips rung 3 and goes to outside readers (when the root holds other folders, a line on stderr names the
+declared name, its key and those folders).
+`--no-standard` is refused while documents are readable for the dialecte (outside readers run only when the
+documents cannot answer), and is the outside route without them. `--person-only` sends the ask to a person after
+rung 2. Once documents exist, each `unchecked` fact of the dialecte's standard is asked again, once: a new ask
+holding its question and `reask: <fact id>` (never its answer), and a `rechecked` line on the fact.
+
+**States and exit codes.** `answered` exit 0; `needs-person` exit 1 (next: `dialecte ask answer <id> ...`);
+`needs-readers` exit 3 (next: `dialecte ask pack <id>`, with `--outside` without documents); exit 2 for usage and
+refusals, nothing written: an unknown `--about` tag or attribute (the closest named), an attribute the element
+lacks, several dialectes without `--package`, two standard folders of one key, `--no-standard` with documents,
+an `--effort` other than the lot's, a `--lot` folder inside a repository.
+
+**The ask folder.** Each ask is a folder `A-<n>` holding `ask.json` (the `--json` object, versioned by its `schema`
+member, now `1`: the subject, kind, rung, state, answer, fact, source, boundary, conflict, candidates, methods,
+angles, slices, effort, next and what was read of the documents). With `--lot <id|folder>` (a store lot by index, name or folder, or a hand-over folder outside every
+repository) it is in `<lot folder>/asks/`; run in a lot's worktree, in that lot; else in
+`$XDG_STATE_HOME/dialecte/asks/`. An ask of a lot that reaches the documents or the outside route rewrites the
+lot's `standard.json` (`consulted`, a note listing every ask of the lot and its state). A lot's ask takes the
+lot's effort; elsewhere `--effort`, else `medium`.
+
+**Events.** `ask.parsed`, `ask.rung` (one per rung run, with its time), `ask.fact` and `ask.state` go to the
+lot's `events.jsonl`, else `$XDG_STATE_HOME/dialecte/asks/events.jsonl`; they hold the question's length and key
+hash, never its text, a quote or a slice's text; `ask.state` says `conflict: true|false`, never what
+conflicts. An event that cannot be written prints one line on stderr and
+never changes the exit code.
 
 ## MCP server
 

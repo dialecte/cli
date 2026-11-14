@@ -141,14 +141,14 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]',
 			'dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]',
 			'dialecte standard show <file id>:<from>-<to> [--json]',
-			'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]',
+			'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--angles] [--json]',
 		],
 		notes: [
 			'the vocabulary - the tags, attributes and enumeration values of the installed dialectes (--package <name>: that one only); index, find and eval print it first',
 			'index - builds (or reuses) the index of each standard folder, prints its quality per file',
 			'find - the ranked slices of whole lines that hold the terms, then the clauses they refer to [linked]; --about <Tag> adds a tag of the installed dialectes',
 			'show - the normalised text of a range of original lines; a file id is <standard id>/<file name without .md>',
-			'eval - recall at 5 and 10 of find over a local gold file of { question, about?, expected: [{ file, quote }] } lines; the expected quotes are alternatives',
+			'eval - recall at 5 and 10 of find over a local gold file of { question, about?, expected: [{ file, quote }] } lines; the expected quotes are alternatives; --angles runs each question through the ask ladder (no fact read or written, no ask kept) and scores its merged slices',
 			'the standard is never copied into a repository: its index is in $XDG_CACHE_HOME/dialecte (else ~/.cache/dialecte)',
 		],
 		exitCodes: [
@@ -178,6 +178,30 @@ export const COMMAND_MAP: CommandMap = {
 			'2  usage · the ledger inside a git work tree (set XDG_DATA_HOME to a folder outside the repository)',
 		],
 		example: 'dialecte facts list --state stale',
+	},
+	ask: {
+		family: 'Discover',
+		summary:
+			'Answer a question about a dialecte: a fact recorded before, the definition, the catalogues and api indexes, else the slices of the standard for readers',
+		usage: [
+			'dialecte ask "<question>" [--about [<Parent>/]<Tag>[@<attr>] | --code <code> | --method <path>] [--kind <kind>] [--decision] [--package <name>] [--effort low|medium|high] [--lot <id|folder>] [--limit <n>] [--no-facts] [--no-standard] [--person-only] [--json]',
+		],
+		notes: [
+			'the ladder - rung 0 a fact of the same question (reused at its effort or above), rung 1 the definition (a structural question: children, parents, required, values, default, fixed, type, variants, documentation), rung 2 the catalogues (a code) and the api indexes (a method), rung 3 the slices of the standard found from the angles of the question',
+			'--about [<Parent>/]<Tag>[@<attr>], --code, --method name the subject; --kind forces the kind; --decision skips rung 1 (a choice the definition does not make)',
+			'--decision reads the definition as the boundary of what is valid (boundary: <answer> (definition), never the answer): a stored schema fact is a candidate only; a standard or person fact answers inside it; one naming what the XSD rejects is cut to the boundary (a list) or takes its answer, and a ! conflict: line flags it (standard-vs-xsd, exit 0): the XSD wins, fix it and ask again',
+			'an answer from rung 1 or 2 is recorded as a fact in $XDG_DATA_HOME/dialecte/facts at the ask effort; --no-facts reads and records none',
+			'an ask is a folder A-<n> holding ask.json (the --json object, schema: 1, with boundary and conflict): with --lot <id|folder> in <lot folder>/asks/ (a store lot by index, name or folder, or a hand-over folder outside every repository), inside a lot worktree in its lot, else in $XDG_STATE_HOME/dialecte/asks/',
+			'the events (ask.parsed, ask.rung, ask.fact, ask.state) go to the lot events.jsonl, else $XDG_STATE_HOME/dialecte/asks/events.jsonl; they hold the question length and key hash, never its text; ask.state says conflict: true|false, never what conflicts',
+			'the documents - the DIALECTE_STANDARD folder whose id matches the dialecte standard name; without one the ask goes to outside readers (--no-standard is refused while documents are readable)',
+			'--effort - a lot ask takes the lot effort; elsewhere --effort, else medium',
+		],
+		exitCodes: [
+			'1  no rung answers and a person answers next (--person-only)',
+			'2  usage · an unknown --about tag or attribute (the closest named) · several dialectes without --package · two standard folders of one key · --no-standard with documents · --effort other than the lot effort · a --lot folder inside a repository',
+			'3  readers answer next: dialecte ask pack <id> (the slices of the documents, or --outside without them)',
+		],
+		example: 'dialecte ask "children of Bay"',
 	},
 	run: {
 		family: 'Use',

@@ -1,4 +1,4 @@
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 import type { LoadedDialectes } from '../lib/schema/schema.types.ts'
 
 /** The dialectes a schema lookup reads, or the answer that says why there are none to read. */
@@ -15,4 +15,4 @@ export type SchemaDialectesRead =
 			/** Every dialecte installed, filter or not. */
 			installed: string[]
 	  }
-	| { kind: 'output'; output: CommandOutput }
+	| { kind: 'output'; output: LookupCommandOutput }
