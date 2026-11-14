@@ -14,7 +14,6 @@ import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
 import { GATE_NO_HEAD_LINE } from '../gate-records/no-head.constants.ts'
 import { reusedResults } from '../gate-records/record-reuse.ts'
 import { readHeadOrNone } from '../git.ts'
-import { readPackageJson } from '../package-json.ts'
 import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
@@ -33,10 +32,16 @@ import {
 	GATE_HOOK_SELECTION_WORDS,
 	STEP_DETAIL_INDENT,
 } from './gate-config.constants.ts'
-import { holdsScopedStep, listHookTestSteps, resolveGateSteps } from './gate-config.ts'
+import {
+	GateConfigError,
+	holdsScopedStep,
+	listHookTestSteps,
+	resolveGateSteps,
+} from './gate-config.ts'
 import { runGateSteps } from './run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from './step-counts.ts'
 import { renderStepLine } from './step-line.ts'
+import { readStepSource } from './step-source.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
 import type { CheckKey, GateRecord } from '../gate-records/gate-records.types.ts'
@@ -69,7 +74,10 @@ export async function runHookGate(params: {
 	warn?: (line: string) => void
 }): Promise<CommandResult> {
 	const { cwd } = params
-	const packageJson = readPackageJson(cwd)
+	// nothing to run without a package.json stops the commit, as a broken gate config does
+	const source = readStepSource(cwd)
+	if ('refusal' in source) throw new GateConfigError(source.refusal)
+	const { packageJson } = source
 	const fullSteps = resolveGateSteps({ packageJson, mode: 'full' })
 	const testSteps = listHookTestSteps(fullSteps)
 	if (testSteps.length === 0) return { exitCode: 0, output: textOf([GATE_HOOK_NO_TEST_STEP_LINE]) }

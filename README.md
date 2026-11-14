@@ -530,7 +530,13 @@ the answer.
   hand-over card shows `✗ <step>  not wired (no npm script; or dialecte.gate.skip)` for a full or release record
   (`dialecte.contrib.skip` for a contrib one) and `! <step>  not
   wired (no npm script)` for a fast one, and `! <step>  opted out: <reason>` for an opt-out (a warning). The
-  `type-narrowing` step is derived from the package's scripts and is never unwired. A gate record written
+  `type-narrowing` step is derived from the package's scripts and is never unwired. A repository without
+  package.json has no default list: the gate infers its steps from its files (`pyproject.toml` + `uv.lock` at
+  the root: a `tests` step `uv run pytest` for fast and full, counted from pytest's summary line), and a root
+  `dialecte.json` (`{ "schema": 1, "gate": { "fast": [...], "full": [...] } }`, the keys of package.json's
+  `dialecte.gate` without `skip`) overrides it list by list (its refusals name the lists as package.json's
+  `dialecte.gate.<list>`); with neither, the gate refuses naming both. A repository with a
+  package.json never reads `dialecte.json`. A gate record written
   before this check is not reused for a package with an unwired or opted-out step (the key changes). While a hand-over
   holds the repository (`dialecte handover <lots.json>` wrote its lock), the gate runs only under the
   hand-over written for this repository - the script the lock names exists and the `lots.json` beside it

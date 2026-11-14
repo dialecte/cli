@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `dialecte gate` (`--fast`, `--full`, `--release`, `--hook`) in a repository without package.json (a Python repository) no longer fails on `check`, `skills` and `build` "not wired (no npm script)": the gate infers its steps from the repository's files (`pyproject.toml` + `uv.lock` at the root: a `tests` step `uv run pytest`, for fast and full; release falls back to full). A step it cannot infer is absent, not failing, and no `no npm script` line is printed for the derived `type-narrowing` step.
+- A root `dialecte.json` (`{ "schema": 1, "gate": { "fast": [...], "full": [...], "release": [...] } }`, `schema` optional) overrides the inferred steps list by list: a list it lacks is inferred, and with nothing to infer it must declare both `fast` and `full`. Any other key, and a `gate.skip` (there is no default npm step to opt out of), is refused: `gate: dialecte.json: <problem>`. A repository with a package.json is unchanged and never reads `dialecte.json`.
+- With neither, the gate refuses naming both ways (exit 2, 1 for `--hook`): `gate: no package.json and nothing to run: write a dialecte.json at the root (...), or hold the files the gate infers its steps from: pyproject.toml + uv.lock (uv run pytest)`.
+- Without package.json, `readPackageJson` answers the gate's step source, so every reader of the gate's steps (the hand-over card, the hook's reuse, contrib, the rehearsal) computes the same command hash as the gate's records.
+- A test step's counts now read pytest's summary line (`2 failed, 5 passed, 1 skipped, 1 error in 1.03s`, framed or `-q`): passed and xpassed pass, failed and errors fail, skipped and xfailed skip.
+
 ## [0.6.0] - 2026-11-13
 
 Breaking: the hand-over card is BLOCKED without an independent review after the last review round, `handover run` refuses late fixes nobody verified (`lot verify`), `lot snapshot` refuses a round above the cap of the lot's effort (`--beyond-cap`), `skills sync` creates `AGENTS.md` off a terminal only with `--agents-file`, a test file that runs no case fails the tdd step, and `ApiMethod` gains a source kind. Also: `lot status` names the next station from the lot's records; the facts ledger (`dialecte facts`); `api find --source` and `api show <file>#<name>`; the gate in a repository with no commit yet; store lots committed outside their folder; `rules` on a broken `.d.ts`; tdd and gate base fixes.

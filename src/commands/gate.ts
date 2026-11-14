@@ -2,7 +2,8 @@
  * `dialecte gate [--fast | --full | --release] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` |
  * `dialecte gate --hook [--no-reuse]` - the Definition of Done
  * of the package, inside its repository: `--fast` (default) while iterating, `--full` once per lot. Steps
- * come from `"dialecte": { "gate": { "fast", "full" } }` in package.json, or the defaults. One line per
+ * come from `"dialecte": { "gate": { "fast", "full" } }` in package.json, or the defaults; without a package.json,
+ * from a root dialecte.json and the steps the repository's files tell (`readStepSource`). One line per
  * step with the counts the step itself printed. While a hand-over script holds the repository it runs only
  * under the hand-over written for this repository (its lots file names it) when no real run of it is in
  * progress, and says so in one line; it refuses otherwise.
@@ -73,13 +74,13 @@ import {
 import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
 import { renderStepLine } from '../lib/gate/step-line.ts'
+import { readStepSource } from '../lib/gate/step-source.ts'
 import { namesAnotherRepository } from '../lib/git-environment.ts'
 import { readHeadOrNone } from '../lib/git.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
 import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
-import { readPackageJson } from '../lib/package-json.ts'
 import { jsonOf, joinedOf, printOut, textOf } from '../lib/print/print.ts'
 import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
@@ -203,7 +204,13 @@ export async function runGate(params: {
 				]
 			: []
 
-	const packageJson = readPackageJson(cwd)
+	const source = readStepSource(cwd)
+	if ('refusal' in source)
+		return resultOf({
+			exitCode: 2,
+			lines: [GATE_CONFIG_REFUSAL.replace('{message}', () => source.refusal)],
+		})
+	const { packageJson } = source
 	const resolved = resolveStepsOf({ packageJson, mode })
 	if ('refusal' in resolved) return resultOf({ exitCode: 2, lines: [resolved.refusal] })
 	const { steps } = resolved
@@ -322,8 +329,10 @@ export async function runGate(params: {
 		results.push(...stepResults)
 	}
 	// a derived step the package has no script for: one skip line, no step of the record
+	// only a package.json has npm scripts to derive from: a repository without one says nothing of them
 	const derives =
-		mode === 'full' || (mode === 'release' && packageJson.dialecte?.gate?.release === undefined)
+		source.origin === 'package.json' &&
+		(mode === 'full' || (mode === 'release' && packageJson.dialecte?.gate?.release === undefined))
 	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
 	if (progress) for (const line of absentLines) live?.writeLine(textOf([line]))
 	const sleptMs = sleptSinceStart?.()
