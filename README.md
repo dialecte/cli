@@ -47,6 +47,7 @@ dialecte fixture <Tag>     # the smallest valid XML document holding an element,
 dialecte new verb <namespace> <query|transaction> <name>
 dialecte lot start <brief.json>   # a lot from its brief: the lot folder in the store, the numbered worktree, .dialecte/lot
 dialecte lot status <id>   # its state derived from the records, the checks, the next station and its exact command; reads only
+dialecte lot risk <id|folder> [--effort <level> --by <who>]   # the risk class derived now, the effort and its cap; --effort records a person's effort
 dialecte lot wait <id> [--timeout <seconds>]   # until the lot needs someone: ready, a question, failed, a limit
 dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open question of the lot, once
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
@@ -946,14 +947,14 @@ the answer.
     merge hand-over the tdd verdict is judged on the worktree's own lot tree (the tree its first merge lot
     merged onto), current while the hook record of the merged tree stands, so no `gates ran on another tree`
     for it), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
-    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `late
-    fixes` on a card still to run (below), then `standard`. `✓`
+    `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `effort`
+    (below; none on a release hand-over), then `late fixes` on a card still to run (below), then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
     findings ledger, or one holding no row yet: `no findings recorded`; only nits open); `✗` failed (a
     failed step, a blocking or should-fix finding open, no independent review after the last round, `gate
     never run on this tree` when there is no record).
-  - `review`: the review rounds are the `round-<n>/` snapshots only, against the cap of the lot's effort
-    (low 1, medium 2, high 3; the identity's effort, else the folder's `brief.json`), then the independent
+  - `review`: the review rounds are the `round-<n>/` snapshots only, against the cap of the folder's effort
+    and risk class (the rounds of the higher of the two, below `lot risk`), then the independent
     review, then the open findings: `✓ review  2 review rounds of 2 · independent review approve · approved`.
     The independent review must come after the last snapshot: an `independent-reviewer` station end with a
     verdict strictly after the snapshot's time (`round-<n>.state`'s `at`, else `round-<n>.base`'s mtime; a
@@ -968,6 +969,11 @@ the answer.
     no snapshot, no ledger row and no independent end, a folder without step events and with no snapshot
     (its ledger rows claim no independent review), and a release hand-over keep the ledger-only line
     (`<n> rounds · approved · findings ledger`).
+  - `effort`: the effort against the risk class, from the folder's `risk.jsonl`: `✓ effort  high · risk class
+    high at handover write (src/cleanup.ts:2: rmSync) · 2 review rounds of 3` (`risk class unknown` with no
+    derived line); an effort below the class `! effort  medium below risk class high (by <who>: <reason>)`, or
+    `(no go-ahead recorded)` when no reason is recorded (an effort line without one, or the lot's own effort), a
+    warning that never changes the verdict; `no effort recorded` without one.
   - `late fixes`: a change of the tree after the last snapshot (the worktree's state hash against
     `round-<n>.state`'s) reads `! late fixes  unverified since round <n> (<k> files): dialecte lot verify
     <lot> --by <who> --note <text>`, a `lot verify` of the current state `✓ late fixes  verified by <who>:
@@ -1346,7 +1352,7 @@ the answer.
   (`lockfile`, `notChecked`, `problems`: `package`, `problem`; `command` when there are problems). The
   exit code stays 0 whatever the links and the lockfile say: the worktree exists, and its card says what
   to run.
-- `dialecte lot start <brief.json> [--effort low|medium|high] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
+- `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
   (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`).
   Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
@@ -1367,6 +1373,38 @@ the answer.
   `{ dryRun: true, lot, worktree, next }` dry run, `{ lot, folder, state, reason, next }` failed,
   `{ refused, next: null }` a refused brief, `{ error, usage, next: null }` a usage error (exit 2),
   `{ error, next: null }` any other exit before a lot exists.
+  The effort: the risk class of the scope sets the default (high when a scope entry reaches the package's
+  `dialecte.risk.high` list, or may reach it: `src/**` holds `src/lib/store/**`; `effort high (risk) · risk class
+  high: ...`). On a terminal, without `--json` or `--dry-run`, the effort is asked with that default
+  (`effort for risk class high [high]: `). An effort below the class, from `--effort`, the brief or the answer,
+  is refused (exit 2, nothing written, also on `--dry-run`) unless `--by <who> --reason <text>` give the
+  go-ahead (both or neither); given, they are recorded on an effort line in the lot's `risk.jsonl` and the start
+  prints `! effort medium below risk class high (by <who>: <reason>)`.
+- `dialecte lot risk <id|folder> [--json]` reads the folder's `risk.jsonl` and derives the risk class now from
+  the worktree's diff against the lot's base, writing nothing: `lot risk: class <c> · effort <e> · cap <n>`, a
+  `! effort <e> below risk class <c> (by <who>: <reason>)` line when it is (`(no go-ahead recorded)` when no
+  reason is recorded), then one line per reason (`<file>:<line>: <detail>`; a declared file reads `<file>:
+  declared` when the list names it, else `<file>: declared <glob>`).
+  High: a changed file in the package's `dialecte.risk.high` list (the base's and the worktree's together, so
+  a change that drops a glob still counts it; the cli declares its store, events, cleanup, review rounds and
+  hand-over commit paths), an added destructive call or git argument in a source file (a line
+  that is a comment alone, starting with `//`, `/*` or `*`, is not read), or a runtime package (one with an
+  `exports` map) whose API index changed, or whose export source changed against the base while its index did
+  not or there is none; light: docs, a version bump, the lockfile, or at most 40 changed lines in at most 3
+  files; medium otherwise. A derivation that cannot run (a repository with no commit yet) falls back to the
+  last derived line, else `class unknown`, and the read ends with `! risk class not derived: <reason>`, exit 0.
+  `--json` prints the read as one object `{ class, reasons, effort, below, cap }`, versioned by the JSON schema
+  `src/commands/lot-risk.schema.json` (draft 2020-12, version 1). `dialecte lot risk <id|folder> --effort low|medium|high [--class
+  high|medium|light] --by <who> [--reason <text>]` appends `{ schema: 1, kind: "effort", at, effort, class?, by,
+  reason? }` to `risk.jsonl` (the last line wins; the same effort, class and reason again: `already`, nothing
+  written, so a reason given after the class rose is a new line);
+  an effort below the class needs `--reason`; when the derivation cannot run, the effort is compared to the last
+  derived line, or to nothing, and recorded. Exit 0 read or recorded; 2 for a usage error, an unknown id, a
+  damaged store lot (`lot risk: <name> damaged: <reason>`, read or write), no `--by`, below without `--reason`,
+  a forbidden word or a committed, canceled or failed lot, nothing written; 1 when the line cannot be
+  written. `lot snapshot` (only when it goes ahead) and `handover write` append a `{ kind: "derived", class,
+  reasons, from }` line; a derivation that cannot run prints `! risk class not derived: <reason>` and appends
+  nothing.
 - `dialecte lot status <id> [--json]` derives the lot's state from its records (`working`, `input-required`,
   `ready`, `committed`, `canceled`, `failed`), with the worktree and link checks and the exact next command (the
   text form adds an `also:` line when there is one, five lines at most); it
@@ -1396,7 +1434,10 @@ the answer.
   (<station> ended with <word>)`. `--json` adds `station` (`{ kind, station, check, step, round, why,
   unplaced, noEnd }`, `null` for a simulated lot) and `rounds` (`{ review, cap, effort, steps, beyondCap:
   [{ round, by, reason }], independent }`, `effort` the level the cap is taken from or `null`, `steps` the
-  brief's count; the text form prints from them). Other states, a
+  brief's count; the text form prints from them) and `effort` (`{ level, source, riskClass, below }`,
+  `source` `risk-line` for an effort recorded by `lot risk`, `riskClass` the last derived line or `null`; the
+  text form adds `! effort <e> below risk class <c> (by <who>: <reason>)` when it is below, `(no go-ahead
+  recorded)` when no reason is recorded). Other states, a
   simulated lot and `lot start` keep their next. A damaged lot (a folder of the store whose name has a lot
   name's shape and whose records do not hold: no readable `identity.json`, one naming another folder, or a record
   that fails its check) answers `<name> damaged: <reason>` then `next: dialecte lot stop <name> --reason <text>`
@@ -1553,9 +1594,14 @@ the answer.
     index or at HEAD) are refused; a run that
     stops part-way leaves only `.partial` names, which the next run removes. `.dialecte/lot.json` is
     never part of it. `round-<n>.state` (`{ "schema": 1, "at", "stateHash" }`, the worktree's state hash)
-    is written and renamed with the others. A round above the cap of the lot's effort (low 1, medium 2,
-    high 3; the identity's effort, else the folder's `brief.json`, else none recorded and a cap of 1; an
-    interim read until the risk class lands) is refused, exit 2, naming `dialecte lot snapshot <folder>
+    is written and renamed with the others. The risk class is derived again from the diff first, and appended
+    to `risk.jsonl` only when the snapshot goes ahead (a refused snapshot writes nothing); the cap is the
+    rounds of the higher of the effort's class and that class (low or light 1,
+    medium 2, high 3; the effort is the last `lot risk --effort` line, else the lot's), and a class above the
+    effort prints `! risk class now high (src/cleanup.ts:2: rmSync): cap 3`. With no effort recorded the cap
+    is 1 and a later round is refused, exit 2, naming `dialecte lot risk <folder> --effort low|medium|high --by
+    <who>`. A round above the cap of an effort is refused, exit 2, naming what set the cap (`(effort medium)`,
+    or `(effort medium, risk class high)` when a class raised it) and `dialecte lot snapshot <folder>
     --round <n> --beyond-cap --by <who> --reason <text>`. With them the row `| round <n> beyond the cap of
     <cap>: <reason> | <who> | <day> |` goes to `decisions.md` first, then the snapshot (a retry finds the
     row of that round and adds none; once it stands, the plain `--round <n>` takes the round too). `--beyond-cap` within the cap, `--by` or `--reason` without it or

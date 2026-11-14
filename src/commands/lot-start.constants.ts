@@ -1,9 +1,7 @@
 import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
 
-import type { BriefEffort } from '../lib/store/brief.types.ts'
-
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
-export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate']
+export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate', 'by', 'reason']
 export const START_FLAGS: readonly string[] = ['dry-run', 'json']
 
 /** Why `lot start` is a usage error: `{extra}` the words beyond the brief, `{effort}` and `{efforts}` the flag's. */
@@ -11,10 +9,30 @@ export const START_USAGE_REASONS = {
 	noBrief: 'lot start takes one brief: none given',
 	extra: 'lot start takes one brief, not also {extra}',
 	effort: '--effort {effort} is not one of {efforts}',
+	goAheadHalf: '--by and --reason go together: {option} alone',
+	goAheadLine: '{option} takes one non-empty line',
+	asked: 'no effort among {efforts} after {attempts} answers',
 } as const
 
-/** The effort of a lot whose brief and flags name none (S; L1 replaces it by the risk class). */
-export const DEFAULT_EFFORT: BriefEffort = 'medium'
+/** The verb the forbidden-word refusal of `--by` and `--reason` names. */
+export const START_VERB = 'start'
+
+/** The line of a start: the effort, where it came from, the risk class and its first reason. */
+export const START_EFFORT_LINE = 'effort {effort} ({source}) · risk class {class}: {detail}'
+
+/** The detail of a class derived with no reason: no scope entry reaches a declared glob. */
+export const NO_DECLARED_PATH = 'no declared path'
+
+/** The refusal of an effort below the scope's class without `--by` and `--reason` (D13). */
+export const START_BELOW_REFUSAL =
+	'lot start: effort {effort} is below risk class {class} ({detail}): add --by <who> --reason <text>'
+
+/** The question `lot start` asks on a terminal (D13), and how many answers out of the efforts it reads at most. */
+export const START_EFFORT_PROMPT = 'effort for risk class {class} [{effort}]: '
+export const START_EFFORT_ATTEMPTS = 3
+
+/** The refusal of a question whose input closed before an answer (D22). */
+export const START_NO_ANSWER = 'lot start: no answer to the effort question'
 
 /** The schema of `identity.json`. */
 export const IDENTITY_SCHEMA = 1

@@ -27,15 +27,19 @@ import {
 	BEYOND_CAP_DECISION,
 	BEYOND_CAP_FLAG,
 	BEYOND_CAP_REFUSAL,
+	CAP_SOURCE_EFFORT,
+	CAP_SOURCE_EFFORT_CLASS,
 	CHOICE_OPTIONS,
 	DECISIONS_FILE,
-	NO_EFFORT_RECORDED,
+	NO_EFFORT_CAP_REFUSAL,
 	LEDGER_FILE,
 	LINE_BREAK_PATTERN,
 	CHOICE_USAGE,
 	DECIDE_USAGE,
 	FINDING_OPTIONS,
 	FINDING_USAGE,
+	RISK_RAISED_LINE,
+	RISK_RAISED_REASON,
 	SEVERITY_SPELLINGS,
 	SNAPSHOT_OPTIONS,
 	SNAPSHOT_USAGE,
@@ -48,17 +52,17 @@ import {
 	readWorktreeState,
 	workTreeTopOf,
 } from '../lib/review-rounds/worktree-state.ts'
+import { appendDerivedRiskLine, tryDeriveLotRiskClass } from '../lib/risk/derive-lot-risk-class.ts'
+import { riskReasonText } from '../lib/risk/risk-reason.ts'
+import { isEffortBelow, riskCapOf } from '../lib/risk/risk-records.ts'
 import { recordStandard } from '../lib/standard/record-standard.ts'
-import { readIdentity } from '../lib/store/identity.ts'
-import { interimEffortOf } from '../lib/store/lot-records.ts'
-import { capOf } from '../lib/store/next-station.ts'
 import { replaceWhole } from '../lib/store/publish.ts'
 import { readBeyondCapRows } from '../lib/store/station-records.ts'
 
 import type { RecordVerb } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RoundArguments, SnapshotGoAhead } from '../lib/review-rounds/review-rounds.types.ts'
-import type { BriefEffort } from '../lib/store/brief.types.ts'
+import type { Effort, RiskCap, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { TemporaryFileSeam } from '../lib/store/store.types.ts'
 
 /** A review rounds' verb under its old word (`runRecord({ argv: [<old word>, ...] })`). */
@@ -248,25 +252,18 @@ function recordSnapshot(params: {
 	const state = readWorktreeState(root)
 	const refusal = snapshotRefusal({ root, folder, round, state })
 	if (refusal) return answerOf({ exitCode: 1, line: `${verbPrefix('snapshot')}: ${refusal}` })
-	// interim until L1b: the effort is read by interimEffortOf, then by effectiveEffort (33L1 rev 8, Q-A)
-	const effort = interimEffortOf({
-		lotFolder: folder,
-		identityEffort: readIdentity({ lotFolder: folder })?.effort,
-	})
-	const cap = capOf({ effort })
-	const capRefusal = roundCapRefusal({ folder, round, cap, effort, goAhead })
-	if (capRefusal) return answerOf({ exitCode: 2, line: capRefusal })
 	const now = params.now ?? new Date()
+	// derived before the cap check, appended only once every refusal is passed: a raised class raises the cap of this
+	// call (D7), a refused call writes nothing (D30)
+	const { derivation, warning } = tryDeriveLotRiskClass({ folder, cwd: params.cwd })
+	const riskCap = riskCapOf({ folder, derivedNow: derivation?.class })
+	const { cap, effort } = riskCap
+	const capRefusal = roundCapRefusal({ folder, round, riskCap, goAhead })
+	if (capRefusal) return answerOf({ exitCode: 2, line: capRefusal })
+	const wordRefusal = goAheadWordRefusal({ root, goAhead })
+	if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
+	if (derivation !== undefined) appendDerivedRiskLine({ folder, derivation, now, from: 'snapshot' })
 	if (goAhead) {
-		const wordRefusal = forbiddenWordRefusal({
-			root,
-			verb: 'snapshot',
-			options: [
-				{ option: '--by', text: goAhead.by },
-				{ option: '--reason', text: goAhead.reason },
-			],
-		})
-		if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
 		writeGoAhead({
 			folder,
 			round,
@@ -277,9 +274,43 @@ function recordSnapshot(params: {
 		})
 	}
 	const taken = takeSnapshot({ root, folder, round, state, at: now })
-	return answerOf({
+	const raised = raisedLineOf({ derivation, effort, cap })
+	return resultOf({
 		exitCode: 0,
-		line: `${verbPrefix('snapshot')}: round-${round} - ${taken.copied} copied, ${taken.deleted} deleted, base ${taken.base.slice(0, 12)} - ${folder}`,
+		lines: [
+			`${verbPrefix('snapshot')}: round-${round} - ${taken.copied} copied, ${taken.deleted} deleted, base ${taken.base.slice(0, 12)} - ${folder}`,
+			...(raised === undefined ? [] : [raised]),
+			...(warning === undefined ? [] : [warning]),
+		],
+	})
+}
+
+/**
+ * The `!` line of a snapshot whose class derived now is above the effort's: the class, its first reason and the cap
+ * (33L1 D7); undefined when nothing was derived, no effort is recorded or the class is not above it.
+ */
+function raisedLineOf(params: {
+	derivation: RiskDerivation | undefined
+	effort: Effort | undefined
+	cap: number
+}): string | undefined {
+	const { derivation, effort } = params
+	if (derivation === undefined || effort === undefined) return undefined
+	if (!isEffortBelow({ effort, riskClass: derivation.class })) return undefined
+	const [first] = derivation.reasons
+	return fillMessage({
+		template: RISK_RAISED_LINE,
+		values: {
+			class: derivation.class,
+			reason:
+				first === undefined
+					? ''
+					: fillMessage({
+							template: RISK_RAISED_REASON,
+							values: { reason: riskReasonText(first) },
+						}),
+			cap: String(params.cap),
+		},
 	})
 }
 
@@ -304,18 +335,18 @@ function goAheadOf(read: RoundArguments): SnapshotGoAhead | undefined | 'usage' 
 function roundCapRefusal(params: {
 	folder: string
 	round: number
-	cap: number
-	effort: BriefEffort | undefined
+	riskCap: RiskCap
 	goAhead: SnapshotGoAhead | undefined
 }): string | undefined {
-	const { round, cap } = params
+	const { round, riskCap } = params
+	const { cap, effort } = riskCap
 	if (round > cap && !params.goAhead && !hasGoAheadRow({ folder: params.folder, round }))
 		return fillMessage({
-			template: BEYOND_CAP_REFUSAL,
+			template: effort === undefined ? NO_EFFORT_CAP_REFUSAL : BEYOND_CAP_REFUSAL,
 			values: {
 				round: String(round),
 				cap: String(cap),
-				effort: params.effort === undefined ? NO_EFFORT_RECORDED : `effort ${params.effort}`,
+				capSource: capSourceOf({ riskCap }),
 				folder: params.folder,
 			},
 		})
@@ -325,6 +356,36 @@ function roundCapRefusal(params: {
 			values: { round: String(round), cap: String(cap) },
 		})
 	return undefined
+}
+
+/** The refusal of a go-ahead whose `--by` or `--reason` holds a forbidden word; undefined without a go-ahead. */
+function goAheadWordRefusal(params: {
+	root: string
+	goAhead: SnapshotGoAhead | undefined
+}): string | undefined {
+	const { goAhead } = params
+	if (goAhead === undefined) return undefined
+	return forbiddenWordRefusal({
+		root: params.root,
+		verb: 'snapshot',
+		options: [
+			{ option: '--by', text: goAhead.by },
+			{ option: '--reason', text: goAhead.reason },
+		],
+	})
+}
+
+/**
+ * What set the cap a beyond-cap refusal names (D30): `effort <e>`, or `effort <e>, risk class <c>` when a class above
+ * the effort's raised it; empty without an effort (its refusal names none).
+ */
+function capSourceOf(params: { riskCap: RiskCap }): string {
+	const { effort, class: riskClass, raisedBy } = params.riskCap
+	if (effort === undefined) return ''
+	return fillMessage({
+		template: raisedBy === undefined ? CAP_SOURCE_EFFORT : CAP_SOURCE_EFFORT_CLASS,
+		values: { effort, class: riskClass ?? '' },
+	})
 }
 
 /**

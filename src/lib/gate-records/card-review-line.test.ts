@@ -4,17 +4,17 @@
  * last snapshot, else (a folder without step events) a ledger row of a round above it - is required. Every case
  * writes a whole lot folder in a temporary store and asserts the whole line.
  */
-import { copyFileSync, readFileSync } from 'node:fs'
+import { copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeLedger } from '../../../test/lot-report-workspace.ts'
 import { STATION_LOT } from '../../../test/lot-station-workspace.constants.ts'
 import { createStationLot } from '../../../test/lot-station-workspace.ts'
 import { REVIEW_LINE_FIXTURE } from '../../../test/review-line-workspace.constants.ts'
+import { effortLineOf, writeRiskLines } from '../../../test/risk-workspace.ts'
 import { DECISION_DAY } from '../../../test/station-records-workspace.constants.ts'
 import {
 	playMoves,
-	rewriteRecord,
 	setIdentityEffort,
 	writeLotBrief,
 	writeSnapshot,
@@ -468,18 +468,15 @@ describe('buildReviewLine: rounds, cap and the independent review (D18)', () => 
 })
 
 describe('buildReviewLine: a real folder of 7 ledger rounds (case 17)', () => {
-	it('3 empty snapshots with their base, 48 ledger rows of rounds 1-7, effort high from the brief -> 3 review rounds of 3, the independent rows counted apart, passed', () => {
+	it('3 empty snapshots with their base, 48 ledger rows of rounds 1-7, effort high from an effort line -> 3 review rounds of 3, the independent rows counted apart, passed', () => {
 		const lot = createStationLot()
 		setIdentityEffort({ lot, level: undefined })
+		writeRiskLines({ folder: lot.lotFolder, lines: [effortLineOf({ effort: 'high' })] })
 		for (const round of [1, 2, 3]) writeSnapshot({ lot, round, baseSecond: round })
 		copyFileSync(
 			join(REVIEW_LINE_FIXTURE, 'findings-ledger.md'),
 			join(lot.lotFolder, 'findings-ledger.md'),
 		)
-		rewriteRecord({
-			path: join(lot.lotFolder, 'brief.json'),
-			text: readFileSync(join(REVIEW_LINE_FIXTURE, 'brief-high.json'), 'utf8'),
-		})
 
 		expect(buildReviewLine({ folder: lot.lotFolder, release: false })).toEqual(
 			line({

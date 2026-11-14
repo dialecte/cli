@@ -44,6 +44,12 @@ export const WRITER_EXCEPTIONS: readonly WriterException[] = [
 			'the confirmation prompt of `worktree prune --yes` is written by readline on the terminal, a question the person answers',
 	},
 	{
+		path: 'src/commands/lot.ts',
+		linePattern: /createInterface\(\{[^}]*output:\s*process\.stdout/,
+		reason:
+			'the effort question of `lot start` on a terminal is written by readline, a question the person answers',
+	},
+	{
 		path: 'src/commands/skills.ts',
 		linePattern: /output:\s*process\.stdout/,
 		reason:

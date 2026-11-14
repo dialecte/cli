@@ -1,3 +1,6 @@
+import type { CommandResult } from '../lib/command-result.types.ts'
+import type { RiskDerivation } from '../lib/risk/risk.types.ts'
+import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
 import type { ScenarioStep, ScenarioTable } from '../lib/store/scenarios.types.ts'
 import type { SynchronousPause } from '../lib/store/store.types.ts'
 
@@ -48,3 +51,40 @@ export type LotWorktreeResult =
 	| { worktree: string; link: string }
 	| { worktree: string; linkRefused: string }
 	| { failed: string }
+
+/** Where a lot's effort came from: `--effort`, the brief, the terminal's answer, or the scope's risk class. */
+export type StartEffortSource = 'flag' | 'brief' | 'asked' | 'risk'
+
+/** The effort of a start and where it came from. */
+export type StartEffort = { level: BriefEffort; source: StartEffortSource }
+
+/** `--by` and `--reason`, given together: who let the effort be and why. */
+export type StartGoAhead = { by: string; reason: string }
+
+/** A start checked up to its effort: what `finishStart` needs once the effort is known (asked or not). */
+export type PreparedStart = {
+	brief: CheckedBrief
+	/** The brief path as the command was given it. */
+	briefPath: string
+	worktreesFolder: string
+	simulation: Simulation | undefined
+	json: boolean
+	dryRun: boolean
+	now: Date
+	seams: StartSeams
+	effortFlag: BriefEffort | undefined
+	goAhead: StartGoAhead | undefined
+	/** The class of the brief's scope over the repository's declared list. */
+	derivation: RiskDerivation
+}
+
+/** A prepared start, or the exit that ended it before its effort was known. */
+export type PrepareStartResult = { prepared: PreparedStart } | { exit: CommandResult }
+
+/** What a start prints and records of its effort: the effort, the class, the go-ahead, the printed lines. */
+export type StartRisk = {
+	effort: StartEffort
+	derivation: RiskDerivation
+	goAhead: StartGoAhead | undefined
+	lines: string[]
+}

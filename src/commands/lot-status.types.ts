@@ -1,5 +1,5 @@
 import type { HandoverEntryState } from '../lib/handover/handover.types.ts'
-import type { BriefEffort } from '../lib/store/brief.types.ts'
+import type { Effort, RiskDerivedLine } from '../lib/risk/risk.types.ts'
 import type { NextStation } from '../lib/store/next-station.types.ts'
 import type { BeyondCapRow } from '../lib/store/station-records.types.ts'
 import type {
@@ -19,16 +19,28 @@ export type StationStatus = NextStation
 export type RoundsStatus = {
 	/** The `round-<n>/` snapshots (the count is the snapshots only). */
 	review: number
-	/** The cap of the lot's effort; null when no effort is known. */
+	/** The cap of review rounds (`riskCapOf`); null when no effort is known. */
 	cap: number | null
-	/** The effort the cap is taken from (the identity's, else the brief's, D2); null when neither says. */
-	effort: BriefEffort | null
+	/** The effort the cap is taken from (`effectiveEffort`: the last effort line's, else the identity's); null when neither says. */
+	effort: Effort | null
 	/** The brief's step count (at least 1, D13). */
 	steps: number
 	/** The go-ahead rows of `decisions.md` for the rounds above the cap. */
 	beyondCap: BeyondCapRow[]
 	/** The distinct ledger rounds above the last snapshot. */
 	independent: number
+}
+
+/** The effort block of the status JSON (33L1 D25): the effective effort, where it came from, the class, below or not. */
+export type LotStatusEffort = {
+	/** The last effort line's effort, else the identity's level. */
+	level: string
+	/** `risk-line` when an effort line is current, else the identity's source. */
+	source: string
+	/** The last derived line's class, time and reasons; null when no derived line stands. */
+	riskClass: Pick<RiskDerivedLine, 'class' | 'at' | 'reasons'> | null
+	/** The effort's class is below `riskClass`. */
+	below: boolean
 }
 
 /** What `lot status --json` prints (33S section 7, D17). */
@@ -50,7 +62,8 @@ export type LotStatusJson = {
 	questions: Array<QuestionRecord & { asked: string }>
 	answered: number
 	handover: { name: string; state: HandoverEntryState } | null
-	effort: LotIdentity['effort']
+	/** Null when neither an effort line nor the identity records an effort. */
+	effort: LotStatusEffort | null
 	simulated: boolean
 	scenario: string | null
 	checks: {

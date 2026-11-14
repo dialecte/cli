@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
+import { effortLineOf, writeRiskLines } from '../../test/risk-workspace.ts'
 import {
 	createScratchRepository,
 	git,
@@ -91,6 +92,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 		expect(runRecord(snapshotCall({ cwd: root, folder })).exitCode).toBe(0)
 		expect(readdirSync(folder).sort()).toEqual([
+			'risk.jsonl',
 			'round-1',
 			'round-1.base',
 			'round-1.deleted',
@@ -201,6 +203,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 			output: summary({ copied: 1, deleted: 0, root, folder }),
 		})
 		expect(readdirSync(folder).sort()).toEqual([
+			'risk.jsonl',
 			'round-1',
 			'round-1.base',
 			'round-1.deleted',
@@ -339,8 +342,8 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 		const root = createScratchRepository({ 'a.ts': 'a\n' })
 		writeFiles({ root, files: { 'a.ts': 'one\n' } })
 		const folder = handoverFolder()
-		// the folder's brief gives the effort (medium: a cap of 2) that round 2 needs
-		writeFileSync(join(folder, 'brief.json'), '{"effort":"medium"}\n')
+		// the folder's effort line gives the effort (medium: a cap of 2) that round 2 needs
+		writeRiskLines({ folder, lines: [effortLineOf({ effort: 'medium' })] })
 
 		expect(runRecord(snapshotCall({ cwd: root, folder, round: '1' }))).toEqual({
 			exitCode: 0,
@@ -366,7 +369,7 @@ describe('dialecte record snapshot', { timeout: 60_000 }, () => {
 
 		expect(runRecord(snapshotCall({ cwd: root, folder, round: '2' }))).toEqual({
 			exitCode: 2,
-			output: `lot snapshot: round 2 is beyond the cap of 1 (no effort recorded): dialecte lot snapshot ${folder} --round 2 --beyond-cap --by <who> --reason <text>`,
+			output: `lot snapshot: round 2 is beyond the cap of 1 (no effort recorded): dialecte lot risk ${folder} --effort low|medium|high --by <who>`,
 		})
 		expect(readdirSync(folder).sort()).toEqual(before)
 	})

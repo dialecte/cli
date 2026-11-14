@@ -149,6 +149,7 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		json: ['status', FORGED_WORD, '--json'],
 	},
+	'lot risk': { argv: ['risk', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	'lot wait': { argv: ['wait', FORGED_WORD], quotes: true, json: ['wait', FORGED_WORD, '--json'] },
 	'lot answer': {
 		argv: ['answer', FORGED_WORD, 'q1', 'keep'],

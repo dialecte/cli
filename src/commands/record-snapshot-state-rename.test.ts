@@ -43,11 +43,13 @@ describe('lot snapshot - a failed rename', { timeout: 60_000 }, () => {
 
 			expect(failed).toEqual({ exitCode: 1, output: expect.stringMatching(/^lot snapshot: /) })
 			const left = readdirSync(folder).filter((entry) => !entry.endsWith('.partial'))
-			expect(left).toEqual([])
+			// the derived line is appended before the round is taken (D7): it stays, the round's names do not
+			expect(left).toEqual(['risk.jsonl'])
 
 			failing.suffix = undefined
 			expect(runRecord({ cwd: root, argv: ['snapshot', folder, '--round', '1'] }).exitCode).toBe(0)
 			expect(readdirSync(folder).sort()).toEqual([
+				'risk.jsonl',
 				'round-1',
 				'round-1.base',
 				'round-1.deleted',

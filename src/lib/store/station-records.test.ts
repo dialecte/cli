@@ -14,6 +14,7 @@ import {
 import { snapshotOf } from '../../../test/lot-start-workspace.ts'
 import { commitStationLot, createStationLot } from '../../../test/lot-station-workspace.ts'
 import { stationRun } from '../../../test/report-events.ts'
+import { effortLineOf, writeRiskLines } from '../../../test/risk-workspace.ts'
 import {
 	CONSUMER_PACKAGE,
 	DECISION_DAY,
@@ -605,10 +606,19 @@ const BRIEF_CASES: Case[] = [
 		expected: { steps: 1 },
 	},
 	{
-		title: 'effort (D2): the identity holds none, the folder brief says high -> high',
+		title:
+			'effort (D3): the identity holds none, the folder brief says high (not read) -> undefined',
 		build: (lot) => {
 			setIdentityEffort({ lot, level: undefined })
 			writeLotBrief({ lot, stepCount: 1, effort: 'high' })
+		},
+		expected: { effort: undefined },
+	},
+	{
+		title: 'effort (D3): an effort line high over an identity low -> high',
+		build: (lot) => {
+			setIdentityEffort({ lot, level: 'low' })
+			writeRiskLines({ folder: lot.lotFolder, lines: [effortLineOf({ effort: 'high' })] })
 		},
 		expected: { effort: 'high' },
 	},

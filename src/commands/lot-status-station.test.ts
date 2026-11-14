@@ -653,12 +653,13 @@ const ROUNDS_CASES: RoundsCase[] = [
 		expected: roundsBlock({ cap: 1 }),
 	},
 	{
-		title: 'effort (D2): the identity holds none, the folder brief says high -> cap 3',
+		title:
+			'effort (D3): the identity holds none, the folder brief says high (not read) -> cap null',
 		build: (lot) => {
 			setIdentityEffort({ lot, level: undefined })
 			writeLotBrief({ lot, stepCount: 1, effort: 'high' })
 		},
-		expected: roundsBlock({ cap: 3 }),
+		expected: roundsBlock({ cap: null }),
 	},
 	{
 		title: 'effort (D2): neither says -> cap null',

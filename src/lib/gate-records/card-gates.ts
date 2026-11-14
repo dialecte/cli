@@ -46,9 +46,9 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { readLateFixes } from '../review-rounds/late-fixes.ts'
 import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledger-rounds.ts'
 import { snapshotRounds } from '../review-rounds/round-names.ts'
-import { readIdentity } from '../store/identity.ts'
-import { interimEffortOf } from '../store/lot-records.ts'
-import { capOf, isEnded } from '../store/next-station.ts'
+import { goAheadText, riskReasonText } from '../risk/risk-reason.ts'
+import { riskCapOf, riskStandingOf } from '../risk/risk-records.ts'
+import { isEnded } from '../store/next-station.ts'
 import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
@@ -61,6 +61,14 @@ import {
 	CONTRIB_LINE_NAME,
 	CONTRIB_NEVER_RUN_DETAIL,
 	DETAIL_SEPARATOR,
+	EFFORT_BELOW_DETAIL,
+	EFFORT_CLASS_DETAIL,
+	EFFORT_CLASS_REASON,
+	EFFORT_CLASS_UNKNOWN_DETAIL,
+	EFFORT_DERIVED_FROM_WORDS,
+	EFFORT_LINE_DETAIL,
+	EFFORT_LINE_NAME,
+	EFFORT_NONE_DETAIL,
 	FAILING_DETAIL,
 	FAILING_MORE,
 	FAILING_PATH_SEPARATOR,
@@ -139,6 +147,7 @@ import { computeStateTree, hashStateTree } from './state-hash.ts'
 import type { LotEvent } from '../events/event.types.ts'
 import type { StepCounts, StepSelection } from '../gate/gate.types.ts'
 import type { LateFixes, ReviewLedger } from '../review-rounds/review-rounds.types.ts'
+import type { RiskDerivedLine } from '../risk/risk.types.ts'
 import type { StationName, StationVerdict } from '../store/next-station.types.ts'
 import type {
 	CardGateConfig,
@@ -1134,27 +1143,20 @@ function independentLedgerPart(params: {
 }
 
 /**
- * The rounds part: the snapshots against the cap of the lot's effort (the interim read of 33L1 D2), each round above
- * the cap named with its go-ahead row, `!` when one has none.
+ * The rounds part: the snapshots against the cap of the folder's risk records (`riskCapOf`, 33L1 D3), each round
+ * above the cap named with its go-ahead row, `!` when one has none.
  */
 function roundsPart(params: { folder: string; snapshots: number[] }): ReviewLinePart {
 	const { folder, snapshots } = params
-	const count = snapshots.length
-	const rounds = fillMessage({
-		template: count === 1 ? REVIEW_ROUND_COUNT.one : REVIEW_ROUND_COUNT.many,
-		values: { count: String(count) },
-	})
-	const effort = interimEffortOf({
-		lotFolder: folder,
-		identityEffort: readIdentity({ lotFolder: folder })?.effort,
-	})
-	if (effort === undefined)
+	const rounds = roundCountOf({ count: snapshots.length })
+	const risk = riskCapOf({ folder })
+	if (risk.effort === undefined)
 		return {
 			status: 'passed',
 			detail: fillMessage({ template: REVIEW_ROUNDS_NO_EFFORT_DETAIL, values: { rounds } }),
 		}
-	const cap = String(capOf({ effort }))
-	const beyond = snapshots.filter((round) => round > capOf({ effort }))
+	const cap = String(risk.cap)
+	const beyond = snapshots.filter((round) => round > risk.cap)
 	if (beyond.length === 0)
 		return {
 			status: 'passed',
@@ -1190,4 +1192,67 @@ function roundsPart(params: { folder: string; snapshots: number[] }): ReviewLine
 function worstStatusOf(parts: readonly ReviewLinePart[]): CardGateLine['status'] {
 	if (parts.some((part) => part.status === 'failed')) return 'failed'
 	return parts.some((part) => part.status === 'warning') ? 'warning' : 'passed'
+}
+
+/** `<n> review round(s)`. */
+function roundCountOf(params: { count: number }): string {
+	return fillMessage({
+		template: params.count === 1 ? REVIEW_ROUND_COUNT.one : REVIEW_ROUND_COUNT.many,
+		values: { count: String(params.count) },
+	})
+}
+
+/**
+ * The card's `effort` line (33L1 section 5, D20): the effort, the risk class of the last derived line with where it was
+ * derived and its first reason, and the review rounds against the cap; a warning when the effort is below the class,
+ * naming its go-ahead: who recorded the effort and why, else `no go-ahead recorded` (D30).
+ */
+export function buildEffortLine(params: { folder: string }): CardGateLine {
+	const { folder } = params
+	const { effort, effortLine, derived, comparedClass, below } = riskStandingOf({ folder })
+	if (effort === undefined)
+		return { name: EFFORT_LINE_NAME, status: 'passed', detail: EFFORT_NONE_DETAIL }
+	if (below && comparedClass !== undefined)
+		return {
+			name: EFFORT_LINE_NAME,
+			status: 'warning',
+			detail: fillMessage({
+				template: EFFORT_BELOW_DETAIL,
+				values: { effort, class: comparedClass, goAhead: goAheadText({ effortLine }) },
+			}),
+		}
+	return {
+		name: EFFORT_LINE_NAME,
+		status: 'passed',
+		detail: fillMessage({
+			template: EFFORT_LINE_DETAIL,
+			values: {
+				effort,
+				riskClass: riskClassPart({ derived }),
+				rounds: roundCountOf({ count: snapshotRounds(folder).length }),
+				cap: String(riskCapOf({ folder }).cap),
+			},
+		}),
+	}
+}
+
+/** The risk class part: the last derived class, where it was derived and its first reason; `unknown` without one. */
+function riskClassPart(params: { derived: RiskDerivedLine | undefined }): string {
+	const { derived } = params
+	if (derived === undefined) return EFFORT_CLASS_UNKNOWN_DETAIL
+	const [first] = derived.reasons
+	return fillMessage({
+		template: EFFORT_CLASS_DETAIL,
+		values: {
+			class: derived.class,
+			from: EFFORT_DERIVED_FROM_WORDS[derived.from],
+			reason:
+				first === undefined
+					? ''
+					: fillMessage({
+							template: EFFORT_CLASS_REASON,
+							values: { reason: riskReasonText(first) },
+						}),
+		},
+	})
 }

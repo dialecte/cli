@@ -1,6 +1,6 @@
 /**
  * `lot snapshot` and the cap of review rounds (33L1 section 6, cases 15, 16, 20; D2, D3, D8, D17): the cap read from the
- * identity's effort, else the folder's `brief.json`; `--beyond-cap --by --reason` and its decisions row; `--by` or
+ * identity's effort or the folder's effort lines (the brief's `effort` is not read: D3); `--beyond-cap --by --reason` and its decisions row; `--by` or
  * `--reason` held to the forbidden words; `round-<n>.state` (D7). Each case runs on a scratch store lot.
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -63,15 +63,16 @@ function decisionsOf(lot: StationLot) {
 	return readDecisions(join(lot.lotFolder, 'decisions.md'))
 }
 
-/** The whole refusal of a round beyond the cap (D22.2); `effort` undefined: none recorded. */
+/** The whole refusal of a round beyond the cap (D22.2, D3); `effort` undefined: none recorded, `lot risk` is named. */
 function beyondCapLine(params: {
 	folder: string
 	round: number
 	cap: number
 	effort: Effort | undefined
 }): string {
-	const effort = params.effort === undefined ? 'no effort recorded' : `effort ${params.effort}`
-	return `lot snapshot: round ${params.round} is beyond the cap of ${params.cap} (${effort}): dialecte lot snapshot ${params.folder} --round ${params.round} --beyond-cap --by <who> --reason <text>`
+	if (params.effort === undefined)
+		return `lot snapshot: round ${params.round} is beyond the cap of ${params.cap} (no effort recorded): dialecte lot risk ${params.folder} --effort low|medium|high --by <who>`
+	return `lot snapshot: round ${params.round} is beyond the cap of ${params.cap} (effort ${params.effort}): dialecte lot snapshot ${params.folder} --round ${params.round} --beyond-cap --by <who> --reason <text>`
 }
 
 type CapCase = {
@@ -91,10 +92,30 @@ const CAP_CASES: CapCase[] = [
 	{ name: 'identity medium, round 3', identity: 'medium', round: 3, refusedAt: 2 },
 	{ name: 'identity low, round 1', identity: 'low', round: 1 },
 	{ name: 'identity low, round 2', identity: 'low', round: 2, refusedAt: 1 },
-	{ name: 'no identity effort, brief high, round 3', brief: 'high', round: 3 },
-	{ name: 'no identity effort, brief high, round 4', brief: 'high', round: 4, refusedAt: 3 },
-	{ name: 'no identity effort, brief medium, round 3', brief: 'medium', round: 3, refusedAt: 2 },
-	{ name: 'no identity effort, brief low, round 2', brief: 'low', round: 2, refusedAt: 1 },
+	{
+		name: 'no identity effort, brief high is not read, round 3',
+		brief: 'high',
+		round: 3,
+		refusedAt: 1,
+	},
+	{
+		name: 'no identity effort, brief high is not read, round 4',
+		brief: 'high',
+		round: 4,
+		refusedAt: 1,
+	},
+	{
+		name: 'no identity effort, brief medium is not read, round 3',
+		brief: 'medium',
+		round: 3,
+		refusedAt: 1,
+	},
+	{
+		name: 'no identity effort, brief low is not read, round 2',
+		brief: 'low',
+		round: 2,
+		refusedAt: 1,
+	},
 	{
 		name: 'identity low beats brief high, round 2',
 		identity: 'low',
@@ -128,7 +149,7 @@ describe('lot snapshot - the cap', { timeout: STORE_CASE_TIMEOUT }, () => {
 					folder: lot.lotFolder,
 					round,
 					cap: refusedAt,
-					effort: identity ?? brief,
+					effort: identity,
 				}),
 			})
 			expect(listing(lot)).toEqual(before)

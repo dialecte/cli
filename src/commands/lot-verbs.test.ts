@@ -76,6 +76,7 @@ describe('dialecte lot - the review rounds verbs', { timeout: 60_000 }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(readdirSync(folder).sort()).toEqual([
+			'risk.jsonl',
 			'round-1',
 			'round-1.base',
 			'round-1.deleted',

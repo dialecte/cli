@@ -4,6 +4,10 @@ import type { GateStep } from './gate/gate-config.types.ts'
 export type PackageJson = {
 	name?: string
 	version?: string
+	/** The commands the package installs: a package with one is a tool, not a runtime package. */
+	bin?: string | Record<string, string>
+	/** The entry points the package ships: a package without one has no runtime api. */
+	exports?: unknown
 	scripts?: Record<string, string>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
@@ -51,6 +55,8 @@ export type DialecteField = {
 	 * another shape (absolute, climbing with `..`, without its trailing `/`, not a string) counts for nothing.
 	 */
 	rebuiltIgnored?: unknown[]
+	/** `risk.high`: globs of the files whose change makes a lot high risk whatever its size. */
+	risk?: { high?: string[] }
 	/** The cli's step-events capability: 1 or higher when it writes step events (read by `worktreeCli`; any other value counts for nothing). */
 	stepEvents?: unknown
 }

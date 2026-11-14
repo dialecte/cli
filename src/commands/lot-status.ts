@@ -13,17 +13,18 @@ import { jsonOf, textOf } from '../lib/print/print.ts'
 import { independentLedgerRounds, readReviewLedger } from '../lib/review-rounds/ledger-rounds.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { snapshotRounds } from '../lib/review-rounds/round-names.ts'
+import { goAheadText } from '../lib/risk/risk-reason.ts'
+import { riskCapOf, riskStandingOf } from '../lib/risk/risk-records.ts'
+import { RISK_EFFORT_BELOW_LINE, RISK_LINE_SOURCE } from '../lib/risk/risk.constants.ts'
 import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
 import {
-	interimEffortOf,
 	readBriefStepCount,
 	readCheckedLotState,
 	readLotStateInput,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
-import { capOf } from '../lib/store/next-station.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { readBeyondCapRows, readStationNext } from '../lib/store/station-records.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
@@ -45,7 +46,7 @@ import type {
 	LotStateReport,
 	WorktreeCheck,
 } from '../lib/store/store.types.ts'
-import type { LotStatusJson, RoundsStatus } from './lot-status.types.ts'
+import type { LotStatusEffort, LotStatusJson, RoundsStatus } from './lot-status.types.ts'
 
 /**
  * The status of the lot `<id>` names, as text or `--json`; a damaged lot answers `damaged` with its reason and the
@@ -130,7 +131,7 @@ export function lotStatusOfInput(params: {
 		handover: input.registryEntry
 			? { name: input.registryEntry.name, state: input.registryEntry.state }
 			: null,
-		effort: identity.effort,
+		effort: effortStatusOf({ identity, lotFolder }),
 		simulated: identity.simulated,
 		scenario: identity.scenario,
 		checks: checksOf({ identity, lotFolder }),
@@ -143,6 +144,29 @@ export function lotStatusOfInput(params: {
 }
 
 /**
+ * The effort block of a lot's status (33L1 D25): the effective effort and where it came from (`risk-line` for an
+ * effort line, else the identity's source), the last derived line's class and whether the effort is below it; null
+ * when no effort is recorded.
+ */
+function effortStatusOf(params: {
+	identity: LotIdentity
+	lotFolder: string
+}): LotStatusEffort | null {
+	const standing = riskStandingOf({ folder: params.lotFolder })
+	if (standing.effort === undefined) return null
+	const { derived } = standing
+	return {
+		level: standing.effort,
+		source: standing.effortLine === undefined ? params.identity.effort.source : RISK_LINE_SOURCE,
+		riskClass:
+			derived === undefined
+				? null
+				: { class: derived.class, at: derived.at, reasons: derived.reasons },
+		below: standing.below,
+	}
+}
+
+/**
  * The rounds block of a lot's status: the snapshots, the effort the cap is taken from (D2) and that cap, the brief's
  * step count, the beyond-cap rows with their author and reason, the distinct ledger rounds above the last snapshot
  * (33L1 section 6).
@@ -150,10 +174,10 @@ export function lotStatusOfInput(params: {
 function roundsOf(params: { input: LotStateInput; lotFolder: string }): RoundsStatus {
 	const { lotFolder } = params
 	const snapshots = snapshotRounds(lotFolder)
-	const effort = interimEffortOf({ lotFolder, identityEffort: params.input.identity.effort })
+	const { cap, effort } = riskCapOf({ folder: lotFolder })
 	return {
 		review: snapshots.length,
-		cap: effort === undefined ? null : capOf({ effort }),
+		cap: effort === undefined ? null : cap,
 		effort: effort ?? null,
 		steps: readBriefStepCount({ lotFolder }),
 		beyondCap: readBeyondCapRows({ lotFolder }),
@@ -252,6 +276,7 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 	const [first] = status.questions
 	const missing = checksText(status.checks)
 	const rest = [
+		belowLineOf(status),
 		first ? `questions: ${status.questions.length} open, ${first.id}: ${first.text}` : undefined,
 		missing ? `checks: ${missing}` : undefined,
 		status.next === null ? undefined : `next: ${status.next}`,
@@ -311,6 +336,22 @@ function stationWhatOf(params: {
 function stationTemplateOf(station: NonNullable<LotStatusJson['station']>): string {
 	if (station.step !== null) return STATION_LINE.stationStep
 	return station.round === null ? STATION_LINE.station : STATION_LINE.stationRound
+}
+
+/**
+ * The line of an effort below its risk class, naming the class it is held to (the highest of the last derived class and
+ * the effort line's, read from the lot folder: the JSON's `riskClass` is the derived line alone) and its go-ahead
+ * (D30); undefined when it is not below.
+ */
+function belowLineOf(status: LotStatusJson): string | undefined {
+	const { effort } = status
+	if (effort === null || !effort.below) return undefined
+	const { comparedClass, effortLine } = riskStandingOf({ folder: status.folder })
+	if (comparedClass === undefined) return undefined
+	return fillMessage({
+		template: RISK_EFFORT_BELOW_LINE,
+		values: { effort: effort.level, class: comparedClass, goAhead: goAheadText({ effortLine }) },
+	})
 }
 
 /** The checks that are not `present`, as `worktree missing, link dangling`; empty when all are. */

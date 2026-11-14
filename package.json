@@ -120,6 +120,25 @@
 				"test/suite-guard"
 			]
 		},
+		"risk": {
+			"high": [
+				"src/lib/store/**",
+				"src/lib/events/**",
+				"src/lib/cleanup/**",
+				"src/lib/review-rounds/**",
+				"src/commands/record.ts",
+				"src/lib/worktree/trash.ts",
+				"src/lib/worktree/node-modules-pool.ts",
+				"src/lib/worktree/prune-worktrees.ts",
+				"src/lib/handover/commit-lots.ts",
+				"src/lib/handover/run-handover-folder.ts",
+				"src/lib/handover/close-handovers.ts",
+				"src/lib/handover/abandon-handover.ts",
+				"src/lib/handover/handover-store.ts",
+				"src/lib/handover/handover-lock.ts",
+				"src/lib/handover/sync-node-modules.ts"
+			]
+		},
 		"stepEvents": 1
 	}
 }

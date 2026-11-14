@@ -13,15 +13,21 @@
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { createInterface } from 'node:readline/promises'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { isFolder } from '../lib/file-system.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { formOfLotVerb } from '../lib/review-rounds/review-round-verbs.ts'
 import { REVIEW_ROUND_VALUE_OPTIONS } from '../lib/review-rounds/review-rounds.constants.ts'
-import { resolveLot } from '../lib/store/resolve-lot.ts'
+import { effortOfClass, isEffort } from '../lib/risk/risk-records.ts'
+import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
+import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { requireLot, resolveLot } from '../lib/store/resolve-lot.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
@@ -30,7 +36,15 @@ import { runLotClose } from './lot-close.ts'
 import { lotExport } from './lot-export.ts'
 import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
-import { startLot } from './lot-start.ts'
+import { LOT_RISK_EFFORT_OPTION, LOT_RISK_VALUE_OPTIONS } from './lot-risk.constants.ts'
+import { runLotRisk } from './lot-risk.ts'
+import {
+	START_EFFORT_ATTEMPTS,
+	START_EFFORT_PROMPT,
+	START_NO_ANSWER,
+	START_USAGE_REASONS,
+} from './lot-start.constants.ts'
+import { askedClassOf, finishStart, prepareStart, startLot } from './lot-start.ts'
 import { lotStation } from './lot-station.ts'
 import { lotStatus } from './lot-status.ts'
 import { lotStop } from './lot-stop.ts'
@@ -44,21 +58,98 @@ import { runDelta } from './review.ts'
 import type { DeclaredRenamedForm } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HandoverProbe } from '../lib/handover/handover.types.ts'
+import type { RiskClass } from '../lib/risk/risk.types.ts'
+import type { BriefEffort } from '../lib/store/brief.types.ts'
 import type { ResolveMode } from '../lib/store/store.types.ts'
 import type { LotCaseEntry, LotCaseList, LotGoneEntry } from '../lib/tdd/tdd.types.ts'
+import type { AskFunction, RunLotCommandParams } from './lot.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const [verb, ...words] = argv
-	// `wait` sleeps between its reads: the one verb that runs asynchronously
+	// `wait` sleeps between its reads and tells its progress on standard error when that is a terminal
 	const result =
 		verb === 'wait'
 			? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
-			: runLot({ cwd: process.cwd(), argv, cliPath: realpathSync(process.argv[1]) })
+			: await runLotCommand({
+					argv,
+					cwd: process.cwd(),
+					isTerminal: process.stdin.isTTY === true && process.stdout.isTTY === true,
+					ask: askOnTerminal,
+					cliPath: realpathSync(process.argv[1]),
+				})
 	printOut({
 		stream: printsOnStandardError({ verb, exitCode: result.exitCode }) ? 'stderr' : 'stdout',
 		text: result.output,
 	})
 	if (result.exitCode !== 0) process.exit(result.exitCode)
+}
+
+/**
+ * The entry of `dialecte lot` with its questions: `lot start` on a terminal asks the effort (D13) when neither
+ * `--effort`, `--json`, `--dry-run` nor the brief names one, and passes the answer on; every other verb is `runLot`
+ * (`wait` is awaited by `run`, its terminal being standard error).
+ */
+export async function runLotCommand(params: RunLotCommandParams): Promise<CommandResult> {
+	const [verb, ...words] = params.argv
+	if (verb !== 'start' || !params.isTerminal)
+		return runLot({
+			cwd: params.cwd,
+			argv: params.argv,
+			now: params.now,
+			cliPath: params.cliPath,
+		})
+	const prepared = prepareStart({ cwd: params.cwd, argv: words, now: params.now })
+	if ('exit' in prepared) return prepared.exit
+	const riskClass = askedClassOf(prepared.prepared)
+	if (riskClass === undefined) return finishStart({ prepared: prepared.prepared })
+	let asked: BriefEffort | undefined
+	try {
+		asked = await askEffort({ riskClass, ask: params.ask })
+	} catch {
+		// the input closed before an answer (D22): nothing written
+		return lotRefusalExit({ lines: [START_NO_ANSWER], json: false })
+	}
+	if (asked === undefined)
+		return lotUsageExit({
+			reason: fillMessage({
+				template: START_USAGE_REASONS.asked,
+				values: { efforts: BRIEF_EFFORTS.join(', '), attempts: String(START_EFFORT_ATTEMPTS) },
+			}),
+			json: false,
+		})
+	return finishStart({ prepared: prepared.prepared, asked })
+}
+
+/**
+ * The effort a terminal answers for `riskClass`: an empty answer takes the class's effort, a word out of the efforts
+ * asks again; undefined after `START_EFFORT_ATTEMPTS` such words. Throws what `ask` throws (its input closed).
+ */
+async function askEffort(params: {
+	riskClass: RiskClass
+	ask: AskFunction
+}): Promise<BriefEffort | undefined> {
+	const fallback = effortOfClass({ riskClass: params.riskClass })
+	const prompt = fillMessage({
+		template: START_EFFORT_PROMPT,
+		values: { class: params.riskClass, effort: fallback },
+	})
+	for (let attempt = 0; attempt < START_EFFORT_ATTEMPTS; attempt++) {
+		const answer = await params.ask({ prompt })
+		const word = answer.trim()
+		if (word === '') return fallback
+		if (isEffort(word)) return word
+	}
+	return undefined
+}
+
+/** One question on the process's terminal: the prompt on standard output, the line read from standard input. */
+async function askOnTerminal(params: { prompt: string }): Promise<string> {
+	const terminal = createInterface({ input: process.stdin, output: process.stdout })
+	try {
+		return await terminal.question(params.prompt)
+	} finally {
+		terminal.close()
+	}
 }
 
 export function runLot(params: {
@@ -93,6 +184,7 @@ export function runLot(params: {
 		if (resolved.note === undefined) return result
 		return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
 	}
+	if (verb === 'risk') return runRiskVerb({ cwd: params.cwd, words, now: params.now })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
@@ -169,6 +261,28 @@ function refuseMutationWords(words: readonly string[]): string | undefined {
 	return undefined
 }
 
+/**
+ * `lot risk <id|folder> ...`: the folder word resolved (mode `write` for `--effort`, `read` otherwise), an id that names
+ * no lot nor folder refused as `no lot <id>`, then `runLotRisk` on the words.
+ */
+function runRiskVerb(params: { cwd: string; words: string[]; now?: Date }): CommandResult {
+	const { cwd, words } = params
+	const mode: ResolveMode = words.includes(LOT_RISK_EFFORT_OPTION) ? 'write' : 'read'
+	const valueOptions = LOT_RISK_VALUE_OPTIONS
+	const resolved = resolveFolderWord({ cwd, words, mode, valueOptions })
+	if ('exitCode' in resolved) return resolved
+	const position = firstPositionalIndex({ words, valueOptions })
+	let resolvedWords = resolved.words
+	if (position !== undefined && !isFolder(resolvedWords[position])) {
+		const required = requireLot({ argument: words[position], cwd, mode })
+		if ('exitCode' in required) return required
+		resolvedWords = resolvedWords.map((word, index) => (index === position ? required.lot : word))
+	}
+	const result = runLotRisk({ cwd, argv: resolvedWords, now: params.now })
+	if (resolved.note === undefined) return result
+	return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
+}
+
 /** A review rounds' verb run by today's implementation, or undefined for any other verb. */
 function runReviewRoundVerb(params: {
 	cwd: string
@@ -214,9 +328,11 @@ function resolveFolderWord(params: {
 	cwd: string
 	words: string[]
 	mode: ResolveMode
+	/** The options of the verb followed by a value, without the dashes; the review rounds' ones when left out. */
+	valueOptions?: readonly string[]
 }): { words: string[]; note?: string } | CommandResult {
 	const { words } = params
-	const position = firstPositionalIndex(words)
+	const position = firstPositionalIndex({ words, valueOptions: params.valueOptions })
 	if (position === undefined) return { words }
 	const resolved = resolveLot({ argument: words[position], cwd: params.cwd, mode: params.mode })
 	if ('exitCode' in resolved) return { exitCode: resolved.exitCode, output: resolved.output }
@@ -227,13 +343,21 @@ function resolveFolderWord(params: {
 		: { words: replaced }
 }
 
-/** Where the first word that is no option nor an option's value stands, as the review rounds' verbs read them. */
-function firstPositionalIndex(words: readonly string[]): number | undefined {
+/**
+ * Where the first word that is no option nor an option's value stands, as the review rounds' verbs read them (or the
+ * verb whose `valueOptions` are given).
+ */
+function firstPositionalIndex(params: {
+	words: readonly string[]
+	valueOptions?: readonly string[]
+}): number | undefined {
+	const { words } = params
+	const valueOptions = params.valueOptions ?? REVIEW_ROUND_VALUE_OPTIONS
 	for (let index = 0; index < words.length; index++) {
 		const word = words[index]
 		if (word === '--') return index + 1 < words.length ? index + 1 : undefined
 		if (!word.startsWith('--')) return index
-		if (REVIEW_ROUND_VALUE_OPTIONS.includes(word.slice(2))) index++
+		if (valueOptions.includes(word.slice(2))) index++
 	}
 	return undefined
 }

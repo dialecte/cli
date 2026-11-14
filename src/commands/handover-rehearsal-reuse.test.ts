@@ -530,7 +530,7 @@ describe(
 
 			const { output } = writeReadLotHandover(root)
 
-			expect(gateStepLinesOf(output)).toEqual(['✓ count 4/4'])
+			expect(gateStepLinesOf(output)).toEqual(['✓ count 4/4', '✓ effort no effort recorded'])
 		})
 
 		it("a gate run whose files changed while its steps ran (no key, nothing stored) → the worktree's own card does not read it as green for the state after the run", async () => {

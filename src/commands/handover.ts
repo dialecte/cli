@@ -115,6 +115,7 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
+import { appendLotRiskClass } from '../lib/risk/derive-lot-risk-class.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
@@ -339,6 +340,13 @@ export function runHandover(params: {
 		restoreLock({ lockPath, bytes: lockBefore, scriptPath })
 		throw error
 	}
+	// the class derived at the write, kept in the folder for the card once the worktree is gone (33L1 section 5)
+	const { warning: riskWarning } = appendLotRiskClass({
+		folder: out,
+		cwd: plan.repository,
+		now: params.now ?? new Date(),
+		from: 'handover-write',
+	})
 	// before the card, which names the hand-over by its entry
 	try {
 		registerHandover({
@@ -385,7 +393,11 @@ export function runHandover(params: {
 		output: joinedOf([
 			...(outNote === undefined ? [] : [textOf([outNote])]),
 			box,
-			textOf([HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)), card.command]),
+			textOf([
+				HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)),
+				card.command,
+				...(riskWarning === undefined ? [] : [riskWarning]),
+			]),
 		]),
 	}
 }

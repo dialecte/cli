@@ -67,15 +67,25 @@ export const BEYOND_CAP_FLAG = 'beyond-cap'
 /** The options `lot snapshot` takes followed by a value, without the dashes. */
 export const SNAPSHOT_OPTIONS = ['round', 'by', 'reason'] as const
 
-/**
- * A round above the cap refused without the go-ahead; `{effort}` is `effort <level>` or `no effort recorded`.
- * Interim until L1b: the message then names `lot risk` (33L1 rev 8, Q-A).
- */
+/** A round above the cap of a recorded effort refused without the go-ahead. */
 export const BEYOND_CAP_REFUSAL =
-	'lot snapshot: round {round} is beyond the cap of {cap} ({effort}): dialecte lot snapshot {folder} --round {round} --beyond-cap --by <who> --reason <text>'
+	'lot snapshot: round {round} is beyond the cap of {cap} ({capSource}): dialecte lot snapshot {folder} --round {round} --beyond-cap --by <who> --reason <text>'
 
-/** The effort part of `BEYOND_CAP_REFUSAL` when neither the identity nor the brief records one. */
-export const NO_EFFORT_RECORDED = 'no effort recorded'
+/** What set the cap a beyond-cap refusal names: the effort alone (D30). */
+export const CAP_SOURCE_EFFORT = 'effort {effort}'
+
+/** What set the cap a beyond-cap refusal names: the effort, and the risk class that raised the cap above it (D30). */
+export const CAP_SOURCE_EFFORT_CLASS = 'effort {effort}, risk class {class}'
+
+/** A round above the cap of 1 refused when no effort is recorded (33L1 D3): a person's effort is the way past it. */
+export const NO_EFFORT_CAP_REFUSAL =
+	'lot snapshot: round {round} is beyond the cap of {cap} (no effort recorded): dialecte lot risk {folder} --effort low|medium|high --by <who>'
+
+/** The line after a snapshot whose derived class is above the effort's (33L1 D7): the class, its first reason, the cap. */
+export const RISK_RAISED_LINE = '! risk class now {class}{reason}: cap {cap}'
+
+/** The first reason of `RISK_RAISED_LINE`, in parentheses after the class. */
+export const RISK_RAISED_REASON = ' ({reason})'
 
 /** `--beyond-cap` given for a round the cap allows. */
 export const WITHIN_CAP_REFUSAL =

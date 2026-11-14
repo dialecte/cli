@@ -52,6 +52,11 @@ export type StationRecords = {
 	/** The brief's step count (at least 1). */
 	steps: number
 	effort: BriefEffort | undefined
+	/**
+	 * The cap of review rounds when the risk records raise it above the effort's (`riskCapOf`: a derived class or an
+	 * effort line's class); undefined: the cap of the effort.
+	 */
+	raisedCap?: number
 	/** The package is a producer (a contrib check is needed). */
 	producer: boolean
 	/** A registry entry holds the lot folder. */

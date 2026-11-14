@@ -100,7 +100,7 @@ const LAYOUT_ROWS: LayoutRow[] = [
 			branch: BRIEF_BRANCH,
 			base: { ref: BRIEF_BASE, commit: context.start.workspace.commit },
 			feature: 'dataflow-subscribe',
-			effort: { level: 'medium', source: 'default' },
+			effort: { level: 'medium', source: 'risk' },
 			simulated: false,
 			scenario: null,
 			cli: readCliVersion(),
@@ -209,7 +209,7 @@ const EFFORT_ROWS: EffortRow[] = [
 	{
 		title: 'the brief says low, no flag',
 		briefEffort: 'low',
-		flags: [],
+		flags: ['--by', 'person-a', '--reason', 'x'],
 		expected: { level: 'low', source: 'brief' },
 	},
 	{
@@ -218,7 +218,7 @@ const EFFORT_ROWS: EffortRow[] = [
 		flags: ['--effort', 'high'],
 		expected: { level: 'high', source: 'flag' },
 	},
-	{ title: 'neither', flags: [], expected: { level: 'medium', source: 'default' } },
+	{ title: 'neither', flags: [], expected: { level: 'medium', source: 'risk' } },
 ]
 
 describe('lot start, the effort', { timeout: STORE_CASE_TIMEOUT }, () => {

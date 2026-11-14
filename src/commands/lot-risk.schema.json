@@ -1,0 +1,32 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "lot-risk.schema.json",
+	"$comment": "Output of `dialecte lot risk <id|folder> --json`, schema version 1.",
+	"title": "The answer of lot risk --json",
+	"type": "object",
+	"required": ["class", "reasons", "effort", "below", "cap"],
+	"additionalProperties": false,
+	"properties": {
+		"class": { "oneOf": [{ "$ref": "#/$defs/class" }, { "type": "null" }] },
+		"reasons": { "type": "array", "items": { "$ref": "#/$defs/reason" } },
+		"effort": { "oneOf": [{ "enum": ["low", "medium", "high"] }, { "type": "null" }] },
+		"below": { "type": "boolean" },
+		"cap": { "type": "integer", "minimum": 1 }
+	},
+	"$defs": {
+		"class": { "enum": ["light", "medium", "high"] },
+		"reason": {
+			"type": "object",
+			"required": ["kind", "detail"],
+			"additionalProperties": false,
+			"properties": {
+				"kind": {
+					"enum": ["declared", "destructive", "api", "broad-scope", "size", "docs", "more"]
+				},
+				"file": { "type": "string" },
+				"line": { "type": "integer" },
+				"detail": { "type": "string" }
+			}
+		}
+	}
+}

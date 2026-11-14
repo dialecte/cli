@@ -150,7 +150,8 @@ export type StoreFileNames = Readonly<
 		| 'events'
 		| 'cardsLog'
 		| 'registry'
-		| 'verify',
+		| 'verify'
+		| 'risk',
 		string
 	>
 >

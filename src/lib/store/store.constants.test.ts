@@ -46,6 +46,12 @@ describe('the names of the store (case 30)', () => {
 		}).toEqual({ empty: [], clashing: [], repeated: [] })
 	})
 
+	it('the risk file -> risk.jsonl: a store file, no hand-over file nor round name', () => {
+		const names: Record<string, string> = STORE_FILES
+
+		expect(names.risk).toBe('risk.jsonl')
+	})
+
 	it('the late fixes file -> verify.jsonl: a store file, no hand-over file nor round name', () => {
 		expect(STORE_FILES.verify).toBe('verify.jsonl')
 	})

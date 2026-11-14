@@ -21,6 +21,8 @@ export const STORE_FILES: StoreFileNames = {
 	registry: 'registry.json',
 	// `lot verify` appends the late fixes' verifications here (33L1 D19)
 	verify: 'verify.jsonl',
+	// `lot start`, `lot risk`, `lot snapshot` and `handover write` append the effort and the derived class here (33L1 D10)
+	risk: 'risk.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

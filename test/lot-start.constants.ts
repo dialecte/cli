@@ -10,7 +10,7 @@ export const BRIEF_BASE = 'main'
 
 /** The usage lines of the two verbs, as the map writes them after `dialecte lot `. */
 export const START_USAGE =
-	'start <brief.json> [--effort low|medium|high] [--dry-run] [--simulate <scenario>] [--json]'
+	'start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]'
 export const STATUS_USAGE = 'status <id> [--json]'
 
 /** The second repository of the workspace (case 32), its brief file and what that brief names. */

@@ -706,6 +706,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			'files.txt',
 			'lots.json',
 			'lots.sha256',
+			'risk.jsonl',
 		])
 		const commands = readFileSync(join(out, 'commit.sh'), 'utf8')
 			.split('\n')
@@ -1098,6 +1099,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(JSON.parse(result.output).gates).toEqual([
 			{ name: 'gate', status: 'failed', detail: 'never run on this tree' },
 			{ name: 'review', status: 'warning', detail: 'no findings ledger' },
+			{ name: 'effort', status: 'passed', detail: 'no effort recorded' },
 			{
 				name: 'standard',
 				status: 'warning',
@@ -3029,6 +3031,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ build',
 				'✓ skills',
 				'! review no findings ledger',
+				'✓ effort no effort recorded',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3043,6 +3046,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 			[
 				'✗ gate never run on this tree',
 				'! review no findings ledger',
+				'✓ effort no effort recorded',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3378,6 +3382,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ ! check     4/4 (the tree changed since)                                     │',
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
 			'│ ! review    no findings ledger                                               │',
+			'│ ✓ effort    no effort recorded                                               │',
 			'│ ! standard  not consulted: none configured (DIALECTE_STANDARD)               │',
 			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
 			'│ 1 proven red → green · 2 unchanged                                           │',

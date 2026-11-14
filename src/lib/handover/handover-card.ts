@@ -20,6 +20,7 @@ import {
 	buildContribLines,
 	buildMutationLines,
 	buildLateFixesLine,
+	buildEffortLine,
 	buildReviewLine,
 	sleptLineOf,
 } from '../gate-records/card-gates.ts'
@@ -228,6 +229,8 @@ export function buildHandoverCard(params: {
 		...(params.done ? sleptRunLines(params.folder) : []),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
 		buildReviewLine({ folder: params.folder, release: params.release }),
+		// the effort against the risk class: a warning below it, never on a release hand-over
+		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
 		// changes after the last snapshot, on a card still to run: nothing late, no line
 		...(lateFixesLine ? [lateFixesLine] : []),
 		// a committed card shows the state recorded on the lot, never the runner's environment

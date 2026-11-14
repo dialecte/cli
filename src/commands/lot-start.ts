@@ -1,7 +1,8 @@
 /**
- * `dialecte lot start <brief.json> [--effort low|medium|high] [--simulate <scenario>] [--dry-run] [--json]`: checks
- * the brief, claims an index, publishes the lot folder, makes the worktree and its link (33S section 5, `lot start`,
- * in order). A simulated start records the overlap and branch findings instead of refusing, copies the scenario
+ * `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--simulate <scenario>]
+ * [--dry-run] [--json]`: checks the brief, derives the scope's risk class (an effort below it needs `--by` and
+ * `--reason`), claims an index, publishes the lot folder with its `risk.jsonl`, makes the worktree and its link (33S
+ * section 5, `lot start`, in order; 33L1 section 5). A simulated start records the overlap and branch findings instead of refusing, copies the scenario
  * into the lot and makes no worktree, branch or link (33S section 8). Each step
  * is an exported function, so the race of two starts can be played in a forced order.
  */
@@ -14,14 +15,24 @@ import { startStep } from '../lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../lib/file-system.ts'
 import { branchExists } from '../lib/git.ts'
 import { registryOfCommonFolder } from '../lib/handover/handover-store-read.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
+import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { readDeclaredHigh } from '../lib/risk/derive-lot-risk-class.ts'
+import { deriveStartRiskClass } from '../lib/risk/derive-risk-class.ts'
+import { appendRiskLine, effortOfClass, isEffortBelow } from '../lib/risk/risk-records.ts'
+import {
+	RISK_EFFORT_BELOW_LINE,
+	RISK_GO_AHEAD_PART,
+	RISK_SCHEMA,
+} from '../lib/risk/risk.constants.ts'
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
 import { checkBrief } from '../lib/store/brief.ts'
 import { readIdentity } from '../lib/store/identity.ts'
-import { lotUsageExit } from '../lib/store/lot-exits.ts'
+import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import {
 	failedNextOf,
 	manualNextOf,
@@ -45,22 +56,26 @@ import {
 } from '../lib/worktree/worktree-index.ts'
 import {
 	BRANCH_MADE_SUFFIX,
-	DEFAULT_EFFORT,
 	ENGINE,
 	IDENTITY_SCHEMA,
 	LINK_REFUSED_NOTE,
+	NO_DECLARED_PATH,
 	OVERLAP_REASON,
 	PROBE_NAME,
 	PROBE_SOURCE,
 	PROBE_TARGET,
+	START_BELOW_REFUSAL,
+	START_EFFORT_LINE,
 	START_FLAGS,
 	START_REASON,
 	START_USAGE_REASONS,
 	START_VALUE_OPTIONS,
+	START_VERB,
 } from './lot-start.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
+import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
 import type { ScenarioFile } from '../lib/store/scenarios.types.ts'
 import type {
@@ -74,14 +89,19 @@ import type { NodeModulesSource } from '../lib/worktree/worktree.types.ts'
 import type {
 	LinkFunction,
 	LotWorktreeResult,
+	PreparedStart,
+	PrepareStartResult,
 	Simulation,
+	StartEffort,
+	StartGoAhead,
+	StartRisk,
 	StartSeams,
 	SymlinkFunction,
 } from './lot-start.types.ts'
 
 /**
  * Starts the lot of a brief (or checks it with `--dry-run`); every exit is JSON under `--json`, a usage error and a
- * refused brief included (exit 2, `next: null`).
+ * refused brief included (exit 2, `next: null`). `asked` is the effort a terminal answered (D13): source `asked`.
  */
 export function startLot(params: {
 	cwd: string
@@ -89,7 +109,23 @@ export function startLot(params: {
 	argv: string[]
 	now?: Date
 	seams?: StartSeams
+	asked?: BriefEffort
 }): CommandResult {
+	const prepared = prepareStart(params)
+	if ('exit' in prepared) return prepared.exit
+	return finishStart({ prepared: prepared.prepared, asked: params.asked })
+}
+
+/**
+ * The checks of a start up to its effort: the words, the brief, `--by` and `--reason`, the store list, the scope's
+ * risk class. Nothing written.
+ */
+export function prepareStart(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	seams?: StartSeams
+}): PrepareStartResult {
 	const now = params.now ?? new Date()
 	const read = readArguments({
 		argv: params.argv,
@@ -97,50 +133,140 @@ export function startLot(params: {
 		flags: START_FLAGS,
 	})
 	if (typeof read === 'string')
-		return lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) })
+		return { exit: lotUsageExit({ reason: read, json: params.argv.includes(JSON_FLAG) }) }
 	const json = read.flags.has('json')
 	const [briefPath, ...extra] = read.words
-	if (briefPath === undefined) return lotUsageExit({ reason: START_USAGE_REASONS.noBrief, json })
+	if (briefPath === undefined)
+		return { exit: lotUsageExit({ reason: START_USAGE_REASONS.noBrief, json }) }
 	if (extra.length > 0)
-		return lotUsageExit({
-			reason: START_USAGE_REASONS.extra.replace('{extra}', extra.join(' ')),
-			json,
-		})
+		return {
+			exit: lotUsageExit({
+				reason: START_USAGE_REASONS.extra.replace('{extra}', extra.join(' ')),
+				json,
+			}),
+		}
 	const effortFlag = read.values.get('effort')
 	if (effortFlag !== undefined && !BRIEF_EFFORTS.includes(effortFlag as BriefEffort))
-		return lotUsageExit({
-			reason: START_USAGE_REASONS.effort
-				.replace('{effort}', effortFlag)
-				.replace('{efforts}', BRIEF_EFFORTS.join(', ')),
-			json,
-		})
+		return {
+			exit: lotUsageExit({
+				reason: START_USAGE_REASONS.effort
+					.replace('{effort}', effortFlag)
+					.replace('{efforts}', BRIEF_EFFORTS.join(', ')),
+				json,
+			}),
+		}
+	const goAhead = goAheadOf({ by: read.values.get('by'), reason: read.values.get('reason') })
+	if (typeof goAhead === 'string') return { exit: lotUsageExit({ reason: goAhead, json }) }
 	const seams = params.seams ?? {}
 	const scenarioName = read.values.get('simulate')
 	const simulation = scenarioName === undefined ? undefined : simulationOf({ scenarioName, seams })
-	if (typeof simulation === 'string') return errorOutput({ exitCode: 2, message: simulation, json })
+	if (typeof simulation === 'string')
+		return { exit: errorOutput({ exitCode: 2, message: simulation, json }) }
 	const checked = checkBrief({
 		briefPath,
 		cwd: params.cwd,
 		simulated: simulation !== undefined,
 		pause: seams.pause,
 	})
-	if (!checked.checked) return refusedOutput({ refused: checked.refused, json })
+	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
 	const brief = checked.checked
-	const worktreesFolder = join(dirname(brief.repository), WORKTREES_FOLDER)
+	const wordRefusal =
+		goAhead &&
+		forbiddenWordRefusal({
+			root: brief.repository,
+			verb: START_VERB,
+			options: [
+				{ option: '--by', text: goAhead.by },
+				{ option: '--reason', text: goAhead.reason },
+			],
+		})
+	if (wordRefusal) return { exit: lotRefusalExit({ lines: [wordRefusal], json }) }
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
-	if (listRefusal) return errorOutput({ exitCode: 2, message: listRefusal, json })
-	if (read.flags.has('dry-run'))
-		return dryRunOutput({ brief, briefPath, worktreesFolder, simulation, json })
+	if (listRefusal) return { exit: errorOutput({ exitCode: 2, message: listRefusal, json }) }
+	let derivation: RiskDerivation
+	try {
+		derivation = deriveStartRiskClass({
+			declaredHigh: readDeclaredHigh({ root: brief.repository }),
+			scope: brief.scope,
+		})
+	} catch (error) {
+		return { exit: thrownOutput({ error, json }) }
+	}
+	return {
+		prepared: {
+			brief,
+			briefPath,
+			worktreesFolder: join(dirname(brief.repository), WORKTREES_FOLDER),
+			simulation,
+			json,
+			dryRun: read.flags.has('dry-run'),
+			now,
+			seams,
+			effortFlag: effortFlag as BriefEffort | undefined,
+			goAhead,
+			derivation,
+		},
+	}
+}
+
+/**
+ * The class a terminal is asked the effort for (D13): only when neither `--effort`, `--json`, `--dry-run` nor the
+ * brief names one; undefined otherwise.
+ */
+export function askedClassOf(prepared: PreparedStart): RiskClass | undefined {
+	if (prepared.json || prepared.dryRun) return undefined
+	if (prepared.effortFlag !== undefined || prepared.brief.effort !== undefined) return undefined
+	return prepared.derivation.class
+}
+
+/**
+ * The start once its effort is known: refused below the class without `--by` and `--reason`, then the dry run or the
+ * start itself.
+ */
+export function finishStart(params: {
+	prepared: PreparedStart
+	asked?: BriefEffort
+}): CommandResult {
+	const { prepared } = params
+	const { brief, json, derivation } = prepared
+	const effort = effortOf({ flag: prepared.effortFlag, brief, asked: params.asked, derivation })
+	if (
+		prepared.goAhead === undefined &&
+		isEffortBelow({ effort: effort.level, riskClass: derivation.class })
+	)
+		return lotRefusalExit({
+			lines: [
+				fillMessage({
+					template: START_BELOW_REFUSAL,
+					values: {
+						effort: effort.level,
+						class: derivation.class,
+						detail: firstDetailOf(derivation),
+					},
+				}),
+			],
+			json,
+		})
+	const riskLines = riskLinesOf({ effort, derivation, goAhead: prepared.goAhead })
+	if (prepared.dryRun)
+		return dryRunOutput({
+			brief,
+			briefPath: prepared.briefPath,
+			worktreesFolder: prepared.worktreesFolder,
+			simulation: prepared.simulation,
+			riskLines,
+			json,
+		})
 	try {
 		return startChecked({
 			brief,
-			worktreesFolder,
-			effort: effortOf({ flag: effortFlag as BriefEffort | undefined, brief }),
+			worktreesFolder: prepared.worktreesFolder,
+			risk: { effort, derivation, goAhead: prepared.goAhead, lines: riskLines },
 			json,
-			now,
-			seams,
-			simulation,
+			now: prepared.now,
+			seams: prepared.seams,
+			simulation: prepared.simulation,
 		})
 	} catch (error) {
 		return thrownOutput({ error, json })
@@ -288,14 +414,14 @@ export function probeHardLinks(params: {
 function startChecked(params: {
 	brief: CheckedBrief
 	worktreesFolder: string
-	effort: LotIdentity['effort']
+	risk: StartRisk
 	json: boolean
 	now: Date
 	seams: StartSeams
 	/** A simulated start: the scenario copied into the lot; no re-check, worktree, branch nor link. */
 	simulation: Simulation | undefined
 }): CommandResult {
-	const { brief, now, seams, json, simulation } = params
+	const { brief, now, seams, json, simulation, risk } = params
 	const store = locateStore({ from: brief.repository })?.store
 	if (store === undefined)
 		return errorOutput({ exitCode: 2, message: `${brief.repository} holds no git folder`, json })
@@ -334,9 +460,15 @@ function startChecked(params: {
 			index,
 			store,
 			worktreesFolder: params.worktreesFolder,
-			effort: params.effort,
+			effort: risk.effort,
 			now,
 			simulation,
+		}),
+		// a simulated start writes no risk.jsonl; a real one's lines ride the publish rename
+		...(simulation === undefined && {
+			beforeIdentity: function writeRiskLines(temporary: string) {
+				writeStartRiskLines({ folder: temporary, risk, now })
+			},
 		}),
 	})
 	if (!published)
@@ -346,9 +478,9 @@ function startChecked(params: {
 			json,
 		})
 	// a simulated lot holds no lock and no branch: never re-checked, no worktree made
-	if (simulation) return startedOutput({ name, lotFolder, worktree: null, notes: [], json })
+	if (simulation) return startedOutput({ name, lotFolder, worktree: null, notes: [], risk, json })
 	try {
-		return startPublished({ name, lotFolder, brief, now, seams, json })
+		return startPublished({ name, lotFolder, brief, now, seams, risk, json })
 	} catch (error) {
 		// the lot exists from here on: the exit names it
 		return thrownOutput({ error, json, lot: name })
@@ -362,9 +494,10 @@ function startPublished(params: {
 	brief: CheckedBrief
 	now: Date
 	seams: StartSeams
+	risk: StartRisk
 	json: boolean
 }): CommandResult {
-	const { name, lotFolder, brief, now, seams, json } = params
+	const { name, lotFolder, brief, now, seams, json, risk } = params
 	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
@@ -379,6 +512,7 @@ function startPublished(params: {
 		lotFolder,
 		worktree: made.worktree,
 		notes: 'linkRefused' in made ? [made.linkRefused] : [],
+		risk,
 		json,
 	})
 }
@@ -470,14 +604,107 @@ function failedOutput(params: {
 	})
 }
 
-/** `--effort`, else the brief's, else the default; with where it came from. */
+/** `--effort`, else the brief's, else the terminal's answer, else the effort of the scope's class; with where it came from. */
 function effortOf(params: {
 	flag: BriefEffort | undefined
 	brief: CheckedBrief
-}): LotIdentity['effort'] {
+	asked: BriefEffort | undefined
+	derivation: RiskDerivation
+}): StartEffort {
 	if (params.flag) return { level: params.flag, source: 'flag' }
 	if (params.brief.effort) return { level: params.brief.effort, source: 'brief' }
-	return { level: DEFAULT_EFFORT, source: 'default' }
+	if (params.asked) return { level: params.asked, source: 'asked' }
+	return { level: effortOfClass({ riskClass: params.derivation.class }), source: 'risk' }
+}
+
+/** `--by` and `--reason`: both or neither, each one non-empty line; the usage reason otherwise. */
+function goAheadOf(params: {
+	by: string | undefined
+	reason: string | undefined
+}): StartGoAhead | undefined | string {
+	const { by, reason } = params
+	if (by === undefined && reason === undefined) return undefined
+	if (by === undefined || reason === undefined)
+		return fillMessage({
+			template: START_USAGE_REASONS.goAheadHalf,
+			values: { option: by === undefined ? '--reason' : '--by' },
+		})
+	if (!isOneLine(by))
+		return fillMessage({ template: START_USAGE_REASONS.goAheadLine, values: { option: '--by' } })
+	if (!isOneLine(reason))
+		return fillMessage({
+			template: START_USAGE_REASONS.goAheadLine,
+			values: { option: '--reason' },
+		})
+	return { by, reason }
+}
+
+/** The first reason's detail of a class, or the words of a class without one. */
+function firstDetailOf(derivation: RiskDerivation): string {
+	return derivation.reasons[0]?.detail ?? NO_DECLARED_PATH
+}
+
+/** The lines a start prints for its effort: the effort line, then the `!` line of an effort below the class. */
+function riskLinesOf(params: {
+	effort: StartEffort
+	derivation: RiskDerivation
+	goAhead: StartGoAhead | undefined
+}): string[] {
+	const { effort, derivation, goAhead } = params
+	const effortLine = fillMessage({
+		template: START_EFFORT_LINE,
+		values: {
+			effort: effort.level,
+			source: effort.source,
+			class: derivation.class,
+			detail: firstDetailOf(derivation),
+		},
+	})
+	if (
+		goAhead === undefined ||
+		!isEffortBelow({ effort: effort.level, riskClass: derivation.class })
+	)
+		return [effortLine]
+	return [
+		effortLine,
+		fillMessage({
+			template: RISK_EFFORT_BELOW_LINE,
+			values: {
+				effort: effort.level,
+				class: derivation.class,
+				goAhead: fillMessage({ template: RISK_GO_AHEAD_PART, values: goAhead }),
+			},
+		}),
+	]
+}
+
+/** The `risk.jsonl` lines of a real start: the effort line of a go-ahead, then the derived line (from `start`). */
+function writeStartRiskLines(params: { folder: string; risk: StartRisk; now: Date }): void {
+	const { folder, risk } = params
+	const at = params.now.toISOString()
+	if (risk.goAhead !== undefined)
+		appendRiskLine({
+			folder,
+			line: {
+				schema: RISK_SCHEMA,
+				kind: 'effort',
+				at,
+				effort: risk.effort.level,
+				by: risk.goAhead.by,
+				reason: risk.goAhead.reason,
+			},
+		})
+	appendRiskLine({
+		folder,
+		line: {
+			schema: RISK_SCHEMA,
+			kind: 'derived',
+			at,
+			class: risk.derivation.class,
+			reasons: risk.derivation.reasons,
+			from: 'start',
+		},
+	})
 }
 
 /** Transition 1 (D4): working, step 0 (no station has run) of the brief's steps, cause start. */
@@ -523,7 +750,7 @@ function identityOf(params: {
 	index: string
 	store: string
 	worktreesFolder: string
-	effort: LotIdentity['effort']
+	effort: StartEffort
 	now: Date
 	simulation: Simulation | undefined
 }): LotIdentity {
@@ -600,6 +827,8 @@ function dryRunOutput(params: {
 	briefPath: string
 	worktreesFolder: string
 	simulation: Simulation | undefined
+	/** The effort line a start would print (D13). */
+	riskLines: string[]
 	json: boolean
 }): CommandResult {
 	const { brief, simulation } = params
@@ -628,6 +857,7 @@ function dryRunOutput(params: {
 						]),
 				lotLine,
 				'worktree: none (simulated)',
+				...params.riskLines,
 				`next: ${next}`,
 			],
 		})
@@ -637,7 +867,13 @@ function dryRunOutput(params: {
 	if (params.json) return { exitCode: 0, output: jsonOf({ dryRun: true, lot, worktree, next }, 2) }
 	return resultOf({
 		exitCode: 0,
-		lines: ['checks: every check passed', lotLine, `worktree: ${worktree}`, `next: ${next}`],
+		lines: [
+			'checks: every check passed',
+			lotLine,
+			`worktree: ${worktree}`,
+			...params.riskLines,
+			`next: ${next}`,
+		],
 	})
 }
 
@@ -650,8 +886,10 @@ function startedOutput(params: {
 	lotFolder: string
 	worktree: string | null
 	notes: string[]
+	risk: StartRisk
 	json: boolean
 }): CommandResult {
+	const { risk } = params
 	const simulated = params.worktree === null
 	const runner = simulated ? RUNNERS.simulated : RUNNERS.manual
 	const next = simulated ? waitNextOf({ name: params.name, simulated }) : manualNextOf(params.name)
@@ -664,6 +902,8 @@ function startedOutput(params: {
 					folder: params.lotFolder,
 					worktree: params.worktree,
 					runner,
+					effort: risk.effort,
+					riskClass: risk.derivation,
 					notes: params.notes,
 					next,
 				},
@@ -677,6 +917,7 @@ function startedOutput(params: {
 			`folder: ${params.lotFolder}`,
 			`worktree: ${params.worktree ?? 'none (simulated)'}`,
 			`runner: ${runner}`,
+			...risk.lines,
 			...params.notes.map((note) => `note: ${note}`),
 			`next: ${next}`,
 		],

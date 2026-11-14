@@ -223,6 +223,37 @@ export const REVIEW_ROUNDS_NO_GO_AHEAD_DETAIL = '{rounds}, cap {cap}, no go-ahea
 /** The rounds part of a lot whose effort is not recorded. */
 export const REVIEW_ROUNDS_NO_EFFORT_DETAIL = '{rounds} (no effort recorded)'
 
+/** The name of the card's effort line (33L1 D20). */
+export const EFFORT_LINE_NAME = 'effort'
+
+/** The effort line: the effort, the risk class part and the rounds against the cap. */
+export const EFFORT_LINE_DETAIL = '{effort} · {riskClass} · {rounds} of {cap}'
+
+/** The risk class part of the effort line: the last derived class, where it was derived and its first reason. */
+export const EFFORT_CLASS_DETAIL = 'risk class {class} at {from}{reason}'
+
+/** The first reason of `EFFORT_CLASS_DETAIL`, in parentheses. */
+export const EFFORT_CLASS_REASON = ' ({reason})'
+
+/** The risk class part when no derived line stands. */
+export const EFFORT_CLASS_UNKNOWN_DETAIL = 'risk class unknown'
+
+/** Where a derived line was made, as the effort line names it. */
+export const EFFORT_DERIVED_FROM_WORDS = {
+	start: 'start',
+	snapshot: 'snapshot',
+	'handover-write': 'handover write',
+} as const
+
+/**
+ * The effort line of an effort below the derived class (a warning), with its go-ahead (who recorded the effort and
+ * why, else none recorded); the line name `effort` prints first.
+ */
+export const EFFORT_BELOW_DETAIL = '{effort} below risk class {class}{goAhead}'
+
+/** The effort line when no effort is recorded. */
+export const EFFORT_NONE_DETAIL = 'no effort recorded'
+
 /** The independent review part: the verdict of its end, or its rounds in the ledger. */
 export const INDEPENDENT_VERDICT_DETAIL = 'independent review {verdict}'
 

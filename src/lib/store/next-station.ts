@@ -362,7 +362,7 @@ function implementationNext(params: {
 
 /** Rows 9-13, round 1 first; `null` when a round is approved. */
 function reviewRoundsNext(walk: StationWalk): NextStation | null {
-	const cap = capOf({ effort: walk.records.effort })
+	const cap = walk.records.raisedCap ?? capOf({ effort: walk.records.effort })
 	for (let round = 1; ; round += 1) {
 		const outcome = roundNext({ walk, round, cap })
 		if (outcome === 'approved') return null

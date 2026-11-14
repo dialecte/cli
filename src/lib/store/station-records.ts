@@ -15,7 +15,8 @@ import { readProfile } from '../profile/profile.ts'
 import { readDecisions } from '../review-rounds/decisions-file.ts'
 import { DECISIONS_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { roundNames, snapshotRounds } from '../review-rounds/round-names.ts'
-import { interimEffortOf, readBriefStepCount } from './lot-records.ts'
+import { riskCapOf } from '../risk/risk-records.ts'
+import { readBriefStepCount } from './lot-records.ts'
 import { lotState } from './lot-state.ts'
 import { nextStation } from './next-station.ts'
 import {
@@ -54,11 +55,14 @@ export function readStationRecords(params: {
 	const records =
 		identity.worktree === null ? undefined : readRecordTimes({ worktree: identity.worktree })
 	const checks = checksOf({ events, records })
+	const risk = riskCapOf({ folder: lotFolder })
 	return {
 		state: report.state,
 		openQuestion: report.openQuestions[0]?.id ?? null,
 		steps: readBriefStepCount({ lotFolder }),
-		effort: interimEffortOf({ lotFolder, identityEffort: identity.effort }),
+		effort: risk.effort,
+		// only when the risk records raise the cap above the effort's: the walk's cap is then this one (33L1 D2)
+		...(risk.raisedBy === undefined ? {} : { raisedCap: risk.cap }),
 		producer: isProducer({ worktree: identity.worktree }),
 		registered: input.registryEntry !== undefined && input.registryEntry !== null,
 		checks,

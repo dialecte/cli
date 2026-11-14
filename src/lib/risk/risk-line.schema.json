@@ -1,0 +1,49 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "risk-line.schema.json",
+	"title": "A line of risk.jsonl",
+	"oneOf": [{ "$ref": "#/$defs/effortLine" }, { "$ref": "#/$defs/derivedLine" }],
+	"$defs": {
+		"class": { "enum": ["light", "medium", "high"] },
+		"reason": {
+			"type": "object",
+			"required": ["kind", "detail"],
+			"additionalProperties": false,
+			"properties": {
+				"kind": {
+					"enum": ["declared", "destructive", "api", "broad-scope", "size", "docs", "more"]
+				},
+				"file": { "type": "string" },
+				"line": { "type": "integer" },
+				"detail": { "type": "string" }
+			}
+		},
+		"effortLine": {
+			"type": "object",
+			"required": ["schema", "kind", "at", "effort", "by"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": { "const": 1 },
+				"kind": { "const": "effort" },
+				"at": { "type": "string" },
+				"effort": { "enum": ["low", "medium", "high"] },
+				"class": { "$ref": "#/$defs/class" },
+				"by": { "type": "string" },
+				"reason": { "type": "string" }
+			}
+		},
+		"derivedLine": {
+			"type": "object",
+			"required": ["schema", "kind", "at", "class", "reasons", "from"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": { "const": 1 },
+				"kind": { "const": "derived" },
+				"at": { "type": "string" },
+				"class": { "$ref": "#/$defs/class" },
+				"reasons": { "type": "array", "items": { "$ref": "#/$defs/reason" } },
+				"from": { "enum": ["start", "snapshot", "handover-write"] }
+			}
+		}
+	}
+}
