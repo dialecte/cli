@@ -17,6 +17,13 @@ export const RISK_NO_GO_AHEAD_PART = ' (no go-ahead recorded)'
 /** The last line of a command whose derivation could not run (33L1 D26): nothing appended, never a refusal. */
 export const RISK_NOT_DERIVED_LINE = '! risk class not derived: {reason}'
 
+/**
+ * The refusal of an identity effort level other than `low`, `medium`, `high` (33K rev 5: refused as damaged), the level
+ * shown as JSON; thrown by `effectiveEffort`, so every reader of the effort ends on it.
+ */
+export const DAMAGED_EFFORT_REFUSAL =
+	'lot {lot}: identity.effort.level {level} is damaged: expected low, medium or high'
+
 /** The `source` of `lot status`'s effort when an effort line is current (33L1 D25). */
 export const RISK_LINE_SOURCE = 'risk-line'
 
