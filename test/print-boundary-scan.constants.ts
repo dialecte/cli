@@ -38,6 +38,11 @@ export const WRITER_EXCEPTIONS: readonly WriterException[] = [
 		reason: 'hands the live progress renderer the error stream, as above',
 	},
 	{
+		path: 'src/commands/ask.ts',
+		linePattern: /createStreamLiveOutput\(process\.stderr\)/,
+		reason: 'hands the live progress renderer the error stream, as above',
+	},
+	{
 		path: 'src/commands/worktree.ts',
 		linePattern: /createInterface\(\{[^}]*output:\s*process\.stdout/,
 		reason:

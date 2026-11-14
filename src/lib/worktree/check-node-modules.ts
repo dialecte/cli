@@ -19,9 +19,18 @@ export function lockHashOf(worktree: string): string | undefined {
 	return createHash('sha256').update(readFileSync(lockfile)).digest('hex')
 }
 
-export function checkNodeModules(params: { worktree: string }): NodeModulesCheck {
-	const { worktree } = params
-	const read = readLockedPackages({ worktree })
+/**
+ * The worktree's `node_modules` against its lock: the worktree's `package-lock.json`, or `lockText` when given (then
+ * never `no lockfile`). Each package that differs is a problem; any problem against the worktree's file names the
+ * `npm ci` to run (none for `lockText`: `npm ci` would install the file).
+ */
+export function checkNodeModules(params: {
+	worktree: string
+	/** The lock's text, read instead of the worktree's file. */
+	lockText?: string
+}): NodeModulesCheck {
+	const { worktree, lockText } = params
+	const read = readLockedPackages({ worktree, lockText })
 	if ('notChecked' in read)
 		return read.notChecked === 'no lockfile'
 			? { lockfile: undefined, problems: [] }
@@ -33,7 +42,9 @@ export function checkNodeModules(params: { worktree: string }): NodeModulesCheck
 	return {
 		lockfile: PACKAGE_LOCK_FILE,
 		problems,
-		...(problems.length > 0 && { command: `cd ${shellQuote(worktree)} && npm ci` }),
+		// `npm ci` installs the lock on disk: no command for another lock's text
+		...(problems.length > 0 &&
+			lockText === undefined && { command: `cd ${shellQuote(worktree)} && npm ci` }),
 	}
 }
 

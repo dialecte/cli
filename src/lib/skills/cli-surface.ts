@@ -7,10 +7,10 @@ import { dirname, join } from 'node:path'
 import { commandSurfaceOf } from '../command-map/command-surface.ts'
 import { allRenamedWords } from '../command-map/renamed-answer.ts'
 import { listedCommands } from '../command-map/render-help.ts'
+import { binOf } from '../own-cli-command.ts'
 import { readPackageJson } from '../package-json.ts'
 import { HELP_FLAG, JSON_FLAG } from '../parse-invocation.constants.ts'
 import {
-	CLI_BIN,
 	CLI_PACKAGE,
 	CLI_SURFACE_TIMEOUT_MS,
 	UNAVAILABLE_REASONS,
@@ -52,7 +52,7 @@ function readInstalledSurface(params: { cwd: string }): CliSurfaceAnswer {
 	const manifest = readManifest(manifestPath)
 	if (!manifest) return { unavailable: UNAVAILABLE_REASONS.badManifest }
 	const version = typeof manifest.version === 'string' ? manifest.version : ''
-	const bin = binOf(manifest.bin)
+	const bin = binOf(manifest)
 	if (!bin) return { unavailable: withVersion({ reason: UNAVAILABLE_REASONS.noBin, version }) }
 
 	const answer = spawnSync(
@@ -87,14 +87,6 @@ function installedManifestPath(params: { cwd: string }): string | undefined {
 	} catch {
 		return undefined
 	}
-}
-
-/** The path of the `dialecte` bin in a package.json `bin` field. */
-function binOf(bin: unknown): string | undefined {
-	if (typeof bin === 'string') return bin
-	if (typeof bin !== 'object' || bin === null) return undefined
-	const path: unknown = Object.entries(bin).find(([name]) => name === CLI_BIN)?.[1]
-	return typeof path === 'string' ? path : undefined
 }
 
 function withVersion(params: { reason: string; version: string }): string {

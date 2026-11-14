@@ -10,7 +10,7 @@ import { missingPackage } from '../lib/missing-package.ts'
 import { printOut, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 import type { DoctorContext } from '../lib/doctor/doctor.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -37,7 +37,7 @@ export function runDoctor(params: {
 	dialecteRoot: string | undefined
 	/** The cli's version, or how to read it: `--brief` reads it inside its guard, so a failure never shows. */
 	cliVersion: string | (() => string)
-}): CommandOutput {
+}): LookupCommandOutput {
 	const { argv, cliVersion, ...rest } = params
 	if (hasFlag([...argv], 'brief')) return runBrief({ ...rest, cliVersion })
 	const missing = missingPackage({ cwd: params.cwd })
@@ -51,7 +51,7 @@ export function runDoctor(params: {
 /** The session-start check: silent when in sync, and never a failure, whatever the folder holds. */
 function runBrief(
 	context: Omit<DoctorContext, 'cliVersion'> & { cliVersion: string | (() => string) },
-): CommandOutput {
+): LookupCommandOutput {
 	try {
 		return answerDoctorBrief(
 			diagnose({ ...context, cliVersion: resolveVersion(context.cliVersion), brief: true }),

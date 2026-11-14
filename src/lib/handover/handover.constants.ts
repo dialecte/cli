@@ -40,6 +40,8 @@ export const HANDOVER_FILES = {
 	abandoned: 'abandoned.json',
 	/** Written when a run (`--rehearse` or not) ends: `{ "sleptMs"? }`, the sleep it spanned; the DONE card reads it. */
 	lastRun: 'last-run.json',
+	/** Written by the install guard before each lot's commit: `{ at, lock, working, ok, mismatched }`, replaced whole. */
+	install: 'install.json',
 } as const
 
 /** The folder, in the repository's shared git folder, registering every hand-over written (one entry each). */

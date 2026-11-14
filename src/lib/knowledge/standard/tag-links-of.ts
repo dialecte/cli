@@ -41,8 +41,16 @@ export function tagLinksOf(params: TagLinksOfParams): StandardTagLinks {
 			standardLine,
 			definitionTerms,
 		})
-		for (const name of namesOfLine({ line, rules, otherNames }))
-			record({ found, name, unit, strength, standardLine })
+		for (const name of namesOfLine({ line, rules, otherNames })) {
+			const byUnit = found.get(name) ?? new Map<number, StandardTagLink>()
+			found.set(name, byUnit)
+			const link = byUnit.get(unit)
+			if (!link) byUnit.set(unit, { unit, strength, lines: [standardLine] })
+			else {
+				link.strength = Math.max(link.strength, strength)
+				link.lines.push(standardLine)
+			}
+		}
 	}
 	const links: StandardTagLinks = Object.create(null)
 	for (const [name, byUnit] of found) links[name] = [...byUnit.values()]
@@ -151,25 +159,4 @@ function containsBounded(params: { text: string; name: string }): boolean {
 
 function isWordCharacter(character: string): boolean {
 	return character !== '' && isWholeWord(character)
-}
-
-function record(params: {
-	found: Map<string, Map<number, StandardTagLink>>
-	name: string
-	unit: number
-	strength: number
-	standardLine: number
-}): void {
-	const { found, name, unit, strength, standardLine } = params
-	let byUnit = found.get(name)
-	if (!byUnit) {
-		byUnit = new Map()
-		found.set(name, byUnit)
-	}
-	const link = byUnit.get(unit)
-	if (!link) byUnit.set(unit, { unit, strength, lines: [standardLine] })
-	else {
-		link.strength = Math.max(link.strength, strength)
-		link.lines.push(standardLine)
-	}
 }

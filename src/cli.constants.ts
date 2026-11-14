@@ -1,5 +1,6 @@
 /** The `dialecte` commands: each name with its run function. The help reads the command map. */
 import { run as api } from './commands/api.ts'
+import { run as ask } from './commands/ask.ts'
 import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
 import { run as contrib } from './commands/contrib.ts'
@@ -45,6 +46,7 @@ export const COMMANDS = {
 	explain,
 	standard,
 	facts,
+	ask,
 	rules,
 	gate,
 	contrib,

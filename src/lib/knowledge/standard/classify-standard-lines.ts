@@ -47,42 +47,50 @@ export function classifyStandardLines(params: { lines: string[] }): StandardClas
 
 function classifyAll(params: { lines: string[]; listItems: boolean }): StandardClassifiedLine[] {
 	const classified: StandardClassifiedLine[] = []
-	const state: StandardClassifyState = {
+	let state: StandardClassifyState = {
 		inFence: false,
 		termsClause: null,
 		listItems: params.listItems,
 	}
-	for (const [index, original] of params.lines.entries())
-		classified.push(classifyLine({ original, line: index + 1, state }))
+	for (const [index, original] of params.lines.entries()) {
+		const next = classifyLine({ original, line: index + 1, state })
+		classified.push(next.classified)
+		state = next.state
+	}
 	return classified
 }
 
-function classifyLine(params: {
-	original: string
-	line: number
+/** The line classified, and the state the next line starts from. */
+function classifyLine(params: { original: string; line: number; state: StandardClassifyState }): {
+	classified: StandardClassifiedLine
 	state: StandardClassifyState
-}): StandardClassifiedLine {
+} {
 	const { line, state } = params
 	const trimmed = params.original.trim()
 	if (state.inFence || trimmed.startsWith(FENCE_MARKER)) {
-		if (trimmed.startsWith(FENCE_MARKER)) state.inFence = !state.inFence
-		return lineOf({ line, content: trimmed, kind: 'code' })
+		const inFence = trimmed.startsWith(FENCE_MARKER) ? !state.inFence : state.inFence
+		return {
+			classified: lineOf({ line, content: trimmed, kind: 'code' }),
+			state: { ...state, inFence },
+		}
 	}
-	if (trimmed.startsWith(TABLE_LINE_START)) return lineOf({ line, content: trimmed, kind: 'table' })
-	if (trimmed.startsWith(CODE_LINE_START)) return lineOf({ line, content: trimmed, kind: 'code' })
+	if (trimmed.startsWith(TABLE_LINE_START))
+		return { classified: lineOf({ line, content: trimmed, kind: 'table' }), state }
+	if (trimmed.startsWith(CODE_LINE_START))
+		return { classified: lineOf({ line, content: trimmed, kind: 'code' }), state }
 	const content = stripMarkdownMarkers(trimmed)
-	if (content.length === 0) return lineOf({ line, content, kind: 'blank' })
+	if (content.length === 0) return { classified: lineOf({ line, content, kind: 'blank' }), state }
 	const listItems = state.listItems && !HEADING_MARKER_PATTERN.test(trimmed)
 	const classified = classifyContent({ content, line, termsClause: state.termsClause, listItems })
 	const settled =
 		classified.kind === 'prose' && !classified.listItem && isLetterSpaced(content)
 			? classifyRebuilt({ content: rebuildLetterSpaced(content), line, state, listItems })
 			: classified
-	if (settled.candidate?.depth === 1)
-		state.termsClause = TERMS_TITLE_PATTERN.test(settled.candidate.title)
-			? settled.candidate.number
-			: null
-	return settled
+	if (settled.candidate?.depth !== 1) return { classified: settled, state }
+	const termsClause = TERMS_TITLE_PATTERN.test(settled.candidate.title)
+		? settled.candidate.number
+		: null
+	return { classified: settled, state: { ...state, termsClause } }
 }
 
 function classifyRebuilt(params: {

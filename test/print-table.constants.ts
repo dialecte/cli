@@ -108,6 +108,7 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		noJson: PLAIN_TEXT,
 	},
+	ask: { argv: ['a question', '--kind', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	rules: { argv: [FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	gate: {
 		argv: ['--fast', '--full', FORGED_WORD],

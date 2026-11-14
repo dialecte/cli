@@ -70,6 +70,7 @@ describe('gate: a default step without its npm script', { timeout: HANDOVER_CASE
 					SKILLS_NOT_WIRED_FAIL_LINE,
 					notRun('build'),
 					notRun('tests'),
+					notRun('rules'),
 					ABSENT_DERIVED_LINE,
 				],
 				verdict,
@@ -78,7 +79,7 @@ describe('gate: a default step without its npm script', { timeout: HANDOVER_CASE
 		})
 	}
 
-	it('R3-4 gate --full on the same package → the output names the fix: dialecte.gate.skip to opt out and to add the script, on the step line or a line after it', async () => {
+	it('gate --full on the same package → the output names the fix: dialecte.gate.skip to opt out and to add the script, on the step line or a line after it', async () => {
 		const root = createUnwiredPackage({ counter: createCounter(), scripts: DEFAULT_WIRED_SCRIPTS })
 
 		const result = await runGateWith({ cwd: root, argv: ['--full'] })
@@ -117,6 +118,7 @@ describe('gate: a default step without its npm script', { timeout: HANDOVER_CASE
 				},
 				{ name: 'build', status: 'not-run', reason: UNWIRED_NOT_RUN_REASON },
 				{ name: 'tests', status: 'not-run', reason: UNWIRED_NOT_RUN_REASON },
+				{ name: 'rules', status: 'not-run', reason: UNWIRED_NOT_RUN_REASON },
 			],
 		})
 	})
@@ -171,6 +173,7 @@ describe('gate: a default step without its npm script', { timeout: HANDOVER_CASE
 				SKILLS_NOT_WIRED_FAIL_LINE,
 				BUILD_NOT_WIRED_FAIL_LINE,
 				notRun('tests'),
+				notRun('rules'),
 				ABSENT_DERIVED_LINE,
 			],
 			runs: 0,
@@ -216,7 +219,7 @@ describe('gate: an opt-out', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 		}).toEqual({
 			exitCode: 0,
 			absentLine: true,
-			names: ['tdd', 'check', 'skills', 'build', 'tests'],
+			names: ['tdd', 'check', 'skills', 'build', 'tests', 'rules'],
 			skills: { status: 'skipped', optedOut: 'no skills folder' },
 			skillsHasUnwired: false,
 		})
@@ -288,7 +291,7 @@ describe('gate: an opt-out', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 		})
 	})
 
-	it('R3-3 an opt-out of skills while its skills:check script exists → exit 2, the refusal names dialecte.gate.skip, skills and that skip is for a step the package cannot run, nothing ran', async () => {
+	it('an opt-out of skills while its skills:check script exists → exit 2, the refusal names dialecte.gate.skip, skills and that skip is for a step the package cannot run, nothing ran', async () => {
 		const counter = createCounter()
 		const root = createUnwiredPackage({
 			counter,
@@ -329,41 +332,54 @@ describe('gate: an opt-out', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 })
 
 describe('gate: a step the package declares', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
-	for (const { title, argv, list } of [
-		{ title: 'a declared fast list', argv: ['--fast'], list: 'fast' },
-		{ title: 'a declared full list', argv: ['--full'], list: 'full' },
-	]) {
-		it(`${title} naming a script the package lacks → fails declared but not wired, whatever the mode, nothing ran`, async () => {
-			const counter = createCounter()
-			const root = createUnwiredPackage({
-				counter,
-				scripts: ['check'],
-				dialecte: {
-					gate: {
-						[list]: [
-							{ name: 'check', run: 'npm run check' },
-							{ name: 'lint', run: 'npm run lint' },
-						],
-					},
+	async function expectDeclaredNotWired(parameters: {
+		argv: string[]
+		list: 'fast' | 'full'
+		extraLines: string[]
+	}) {
+		const { argv, list, extraLines } = parameters
+		const counter = createCounter()
+		const root = createUnwiredPackage({
+			counter,
+			scripts: ['check'],
+			dialecte: {
+				gate: {
+					[list]: [
+						{ name: 'check', run: 'npm run check' },
+						{ name: 'lint', run: 'npm run lint' },
+					],
 				},
-			})
+			},
+		})
 
-			const result = await runGateWith({ cwd: root, argv })
+		const result = await runGateWith({ cwd: root, argv })
 
-			expect({
-				exitCode: result.exitCode,
-				lines: stepLinesOf(result.output),
-				runs: countRuns(counter),
-			}).toEqual({
-				exitCode: 1,
-				lines: [
-					notRun('check'),
-					'FAIL  lint  declared but not wired (no npm script "lint")',
-					// a full run says the derived step it has no script for; a fast run does not
-					...(list === 'full' ? [ABSENT_DERIVED_LINE] : []),
-				],
-				runs: 0,
-			})
+		expect({
+			exitCode: result.exitCode,
+			lines: stepLinesOf(result.output),
+			runs: countRuns(counter),
+		}).toEqual({
+			exitCode: 1,
+			lines: [
+				notRun('check'),
+				'FAIL  lint  declared but not wired (no npm script "lint")',
+				...extraLines,
+			],
+			runs: 0,
+		})
+	}
+
+	for (const { title, argv } of [{ title: 'a declared fast list', argv: ['--fast'] }]) {
+		it(`${title} naming a script the package lacks → fails declared but not wired, whatever the mode, nothing ran`, async () => {
+			// a fast run does not say the derived step it has no script for
+			await expectDeclaredNotWired({ argv, list: 'fast', extraLines: [] })
+		})
+	}
+
+	for (const { title, argv } of [{ title: 'a declared full list', argv: ['--full'] }]) {
+		it(`${title} naming a script the package lacks → fails declared but not wired, whatever the mode, nothing ran`, async () => {
+			// a full run says the derived step it has no script for
+			await expectDeclaredNotWired({ argv, list: 'full', extraLines: [ABSENT_DERIVED_LINE] })
 		})
 	}
 
@@ -455,6 +471,7 @@ describe(
 						SKILLS_NOT_WIRED_FAIL_LINE,
 						notRun('build'),
 						notRun('tests'),
+						notRun('rules'),
 						ABSENT_DERIVED_LINE,
 					],
 					runs: 0,

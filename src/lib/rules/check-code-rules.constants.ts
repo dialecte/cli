@@ -20,6 +20,28 @@ export const RULE_NAMES = [
 	'committed-text-reference',
 	'temporary-root-shared',
 	'unreadable-file',
+	'argument-mutation',
+	'query-in-loop',
+	'long-function',
+	'table-branch',
+	'without-export-xml',
+	'export-without-queries',
+	'fixture-builder',
+	'plan-tag',
+	'invalid-allow',
+	'unused-allow',
+] as const
+
+/** The quality rules a `dialecte-allow` comment may silence. */
+export const ALLOWABLE_RULES = [
+	'argument-mutation',
+	'query-in-loop',
+	'long-function',
+	'table-branch',
+	'without-export-xml',
+	'export-without-queries',
+	'fixture-builder',
+	'plan-tag',
 ] as const
 
 /** A module constant by its name: `MAX_DEPTH`, `ROOTS`. */

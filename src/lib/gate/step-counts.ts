@@ -6,6 +6,7 @@
 import { stripVTControlCharacters } from 'node:util'
 
 import { VITEST_COUNT_SEPARATOR, VITEST_TESTS_LINE } from './gate-config.constants.ts'
+import { PYTEST_SUMMARY_PATTERN, PYTEST_SUMMARY_WORDS } from './step-counts.constants.ts'
 
 import type { StepCounts } from './gate.types.ts'
 
@@ -33,6 +34,9 @@ export function readStepCounts(output: string): StepCounts {
 			total: Number(nodeTotal[1]),
 		}
 	}
+	// pytest: its last summary line, when no other runner counted
+	const pytestTests = counts.tests ? undefined : readPytestTests(text)
+	if (pytestTests) counts.tests = pytestTests
 	const filesLine = lastMatch({ text, pattern: /^\s*Test Files\s+(.+)\((\d+)\)\s*$/gm })
 	if (filesLine)
 		counts.testFiles = {
@@ -87,6 +91,27 @@ export function renderStepCounts(counts: StepCounts): string {
 function nodeTestCount(params: { text: string; word: string }): number {
 	const pattern = new RegExp(`^[ℹ#] ${params.word} (\\d+)$`, 'gm')
 	return Number(lastMatch({ text: params.text, pattern })?.[1] ?? 0)
+}
+
+/**
+ * The test counts of pytest's last summary line (`PYTEST_SUMMARY_PATTERN`) whose every count names a word of
+ * `PYTEST_SUMMARY_WORDS`, or undefined when there is none.
+ */
+function readPytestTests(text: string): StepCounts['tests'] {
+	const summaries = [...text.matchAll(PYTEST_SUMMARY_PATTERN)].map(function countsOf(match) {
+		const tests = { passed: 0, failed: 0, skipped: 0, total: 0 }
+		if (match[1] === 'no tests ran') return tests
+		for (const part of match[1].split(', ')) {
+			const [count, word] = part.split(' ')
+			if (!Object.hasOwn(PYTEST_SUMMARY_WORDS, word)) return undefined
+			const into = PYTEST_SUMMARY_WORDS[word]
+			if (into === null) continue
+			tests[into] += Number(count)
+			tests.total += Number(count)
+		}
+		return tests
+	})
+	return summaries.filter((tests) => tests !== undefined).at(-1)
 }
 
 function lastMatch(params: { text: string; pattern: RegExp }): RegExpMatchArray | undefined {

@@ -14,6 +14,7 @@ type LockEntry = {
 	link?: boolean
 	optional?: boolean
 	devOptional?: boolean
+	peer?: boolean
 	os?: string[]
 	cpu?: string[]
 	inBundle?: boolean
@@ -31,26 +32,40 @@ const OTHER_ARCH = process.arch === 'arm64' ? 'x64' : 'arm64'
 function createWorktree(params: {
 	packages: Record<string, LockEntry>
 	lockfileVersion?: number
+	/** What the disk's `package-lock.json` holds: these packages instead, or `null` for no lockfile. */
+	diskPackages?: Record<string, LockEntry> | null
 }): string {
 	const workspace = temporaryFolder('dialecte-check-node-modules-')
 	const worktree = join(workspace, '.worktrees', 'cli-thing')
-	writeFiles({
-		root: worktree,
-		files: {
-			'package.json': '{ "name": "@dialecte/cli" }\n',
-			'package-lock.json': JSON.stringify({
-				name: '@dialecte/cli',
-				lockfileVersion: params.lockfileVersion ?? 3,
-				packages: {
-					'': { name: '@dialecte/cli' },
-					'../core': { name: '@dialecte/core', version: '0.7.0' },
-					...params.packages,
-				},
-			}),
-		},
-	})
+	writeFiles({ root: worktree, files: { 'package.json': '{ "name": "@dialecte/cli" }\n' } })
+	if (params.diskPackages !== null)
+		writeFiles({
+			root: worktree,
+			files: {
+				'package-lock.json': lockTextOf({
+					packages: params.diskPackages ?? params.packages,
+					lockfileVersion: params.lockfileVersion,
+				}),
+			},
+		})
 	writeFiles({ root: join(workspace, '.worktrees', 'core'), files: { 'package.json': '{}\n' } })
 	return worktree
+}
+
+/** A `package-lock.json` holding `packages` (beside the root entry and the linked sibling's). */
+function lockTextOf(params: {
+	packages: Record<string, LockEntry>
+	lockfileVersion?: number
+}): string {
+	return JSON.stringify({
+		name: '@dialecte/cli',
+		lockfileVersion: params.lockfileVersion ?? 3,
+		packages: {
+			'': { name: '@dialecte/cli' },
+			'../core': { name: '@dialecte/core', version: '0.7.0' },
+			...params.packages,
+		},
+	})
 }
 
 /** `node_modules/<name>/package.json` at `version`. */
@@ -184,6 +199,15 @@ const CASES: Case[] = [
 		problems: [{ package: 'watcher', problem: 'missing' }],
 	},
 	{
+		name: 'a peer package (not optional) left out → missing',
+		packages: {
+			'node_modules/demo': { version: '1.0.0' },
+			'node_modules/peer-dep': { version: '1.0.0', peer: true },
+		},
+		setup: (worktree) => install({ worktree, name: 'demo', version: '1.0.0' }),
+		problems: [{ package: 'peer-dep', problem: 'missing' }],
+	},
+	{
 		name: 'a package left out whose os is another platform → not a problem',
 		packages: {
 			'node_modules/demo': { version: '1.0.0' },
@@ -300,6 +324,97 @@ describe('checkNodeModules', () => {
 				...(testCase.problems.length > 0 && { command: `cd '${worktree}' && npm ci` }),
 			})
 		})
+
+	const DISK_VARIANTS = [
+		{
+			name: 'another lock on disk',
+			diskPackages: { 'node_modules/unrelated': { version: '9.0.0' } },
+		},
+		{ name: 'no lock on disk', diskPackages: null },
+	]
+	for (const variant of DISK_VARIANTS)
+		for (const testCase of CASES.filter((candidate) => candidate.problems.length > 0))
+			it(`lockText given, ${variant.name}: ${testCase.name}`, () => {
+				const worktree = createWorktree({
+					packages: testCase.packages,
+					lockfileVersion: testCase.lockfileVersion,
+					diskPackages: variant.diskPackages,
+				})
+				testCase.setup(worktree)
+
+				expect(
+					checkNodeModules({
+						worktree,
+						lockText: lockTextOf({
+							packages: testCase.packages,
+							lockfileVersion: testCase.lockfileVersion,
+						}),
+					}),
+				).toEqual({
+					lockfile: 'package-lock.json',
+					problems: testCase.problems,
+				})
+			})
+
+	for (const variant of DISK_VARIANTS)
+		for (const testCase of CASES.filter((candidate) => candidate.problems.length === 0))
+			it(`lockText given, ${variant.name}: ${testCase.name}`, () => {
+				const worktree = createWorktree({
+					packages: testCase.packages,
+					lockfileVersion: testCase.lockfileVersion,
+					diskPackages: variant.diskPackages,
+				})
+				testCase.setup(worktree)
+
+				expect(
+					checkNodeModules({
+						worktree,
+						lockText: lockTextOf({
+							packages: testCase.packages,
+							lockfileVersion: testCase.lockfileVersion,
+						}),
+					}),
+				).toEqual({
+					lockfile: 'package-lock.json',
+					problems: testCase.problems,
+					...(testCase.problems.length > 0 && { command: `cd '${worktree}' && npm ci` }),
+				})
+			})
+
+	const UNREADABLE_TEXTS = [
+		{ name: 'not JSON', lockText: 'not json {', notChecked: 'unreadable' },
+		{
+			name: 'no packages map',
+			lockText: JSON.stringify({ lockfileVersion: 3 }),
+			notChecked: 'has no packages map',
+		},
+	]
+	for (const row of UNREADABLE_TEXTS)
+		for (const disk of [
+			{ name: 'a good lock on disk', diskPackages: { 'node_modules/demo': { version: '1.0.0' } } },
+			{ name: 'no lock on disk', diskPackages: null },
+		])
+			it(`lockText ${row.name}, ${disk.name} → notChecked ${row.notChecked}, as from the disk`, () => {
+				const worktree = createWorktree({ packages: {}, diskPackages: disk.diskPackages })
+				install({ worktree, name: 'demo', version: '1.0.0' })
+
+				expect(checkNodeModules({ worktree, lockText: row.lockText })).toEqual({
+					lockfile: 'package-lock.json',
+					notChecked: row.notChecked,
+					problems: [],
+				})
+			})
+
+	it('a package-lock.json that is a folder (unreadable) → notChecked unreadable, never a throw', () => {
+		const worktree = join(temporaryFolder('dialecte-check-node-modules-'), 'cli-thing')
+		mkdirSync(join(worktree, 'package-lock.json'), { recursive: true })
+
+		expect(checkNodeModules({ worktree })).toEqual({
+			lockfile: 'package-lock.json',
+			notChecked: 'unreadable',
+			problems: [],
+		})
+	})
 
 	it('no package-lock.json → nothing checked: no lockfile, no problem, no command', () => {
 		const worktree = join(temporaryFolder('dialecte-check-node-modules-'), 'cli-thing')

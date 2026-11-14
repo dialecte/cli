@@ -116,6 +116,12 @@ function recordChoice(params: {
 			exitCode: 2,
 			line: `${CHOICE_USAGE} (the decision and --by are one line each)`,
 		})
+	const wordRefusal = forbiddenWordRefusal({
+		root: params.cwd,
+		verb: 'choice',
+		options: [{ option: '--by', text: by }],
+	})
+	if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
 	const folder = resolve(params.cwd, folderWord)
 	const refusal = handoverFolderRefusal(folder)
 	if (refusal) return answerOf({ exitCode: 1, line: `${verbPrefix('choice')}: ${refusal}` })

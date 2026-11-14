@@ -365,6 +365,17 @@ export type Installer = (params: {
 	root: string
 }) => Promise<{ exitCode: number | undefined; output: string }>
 
+/** A file the lock sync writes over with its staged copy while it installs: its working and staged bytes. */
+export type InstallFile = {
+	file: string
+	/** Absolute path of the working copy. */
+	path: string
+	/** The working copy's bytes; undefined when there is none. */
+	working: Buffer | undefined
+	/** The index's bytes; undefined when the index holds none. */
+	staged: Buffer | undefined
+}
+
 /** A package entry of a staged `package-lock.json`, as the lock sync reads it. */
 export type StagedLockEntry = {
 	version?: string

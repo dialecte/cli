@@ -59,6 +59,27 @@ export function readGitBytes(params: { root: string; args: string[] }): Buffer {
 }
 
 /**
+ * The bytes of `file` (relative to the repository root) as the index of `root` holds it, never decoded; undefined
+ * only when the index holds no entry for it. An unmerged path (a conflict's stages 1-3) throws, as does any other
+ * failure (a missing object, not a repository), with git's message.
+ */
+export function readStagedFile(params: { root: string; file: string }): Buffer | undefined {
+	const stages = readGit({
+		root: params.root,
+		args: ['ls-files', '--stage', '-z', '--', params.file],
+	})
+		.split('\0')
+		.filter(Boolean)
+		.filter((entry) => entry.slice(entry.indexOf('\t') + 1) === params.file)
+		// `<mode> <object> <stage>\t<path>`
+		.map((entry) => entry.slice(0, entry.indexOf('\t')).split(' ')[2])
+	if (stages.length === 0) return undefined
+	if (stages.some((stage) => stage !== '0'))
+		throw new Error(`${params.file} is unmerged in the index (a conflict not resolved)`)
+	return readGitBytes({ root: params.root, args: ['show', `:${params.file}`] })
+}
+
+/**
  * Files changed against HEAD, staged or not, and new files git does not ignore; deleted files left out
  * unless asked. Relative to the repository root, sorted. The lot declaration (`.dialecte/lot.json`) is
  * never part of a change: the orchestrator writes it for the gate, nobody commits it.

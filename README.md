@@ -25,7 +25,7 @@ shape. Exit codes: 0 an answer or green, 1 nothing found or a failed check,
 2 usage or refused; a command's help says when it differs.
 
 ```
-Discover    api  members  schema  explain  standard  facts
+Discover    api  members  schema  explain  standard  facts  ask
 Use         run  fixture  new
 Grow        lot
 Plan        plan
@@ -42,6 +42,7 @@ dialecte schema <Tag>      # what an element may hold and where
 dialecte explain <code>    # what an error or diagnostic code means, when it is raised, the usual fix
 dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
 dialecte facts list|show|forget   # the facts recorded in your data folder: their state now, their history; forget one
+dialecte ask "<question>"  # answer from a fact, the definition, the catalogues and api indexes, else the standard's slices for readers
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -350,6 +351,12 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   closest quote and why (`ranked <r>`, `not found by find`, `not in the text`, `unknown file <id>`). Items with
   no expected quote are counted apart. Exit 1 when no item has one; 2 for a gold file that cannot be read or a
   malformed line (its number named).
+- `dialecte standard eval <gold.jsonl> --angles [...]`: the same recall, each question run through the `ask` ladder
+  instead of `find` alone (kind `semantic`, no fact read or written, no ask kept, no event): find's own list for
+  the whole question first and untouched, then at most 3 slices the angles found in clauses that list does not
+  cover, then the linked slices. A question the ladder refuses (an `about` no dialecte declares, a tag of several
+  dialectes without `--package`) scores find's own list. The answer adds `added +<n>` (`added` in `--json`): the
+  items whose quote only the added slices hold. Run from a package (exit 2 outside one).
 
 `show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
 `DIALECTE_STANDARD` when no standard is configured.
@@ -412,6 +419,77 @@ previous fact of a question gets its `supersededBy`, with a `superseded` line ma
 
 `show` and `forget` answer exit 1 for an id with no fact (the closest ids named) or a fact file that is not
 readable JSON (its path named).
+
+## Ask
+
+`dialecte ask "<question>" [--about [<Parent>/]<Tag>[@<attr>] | --code <code> | --method <path>] [--kind <kind>]
+[--decision] [--package <name>] [--effort low|medium|high] [--lot <id|folder>] [--limit <n>] [--no-facts]
+[--no-standard] [--person-only] [--json]` answers a question about the installed dialecte from the cheapest
+source that holds the answer, and never answers from anything else: past the dialecte's own files it hands the
+question on (to readers of the documents, or a person) instead of guessing.
+
+The question's subject is read from the names of the installed dialectes it holds (tags, attributes, catalogue
+codes, api methods: exact names, case kept; a name that is also an ordinary word counts only as `@name`, `name=`
+or through `--about`). `--about`, `--code` and `--method` name the subject instead; `--kind` forces the kind
+(`children`, `parents`, `required`, `values`, `default`, `fixed`, `type`, `variants`, `documentation`, `code`,
+`method`, `semantic`). A tag of several installed dialectes needs `--package` unless the folder is one of them.
+
+**The rungs**, in order; the first that answers ends the ask:
+
+- 0, a fact: the current fact of the same question in the facts ledger, reused when it is valid at the asked
+  effort or above (a person's fact at any effort). A fact that does not answer (lower effort, stale,
+  unverifiable, unchecked) is listed as a candidate, never the answer. `--no-facts` reads and records none.
+- 1, the definition: a structural question whose element resolves to one declaration (`--about <Parent>/<Tag>`
+  for a tag declared several ways), answered from the dialecte's definition. `--decision` skips it as an
+  answer and reads it as the boundary (below).
+- 2, the dialecte's files: a code answered by the one catalogue entry that explains it, a method by the api
+  index entry whose intents hold every content word of the need (else the closest five listed).
+- 3, the documents: the slices of the standard for the question (find's own list, then the slices its angles
+  add), handed to readers.
+
+A rung 1 or 2 answer is recorded as a fact at the ask's effort. A fact recorded from the definition is checked
+again when the definition changes: answering the same, it is kept with the new hash; else it is stale and a new
+fact replaces it.
+
+**The boundary (`--decision`).** The definition (the XSD) is what validates, so on a `--decision` ask it is the
+hard limit of what is valid, never the answer: it is read live (`boundary` in `--json`, `boundary: <answer>
+(definition)` in the text) when the question is structural and its element resolves to one declaration. A stored
+fact recorded from the definition is a candidate only; the answer comes from the prose inside the boundary (a
+standard or person fact, or the readers). The values of an attribute with no enumeration are open (any value of its
+type is valid): the prose values stand, no conflict. Prose naming what the definition rejects (a list item it does
+not hold, an enumeration value it does not list, another yes/no, another value) is answered within it: the list cut to the boundary's items, else the boundary's
+own answer; `conflict` in `--json` names the fact and what it named outside (`{ kind: 'standard-vs-xsd', fact,
+outside }`), the text adds `! conflict: the standard names <items> the XSD rejects; the XSD wins - fix the XSD and
+ask again`, and the ask still exits 0. Without `--decision` neither is read (`boundary` and `conflict` null).
+
+**The documents.** The `DIALECTE_STANDARD` folder whose id has the key of the dialecte's declared standard name
+(both lowercased, letters and digits only); every folder when the dialecte declares none. With none, the ask
+skips rung 3 and goes to outside readers (when the root holds other folders, a line on stderr names the
+declared name, its key and those folders).
+`--no-standard` is refused while documents are readable for the dialecte (outside readers run only when the
+documents cannot answer), and is the outside route without them. `--person-only` sends the ask to a person after
+rung 2. Once documents exist, each `unchecked` fact of the dialecte's standard is asked again, once: a new ask
+holding its question and `reask: <fact id>` (never its answer), and a `rechecked` line on the fact.
+
+**States and exit codes.** `answered` exit 0; `needs-person` exit 1 (next: `dialecte ask answer <id> ...`);
+`needs-readers` exit 3 (next: `dialecte ask pack <id>`, with `--outside` without documents); exit 2 for usage and
+refusals, nothing written: an unknown `--about` tag or attribute (the closest named), an attribute the element
+lacks, several dialectes without `--package`, two standard folders of one key, `--no-standard` with documents,
+an `--effort` other than the lot's, a `--lot` folder inside a repository.
+
+**The ask folder.** Each ask is a folder `A-<n>` holding `ask.json` (the `--json` object, versioned by its `schema`
+member, now `1`: the subject, kind, rung, state, answer, fact, source, boundary, conflict, candidates, methods,
+angles, slices, effort, next and what was read of the documents). With `--lot <id|folder>` (a store lot by index, name or folder, or a hand-over folder outside every
+repository) it is in `<lot folder>/asks/`; run in a lot's worktree, in that lot; else in
+`$XDG_STATE_HOME/dialecte/asks/`. An ask of a lot that reaches the documents or the outside route rewrites the
+lot's `standard.json` (`consulted`, a note listing every ask of the lot and its state). A lot's ask takes the
+lot's effort; elsewhere `--effort`, else `medium`.
+
+**Events.** `ask.parsed`, `ask.rung` (one per rung run, with its time), `ask.fact` and `ask.state` go to the
+lot's `events.jsonl`, else `$XDG_STATE_HOME/dialecte/asks/events.jsonl`; they hold the question's length and key
+hash, never its text, a quote or a slice's text; `ask.state` says `conflict: true|false`, never what
+conflicts. An event that cannot be written prints one line on stderr and
+never changes the exit code.
 
 ## MCP server
 
@@ -510,9 +588,53 @@ the answer.
   gate's selection (the files it checked); outside a gate, the files changed against HEAD and the new ones,
   that result recorded in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the
   files, the errors and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
+  Quality rules, on implementation files (a test-shaped file is exempt):
+  - `argument-mutation` (error): a function changes what a parameter refers to (a mutating method such as
+    `.push` or `.add`, an assignment to a property, `delete`, `++`, `Object.assign` with it first); return the
+    new value instead. Rebinding the parameter, a copy, a write through `query` / `tx`, a `reduce` accumulator
+    are not flagged.
+  - `query-in-loop` (error): a query read (a method of the API indexes' `q` entries, `perf` and writes aside)
+    called on a query binding inside a loop or a loop callback (`map`, `forEach`, ...); read them in one query
+    before the loop. A call through a `perf` segment (`doc.query.perf.getRecord()`) is never a query read. Without an API index the rule does not run.
+  - `long-function` (warning): a function body over 60 lines that are neither blank nor comment-only; split it.
+
+  Test-shape rules, on test-shaped files (a test file, a name ending `-fixtures.ts`, `.test-fixtures.ts` or
+  `-cases.ts`, a file under the package's top-level `test/` folder):
+  - `table-branch` (error): an act or a per-case callback branches on a field of its case; one table per
+    behaviour.
+  - `without-export-xml` (error): a `.withoutExport(` act reads exported XML; use `withExport` with
+    `expectedQueries`.
+  - `export-without-queries` (error): a case of a `.withExport(` table with no (or empty) `expectedQueries`
+    and `unexpectedQueries`; give it one.
+  - `fixture-builder` (warning): a function returns XML built with a substitution (a value inside the XML, or
+    the element name itself: `` `<${tag} .../>` ``); write each fixture as inline XML.
+  - `plan-tag` (error): a title, a table key or the file name carries a plan or round tag; say what the case
+    checks.
+
+  An opt-out silences one of these eight rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
+  least 15 characters, on the finding's line or the line before it (for `argument-mutation` and
+  `long-function`, also anywhere in the comments right before the function, its doc comment included). A
+  malformed opt-out, a rule it cannot silence or a reason too short is an `invalid-allow` error; an opt-out
+  that covers no finding is an `unused-allow` warning (never for a rule that did not run). `--json` (and the
+  rules record) counts the findings the opt-outs silenced, per rule, in `allowed`. With the gate base (a
+  scoped gate step), an error of these rules on a line the change did not add is a warning ending
+  `(not added by this change)`; an empty-tree base (the release list, or no base branch found) knows no
+  change, so every error of these rules is such a warning. A plain `rules` run (no gate base) keeps them
+  errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
+  nothing: `query-in-loop` does not run and one line names the file and why. Not judged: an alias of a
+  parameter (`const set = params.items; set.add(x)`), a read in a function the loop calls (`query-in-loop` is
+  syntactic: it sees the reads written inside the loop), a table imported from a sibling file. `plan-tag`
+  flags `round` or `step` followed by a number in a title (`step 2 of the import`): reword it, or opt out.
+  `fixture-builder` reads `<` followed by a letter as XML, so a returned text with a `<word>` placeholder and a
+  substitution (`` `usage: <name> ${value}` ``) is flagged too: opt out with the reason.
+
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
-  runner's defaults: every file in parallel), then the steps derived from the package's scripts after its
+  runner's defaults: every file in parallel); both default lists end with a scoped `rules` step
+  (`dialecte rules` on the changed files, judged against the gate base); a step whose command starts with the word
+  `dialecte` runs as the cli that runs the gate (its own node and entry file, never the package's
+  `node_modules/.bin/dialecte`, so a package without the cli installed runs it too), its line ending
+  `(dialecte <version>)`; then the steps derived from the package's scripts after its
   own (declared or default): `type-narrowing` (`npm run type-narrowing`, a check a publish workflow runs)
   when the package has that script and no step runs it; without the script, one line
   `skip  type-narrowing  no npm script "type-narrowing"` and no step of the record. The docs build and the type bench are contributor checks:
@@ -531,7 +653,13 @@ the answer.
   hand-over card shows `✗ <step>  not wired (no npm script; or dialecte.gate.skip)` for a full or release record
   (`dialecte.contrib.skip` for a contrib one) and `! <step>  not
   wired (no npm script)` for a fast one, and `! <step>  opted out: <reason>` for an opt-out (a warning). The
-  `type-narrowing` step is derived from the package's scripts and is never unwired. A gate record written
+  `type-narrowing` step is derived from the package's scripts and is never unwired. A repository without
+  package.json has no default list: the gate infers its steps from its files (`pyproject.toml` + `uv.lock` at
+  the root: a `tests` step `uv run pytest` for fast and full, counted from pytest's summary line), and a root
+  `dialecte.json` (`{ "schema": 1, "gate": { "fast": [...], "full": [...] } }`, the keys of package.json's
+  `dialecte.gate` without `skip`) overrides it list by list (its refusals name the lists as package.json's
+  `dialecte.gate.<list>`); with neither, the gate refuses naming both. A repository with a
+  package.json never reads `dialecte.json`. A gate record written
   before this check is not reused for a package with an unwired or opted-out step (the key changes). While a hand-over
   holds the repository (`dialecte handover <lots.json>` wrote its lock), the gate runs only under the
   hand-over written for this repository - the script the lock names exists and the `lots.json` beside it
@@ -633,8 +761,13 @@ the answer.
   stops (state `T`) and is reported as stalled.
 - `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
-  changed against HEAD (recorded as `dialecte rules` records it), the package's `dialecte.contrib.steps`
-  (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
+  changed against HEAD (recorded as `dialecte rules` records it), judged against the gate base (the scoped
+  gate step's: the base branch's merge-base with HEAD; a rehearsal's run against the last merge lot's tip, else
+  the base the repository resolves at the lots file's HEAD): an error of a quality rule on a line the base already
+  holds is a warning ending `(not added by this change)`. No base branch found: the base is the empty tree, which
+  knows no change, so every quality error is that warning. No base, every error kept, only without a scoped gate
+  step or with a `dialecte.baseBranch` that names no branch. Then the package's
+  `dialecte.contrib.steps` (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
   `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a default
   step whose npm script is missing fails the run before any row, the built-in `rules` and `release` rows
   included, unless `dialecte.contrib.skip` opts it out with a reason; a declared one fails too), `type-narrowing` (`npm run type-narrowing`) when the package has that script and
@@ -1085,7 +1218,16 @@ the answer.
   `✓ verify  no late fixes`, or `verified by <who>: <note>`), come after the merges guard. Each refusal
   exits 2 with nothing committed, where every other guard exits 1; `--rehearse` prints `!` for each and goes
   on. The merges guard's note for a merge lot of the target that moved reads `lot <n>: merges main at <sha>; main
-  is now <sha> (see target)`. Each guard prints one line with its result
+  is now <sha> (see target)`. The install guard runs at each lot instead, once its files are staged (after the
+  lock sync below): `node_modules` read against the lock the commit holds, the index's `package-lock.json`. A
+  package at another version, missing or a link elsewhere, a lock that cannot be read or a check that cannot be
+  made refuses the lot (`✗ lot <n> not committed: node_modules do not match package-lock.json: run npm ci in
+  <worktree>`, the packages under it; when the working lock is a later lot's, `... the package-lock.json lot <n>
+  commits (a later lot changes it): run npm ci with that lock, or commit the lock change first`) with exit 2, under `--rehearse` too: no `!` there, a rehearsal checks its
+  clone's `node_modules`. No lock in the index: nothing checked. Each check replaces `install.json` in the
+  hand-over folder (`{ at, lock, working, ok, mismatched }`, `laterLock: true` for a later-lot refusal); the card shows it as its `install` line (`✓ install
+  node_modules match package-lock.json (<hash>)`, or `✗` with the count, which blocks a card still to run) while
+  the worktree's `package-lock.json` is the one the check saw (`working`), else no line. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
   lots, references (citations, declared patterns, and the tags of a contributor), `contrib` in a contributor
@@ -1161,7 +1303,10 @@ the answer.
   lot is reused and no contrib run is needed, no clone is made: the guards, a reused merge's `tree <sha>`,
   then `rehearsal skipped: every lot's tree has a green record` and the card. Otherwise the clone is made
   (`▶ rehearsal contrib` then runs `dialecte contrib` in it at the lots file's HEAD on the tree the lots
-  leave, before any commit, its record going to the repository's store as a rehearsal's; the clone is put
+  leave, before any commit, its rules row judged against the last merge lot's tip (only the last one: the lines
+  an earlier merge of another branch brought in count as added), so only the lines the lots add can fail it;
+  without a merge lot against the base the repository resolves at the lots file's HEAD, as `dialecte contrib`
+  there would, never the clone's own base branch; its record going to the repository's store as a rehearsal's; the clone is put
   back after it, the files the run left removed) and
   the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
   others with their hook. A real run (no `--rehearse`) runs every commit's hook, whatever the store holds.
@@ -1223,8 +1368,9 @@ the answer.
   the note after the sync names each installed package of the staged lock that has one,
   `install scripts not run: <names>`: each package once by its name, a nested copy too, five named then
   `and <n> more`), the working copies put back byte for byte;
-  refused when the install changed the staged files or the versions still differ (dev, peer and optional
-  packages an install leaves out aside). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
+  refused when the install changed the staged files or the versions still differ (the sync leaves absent dev,
+  peer and optional packages aside; the install guard right after it checks dev and peer ones, and refuses the
+  lot when one is missing). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
   into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration
   (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
   the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a
@@ -2013,7 +2159,8 @@ Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `wo
 `lot close`, the hand-over's target) finds it the same way, the first rule that answers winning:
 
 1. `dialecte.baseBranch` when set (an optional override): the local branch, else origin's. Set to a branch that
-   exists nowhere, it is refused, never replaced by another: exit 2 for the gate's base, `mutants`, `handover write`
+   exists nowhere, it is refused, never replaced by another (a package without a `dialecte.gate` config too: its
+   default lists hold the scoped `rules` step): exit 2 for the gate's base, `mutants`, `handover write`
    and `handover run`, exit 1 for `worktree add` of a new branch without `--from`; the commit hook fails, and the
    tdd step of `gate --full` fails with the same text.
 2. The branch `origin/HEAD` names (recorded at clone), when that branch exists; the local one is preferred.

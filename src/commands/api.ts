@@ -29,7 +29,7 @@ import {
 } from './api.constants.ts'
 
 import type { ApiJson } from '../lib/api/api-json.types.ts'
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = runApi({ argv, cwd: process.cwd() })
@@ -44,7 +44,7 @@ export async function run(argv: string[]): Promise<void> {
  *
  * @intent answer an api lookup without the command line, find a Dialecte method by what it is for, show a method's contract from another program
  */
-export function runApi(params: { argv: readonly string[]; cwd: string }): CommandOutput {
+export function runApi(params: { argv: readonly string[]; cwd: string }): LookupCommandOutput {
 	const [subcommand, ...rest] = params.argv
 	const words = positionalArguments({ argv: rest, valueOptions: API_VALUE_OPTIONS })
 	const sourceFlag = hasFlag([...rest], SOURCE_FLAG)
@@ -90,7 +90,7 @@ function find(params: {
 	limit: number
 	json: boolean
 	notes?: readonly string[]
-}): CommandOutput {
+}): LookupCommandOutput {
 	const found = findMethods(params)
 	if (found.length === 0 && !params.json)
 		return {
@@ -112,7 +112,7 @@ function show(params: {
 	path: string
 	json: boolean
 	notes?: readonly string[]
-}): CommandOutput {
+}): LookupCommandOutput {
 	const methods = findByPath(params)
 	if (methods.length === 0 && !params.json)
 		return {

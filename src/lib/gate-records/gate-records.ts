@@ -19,6 +19,7 @@ import {
 import { computeStateHash, hashStateTree } from './state-hash.ts'
 
 import type { StepResult } from '../gate/gate.types.ts'
+import type { AllowedCounts } from '../rules/allow-comments.types.ts'
 import type { CaseStatus, DuplicateCaseId } from '../tdd/tdd.types.ts'
 import type {
 	CheckKey,
@@ -177,6 +178,8 @@ export function recordRules(params: {
 	files: string[]
 	errors: number
 	warnings: number
+	/** The findings the opt-outs silenced, per rule; absent when none. */
+	allowed?: AllowedCounts
 }): void {
 	const record: RulesRecord = {
 		at: new Date().toISOString(),
@@ -185,6 +188,7 @@ export function recordRules(params: {
 		files: params.files,
 		errors: params.errors,
 		warnings: params.warnings,
+		...(params.allowed !== undefined && { allowed: params.allowed }),
 	}
 	writeRecord({ root: params.root, name: RULES_RECORD_FILE, record })
 }

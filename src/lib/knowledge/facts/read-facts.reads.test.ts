@@ -67,7 +67,7 @@ function factFilesReadBy(params: { folder: string; key: string }): string[] {
 	return counted.reads.map((path) => basename(path)).filter((name) => FACT_FILE.test(name))
 }
 
-describe('currentFact on a ledger of 20 facts of other keys: only the target and the fact it supersedes are read (R1-4)', () => {
+describe('currentFact on a ledger of 20 facts of other keys: only the target and the fact it supersedes are read', () => {
 	const rows: Record<string, { crashAfterPointer: boolean }> = {
 		'the replacement complete': { crashAfterPointer: false },
 		'a crash after the pointer swap (F-0021 not marked superseded)': { crashAfterPointer: true },

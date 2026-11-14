@@ -8,7 +8,7 @@ import { answerModels } from '../lib/models/answer-models.ts'
 import { readRememberedVendor } from '../lib/models/remembered-vendor.ts'
 import { printOut, textOf } from '../lib/print/print.ts'
 
-import type { CommandOutput } from '../lib/command-output.types.ts'
+import type { LookupCommandOutput } from '../lib/command-output.types.ts'
 import type { PrintedText } from '../lib/print/print.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -27,7 +27,7 @@ export async function run(argv: string[]): Promise<void> {
 export function runModels(params: {
 	argv: readonly string[]
 	cwd: string
-}): CommandOutput & { warnings: PrintedText } {
+}): LookupCommandOutput & { warnings: PrintedText } {
 	const missing = missingPackage({ cwd: params.cwd })
 	if (missing) return { ...missing, warnings: textOf([]) }
 	const argv = [...params.argv]

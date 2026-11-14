@@ -1,5 +1,6 @@
 import type { RULE_NAMES } from './check-code-rules.constants.ts'
 import type { ReferencePattern } from './committed-text.types.ts'
+import type ts from 'typescript'
 
 export type RuleName = (typeof RULE_NAMES)[number]
 
@@ -15,6 +16,8 @@ export type RuleFinding = {
 	rule: RuleName
 	severity: RuleSeverity
 	message: string
+	/** For a function-wide rule: the 1-based line of the function's first token. */
+	functionLine?: number
 }
 
 /** What a file is for, from its name: the rules that apply depend on it. */
@@ -33,4 +36,7 @@ export type CheckCodeRulesParams = {
 	file: string
 	text: string
 	referencePatterns: readonly ReferencePattern[]
+	queryNames?: ReadonlySet<string>
+	/** The syntax tree of `text`, when the caller already parsed it (with parent nodes set): not parsed again. */
+	sourceFile?: ts.SourceFile
 }

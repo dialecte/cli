@@ -4,8 +4,8 @@ import type { GateStep } from './gate/gate-config.types.ts'
 export type PackageJson = {
 	name?: string
 	version?: string
-	/** The commands the package installs: a package with one is a tool, not a runtime package. */
-	bin?: string | Record<string, string>
+	/** The package's bins: a path (the bin takes the package's name) or a map of bin names to paths. */
+	bin?: unknown
 	/** The entry points the package ships: a package without one has no runtime api. */
 	exports?: unknown
 	scripts?: Record<string, string>
