@@ -1,3 +1,5 @@
+/** Questions about a test file's source, answered from its syntax tree (never from lines or greps). */
+
 import {
 	ASSERTION_CALLEE,
 	CASE_FUNCTIONS,
@@ -12,7 +14,6 @@ import {
 	TEST_FUNCTIONS,
 } from './tdd.constants.ts'
 
-/** Questions about a test file's source, answered from its syntax tree (never from lines or greps). */
 import ts from 'typescript'
 
 import type {
@@ -536,7 +537,7 @@ function describePathOf(node: ts.Node): (string | undefined)[] {
  * `describe(...)`, `suite.skip(...)`, `describe.each(table)(...)`, `describe.skipIf(condition)(...)`: the call
  * that takes a suite's title and body.
  */
-function isSuiteCallee(callee: ts.Expression): boolean {
+export function isSuiteCallee(callee: ts.Expression): boolean {
 	if (ts.isCallExpression(callee)) return isSuiteCallee(callee.expression) && isModifierCall(callee)
 	const root = rootIdentifierOf(callee)
 	return root !== undefined && SUITE_FUNCTIONS.includes(root)
@@ -554,14 +555,14 @@ function suiteTitleOf(call: ts.CallExpression): string | undefined {
  * `it(...)`, `test.skip(...)`, `it.each(table)(...)`, `it.skipIf(condition)(...)`: the call that takes a
  * test's title and body.
  */
-function isTestCallee(callee: ts.Expression): boolean {
+export function isTestCallee(callee: ts.Expression): boolean {
 	if (ts.isCallExpression(callee)) return isTestCallee(callee.expression) && isModifierCall(callee)
 	const root = rootIdentifierOf(callee)
 	return root !== undefined && CASE_FUNCTIONS.includes(root)
 }
 
 /** `.each(table)`, `.for(table)`, `.skipIf(condition)`, `.runIf(condition)`: a call returning the call that takes the title. */
-function isModifierCall(call: ts.CallExpression): boolean {
+export function isModifierCall(call: ts.CallExpression): boolean {
 	return (
 		ts.isPropertyAccessExpression(call.expression) &&
 		[...TABLE_MODIFIERS, ...CONDITION_MODIFIERS].includes(call.expression.name.text)
@@ -578,7 +579,7 @@ function takesFormatTitle(callee: ts.Expression): boolean {
 }
 
 /** `it` of `it.skip.each`: the identifier a chain of property accesses starts from. */
-function rootIdentifierOf(expression: ts.Expression): string | undefined {
+export function rootIdentifierOf(expression: ts.Expression): string | undefined {
 	if (ts.isIdentifier(expression)) return expression.text
 	if (ts.isPropertyAccessExpression(expression)) return rootIdentifierOf(expression.expression)
 	return undefined

@@ -53,10 +53,11 @@ describe('this package’s own gate (its package.json dialecte.gate)', () => {
 		})
 	})
 
-	it('full → the default full steps unchanged, then rules (scoped, as in fast); release is the same list and covers it', () => {
+	it('full → the default full steps unchanged but for their own rules step, then rules (scoped, as in fast); release is the same list and covers it', () => {
 		const fast = resolveGateSteps({ packageJson: OWN_PACKAGE, mode: 'fast' })
 		const rules = stepNamed({ steps: fast, name: 'rules' })
-		const expectedFull = [...DEFAULT_GATE_STEPS.full, rules]
+		const defaultsBeforeRules = DEFAULT_GATE_STEPS.full.filter((step) => step.name !== 'rules')
+		const expectedFull = [...defaultsBeforeRules, rules]
 
 		expect({
 			full: resolveGateSteps({ packageJson: OWN_PACKAGE, mode: 'full' }),

@@ -33,7 +33,8 @@ export function scoreUnits(params: {
 		for (const hit of hits) {
 			const titleLine = index.units[hit.unit].titleLine
 			const titleFactor = titleLine !== null && hit.lines.includes(titleLine) ? TITLE_HIT_FACTOR : 1
-			const score = scoreOf({ scores, unit: hit.unit, termCount: terms.length })
+			const score = scores.get(hit.unit) ?? emptyScore({ unit: hit.unit, termCount: terms.length })
+			scores.set(hit.unit, score)
 			const contribution = (titleFactor * term.factor) / weight
 			score.score += contribution
 			score.termsHit[termIndex] = true
@@ -87,22 +88,13 @@ function frequencyWeight(params: { lineCount: number; logicalLineCount: number }
 	return (1 + Math.log(1 + lineCount)) * (common ? COMMON_WORD_WEIGHT_FACTOR : 1)
 }
 
-function scoreOf(params: {
-	scores: Map<number, StandardUnitScore>
-	unit: number
-	termCount: number
-}): StandardUnitScore {
-	const { scores, unit, termCount } = params
-	let score = scores.get(unit)
-	if (!score) {
-		score = {
-			unit,
-			score: 0,
-			termsHit: Array.from({ length: termCount }, () => false),
-			hitLines: [],
-			contributions: [],
-		}
-		scores.set(unit, score)
+/** A unit's score before any term hits it. */
+function emptyScore(params: { unit: number; termCount: number }): StandardUnitScore {
+	return {
+		unit: params.unit,
+		score: 0,
+		termsHit: Array.from({ length: params.termCount }, () => false),
+		hitLines: [],
+		contributions: [],
 	}
-	return score
 }

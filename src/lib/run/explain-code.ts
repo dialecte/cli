@@ -1,3 +1,5 @@
+import { CORE_CATALOGUE_NAME } from './run.constants.ts'
+
 import type {
 	Catalogues,
 	ExplainedCode,
@@ -58,7 +60,7 @@ export function collectCatalogues(params: {
 	const { coreIndex, dialecte } = params
 	const catalogues: Catalogues = { errors: [], diagnostics: [] }
 	if (isErrorCatalogue(coreIndex.ERROR_CATALOG))
-		catalogues.errors.push({ name: 'core', entries: coreIndex.ERROR_CATALOG })
+		catalogues.errors.push({ name: CORE_CATALOGUE_NAME, entries: coreIndex.ERROR_CATALOG })
 
 	const exports = Object.entries(dialecte ?? {}).sort(([left], [right]) =>
 		left.localeCompare(right),

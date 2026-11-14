@@ -71,6 +71,7 @@ import {
 	REUSED_MERGE_TREE_LINE,
 	UNTRACKED_WARNING_LIMIT,
 } from './handover.constants.ts'
+import { lastMergeTipOf } from './last-merge-tip.ts'
 import {
 	linkRehearsalSiblings,
 	removeRehearsalFolder,
@@ -270,6 +271,7 @@ async function rehearseRecorded(
 						args: ['rev-parse', `${handover.lotsFile.head}^{commit}`],
 					}).trim(),
 					tree: contribRun.tree,
+					rulesBase: lastMergeTipOf(handover.lots) ?? gateScope.base?.commit ?? null,
 					write,
 					progress,
 					clock: params.clock,
@@ -583,6 +585,12 @@ async function runContribInClone(params: {
 	/** The lots file's HEAD, as a full commit. */
 	head: string
 	tree: string
+	/**
+	 * The commit contrib's rules row judges against: the tip the last merge lot merges, else the hand-over base the
+	 * repository resolves at the lots file's HEAD (`resolveHandoverGateScope`); `null`: no base (no scoped step), never
+	 * the clone's own base branch (its `origin/HEAD` names the lot branch).
+	 */
+	rulesBase: string | null
 	write: WriteLine
 	progress: StepProgress
 	clock: Clock
@@ -607,7 +615,12 @@ async function runContribInClone(params: {
 			running.finish(`! ${REHEARSAL_CONTRIB_STEP}  ${reason}`)
 			return reason
 		}
-		const result = await runContrib({ cwd: clone, argv: [], storeRoot: repository })
+		const result = await runContrib({
+			cwd: clone,
+			argv: [],
+			storeRoot: repository,
+			rulesBase: params.rulesBase,
+		})
 		running.finish(
 			`${result.exitCode === 0 ? '✓' : '✗'} ${REHEARSAL_CONTRIB_STEP}  ${formatDuration(params.clock.now() - startedAt)}`,
 		)

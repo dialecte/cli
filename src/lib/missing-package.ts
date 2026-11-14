@@ -3,10 +3,10 @@ import { join } from 'node:path'
 
 import { textOf } from './print/print.ts'
 
-import type { CommandOutput } from './command-output.types.ts'
+import type { LookupCommandOutput } from './command-output.types.ts'
 
 /** A lookup reads the package where it runs: without a package.json there, a usage error saying so. */
-export function missingPackage(params: { cwd: string }): CommandOutput | undefined {
+export function missingPackage(params: { cwd: string }): LookupCommandOutput | undefined {
 	return existsSync(join(params.cwd, 'package.json'))
 		? undefined
 		: {

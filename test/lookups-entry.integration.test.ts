@@ -8,16 +8,24 @@ import {
 	existsSync,
 	mkdtempSync,
 	readdirSync,
+	mkdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
 	symlinkSync,
+	writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { LOOKUP_EXPORTS, LOOKUP_TYPE_EXPORTS } from './lookups-entry.constants.ts'
+import {
+	LOOKUP_CONSUMER_FILE,
+	LOOKUP_CONSUMER_SOURCE,
+	LOOKUP_DOCUMENTED_FUNCTIONS,
+	LOOKUP_EXPORTS,
+	LOOKUP_TYPE_EXPORTS,
+} from './lookups-entry.constants.ts'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -70,12 +78,47 @@ describe('@dialecte/cli/lookups', () => {
 		for (const name of LOOKUP_EXPORTS) expect(declarations).toContain(name)
 	})
 
+	it('declares each ask function with an @intent line in its JSDoc', () => {
+		const declarations = readFileSync(join(BUILT, 'dist/lookups.d.ts'), 'utf8')
+		const withoutIntent = LOOKUP_DOCUMENTED_FUNCTIONS.filter((name) => {
+			const match = new RegExp(
+				String.raw`/\*\*((?:(?!\*/)[^])+)\*/\s*declare function ${name}\b`,
+				'u',
+			).exec(declarations)
+			return match === null || !/@intent\s+\S/u.test(match[1])
+		})
+
+		expect(withoutIntent).toEqual([])
+	})
+
+	it('declares each ask function with a non-empty JSDoc summary above it', () => {
+		const declarations = readFileSync(join(BUILT, 'dist/lookups.d.ts'), 'utf8')
+		const summaries = LOOKUP_DOCUMENTED_FUNCTIONS.map((name) => {
+			const match = new RegExp(
+				String.raw`/\*\*((?:(?!\*/)[^])+)\*/\s*declare function ${name}\b`,
+				'u',
+			).exec(declarations)
+			return match === null ? '' : match[1].replace(/[\s*]+/gu, ' ').trim()
+		})
+
+		expect(summaries.filter((summary) => summary === '')).toEqual([])
+	})
+
 	it('exports the types of the described element from its declaration file', () => {
 		const declarations = readFileSync(join(BUILT, 'dist/lookups.d.ts'), 'utf8')
 		const exportClause = declarations.slice(declarations.lastIndexOf('export {'))
 		const exportedTypes = [...exportClause.matchAll(/\btype (\w+)/gu)].map((match) => match[1])
 
 		expect(LOOKUP_TYPE_EXPORTS.filter((name) => !exportedTypes.includes(name))).toEqual([])
+	})
+
+	it('lets a consumer assign each lookup answer to the exported CommandOutput (exit 0, 1 or 2)', () => {
+		const consumer = join(BUILT, 'consumer')
+		mkdirSync(consumer)
+		writeFileSync(join(consumer, LOOKUP_CONSUMER_FILE), LOOKUP_CONSUMER_SOURCE)
+		const diagnostics = typeCheckOutput({ consumer })
+
+		expect(diagnostics).toBe('')
 	})
 
 	it('keeps the bin free of a runtime import of @dialecte/core', () => {
@@ -99,3 +142,33 @@ describe('@dialecte/cli/lookups', () => {
 		expect(listWithTimes(join(ROOT, 'dist'))).toEqual(CHECKOUT_DIST_BEFORE)
 	})
 })
+
+/** What `tsc` prints for the consumer folder against the built declarations: `''` when it type-checks. */
+function typeCheckOutput(params: { consumer: string }): string {
+	try {
+		execFileSync(
+			join(ROOT, 'node_modules/.bin/tsc'),
+			[
+				'--noEmit',
+				'--strict',
+				'--skipLibCheck',
+				'--module',
+				'esnext',
+				'--moduleResolution',
+				'bundler',
+				'--target',
+				'es2022',
+				'--types',
+				'node',
+				'--typeRoots',
+				join(ROOT, 'node_modules/@types'),
+				join(params.consumer, LOOKUP_CONSUMER_FILE),
+			],
+			{ cwd: BUILT, encoding: 'utf8', stdio: 'pipe' },
+		)
+		return ''
+	} catch (error) {
+		const failure = error as { stdout?: string; stderr?: string }
+		return `${failure.stdout ?? ''}${failure.stderr ?? ''}`.trim() || 'tsc failed'
+	}
+}

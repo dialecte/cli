@@ -107,52 +107,39 @@ describe('recordFact: the first record of a key', () => {
 	})
 })
 
-/** One row of the replacement rule: the current fact (and what is done to it), the new draft, the outcome. */
+/** One row of the replacement rule: the current fact, the new draft. */
 type ReplacementRow = {
 	name: string
 	current: Partial<FactDraft>
-	/** The state the current fact's file is rewritten to after its record. */
-	currentState?: FactStoredState
-	/** The check the second record runs. */
-	unverifiable?: true
 	next: Partial<FactDraft>
-	expected: 'replaced' | 'reused'
 }
 
-const REPLACEMENT_ROWS: ReplacementRow[] = [
-	{ name: 'current stale', current: {}, currentState: 'stale', next: {}, expected: 'replaced' },
-	{
-		name: 'current forgotten',
-		current: {},
-		currentState: 'forgotten',
-		next: {},
-		expected: 'replaced',
-	},
+/** One row of the replacement of a current fact whose file is rewritten to a state: the name, that state. */
+type CurrentStateRow = { name: string; currentState: FactStoredState }
+
+const STALE_OR_FORGOTTEN_ROWS: CurrentStateRow[] = [
+	{ name: 'current stale', currentState: 'stale' },
+	{ name: 'current forgotten', currentState: 'forgotten' },
+]
+
+const UNVERIFIABLE_ROWS: ReplacementRow[] = [
 	{
 		name: 'current unverifiable by the check',
 		current: {},
-		unverifiable: true,
 		next: {},
-		expected: 'replaced',
 	},
+]
+
+const REPLACED_ROWS: ReplacementRow[] = [
 	{
 		name: 'current medium, new high',
 		current: { effort: 'medium' },
 		next: { effort: 'high' },
-		expected: 'replaced',
 	},
-	{
-		name: 'current high, new medium',
-		current: { effort: 'high' },
-		next: { effort: 'medium' },
-		expected: 'reused',
-	},
-	{ name: 'equal effort', current: {}, next: {}, expected: 'reused' },
 	{
 		name: 'new person fact over a high standard fact',
 		current: { effort: 'high' },
 		next: { source: 'person', effort: 'low', sources: [] },
-		expected: 'replaced',
 	},
 	{
 		name: 'current outside (unchecked), new standard',
@@ -162,23 +149,11 @@ const REPLACEMENT_ROWS: ReplacementRow[] = [
 			sources: [{ kind: 'outside', url: 'https://example.com' }],
 		},
 		next: { effort: 'low' },
-		expected: 'replaced',
 	},
 	{
 		name: 'current person fact with unchecked: true, new standard',
 		current: { source: 'person', effort: 'high', sources: [], unchecked: true },
 		next: { effort: 'low' },
-		expected: 'replaced',
-	},
-	{
-		name: 'current valid standard medium, new outside (unchecked) high',
-		current: { effort: 'medium' },
-		next: {
-			source: 'outside',
-			effort: 'high',
-			sources: [{ kind: 'outside', url: 'https://example.com' }],
-		},
-		expected: 'reused',
 	},
 	{
 		name: 'current outside (unchecked) low, new outside (unchecked) high',
@@ -192,7 +167,24 @@ const REPLACEMENT_ROWS: ReplacementRow[] = [
 			effort: 'high',
 			sources: [{ kind: 'outside', url: 'https://example.org' }],
 		},
-		expected: 'replaced',
+	},
+]
+
+const REUSED_ROWS: ReplacementRow[] = [
+	{
+		name: 'current high, new medium',
+		current: { effort: 'high' },
+		next: { effort: 'medium' },
+	},
+	{ name: 'equal effort', current: {}, next: {} },
+	{
+		name: 'current valid standard medium, new outside (unchecked) high',
+		current: { effort: 'medium' },
+		next: {
+			source: 'outside',
+			effort: 'high',
+			sources: [{ kind: 'outside', url: 'https://example.com' }],
+		},
 	},
 	{
 		name: 'current outside (unchecked) high, new outside (unchecked) low',
@@ -206,7 +198,6 @@ const REPLACEMENT_ROWS: ReplacementRow[] = [
 			effort: 'low',
 			sources: [{ kind: 'outside', url: 'https://example.org' }],
 		},
-		expected: 'reused',
 	},
 	{
 		name: 'current outside (unchecked), new outside (unchecked) at equal effort',
@@ -220,80 +211,115 @@ const REPLACEMENT_ROWS: ReplacementRow[] = [
 			effort: 'medium',
 			sources: [{ kind: 'outside', url: 'https://example.org' }],
 		},
-		expected: 'reused',
 	},
 	{
 		name: 'current valid standard medium, new person fact with unchecked: true',
 		current: { effort: 'medium' },
 		next: { source: 'person', effort: 'high', sources: [], unchecked: true },
-		expected: 'reused',
 	},
 ]
 
-describe('recordFact: the replacement rule', () => {
-	it.each(REPLACEMENT_ROWS)('$name → $expected', (row) => {
-		const folder = temporaryFolder('facts-rule-')
-		const currentDraft = factDraft(row.current)
-		const nextDraft = factDraft({ answer: SECOND_ANSWER, ...row.next })
-		expect(
-			recordFact({ folder, draft: currentDraft, lot: '0025', ask: 'q1', now: () => NOW }).id,
-		).toBe('F-0001')
-		if (row.currentState !== undefined)
-			writeFactFile({
-				folder,
-				fact: { ...readFactFile({ folder, id: 'F-0001' }), state: row.currentState },
-			})
-		const before = readFileSync(join(folder, 'F-0001.json'), 'utf8')
-		const oldBefore = readFactFile({ folder, id: 'F-0001' })
+type ReplacementRun = {
+	folder: string
+	key: string
+	outcome: ReturnType<typeof recordFact>
+	before: string
+	oldBefore: ReturnType<typeof readFactFile>
+}
 
-		const outcome = recordFact({
+/** Records the current draft, rewrites its file to the given state when there is one, then records the next draft. */
+function runReplacement(parameters: {
+	current: Partial<FactDraft>
+	next: Partial<FactDraft>
+	currentState?: FactStoredState
+	unverifiable?: true
+}): ReplacementRun {
+	const { current, next, currentState, unverifiable } = parameters
+	const folder = temporaryFolder('facts-rule-')
+	const currentDraft = factDraft(current)
+	const nextDraft = factDraft({ answer: SECOND_ANSWER, ...next })
+	expect(
+		recordFact({ folder, draft: currentDraft, lot: '0025', ask: 'q1', now: () => NOW }).id,
+	).toBe('F-0001')
+	if (currentState !== undefined)
+		writeFactFile({
 			folder,
-			draft: nextDraft,
-			lot: '0025',
-			ask: 'q2',
-			now: () => NOW,
-			check: row.unverifiable ? () => ({ state: 'unverifiable' }) : undefined,
+			fact: { ...readFactFile({ folder, id: 'F-0001' }), state: currentState },
 		})
-		const key = keyOfDraft(currentDraft)
+	const before = readFileSync(join(folder, 'F-0001.json'), 'utf8')
+	const oldBefore = readFactFile({ folder, id: 'F-0001' })
 
-		if (row.expected === 'reused') {
-			expect({
-				outcome,
-				pointer: readPointerText({ folder, key }),
-				secondFactFile: existsSync(join(folder, 'F-0002.json')),
-				currentFileKept: readFileSync(join(folder, 'F-0001.json'), 'utf8') === before,
-				events: readHistoryFile({ folder, id: 'F-0001' }).map((line) => [line.event, line.ask]),
-			}).toEqual({
-				outcome: { outcome: 'reused', id: 'F-0001', previous: null },
-				pointer: 'F-0001\n',
-				secondFactFile: false,
-				currentFileKept: true,
-				events: [
-					['created', 'q1'],
-					['reused', 'q2'],
-				],
-			})
-			return
-		}
-		expect({
-			outcome,
-			pointer: readPointerText({ folder, key }),
-			replacement: {
-				answer: readFactFile({ folder, id: 'F-0002' }).answer,
-				supersedes: readFactFile({ folder, id: 'F-0002' }).supersedes,
-				supersededBy: readFactFile({ folder, id: 'F-0002' }).supersededBy,
-			},
-			oldFact: readFactFile({ folder, id: 'F-0001' }),
-			oldEvents: readHistoryFile({ folder, id: 'F-0001' }).map((line) => line.event),
-			newEvents: readHistoryFile({ folder, id: 'F-0002' }).map((line) => line.event),
-		}).toEqual({
-			outcome: { outcome: 'replaced', id: 'F-0002', previous: 'F-0001' },
-			pointer: 'F-0002\n',
-			replacement: { answer: SECOND_ANSWER, supersedes: 'F-0001', supersededBy: null },
-			oldFact: { ...oldBefore, supersededBy: 'F-0002' },
-			oldEvents: ['created', 'superseded'],
-			newEvents: ['created'],
-		})
+	const outcome = recordFact({
+		folder,
+		draft: nextDraft,
+		lot: '0025',
+		ask: 'q2',
+		now: () => NOW,
+		check: unverifiable ? () => ({ state: 'unverifiable' }) : undefined,
+	})
+	return { folder, key: keyOfDraft(currentDraft), outcome, before, oldBefore }
+}
+
+/** The next record found the current fact good enough: it is reused and nothing else is written. */
+function expectReused(run: ReplacementRun): void {
+	const { folder, key, outcome, before } = run
+	expect({
+		outcome,
+		pointer: readPointerText({ folder, key }),
+		secondFactFile: existsSync(join(folder, 'F-0002.json')),
+		currentFileKept: readFileSync(join(folder, 'F-0001.json'), 'utf8') === before,
+		events: readHistoryFile({ folder, id: 'F-0001' }).map((line) => [line.event, line.ask]),
+	}).toEqual({
+		outcome: { outcome: 'reused', id: 'F-0001', previous: null },
+		pointer: 'F-0001\n',
+		secondFactFile: false,
+		currentFileKept: true,
+		events: [
+			['created', 'q1'],
+			['reused', 'q2'],
+		],
+	})
+}
+
+/** The next record replaced the current fact: the new file supersedes it, the pointer moves. */
+function expectReplaced(run: ReplacementRun): void {
+	const { folder, key, outcome, oldBefore } = run
+	expect({
+		outcome,
+		pointer: readPointerText({ folder, key }),
+		replacement: {
+			answer: readFactFile({ folder, id: 'F-0002' }).answer,
+			supersedes: readFactFile({ folder, id: 'F-0002' }).supersedes,
+			supersededBy: readFactFile({ folder, id: 'F-0002' }).supersededBy,
+		},
+		oldFact: readFactFile({ folder, id: 'F-0001' }),
+		oldEvents: readHistoryFile({ folder, id: 'F-0001' }).map((line) => line.event),
+		newEvents: readHistoryFile({ folder, id: 'F-0002' }).map((line) => line.event),
+	}).toEqual({
+		outcome: { outcome: 'replaced', id: 'F-0002', previous: 'F-0001' },
+		pointer: 'F-0002\n',
+		replacement: { answer: SECOND_ANSWER, supersedes: 'F-0001', supersededBy: null },
+		oldFact: { ...oldBefore, supersededBy: 'F-0002' },
+		oldEvents: ['created', 'superseded'],
+		newEvents: ['created'],
+	})
+}
+
+describe('recordFact: the replacement rule', () => {
+	it.each(STALE_OR_FORGOTTEN_ROWS)('$name → replaced', (row) => {
+		expectReplaced(runReplacement({ current: {}, next: {}, currentState: row.currentState }))
+	})
+
+	it.each(UNVERIFIABLE_ROWS)('$name → replaced', (row) => {
+		expectReplaced(runReplacement({ current: row.current, next: row.next, unverifiable: true }))
+	})
+
+	it.each(REPLACED_ROWS)('$name → replaced', (row) => {
+		expectReplaced(runReplacement({ current: row.current, next: row.next }))
+	})
+
+	it.each(REUSED_ROWS)('$name → reused', (row) => {
+		expectReused(runReplacement({ current: row.current, next: row.next }))
 	})
 })
 

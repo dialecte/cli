@@ -9,6 +9,9 @@ export const DEFAULT_RUN_SEED = 0
 /** How long a script may run before the run gives up on it. */
 export const DEFAULT_RUN_TIMEOUT_IN_MILLISECONDS = 120_000
 
+/** The name `collectCatalogues` gives core's error catalogue (every other catalogue is named by its export). */
+export const CORE_CATALOGUE_NAME = 'core'
+
 /** The packages of the `@dialecte` scope that are not dialectes. */
 export const NON_DIALECTE_PACKAGES: ReadonlySet<string> = new Set([
 	'@dialecte/core',

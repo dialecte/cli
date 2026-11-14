@@ -4,6 +4,8 @@ import type { GateStep } from './gate/gate-config.types.ts'
 export type PackageJson = {
 	name?: string
 	version?: string
+	/** The package's bins: a path (the bin takes the package's name) or a map of bin names to paths. */
+	bin?: unknown
 	scripts?: Record<string, string>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>

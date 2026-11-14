@@ -5,6 +5,7 @@
  */
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
+import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { recordAnswer } from '../lib/store/answers.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
@@ -47,13 +48,16 @@ export function lotAnswer(params: LotAnswerParams): CommandResult {
 	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: 'write' })
 	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
 	const lotFolder = required.lot
+	const by = read.values.get('by')
+	const wordRefusal = storedLotByRefusal({ lotFolder, verb: 'answer', by })
+	if (wordRefusal) return lotRefusalExit({ lines: [wordRefusal], json })
 	let recorded: RecordedAnswer
 	try {
 		recorded = recordAnswer({
 			lotFolder,
 			question,
 			answer,
-			by: read.values.get('by'),
+			by,
 			now: params.now ?? new Date(),
 		})
 	} catch (error) {

@@ -4,26 +4,31 @@
  * no `await` inside an argument, object parameters, full words, and no plan tag or standard citation
  * in committed text.
  */
+import { calleeName } from './callee-name.ts'
 import {
 	ABBREVIATIONS,
 	CONSTANT_NAME_PATTERN,
 	CODE_VISITED_KINDS,
 	LEADING_POSITIONAL_PARAMETERS,
 	ROOT_OPTION_PATTERN,
-	RULE_NAMES,
 	PATH_PASS_THROUGH_PATTERN,
 	SCANNING_CALL_PATTERN,
 } from './check-code-rules.constants.ts'
+import { checkQualityRules } from './check-quality-rules.ts'
+import { checkTestShapeRules, isTestShaped } from './check-test-shape-rules.ts'
 import { findReferences, isReferenceChecked } from './committed-text.ts'
+import { fileKindOf } from './file-kind.ts'
+import { compareFindings } from './findings-order.ts'
 
 import ts from 'typescript'
 
-import type { CheckCodeRulesParams, FileKind, RuleFinding } from './check-code-rules.types.ts'
+import type { CheckCodeRulesParams, RuleFinding } from './check-code-rules.types.ts'
 
 export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 	const { file, text } = params
 	const kind = fileKindOf(file)
-	const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
+	const sourceFile =
+		params.sourceFile ?? ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
 	const findings: RuleFinding[] = []
 
 	function report(
@@ -113,6 +118,14 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 					"the system's temporary folder itself as a root: other tests and processes share it - give the test a folder of its own (`mkdtempSync(join(tmpdir(), '<prefix>-'))`)",
 			})
 
+	if (kind === 'implementation' && !isTestShaped(file))
+		for (const finding of checkQualityRules({ sourceFile, kind, queryNames: params.queryNames }))
+			findings.push({ file, ...finding })
+
+	if (isTestShaped(file))
+		for (const finding of checkTestShapeRules({ file, sourceFile }))
+			findings.push({ file, ...finding })
+
 	if (kind !== 'generated' && isReferenceChecked(file))
 		for (const reference of findReferences({ text, patterns: params.referencePatterns }))
 			findings.push({
@@ -125,31 +138,6 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 			})
 
 	return findings.sort(compareFindings)
-}
-
-/**
- * What a file is for, from its name and folder, as the house layout places them: `<name>.types.ts`,
- * `types.ts`, `types.<topic>.ts` or a `types/` folder hold types; `<name>.constants.ts`, `constants.ts`,
- * `constant.ts`, `constants.<topic>.ts` or a `constants/` folder hold module constants; a `*.config.ts`
- * file holds a configuration object (module constants allowed, types still in their own file). Files
- * under `__tests__/` and `*.cases.ts` / `*.fixtures.ts` are test support; files in the `evals` folder of a skill
- * are eval fixtures, often wrong on purpose: only their references are checked.
- */
-export function fileKindOf(file: string): FileKind {
-	const segments = file.split(/[\\/]/)
-	const name = segments.at(-1) ?? ''
-	const folders = segments.slice(0, -1)
-	if (/\.generated\.[cm]?tsx?$/.test(name)) return 'generated'
-	if (/\.d\.[cm]?ts$/.test(name)) return 'declaration'
-	if (folders.some((folder, index) => folder === 'skills' && folders[index + 2] === 'evals'))
-		return 'eval-fixture'
-	if (/\.(test|spec|cases|fixtures)\.[cm]?tsx?$/.test(name) || folders.includes('__tests__'))
-		return 'test'
-	if (!/\.[cm]?tsx?$/.test(name)) return 'text'
-	if (/(^|\.)types?\./.test(name) || folders.includes('types')) return 'types'
-	if (/(^|\.)constants?\./.test(name) || folders.includes('constants')) return 'constants'
-	if (/\.config\.[cm]?tsx?$/.test(name)) return 'config'
-	return 'implementation'
 }
 
 /**
@@ -238,13 +226,6 @@ function isTmpdirCall(node: ts.Node): boolean {
 	)
 }
 
-/** `readdirSync` for `readdirSync(...)` and `fs.readdirSync(...)`; empty for anything else. */
-function calleeName(expression: ts.Expression): string {
-	if (ts.isIdentifier(expression)) return expression.text
-	if (ts.isPropertyAccessExpression(expression)) return expression.name.text
-	return ''
-}
-
 /** A `let` given a function first and another one later: a variable, not a function declaration. */
 function isReassignedLet(params: {
 	declaration: ts.VariableDeclaration
@@ -265,14 +246,6 @@ function isReassignedLet(params: {
 		return ts.forEachChild(node, assigns) ?? false
 	}
 	return assigns(sourceFile)
-}
-
-function compareFindings(left: RuleFinding, right: RuleFinding): number {
-	return (
-		left.line - right.line ||
-		left.column - right.column ||
-		RULE_NAMES.indexOf(left.rule) - RULE_NAMES.indexOf(right.rule)
-	)
 }
 
 /** The name a declaration introduces in this file: a variable, a parameter, a function. */

@@ -436,16 +436,21 @@ describe('hasScopedStep', () => {
 	}
 
 	it.each([
-		{ label: 'no dialecte.gate', packageJson: {}, expected: false },
+		{
+			label: 'no dialecte.gate (the default lists hold a scoped rules step)',
+			packageJson: {},
+			expected: true,
+		},
 		{
 			label: 'plain steps in every list',
 			packageJson: gatePackage({ fast: [PLAIN], full: [PLAIN], release: [PLAIN] }),
 			expected: false,
 		},
 		{
-			label: 'scoped: false and heavy only',
+			label:
+				'scoped: false and heavy only, no fast list (the default fast list holds a scoped rules step)',
 			packageJson: gatePackage({ full: [{ ...PLAIN, scoped: false, heavy: true }] }),
-			expected: false,
+			expected: true,
 		},
 		{
 			label: 'a scoped step in fast',

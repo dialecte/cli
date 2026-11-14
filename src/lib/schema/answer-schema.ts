@@ -5,7 +5,7 @@ import { describeElement } from './describe-element.ts'
 import { heldDeclarationIds } from './resolve-declaration.ts'
 import { SUGGESTION_LIMIT } from './schema.constants.ts'
 
-import type { CommandOutput } from '../command-output.types.ts'
+import type { LookupCommandOutput } from '../command-output.types.ts'
 import type {
 	AttributeDescription,
 	DeclarationDescription,
@@ -29,7 +29,7 @@ export function answerSchema(params: {
 	/** A parent (`--under`): answers the declaration(s) the tag has there. */
 	under?: string | undefined
 	json: boolean
-}): CommandOutput {
+}): LookupCommandOutput {
 	const { loaded, tagName, under } = params
 	const answers = loaded.dialectes.flatMap(
 		(dialecte) => answerOf({ dialecte, tagName, under }) ?? [],

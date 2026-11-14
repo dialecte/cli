@@ -16,7 +16,6 @@ import {
 import { RELEASE_RECORD_MODE } from '../gate-records/gate-records.constants.ts'
 import { readGateRecords, readReleaseRecord } from '../gate-records/gate-records.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
-import { resolveConfiguredBase } from '../gate/gate-base.ts'
 import { resolveGateSteps } from '../gate/gate-config.ts'
 
 import type {
@@ -26,21 +25,25 @@ import type {
 	RecordOrigin,
 	RecordedStep,
 } from '../gate-records/gate-records.types.ts'
+import type { UsedGateBase } from '../gate/gate-base.types.ts'
 import type { GateStep } from '../gate/gate-config.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
+import type { Refusal } from '../refusal.types.ts'
 import type { AnsweringGateRecords, FullGateRecords } from './contrib.types.ts'
 
 /**
  * The green gate records whose key is the one a gate would have now: `gate --full`'s, then `gate --release`'s when its
  * list covers full; in each the worktree's own first, then the store's of any worktree, newest first. A gate that
- * failed answers no step, even one it passed.
+ * failed answers no step, even one it passed. `base` is the gate base the run resolved once
+ * (`resolveConfiguredBase`).
  */
 export function readFullGateRecords(params: {
 	root: string
 	packageJson: PackageJson
+	/** The run's gate base: undefined when no gate list holds a scoped step, a refusal for a refused base branch. */
+	base: UsedGateBase | Refusal | undefined
 }): FullGateRecords {
-	const { root, packageJson } = params
-	const base = resolveConfiguredBase({ root, packageJson })
+	const { root, packageJson, base } = params
 	// a refused gate base (a set dialecte.baseBranch naming no branch): no record answers, the steps run
 	if (base !== undefined && 'refusal' in base) return { sources: [] }
 	const hashes = readModeCommandHashes({ root, packageJson, gateBase: base?.commit })
