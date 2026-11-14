@@ -16,7 +16,7 @@ const MANY_SOURCES = Array.from({ length: 80 }, (_, index) => ({
 	files: `sha256:${index}`,
 }))
 
-describe('reads: a re-check giving 80 sources → the file holds them all, the rechecked line is cut to fit (R1-3)', () => {
+describe('reads: a re-check giving 80 sources → the file holds them all, the rechecked line is cut to fit', () => {
 	for (const readName of READ_NAMES)
 		it(`read by ${readName} → no throw, the new sources written, one rechecked line under 4,096 bytes with cut: true`, () => {
 			const folder = temporaryFolder('facts-read-rechecked-cut-')

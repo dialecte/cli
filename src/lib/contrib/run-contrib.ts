@@ -4,11 +4,13 @@
  * runs them, and so does a rehearsal in its scratch clone (its record goes to the repository's store, marked as a
  * rehearsal's).
  *
- * The rows, in order: `rules` on the files changed against HEAD (recorded as `dialecte rules` records it), the
- * package's `dialecte.contrib.steps` (else the docs build and the type bench) run as the gate runs its steps,
- * `release` (no dependency named by a local folder), then `mutation`, read from the mutation store now and never
- * recorded (only when the package declares a mutation scope). A package step a green `gate --full` record of this
- * tree and install passed with the same name and command is not run again.
+ * The rows, in order: `rules` on the files changed against HEAD (recorded as `dialecte rules` records it), judged
+ * against the gate base (`resolveConfiguredBase`; a rehearsal's against the last merge lot's tip, else the base its
+ * repository resolves): an error of a quality rule on a line the base already holds is a warning, `(not added by
+ * this change)`. Then the package's `dialecte.contrib.steps` (else the docs build and the type bench) run as the
+ * gate runs its steps, `release` (no dependency named by a local folder), then `mutation`, read from the mutation
+ * store now and never recorded (only when the package declares a mutation scope). A package step a green
+ * `gate --full` record of this tree and install passed with the same name and command is not run again.
  *
  * The run is recorded in the worktree's git folder (`dialecte-gate-contrib.json`) and in the repository's store of
  * records by tree, keyed by the tree, the install, the steps, the cli and HEAD (the rules row reads the files changed
@@ -22,6 +24,7 @@ import { computeCheckKey } from '../gate-records/check-key.ts'
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { recordCheckedRun, renderReuseLine, reusedResults } from '../gate-records/record-reuse.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
+import { resolveConfiguredBase } from '../gate/gate-base.ts'
 import {
 	GATE_STATE_CHANGED_LINE,
 	STEP_DETAIL_INDENT,
@@ -88,6 +91,12 @@ export async function runContrib(params: {
 	live?: LiveOutput
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
+	/**
+	 * The commit the rules row judges against: an error of a quality rule on a line it already holds is a warning
+	 * (`(not added by this change)`). A rehearsal passes the base its repository resolves; `null`: no base, every
+	 * error stays one. Without it, the row takes the scoped gate step's base (none when the package has no scoped step).
+	 */
+	rulesBase?: string | null
 	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
 	warn?: (line: string) => void
 }): Promise<CommandResult> {
@@ -137,7 +146,7 @@ export async function runContrib(params: {
 				root: cwd,
 				steps,
 				packageJson,
-				gate: reusable ? readFullGateRecords({ root: cwd, packageJson }) : undefined,
+				...rowBasesOf({ root: cwd, packageJson, rulesBase: params.rulesBase, reusable }),
 				progress,
 				showLive,
 				beforeRelease: showAbsentLive,
@@ -256,6 +265,8 @@ async function runRows(params: {
 	root: string
 	steps: readonly ContribStep[]
 	packageJson: PackageJson
+	/** The commit the rules row judges against; undefined: no base, every error stays one. */
+	rulesBase: string | undefined
 	/** The current `gate --full` records; undefined with `--no-reuse`. */
 	gate: FullGateRecords | undefined
 	progress: StepProgress | undefined
@@ -287,7 +298,8 @@ async function runRows(params: {
 			if (isReleaseRow(step)) params.beforeRelease()
 			const running = progress?.start({ name: step.name, detail: `dialecte ${step.builtin}` })
 			const finishPart = recorder.startPart({ name: step.name, heavy: false })
-			const result = step.builtin === 'rules' ? rulesResult(root) : releaseResult(root)
+			const base = params.rulesBase
+			const result = step.builtin === 'rules' ? rulesResult({ root, base }) : releaseResult(root)
 			durations.set(result, finishPart())
 			results.push(result)
 			if (running) showLive({ result, finish: running.finish })
@@ -359,9 +371,36 @@ function unwiredRows(params: {
 	})
 }
 
-/** The rules row: the code rules on the files changed against HEAD, recorded as `dialecte rules` records them. */
-function rulesResult(root: string): StepResult {
-	const check = checkRules({ root, givenFiles: [] })
+/**
+ * What the rows read of the gate base, resolved once (`resolveConfiguredBase`): the commit the rules row judges
+ * against (`rulesBase` when given, none when it is `null`, else the scoped gate step's base; none without a scoped
+ * step or with a refused base branch) and, unless `--no-reuse`, the `gate --full` records read with that same base.
+ */
+function rowBasesOf(params: {
+	root: string
+	packageJson: PackageJson
+	rulesBase: string | null | undefined
+	reusable: boolean
+}): Pick<Parameters<typeof runRows>[0], 'rulesBase' | 'gate'> {
+	const { root, packageJson } = params
+	const base = resolveConfiguredBase({ root, packageJson })
+	const configured = base === undefined || 'refusal' in base ? undefined : base.commit
+	return {
+		rulesBase: params.rulesBase === null ? undefined : (params.rulesBase ?? configured),
+		gate: params.reusable ? readFullGateRecords({ root, packageJson, base }) : undefined,
+	}
+}
+
+/**
+ * The rules row: the code rules on the files changed against HEAD, recorded as `dialecte rules` records them; with
+ * `base`, an error of a quality rule on a line the base already holds is a warning.
+ */
+function rulesResult(params: { root: string; base: string | undefined }): StepResult {
+	const check = checkRules({
+		root: params.root,
+		givenFiles: [],
+		...(params.base !== undefined && { base: params.base }),
+	})
 	const errors = check.findings.filter((finding) => finding.severity === 'error')
 	const warnings = check.findings.filter((finding) => finding.severity === 'warning')
 	return {

@@ -18,15 +18,18 @@ import type {
 
 const NOW = new Date('2026-11-11T10:00:00.000Z')
 
-/** One row of the reuse rule (D11): the key's current fact, what the check says, the effort asked, the result. */
-type ReuseRow = {
+/** The current fact of the key, what is done to it and to its check, the effort asked. */
+type ReuseSetup = {
 	/** The current fact; none when the key holds no fact. */
 	draft?: FactDraft
 	/** The state the fact's file is rewritten to after its record. */
 	storedState?: FactStoredState
 	check?: CheckOutcome
 	asked: FactEffort
-	expected: 'answer' | 'candidate' | 'neither'
+}
+
+/** One row of a reuse case: its setup, and the view state and reason the answer or candidate says. */
+type ReuseRow = ReuseSetup & {
 	/** The state the view of the answer or candidate says (`valid` when left out). */
 	viewState?: FactViewState
 	/** The reason the view carries (none when left out). */
@@ -35,39 +38,64 @@ type ReuseRow = {
 
 const OUTSIDE_SOURCES = [{ kind: 'outside', url: 'https://example.com' }]
 
+/** Records the current fact of a setup, runs the reuse rule, and builds the view the current fact would show. */
+function runReuse(parameters: { setup: ReuseSetup; viewState?: FactViewState; reason?: string }) {
+	const { setup, viewState, reason } = parameters
+	const folder = temporaryFolder('facts-reuse-')
+	const draft = setup.draft ?? factDraft()
+	if (setup.draft !== undefined) {
+		recordFact({ folder, draft: setup.draft, now: () => NOW })
+		if (setup.storedState !== undefined)
+			writeFactFile({
+				folder,
+				fact: { ...readFactFile({ folder, id: 'F-0001' }), state: setup.storedState },
+			})
+	}
+	const check = setup.check === undefined ? undefined : () => setup.check as CheckOutcome
+
+	const stored = setup.draft === undefined ? undefined : readFactFile({ folder, id: 'F-0001' })
+	const view = {
+		id: 'F-0001',
+		path: join(folder, 'F-0001.json'),
+		fact: stored,
+		state: viewState ?? 'valid',
+		current: true,
+		...(reason === undefined ? {} : { reason }),
+	}
+	const result = reuseFact({ folder, key: keyOfDraft(draft), effort: setup.asked, check })
+	return { result, view, stored }
+}
+
 describe('reuseFact: the current fact answers, is a candidate, or is neither (D11)', () => {
-	const rows: Record<string, ReuseRow> = {
+	const answerRows: Record<string, ReuseSetup> = {
 		'valid high, asked medium → the answer': {
 			draft: factDraft({ effort: 'high' }),
 			asked: 'medium',
-			expected: 'answer',
 		},
 		'valid medium, asked medium → the answer': {
 			draft: factDraft({ effort: 'medium' }),
 			asked: 'medium',
-			expected: 'answer',
-		},
-		'valid medium, asked high → no answer, a candidate': {
-			draft: factDraft({ effort: 'medium' }),
-			asked: 'high',
-			expected: 'candidate',
-			viewState: 'valid',
 		},
 		'a valid person fact (low effort), asked high → the answer': {
 			draft: factDraft({ source: 'person', sources: [], effort: 'low' }),
 			asked: 'high',
-			expected: 'answer',
 		},
 		'a valid person fact with unchecked: true, asked high → the answer (D11b)': {
 			draft: factDraft({ source: 'person', sources: [], unchecked: true, effort: 'low' }),
 			asked: 'high',
-			expected: 'answer',
+		},
+	}
+
+	const candidateRows: Record<string, ReuseRow> = {
+		'valid medium, asked high → no answer, a candidate': {
+			draft: factDraft({ effort: 'medium' }),
+			asked: 'high',
+			viewState: 'valid',
 		},
 		'stale → a candidate': {
 			draft: factDraft({ effort: 'high' }),
 			storedState: 'stale',
 			asked: 'low',
-			expected: 'candidate',
 			viewState: 'stale',
 		},
 		'the check says unverifiable → a candidate whose view says unverifiable and why': {
@@ -77,51 +105,47 @@ describe('reuseFact: the current fact answers, is a candidate, or is neither (D1
 				reason: 'standard example-0000 cannot be compared: fix the root',
 			},
 			asked: 'low',
-			expected: 'candidate',
 			viewState: 'unverifiable',
 			reason: 'standard example-0000 cannot be compared: fix the root',
 		},
 		'outside, unchecked → a candidate': {
 			draft: factDraft({ source: 'outside', sources: OUTSIDE_SOURCES, effort: 'high' }),
 			asked: 'low',
-			expected: 'candidate',
 			viewState: 'unchecked',
 		},
+	}
+
+	const neitherRows: Record<string, ReuseSetup> = {
 		'forgotten → neither': {
 			draft: factDraft({ effort: 'high' }),
 			storedState: 'forgotten',
 			asked: 'low',
-			expected: 'neither',
 		},
-		'no fact → neither': { asked: 'low', expected: 'neither' },
+		'no fact → neither': { asked: 'low' },
 	}
 
-	for (const [name, row] of Object.entries(rows))
+	for (const [name, row] of Object.entries(answerRows))
 		it(name, () => {
-			const folder = temporaryFolder('facts-reuse-')
-			const draft = row.draft ?? factDraft()
-			if (row.draft !== undefined) {
-				recordFact({ folder, draft: row.draft, now: () => NOW })
-				if (row.storedState !== undefined)
-					writeFactFile({
-						folder,
-						fact: { ...readFactFile({ folder, id: 'F-0001' }), state: row.storedState },
-					})
-			}
-			const check = row.check === undefined ? undefined : () => row.check as CheckOutcome
+			const { result, view } = runReuse({ setup: row })
 
-			const stored = row.draft === undefined ? undefined : readFactFile({ folder, id: 'F-0001' })
-			const view = {
-				id: 'F-0001',
-				path: join(folder, 'F-0001.json'),
-				fact: stored,
-				state: row.viewState ?? 'valid',
-				current: true,
-				...(row.reason === undefined ? {} : { reason: row.reason }),
-			}
-			expect(reuseFact({ folder, key: keyOfDraft(draft), effort: row.asked, check })).toEqual({
-				answer: row.expected === 'answer' ? view : undefined,
-				candidates: row.expected === 'candidate' && stored !== undefined ? [view] : [],
+			expect(result).toEqual({ answer: view, candidates: [] })
+		})
+
+	for (const [name, row] of Object.entries(candidateRows))
+		it(name, () => {
+			const { result, view } = runReuse({
+				setup: row,
+				viewState: row.viewState,
+				reason: row.reason,
 			})
+
+			expect(result).toEqual({ answer: undefined, candidates: [view] })
+		})
+
+	for (const [name, row] of Object.entries(neitherRows))
+		it(name, () => {
+			const { result } = runReuse({ setup: row })
+
+			expect(result).toEqual({ answer: undefined, candidates: [] })
 		})
 })

@@ -17,7 +17,7 @@ import type { FactDraft } from './facts.types.ts'
 const NOW = new Date('2026-11-11T10:00:00.000Z')
 const SECOND_ANSWER = { verdict: 'no', value: null, text: 'D is optional in A.' }
 
-describe('recordFact: a check that says stale (R1-1, D10b)', () => {
+describe('recordFact: a check that says stale', () => {
 	it('current valid standard medium, the check says stale, new standard medium → replaced: the old file stale and superseded, its history created, stale, superseded', () => {
 		const folder = temporaryFolder('facts-stale-by-check-')
 		const draft = factDraft()
@@ -56,7 +56,7 @@ describe('recordFact: a check that says stale (R1-1, D10b)', () => {
 	})
 })
 
-describe('recordFact: a history line that would pass 4,096 bytes is cut, never refused (R1-3)', () => {
+describe('recordFact: a history line that would pass 4,096 bytes is cut, never refused', () => {
 	const rows: Record<string, { lot?: string; ask?: string; member: 'lot' | 'ask' }> = {
 		'a 5,000-character ask': { ask: 'q'.repeat(5000), member: 'ask' },
 		'a 5,000-character lot': { lot: 'l'.repeat(5000), member: 'lot' },
@@ -80,7 +80,7 @@ describe('recordFact: a history line that would pass 4,096 bytes is cut, never r
 		})
 })
 
-describe('updateFact: it replaces the copy on disk, not an earlier snapshot (R1-5)', () => {
+describe('updateFact: it replaces the copy on disk, not an earlier snapshot', () => {
 	const context = { at: NOW.toISOString(), lot: null, ask: null }
 
 	it('the fact forgotten on disk after it was read, then marked superseded from the earlier copy → the file keeps forgotten and gains supersededBy', () => {
@@ -119,7 +119,7 @@ describe('updateFact: it replaces the copy on disk, not an earlier snapshot (R1-
 	})
 })
 
-describe("recordFact: a fact file's members follow the ledger's order (R1-10)", () => {
+describe("recordFact: a fact file's members follow the ledger's order", () => {
 	const SHAPE = [
 		'id',
 		'key',

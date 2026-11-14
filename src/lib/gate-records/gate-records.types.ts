@@ -4,6 +4,7 @@
  */
 import type { UsedGateBase } from '../gate/gate-base.types.ts'
 import type { GateMode, StepCounts, StepSelection, StepStatus } from '../gate/gate.types.ts'
+import type { AllowedCounts } from '../rules/allow-comments.types.ts'
 import type { DuplicateCaseId, JudgedCase } from '../tdd/tdd.types.ts'
 import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
 
@@ -104,6 +105,8 @@ export type RulesRecord = {
 	files: string[]
 	errors: number
 	warnings: number
+	/** The findings the opt-outs silenced, per rule (as `RulesCheck.allowed`). */
+	allowed?: AllowedCounts
 }
 
 /** `✓` passed, `!` to look at (skipped, not run, from an older tree, only nits open), `✗` failed. */

@@ -97,6 +97,9 @@ export type StepRun = {
 	declaredFailing?: string[]
 }
 
+/** A step's shell command, or why a self step's could not be built (the message of the resolver's error). */
+export type StepShellCommand = { command: string } | { failure: string }
+
 /** The serial rerun of a failed vitest test step, on the files its first run named. */
 export type StepRerun = {
 	/** The failing files the first run named, in its order; `[]` when it named none (the whole step was rerun). */

@@ -9,7 +9,9 @@ import { join } from 'node:path'
 import { runGate } from '../src/commands/gate.ts'
 import { computeCheckKey, gateCommandHash } from '../src/lib/gate-records/check-key.ts'
 import { recordGate } from '../src/lib/gate-records/gate-records.ts'
+import { resolveConfiguredBase } from '../src/lib/gate/gate-base.ts'
 import { DEFAULT_GATE_STEPS } from '../src/lib/gate/gate-config.constants.ts'
+import { readPackageJson } from '../src/lib/package-json.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { GATE_OWN_STEPS, STAND_IN_TEST_COUNT } from './rule-gaps-unwired.constants.ts'
 import { createScratchRepository } from './scratch-repository.ts'
@@ -65,7 +67,10 @@ export function stepLinesOf(output: string): string[] {
 export function seedPreUnwiredFullRecord(params: { root: string; skillsWired: boolean }): void {
 	const { root } = params
 	const steps = DEFAULT_GATE_STEPS.full
-	const key = computeCheckKey({ root, commandHash: gateCommandHash({ root, steps }) })
+	// keyed as the live gate keys it: the base a list holding a scoped step resolves enters the hash
+	const base = resolveConfiguredBase({ root, packageJson: readPackageJson(root) })
+	const gateBase = base !== undefined && 'commit' in base ? base.commit : undefined
+	const key = computeCheckKey({ root, commandHash: gateCommandHash({ root, steps, gateBase }) })
 	const results = steps.map(function resultOf(step): StepResult {
 		if (step.name === 'skills' && !params.skillsWired)
 			return {

@@ -141,8 +141,12 @@ function linkedSlicesOf(params: {
 	const linked: StandardRankedSlice[] = []
 	for (const ranked of direct) {
 		const searched = standards[ranked.standard]
-		const file = filesOf({ files, searched, standard: ranked.standard }).get(ranked.slice.file)
-		const unitOfTarget = targetsOf({ targets, searched, standard: ranked.standard })
+		// each standard's lookups are built once per call, the first time one of its slices is linked
+		const filesById = files.get(ranked.standard) ?? filesOf(searched)
+		const unitOfTarget = targets.get(ranked.standard) ?? targetsOf(searched)
+		files.set(ranked.standard, filesById)
+		targets.set(ranked.standard, unitOfTarget)
+		const file = filesById.get(ranked.slice.file)
 		for (const reference of file?.crossReferences ?? []) {
 			if (linked.length === limit) return linked
 			if (!reference.resolved) continue
@@ -180,31 +184,17 @@ function linkedSliceOf(params: { searched: StandardSearched; unit: number }): St
 }
 
 /** The unit each cross-reference target of a standard names (`<file id>#<target>`), the first one. */
-function targetsOf(params: {
-	targets: Map<number, Map<string, number>>
-	searched: StandardSearched
-	standard: number
-}): Map<string, number> {
-	const known = params.targets.get(params.standard)
-	if (known) return known
+function targetsOf(searched: StandardSearched): Map<string, number> {
 	const unitOfTarget = new Map<string, number>()
-	for (const [index, unit] of params.searched.index.units.entries()) {
+	for (const [index, unit] of searched.index.units.entries()) {
 		if (unit.target === null) continue
 		const key = `${unit.fileId}#${unit.target}`
 		if (!unitOfTarget.has(key)) unitOfTarget.set(key, index)
 	}
-	params.targets.set(params.standard, unitOfTarget)
 	return unitOfTarget
 }
 
-function filesOf(params: {
-	files: Map<number, Map<string, StandardFileIndex>>
-	searched: StandardSearched
-	standard: number
-}): Map<string, StandardFileIndex> {
-	const known = params.files.get(params.standard)
-	if (known) return known
-	const byId = new Map(params.searched.index.files.map((file) => [file.fileId, file]))
-	params.files.set(params.standard, byId)
-	return byId
+/** The standard's file indexes by file id. */
+function filesOf(searched: StandardSearched): Map<string, StandardFileIndex> {
+	return new Map(searched.index.files.map((file) => [file.fileId, file]))
 }
