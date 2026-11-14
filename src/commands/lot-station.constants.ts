@@ -8,8 +8,9 @@ export const STATION_START_REFUSED_STATES: readonly LotStateName[] = [
 ]
 
 /**
- * The fields a retry or an `--event` repeat does not compare: the envelope the cli makes, the cli-made `run`, and
- * `started` of an end recorded alone. Every other field is host-given.
+ * The fields a retry or an `--event` repeat does not compare: the envelope the cli makes, the cli-made `run`,
+ * `started` of an end recorded alone, and the state hash the cli reads at an end (D29). Every other field is
+ * host-given.
  */
 export const NOT_HOST_GIVEN_FIELDS: readonly string[] = [
 	'schema',
@@ -23,6 +24,7 @@ export const NOT_HOST_GIVEN_FIELDS: readonly string[] = [
 	'by',
 	'run',
 	'started',
+	'stateHash',
 ]
 
 /** The fields that pair an end without `--run` with its start, and a retry with the end it repeats. */

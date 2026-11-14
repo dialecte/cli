@@ -75,7 +75,12 @@ describe('dialecte lot - the review rounds verbs', { timeout: 60_000 }, () => {
 		const result = runLot({ cwd: root, argv: ['snapshot', folder, '--round', '1'] })
 
 		expect(result.exitCode).toBe(0)
-		expect(readdirSync(folder).sort()).toEqual(['round-1', 'round-1.base', 'round-1.deleted'])
+		expect(readdirSync(folder).sort()).toEqual([
+			'round-1',
+			'round-1.base',
+			'round-1.deleted',
+			'round-1.state',
+		])
 		expect(readFileSync(join(folder, 'round-1', 'a.ts'), 'utf8')).toBe('b\n')
 	})
 

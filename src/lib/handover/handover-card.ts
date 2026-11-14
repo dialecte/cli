@@ -19,6 +19,7 @@ import {
 	buildCardGateLines,
 	buildContribLines,
 	buildMutationLines,
+	buildLateFixesLine,
 	buildReviewLine,
 	sleptLineOf,
 } from '../gate-records/card-gates.ts'
@@ -211,6 +212,9 @@ export function buildHandoverCard(params: {
 	const pending = !params.abandoned && !params.done
 	const processes = pending ? params.processes : undefined
 	const processesLine = processes && strayProcessesLineOf(processes)
+	const lateFixesLine = pending
+		? buildLateFixesLine({ folder: params.folder, root, stateHash })
+		: undefined
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -223,7 +227,9 @@ export function buildHandoverCard(params: {
 		// a committed hand-over whose run spanned a sleep says so
 		...(params.done ? sleptRunLines(params.folder) : []),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
-		buildReviewLine(params.folder),
+		buildReviewLine({ folder: params.folder, release: params.release }),
+		// changes after the last snapshot, on a card still to run: nothing late, no line
+		...(lateFixesLine ? [lateFixesLine] : []),
 		// a committed card shows the state recorded on the lot, never the runner's environment
 		params.done
 			? readRecordedStandardLine({ folder: params.folder })

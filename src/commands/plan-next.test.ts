@@ -361,6 +361,7 @@ describe('plan next --json: the object of section 9', () => {
 			'entries',
 			'heavy',
 			'held',
+			'landed',
 			'plan',
 			'proposals',
 			'repositories',

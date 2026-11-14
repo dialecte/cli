@@ -1,0 +1,13 @@
+# Notes for agents
+
+This repository holds the bay editor. Read the README before changing anything, and keep every change small.
+
+## Rules
+
+- Run the tests before a commit.
+- Never edit a generated file by hand.
+- Ask before adding a dependency.
+
+<!-- dialecte-skills:session-check -->
+At the start of a session, run `npx --no-install @dialecte/cli doctor --brief`: nothing printed means the Dialecte skills are in sync; otherwise each line is a problem with its fix.
+<!-- /dialecte-skills:session-check -->

@@ -129,7 +129,7 @@ export function startStep(params: StartStepParams): StepHandle {
 				throwaway: place.throwaway,
 				...(ending.outcome === undefined ? { exit: ending.exit } : { outcome: ending.outcome }),
 				durationMs: Date.now() - startedAt,
-				stateHash: ending.stateHash,
+				stateHash: typeof ending.stateHash === 'function' ? ending.stateHash() : ending.stateHash,
 				...(ending.reuse === undefined ? {} : { reuse: ending.reuse }),
 			}
 			writeStepEvent({ file: place.file, event, parts: ending.parts })

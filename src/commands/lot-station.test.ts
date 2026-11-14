@@ -15,9 +15,10 @@ import {
 	recordedAfter,
 	station,
 } from '../../test/lot-station-workspace.ts'
-import { writeFiles } from '../../test/scratch-repository.ts'
+import { initializeRepository, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { pairRuns } from '../lib/events/pair-runs.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { AGENT_SKILL_FOLDERS } from '../lib/skills/sync-skills.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -344,6 +345,48 @@ describe('lot station end: pairing', { timeout: STORE_CASE_TIMEOUT }, () => {
 				]),
 			),
 		).toEqual({ exitCode: 2, hasError: true, eventCount: 0 })
+	})
+})
+
+describe('lot station end: the state hash (D29)', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('D29: the worktree is a git repository → the end carries the hash of its state, the start none', () => {
+		const lot = createStationLot()
+		initializeRepository({ root: lot.worktree, files: { 'src/a.ts': 'export const a = 1\n' } })
+		writeFiles({ root: lot.worktree, files: { 'src/b.ts': 'export const b = 2\n' } })
+
+		const recording = recordedAfter(lot, [
+			() => station(lot, ['start', STATION]),
+			() => station(lot, ['end', STATION]),
+		])
+
+		expect({
+			exits: recording.answers.map((answer) => answer.exitCode),
+			startHash: 'stateHash' in (recording.events[0] ?? {}),
+			endHash: recording.events[1]?.stateHash,
+		}).toEqual({
+			exits: [0, 0],
+			startHash: false,
+			endHash: computeStateHash(lot.worktree),
+		})
+	})
+
+	it('D29: the worktree cannot be read (no folder) → the end is recorded without a stateHash, exit 0', () => {
+		const lot = createStationLot()
+
+		const recording = recordedAfter(lot, [
+			() => station(lot, ['start', STATION]),
+			() => station(lot, ['end', STATION]),
+		])
+
+		expect({
+			exits: recording.answers.map((answer) => answer.exitCode),
+			kinds: recording.events.map((event) => event.kind),
+			endHasHash: 'stateHash' in (recording.events[1] ?? {}),
+		}).toEqual({
+			exits: [0, 0],
+			kinds: ['station.start', 'station.end'],
+			endHasHash: false,
+		})
 	})
 })
 

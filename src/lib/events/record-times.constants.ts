@@ -21,3 +21,6 @@ export const TDD_ENTRY_LIMIT = 200
 
 /** The extension of a mutation run file. */
 export const RUN_FILE_EXTENSION = '.json'
+
+/** The status of a gate record's step that failed: the one status that makes the record not green. */
+export const FAILED_STEP_STATUS = 'failed'

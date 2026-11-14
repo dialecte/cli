@@ -105,6 +105,8 @@ export function writeStoreLot(params: {
 	worktree?: string
 	/** The identity's feature; the fixed one of the records when left out. */
 	feature?: string
+	/** The identity's base; the fixed one of the records when left out. */
+	base?: { ref: string; commit: string }
 }): string {
 	const { workspace, name } = params
 	const simulated = params.simulated ?? false
@@ -123,6 +125,7 @@ export function writeStoreLot(params: {
 			...identityOf({ name }),
 			...(params.repository !== undefined && { repository: params.repository }),
 			...(params.feature !== undefined && { feature: params.feature }),
+			...(params.base !== undefined && { base: params.base }),
 			branch: params.branch ?? `feat/${name}`,
 			simulated,
 			worktree: simulated

@@ -35,7 +35,7 @@ import { renderAbsentDerivedLines, validateGateConfig } from '../gate/gate-confi
 import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { findUnwiredSteps } from '../gate/unwired-steps.ts'
-import { currentBranchOf, readGit } from '../git.ts'
+import { currentBranchOf, readGit, readHeadOrNone } from '../git.ts'
 import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { pendingVerdict } from '../mutation/pending-verdict.ts'
@@ -252,11 +252,7 @@ function refuseRepository(root: string): string | undefined {
 	} catch {
 		return CONTRIB_NO_REPOSITORY.replace('{root}', root)
 	}
-	try {
-		readGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD'] })
-	} catch {
-		return CONTRIB_NO_COMMIT.replace('{root}', root)
-	}
+	if (readHeadOrNone(root) === undefined) return CONTRIB_NO_COMMIT.replace('{root}', root)
 	return undefined
 }
 

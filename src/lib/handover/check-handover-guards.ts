@@ -2,7 +2,8 @@
  * The guards `handover run` checks before its first commit, each announced on one line with its result
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
  * the merge lots (none in progress, trees recorded, resolutions as reviewed), the target branch's tip held by the
- * hand-over (exit 2 when it moved), no process left running in the worktree (exit 2), an empty index, the files
+ * hand-over (exit 2 when it moved), no process left running in the worktree (exit 2), no late fix nobody verified
+ * (exit 2), an empty index, the files
  * against the reviewed snapshot, the deleted files, files outside the lots,
  * plan tags (a contributor's) or standard citations in the lots' files and messages, a contributor's green
  * `dialecte contrib` of the tree the lots leave, and what the package still owes its mutation runs.
@@ -13,8 +14,10 @@ import { join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { isPresent } from '../file-system.ts'
+import { lateFixesDetailOf } from '../gate-records/card-gates.ts'
 import { isGreenRecord, originOfRecord } from '../gate-records/check-store.ts'
-import { computeStateTree } from '../gate-records/state-hash.ts'
+import { LATE_FIXES_LINE_NAME } from '../gate-records/gate-records.constants.ts'
+import { computeStateHash, computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
 import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
@@ -23,6 +26,7 @@ import { readPackageJson } from '../package-json.ts'
 import { textOf } from '../print/print.ts'
 import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
+import { readLateFixes } from '../review-rounds/late-fixes.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
 import { shellQuote } from '../shell-quote.ts'
@@ -44,6 +48,7 @@ import {
 	TARGET_GUARD_NAME,
 	TARGET_HELD_DETAIL,
 	TARGET_MERGE_NOTE,
+	VERIFY_GUARD_NAME,
 } from './handover.constants.ts'
 import { checkedTree, mergedBranchesOf } from './lot-trees.ts'
 import { commitOf, readMergeMarker, removeMergeMarker } from './merge-lot.ts'
@@ -229,6 +234,16 @@ export function checkHandoverGuards(params: {
 			name: PROCESSES_GUARD_NAME,
 			check: function nothingLeftRunning(): GuardVerdict {
 				return checkProcesses({ root, rehearsal: params.rehearsal ?? false })
+			},
+		},
+		{
+			name: VERIFY_GUARD_NAME,
+			check: function lateFixesVerified(): GuardVerdict {
+				return checkLateFixes({
+					root,
+					folder: handover.folder,
+					rehearsal: params.rehearsal ?? false,
+				})
 			},
 		},
 		{
@@ -485,6 +500,28 @@ function checkProcesses(params: { root: string; rehearsal: boolean }): GuardVerd
 	return params.rehearsal
 		? { ok: true, warning: true, detail: line.detail }
 		: { ok: false, exitCode: 2, detail: line.detail }
+}
+
+/**
+ * The changes of the lot's tree after its last snapshot (33L1 6b): none or verified by `lot verify` of the current
+ * tree pass; unverified ones refuse the run (exit 2), a rehearsal goes on with `!`; a last snapshot with no state
+ * (an older cli) is a warning, never a refusal (Q15).
+ */
+function checkLateFixes(params: {
+	root: string
+	folder: string
+	rehearsal: boolean
+}): GuardVerdict {
+	const lateFixes = readLateFixes({
+		folder: params.folder,
+		root: params.root,
+		stateHash: computeStateHash(params.root),
+	})
+	const words = lateFixesDetailOf({ lateFixes })
+	const detail = lateFixes.kind === 'none' ? words : `${LATE_FIXES_LINE_NAME} ${words}`
+	if (lateFixes.kind === 'not-checked') return { ok: true, warning: true, detail }
+	if (lateFixes.kind !== 'unverified') return { ok: true, detail }
+	return params.rehearsal ? { ok: true, warning: true, detail } : { ok: false, exitCode: 2, detail }
 }
 
 /**

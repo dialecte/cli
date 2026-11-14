@@ -8,11 +8,10 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts'
 import { gitBlobIds } from '../handover/committed-bytes.ts'
-import { readHygieneBaseline } from '../worktree/hygiene.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
+import { resolveTddBase } from './tdd-base.ts'
 import {
 	DELETED_PRODUCTION_FILE,
 	FIXTURE_FOLDER_PATTERN,
@@ -156,11 +155,8 @@ function ledgerPath(root: string): string {
 }
 
 /**
- * The commit the change is measured from. By default HEAD: the lot is the uncommitted work, whatever
- * earlier lots the branch holds. `ref` (`--base <ref>`): where HEAD left that ref, the whole-branch view.
- * `wholeBranch` (the gate's `--full`, before a merge): the HEAD `worktree add` recorded, else where HEAD
- * left the base branch (`findBaseBranchRef`), else HEAD when no base branch is found. Why there is none: a
- * repository without a commit, an unknown ref, a set `dialecte.baseBranch` naming no branch (the resolver's text).
+ * The commit the change is measured from, without where it came from: `resolveTddBase`'s commit (HEAD by default,
+ * `--base`, or the whole-branch base), or why there is none.
  */
 export function resolveBase(params: {
 	root: string
@@ -168,27 +164,8 @@ export function resolveBase(params: {
 	ref?: string
 	wholeBranch?: boolean
 }): string | { failure: string } {
-	const { root } = params
-	const head = tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', 'HEAD'] })?.trim()
-	if (!head)
-		return {
-			failure: `the repository at ${root} has no commit yet: the lot is measured from HEAD, commit a base first`,
-		}
-	if (params.ref !== undefined) {
-		const base =
-			tryReadGit({ root, args: ['merge-base', 'HEAD', params.ref] }) ??
-			tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', params.ref] })
-		return base ? base.trim() : { failure: `--base ${params.ref}: no such commit` }
-	}
-	if (!params.wholeBranch) return head
-	const recorded = readHygieneBaseline(root)?.head
-	if (recorded) return recorded
-	const found = findBaseBranchRef({ root, packageJson: params.packageJson })
-	if ('refusal' in found)
-		// a set dialecte.baseBranch naming no branch is refused, never replaced; nothing found: HEAD, as when the
-		// merge-base fails
-		return params.packageJson.dialecte?.baseBranch === undefined ? head : { failure: found.refusal }
-	return tryReadGit({ root, args: ['merge-base', 'HEAD', found.ref] })?.trim() ?? head
+	const base = resolveTddBase(params)
+	return 'failure' in base ? base : base.commit
 }
 
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */

@@ -14,6 +14,8 @@ import {
 } from '../handover/handover-store-read.ts'
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
+import { BRIEF_EFFORTS } from './brief.constants.ts'
+import { committedElsewhereEntry, isResumedAfterEntry } from './committed-elsewhere.ts'
 import { readIdentity } from './identity.ts'
 import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
@@ -36,6 +38,8 @@ import {
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
+import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
+import type { BriefEffort } from './brief.types.ts'
 import type {
 	CheckedLotState,
 	LotIdentity,
@@ -43,6 +47,7 @@ import type {
 	LotStateInput,
 	LotStateReadParams,
 	SynchronousPause,
+	Transition,
 } from './store.types.ts'
 
 /** The hand-over registry of the repository whose store holds `lotFolder`: beside the store in the git common folder. */
@@ -68,7 +73,8 @@ export function readLotStateInput(params: LotStateReadParams): LotStateInput | u
 /**
  * The lot of a folder read once, its records validated once (`record-checks.ts`): its `lotState` input, or why it is
  * damaged (P2.1) - an identity that does not read, one naming another folder, a record that does not hold - with
- * its identity when that reads. Undefined only when nothing is at the folder.
+ * its identity when that reads. Undefined only when nothing is at the folder. The registry entry is the one naming the
+ * lot folder, else a closed hand-over committed for its worktree and branch outside the folder (`closedElsewhereEntry`).
  */
 export function readCheckedLotState(params: LotStateReadParams): CheckedLotState | undefined {
 	const { lotFolder } = params
@@ -81,13 +87,13 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 		return { damage: RECORD_DAMAGE_REASONS.identityName, identity }
 	const transitions = readTransitions({ lotFolder })
 	const answerFiles = readAnswerFiles({ lotFolder })
-	const registryEntry = entryOfFolder({
-		entries: params.entries ?? readStoreEntries(params.registry),
-		folder: lotFolder,
-	})
+	const entries = params.entries ?? readStoreEntries(params.registry)
 	const abandoned = readAbandonedMarker(lotFolder)
 	// the reader leaves out a marker whose process is gone: row 2 counts only a live run
 	const runMarker = readRunMarker(lotFolder)
+	const registryEntry =
+		entryOfFolder({ entries, folder: lotFolder }) ??
+		closedElsewhereEntry({ entries, identity, lotFolder, transitions, runMarker })
 	const damage =
 		identityDamageOf(identity) ??
 		firstDamageOf(transitions.map(transitionDamageOf)) ??
@@ -107,6 +113,24 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			runMarker,
 		},
 	}
+}
+
+/**
+ * The entry a lot reads `committed` from, files only, when no entry registers its folder: the hand-over committed
+ * for its worktree and branch outside its folder (every such entry committed), whose worktree `lot close` closed.
+ * None when that entry does not hold, or the lot runs or was resumed after it (a live run marker, a later transition).
+ */
+function closedElsewhereEntry(params: {
+	entries: readonly StoreEntry[]
+	identity: LotIdentity
+	lotFolder: string
+	transitions: readonly Transition[]
+	runMarker: HandoverRunMarker | undefined
+}): StoreEntry | undefined {
+	const entry = committedElsewhereEntry(params)
+	if (entry === undefined || entry.closed === undefined || entryDamageOf(entry) !== undefined)
+		return undefined
+	return isResumedAfterEntry({ ...params, entry }) ? undefined : entry
 }
 
 /** The first reason among the checks of a lot's records; undefined when every record holds. */
@@ -256,13 +280,49 @@ function readBriefScope(params: { lotFolder: string }): string[] | undefined {
 	return (scope as string[]).map(normaliseScopeEntry)
 }
 
+/**
+ * The number of steps of the lot's `brief.json` (33L1 D13): at least 1, and 1 when the brief is missing, does not
+ * parse, or its steps are no list or an empty one.
+ */
+export function readBriefStepCount(params: { lotFolder: string }): number {
+	const steps = briefValueOf({ lotFolder: params.lotFolder, field: 'steps' })
+	return Array.isArray(steps) && steps.length > 0 ? steps.length : 1
+}
+
+/**
+ * The effort of a lot for its review-round cap (33L1 D2): the identity's `effort.level`, else the folder's
+ * `brief.json` `effort`, else undefined (a value that is no effort counts as none).
+ */
+// interim until L1b: replaced by effectiveEffort (33L1 rev 8, Q-A)
+export function interimEffortOf(params: {
+	/** The hand-over folder holding `brief.json`. */
+	lotFolder: string
+	/** The identity's effort; undefined when the identity holds none. */
+	identityEffort: LotIdentity['effort'] | undefined
+}): BriefEffort | undefined {
+	return (
+		effortOf(params.identityEffort?.level) ??
+		effortOf(briefValueOf({ lotFolder: params.lotFolder, field: 'effort' }))
+	)
+}
+
+/** The value as an effort; undefined when it is none of `BRIEF_EFFORTS`. */
+function effortOf(value: unknown): BriefEffort | undefined {
+	return BRIEF_EFFORTS.find((effort) => effort === value)
+}
+
 /** The `scope` value of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
 function briefScopeValueOf(params: { lotFolder: string }): unknown {
+	return briefValueOf({ lotFolder: params.lotFolder, field: 'scope' })
+}
+
+/** A field of the lot's `brief.json` as parsed; undefined when the brief is missing or does not parse. */
+function briefValueOf(params: { lotFolder: string; field: string }): unknown {
 	try {
 		const brief: unknown = JSON.parse(
 			readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'),
 		)
-		return (brief as { scope?: unknown } | null)?.scope
+		return (brief as Record<string, unknown> | null)?.[params.field]
 	} catch {
 		return undefined
 	}

@@ -15,7 +15,7 @@ import { basename, join, relative, resolve } from 'node:path'
 
 import { holdsScopedStep } from '../gate/gate-config.ts'
 import { listCommitHookFiles } from '../git-hooks.ts'
-import { readGit } from '../git.ts'
+import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readMachineLists } from '../rules/committed-text.ts'
@@ -60,7 +60,8 @@ export function readInstalledKey(root: string): Pick<CheckKey, 'lockHash' | 'lin
 
 /**
  * The command hash of a gate's steps in the worktree `root` is in: the steps, and HEAD's commit when a step
- * runs only the tests the change affects (which tests those are depends on the diff against HEAD), and the gate
+ * runs only the tests the change affects (which tests those are depends on the diff against HEAD; none in a repository with no
+ * commit, whose gates key no record: `readHeadOrNone`), and the gate
  * base its caller resolved once for the run (it counts only with a scoped step: `hashGateCommand`); it never
  * resolves a base itself.
  */
@@ -74,7 +75,7 @@ export function gateCommandHash(params: {
 	const hash = steps.some((step) => step.changedOnly)
 		? hashGateCommand({
 				steps,
-				base: readGit({ root, args: ['rev-parse', 'HEAD'] }).trim(),
+				base: readHeadOrNone(root),
 				gateBase,
 			})
 		: hashGateCommand({ steps, gateBase })

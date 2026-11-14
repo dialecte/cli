@@ -59,7 +59,7 @@ describe('the map lines of the lot store, S1b', () => {
 })
 
 describe('the usage errors of the review rounds verbs', { timeout: STORE_CASE_TIMEOUT }, () => {
-	const VERBS = ['finding', 'snapshot', 'choice', 'standard', 'delta', 'recap']
+	const VERBS = ['finding', 'snapshot', 'choice', 'standard', 'delta', 'recap', 'verify']
 	for (const verb of VERBS)
 		it(`lot ${verb} with no word → the usage line names <id|folder>, not <folder>, exit 2`, () => {
 			isolateStateFolder()

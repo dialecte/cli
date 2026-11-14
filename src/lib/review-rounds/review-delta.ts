@@ -19,7 +19,7 @@ import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { verbPrefix } from './review-round-verbs.ts'
 import { DELTA_FILE_MARK, NO_FILE, PLAIN_DIFF_OPTIONS } from './review-rounds.constants.ts'
-import { roundNames } from './snapshot-round.ts'
+import { roundNames } from './round-names.ts'
 import { listTreeFiles } from './worktree-state.ts'
 
 import type { PrintedText } from '../print/print.types.ts'

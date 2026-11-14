@@ -14,6 +14,7 @@ import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { HANDOVER_ABANDON_TEXTS } from '../lib/handover/handover.constants.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
+import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { moveLotAside } from '../lib/store/lot-aside.ts'
 import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
@@ -77,6 +78,8 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: 'write' })
 	if ('exitCode' in required) return lotRefusalExit({ lines: required.lines, json })
 	const lotFolder = required.lot
+	const wordRefusal = storedLotByRefusal({ lotFolder, verb: 'stop', by: read.values.get('by') })
+	if (wordRefusal) return lotRefusalExit({ lines: [wordRefusal], json })
 	const registry = registryOfLotFolder(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry })
 	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })

@@ -1,3 +1,4 @@
+import type { NextCheckName } from './next-station.types.ts'
 import type {
 	LotStateName,
 	RefusalRule,
@@ -18,6 +19,8 @@ export const STORE_FILES: StoreFileNames = {
 	// reserved: `lot export` adds them to a copy (the lot's `cards.log` lines, its registry entry)
 	cardsLog: 'cards.log',
 	registry: 'registry.json',
+	// `lot verify` appends the late fixes' verifications here (33L1 D19)
+	verify: 'verify.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */
@@ -136,6 +139,28 @@ export const NEXT_COMMANDS = {
 	stop: 'dialecte lot stop {name} --reason <text>',
 	close: 'dialecte lot close {handover}',
 } as const
+
+/**
+ * The commands of the next station `lot status` names for a real working lot (33L1 D14): `{name}` is the lot's full
+ * name, `{station}` a station, `{step}`, `{round}` numbers, `{run}` a run id.
+ */
+export const STATION_NEXT_COMMANDS = {
+	start: 'dialecte lot station {name} start {station}',
+	step: ' --step {step}',
+	round: ' --round {round}',
+	end: 'dialecte lot station {name} end {station} --run {run}',
+	snapshot: 'dialecte lot snapshot {name} --round {round}',
+	beyondCap: 'dialecte lot snapshot {name} --round {round} --beyond-cap --by <who> --reason <text>',
+} as const
+
+/** The command of each check the next station asks for (33L1 D14). */
+export const CHECK_NEXT_COMMANDS: Readonly<Record<NextCheckName, string>> = {
+	'tdd-red': 'dialecte tdd red',
+	'tdd-green-and-gate-fast': 'dialecte tdd green && dialecte gate --fast',
+	'gate-fast': 'dialecte gate --fast',
+	'gate-full': 'dialecte gate --full',
+	contrib: 'dialecte contrib',
+}
 
 /** What runs a lot in S: a person or a host runs the stations by hand, or the simulator plays a scenario. */
 export const RUNNERS = { manual: 'manual', simulated: 'simulated' } as const

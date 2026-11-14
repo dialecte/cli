@@ -163,6 +163,9 @@ export const ALREADY_COMMITTED_DETAIL =
 /** `lot close` of a hand-over its registry entry records closed by an earlier close: nothing moved, exit 0. */
 export const LOT_CLOSE_ALREADY_CLOSED = '{handover} already closed'
 
+/** What a landed lot's line of `lot close` starts with: it sits under the outcome's line. */
+export const LOT_CLOSE_LANDED_INDENT = '        '
+
 /** How many commits only a worktree's HEAD reflog reaches `lot close` names when it keeps it; the rest are counted. */
 export const HEAD_REFLOG_COMMITS_SHOWN = 3
 
@@ -300,6 +303,9 @@ export const CONSUMER_REFERENCES_DETAIL = 'a standard citation'
 
 /** The `target` guard: refused (exit 2) while the target branch's tip is held neither by the head nor by a merge lot. */
 export const TARGET_GUARD_NAME = 'target'
+
+/** The `handover run` guard that refuses late fixes nobody verified (33L1 6b). */
+export const VERIFY_GUARD_NAME = 'verify'
 
 /** What the card and the `target` guard say when the target branch moved: `{tip}` its new tip, the 8-character short sha. */
 export const TARGET_MOVED_LINE =

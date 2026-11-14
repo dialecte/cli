@@ -1,8 +1,9 @@
 /**
  * The verbs of a lot's review rounds that write in its hand-over folder, run by `dialecte lot`:
  * `lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>`,
- * `lot decide <id|folder> <finding> <state...>`, `lot snapshot <id|folder> --round <n>`: the findings ledger and
- * the per-round snapshots; `lot choice <id|folder> --by <who> <decision>`: a decision made outside the ledger, in
+ * `lot decide <id|folder> <finding> <state...>`, `lot snapshot <id|folder> --round <n> [--beyond-cap --by <who>
+ * --reason <text>]`: the findings ledger and the per-round snapshots, a round above the cap only with its go-ahead
+ * row in `decisions.md`; `lot choice <id|folder> --by <who> <decision>`: a decision made outside the ledger, in
  * its `decisions.md`; `lot standard <id|folder> consulted <note> | not-consulted <reason>`: the standard check.
  * `runRecordVerb` runs one by its `lot` verb; `runRecord` takes it under the old word the table of the renamed
  * forms gives it.
@@ -12,6 +13,7 @@ import { basename, join, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { appendDecision, dayOf } from '../lib/review-rounds/decisions-file.ts'
 import {
 	appendFinding,
@@ -19,19 +21,25 @@ import {
 	parseDecision,
 	replaceStateCell,
 } from '../lib/review-rounds/findings-ledger.ts'
+import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { recordVerbOfWord, verbPrefix } from '../lib/review-rounds/review-round-verbs.ts'
 import {
+	BEYOND_CAP_DECISION,
+	BEYOND_CAP_FLAG,
+	BEYOND_CAP_REFUSAL,
 	CHOICE_OPTIONS,
 	DECISIONS_FILE,
+	NO_EFFORT_RECORDED,
 	LEDGER_FILE,
 	LINE_BREAK_PATTERN,
 	CHOICE_USAGE,
 	DECIDE_USAGE,
 	FINDING_OPTIONS,
 	FINDING_USAGE,
-	ROUND_OPTIONS,
 	SEVERITY_SPELLINGS,
+	SNAPSHOT_OPTIONS,
 	SNAPSHOT_USAGE,
+	WITHIN_CAP_REFUSAL,
 } from '../lib/review-rounds/review-rounds.constants.ts'
 import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { snapshotRefusal, takeSnapshot } from '../lib/review-rounds/snapshot-round.ts'
@@ -41,10 +49,16 @@ import {
 	workTreeTopOf,
 } from '../lib/review-rounds/worktree-state.ts'
 import { recordStandard } from '../lib/standard/record-standard.ts'
+import { readIdentity } from '../lib/store/identity.ts'
+import { interimEffortOf } from '../lib/store/lot-records.ts'
+import { capOf } from '../lib/store/next-station.ts'
 import { replaceWhole } from '../lib/store/publish.ts'
+import { readBeyondCapRows } from '../lib/store/station-records.ts'
 
 import type { RecordVerb } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { RoundArguments, SnapshotGoAhead } from '../lib/review-rounds/review-rounds.types.ts'
+import type { BriefEffort } from '../lib/store/brief.types.ts'
 import type { TemporaryFileSeam } from '../lib/store/store.types.ts'
 
 /** A review rounds' verb under its old word (`runRecord({ argv: [<old word>, ...] })`). */
@@ -69,7 +83,7 @@ export function runRecordVerb(params: {
 		if (verb === 'choice') return recordChoice({ cwd, argv, now, afterTemporaryWritten })
 		if (verb === 'finding') return recordFinding({ cwd, argv, afterTemporaryWritten })
 		if (verb === 'decide') return recordDecision({ cwd, argv, afterTemporaryWritten })
-		if (verb === 'snapshot') return recordSnapshot({ cwd, argv })
+		if (verb === 'snapshot') return recordSnapshot({ cwd, argv, now, afterTemporaryWritten })
 		return recordStandard({ cwd, argv, now, afterTemporaryWritten })
 	} catch (error) {
 		return answerOf({ exitCode: 1, line: `${verbPrefix(verb)}: ${(error as Error).message}` })
@@ -98,6 +112,12 @@ function recordChoice(params: {
 			exitCode: 2,
 			line: `${CHOICE_USAGE} (the decision and --by are one line each)`,
 		})
+	const wordRefusal = forbiddenWordRefusal({
+		root: params.cwd,
+		verb: 'choice',
+		options: [{ option: '--by', text: by }],
+	})
+	if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
 	const folder = resolve(params.cwd, folderWord)
 	const refusal = handoverFolderRefusal(folder)
 	if (refusal) return answerOf({ exitCode: 1, line: `${verbPrefix('choice')}: ${refusal}` })
@@ -204,12 +224,22 @@ function recordDecision(params: {
 	})
 }
 
-function recordSnapshot(params: { cwd: string; argv: string[] }): CommandResult {
-	const read = readArguments({ argv: params.argv, valueOptions: ROUND_OPTIONS })
+function recordSnapshot(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	afterTemporaryWritten?: TemporaryFileSeam
+}): CommandResult {
+	const read = readArguments({
+		argv: params.argv,
+		valueOptions: SNAPSHOT_OPTIONS,
+		flags: [BEYOND_CAP_FLAG],
+	})
 	if (typeof read === 'string')
 		return answerOf({ exitCode: 2, line: `${SNAPSHOT_USAGE} (${read})` })
 	const round = parseRound(read.values.get('round'))
-	if (read.words.length !== 1 || round === undefined)
+	const goAhead = goAheadOf(read)
+	if (read.words.length !== 1 || round === undefined || goAhead === 'usage')
 		return answerOf({ exitCode: 2, line: SNAPSHOT_USAGE })
 	const root = workTreeTopOf(params.cwd)
 	if (!root)
@@ -224,9 +254,113 @@ function recordSnapshot(params: { cwd: string; argv: string[] }): CommandResult 
 	const state = readWorktreeState(root)
 	const refusal = snapshotRefusal({ root, folder, round, state })
 	if (refusal) return answerOf({ exitCode: 1, line: `${verbPrefix('snapshot')}: ${refusal}` })
-	const taken = takeSnapshot({ root, folder, round, state })
+	// interim until L1b: the effort is read by interimEffortOf, then by effectiveEffort (33L1 rev 8, Q-A)
+	const effort = interimEffortOf({
+		lotFolder: folder,
+		identityEffort: readIdentity({ lotFolder: folder })?.effort,
+	})
+	const cap = capOf({ effort })
+	const capRefusal = roundCapRefusal({ folder, round, cap, effort, goAhead })
+	if (capRefusal) return answerOf({ exitCode: 2, line: capRefusal })
+	const now = params.now ?? new Date()
+	if (goAhead) {
+		const wordRefusal = forbiddenWordRefusal({
+			root,
+			verb: 'snapshot',
+			options: [
+				{ option: '--by', text: goAhead.by },
+				{ option: '--reason', text: goAhead.reason },
+			],
+		})
+		if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
+		writeGoAhead({
+			folder,
+			round,
+			cap,
+			goAhead,
+			now,
+			afterTemporaryWritten: params.afterTemporaryWritten,
+		})
+	}
+	const taken = takeSnapshot({ root, folder, round, state, at: now })
 	return answerOf({
 		exitCode: 0,
 		line: `${verbPrefix('snapshot')}: round-${round} - ${taken.copied} copied, ${taken.deleted} deleted, base ${taken.base.slice(0, 12)} - ${folder}`,
 	})
+}
+
+/**
+ * The go-ahead of `lot snapshot` for a round above the cap: `--beyond-cap` with `--by` and `--reason`, each one
+ * non-empty line; undefined when none of the three is given; `usage` for any other mix (33L1 D17).
+ */
+function goAheadOf(read: RoundArguments): SnapshotGoAhead | undefined | 'usage' {
+	const by = read.values.get('by')
+	const reason = read.values.get('reason')
+	if (!read.flags.has(BEYOND_CAP_FLAG))
+		return by === undefined && reason === undefined ? undefined : 'usage'
+	if (!isOneLine(by) || !isOneLine(reason)) return 'usage'
+	return { by, reason }
+}
+
+/**
+ * Why round `round` cannot be taken at the cap `cap`: above it without the go-ahead given nor a go-ahead row of the
+ * round standing in `decisions.md` (the retry after a crash between the row and the snapshot, R1-3), or within it
+ * with one; undefined when it can.
+ */
+function roundCapRefusal(params: {
+	folder: string
+	round: number
+	cap: number
+	effort: BriefEffort | undefined
+	goAhead: SnapshotGoAhead | undefined
+}): string | undefined {
+	const { round, cap } = params
+	if (round > cap && !params.goAhead && !hasGoAheadRow({ folder: params.folder, round }))
+		return fillMessage({
+			template: BEYOND_CAP_REFUSAL,
+			values: {
+				round: String(round),
+				cap: String(cap),
+				effort: params.effort === undefined ? NO_EFFORT_RECORDED : `effort ${params.effort}`,
+				folder: params.folder,
+			},
+		})
+	if (round <= cap && params.goAhead)
+		return fillMessage({
+			template: WITHIN_CAP_REFUSAL,
+			values: { round: String(round), cap: String(cap) },
+		})
+	return undefined
+}
+
+/**
+ * Appends the go-ahead row `round <n> beyond the cap of <cap>: <reason>` to the folder's `decisions.md`, unless a
+ * row of that round stands already (a retry after a crash between the row and the snapshot, 33L1 D22.3).
+ */
+function writeGoAhead(params: {
+	folder: string
+	round: number
+	cap: number
+	goAhead: SnapshotGoAhead
+	now: Date
+	afterTemporaryWritten?: TemporaryFileSeam
+}): void {
+	const { folder, round } = params
+	if (hasGoAheadRow({ folder, round })) return
+	appendDecision({
+		path: join(folder, DECISIONS_FILE),
+		title: basename(folder),
+		decision: fillMessage({
+			template: BEYOND_CAP_DECISION,
+			values: { round: String(round), cap: String(params.cap), reason: params.goAhead.reason },
+		}),
+		by: params.goAhead.by,
+		when: dayOf(params.now),
+		afterTemporaryWritten: params.afterTemporaryWritten,
+	})
+}
+
+/** Whether a go-ahead row of `round` stands in the folder's `decisions.md`. */
+function hasGoAheadRow(params: { folder: string; round: number }): boolean {
+	return readBeyondCapRows({ lotFolder: params.folder }).some((row) => row.round === params.round)
 }

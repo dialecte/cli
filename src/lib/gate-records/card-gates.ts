@@ -21,12 +21,15 @@
  * runs (read from the mutation store when the card is built), the review from the hand-over folder's findings
  * ledger and round snapshots, and a contributor's contrib rows from the contrib record of the checked tree.
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename, join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
 import { counted } from '../counted.ts'
+import { pairRuns } from '../events/pair-runs.ts'
+import { readEvents } from '../events/read-events.ts'
+import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { resolveConfiguredBase } from '../gate/gate-base.ts'
 import {
 	FLAKY_NOTE,
@@ -35,12 +38,19 @@ import {
 } from '../gate/gate-config.constants.ts'
 import { GateConfigError } from '../gate/gate-config.ts'
 import { isAncestorCommit, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
-import { LEDGER_FILE, SEVERITY_SPELLINGS } from '../review-rounds/review-rounds.constants.ts'
+import { readLateFixes } from '../review-rounds/late-fixes.ts'
+import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledger-rounds.ts'
+import { snapshotRounds } from '../review-rounds/round-names.ts'
+import { readIdentity } from '../store/identity.ts'
+import { interimEffortOf } from '../store/lot-records.ts'
+import { capOf, isEnded } from '../store/next-station.ts'
+import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
+import { STORE_FILES } from '../store/store.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import { readInstalledKey } from './check-key.ts'
 import { findReusableRecord, isGreenRecord, isSameKey, readTreeRecords } from './check-store.ts'
@@ -64,15 +74,27 @@ import {
 	HOOK_RECORD_MODE,
 	HOOK_REUSED_DETAIL,
 	GATE_BASE_PROBLEM_DETAIL,
+	INDEPENDENT_ASKS_FIXES_DETAIL,
+	INDEPENDENT_LEDGER_ROUND_DETAIL,
+	INDEPENDENT_LEDGER_ROUNDS_DETAIL,
+	INDEPENDENT_VERDICT_DETAIL,
 	INVALID_GATE_CONFIG_DETAIL,
 	MISSING_SCRIPT_DETAIL,
 	MISSING_SCRIPT_PATTERN,
 	NEVER_RUN_DETAIL,
 	NIT_SEVERITY,
 	NO_FINDINGS_DETAIL,
+	NO_INDEPENDENT_REVIEW_DETAIL,
 	NO_LEDGER_DETAIL,
 	NOT_RUN_BY_HOOK_DETAIL,
 	NOT_RUN_DETAIL,
+	LATE_FIXES_LINE_NAME,
+	LATE_FIXES_NOT_CHECKED_DETAIL,
+	LATE_FIXES_UNVERIFIED_DETAIL,
+	LATE_FIXES_VERIFIED_DETAIL,
+	LATE_FIXES_VERIFY_COMMAND_DETAIL,
+	NO_LATE_FIXES_DETAIL,
+	NO_REVIEW_SNAPSHOT_DETAIL,
 	NOT_RUN_HERE_DETAIL,
 	NOT_RUN_ON_CHECKED_TREE_DETAIL,
 	NOT_WIRED_DETAIL,
@@ -80,7 +102,6 @@ import {
 	NOTHING_SELECTED_DETAIL,
 	OLDER_BASE_SUFFIX,
 	OPTED_OUT_DETAIL,
-	OPEN_LEDGER_STATES,
 	RECORD_FROM_DETAIL,
 	REHEARSAL_ORIGIN,
 	REHEARSAL_RECORD_DETAIL,
@@ -88,8 +109,15 @@ import {
 	RELEASE_GREEN_DETAIL,
 	RELEASE_RECORD_MODE,
 	REVIEW_APPROVED_DETAIL,
+	REVIEW_APPROVED_PART,
+	REVIEW_GO_AHEAD_DETAIL,
+	REVIEW_GO_AHEAD_SEPARATOR,
 	REVIEW_LINE_NAME,
-	ROUND_FOLDER_PATTERN,
+	REVIEW_ROUND_COUNT,
+	REVIEW_ROUNDS_GO_AHEAD_DETAIL,
+	REVIEW_ROUNDS_NO_EFFORT_DETAIL,
+	REVIEW_ROUNDS_NO_GO_AHEAD_DETAIL,
+	REVIEW_ROUNDS_OF_CAP_DETAIL,
 	RULES_LINE_NAME,
 	SELECTED_DETAIL,
 	SELECTED_ID_SEPARATOR,
@@ -108,10 +136,14 @@ import {
 import { readModeCommandHashes } from './mode-command-hashes.ts'
 import { computeStateTree, hashStateTree } from './state-hash.ts'
 
+import type { LotEvent } from '../events/event.types.ts'
 import type { StepCounts, StepSelection } from '../gate/gate.types.ts'
+import type { LateFixes, ReviewLedger } from '../review-rounds/review-rounds.types.ts'
+import type { StationName, StationVerdict } from '../store/next-station.types.ts'
 import type {
 	CardGateConfig,
 	CardGateLine,
+	ReviewLinePart,
 	CheckKey,
 	GateRecord,
 	GateRecordMode,
@@ -867,56 +899,295 @@ export function buildRulesLine(params: { root: string; stateHash: string }): Car
 }
 
 /**
- * The review from the findings ledger: approved when no row is open, `!` when only nits are or the ledger
- * holds no row yet, `✗` when a blocking or should-fix row is; the rounds are the highest of the rows' and
- * the snapshots'.
+ * The review line (33L1 section 6, 6b; D18, D24). The rounds are the `round-<n>/` snapshots, against the cap of the
+ * lot's effort; the independent review is required after the last snapshot: a `station.end` of
+ * `independent-reviewer` strictly after the snapshot's time, the last one, ended by the walk's rule with a verdict
+ * (R3-1), else, for a folder without step events, the ledger rows of a round above it. None:
+ * `✗ no independent review after round <n>`; a last end `fix-then-repass`: `✗ independent review asks for fixes`
+ * with the fixer's command; another word than `approve`: a failed part naming it. Then the open findings of
+ * the ledger: `✗` when a blocking or should-fix row is open, `!` when only nits are. A release hand-over, a folder
+ * holding no review evidence at all (no snapshot, no ledger row, no independent end), and a folder without step events
+ * and with no snapshot keep the ledger-only line.
  */
-export function buildReviewLine(folder: string): CardGateLine {
-	const ledgerPath = join(folder, LEDGER_FILE)
-	if (!existsSync(ledgerPath))
-		return { name: REVIEW_LINE_NAME, status: 'warning', detail: NO_LEDGER_DETAIL }
-	const lines = readFileSync(ledgerPath, 'utf8').split('\n')
-	const rows = findLedgerTable(lines)?.rows ?? []
-	const rounds = Math.max(0, ...rows.map((row) => row.round ?? 0), ...snapshotRounds(folder))
-	const openSeverities = rows.flatMap(function openSeverity(row) {
-		const cells = tableCells(lines[row.line]) ?? []
-		const state = cells.at(-1) ?? ''
-		if (!OPEN_LEDGER_STATES.includes(state)) return []
-		return [SEVERITY_SPELLINGS[cells[2] ?? ''] ?? cells[2] ?? '']
+export function buildReviewLine(params: { folder: string; release?: boolean }): CardGateLine {
+	const { folder } = params
+	const ledger = readReviewLedger({ folder })
+	const snapshots = snapshotRounds(folder)
+	if (params.release) return ledgerOnlyReviewLine({ ledger, snapshots })
+	const lastRound = snapshots.at(-1) ?? 0
+	const events = readFolderEvents({ folder })
+	const verdict = independentVerdictOf({
+		folder,
+		events,
+		lastRound,
+		snapshotted: snapshots.length > 0,
 	})
+	if (snapshots.length === 0 && ledger.rows.length === 0 && verdict === undefined)
+		return ledgerOnlyReviewLine({ ledger, snapshots })
+	const ledgerStands = ledgerStandsIn({ folder, events })
+	// with no snapshot, a folder without step events keeps the ledger-only line: its rows claim no independent review
+	// (R1-6, R2-2); with step events, the ledger never stands in for a review round: no snapshot is no review round
+	if (snapshots.length === 0 && ledgerStands) return ledgerOnlyReviewLine({ ledger, snapshots })
+	if (snapshots.length === 0)
+		return {
+			name: REVIEW_LINE_NAME,
+			status: 'failed',
+			detail: fillMessage({
+				template: NO_REVIEW_SNAPSHOT_DETAIL,
+				values: { id: basename(folder) },
+			}),
+		}
+	if (verdict === 'fix-then-repass')
+		return {
+			name: REVIEW_LINE_NAME,
+			status: 'failed',
+			detail: fillMessage({
+				template: INDEPENDENT_ASKS_FIXES_DETAIL,
+				values: { id: basename(folder) },
+			}),
+		}
+	const ledgerPart =
+		verdict === undefined && ledgerStands ? independentLedgerPart({ ledger, lastRound }) : undefined
+	const independent: ReviewLinePart | undefined =
+		verdict !== undefined
+			? independentVerdictPart({ verdict })
+			: ledgerPart
+				? { status: 'passed', detail: ledgerPart }
+				: undefined
+	if (independent === undefined)
+		return {
+			name: REVIEW_LINE_NAME,
+			status: 'failed',
+			detail: fillMessage({
+				template: NO_INDEPENDENT_REVIEW_DETAIL,
+				values: { round: String(lastRound) },
+			}),
+		}
+	const parts: ReviewLinePart[] = [
+		roundsPart({ folder, snapshots }),
+		independent,
+		openFindingsPart({ ledger, approved: REVIEW_APPROVED_PART }),
+	]
+	return {
+		name: REVIEW_LINE_NAME,
+		status: worstStatusOf(parts),
+		detail: parts.map((part) => part.detail).join(DETAIL_SEPARATOR),
+	}
+}
+
+/**
+ * The card's `late fixes` line (33L1 6b, D19): none when the tree is the last snapshot's or the last verified one's
+ * (no line), `! unverified since round <n> (<k> files): dialecte lot verify <lot name> --by <who> --note <text>`,
+ * `✓ verified by <who>: <note>`, `! not checked (round <n> has no state)`. A warning only: never a failed line.
+ */
+export function buildLateFixesLine(params: {
+	folder: string
+	root: string
+	stateHash: string
+}): CardGateLine | undefined {
+	const lateFixes = readLateFixes(params)
+	if (lateFixes.kind === 'none') return undefined
+	return {
+		name: LATE_FIXES_LINE_NAME,
+		status: lateFixes.kind === 'verified' ? 'passed' : 'warning',
+		detail: lateFixesDetailOf({ lateFixes, id: basename(params.folder) }),
+	}
+}
+
+/**
+ * The words of a lot's late fixes after `late fixes`: the card's, with the files and the command verifying them for
+ * the hand-over folder named `id`; the `verify` guard's without `id`.
+ */
+export function lateFixesDetailOf(params: { lateFixes: LateFixes; id?: string }): string {
+	const { lateFixes } = params
+	if (lateFixes.kind === 'none') return NO_LATE_FIXES_DETAIL
+	if (lateFixes.kind === 'verified')
+		return fillMessage({
+			template: LATE_FIXES_VERIFIED_DETAIL,
+			values: { by: lateFixes.by, note: lateFixes.note },
+		})
+	const round = String(lateFixes.round)
+	if (lateFixes.kind === 'not-checked')
+		return fillMessage({ template: LATE_FIXES_NOT_CHECKED_DETAIL, values: { round } })
+	const unverified = fillMessage({ template: LATE_FIXES_UNVERIFIED_DETAIL, values: { round } })
+	if (params.id === undefined) return unverified
+	return `${unverified}${fillMessage({
+		template: LATE_FIXES_VERIFY_COMMAND_DETAIL,
+		values: { files: counted({ count: lateFixes.files, noun: 'file' }), id: params.id },
+	})}`
+}
+
+/**
+ * The review line from the findings ledger alone (a release hand-over's, 33L1 Q13): approved when no row is open,
+ * `!` when only nits are or the ledger holds no row yet, `✗` when a blocking or should-fix row is; the rounds are
+ * the highest of the rows' and the snapshots'.
+ */
+function ledgerOnlyReviewLine(params: { ledger: ReviewLedger; snapshots: number[] }): CardGateLine {
+	const { ledger } = params
+	if (!ledger.exists) return { name: REVIEW_LINE_NAME, status: 'warning', detail: NO_LEDGER_DETAIL }
+	const rounds = Math.max(0, ...ledger.rows.map((row) => row.round ?? 0), ...params.snapshots)
 	const roundsText = `${rounds} ${rounds === 1 ? 'round' : 'rounds'}`
 	// a ledger made before the reviewer answered approves nothing
-	if (rows.length === 0)
+	if (ledger.rows.length === 0)
 		return {
 			name: REVIEW_LINE_NAME,
 			status: 'warning',
 			detail: `${roundsText}${DETAIL_SEPARATOR}${NO_FINDINGS_DETAIL}`,
 		}
-	const nits = openSeverities.filter((severity) => severity === NIT_SEVERITY).length
-	const blocking = openSeverities.length - nits
-	if (blocking)
-		return {
-			name: REVIEW_LINE_NAME,
-			status: 'failed',
-			detail: `${roundsText}${DETAIL_SEPARATOR}${blocking} open: blocking or should fix`,
-		}
-	if (nits)
-		return {
-			name: REVIEW_LINE_NAME,
-			status: 'warning',
-			detail: `${roundsText}${DETAIL_SEPARATOR}${nits} ${nits === 1 ? 'nit' : 'nits'} open`,
-		}
+	const open = openFindingsPart({ ledger, approved: REVIEW_APPROVED_DETAIL })
 	return {
 		name: REVIEW_LINE_NAME,
-		status: 'passed',
-		detail: `${roundsText}${DETAIL_SEPARATOR}${REVIEW_APPROVED_DETAIL}`,
+		status: open.status,
+		detail: `${roundsText}${DETAIL_SEPARATOR}${open.detail}`,
 	}
 }
 
-/** The rounds of the `round-<n>/` snapshots in the hand-over folder. */
-function snapshotRounds(folder: string): number[] {
-	return readdirSync(folder, { withFileTypes: true }).flatMap(function roundOf(entry) {
-		const match = ROUND_FOLDER_PATTERN.exec(entry.name)
-		return entry.isDirectory() && match ? [Number(match[1])] : []
+/** Today's open-findings part: `✗` for an open blocking or should-fix row, `!` for open nits, else `approved`. */
+function openFindingsPart(params: { ledger: ReviewLedger; approved: string }): ReviewLinePart {
+	const openSeverities = params.ledger.rows.flatMap((row) =>
+		row.openSeverity === undefined ? [] : [row.openSeverity],
+	)
+	const nits = openSeverities.filter((severity) => severity === NIT_SEVERITY).length
+	const blocking = openSeverities.length - nits
+	if (blocking) return { status: 'failed', detail: `${blocking} open: blocking or should fix` }
+	if (nits) return { status: 'warning', detail: `${nits} ${nits === 1 ? 'nit' : 'nits'} open` }
+	return { status: 'passed', detail: params.approved }
+}
+
+/** The lot's events as `readStationRecords` reads them; none without an `events.jsonl`. */
+function readFolderEvents(params: { folder: string }): LotEvent[] {
+	return pairRuns({ events: readEvents({ file: join(params.folder, STORE_FILES.events) }).events })
+		.events
+}
+
+/**
+ * The verdict of the last `independent-reviewer` end strictly after the last snapshot (33L1 D4, D24.9: a tie is not
+ * after; R3-1): only that end counts, and only when it ended by the walk's rule (`isEnded`: exit 0 or none, no
+ * `failed` or `limit`) with a verdict; any end counts without a snapshot, none when the last snapshot's time does not
+ * read.
+ */
+function independentVerdictOf(params: {
+	folder: string
+	events: readonly LotEvent[]
+	lastRound: number
+	snapshotted: boolean
+}): StationVerdict | undefined {
+	const snapshotTime = params.snapshotted
+		? snapshotTimeOf({ lotFolder: params.folder, round: params.lastRound })
+		: undefined
+	if (snapshotTime === null) return undefined
+	const after = snapshotTime === undefined ? -Infinity : Date.parse(snapshotTime)
+	const station: StationName = 'independent-reviewer'
+	const last = params.events
+		.filter(function isIndependentEndAfter(event) {
+			return (
+				event.kind === 'station.end' && event.station === station && Date.parse(event.at) > after
+			)
+		})
+		.at(-1)
+	if (last === undefined) return undefined
+	const end = {
+		verdict: STATION_VERDICTS.find((known) => known === last.verdict),
+		exit: typeof last.exit === 'number' ? last.exit : undefined,
+	}
+	return isEnded(end) ? end.verdict : undefined
+}
+
+/**
+ * The independent review's part of the line from its counted verdict (R3-1): `approve` passes; another word fails with
+ * the verdict named (`fix-then-repass` never reaches here: the whole line names the fixer).
+ */
+function independentVerdictPart(params: { verdict: StationVerdict }): ReviewLinePart {
+	return {
+		status: params.verdict === 'approve' ? 'passed' : 'failed',
+		detail: fillMessage({
+			template: INDEPENDENT_VERDICT_DETAIL,
+			values: { verdict: params.verdict },
+		}),
+	}
+}
+
+/**
+ * Whether the ledger stands in for the independent review's end (33L1 D24.3): a folder without `events.jsonl`, or
+ * one whose events say the worktree's cli writes no step events.
+ */
+function ledgerStandsIn(params: { folder: string; events: readonly LotEvent[] }): boolean {
+	return (
+		!existsSync(join(params.folder, STORE_FILES.events)) ||
+		!writesStepEvents({ events: params.events })
+	)
+}
+
+/** The independent review as the ledger rows of the rounds above the last snapshot; undefined without one. */
+function independentLedgerPart(params: {
+	ledger: ReviewLedger
+	lastRound: number
+}): string | undefined {
+	const rounds = independentLedgerRounds(params)
+	const first = rounds.at(0)
+	const last = rounds.at(-1)
+	if (first === undefined || last === undefined) return undefined
+	return fillMessage({
+		template: first === last ? INDEPENDENT_LEDGER_ROUND_DETAIL : INDEPENDENT_LEDGER_ROUNDS_DETAIL,
+		values: { first: String(first), last: String(last) },
 	})
+}
+
+/**
+ * The rounds part: the snapshots against the cap of the lot's effort (the interim read of 33L1 D2), each round above
+ * the cap named with its go-ahead row, `!` when one has none.
+ */
+function roundsPart(params: { folder: string; snapshots: number[] }): ReviewLinePart {
+	const { folder, snapshots } = params
+	const count = snapshots.length
+	const rounds = fillMessage({
+		template: count === 1 ? REVIEW_ROUND_COUNT.one : REVIEW_ROUND_COUNT.many,
+		values: { count: String(count) },
+	})
+	const effort = interimEffortOf({
+		lotFolder: folder,
+		identityEffort: readIdentity({ lotFolder: folder })?.effort,
+	})
+	if (effort === undefined)
+		return {
+			status: 'passed',
+			detail: fillMessage({ template: REVIEW_ROUNDS_NO_EFFORT_DETAIL, values: { rounds } }),
+		}
+	const cap = String(capOf({ effort }))
+	const beyond = snapshots.filter((round) => round > capOf({ effort }))
+	if (beyond.length === 0)
+		return {
+			status: 'passed',
+			detail: fillMessage({ template: REVIEW_ROUNDS_OF_CAP_DETAIL, values: { rounds, cap } }),
+		}
+	// the first go-ahead row of a round is the one that let its snapshot through (R1-10)
+	const byRound = new Map<number, string>()
+	for (const row of readBeyondCapRows({ lotFolder: folder }))
+		if (!byRound.has(row.round)) byRound.set(row.round, row.by)
+	if (beyond.some((round) => !byRound.has(round)))
+		return {
+			status: 'warning',
+			detail: fillMessage({ template: REVIEW_ROUNDS_NO_GO_AHEAD_DETAIL, values: { rounds, cap } }),
+		}
+	const goAheads = beyond
+		.map((round) =>
+			fillMessage({
+				template: REVIEW_GO_AHEAD_DETAIL,
+				values: { round: String(round), by: byRound.get(round) ?? '' },
+			}),
+		)
+		.join(REVIEW_GO_AHEAD_SEPARATOR)
+	return {
+		status: 'passed',
+		detail: fillMessage({
+			template: REVIEW_ROUNDS_GO_AHEAD_DETAIL,
+			values: { rounds, cap, goAheads },
+		}),
+	}
+}
+
+/** The worst status of the parts: failed, then warning, then passed. */
+function worstStatusOf(parts: readonly ReviewLinePart[]): CardGateLine['status'] {
+	if (parts.some((part) => part.status === 'failed')) return 'failed'
+	return parts.some((part) => part.status === 'warning') ? 'warning' : 'passed'
 }

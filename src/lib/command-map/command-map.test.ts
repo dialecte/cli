@@ -116,16 +116,29 @@ describe('the command map', () => {
 	const REVIEW_ROUND_LINES = [
 		'dialecte lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>',
 		'dialecte lot decide <id|folder> <finding> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',
-		'dialecte lot snapshot <id|folder> --round <n>',
+		'dialecte lot snapshot <id|folder> --round <n> [--beyond-cap --by <who> --reason <text>]',
 		'dialecte lot choice <id|folder> --by <who> <decision>',
 		'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>',
 		'dialecte lot delta <id|folder> --round <n> [--worktree] [--json]',
 		'dialecte lot recap <id|folder>',
+		'dialecte lot verify <id|folder> --by <who> --note <text>',
 	]
 	for (const line of REVIEW_ROUND_LINES)
 		it(`the review-round line says <id|folder>: ${line}`, () => {
 			expect(COMMAND_MAP.lot.usage).toContain(line)
 		})
+
+	it('the lot section notes verify with a verify - line naming verify.jsonl, the state hash and the snapshot', () => {
+		const note = (COMMAND_MAP.lot.notes ?? []).find((candidate) =>
+			candidate.startsWith('verify - '),
+		)
+
+		expect({
+			namesFile: note?.includes('verify.jsonl'),
+			namesState: note?.includes('state'),
+			namesSnapshot: note?.includes('snapshot'),
+		}).toEqual({ namesFile: true, namesState: true, namesSnapshot: true })
+	})
 
 	it('gate lists --release in a usage line, in the map and in gate --help, and the surface derived from it has the flag', () => {
 		const releaseLines = COMMAND_MAP.gate.usage.filter((line) => line.includes('--release'))

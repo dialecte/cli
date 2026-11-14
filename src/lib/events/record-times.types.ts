@@ -11,3 +11,6 @@ export type RecordTimesRead = { gone: true } | { gone: false; times: ReadRecordT
 
 /** A mutation run file of the repository as stored: its state is the run's (`running`, `reported`, `abandoned`). */
 export type MutationRunFile = { worktree: string; startedAt: string; state: string }
+
+/** A gate record's time and result: green when no recorded step failed; the state hash it ran on, when it holds one. */
+export type GateRecordResult = { at: string; green: boolean; stateHash?: string }

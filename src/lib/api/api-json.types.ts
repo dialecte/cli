@@ -5,9 +5,10 @@ export type MethodRoot = (typeof ROOTS)[number]
 
 /**
  * One method of a package as `api.json` ships it: what `dialecte api find` and `api show` read. A method of a
- * root or a function a package entry exports: `root` tells them apart, and only an export has an `entry`.
+ * root, a function a package entry exports or one the package's source exports: `root` tells them apart, and only
+ * an export has an `entry`.
  */
-export type ApiMethod = ApiRootMethod | ApiExportedFunction
+export type ApiMethod = ApiRootMethod | ApiExportedFunction | ApiSourceFunction
 
 /** A method reached from a root (`q`, `tx`, `doc`, `project`). */
 export type ApiRootMethod = ApiMethodFields & {
@@ -20,6 +21,12 @@ export type ApiExportedFunction = ApiMethodFields & {
 	root: 'export'
 	/** The package entry the function comes from ('@dialecte/core/sqlite'). */
 	entry: string
+}
+
+/** An exported function of the package's own source (`src/lib/git.ts#readGit`), read from the files, not from `api.json`. */
+export type ApiSourceFunction = ApiMethodFields & {
+	root: 'source'
+	entry?: undefined
 }
 
 /** What every row of `api.json` holds, whatever its root. */

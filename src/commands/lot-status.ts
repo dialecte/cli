@@ -7,20 +7,34 @@ import { dirname, join, resolve } from 'node:path'
 
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
+import { independentLedgerRounds, readReviewLedger } from '../lib/review-rounds/ledger-rounds.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { snapshotRounds } from '../lib/review-rounds/round-names.ts'
 import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
 import {
+	interimEffortOf,
+	readBriefStepCount,
 	readCheckedLotState,
 	readLotStateInput,
 	registryOfLotFolder,
 } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
+import { capOf } from '../lib/store/next-station.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
+import { readBeyondCapRows, readStationNext } from '../lib/store/station-records.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
-import { STATUS_FLAGS, STATUS_MAX_LINES, STATUS_USAGE_REASONS } from './lot-status.constants.ts'
+import {
+	CHECK_WORDS,
+	STATION_LINE,
+	STATION_WHAT,
+	STATUS_FLAGS,
+	STATUS_MAX_LINES,
+	STATUS_USAGE_REASONS,
+} from './lot-status.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
@@ -31,7 +45,7 @@ import type {
 	LotStateReport,
 	WorktreeCheck,
 } from '../lib/store/store.types.ts'
-import type { LotStatusJson } from './lot-status.types.ts'
+import type { LotStatusJson, RoundsStatus } from './lot-status.types.ts'
 
 /**
  * The status of the lot `<id>` names, as text or `--json`; a damaged lot answers `damaged` with its reason and the
@@ -83,7 +97,8 @@ export function lotStatusOf(params: {
 
 /**
  * The status JSON of a lot (33S section 7, D17) from its records already read, with the registry's entries they
- * were read with. Reads the worktree and its link only.
+ * were read with: the next station from the lot folder's and the worktree's records (33L1 section 4). Reads files
+ * only.
  */
 export function lotStatusOfInput(params: {
 	input: LotStateInput
@@ -94,7 +109,8 @@ export function lotStatusOfInput(params: {
 	const { identity } = input
 	const report = lotState(input)
 	const last = input.transitions.at(-1)
-	const { next, also } = nextCommandsOf({ input, report })
+	const station = readStationNext({ input, lotFolder })
+	const { next, also } = nextCommandsOf({ input, report, station })
 	return {
 		lot: identity.name,
 		index: identity.index,
@@ -121,6 +137,30 @@ export function lotStatusOfInput(params: {
 		notes: otherFolderNotes(params),
 		next,
 		also,
+		station: station?.next ?? null,
+		rounds: roundsOf({ input, lotFolder }),
+	}
+}
+
+/**
+ * The rounds block of a lot's status: the snapshots, the effort the cap is taken from (D2) and that cap, the brief's
+ * step count, the beyond-cap rows with their author and reason, the distinct ledger rounds above the last snapshot
+ * (33L1 section 6).
+ */
+function roundsOf(params: { input: LotStateInput; lotFolder: string }): RoundsStatus {
+	const { lotFolder } = params
+	const snapshots = snapshotRounds(lotFolder)
+	const effort = interimEffortOf({ lotFolder, identityEffort: params.input.identity.effort })
+	return {
+		review: snapshots.length,
+		cap: effort === undefined ? null : capOf({ effort }),
+		effort: effort ?? null,
+		steps: readBriefStepCount({ lotFolder }),
+		beyondCap: readBeyondCapRows({ lotFolder }),
+		independent: independentLedgerRounds({
+			ledger: readReviewLedger({ folder: lotFolder }),
+			lastRound: Math.max(0, ...snapshots),
+		}).length,
 	}
 }
 
@@ -201,8 +241,8 @@ function otherFolderNotes(params: {
 }
 
 /**
- * The text form of a status, five lines at most: the state line, the position, the open questions, the checks
- * when not all present, next and also.
+ * The text form of a status, five lines at most: the state line, the next station (33L1 D20.2-3), the position, the
+ * open questions, the checks when not all present, next and also.
  */
 export function lotStatusLines(status: LotStatusJson): string[] {
 	const { station } = status.position ?? {}
@@ -218,9 +258,59 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 		status.also.length > 0 ? `also: ${status.also.join(' | ')}` : undefined,
 	].filter((line): line is string => line !== undefined)
 	const state = `${status.lot} ${status.state} since ${status.since}${status.limit ? ' (limit: run again)' : ''}`
+	const stationLine = stationLineOf(status)
+	const head = stationLine === undefined ? [state] : [state, stationLine]
 	// the position is the line given up when every other one is needed
-	const withPosition = position && rest.length + 2 <= STATUS_MAX_LINES ? [position] : []
-	return [state, ...withPosition, ...rest]
+	const withPosition =
+		position && head.length + rest.length + 1 <= STATUS_MAX_LINES ? [position] : []
+	return [...head, ...withPosition, ...rest]
+}
+
+/**
+ * The station line: `station <what> · round <r|->/<cap|-> · effort <level|->`; none for a simulated lot and a walk
+ * that names nothing (`none`). The effort and the step count are the JSON's rounds block (33L1 D13, D2; R1-13).
+ */
+function stationLineOf(status: LotStatusJson): string | undefined {
+	const { station } = status
+	if (station === null || station.kind === 'none') return undefined
+	const what = stationWhatOf({ status, station })
+	return fillMessage({
+		template: STATION_LINE.line,
+		values: {
+			what,
+			round: station.round === null ? STATION_LINE.none : String(station.round),
+			cap: status.rounds.cap === null ? STATION_LINE.none : String(status.rounds.cap),
+			effort: status.rounds.effort ?? STATION_LINE.none,
+		},
+	})
+}
+
+/** What the station line names (33L1 D20.2): the station, the check, the snapshot, the question, the answer. */
+function stationWhatOf(params: {
+	status: LotStatusJson
+	station: NonNullable<LotStatusJson['station']>
+}): string {
+	const { status, station } = params
+	const template =
+		station.kind === 'station' ? stationTemplateOf(station) : STATION_WHAT[station.kind]
+	return fillMessage({
+		template,
+		values: {
+			station: station.station ?? STATION_LINE.none,
+			step: String(station.step),
+			of: String(status.rounds.steps),
+			round: String(station.round),
+			why: station.why,
+			check: station.check === null ? STATION_LINE.none : CHECK_WORDS[station.check],
+			question: status.questions[0]?.id ?? STATION_LINE.none,
+		},
+	})
+}
+
+/** A station to run: with its step and the brief's step count, with its round, or alone. */
+function stationTemplateOf(station: NonNullable<LotStatusJson['station']>): string {
+	if (station.step !== null) return STATION_LINE.stationStep
+	return station.round === null ? STATION_LINE.station : STATION_LINE.stationRound
 }
 
 /** The checks that are not `present`, as `worktree missing, link dangling`; empty when all are. */

@@ -172,8 +172,66 @@ export const NO_LEDGER_DETAIL = 'no findings ledger'
 /** A findings ledger holding no row yet: nothing recorded, so nothing approved. */
 export const NO_FINDINGS_DETAIL = 'no findings recorded'
 
-/** The review line when no row is open. */
+/** The review line when no row is open: a release hand-over's line, as before the independent review (33L1 Q13). */
 export const REVIEW_APPROVED_DETAIL = 'approved · findings ledger'
+
+/** The review line's last part when no row is open (33L1 D24.7). */
+export const REVIEW_APPROVED_PART = 'approved'
+
+/** The review line when no independent review follows the last snapshot (33L1 D18). */
+export const NO_INDEPENDENT_REVIEW_DETAIL = 'no independent review after round {round}'
+
+/** The review line of a lot with step events and no review round snapshot: the ledger stands in for none (R1-6). */
+export const NO_REVIEW_SNAPSHOT_DETAIL =
+	'no review round snapshot: dialecte lot snapshot {id} --round 1'
+
+/** The card's line of the changes after the last snapshot (33L1 6b), and the `verify` guard's first words. */
+export const LATE_FIXES_LINE_NAME = 'late fixes'
+
+/** Late fixes nobody verified: the guard's detail, the card's first part. */
+export const LATE_FIXES_UNVERIFIED_DETAIL = 'unverified since round {round}'
+
+/** The card's part after `LATE_FIXES_UNVERIFIED_DETAIL`: the files that differ, the command that verifies them. */
+export const LATE_FIXES_VERIFY_COMMAND_DETAIL =
+	' ({files}): dialecte lot verify {id} --by <who> --note <text>'
+
+/** Late fixes verified by `lot verify` of the current tree. */
+export const LATE_FIXES_VERIFIED_DETAIL = 'verified by {by}: {note}'
+
+/** A last snapshot taken by an older cli: no state to compare (33L1 Q15). */
+export const LATE_FIXES_NOT_CHECKED_DETAIL = 'not checked (round {round} has no state)'
+
+/** The `verify` guard's detail when the tree is the last snapshot's, or no snapshot stands. */
+export const NO_LATE_FIXES_DETAIL = 'no late fixes'
+
+/** The review rounds counted: `1 review round`, `2 review rounds`. */
+export const REVIEW_ROUND_COUNT = { one: '{count} review round', many: '{count} review rounds' }
+
+/** The rounds part within the cap. */
+export const REVIEW_ROUNDS_OF_CAP_DETAIL = '{rounds} of {cap}'
+
+/** The rounds part beyond the cap, each round above it with its go-ahead row. */
+export const REVIEW_ROUNDS_GO_AHEAD_DETAIL = '{rounds} (cap {cap}, {goAheads})'
+
+/** One go-ahead of the rounds part, and the separator between two. */
+export const REVIEW_GO_AHEAD_DETAIL = 'round {round} by {by}'
+export const REVIEW_GO_AHEAD_SEPARATOR = ', '
+
+/** The rounds part beyond the cap when a round above it has no go-ahead row (a warning: the line's mark says it). */
+export const REVIEW_ROUNDS_NO_GO_AHEAD_DETAIL = '{rounds}, cap {cap}, no go-ahead recorded'
+
+/** The rounds part of a lot whose effort is not recorded. */
+export const REVIEW_ROUNDS_NO_EFFORT_DETAIL = '{rounds} (no effort recorded)'
+
+/** The independent review part: the verdict of its end, or its rounds in the ledger. */
+export const INDEPENDENT_VERDICT_DETAIL = 'independent review {verdict}'
+
+/** The review line when the independent review's last end asks for fixes (row 16b): the fixer is next. */
+export const INDEPENDENT_ASKS_FIXES_DETAIL =
+	'independent review asks for fixes: dialecte lot station {id} start fixer'
+export const INDEPENDENT_LEDGER_ROUND_DETAIL = 'independent review: round {first} in the ledger'
+export const INDEPENDENT_LEDGER_ROUNDS_DETAIL =
+	'independent review: rounds {first}-{last} in the ledger'
 
 /** The ledger states that leave a finding open. */
 export const OPEN_LEDGER_STATES: readonly string[] = ['open', 'fix to verify', 'fix-to-verify']

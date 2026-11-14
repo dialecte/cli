@@ -7,6 +7,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { errorReasonOf } from '../error-reason.ts'
+import { firstSyntaxErrorOf } from '../first-syntax-error.ts'
 import { recordRules } from '../gate-records/gate-records.ts'
 import { listChangedFiles, listRepositoryFiles, readGit } from '../git.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -192,7 +193,7 @@ function checkFile(params: {
 	}
 	// one syntax tree per file: the rules and the opt-outs read the same one
 	const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
-	const unparsable = parseFindingOf({ file, text, sourceFile })
+	const unparsable = parseFindingOf({ file, sourceFile })
 	if (unparsable) return { findings: [unparsable], allowed: {} }
 	const findings = checkCodeRules({
 		file,
@@ -226,25 +227,19 @@ function sumAllowed(counts: readonly AllowedCounts[]): AllowedCounts {
 /** The first syntax error of a script file, as a finding at its place; undefined when it parses (or is no script). */
 function parseFindingOf(params: {
 	file: string
-	text: string
 	sourceFile: ts.SourceFile
 }): RuleFinding | undefined {
-	const { file, text, sourceFile } = params
+	const { file, sourceFile } = params
 	if (!SCRIPT_FILE_PATTERN.test(file)) return undefined
-	const [first] =
-		ts.transpileModule(text, { fileName: file, reportDiagnostics: true }).diagnostics ?? []
-	if (first === undefined) return undefined
-	const position = sourceFile.getLineAndCharacterOfPosition(first.start ?? 0)
+	const syntaxError = firstSyntaxErrorOf({ source: sourceFile })
+	if (syntaxError === undefined) return undefined
 	return {
 		file,
-		line: position.line + 1,
-		column: position.character + 1,
+		line: syntaxError.line,
+		column: syntaxError.column,
 		rule: 'unreadable-file',
 		severity: 'error',
-		message: UNPARSABLE_FILE_MESSAGE.replace(
-			'{why}',
-			ts.flattenDiagnosticMessageText(first.messageText, ' '),
-		),
+		message: UNPARSABLE_FILE_MESSAGE.replace('{why}', syntaxError.message),
 	}
 }
 

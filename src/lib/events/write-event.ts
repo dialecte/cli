@@ -8,15 +8,32 @@ import {
 	EVENT_SCHEMA,
 } from './events.constants.ts'
 
-import type { LotEvent, MakeEnvelopeParams, WriteEventParams } from './event.types.ts'
+import type {
+	AppendLineParams,
+	LotEvent,
+	MakeEnvelopeParams,
+	WriteEventParams,
+} from './event.types.ts'
 
 /** The events made by this process so far: the `n` of the next id. */
 let eventCount = 0
 
 /** Appends one event as one line, in one write; refuses a line over the limit; a short write is a failure. */
 export function writeEvent(params: WriteEventParams): void {
-	const { file, event, limit, writeBuffer = writeWhole } = params
-	const line = eventLineOf({ event })
+	appendLine({
+		file: params.file,
+		line: eventLineOf({ event: params.event }),
+		limit: params.limit,
+		writeBuffer: params.writeBuffer,
+	})
+}
+
+/**
+ * Appends one whole line (its `\n` included) to `file` in one write, after a `\n` when the file ends torn; refuses a
+ * line over `limit` bytes; a short write is a failure. The single-write append of every JSON-lines file of a lot.
+ */
+export function appendLine(params: AppendLineParams): void {
+	const { file, line, limit, writeBuffer = writeWhole } = params
 	if (line.length > limit) throw new Error(overLimitMessage({ bytes: line.length, limit }))
 	const buffer = endsTorn({ file }) ? Buffer.concat([Buffer.from('\n'), line]) : line
 	const descriptor = openSync(

@@ -7,6 +7,8 @@ import {
 	META_GLOB_NAME,
 	NEGATED_GLOB_PREFIX,
 	ONLY_MARKER,
+	SKIP_IF_MARKER,
+	SKIP_MARKERS,
 	SUITE_FUNCTIONS,
 	TABLE_MODIFIERS,
 	TEST_FUNCTIONS,
@@ -197,6 +199,70 @@ export function listTestCalls(params: { text: string; file: string }): TestCall[
 }
 
 /**
+ * Every case the run reports is skipped as written: each one's location maps (`testCallAt`) to a test call of the
+ * file that goes through `.skip` / `.todo` / `.skipIf(true)` on its own callee or on a suite call around it
+ * (`it.skip(...)`, `it.todo(...)`, `describe.skip(...)`). A case mapping to no call (registered by a helper, no
+ * location) is not known skipped. A collect-only run reports every case skipped: the source says which ones the file
+ * skips itself.
+ */
+export function everyTestCallSkipped(params: {
+	text: string
+	file: string
+	/** The locations of the cases the run reports for the file (undefined: the run gave none). */
+	locations: ReadonlyArray<SourceLocation | undefined>
+}): boolean {
+	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
+	const nodes = testCallNodesOf(source)
+	const index = testCallIndexOf({ source, nodes })
+	const nodeByStart = new Map(nodes.map((node) => [node.getStart(source), node]))
+	return (
+		params.locations.length > 0 &&
+		params.locations.every(function reportedSkipped(location) {
+			const call = location === undefined ? undefined : testCallSpanning({ index, location })
+			const node = call === undefined ? undefined : nodeByStart.get(call.start)
+			return node !== undefined && isSkippedAsWritten(node)
+		})
+	)
+}
+
+/** The test call goes through `.skip` / `.todo`, itself or through a suite call whose arguments hold it. */
+function isSkippedAsWritten(node: ts.CallExpression): boolean {
+	if (callsThroughSkip(node.expression)) return true
+	for (
+		let child: ts.Node = node, parent = node.parent;
+		parent;
+		child = parent, parent = parent.parent
+	)
+		if (
+			ts.isCallExpression(parent) &&
+			parent.arguments.some((argument) => argument === child) &&
+			isSuiteCallee(parent.expression) &&
+			callsThroughSkip(parent.expression)
+		)
+			return true
+	return false
+}
+
+/** A callee chain holds a skip marker: `it.skip`, `describe.todo`, `test.skip.each(table)`, `it.skipIf(true)`. */
+function callsThroughSkip(callee: ts.Expression): boolean {
+	if (ts.isCallExpression(callee))
+		return isSkipIfTrue(callee) || callsThroughSkip(callee.expression)
+	if (ts.isPropertyAccessExpression(callee))
+		return SKIP_MARKERS.includes(callee.name.text) || callsThroughSkip(callee.expression)
+	return false
+}
+
+/** `<chain>.skipIf(true)`: a condition written as the literal `true` skips the case as surely as `.skip`. */
+function isSkipIfTrue(call: ts.CallExpression): boolean {
+	return (
+		ts.isPropertyAccessExpression(call.expression) &&
+		call.expression.name.text === SKIP_IF_MARKER &&
+		call.arguments.length > 0 &&
+		call.arguments[0].kind === ts.SyntaxKind.TrueKeyword
+	)
+}
+
+/**
  * The test calls of the file (as `listTestCalls` lists them) with their offsets, indexed by where they
  * start: the file is parsed once, a reported location is then answered in O(1) (`testCallAt`).
  */
@@ -278,6 +344,25 @@ export function testCallAt(params: {
 			position < call.end &&
 			(!holding || call.start > holding.start)
 		)
+			holding = call
+	return holding
+}
+
+/**
+ * The innermost test call whose whole span (callee included) holds a reported location: vitest points an
+ * `it.skip(...)` / `it.todo(...)` case at its marker (`skip`), inside the callee, where `testCallAt` finds the call
+ * around it instead. A location under a suite and in no case call of the file (a helper's call) gives the suite.
+ */
+function testCallSpanning(params: {
+	index: TestCallIndex
+	location: SourceLocation
+}): LocatedTestCall | undefined {
+	const { index, location } = params
+	if (location.line < 1 || location.line > index.lineStarts.length) return undefined
+	const position = index.lineStarts[location.line - 1] + Math.max(location.column - 1, 0)
+	let holding: LocatedTestCall | undefined
+	for (const call of index.calls)
+		if (call.start <= position && position < call.end && (!holding || call.start > holding.start))
 			holding = call
 	return holding
 }

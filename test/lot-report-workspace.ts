@@ -55,6 +55,10 @@ export function writeWorktreeRecords(params: {
 	worktree: string
 	gateFast?: string
 	gateFull?: string
+	/** The record of `contrib` at this time. */
+	contrib?: string
+	/** The steps a record of a mode lists (`{ name, status }`); a record written without them holds none. */
+	steps?: Partial<Record<'fast' | 'full' | 'contrib', { name: string; status: string }[]>>
 	ledger?: { kind: string; at: string }[] | string
 	/** The gate record of `fast` exists but does not parse (written as this text); wins over `gateFast`. */
 	damagedGateFast?: string
@@ -66,9 +70,15 @@ export function writeWorktreeRecords(params: {
 	for (const [mode, at] of [
 		['fast', params.gateFast],
 		['full', params.gateFull],
+		['contrib', params.contrib],
 	] as const)
-		if (at !== undefined && !(mode === 'fast' && params.damagedGateFast !== undefined))
-			writeFileSync(join(gitFolder, `dialecte-gate-${mode}.json`), JSON.stringify({ mode, at }))
+		if (at !== undefined && !(mode === 'fast' && params.damagedGateFast !== undefined)) {
+			const steps = params.steps?.[mode]
+			writeFileSync(
+				join(gitFolder, `dialecte-gate-${mode}.json`),
+				JSON.stringify({ mode, at, ...(steps === undefined ? {} : { steps }) }),
+			)
+		}
 	if (params.ledger === undefined) return
 	writeFileSync(
 		join(gitFolder, 'dialecte-tdd.json'),

@@ -14,6 +14,11 @@ export type HygieneBaseline = {
 	 */
 	stashCommits: string[]
 	head: string
+	/**
+	 * The branch the worktree was cut from (`worktree add`'s start: `--from` as given, else the resolved base branch,
+	 * `origin/<b>` when it starts on origin). Absent in a baseline written before it was recorded.
+	 */
+	from?: string
 	/** ISO date. */
 	writtenAt: string
 }

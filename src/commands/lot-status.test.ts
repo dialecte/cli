@@ -40,6 +40,9 @@ type StatusRow = {
 	expected: Record<string, unknown>
 }
 
+/** A real working lot with no station recorded: the walk starts at the first test-writer, the manual line stays in `also`. */
+const FIRST_STATION_NEXT = `dialecte lot station ${LOT} start test-writer --step 1`
+
 const TO_ANSWER = `dialecte lot answer ${LOT} q1 "<answer>"`
 
 function questionOf(number: number): Record<string, unknown> {
@@ -76,17 +79,23 @@ function expectedOf(overrides: Record<string, unknown>): Record<string, unknown>
 
 const STATUS_ROWS: StatusRow[] = [
 	{
-		title: 'working, real: the manual line',
-		expected: expectedOf({ state: 'working', next: manualLineOf(LOT) }),
+		title:
+			'working, real: no station recorded, the first station command and the manual line in also',
+		expected: expectedOf({
+			state: 'working',
+			next: FIRST_STATION_NEXT,
+			also: [manualLineOf(LOT)],
+		}),
 	},
 	{
-		title: 'working with a last limit transition: limit true, the same next',
+		title: 'working with a last limit transition: limit true, the same next and also',
 		later: [transitionOf({ seq: 2, kind: 'limit', at: LATER_TIME })],
 		expected: expectedOf({
 			state: 'working',
 			since: LATER_TIME,
 			limit: true,
-			next: manualLineOf(LOT),
+			next: FIRST_STATION_NEXT,
+			also: [manualLineOf(LOT)],
 		}),
 	},
 	{
@@ -260,7 +269,7 @@ const TEXT_ROWS: TextRow[] = [
 		title: 'working',
 		row: { title: 'working', expected: {} },
 		first: `${LOT} working since ${RECORD_TIME}`,
-		next: `next: ${manualLineOf(LOT)}`,
+		next: `next: ${FIRST_STATION_NEXT}`,
 		// the recorded worktree was never made: the checks line says so
 		alsoHolds: 'worktree missing',
 	},

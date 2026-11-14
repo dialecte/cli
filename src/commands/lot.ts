@@ -35,6 +35,7 @@ import { lotStation } from './lot-station.ts'
 import { lotStatus } from './lot-status.ts'
 import { lotStop } from './lot-stop.ts'
 import { printsOnStandardError } from './lot-streams.ts'
+import { runLotVerify } from './lot-verify.ts'
 import { waitLot } from './lot-wait.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
@@ -85,6 +86,13 @@ export function runLot(params: {
 			probe: params.probe,
 			cliPath: params.cliPath,
 		})
+	if (verb === 'verify') {
+		const resolved = resolveFolderWord({ cwd: params.cwd, words, mode: 'write' })
+		if ('exitCode' in resolved) return resolved
+		const result = runLotVerify({ cwd: params.cwd, argv: resolved.words, now: params.now })
+		if (resolved.note === undefined) return result
+		return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
+	}
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined

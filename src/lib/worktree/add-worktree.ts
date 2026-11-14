@@ -120,7 +120,12 @@ export function addWorktree(params: {
 	const nodeModulesCheck = checkNodeModules({ worktree })
 	const lockfileRead = readLockedPackages({ worktree })
 	const lockedPackages = 'packages' in lockfileRead ? lockfileRead.packages.length : 0
-	const baseline = writeHygieneBaseline({ root: worktree, now: params.now })
+	// an existing branch checked out has no start: no branch it was cut from is known
+	const baseline = writeHygieneBaseline({
+		root: worktree,
+		now: params.now,
+		...(start !== undefined && { from: start.name }),
+	})
 	return {
 		repository,
 		worktree,

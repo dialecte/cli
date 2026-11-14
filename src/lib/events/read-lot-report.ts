@@ -17,6 +17,7 @@ import {
 	registryOfLotFolder,
 } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
+import { readStationNext } from '../store/station-records.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { readStoreList } from '../store/store-list.ts'
 import { LOTS_KEEPING_NOTHING, NEXT_COMMANDS, STORE_FILES } from '../store/store.constants.ts'
@@ -108,7 +109,7 @@ export function readLotReport(params: { lotFolder: string; now: Date }): Reporte
 	})
 	return {
 		...report,
-		next: nextOf({ input, state: state.state, worktree: identity.worktree }),
+		next: nextOf({ input, lotFolder, state: state.state, worktree: identity.worktree }),
 		simulated: identity.simulated,
 	}
 }
@@ -271,18 +272,23 @@ function folderNamesOf(params: { folder: string }): string[] {
 }
 
 /**
- * The lot's next command: the state's (`nextCommandsOf`); for a committed or canceled lot whose worktree is on disk
+ * The lot's next command: the state's (`nextCommandsOf`, with the next station as `lot status` reads it); for a committed or canceled lot whose worktree is on disk
  * and which has a registry entry (the one the lot's state read), `lot close` of that entry (no `lot prune` before
  * L0b: a throwaway alone, or a lot with no entry, has no next).
  */
 function nextOf(params: {
 	input: LotStateInput
+	lotFolder: string
 	state: LotStateName
 	worktree: string | null
 }): string | null {
 	const { input, state, worktree } = params
 	if (!LOTS_KEEPING_NOTHING.includes(state))
-		return nextCommandsOf({ input, report: lotState(input) }).next
+		return nextCommandsOf({
+			input,
+			report: lotState(input),
+			station: readStationNext({ input, lotFolder: params.lotFolder }),
+		}).next
 	if (worktree === null || !existsSync(worktree)) return null
 	const entry = input.registryEntry
 	return entry === undefined ? null : NEXT_COMMANDS.close.replace('{handover}', entry.name)

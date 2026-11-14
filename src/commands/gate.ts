@@ -45,6 +45,7 @@ import { partsOf, reuseOf, startStep } from '../lib/events/record-step.ts'
 import { computeCheckKey, gateCommandHash } from '../lib/gate-records/check-key.ts'
 import { findReusableRecord } from '../lib/gate-records/check-store.ts'
 import { HYGIENE_STEP_NAME } from '../lib/gate-records/gate-records.constants.ts'
+import { GATE_NO_HEAD_LINE } from '../lib/gate-records/no-head.constants.ts'
 import {
 	recordCheckedRun,
 	renderReuseLine,
@@ -73,6 +74,7 @@ import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
 import { renderStepLine } from '../lib/gate/step-line.ts'
 import { namesAnotherRepository } from '../lib/git-environment.ts'
+import { readHeadOrNone } from '../lib/git.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
 import { readHandoverHold } from '../lib/handover/handover-lock.ts'
 import { GATE_UNDER_HANDOVER, HANDOVER_FILES } from '../lib/handover/handover.constants.ts'
@@ -272,10 +274,14 @@ export async function runGate(params: {
 		results.push(tdd)
 		if (running) showLive({ result: tdd, running })
 	}
+	// a record is keyed on HEAD: a repository with no commit yet reuses and keeps none (its tdd step refuses first
+	// today; the guard holds should that step ever pass without a commit)
+	const head = readHeadOrNone(cwd)
 	// the key of the state the steps start on: a record is stored only when they leave it the same
-	keyBefore = results.some((result) => result.status === 'failed')
-		? undefined
-		: computeCheckKey({ root: cwd, commandHash })
+	keyBefore =
+		head === undefined || results.some((result) => result.status === 'failed')
+			? undefined
+			: computeCheckKey({ root: cwd, commandHash })
 	const found =
 		keyBefore && !hasFlag(argv, 'no-reuse')
 			? findReusableRecord({ root: cwd, mode, key: keyBefore })
@@ -320,19 +326,24 @@ export async function runGate(params: {
 		mode === 'full' || (mode === 'release' && packageJson.dialecte?.gate?.release === undefined)
 	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
 	if (progress) for (const line of absentLines) live?.writeLine(textOf([line]))
-	const keyAfter = reused?.key ?? computeCheckKey({ root: cwd, commandHash })
 	const sleptMs = sleptSinceStart?.()
-	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
-		root: cwd,
-		mode,
-		results,
-		keyBefore,
-		keyAfter,
-		...(reused && { reused: reused.record }),
-		...(gateBase && { base: gateBase }),
-		...(sleptMs !== undefined && { sleptMs }),
-	})
-	const notStored = changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []
+	const { stored, changedWhileRunning, stateHash } =
+		head === undefined
+			? { stored: false, changedWhileRunning: false, stateHash: null }
+			: recordCheckedRun({
+					root: cwd,
+					mode,
+					results,
+					keyBefore,
+					keyAfter: reused?.key ?? computeCheckKey({ root: cwd, commandHash }),
+					...(reused && { reused: reused.record }),
+					...(gateBase && { base: gateBase }),
+					...(sleptMs !== undefined && { sleptMs }),
+				})
+	const notStored = [
+		...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
+		...(head === undefined ? [GATE_NO_HEAD_LINE.replace('{command}', `gate --${mode}`)] : []),
+	]
 
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
@@ -453,6 +464,11 @@ async function tddStep(params: {
 		ref: params.ref,
 		wholeBranch: params.wholeBranch,
 	})
+	// the whole-branch base under the step's line (a skipped step measured nothing from it)
+	const details = [
+		...(check.baseNote && check.status !== 'skipped' ? [check.baseNote] : []),
+		...(check.details ?? []),
+	]
 	return {
 		step: TDD_STEP,
 		status: check.status,
@@ -461,7 +477,7 @@ async function tddStep(params: {
 		...(check.reason && { reason: check.reason }),
 		...(check.note && { note: check.note }),
 		...(check.lines?.length && { tail: check.lines.join('\n') }),
-		...(check.details?.length && { details: check.details }),
+		...(details.length && { details }),
 		...(check.cases && { cases: check.cases }),
 		...(check.moved?.length && { moved: check.moved }),
 		...(check.duplicates?.length && { duplicates: check.duplicates }),

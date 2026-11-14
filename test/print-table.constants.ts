@@ -37,6 +37,8 @@ const WRITES_DECLARATION =
 	'a form that reads the argument as a reason writes the lot declaration, so the row gives the usage form, which names no argument'
 const REFUSES_COMBINATION = 'it refuses the combination of flags, naming the flags and no value'
 const REFUSES_PROFILE = 'it refuses at once in the consumer profile, naming the profile'
+const NO_SNAPSHOT_FIXED_LINE =
+	'its refusal here is the fixed line "nothing is late before the first snapshot", which names no argument'
 const RUNS_CHECKS = 'it answers its checks and names no argument'
 
 /**
@@ -197,6 +199,11 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 	'lot standard': { argv: ['standard', FORGED_WORD, 'consulted', 'a note'], quotes: true },
 	'lot delta': { argv: ['delta', FORGED_WORD, '--round', '2'], quotes: true, noJson: PLAIN_TEXT },
 	'lot recap': { argv: ['recap', FORGED_WORD], quotes: true },
+	'lot verify': {
+		argv: ['verify', FORGED_WORD, '--by', 'a-person', '--note', 'a note'],
+		quotes: false,
+		reason: NO_SNAPSHOT_FIXED_LINE,
+	},
 	'lot close': { argv: ['close', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	inbox: {
 		argv: [`--${FORGED_WORD}`],
