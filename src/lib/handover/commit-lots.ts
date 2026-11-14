@@ -14,7 +14,9 @@
  * whose commit fails is unstaged again (a merge lot's merge aborted), so the same command resumes at it
  * once the cause is fixed. A merge lot merges its recorded tip with its resolutions, checked against what
  * was reviewed and rehearsed. Before any commit that stages a change of the lock, `node_modules` are
- * brought to it. A commit whose hook prints nothing and gains no CPU for the stall time is stopped: its
+ * brought to it; then, for every lot, the install guard checks them against the lock the commit holds (the
+ * index's) and refuses the lot when they differ, that lock cannot be read or the check cannot be made, its result
+ * recorded in the hand-over folder's `install.json` (its refusal's exit code, 2, given to `onInstallRefusal`, as for a staged lock the sync cannot read or parse). A commit whose hook prints nothing and gains no CPU for the stall time is stopped: its
  * process tree is printed, then killed, and the lot is not committed.
  */
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -42,6 +44,8 @@ import {
 } from './handover.constants.ts'
 import { createHookLiveView } from './hook-live-view.ts'
 import { hookOutcomeLines, hookSummarySteps, readHookBase, readHookSteps } from './hook-output.ts'
+import { INSTALL_REFUSAL_EXIT_CODE } from './install-guard.constants.ts'
+import { guardInstall } from './install-guard.ts'
 import { removeMergeMarker, runMergeLot, undoMerge } from './merge-lot.ts'
 import { syncNodeModules } from './sync-node-modules.ts'
 import { unstageLot } from './unstage-lot.ts'
@@ -72,6 +76,14 @@ export async function commitLots(params: {
 	tty?: boolean
 	/** Brings `node_modules` to a staged lock that changed; default: `npm install`. */
 	install?: Installer
+	/** Where the install guard records its result (`install.json` in the hand-over folder); absent: no file. */
+	installRecord?: string
+	/** The repository's worktree the install guard's refusal names (a rehearsal's `root` is a clone); default `root`. */
+	worktree?: string
+	/** Wall-clock time of the install record's `at`; default `new Date()`. */
+	now?: () => Date
+	/** Called when the install guard refused a lot (the run then returns undefined): the run's exit code for it. */
+	onInstallRefusal?: (refusal: { exitCode: number }) => void
 	/** The lots (numbered from 1) committed without their hook: a rehearsal's lots a green record answers. */
 	withoutHook?: ReadonlySet<number>
 	/** The repository whose store holds the hook records, when `root` is a rehearsal clone of it. */
@@ -153,9 +165,26 @@ export async function commitLots(params: {
 		if ('refusal' in synced) {
 			running.finish(textOf([`✗ lot ${number} not committed: ${synced.refusal}`]))
 			write(undo())
+			// a staged lock the sync cannot read or parse exits as the install guard's refusal
+			if (synced.exitCode !== undefined) params.onInstallRefusal?.({ exitCode: synced.exitCode })
 			return undefined
 		}
 		if (synced.note) write(textOf([`  ${synced.note}`]))
+		const guarded = guardInstall({
+			root,
+			worktree: params.worktree,
+			lot: number,
+			record: params.installRecord,
+			now: params.now,
+		})
+		if (guarded.warning) write(textOf([guarded.warning]))
+		if ('refusal' in guarded) {
+			running.finish(textOf([`✗ lot ${number} not committed: ${guarded.refusal}`]))
+			if (guarded.lines.length > 0) write(textOf(guarded.lines.map((line) => `    ${line}`)))
+			write(undo())
+			params.onInstallRefusal?.({ exitCode: INSTALL_REFUSAL_EXIT_CODE })
+			return undefined
+		}
 		const skipsHook = params.withoutHook?.has(number) ?? false
 		// the record is of the tree the commit records: the index, the lot's files or the merge staged in it
 		const hooked = !skipsHook && hasCommitHook(root)

@@ -28,6 +28,7 @@ import {
 	ARCHIVED_LOT_FILE,
 	COMMIT_SCRIPT_FILE,
 	EMPTY_LOT_DECLARATION,
+	HANDOVER_FILES,
 	LOT_FILE_ARCHIVED,
 	REHEARSAL_SKIPPED_LINE,
 } from './handover.constants.ts'
@@ -41,7 +42,8 @@ import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.
 
 /**
  * The exit code: 0 when every lot is committed, 1 when a guard or a commit refused, 2 when the gate config is one
- * the cli cannot run (read before the guards, nothing staged) or a guard that sets it refused (`target`).
+ * the cli cannot run (read before the guards, nothing staged), a guard that sets it refused (`target`), or the
+ * install guard refused a lot.
  */
 export async function runHandoverFolder(params: {
 	handover: HandoverFolder
@@ -101,6 +103,8 @@ export async function runHandoverFolder(params: {
 	})
 	if ('exitCode' in guarded) return guarded.exitCode
 	if (params.skipCommits) write(REHEARSAL_SKIPPED_LINE)
+	// a refusal of the install guard exits as the guards do (2); a failed commit exits 1
+	let refusalExitCode: number | undefined
 	const committed = params.skipCommits
 		? guarded.commits
 		: await commitLots({
@@ -117,6 +121,12 @@ export async function runHandoverFolder(params: {
 				storeRoot: params.storeRoot,
 				scoped: gateScope.scoped,
 				handoverBase: gateScope.handoverBase,
+				// the record lands in the hand-over folder, the refusal names the repository (never a rehearsal clone)
+				installRecord: join(handover.folder, HANDOVER_FILES.install),
+				worktree: lotsFile.repository,
+				onInstallRefusal: function keepExitCode(refusal) {
+					refusalExitCode = refusal.exitCode
+				},
 			})
 	// a stopped run: the lots it did commit, for the card (the hand-over is partly committed)
 	const commits =
@@ -173,7 +183,7 @@ export async function runHandoverFolder(params: {
 	}
 	// whole on one line, whatever the width: a person copies it
 	if (!card.done) write(textOf([card.command]))
-	return committed ? 0 : 1
+	return committed ? 0 : (refusalExitCode ?? 1)
 }
 
 /**

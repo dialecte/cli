@@ -102,6 +102,7 @@ import {
 	USAGE_ROW,
 	WORKTREE_LINE_LABEL,
 } from './handover.constants.ts'
+import { readInstallLine } from './install-guard.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
 import { checkedTree, mergedBranchesOf, ownLotTreeOf } from './lot-trees.ts'
 import { PROCESSES_GUARD_NAME } from './stray-processes.constants.ts'
@@ -215,6 +216,7 @@ export function buildHandoverCard(params: {
 	const lateFixesLine = pending
 		? buildLateFixesLine({ folder: params.folder, root, stateHash })
 		: undefined
+	const installLine = readInstallLine({ folder: params.folder, worktree: root })
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -230,6 +232,8 @@ export function buildHandoverCard(params: {
 		buildReviewLine({ folder: params.folder, release: params.release }),
 		// changes after the last snapshot, on a card still to run: nothing late, no line
 		...(lateFixesLine ? [lateFixesLine] : []),
+		// the install guard's last record, on every card; none recorded: no line
+		...(installLine ? [installLine] : []),
 		// a committed card shows the state recorded on the lot, never the runner's environment
 		params.done
 			? readRecordedStandardLine({ folder: params.folder })

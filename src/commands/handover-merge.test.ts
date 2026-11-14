@@ -958,20 +958,26 @@ describe(
 	'the lock sync leaves out what an install may not bring',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		const LOCK_WITH_ABSENT = `{
-	"lockfileVersion": 3,
-	"packages": {
-		"": {},
-		"node_modules/dep": { "version": "2.0.0" },
-		"node_modules/devonly": { "version": "1.0.0", "dev": true },
-		"node_modules/devopt": { "version": "1.0.0", "devOptional": true },
-		"node_modules/peeropt": { "version": "1.0.0", "peerOptional": true },
-		"node_modules/opt": { "version": "1.0.0", "optional": true }
-	}
-}
-`
+		/** A lock holding `dep` and the given extra packages, each with its flag. */
+		function lockWith(extra: Record<string, Record<string, boolean>>): string {
+			return `${JSON.stringify({
+				lockfileVersion: 3,
+				packages: {
+					'': {},
+					'node_modules/dep': { version: '2.0.0' },
+					...Object.fromEntries(
+						Object.entries(extra).map(([name, flags]) => [
+							`node_modules/${name}`,
+							{ version: '1.0.0', ...flags },
+						]),
+					),
+				},
+			})}\n`
+		}
+		const DEV_PACKAGES = { devonly: { dev: true }, devopt: { devOptional: true } }
+		const LEFT_OUT_PACKAGES = { opt: { optional: true } }
 
-		function absentScenario(installed: string): {
+		function absentScenario(params: { installed: string; lock: string }): {
 			root: string
 			out: string
 			calls: string
@@ -985,8 +991,8 @@ describe(
 			writeFiles({
 				root,
 				files: {
-					'node_modules/dep/package.json': `{ "name": "dep", "version": "${installed}" }\n`,
-					'package-lock.json': LOCK_WITH_ABSENT,
+					'node_modules/dep/package.json': `{ "name": "dep", "version": "${params.installed}" }\n`,
+					'package-lock.json': params.lock,
 				},
 			})
 			const calls = join(temporaryFolder('dialecte-npm-record-'), 'calls.txt')
@@ -1006,24 +1012,53 @@ describe(
 			return { root, out, calls, base: head(root) }
 		}
 
-		it('dev, devOptional, peerOptional and optional packages absent from node_modules → nothing differs: no install, the commit goes through', async () => {
-			const scenario = absentScenario('2.0.0')
+		function callCount(calls: string): number {
+			return existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean).length : 0
+		}
+
+		it('dev and devOptional packages absent from node_modules → refused by the install guard (exit 2), naming them, nothing committed', async () => {
+			const scenario = absentScenario({
+				installed: '2.0.0',
+				lock: lockWith(DEV_PACKAGES),
+			})
+
+			const result = await runFolder({ out: scenario.out })
+
+			expect(result.exitCode).toBe(2)
+			const lines = result.text.split('\n')
+			expect(lines).toContain('    devonly: missing')
+			expect(lines).toContain('    devopt: missing')
+			expect(head(scenario.root)).toBe(scenario.base)
+		})
+
+		it('an optional package absent from node_modules → nothing differs: no install, the commit goes through', async () => {
+			const scenario = absentScenario({
+				installed: '2.0.0',
+				lock: lockWith(LEFT_OUT_PACKAGES),
+			})
 
 			const result = await runFolder({ out: scenario.out })
 
 			expect(result.exitCode).toBe(0)
-			expect(existsSync(scenario.calls)).toBe(false)
+			expect(callCount(scenario.calls)).toBe(0)
 			expect(head(scenario.root)).not.toBe(scenario.base)
 		})
 
-		it('node_modules behind, an installer that leaves the dev packages out → installed once, then the commit goes through without a refusal', async () => {
-			const scenario = absentScenario('1.0.0')
+		it('node_modules behind, an installer that leaves the dev packages out → installed once, then the install guard refuses (exit 2), naming only the dev packages', async () => {
+			const scenario = absentScenario({
+				installed: '1.0.0',
+				lock: lockWith({ ...DEV_PACKAGES, ...LEFT_OUT_PACKAGES }),
+			})
 
 			const result = await runFolder({ out: scenario.out })
 
-			expect(result.exitCode).toBe(0)
-			expect(existsSync(scenario.calls) ? readFileSync(scenario.calls, 'utf8') : '').not.toBe('')
-			expect(head(scenario.root)).not.toBe(scenario.base)
+			expect(result.exitCode).toBe(2)
+			expect(callCount(scenario.calls)).toBe(1)
+			const lines = result.text.split('\n')
+			expect(lines).toContain('    devonly: missing')
+			expect(lines).toContain('    devopt: missing')
+			expect(lines.filter((line) => /^ {4}opt:/.test(line))).toEqual([])
+			expect(head(scenario.root)).toBe(scenario.base)
 		})
 	},
 )

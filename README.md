@@ -1079,7 +1079,16 @@ the answer.
   `✓ verify  no late fixes`, or `verified by <who>: <note>`), come after the merges guard. Each refusal
   exits 2 with nothing committed, where every other guard exits 1; `--rehearse` prints `!` for each and goes
   on. The merges guard's note for a merge lot of the target that moved reads `lot <n>: merges main at <sha>; main
-  is now <sha> (see target)`. Each guard prints one line with its result
+  is now <sha> (see target)`. The install guard runs at each lot instead, once its files are staged (after the
+  lock sync below): `node_modules` read against the lock the commit holds, the index's `package-lock.json`. A
+  package at another version, missing or a link elsewhere, a lock that cannot be read or a check that cannot be
+  made refuses the lot (`✗ lot <n> not committed: node_modules do not match package-lock.json: run npm ci in
+  <worktree>`, the packages under it; when the working lock is a later lot's, `... the package-lock.json lot <n>
+  commits (a later lot changes it): run npm ci with that lock, or commit the lock change first`) with exit 2, under `--rehearse` too: no `!` there, a rehearsal checks its
+  clone's `node_modules`. No lock in the index: nothing checked. Each check replaces `install.json` in the
+  hand-over folder (`{ at, lock, working, ok, mismatched }`, `laterLock: true` for a later-lot refusal); the card shows it as its `install` line (`✓ install
+  node_modules match package-lock.json (<hash>)`, or `✗` with the count, which blocks a card still to run) while
+  the worktree's `package-lock.json` is the one the check saw (`working`), else no line. Each guard prints one line with its result
   and its time (`✓ snapshot    110 file(s)  0.4 s`): repository, the lots file as reviewed, hooks
   folder, branch, HEAD, empty index, the files against the snapshot, deleted files, files outside the
   lots, references (citations, declared patterns, and the tags of a contributor), `contrib` in a contributor
@@ -1217,8 +1226,9 @@ the answer.
   the note after the sync names each installed package of the staged lock that has one,
   `install scripts not run: <names>`: each package once by its name, a nested copy too, five named then
   `and <n> more`), the working copies put back byte for byte;
-  refused when the install changed the staged files or the versions still differ (dev, peer and optional
-  packages an install leaves out aside). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
+  refused when the install changed the staged files or the versions still differ (the sync leaves absent dev,
+  peer and optional packages aside; the install guard right after it checks dev and peer ones, and refuses the
+  lot when one is missing). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
   into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration
   (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
   the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a

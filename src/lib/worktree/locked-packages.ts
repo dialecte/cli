@@ -12,12 +12,20 @@ import { NODE_MODULES_PREFIX, PACKAGE_LOCK_FILE } from './worktree.constants.ts'
 
 import type { LockfileEntry, LockfileRead } from './worktree.types.ts'
 
-export function readLockedPackages(params: { worktree: string }): LockfileRead {
+/**
+ * The packages the lock installs in the worktree's `node_modules`: read from `lockText` when given (another lock
+ * than the file, the index's), else from the worktree's `package-lock.json` (`no lockfile` without one).
+ */
+export function readLockedPackages(params: {
+	worktree: string
+	/** The lock's text, read instead of the worktree's file. */
+	lockText?: string
+}): LockfileRead {
 	const path = join(params.worktree, PACKAGE_LOCK_FILE)
-	if (!existsSync(path)) return { notChecked: 'no lockfile' }
+	if (params.lockText === undefined && !existsSync(path)) return { notChecked: 'no lockfile' }
 	let lockfile: { packages?: Record<string, LockfileEntry> }
 	try {
-		lockfile = JSON.parse(readFileSync(path, 'utf8')) as typeof lockfile
+		lockfile = JSON.parse(params.lockText ?? readFileSync(path, 'utf8')) as typeof lockfile
 	} catch {
 		return { notChecked: 'unreadable' }
 	}
