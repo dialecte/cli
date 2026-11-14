@@ -9,24 +9,28 @@ import type { StandardClassifiedLine, StandardNoise } from './standard-index.typ
  * dropped run (its first to its last one-character line, the blank lines inside it included).
  */
 export function markNoiseLines(params: { lines: StandardClassifiedLine[] }): StandardNoise {
-	const found: StandardNoise = { dropped: params.lines.map(() => false), ranges: [] }
+	const runs = droppedRunsOf(params.lines)
+	const dropped = params.lines.map(() => false)
+	for (const run of runs) for (const index of run) dropped[index] = true
+	return {
+		dropped,
+		ranges: runs.map((run) => ({ from: run[0] + 1, to: run[run.length - 1] + 1 })),
+	}
+}
+
+/** The indexes of each run of one-character prose lines at least the minimum long, in file order. */
+function droppedRunsOf(lines: StandardClassifiedLine[]): number[][] {
+	const runs: number[][] = []
 	let run: number[] = []
-	for (const [index, line] of params.lines.entries()) {
+	for (const [index, line] of lines.entries()) {
 		if (line.kind === 'blank') continue
 		if (line.kind === 'prose' && line.content.length === 1) {
 			run.push(index)
 			continue
 		}
-		dropRun({ run, found })
+		if (run.length >= NOISE_RUN_MINIMUM) runs.push(run)
 		run = []
 	}
-	dropRun({ run, found })
-	return found
-}
-
-function dropRun(params: { run: number[]; found: StandardNoise }): void {
-	const { run, found } = params
-	if (run.length < NOISE_RUN_MINIMUM) return
-	for (const index of run) found.dropped[index] = true
-	found.ranges.push({ from: run[0] + 1, to: run[run.length - 1] + 1 })
+	if (run.length >= NOISE_RUN_MINIMUM) runs.push(run)
+	return runs
 }

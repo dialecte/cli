@@ -587,9 +587,53 @@ the answer.
   gate's selection (the files it checked); outside a gate, the files changed against HEAD and the new ones,
   that result recorded in the worktree's git folder (`dialecte-rules.json`: when, HEAD, the state hash, the
   files, the errors and warnings), which `dialecte lot recap` reads; a run on named files records nothing.
+  Quality rules, on implementation files (a test-shaped file is exempt):
+  - `argument-mutation` (error): a function changes what a parameter refers to (a mutating method such as
+    `.push` or `.add`, an assignment to a property, `delete`, `++`, `Object.assign` with it first); return the
+    new value instead. Rebinding the parameter, a copy, a write through `query` / `tx`, a `reduce` accumulator
+    are not flagged.
+  - `query-in-loop` (error): a query read (a method of the API indexes' `q` entries, `perf` and writes aside)
+    called on a query binding inside a loop or a loop callback (`map`, `forEach`, ...); read them in one query
+    before the loop. A call through a `perf` segment (`doc.query.perf.getRecord()`) is never a query read. Without an API index the rule does not run.
+  - `long-function` (warning): a function body over 60 lines that are neither blank nor comment-only; split it.
+
+  Test-shape rules, on test-shaped files (a test file, a name ending `-fixtures.ts`, `.test-fixtures.ts` or
+  `-cases.ts`, a file under the package's top-level `test/` folder):
+  - `table-branch` (error): an act or a per-case callback branches on a field of its case; one table per
+    behaviour.
+  - `without-export-xml` (error): a `.withoutExport(` act reads exported XML; use `withExport` with
+    `expectedQueries`.
+  - `export-without-queries` (error): a case of a `.withExport(` table with no (or empty) `expectedQueries`
+    and `unexpectedQueries`; give it one.
+  - `fixture-builder` (warning): a function returns XML built with a substitution (a value inside the XML, or
+    the element name itself: `` `<${tag} .../>` ``); write each fixture as inline XML.
+  - `plan-tag` (error): a title, a table key or the file name carries a plan or round tag; say what the case
+    checks.
+
+  An opt-out silences one of these eight rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
+  least 15 characters, on the finding's line or the line before it (for `argument-mutation` and
+  `long-function`, also anywhere in the comments right before the function, its doc comment included). A
+  malformed opt-out, a rule it cannot silence or a reason too short is an `invalid-allow` error; an opt-out
+  that covers no finding is an `unused-allow` warning (never for a rule that did not run). `--json` (and the
+  rules record) counts the findings the opt-outs silenced, per rule, in `allowed`. With the gate base (a
+  scoped gate step), an error of these rules on a line the change did not add is a warning ending
+  `(not added by this change)`; an empty-tree base (the release list, or no base branch found) knows no
+  change, so every error of these rules is such a warning. A plain `rules` run (no gate base) keeps them
+  errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
+  nothing: `query-in-loop` does not run and one line names the file and why. Not judged: an alias of a
+  parameter (`const set = params.items; set.add(x)`), a read in a function the loop calls (`query-in-loop` is
+  syntactic: it sees the reads written inside the loop), a table imported from a sibling file. `plan-tag`
+  flags `round` or `step` followed by a number in a title (`step 2 of the import`): reword it, or opt out.
+  `fixture-builder` reads `<` followed by a letter as XML, so a returned text with a `<word>` placeholder and a
+  substitution (`` `usage: <name> ${value}` ``) is flagged too: opt out with the reason.
+
 - `dialecte gate [--fast | --full] [--base <ref>] [--no-reuse] [--declare <path>]... [--json]` runs the Definition of Done: `--fast` (default) `check`,
   `skills:check` and the tests of the changed files; `--full` adds `build` and the whole suite (the
-  runner's defaults: every file in parallel), then the steps derived from the package's scripts after its
+  runner's defaults: every file in parallel); both default lists end with a scoped `rules` step
+  (`dialecte rules` on the changed files, judged against the gate base); a step whose command starts with the word
+  `dialecte` runs as the cli that runs the gate (its own node and entry file, never the package's
+  `node_modules/.bin/dialecte`, so a package without the cli installed runs it too), its line ending
+  `(dialecte <version>)`; then the steps derived from the package's scripts after its
   own (declared or default): `type-narrowing` (`npm run type-narrowing`, a check a publish workflow runs)
   when the package has that script and no step runs it; without the script, one line
   `skip  type-narrowing  no npm script "type-narrowing"` and no step of the record. The docs build and the type bench are contributor checks:
@@ -710,8 +754,13 @@ the answer.
   stops (state `T`) and is reported as stalled.
 - `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
-  changed against HEAD (recorded as `dialecte rules` records it), the package's `dialecte.contrib.steps`
-  (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
+  changed against HEAD (recorded as `dialecte rules` records it), judged against the gate base (the scoped
+  gate step's: the base branch's merge-base with HEAD; a rehearsal's run against the last merge lot's tip, else
+  the base the repository resolves at the lots file's HEAD): an error of a quality rule on a line the base already
+  holds is a warning ending `(not added by this change)`. No base branch found: the base is the empty tree, which
+  knows no change, so every quality error is that warning. No base, every error kept, only without a scoped gate
+  step or with a `dialecte.baseBranch` that names no branch. Then the package's
+  `dialecte.contrib.steps` (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
   `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a default
   step whose npm script is missing fails the run before any row, the built-in `rules` and `release` rows
   included, unless `dialecte.contrib.skip` opts it out with a reason; a declared one fails too), `type-narrowing` (`npm run type-narrowing`) when the package has that script and
@@ -1233,7 +1282,10 @@ the answer.
   lot is reused and no contrib run is needed, no clone is made: the guards, a reused merge's `tree <sha>`,
   then `rehearsal skipped: every lot's tree has a green record` and the card. Otherwise the clone is made
   (`▶ rehearsal contrib` then runs `dialecte contrib` in it at the lots file's HEAD on the tree the lots
-  leave, before any commit, its record going to the repository's store as a rehearsal's; the clone is put
+  leave, before any commit, its rules row judged against the last merge lot's tip (only the last one: the lines
+  an earlier merge of another branch brought in count as added), so only the lines the lots add can fail it;
+  without a merge lot against the base the repository resolves at the lots file's HEAD, as `dialecte contrib`
+  there would, never the clone's own base branch; its record going to the repository's store as a rehearsal's; the clone is put
   back after it, the files the run left removed) and
   the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
   others with their hook. A real run (no `--rehearse`) runs every commit's hook, whatever the store holds.
@@ -2045,7 +2097,8 @@ Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `wo
 `lot close`, the hand-over's target) finds it the same way, the first rule that answers winning:
 
 1. `dialecte.baseBranch` when set (an optional override): the local branch, else origin's. Set to a branch that
-   exists nowhere, it is refused, never replaced by another: exit 2 for the gate's base, `mutants`, `handover write`
+   exists nowhere, it is refused, never replaced by another (a package without a `dialecte.gate` config too: its
+   default lists hold the scoped `rules` step): exit 2 for the gate's base, `mutants`, `handover write`
    and `handover run`, exit 1 for `worktree add` of a new branch without `--from`; the commit hook fails, and the
    tdd step of `gate --full` fails with the same text.
 2. The branch `origin/HEAD` names (recorded at clone), when that branch exists; the local one is preferred.

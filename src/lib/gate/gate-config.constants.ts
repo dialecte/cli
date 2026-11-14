@@ -1,3 +1,5 @@
+import { CLI_BIN } from '../skills/cli-invocations.constants.ts'
+
 import type { GateListName, GateStep } from './gate-config.types.ts'
 
 /**
@@ -5,21 +7,36 @@ import type { GateListName, GateStep } from './gate-config.types.ts'
  * `--fast` while iterating; `--full` once per lot. The docs build and the type bench are contributor checks:
  * `dialecte contrib` runs them (`DEFAULT_CONTRIB_STEPS`). The suite runs with the runner's defaults (every file in
  * parallel); a test step that fails is rerun once, serially, on its failing files to tell a flake from a real
- * failure.
+ * failure. Both lists end with `dialecte rules`, scoped: it judges the changed files, and with the gate base an
+ * error on a line the change did not add counts as a warning. The gate runs it as itself (`SELF_STEP_PATTERN`).
  */
 export const DEFAULT_GATE_STEPS: Readonly<Record<'fast' | 'full', readonly GateStep[]>> = {
 	fast: [
 		{ name: 'check', run: 'npm run check' },
 		{ name: 'skills', run: 'npm run skills:check' },
 		{ name: 'tests', run: 'npx vitest run --changed', counts: 'tests', changedOnly: true },
+		{ name: 'rules', run: 'dialecte rules', scoped: true },
 	],
 	full: [
 		{ name: 'check', run: 'npm run check' },
 		{ name: 'skills', run: 'npm run skills:check' },
 		{ name: 'build', run: 'npm run build' },
 		{ name: 'tests', run: 'npx vitest run', counts: 'tests' },
+		{ name: 'rules', run: 'dialecte rules', scoped: true },
 	],
 }
+
+/**
+ * A step whose command starts with the word `dialecte`: the gate runs it as the cli that runs the gate (its own node
+ * and entry file), never as the `dialecte` a package installed, or lacks.
+ */
+export const SELF_STEP_PATTERN = new RegExp(`^${CLI_BIN}(?=\\s|$)`)
+
+/** The note on a self step's line and record: `{version}` the version of the cli that ran it. */
+export const SELF_STEP_NOTE = `(${CLI_BIN} {version})`
+
+/** A self step whose cli command could not be resolved: it fails with this reason, the resolver's message in its tail. */
+export const SELF_COMMAND_UNRESOLVED_REASON = `no ${CLI_BIN} bin resolved for the cli running the gate`
 
 /** The step lists of `dialecte.gate`, each validated whatever mode resolves. */
 export const GATE_LIST_NAMES: readonly GateListName[] = ['fast', 'full', 'release']

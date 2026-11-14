@@ -10,11 +10,19 @@ import type { StandardWordIndex, WordIndexOfParams } from './standard-search.typ
  */
 export function wordIndexOf(params: WordIndexOfParams): StandardWordIndex {
 	const stems: Record<string, number[]> = Object.create(null)
+	// the keys of each token are computed once per index build
 	const keysOfToken = new Map<string, string[]>()
 	let standardLine = 0
 	for (const file of params.files)
 		for (const line of file.logicalLines) {
-			for (const stem of stemsOfText({ text: line.text, keysOfToken })) {
+			const lineStems = new Set<string>()
+			for (const match of line.text.matchAll(WORD_TOKEN_PATTERN)) {
+				const token = match[0]
+				const keys = keysOfToken.get(token) ?? wordKeysOf({ token, split: true })
+				keysOfToken.set(token, keys)
+				for (const key of keys) lineStems.add(key)
+			}
+			for (const stem of lineStems) {
 				const lines = stems[stem]
 				if (lines) lines.push(standardLine)
 				else stems[stem] = [standardLine]
@@ -22,20 +30,4 @@ export function wordIndexOf(params: WordIndexOfParams): StandardWordIndex {
 			standardLine++
 		}
 	return { logicalLineCount: standardLine, stems }
-}
-
-/** The distinct stems of a text; the keys of each token are computed once per index build. */
-function stemsOfText(params: { text: string; keysOfToken: Map<string, string[]> }): Set<string> {
-	const { text, keysOfToken } = params
-	const stems = new Set<string>()
-	for (const match of text.matchAll(WORD_TOKEN_PATTERN)) {
-		const token = match[0]
-		let keys = keysOfToken.get(token)
-		if (!keys) {
-			keys = wordKeysOf({ token, split: true })
-			keysOfToken.set(token, keys)
-		}
-		for (const key of keys) stems.add(key)
-	}
-	return stems
 }

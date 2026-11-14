@@ -51,6 +51,9 @@ export type ApiJson = {
 	methods: ApiMethod[]
 }
 
+/** A shipped index file read: the index, or why the file is not one. */
+export type ApiJsonRead = { index: ApiJson } | { problem: string }
+
 /** A method found for a need, with the package that ships it and why it matched. */
 export type FoundMethod = {
 	method: ApiMethod

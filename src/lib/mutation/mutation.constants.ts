@@ -33,8 +33,6 @@ export const TIMEOUT_STATUS = 'Timeout'
 export const KILLED_STATUS = 'Killed'
 
 export const MUTATE_TARGET = /^(.*?)(?::(\d+)(?::(\d+))?-(\d+)(?::(\d+))?)?$/
-export const DIFF_HUNK = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/
-export const DIFF_NEW_PATH = '+++ b/'
 
 export const IGNORER_ERROR_TEXT = 'dialecte-error-text'
 export const IGNORER_EXHAUSTIVE_DEFAULT = 'dialecte-exhaustive-default'

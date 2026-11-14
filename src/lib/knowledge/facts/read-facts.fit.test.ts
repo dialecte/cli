@@ -21,7 +21,7 @@ function realSources(params: { seed: number }): Record<string, unknown>[] {
 	}))
 }
 
-describe('reads: a re-check giving 30 real-size sources → no throw, the line fitted, the lists as counts (R2-1)', () => {
+describe('reads: a re-check giving 30 real-size sources → no throw, the line fitted, the lists as counts', () => {
 	for (const readName of READ_NAMES)
 		it(`read by ${readName} → one rechecked line of at most 4,096 bytes, cut: true, fromCount and toCount, the file holding all 30 sources`, () => {
 			const folder = temporaryFolder('facts-read-rechecked-fit-')

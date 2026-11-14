@@ -44,9 +44,13 @@ export function evaluateGold(params: EvaluateGoldParams): StandardEvaluation {
 		if (best <= RECALL_RANKS.far) continue
 		let wide: StandardSlice[] | null = null
 		const candidates = quotes.map((entry) => {
-			const inText =
-				entry.file !== undefined &&
-				fileTextOf({ fileTexts, file: entry.file }).includes(entry.quote)
+			// the text of a whole file is folded once per evaluation
+			const text =
+				entry.file === undefined
+					? undefined
+					: (fileTexts.get(entry.file.fileId) ?? textOf(entry.file.logicalLines))
+			if (entry.file !== undefined && text !== undefined) fileTexts.set(entry.file.fileId, text)
+			const inText = text?.includes(entry.quote) ?? false
 			if (inText && entry.rank === null) wide ??= findWide({ item })
 			return missOf({ item, ...entry, inText, wide })
 		})
@@ -135,17 +139,6 @@ function compareReasons(params: { left: StandardMissReason; right: StandardMissR
 	const order = MISS_REASON_ORDER.indexOf(left.kind) - MISS_REASON_ORDER.indexOf(right.kind)
 	if (order !== 0) return order
 	return (left.rank ?? 0) - (right.rank ?? 0)
-}
-
-/** The text of a whole file (its logical lines), folded once per evaluation. */
-function fileTextOf(params: { fileTexts: Map<string, string>; file: StandardFileIndex }): string {
-	const { fileTexts, file } = params
-	let text = fileTexts.get(file.fileId)
-	if (text === undefined) {
-		text = textOf(file.logicalLines)
-		fileTexts.set(file.fileId, text)
-	}
-	return text
 }
 
 /** The logical lines' texts, each without its markup and folded, joined by one space. */

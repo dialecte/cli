@@ -1,5 +1,6 @@
+import { addedLineRangesOf } from '../git-diff.ts'
 import { matchesGlob } from '../tdd/match-glob.ts'
-import { DIFF_HUNK, DIFF_NEW_PATH, MUTABLE_EXTENSION, NEVER_MUTABLE } from './mutation.constants.ts'
+import { MUTABLE_EXTENSION, NEVER_MUTABLE } from './mutation.constants.ts'
 
 import type { MutationDeclaration } from './mutation.types.ts'
 
@@ -29,24 +30,9 @@ export function changedRanges(params: {
 	untracked: readonly string[]
 }): string[] {
 	const { declaration, diff, untracked } = params
-	const ranges: string[] = []
-	let file: string | undefined
-	let previous = ''
-	for (const line of diff.split('\n')) {
-		// a file header follows its `--- ` line: an added line starting with `++ ` is content
-		if (previous.startsWith('--- ') && line.startsWith('+++ ')) {
-			const path = line.startsWith(DIFF_NEW_PATH)
-				? line.slice(DIFF_NEW_PATH.length).replace(/\t$/, '')
-				: undefined
-			file = path !== undefined && isMutable({ declaration, file: path }) ? path : undefined
-		} else {
-			const hunk = DIFF_HUNK.exec(line)
-			const count = hunk?.[2] === undefined ? 1 : Number(hunk[2])
-			if (file && hunk && count > 0)
-				ranges.push(`${file}:${Number(hunk[1])}-${Number(hunk[1]) + count - 1}`)
-		}
-		previous = line
-	}
+	const ranges = [...addedLineRangesOf({ diff })]
+		.filter(([path]) => isMutable({ declaration, file: path }))
+		.flatMap(([path, lines]) => lines.map((range) => `${path}:${range.start}-${range.end}`))
 	return [
 		...new Set([...ranges, ...untracked.filter((path) => isMutable({ declaration, file: path }))]),
 	]

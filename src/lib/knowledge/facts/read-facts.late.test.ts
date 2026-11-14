@@ -22,7 +22,7 @@ function neverCalled(): CheckOutcome {
 	throw new Error('the check is never called for a stale fact')
 }
 
-describe('a stale fact keeps its reason (R4-1)', () => {
+describe('a stale fact keeps its reason', () => {
 	for (const readName of READ_NAMES) {
 		it(`the stale line holds the check's reason, read by ${readName}`, () => {
 			const folder = temporaryFolder('facts-late-stale-line-')
