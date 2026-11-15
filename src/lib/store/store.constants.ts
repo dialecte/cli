@@ -23,6 +23,8 @@ export const STORE_FILES: StoreFileNames = {
 	verify: 'verify.jsonl',
 	// `lot start`, `lot risk`, `lot snapshot` and `handover write` append the effort and the derived class here (33L1 D10)
 	risk: 'risk.jsonl',
+	// `lot scope` appends a started lot's scope changes here; the brief stays as published (FIX-lot-scope)
+	scopeChanges: 'scope-changes.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

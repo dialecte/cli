@@ -90,6 +90,8 @@ export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	'step.foreign': ['step', 'worktree'],
 	'step.wait': ['step', 'waitedMs'],
 	folder: ['action', 'path', 'branch', 'tip', 'durationMs'],
+	// `lot scope` writes one per change of a lot's scope (FIX-lot-scope D6)
+	'scope.changed': ['op', 'paths'],
 }
 
 /** Every field a reader knows: the envelope's and those of every known kind (a field is unknown when none holds it). */

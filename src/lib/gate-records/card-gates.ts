@@ -48,7 +48,9 @@ import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledg
 import { snapshotRounds } from '../review-rounds/round-names.ts'
 import { goAheadText, riskReasonText } from '../risk/risk-reason.ts'
 import { riskCapOf, riskStandingOf } from '../risk/risk-records.ts'
+import { lotScopeOf } from '../store/lot-records.ts'
 import { isEnded } from '../store/next-station.ts'
+import { scopeChangesText } from '../store/scope-changes.ts'
 import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
@@ -68,6 +70,7 @@ import {
 	EFFORT_DERIVED_FROM_WORDS,
 	EFFORT_LINE_DETAIL,
 	EFFORT_LINE_NAME,
+	SCOPE_LINE_NAME,
 	EFFORT_NONE_DETAIL,
 	FAILING_DETAIL,
 	FAILING_MORE,
@@ -1200,6 +1203,21 @@ function roundCountOf(params: { count: number }): string {
 		template: params.count === 1 ? REVIEW_ROUND_COUNT.one : REVIEW_ROUND_COUNT.many,
 		values: { count: String(params.count) },
 	})
+}
+
+/**
+ * The card's `scope` line (FIX-lot-scope D8): the scope changes of the lot, the adds with who and why; a warning when a
+ * change line does not read (the overlap guard then reads every path); none when the lot changed nothing.
+ */
+export function buildScopeLine(params: { folder: string }): CardGateLine | undefined {
+	const scope = lotScopeOf({ lotFolder: params.folder })
+	const detail = scopeChangesText({ scope, withReason: true })
+	if (detail === undefined) return undefined
+	return {
+		name: SCOPE_LINE_NAME,
+		status: scope.unreadable === undefined ? 'passed' : 'warning',
+		detail,
+	}
 }
 
 /**

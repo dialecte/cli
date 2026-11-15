@@ -226,6 +226,9 @@ export const REVIEW_ROUNDS_NO_EFFORT_DETAIL = '{rounds} (no effort recorded)'
 /** The name of the card's effort line (33L1 D20). */
 export const EFFORT_LINE_NAME = 'effort'
 
+/** The card line naming a lot's scope changes (FIX-lot-scope D8). */
+export const SCOPE_LINE_NAME = 'scope'
+
 /** The effort line: the effort, the risk class part and the rounds against the cap. */
 export const EFFORT_LINE_DETAIL = '{effort} · {riskClass} · {rounds} of {cap}'
 
