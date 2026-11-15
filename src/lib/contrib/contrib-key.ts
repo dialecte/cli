@@ -1,9 +1,9 @@
 /**
  * The key of a `dialecte contrib` run, shared by the run, the hand-over card, the `contrib` guard and the rehearsal
- * plan: the tree, what is installed, and a command hash of the contrib rows (a built-in row by its name and the cli's
+ * plan: the tree, what it locks, the `file:` dependencies, and a command hash of the contrib rows (a built-in row by its name and the cli's
  * version) with HEAD folded in, which the rules row reads the changed files against.
  */
-import { foldMachineLists, hashGateCommand, readInstalledKey } from '../gate-records/check-key.ts'
+import { foldMachineLists, hashGateCommand, readTreeKey } from '../gate-records/check-key.ts'
 import { isSameKey, readTreeRecords } from '../gate-records/check-store.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readCliVersion } from '../read-cli-version.ts'
@@ -52,13 +52,13 @@ export function contribCommandHash(params: {
 
 /**
  * The key a contrib run of the package at `root` would have now on `tree` at the commit `head`: the package's contrib
- * rows, what is installed in `root`.
+ * rows, what `tree` locks, the `file:` dependencies of `root`.
  */
 export function contribKeyOf(params: { root: string; tree: string; head: string }): CheckKey {
 	const steps = resolveContribSteps({ packageJson: readPackageJson(params.root) })
 	return {
 		tree: params.tree,
-		...readInstalledKey(params.root),
+		...readTreeKey({ root: params.root, tree: params.tree }),
 		commandHash: contribKeyHash({ root: params.root, steps, head: params.head }),
 	}
 }

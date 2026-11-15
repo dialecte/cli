@@ -18,14 +18,14 @@ import {
 	OWN_GATE_TIME,
 } from '../../../test/hook-tree.constants.ts'
 import { createHookTreeRepository } from '../../../test/hook-tree.ts'
-import { PACKAGES_A_NEWER } from '../../../test/install-key.constants.ts'
+import { PACKAGES_A_NEWER } from '../../../test/lock-key.constants.ts'
 import {
 	FULL_RECORD_FILE,
 	SCRATCH_REPOSITORY_TIMEOUT,
 } from '../../../test/scratch-checks.constants.ts'
 import { headOf, writeMergeHandover } from '../../../test/scratch-checks.ts'
 import { buildCardGateLines } from './card-gates.ts'
-import { readInstalledKey } from './check-key.ts'
+import { readTreeKey } from './check-key.ts'
 import { storeCheckRecord } from './check-store.ts'
 import { GATE_LINE_NAME, NEVER_RUN_DETAIL } from './gate-records.constants.ts'
 import { hashStateTree } from './state-hash.ts'
@@ -65,7 +65,7 @@ function storeHookRecord(params: { root: string; tree: string; commandHash: stri
 			head: headOf(root),
 			stateHash: hashStateTree(tree),
 			steps: HOOK_RECORD_STEPS,
-			key: { tree, ...readInstalledKey(root), commandHash: params.commandHash },
+			key: { tree, ...readTreeKey({ root, tree }), commandHash: params.commandHash },
 		},
 	})
 }
@@ -109,7 +109,7 @@ describe(
 			expect(byName(buildCardGateLines({ root, tree: ownTree }))).toEqual(byName(HOOK_GATE_LINES))
 		})
 
-		it('a hook-gate record made against another install → not counted: only the gate never run line is read', async () => {
+		it("npm's installed lock rewritten at other versions after the hook, the tree's lock unchanged → the hook-gate record still counts: the key reads the tree", async () => {
 			const { root, ownTree } = createHookTreeRepository()
 			writeInstalledLock({ root })
 			const ran = await runHookIn({ cwd: root })
@@ -117,9 +117,12 @@ describe(
 			const counted = byName(buildCardGateLines({ root, tree: ownTree }))
 			writeInstalledLock({ root, packages: PACKAGES_A_NEWER })
 
-			expect({ counted, afterInstall: buildCardGateLines({ root, tree: ownTree }) }).toEqual({
+			expect({
+				counted,
+				afterInstall: byName(buildCardGateLines({ root, tree: ownTree })),
+			}).toEqual({
 				counted: byName(HOOK_GATE_LINES),
-				afterInstall: [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }],
+				afterInstall: byName(HOOK_GATE_LINES),
 			})
 		})
 	},

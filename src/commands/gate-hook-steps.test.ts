@@ -28,7 +28,12 @@ import {
 	stepReusedLineOf,
 	stripStepHashes,
 } from '../../test/gate-hook.ts'
-import { PACKAGES, ROOT_FIELDS_A, ROOT_FIELDS_B } from '../../test/install-key.constants.ts'
+import {
+	INSTALLED_LOCK_FILE,
+	PACKAGES,
+	ROOT_FIELDS_A,
+	ROOT_FIELDS_B,
+} from '../../test/lock-key.constants.ts'
 import {
 	createScopedPackage,
 	createScopedStep,
@@ -44,9 +49,8 @@ import {
 	seedFullGate,
 } from '../../test/scratch-checks.ts'
 import { writeFiles } from '../../test/scratch-repository.ts'
-import { hashGateCommand, readInstalledKey } from '../lib/gate-records/check-key.ts'
+import { hashGateCommand, readTreeKey } from '../lib/gate-records/check-key.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
-import { INSTALLED_LOCK_FILE } from '../lib/gate-records/gate-records.constants.ts'
 import { listHookSteps, resolveGateSteps } from '../lib/gate/gate-config.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -167,7 +171,7 @@ describe(
 			expect(runsOf(hookPackage)).toEqual([1, 1])
 		})
 
-		it('the same packages installed with another root version and name since the gate → the same install: every step answered', async () => {
+		it("npm's installed lock rewritten since the gate (another root version and name) → the key reads the tree's lock only: every step answered", async () => {
 			const hookPackage = createHookPackage()
 			const { root } = hookPackage
 			writeFiles({ root, files: installedLockOf({ root: ROOT_FIELDS_A, packages: PACKAGES }) })
@@ -323,7 +327,7 @@ describe(
 	'gate --hook: every run writes a hook-gate record',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('a hook that answered from gate --full → one hook-gate record: the index tree, the installed key, the hash of the hook steps, each step with its stepHash and the origin it was answered from, HEAD before the commit, no origin mark', async () => {
+		it('a hook that answered from gate --full → one hook-gate record: the index tree, the key of what it locks, the hash of the hook steps, each step with its stepHash and the origin it was answered from, HEAD before the commit, no origin mark', async () => {
 			const hookPackage = createHookPackage()
 			const { root, checkCounter, testCounter, requires } = hookPackage
 			await seedFullGate(root)
@@ -339,7 +343,7 @@ describe(
 				head: headOf(root),
 				key: {
 					tree,
-					...readInstalledKey(root),
+					...readTreeKey({ root, tree }),
 					commandHash: hashGateCommand({
 						steps: hookStepsOf({ checkCounter, testCounter, requires }),
 					}),

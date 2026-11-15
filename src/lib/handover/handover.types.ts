@@ -429,12 +429,13 @@ export type RehearsalDecision = {
 /** A rehearsal's decision for a lot, before its number and tree are added. */
 export type LotDecision = Omit<RehearsalDecision, 'lot' | 'tree'>
 
-/** What every lot's decision of a rehearsal reads: the repository, what is installed, the commands, the hook. */
+/** What every lot's decision of a rehearsal reads: the repository, what the tree locks, the commands, the hook. */
 export type RehearsalPlanContext = {
 	root: string
 	/** The branch the hand-over commits on. */
 	branch: string
-	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	/** What the lot's tree locks, and the `file:` dependencies (`readTreeKey`). */
+	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
 	/**
 	 * The command hash a record of each mode must hold to be reused, at the hand-over base; `release` only when the
 	 * release list covers `full` (its scoped steps against the empty tree).
@@ -446,11 +447,8 @@ export type RehearsalPlanContext = {
 	stages: string | undefined
 }
 
-/** What every lot's plan context shares: the repository, the branch, what is installed, the worktree's package.json. */
-export type SharedPlanContext = Pick<
-	RehearsalPlanContext,
-	'root' | 'branch' | 'installed' | 'base'
-> & {
+/** What every lot's plan context shares: the repository, the branch, the worktree's package.json. */
+export type SharedPlanContext = Pick<RehearsalPlanContext, 'root' | 'branch' | 'base'> & {
 	/** The worktree's package.json: a lot tree that holds none is read with it. */
 	packageJson: PackageJson
 }

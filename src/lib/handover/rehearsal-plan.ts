@@ -1,18 +1,18 @@
 /**
  * What a rehearsal does for each lot, decided before any clone: reuse a green record of the tree the lot's
  * commit will hold, or rehearse the lot in the scratch clone, and why. A plain lot is reused when the
- * repository's store holds a green `gate --full` of its tree, run against what is installed now (the same
- * `node_modules`, the same `file:` dependencies, the same steps), the lot does not change
+ * repository's store holds a green `gate --full` of its tree, run against the lock that tree holds (the
+ * same `file:` dependencies, the same steps), the lot does not change
  * `package-lock.json` and the commit hook stages no files of its own. A merge lot is reused when the tree it
  * leaves is its tip's tree and a green record of that tree (the branch commit's hook, or a `gate --full`)
- * matches what is installed now, under the same conditions. A contributor's last lot also says when the tree the
+ * matches what the tree locks, under the same conditions. A contributor's last lot also says when the tree the
  * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone. A green
  * `gate --release` record of a release list that covers `full` answers a plain or a merge lot as a full record would.
  * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
  * rehearsed saying the base moved.
  */
 import { findContribRecord } from '../contrib/contrib-key.ts'
-import { readInstalledKey } from '../gate-records/check-key.ts'
+import { readTreeKey } from '../gate-records/check-key.ts'
 import {
 	isGreenRecord,
 	isSameKey,
@@ -58,7 +58,6 @@ export function planRehearsal(params: {
 	const shared: SharedPlanContext = {
 		root,
 		branch: params.handover.lotsFile.branch,
-		installed: readInstalledKey(root),
 		packageJson: readPackageJson(root),
 		...(params.base !== undefined && { base: params.base }),
 	}
@@ -116,6 +115,8 @@ function readPlanContext(params: {
 	return {
 		root,
 		...rest,
+		// what the lot's tree locks: a record of that tree ran on a node_modules that installed it
+		treeKey: readTreeKey({ root, tree }),
 		commands: {
 			full: hashes.full,
 			hook: hashes.hook,
@@ -128,7 +129,7 @@ function readPlanContext(params: {
 
 /**
  * A contributor's hand-over whose last lot leaves `tree` (the tree the `contrib` guard checks) with no green contrib
- * record of it at the lots file's HEAD (the guard's), against what is installed now: the rehearsal runs
+ * record of it at the lots file's HEAD (the guard's), against what the tree locks: the rehearsal runs
  * `dialecte contrib` on it in the clone.
  */
 function needsContribRun(params: {
@@ -201,7 +202,7 @@ function decideMerge(params: {
 }
 
 /**
- * Reused with the newest record that checked the tree against what is installed now with the command of its
+ * Reused with the newest record that checked the tree against what the tree locks with the command of its
  * mode; else rehearsed, saying what changed since the newest record.
  */
 function reuseOrMismatch(params: {
@@ -243,16 +244,16 @@ function reuseOrMismatch(params: {
 				},
 			}),
 		)
-	if (newest.key?.lockHash !== context.installed.lockHash)
+	if (newest.key?.lockHash !== context.treeKey.lockHash)
 		return rehearsed(REHEARSAL_REASONS.installChanged)
-	if (newest.key?.linked !== context.installed.linked)
+	if (newest.key?.linked !== context.treeKey.linked)
 		return rehearsed(REHEARSAL_REASONS.linkedChanged)
 	return rehearsed(
 		fillReason({ template: REHEARSAL_REASONS.commandChanged, values: { mode: newest.mode } }),
 	)
 }
 
-/** The key a record of `tree` must hold to be reused now: what is installed, the command of its mode. */
+/** The key a record of `tree` must hold to be reused now: what the tree locks, the command of its mode. */
 function expectedKey(params: {
 	context: RehearsalPlanContext
 	tree: string
@@ -261,7 +262,7 @@ function expectedKey(params: {
 	const { context, record } = params
 	return {
 		tree: params.tree,
-		...context.installed,
+		...context.treeKey,
 		commandHash:
 			record.mode === HOOK_RECORD_MODE
 				? context.commands.hook

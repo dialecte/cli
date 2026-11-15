@@ -6,11 +6,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runHandover } from '../src/commands/handover.ts'
-import {
-	foldHookBase,
-	hashHookCommand,
-	readInstalledKey,
-} from '../src/lib/gate-records/check-key.ts'
+import { foldHookBase, hashHookCommand, readTreeKey } from '../src/lib/gate-records/check-key.ts'
 import { storeCheckRecord } from '../src/lib/gate-records/check-store.ts'
 import { hashStateTree } from '../src/lib/gate-records/state-hash.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
@@ -156,7 +152,7 @@ export function storeHookRecordAt(params: { root: string; tree: string; gateBase
 			],
 			key: {
 				tree,
-				...readInstalledKey(root),
+				...readTreeKey({ root, tree }),
 				commandHash: foldHookBase({ hook: hashHookCommand(root), gateBase }),
 			},
 			base: { commit: gateBase, source: 'base-branch' },

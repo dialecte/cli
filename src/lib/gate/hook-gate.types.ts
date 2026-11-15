@@ -5,12 +5,12 @@ import type { GateRunBase } from './gate-base.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 import type { StepResult } from './gate.types.ts'
 
-/** Where `gate --hook` looks its steps up: the committed tree, what is installed, and the store to read. */
+/** Where `gate --hook` looks its steps up: the committed tree, what the tree locks, and the store to read. */
 export type HookAnswerPlace = {
 	cwd: string
 	/** The tree of the index git hands the hook. */
 	tree: string
-	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
 	/** The absolute git common dir whose store to read instead of the repository's own. */
 	checkStore: string | undefined
 }
@@ -48,7 +48,7 @@ export type PreparedHookRun = {
 	hasHead: boolean
 	/** The tree of the index git hands the hook. */
 	tree: string
-	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
 	/** Each hook step's `hashGateStep` at the hook base, by name. */
 	stepHashes: ReadonlyMap<string, string>
 }

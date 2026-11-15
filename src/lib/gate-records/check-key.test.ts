@@ -17,8 +17,14 @@ import {
 } from '../../../test/scratch-repository.ts'
 import { treeOfWorkingFiles } from '../../../test/scratch-tree.ts'
 import { contribCommandHash } from '../contrib/contrib-key.ts'
-import { computeInstallKey } from '../worktree/install-key.ts'
-import { computeCheckKey, hashGateCommand, hashHookCommand, readTreeOf } from './check-key.ts'
+import { computeLockKey } from '../worktree/lock-key.ts'
+import {
+	computeCheckKey,
+	computeCommitKey,
+	hashGateCommand,
+	hashHookCommand,
+	readTreeOf,
+} from './check-key.ts'
 import { computeStateHash } from './state-hash.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -87,26 +93,40 @@ describe('computeCheckKey', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(keys[1]).toEqual(keys[0])
 	})
 
-	it('no node_modules/.package-lock.json → lockHash is none', () => {
+	it('no package-lock.json → lockHash is none', () => {
 		const root = changedRepository()
 
 		expect(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash).toBe('none')
 	})
 
-	it('node_modules/.package-lock.json present → lockHash is the install key of its packages, and another package version gives another hash', () => {
+	it('a package-lock.json edited in the worktree → lockHash is the key of the edited lock, whatever node_modules holds', () => {
 		const root = changedRepository()
-		const content = '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n'
-		writeFiles({ root, files: { 'node_modules/.package-lock.json': content } })
-		const locks: string[] = []
-		expect(locks.push(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash)).toBe(1)
-		expect(computeInstallKey(root)).toBe(locks[0])
+		const lock = '{"packages":{"node_modules/a":{"version":"1.0.1"}}}\n'
 		writeFiles({
 			root,
-			files: { 'node_modules/.package-lock.json': content.replace('1.0.0', '1.0.1') },
+			files: {
+				'package-lock.json': lock,
+				'node_modules/.package-lock.json': lock.replace('1.0.1', '1.0.0'),
+			},
 		})
-		expect(locks.push(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash)).toBe(2)
 
-		expect(locks[1]).not.toBe(locks[0])
+		expect(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash).toBe(
+			computeLockKey({ text: lock }),
+		)
+	})
+})
+
+describe('computeCommitKey', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('a lock staged and another one on disk → lockHash is the key of the staged lock', () => {
+		const root = changedRepository()
+		const staged = '{"packages":{"node_modules/a":{"version":"1.0.1"}}}\n'
+		writeFiles({ root, files: { 'package-lock.json': staged } })
+		git({ root, args: ['add', 'package-lock.json'] })
+		writeFiles({ root, files: { 'package-lock.json': staged.replace('1.0.1', '2.0.0') } })
+
+		expect(computeCommitKey({ root, commandHash: COMMAND_HASH }).lockHash).toBe(
+			computeLockKey({ text: staged }),
+		)
 	})
 })
 

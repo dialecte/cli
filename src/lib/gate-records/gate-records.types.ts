@@ -56,7 +56,7 @@ export type GateRecordMode = GateMode | 'hook' | 'hook-gate' | 'contrib'
 export type CheckKey = {
 	/** The git tree id of the state it ran on. */
 	tree: string
-	/** sha256 (hex) of `node_modules/.package-lock.json`, `none` when absent. */
+	/** The lock key of the checked tree's `package-lock.json` (`computeLockKey`), `none` when it holds none. */
 	lockHash: string
 	/** sha256 (hex) of what ran: the gate's resolved steps and `--base`, or the commit hook's files. */
 	commandHash: string

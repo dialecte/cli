@@ -683,7 +683,7 @@ export const REHEARSAL_REASONS = {
 	mergeChangesLock: 'the merge changes package-lock.json',
 	hookStages: 'the hook stages files ({match})',
 	branchMoved: '{branch} moved: the merge leaves tree {tree}, the tip holds {tip}',
-	installChanged: 'node_modules changed since the record',
+	installChanged: 'the lock of the tree is not the one the record ran on',
 	linkedChanged: 'a linked dependency changed since the record',
 	commandChanged: 'the {mode} command changed since the record',
 	full: '--full',

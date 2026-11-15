@@ -1,4 +1,4 @@
-/** The installed locks the install-key tests write: the same packages told in different ways. */
+/** The locks the lock-key tests write: the same packages told in different ways. */
 
 /** What a lock holds besides its packages. */
 export const ROOT_FIELDS_A = { name: 'app', version: '1.0.0', lockfileVersion: 3, requires: true }
@@ -40,7 +40,16 @@ export const PACKAGES_A_NEWER = {
 	'node_modules/a': { ...PACKAGES['node_modules/a'], version: '1.0.1' },
 }
 
+/** The package's own entry of a lock (`""`), and the same with another name, version and dependency range. */
+export const ROOT_ENTRY_A = { '': { name: 'app', version: '1.0.0', dependencies: { a: '^1.0.0' } } }
+export const ROOT_ENTRY_B = {
+	'': { name: 'other-app', version: '2.4.0', dependencies: { a: '^1.0.0 || ^2.0.0' } },
+}
+
 /** A file that is no JSON, and a JSON with no `packages` object. */
 export const NOT_JSON_LOCK = 'lock-1\n'
 export const NO_PACKAGES_LOCK = '{"name":"app","version":"1.0.0"}\n'
 export const PACKAGES_NOT_AN_OBJECT_LOCK = '{"packages":[1,2]}\n'
+
+/** npm's own lock of what it installed, relative to the package: no part of a check key, which reads the tree's. */
+export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'

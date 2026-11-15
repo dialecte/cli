@@ -572,7 +572,7 @@ function checkMutation(params: { handover: HandoverFolder; committed: number }):
 
 /**
  * A contributor's contrib run of the tree the lots still to commit leave: a green record whose key is the one a run
- * would have now (that tree, what is installed, the contrib rows) at the lots file's HEAD, before any lot is
+ * would have now (that tree, what it locks, the contrib rows) at the lots file's HEAD, before any lot is
  * committed; else refused, naming the failed rows of a record of that key.
  */
 function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): GuardVerdict {

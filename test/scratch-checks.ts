@@ -386,7 +386,7 @@ export async function createRehearsedScenario(variant: RehearsedVariant): Promis
 		if (variant === '--full') reason = '--full'
 		if (variant === 'node_modules/.package-lock.json changed since the gate') {
 			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } })
-			reason = 'node_modules changed since the record'
+			reason = 'the lock of the tree is not the one the record ran on'
 		}
 		if (variant === 'a linked dependency changed since the gate') {
 			writeFiles({ root: join(root, '..', 'dep'), files: { 'lib/a.js': 'one, and more\n' } })

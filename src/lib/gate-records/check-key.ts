@@ -1,4 +1,4 @@
-/** The key of a check: what a record ran on, computed from the worktree as it is now. */
+/** The key of a check: what a record ran on, every part read from the tree it checks. */
 import { createHash } from 'node:crypto'
 import {
 	copyFileSync,
@@ -19,7 +19,7 @@ import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readMachineLists } from '../rules/committed-text.ts'
-import { computeInstallKey } from '../worktree/install-key.ts'
+import { computeTreeLockKey } from '../worktree/lock-key.ts'
 import {
 	FILE_DEPENDENCY_PREFIX,
 	LINKED_DEPENDENCY_FIELDS,
@@ -38,23 +38,32 @@ import type { CommitHookFile } from '../git-hooks.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { CheckKey } from './gate-records.types.ts'
 
-/** The key of the worktree `root` is in, now. */
-export function computeCheckKey(params: { root: string; commandHash: string }): CheckKey {
-	return {
-		tree: computeStateTree(params.root),
-		...readInstalledKey(params.root),
-		commandHash: params.commandHash,
-	}
+/**
+ * The key of the worktree `root` is in, now: its state tree (`computeStateTree`, or `tree` when the caller just read
+ * it) and what that tree locks.
+ */
+export function computeCheckKey(params: {
+	root: string
+	commandHash: string
+	/** The state tree the caller read a moment ago, with nothing run since. */
+	tree?: string
+}): CheckKey {
+	const tree = params.tree ?? computeStateTree(params.root)
+	return { tree, ...readTreeKey({ root: params.root, tree }), commandHash: params.commandHash }
 }
 
 /**
- * What the package at `root` runs against besides its tree, as a check key holds it: what npm installed
- * (`lockHash`) and the folders of its `file:` dependencies as they are now (`linked`).
+ * What a check of the package at `root` on `tree` runs against besides the tree's files, as a check key holds it:
+ * the lock key of the tree's `package-lock.json` (`lockHash`; `node_modules` installing it is a precondition,
+ * `checkInstallMatchesTree`) and the folders of its `file:` dependencies as they are now (`linked`).
  */
-export function readInstalledKey(root: string): Pick<CheckKey, 'lockHash' | 'linked'> {
+export function readTreeKey(params: {
+	root: string
+	tree: string
+}): Pick<CheckKey, 'lockHash' | 'linked'> {
 	return {
-		lockHash: computeInstallKey(root),
-		linked: hashLinkedFolders(root),
+		lockHash: computeTreeLockKey(params),
+		linked: hashLinkedFolders(params.root),
 	}
 }
 
@@ -170,8 +179,8 @@ export function foldHookBase(params: { hook: string; gateBase: string }): string
 }
 
 /**
- * The key of what a commit in the worktree `root` is in records: the tree of its index (`readIndexTree`), what
- * npm installed, the `file:` dependencies, and `commandHash`.
+ * The key of what a commit in the worktree `root` is in records: the tree of its index (`readIndexTree`), what that
+ * tree locks, the `file:` dependencies, and `commandHash`.
  */
 export function computeCommitKey(params: {
 	root: string
@@ -179,11 +188,8 @@ export function computeCommitKey(params: {
 	/** The index the commit records, as git hands it to a hook (relative: to the worktree top); default: the worktree's own. */
 	indexFile?: string
 }): CheckKey {
-	return {
-		tree: readIndexTree({ root: params.root, indexFile: params.indexFile }),
-		...readInstalledKey(params.root),
-		commandHash: params.commandHash,
-	}
+	const tree = readIndexTree({ root: params.root, indexFile: params.indexFile })
+	return { tree, ...readTreeKey({ root: params.root, tree }), commandHash: params.commandHash }
 }
 
 /**

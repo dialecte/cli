@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { readRecordFile } from '../../test/gate-records.ts'
 import { startedAt, reportRun } from '../../test/mutation-hooks.ts'
 import { PACKAGE_NAME } from '../../test/mutation-package.constants.ts'
@@ -24,11 +27,17 @@ import {
 	removeCheckStore,
 	runContribIn,
 } from '../../test/scratch-contrib.ts'
-import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import {
+	createScratchRepository,
+	git,
+	temporaryFolder,
+	writeFiles,
+} from '../../test/scratch-repository.ts'
 import { addWorktree, treeOfWorkingFiles } from '../../test/scratch-tree.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
 import { RULES_RECORD_FILE } from '../lib/gate-records/gate-records.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
+import { runContrib } from './contrib.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -485,14 +494,17 @@ describe('contrib: a step gate --full already ran', { timeout: SCRATCH_REPOSITOR
 		expect(countRuns(counter)).toBe(2)
 	})
 
-	it('gate --full passed docs, then a new install (same tree) → the docs step runs', async () => {
+	it("gate --full passed docs, then npm's installed lock rewritten (same tree, same lock) → the docs step is reused: the key reads the tree's lock", async () => {
 		const counter = createCounter()
 		const root = sharedDocsPackage(counter)
 		await seedFullGate(root)
 		writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } })
 
-		await expect(runContribIn({ cwd: root })).resolves.toMatchObject({ exitCode: 0 })
-		expect(countRuns(counter)).toBe(2)
+		await expect(runContribIn({ cwd: root })).resolves.toMatchObject({
+			exitCode: 0,
+			output: expect.stringContaining('reused from gate --full'),
+		})
+		expect(countRuns(counter)).toBe(1)
 	})
 
 	it('a failed gate --full whose docs step passed → the docs step runs, not reused', async () => {
@@ -533,5 +545,48 @@ describe('contrib: no usable repository', { timeout: SCRATCH_REPOSITORY_TIMEOUT 
 			exitCode: 2,
 			output: expect.stringMatching(/^contrib:/),
 		})
+	})
+})
+
+describe(
+	'contrib: node_modules against the lock being checked',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('node_modules holding another version than package-lock.json → refused naming the package and the npm ci to run, no row run, exit 1', async () => {
+			const counter = createCounter()
+			const root = createContribPackage({
+				steps: [counterStep({ counter, name: 'check' })],
+				files: {
+					'package-lock.json': `${JSON.stringify({ lockfileVersion: 3, packages: { 'node_modules/a': { version: '1.0.1' } } })}\n`,
+				},
+			})
+			writeFiles({ root, files: { 'node_modules/a/package.json': '{"version":"1.0.0"}\n' } })
+
+			const result = await runContribIn({ cwd: root })
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain('a: 1.0.0 installed, lock 1.0.1')
+			expect(result.output).toContain(`cd ${shellQuote(root)} && npm ci`)
+			expect(countRuns(counter)).toBe(0)
+		})
+	},
+)
+
+describe('contrib given a store', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('given the git common dir of another repository → the record lands in that store marked as a rehearsal, none in its own; a second run reuses it from there', async () => {
+		const counter = createCounter()
+		const root = createContribPackage({ steps: [counterStep({ counter, name: 'check' })] })
+		const checkStore = join(createScratchRepository(), '.git')
+
+		const first = await runContrib({ cwd: root, argv: [], checkStore })
+		await runContrib({ cwd: root, argv: [], checkStore })
+
+		expect(first.exitCode).toBe(0)
+		expect(existsSync(join(root, '.git/dialecte-checks'))).toBe(false)
+		const [stored] = readdirSync(join(checkStore, 'dialecte-checks'))
+		expect(JSON.parse(readFileSync(join(checkStore, 'dialecte-checks', stored), 'utf8'))).toEqual([
+			expect.objectContaining({ mode: 'contrib', origin: 'rehearsal' }),
+		])
+		expect(countRuns(counter)).toBe(1)
 	})
 })

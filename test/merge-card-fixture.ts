@@ -1,7 +1,7 @@
 /** The records the gate-line cards read, written as the gate and the commit hook leave them in the git folder. */
 import { writeFileSync } from 'node:fs'
 
-import { hashHookCommand, readInstalledKey } from '../src/lib/gate-records/check-key.ts'
+import { hashHookCommand, readTreeKey } from '../src/lib/gate-records/check-key.ts'
 import { storeCheckRecord } from '../src/lib/gate-records/check-store.ts'
 import { computeStateTree, hashStateTree } from '../src/lib/gate-records/state-hash.ts'
 import { gitPathOf } from './gate-records.ts'
@@ -52,7 +52,7 @@ export function writeOwnHookRecord(params: {
 	at: string
 	foreignInstall?: boolean
 }): void {
-	const installed = readInstalledKey(params.root)
+	const treeKey = readTreeKey({ root: params.root, tree: params.tree })
 	const record: GateRecord = {
 		mode: 'hook',
 		at: params.at,
@@ -61,7 +61,7 @@ export function writeOwnHookRecord(params: {
 		steps: HOOK_STEPS,
 		key: {
 			tree: params.tree,
-			...installed,
+			...treeKey,
 			...(params.foreignInstall && { lockHash: FOREIGN_LOCK_HASH }),
 			commandHash: hashHookCommand(params.root),
 		},

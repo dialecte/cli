@@ -680,8 +680,9 @@ the answer.
   worktree would commit (HEAD's tree with the changed and untracked files on top, the deleted ones
   removed, `.dialecte/` left out): committing the lots leaves it the same, any other edit changes it.
   The record also holds its `key`, what the run checked: `tree` (the git tree id the state hash is the
-  sha256 of), `lockHash` (sha256 of `node_modules/.package-lock.json`, what npm installed; `none` without
-  it), `commandHash` (sha256 of the steps' names and commands in order, and HEAD's commit when a step
+  sha256 of), `lockHash` (sha256 of the `packages` of the checked tree's `package-lock.json`, keys sorted and the
+  package's own entry left out; `none` when the tree holds none: `node_modules` installing that lock is checked
+  before any step, never part of the key), `commandHash` (sha256 of the steps' names and commands in order, and HEAD's commit when a step
   runs only the tests the change affects, which depend on the diff against HEAD; `--base` is no part of
   it: it reads the `tdd` step only) and `linked` (sha256 over the package's `file:` dependencies as node
   loads them - the folder `node_modules/<name>` links to, else the path package.json names - each file

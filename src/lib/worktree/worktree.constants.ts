@@ -51,6 +51,9 @@ export const LOCAL_DEPENDENCY_PATTERN = /^(?:file|link):(.+)$/
 /** The lockfile `worktree add` reads `node_modules` against. */
 export const PACKAGE_LOCK_FILE = 'package-lock.json'
 
+/** The package's own entry in a lock's `packages`: its name, version and ranges, nothing installed. */
+export const PACKAGE_LOCK_ROOT_ENTRY = ''
+
 /** Where npm installs packages; a nested package sits in its parent's own one. */
 export const NODE_MODULES_PREFIX = 'node_modules/'
 
@@ -120,3 +123,15 @@ export const HYGIENE_BASELINE_MOVED_KIND = 'hygiene.baseline-moved'
  */
 export const HYGIENE_BASELINE_REWRITTEN =
 	"tdd base: {ref} was rewritten under the lot: the worktree's baseline {cut} is no ancestor of the merge-base {mergeBase}, so the baseline is not moved; once the lot's commits are checked against {ref}, measure the lot from it with `dialecte gate --full --base {ref}`"
+
+/** A check refused on a node_modules that does not install the checked tree's lock (`checkInstallMatchesTree`). */
+export const TREE_INSTALL_REFUSALS = {
+	/** The lock on disk is the checked one: `npm ci` installs it. */
+	mismatch:
+		'node_modules does not install the package-lock.json being checked: {package}: {problem}{more}; run {command}',
+	/** The checked lock (the staged one) is not the file on disk: `npm ci` would install the other one. */
+	otherLock:
+		'node_modules does not install the package-lock.json being checked, which differs from the one on disk: {package}: {problem}{more}; put the checked lock on disk (or stage the one on disk), then run {command}',
+	/** The checked lock cannot be read package by package: `{reason}` is the reader's. */
+	unreadable: 'the package-lock.json being checked {reason}: fix it, then run {command}',
+} as const
