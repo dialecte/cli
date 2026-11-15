@@ -618,9 +618,12 @@ the answer.
   that covers no finding is an `unused-allow` warning (never for a rule that did not run). `--json` (and the
   rules record) counts the findings the opt-outs silenced, per rule, in `allowed`. With the gate base (a
   scoped gate step), an error of these rules on a line the change did not add is a warning ending
-  `(not added by this change)`; an empty-tree base (the release list, or no base branch found) knows no
-  change, so every error of these rules is such a warning. A plain `rules` run (no gate base) keeps them
-  errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
+  `(not added by this change)`. An empty-tree gate base (the release list, or no base branch found) knows no
+  change, so it takes the one order every caller shares: the recorded base of the store lot whose worktree holds
+  the package, else the base branch's merge-base with HEAD (for this empty-tree request, a merge-base equal to
+  HEAD's commit knows no change and is skipped, on a branch or detached), else the package's last release tag `<name>@v<version>` reachable from HEAD (only the lines added
+  since that release count), else every error is kept: no empty-tree softening. A plain `rules` run (no gate
+  base) keeps them errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
   nothing: `query-in-loop` does not run and one line names the file and why. Not judged: an alias of a
   parameter (`const set = params.items; set.add(x)`), a read in a function the loop calls (`query-in-loop` is
   syntactic: it sees the reads written inside the loop), a table imported from a sibling file. `plan-tag`
@@ -761,12 +764,14 @@ the answer.
   stops (state `T`) and is reported as stalled.
 - `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
-  changed against HEAD (recorded as `dialecte rules` records it), judged against the gate base (the scoped
-  gate step's: the base branch's merge-base with HEAD; a rehearsal's run against the last merge lot's tip, else
-  the base the repository resolves at the lots file's HEAD): an error of a quality rule on a line the base already
-  holds is a warning ending `(not added by this change)`. No base branch found: the base is the empty tree, which
-  knows no change, so every quality error is that warning. No base, every error kept, only without a scoped gate
-  step or with a `dialecte.baseBranch` that names no branch. Then the package's
+  changed against HEAD (recorded as `dialecte rules` records it), judged against the lot's base for every
+  package, whatever its gate config, in the order the gate's scoped rules step shares (the recorded base commit of
+  the store lot whose worktree holds the package, else [the base branch](#the-base-branch)'s merge-base with HEAD,
+  taken as the gate's scoped rules step takes it, even when it is HEAD's commit, else the package's last release tag
+  `<name>@v<version>` reachable from HEAD; a rehearsal's run against the last merge lot's tip, else the base the repository resolves at the lots file's
+  HEAD): an error of a quality rule on a line the base already holds is a warning ending
+  `(not added by this change)`. Without any of these, every error is kept: no empty-tree softening.
+  The contrib record does not hold the base its rules row judged against. Then the package's
   `dialecte.contrib.steps` (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
   `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a default
   step whose npm script is missing fails the run before any row, the built-in `rules` and `release` rows
@@ -919,16 +924,19 @@ the answer.
     whole-branch view; `gate --full` (and `--release`) measures the tdd step from the lot's base: the
     branch the lot was started on (the store lot's base, else the branch `worktree add` recorded it was cut
     from; a base given as a commit id stands for the resolved base branch), from where HEAD now leaves it,
-    so a lot that merged or rebased onto its base's new commits is not asked for them. When that base is
-    not found, is behind the cut, never held the cut (a stacked lot), was rewritten or has merged the lot's own commits, it measures from the
-    worktree's cut and says why; a worktree with no recorded base measures from its cut, one not made by
-    `worktree add` from where the branch left its base branch. The first details line of the gate's tdd step
+    so a lot that merged or rebased onto its base's new commits is not asked for them; a worktree with no
+    recorded base follows the resolved base branch the same way. Once the lot took its base's new commits, the
+    worktree's hygiene baseline moves to that merge-base, never onto HEAD itself (no command to run) and a store lot gets one
+    `hygiene.baseline-moved` event (`from`, `to`). When that base is not found, is behind the cut, never held the
+    cut (a stacked lot) or has merged the lot's own commits, it measures from the worktree's cut and says why; a
+    base rewritten under the lot (it once held the cut, now neither reaches the other) fails the step naming the
+    baseline and the merge-base, the baseline left as it is. With no base branch found, a worktree measures from
+    its cut. A worktree not made by `worktree add` measures from where the branch left its base branch. The first details line of the gate's tdd step
     (none when the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
     `lot base <ref>`, `worktree from <ref>`, `base branch <b> (the lot's base is a commit)`, `worktree cut`,
     `base branch <b>`, `HEAD`; a fallback reads `tdd base: the worktree's cut (<why>)`, the why one of `no
-    base branch recorded`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
-    stacked lot` (the ref's reflog never reached the cut), `<ref> was rewritten: the cut <sha>
-    is no ancestor of the merge-base <sha>`, `<ref> holds the lot's own commits`.
+    base branch recorded or found`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
+    stacked lot` (the ref's reflog never reached the cut), `<ref> holds the lot's own commits`.
   - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
     (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
     `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,

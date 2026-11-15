@@ -228,11 +228,44 @@ function placeOf(params: { cwd: string; step: string; warn: (line: string) => vo
 		)
 		return { place: undefined, worktree, repository: worktree }
 	}
-	const store = locateStore({ from: workTree })?.store
-	const lotFolder = linked ?? (store === undefined ? undefined : join(store, found.lot))
+	const lotFolder = ownLotFolderOf({ workTree, linked, lot: found.lot })
 	if (lotFolder === undefined) return { place: undefined, worktree, repository: worktree }
 	const placed = placeIn({ lotFolder, worktree: found.worktree, throwaway: found.throwaway })
 	return { place: placed.place, worktree: found.worktree, repository: placed.repository }
+}
+
+/** The worktree's own lot folder: the one its link names, else the store's lot of that name; undefined without either. */
+function ownLotFolderOf(params: {
+	workTree: string
+	linked: string | undefined
+	lot: string
+}): string | undefined {
+	if (params.linked !== undefined) return params.linked
+	const store = locateStore({ from: params.workTree })?.store
+	return store === undefined ? undefined : join(store, params.lot)
+}
+
+/**
+ * Writes one cli event of `kind`, its `fields` beside the envelope, in the lot of the worktree holding `cwd`; writes
+ * nothing when that worktree holds no lot of its own (no lot, or another lot's link: never a `step.foreign`).
+ */
+export function writeWorktreeEvent(params: {
+	cwd: string
+	kind: string
+	fields: Readonly<Record<string, unknown>>
+}): void {
+	const workTree = workTreeHolding({ from: params.cwd })
+	const found = lotOfStep({ cwd: params.cwd })
+	if (workTree === undefined || found === undefined || 'foreign' in found) return
+	const linked = lotFolderOf({ folder: join(workTree, ...LOT_LINK_SEGMENTS) })
+	const lotFolder = ownLotFolderOf({ workTree, linked, lot: found.lot })
+	if (lotFolder === undefined) return
+	const { place } = placeIn({ lotFolder, worktree: found.worktree, throwaway: found.throwaway })
+	writeStepEvent({
+		file: place.file,
+		// the envelope last: a field never overwrites the kind, the lot or the id
+		event: { ...params.fields, ...envelopeOf({ place, kind: params.kind }) },
+	})
 }
 
 /** Where a step that knows its lot writes: that lot (none for `null`), never one found from `cwd`. */
