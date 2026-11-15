@@ -21,6 +21,7 @@ import {
 	buildMutationLines,
 	buildLateFixesLine,
 	buildEffortLine,
+	buildScopeLine,
 	buildReviewLine,
 	sleptLineOf,
 } from '../gate-records/card-gates.ts'
@@ -218,6 +219,7 @@ export function buildHandoverCard(params: {
 		? buildLateFixesLine({ folder: params.folder, root, stateHash })
 		: undefined
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
+	const scopeLine = params.release ? undefined : buildScopeLine({ folder: params.folder })
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -233,6 +235,8 @@ export function buildHandoverCard(params: {
 		buildReviewLine({ folder: params.folder, release: params.release }),
 		// the effort against the risk class: a warning below it, never on a release hand-over
 		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
+		// a lot that changed its scope after the start: the changes, the adds with who and why; none: no line
+		...(scopeLine ? [scopeLine] : []),
 		// changes after the last snapshot, on a card still to run: nothing late, no line
 		...(lateFixesLine ? [lateFixesLine] : []),
 		// the install guard's last record, on every card; none recorded: no line

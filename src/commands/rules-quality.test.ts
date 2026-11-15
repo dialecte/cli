@@ -210,11 +210,14 @@ describe(
 			committed: string
 			edited: string
 			base: 'commit' | 'empty-tree' | 'none'
+			/** Tag the committed state `demo@v0.1.0`, a release of the package. */
+			released?: boolean
 		}): {
 			exitCode: number
 			findings: ReturnType<typeof shapeOf>[]
 		} {
 			const root = packageHolding({ [SOURCE]: params.committed })
+			if (params.released === true) git({ root, args: ['tag', 'demo@v0.1.0'] })
 			const baseIds = {
 				commit: git({ root, args: ['rev-parse', 'HEAD'] }).trim(),
 				'empty-tree': git({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim(),
@@ -279,9 +282,30 @@ describe(
 			})
 		})
 
-		it('with the empty tree as the gate base (no change known): a mutation the file already held → a warning ending as not added, exit 0', () => {
+		it('with the empty tree as the gate base and no release tag in the repository: a mutation the file already held → an error, exit 1', () => {
 			expect(
 				scopedRunOf({ committed: MUTATING, edited: MUTATING_EDITED, base: 'empty-tree' }),
+			).toEqual({
+				exitCode: 1,
+				findings: [
+					{
+						rule: 'argument-mutation',
+						line: 2,
+						severity: 'error',
+						message: expect.not.stringMatching(/ \(not added by this change\)$/),
+					},
+				],
+			})
+		})
+
+		it('with the empty tree as the gate base and a release tag after the held line → the held mutation a warning ending as not added, exit 0', () => {
+			expect(
+				scopedRunOf({
+					committed: MUTATING,
+					edited: MUTATING_EDITED,
+					base: 'empty-tree',
+					released: true,
+				}),
 			).toEqual({
 				exitCode: 0,
 				findings: [

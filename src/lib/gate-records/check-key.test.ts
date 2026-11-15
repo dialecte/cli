@@ -17,6 +17,7 @@ import {
 } from '../../../test/scratch-repository.ts'
 import { treeOfWorkingFiles } from '../../../test/scratch-tree.ts'
 import { contribCommandHash } from '../contrib/contrib-key.ts'
+import { computeInstallKey } from '../worktree/install-key.ts'
 import { computeCheckKey, hashGateCommand, hashHookCommand, readTreeOf } from './check-key.ts'
 import { computeStateHash } from './state-hash.ts'
 
@@ -92,19 +93,19 @@ describe('computeCheckKey', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash).toBe('none')
 	})
 
-	it('node_modules/.package-lock.json present → lockHash is the sha256 of its bytes, and another content gives another hash', () => {
+	it('node_modules/.package-lock.json present → lockHash is the install key of its packages, and another package version gives another hash', () => {
 		const root = changedRepository()
 		const content = '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n'
 		writeFiles({ root, files: { 'node_modules/.package-lock.json': content } })
 		const locks: string[] = []
 		expect(locks.push(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash)).toBe(1)
+		expect(computeInstallKey(root)).toBe(locks[0])
 		writeFiles({
 			root,
 			files: { 'node_modules/.package-lock.json': content.replace('1.0.0', '1.0.1') },
 		})
 		expect(locks.push(computeCheckKey({ root, commandHash: COMMAND_HASH }).lockHash)).toBe(2)
 
-		expect(locks[0]).toBe(createHash('sha256').update(content).digest('hex'))
 		expect(locks[1]).not.toBe(locks[0])
 	})
 })

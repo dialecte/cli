@@ -28,7 +28,10 @@ export type RecordedStep = {
 	moved?: string[]
 	/** The tdd step: the case ids more than one case holds, what the card lists. */
 	duplicates?: DuplicateCaseId[]
-	/** A hook's test step `gate --hook` answered from the green `gate --full` record of this time and short HEAD. */
+	/**
+	 * A step a record of another run answered: the run that really ran it (its time, HEAD and, from `gate --hook`'s
+	 * own records, its mode); a hand-over's hook record names the time and short HEAD its hook's line printed.
+	 */
 	reused?: RecordOrigin
 	/** A scoped step that wrote a valid selection: what it recorded. */
 	selection?: StepSelection
@@ -36,13 +39,15 @@ export type RecordedStep = {
 	heavy?: true
 	/** A failed or flaky step: every file it named as failing, sorted, unique. */
 	failing?: string[]
+	/** What the step ran as (`hashGateStep`): another record's step of the same hash answers it; absent on a record of an older cli. */
+	stepHash?: string
 }
 
 /** The run a record names: when it ran (ISO 8601) and its HEAD (full, or the short sha a hook's line printed). */
-export type RecordOrigin = { at: string; head: string }
+export type RecordOrigin = { at: string; head: string; mode?: GateRecordMode }
 
 /** What wrote a gate record: `dialecte gate --fast` / `--full`, `dialecte contrib`, or a commit's hook during `handover run`. */
-export type GateRecordMode = GateMode | 'hook' | 'contrib'
+export type GateRecordMode = GateMode | 'hook' | 'hook-gate' | 'contrib'
 
 /**
  * What a check ran on, as a record names it: the tree it ran on, what npm had installed, what ran, and the

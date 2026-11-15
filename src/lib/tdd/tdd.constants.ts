@@ -369,13 +369,11 @@ export const TDD_BASE_SOURCES = {
  * and `{mergeBase}` short commit ids.
  */
 export const TDD_BASE_NOTES = {
-	noneRecorded: "tdd base: the worktree's cut (no base branch recorded)",
+	noneRecorded: "tdd base: the worktree's cut (no base branch recorded or found)",
 	notFound: "tdd base: the worktree's cut ({ref} not found)",
 	holdsOwnCommits: "tdd base: the worktree's cut ({ref} holds the lot's own commits)",
 	behind: "tdd base: the worktree's cut ({ref} is behind the cut)",
 	notOnRef: "tdd base: the worktree's cut ({ref} does not hold the cut: a stacked lot)",
-	rewritten:
-		"tdd base: the worktree's cut ({ref} was rewritten: the cut {cut} is no ancestor of the merge-base {mergeBase})",
 } as const
 
 /** The ref folders a recorded base ref may name (a branch, origin's branch, a tag); in none of them, it is a commit id. */

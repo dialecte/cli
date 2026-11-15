@@ -15,7 +15,7 @@ export const FLAKY_WORDS = '1 flaky, passed serially'
  */
 export const FLAKY_HOOK_LINES = [
 	...HOOK_SCRIPT_HEADER,
-	'gate --hook: no green gate --full or --release of tree 270a1ab64965 with this install: running the tests',
+	'gate --hook: no green record of tree 270a1ab64965 with this install answers a hook step: running tests',
 	'ok    tests  exit 1  tests 40 passed, 1 failed / 41, files 10  serial rerun of 1 file(s): exit 0, tests 1 passed / 1, files 1  flaky in parallel',
 	'        flaky  src/a.test.ts',
 	'      Tests  1 failed | 40 passed (41)',

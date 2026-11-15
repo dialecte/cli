@@ -17,6 +17,7 @@ const SCHEMA_NAMES = [
 	'dialecterc.schema.json',
 	'lot-risk.schema.json',
 	'risk-line.schema.json',
+	'scope-change.schema.json',
 ]
 
 /** The basenames of the listing of `root`, or what the listing threw (so a stub fails inside the assertion). */
@@ -34,7 +35,7 @@ function escapedForRegExp(text: string): string {
 }
 
 describe('shippedSchemaFilesOf', () => {
-	it('the real src/ → the five schemas, sorted', () => {
+	it('the real src/ → the six schemas, sorted', () => {
 		expect(shippedNamesOf(CLI_ROOT)).toEqual(SCHEMA_NAMES)
 	})
 

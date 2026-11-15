@@ -110,3 +110,13 @@ export const DISCARDED_CACHES_PREFIX = '.dialecte-discarded-caches-'
 
 /** The folder of `.worktrees/` where worktrees and folders wait for their background removal. */
 export const TRASH_FOLDER = '_trash'
+
+/** The event the cli writes in the worktree's lot when it moves the hygiene baseline forward: `from` and `to`, full ids. */
+export const HYGIENE_BASELINE_MOVED_KIND = 'hygiene.baseline-moved'
+
+/**
+ * The whole-branch base cannot follow `{ref}`: it was rewritten under the lot (it once held the cut, now neither
+ * reaches the other). `{cut}` the recorded baseline, `{mergeBase}` HEAD's merge-base with the ref, both short.
+ */
+export const HYGIENE_BASELINE_REWRITTEN =
+	"tdd base: {ref} was rewritten under the lot: the worktree's baseline {cut} is no ancestor of the merge-base {mergeBase}, so the baseline is not moved; once the lot's commits are checked against {ref}, measure the lot from it with `dialecte gate --full --base {ref}`"

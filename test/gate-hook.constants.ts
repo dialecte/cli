@@ -10,8 +10,8 @@ export const TEST_HOOK_STEP = 'test:hook'
 /** The refusal of `--hook` next to `--fast` or `--full`. */
 export const HOOK_MODE_REFUSAL = 'gate: --hook, --fast or --full, one of them'
 
-/** The answer of a package whose full gate holds no test step. */
-export const NO_TEST_STEP_LINE = 'gate --hook: no test step in gate --full'
+/** The answer of a package whose full gate holds no hook step. */
+export const NO_HOOK_STEP_LINE = 'gate --hook: no hook step in gate --full'
 
 /** The last line of a hook run whose test steps passed. */
 export const HOOK_GREEN_LINE = 'gate --hook: green'
@@ -22,8 +22,8 @@ export const HOOK_TREE_LENGTH = 12
 /** The line of a test step run by the hook: its line, then vitest's summary line under it. */
 export const RUN_STEP_WITH_SUMMARY = /^ok +tests\b[^\n]*\n\s*Tests {2}4 passed \(4\)$/m
 
-/** A gate step line of a step `--hook` never runs: hygiene, tdd, the full gate's non-test steps. */
-export const NOT_A_HOOK_STEP_LINE = /^(ok|skip|FAIL|--) +(hygiene|tdd|check)\b/m
+/** A gate step line of a step `--hook` never runs: hygiene and tdd. */
+export const NOT_A_HOOK_STEP_LINE = /^(ok|skip|FAIL|--) +(hygiene|tdd)\b/m
 
 /** The hook script's lines running the repository's cli as `npm run test:hook` would. */
 export const HOOK_GATE_COMMAND = [
@@ -35,3 +35,6 @@ export const HOOK_GATE_COMMAND = [
 export const WRITTEN_REUSE_AT = '2026-11-03T10:00:00.000Z'
 export const WRITTEN_REUSE_HEAD = 'b'.repeat(12)
 export const WRITTEN_REUSE_TREE = 'a'.repeat(12)
+
+/** The hook steps of a hook package (`createHookPackage`), in list order. */
+export const HOOK_STEP_NAMES = ['check', 'tests']

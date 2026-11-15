@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { hookRecordsOf, indexTreeOf } from '../../test/gate-hook.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { addWorktreeFolder, linkLot } from '../../test/lot-stores.ts'
 import {
@@ -450,13 +451,14 @@ describe('gate --full, --release and --hook', { timeout: SCRATCH_REPOSITORY_TIME
 		})
 	})
 
-	it('--hook → gate-hook start and end, no state hash (the hook stores no record), reuse none, the test step as a part', async () => {
+	it('--hook → gate-hook start and end, the state hash of the hook-gate record it writes, reuse none, the test step as a part', async () => {
 		const lot = createStepLot({
 			full: [{ name: 'tests', run: TEST_SUMMARY_COMMAND, counts: 'tests' }],
 		})
 
 		const result = await runGate({ cwd: lot.worktree, argv: ['--hook'] })
 		const end = eventsOfStep({ lot, step: 'gate-hook' })[1]
+		const records = hookRecordsOf({ root: lot.worktree, tree: indexTreeOf({ root: lot.worktree }) })
 
 		expect({
 			exitCode: result.exitCode,
@@ -469,10 +471,11 @@ describe('gate --full, --release and --hook', { timeout: SCRATCH_REPOSITORY_TIME
 			exitCode: 0,
 			kinds: ['step.start', 'step.end'],
 			heavy: false,
-			stateHash: null,
+			stateHash: expect.any(String),
 			reuse: 'none',
 			parts: [['tests', 'passed']],
 		})
+		expect(records.map((record) => record.stateHash)).toEqual([end?.stateHash])
 	})
 
 	it('--full with the gate record written → the end stores the hash of the full record', async () => {

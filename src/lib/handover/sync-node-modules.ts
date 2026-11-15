@@ -12,6 +12,7 @@ import { join } from 'node:path'
 
 import { firstLineOf } from '../error-reason.ts'
 import { readGit, readStagedFile } from '../git.ts'
+import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { onSignalExit } from '../progress/interrupt-forwarding.ts'
 import { runChild } from '../progress/run-child.ts'
@@ -22,7 +23,6 @@ import {
 	OPTIONAL_LOCK_FLAGS,
 	PACKAGE_LOCK_FILE,
 	NODE_MODULES_SEGMENT,
-	PACKAGE_MANIFEST_FILE,
 	SKIPPED_INSTALL_SCRIPTS_NOTE,
 	SKIPPED_SCRIPTS_NAMED,
 	STAGED_SUFFIX,
