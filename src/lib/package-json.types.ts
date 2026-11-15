@@ -41,6 +41,8 @@ export type DialecteField = {
 		fast?: GateStep[]
 		full?: GateStep[]
 		release?: GateStep[]
+		/** The steps `gate --hook` runs; absent: the full steps but the scoped ones counting no tests. */
+		hook?: GateStep[]
 		skip?: Record<string, string>
 	}
 	/**

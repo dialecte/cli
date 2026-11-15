@@ -20,7 +20,12 @@ import {
 	SECOND_DEFAULT_BASE_BRANCH,
 } from './gate-base.constants.ts'
 import { GATE_LIST_NAMES } from './gate-config.constants.ts'
-import { holdsScopedStep, listHookTestSteps, resolveGateSteps } from './gate-config.ts'
+import {
+	holdsScopedStep,
+	listHookTestSteps,
+	resolveGateSteps,
+	resolveHookSteps,
+} from './gate-config.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { Refusal } from '../refusal.types.ts'
@@ -83,11 +88,13 @@ export function readEmptyTree(root: string): string {
 	return readGit({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
 }
 
-/** True when any resolved gate list (fast, full, release) holds a scoped step. */
+/** True when any resolved gate list (fast, full, release, the hook list) holds a scoped step. */
 export function hasScopedStep(packageJson: PackageJson): boolean {
-	return GATE_LIST_NAMES.some(function listHasScopedStep(mode) {
-		return holdsScopedStep(resolveGateSteps({ packageJson, mode }))
-	})
+	return (
+		GATE_LIST_NAMES.some(function listHasScopedStep(mode) {
+			return holdsScopedStep(resolveGateSteps({ packageJson, mode }))
+		}) || holdsScopedStep(resolveHookSteps({ packageJson }))
+	)
 }
 
 /**
@@ -111,11 +118,11 @@ export function resolveConfiguredBase(params: {
 }
 
 /**
- * True when the test steps `gate --hook` runs (the resolved `full` steps counting tests) hold a scoped step: the
+ * True when the test steps `gate --hook` runs (`resolveHookSteps`, those counting tests) hold a scoped step: the
  * hook then resolves a base, and a hand-over hands one down and keys its hook records with it.
  */
 export function hasScopedHookStep(packageJson: PackageJson): boolean {
-	return holdsScopedStep(listHookTestSteps(resolveGateSteps({ packageJson, mode: 'full' })))
+	return holdsScopedStep(listHookTestSteps(resolveHookSteps({ packageJson })))
 }
 
 /**

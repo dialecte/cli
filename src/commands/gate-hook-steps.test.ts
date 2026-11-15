@@ -4,7 +4,6 @@
  * else run; every hook run records itself as a `hook-gate` record. Counting steps prove whether a step ran.
  */
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -51,16 +50,12 @@ import {
 import { writeFiles } from '../../test/scratch-repository.ts'
 import { hashGateCommand, readTreeKey } from '../lib/gate-records/check-key.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
-import { listHookSteps, resolveGateSteps } from '../lib/gate/gate-config.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { HookPackage } from '../../test/gate-hook.types.ts'
-import type { GateStep } from '../lib/gate/gate-config.types.ts'
 
 const SHA256_HEX = /^[0-9a-f]{64}$/
-
-const PACKAGE_ROOT = join(import.meta.dirname, '..', '..')
 
 /** The runs of the `check` step, then of the `tests` step. */
 function runsOf(hookPackage: HookPackage): [number, number] {
@@ -73,35 +68,6 @@ function installedLockOf(params: { root: object; packages: object }): Record<str
 		[INSTALLED_LOCK_FILE]: `${JSON.stringify({ ...params.root, packages: params.packages }, null, 2)}\n`,
 	}
 }
-
-describe('listHookSteps', () => {
-	it('a full list of check, skills, build, tests, a scoped step counting no tests and a scoped test step → all but the scoped step counting no tests, in list order', () => {
-		const steps: GateStep[] = [
-			{ name: 'check', run: 'npm run check' },
-			{ name: 'skills', run: 'npm run skills:check' },
-			{ name: 'build', run: 'npm run build' },
-			{ name: 'tests', run: 'npm test', counts: 'tests' },
-			{ name: 'rules', run: 'dialecte rules', scoped: true },
-			{ name: 'scoped tests', run: 'dialecte scoped', counts: 'tests', scoped: true },
-		]
-
-		expect(listHookSteps(steps).map((step) => step.name)).toEqual([
-			'check',
-			'skills',
-			'build',
-			'tests',
-			'scoped tests',
-		])
-	})
-
-	it("the cli's own package.json full list → check, skills, build, tests", () => {
-		const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8'))
-
-		expect(
-			listHookSteps(resolveGateSteps({ packageJson, mode: 'full' })).map((step) => step.name),
-		).toEqual(['check', 'skills', 'build', 'tests'])
-	})
-})
 
 describe(
 	'gate --hook: every hook step is answered by the record of a run that ran it',

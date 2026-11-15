@@ -5,7 +5,8 @@
  * same `file:` dependencies, the same steps), the lot does not change
  * `package-lock.json` and the commit hook stages no files of its own. A merge lot is reused when the tree it
  * leaves is its tip's tree and a green record of that tree (the branch commit's hook, or a `gate --full`)
- * matches what the tree locks, under the same conditions. A contributor's last lot also says when the tree the
+ * matches what the tree locks, under the same conditions; a package declaring its hook list (`dialecte.gate.hook`, the
+ * fast tier) needs the `gate --full` record. A contributor's last lot also says when the tree the
  * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone. A green
  * `gate --release` record of a release list that covers `full` answers a plain or a merge lot as a full record would.
  * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
@@ -117,6 +118,8 @@ function readPlanContext(params: {
 		...rest,
 		// what the lot's tree locks: a record of that tree ran on a node_modules that installed it
 		treeKey: readTreeKey({ root, tree }),
+		// a declared hook list is the fast tier: its record proves no full suite
+		hookProvesFull: packageJson.dialecte?.gate?.hook === undefined,
 		commands: {
 			full: hashes.full,
 			hook: hashes.hook,
@@ -185,7 +188,10 @@ function decideMerge(params: {
 	const records = greenRecords({
 		context,
 		tree,
-		modes: answeringModes({ context, modes: [HOOK_RECORD_MODE, 'full'] }),
+		modes: answeringModes({
+			context,
+			modes: context.hookProvesFull ? [HOOK_RECORD_MODE, 'full'] : ['full'],
+		}),
 	})
 	if (records.length === 0)
 		return rehearsed(fillReason({ template: REHEARSAL_REASONS.noTipRecord, values: { tree } }))

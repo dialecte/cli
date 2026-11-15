@@ -1,12 +1,12 @@
 /**
  * The scoped `tests` step of this package's fast gate: runs `vitest related` over the changed paths of the gate
- * (the NUL-separated file in `DIALECTE_GATE_CHANGED`), or the whole suite for a change no test imports, and writes the
- * selection file the gate reads. An empty selection exits 0 without starting vitest.
+ * (the NUL-separated file in `DIALECTE_GATE_CHANGED`), leaving a change no test imports to the full suite on CI, and
+ * writes the selection file the gate reads. An empty selection exits 0 without starting vitest.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import { counted } from '../counted.ts'
 import { readGit } from '../git.ts'
@@ -16,38 +16,33 @@ import { createModuleResolver } from '../tdd/module-resolver.ts'
 import { resolvePackageVitest } from '../tdd/package-vitest.ts'
 import { VITEST_RUN_ARGUMENT } from '../tdd/tdd.constants.ts'
 import {
-	CLI_ENTRY_REFERENCE_PATTERN,
 	IMPORTABLE_FILE_PATTERN,
-	NODE_MODULES_FOLDER,
 	NOTHING_TO_RELATE_LINE,
 	OUTPUT_MAX_BYTES,
 	REPORT_FILE_NAME,
 	REPORT_FOLDER_PREFIX,
-	RELATIVE_IMPORT_PATTERN,
 	SCOPED_TESTS_DEPTH_VARIABLE,
 	SCOPED_TESTS_SELECTION_ID,
-	SPAWNING_TESTS_SELECTION_ID,
-	TEST_FILE_PATTERN,
-	TEST_FOLDERS,
 	TEST_READ_FOLDER_PATTERN,
 	VITEST_JSON_OUTPUT_OPTION,
 	VITEST_RELATED_ARGUMENTS,
-	VITEST_REPORT_ARGUMENTS,
-	WHOLE_SUITE_FILE_PATTERN,
-	WHOLE_SUITE_FILES,
-	WHOLE_SUITE_LINE,
-	WHOLE_SUITE_SELECTION_ID,
+	LEFT_TO_CI_FILE_PATTERN,
+	LEFT_TO_CI_FILES,
+	LEFT_TO_CI_LINE_START,
+	LEFT_TO_CI_SELECTION_ID,
 } from './scoped-tests.constants.ts'
 import { GATE_SCOPE_VARIABLES, HANDOVER_VARIABLES } from './selection.constants.ts'
 import { readChangedPaths, writeSelectionFile } from './selection.ts'
 
 import type { ScopedTestsEnvironment, ScopedTestsRun } from './scoped-tests.types.ts'
+import type { SpawnSyncReturns } from 'node:child_process'
 
 /**
- * Runs the tests the gate's change can reach and writes its selection: the whole suite when a changed path is one no
- * related run can follow (`wholeSuitePaths`), the selection naming those paths; else `vitest related` over the
- * importable changed paths; nothing, exit 0, when there is none. Output is vitest's, unfiltered.
- * @intent run only the tests a change reaches, run the whole suite for a change no test imports
+ * Runs the tests the gate's change can reach and writes its selection: `vitest related` over the importable changed
+ * paths; a changed path no related run can follow (`wholeSuitePaths`: the manifest, the entry, the vitest config, a
+ * file a test reads) is left to the full suite CI runs, said in one line and named in the selection; nothing, exit 0,
+ * when no test is related.
+ * @intent run on the machine only the tests a change reaches, the full suite being CI's
  */
 export function runScopedTests(params: {
 	/** The package root vitest runs from. */
@@ -61,73 +56,84 @@ export function runScopedTests(params: {
 	const { root, environment } = params
 	const changed = readChangedPaths(environment.changed)
 	const packagePaths = packagePathsOf({ root, changed })
-	const forcing = wholeSuitePaths({ root, paths: packagePaths })
-	const importable = importablePaths({ root, paths: packagePaths })
-	// a test that spawns the cli entry imports nothing it runs: any production change under src/ adds it
-	const spawning = importable.some(isProductionSource) ? listSpawningTests({ root }) : []
-	const related = [...importable, ...spawning.filter((file) => !importable.includes(file))]
+	const leftToCi = leftToCiPaths({ root, paths: packagePaths })
+	// a path left to CI is never related here: `vitest related` on the manifest or a setup file runs every test
+	const importable = importablePaths({ root, paths: packagePaths }).filter(
+		(path) => !leftToCi.includes(path),
+	)
 	const extraArguments = params.extraArguments ?? []
-	if (forcing.length === 0 && related.length === 0 && extraArguments.length === 0) {
-		writeSelectionFile({ scope: environment, changed: changed.length, selected: [] })
+	const leftLine =
+		leftToCi.length > 0 ? `${textOf([`${LEFT_TO_CI_LINE_START}${leftToCi.join(', ')}`])}\n` : ''
+	// skipped, never selected: a step that selects nothing passes; what CI checks stays named for the card and the record
+	const skipped =
+		leftToCi.length > 0 ? [{ id: LEFT_TO_CI_SELECTION_ID, reason: leftToCi.join(', ') }] : []
+	if (importable.length === 0 && extraArguments.length === 0) {
+		writeSelectionFile({ scope: environment, changed: changed.length, selected: [], skipped })
 		return {
 			exitCode: 0,
-			output: NOTHING_TO_RELATE_LINE.replace(
-				'{paths}',
-				counted({ count: changed.length, noun: 'path' }),
-			),
+			output:
+				leftLine ||
+				NOTHING_TO_RELATE_LINE.replace('{paths}', counted({ count: changed.length, noun: 'path' })),
 		}
 	}
 	const folder = mkdtempSync(join(tmpdir(), REPORT_FOLDER_PREFIX))
 	try {
 		const report = join(folder, REPORT_FILE_NAME)
-		const vitest = resolvePackageVitest({ root })
-		const whole = forcing.length > 0
-		const run = spawnSync(
-			vitest.command,
-			[
-				...(whole
-					? vitest.arguments
-					: vitest.arguments.filter((argument) => argument !== VITEST_RUN_ARGUMENT)),
-				...(whole ? VITEST_REPORT_ARGUMENTS : VITEST_RELATED_ARGUMENTS),
-				VITEST_JSON_OUTPUT_OPTION.replace('{file}', report),
-				...(whole ? [] : related),
-				...extraArguments,
-			],
-			{
-				cwd: root,
-				encoding: 'utf8',
-				maxBuffer: OUTPUT_MAX_BYTES,
-				// the tests never see the gate's variables: a test reading them would read this run's
-				// and they carry the nesting depth one deeper: an entry they start again refuses at the second level
-				env: {
-					...withoutVariables({
-						names: [...Object.values(GATE_SCOPE_VARIABLES), ...HANDOVER_VARIABLES],
-					}),
-					[SCOPED_TESTS_DEPTH_VARIABLE]: String((params.depth ?? 0) + 1),
-				},
-			},
-		)
+		const run = spawnRelated({
+			root,
+			report,
+			related: importable,
+			extraArguments,
+			depth: params.depth ?? 0,
+		})
 		const testFiles = readReportedFiles({ root, report })
 		writeSelectionFile({
 			scope: environment,
 			changed: changed.length,
-			selected: whole
-				? [{ id: WHOLE_SUITE_SELECTION_ID, reasons: forcing }]
-				: [
-						...(testFiles.length ? [{ id: SCOPED_TESTS_SELECTION_ID, reasons: testFiles }] : []),
-						...(spawning.length ? [{ id: SPAWNING_TESTS_SELECTION_ID, reasons: spawning }] : []),
-					],
+			selected: testFiles.length ? [{ id: SCOPED_TESTS_SELECTION_ID, reasons: testFiles }] : [],
+			skipped,
 		})
-		const said = whole
-			? `${textOf([WHOLE_SUITE_LINE.replace('{paths}', forcing.join(', '))])}\n`
-			: ''
 		return {
 			exitCode: run.status ?? 1,
-			output: `${said}${run.stdout ?? ''}${run.stderr ?? ''}${run.error ? `${run.error.message}\n` : ''}`,
+			output: `${leftLine}${run.stdout ?? ''}${run.stderr ?? ''}${run.error ? `${run.error.message}\n` : ''}`,
 		}
 	} finally {
 		rmSync(folder, { recursive: true, force: true })
 	}
+}
+
+/** `vitest related` over `related` (then `extraArguments`), its JSON report written to `report`. */
+function spawnRelated(params: {
+	root: string
+	report: string
+	related: readonly string[]
+	extraArguments: readonly string[]
+	depth: number
+}): SpawnSyncReturns<string> {
+	const vitest = resolvePackageVitest({ root: params.root })
+	return spawnSync(
+		vitest.command,
+		[
+			...vitest.arguments.filter((argument) => argument !== VITEST_RUN_ARGUMENT),
+			...VITEST_RELATED_ARGUMENTS,
+			VITEST_JSON_OUTPUT_OPTION.replace('{file}', params.report),
+			...params.related,
+			...params.extraArguments,
+		],
+		{
+			cwd: params.root,
+			encoding: 'utf8',
+			maxBuffer: OUTPUT_MAX_BYTES,
+			// the tests never see the gate's variables: a test reading them would read this run's
+			// and they carry the nesting depth one deeper: an entry they start again refuses at the second level
+			env: {
+				...withoutVariables({
+					names: [...Object.values(GATE_SCOPE_VARIABLES), ...HANDOVER_VARIABLES],
+				}),
+				[SCOPED_TESTS_DEPTH_VARIABLE]: String(params.depth + 1),
+			},
+		},
+	)
 }
 
 /** The changed paths of the package, as it names them (the list names paths from the repository's top). */
@@ -139,17 +145,17 @@ function packagePathsOf(params: { root: string; changed: readonly string[] }): s
 }
 
 /**
- * The paths whose change no `vitest related` can follow: the manifest, a lockfile, the vitest config, the cli's
+ * The paths whose change no `vitest related` can follow, left to the full suite on CI: the manifest, a lockfile, the vitest config, the cli's
  * entry, a setup file (named by the config, or by its `*.setup.*` name: a global setup), and a file at the package
  * root or under `src/` or `test/` no test can import (a README, a CHANGELOG, a note a test reads). A deleted one
  * counts too. A file in another folder (`docs/`) asks for nothing.
  */
-function wholeSuitePaths(params: { root: string; paths: readonly string[] }): string[] {
+function leftToCiPaths(params: { root: string; paths: readonly string[] }): string[] {
 	const setupFiles = createModuleResolver({ root: params.root }).setupFiles
 	return params.paths.filter(
 		(path) =>
-			WHOLE_SUITE_FILES.includes(path) ||
-			WHOLE_SUITE_FILE_PATTERN.test(path) ||
+			LEFT_TO_CI_FILES.includes(path) ||
+			LEFT_TO_CI_FILE_PATTERN.test(path) ||
 			setupFiles.includes(path) ||
 			(TEST_READ_FOLDER_PATTERN.test(path) && !IMPORTABLE_FILE_PATTERN.test(path)),
 	)
@@ -160,56 +166,6 @@ function importablePaths(params: { root: string; paths: readonly string[] }): st
 	return params.paths.filter(
 		(path) => IMPORTABLE_FILE_PATTERN.test(path) && existsSync(resolve(params.root, path)),
 	)
-}
-
-/** A production source under `src/`: an importable file that is no test. */
-function isProductionSource(path: string): boolean {
-	return path.startsWith(`${TEST_FOLDERS[0]}/`) && !TEST_FILE_PATTERN.test(path)
-}
-
-/**
- * The test files of the package (under `src/` and `test/`) that spawn the cli entry: their text names it, or a module
- * they import relatively does. Read from the files, sorted, relative to the package root.
- */
-function listSpawningTests(params: { root: string }): string[] {
-	const { root } = params
-	const known = new Map<string, boolean>()
-	/** Whether the file at `path` names the cli entry, read once. */
-	function namesEntry(path: string): boolean {
-		const found = known.get(path)
-		if (found !== undefined) return found
-		let text = ''
-		try {
-			text = readFileSync(path, 'utf8')
-		} catch {
-			// a module that does not read names nothing
-		}
-		const names = CLI_ENTRY_REFERENCE_PATTERN.test(text)
-		known.set(path, names)
-		return names
-	}
-	return listTestFiles({ root })
-		.filter(function spawnsEntry(file) {
-			const path = resolve(root, file)
-			if (namesEntry(path)) return true
-			const text = readFileSync(path, 'utf8')
-			return [...text.matchAll(RELATIVE_IMPORT_PATTERN)].some(([, specifier]) =>
-				namesEntry(resolve(dirname(path), specifier)),
-			)
-		})
-		.sort()
-}
-
-/** The test files under the package's `src/` and `test/`, relative to its root (`node_modules` never read). */
-function listTestFiles(params: { root: string }): string[] {
-	return TEST_FOLDERS.flatMap(function filesOf(folder) {
-		const absolute = join(params.root, folder)
-		if (!existsSync(absolute)) return []
-		return readdirSync(absolute, { recursive: true, withFileTypes: true })
-			.filter((entry) => entry.isFile() && TEST_FILE_PATTERN.test(entry.name))
-			.map((entry) => relative(params.root, join(entry.parentPath, entry.name)))
-			.filter((file) => !file.split(sep).includes(NODE_MODULES_FOLDER))
-	})
 }
 
 /** The test files vitest's JSON report names, relative to the package root, sorted; none without a report. */

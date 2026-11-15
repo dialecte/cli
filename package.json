@@ -88,6 +88,18 @@
 					"scoped": true
 				}
 			],
+			"hook": [
+				{
+					"name": "check",
+					"run": "npm run check"
+				},
+				{
+					"name": "tests",
+					"run": "node src/scoped-tests.ts",
+					"counts": "tests",
+					"scoped": true
+				}
+			],
 			"full": [
 				{
 					"name": "check",

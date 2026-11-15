@@ -34,7 +34,12 @@ import {
 	GATE_HOOK_SELECTION_WORDS,
 	STEP_DETAIL_INDENT,
 } from './gate-config.constants.ts'
-import { GateConfigError, holdsScopedStep, listHookSteps, resolveGateSteps } from './gate-config.ts'
+import {
+	GateConfigError,
+	holdsScopedStep,
+	resolveGateSteps,
+	resolveHookSteps,
+} from './gate-config.ts'
 import { answerHookSteps } from './hook-step-answers.ts'
 import { runGateSteps } from './run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from './step-counts.ts'
@@ -225,11 +230,11 @@ function prepareHookRun(params: {
 	if ('refusal' in source) throw new GateConfigError(source.refusal)
 	const { packageJson } = source
 	const fullSteps = resolveGateSteps({ packageJson, mode: 'full' })
-	const hookSteps = listHookSteps(fullSteps)
+	const hookSteps = resolveHookSteps({ packageJson })
 	if (hookSteps.length === 0)
 		return { result: { exitCode: 0, output: textOf([GATE_HOOK_NO_STEP_LINE]) } }
-	// a scoped full step's hash holds the base; the hook says it only when it runs a scoped step
-	const hookBase = holdsScopedStep(fullSteps)
+	// a scoped full or hook step's hash holds the base; the hook says it only when it runs a scoped step
+	const hookBase = holdsScopedStep([...fullSteps, ...hookSteps])
 		? resolveHookBase({
 				cwd,
 				handoverBase: params.handoverBase,

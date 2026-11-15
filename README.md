@@ -713,7 +713,9 @@ the answer.
   measure their wall and monotonic time: a run whose wall time passed its monotonic time by over 60 s spanned
   a sleep of the machine all the same, its record keeps `sleptMs`, and the hand-over card's gates print
   `! slept <duration> during gate --full` for a record of the tree it checks.
-- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the steps of `--full` but the scoped ones that count
+- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the `dialecte.gate.hook` steps when the package declares
+  them (a package whose full suite runs on CI commits on its fast tier: the cli declares `check` and its scoped
+  `tests`), else the steps of `--full` but the scoped ones that count
   no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays the gate's and contrib's).
   Each step is answered by any green record that ran it as it is now - a `gate --fast`, `--full`, `--release` or an
   earlier hook's - of the committed tree, what npm installed (the version-blind install key: the installed
@@ -2430,8 +2432,10 @@ its scratch repository only, and the cli clears git's repository variables at it
 
 The cli gates itself with its own `dialecte.gate` (package.json). `--fast`: `check`, a scoped `tests` step
 (`node src/scoped-tests.ts`: `vitest related` over the paths changed between the gate base and the tree that a
-test can import, and an empty selection exits 0 without starting vitest) and a scoped `rules` step on the same
-changed list. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
+test can import, and an empty selection exits 0 without starting vitest; a changed path no test can import - the
+manifest, the entry, the vitest config, a setup file, a file a test reads - is left to the full suite on CI, said in
+one line) and a scoped `rules` step on the same changed list. Its commit hook (`dialecte.gate.hook`) runs `check`
+and that scoped `tests` step; the full suite runs on CI for every pull request. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
 changes since the gate base. The suite's setup file also points `XDG_CONFIG_HOME` at a folder that does not exist
 (no person's forbidden words list is read) and sets `DIALECTE_KEEP_AWAKE=0` (no run of the suite holds the machine
 awake); a case that wants either sets it itself.

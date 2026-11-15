@@ -211,6 +211,7 @@ export function buildCardGateLines(params: {
 			ownLotStateHash: params.ownLotStateHash,
 			outsideHistory: commitsOutsideHistory({ root, records }),
 			baseCheck: recordBaseCheck({ root, base: config.base }),
+			hookProvesFull: config.hookProvesFull ?? true,
 		}),
 		...sleptGateLines({ root, tree }),
 		...(config.invalid === undefined
@@ -291,6 +292,7 @@ function readCardGateConfig(params: {
 		return {
 			...(base && { base }),
 			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit, tree }),
+			hookProvesFull: packageJson.dialecte?.gate?.hook === undefined,
 		}
 	} catch (error) {
 		if (error instanceof GateConfigError) return { invalid: error.message }
@@ -554,14 +556,18 @@ function gateStepLines(params: {
 	outsideHistory: ReadonlySet<string>
 	/** How a record's gate base reads against the card's (`recordBaseCheck`). */
 	baseCheck: (record: GateRecord) => RecordBaseCheck | undefined
+	/** False under a declared hook list: a hook's test step answers no full test step. */
+	hookProvesFull: boolean
 }): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
 	const latest = new Map<string, { step: RecordedStep; record: GateRecord }>()
 	const { stateHash } = params
-	const oldestFirst = currentRecords({ records: params.records, stateHash }).sort((first, second) =>
-		first.at.localeCompare(second.at),
-	)
+	const oldestFirst = currentRecords({
+		records: params.records,
+		stateHash,
+		hookProvesFull: params.hookProvesFull,
+	}).sort((first, second) => first.at.localeCompare(second.at))
 	const superseded = isSuperseded({ records: oldestFirst, stateHash })
 	const tddStateHashes = currentTddStateHashes({ ...params, records: oldestFirst })
 	for (const record of oldestFirst)
@@ -627,6 +633,7 @@ function currentTddStateHashes(params: {
 function currentRecords(params: {
 	records: readonly GateRecord[]
 	stateHash: string
+	hookProvesFull: boolean
 }): GateRecord[] {
 	const { records, stateHash } = params
 	const gates = records.filter((record) => record.mode !== HOOK_RECORD_MODE)
@@ -642,7 +649,9 @@ function currentRecords(params: {
 	if (checkedHooks.length === 0) return standing
 	const superseded = isSuperseded({ records: standing, stateHash })
 	return standing.map(function supersededByHook(record) {
-		return superseded(record) ? withoutAnsweredSteps({ record, hooks: checkedHooks }) : record
+		return superseded(record)
+			? withoutAnsweredSteps({ record, hooks: checkedHooks, hookProvesFull: params.hookProvesFull })
+			: record
 	})
 }
 
@@ -671,11 +680,13 @@ function newestAt(records: readonly GateRecord[]): string {
 /**
  * A gate record a standing hook record of the checked tree superseded, without the steps `hooks` answer: a hook
  * step of the same name, or, for a step counting tests, a hook step counting tests (the hook runs the full gate's
- * test steps). Its tdd step (the worktree's own) and its failed steps always stay.
+ * test steps). Its tdd step (the worktree's own) and its failed steps always stay, and its test steps under a declared
+ * hook list (`hookProvesFull` false: the hook runs the fast tier).
  */
 function withoutAnsweredSteps(params: {
 	record: GateRecord
 	hooks: readonly GateRecord[]
+	hookProvesFull: boolean
 }): GateRecord {
 	const hookSteps = params.hooks.flatMap((hook) => hook.steps)
 	const hookCountsTests = hookSteps.some((step) => step.counts.tests !== undefined)
@@ -683,6 +694,7 @@ function withoutAnsweredSteps(params: {
 		...params.record,
 		steps: params.record.steps.filter(function unanswered(step) {
 			if (step.name === TDD_STEP.name || step.status === 'failed') return true
+			if (step.counts.tests !== undefined && !params.hookProvesFull) return true
 			if (hookSteps.some((hookStep) => hookStep.name === step.name)) return false
 			return !(step.counts.tests !== undefined && hookCountsTests)
 		}),

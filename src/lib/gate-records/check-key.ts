@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
-import { holdsScopedStep, listHookSteps, resolveGateSteps } from '../gate/gate-config.ts'
+import { holdsScopedStep, resolveHookSteps } from '../gate/gate-config.ts'
 import { readCommitHookFiles } from '../git-hooks.ts'
 import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -159,15 +159,17 @@ export function hashHookFiles(files: readonly CommitHookFile[]): string {
 }
 
 /**
- * The command hash `gate --hook` keys its `hook-gate` record with: the hook steps of the package's full gate
- * (`listHookSteps`), with `gateBase` (the hook base, entering only when a hook step is scoped).
+ * The command hash `gate --hook` keys its `hook-gate` record with: the hook steps of the package
+ * (`resolveHookSteps`), with `gateBase` (the hook base, entering only when a hook step is scoped).
  */
 export function hashHookGateCommand(params: {
 	packageJson: PackageJson
 	gateBase?: string
 }): string {
-	const fullSteps = resolveGateSteps({ packageJson: params.packageJson, mode: 'full' })
-	return hashGateCommand({ steps: listHookSteps(fullSteps), gateBase: params.gateBase })
+	return hashGateCommand({
+		steps: resolveHookSteps({ packageJson: params.packageJson }),
+		gateBase: params.gateBase,
+	})
 }
 
 /**

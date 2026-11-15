@@ -1,7 +1,7 @@
 /**
  * The commands this package's fast gate declares for its scoped steps, run as the gate runs them (a shell, from the
  * package root, the scoped variables set): with only a file no test relates to listed as changed, the tests step
- * runs no test and selects nothing, and the rules step passes. A step that ran the whole suite, or ignored the
+ * runs no test and selects nothing, and the rules step passes. A step that ran every test, or ignored the
  * changed list, fails here.
  */
 import { spawnSync } from 'node:child_process'
@@ -37,12 +37,12 @@ function commandOf(name: string): string {
 	return step?.scoped === true ? step.run : 'echo no scoped step; exit 99'
 }
 
-/** Runs `command` from the package root with the scoped variables of a gate whose only changed path is `ONLY_CHANGED_FILE`. */
-function runScoped(command: string) {
+/** Runs `command` from the package root with the scoped variables of a gate whose only changed path is `changed`. */
+function runScoped(params: { command: string; changed?: string }) {
 	const folder = temporaryFolder('dialecte-own-scoped-')
-	writeFiles({ root: folder, files: { changed: `${ONLY_CHANGED_FILE}\0` } })
+	writeFiles({ root: folder, files: { changed: `${params.changed ?? ONLY_CHANGED_FILE}\0` } })
 	const selection = join(folder, 'selection.json')
-	const run = spawnSync('sh', ['-c', command], {
+	const run = spawnSync('sh', ['-c', params.command], {
 		cwd: PACKAGE_ROOT,
 		encoding: 'utf8',
 		timeout: OWN_SCOPED_STEP_KILL_BOUND_MS,
@@ -67,7 +67,7 @@ describe('the own package’s scoped fast steps, run as the gate runs them', () 
 		'only a file no test relates to is changed → the tests step exits 0 without a test line and selects nothing',
 		{ timeout: HELPER_SCENARIO_TIMEOUT },
 		() => {
-			const ran = runScoped(commandOf('tests'))
+			const ran = runScoped({ command: commandOf('tests') })
 
 			expect({
 				status: ran.status,
@@ -83,10 +83,24 @@ describe('the own package’s scoped fast steps, run as the gate runs them', () 
 	)
 
 	it(
+		'only package.json changed → the tests step runs no test, selects nothing (the gate passes it) and leaves it to CI',
+		{ timeout: HELPER_SCENARIO_TIMEOUT },
+		() => {
+			const ran = runScoped({ command: commandOf('tests'), changed: 'package.json' })
+
+			expect(ran.status).toBe(0)
+			expect(/^\s*Tests\s/m.test(stripVTControlCharacters(ran.output))).toBe(false)
+			expect(judgeSelection({ path: ran.selection, scopeRun: ran.scopeRun })).toMatchObject({
+				selection: { ids: [], skipped: [expect.objectContaining({ id: 'left-to-ci' })] },
+			})
+		},
+	)
+
+	it(
 		'the same changed list → the rules step reads it and exits 0',
 		{ timeout: HELPER_SCENARIO_TIMEOUT },
 		() => {
-			const ran = runScoped(commandOf('rules'))
+			const ran = runScoped({ command: commandOf('rules') })
 
 			expect({ status: ran.status, output: ran.output }).toMatchObject({ status: 0 })
 		},

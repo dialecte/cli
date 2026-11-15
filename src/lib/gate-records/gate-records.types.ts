@@ -160,6 +160,8 @@ export type CardGateConfig = {
 	invalid?: string
 	/** The refusal of the gate base: a set `dialecte.baseBranch` naming no branch. */
 	baseRefusal?: string
+	/** False when the package declares its hook list (`dialecte.gate.hook`): its hook's tests are no full suite. */
+	hookProvesFull?: boolean
 }
 
 /** How a record's gate base reads against the card's: the same, an ancestor of it, or neither. */

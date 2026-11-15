@@ -436,6 +436,8 @@ export type RehearsalPlanContext = {
 	branch: string
 	/** What the lot's tree locks, and the `file:` dependencies (`readTreeKey`). */
 	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
+	/** False when the package declares its hook list (`dialecte.gate.hook`): a hook record then proves no full suite. */
+	hookProvesFull: boolean
 	/**
 	 * The command hash a record of each mode must hold to be reused, at the hand-over base; `release` only when the
 	 * release list covers `full` (its scoped steps against the empty tree).

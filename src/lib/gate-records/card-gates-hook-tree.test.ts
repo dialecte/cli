@@ -3,7 +3,8 @@
  * merge hand-over's hook record is current when it is keyed with the merged tree's hook files, whatever the worktree's
  * own hook files hold, and a `gate --hook` record is current with the hook steps' command hash.
  */
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { runHookIn } from '../../../test/gate-hook.ts'
 import { gitPathOf } from '../../../test/gate-records.ts'
@@ -93,6 +94,56 @@ describe(
 			expect(buildCardGateLines({ root, tree: mergedTree })).toEqual([
 				{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL },
 			])
+		})
+	},
+)
+
+/** A full record of the worktree's own tree with a passed tests step, and the merged tree's hook record stored. */
+function ownTestsAndMergedHook(): { root: string; mergedTree: string } {
+	const { root, mergedTree, ownTree, mergedHookHash } = createHookTreeRepository()
+	const record: GateRecord = {
+		mode: 'full',
+		at: OWN_GATE_TIME,
+		head: headOf(root),
+		stateHash: hashStateTree(ownTree),
+		steps: [
+			...OWN_GATE_RECORD_STEPS,
+			{
+				name: 'tests',
+				status: 'passed',
+				counts: { tests: { passed: 9, failed: 0, skipped: 0, total: 9 } },
+			},
+		],
+	}
+	writeFileSync(gitPathOf({ root, name: FULL_RECORD_FILE }), `${JSON.stringify(record, null, 2)}\n`)
+	storeHookRecord({ root, tree: mergedTree, commandHash: mergedHookHash })
+	return { root, mergedTree }
+}
+
+describe(
+	'buildCardGateLines: a hook record and the full tests step of another tree',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('no hook list: the hook runs the full suite → the hook answers the full tests step', () => {
+			const { root, mergedTree } = ownTestsAndMergedHook()
+
+			expect(
+				buildCardGateLines({ root, tree: mergedTree }).some((line) => line.name === 'tests'),
+			).toBe(false)
+		})
+
+		it('a declared hook list (the fast tier) → the full tests step of the other tree stays its own line', () => {
+			const { root, mergedTree } = ownTestsAndMergedHook()
+			const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+			packageJson.dialecte = {
+				...packageJson.dialecte,
+				gate: { ...packageJson.dialecte?.gate, hook: [{ name: 'check', run: 'true' }] },
+			}
+			writeFileSync(join(root, 'package.json'), `${JSON.stringify(packageJson)}\n`)
+
+			expect(
+				buildCardGateLines({ root, tree: mergedTree }).some((line) => line.name === 'tests'),
+			).toBe(true)
 		})
 	},
 )

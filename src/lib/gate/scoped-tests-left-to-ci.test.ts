@@ -1,7 +1,8 @@
 /**
- * R1-C1: the scoped tests step runs the whole suite, saying why, for a change no test imports (the entry, the
- * vitest config, a setup file, the manifest, a file a test reads); a change of only an importable source file still
- * runs its related tests. Run in a scratch vitest package, never over this package.
+ * CI first (33CI CI5): the machine runs only the tests the importable changes reach; a change no test imports (the
+ * entry, the vitest config, a setup file, the manifest, a file a test reads, the root README and CHANGELOG) is left to
+ * the full suite CI runs, said in one line and recorded as skipped. Run in a scratch vitest package, never over this
+ * package.
  */
 import { join } from 'node:path'
 
@@ -10,12 +11,13 @@ import { scopeRunOf } from '../../../test/scope-run.ts'
 import {
 	SCRATCH_EXTRA_FILES,
 	SCRATCH_TEST_FILES,
-	WHOLE_SUITE_CHANGES,
-} from '../../../test/scoped-whole-suite.constants.ts'
+	LEFT_TO_CI_CHANGES,
+} from '../../../test/scoped-left-to-ci.constants.ts'
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../../test/scratch-vitest-package.ts'
 import { BASE, TREE } from '../../../test/step4-cases.constants.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { LEFT_TO_CI_LINE_START } from './scoped-tests.constants.ts'
 import { judgeSelection } from './selection.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -40,7 +42,7 @@ function scratchPackage(): string {
 
 /** What the gate hands the step for `changed` paths. */
 function handedFor(changed: readonly string[]) {
-	const folder = temporaryFolder('dialecte-scoped-whole-')
+	const folder = temporaryFolder('dialecte-scoped-left-')
 	writeFiles({ root: folder, files: { changed: changed.map((path) => `${path}\0`).join('') } })
 	const selection = join(folder, 'selection.json')
 	return {
@@ -54,22 +56,35 @@ describe(
 	'the scoped tests step and a change no test imports',
 	{ timeout: HELPER_SCENARIO_TIMEOUT },
 	() => {
-		for (const change of WHOLE_SUITE_CHANGES)
-			it(`${change.title} changed -> every test file runs and the selection names the change as the reason`, () => {
+		for (const change of LEFT_TO_CI_CHANGES)
+			it(`${change.title} changed -> no test runs here, one line leaves it to the full suite on CI, the selection names it`, () => {
 				const root = scratchPackage()
 				const handed = handedFor([change.path])
 
 				const run = plainScopedRun({ root, environment: handed.environment })
 
 				expect(run.exitCode).toBe(0)
-				for (const file of SCRATCH_TEST_FILES) expect(run.output).toContain(file)
-				expect(run.output).toMatch(/Tests\s+2 passed \(2\)/)
+				expect(run.output).toContain(`${LEFT_TO_CI_LINE_START}${change.path}`)
+				for (const file of SCRATCH_TEST_FILES) expect(run.output).not.toContain(file)
 				const judged = judgeSelection({ path: handed.selection, scopeRun: handed.scopeRun })
 				expect(judged).toHaveProperty('selection')
-				const reasons = 'selection' in judged ? JSON.stringify(judged.selection.reasons) : ''
-				expect('selection' in judged && judged.selection.ids.length).toBeGreaterThan(0)
-				expect(reasons).toContain(change.path)
+				// nothing selected (the gate passes the step with its nothing-selected note), the path skipped for CI
+				expect('selection' in judged && judged.selection.ids).toEqual([])
+				const skipped = 'selection' in judged ? JSON.stringify(judged.selection.skipped) : ''
+				expect(skipped).toContain(change.path)
 			})
+
+		it("the manifest and an importable source file changed -> the source file's related test runs, the manifest is left to CI", () => {
+			const root = scratchPackage()
+			const handed = handedFor(['package.json', 'src/a.ts'])
+
+			const run = plainScopedRun({ root, environment: handed.environment })
+
+			expect(run.exitCode).toBe(0)
+			expect(run.output).toContain(`${LEFT_TO_CI_LINE_START}package.json`)
+			expect(run.output).toContain('src/a.test.ts')
+			expect(run.output).not.toContain('src/b.test.ts')
+		})
 
 		it('only an importable source file changed -> only its related test runs', () => {
 			const root = scratchPackage()
