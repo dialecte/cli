@@ -1,5 +1,8 @@
-/** The line a run prints when it took its base from the lot link or from the worktree's hygiene baseline. */
-export const LOT_BASE_LINE = {
+/** The line a run without a gate base prints, naming where the one base order found its base. */
+export const BASE_LINE = {
 	lot: 'rules: base {sha} (the lot {name})',
-	worktree: "rules: base {sha} (the worktree's from {ref})",
+	baseBranch: 'rules: base {sha} (the merge-base with {branch})',
+	/** The base branch's name not found again: never an empty name. */
+	baseBranchUnnamed: 'rules: base {sha} (the merge-base with the base branch)',
+	releaseTag: 'rules: base {sha} (the release tag {tag})',
 } as const

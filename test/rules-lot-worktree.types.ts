@@ -2,17 +2,9 @@
 export type LotWorktreeKind = 'dialecte' | 'app'
 
 /**
- * How the worktree says which base it was cut for: a lot link (its identity's base ref, or only its commit), a hygiene
- * baseline (its `from` readable, or not), a link and a baseline together, a link to an unreadable ref, nothing.
+ * What the worktree's lot link holds: a base ref and commit, only a commit, a commit git cannot read, or no link at all.
  */
-export type LotWorktreeSource =
-	| 'lot-link'
-	| 'lot-link-commit-only'
-	| 'hygiene-baseline'
-	| 'hygiene-baseline-unreadable-from'
-	| 'link-and-baseline'
-	| 'unreadable-ref-link'
-	| 'none'
+export type LotWorktreeSource = 'lot-link' | 'lot-link-commit-only' | 'unreadable-link' | 'none'
 
 /** A worktree cut from `main`, then each branch moved on; its test file adds a splice on top of an old one. */
 export type LotWorktree = {
@@ -21,4 +13,6 @@ export type LotWorktree = {
 	shortSha: string
 	/** The full merge-base commit. */
 	baseCommit: string
+	/** The release tag put on the base commit, when asked. */
+	releaseTag?: string
 }

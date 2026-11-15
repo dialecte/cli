@@ -38,6 +38,7 @@ import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
 import { LOT_RISK_EFFORT_OPTION, LOT_RISK_VALUE_OPTIONS } from './lot-risk.constants.ts'
 import { runLotRisk } from './lot-risk.ts'
+import { runLotScope } from './lot-scope.ts'
 import {
 	START_EFFORT_ATTEMPTS,
 	START_EFFORT_PROMPT,
@@ -185,6 +186,7 @@ export function runLot(params: {
 		return { ...result, output: textOf([resolved.note, ...linesOf(result.output)]) }
 	}
 	if (verb === 'risk') return runRiskVerb({ cwd: params.cwd, words, now: params.now })
+	if (verb === 'scope') return runLotScope({ cwd: params.cwd, argv: words, now: params.now })
 	const reviewRound = runReviewRoundVerb({ cwd: params.cwd, verb, words, now: params.now })
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined

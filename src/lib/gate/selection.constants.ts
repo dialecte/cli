@@ -1,4 +1,5 @@
 /** The environment, the selection file and the verdict wordings of a scoped gate step. */
+import { CHECK_STORE_VARIABLE } from '../gate-records/gate-records.constants.ts'
 import { HANDOVER_BASE_VARIABLES } from './gate-base.constants.ts'
 
 /** What the gate hands a scoped step: its base, its tree, the changed-paths file and where to write the selection. */
@@ -9,8 +10,14 @@ export const GATE_SCOPE_VARIABLES = {
 	selection: 'DIALECTE_GATE_SELECTION',
 } as const
 
-/** The hand-over's variables for the `gate --hook` a commit starts: no step ever gets them. */
-export const HANDOVER_VARIABLES: readonly string[] = Object.values(HANDOVER_BASE_VARIABLES)
+/**
+ * The hand-over's variables for the `gate --hook` a commit starts (its base and folder, and the store a rehearsal
+ * hands it): no step ever gets them, nor what a step starts (a suite spawning its own hooks would read them).
+ */
+export const HANDOVER_VARIABLES: readonly string[] = [
+	...Object.values(HANDOVER_BASE_VARIABLES),
+	CHECK_STORE_VARIABLE,
+]
 
 /** The folder (in the system's temporary folder) of one gate run's changed file and selection paths. */
 export const GATE_SCOPE_FOLDER_PREFIX = 'dialecte-gate-scope-'

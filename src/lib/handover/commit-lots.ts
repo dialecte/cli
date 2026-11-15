@@ -43,7 +43,13 @@ import {
 	STILL_STAGED_INDEX_LOCK,
 } from './handover.constants.ts'
 import { createHookLiveView } from './hook-live-view.ts'
-import { hookOutcomeLines, hookSummarySteps, readHookBase, readHookSteps } from './hook-output.ts'
+import {
+	hookLandingLine,
+	hookOutcomeLines,
+	hookSummarySteps,
+	readHookBase,
+	readHookSteps,
+} from './hook-output.ts'
 import { INSTALL_REFUSAL_EXIT_CODE } from './install-guard.constants.ts'
 import { guardInstall } from './install-guard.ts'
 import { removeMergeMarker, runMergeLot, undoMerge } from './merge-lot.ts'
@@ -220,6 +226,9 @@ export async function commitLots(params: {
 					logPath: hookLog,
 				}).map((line) => `${HOOK_OUTPUT_PREFIX}${line}`)
 			: []
+		// what the hook reused and ran, under its outcome (none for a hook that is not `gate --hook`)
+		const landing = hookRan ? hookLandingLine({ output: commit.output }) : undefined
+		const hookLines = landing === undefined ? hookOutcome : [...hookOutcome, landing]
 		// after a failed commit HEAD is still the base; a stalled hook proved nothing
 		if (key !== undefined && !commit.stalled)
 			recordHook({
@@ -233,7 +242,7 @@ export async function commitLots(params: {
 				}).map(recordedHookStep),
 			})
 		if (commit.exitCode !== 0) {
-			running.finish(...hookOutcome)
+			running.finish(...hookLines)
 			// the commit's processes are gone by now (a stalled run settles once its tree is killed)
 			const undone = undo()
 			const elapsed = formatDuration(clock.now() - startedAt)
@@ -252,7 +261,7 @@ export async function commitLots(params: {
 		const sha = readGit({ root, args: ['rev-parse', 'HEAD'] }).trim()
 		commits.push(sha)
 		running.finish(
-			...hookOutcome,
+			...hookLines,
 			textOf([`✓ ${sha.slice(0, 12)} ${subject}  ${formatDuration(clock.now() - startedAt)}`]),
 		)
 		// a merge commit's own diff is empty: its stat is against its first parent

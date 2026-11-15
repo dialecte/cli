@@ -27,6 +27,7 @@ import type {
 	GateRecordMode,
 	RecordedRun,
 	RecordedStep,
+	RecordOrigin,
 	RulesRecord,
 } from './gate-records.types.ts'
 
@@ -87,6 +88,15 @@ export function recordGate(params: {
 	base?: GateRecord['base']
 	/** How long the machine slept during the run, when it did (`sleptMsOf`): kept on the record. */
 	sleptMs?: number
+	/** What each configured step ran as (`hashGateStep`), by step name: kept on the record's steps. */
+	stepHashes?: ReadonlyMap<string, string>
+	/** The steps another run's record answered, by step name: the run that really ran each, kept on its step. */
+	stepOrigins?: ReadonlyMap<string, RecordOrigin>
+	/**
+	 * The absolute git common dir whose store holds the record instead of the repository's own (a rehearsal clone
+	 * given `DIALECTE_CHECK_STORE`): the record is then marked as a rehearsal's.
+	 */
+	checkStore?: string
 }): RecordedRun {
 	const refused = params.results.some(
 		(result) => UNRECORDED_STEPS.includes(result.step.name) && result.status === 'failed',
@@ -99,11 +109,17 @@ export function recordGate(params: {
 		stateHash: stateHashOf(params),
 		steps: params.results
 			.filter((result) => !UNRECORDED_STEPS.includes(result.step.name))
-			.map(recordedStepOf),
+			.map((result) =>
+				recordedStepOf({
+					result,
+					stepHash: params.stepHashes?.get(result.step.name),
+					origin: params.stepOrigins?.get(result.step.name),
+				}),
+			),
 		...(params.key && { key: params.key }),
 		...(params.reused && { reused: params.reused }),
 		...(params.base && { base: params.base }),
-		...(params.storeRoot && { origin: REHEARSAL_ORIGIN }),
+		...((params.storeRoot || params.checkStore) && { origin: REHEARSAL_ORIGIN }),
 		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
 	}
 	writeRecord({ root: params.root, name: gateRecordName(params.mode), record })
@@ -111,7 +127,12 @@ export function recordGate(params: {
 		(result) => result.step.name === TDD_STEP.name && result.status === 'failed',
 	)
 	const stored = Boolean(params.key) && !params.reused && !tddFailed
-	if (stored) storeCheckRecord({ root: params.storeRoot ?? params.root, record })
+	if (stored)
+		storeCheckRecord({
+			root: params.storeRoot ?? params.root,
+			record,
+			...(params.checkStore && { checkStore: params.checkStore }),
+		})
 	return { stored, stateHash: record.stateHash }
 }
 
@@ -121,7 +142,12 @@ function stateHashOf(params: { root: string; key?: CheckKey; checkedTree?: strin
 	return tree ? hashStateTree(tree) : computeStateHash(params.root)
 }
 
-function recordedStepOf(result: StepResult): RecordedStep {
+function recordedStepOf(params: {
+	result: StepResult
+	stepHash?: string
+	origin?: RecordOrigin
+}): RecordedStep {
+	const { result, stepHash, origin } = params
 	return {
 		name: result.step.name,
 		status: result.status,
@@ -136,6 +162,8 @@ function recordedStepOf(result: StepResult): RecordedStep {
 		...(result.selection && { selection: result.selection }),
 		...(result.failing && { failing: result.failing }),
 		...(result.step.heavy === true && { heavy: true as const }),
+		...(stepHash && { stepHash }),
+		...(origin && { reused: origin }),
 	}
 }
 

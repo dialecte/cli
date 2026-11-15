@@ -5,7 +5,6 @@ import { createLotWorktree } from '../../test/rules-lot-worktree.ts'
 import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NOT_ADDED_SUFFIX } from '../lib/rules/added-lines.constants.ts'
-import { LOT_BASE_LINE } from '../lib/rules/lot-base.constants.ts'
 import { runRules } from './rules.ts'
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -57,22 +56,54 @@ describe(
 			{
 				source: LotWorktreeSource
 				kind?: LotWorktreeKind
+				baseBranch?: 'present' | 'absent'
+				placement?: 'worktree' | 'on-main'
+				releaseTag?: boolean
 				gateBase?: boolean
 				expectedVerdicts: SpliceVerdict[]
-				expectedLine: 'lot' | 'worktree' | 'none'
+				expectedLine: 'lot' | 'mergeBase' | 'releaseTag' | 'none'
 			}
 		> = {
-			'a lot link, both branches moved on → the old splice a warning, the new one an error, one line naming the merge-base and the lot':
+			'a lot link, both branches moved on → the old splice a warning, the new one an error, one line naming the base and the lot':
 				{
 					source: 'lot-link',
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 					expectedLine: 'lot',
 				},
-			'no link, a hygiene baseline naming the branch it was cut from, both branches moved on → the same split, the line names the merge-base and that ref':
+			'no lot, main is the base branch, both branches moved on → the same split, the line names the merge-base and main':
 				{
-					source: 'hygiene-baseline',
+					source: 'none',
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
-					expectedLine: 'worktree',
+					expectedLine: 'mergeBase',
+				},
+			'no lot, no base branch, a release tag on the commit before the change → the same split, the line names the tag':
+				{
+					source: 'none',
+					baseBranch: 'absent',
+					releaseTag: true,
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'releaseTag',
+				},
+			'no lot, no base branch, no release tag → no base: both splices are errors, no line': {
+				source: 'none',
+				baseBranch: 'absent',
+				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+				expectedLine: 'none',
+			},
+			'no lot, the change uncommitted on main itself, no release tag → no base: both splices are errors, no line':
+				{
+					source: 'none',
+					placement: 'on-main',
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'none',
+				},
+			'no lot, the change uncommitted on main itself, a release tag on the commit before it → the same split, the line names the tag':
+				{
+					source: 'none',
+					placement: 'on-main',
+					releaseTag: true,
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'releaseTag',
 				},
 			'a lot link and a gate base → the gate base judges, no line about the lot': {
 				source: 'lot-link',
@@ -86,43 +117,58 @@ describe(
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 					expectedLine: 'lot',
 				},
-			'a link and a hygiene baseline together → the link wins, the line names the lot': {
-				source: 'link-and-baseline',
-				expectedVerdicts: [OLD_WARNING, NEW_ERROR],
-				expectedLine: 'lot',
-			},
-			'a hygiene baseline whose from git cannot read → no base: both splices are errors, no line': {
-				source: 'hygiene-baseline-unreadable-from',
-				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-				expectedLine: 'none',
-			},
+			'a link whose base commit git cannot read, main is the base branch → no base: both splices are errors, no line':
+				{
+					source: 'unreadable-link',
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'none',
+				},
+			'a link whose base commit git cannot read, no base branch, a release tag → no base: both splices are errors, no line':
+				{
+					source: 'unreadable-link',
+					baseBranch: 'absent',
+					releaseTag: true,
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'none',
+				},
+			'a link whose base commit git cannot read, no base branch, no release tag → no base: both splices are errors, no line':
+				{
+					source: 'unreadable-link',
+					baseBranch: 'absent',
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'none',
+				},
 			'an app, a lot link → the same split and the same line': {
 				source: 'lot-link',
 				kind: 'app',
 				expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 				expectedLine: 'lot',
 			},
-			'an app, a hygiene baseline → the same split and the same line': {
-				source: 'hygiene-baseline',
+			'an app, no lot, main is the base branch → the same split, the line names the merge-base': {
+				source: 'none',
 				kind: 'app',
 				expectedVerdicts: [OLD_WARNING, NEW_ERROR],
-				expectedLine: 'worktree',
+				expectedLine: 'mergeBase',
 			},
-			'a plain checkout, no link and no baseline → no base: both splices are errors, no line': {
+			'an app, no lot, no base branch, a release tag → the same split, the line names the tag': {
 				source: 'none',
-				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-				expectedLine: 'none',
-			},
-			'a link whose base ref git cannot read → no base: both splices are errors, no line': {
-				source: 'unreadable-ref-link',
-				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-				expectedLine: 'none',
+				kind: 'app',
+				baseBranch: 'absent',
+				releaseTag: true,
+				expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+				expectedLine: 'releaseTag',
 			},
 		}
 
 		for (const [title, testCase] of Object.entries(testCases))
 			it(title, () => {
-				const worktree = createLotWorktree({ source: testCase.source, kind: testCase.kind })
+				const worktree = createLotWorktree({
+					source: testCase.source,
+					kind: testCase.kind,
+					baseBranch: testCase.baseBranch,
+					placement: testCase.placement,
+					releaseTag: testCase.releaseTag,
+				})
 				const environment = {
 					...machineOf(),
 					...(testCase.gateBase && {
@@ -130,10 +176,9 @@ describe(
 					}),
 				}
 				const expectedLines = {
-					lot: [LOT_BASE_LINE.lot.replace('{sha}', worktree.shortSha).replace('{name}', LOT_NAME)],
-					worktree: [
-						LOT_BASE_LINE.worktree.replace('{sha}', worktree.shortSha).replace('{ref}', 'main'),
-					],
+					lot: [`rules: base ${worktree.shortSha} (the lot ${LOT_NAME})`],
+					mergeBase: [`rules: base ${worktree.shortSha} (the merge-base with main)`],
+					releaseTag: [`rules: base ${worktree.shortSha} (the release tag ${worktree.releaseTag})`],
 					none: [],
 				}
 

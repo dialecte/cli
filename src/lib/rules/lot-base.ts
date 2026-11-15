@@ -1,36 +1,46 @@
+import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { isInWorkTree, tryReadGit } from '../git.ts'
-import { readIdentity } from '../store/identity.ts'
-import { lotOfWorktree } from '../store/resolve-lot.ts'
-import { readHygieneBaseline } from '../worktree/hygiene.ts'
-import { LOT_BASE_LINE } from './lot-base.constants.ts'
+import { readPackageJson } from '../package-json.ts'
+import { resolveRulesBaseSource } from '../rules-base.ts'
+import { BASE_LINE } from './lot-base.constants.ts'
 
-import type { LotBase } from './lot-base.types.ts'
+import type { RulesBaseSource } from '../rules-base.types.ts'
+import type { BaseWithLine } from './lot-base.types.ts'
 
 /**
- * The base of the lot the worktree at `root` belongs to (its lot link's identity base, else the hygiene baseline's
- * `from`) as a merge-base with HEAD; undefined when neither names a ref git can read, or outside a git work tree.
+ * The base `dialecte rules` judges against without a gate base, through the one order every caller shares
+ * (`resolveRulesBaseSource`, asked as an empty-tree request: a merge-base equal to HEAD's commit is no answer), with
+ * the line naming its short sha and where it came from; undefined outside a git work tree, when the order finds no
+ * base, or when git cannot read the commit it found (no base then, as for every caller: `readAddedLines` cannot read
+ * it either).
  */
-export function readLotBase(params: { root: string }): LotBase | undefined {
+export function readBaseWithLine(params: { root: string }): BaseWithLine | undefined {
 	const { root } = params
 	if (!isInWorkTree(root)) return undefined
-	const lotFolder = lotOfWorktree({ cwd: root })
-	const identity = lotFolder === undefined ? undefined : readIdentity({ lotFolder })
-	if (identity !== undefined) {
-		const ref = identity.base.ref || identity.base.commit
-		return lotBaseOf({ root, ref, line: LOT_BASE_LINE.lot.replace('{name}', identity.name) })
+	// no base handed, as for an empty-tree request: a merge-base at HEAD's own commit knows no change, the order goes on
+	const resolved = resolveRulesBaseSource({ root, emptyTreeRequest: true })
+	if (resolved === undefined) return undefined
+	const shortSha = tryReadGit({
+		root,
+		args: ['rev-parse', '--short', '--verify', '--quiet', `${resolved.commit}^{commit}`],
+	})?.trim()
+	if (!shortSha) return undefined
+	return {
+		base: resolved.commit,
+		line: lineOf({ root, resolved }).replace('{sha}', () => shortSha),
 	}
-	const from = readHygieneBaseline(root)?.from
-	if (!from) return undefined
-	return lotBaseOf({ root, ref: from, line: LOT_BASE_LINE.worktree.replace('{ref}', from) })
 }
 
-/** The merge-base of HEAD and `ref` with `line` naming its short sha; undefined when git cannot read the ref. */
-function lotBaseOf(params: { root: string; ref: string; line: string }): LotBase | undefined {
-	const { root, ref } = params
-	if (!ref) return undefined
-	const base = tryReadGit({ root, args: ['merge-base', 'HEAD', ref] })?.trim()
-	if (!base) return undefined
-	const shortSha = tryReadGit({ root, args: ['rev-parse', '--short', base] })?.trim()
-	if (!shortSha) return undefined
-	return { base, line: params.line.replace('{sha}', shortSha) }
+/**
+ * The base line of `resolved` with its source named and `{sha}` still to fill; the base branch's name is read here
+ * only, once per run (`findBaseBranchRef`), so no other caller of the order pays for it.
+ */
+function lineOf(params: { root: string; resolved: RulesBaseSource }): string {
+	const { root, resolved } = params
+	if (resolved.source === 'lot') return BASE_LINE.lot.replace('{name}', () => resolved.lot)
+	if (resolved.source === 'release-tag')
+		return BASE_LINE.releaseTag.replace('{tag}', () => resolved.tag)
+	const found = findBaseBranchRef({ root, packageJson: readPackageJson(root) })
+	if ('refusal' in found) return BASE_LINE.baseBranchUnnamed
+	return BASE_LINE.baseBranch.replace('{branch}', () => found.branch)
 }

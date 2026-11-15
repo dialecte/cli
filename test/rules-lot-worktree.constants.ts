@@ -1,5 +1,7 @@
 export const LOT_NAME = '0084-repo-widget'
 export const TEST_FILE = 'src/widget/add-widget.test.ts'
+/** The release tag `<name>@v<version>` of the package of each kind. */
+export const RELEASE_TAG = { dialecte: '@dialecte/demo@v0.1.0', app: 'demo-app@v0.1.0' } as const
 export const GATE_BASE_VARIABLE = 'DIALECTE_GATE_BASE'
 
 const DIALECTE_PACKAGE_FILES = {

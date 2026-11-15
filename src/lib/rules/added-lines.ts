@@ -3,6 +3,7 @@ import { relative, resolve, sep } from 'node:path'
 import { readEmptyTree } from '../gate/gate-base.ts'
 import { addedLineRangesOf } from '../git-diff.ts'
 import { tryReadGit } from '../git.ts'
+import { resolveRulesBase } from '../rules-base.ts'
 import { NOT_ADDED_SUFFIX } from './added-lines.constants.ts'
 import { ALLOWABLE_RULES } from './check-code-rules.constants.ts'
 import { GROWTH_JUDGED_RULES } from './check-length-rules.constants.ts'
@@ -12,8 +13,9 @@ import type { RuleFinding, RuleName } from './check-code-rules.types.ts'
 
 /**
  * The lines of `files` that the working tree adds against `base`; a file the base lacks, or a base that is neither a
- * commit nor the empty tree, is whole. The repository's empty tree as the base means no change is known: every file
- * maps to nothing added.
+ * commit nor the empty tree, is whole. The repository's empty tree as the base (`gate --release`) goes through the
+ * same order as every other caller as an empty-tree request (`resolveRulesBase`: lot base, base-branch merge-base
+ * unless it is HEAD's commit, last release tag); without an answer, every file is whole.
  */
 export function readAddedLines(params: {
 	root: string
@@ -23,11 +25,13 @@ export function readAddedLines(params: {
 	const { root, base, files } = params
 	const whole: AddedLines = new Map(files.map((file) => [file, 'whole']))
 	if (files.length === 0) return whole
-	const commit = tryReadGit({
-		root,
-		args: ['rev-parse', '--verify', '--quiet', `${base}^{commit}`],
-	})?.trim()
-	if (!commit) return isEmptyTree({ root, base }) ? nothingAddedTo(files) : whole
+	const commit =
+		tryReadGit({
+			root,
+			args: ['rev-parse', '--verify', '--quiet', `${base}^{commit}`],
+		})?.trim() ||
+		(isEmptyTree({ root, base }) ? resolveRulesBase({ root, emptyTreeRequest: true }) : undefined)
+	if (!commit) return whole
 	const paths = files.map((file) => packagePathOf({ root, file }))
 	const diff = tryReadGit({
 		root,
@@ -98,11 +102,6 @@ function isEmptyTree(params: { root: string; base: string }): boolean {
 	if (!resolved) return false
 	const emptyTree = readEmptyTree(root)
 	return resolved === emptyTree || base === emptyTree
-}
-
-/** Every file of `files` mapped to an empty set of added lines. */
-function nothingAddedTo(files: readonly string[]): AddedLines {
-	return new Map(files.map((file) => [file, new Set<number>()]))
 }
 
 /** `file` as git names it from `root`: relative, `/` separators. */

@@ -86,12 +86,15 @@ export function recordCheckedRun(params: {
 	base?: GateRecord['base']
 	/** How long the machine slept during the run, when it did. */
 	sleptMs?: number
+	/** What each configured step ran as (`hashGateStep`), by name; a reused run keeps the answering record's instead. */
+	stepHashes?: ReadonlyMap<string, string>
 }): RecordedRun & { changedWhileRunning: boolean } {
 	const { keyBefore, keyAfter } = params
 	const changedTree =
 		keyBefore !== undefined && !isSameKey({ key: keyBefore, other: keyAfter })
 			? keyBefore.tree
 			: undefined
+	const stepHashes = params.reused ? stepHashesOf(params.reused) : params.stepHashes
 	const recorded = recordGate({
 		root: params.root,
 		mode: params.mode,
@@ -101,6 +104,14 @@ export function recordCheckedRun(params: {
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
 		...(params.base && { base: params.base }),
 		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
+		...(stepHashes && { stepHashes }),
 	})
 	return { ...recorded, changedWhileRunning: changedTree !== undefined }
+}
+
+/** The step hashes a record holds, by step name. */
+function stepHashesOf(record: GateRecord): ReadonlyMap<string, string> {
+	return new Map(
+		record.steps.flatMap((step) => (step.stepHash ? [[step.name, step.stepHash] as const] : [])),
+	)
 }

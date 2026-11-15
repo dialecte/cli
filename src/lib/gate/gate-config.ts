@@ -185,6 +185,14 @@ export function listHookTestSteps(fullSteps: readonly GateStep[]): GateStep[] {
 	return fullSteps.filter((step) => step.counts === 'tests')
 }
 
+/**
+ * The steps of `fullSteps` that `gate --hook` runs or answers: all but the scoped ones that count no tests, in list
+ * order.
+ */
+export function listHookSteps(fullSteps: readonly GateStep[]): GateStep[] {
+	return fullSteps.filter((step) => step.scoped !== true || step.counts === 'tests')
+}
+
 /** True when one of `steps` is scoped (`"scoped": true`). */
 export function holdsScopedStep(steps: readonly GateStep[]): boolean {
 	return steps.some((step) => step.scoped === true)

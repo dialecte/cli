@@ -19,6 +19,7 @@ import { RISK_EFFORT_BELOW_LINE, RISK_LINE_SOURCE } from '../lib/risk/risk.const
 import { lotDamagedExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { nextCommandsOf } from '../lib/store/lot-next.ts'
 import {
+	lotScopeOf,
 	readBriefStepCount,
 	readCheckedLotState,
 	readLotStateInput,
@@ -26,6 +27,7 @@ import {
 } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
+import { scopeChangesText } from '../lib/store/scope-changes.ts'
 import { readBeyondCapRows, readStationNext } from '../lib/store/station-records.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
 import {
@@ -33,6 +35,7 @@ import {
 	STATION_LINE,
 	STATION_WHAT,
 	STATUS_FLAGS,
+	SCOPE_STATUS_LINE,
 	STATUS_MAX_LINES,
 	STATUS_USAGE_REASONS,
 } from './lot-status.constants.ts'
@@ -136,6 +139,7 @@ export function lotStatusOfInput(params: {
 		scenario: identity.scenario,
 		checks: checksOf({ identity, lotFolder }),
 		notes: otherFolderNotes(params),
+		scope: lotScopeOf({ lotFolder }),
 		next,
 		also,
 		station: station?.next ?? null,
@@ -285,10 +289,16 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 	const state = `${status.lot} ${status.state} since ${status.since}${status.limit ? ' (limit: run again)' : ''}`
 	const stationLine = stationLineOf(status)
 	const head = stationLine === undefined ? [state] : [state, stationLine]
-	// the position is the line given up when every other one is needed
+	// the lines given up when every other one is needed: the position first, then the scope changes (a recorded
+	// decision outranks the step count the station line already gives)
+	const changes = scopeChangesText({ scope: status.scope, withReason: false })
+	const scope =
+		changes !== undefined && head.length + rest.length + 1 <= STATUS_MAX_LINES
+			? [fillMessage({ template: SCOPE_STATUS_LINE, values: { changes } })]
+			: []
 	const withPosition =
-		position && head.length + rest.length + 1 <= STATUS_MAX_LINES ? [position] : []
-	return [...head, ...withPosition, ...rest]
+		position && head.length + scope.length + rest.length + 1 <= STATUS_MAX_LINES ? [position] : []
+	return [...head, ...withPosition, ...scope, ...rest]
 }
 
 /**

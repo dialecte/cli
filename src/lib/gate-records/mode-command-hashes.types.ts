@@ -4,6 +4,8 @@ export type ModeCommandHashes = {
 	full: string
 	/** The commit hook's files, folded with the gate base when the hook's test steps hold a scoped step. */
 	hook: string
+	/** What `gate --hook` keys its `hook-gate` record with: the hook steps' command hash at the hook base. */
+	hookGate: string
 	/** The release list, its scoped steps against the empty tree. */
 	release: string
 	/** The release list covers `full`: only then does a release record stand in for a full one. */

@@ -10,11 +10,14 @@ import { join } from 'node:path'
 
 import { HOOK_TREE_LENGTH, REPOSITORY_CLI_PATH } from '../../test/gate-hook.constants.ts'
 import {
+	allReusedLinesOf,
 	createHookPackage,
+	hookRecordsOf,
 	indexTreeOf,
 	readFullRecord,
-	reuseLineOf,
 	runningLineOf,
+	stepReusedLineOf,
+	stripStepHashes,
 } from '../../test/gate-hook.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { FEATURE_BRANCH } from '../../test/scoped-gate-package.constants.ts'
@@ -45,6 +48,7 @@ import {
 } from '../../test/scratch-checks.ts'
 import { git, temporaryFolder } from '../../test/scratch-repository.ts'
 import { CLI_SURFACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { readTreeRecords } from '../lib/gate-records/check-store.ts'
 import { readReleaseRecord } from '../lib/gate-records/gate-records.ts'
 import {
 	HANDOVER_BASE_IGNORED_REASONS,
@@ -115,7 +119,7 @@ describe(
 
 			const lines = linesOf(result.output)
 			expect(result.exitCode).toBe(0)
-			expect(lines).toContain(runningLineOf(tree))
+			expect(lines).toContain(runningLineOf({ tree, steps: ['scoped'] }))
 			expect(lines).toContain(
 				baseLineOf({ commit: base, source: 'base-branch', selection: 'selected T0' }),
 			)
@@ -154,7 +158,7 @@ describe(
 			)
 		})
 
-		it('R1-1: a full list holding a scoped step that counts no tests and an unscoped tests step, after a green gate --full → the hook reuses its record, with no base line', async () => {
+		it('a full list holding a scoped step that counts no tests and an unscoped tests step, after a green gate --full → the hook answers the tests step from its record (the scoped step is no hook step), with no base line', async () => {
 			const counter = createCounter()
 			const bench = createScopedStep({ name: 'bench' })
 			const tests = countingStep({ counter, name: 'tests' })
@@ -166,12 +170,11 @@ describe(
 			})
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const tree = indexTreeOf({ root })
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toEqual([reuseLineOf({ tree, record })])
+			expect(linesOf(result.output)).toEqual([stepReusedLineOf({ step: 'tests', record })])
 			expect(countRuns(counter)).toBe(1)
 		})
 
@@ -201,18 +204,17 @@ describe(
 			expect(result.output).toContain(NO_BASE_BRANCH_NOTE.replace('{branch}', 'main'))
 		})
 
-		it('a green gate --full of this tree and base → no step runs: the unchanged reuse line, and the base line says reused', async () => {
+		it('a green gate --full of this tree and base → no step runs: the step reuse line, and the base line says reused', async () => {
 			const { root, scoped, base } = scopedHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const tree = indexTreeOf({ root })
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
 			expect(sortedLines(result.output)).toEqual(
 				[
-					reuseLineOf({ tree, record }),
+					stepReusedLineOf({ step: 'scoped', record }),
 					baseLineOf({ commit: base, source: 'base-branch', selection: 'reused' }),
 				].sort(),
 			)
@@ -229,7 +231,7 @@ describe(
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toContain(runningLineOf(tree))
+			expect(linesOf(result.output)).toContain(runningLineOf({ tree, steps: ['scoped'] }))
 			expect(readScopedRuns(scoped)).toEqual([
 				{ base: otherBase, tree },
 				{ base, tree },
@@ -246,12 +248,13 @@ describe(
 			expect(readScopedRuns(scoped)).toHaveLength(2)
 		})
 
-		it('A18: a green covering gate --release of this tree, no full record → the new release line, the base line says reused, no step runs', async () => {
+		it('A18: a green covering gate --release of this tree and an older cli (no step hashes), no full record → the whole-key release line, the base line says reused, no step runs', async () => {
 			const { root, scoped, base } = scopedHookPackage()
 			const releaseGate = await runGateIn({ cwd: root, argv: ['--release'] })
 			expect(releaseGate.exitCode).toBe(0)
 			const record = readReleaseRecord(root)
 			const tree = indexTreeOf({ root })
+			stripStepHashes({ root, tree })
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
@@ -261,6 +264,25 @@ describe(
 					releaseReuseLineOf({ tree, at: record?.at ?? '', head: record?.head ?? '' }),
 					baseLineOf({ commit: base, source: 'base-branch', selection: 'reused' }),
 				].sort(),
+			)
+			expect(readScopedRuns(scoped)).toHaveLength(1)
+			expect(hookRecordsOf({ root, tree })).toHaveLength(1)
+		})
+
+		it('a green gate --release of this tree (step hashes), the scoped step recorded at the empty tree → it answers the scoped step at the hook base: the reused line naming release, no step runs', async () => {
+			const { root, scoped } = scopedHookPackage()
+			const releaseGate = await runGateIn({ cwd: root, argv: ['--release'] })
+			expect(releaseGate.exitCode).toBe(0)
+			const records = readTreeRecords({ root, tree: indexTreeOf({ root }) }).filter(
+				(stored) => stored.mode === 'release',
+			)
+			expect(records).toHaveLength(1)
+
+			const result = await runGate({ cwd: root, argv: ['--hook'] })
+
+			expect(result.exitCode).toBe(0)
+			expect(linesOf(result.output)).toContain(
+				stepReusedLineOf({ step: 'scoped', record: records[0] }),
 			)
 			expect(readScopedRuns(scoped)).toHaveLength(1)
 		})
@@ -283,7 +305,7 @@ describe(
 			})
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)[0]).toBe(runningLineOf(tree))
+			expect(linesOf(result.output)[0]).toBe(runningLineOf({ tree }))
 			expect(
 				linesOf(result.output).filter((line) => line.startsWith('gate --hook: base ')),
 			).toEqual([])
@@ -292,20 +314,22 @@ describe(
 			expect(countRuns(testCounter)).toBe(1)
 		})
 
-		it('3: a green gate --release of the tree → the release line alone, no base line, no step runs', async () => {
-			const { root, testCounter } = createHookPackage()
+		it('3: a green gate --release of the tree → one release line per hook step, no base line, no step runs', async () => {
+			const { root, testCounter, checkCounter } = createHookPackage()
 			const releaseGate = await runGateIn({ cwd: root, argv: ['--release'] })
 			expect(releaseGate.exitCode).toBe(0)
-			const record = readReleaseRecord(root)
-			const tree = indexTreeOf({ root })
+			const records = readTreeRecords({ root, tree: indexTreeOf({ root }) }).filter(
+				(stored) => stored.mode === 'release',
+			)
+			expect(records).toHaveLength(1)
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result).toEqual({
 				exitCode: 0,
-				output: releaseReuseLineOf({ tree, at: record?.at ?? '', head: record?.head ?? '' }),
+				output: allReusedLinesOf({ record: records[0] }).join('\n'),
 			})
-			expect(countRuns(testCounter)).toBe(1)
+			expect([countRuns(checkCounter), countRuns(testCounter)]).toEqual([1, 1])
 		})
 	},
 )
@@ -335,7 +359,7 @@ describe(
 				})
 
 				expect(result.exitCode).toBe(0)
-				expect(linesOf(result.output)[0]).toBe(runningLineOf(tree))
+				expect(linesOf(result.output)[0]).toBe(runningLineOf({ tree, steps: ['count'] }))
 				expect(
 					linesOf(result.output).filter((line) => line.startsWith('gate --hook: base ')),
 				).toEqual([])
@@ -351,24 +375,31 @@ describe(
 	'gate --hook: a release record that does not answer (A18b)',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('a green release of a list missing a full step → answers no hook: the tests run', async () => {
+		it('a green release of a list missing a full step → its identical scoped step answers, the missing full step runs: the reused line first, no running line', async () => {
 			const scoped = createScopedStep()
-			const check = { name: 'check', run: 'true' }
+			const checkCounter = createCounter()
+			const check = countingStep({ counter: checkCounter, name: 'check' })
 			const root = createScopedPackage({
 				gate: { fast: [scoped.step], full: [check, scoped.step], release: [scoped.step] },
 			})
 			const releaseGate = await runGateIn({ cwd: root, argv: ['--release'] })
 			expect(releaseGate.exitCode).toBe(0)
 			const tree = indexTreeOf({ root })
+			const releases = readTreeRecords({ root, tree }).filter((stored) => stored.mode === 'release')
+			expect(releases).toHaveLength(1)
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toContain(runningLineOf(tree))
-			expect(readScopedRuns(scoped)).toHaveLength(2)
+			expect(linesOf(result.output)[0]).toBe(
+				stepReusedLineOf({ step: 'scoped', record: releases[0] }),
+			)
+			expect(linesOf(result.output)).not.toContain(runningLineOf({ tree, steps: ['check'] }))
+			expect(readScopedRuns(scoped)).toHaveLength(1)
+			expect(countRuns(checkCounter)).toBe(1)
 		})
 
-		it('a green release whose tests step lacks counts: tests (same name and command, so the same key) → answers no hook: the tests run', async () => {
+		it('a green release whose scoped step lacks counts: tests (same name, command and scoped mark; counts is no part of the step hash) → the release step answers the hook step, nothing runs', async () => {
 			const scoped = createScopedStep()
 			const { name, run } = scoped.step
 			const root = createScopedPackage({
@@ -377,12 +408,17 @@ describe(
 			const releaseGate = await runGateIn({ cwd: root, argv: ['--release'] })
 			expect(releaseGate.exitCode).toBe(0)
 			const tree = indexTreeOf({ root })
+			const releases = readTreeRecords({ root, tree }).filter((stored) => stored.mode === 'release')
+			expect(releases).toHaveLength(1)
 
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toContain(runningLineOf(tree))
-			expect(readScopedRuns(scoped)).toHaveLength(2)
+			expect(linesOf(result.output)).toContain(
+				stepReusedLineOf({ step: 'scoped', record: releases[0] }),
+			)
+			expect(linesOf(result.output)).not.toContain(runningLineOf({ tree, steps: ['scoped'] }))
+			expect(readScopedRuns(scoped)).toHaveLength(1)
 		})
 
 		it('a failed release record of the same key → answers no hook: the tests run', async () => {
@@ -395,7 +431,7 @@ describe(
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toContain(runningLineOf(tree))
+			expect(linesOf(result.output)).toContain(runningLineOf({ tree, steps: ['scoped'] }))
 			expect(readScopedRuns(failing)).toHaveLength(2)
 		})
 	},
@@ -450,7 +486,6 @@ describe(
 			expect(fullGate.exitCode).toBe(0)
 			const record = readFullRecord(root)
 			const folder = startLiveHandoverRun({ root })
-			const tree = indexTreeOf({ root })
 
 			const result = await runGate({
 				cwd: root,
@@ -460,7 +495,7 @@ describe(
 
 			expect(sortedLines(result.output)).toEqual(
 				[
-					reuseLineOf({ tree, record }),
+					stepReusedLineOf({ step: 'scoped', record }),
 					baseLineOf({ commit: older, source: 'handover', selection: 'reused' }),
 				].sort(),
 			)

@@ -1,3 +1,5 @@
+import { createBriefWorkspace, writeStoreLot } from '../../../test/brief-workspace.ts'
+import { addWorktreeFolder, linkLot } from '../../../test/lot-stores.ts'
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { readAddedLines, softenNotAdded } from './added-lines.ts'
@@ -38,25 +40,125 @@ describe('readAddedLines', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		)
 	})
 
-	it('the empty tree as the base → every file, tracked or untracked, maps to nothing added', () => {
-		const root = createScratchRepository({ 'src/a.ts': FIVE_LINES })
+	it('the empty tree as the base, a release tag of the package on history → the lines added since that tag, an untracked file whole', () => {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo-package' })}\n`,
+			'src/a.ts': FIVE_LINES,
+		})
+		git({ root, args: ['tag', 'demo-package@v1.0.0'] })
+		writeFiles({ root, files: { 'src/a.ts': EDITED_LINES, 'src/new.ts': EDITED_LINES } })
+		const base = git({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
+
+		const expected: AddedLines = new Map()
+		expected.set('src/a.ts', new Set([2, 6]))
+		expected.set('src/new.ts', 'whole')
+
+		expect(readAddedLines({ root, base, files: ['src/a.ts', 'src/new.ts'] })).toEqual(expected)
+	})
+
+	it('the empty tree as the base, no release tag → every file whole, full severity', () => {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo-package' })}\n`,
+			'src/a.ts': FIVE_LINES,
+		})
 		writeFiles({ root, files: { 'src/a.ts': EDITED_LINES, 'src/new.ts': EDITED_LINES } })
 		const base = git({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
 
 		expect(readAddedLines({ root, base, files: ['src/a.ts', 'src/new.ts'] })).toEqual(
 			new Map([
-				['src/a.ts', new Set()],
-				['src/new.ts', new Set()],
+				['src/a.ts', 'whole'],
+				['src/new.ts', 'whole'],
 			]),
 		)
 	})
 
-	it('a base that is not a commit → every file whole, never softer than without a base', () => {
-		const root = createScratchRepository({ 'src/a.ts': FIVE_LINES })
+	it('a base that is not a commit, a release tag of the package on history → every file whole, never softer than without a base (a garbage base is no empty-tree request)', () => {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo-package' })}\n`,
+			'src/a.ts': FIVE_LINES,
+		})
+		git({ root, args: ['tag', 'demo-package@v1.0.0'] })
 		writeFiles({ root, files: { 'src/a.ts': EDITED_LINES } })
 
 		expect(readAddedLines({ root, base: 'no-such-commit', files: ['src/a.ts'] })).toEqual(
 			new Map([['src/a.ts', 'whole']]),
+		)
+	})
+
+	it('the empty tree as the base, HEAD on main with a release tag (no lot base, merge-base is HEAD) → the lines added since the tag', () => {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo-package' })}\n`,
+			'src/a.ts': FIVE_LINES,
+		})
+		git({ root, args: ['tag', 'demo-package@v1.0.0'] })
+		writeFiles({ root, files: { 'src/a.ts': EDITED_LINES } })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: edit'] })
+		const base = git({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
+
+		expect(readAddedLines({ root, base, files: ['src/a.ts'] })).toEqual(
+			new Map([['src/a.ts', new Set([2, 6])]]),
+		)
+	})
+
+	it('the empty tree as the base, a feature branch from main, a release tag older than the merge-base → the merge-base answers: a line main brought after the tag is not added, only the edited line counts', () => {
+		const root = createScratchRepository({
+			'package.json': `${JSON.stringify({ name: 'demo-package' })}\n`,
+			'src/a.ts': FIVE_LINES,
+		})
+		git({ root, args: ['tag', 'demo-package@v1.0.0'] })
+		writeFiles({
+			root,
+			files: { 'src/a.ts': ['one', 'two', 'held', 'four', 'five', ''].join('\n') },
+		})
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: main brings a line'] })
+		git({ root, args: ['checkout', '-q', '-b', 'feat/work'] })
+		writeFiles({ root, files: { 'src/other.ts': 'other\n' } })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'feat: the branch has a commit of its own'] })
+		writeFiles({
+			root,
+			files: { 'src/a.ts': ['one', 'changed', 'held', 'four', 'five', ''].join('\n') },
+		})
+		const base = git({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
+
+		expect(readAddedLines({ root, base, files: ['src/a.ts'] })).toEqual(
+			new Map([['src/a.ts', new Set([2])]]),
+		)
+	})
+
+	it("the empty tree as the base, in a store lot's worktree → the lot's recorded base answers: every line since it counts, also the one the branch was cut with", () => {
+		const workspace = createBriefWorkspace()
+		const { repository } = workspace
+		writeFiles({ root: repository, files: { 'src/a.ts': FIVE_LINES } })
+		git({ root: repository, args: ['add', '-A'] })
+		git({ root: repository, args: ['commit', '-q', '-m', 'feat: main holds a file'] })
+		const recorded = git({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
+		writeFiles({
+			root: repository,
+			files: { 'src/a.ts': ['one', 'two', 'held', 'four', 'five', ''].join('\n') },
+		})
+		git({ root: repository, args: ['add', '-A'] })
+		git({ root: repository, args: ['commit', '-q', '-m', 'feat: main brings a line'] })
+		const folderName = '0100-added-lines-lot'
+		const worktree = addWorktreeFolder({ workspace, folderName })
+		const lotFolder = writeStoreLot({
+			workspace,
+			name: folderName,
+			scope: ['src/'],
+			worktree,
+			base: { ref: 'main', commit: recorded },
+		})
+		linkLot({ worktree, lotFolder })
+		writeFiles({
+			root: worktree,
+			files: { 'src/a.ts': ['one', 'changed', 'held', 'four', 'five', 'six', ''].join('\n') },
+		})
+		const base = git({ root: worktree, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
+
+		expect(readAddedLines({ root: worktree, base, files: ['src/a.ts'] })).toEqual(
+			new Map([['src/a.ts', new Set([2, 3, 6])]]),
 		)
 	})
 })

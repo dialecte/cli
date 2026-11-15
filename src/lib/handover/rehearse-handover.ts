@@ -37,7 +37,7 @@ import { contribKeyOf } from '../contrib/contrib-key.ts'
 import { runContrib } from '../contrib/run-contrib.ts'
 import { startStep } from '../events/record-step.ts'
 import { isPresent, realPathOf } from '../file-system.ts'
-import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
+import { CHECK_STORE_VARIABLE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
@@ -289,7 +289,13 @@ async function rehearseRecorded(
 			columns: params.columns,
 			cliPath: params.cliPath,
 			resumeMerge: params.resumeMerge,
-			hookEnvironment: { TMPDIR: hookTemporary },
+			hookEnvironment: {
+				TMPDIR: hookTemporary,
+				[CHECK_STORE_VARIABLE]: readGit({
+					root: repository,
+					args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+				}).trim(),
+			},
 			withoutHook: new Set(
 				decisions
 					.filter((decision) => decision.decision === 'reused')

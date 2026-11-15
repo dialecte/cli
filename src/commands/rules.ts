@@ -9,8 +9,11 @@
  * files that are Dialecte changes are judged, the others counted in one line; `--json` gives each checked file its
  * verdict (`dialecteChanges`). The test rules (spliced or replaced XML, spies on a transaction, acts that repeat the
  * call or compare a captured state, long documents, test and fixture files) judge test-shaped Dialecte changes only.
- * The gate's base (`DIALECTE_GATE_BASE`) makes an error on a line the change did not add a warning; without it, a
- * lot's worktree takes its lot link's base, else its hygiene baseline's `from`, and says so in one line (`baseLine`).
+ * The gate's base (`DIALECTE_GATE_BASE`) makes an error on a line the change did not add a warning; without it, the
+ * run takes the order every caller shares (the store lot's recorded base, else the base branch's merge-base with HEAD,
+ * skipped when it is HEAD's commit, else the last release tag `<name>@v<version>` reachable from HEAD, else no base and
+ * every error kept: a run on the base branch itself takes that tag, else keeps every error) and names it in one line
+ * (`baseLine`).
  * Not judged: act-repeats-call counts a call after an early-return arm that makes the same call as two; a
  * `*Query`-named binding that is no query, or a run with no readable API index (no core groups), can make a unit of a
  * call chain.
@@ -36,7 +39,7 @@ import {
 import { checkRules, renderRuleFinding } from '../lib/rules/check-rules.ts'
 import { NOT_JUDGED_LINE } from '../lib/rules/dialecte-change.constants.ts'
 import { NO_FORBIDDEN_WORDS_LINE } from '../lib/rules/forbidden-words.constants.ts'
-import { readLotBase } from '../lib/rules/lot-base.ts'
+import { readBaseWithLine } from '../lib/rules/lot-base.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RulesCheck } from '../lib/rules/check-rules.types.ts'
@@ -59,10 +62,10 @@ export function runRules(params: {
 	const json = hasFlag(argv, 'json')
 	const givenFiles = argv.filter((argument) => !argument.startsWith('--'))
 	const changedList = givenFiles.length ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
-	// the gate's base always wins; without it, the base the worktree's lot link or hygiene baseline names
+	// the gate's base always wins; without it, the base of the order every caller shares, with its line
 	const gateBase = environment[GATE_SCOPE_VARIABLES.base] || undefined
-	const lotBase = gateBase === undefined ? readLotBase({ root: cwd }) : undefined
-	const base = gateBase ?? lotBase?.base
+	const ownBase = gateBase === undefined ? readBaseWithLine({ root: cwd }) : undefined
+	const base = gateBase ?? ownBase?.base
 	const checked = checkRules({
 		root: cwd,
 		givenFiles,
@@ -70,7 +73,7 @@ export function runRules(params: {
 		environment,
 		...(base !== undefined && { base }),
 	})
-	const check: RulesCheck = lotBase === undefined ? checked : { ...checked, baseLine: lotBase.line }
+	const check: RulesCheck = ownBase === undefined ? checked : { ...checked, baseLine: ownBase.line }
 	if (changedList !== undefined) writeScopedSelection({ environment, check })
 	const { files, errors, warnings, findings } = check
 	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
