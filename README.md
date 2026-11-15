@@ -618,9 +618,12 @@ the answer.
   that covers no finding is an `unused-allow` warning (never for a rule that did not run). `--json` (and the
   rules record) counts the findings the opt-outs silenced, per rule, in `allowed`. With the gate base (a
   scoped gate step), an error of these rules on a line the change did not add is a warning ending
-  `(not added by this change)`; an empty-tree base (the release list, or no base branch found) knows no
-  change, so every error of these rules is such a warning. A plain `rules` run (no gate base) keeps them
-  errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
+  `(not added by this change)`. An empty-tree gate base (the release list, or no base branch found) knows no
+  change, so it takes the one order every caller shares: the recorded base of the store lot whose worktree holds
+  the package, else the base branch's merge-base with HEAD (for this empty-tree request, a merge-base equal to
+  HEAD's commit knows no change and is skipped, on a branch or detached), else the package's last release tag `<name>@v<version>` reachable from HEAD (only the lines added
+  since that release count), else every error is kept: no empty-tree softening. A plain `rules` run (no gate
+  base) keeps them errors. An API index that cannot be read (not JSON, a skill shipped twice) fails
   nothing: `query-in-loop` does not run and one line names the file and why. Not judged: an alias of a
   parameter (`const set = params.items; set.add(x)`), a read in a function the loop calls (`query-in-loop` is
   syntactic: it sees the reads written inside the loop), a table imported from a sibling file. `plan-tag`
@@ -761,12 +764,14 @@ the answer.
   stops (state `T`) and is reported as stalled.
 - `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
-  changed against HEAD (recorded as `dialecte rules` records it), judged against the gate base (the scoped
-  gate step's: the base branch's merge-base with HEAD; a rehearsal's run against the last merge lot's tip, else
-  the base the repository resolves at the lots file's HEAD): an error of a quality rule on a line the base already
-  holds is a warning ending `(not added by this change)`. No base branch found: the base is the empty tree, which
-  knows no change, so every quality error is that warning. No base, every error kept, only without a scoped gate
-  step or with a `dialecte.baseBranch` that names no branch. Then the package's
+  changed against HEAD (recorded as `dialecte rules` records it), judged against the lot's base for every
+  package, whatever its gate config, in the order the gate's scoped rules step shares (the recorded base commit of
+  the store lot whose worktree holds the package, else [the base branch](#the-base-branch)'s merge-base with HEAD,
+  taken as the gate's scoped rules step takes it, even when it is HEAD's commit, else the package's last release tag
+  `<name>@v<version>` reachable from HEAD; a rehearsal's run against the last merge lot's tip, else the base the repository resolves at the lots file's
+  HEAD): an error of a quality rule on a line the base already holds is a warning ending
+  `(not added by this change)`. Without any of these, every error is kept: no empty-tree softening.
+  The contrib record does not hold the base its rules row judged against. Then the package's
   `dialecte.contrib.steps` (default: `docs`, `npm run doc:build` with the `generatedDocs` restored, and `type-bench`,
   `npm run type-bench:check`; `[]` keeps the built-in rows only) run as the gate runs its steps (a default
   step whose npm script is missing fails the run before any row, the built-in `rules` and `release` rows
