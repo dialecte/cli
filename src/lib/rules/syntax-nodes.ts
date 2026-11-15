@@ -14,6 +14,12 @@ export function unwrapped(expression: ts.Expression): ts.Expression {
 	return expression
 }
 
+/** The expression under parentheses, assertions and `await`. */
+export function awaitedOf(expression: ts.Expression): ts.Expression {
+	const inner = unwrapped(expression)
+	return ts.isAwaitExpression(inner) ? awaitedOf(inner.expression) : inner
+}
+
 /** A function with parameters and a body: declaration, method, accessor, constructor, expression, arrow. */
 export function isFunctionNode(node: ts.Node): node is ts.FunctionLikeDeclaration {
 	return (
@@ -52,4 +58,15 @@ export function bindingNamesOf(name: ts.BindingName): string[] {
 	return name.elements.flatMap((element) =>
 		ts.isBindingElement(element) ? bindingNamesOf(element.name) : [],
 	)
+}
+
+/** Is the declaration exported: its own `export`, or the `export` of the statement that declares it? */
+export function isExported(declaration: ts.Declaration): boolean {
+	return (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Export) !== 0
+}
+
+/** Does `container` span `node` (the node itself included)? */
+export function isWithin(params: { node: ts.Node; container: ts.Node }): boolean {
+	const { node, container } = params
+	return node.pos >= container.pos && node.end <= container.end
 }

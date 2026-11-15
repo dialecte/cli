@@ -5,6 +5,7 @@
  * in committed text.
  */
 import { calleeName } from './callee-name.ts'
+import { checkActRules } from './check-act-rules.ts'
 import {
 	ABBREVIATIONS,
 	CONSTANT_NAME_PATTERN,
@@ -14,15 +15,23 @@ import {
 	PATH_PASS_THROUGH_PATTERN,
 	SCANNING_CALL_PATTERN,
 } from './check-code-rules.constants.ts'
+import { checkFixtureRules } from './check-fixture-rules.ts'
 import { checkQualityRules } from './check-quality-rules.ts'
 import { checkTestShapeRules, isTestShaped } from './check-test-shape-rules.ts'
 import { findReferences, isReferenceChecked } from './committed-text.ts'
 import { fileKindOf } from './file-kind.ts'
 import { compareFindings } from './findings-order.ts'
+import { isExported } from './syntax-nodes.ts'
+import { testShapeOf } from './test-shape-tables.ts'
 
 import ts from 'typescript'
 
-import type { CheckCodeRulesParams, RuleFinding } from './check-code-rules.types.ts'
+import type {
+	CheckCodeRulesParams,
+	RuleFinding,
+	TestRulesContext,
+} from './check-code-rules.types.ts'
+import type { QualityFinding } from './check-quality-rules.types.ts'
 
 export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 	const { file, text } = params
@@ -123,7 +132,7 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 			findings.push({ file, ...finding })
 
 	if (isTestShaped(file))
-		for (const finding of checkTestShapeRules({ file, sourceFile }))
+		for (const finding of testShapedFindingsOf({ file, sourceFile, testRules: params.testRules }))
 			findings.push({ file, ...finding })
 
 	if (kind !== 'generated' && isReferenceChecked(file))
@@ -138,6 +147,27 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 			})
 
 	return findings.sort(compareFindings)
+}
+
+/**
+ * The findings of a test-shaped file: the test-shape rules, and for a Dialecte change the fixture document rules
+ * (one reading of the file's tables and acts for both).
+ */
+function testShapedFindingsOf(params: {
+	file: string
+	sourceFile: ts.SourceFile
+	testRules: TestRulesContext | undefined
+}): QualityFinding[] {
+	const { file, sourceFile, testRules } = params
+	const shape = testShapeOf(sourceFile)
+	const dialecteChange = testRules?.dialecteChange ?? false
+	return [
+		...checkTestShapeRules({ file, sourceFile, shape, dialecteChange }),
+		...(dialecteChange
+			? checkFixtureRules({ file, sourceFile, shape, xmlImports: testRules?.xmlImports })
+			: []),
+		...(testRules ? checkActRules({ sourceFile, shape, units: testRules.units }) : []),
+	]
 }
 
 /**
@@ -322,8 +352,4 @@ function isModuleRegistry(initializer: ts.Expression | undefined): boolean {
 				(ts.isPropertyAssignment(property) && ts.isIdentifier(property.initializer)),
 		)
 	)
-}
-
-function isExported(declaration: ts.TypeAliasDeclaration | ts.InterfaceDeclaration): boolean {
-	return (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Export) !== 0
 }

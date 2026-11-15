@@ -7,6 +7,7 @@ import {
 	INVALID_ALLOW_MESSAGE,
 	UNUSED_ALLOW_MESSAGE,
 	UNUSED_ALLOW_WHERE,
+	XML_ALLOW_COMMENT_PATTERN,
 } from './allow-comments.constants.ts'
 import { ALLOWABLE_RULES } from './check-code-rules.constants.ts'
 import { compareFindings } from './findings-order.ts'
@@ -46,12 +47,39 @@ export function applyAllowComments(params: {
 	/** The syntax tree of `text` the rules already built: read again, not parsed again. */
 	sourceFile?: ts.SourceFile
 }): { findings: RuleFinding[]; allowed: AllowedCounts } {
-	const { file, text } = params
-	const ranRules: ReadonlySet<string> | undefined = params.ranRules
 	const comments = readAllowComments({
-		text,
+		text: params.text,
 		...(params.sourceFile !== undefined && { sourceFile: params.sourceFile }),
 	})
+	return appliedComments({ ...params, comments })
+}
+
+/**
+ * The findings of an XML file left once the opt-out of its first line (`<!-- dialecte-allow <rule>: <reason> -->`,
+ * the same grammar) has silenced what it covers, with its `invalid-allow` / `unused-allow` finding, and the counts.
+ */
+export function applyXmlAllowComment(params: {
+	file: string
+	text: string
+	findings: readonly RuleFinding[]
+}): { findings: RuleFinding[]; allowed: AllowedCounts } {
+	const firstLine = params.text.split('\n', 1)[0] ?? ''
+	const match = XML_ALLOW_COMMENT_PATTERN.exec(firstLine.trim())
+	const comments: AllowComment[] = match
+		? [{ line: 1, afterCode: false, nextCodeLine: 2, ...partsOf(match.groups?.rest ?? '') }]
+		: []
+	return appliedComments({ file: params.file, findings: params.findings, comments })
+}
+
+/** The findings once the well-formed comments have silenced what they cover, with the comments' own findings. */
+function appliedComments(params: {
+	file: string
+	findings: readonly RuleFinding[]
+	comments: readonly AllowComment[]
+	ranRules?: ReadonlySet<RuleName>
+}): { findings: RuleFinding[]; allowed: AllowedCounts } {
+	const { file, comments } = params
+	const ranRules: ReadonlySet<string> | undefined = params.ranRules
 	const valid = comments.filter((comment) => comment.problem === undefined)
 	const used = new Map<AllowComment, Set<string>>(valid.map((comment) => [comment, new Set()]))
 	const allowed: AllowedCounts = {}
@@ -115,7 +143,7 @@ function covers(params: { comment: AllowComment; finding: RuleFinding }): boolea
 }
 
 /** Every comment of the module once: the trivia before and after each token. */
-function commentRangesOf(params: { sourceFile: ts.SourceFile }): ts.CommentRange[] {
+export function commentRangesOf(params: { sourceFile: ts.SourceFile }): ts.CommentRange[] {
 	const { sourceFile } = params
 	const text = sourceFile.getFullText()
 	const ranges = new Map<number, ts.CommentRange>()

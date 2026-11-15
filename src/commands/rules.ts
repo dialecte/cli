@@ -5,6 +5,15 @@
  * consumer name nor word of the machine's forbidden list. Without files, the changed list a scoped gate step hands
  * (`DIALECTE_GATE_CHANGED`), else the files changed against HEAD and the new ones, that result recorded in the
  * worktree's git folder (`dialecte-rules.json`) for the hand-over card. A file it cannot read or parse is an error.
+ * In an app (a package that is no core, dialecte, create nor cli package, and no contributor's), only the script
+ * files that are Dialecte changes are judged, the others counted in one line; `--json` gives each checked file its
+ * verdict (`dialecteChanges`). The test rules (spliced or replaced XML, spies on a transaction, acts that repeat the
+ * call or compare a captured state, long documents, test and fixture files) judge test-shaped Dialecte changes only.
+ * The gate's base (`DIALECTE_GATE_BASE`) makes an error on a line the change did not add a warning; without it, a
+ * lot's worktree takes its lot link's base, else its hygiene baseline's `from`, and says so in one line (`baseLine`).
+ * Not judged: act-repeats-call counts a call after an early-return arm that makes the same call as two; a
+ * `*Query`-named binding that is no query, or a run with no readable API index (no core groups), can make a unit of a
+ * call chain.
  * Exit 1 on an error; warnings alone exit 0. Run as a scoped gate step, it writes the gate's selection: the files
  * it checked.
  */
@@ -25,7 +34,9 @@ import {
 	RULES_SUMMARY_LINE,
 } from '../lib/rules/check-rules.constants.ts'
 import { checkRules, renderRuleFinding } from '../lib/rules/check-rules.ts'
+import { NOT_JUDGED_LINE } from '../lib/rules/dialecte-change.constants.ts'
 import { NO_FORBIDDEN_WORDS_LINE } from '../lib/rules/forbidden-words.constants.ts'
+import { readLotBase } from '../lib/rules/lot-base.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RulesCheck } from '../lib/rules/check-rules.types.ts'
@@ -48,15 +59,18 @@ export function runRules(params: {
 	const json = hasFlag(argv, 'json')
 	const givenFiles = argv.filter((argument) => !argument.startsWith('--'))
 	const changedList = givenFiles.length ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
-	// the gate's base alone makes the run base-aware, whatever else the gate handed
-	const base = environment[GATE_SCOPE_VARIABLES.base] || undefined
-	const check = checkRules({
+	// the gate's base always wins; without it, the base the worktree's lot link or hygiene baseline names
+	const gateBase = environment[GATE_SCOPE_VARIABLES.base] || undefined
+	const lotBase = gateBase === undefined ? readLotBase({ root: cwd }) : undefined
+	const base = gateBase ?? lotBase?.base
+	const checked = checkRules({
 		root: cwd,
 		givenFiles,
 		...(changedList !== undefined && { changedList }),
 		environment,
 		...(base !== undefined && { base }),
 	})
+	const check: RulesCheck = lotBase === undefined ? checked : { ...checked, baseLine: lotBase.line }
 	if (changedList !== undefined) writeScopedSelection({ environment, check })
 	const { files, errors, warnings, findings } = check
 	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
@@ -65,14 +79,21 @@ export function runRules(params: {
 			? []
 			: [NO_FORBIDDEN_WORDS_LINE.replace('{file}', check.noForbiddenWordsList)]
 	const notRun = check.queryInLoopNotRun === undefined ? [] : [check.queryInLoopNotRun]
+	const baseLine = check.baseLine === undefined ? [] : [check.baseLine]
+	const notJudged =
+		check.notJudged === undefined
+			? []
+			: [NOT_JUDGED_LINE.replace('{count}', String(check.notJudged))]
 	if (files.length === 0 && findings.length === 0)
-		return resultOf({ exitCode: 0, lines: [...noList, RULES_NOTHING_LINE] })
+		return resultOf({ exitCode: 0, lines: [...baseLine, ...noList, RULES_NOTHING_LINE] })
 	return resultOf({
 		exitCode: errors ? 1 : 0,
 		lines: [
+			...baseLine,
 			...noList,
 			...notRun,
 			...findings.map(renderRuleFinding),
+			...notJudged,
 			RULES_SUMMARY_LINE.replace('{files}', String(files.length))
 				.replace('{errors}', String(errors))
 				.replace('{warnings}', String(warnings)),

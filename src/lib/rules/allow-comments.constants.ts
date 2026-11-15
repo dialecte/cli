@@ -6,6 +6,11 @@ export const ALLOW_KEYWORD = 'dialecte-allow'
 /** A `dialecte-allow` opt-out, at the start of a comment's text: its rule list, then its reason, are what follows the keyword. */
 export const ALLOW_COMMENT_PATTERN = new RegExp(`^${ALLOW_KEYWORD}\\b(?<rest>.*)$`)
 
+/** An opt-out in an XML comment that is the whole line: `<!-- dialecte-allow <rule>: <reason> -->`. */
+export const XML_ALLOW_COMMENT_PATTERN = new RegExp(
+	`^<!--\\s*${ALLOW_KEYWORD}\\b(?<rest>.*?)\\s*-->$`,
+)
+
 /** A reason shorter than this many characters is no reason. */
 export const ALLOW_REASON_MIN_LENGTH = 15
 
@@ -16,7 +21,13 @@ export const ALLOW_GRAMMAR = 'dialecte-allow <rule>[, <rule>]: <reason>'
  * The rules judged on a whole function: an opt-out in the comments right before the function (above or inside its
  * doc comment) covers their findings too.
  */
-export const FUNCTION_WIDE_RULES: readonly RuleName[] = ['argument-mutation', 'long-function']
+export const FUNCTION_WIDE_RULES: readonly RuleName[] = [
+	'argument-mutation',
+	'long-function',
+	'act-repeats-call',
+	'act-snapshot',
+	'act-format-check',
+]
 
 /** What is wrong with an opt-out: `{names}` the rules it names that no opt-out may silence. */
 export const ALLOW_PROBLEMS = {

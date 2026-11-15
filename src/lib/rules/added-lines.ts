@@ -5,6 +5,7 @@ import { addedLineRangesOf } from '../git-diff.ts'
 import { tryReadGit } from '../git.ts'
 import { NOT_ADDED_SUFFIX } from './added-lines.constants.ts'
 import { ALLOWABLE_RULES } from './check-code-rules.constants.ts'
+import { GROWTH_JUDGED_RULES } from './check-length-rules.constants.ts'
 
 import type { AddedLines } from './added-lines.types.ts'
 import type { RuleFinding, RuleName } from './check-code-rules.types.ts'
@@ -65,12 +66,17 @@ export function readAddedLines(params: {
 	return added
 }
 
-/** The findings with each error of a quality rule on a line the change did not add made a warning that says so. */
+/**
+ * The findings with each error of a quality rule on a line the change did not add made a warning that says so; the
+ * rules that judge a file's growth since the base are left as they are.
+ */
 export function softenNotAdded(params: {
 	findings: readonly RuleFinding[]
 	added: AddedLines
 }): RuleFinding[] {
-	const softened: readonly RuleName[] = ALLOWABLE_RULES
+	const softened: readonly RuleName[] = ALLOWABLE_RULES.filter(
+		(rule) => !GROWTH_JUDGED_RULES.includes(rule),
+	)
 	return params.findings.map((finding) => {
 		const lines = params.added.get(finding.file)
 		if (
