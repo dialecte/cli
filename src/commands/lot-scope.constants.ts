@@ -3,7 +3,7 @@ export const LOT_SCOPE_VERB = 'scope'
 
 /** The one usage line of `lot scope`, for every usage fault. */
 export const LOT_SCOPE_USAGE =
-	'lot scope: expected <id> --drop <path>... | --add <path>... --by <who> --reason <text>'
+	'lot scope: expected <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>'
 
 /** The options `lot scope` reads: one value each, and the repeatable paths. */
 export const LOT_SCOPE_VALUE_OPTIONS: readonly string[] = ['by', 'reason']
@@ -11,12 +11,15 @@ export const LOT_SCOPE_PATH_OPTIONS: readonly string[] = ['drop', 'add']
 
 /** The lines `lot scope` prints (FIX-lot-scope D3-D6, D11). */
 export const LOT_SCOPE_TEXTS = {
-	added: 'lot scope: {name} added {paths} by {by} - effective scope: {scope}',
-	dropped: 'lot scope: {name} dropped {paths} - effective scope: {scope}',
+	added: 'lot scope: {name} added {added} by {by} - effective scope: {scope}',
+	dropped: 'lot scope: {name} dropped {dropped} by {by} - effective scope: {scope}',
+	narrowed: 'lot scope: {name} dropped {dropped}, added {added} by {by} - effective scope: {scope}',
 	already: 'lot scope: {name} already holds {paths}: nothing written',
 	damaged: 'lot scope: {name} damaged: {reason}',
 	terminal: 'lot scope: {name} is {state}: nothing to record',
 	simulated: 'lot scope: {name} is simulated: nothing to record',
+	lateOverlapNarrowed:
+		'lot scope: {name}: the added paths meet the open lot {lot} (changed meanwhile): {met}: the add is undone, the dropped entries put back',
 	lateOverlap:
 		'lot scope: {name}: the added paths meet the open lot {lot} (changed meanwhile): {met}: the add is undone',
 	undoFailure:
@@ -33,6 +36,8 @@ export const LOT_SCOPE_TEXTS = {
 	worktreeUnreadable:
 		"lot scope: {name}: the lot's worktree {worktree} cannot be read: nothing written",
 	overLimit: 'lot scope: {name}: {message}: nothing written',
+	takeBackOverLimit:
+		'lot scope: {name}: its take-back on a late overlap would not fit: {message}: nothing written',
 	writeFailure: 'lot scope: {message}',
 	eventFailure: 'lot scope: the event could not be written in {file}: {message}',
 } as const
@@ -45,3 +50,6 @@ export const SCOPE_CHANGED_KIND = 'scope.changed'
 
 /** How a lot with no worktree names it in the unreadable-worktree refusal. */
 export const NO_WORKTREE = '(none)'
+
+/** What starts the reason of the add that puts back what a taken-back drop removed (D5, D7). */
+export const RESTORED_REASON_PREFIX = 'restored: '

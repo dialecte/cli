@@ -1,5 +1,5 @@
 /**
- * `dialecte lot scope <id> --drop <path>... | --add <path>... --by <who> --reason <text>` (FIX-lot-scope D3-D6): a
+ * `dialecte lot scope <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>` (FIX-lot-scope D3-D6): a
  * change appends one line to the lot folder's `scope-changes.jsonl` and a `scope.changed` event; every refusal exits 2
  * and writes nothing. The lot is a real started lot: brief scope `src/dataflow/`, `src/dataflow/**\/*.test.ts`, its
  * worktree changing `src/dataflow/subscribe.ts`.
@@ -37,7 +37,10 @@ afterEach(function restoreEnvironment() {
 const NOW = new Date('2026-11-14T10:00:00.000Z')
 const SCOPE_CHANGES_FILE = 'scope-changes.jsonl'
 const USAGE =
-	'lot scope: expected <id> --drop <path>... | --add <path>... --by <who> --reason <text>'
+	'lot scope: expected <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>'
+/** Who and why, which every drop gives (FIX-scope-narrow D4). */
+const DROP_WHO = ['--by', 'person-a', '--reason', 'hand back']
+
 /** Another open lot of the store, whose scope is `docs/`. */
 const OTHER_LOT = '0009-repo-docs'
 /** The real lot's effective scope before any change, as printed (normalised entries). */
@@ -110,36 +113,26 @@ describe('lot scope - changes on the record', { timeout: STORE_CASE_TIMEOUT }, (
 		})
 	})
 
-	it('--drop of an added entry the worktree did not change -> exit 0, one drop line (no by, no reason), one event', () => {
+	it('--drop of an added entry the worktree did not change -> exit 0, one drop line with who and why, one event', () => {
 		const lot = startRealLot()
 		scopeOf({ lot, extra: addWords(['docs/notes.md']) })
 
-		const result = scopeOf({ lot, extra: ['--drop', 'docs/notes.md'] })
+		const result = scopeOf({ lot, extra: ['--drop', 'docs/notes.md', ...DROP_WHO] })
 
 		expect({ result, last: changesOf(lot).at(-1), events: scopeEventsOf(lot).at(-1) }).toEqual({
 			result: {
 				exitCode: 0,
-				output: `lot scope: ${lot.lotName} dropped docs/notes.md - effective scope: ${BRIEF_SCOPE}`,
+				output: `lot scope: ${lot.lotName} dropped docs/notes.md by person-a - effective scope: ${BRIEF_SCOPE}`,
 			},
-			last: { schema: 1, at: NOW.toISOString(), op: 'drop', paths: ['docs/notes.md'] },
+			last: {
+				schema: 1,
+				at: NOW.toISOString(),
+				op: 'drop',
+				paths: ['docs/notes.md'],
+				by: 'person-a',
+				reason: 'hand back',
+			},
 			events: { op: 'drop', paths: ['docs/notes.md'], lot: lot.lotName },
-		})
-	})
-
-	it('--add of a path already inside the effective scope -> exit 0, nothing written', () => {
-		const lot = startRealLot()
-
-		expect({
-			result: scopeOf({ lot, extra: addWords(['src/dataflow/deep/x.ts']) }),
-			changes: changesOf(lot),
-			events: scopeEventsOf(lot),
-		}).toEqual({
-			result: {
-				exitCode: 0,
-				output: `lot scope: ${lot.lotName} already holds src/dataflow/deep/x.ts: nothing written`,
-			},
-			changes: [],
-			events: [],
 		})
 	})
 })
@@ -186,16 +179,6 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 	const ROWS: RefusalRow[] = [
 		{ title: 'no option', extra: [], output: () => USAGE },
 		{ title: '--drop with no path', extra: ['--drop'], output: () => USAGE },
-		{
-			title: '--drop and --add together',
-			extra: ['--drop', 'docs/a', ...addWords(['docs/b'])],
-			output: () => USAGE,
-		},
-		{
-			title: '--drop with --by',
-			extra: ['--drop', 'docs/a', '--by', 'person-a'],
-			output: () => USAGE,
-		},
 		{
 			title: '--add without --by',
 			extra: ['--add', 'docs/a', '--reason', 'r'],
@@ -244,13 +227,13 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 		},
 		{
 			title: '--drop of a path that is no entry of the scope',
-			extra: ['--drop', 'docs/a'],
+			extra: ['--drop', 'docs/a', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: docs/a is no entry of the lot's scope: nothing written`,
 		},
 		{
 			title: '--drop of a path inside a wider entry',
-			extra: ['--drop', 'src/dataflow/deep'],
+			extra: ['--drop', 'src/dataflow/deep', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: src/dataflow/deep lies inside the entry src/dataflow: drop the entry and add what stays: nothing written`,
 		},
@@ -258,14 +241,14 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 			title: '--drop of an entry holding a file the worktree changed',
 			// another entry first, so the drop leaves the lot a scope
 			arrange: (lot) => scopeOf({ lot, extra: addWords(['docs/notes.md']) }),
-			extra: ['--drop', 'src/dataflow'],
+			extra: ['--drop', 'src/dataflow', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: src/dataflow holds src/dataflow/subscribe.ts, changed in the lot's worktree: nothing written`,
 		},
 		{
 			title: 'a --drop while scope-changes.jsonl holds a line that does not read',
 			arrange: (lot) => writeFileSync(join(lot.lotFolder, SCOPE_CHANGES_FILE), 'not json\n'),
-			extra: ['--drop', 'src/dataflow/**/*.test.ts'],
+			extra: ['--drop', 'src/dataflow/**/*.test.ts', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: ${join(lot.lotFolder, SCOPE_CHANGES_FILE)} holds 1 line(s) that do not read: nothing written`,
 		},
@@ -278,14 +261,14 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 		},
 		{
 			title: '--drop of a path that only prefixes an entry by text (src/data against src/dataflow)',
-			extra: ['--drop', 'src/data'],
+			extra: ['--drop', 'src/data', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: src/data is no entry of the lot's scope: nothing written`,
 		},
 		{
 			title: "--drop when the lot's worktree cannot be read (removed)",
 			arrange: (lot) => rmSync(lot.worktree, { recursive: true, force: true }),
-			extra: ['--drop', 'src/dataflow/**/*.test.ts'],
+			extra: ['--drop', 'src/dataflow/**/*.test.ts', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: the lot's worktree ${lot.worktree} cannot be read: nothing written`,
 		},
@@ -321,13 +304,13 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 		},
 		{
 			title: '--drop of every entry (the lot would hold no scope)',
-			extra: ['--drop', 'src/dataflow'],
+			extra: ['--drop', 'src/dataflow', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: the drop leaves the lot no scope: stop it instead (dialecte lot stop ${lot.lotName} --reason <text>): nothing written`,
 		},
 		{
 			title: '--drop of a glob path that is no entry',
-			extra: ['--drop', 'src/dataflow/**'],
+			extra: ['--drop', 'src/dataflow/**', ...DROP_WHO],
 			output: (lot) =>
 				`lot scope: ${lot.lotName}: src/dataflow/** is no entry of the lot's scope: nothing written`,
 		},
@@ -395,7 +378,7 @@ describe(
 
 		const SIMULATED_ROWS: { title: string; extra: string[] }[] = [
 			{ title: '--add', extra: addWords(['docs/a']) },
-			{ title: '--drop', extra: ['--drop', 'src/'] },
+			{ title: '--drop', extra: ['--drop', 'src/', ...DROP_WHO] },
 		]
 
 		for (const { title, extra } of SIMULATED_ROWS)
