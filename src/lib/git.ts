@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { GIT_READ_ENVIRONMENT } from './git.constants.ts'
+import { CAT_FILE_HEADER_PATTERN, GIT_READ_ENVIRONMENT } from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
 
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
@@ -56,6 +56,43 @@ export function readGitBytes(params: { root: string; args: string[] }): Buffer {
 	if (result.status !== 0)
 		throw new Error(`git ${params.args.join(' ')}: ${result.stderr.toString().trim()}`)
 	return result.stdout
+}
+
+/**
+ * The text of each file (relative to `root`) as `revision` holds it, all read in one `git cat-file --batch` call; a
+ * file the revision does not hold is absent from the map, and every file is when git fails (an unknown revision, not
+ * a repository).
+ */
+export function readFilesAtRevision(params: {
+	root: string
+	revision: string
+	files: readonly string[]
+}): Map<string, string> {
+	const texts = new Map<string, string>()
+	if (params.files.length === 0) return texts
+	const result = spawnSync('git', ['cat-file', '--batch'], {
+		cwd: params.root,
+		input: params.files.map((file) => `${params.revision}:./${file}\n`).join(''),
+		maxBuffer: 1e9,
+		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
+	})
+	if (result.status !== 0) return texts
+	const output = result.stdout
+	let offset = 0
+	for (const file of params.files) {
+		const headerEnd = output.indexOf(0x0a, offset)
+		if (headerEnd === -1) break
+		const header = output.subarray(offset, headerEnd).toString('utf8')
+		offset = headerEnd + 1
+		// `<oid> <type> <size>` then the content and a newline, else `<object> missing` (or `ambiguous`) alone
+		const found = CAT_FILE_HEADER_PATTERN.exec(header)
+		if (found === null) continue
+		const end = offset + Number(found.groups?.size)
+		if (found.groups?.type === 'blob')
+			texts.set(file, output.subarray(offset, end).toString('utf8'))
+		offset = end + 1
+	}
+	return texts
 }
 
 /**

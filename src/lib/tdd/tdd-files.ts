@@ -74,10 +74,7 @@ export function isTestCode(file: string): boolean {
  */
 export function isPackageTestCode(params: { file: string; packageJson: PackageJson }): boolean {
 	const { file } = params
-	// `./src/test`, `src/test/` and `src/test` name the same folder
-	const declared = (params.packageJson.dialecte?.tdd?.production ?? [])
-		.map((folder) => folder.replace(/^(\.\/)+/, '').replace(/\/+$/, ''))
-		.find((folder) => folder !== '' && file.startsWith(`${folder}/`))
+	const declared = productionFolderOf(params)
 	if (declared !== undefined)
 		return (
 			TEST_FILE_PATTERN.test(file) ||
@@ -86,6 +83,17 @@ export function isPackageTestCode(params: { file: string; packageJson: PackageJs
 			SCRIPT_FILE_PATTERN.test(file)
 		)
 	return isTestCode(file)
+}
+
+/** The folder the package declares production (`dialecte.tdd.production`) that holds the file; undefined when none. */
+export function productionFolderOf(params: {
+	file: string
+	packageJson: PackageJson
+}): string | undefined {
+	// `./src/test`, `src/test/` and `src/test` name the same folder
+	return (params.packageJson.dialecte?.tdd?.production ?? [])
+		.map((folder) => folder.replace(/^(\.\/)+/, '').replace(/\/+$/, ''))
+		.find((folder) => folder !== '' && params.file.startsWith(`${folder}/`))
 }
 
 /** A file of the package that is production: not test code, not generated, not the lot declaration. */

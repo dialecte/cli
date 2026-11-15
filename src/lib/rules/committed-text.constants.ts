@@ -12,7 +12,13 @@ import type { ReferencePattern } from './committed-text.types.ts'
  */
 export const GENERIC_REFERENCE_PATTERNS: readonly ReferencePattern[] = [
 	{ label: 'plan tag', source: '\\blot [A-Z0-9]', allowable: true },
-	{ label: 'acceptance criterion', source: '\\bAC[0-9]', allowable: true },
+	// a `{` before the tag is a code point escape (`\u{...}`), not a criterion; a letter before it is a word (`\uXXXX`)
+	{
+		label: 'acceptance criterion',
+		source: '(^|[^{A-Za-z0-9_])AC[0-9]',
+		leadingBoundary: true,
+		allowable: true,
+	},
 	// digits up to a word boundary: `#1234ab`, a colour, is not a ticket; nor a hash glued to a word
 	// (`abc#123`) or ending a character reference (`&#160;`)
 	{
