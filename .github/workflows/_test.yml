@@ -5,9 +5,15 @@ on:
   workflow_call:
 
 jobs:
+  # the suite in 4 shards on 4 runners: each runs a quarter of the test files (vitest --shard), all must pass
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: test (shard ${{ matrix.shard }}/4)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -15,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 'latest'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Restore node_modules cache
@@ -28,7 +34,7 @@ jobs:
         run: sudo apt-get install -y libxml2-utils
 
       - name: Run Tests
-        run: npm run test
+        run: npx vitest run --shard=${{ matrix.shard }}/4
 
   # the config homes differ per platform (%APPDATA%, path keys compared whatever the case): their tests on Windows
   config-windows:
@@ -41,7 +47,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 'latest'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Restore node_modules cache

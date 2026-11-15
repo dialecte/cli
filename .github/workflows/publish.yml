@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+  # a pull request runs install, build, lint and the tests as its checks; deploy and tag run only on main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   install:
@@ -36,7 +40,7 @@ jobs:
 
   deploy:
     name: Publish to NPM
-    if: needs.version.outputs.version_changed == 'true'
+    if: github.event_name != 'pull_request' && needs.version.outputs.version_changed == 'true'
     needs:
       - build
       - test
@@ -46,7 +50,7 @@ jobs:
 
   create-release-tag:
     name: Create Release Tag
-    if: needs.version.outputs.version_changed == 'true'
+    if: github.event_name != 'pull_request' && needs.version.outputs.version_changed == 'true'
     needs:
       - version
       - extract-version
