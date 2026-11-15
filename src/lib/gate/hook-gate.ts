@@ -9,7 +9,7 @@
  */
 import { hasFlag } from '../config.ts'
 import { partsOf, reuseOf, startStep } from '../events/record-step.ts'
-import { hashGateCommand, readIndexTree, readInstalledKey } from '../gate-records/check-key.ts'
+import { hashHookGateCommand, readIndexTree, readInstalledKey } from '../gate-records/check-key.ts'
 import { HOOK_GATE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { recordGate } from '../gate-records/gate-records.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
@@ -102,7 +102,7 @@ export async function runHookGate(params: {
 		key: {
 			tree,
 			...prepared.installed,
-			commandHash: hashGateCommand({ steps: hookSteps, gateBase: prepared.gateBase }),
+			commandHash: hashHookGateCommand(prepared),
 		},
 		steps: hookSteps,
 		stepHashes: prepared.stepHashes,

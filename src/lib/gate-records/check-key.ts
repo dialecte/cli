@@ -11,10 +11,10 @@ import {
 	rmSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
-import { holdsScopedStep } from '../gate/gate-config.ts'
-import { listCommitHookFiles } from '../git-hooks.ts'
+import { holdsScopedStep, listHookSteps, resolveGateSteps } from '../gate/gate-config.ts'
+import { readCommitHookFiles } from '../git-hooks.ts'
 import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
@@ -34,6 +34,8 @@ import {
 import { computeStateTree } from './state-hash.ts'
 
 import type { GateStep } from '../gate/gate-config.types.ts'
+import type { CommitHookFile } from '../git-hooks.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
 import type { CheckKey } from './gate-records.types.ts'
 
 /** The key of the worktree `root` is in, now. */
@@ -131,15 +133,32 @@ export function hashedStepOf(step: GateStep): string[] {
 	]
 }
 
-/** sha256 (hex) of the commit hook files git runs in `root`. */
+/** sha256 (hex) of the commit hook files git runs in `root` (`hashHookFiles`). */
 export function hashHookCommand(root: string): string {
+	return hashHookFiles(readCommitHookFiles({ root }))
+}
+
+/** sha256 (hex) of commit hook files, each its name and bytes, in the order git runs them. */
+export function hashHookFiles(files: readonly CommitHookFile[]): string {
 	const hash = createHash('sha256')
-	for (const file of listCommitHookFiles(root)) {
-		hash.update(`${basename(file)}\0`)
-		hash.update(readFileSync(file))
+	for (const file of files) {
+		hash.update(`${file.name}\0`)
+		hash.update(file.bytes)
 		hash.update('\0')
 	}
 	return hash.digest('hex')
+}
+
+/**
+ * The command hash `gate --hook` keys its `hook-gate` record with: the hook steps of the package's full gate
+ * (`listHookSteps`), with `gateBase` (the hook base, entering only when a hook step is scoped).
+ */
+export function hashHookGateCommand(params: {
+	packageJson: PackageJson
+	gateBase?: string
+}): string {
+	const fullSteps = resolveGateSteps({ packageJson: params.packageJson, mode: 'full' })
+	return hashGateCommand({ steps: listHookSteps(fullSteps), gateBase: params.gateBase })
 }
 
 /**

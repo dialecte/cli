@@ -82,6 +82,7 @@ import {
 	GATE_RELEASE_LINE_NAME,
 	HOOK_BASE_DETAIL,
 	HOOK_RECORD_DETAIL,
+	HOOK_GATE_RECORD_MODE,
 	HOOK_RECORD_MODE,
 	HOOK_REUSED_DETAIL,
 	GATE_BASE_PROBLEM_DETAIL,
@@ -191,7 +192,7 @@ export function buildCardGateLines(params: {
 	release?: boolean
 }): CardGateLine[] {
 	const { root, tree } = params
-	const config = readCardGateConfig({ root, head: params.head })
+	const config = readCardGateConfig({ root, tree, head: params.head })
 	const own = readGateRecords(root)
 	const others = readTreeRecords({ root, tree }).filter(
 		(record) => !own.some((ownRecord) => isSameRun({ record, other: ownRecord })),
@@ -268,11 +269,16 @@ export function sleptLineOf(params: { sleptMs: number; run: string }): CardGateL
 
 /**
  * The package's gate config as the card reads it, once: the base resolved on `head` when a gate list holds a
- * scoped step, the command hash of each mode at that base; the message of a config the cli cannot run; nothing
- * of a package.json the gate itself could not read (no stored record can be told current then).
+ * scoped step, the command hash of each mode at that base, read at the tree the card checks (its hook files and
+ * package.json: a merge's tree holds its own); the message of a config the cli cannot run; nothing of a
+ * package.json the gate itself could not read (no stored record can be told current then).
  */
-function readCardGateConfig(params: { root: string; head: string | undefined }): CardGateConfig {
-	const { root } = params
+function readCardGateConfig(params: {
+	root: string
+	tree: string
+	head: string | undefined
+}): CardGateConfig {
+	const { root, tree } = params
 	try {
 		const packageJson = readPackageJson(root)
 		const base = resolveConfiguredBase({
@@ -284,7 +290,7 @@ function readCardGateConfig(params: { root: string; head: string | undefined }):
 		if (base !== undefined && 'refusal' in base) return { baseRefusal: base.refusal }
 		return {
 			...(base && { base }),
-			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit }),
+			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit, tree }),
 		}
 	} catch (error) {
 		if (error instanceof GateConfigError) return { invalid: error.message }
@@ -515,6 +521,7 @@ function readCommandHashes(config: CardGateConfig): Partial<Record<GateRecordMod
 		fast: hashes.fast,
 		full: hashes.full,
 		[HOOK_RECORD_MODE]: hashes.hook,
+		[HOOK_GATE_RECORD_MODE]: hashes.hookGate,
 		...(hashes.releaseCoversFull && { [RELEASE_RECORD_MODE]: hashes.release }),
 	}
 }

@@ -1089,9 +1089,9 @@ the answer.
     the tree a rehearsal recorded, else says `size after rehearse`. Then `HEAD <sha>`, after a run
     `HEAD <base> → <tip> · nothing pushed`.
   - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`,
-    `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
-    `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
-    since the hook names its own scripts, not the gate's steps; the other way round, a hook record of the
+    `--full`, `gate --hook`'s record and the commit hook's record, a line of the hook's ending with
+    `commit hook`: `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its
+    lines whole, since the hook names its own scripts, not the gate's steps; the other way round, a hook record of the
     tree the hand-over commits, not dropped by a newer gate record of that tree, replaces the lines of
     every gate record of another tree it answers - a step of the same name, or a step counting tests when
     the hook counts tests: a merge hand-over rehearsed or committed reads the hook's lines of the merged
@@ -1100,7 +1100,10 @@ the answer.
     failed one stays `✗ ... (the tree changed since)`, and `tdd` stays the worktree's: on the DONE card of a
     merge hand-over the tdd verdict is judged on the worktree's own lot tree (the tree its first merge lot
     merged onto), current while the hook record of the merged tree stands, so no `gates ran on another tree`
-    for it), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
+    for it; a record counts when its key is the one of the tree the card checks, judged with the hook files and
+    gate lists that tree holds - a merge's tree holds its own, whatever the worktree's are now; a hook file git
+    does not track is read from disk), then, in a consumer, `mutation` when the package declares a mutation
+    scope (below), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `effort`
     (below; none on a release hand-over), then `late fixes` on a card still to run (below), then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
@@ -1309,10 +1312,12 @@ the answer.
   something new, and prints one line per lot: `lot <n>/<N>  reused  <reason>` or
   `lot <n>/<N>  rehearse  <reason>`. A plain lot is reused when the store holds a green `gate --full` of
   the tree its commit will hold (HEAD with every lot up to it on top) with the key of now - the same
-  `node_modules`, `file:` dependencies and `--full` steps - the lot does not change `package-lock.json`,
-  and the commit hook stages no files of its own (its text names `git add`, `git stage`, `lint-staged` or
-  `git update-index`): `green gate --full on tree <tree>`. A merge lot is reused when the tree it leaves
-  (its trial merge with its resolutions) is its tip's tree and a green record of that tree - the branch
+  `node_modules`, `file:` dependencies and the `--full` steps that tree's package.json holds - the lot does
+  not change `package-lock.json`, and the commit hook that tree holds stages no files of its own (its text
+  names `git add`, `git stage`, `lint-staged` or `git update-index`): `green gate --full on tree <tree>`.
+  Each lot is judged with its own tree's hook files and gate lists, a merge lot with the merged tree's: the
+  commit runs the hook its tree holds, whatever the worktree's is now. A merge lot is reused when the tree it
+  leaves (its trial merge with its resolutions) is its tip's tree and a green record of that tree - the branch
   commit's hook record or a `gate --full`, with the key of now - is in the store, under the same
   conditions: `green hook record of the tip's tree <tree>`. Otherwise the line says the first reason that
   holds: `no green gate --full on tree <tree>`, `the lot changes package-lock.json`,
