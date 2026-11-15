@@ -1,5 +1,5 @@
 /**
- * `dialecte lot scope <id> --drop <path>... | --add <path>... --by <who> --reason <text>` (FIX-lot-scope): a started
+ * `dialecte lot scope <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>` (FIX-lot-scope): a started
  * lot's scope changes on the record, appended to its `scope-changes.jsonl` with a `scope.changed` event; the brief stays
  * as it was published. Every refusal exits 2 and writes nothing.
  */
@@ -36,12 +36,12 @@ import {
 	SCOPE_CHANGE_SCHEMA,
 } from '../lib/store/scope-changes.constants.ts'
 import {
-	appendScopeChange,
+	appendScopeChanges,
 	effectiveScopeOf,
 	isDroppedBy,
-	isHeldBy,
+	isCoveredBy,
 	readScopeChanges,
-	scopeChangeLineOf,
+	scopeChangesBufferOf,
 	scopeChangesFileOf,
 } from '../lib/store/scope-changes.ts'
 import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
@@ -53,6 +53,7 @@ import {
 	LOT_SCOPE_VALUE_OPTIONS,
 	LOT_SCOPE_VERB,
 	NO_WORKTREE,
+	RESTORED_REASON_PREFIX,
 	SCOPE_CHANGED_KIND,
 } from './lot-scope.constants.ts'
 
@@ -94,12 +95,19 @@ export function runLotScope(params: {
 			},
 		})
 	const scope = readLotScope({ lotFolder: target.lotFolder })
-	const now = params.now ?? new Date()
-	const step = { request, target, scope, now, seams: params.seams }
-	return request.op === 'add' ? addPaths(step) : dropPaths(step)
+	return changeScope({
+		request,
+		target,
+		scope,
+		now: params.now ?? new Date(),
+		seams: params.seams,
+	})
 }
 
-/** The request the words make; undefined for a usage fault (both ops or none, no path, who and why misplaced). */
+/**
+ * The request the words make; undefined for a usage fault: no path, or `--by` / `--reason` missing, blank or not one
+ * line (both are required on every drop and every add, FIX-scope-narrow D4).
+ */
 function requestOf(params: { argv: string[] }): ScopeRequest | undefined {
 	const read = readArguments({
 		argv: params.argv,
@@ -112,11 +120,9 @@ function requestOf(params: { argv: string[] }): ScopeRequest | undefined {
 	const adds = read.lists.get('add') ?? []
 	const by = read.values.get('by')
 	const reason = read.values.get('reason')
-	if (drops.length > 0 === adds.length > 0) return undefined
-	if (drops.length > 0)
-		return by === undefined && reason === undefined ? { id, op: 'drop', paths: drops } : undefined
+	if (drops.length === 0 && adds.length === 0) return undefined
 	if (!isOneLine(by) || !isOneLine(reason)) return undefined
-	return { id, op: 'add', paths: adds, by, reason }
+	return { id, drops, adds, by, reason }
 }
 
 /** The lot to change, or the refusal of a lot that is gone, damaged, or committed, canceled or failed. */
@@ -148,10 +154,12 @@ function targetOf(params: { lotFolder: string; id: string }): ScopeTarget | stri
 }
 
 /**
- * An add: each path a well-formed scope entry, those not already inside the effective scope written, refused when
- * they meet another open lot's effective scope; nothing to add answers `already holds`.
+ * A change of the scope - a drop, an add, or both in one call (FIX-scope-narrow D1): the adds well-formed scope
+ * entries, those not equal to an entry written (D3); each drop an entry or a folder holding entries, never a path
+ * inside a wider entry; the scope left never empty; every file the worktree changed inside a dropped entry covered by
+ * the entries left, the call's adds counted (D2); the adds never meeting another open lot's scope.
  */
-function addPaths(params: {
+function changeScope(params: {
 	request: ScopeRequest
 	target: ScopeTarget
 	scope: string[]
@@ -159,7 +167,7 @@ function addPaths(params: {
 	seams?: ScopeSeams
 }): CommandResult {
 	const { request, target, scope } = params
-	for (const path of request.paths) {
+	for (const path of request.adds) {
 		const fault = scopeFaultOf({ entry: normaliseScopeEntry(path) })
 		if (fault !== undefined)
 			return refused({
@@ -167,36 +175,120 @@ function addPaths(params: {
 				values: { name: target.name, path, fault },
 			})
 	}
-	const normalised = [...new Set(request.paths.map(normaliseScopeEntry))]
-	const added = normalised.filter((path) => !scope.some((entry) => isHeldBy({ path, entry })))
-	if (added.length === 0)
+	const normalisedAdds = [...new Set(request.adds.map(normaliseScopeEntry))]
+	const dropped = [...new Set(request.drops.map(normaliseScopeEntry))]
+	// an add equal to an entry the same call drops is written: only an entry that stays holds it already (R1-1)
+	const kept = scope.filter((entry) => !dropped.some((path) => isDroppedBy({ entry, path })))
+	const added = normalisedAdds.filter((path) => !kept.includes(path))
+	const entryRefusal = dropEntryRefusal({ target, scope, dropped })
+	if (entryRefusal !== undefined) return entryRefusal
+	if (dropped.length === 0 && added.length === 0)
 		return answerOf({
 			exitCode: 0,
 			lines: [
 				fillMessage({
 					template: LOT_SCOPE_TEXTS.already,
-					values: { name: target.name, paths: normalised.join(LOT_SCOPE_LIST_SEPARATOR) },
+					values: { name: target.name, paths: normalisedAdds.join(LOT_SCOPE_LIST_SEPARATOR) },
 				}),
 			],
 		})
-	const overlap = addOverlapOf({ target, added })
-	if (overlap !== undefined)
-		return refused({
-			template: LOT_SCOPE_TEXTS.overlap,
-			values: { name: target.name, lot: overlapLotLabelOf(overlap), met: overlapMetText(overlap) },
-		})
-	return recordChange({
+	const at = params.now.toISOString()
+	const who = { by: request.by, reason: request.reason }
+	const changes: ScopeChange[] = [
+		...(dropped.length > 0
+			? [{ schema: SCOPE_CHANGE_SCHEMA, at, op: 'drop' as const, paths: dropped, ...who }]
+			: []),
+		...(added.length > 0
+			? [{ schema: SCOPE_CHANGE_SCHEMA, at, op: 'add' as const, paths: added, ...who }]
+			: []),
+	]
+	const removed = scope.filter((entry) => !kept.includes(entry))
+	if (dropped.length > 0) {
+		const coverage = coverageRefusal({ target, scope, dropped, changes })
+		if (coverage !== undefined) return coverage
+	}
+	if (added.length > 0) {
+		const overlap = addOverlapOf({ target, added })
+		if (overlap !== undefined)
+			return refused({
+				template: LOT_SCOPE_TEXTS.overlap,
+				values: {
+					name: target.name,
+					lot: overlapLotLabelOf(overlap),
+					met: overlapMetText(overlap),
+				},
+			})
+	}
+	return recordChanges({
 		...params,
-		change: {
-			schema: SCOPE_CHANGE_SCHEMA,
-			at: params.now.toISOString(),
-			op: 'add',
-			paths: added,
-			by: request.by,
-			reason: request.reason,
-		},
-		recheck: () => addOverlapOf({ target, added }),
+		changes,
+		added,
+		removed,
+		recheck: added.length > 0 ? () => addOverlapOf({ target, added }) : undefined,
 	})
+}
+
+/** Why a dropped path is refused before anything else: it is no entry, or lies inside a wider one; none when each holds entries. */
+function dropEntryRefusal(params: {
+	target: ScopeTarget
+	scope: string[]
+	dropped: string[]
+}): CommandResult | undefined {
+	const { target, scope } = params
+	for (const path of params.dropped) {
+		if (scope.some((entry) => isDroppedBy({ entry, path }))) continue
+		// a glob path names no folder an entry could be cut from: it is an entry, or none
+		const wider =
+			literalPartOf(path) === path
+				? scope.find((entry) => isInsideEntry({ path, entry }))
+				: undefined
+		return wider === undefined
+			? refused({ template: LOT_SCOPE_TEXTS.noEntry, values: { name: target.name, path } })
+			: refused({
+					template: LOT_SCOPE_TEXTS.insideEntry,
+					values: { name: target.name, path, entry: wider },
+				})
+	}
+	return undefined
+}
+
+/**
+ * Why the drop cannot keep the lot's work held: it leaves no scope, the worktree cannot be read, or a changed file
+ * inside a dropped entry is covered by no entry left (the call's adds counted, D2); none when the drop may go.
+ */
+function coverageRefusal(params: {
+	target: ScopeTarget
+	scope: string[]
+	dropped: string[]
+	changes: ScopeChange[]
+}): CommandResult | undefined {
+	const { target, scope } = params
+	const left = effectiveScopeOf({ brief: scope, changes: params.changes })
+	// a brief never holds an empty scope: a lot that hands back everything stops instead
+	if (left.length === 0)
+		return refused({ template: LOT_SCOPE_TEXTS.emptied, values: { name: target.name } })
+	const changed = changedFilesOf({ worktree: target.worktree })
+	if (changed === undefined)
+		return refused({
+			template: LOT_SCOPE_TEXTS.worktreeUnreadable,
+			values: { name: target.name, worktree: target.worktree ?? NO_WORKTREE },
+		})
+	for (const path of params.dropped) {
+		const holding = scope.filter((entry) => isDroppedBy({ entry, path }))
+		const file = changed.find(
+			(each) =>
+				// a removed glob entry holds every changed file under its literal folder, matched or not: stricter than
+				// the coverage of the entries left on purpose (fails closed, FIX-lot-scope R1-7)
+				holding.some((entry) => isInsideEntry({ path: each, entry })) &&
+				!left.some((entry) => isCoveredBy({ path: each, entry })),
+		)
+		if (file !== undefined)
+			return refused({
+				template: LOT_SCOPE_TEXTS.changed,
+				values: { name: target.name, path, file },
+			})
+	}
+	return undefined
 }
 
 /** The first open lot, other than the target, whose effective scope the added paths meet; none when they meet none. */
@@ -212,70 +304,6 @@ function addOverlapOf(params: { target: ScopeTarget; added: string[] }): LotOver
 	return overlap
 }
 
-/**
- * A drop: each path an entry of the effective scope or one holding entries, never a path inside a wider entry;
- * refused when a file the lot's worktree changed lies inside a dropped entry, or the worktree cannot be read.
- */
-function dropPaths(params: {
-	request: ScopeRequest
-	target: ScopeTarget
-	scope: string[]
-	now: Date
-	seams?: ScopeSeams
-}): CommandResult {
-	const { request, target, scope } = params
-	const normalised = [...new Set(request.paths.map(normaliseScopeEntry))]
-	for (const path of normalised) {
-		if (scope.some((entry) => isDroppedBy({ entry, path }))) continue
-		// a glob path names no folder an entry could be cut from: it is an entry, or none
-		const wider =
-			literalPartOf(path) === path
-				? scope.find((entry) => isInsideEntry({ path, entry }))
-				: undefined
-		return wider === undefined
-			? refused({ template: LOT_SCOPE_TEXTS.noEntry, values: { name: target.name, path } })
-			: refused({
-					template: LOT_SCOPE_TEXTS.insideEntry,
-					values: { name: target.name, path, entry: wider },
-				})
-	}
-	// a brief never holds an empty scope: a lot that hands back everything stops instead
-	const left = effectiveScopeOf({
-		brief: scope,
-		changes: [dropOf({ paths: normalised, now: params.now })],
-	})
-	if (left.length === 0)
-		return refused({ template: LOT_SCOPE_TEXTS.emptied, values: { name: target.name } })
-	const changed = changedFilesOf({ worktree: target.worktree })
-	if (changed === undefined)
-		return refused({
-			template: LOT_SCOPE_TEXTS.worktreeUnreadable,
-			values: { name: target.name, worktree: target.worktree ?? NO_WORKTREE },
-		})
-	for (const path of normalised) {
-		const dropped = scope.filter((entry) => isDroppedBy({ entry, path }))
-		const file = changed.find((each) =>
-			dropped.some((entry) => isInsideEntry({ path: each, entry })),
-		)
-		if (file !== undefined)
-			return refused({
-				template: LOT_SCOPE_TEXTS.changed,
-				values: { name: target.name, path, file },
-			})
-	}
-	return recordChange({ ...params, change: dropOf({ paths: normalised, now: params.now }) })
-}
-
-/** The drop line of `paths` at `now`. */
-function dropOf(params: { paths: string[]; now: Date }): ScopeChange {
-	return {
-		schema: SCOPE_CHANGE_SCHEMA,
-		at: params.now.toISOString(),
-		op: 'drop',
-		paths: params.paths,
-	}
-}
-
 /** The files the lot's worktree lists as changed (git status); undefined when it has none or it cannot be read. */
 function changedFilesOf(params: { worktree: string | null }): string[] | undefined {
 	if (params.worktree === null) return undefined
@@ -287,20 +315,23 @@ function changedFilesOf(params: { worktree: string | null }): string[] | undefin
 }
 
 /**
- * Writes the change - refused before the write when its line is over the limit - then its `scope.changed` event; an
- * event that cannot be written adds one line and never changes the exit code (D6).
+ * Writes the call's changes in one append - refused before the write when they are over the line limit - then their
+ * `scope.changed` events; an event that cannot be written adds one line and never changes the exit code (D6). An add a
+ * lot that started or widened meanwhile meets is taken back (`undoneChanges`).
  */
-function recordChange(params: {
+function recordChanges(params: {
+	request: ScopeRequest
 	target: ScopeTarget
-	change: ScopeChange
+	changes: ScopeChange[]
 	scope: string[]
+	added: string[]
+	removed: string[]
+	now: Date
 	seams?: ScopeSeams
-	now?: Date
-	/** An add's overlap read again once it is appended: a lot that started or widened meanwhile (D12). */
 	recheck?: () => LotOverlap | undefined
 }): CommandResult {
-	const { target, change } = params
-	const bytes = scopeChangeLineOf({ change }).length
+	const { target, changes } = params
+	const bytes = scopeChangesBufferOf({ changes }).length
 	if (bytes > SCOPE_CHANGE_LINE_LIMIT)
 		return refused({
 			template: LOT_SCOPE_TEXTS.overLimit,
@@ -309,8 +340,20 @@ function recordChange(params: {
 				message: overLimitMessage({ bytes, limit: SCOPE_CHANGE_LINE_LIMIT }),
 			},
 		})
+	// the take-back must fit too, or a late overlap would leave the add in place: checked before the first write (R1-3)
+	if (params.added.length > 0) {
+		const takeBackBytes = scopeChangesBufferOf({ changes: takeBackOf(params) }).length
+		if (takeBackBytes > SCOPE_CHANGE_LINE_LIMIT)
+			return refused({
+				template: LOT_SCOPE_TEXTS.takeBackOverLimit,
+				values: {
+					name: target.name,
+					message: overLimitMessage({ bytes: takeBackBytes, limit: SCOPE_CHANGE_LINE_LIMIT }),
+				},
+			})
+	}
 	try {
-		appendScopeChange({ lotFolder: target.lotFolder, change })
+		appendScopeChanges({ lotFolder: target.lotFolder, changes })
 	} catch (error) {
 		return answerOf({
 			exitCode: 1,
@@ -324,46 +367,55 @@ function recordChange(params: {
 	}
 	params.seams?.afterAppend?.()
 	const late = params.recheck?.()
-	if (late !== undefined) return undoneAdd({ target, change, overlap: late, now: params.now })
-	const effective = effectiveScopeOf({ brief: params.scope, changes: [change] })
+	if (late !== undefined) return undoneChanges({ ...params, overlap: late })
+	const effective = effectiveScopeOf({ brief: params.scope, changes })
 	const changedLine = fillMessage({
-		template: change.op === 'add' ? LOT_SCOPE_TEXTS.added : LOT_SCOPE_TEXTS.dropped,
+		template: changedTemplateOf({ changes }),
 		values: {
 			name: target.name,
-			paths: change.paths.join(LOT_SCOPE_LIST_SEPARATOR),
-			by: change.by ?? '',
+			dropped: pathsOf({ changes, op: 'drop' }),
+			added: pathsOf({ changes, op: 'add' }),
+			by: params.request.by,
 			scope: effective.join(LOT_SCOPE_LIST_SEPARATOR),
 		},
 	})
-	const eventFailure = writeScopeEvent({ target, change })
-	return answerOf({
-		exitCode: 0,
-		lines: eventFailure === undefined ? [changedLine] : [changedLine, eventFailure],
-	})
+	const failures = changes
+		.map((change) => writeScopeEvent({ target, change }))
+		.filter((line): line is string => line !== undefined)
+	return answerOf({ exitCode: 0, lines: [changedLine, ...failures] })
+}
+
+/** The line a written change prints: a drop, an add, or a drop with its adds. */
+function changedTemplateOf(params: { changes: ScopeChange[] }): string {
+	const ops = params.changes.map((change) => change.op)
+	if (ops.includes('drop') && ops.includes('add')) return LOT_SCOPE_TEXTS.narrowed
+	return ops.includes('drop') ? LOT_SCOPE_TEXTS.dropped : LOT_SCOPE_TEXTS.added
+}
+
+/** The paths of the change of `op`, as a printed list. */
+function pathsOf(params: { changes: ScopeChange[]; op: ScopeChange['op'] }): string {
+	const change = params.changes.find((each) => each.op === params.op)
+	return (change?.paths ?? []).join(LOT_SCOPE_LIST_SEPARATOR)
 }
 
 /**
- * Undoes an add a lot that started or widened meanwhile meets, the way `lot start` fails its own lot on a late
- * overlap: an `undo` line taking back exactly the add's paths, no event, exit 2 naming that lot; an undo that cannot be
- * written exits 1 naming the paths and the lot (D13).
+ * Takes back a call whose adds a lot that started or widened meanwhile meets, the way `lot start` fails its own lot on
+ * a late overlap: in one write, an `undo` of the adds and, when the call dropped, an add putting back exactly the
+ * entries the drop removed (`restored: <reason>`, never wider than before, D5/D7); no event, exit 2 naming that lot;
+ * a take-back that cannot be written exits 1 naming the paths and the lot.
  */
-function undoneAdd(params: {
+function undoneChanges(params: {
+	request: ScopeRequest
 	target: ScopeTarget
-	change: ScopeChange
+	added: string[]
+	removed: string[]
 	overlap: LotOverlap
-	now?: Date
+	now: Date
 }): CommandResult {
-	const { target, change } = params
+	const { target, added, removed, overlap } = params
+	const changes = takeBackOf(params)
 	try {
-		appendScopeChange({
-			lotFolder: target.lotFolder,
-			change: {
-				schema: SCOPE_CHANGE_SCHEMA,
-				at: (params.now ?? new Date()).toISOString(),
-				op: 'undo',
-				paths: change.paths,
-			},
-		})
+		appendScopeChanges({ lotFolder: target.lotFolder, changes })
 	} catch (error) {
 		return answerOf({
 			exitCode: 1,
@@ -372,8 +424,8 @@ function undoneAdd(params: {
 					template: LOT_SCOPE_TEXTS.undoFailure,
 					values: {
 						name: target.name,
-						paths: change.paths.join(LOT_SCOPE_LIST_SEPARATOR),
-						lot: overlapLotLabelOf(params.overlap),
+						paths: added.join(LOT_SCOPE_LIST_SEPARATOR),
+						lot: overlapLotLabelOf(overlap),
 						message: (error as Error).message,
 					},
 				}),
@@ -381,13 +433,38 @@ function undoneAdd(params: {
 		})
 	}
 	return refused({
-		template: LOT_SCOPE_TEXTS.lateOverlap,
-		values: {
-			name: target.name,
-			lot: overlapLotLabelOf(params.overlap),
-			met: overlapMetText(params.overlap),
-		},
+		template:
+			removed.length > 0 ? LOT_SCOPE_TEXTS.lateOverlapNarrowed : LOT_SCOPE_TEXTS.lateOverlap,
+		values: { name: target.name, lot: overlapLotLabelOf(overlap), met: overlapMetText(overlap) },
 	})
+}
+
+/**
+ * The lines that take a call back on a late overlap: an `undo` of its adds and, when it dropped, an add putting back
+ * exactly the entries the drop removed (`restored: <reason>`).
+ */
+function takeBackOf(params: {
+	request: ScopeRequest
+	added: string[]
+	removed: string[]
+	now: Date
+}): ScopeChange[] {
+	const at = params.now.toISOString()
+	return [
+		{ schema: SCOPE_CHANGE_SCHEMA, at, op: 'undo', paths: params.added },
+		...(params.removed.length > 0
+			? [
+					{
+						schema: SCOPE_CHANGE_SCHEMA,
+						at,
+						op: 'add' as const,
+						paths: params.removed,
+						by: params.request.by,
+						reason: `${RESTORED_REASON_PREFIX}${params.request.reason}`,
+					},
+				]
+			: []),
+	]
 }
 
 /** Writes the change's `scope.changed` event into the lot's events; the line to print when it could not be written. */

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 
 import { appendLine } from '../events/write-event.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { matchesGlob } from '../tdd/match-glob.ts'
 import { isInsideEntry, literalPartOf, normaliseScopeEntry } from './brief-scope.ts'
 import {
 	SCOPE_CHANGE_LINE_LIMIT,
@@ -22,9 +23,10 @@ import { STORE_FILES } from './store.constants.ts'
 import type { LotScope, ScopeChange, ScopeChangeOp, ScopeChanges } from './scope-changes.types.ts'
 
 /**
- * The changes of the lot folder's `scope-changes.jsonl` in file order; a line that does not read as one (no JSON,
- * another schema, an unknown op, paths that are no list of texts, an add without `by` or `reason`, a last line
- * without its line feed) is counted, never read. No file: no change.
+ * The changes of the lot folder's `scope-changes.jsonl` in file order; a line that does not read as one is counted,
+ * never read: no JSON, another schema, an unknown op, paths that are no non-empty list of texts, a key the schema does
+ * not name, an add without `by` or `reason`, a drop with only one of them, an undo with either, a last line without
+ * its line feed. No file: no change.
  */
 export function readScopeChanges(params: { lotFolder: string }): ScopeChanges {
 	let content: string
@@ -65,9 +67,10 @@ export function effectiveScopeOf(params: {
 }
 
 /**
- * The changes of a lot's scope in words, for `lot status` and the card: each drop `dropped <paths>`, each add `added
- * <paths> (by <who>)` - with `: <reason>` when `withReason` - joined by `; `; an unreadable file says so; undefined when
- * the lot changed nothing.
+ * The changes of a lot's scope in words, for `lot status` and the card: each drop `dropped <paths>` - `(by <who>)` when
+ * it names who, `(by <who>: <reason>)` with `withReason` -, each add `added <paths> (by <who>)` - with `: <reason>` when
+ * `withReason` -, each undo `undid the add of <paths>`, joined by `; `; an unreadable file says so; undefined when the
+ * lot changed nothing.
  */
 export function scopeChangesText(params: {
 	scope: LotScope
@@ -84,7 +87,15 @@ export function scopeChangesText(params: {
 		.map(function changeText(change) {
 			const paths = change.paths.join(SCOPE_PATHS_SEPARATOR)
 			if (change.op === 'drop')
-				return fillMessage({ template: SCOPE_CHANGE_TEXTS.dropped, values: { paths } })
+				return fillMessage({
+					template:
+						change.by === undefined
+							? SCOPE_CHANGE_TEXTS.dropped
+							: params.withReason
+								? SCOPE_CHANGE_TEXTS.droppedWithReason
+								: SCOPE_CHANGE_TEXTS.droppedBy,
+					values: { paths, by: change.by ?? '', reason: change.reason ?? '' },
+				})
 			if (change.op === 'undo')
 				return fillMessage({ template: SCOPE_CHANGE_TEXTS.undone, values: { paths } })
 			return fillMessage({
@@ -106,26 +117,38 @@ export function isDroppedBy(params: { entry: string; path: string }): boolean {
 }
 
 /**
- * Whether the scope entry already holds `path`: the entry is the path, or a literal entry (no glob) the path lies
- * inside on path segments; a glob entry holds only the path it equals, never what its literal folder names.
+ * Whether the scope entry covers `path`, a file: the entry is the path, a literal entry (no glob) holding it on path
+ * segments, or a glob entry matching it (never every file under the glob's literal folder, FIX-scope-narrow D2).
  */
-export function isHeldBy(params: { path: string; entry: string }): boolean {
+export function isCoveredBy(params: { path: string; entry: string }): boolean {
 	const { path, entry } = params
 	if (entry === path) return true
-	return literalPartOf(entry) === entry && isInsideEntry({ path, entry })
+	if (literalPartOf(entry) === entry) return isInsideEntry({ path, entry })
+	return matchesGlob({ path, glob: entry })
 }
 
-/** Appends one change to the lot folder's `scope-changes.jsonl` in one write; a line over the limit is refused. */
-export function appendScopeChange(params: { lotFolder: string; change: ScopeChange }): void {
+/**
+ * Appends the changes of one call to the lot folder's `scope-changes.jsonl` in one write, in order (a drop before the
+ * adds that narrow it, FIX-scope-narrow D1); refused over the line limit.
+ */
+export function appendScopeChanges(params: {
+	lotFolder: string
+	changes: readonly ScopeChange[]
+}): void {
 	appendLine({
 		file: scopeChangesFileOf(params),
-		line: scopeChangeLineOf({ change: params.change }),
+		line: scopeChangesBufferOf(params),
 		limit: SCOPE_CHANGE_LINE_LIMIT,
 	})
 }
 
+/** The bytes the changes of one call are written as: each change's line, in order. */
+export function scopeChangesBufferOf(params: { changes: readonly ScopeChange[] }): Buffer {
+	return Buffer.concat(params.changes.map((change) => scopeChangeLineOf({ change })))
+}
+
 /** The bytes a change is written as: its JSON and a line feed, in UTF-8 (what the limit counts). */
-export function scopeChangeLineOf(params: { change: ScopeChange }): Buffer {
+function scopeChangeLineOf(params: { change: ScopeChange }): Buffer {
 	return Buffer.from(`${JSON.stringify(params.change)}\n`, 'utf8')
 }
 
@@ -155,10 +178,13 @@ function parseScopeChange(params: { text: string }): ScopeChange | undefined {
 		!paths.every((path) => typeof path === 'string')
 	)
 		return undefined
-	if (op !== 'add')
+	if (op === 'undo')
 		return by === undefined && reason === undefined
 			? { schema: SCOPE_CHANGE_SCHEMA, at, op, paths: paths as string[] }
 			: undefined
+	// a drop names who and why since every drop requires them; an older drop line holds neither (FIX-scope-narrow D7)
+	if (op === 'drop' && by === undefined && reason === undefined)
+		return { schema: SCOPE_CHANGE_SCHEMA, at, op, paths: paths as string[] }
 	if (typeof by !== 'string' || typeof reason !== 'string') return undefined
 	return { schema: SCOPE_CHANGE_SCHEMA, at, op, paths: paths as string[], by, reason }
 }

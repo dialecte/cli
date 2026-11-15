@@ -4,7 +4,10 @@
  */
 export type ScopeChangeOp = 'drop' | 'add' | 'undo'
 
-/** A line of a lot's `scope-changes.jsonl` (schema 1): `by` and `reason` on an `add` only. */
+/**
+ * A line of a lot's `scope-changes.jsonl` (schema 1): `by` and `reason` on every `add`, on a `drop` the verb writes
+ * since every drop requires them (both or neither on an older drop line), never on an `undo`.
+ */
 export type ScopeChange = {
 	schema: 1
 	at: string
