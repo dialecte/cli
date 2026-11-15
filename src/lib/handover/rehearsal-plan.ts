@@ -11,8 +11,6 @@
  * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
  * rehearsed saying the base moved.
  */
-import { readFileSync } from 'node:fs'
-
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { readInstalledKey } from '../gate-records/check-key.ts'
 import {
@@ -27,7 +25,7 @@ import {
 	SHORT_SHA_LENGTH,
 } from '../gate-records/gate-records.constants.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
-import { listCommitHookFiles } from '../git-hooks.ts'
+import { readCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -43,6 +41,7 @@ import type {
 	RehearsalDecision,
 	RehearsalPlanContext,
 	ResolvedLot,
+	SharedPlanContext,
 } from './handover.types.ts'
 
 /**
@@ -56,27 +55,15 @@ export function planRehearsal(params: {
 }): RehearsalDecision[] {
 	const root = params.handover.lotsFile.repository
 	const trees = listLotTrees({ root, lots: params.handover.lots })
-	const hookText = listCommitHookFiles(root)
-		.map((file) => readFileSync(file, 'utf8'))
-		.join('\n')
-	const hashes = readModeCommandHashes({
-		root,
-		packageJson: readPackageJson(root),
-		gateBase: params.base,
-	})
-	const context: RehearsalPlanContext = {
+	const shared: SharedPlanContext = {
 		root,
 		branch: params.handover.lotsFile.branch,
 		installed: readInstalledKey(root),
-		commands: {
-			full: hashes.full,
-			hook: hashes.hook,
-			// a release list that does not cover full answers no lot
-			...(hashes.releaseCoversFull && { release: hashes.release }),
-		},
+		packageJson: readPackageJson(root),
 		...(params.base !== undefined && { base: params.base }),
-		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
 	}
+	// a full rehearsal judges no record: no lot tree is read
+	const contexts = params.full ? [] : readPlanContexts({ shared, trees })
 	const contribRun = needsContribRun({
 		root,
 		tree: trees.at(-1)?.tree,
@@ -87,8 +74,8 @@ export function planRehearsal(params: {
 		const decision = params.full
 			? rehearsed(REHEARSAL_REASONS.full)
 			: lot.merge
-				? decideMerge({ context, merge: lot.merge, lotTree: trees[index] })
-				: decidePlain({ context, lot, tree })
+				? decideMerge({ context: contexts[index], merge: lot.merge, lotTree: trees[index] })
+				: decidePlain({ context: contexts[index], lot, tree })
 		return {
 			lot: index + 1,
 			tree,
@@ -96,6 +83,47 @@ export function planRehearsal(params: {
 			...(contribRun && index === trees.length - 1 && { contrib: 'run' as const }),
 		}
 	})
+}
+
+/**
+ * What each lot's records are judged with, in lot order, read once per lot tree: the command hashes at the hand-over
+ * base read as that tree holds the hook files and package.json, and what its hook stages - the commit of a lot runs
+ * the hook its tree holds, a merge lot the merged tree's, whatever the worktree's hook is now.
+ */
+function readPlanContexts(params: {
+	shared: SharedPlanContext
+	trees: readonly LotTree[]
+}): RehearsalPlanContext[] {
+	const byTree = new Map<string, RehearsalPlanContext>()
+	return params.trees.map(function contextOf({ tree }) {
+		const context = byTree.get(tree) ?? readPlanContext({ shared: params.shared, tree })
+		byTree.set(tree, context)
+		return context
+	})
+}
+
+/** The plan context of one lot tree (`readPlanContexts`). */
+function readPlanContext(params: {
+	shared: SharedPlanContext
+	tree: string
+}): RehearsalPlanContext {
+	const { shared, tree } = params
+	const { root, packageJson, ...rest } = shared
+	const hashes = readModeCommandHashes({ root, packageJson, gateBase: shared.base, tree })
+	const hookText = readCommitHookFiles({ root, tree })
+		.map((file) => file.bytes.toString('utf8'))
+		.join('\n')
+	return {
+		root,
+		...rest,
+		commands: {
+			full: hashes.full,
+			hook: hashes.hook,
+			// a release list that does not cover full answers no lot
+			...(hashes.releaseCoversFull && { release: hashes.release }),
+		},
+		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
+	}
 }
 
 /**

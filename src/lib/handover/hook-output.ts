@@ -11,14 +11,21 @@ import {
 	FLAKY_NOTE,
 	GATE_HOOK_BASE_PATTERN,
 	GATE_HOOK_REUSED_PATTERN,
+	GATE_HOOK_STEP_REUSED_PATTERN,
 } from '../gate/gate-config.constants.ts'
 import { readStepCounts } from '../gate/step-counts.ts'
 import { textOf } from '../print/print.ts'
 import {
 	COMMAND_SEPARATORS,
 	FAILING_TAIL_LINES,
+	GATE_HOOK_LINE_PATTERN,
 	HOOK_FLAKY_FILE_PATTERN,
+	HOOK_LANDING_LINE,
+	HOOK_LANDING_NONE,
+	HOOK_LANDING_SEPARATOR,
 	HOOK_LINE_PATTERNS,
+	HOOK_RAN_STEP_PATTERN,
+	HOOK_REUSED_TESTS_STEP,
 	HOOK_WARNING_KINDS,
 	NPM_COMMAND_LINE,
 	NPM_RUN_SCRIPT,
@@ -304,10 +311,20 @@ function readFlakyFiles(lines: readonly string[]): string[] {
 	return [...new Set(files)].sort()
 }
 
-/** The record `gate --hook` says it answered from (`GATE_HOOK_REUSED_LINE`): its time and short HEAD. */
+/**
+ * The record `gate --hook` says it answered from (`GATE_HOOK_REUSED_LINE`): its time and short HEAD; or, when it
+ * answered every step one by one (no line of a step it ran), the latest run it answered from.
+ */
 function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
-	const match = GATE_HOOK_REUSED_PATTERN.exec(stripVTControlCharacters(lines.join('\n')))
-	return match ? { at: match[2], head: match[3] } : undefined
+	const text = stripVTControlCharacters(lines.join('\n'))
+	const match = GATE_HOOK_REUSED_PATTERN.exec(text)
+	if (match) return { at: match[2], head: match[3] }
+	if (new RegExp(HOOK_RAN_STEP_PATTERN).test(text)) return undefined
+	const answers = [...text.matchAll(GATE_HOOK_STEP_REUSED_PATTERN)].map((step) => ({
+		at: step[3],
+		head: step[4],
+	}))
+	return answers.sort((first, second) => first.at.localeCompare(second.at)).at(-1)
 }
 
 /**
@@ -441,4 +458,27 @@ function renderHookCounts(counts: StepCounts): string {
 	}
 	if (counts.errors) return counted({ count: counts.errors, noun: 'error' })
 	return ''
+}
+
+/**
+ * The landing line (`HOOK_LANDING_LINE`) of a hook's output, read from the lines `gate --hook` printed: a step
+ * answered by `gate --hook: reused {step} from {mode} {at} (HEAD {head})`, a step it ran by its `ok` or `FAIL` step
+ * line. Undefined when the output holds none of its lines (a hook that is not `gate --hook`).
+ */
+export function hookLandingLine(params: { output: string }): string | undefined {
+	const text = stripVTControlCharacters(params.output)
+	if (!GATE_HOOK_LINE_PATTERN.test(text)) return undefined
+	const reused = [...text.matchAll(GATE_HOOK_STEP_REUSED_PATTERN)].map(
+		(match) => `${match[1]} (${match[2]} ${match[3]})`,
+	)
+	const whole = GATE_HOOK_REUSED_PATTERN.exec(text)
+	if (whole) reused.push(`${HOOK_REUSED_TESTS_STEP} (full ${whole[2]})`)
+	// the gate prints a step's line as it ends and again in its summary: each step once
+	const ran = [...new Set([...text.matchAll(HOOK_RAN_STEP_PATTERN)].map((match) => match[1]))]
+	return HOOK_LANDING_LINE.replace('{reused}', listOrNone(reused)).replace('{ran}', listOrNone(ran))
+}
+
+/** The names joined by `HOOK_LANDING_SEPARATOR`; `none` for an empty list. */
+function listOrNone(names: readonly string[]): string {
+	return names.length ? names.join(HOOK_LANDING_SEPARATOR) : HOOK_LANDING_NONE
 }

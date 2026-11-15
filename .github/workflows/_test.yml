@@ -29,3 +29,32 @@ jobs:
 
       - name: Run Tests
         run: npm run test
+
+  # the config homes differ per platform (%APPDATA%, path keys compared whatever the case): their tests on Windows
+  config-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'latest'
+          cache: 'npm'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      # the install workflow fills the Linux cache only: a Windows cache miss installs here
+      - name: Install dependencies
+        run: npm ci
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+
+      - name: Run config tests
+        run: npx vitest run src/lib/config/ src/commands/config src/lib/release/

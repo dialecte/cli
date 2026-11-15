@@ -1,0 +1,33 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "dialecterc.schema.json",
+	"$comment": "The project settings file .dialecterc, schema version 1",
+	"type": "object",
+	"required": ["schema"],
+	"properties": {
+		"schema": { "const": 1 },
+		"profile": { "type": "string" },
+		"baseBranch": { "type": "string" },
+		"gate": { "type": "object" },
+		"contrib": { "type": "object" },
+		"tdd": { "type": "object" },
+		"references": {
+			"type": "object",
+			"properties": {
+				"allow": { "type": "array", "items": { "type": "string" } },
+				"patterns": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": false
+		},
+		"mutation": { "type": "object" },
+		"generatedDocs": { "type": "array", "items": { "type": "string" } },
+		"risk": { "type": "object" },
+		"rebuiltIgnored": { "type": "array", "items": { "type": "string" } },
+		"tsconfig": { "type": "string" },
+		"namespace": { "type": "string" },
+		"entry": { "type": "string" },
+		"constantsDir": { "type": "string" },
+		"out": { "type": "string" }
+	},
+	"additionalProperties": false
+}

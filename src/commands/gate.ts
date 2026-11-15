@@ -27,15 +27,24 @@
  * `dialecte.gate.release` (default: the full steps) like `--full`, its scoped steps against the empty tree, and
  * records `dialecte-gate-release.json`. A gate config the cli cannot run exits 2 (1 under `--hook`).
  *
- * `--hook [--no-reuse]` runs in a commit hook: the test steps of `--full` (those counting tests), unless a green
- * `--full` record of what is committed answers them - its key the tree of the index git hands the hook (never the
- * working files: a merge commit and a partial commit check what they record), what npm installed, the `file:`
- * dependencies and the full gate's command hash - else by a green `--release` record of the same tree when the
- * release list covers `full`. It prints one line saying which; no hygiene, no tdd step, no hand-over hold (it runs
- * inside `handover run`'s own commit), no record. When its test steps hold a scoped step it resolves the hook base
- * once - the hand-over base `handover run` hands down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`)
- * when a live run of that folder holds it, else the base branch's - and prints it on one more line with what was
- * selected (or `reused`).
+ * `--hook [--no-reuse]` runs in a commit hook the hook steps of `--full`: every full step but the scoped ones that
+ * count no tests (a commit has no lot base for them). Each step is answered by the newest green record of what is
+ * committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
+ * of the index git hands the hook (never the working files: a merge commit and a partial commit check what they
+ * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the
+ * hook base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran
+ * it: `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in
+ * list order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older
+ * cli, with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git
+ * variables naming another repository, answer nothing. No hygiene, no tdd step, no hand-over hold (it runs inside
+ * `handover run`'s own commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its
+ * hash, an answered one with the run it came from; it goes to the repository's store, or - given
+ * `DIALECTE_CHECK_STORE`, the absolute git common dir of the repository a rehearsal clones - to that store, marked as
+ * a rehearsal's (any other value is ignored, said on the hook's first line; no step ever sees the variable). The
+ * record is kept only when the working files were the committed tree before and after the steps ran: a step reads
+ * the working files, so a run on others answers nothing of the tree. When a hook step is scoped it resolves the hook base once - the hand-over base `handover run` hands
+ * down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live run of that folder holds it, else the
+ * base branch's - and prints it on one more line with what was selected (or `reused`).
  */
 import { join } from 'node:path'
 
@@ -52,6 +61,7 @@ import {
 	renderReuseLine,
 	reusedResults,
 } from '../lib/gate-records/record-reuse.ts'
+import { hashGateStep } from '../lib/gate-records/step-reuse.ts'
 import { readEmptyTree, readGivenHandoverBase, resolveGateBase } from '../lib/gate/gate-base.ts'
 import {
 	GATE_BASE_FLAG_LINE,
@@ -71,6 +81,7 @@ import {
 	renderAbsentDerivedLines,
 	resolveGateSteps,
 } from '../lib/gate/gate-config.ts'
+import { readGivenCheckStore } from '../lib/gate/given-check-store.ts'
 import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
 import { renderStepLine } from '../lib/gate/step-line.ts'
@@ -112,6 +123,8 @@ export async function run(argv: string[]): Promise<void> {
 	const indexFile = ignoredGivenRepository ? undefined : GIVEN_ENVIRONMENT.GIT_INDEX_FILE
 	// the base a hand-over run hands its hooks: only `--hook` reads it
 	const given = hasFlag(argv, 'hook') ? readGivenHandoverBase(GIVEN_ENVIRONMENT) : {}
+	// a rehearsal clone's hook reads and writes the store of the repository it rehearses: an absolute folder only
+	const store = hasFlag(argv, 'hook') ? readGivenCheckStore(GIVEN_ENVIRONMENT) : {}
 	const result = await runGate({
 		cwd: process.cwd(),
 		argv,
@@ -120,6 +133,8 @@ export async function run(argv: string[]): Promise<void> {
 		...(ignoredGivenRepository && { reusable: false }),
 		...(given.handoverBase && { handoverBase: given.handoverBase }),
 		...(given.ignored && { handoverIgnored: given.ignored }),
+		...(store.checkStore && { checkStore: store.checkStore }),
+		...(store.ignored && { checkStoreIgnored: store.ignored }),
 	})
 	printOut({ stream: 'stdout', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
@@ -141,6 +156,13 @@ export async function runGate(params: {
 	handoverBase?: HandoverBase
 	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
 	handoverIgnored?: string
+	/**
+	 * `--hook`: the absolute git common dir of the repository whose store holds the hook's records
+	 * (`DIALECTE_CHECK_STORE` in the cli's given environment); its records are marked as a rehearsal's.
+	 */
+	checkStore?: string
+	/** `--hook`: the line saying why a given store was ignored (no absolute path to a folder); the hook starts with it. */
+	checkStoreIgnored?: string
 	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
 	holdAwake?: AwakeHolder
 	/** The clock pair a `--full` or `--release` run measures a sleep with. Default: the process's. */
@@ -166,6 +188,8 @@ export async function runGate(params: {
 				live: params.live,
 				handoverBase: params.handoverBase,
 				handoverIgnored: params.handoverIgnored,
+				...(params.checkStore && { checkStore: params.checkStore }),
+				...(params.checkStoreIgnored && { checkStoreIgnored: params.checkStoreIgnored }),
 				warn: params.warn,
 			})
 		} catch (error) {
@@ -348,6 +372,12 @@ export async function runGate(params: {
 					...(reused && { reused: reused.record }),
 					...(gateBase && { base: gateBase }),
 					...(sleptMs !== undefined && { sleptMs }),
+					stepHashes: new Map(
+						steps.map((step) => [
+							step.name,
+							hashGateStep({ root: cwd, step, gateBase: gateBase?.commit }),
+						]),
+					),
 				})
 	const notStored = [
 		...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),

@@ -5,6 +5,7 @@
  * on their own folder only. Nor do they read the person's global or system git config (a `dialecte.*` key, an
  * alias, a default branch): the suite sees what a CI machine sees, an empty one.
  */
+import { HANDOVER_VARIABLES } from '../src/lib/gate/selection.constants.ts'
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
 import { STANDARD_ENVIRONMENT_VARIABLE } from '../src/lib/standard/standard.constants.ts'
 import {
@@ -20,6 +21,10 @@ for (const name of [
 	...DISCOVERY_ENVIRONMENT_VARIABLES,
 ])
 	delete process.env[name]
+
+// a hand-over's variables for a commit's hook (its base and folder, the store a rehearsal hands it) are that hook's:
+// a case spawning its own scratch hook must never read or write the real repository's store with them
+for (const name of HANDOVER_VARIABLES) delete process.env[name]
 
 // git reads /dev/null as an empty config file
 process.env.GIT_CONFIG_GLOBAL = '/dev/null'
