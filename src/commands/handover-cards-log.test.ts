@@ -44,6 +44,7 @@ import {
 } from '../../test/standard-error-capture.ts'
 import { HOOK_RECORD_FILE } from '../../test/step-events-handover.constants.ts'
 import { createHandoverLot, printLines } from '../../test/step-events-handover.ts'
+import { GO_AHEAD_ARGV } from '../../test/store-lot-guard-workspace.constants.ts'
 import { finalCardOf, readCardsLog } from '../lib/events/cards-log.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runHandoverRun, runHandoverShow } from './handover.ts'
@@ -181,7 +182,9 @@ describe('handover run: the card line', { timeout: SCRATCH_REPOSITORY_TIMEOUT },
 		recordStations(lot)
 		const name = registeredNameIn(lot)
 
-		await expect(runHandoverRun(runArguments({ lot, lines: printedLines() }))).resolves.toBe(0)
+		await expect(
+			runHandoverRun(runArguments({ lot, argv: [...GO_AHEAD_ARGV], lines: printedLines() })),
+		).resolves.toBe(0)
 
 		const lines = cardsLogLines(lot)
 		expect(lines).toHaveLength(1)

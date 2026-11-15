@@ -103,6 +103,8 @@ import { markHandoverTarget, markReleaseHandover } from '../lib/handover/release
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
 import { countChangedSinceReview, recomputeHandoverCard } from '../lib/handover/show-handover.ts'
+import { NOT_A_LOT_VALUE_OPTIONS } from '../lib/handover/store-lot-guard.constants.ts'
+import { notALotWordRefusal, readNotALotOptions } from '../lib/handover/store-lot-guard.ts'
 import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
@@ -136,6 +138,7 @@ import type {
 	StoreEntry,
 	WriteLine,
 } from '../lib/handover/handover.types.ts'
+import type { NotALotGoAhead } from '../lib/handover/store-lot-guard.types.ts'
 import type { AwakeHolder } from '../lib/keep-awake/keep-awake.types.ts'
 import type { Clock } from '../lib/progress/clock.types.ts'
 import type { RunClocks } from '../lib/progress/slept.types.ts'
@@ -402,7 +405,10 @@ export function runHandover(params: {
 	}
 }
 
-/** `handover run <folder> [--rehearse [--keep] [--full]]`; `handover run --probe` answers that this cli has the command. */
+/**
+ * `handover run <folder> [--rehearse [--keep] [--full]] [--resume-merge] [--not-a-lot --by <who> --reason <text>]`;
+ * `handover run --probe` answers that this cli has the command.
+ */
 export async function runHandoverRun(params: {
 	argv: string[]
 	write: WriteLine
@@ -439,12 +445,18 @@ export async function runHandoverRun(params: {
 		write('handover run')
 		return 0
 	}
+	// `--not-a-lot --by --reason` misused: refused before anything is read or written (D17)
+	const notALot = readNotALotOptions(argv)
+	if ('usage' in notALot) {
+		write(textOf([notALot.usage]))
+		return 2
+	}
 	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
 	const sleptSinceStart = startLongRun({
 		holdAwake: params.holdAwake,
 		runClocks: params.runClocks,
 	})
-	const [argument] = positionalArguments({ argv, valueOptions: [] })
+	const [argument] = positionalArguments({ argv, valueOptions: NOT_A_LOT_VALUE_OPTIONS })
 	const cwd = params.cwd ?? process.cwd()
 	const store = storeOfFolder(cwd)
 	const folder = argument
@@ -464,6 +476,14 @@ export async function runHandoverRun(params: {
 	const handover = readHandoverFolder(folder)
 	if (typeof handover === 'string') {
 		write(textOf([`handover run: ${handover}`]))
+		return 2
+	}
+	// a go-ahead holding a forbidden word: refused, nothing written (U3), the list of the repository committed into
+	const wordRefusal =
+		notALot.goAhead &&
+		notALotWordRefusal({ root: handover.lotsFile.repository, goAhead: notALot.goAhead })
+	if (wordRefusal) {
+		write(textOf([wordRefusal]))
 		return 2
 	}
 	if (readAbandonedMarker(handover.folder)) {
@@ -490,7 +510,15 @@ export async function runHandoverRun(params: {
 		})
 	}
 	try {
-		return await runHandoverOf({ ...params, handover, progress, live, cliPath, recordRun })
+		return await runHandoverOf({
+			...params,
+			handover,
+			progress,
+			live,
+			cliPath,
+			recordRun,
+			notALot: notALot.goAhead,
+		})
 	} finally {
 		recordRun()
 	}
@@ -513,6 +541,8 @@ async function runHandoverOf(params: {
 	live: LiveOutput
 	cliPath: string
 	recordRun: () => void
+	/** `--not-a-lot --by <who> --reason <text>`: the person's go-ahead for a hand-over that is no store lot. */
+	notALot?: NotALotGoAhead
 }): Promise<number> {
 	const { argv, write, handover, progress, live, cliPath } = params
 	// the step's lot is the hand-over folder's (none outside every store); its worktree the commit root
@@ -582,6 +612,7 @@ async function runHandoverOf(params: {
 			resumeMerge: hasFlag(argv, 'resume-merge'),
 			// the DONE card reads the run record: written before it
 			beforeCard: params.recordRun,
+			notALot: params.notALot,
 		})
 		return stepExit
 	} finally {

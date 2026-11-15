@@ -4,6 +4,8 @@
  * verified, a rehearsal goes on with `!`, a snapshot with no state is no refusal). The hand-over folder is the lot
  * folder: its snapshots are real, its verify lines written by hand.
  */
+import { basename } from 'node:path'
+
 import { STORE_FIRST_NAME, STORE_NOW } from '../../test/handover-store-scenario.constants.ts'
 import {
 	createBranchRepository,
@@ -38,11 +40,16 @@ const FIX: LateFixesStep = { edit: { [READ_FILE]: READ_TWO } }
 const ONE_LINE_FIX = { by: FIRST_VERIFIER, note: 'one-line fix' }
 
 /** A hand-over of one lot, its folder holding the snapshots and verify lines the story plays; the repository is the worktree. */
-function handoverWith(steps: readonly LateFixesStep[]): { root: string; folder: string } {
+function handoverWith(steps: readonly LateFixesStep[]): {
+	root: string
+	folder: string
+	/** The lot the hand-over is written into: a lot's hand-over carries the lot's name. */
+	lotName: string
+} {
 	const root = createBranchRepository()
 	const { folder } = writeStoreHandover({ root, name: 'late', changes: CHANGES })
 	playStory({ lot: { cwd: root, lotFolder: folder }, steps })
-	return { root, folder }
+	return { root, folder, lotName: basename(folder) }
 }
 
 /** The card's lines about late fixes, as the gate lines of the box read (the padding squeezed). */
@@ -58,20 +65,20 @@ function verifyLinesOf(text: string): string[] {
 }
 
 describe('the card: the late fixes line', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
-	type Case = { title: string; steps: LateFixesStep[]; rows: string[] }
+	type Case = { title: string; steps: LateFixesStep[]; rows: (lotName: string) => string[] }
 
 	const CASES: Case[] = [
 		{
 			title: 'case 46: a one-line fix after round 1',
 			steps: [{ snapshot: 1 }, FIX],
-			rows: [
-				'! late fixes unverified since round 1 (1 file): dialecte lot verify handover --by <who> --note <text>',
+			rows: (lotName) => [
+				`! late fixes unverified since round 1 (1 file): dialecte lot verify ${lotName} --by <who> --note <text>`,
 			],
 		},
 		{
 			title: 'a verified fix',
 			steps: [{ snapshot: 1 }, FIX, { verifyHere: ONE_LINE_FIX }],
-			rows: ['✓ late fixes verified by person-a: one-line fix'],
+			rows: () => ['✓ late fixes verified by person-a: one-line fix'],
 		},
 		{
 			title: 'case 47: a verify, then another edit',
@@ -81,22 +88,22 @@ describe('the card: the late fixes line', { timeout: HANDOVER_CASE_TIMEOUT }, ()
 				{ verifyHere: ONE_LINE_FIX },
 				{ edit: { [READ_FILE]: READ_THREE } },
 			],
-			rows: [
-				'! late fixes unverified since round 1 (1 file): dialecte lot verify handover --by <who> --note <text>',
+			rows: (lotName) => [
+				`! late fixes unverified since round 1 (1 file): dialecte lot verify ${lotName} --by <who> --note <text>`,
 			],
 		},
 		{
 			title: 'case 49: a snapshot with no state',
 			steps: [{ snapshot: 1, withoutState: true }, FIX],
-			rows: ['! late fixes not checked (round 1 has no state)'],
+			rows: () => ['! late fixes not checked (round 1 has no state)'],
 		},
 	]
 
 	for (const { title, steps, rows } of CASES)
-		it(`${title} -> ${rows[0]}`, () => {
-			const { root } = handoverWith(steps)
+		it(title, () => {
+			const { root, lotName } = handoverWith(steps)
 
-			expect(lateFixesRowsOf(root)).toEqual(rows)
+			expect(lateFixesRowsOf(root)).toEqual(rows(lotName))
 		})
 })
 
