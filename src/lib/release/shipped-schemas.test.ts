@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
+import { packedFilesOf } from '../../../test/npm-pack-files.ts'
 import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { thrownBy } from '../../../test/thrown-by.ts'
 import { copyShippedSchemas, shippedSchemaFilesOf } from './shipped-schemas.ts'
@@ -70,9 +71,7 @@ describe('copyShippedSchemas', () => {
 			encoding: 'utf8',
 			shell: process.platform === 'win32',
 		})
-		const listed = (JSON.parse(packed.stdout) as { files: { path: string }[] }[])[0].files.map(
-			(file) => file.path,
-		)
+		const listed = packedFilesOf(packed.stdout)
 
 		expect(SCHEMA_NAMES.map((name) => listed.includes(`dist/schemas/${name}`))).toEqual(
 			SCHEMA_NAMES.map(() => true),
