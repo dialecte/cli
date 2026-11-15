@@ -14,12 +14,14 @@ import {
 	PROFILE_LOT_PATH,
 	STANDARD_RECORDED_AT,
 } from './handover-profile.constants.ts'
+import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
+import { storeLotFolder } from './handover-store-scenario.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { BRANCH_NAME, WRITER_CLI } from './scratch-checks.constants.ts'
 import { headOf, runGateIn, writeHandoverFolder } from './scratch-checks.ts'
 import { EDITED_SOURCE_TEXT, SOURCE_FILE } from './scratch-contrib.constants.ts'
 import { createContribPackage, runContribIn } from './scratch-contrib.ts'
-import { git, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import { git, writeFiles } from './scratch-repository.ts'
 
 import type { GateStep } from '../src/lib/gate/gate-config.types.ts'
 import type { LotsFile, MergeLotPlan } from '../src/lib/handover/handover.types.ts'
@@ -60,7 +62,8 @@ export function cardOf(params: {
 	standard?: Pick<StandardRecord, 'state' | 'note'>
 }): { text: string; data: JsonCard; out: string } {
 	const { root } = params
-	const out = temporaryFolder('dialecte-profile-card-')
+	// the hand-over's folder is a new store lot of the repository: the card is the one of a lot's hand-over
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	if (params.standard)
 		writeFileSync(
 			join(out, STANDARD_FILE),

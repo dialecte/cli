@@ -29,6 +29,7 @@ import {
 	stepEventsOf,
 } from '../../test/step-events-lot.ts'
 import { spyOnWarnings } from '../../test/step-events-tdd.ts'
+import { GO_AHEAD_ARGV } from '../../test/store-lot-guard-workspace.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { writeEvent } from '../lib/events/write-event.ts'
 import { INVALID_STEP, INVALID_STEP_PROBLEMS } from '../lib/gate/gate-config.constants.ts'
@@ -214,7 +215,7 @@ describe('handover run outside a lot', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 		const warnings = spyOnWarnings()
 		vi.mocked(writeEvent).mockClear()
 
-		const result = await runHandover({ lot })
+		const result = await runHandover({ lot, argv: [...GO_AHEAD_ARGV] })
 
 		expect({
 			exitCode: result.exitCode,

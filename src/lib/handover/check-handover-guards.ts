@@ -58,6 +58,8 @@ import {
 	reviewedHashes,
 	snapshotPathOf,
 } from './reviewed-snapshot.ts'
+import { STORE_LOT_GUARD_NAME } from './store-lot-guard.constants.ts'
+import { checkStoreLot } from './store-lot-guard.ts'
 import { PROCESSES_GUARD_NAME } from './stray-processes.constants.ts'
 import { strayProcesses, strayProcessesLineOf } from './stray-processes.ts'
 import { restoreLeftoverBackup } from './sync-node-modules.ts'
@@ -76,6 +78,7 @@ import type {
 	ResolvedLot,
 	WriteLine,
 } from './handover.types.ts'
+import type { NotALotGoAhead } from './store-lot-guard.types.ts'
 
 /**
  * The run's HEAD and the lots committed already; when a guard refused (its lines written), the exit code it sets
@@ -94,6 +97,8 @@ export function checkHandoverGuards(params: {
 	 * the install...). The `contrib` guard says that rather than advising a run.
 	 */
 	contribUnanswerable?: string
+	/** `--not-a-lot --by --reason`: the person's go-ahead for a hand-over that is not a store lot. */
+	notALot?: NotALotGoAhead
 }): GuardedRun | GuardRefusal {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -243,6 +248,17 @@ export function checkHandoverGuards(params: {
 					root,
 					folder: handover.folder,
 					rehearsal: params.rehearsal ?? false,
+				})
+			},
+		},
+		{
+			name: STORE_LOT_GUARD_NAME,
+			check: function isALotOfTheStore(): GuardVerdict | undefined {
+				return checkStoreLot({
+					folder: handover.folder,
+					release: lotsFile.release === true,
+					rehearsal: params.rehearsal ?? false,
+					goAhead: params.notALot,
 				})
 			},
 		},

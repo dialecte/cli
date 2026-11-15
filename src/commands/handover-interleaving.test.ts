@@ -14,6 +14,7 @@ import {
 	footerOf,
 	headOf,
 	markAbandoned,
+	plainHandoverFolder,
 	readEntry,
 	runIn,
 	storeOf,
@@ -114,6 +115,7 @@ describe('registration and abandon: other orders', { timeout: HANDOVER_CASE_TIME
 			name: STORE_FIRST_NAME,
 			changes: CHANGES,
 			keepLock: true,
+			folder: plainHandoverFolder(),
 		})
 		const link = join(temporaryFolder('dialecte-link-'), 'link')
 		symlinkSync(folder, link, 'dir')

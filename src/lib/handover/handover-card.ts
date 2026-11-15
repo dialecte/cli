@@ -106,6 +106,7 @@ import {
 import { readInstallLine } from './install-guard.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
 import { checkedTree, mergedBranchesOf, ownLotTreeOf } from './lot-trees.ts'
+import { readStoreLotLine } from './store-lot-guard.ts'
 import { PROCESSES_GUARD_NAME } from './stray-processes.constants.ts'
 import { strayProcessesLineOf } from './stray-processes.ts'
 import { targetLineOf } from './target-moved.ts'
@@ -218,6 +219,12 @@ export function buildHandoverCard(params: {
 		? buildLateFixesLine({ folder: params.folder, root, stateHash })
 		: undefined
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
+	// a closed card (DONE or abandoned) shows the lot line only for the go-ahead row (D19, D22)
+	const storeLotLine = readStoreLotLine({
+		folder: params.folder,
+		release: params.release === true,
+		done: params.done === true || params.abandoned === true,
+	})
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -237,6 +244,8 @@ export function buildHandoverCard(params: {
 		...(lateFixesLine ? [lateFixesLine] : []),
 		// the install guard's last record, on every card; none recorded: no line
 		...(installLine ? [installLine] : []),
+		// a hand-over that is not a store lot: its lot line; a healthy store lot or a release: none
+		...(storeLotLine ? [storeLotLine] : []),
 		// a committed card shows the state recorded on the lot, never the runner's environment
 		params.done
 			? readRecordedStandardLine({ folder: params.folder })

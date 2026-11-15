@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { storeLotFolder } from '../../../test/handover-store-scenario.ts'
 import { headOf, hooksRepository, writeGreenRecords } from '../../../test/mutation-hooks.ts'
 import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
@@ -47,11 +48,16 @@ function writeMismatchedInstall(root: string): void {
 	)
 }
 
-/** A hand-over folder holding `install.json` with `content` (none when undefined). */
+/** Writes `install.json` with `content` into `folder` (nothing when undefined); the folder. */
+function withRecord(params: { folder: string; content: string | undefined }): string {
+	if (params.content !== undefined)
+		writeFileSync(join(params.folder, HANDOVER_FILES.install), params.content)
+	return params.folder
+}
+
+/** A plain hand-over folder holding `install.json` with `content` (none when undefined). */
 function folderWithRecord(content: string | undefined): string {
-	const folder = temporaryFolder('dialecte-install-card-')
-	if (content !== undefined) writeFileSync(join(folder, HANDOVER_FILES.install), content)
-	return folder
+	return withRecord({ folder: temporaryFolder('dialecte-install-card-'), content })
 }
 
 /** The record text the guard writes for the lock of `LOCK_TEXT` (also the worktree's), with `overrides` replacing fields. */
@@ -79,7 +85,10 @@ function cardParamsOf(params: {
 	writeGreenRecords(root)
 	return {
 		root,
-		folder: folderWithRecord(params.content),
+		folder: withRecord({
+			folder: storeLotFolder({ root, name: 'install' }),
+			content: params.content,
+		}),
 		branch: 'main',
 		head: headOf(root),
 		notes: undefined,

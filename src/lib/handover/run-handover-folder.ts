@@ -39,6 +39,7 @@ import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { HandoverGateScope } from './handover-gate-scope.types.ts'
 import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.ts'
+import type { NotALotGoAhead } from './store-lot-guard.types.ts'
 
 /**
  * The exit code: 0 when every lot is committed, 1 when a guard or a commit refused, 2 when the gate config is one
@@ -81,6 +82,8 @@ export async function runHandoverFolder(params: {
 	gateScope?: HandoverGateScope
 	/** Called once the lots are committed (or the run stopped), before the card is built: what the card reads. */
 	beforeCard?: () => void
+	/** `--not-a-lot --by --reason`: the person's go-ahead for a hand-over that is not a store lot. */
+	notALot?: NotALotGoAhead
 }): Promise<number> {
 	const { handover, write, clock } = params
 	const { lotsFile, lots } = handover
@@ -100,6 +103,7 @@ export async function runHandoverFolder(params: {
 		rehearsal,
 		resumeMerge: params.resumeMerge,
 		contribUnanswerable: params.contribUnanswerable,
+		notALot: params.notALot,
 	})
 	if ('exitCode' in guarded) return guarded.exitCode
 	if (params.skipCommits) write(REHEARSAL_SKIPPED_LINE)

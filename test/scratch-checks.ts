@@ -13,6 +13,8 @@ import { REHEARSAL_FOLDER_PREFIX } from '../src/lib/handover/handover.constants.
 import { readHandoverFolder } from '../src/lib/handover/read-handover-folder.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { createFakeClock } from './fake-clock.ts'
+import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
+import { storeLotFolder } from './handover-store-scenario.ts'
 import { removeHookLogs } from './hook-logs.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
@@ -188,13 +190,16 @@ export function editReadLot(root: string): void {
 	})
 }
 
-/** The hand-over folder written for `lots` (the lots file, snapshot and card): its folder and the card printed. */
+/**
+ * The hand-over folder written for `lots` (the lots file, snapshot and card): its folder, a new store lot of the
+ * repository's store, and the card printed.
+ */
 export function writeHandoverFolder(params: {
 	root: string
 	lots: LotsFile['lots']
 	branch?: string
 }): { out: string; output: string } {
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root: params.root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: params.root,

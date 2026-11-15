@@ -12,6 +12,7 @@ import {
 	commitStoreHandover,
 	markAbandoned,
 	show,
+	storeLotFolder,
 	writeLotsFile,
 	writeStoreHandover,
 } from '../../../test/handover-store-scenario.ts'
@@ -179,7 +180,11 @@ describe('the review row of a READY card', { timeout: EDITOR_CASE_TIMEOUT }, () 
 		const root = await gatedRepository({ editor: 'fake-editor' })
 
 		const { output } = runHandover({
-			argv: [writeLotsFile({ root, name: 'review' }), '--out', temporaryFolder('dialecte-out-')],
+			argv: [
+				writeLotsFile({ root, name: 'review' }),
+				'--out',
+				storeLotFolder({ root, name: 'review' }),
+			],
 			cliPath: STORE_WRITER_CLI,
 			probe: noRepositoryCli,
 			now: STORE_NOW,
