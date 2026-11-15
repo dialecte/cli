@@ -1,3 +1,4 @@
+import { CHECK_STORE_VARIABLE } from '../gate-records/gate-records.constants.ts'
 import { CLI_BIN } from '../skills/cli-invocations.constants.ts'
 
 import type { GateListName, GateStep } from './gate-config.types.ts'
@@ -213,12 +214,26 @@ export const GATE_BASE_FLAG_LINE =
 export const RELEASE_NOT_COVERING_LINE =
 	'release does not run: {steps}: its record answers no full gate'
 
-/** `gate --hook` on a package whose `gate --full` holds no step counting tests. */
-export const GATE_HOOK_NO_TEST_STEP_LINE = 'gate --hook: no test step in gate --full'
+/** `gate --hook` on a package whose `gate --full` holds no hook step (none, or only scoped steps counting no tests). */
+export const GATE_HOOK_NO_STEP_LINE = 'gate --hook: no hook step in gate --full'
 
 /** `gate --hook` answered by a green `gate --full` record of the committed tree: the line it prints. */
 export const GATE_HOOK_REUSED_LINE =
 	'gate --hook: tests reused from gate --full green on tree {tree} at {at} (HEAD {head})'
+
+/**
+ * `gate --hook` answered one step from the record of a run of another mode: the step, then the mode, time and short
+ * HEAD of the run that really ran it (the origin of the answer).
+ */
+export const GATE_HOOK_STEP_REUSED_LINE =
+	'gate --hook: reused {step} from {mode} {at} (HEAD {head})'
+
+/**
+ * `GATE_HOOK_STEP_REUSED_LINE` as a hook's output holds it, every one: the step (group 1), the mode (group 2), the
+ * time (group 3) and the short HEAD (group 4) of the run that really ran it.
+ */
+export const GATE_HOOK_STEP_REUSED_PATTERN =
+	/^gate --hook: reused (\S+) from (\S+) (\S+) \(HEAD ([0-9a-f]+)\)$/gm
 
 /** `gate --hook` answered by a green covering `gate --release` record of the committed tree: the line it prints. */
 export const GATE_HOOK_RELEASE_REUSED_LINE =
@@ -232,14 +247,23 @@ export const GATE_HOOK_REUSED_PATTERN =
 	/^gate --hook: tests reused from gate --(?:full|release) green on tree (\S+) at (\S+) \(HEAD ([0-9a-f]+)\)$/m
 
 /**
- * `gate --hook` with no green `gate --full` or covering `gate --release` record of that key: the line before the
- * test steps it runs.
+ * `gate --hook` when no green record of the committed tree and install answers any hook step: the line before the
+ * steps it runs, `{steps}` their names in list order.
  */
 export const GATE_HOOK_RUNNING_LINE =
-	'gate --hook: no green gate --full or --release of tree {tree} with this install: running the tests'
+	'gate --hook: no green record of tree {tree} with this install answers a hook step: running {steps}'
 
 /** Before a line `gate --hook` says about its base (a note, a hand-over base it ignored). */
 export const GATE_HOOK_LINE_PREFIX = 'gate --hook: '
+
+/** `gate --hook` given a store it does not honour (`DIALECTE_CHECK_STORE`): its first line; `{why}` says why. */
+export const GATE_HOOK_CHECK_STORE_IGNORED_LINE = `gate --hook: ${CHECK_STORE_VARIABLE} ignored: {why}`
+
+/** Why a given store is not honoured, as `GATE_HOOK_CHECK_STORE_IGNORED_LINE`'s `{why}` says it; `{value}` as given. */
+export const GATE_HOOK_CHECK_STORE_IGNORED_WHY = {
+	notAbsolute: 'not an absolute path: {value}',
+	notAFolder: 'no folder at {value}',
+} as const
 
 /**
  * `gate --hook` whose test steps hold a scoped step: the base it used (full sha) with its source, and what the

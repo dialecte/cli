@@ -1,6 +1,7 @@
 import type { HandoverEntryState } from '../lib/handover/handover.types.ts'
 import type { Effort, RiskDerivedLine } from '../lib/risk/risk.types.ts'
 import type { NextStation } from '../lib/store/next-station.types.ts'
+import type { LotScope } from '../lib/store/scope-changes.types.ts'
 import type { BeyondCapRow } from '../lib/store/station-records.types.ts'
 import type {
 	LinkCheck,
@@ -73,6 +74,8 @@ export type LotStatusJson = {
 		wouldRefuse: Refusal[]
 	}
 	notes: string[]
+	/** The lot's scope: the brief's, the effective one with its scope changes, the changes (FIX-lot-scope D7). */
+	scope: LotScope
 	next: string | null
 	also: string[]
 	/** The next station from the records; null for a simulated lot. */

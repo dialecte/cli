@@ -1,0 +1,52 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "config-yml.schema.json",
+	"$comment": "The personal settings file config.yml, schema version 1",
+	"type": "object",
+	"required": ["schema"],
+	"$defs": {
+		"editor": { "type": "string" },
+		"load": {
+			"type": "object",
+			"properties": { "budget": { "type": "integer", "minimum": 1 } },
+			"additionalProperties": false
+		},
+		"words": { "type": "array", "items": { "type": "string" } },
+		"repoOverride": {
+			"type": "object",
+			"properties": {
+				"editor": { "$ref": "#/$defs/editor" },
+				"load": { "$ref": "#/$defs/load" },
+				"personProcesses": { "$ref": "#/$defs/words" },
+				"forbiddenWords": { "$ref": "#/$defs/words" },
+				"consumerNames": { "$ref": "#/$defs/words" }
+			},
+			"additionalProperties": false
+		}
+	},
+	"properties": {
+		"schema": { "const": 1 },
+		"editor": { "$ref": "#/$defs/editor" },
+		"load": { "$ref": "#/$defs/load" },
+		"personProcesses": { "$ref": "#/$defs/words" },
+		"forbiddenWords": { "$ref": "#/$defs/words" },
+		"consumerNames": { "$ref": "#/$defs/words" },
+		"corpora": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "object",
+				"required": ["xsd"],
+				"properties": {
+					"xsd": { "type": "string" },
+					"instances": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"repos": {
+			"type": "object",
+			"additionalProperties": { "$ref": "#/$defs/repoOverride" }
+		}
+	},
+	"additionalProperties": false
+}

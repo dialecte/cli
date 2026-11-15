@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { appendLine } from '../events/write-event.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readIdentity } from '../store/identity.ts'
 import { REVIEW_ROUND_CAPS, UNKNOWN_EFFORT_CAP } from '../store/next-station.constants.ts'
+import { storeRefusal } from '../store/publish.ts'
 import {
 	CLASS_OF_EFFORT,
+	DAMAGED_EFFORT_REFUSAL,
 	RISK_CLASSES,
 	RISK_DERIVED_FROM,
 	RISK_FILE,
@@ -14,6 +17,7 @@ import {
 	RISK_SCHEMA,
 } from './risk.constants.ts'
 
+import type { LotIdentity } from '../store/store.types.ts'
 import type {
 	Effort,
 	RiskCap,
@@ -64,12 +68,42 @@ export function readRiskRecords(params: { folder: string }): RiskRecords {
 	return records
 }
 
-/** The last `effort` line's effort (file order), else the identity's effort level, else undefined. */
+/**
+ * The last `effort` line's effort (file order), else the identity's effort level, else undefined (no identity, or one
+ * with no effort level). An identity level other than `low`, `medium`, `high` throws a store refusal naming the lot
+ * and the field (33K rev 5: refused as damaged), never read as no effort.
+ */
 export function effectiveEffort(params: { folder: string }): Effort | undefined {
 	const lastEffortLine = readRiskRecords(params).effort.at(-1)
 	if (lastEffortLine !== undefined) return lastEffortLine.effort
-	const level = readIdentity({ lotFolder: params.folder })?.effort?.level
-	return isEffort(level) ? level : undefined
+	const identity = readIdentity({ lotFolder: params.folder })
+	if (identity === undefined) return undefined
+	const level = identityEffortLevelOf({ identity })
+	if (level === undefined || isEffort(level)) return level
+	throw storeRefusal(
+		fillMessage({
+			template: DAMAGED_EFFORT_REFUSAL,
+			values: { lot: identity.name, level: JSON.stringify(level) },
+		}),
+	)
+}
+
+/**
+ * The effort level an identity holds, as read from disk (the record is untyped there): undefined when it holds none
+ * (no effort, an effort that is no object, or one with no level); any other value is returned for the caller to check
+ * with `isEffort`.
+ */
+export function identityEffortLevelOf(params: { identity: LotIdentity }): unknown {
+	return (params.identity.effort as { level?: unknown } | null | undefined)?.level
+}
+
+/**
+ * Whether an identity holds an effort level other than `low`, `medium`, `high` (33K rev 5: damaged); a missing level
+ * is no damage. The store's identity check reads it (user 2026-11-14), `effectiveEffort` refuses on it.
+ */
+export function holdsDamagedEffortLevel(params: { identity: LotIdentity }): boolean {
+	const level = identityEffortLevelOf(params)
+	return level !== undefined && !isEffort(level)
 }
 
 /**

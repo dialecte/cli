@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
+import { readFullRecord, stepReusedLineOf } from '../../test/gate-hook.ts'
 import { ISO_TIME_PATTERN } from '../../test/gate-records.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { FEATURE_BRANCH } from '../../test/scoped-gate-package.constants.ts'
@@ -22,7 +23,6 @@ import {
 	HOOK_RECORD_FILE,
 	READ_LOT,
 	SCRATCH_REPOSITORY_TIMEOUT,
-	SHORT_SHA_LENGTH,
 } from '../../test/scratch-checks.constants.ts'
 import {
 	countRuns,
@@ -100,7 +100,7 @@ describe('handover run: what the hooks are handed', { timeout: SCRATCH_REPOSITOR
 		{ label: 'a rehearsal', layout: 'none' as const, argv: ['--rehearse'] },
 		{ label: 'a real run, the only scoped step in fast', layout: 'fast-only' as const, argv: [] },
 		{
-			label: 'a rehearsal, the only scoped step in fast',
+			label: 'a rehearsal, scoped in fast only',
 			layout: 'fast-only' as const,
 			argv: ['--rehearse'],
 		},
@@ -110,7 +110,7 @@ describe('handover run: what the hooks are handed', { timeout: SCRATCH_REPOSITOR
 			argv: [],
 		},
 		{
-			label: 'a rehearsal, the only scoped step in release',
+			label: 'a rehearsal, scoped in release only',
 			layout: 'release-only' as const,
 			argv: ['--rehearse'],
 		},
@@ -225,7 +225,6 @@ describe(
 			const ran = await runFolder({ out })
 
 			expect(ran.exitCode).toBe(0)
-			const finalTree = git({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim()
 			const logs = [...ran.text.matchAll(/full log: (\S+)/g)].map((match) =>
 				readFileSync(match[1], 'utf8'),
 			)
@@ -236,9 +235,7 @@ describe(
 			])
 			// the gate's own run, then the first commit's hook; the second commit's hook ran no test step
 			expect(countRuns(counter)).toBe(2)
-			expect(logs[1]).toContain(
-				`gate --hook: tests reused from gate --full green on tree ${finalTree.slice(0, SHORT_SHA_LENGTH)}`,
-			)
+			expect(logs[1]).toContain(stepReusedLineOf({ step: 'tests', record: readFullRecord(root) }))
 			for (const hookLog of logs) expect(hookLog).not.toContain('gate --hook: base')
 		})
 	},
@@ -282,9 +279,7 @@ describe(
 			])
 			expect(logs).toHaveLength(2)
 			expect(logs[0]).toContain(`gate --hook: base ${base} (handover), selected T0`)
-			expect(logs[1]).toContain(
-				`gate --hook: tests reused from gate --full green on tree ${finalTree.slice(0, SHORT_SHA_LENGTH)}`,
-			)
+			expect(logs[1]).toContain(stepReusedLineOf({ step: 'scoped', record: readFullRecord(root) }))
 			expect(logs[1]).toContain(`gate --hook: base ${base} (handover), reused`)
 			const record = readRecordFile<GateRecord>({ root, name: HOOK_RECORD_FILE })
 			expect(record?.base).toMatchObject({ commit: base })

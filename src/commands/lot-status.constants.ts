@@ -12,6 +12,9 @@ export const STATUS_USAGE_REASONS = {
 /** The most lines the text form of `lot status` prints. */
 export const STATUS_MAX_LINES = 5
 
+/** The status line of a lot that changed its scope (FIX-lot-scope D7). */
+export const SCOPE_STATUS_LINE = 'scope: {changes}'
+
 /**
  * The parts of the text form's station line (33L1 D20.2): `station <what> · round <r|->/<cap|-> · effort <level|->`;
  * a station to run is named `<station> step <k> of <n>`, `<station> round <r>` or `<station>`.

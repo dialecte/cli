@@ -2,6 +2,7 @@ import type { CardLine } from '../card/card.types.ts'
 import type { AgentTime } from '../events/attribute-steps.types.ts'
 import type { LotTokenTotals, MoneySum } from '../events/token-totals.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
@@ -443,6 +444,15 @@ export type RehearsalPlanContext = {
 	base?: string
 	/** What the commit hook's text names that stages files, if anything. */
 	stages: string | undefined
+}
+
+/** What every lot's plan context shares: the repository, the branch, what is installed, the worktree's package.json. */
+export type SharedPlanContext = Pick<
+	RehearsalPlanContext,
+	'root' | 'branch' | 'installed' | 'base'
+> & {
+	/** The worktree's package.json: a lot tree that holds none is read with it. */
+	packageJson: PackageJson
 }
 
 /** The tree a lot of a hand-over starts from and the tree its commit will hold. */

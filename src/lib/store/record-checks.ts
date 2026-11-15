@@ -4,6 +4,7 @@
  * the lot reader.
  */
 import { HANDOVER_ENTRY_STATES } from '../handover/handover.constants.ts'
+import { holdsDamagedEffortLevel } from '../risk/risk-records.ts'
 import { STEP_STATES } from './scenarios.constants.ts'
 import {
 	LOT_INDEX_PATTERN,
@@ -17,11 +18,15 @@ import type { StoreEntry } from '../handover/handover.types.ts'
 import type { ScenarioRead } from './scenarios.types.ts'
 import type { AnswerFile, LotIdentity, Transition, TransitionPosition } from './store.types.ts'
 
-/** Why an identity does not hold: its index is not digits or its `created` no time of the store. */
+/**
+ * Why an identity does not hold: its index is not digits, its `created` no time of the store, or its effort level none
+ * of `low`, `medium`, `high` (a missing level holds).
+ */
 export function identityDamageOf(identity: LotIdentity): string | undefined {
 	if (typeof identity.index !== 'string' || !LOT_INDEX_PATTERN.test(identity.index))
 		return RECORD_DAMAGE_REASONS.index
 	if (!isStoreTime(identity.created)) return RECORD_DAMAGE_REASONS.created
+	if (holdsDamagedEffortLevel({ identity })) return RECORD_DAMAGE_REASONS.effortLevel
 	return undefined
 }
 

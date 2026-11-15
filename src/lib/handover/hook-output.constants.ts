@@ -96,3 +96,25 @@ export const HOOK_LINE_PATTERNS: readonly HookLinePattern[] = [
 	{ kind: 'test failure', pattern: /^\s*FAIL\s/ },
 	{ kind: 'test failure', pattern: /^\s*✖ / },
 ]
+
+/**
+ * The line a lot's commit prints under its hook outcome (`handover run`, real and rehearsal): `{reused}` is each step
+ * `gate --hook` answered from a record as `{step} ({mode} {at})` joined by `, ` (the mode and time of the run that
+ * really ran it), `{ran}` the names of the steps it ran joined by `, `; an empty list is `none`.
+ */
+export const HOOK_LANDING_LINE = '  hook: reused {reused} · ran {ran}'
+
+/** Any line `gate --hook` itself prints: the reading of a hook's landing line starts from it. */
+export const GATE_HOOK_LINE_PATTERN = /^gate --hook: /m
+
+/** The line of a step `gate --hook` ran (`renderStepLine`, passed or failed): its name in group 1. */
+export const HOOK_RAN_STEP_PATTERN = /^(?:ok|FAIL) +(\S+)(?: .*)?$/gm
+
+/** The step an older cli's whole-tests reuse line answers. */
+export const HOOK_REUSED_TESTS_STEP = 'tests'
+
+/** Between the names of the landing line's lists. */
+export const HOOK_LANDING_SEPARATOR = ', '
+
+/** The landing line's word for an empty list. */
+export const HOOK_LANDING_NONE = 'none'

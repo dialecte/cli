@@ -5,12 +5,14 @@
  * rehearsal's).
  *
  * The rows, in order: `rules` on the files changed against HEAD (recorded as `dialecte rules` records it), judged
- * against the gate base (`resolveConfiguredBase`; a rehearsal's against the last merge lot's tip, else the base its
- * repository resolves): an error of a quality rule on a line the base already holds is a warning, `(not added by
- * this change)`. Then the package's `dialecte.contrib.steps` (else the docs build and the type bench) run as the
- * gate runs its steps, `release` (no dependency named by a local folder), then `mutation`, read from the mutation
- * store now and never recorded (only when the package declares a mutation scope). A package step a green
- * `gate --full` record of this tree and install passed with the same name and command is not run again.
+ * against the lot's base for every package whatever its gate config (`resolveRulesBase`: the store lot's recorded
+ * base, else the base branch's merge-base as the gate's scoped rules step takes it, else the last release tag; a
+ * rehearsal's against the last merge lot's tip, else the base its repository resolves): an error of a quality rule
+ * on a line the base already holds is a warning, `(not added by this change)`. Then the package's
+ * `dialecte.contrib.steps` (else the docs build and the type bench) run as the gate runs its steps, `release` (no
+ * dependency named by a local folder), then `mutation`, read from the mutation store now and never recorded (only
+ * when the package declares a mutation scope). A package step a green `gate --full` record of this tree and install
+ * passed with the same name and command is not run again.
  *
  * The run is recorded in the worktree's git folder (`dialecte-gate-contrib.json`) and in the repository's store of
  * records by tree, keyed by the tree, the install, the steps, the cli and HEAD (the rules row reads the files changed
@@ -50,6 +52,7 @@ import {
 	findLocalDependencies,
 	renderLocalDependency,
 } from '../release/local-dependencies.ts'
+import { resolveRulesBase } from '../rules-base.ts'
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { contribKeyHash } from './contrib-key.ts'
@@ -94,7 +97,7 @@ export async function runContrib(params: {
 	/**
 	 * The commit the rules row judges against: an error of a quality rule on a line it already holds is a warning
 	 * (`(not added by this change)`). A rehearsal passes the base its repository resolves; `null`: no base, every
-	 * error stays one. Without it, the row takes the scoped gate step's base (none when the package has no scoped step).
+	 * error stays one. Without it, the row takes the lot's base (`resolveRulesBase`; none when it finds none).
 	 */
 	rulesBase?: string | null
 	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
@@ -111,11 +114,8 @@ export async function runContrib(params: {
 	const durations = new Map<StepResult, number>()
 	const reusedParts = new Set<StepResult>()
 
-	const commandHash = contribKeyHash({
-		root: cwd,
-		steps,
-		head: readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim(),
-	})
+	const head = readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim()
+	const commandHash = contribKeyHash({ root: cwd, steps, head })
 	const keyBefore = computeCheckKey({ root: cwd, commandHash })
 	const found = reusable
 		? findReusableRecord({ root: cwd, mode: CONTRIB_RECORD_MODE, key: keyBefore })
@@ -146,7 +146,9 @@ export async function runContrib(params: {
 				root: cwd,
 				steps,
 				packageJson,
-				...rowBasesOf({ root: cwd, packageJson, rulesBase: params.rulesBase, reusable }),
+				// resolved once per run, for the rules row only
+				rulesBase: rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase }),
+				gate: reusable ? fullGateRecordsOf({ root: cwd, packageJson }) : undefined,
 				progress,
 				showLive,
 				beforeRelease: showAbsentLive,
@@ -368,23 +370,26 @@ function unwiredRows(params: {
 }
 
 /**
- * What the rows read of the gate base, resolved once (`resolveConfiguredBase`): the commit the rules row judges
- * against (`rulesBase` when given, none when it is `null`, else the scoped gate step's base; none without a scoped
- * step or with a refused base branch) and, unless `--no-reuse`, the `gate --full` records read with that same base.
+ * The commit the rules row judges against: `rulesBase` when given, none when it is `null`, else the lot's base at
+ * `head` (`resolveRulesBase`, whatever the gate config).
  */
-function rowBasesOf(params: {
+function rulesBaseOf(params: {
 	root: string
-	packageJson: PackageJson
+	head: string
 	rulesBase: string | null | undefined
-	reusable: boolean
-}): Pick<Parameters<typeof runRows>[0], 'rulesBase' | 'gate'> {
+}): string | undefined {
+	if (params.rulesBase === null) return undefined
+	return params.rulesBase ?? resolveRulesBase({ root: params.root, head: params.head })
+}
+
+/** The `gate --full` records the package steps may reuse, read with the gate base (`resolveConfiguredBase`, once). */
+function fullGateRecordsOf(params: { root: string; packageJson: PackageJson }): FullGateRecords {
 	const { root, packageJson } = params
-	const base = resolveConfiguredBase({ root, packageJson })
-	const configured = base === undefined || 'refusal' in base ? undefined : base.commit
-	return {
-		rulesBase: params.rulesBase === null ? undefined : (params.rulesBase ?? configured),
-		gate: params.reusable ? readFullGateRecords({ root, packageJson, base }) : undefined,
-	}
+	return readFullGateRecords({
+		root,
+		packageJson,
+		base: resolveConfiguredBase({ root, packageJson }),
+	})
 }
 
 /**

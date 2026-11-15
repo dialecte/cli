@@ -26,6 +26,7 @@ import {
 	transitionDamageOf,
 } from './record-checks.ts'
 import { readScenario } from './scenario-file.ts'
+import { effectiveScopeOf, readScopeChanges } from './scope-changes.ts'
 import { listLotFolderNames } from './store-folder.ts'
 import {
 	DAMAGED_OVERLAP_LABEL,
@@ -38,6 +39,7 @@ import {
 import { readTransitions } from './transitions.ts'
 
 import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
+import type { LotScope } from './scope-changes.types.ts'
 import type {
 	CheckedLotState,
 	LotIdentity,
@@ -259,23 +261,44 @@ export function overlapMetText(overlap: LotOverlap): string {
 	return overlap.everyPath === true ? SCOPE_UNREADABLE : overlap.met.join(MET_PAIRS_SEPARATOR)
 }
 
-/** The scope of the lot's `brief.json`, each entry normalised; none when the brief does not parse. */
+/**
+ * The lot's own effective scope (FIX-lot-scope D2, D11): the scope of its `brief.json` (its text entries), each entry
+ * normalised, with the readable lines of its `scope-changes.jsonl` applied; none when the brief does not parse.
+ */
 export function readLotScope(params: { lotFolder: string }): string[] {
 	const scope = briefScopeValueOf(params)
 	if (!Array.isArray(scope)) return []
-	return scope
-		.filter((entry): entry is string => typeof entry === 'string')
-		.map(normaliseScopeEntry)
+	return effectiveScopeOf({
+		brief: scope.filter((entry): entry is string => typeof entry === 'string'),
+		changes: readScopeChanges(params).changes,
+	})
 }
 
 /**
- * The scope of the lot's `brief.json` when it reads as a list of texts, each entry normalised; undefined when the
- * brief is missing, does not parse, or its scope is no such list.
+ * A lot's scope as `lot status` and the card show it (FIX-lot-scope D7, D11): the brief's text entries normalised, the
+ * effective scope (null when a change line does not read), the readable changes, and the unreadable count when any.
+ */
+export function lotScopeOf(params: { lotFolder: string }): LotScope {
+	const value = briefScopeValueOf(params)
+	const brief = Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === 'string').map(normaliseScopeEntry)
+		: []
+	const { changes, unreadable } = readScopeChanges(params)
+	if (unreadable > 0) return { brief, effective: null, changes, unreadable }
+	return { brief, effective: effectiveScopeOf({ brief, changes }), changes }
+}
+
+/**
+ * The effective scope another lot is checked against (FIX-lot-scope D2): its `brief.json` scope when that reads as a
+ * list of texts, with every line of its `scope-changes.jsonl` applied; undefined - every path, the guard failing
+ * closed - when the brief is missing, does not parse or its scope is no such list, or a scope change does not read.
  */
 function readBriefScope(params: { lotFolder: string }): string[] | undefined {
 	const scope = briefScopeValueOf(params)
 	if (!Array.isArray(scope) || !scope.every((entry) => typeof entry === 'string')) return undefined
-	return (scope as string[]).map(normaliseScopeEntry)
+	const { changes, unreadable } = readScopeChanges(params)
+	if (unreadable > 0) return undefined
+	return effectiveScopeOf({ brief: scope as string[], changes })
 }
 
 /**

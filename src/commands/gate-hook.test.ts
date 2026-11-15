@@ -1,6 +1,6 @@
 /**
- * `gate --hook`: the test steps of `gate --full` for a commit hook, answered from a green `gate --full` record
- * of the tree being committed (the index's), else run. Counting steps prove whether a step ran.
+ * `gate --hook`: the hook steps of `gate --full` for a commit hook, each answered from a green record of the tree
+ * being committed (the index's) that ran it as it is now, else run. Counting steps prove whether a step ran.
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -11,21 +11,27 @@ import {
 	HOOK_GREEN_LINE,
 	HOOK_MODE_REFUSAL,
 	NOT_A_HOOK_STEP_LINE,
-	NO_TEST_STEP_LINE,
+	NO_HOOK_STEP_LINE,
 	REPOSITORY_CLI_PATH,
 	RUN_STEP_WITH_SUMMARY,
 } from '../../test/gate-hook.constants.ts'
 import {
+	allReusedLinesOf,
 	createHookPackage,
 	createIndexFile,
-	hookStepsOf,
+	hookRecordsOf,
 	indexTreeOf,
 	packageFilesOf,
 	readFullRecord,
-	reuseLineOf,
 	runningLineOf,
+	stageChange,
 } from '../../test/gate-hook.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
+import {
+	createScopedPackage,
+	createScopedStep,
+	readScopedRuns,
+} from '../../test/scoped-gate-package.ts'
 import {
 	FAST_RECORD_FILE,
 	FULL_RECORD_FILE,
@@ -57,17 +63,11 @@ import { describe, expect, it } from 'vitest'
 import type { HookPackage, RunInsteadCase } from '../../test/gate-hook.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 
-/** A change staged in the worktree's own index. */
-function stageChange(root: string): void {
-	writeFiles({ root, files: { 'src/a.ts': 'export const staged = 1\n' } })
-	git({ root, args: ['add', '--', 'src/a.ts'] })
-}
-
 describe(
 	'gate --hook: a green gate --full of the committed tree answers',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('a green gate --full of this tree → no step runs, exit 0, the one reuse line naming the record; the store is unchanged', async () => {
+		it('a green gate --full of this tree → no step runs, exit 0, one reuse line per hook step naming the record; the full record stays in the store beside the hook-gate record', async () => {
 			const { root, testCounter, checkCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
@@ -75,21 +75,25 @@ describe(
 
 			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-			expect(result).toEqual({ exitCode: 0, output: reuseLineOf({ tree, record }) })
+			expect(result).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect([countRuns(testCounter), countRuns(checkCounter)]).toEqual([1, 1])
-			expect(readTreeRecords({ root, tree })).toEqual([record])
+			expect(
+				readTreeRecords({ root, tree })
+					.map((stored) => stored.mode)
+					.sort(),
+			).toEqual(['full', 'hook-gate'])
+			expect(readTreeRecords({ root, tree })).toContainEqual(record)
 		})
 
 		it('the working files changed after the gate, the index did not → still answered: the index is what is committed', async () => {
 			const { root, testCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const tree = indexTreeOf({ root })
 			writeFiles({ root, files: { 'src/a.ts': 'export const unstaged = 1\n' } })
 
 			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-			expect(result).toEqual({ exitCode: 0, output: reuseLineOf({ tree, record }) })
+			expect(result).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect(countRuns(testCounter)).toBe(1)
 		})
 
@@ -97,12 +101,11 @@ describe(
 			const { root, testCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const tree = indexTreeOf({ root })
 			writeFileSync(join(root, '.git', HANDOVER_LOCK_FILE), '/plans/commit.sh\n')
 
 			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-			expect(result).toEqual({ exitCode: 0, output: reuseLineOf({ tree, record }) })
+			expect(result).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect(countRuns(testCounter)).toBe(1)
 		})
 
@@ -113,9 +116,9 @@ describe(
 			const result = await runGateIn({ cwd: root, argv: ['--hook', '--no-reuse'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(result.output).not.toContain('reused from')
+			expect(result.output).not.toContain('gate --hook: reused')
 			expect(result.output.split('\n').at(-1)).toBe(HOOK_GREEN_LINE)
-			expect([countRuns(testCounter), countRuns(checkCounter)]).toEqual([2, 1])
+			expect([countRuns(testCounter), countRuns(checkCounter)]).toEqual([2, 2])
 		})
 	},
 )
@@ -128,7 +131,6 @@ describe(
 			const { root, testCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const headTree = indexTreeOf({ root })
 			const alternative = join(temporaryFolder('dialecte-index-'), 'index')
 			createIndexFile({ root, path: alternative })
 			stageChange(root)
@@ -137,10 +139,10 @@ describe(
 			const countAfterGiven = countRuns(testCounter)
 			const own = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-			expect(given).toEqual({ exitCode: 0, output: reuseLineOf({ tree: headTree, record }) })
+			expect(given).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect(countAfterGiven).toBe(1)
-			expect(own.output.split('\n')[0]).toBe(runningLineOf(indexTreeOf({ root })))
-			expect(own.output.split('\n')[0]).toContain('no green gate --full or --release of tree')
+			expect(own.output.split('\n')[0]).toBe(runningLineOf({ tree: indexTreeOf({ root }) }))
+			expect(own.output.split('\n')[0]).toContain('no green record of tree')
 			expect(countRuns(testCounter)).toBe(2)
 		})
 
@@ -148,13 +150,12 @@ describe(
 			const { root, testCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const headTree = indexTreeOf({ root })
 			createIndexFile({ root, path: 'scratch.index' })
 			stageChange(root)
 
 			const result = await runGateIn({ cwd: root, argv: ['--hook'], indexFile: 'scratch.index' })
 
-			expect(result).toEqual({ exitCode: 0, output: reuseLineOf({ tree: headTree, record }) })
+			expect(result).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect(countRuns(testCounter)).toBe(1)
 		})
 
@@ -173,7 +174,7 @@ describe(
 			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
 			expect(indexTreeOf({ root })).toBe(tipTree)
-			expect(result).toEqual({ exitCode: 0, output: reuseLineOf({ tree: tipTree, record }) })
+			expect(result).toEqual({ exitCode: 0, output: allReusedLinesOf({ record }).join('\n') })
 			expect(countRuns(testCounter)).toBe(1)
 		})
 
@@ -181,7 +182,6 @@ describe(
 			const { root, testCounter } = createHookPackage()
 			await seedFullGate(root)
 			const record = readFullRecord(root)
-			const headTree = indexTreeOf({ root })
 			createIndexFile({ root, path: 'scratch.index' })
 			stageChange(root)
 
@@ -192,7 +192,7 @@ describe(
 			})
 
 			expect(result.status).toBe(0)
-			expect(result.stdout).toContain(reuseLineOf({ tree: headTree, record }))
+			expect(result.stdout).toContain(allReusedLinesOf({ record }).join('\n'))
 			expect(countRuns(testCounter)).toBe(1)
 		})
 	},
@@ -213,13 +213,6 @@ const RUN_INSTEAD: RunInsteadCase[] = [
 		},
 	},
 	{
-		name: 'a gate --fast of the same state (same steps, another mode)',
-		setup: async ({ root }) => {
-			const fast = await runGateIn({ cwd: root, argv: [] })
-			expect(fast.exitCode).toBe(0)
-		},
-	},
-	{
 		name: 'the install changed since the gate (another lockHash)',
 		setup: async ({ root }) => {
 			await seedFullGate(root)
@@ -232,26 +225,6 @@ const RUN_INSTEAD: RunInsteadCase[] = [
 		setup: async ({ root }) => {
 			await seedFullGate(root)
 			writeFiles({ root: join(root, '..', 'dep'), files: { 'lib/a.js': 'one, and more\n' } })
-		},
-	},
-	{
-		name: 'the full steps changed since the gate (another command hash, the tree the same)',
-		setup: async ({ root, checkCounter, testCounter, requires }) => {
-			await seedFullGate(root)
-			const steps = hookStepsOf({ checkCounter, testCounter, requires }).map((step) =>
-				step.name === 'tests' ? { ...step, run: `${step.run} && true` } : step,
-			)
-			writeFiles({ root, files: { 'package.json': packageFilesOf({ steps })['package.json'] } })
-		},
-	},
-	{
-		name: "only the check step's command changed since the gate (the command hash covers every full step)",
-		setup: async ({ root, checkCounter, testCounter, requires }) => {
-			await seedFullGate(root)
-			const steps = hookStepsOf({ checkCounter, testCounter, requires }).map((step) =>
-				step.name === 'check' ? { ...step, run: `${step.run} && true` } : step,
-			)
-			writeFiles({ root, files: { 'package.json': packageFilesOf({ steps })['package.json'] } })
 		},
 	},
 	{
@@ -271,7 +244,7 @@ const RUN_INSTEAD: RunInsteadCase[] = [
 ]
 
 describe(
-	'gate --hook: no green record of this state → only the test steps run',
+	'gate --hook: no green record of this state → every hook step runs',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
 		for (const scenario of RUN_INSTEAD)
@@ -290,13 +263,14 @@ describe(
 
 				const lines = result.output.split('\n')
 				expect(result.exitCode).toBe(0)
-				expect(lines[0]).toBe(runningLineOf(tree))
-				expect(lines[0]).toContain('no green gate --full or --release of tree')
+				expect(lines[0]).toBe(runningLineOf({ tree }))
+				expect(lines[0]).toContain('no green record of tree')
 				expect(lines.at(-1)).toBe(HOOK_GREEN_LINE)
 				expect(result.output).toMatch(RUN_STEP_WITH_SUMMARY)
 				expect(result.output).not.toMatch(NOT_A_HOOK_STEP_LINE)
+				expect(result.output).not.toContain('gate --hook: reused')
 				expect(countRuns(testCounter) - testRunsBefore).toBe(1)
-				expect(countRuns(checkCounter) - checkRunsBefore).toBe(0)
+				expect(countRuns(checkCounter) - checkRunsBefore).toBe(1)
 			})
 
 		it('a failing test step → exit 1, the line naming it, the verdict failed at it', async () => {
@@ -306,11 +280,14 @@ describe(
 			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(1)
-			expect(result.output.split('\n')[0]).toBe(runningLineOf(tree))
-			expect(result.output.split('\n')[0]).toContain('no green gate --full or --release of tree')
+			expect(result.output.split('\n')[0]).toBe(runningLineOf({ tree }))
+			expect(result.output.split('\n')[0]).toContain('no green record of tree')
 			expect(result.output).toMatch(/^FAIL +tests\b/m)
 			expect(result.output).toMatch(/^gate --hook: failed at tests$/m)
 			expect(countRuns(testCounter)).toBe(1)
+			expect(
+				hookRecordsOf({ root, tree }).map((record) => record.steps.map((step) => step.status)),
+			).toEqual([['passed', 'failed']])
 		})
 
 		it('a flaky test step → rerun serially on its failing files, exit 0, flagged flaky in parallel, green', async () => {
@@ -328,6 +305,7 @@ describe(
 				'run',
 				'run src/c.test.ts src/a.test.ts src/b.test.ts --no-file-parallelism',
 			])
+			expect(hookRecordsOf({ root, tree: indexTreeOf({ root }) })).toHaveLength(1)
 		})
 
 		it('a hand-over holds the repository → the tests run all the same', async () => {
@@ -339,9 +317,10 @@ describe(
 			expect(result.exitCode).toBe(0)
 			expect(result.output.split('\n').at(-1)).toBe(HOOK_GREEN_LINE)
 			expect(countRuns(testCounter)).toBe(1)
+			expect(hookRecordsOf({ root, tree: indexTreeOf({ root }) })).toHaveLength(1)
 		})
 
-		it('a run → no gate record in the worktree, nothing in the store', async () => {
+		it('a run → no gate --fast, --full or handover hook record in the worktree, one hook-gate record in the store', async () => {
 			const { root } = createHookPackage()
 			const tree = indexTreeOf({ root })
 
@@ -353,7 +332,7 @@ describe(
 					readRecordFile({ root, name }),
 				),
 			).toEqual([undefined, undefined, undefined])
-			expect(readTreeRecords({ root, tree })).toEqual([])
+			expect(readTreeRecords({ root, tree }).map((record) => record.mode)).toEqual(['hook-gate'])
 		})
 	},
 )
@@ -372,13 +351,16 @@ describe('gate --hook: its own arguments', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 			expect([countRuns(testCounter), countRuns(checkCounter)]).toEqual([0, 0])
 		})
 
-	it('a package whose full gate has no test step → exit 0 and the line saying so, no step run', async () => {
-		const { root, checkCounter } = createHookPackage({ withoutTestStep: true })
+	it('a package whose full gate holds only a scoped step that counts no tests → exit 0 and the line saying so, no step run', async () => {
+		const bench = createScopedStep({ name: 'bench' })
+		const root = createScopedPackage({
+			gate: { fast: [], full: [{ name: bench.step.name, run: bench.step.run, scoped: true }] },
+		})
 
 		const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-		expect(result).toEqual({ exitCode: 0, output: NO_TEST_STEP_LINE })
-		expect(countRuns(checkCounter)).toBe(0)
+		expect(result).toEqual({ exitCode: 0, output: NO_HOOK_STEP_LINE })
+		expect(readScopedRuns(bench)).toEqual([])
 	})
 })
 
@@ -400,7 +382,7 @@ describe('gate --hook: review round 1 fixes', { timeout: SCRATCH_REPOSITORY_TIME
 			runGateIn({ cwd: root, argv: ['--hook'], indexFile: '.git/index' }),
 		).resolves.toEqual({
 			exitCode: 0,
-			output: reuseLineOf({ tree: indexTreeOf({ root: top }), record }),
+			output: allReusedLinesOf({ steps: ['tests'], record }).join('\n'),
 		})
 		expect(countRuns(testCounter)).toBe(1)
 	})
@@ -447,8 +429,8 @@ describe('gate --hook: review round 1 fixes', { timeout: SCRATCH_REPOSITORY_TIME
 		const result = await runGate({ cwd: root, argv: ['--hook'], live })
 
 		expect(result).toEqual({ exitCode: 0, output: HOOK_GREEN_LINE })
-		expect(written[0]).toBe(runningLineOf(indexTreeOf({ root })))
-		expect(written[0]).toContain('no green gate --full or --release of tree')
+		expect(written[0]).toBe(runningLineOf({ tree: indexTreeOf({ root }) }))
+		expect(written[0]).toContain('no green record of tree')
 		expect(written.some((line) => /^ok +tests\b/.test(line))).toBe(true)
 	})
 })
@@ -473,8 +455,9 @@ describe('gate --hook: review round 2 fixes', { timeout: SCRATCH_REPOSITORY_TIME
 		})
 
 		expect(result.status).toBe(0)
-		expect(result.stdout).not.toContain('reused from')
+		expect(result.stdout).not.toContain('gate --hook: reused')
 		expect(result.stdout.trim().split('\n').at(-1)).toBe(HOOK_GREEN_LINE)
 		expect(countRuns(testCounter)).toBe(2)
+		expect(hookRecordsOf({ root, tree: indexTreeOf({ root: top }) })).toHaveLength(1)
 	})
 })

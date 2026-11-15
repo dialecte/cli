@@ -23,6 +23,8 @@ export const STORE_FILES: StoreFileNames = {
 	verify: 'verify.jsonl',
 	// `lot start`, `lot risk`, `lot snapshot` and `handover write` append the effort and the derived class here (33L1 D10)
 	risk: 'risk.jsonl',
+	// `lot scope` appends a started lot's scope changes here; the brief stays as published (FIX-lot-scope)
+	scopeChanges: 'scope-changes.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */
@@ -219,6 +221,7 @@ export const RECORD_DAMAGE_REASONS = {
 		'scenario.json is no scenario the simulator plays (unreadable, no steps, or a step it cannot play)',
 	identityUnreadable: 'identity.json is missing or does not read as a lot identity',
 	identityName: 'identity.json names another lot than its folder',
+	effortLevel: 'identity.json holds an effort level other than low, medium or high',
 } as const
 
 /**

@@ -1,0 +1,93 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "scope-change.schema.json",
+	"title": "A line of scope-changes.jsonl",
+	"oneOf": [
+		{
+			"$ref": "#/$defs/dropLine"
+		},
+		{
+			"$ref": "#/$defs/addLine"
+		},
+		{
+			"$ref": "#/$defs/undoLine"
+		}
+	],
+	"$defs": {
+		"dropLine": {
+			"type": "object",
+			"required": ["schema", "at", "op", "paths"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": {
+					"const": 1
+				},
+				"at": {
+					"type": "string"
+				},
+				"op": {
+					"const": "drop"
+				},
+				"paths": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1
+				}
+			}
+		},
+		"addLine": {
+			"type": "object",
+			"required": ["schema", "at", "op", "paths", "by", "reason"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": {
+					"const": 1
+				},
+				"at": {
+					"type": "string"
+				},
+				"op": {
+					"const": "add"
+				},
+				"paths": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1
+				},
+				"by": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string"
+				}
+			}
+		},
+		"undoLine": {
+			"type": "object",
+			"required": ["schema", "at", "op", "paths"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": {
+					"const": 1
+				},
+				"at": {
+					"type": "string"
+				},
+				"op": {
+					"const": "undo"
+				},
+				"paths": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1
+				}
+			}
+		}
+	}
+}

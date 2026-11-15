@@ -129,6 +129,15 @@ export const HOOK_REUSED_DETAIL = 'reused by the hook'
 /** The mode of the record `handover run` writes for a commit's hook. */
 export const HOOK_RECORD_MODE = 'hook'
 
+/** The mode of the record `gate --hook` writes of its own run: each hook step, answered or run. */
+export const HOOK_GATE_RECORD_MODE = 'hook-gate'
+
+/**
+ * The variable a rehearsal hands its commits' hooks: the absolute git common dir of the rehearsed repository, whose
+ * store the hook reads and writes instead of the clone's own.
+ */
+export const CHECK_STORE_VARIABLE = 'DIALECTE_CHECK_STORE'
+
 /** The mode of the record `gate --release` writes (`dialecte-gate-release.json`). */
 export const RELEASE_RECORD_MODE = 'release'
 
@@ -225,6 +234,9 @@ export const REVIEW_ROUNDS_NO_EFFORT_DETAIL = '{rounds} (no effort recorded)'
 
 /** The name of the card's effort line (33L1 D20). */
 export const EFFORT_LINE_NAME = 'effort'
+
+/** The card line naming a lot's scope changes (FIX-lot-scope D8). */
+export const SCOPE_LINE_NAME = 'scope'
 
 /** The effort line: the effort, the risk class part and the rounds against the cap. */
 export const EFFORT_LINE_DETAIL = '{effort} · {riskClass} · {rounds} of {cap}'

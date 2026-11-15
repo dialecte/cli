@@ -1,0 +1,121 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "config-list.schema.json",
+	"$comment": "Output of `dialecte config list --json`, `config get <key> --json` and `config check --json`, schema version 1.",
+	"title": "The answer of config list|get|check --json",
+	"oneOf": [{ "$ref": "#/$defs/list" }, { "$ref": "#/$defs/get" }, { "$ref": "#/$defs/check" }],
+	"$defs": {
+		"schema": { "type": "integer", "const": 1, "enum": [1] },
+		"list": {
+			"type": "object",
+			"required": ["schema", "projectFile", "personalFile", "repo", "values", "findings", "notes"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": { "$ref": "#/$defs/schema" },
+				"projectFile": { "type": "string" },
+				"personalFile": { "type": "string" },
+				"repo": {
+					"type": "object",
+					"required": ["key", "from"],
+					"additionalProperties": false,
+					"properties": {
+						"key": { "type": "string" },
+						"from": { "enum": ["remote", "path"] }
+					}
+				},
+				"values": { "type": "array", "items": { "$ref": "#/$defs/value" } },
+				"findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+				"notes": { "type": "array", "items": { "type": "string" } }
+			}
+		},
+		"get": {
+			"type": "object",
+			"required": ["schema", "key", "value", "source"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": { "$ref": "#/$defs/schema" },
+				"key": { "type": "string" },
+				"value": { "$comment": "Any value; null with a null source when the key is not set." },
+				"source": { "oneOf": [{ "$ref": "#/$defs/source" }, { "type": "null" }] },
+				"findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+			}
+		},
+		"check": {
+			"type": "object",
+			"required": ["schema", "ok", "findings", "notes"],
+			"additionalProperties": false,
+			"properties": {
+				"schema": { "$ref": "#/$defs/schema" },
+				"ok": { "type": "boolean" },
+				"findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+				"notes": { "type": "array", "items": { "type": "string" } }
+			}
+		},
+		"value": {
+			"type": "object",
+			"required": ["key", "value", "source"],
+			"additionalProperties": false,
+			"properties": {
+				"key": { "type": "string" },
+				"value": { "$comment": "Any value." },
+				"source": { "$ref": "#/$defs/source" }
+			}
+		},
+		"source": {
+			"oneOf": [
+				{
+					"type": "object",
+					"required": ["kind", "file", "line"],
+					"additionalProperties": false,
+					"properties": {
+						"kind": { "enum": ["project"] },
+						"file": { "type": "string" },
+						"line": { "type": "integer", "minimum": 1 }
+					}
+				},
+				{
+					"type": "object",
+					"required": ["kind", "file", "line"],
+					"additionalProperties": false,
+					"properties": {
+						"kind": { "enum": ["personal"] },
+						"file": { "type": "string" },
+						"line": { "type": "integer", "minimum": 1 }
+					}
+				},
+				{
+					"type": "object",
+					"required": ["kind", "file", "line", "repo"],
+					"additionalProperties": false,
+					"properties": {
+						"kind": { "enum": ["repo"] },
+						"file": { "type": "string" },
+						"line": { "type": "integer", "minimum": 1 },
+						"repo": { "type": "string" }
+					}
+				},
+				{
+					"type": "object",
+					"required": ["kind", "variable"],
+					"additionalProperties": false,
+					"properties": {
+						"kind": { "enum": ["environment"] },
+						"variable": { "type": "string" }
+					}
+				}
+			]
+		},
+		"finding": {
+			"type": "object",
+			"required": ["file", "line", "problem", "refused"],
+			"additionalProperties": false,
+			"properties": {
+				"file": { "type": "string" },
+				"line": { "type": "integer", "minimum": 0 },
+				"key": { "type": "string" },
+				"problem": { "type": "string" },
+				"refused": { "type": "boolean" }
+			}
+		}
+	}
+}

@@ -8,12 +8,12 @@ import { join } from 'node:path'
 
 import {
 	HOOK_GATE_COMMAND,
-	HOOK_TREE_LENGTH,
 	TEST_HOOK_STEP,
 	WRITTEN_REUSE_AT,
 	WRITTEN_REUSE_HEAD,
 	WRITTEN_REUSE_TREE,
 } from '../../test/gate-hook.constants.ts'
+import { readFullRecord, stepReusedLineOf } from '../../test/gate-hook.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
@@ -165,7 +165,7 @@ describe(
 			// a run prints a hook's summary and flagged lines only: the reuse line is in the full log it names
 			const logPath = /full log: (\S+)/.exec(ran.text)?.[1] ?? ''
 			expect(readFileSync(logPath, 'utf8')).toContain(
-				`gate --hook: tests reused from gate --full green on tree ${tipTree.slice(0, HOOK_TREE_LENGTH)}`,
+				stepReusedLineOf({ step: 'count', record: readFullRecord(root) }),
 			)
 			expect(countRuns(gateCounter) - runsBefore).toBe(0)
 			expect(
