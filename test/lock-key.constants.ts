@@ -53,3 +53,6 @@ export const PACKAGES_NOT_AN_OBJECT_LOCK = '{"packages":[1,2]}\n'
 
 /** npm's own lock of what it installed, relative to the package: no part of a check key, which reads the tree's. */
 export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'
+
+/** A lock key no tree of the tests holds: what a record of an older cli, keyed on the installed lock, carries. */
+export const FOREIGN_LOCK_HASH = 'f'.repeat(64)

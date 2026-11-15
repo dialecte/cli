@@ -1,6 +1,6 @@
 /** Reads what `dialecte gate` and `dialecte rules` record in a scratch repository's git folder. */
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 import { git } from './scratch-repository.ts'
 
@@ -16,4 +16,22 @@ export function gitPathOf(params: { root: string; name: string }): string {
 export function readRecordFile<Parsed>(params: { root: string; name: string }): Parsed | undefined {
 	const path = gitPathOf(params)
 	return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Parsed) : undefined
+}
+
+/**
+ * Every record of the repository's store keyed on another lock (`lockHash`), as a cli that keyed the installed lock
+ * left them: a record no run on today's trees answers from.
+ */
+export function rekeyStoredLocks(params: { root: string; lockHash: string }): void {
+	const common = git({
+		root: params.root,
+		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+	}).trim()
+	const store = join(common, 'dialecte-checks')
+	for (const file of readdirSync(store)) {
+		const path = join(store, file)
+		const records = JSON.parse(readFileSync(path, 'utf8')) as { key?: { lockHash: string } }[]
+		for (const record of records) if (record.key) record.key.lockHash = params.lockHash
+		writeFileSync(path, `${JSON.stringify(records, null, 2)}\n`)
+	}
 }

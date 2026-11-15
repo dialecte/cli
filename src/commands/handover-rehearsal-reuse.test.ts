@@ -101,7 +101,7 @@ describe(
 			'a gate of an earlier tree',
 			'the lot changes package-lock.json',
 			'the hook stages files',
-			'node_modules/.package-lock.json changed since the gate',
+			'the gate record keyed on another lock',
 			'a linked dependency changed since the gate',
 			'--full',
 		]
@@ -472,35 +472,40 @@ describe(
 			expect(rehearsal.text).toMatch(/│ READY /)
 		})
 
-		it('a record another worktree stored for this tree against other node_modules or another linked dependency → not current: the card does not read it as green, not READY', async () => {
-			for (const variant of ['node_modules', 'linked dependency'] as const) {
-				const root = createHookedPackage({
-					hookCounter: createCounter(),
-					gateCounter: createCounter(),
-					...(variant === 'linked dependency' && { linkedDependency: true }),
-				})
-				const second = addWorktree(root)
-				editReadLot(second)
-				editReadLot(root)
-				// the second worktree is installed otherwise: another npm lock (or, for the link, no ../dep beside it)
-				if (variant === 'node_modules')
-					writeFiles({
-						root: second,
-						files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' },
-					})
-				await seedFullGate(second)
+		it("a record another worktree stored for this tree, that worktree's node_modules installed otherwise (npm's lock rewritten) → current: the card reads it green", async () => {
+			const root = createHookedPackage({
+				hookCounter: createCounter(),
+				gateCounter: createCounter(),
+			})
+			const second = addWorktree(root)
+			editReadLot(second)
+			editReadLot(root)
+			writeFiles({
+				root: second,
+				files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' },
+			})
+			await seedFullGate(second)
 
-				const { output } = writeReadLotHandover(root)
+			const { output } = writeReadLotHandover(root)
 
-				expect({
-					variant,
-					lines: gateStepLinesOf(output).filter((line) => /^✓ count\b/.test(line)),
-				}).toEqual({
-					variant,
-					lines: [],
-				})
-				expect({ variant, blocked: /│ BLOCKED /.test(output) }).toEqual({ variant, blocked: true })
-			}
+			expect(gateStepLinesOf(output).filter((line) => /^✓ count\b/.test(line))).toHaveLength(1)
+		})
+
+		it('a record another worktree stored for this tree against another linked dependency → not current: the card does not read it as green, not READY', async () => {
+			const root = createHookedPackage({
+				hookCounter: createCounter(),
+				gateCounter: createCounter(),
+				linkedDependency: true,
+			})
+			const second = addWorktree(root)
+			editReadLot(second)
+			editReadLot(root)
+			await seedFullGate(second)
+
+			const { output } = writeReadLotHandover(root)
+
+			expect(gateStepLinesOf(output).filter((line) => /^✓ count\b/.test(line))).toEqual([])
+			expect(output).toMatch(/│ BLOCKED /)
 		})
 
 		it('a store file of the checked tree holding a record without steps → the card is still written, that record ignored', async () => {

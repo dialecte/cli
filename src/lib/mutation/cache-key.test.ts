@@ -132,7 +132,7 @@ describe('computeIncrementalKey', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () =>
 		)
 	})
 
-	it('the installed lock changed alone → a different key', () => {
+	it("npm's installed lock changed alone → the same key: the key reads the tree's lock", () => {
 		const { root, ignorer } = keyPackage()
 		const before: string[] = []
 		expect(
@@ -141,7 +141,7 @@ describe('computeIncrementalKey', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () =>
 
 		writeFiles({ root, files: { 'node_modules/.package-lock.json': 'lock-2, longer\n' } })
 
-		expect(computeIncrementalKey(inputsOf({ root, ignorer }))).not.toBe(before[0])
+		expect(computeIncrementalKey(inputsOf({ root, ignorer }))).toBe(before[0])
 	})
 
 	it('a file: dependency, a file it publishes changed alone → a different key', () => {

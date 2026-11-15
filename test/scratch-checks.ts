@@ -13,9 +13,11 @@ import { REHEARSAL_FOLDER_PREFIX } from '../src/lib/handover/handover.constants.
 import { readHandoverFolder } from '../src/lib/handover/read-handover-folder.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { createFakeClock } from './fake-clock.ts'
+import { rekeyStoredLocks } from './gate-records.ts'
 import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
 import { storeLotFolder } from './handover-store-scenario.ts'
 import { removeHookLogs } from './hook-logs.ts'
+import { FOREIGN_LOCK_HASH } from './lock-key.constants.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import {
@@ -384,8 +386,8 @@ export async function createRehearsedScenario(variant: RehearsedVariant): Promis
 		if (lock) reason = 'the lot changes package-lock.json'
 		if (variant === 'the hook stages files') reason = 'the hook stages files (git add)'
 		if (variant === '--full') reason = '--full'
-		if (variant === 'node_modules/.package-lock.json changed since the gate') {
-			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } })
+		if (variant === 'the gate record keyed on another lock') {
+			rekeyStoredLocks({ root, lockHash: FOREIGN_LOCK_HASH })
 			reason = 'the lock of the tree is not the one the record ran on'
 		}
 		if (variant === 'a linked dependency changed since the gate') {
