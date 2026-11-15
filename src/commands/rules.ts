@@ -72,6 +72,7 @@ export function runRules(params: {
 		...(changedList !== undefined && { changedList }),
 		environment,
 		...(base !== undefined && { base }),
+		...(environment[GATE_SCOPE_VARIABLES.tree] && { tree: environment[GATE_SCOPE_VARIABLES.tree] }),
 	})
 	const check: RulesCheck = ownBase === undefined ? checked : { ...checked, baseLine: ownBase.line }
 	if (changedList !== undefined) writeScopedSelection({ environment, check })

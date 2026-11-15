@@ -409,6 +409,7 @@ export const COMMAND_MAP: CommandMap = {
 			'a contributor: no consumer name nor forbidden word (git config dialecte.forbiddenWords and $XDG_CONFIG_HOME/dialecte/forbidden-words, else ~/.config/dialecte/forbidden-words; whole words, any case); no list: one line, and the check is not run',
 			'without files: the changed list a scoped gate step hands (DIALECTE_GATE_CHANGED), else the files changed against HEAD and the new ones; a file it cannot read or parse is an error',
 			'quality rules: argument-mutation, query-in-loop, long-function on implementation files; table-branch, without-export-xml, export-without-queries, fixture-builder, plan-tag on test-shaped files; on test-shaped Dialecte changes: xml-splice, xml-replace, transaction-spy, act-repeats-call, act-snapshot, act-format-check, inline-document-long, expected-fixture, fixture-case-comment (warning), test-file-long, fixture-file-long, fixtures-module, fixture-builder an error; in an app only Dialecte-change script files are judged, the others counted in one line (a contributor package is never an app); with the gate base, an error on a line the change did not add is a warning; without a gate base, or with an empty-tree one (as gate --release hands), the order every caller shares: the recorded base of the store lot, else the merge-base with the base branch (skipped, for an empty-tree base and for a run without a gate base, when it is the commit of HEAD), else the last release tag <name>@v<version>, else no base and every error kept; a run without a gate base prints one line naming it (rules: base <sha> (the lot <name> | the merge-base with <branch> | the merge-base with the base branch | the release tag <tag>))',
+			'changelog-edit (an error), in a package keeping a changes/ folder: CHANGELOG.md edited without the package version bumped; write the entry in changes/<lot>.md (dialecte changelog)',
 			'--json: dialecteChanges (the verdict of each file), notJudged, baseLine; described by rules.schema.json (schema 1)',
 			'opt-out: // dialecte-allow <rule>[, <rule>]: <reason> (15 characters at least) on the line or the line before (for argument-mutation, long-function also in the comments before the function, its doc comment included; for act-repeats-call, act-snapshot, act-format-check inside an act also the line before the act); fixture-file-long: <!-- dialecte-allow fixture-file-long: <reason> --> on the first line of the fixture; invalid-allow, unused-allow; --json counts the findings silenced per rule in allowed',
 			'an API index that cannot be read: query-in-loop does not run, one line names the file and why',
@@ -428,6 +429,22 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		exitCodes: ['2  refused in a consumer (nothing written)'],
 		example: 'dialecte contrib',
+	},
+	changelog: {
+		family: 'Check',
+		summary:
+			'Changelog fragments (changes/<lot>.md): check them, or fold them into CHANGELOG.md for a release',
+		usage: ['dialecte changelog check', 'dialecte changelog release <x.y.z> [--date YYYY-MM-DD]'],
+		notes: [
+			'a fragment: one changes/<name>.md per lot, its entries under the changelog headings ### Added, Changed, Deprecated, Removed, Fixed, Security; a package keeping a changes/ folder edits CHANGELOG.md only in a release (rules: changelog-edit)',
+			'check - every fragment readable (a known heading, no loose text, no empty or repeated section), and the Unreleased part of CHANGELOG.md',
+			'release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased] (written above the first version when missing): the Unreleased summary and entries first, then each fragment in file name order, section by section, one entry per line; deletes the fragments; nothing written when a fragment or the Unreleased part cannot be read',
+		],
+		exitCodes: [
+			'1  a fragment or the Unreleased part cannot be read, the release is refused (no CHANGELOG.md, version already there, nothing to release), or a fragment could not be deleted',
+			'2  usage: no verb, a version that is no x.y.z, a date that is no YYYY-MM-DD',
+		],
+		example: 'dialecte changelog release 0.8.0',
 	},
 	mutants: {
 		family: 'Check',

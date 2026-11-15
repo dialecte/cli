@@ -42,6 +42,7 @@ export const RULE_NAMES = [
 	'fixture-file-long',
 	'invalid-allow',
 	'unused-allow',
+	'changelog-edit',
 ] as const
 
 /** The quality rules a `dialecte-allow` comment may silence. */

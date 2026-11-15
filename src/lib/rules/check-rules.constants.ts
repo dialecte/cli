@@ -15,3 +15,7 @@ export const RULES_NOTHING_LINE = 'rules: no changed file to check'
 
 /** The id a scoped `rules` step selects in the gate's selection: its reasons are the files it checked. */
 export const RULES_SELECTION_ID = 'rules'
+
+/** A package keeping changelog fragments (`changes/`) whose change edits CHANGELOG.md without bumping its version. */
+export const CHANGELOG_EDIT_MESSAGE =
+	'CHANGELOG.md changes only in a release (the package version bumped): write the entry in changes/<lot>.md instead'

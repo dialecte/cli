@@ -52,13 +52,14 @@ Tests first, red before green, co-located with the code.
 - Every lot: `node src/cli.ts gate --full` once, before the hand-over (`node src/cli.ts gate --help` prints the
   configured steps).
 - A change to a command, a flag or a visible behaviour also updates the command's help, the README and adds a
-  `## [Unreleased]` entry to `CHANGELOG.md`, in the same change.
+  changelog fragment `changes/<lot>.md` (`### Added` / `Changed` / `Fixed` ... as in `CHANGELOG.md`), in the same
+  change; only a release edits `CHANGELOG.md` (`dialecte changelog release <version>` folds the fragments).
 
 ## Stations
 
 In a lot, each station changes only what its role may change (the role rule in `dialecte-lot`): reviewers change
 nothing; the test station changes tests, test data and stub production code; the implementer changes production
-code in scope and the CHANGELOG; only the lot session deletes.
+code in scope and the changelog fragment; only the lot session deletes.
 
 ## Never
 

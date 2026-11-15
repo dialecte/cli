@@ -29,7 +29,7 @@ Discover    api  members  schema  explain  standard  facts  ask
 Use         run  fixture  new
 Grow        lot
 Plan        plan
-Check       gate  tdd  rules  contrib  mutants
+Check       gate  tdd  rules  contrib  changelog  mutants
 Hand over   handover
 Workspace   worktree  doctor  models  skills
 Maintain    bench  coverage  narrowing  audit  text
@@ -2206,6 +2206,28 @@ Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `wo
 
 The repository field of `package.json` is a URL and is never read for this. `mutants` finds `origin/<b>` through
 the same rule and no longer takes a tag named like the base branch.
+
+### Changelog fragments
+
+A package that keeps a `changes/` folder never has two lots editing `CHANGELOG.md`: each lot writes its entry in
+`changes/<lot>.md`, under the changelog's own headings:
+
+```md
+### Added
+
+- `dialecte changelog release`.
+```
+
+`dialecte changelog check` reads every fragment (a known heading - Added, Changed, Deprecated, Removed, Fixed,
+Security - no text before the first heading, no empty or repeated section). The release runs
+`dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
+`## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the
+Unreleased summary and entries first (a section written twice there is merged), then each fragment in file name
+order, section by section, one entry per line, and the fragments are deleted (`changes/.gitkeep` keeps the folder).
+Code fences and a link block at the end of the changelog are kept as they are. In the commit hook the rule reads the
+version from the tree the commit records. `dialecte rules` refuses a change that edits
+`CHANGELOG.md` without bumping the package version (`changelog-edit`, an error); a package without `changes/` is not
+judged.
 
 ### GitHub text: lot recap and text check
 

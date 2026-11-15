@@ -116,6 +116,8 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		reason: REFUSES_COMBINATION,
 		noJson: PLAIN_TEXT,
 	},
+	'changelog check': { argv: ['check', FORGED_WORD], quotes: false, reason: RUNS_CHECKS },
+	'changelog release': { argv: ['release', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
 	contrib: {
 		argv: ['--bogus', FORGED_WORD],
 		quotes: false,

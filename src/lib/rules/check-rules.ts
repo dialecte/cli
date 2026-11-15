@@ -15,6 +15,7 @@ import { readProfile } from '../profile/profile.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { readAddedLines, softenNotAdded } from './added-lines.ts'
 import { applyAllowComments } from './allow-comments.ts'
+import { checkChangelogEdit } from './changelog-edit.ts'
 import { ALLOWABLE_RULES, TEXT_FILE_PATTERN } from './check-code-rules.constants.ts'
 import { checkCodeRules } from './check-code-rules.ts'
 import {
@@ -55,6 +56,8 @@ export function checkRules(params: {
 	environment?: Readonly<NodeJS.ProcessEnv>
 	/** The gate's base (`DIALECTE_GATE_BASE`): an error of a quality rule on a line it does not add is a warning. */
 	base?: string
+	/** The tree the gate checks (`DIALECTE_GATE_TREE`): the changelog-edit rule reads its package.json. */
+	tree?: string
 }): RulesCheck {
 	const { root, givenFiles } = params
 	const picked = pickFiles(params)
@@ -88,6 +91,12 @@ export function checkRules(params: {
 	})
 	const findings = [
 		...listFindings,
+		...checkChangelogEdit({
+			root,
+			files,
+			...(base !== undefined && { base }),
+			...(params.tree !== undefined && { tree: params.tree }),
+		}),
 		...(base === undefined
 			? fileFindings
 			: softenNotAdded({
