@@ -134,7 +134,18 @@ describe('@dialecte/cli/lookups', () => {
 			'ignorers.js',
 			'lookups.d.ts',
 			'lookups.js',
+			'schemas',
 			'tdd-reporter.js',
+		])
+	})
+
+	it('ships the five JSON schemas the commands print in dist/schemas', () => {
+		expect(readdirSync(join(BUILT, 'dist', 'schemas')).sort()).toEqual([
+			'config-list.schema.json',
+			'config-yml.schema.json',
+			'dialecterc.schema.json',
+			'lot-risk.schema.json',
+			'risk-line.schema.json',
 		])
 	})
 
