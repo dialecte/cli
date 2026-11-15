@@ -23,7 +23,7 @@ describe("the cli's own scripts and commit hook", () => {
 		expect(scripts['test:hook']).toBe('node src/cli.ts gate --hook')
 	})
 
-	it('.husky/pre-commit → npm run check, npm run test:hook, npm run build, in that order', () => {
+	it('.husky/pre-commit → the single line npm run test:hook: the hook runs check, build and the tests itself', () => {
 		const hook = readFileSync(join(PACKAGE_ROOT, '.husky', 'pre-commit'), 'utf8')
 
 		expect(
@@ -31,6 +31,6 @@ describe("the cli's own scripts and commit hook", () => {
 				.split('\n')
 				.map((line) => line.trim())
 				.filter(Boolean),
-		).toEqual(['npm run check', 'npm run test:hook', 'npm run build'])
+		).toEqual(['npm run test:hook'])
 	})
 })

@@ -19,12 +19,11 @@ import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readMachineLists } from '../rules/committed-text.ts'
+import { computeInstallKey } from '../worktree/install-key.ts'
 import {
 	FILE_DEPENDENCY_PREFIX,
-	INSTALLED_LOCK_FILE,
 	LINKED_DEPENDENCY_FIELDS,
 	LINKED_SKIPPED_FOLDERS,
-	NO_INSTALLED_LOCK,
 	PACKAGE_FILES_EXCLUSION_PREFIX,
 	PACKAGE_FILES_GLOB_PATTERN,
 	COMMIT_INDEX_FOLDER_PREFIX,
@@ -51,9 +50,8 @@ export function computeCheckKey(params: { root: string; commandHash: string }): 
  * (`lockHash`) and the folders of its `file:` dependencies as they are now (`linked`).
  */
 export function readInstalledKey(root: string): Pick<CheckKey, 'lockHash' | 'linked'> {
-	const lockPath = join(root, INSTALLED_LOCK_FILE)
 	return {
-		lockHash: existsSync(lockPath) ? sha256(readFileSync(lockPath)) : NO_INSTALLED_LOCK,
+		lockHash: computeInstallKey(root),
 		linked: hashLinkedFolders(root),
 	}
 }
@@ -118,7 +116,7 @@ export function hashGateCommand(params: {
 }
 
 /** A step as its gate command hash holds it: `[name, run]`, then its scoped mark, then its wiring mark. */
-function hashedStepOf(step: GateStep): string[] {
+export function hashedStepOf(step: GateStep): string[] {
 	const wiring =
 		step.optedOut !== undefined
 			? STEP_WIRING_HASH_MARKS.optedOut

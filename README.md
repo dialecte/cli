@@ -61,7 +61,7 @@ dialecte lot delta <id|folder> --round <n>   # the fix diff since round n-1; --w
 dialecte lot recap <id|folder>   # the pull request's expandable part, built from the hand-over's records only
 dialecte lot close <name|index>   # a finished lot: node_modules to the pool, its worktree to the trash
 dialecte gate [--full]     # the package's Definition of Done, with the real counts
-dialecte gate --hook       # in a commit hook: the suite, unless a green gate --full of the committed tree answers it
+dialecte gate --hook       # in a commit hook: the full gate's steps, each answered by a green record of the committed tree or run
 dialecte tdd red|green|status   # receipts: each new test failed on an assertion before the code, then passed untouched
 dialecte rules             # code-rules self-check of the changed files
 dialecte contrib           # the contributor checks, after gate --full and before the hand-over
@@ -712,22 +712,35 @@ the answer.
   measure their wall and monotonic time: a run whose wall time passed its monotonic time by over 60 s spanned
   a sleep of the machine all the same, its record keeps `sleptMs`, and the hand-over card's gates print
   `! slept <duration> during gate --full` for a record of the tree it checks.
-- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the test steps of `--full` (its steps counting
-  tests), unless a green `--full` record of what is committed answers them. Its key is the one a `--full` run of
-  that state stores - the tree, what npm installed, the `file:` dependencies, the full gate's command hash - with
-  the tree taken from the index git hands the hook (`GIT_INDEX_FILE`, else the worktree's index), never from the
-  working files: a merge commit and a partial commit check what they record. A green record of that key prints
-  one line, `gate --hook: tests reused from gate --full green on tree <tree> at <time> (HEAD <sha>)`, and runs
-  nothing; otherwise `gate --hook: no green gate --full of tree <tree> with this install: running the tests`, the
-  test steps (rerun serially on a failure, as the gate does), then one vitest summary line of their summed counts (what the hand-over's hook reader counts),
-  and `gate --hook: green` or `gate --hook: failed at <step>` (exit 1). It runs no hygiene and no tdd step,
-  reads no hand-over hold (it runs inside `handover run`'s own commit) and records nothing: `handover run`
-  records the hook. `--no-reuse` runs the tests whatever the store holds, and so does a hook whose git variables name another
-  repository than its folder's (the cli ignores them, so what is committed is unknown); `--hook` with `--fast` or `--full` is
-  refused (exit 2). Write it in the hook as an npm script (`"test:hook": "dialecte gate --hook"`), so the
-  hand-over reads it as a test step of its own: its card line reads `reused by the hook` when the hook answered
-  from a record. The cli's own hook runs `npm run check` (type-check, lint, format; no suite), `npm run
-  test:hook`, then `npm run build`.
+- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the steps of `--full` but the scoped ones that count
+  no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays the gate's and contrib's).
+  Each step is answered by any green record that ran it as it is now - a `gate --fast`, `--full`, `--release` or an
+  earlier hook's - of the committed tree, what npm installed (the version-blind install key: the installed
+  packages, not the package's own name and version) and the `file:` dependencies; the tree is the one of the index
+  git hands the hook (`GIT_INDEX_FILE`, else the worktree's index), never the working files: a merge commit and a
+  partial commit check what they record. Every recorded step holds its own step hash (name, command, scoped and
+  wiring marks; the gate base only for a scoped step; HEAD for a `changedOnly` step), so a full gate's unscoped
+  steps answer the hook at any base; a scoped step is answered by a record of the same base, or by one that checked
+  everything (a `--release` run, recorded at the empty tree). An answered step prints one line, `gate --hook: reused
+  <step> from <mode> <time> (HEAD <sha>)`, naming the run that really ran it, and does not run; the others run in
+  one go, after `gate --hook: no green record of tree <tree> with this install answers a hook step: running <steps>`
+  (rerun serially on a failure, as the gate does), then one vitest summary line of their summed counts and
+  `gate --hook: green` or `gate --hook: failed at <step>` (exit 1); when every step is answered only the reused
+  lines are printed. A record of an older cli (no step hashes) answers the test steps with its whole key only while that
+  key still matches: an older cli keyed the install on the lock file's bytes, so in practice only a package with no
+  installed lock; elsewhere the steps run once and their new record answers from then on.
+  Every hook run with a HEAD writes a `hook-gate` record of the index tree - only when the working files are that
+  tree, before and after the steps (a partial commit leaves none) - so a later hook of the same tree, install and
+  steps is answered from it. Given `DIALECTE_CHECK_STORE` (an absolute path to a git common dir: `handover run
+  --rehearse` hands it to its clone's commits), the hook reads and writes that repository's store and marks its
+  record `origin: rehearsal`; any other value is ignored with one line; the hook's steps never see the variable.
+  It runs no hygiene and no tdd step and reads no hand-over hold (it runs inside `handover run`'s own commit).
+  `--no-reuse` runs every step whatever the store holds, and so does a hook whose git variables name another
+  repository than its folder's (the cli ignores them, so what is committed is unknown); `--hook` with `--fast` or
+  `--full` is refused (exit 2). Write it in the hook as an npm script (`"test:hook": "dialecte gate --hook"`) and
+  make it the hook's only line: a `check` or `build` line beside it runs a second time. The hand-over reads it as a
+  test step of its own: its card line reads `reused by the hook` when every hook step was answered. The cli's own
+  hook is the single line `npm run test:hook`.
 - A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
   off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
   terminal one spinner line `⠋ <step> - <what runs> <elapsed>` that the step's result line replaces (the
@@ -1272,7 +1285,9 @@ the answer.
   `(×<n>)` from 2) and `full log: <path>`; after a failing hook, the
   summary with `✗`, the labelled error lines not among the failing step's last 30 lines (each once, with
   its count), those 30 lines
-  and the log's path. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
+  and the log's path. Under it, when the hook is `gate --hook`, one landing line
+  `hook: reused <step> (<mode> <time>), ... · ran <steps>` (`none` for an empty list) says what the commit's hook
+  answered from records and what it ran. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
   the git folder of the repository it committed in (`dialecte-gate-hook.json`, mode `hook`): HEAD after
   it (the new commit, or the base when it failed), the state hash of the tree before the commit and the
   steps its summary names with their status and counts; the card reads it with the gate records, so a
@@ -1317,7 +1332,11 @@ the answer.
   there would, never the clone's own base branch; its record going to the repository's store as a rehearsal's; the clone is put
   back after it, the files the run left removed) and
   the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
-  others with their hook. A real run (no `--rehearse`) runs every commit's hook, whatever the store holds.
+  others with their hook, handed `DIALECTE_CHECK_STORE` (the repository's git common dir): a `gate --hook` in
+  the clone reads the repository's records and writes its own there, marked as a rehearsal's. A real run (no
+  `--rehearse`) runs every commit's hook, whatever the store holds; a `gate --hook` there answers each step from
+  the rehearsal's records (or a gate's) of the same tree and install, so the commits take seconds when nothing
+  changed.
   The rehearsal clone (`▶ rehearsal clone`) warns naming the untracked files outside
   `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
   HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
