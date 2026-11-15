@@ -7,11 +7,14 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { NOT_RECORDED_PREFIX } from '../events/record-step.constants.ts'
+import { warnOnStandardError, writeWorktreeEvent } from '../events/record-step.ts'
 import { gitFolderOf, listStagedFiles, readGit } from '../git.ts'
 import { lotPathCovers } from '../handover/read-lots-file.ts'
 import { shellQuote } from '../shell-quote.ts'
 import {
 	HYGIENE_BASELINE_FILE,
+	HYGIENE_BASELINE_MOVED_KIND,
 	LOT_FILE_PATTERN,
 	STASH_SUBJECT_PATTERN,
 } from './worktree.constants.ts'
@@ -120,6 +123,34 @@ export function readHygieneBaseline(root: string): HygieneBaseline | undefined {
 		return JSON.parse(readFileSync(path, 'utf8')) as HygieneBaseline
 	} catch {
 		return undefined
+	}
+}
+
+/**
+ * Moves the worktree's baseline `head` to `to` (the whole-branch base once the lot took its base branch's new
+ * commits), every other field kept, then writes one `hygiene.baseline-moved` event (`from`, `to`) in the worktree's
+ * lot (a failed write is one `events: not recorded` warning); nothing when there is no readable baseline or it is
+ * already there.
+ */
+export function moveHygieneBaseline(params: { root: string; to: string }): void {
+	const { root, to } = params
+	const baseline = readHygieneBaseline(root)
+	if (baseline === undefined || baseline.head === to) return
+	writeFileSync(
+		hygieneBaselinePath(root),
+		`${JSON.stringify({ ...baseline, head: to }, null, '\t')}\n`,
+	)
+	// the record is what the base reads; its event is information: a failed write is one warning line, never a failure
+	try {
+		writeWorktreeEvent({
+			cwd: root,
+			kind: HYGIENE_BASELINE_MOVED_KIND,
+			fields: { from: baseline.head, to },
+		})
+	} catch (error) {
+		warnOnStandardError(
+			`${NOT_RECORDED_PREFIX}${error instanceof Error ? error.message : String(error)}`,
+		)
 	}
 }
 

@@ -29,6 +29,7 @@ import {
 	tagAt,
 } from '../../../test/tdd-bugs-follows-lot.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { HYGIENE_BASELINE_REWRITTEN } from '../worktree/worktree.constants.ts'
 import { checkTddReceipts } from './check-tdd-receipts.ts'
 import { resolveTddBase } from './tdd-base.ts'
 import { TDD_BASE_LINE, TDD_BASE_NOTES, TDD_BASE_SOURCES } from './tdd.constants.ts'
@@ -117,7 +118,7 @@ describe(
 			})
 		})
 
-		it('TB3-d a baseline without from and no store lot → the cut, with the note that no base branch is recorded', () => {
+		it('TB3-d a baseline without from and no store lot, cut on feat/x ahead of main → the resolved base branch main is followed: behind the cut, the cut with that note', () => {
 			const { root, cut } = createLotScenario()
 			advanceBranch({ root, branch: BASE_BRANCH })
 			mergeIntoLot({ root, branch: BASE_BRANCH })
@@ -125,7 +126,7 @@ describe(
 			expect(resolveTddBase({ root, packageJson: {}, wholeBranch: true })).toEqual({
 				commit: cut,
 				source: TDD_BASE_SOURCES.worktreeCut,
-				note: TDD_BASE_NOTES.noneRecorded,
+				note: TDD_BASE_NOTES.behind.replace('{ref}', () => 'main'),
 			})
 		})
 
@@ -185,31 +186,25 @@ describe(
 			})
 		})
 
-		it('X4b feat/x was rewritten and the lot rebased onto the rewritten tip, the cut an ancestor of neither HEAD nor feat/x → the cut, with the note naming the cut and the merge-base', () => {
+		it('X4b feat/x was rewritten and the lot rebased onto the rewritten tip, the cut an ancestor of neither HEAD nor feat/x → refused naming the cut and the merge-base', () => {
 			const { root, cut } = createLotScenario({ from: BASE_BRANCH })
 			rewriteBranch({ root, branch: BASE_BRANCH, onto: 'main' })
 			const rewritten = commitOf({ root, rev: BASE_BRANCH })
 			rebaseLot({ root, onto: rewritten, cut })
 
 			expect(resolveTddBase({ root, packageJson: {}, wholeBranch: true })).toEqual({
-				commit: cut,
-				source: TDD_BASE_SOURCES.worktreeCut,
-				note: TDD_BASE_NOTES.rewritten
-					.replace('{ref}', () => BASE_BRANCH)
+				failure: HYGIENE_BASELINE_REWRITTEN.replaceAll('{ref}', () => BASE_BRANCH)
 					.replace('{cut}', () => shortOf({ root, commit: cut }))
 					.replace('{mergeBase}', () => shortOf({ root, commit: rewritten })),
 			})
 		})
 
-		it('X4b feat/x was rewritten so the cut is no ancestor of its merge-base with the lot → the cut, with the note naming the cut and the merge-base', () => {
+		it('X4b feat/x was rewritten so the cut is no ancestor of its merge-base with the lot → refused naming the cut and the merge-base', () => {
 			const { root, cut, start } = createLotScenario({ from: BASE_BRANCH })
 			rewriteBranch({ root, branch: BASE_BRANCH, onto: 'main' })
 
 			expect(resolveTddBase({ root, packageJson: {}, wholeBranch: true })).toEqual({
-				commit: cut,
-				source: TDD_BASE_SOURCES.worktreeCut,
-				note: TDD_BASE_NOTES.rewritten
-					.replace('{ref}', () => BASE_BRANCH)
+				failure: HYGIENE_BASELINE_REWRITTEN.replaceAll('{ref}', () => BASE_BRANCH)
 					.replace('{cut}', () => shortOf({ root, commit: cut }))
 					.replace('{mergeBase}', () => shortOf({ root, commit: start })),
 			})
@@ -225,7 +220,7 @@ describe(
 			})
 		})
 
-		it('R3-2 a stacked lot: cut on feat/x, feat/x branched from main, main moved past the branch point, the baseline records from main → the cut, with the note that main does not hold the cut, not rewritten', () => {
+		it('a stacked lot: cut on feat/x, feat/x branched from main, main moved past the branch point, the baseline records from main → the cut, with the note that main does not hold the cut, not rewritten', () => {
 			const { root, cut } = createLotScenario({ from: 'main' })
 			advanceBranch({ root, branch: 'main' })
 
