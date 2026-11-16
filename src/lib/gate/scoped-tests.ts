@@ -15,6 +15,7 @@ import { withoutVariables } from '../progress/run-child.ts'
 import { createModuleResolver } from '../tdd/module-resolver.ts'
 import { resolvePackageVitest } from '../tdd/package-vitest.ts'
 import { VITEST_RUN_ARGUMENT } from '../tdd/tdd.constants.ts'
+import { SERIAL_FLAG } from './gate-config.constants.ts'
 import {
 	IMPORTABLE_FILE_PATTERN,
 	NOTHING_TO_RELATE_LINE,
@@ -26,6 +27,7 @@ import {
 	TEST_READ_FOLDER_PATTERN,
 	VITEST_JSON_OUTPUT_OPTION,
 	VITEST_RELATED_ARGUMENTS,
+	VITEST_REPORT_ARGUMENTS,
 	LEFT_TO_CI_FILE_PATTERN,
 	LEFT_TO_CI_FILES,
 	LEFT_TO_CI_LINE_START,
@@ -102,7 +104,10 @@ export function runScopedTests(params: {
 	}
 }
 
-/** `vitest related` over `related` (then `extraArguments`), its JSON report written to `report`. */
+/**
+ * `vitest related` over `related` (then `extraArguments`), its JSON report written to `report`; the gate's serial rerun
+ * (`extraArguments` naming the failing test files) runs those files alone with `vitest run`, never every related one.
+ */
 function spawnRelated(params: {
 	root: string
 	report: string
@@ -111,13 +116,21 @@ function spawnRelated(params: {
 	depth: number
 }): SpawnSyncReturns<string> {
 	const vitest = resolvePackageVitest({ root: params.root })
+	// the gate's serial rerun: its flag and the failing files (a step's own words never hold the flag)
+	const rerun =
+		params.extraArguments.includes(SERIAL_FLAG) &&
+		params.extraArguments.some((argument) => !argument.startsWith('-'))
 	return spawnSync(
 		vitest.command,
 		[
-			...vitest.arguments.filter((argument) => argument !== VITEST_RUN_ARGUMENT),
-			...VITEST_RELATED_ARGUMENTS,
+			...(rerun
+				? [...vitest.arguments, ...VITEST_REPORT_ARGUMENTS]
+				: [
+						...vitest.arguments.filter((argument) => argument !== VITEST_RUN_ARGUMENT),
+						...VITEST_RELATED_ARGUMENTS,
+					]),
 			VITEST_JSON_OUTPUT_OPTION.replace('{file}', params.report),
-			...params.related,
+			...(rerun ? [] : params.related),
 			...params.extraArguments,
 		],
 		{

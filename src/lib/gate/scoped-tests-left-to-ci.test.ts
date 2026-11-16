@@ -86,6 +86,22 @@ describe(
 			expect(run.output).not.toContain('src/b.test.ts')
 		})
 
+		it("the gate's serial rerun of one failing file (handed after the changed paths) → that file alone runs, serially, never every related one", () => {
+			const root = scratchPackage()
+			const handed = handedFor(['src/a.ts', 'src/b.ts'])
+
+			const run = plainScopedRun({
+				root,
+				environment: handed.environment,
+				extraArguments: ['src/b.test.ts', '--no-file-parallelism'],
+			})
+
+			expect(run.exitCode).toBe(0)
+			expect(run.output).toContain('src/b.test.ts')
+			expect(run.output).not.toContain('src/a.test.ts')
+			expect(run.output).toMatch(/Tests\s+1 passed \(1\)/)
+		})
+
 		it('only an importable source file changed -> only its related test runs', () => {
 			const root = scratchPackage()
 			const handed = handedFor(['src/a.ts'])
