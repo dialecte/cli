@@ -244,17 +244,20 @@ export const HANDOVER_HOLD_REASONS = {
 	otherRepository: ' (written for another repository: {repository})',
 } as const
 
-/** Under the card `handover <lots.json>` printed, above the command that runs it; `{lots}` the lots file, quoted. */
+/** Under the card `handover <lots.json>` printed, above the command that runs it; `{lots}` the lots file, quoted; `{out}` ` --out <word>` when the write had one (the word as given, shell-quoted), else empty. */
 export const HANDOVER_WRITTEN_NOTE =
-	'Review the card, then run it. The repository is held until every lot is committed; `dialecte gate` still runs under this hand-over (after a late edit: re-gate, then `dialecte handover {lots} --rehash`):'
+	'Review the card, then run it. The repository is held until every lot is committed; `dialecte gate` still runs under this hand-over (after a late edit: re-gate, then `dialecte handover write {lots}{out} --rehash`):'
 
 /** A refusal while a real run of the hand-over written for this repository is in progress. */
 export const HANDOVER_RUNNING_REFUSAL =
 	'the hand-over {folder} is running (pid {pid}, since {startedAt}, marked by {marker}): wait until its run ends, then run the gate again'
 
-/** The gate's line when it runs under the hand-over written for its repository. */
+/**
+ * The gate's line when it runs under the hand-over written for its repository: `{folder}` the hand-over folder, `{lots}`
+ * its lots file, quoted, `{out}` ` --out <folder>` (the folder as one shell word).
+ */
 export const GATE_UNDER_HANDOVER =
-	'under the hand-over {folder} of this repository: once the gate is green, refresh it with `dialecte handover {lots} --rehash`'
+	'under the hand-over {folder} of this repository: once the gate is green, refresh it with `dialecte handover write {lots}{out} --rehash`'
 
 /** The lot's files stayed staged and git's index lock is there: what to do without touching the lock. */
 export const STILL_STAGED_INDEX_LOCK =

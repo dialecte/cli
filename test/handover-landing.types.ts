@@ -12,4 +12,6 @@ export type LandingScenario = {
 	requires: string
 	/** The tree the first lot commits (HEAD plus the lot's files). */
 	lotTree: string
+	/** The tree every lot of the scenario leaves (the first lot's tree when there is no later lot). */
+	finalTree: string
 }

@@ -1,9 +1,9 @@
 /**
  * What `gate --hook` stores, and where: the store a rehearsal hands it never reaches its steps, a given store that is
- * no absolute path to a folder is ignored, and a hook run records the committed tree only when its steps ran on it.
+ * no git common dir (an absolute path to a folder with a HEAD file and an objects folder) is ignored, and a hook run records the committed tree only when its steps ran on it.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { REPOSITORY_CLI_PATH } from '../../test/gate-hook.constants.ts'
@@ -22,10 +22,21 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
-import { CHECK_STORE_VARIABLE } from '../lib/gate-records/gate-records.constants.ts'
+import {
+	CHECK_STORE_FOLDER,
+	CHECK_STORE_VARIABLE,
+} from '../lib/gate-records/gate-records.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 
 import { describe, expect, it } from 'vitest'
+
+/** A new folder holding the given empty folders and `HEAD` files. */
+function folderWith(params: { folders: string[]; files: string[] }): string {
+	const folder = temporaryFolder('dialecte-store-')
+	for (const name of params.folders) mkdirSync(join(folder, name))
+	for (const name of params.files) writeFileSync(join(folder, name), 'ref: refs/heads/main\n')
+	return folder
+}
 
 /** `gate --hook` as a commit hook starts it: the cli in its own process, given `DIALECTE_CHECK_STORE`. */
 function spawnHookWithStore(params: { cwd: string; store: string }): {
@@ -72,10 +83,25 @@ describe(
 			{
 				name: 'an absolute path to no folder',
 				store: () => join(temporaryFolder('dialecte-store-'), 'missing'),
-				why: 'no folder at {store}',
+				why: 'no git common dir at {store}',
+			},
+			{
+				name: 'an empty folder',
+				store: () => temporaryFolder('dialecte-store-'),
+				why: 'no git common dir at {store}',
+			},
+			{
+				name: 'a folder with an objects folder and no HEAD file',
+				store: () => folderWith({ folders: ['objects'], files: [] }),
+				why: 'no git common dir at {store}',
+			},
+			{
+				name: 'a folder with a HEAD file and no objects folder',
+				store: () => folderWith({ folders: [], files: ['HEAD'] }),
+				why: 'no git common dir at {store}',
 			},
 		])(
-			"the hook given DIALECTE_CHECK_STORE as $name → the ignored line first, the record in the repository's own store, nothing at the given path",
+			"the hook given DIALECTE_CHECK_STORE as $name → the ignored line first, the record in the repository's own store, nothing written in the given folder",
 			({ store, why }) => {
 				const { root } = createHookPackage()
 				const tree = indexTreeOf({ root })
@@ -88,8 +114,8 @@ describe(
 					`gate --hook: DIALECTE_CHECK_STORE ignored: ${why.replace('{store}', given)}`,
 				)
 				expect(hookRecordsOf({ root, tree }).map((record) => record.origin)).toEqual([undefined])
-				expect(existsSync(join(root, given))).toBe(false)
-				expect(existsSync(given)).toBe(false)
+				expect(existsSync(join(root, given, CHECK_STORE_FOLDER))).toBe(false)
+				expect(existsSync(join(given, CHECK_STORE_FOLDER))).toBe(false)
 			},
 		)
 	},

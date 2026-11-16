@@ -1,8 +1,8 @@
 /**
  * Which of `gate --hook`'s steps a record answers: each step by the newest green record of the committed tree and
  * its lock that ran it as it is now (its step hash), any mode; a scoped step also by a run that checked everything
- * (recorded at the empty tree). When no step hash answers a test step, a green `--full` record of the whole key -
- * else a covering `--release` one - written by an older cli (no step hashes) answers the test steps while its whole key
+ * (recorded at the empty tree). When no step hash answers a test step, a green `--full` record of the whole key - else
+ * a covering `--release` one - written by an older cli (no step hashes) answers the test steps while its whole key
  * still matches (in practice only with no lock: older clis keyed the installed lock, this one the tree's).
  */
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'

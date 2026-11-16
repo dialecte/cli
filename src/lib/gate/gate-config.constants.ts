@@ -262,7 +262,7 @@ export const GATE_CHECK_STORE_IGNORED_LINE = `{command}: ${CHECK_STORE_VARIABLE}
 /** Why a given store is not honoured, as `GATE_CHECK_STORE_IGNORED_LINE`'s `{why}` says it; `{value}` as given. */
 export const GATE_HOOK_CHECK_STORE_IGNORED_WHY = {
 	notAbsolute: 'not an absolute path: {value}',
-	notAFolder: 'no folder at {value}',
+	noGitCommonDir: 'no git common dir at {value}',
 } as const
 
 /**
@@ -291,6 +291,12 @@ export const GATE_HOOK_GREEN_LINE = 'gate --hook: green'
 
 /** The verdict of a `gate --hook` whose test step `{step}` failed. */
 export const GATE_HOOK_FAILED_LINE = 'gate --hook: failed at {step}'
+
+/**
+ * The line a failed run prints after its verdict of the failed step `{step}`, before the lines of that step's own
+ * output it relays: nothing after it is a step of the run.
+ */
+export const GATE_FAILED_TAIL_LINE = '--- last lines of {step} ---'
 
 /**
  * vitest's summary line, written once after the test steps `gate --hook` ran (their counts summed), so a hook's

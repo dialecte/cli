@@ -286,7 +286,7 @@ describe(
 			expect(record?.key?.commandHash).toBe(foldedHookHash({ hook, gateBase: base }))
 		})
 
-		it('--rehearse, no record to reuse (the clone keeps its own store) → the clone’s real gate --hook of each lot got the hand-over base: its base line says (handover) with the base of the lots file HEAD, the second commit not its HEAD', async () => {
+		it('--rehearse, no gate run before it (no record of the lots’ trees in the repository’s store) → the clone’s real gate --hook of each lot got the hand-over base: its base line says (handover) with the base of the lots file HEAD, the second commit not its HEAD', async () => {
 			const scoped = createScopedStep()
 			const root = createScopedHookedPackage({
 				gate: { fast: [scoped.step], full: [scoped.step] },

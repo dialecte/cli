@@ -1,13 +1,15 @@
 /**
  * The quality rules of one implementation file, on its syntax tree (no type checker): a function
  * that changes what its caller handed it (`argument-mutation`), a query read once per loop item
- * (`query-in-loop`, in `check-query-in-loop.ts`), and a function too long to read at once
- * (`long-function`).
+ * (`query-in-loop`, in `check-query-in-loop.ts`), a function too long to read at once
+ * (`long-function`), and a class that is no public facade nor store (`class`, in `check-class-rules.ts`,
+ * with the writes through `this` of such a class).
  */
 import { calleeName } from './callee-name.ts'
-import { LEADING_POSITIONAL_PARAMETERS } from './check-code-rules.constants.ts'
-import { LONG_FUNCTION_LINES, MUTATING_METHODS } from './check-quality-rules.constants.ts'
+import { checkClassRules } from './check-class-rules.ts'
+import { LONG_FUNCTION_LINES, THIS_ROOT } from './check-quality-rules.constants.ts'
 import { checkQueryInLoop } from './check-query-in-loop.ts'
+import { isDomainWrite, mutationsAt, pathKeyOf, targetNameOf } from './mutations.ts'
 import {
 	bindingNamesOf,
 	childNodesOf,
@@ -22,23 +24,24 @@ import type { FileKind } from './check-code-rules.types.ts'
 import type {
 	Binding,
 	FunctionOwner,
-	Mutation,
 	OwnedMutation,
 	QualityFinding,
 	Scope,
-	TargetPath,
 } from './check-quality-rules.types.ts'
 
-/** Checks the quality rules (argument mutation, queries in loops, long functions) of one implementation file. */
+/** Checks the quality rules (argument mutation, queries in loops, long functions, classes) of one implementation file. */
 export function checkQualityRules(params: {
 	sourceFile: ts.SourceFile
 	kind: FileKind
 	queryNames?: ReadonlySet<string>
+	/** The names of the file's classes a package entry exports; absent, none is. */
+	entryClasses?: ReadonlySet<string>
 }): QualityFinding[] {
 	const { sourceFile, kind, queryNames } = params
 	if (kind !== 'implementation') return []
 	return [
 		...argumentMutationsOf(sourceFile),
+		...checkClassRules({ sourceFile, entryClasses: params.entryClasses ?? new Set() }),
 		...(queryNames && queryNames.size > 0 ? checkQueryInLoop({ sourceFile, queryNames }) : []),
 		...longFunctionsOf(sourceFile),
 	]
@@ -84,120 +87,21 @@ function mutationsIn(params: {
 }): OwnedMutation[] {
 	const { node, sourceFile } = params
 	const scope = scopeAt({ node, scope: params.scope, sourceFile })
-	const own = ownedMutationAt({ node, scope })
+	const own = ownedMutationsAt({ node, scope })
 	const nested = childNodesOf(node).flatMap((child) =>
 		mutationsIn({ node: child, scope, sourceFile }),
 	)
-	return own ? [own, ...nested] : nested
+	return [...own, ...nested]
 }
 
-/** The mutation at `node` when it changes a parameter outside a domain write (`tx`, `query`). */
-function ownedMutationAt(params: {
-	node: ts.Node
-	scope: Scope | undefined
-}): OwnedMutation | undefined {
-	const mutation = mutationAt(params.node)
-	if (!mutation || isDomainWrite(mutation.path)) return undefined
-	const owner = bindingOf({
-		scope: params.scope,
-		name: mutation.path.root.text,
-	})?.owner
-	return owner ? { owner, mutation } : undefined
-}
-
-/** A mutating method call, an assignment to a property, a `delete`, a `++`/`--` or an `Object.assign`. */
-function mutationAt(node: ts.Node): Mutation | undefined {
-	if (ts.isCallExpression(node)) return callMutationOf(node)
-	if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind))
-		return propertyMutationOf({
-			node,
-			target: node.left,
-			label: ts.tokenToString(node.operatorToken.kind) ?? '=',
-		})
-	if (ts.isDeleteExpression(node))
-		return propertyMutationOf({
-			node,
-			target: node.expression,
-			label: 'delete',
-		})
-	if (
-		(ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
-		(node.operator === ts.SyntaxKind.PlusPlusToken ||
-			node.operator === ts.SyntaxKind.MinusMinusToken)
-	)
-		return propertyMutationOf({
-			node,
-			target: node.operand,
-			label: ts.tokenToString(node.operator) ?? '++',
-		})
-	return undefined
-}
-
-/** `target.method(...)` with a mutating method, or `Object.assign(target, ...)`. */
-function callMutationOf(call: ts.CallExpression): Mutation | undefined {
-	const callee = unwrapped(call.expression)
-	if (!ts.isPropertyAccessExpression(callee)) return undefined
-	if (
-		ts.isIdentifier(callee.expression) &&
-		callee.expression.text === 'Object' &&
-		callee.name.text === 'assign'
-	) {
-		const [first] = call.arguments
-		const path = first && pathOf(first)
-		return path ? { node: call, path, label: 'Object.assign' } : undefined
-	}
-	if (!MUTATING_METHODS.includes(callee.name.text)) return undefined
-	const path = pathOf(callee.expression)
-	return path ? { node: call, path, label: `.${callee.name.text}` } : undefined
-}
-
-/** A change of a property of `target` (`target.x`, `target[i]`): the object it is taken from is the mutated path. */
-function propertyMutationOf(params: {
-	node: ts.Node
-	target: ts.Expression
-	label: string
-}): Mutation | undefined {
-	const property = unwrapped(params.target)
-	if (!ts.isPropertyAccessExpression(property) && !ts.isElementAccessExpression(property))
-		return undefined
-	const path = pathOf(property.expression)
-	return path ? { node: params.node, path, label: params.label } : undefined
-}
-
-function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
-	return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment
-}
-
-/** A receiver path through a query or transaction (`tx.delete`, `params.tx.delete`): domain writes go through them. */
-function isDomainWrite(path: TargetPath): boolean {
-	return [path.root.text, ...path.segments].some(
-		(segment) => segment !== undefined && LEADING_POSITIONAL_PARAMETERS.includes(segment),
-	)
-}
-
-/** `params.state.items` as a root name and its segments; undefined for anything that is not a name path. */
-function pathOf(expression: ts.Expression): TargetPath | undefined {
-	const inner = unwrapped(expression)
-	if (ts.isIdentifier(inner)) return { root: inner, segments: [] }
-	if (!ts.isPropertyAccessExpression(inner) && !ts.isElementAccessExpression(inner))
-		return undefined
-	const base = pathOf(inner.expression)
-	if (!base) return undefined
-	const segment = ts.isPropertyAccessExpression(inner)
-		? inner.name.text
-		: ts.isStringLiteralLike(inner.argumentExpression)
-			? inner.argumentExpression.text
-			: undefined
-	return { root: base.root, segments: [...base.segments, segment] }
-}
-
-/** The last named segment of the path (`state` for `params.state`), or its root. */
-function targetNameOf(path: TargetPath): string {
-	return path.segments.filter((segment) => segment !== undefined).at(-1) ?? path.root.text
-}
-
-function pathKeyOf(path: TargetPath): string {
-	return [path.root.text, ...path.segments.map((segment) => segment ?? '[]')].join('.')
+/** The mutations at `node` that change a parameter outside a domain write (`tx`, `query`). */
+function ownedMutationsAt(params: { node: ts.Node; scope: Scope | undefined }): OwnedMutation[] {
+	return mutationsAt(params.node).flatMap((mutation): OwnedMutation[] => {
+		// a write through `this` is the class rule's to judge (`checkClassRules`), never a parameter's
+		if (mutation.path.root === THIS_ROOT || isDomainWrite(mutation.path)) return []
+		const owner = bindingOf({ scope: params.scope, name: mutation.path.root })?.owner
+		return owner ? [{ owner, mutation }] : []
+	})
 }
 
 // scopes

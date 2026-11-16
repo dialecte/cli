@@ -15,6 +15,9 @@ export const MUTATING_METHODS: readonly string[] = [
 	'set',
 ]
 
+/** The root of a path written through `this` (`this.items`): the instance, never a parameter. */
+export const THIS_ROOT = 'this'
+
 /** Array methods whose callback runs once per item: a loop body. */
 export const LOOP_CALLBACK_METHODS: readonly string[] = [
 	'map',

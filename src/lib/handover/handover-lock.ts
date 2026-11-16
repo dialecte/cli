@@ -6,22 +6,21 @@
  * refuses.
  */
 import { randomUUID } from 'node:crypto'
-import {
-	existsSync,
-	linkSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { gitFolderOf, readGit } from '../git.ts'
+import {
+	createLockFile,
+	isWriterRunning,
+	lockWriterOfText,
+	readLockBytes,
+	replaceLockFile,
+	setStaleLockAside,
+} from '../pid-lock.ts'
 import { LINE_FEED } from '../print/print.constants.ts'
-import { isProcessAlive } from '../process-alive.ts'
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { readAbandonedMarker } from './handover-marker-read.ts'
 import { readRunMarker, runningRefusal } from './handover-run-marker.ts'
 import {
@@ -88,7 +87,7 @@ export function takeHandoverLock(params: {
 	scriptPath: string
 }): { before: Buffer | undefined } | { heldBy: string } {
 	const { lockPath } = params
-	const writer = [process.pid, processStartTime(process.pid) ?? ''].join(LINE_FEED).trimEnd()
+	const writer = [process.pid, ownProcessStartTime() ?? ''].join(LINE_FEED).trimEnd()
 	const text = `${params.scriptPath}\n${writer}\n`
 	let before: Buffer | undefined
 	for (let attempt = 0; attempt < LOCK_TAKE_ATTEMPTS; attempt += 1) {
@@ -98,90 +97,30 @@ export function takeHandoverLock(params: {
 		if (found === undefined) continue
 		const holder = holderOf(found)
 		if (heldAgainst({ holder, scriptPath: params.scriptPath })) return { heldBy: holder.script }
-		if (setStaleLockAside({ lockPath, found })) before = found
+		const aside = `${lockPath}${LOCK_ASIDE_INFIX}${process.pid}-${randomUUID()}`
+		if (setStaleLockAside({ lockPath, found, aside })) before = found
 	}
 	return { heldBy: readLockFile(lockPath) ?? params.scriptPath }
-}
-
-/** Creates the lock file holding `text`; false when one is there. */
-function createLockFile(params: { lockPath: string; text: string }): boolean {
-	try {
-		writeFileSync(params.lockPath, params.text, { flag: 'wx' })
-		return true
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-		return false
-	}
-}
-
-/**
- * Moves away the stale lock read as `found`, by a rename to a name no other taker uses: true once it is gone. False
- * when another taker went first: its rename left nothing here, or what the rename caught is the lock that taker
- * made since, which goes back unless a lock is there again.
- */
-function setStaleLockAside(params: { lockPath: string; found: Buffer }): boolean {
-	const { lockPath } = params
-	const aside = `${lockPath}${LOCK_ASIDE_INFIX}${process.pid}-${randomUUID()}`
-	try {
-		renameSync(lockPath, aside)
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-		return false
-	}
-	const caught = readFileSync(aside)
-	const stale = caught.equals(params.found)
-	try {
-		if (!stale) linkSync(aside, lockPath)
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-	}
-	rmSync(aside)
-	return stale
 }
 
 /** Whether `holder` keeps the lock from a writer of `scriptPath`. */
 function heldAgainst(params: { holder: HandoverLockHolder; scriptPath: string }): boolean {
 	const { holder } = params
 	if (realPathOf(holder.script) !== realPathOf(params.scriptPath)) return isLiveHolder(holder)
-	return holder.pid !== process.pid && writerRuns(holder)
+	return holder.pid !== process.pid && isWriterRunning(holder)
 }
 
 /** A lock's holder is live while its writer runs, or while its script exists and names a hand-over not abandoned. */
 function isLiveHolder(holder: HandoverLockHolder): boolean {
-	if (writerRuns(holder)) return true
+	if (isWriterRunning(holder)) return true
 	return existsSync(holder.script) && readAbandonedMarker(dirname(holder.script)) === undefined
-}
-
-/**
- * The lock's writer still runs: its pid is alive and, when the lock holds a start time `ps` can compare, that pid
- * started then (another start time is a reused pid).
- */
-function writerRuns(holder: HandoverLockHolder): boolean {
-	if (holder.pid === undefined || !isProcessAlive(holder.pid)) return false
-	if (holder.started === undefined) return true
-	const started = processStartTime(holder.pid)
-	return started === undefined || started === holder.started
 }
 
 /** The script, the writer and its start time a lock file's text names (an older cli's lock names fewer). */
 function holderOf(bytes: Buffer): HandoverLockHolder {
-	const [script = '', writer, started] = bytes.toString('utf8').trim().split(LINE_FEED)
-	const pid = Number(writer)
-	return {
-		script,
-		pid: Number.isSafeInteger(pid) && pid > 0 ? pid : undefined,
-		started: started === undefined || started === '' ? undefined : started,
-	}
-}
-
-/** The bytes of the lock file, or undefined when there is none. */
-function readLockBytes(lockPath: string): Buffer | undefined {
-	try {
-		return readFileSync(lockPath)
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-		return undefined
-	}
+	const text = bytes.toString('utf8')
+	const [script = ''] = text.trim().split(LINE_FEED)
+	return { script, ...lockWriterOfText({ text, fields: 1 }) }
 }
 
 /**
@@ -218,7 +157,7 @@ export function restoreLock(params: {
 	if (!isOwnLock({ lockPath, scriptPath })) return
 	const named = bytes !== undefined && realPathOf(holderOf(bytes).script) === realPathOf(scriptPath)
 	if (bytes === undefined || (params.committed && named)) rmSync(lockPath, { force: true })
-	else writeFileSync(lockPath, bytes)
+	else replaceLockFile({ lockPath, text: bytes })
 }
 
 /** Whether the lock at `lockPath` still is `scriptPath`'s (by real path) and no other live writer's. */

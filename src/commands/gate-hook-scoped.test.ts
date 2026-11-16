@@ -140,7 +140,7 @@ describe(
 			)
 		})
 
-		it('R1-9: a scoped test step that failed without a valid selection → the base line says no valid selection, not nothing selected', async () => {
+		it('a scoped test step that failed without a valid selection → the base line says no valid selection, not nothing selected', async () => {
 			const noSelection = {
 				name: 'scoped',
 				run: "printf '      Tests  4 passed (4)\\n'",
@@ -457,6 +457,35 @@ function handDownPackage() {
 	return { root, scoped, older, newer, stale, mergeBase }
 }
 
+/**
+ * Runs `gate --hook` in the hand-down package `given`, handed `commit` with `folder`, and expects the hand-down
+ * ignored: one `gate --hook: ` line saying `reason`, one hand-over base line, the merge-base used and selected.
+ */
+async function expectHandDownIgnored(params: {
+	given: ReturnType<typeof handDownPackage>
+	commit: string
+	folder: string
+	reason: string
+}): Promise<void> {
+	const { root, scoped, mergeBase } = params.given
+	const { commit, folder } = params
+	const tree = indexTreeOf({ root })
+
+	const result = await runGate({ cwd: root, argv: ['--hook'], handoverBase: { commit, folder } })
+
+	const lines = linesOf(result.output)
+	const expected = params.reason.replace('{base}', commit).replace('{folder}', folder)
+	expect(result.exitCode).toBe(0)
+	const ignoredLines = lines.filter((line) => line.includes(expected))
+	expect(ignoredLines).toHaveLength(1)
+	expect(ignoredLines[0].startsWith('gate --hook: ')).toBe(true)
+	expect(lines.filter((line) => line.includes('hand-over base'))).toHaveLength(1)
+	expect(lines).toContain(
+		baseLineOf({ commit: mergeBase, source: 'base-branch', selection: 'selected T0' }),
+	)
+	expect(readScopedRuns(scoped)).toEqual([{ base: mergeBase, tree }])
+}
+
 describe(
 	'gate --hook: the hand-over base of a live hand-over run (rule 2)',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
@@ -524,51 +553,35 @@ describe(
 
 		describe.each([
 			{
-				name: 'A1: a base that is not an ancestor of HEAD',
+				name: 'a live run of that folder, a base that is not an ancestor of HEAD',
 				reason: HANDOVER_BASE_IGNORED_REASONS.notAncestorOfHead,
 				pick: (given: { stale: string }) => given.stale,
-				live: true,
 			},
 			{
-				name: 'A1b: a base newer than the merge-base, an ancestor of HEAD but not of the base branch',
+				name: 'a live run of that folder, a base newer than the merge-base, an ancestor of HEAD but not of the base branch',
 				reason: HANDOVER_BASE_IGNORED_REASONS.notAncestorOfBaseBranch.replace(
 					'{ref}',
 					'refs/heads/main',
 				),
 				pick: (given: { newer: string }) => given.newer,
-				live: true,
 			},
-			{
-				name: 'A1c: exported in a shell, no hand-over run live',
-				reason: HANDOVER_BASE_IGNORED_REASONS.noLiveRun,
-				pick: (given: { older: string }) => given.older,
-				live: false,
-			},
-		])('$name', ({ reason, pick, live }) => {
+		])('$name', ({ reason, pick }) => {
 			it('ignored with one line saying why: rule 3 answers, the step gets the merge-base, source base-branch', async () => {
 				const given = handDownPackage()
-				const { root, scoped, mergeBase } = given
-				const commit = pick(given)
-				const folder = live ? startLiveHandoverRun({ root }) : '/nowhere/handover'
-				const tree = indexTreeOf({ root })
+				const folder = startLiveHandoverRun({ root: given.root })
 
-				const result = await runGate({
-					cwd: root,
-					argv: ['--hook'],
-					handoverBase: { commit, folder },
-				})
+				await expectHandDownIgnored({ given, commit: pick(given), folder, reason })
+			})
+		})
 
-				const lines = linesOf(result.output)
-				const expected = reason.replace('{base}', commit).replace('{folder}', folder)
-				expect(result.exitCode).toBe(0)
-				const ignoredLines = lines.filter((line) => line.includes(expected))
-				expect(ignoredLines).toHaveLength(1)
-				expect(ignoredLines[0].startsWith('gate --hook: ')).toBe(true)
-				expect(lines.filter((line) => line.includes('hand-over base'))).toHaveLength(1)
-				expect(lines).toContain(
-					baseLineOf({ commit: mergeBase, source: 'base-branch', selection: 'selected T0' }),
-				)
-				expect(readScopedRuns(scoped)).toEqual([{ base: mergeBase, tree }])
+		it('exported in a shell, no hand-over run live → ignored with one line saying why: rule 3 answers, the step gets the merge-base, source base-branch', async () => {
+			const given = handDownPackage()
+
+			await expectHandDownIgnored({
+				given,
+				commit: given.older,
+				folder: '/nowhere/handover',
+				reason: HANDOVER_BASE_IGNORED_REASONS.noLiveRun,
 			})
 		})
 

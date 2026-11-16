@@ -6,7 +6,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { shellQuote } from '../../src/lib/shell-quote.ts'
 import { commonGitDirOf, hookRecordsOf, readFullRecord } from '../../test/gate-hook.ts'
 import {
 	ALL_RAN_LANDING,
@@ -18,6 +17,7 @@ import {
 import {
 	createLandingScenario,
 	landingLinesOf,
+	mergeTreeOf,
 	recordMergeTree,
 	rehashFolder,
 	reusedLandingOf,
@@ -35,6 +35,7 @@ import {
 	writeHandoverFolder,
 } from '../../test/scratch-checks.ts'
 import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,11 +46,6 @@ beforeEach(function clearStoreVariable() {
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
-
-/** The tree a rehearsal prints for its merge lot (`  tree <sha>`). */
-function mergeTreeOf(text: string): string {
-	return /^ {2}tree (\S+)$/m.exec(text)?.[1] ?? ''
-}
 
 describe(
 	'handover run --rehearse: the clone’s hooks use the repository’s store',

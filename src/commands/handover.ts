@@ -119,7 +119,7 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
 import { appendLotRiskClass } from '../lib/risk/derive-lot-risk-class.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
-import { shellQuote } from '../lib/shell-quote.ts'
+import { shellQuote, shellWord } from '../lib/shell-quote.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
 import { STORE_REFUSAL } from '../lib/store/store.constants.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
@@ -397,7 +397,10 @@ export function runHandover(params: {
 			...(outNote === undefined ? [] : [textOf([outNote])]),
 			box,
 			textOf([
-				HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)),
+				HANDOVER_WRITTEN_NOTE.replace('{lots}', () => shellQuote(absoluteLotsPath)).replace(
+					'{out}',
+					() => (outWord === undefined ? '' : ` --out ${shellWord(outWord)}`),
+				),
 				card.command,
 				...(riskWarning === undefined ? [] : [riskWarning]),
 			]),
