@@ -20,7 +20,6 @@ import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
-import { LANDING_MERGED_AT_OTHER_HEAD } from './close-handovers.constants.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import {
 	LANDING_FILE,
@@ -31,6 +30,7 @@ import {
 	OVERWRITE_PATTERN,
 	UNTRACKED_STATUS_PREFIX,
 } from './land-lot.constants.ts'
+import { LANDING_MERGED_AT_OTHER_HEAD, NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding, readReplacedHeads } from './land-record.ts'
 import { pullRequestTextOf } from './land-title.ts'
 
@@ -75,6 +75,9 @@ export function landLot(params: {
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
 	if (known.pullRequest?.state === 'merged')
 		return mergedLanding({ ...params, pullRequest: known.pullRequest })
+	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
+	const empty = nothingBeyondBase({ worktree, branch, base })
+	if (empty !== undefined) return refused(empty)
 	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push
 	const registered = registerLotEntry({ ...params })
 	if ('refusal' in registered) return refused(registered.refusal)
@@ -94,7 +97,7 @@ export function landLot(params: {
 			),
 		)
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	const expected = landing?.branch === branch ? landing.head : ''
+	const expected = leaseOf({ worktree, branch, base, lotFolder: params.lotFolder })
 	const pushProblem = pushLot({ worktree, branch, expected })
 	if (pushProblem !== undefined)
 		return {
@@ -108,6 +111,8 @@ export function landLot(params: {
 							.replace('{reason}', () => pushProblem),
 			],
 		}
+	// kept at once: a host that refuses to open the pull request must not make the next landing's push "outside"
+	recordPushedHead({ lotFolder: params.lotFolder, branch, head })
 	lines.push(
 		LANDING_LINES.pushed
 			.replace('{branch}', () => branch)
@@ -358,6 +363,67 @@ function recordReplacedHead(params: { lotFolder: string; branch: string; head: s
 	replaceWhole({
 		path: join(params.lotFolder, LANDING_FILE),
 		text: `${JSON.stringify(record, null, 2)}\n`,
+	})
+}
+
+/**
+ * The refusal of a lot whose HEAD origin's base already holds (no commit of its own to land); undefined when it holds
+ * one, or origin has no such base.
+ */
+function nothingBeyondBase(params: {
+	worktree: string
+	branch: string
+	base: string
+}): string | undefined {
+	const { worktree } = params
+	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
+	if (
+		tryReadGit({ root: worktree, args: ['rev-parse', '--verify', '--quiet', originBase] }) ===
+		undefined
+	)
+		return undefined
+	if (!isAncestorCommit({ root: worktree, ancestor: 'HEAD', descendant: originBase }))
+		return undefined
+	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	return NOTHING_BEYOND_BASE_LINE.replace('{branch}', () => params.branch)
+		.replace('{base}', () => params.base)
+		.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
+}
+
+/**
+ * The head the push's lease expects on origin: the one the lot's last push recorded (`landing.json`, written right
+ * after each push), else origin's branch when origin's base holds it (it carries no work: an earlier push of a
+ * landing that opened no pull request), else none (the branch must not exist on origin).
+ */
+function leaseOf(params: {
+	worktree: string
+	branch: string
+	base: string
+	lotFolder: string
+}): string {
+	const { worktree, branch } = params
+	const raw = readRawLanding({ lotFolder: params.lotFolder })
+	if (raw?.branch === branch && typeof raw.head === 'string') return raw.head
+	const remote = tryReadGit({
+		root: worktree,
+		args: ['rev-parse', '--verify', '--quiet', `${ORIGIN_BRANCH_REF_PREFIX}${branch}`],
+	})?.trim()
+	if (remote === undefined) return ''
+	return isAncestorCommit({
+		root: worktree,
+		ancestor: remote,
+		descendant: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+	})
+		? remote
+		: ''
+}
+
+/** The head just pushed kept in `landing.json` (its other fields as they were), whole or not at all. */
+function recordPushedHead(params: { lotFolder: string; branch: string; head: string }): void {
+	const raw = readRawLanding({ lotFolder: params.lotFolder }) ?? {}
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify({ ...raw, schema: LANDING_SCHEMA, branch: params.branch, head: params.head }, null, 2)}\n`,
 	})
 }
 

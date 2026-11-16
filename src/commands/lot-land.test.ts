@@ -255,7 +255,10 @@ describe(
 		 * The lot's commit dropped, a work-in-progress commit writing `wip` made then dropped (a reset to rebuild the lot),
 		 * the lot committed again, landed, and closed with its pull request merged at the landed head.
 		 */
-		function closeRebuiltLot(params: { wip: Record<string, string> }) {
+		function closeRebuiltLot(params: {
+			wip: Record<string, string>
+			afterLanding?: (worktree: string) => void
+		}) {
 			const { workspace, lotFolder } = landableLot()
 			const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
 			git({ root: worktree, args: ['reset', '-q', '--hard', 'HEAD~1'] })
@@ -267,6 +270,7 @@ describe(
 			git({ root: worktree, args: ['add', 'src/x.ts'] })
 			git({ root: worktree, args: ['commit', '-qm', 'feat(x): x answers one, rebuilt'] })
 			runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+			params.afterLanding?.(worktree)
 			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
 				head: string
 			}
@@ -306,6 +310,25 @@ describe(
 				reflog: false,
 				worktree: false,
 			})
+		})
+
+		it('a work-in-progress commit on lot paths made after the landing and dropped, then one more commit → still kept, named', () => {
+			const { closed, worktree } = closeRebuiltLot({
+				wip: { 'src/x.ts': 'export const x = 0\n' },
+				afterLanding: function dropThenCommit(root) {
+					writeFiles({ root, files: { 'src/x.ts': 'export const x = 3\n' } })
+					git({ root, args: ['commit', '-qam', 'wip: after the landing'] })
+					git({ root, args: ['reset', '-q', '--hard', 'HEAD~1'] })
+					writeFiles({ root, files: { 'src/y.ts': 'export const y = 1\n' } })
+					git({ root, args: ['add', 'src/y.ts'] })
+					git({ root, args: ['commit', '-qm', 'feat(y): y answers one'] })
+				},
+			})
+
+			expect({
+				reflog: closed.output.includes('HEAD reflog reaches 1 commit(s)'),
+				worktree: existsSync(worktree),
+			}).toEqual({ reflog: true, worktree: true })
 		})
 
 		it('a dropped work-in-progress commit touching a file outside the lot paths → still kept, named', () => {

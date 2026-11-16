@@ -57,7 +57,7 @@ import {
 	CLOSE_FROM_INSIDE,
 	HEAD_REFLOG_COMMITS_SHOWN,
 } from './handover.constants.ts'
-import { readReplacedHeads } from './land-record.ts'
+import { readLanding, readReplacedHeads } from './land-record.ts'
 import { readHandoverFolder } from './read-handover-folder.ts'
 
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
@@ -416,6 +416,7 @@ export function whyKeep(params: {
 		baseRef: params.baseBranch?.ref,
 		replaced: readReplacedHeads({ lotFolder: entry.folder, branch: entry.branch }),
 		lotPaths: lotPathsOf({ folder: entry.folder }),
+		landedHead: readLanding({ lotFolder: entry.folder })?.head,
 	})
 	const holders = [entry.branch, ...(params.baseBranch ? [params.baseBranch.branch] : [])]
 	if (unreached.length)
@@ -481,6 +482,8 @@ function commitsOnlyInHeadReflog(params: {
 	replaced: readonly string[]
 	/** The lot's paths (its scope, else its hand-over lots' paths): what a superseded commit may change. */
 	lotPaths: readonly string[]
+	/** The head the lot's landing pushed (`landing.json`); left out, the branch's tip is the landed one. */
+	landedHead?: string
 }): string[] {
 	const root = params.worktree
 	// a reflog git cannot read throws: the worktree is kept with git's message
@@ -545,6 +548,7 @@ function commitsOnlyInHeadReflog(params: {
 		branch: params.branch,
 		commits: notLanded,
 		lotPaths: params.lotPaths,
+		landedHead: params.landedHead,
 	})
 	const left = notLanded.filter(function notSuperseded(commit) {
 		return !superseded.has(commit)
@@ -561,9 +565,9 @@ function commitsOnlyInHeadReflog(params: {
 
 /**
  * The commits of `commits` the lot superseded: each changes at least one file and only files inside the lot's paths,
- * and every one of its reflog entries is older than the first where HEAD reached the branch's tip - work in progress
- * dropped before the lot's final commits were made (a reset to rebuild them). A commit made after the tip was reached,
- * then dropped, is not superseded. Order is the reflog's (`entries`, newest first), never commit dates; none when the
+ * and every one of its reflog entries is older than the first where HEAD reached the landed head (the one the landing
+ * pushed, else the branch's tip) - work in progress dropped before the lot's final commits were made (a reset to rebuild
+ * them). A commit made after the landed head was reached, then dropped, is not superseded. Order is the reflog's (`entries`, newest first), never commit dates; none when the
  * reflog never reached the tip or the lot names no path.
  */
 function supersededOf(params: {
@@ -572,13 +576,16 @@ function supersededOf(params: {
 	branch: string
 	commits: readonly string[]
 	lotPaths: readonly string[]
+	landedHead: string | undefined
 }): Set<string> {
 	const { root, entries, lotPaths } = params
 	if (params.commits.length === 0 || lotPaths.length === 0) return new Set()
-	const tip = tryReadGit({
-		root,
-		args: ['rev-parse', '--verify', '--quiet', `refs/heads/${params.branch}^{commit}`],
-	})?.trim()
+	const tip =
+		params.landedHead ??
+		tryReadGit({
+			root,
+			args: ['rev-parse', '--verify', '--quiet', `refs/heads/${params.branch}^{commit}`],
+		})?.trim()
 	const reachedTip = tip === undefined ? -1 : entries.lastIndexOf(tip)
 	if (reachedTip === -1) return new Set()
 	return new Set(
