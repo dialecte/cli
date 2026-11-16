@@ -121,6 +121,8 @@ export type RunnerParams = {
 	 * folder first on the import path, and is refused when the package is installed editable there. Default: none.
 	 */
 	interpreterRoot?: string
+	/** The base texts of test files (relative to the root): pytest reports their own code too. Default: none. */
+	baseTexts?: Readonly<Record<string, string>>
 }
 
 /**
@@ -135,6 +137,8 @@ export type ReportingRun = {
 	unset?: string[]
 	/** The folder the process runs in. Default: the run's root. */
 	cwd?: string
+	/** JSON inputs written in the run's temporary folder, each file's path given to the process in its variable. */
+	inputs?: Readonly<Record<string, unknown>>
 	run: RunnerParams
 }
 
@@ -166,6 +170,10 @@ export type ReportedModule = {
 	cases: ReportedCase[]
 	/** pytest: the files of test code (absolute paths) the file used: conftests, helpers, data it opened. */
 	dependencies?: string[]
+	/** pytest: the file's own code (`own-code.ts` for JS/TS), read by the cli's plugin. */
+	ownCode?: OwnCodeStatement[]
+	/** pytest: the own code of the file's base text, when the run was given it (`RunnerParams.baseTexts`). */
+	baseOwnCode?: OwnCodeStatement[]
 }
 
 /**

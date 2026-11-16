@@ -5,7 +5,7 @@
  * `timeoutMs`, its process group is killed. A run that wrote no report answers a failure naming its runner, with
  * the last lines it printed.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +30,14 @@ export async function runReportingChild(
 	const { runner, run } = params
 	const folder = mkdtempSync(join(tmpdir(), 'dialecte-tdd-'))
 	const reportPath = join(folder, 'report.json')
+	// each input as a JSON file beside the report, its path in its variable
+	const inputs = Object.fromEntries(
+		Object.entries(params.inputs ?? {}).map(([variable, value], index) => {
+			const path = join(folder, `input-${index}.json`)
+			writeFileSync(path, JSON.stringify(value))
+			return [variable, path]
+		}),
+	)
 	let timer: ReturnType<typeof setTimeout> | undefined
 	let timedOut = false
 	try {
@@ -47,7 +55,7 @@ export async function runReportingChild(
 			command: params.command,
 			args: params.args,
 			cwd: params.cwd ?? run.root,
-			environment: { ...params.environment, [REPORT_ENVIRONMENT_VARIABLE]: reportPath },
+			environment: { ...params.environment, ...inputs, [REPORT_ENVIRONMENT_VARIABLE]: reportPath },
 			...(params.unset && { unset: params.unset }),
 			clock: run.clock,
 			watchdog: run.watchdog,

@@ -234,6 +234,9 @@ export const PYTEST_COLLECT_ARGUMENT = '--collect-only'
 export const PYTEST_NAMES_VARIABLE = 'DIALECTE_TDD_NAMES'
 export const PYTEST_ROOT_VARIABLE = 'DIALECTE_TDD_ROOT'
 
+/** The environment variable naming the JSON file of base texts the cli's pytest plugin reads own code from too. */
+export const PYTEST_BASE_TEXTS_VARIABLE = 'DIALECTE_TDD_BASE_TEXTS'
+
 /** The variables of a python run: no bytecode written beside the sources, the import path the plugin joins. */
 export const PYTHON_NO_BYTECODE_VARIABLE = 'PYTHONDONTWRITEBYTECODE'
 export const PYTHON_PATH_VARIABLE = 'PYTHONPATH'

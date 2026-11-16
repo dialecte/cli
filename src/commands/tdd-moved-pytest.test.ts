@@ -1,8 +1,8 @@
 /**
- * A moved pytest case is refused: no own code is recorded for Python files, so the subset rule cannot compare its new
- * file; the line says what to do instead.
+ * A moved pytest case carries its red under the subset rule, as a vitest one: the cli's pytest plugin reports each
+ * test module's own code, recorded at the red and compared at the move.
  */
-import { renameSync, writeFileSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeFiles } from '../../test/scratch-repository.ts'
@@ -25,28 +25,68 @@ function tdd(params: { cwd: string; argv: string[] }) {
 	return runTdd({ cwd: params.cwd, argv: params.argv, now: () => NOW })
 }
 
+const MOVED_FILE = 'tests/test_sum.py'
+
+/** A package whose `test_one` was proven red then green, then moved to MOVED_FILE as `text` says, with its entry. */
+async function movedPytestPackage(params: {
+	text: string
+	written?: Record<string, string>
+}): Promise<string> {
+	const root = createPythonPackage({
+		written: { [ADDER_FILE]: ADDER_STUB_TEXT, [ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT },
+	})
+	await tdd({ cwd: root, argv: ['red'] })
+	writeFileSync(join(root, ADDER_FILE), ADDER_IMPLEMENTED_TEXT)
+	await tdd({ cwd: root, argv: ['green'] })
+	rmSync(join(root, ADD_PYTEST_FILE))
+	writeFiles({
+		root,
+		files: {
+			...params.written,
+			[MOVED_FILE]: params.text,
+			'.dialecte/lot.json': JSON.stringify({
+				moved: [{ from: ADD_PYTEST_FILE, to: MOVED_FILE, reason: 'a rename' }],
+			}),
+		},
+	})
+	return root
+}
+
 describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
-	it('proven red then green, its file renamed with a moved entry → refused: prove it red again, or accept it', async () => {
-		const root = createPythonPackage({
-			written: { [ADDER_FILE]: ADDER_STUB_TEXT, [ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT },
-		})
-		await tdd({ cwd: root, argv: ['red'] })
-		writeFileSync(join(root, ADDER_FILE), ADDER_IMPLEMENTED_TEXT)
-		await tdd({ cwd: root, argv: ['green'] })
-		renameSync(join(root, ADD_PYTEST_FILE), join(root, 'tests/test_sum.py'))
-		writeFiles({
-			root,
-			files: {
-				'.dialecte/lot.json': JSON.stringify({
-					moved: [{ from: ADD_PYTEST_FILE, to: 'tests/test_sum.py', reason: 'a rename' }],
-				}),
-			},
-		})
+	it('proven red then green, its file renamed with a moved entry → red carries its red (flag moved)', async () => {
+		const root = await movedPytestPackage({ text: ADD_ONE_PYTEST_TEXT })
 
 		const red = await tdd({ cwd: root, argv: ['red'] })
 
 		expect(red.output.split('\n')).toContain(
-			`refused  tests/test_sum.py::test_one  moved from ${ADD_PYTEST_FILE}::test_one, but that red recorded no code of its file to compare with (a pytest file, or a red older than the record): prove it red again, or accept it with dialecte lot accept <case> <reason>`,
+			`red      ${MOVED_FILE}::test_one  moved from ${ADD_PYTEST_FILE}::test_one  flags: moved`,
+		)
+	})
+
+	it('its new file adds a module-level helper → refused naming it', async () => {
+		const root = await movedPytestPackage({
+			text: `${ADD_ONE_PYTEST_TEXT}\n\ndef helper():\n    return 1\n`,
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}tests\/test_sum\.py::test_one {2}moved from .*, but its file holds code the file that red froze did not: def helper\(\):/,
+			),
+		)
+	})
+
+	it('its new file imports add from another module → refused naming the import', async () => {
+		const root = await movedPytestPackage({
+			text: ADD_ONE_PYTEST_TEXT.replace('from adder import add', 'from other import add'),
+			written: { 'other.py': ADDER_IMPLEMENTED_TEXT },
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/holds code the file that red froze did not: from other import add/),
 		)
 	})
 })
