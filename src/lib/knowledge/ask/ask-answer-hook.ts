@@ -5,6 +5,7 @@ import { STORE_FILES } from '../../store/store.constants.ts'
 import { fillMessage } from '../standard/fill-message.ts'
 import { claimAsk } from './ask-claim.ts'
 import { askStateEventOf } from './ask-state-event-of.ts'
+import { askAnswerEventOf } from './ask-step-events-of.ts'
 import { ANSWERED_STATE, CLAIM_MESSAGES, PERSON_RUNG } from './ask.constants.ts'
 import { releaseClaim } from './claim-file.ts'
 import { personAnswerTargetOf, recordPersonAnswer } from './person-answer.ts'
@@ -81,16 +82,19 @@ function recordedUnderClaim(params: {
 		if (!recorded.answered) throw new Error(recorded.refused)
 		return
 	}
-	// the ask's state after the answer (I-9): answered at rung 6, in the lot's events
-	const failure = writeAskEvent({
-		file: join(input.lotFolder, STORE_FILES.events),
-		event: askStateEventOf({
+	// the events `ask answer` writes (I-9, U22): `ask.answer` (no cite: no miss, no refusal) and the ask's state
+	const events = [
+		askAnswerEventOf({ ask: params.ask, lot: input.lot, miss: null, citeRefused: null }),
+		askStateEventOf({
 			ask: params.ask,
 			lot: input.lot,
 			state: ANSWERED_STATE,
 			rung: PERSON_RUNG,
 			conflict: false,
 		}),
-	})
-	if (failure !== undefined) printLines({ stream: 'stderr', lines: [failure] })
+	]
+	for (const event of events) {
+		const failure = writeAskEvent({ file: join(input.lotFolder, STORE_FILES.events), event })
+		if (failure !== undefined) printLines({ stream: 'stderr', lines: [failure] })
+	}
 }

@@ -34,7 +34,7 @@ export function readGold(params: { path: string }): StandardGoldItem[] | string 
 }
 
 /** One gold line as an item, or what is wrong with it. */
-export function goldItemOf(params: { line: string }): StandardGoldItem | string {
+function goldItemOf(params: { line: string }): StandardGoldItem | string {
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(params.line)

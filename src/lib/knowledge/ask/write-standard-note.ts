@@ -53,7 +53,7 @@ export async function writeStandardNote(params: WriteStandardNoteParams): Promis
  * bounded wait on the note's claim (`waitLimitMs`, else `NOTE_LOCK_WAIT_LIMIT_MS`); throws (naming the claim and the
  * fix) past it.
  */
-export function writeStandardNoteNow(params: WriteStandardNoteNowParams): void {
+function writeStandardNoteNow(params: WriteStandardNoteNowParams): void {
 	const claim = join(params.lotHome, NOTE_LOCK_FILE)
 	const waitLimitMs = params.waitLimitMs ?? NOTE_LOCK_WAIT_LIMIT_MS
 	const started = Date.now()

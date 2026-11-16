@@ -39,6 +39,8 @@ export function checkCite(params: CheckCiteParams): CheckedCite {
 	const slice = context.given.find((given) => sliceHolds({ slice: given, cite }))
 	if (slice === undefined) return refusedCite({ cite, refused: 'not-given' })
 	const quote = foldedTextOf({ text: cite.quote })
+	// a quote that folds to nothing (`""`, markup only, a row of bars) quotes no word: refused before the whole-line check
+	if (quote === '') return refusedCite({ cite, refused: 'quote-length' })
 	if (!onWordBoundaries({ quote, text: foldedTextOf({ text: rangeTextOf({ range }) }) }))
 		return refusedCite({ cite, refused: 'quote-not-found' })
 	if (!quoteLengthAllowed({ quote, range })) return refusedCite({ cite, refused: 'quote-length' })
@@ -60,11 +62,10 @@ function sliceHolds(params: { slice: GivenSlice; cite: ReportCite }): boolean {
  * True when the folded quote is in the folded range text on word boundaries (R1-1): at some place where no word
  * character runs on past either end of the quote (a space, a punctuation mark or the text's end next to it), so a
  * quote starting or ending inside a word of the range (`AA_1` in `AA_10`, `bounded` in `unbounded`) is not in it.
+ * The quote is never empty here: an empty one is refused `quote-length` before.
  */
 function onWordBoundaries(params: { quote: string; text: string }): boolean {
 	const { quote, text } = params
-	// an empty quote is refused by its length, not here
-	if (quote === '') return true
 	for (let at = text.indexOf(quote); at !== -1; at = text.indexOf(quote, at + 1)) {
 		const before = text.slice(Math.max(0, at - 1), at)
 		const after = text.slice(at + quote.length, at + quote.length + 1)
@@ -86,7 +87,7 @@ function rangeTextOf(params: { range: RangeText }): string {
 
 /** True when the quote has 8 to 40 words, or is exactly one whole table row or code line of the range. */
 function quoteLengthAllowed(params: { quote: string; range: RangeText }): boolean {
-	const words = params.quote === '' ? 0 : params.quote.split(WORD_SEPARATOR).length
+	const words = params.quote.split(WORD_SEPARATOR).length
 	if (words >= QUOTE_MIN_WORDS && words <= QUOTE_MAX_WORDS) return true
 	return params.range.lines.some(
 		(line) =>

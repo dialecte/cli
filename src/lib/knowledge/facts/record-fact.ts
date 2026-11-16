@@ -176,7 +176,7 @@ export function factPathOf(params: { folder: string; id: string }): string {
 }
 
 /** The path of a key's pointer file in the facts folder. */
-export function pointerPathOf(params: { folder: string; key: string }): string {
+function pointerPathOf(params: { folder: string; key: string }): string {
 	return join(params.folder, BY_KEY_FOLDER, params.key)
 }
 

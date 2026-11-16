@@ -29,6 +29,20 @@ describe('checkCite: the quote lies on word boundaries of the range', () => {
 			context: citeContextOf({ lines: [proseLineOf({ text: RANGE_STARTING_INSIDE_A_WORD })] }),
 			expected: { verified: false, refused: 'quote-not-found' },
 		},
+		'an empty quote of an empty table row (| | |) -> quote-length, before the whole-line check': {
+			cite: citeOf({ quote: '' }),
+			context: citeContextOf({
+				lines: [{ from: 12, to: 12, kind: 'table', text: '| | |' }],
+			}),
+			expected: { verified: false, refused: 'quote-length' },
+		},
+		'a quote of markup only (<br>) of a table row holding nothing else -> quote-length': {
+			cite: citeOf({ quote: '<br>' }),
+			context: citeContextOf({
+				lines: [{ from: 12, to: 12, kind: 'table', text: '| <br> |' }],
+			}),
+			expected: { verified: false, refused: 'quote-length' },
+		},
 	}
 
 	for (const [name, row] of Object.entries(rows))
