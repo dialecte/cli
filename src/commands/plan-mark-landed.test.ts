@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { lotJson, personJson, writePlanWithBlock } from '../../test/plan-command-workspace.ts'
 import { createPlanWorkspace, writeRegistryEntry } from '../../test/plan-facts.ts'
 import {
+	cloneRepository,
 	git,
 	initializeRepository,
 	temporaryFolder,
@@ -208,7 +209,8 @@ describe(
 			const { workspace, cliPath } = landedWorkspace()
 			const other = join(temporaryFolder('dialecte-plan-other-'), 'other')
 			const origin = git({ root: cliPath, args: ['remote', 'get-url', 'origin'] }).trim()
-			git({ root: workspace.root, args: ['clone', '-q', origin, other] })
+			// the scratch identity: a CI machine has no git identity of its own
+			cloneRepository({ origin, into: other })
 			writeFiles({ root: other, files: { 'src/a/b.ts': 'export const b = 1\n' } })
 			git({ root: other, args: ['add', '-A'] })
 			git({ root: other, args: ['commit', '-qm', 'feat(a): b, by a colleague'] })

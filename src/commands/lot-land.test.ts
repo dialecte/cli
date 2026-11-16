@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
-import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
@@ -178,10 +178,8 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 		const { workspace, lotFolder } = landableLot()
 		const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
 		const other = join(workspace.workspace, 'other')
-		git({
-			root: workspace.workspace,
-			args: ['clone', '-q', join(workspace.workspace, 'origin.git'), other],
-		})
+		// the scratch identity: a CI machine has no git identity of its own
+		cloneRepository({ origin: join(workspace.workspace, 'origin.git'), into: other })
 		writeFiles({ root: other, files: { 'src/other.ts': 'export {}\n' } })
 		git({ root: other, args: ['add', 'src/other.ts'] })
 		git({ root: other, args: ['commit', '-qm', 'feat: landed by the queue'] })
