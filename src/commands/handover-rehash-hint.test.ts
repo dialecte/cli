@@ -40,13 +40,24 @@ function writeWith(params: { outWord: (folder: string) => string | undefined }) 
 	return { root, lotsPath, folder, written }
 }
 
-const AS_GIVEN = (folder: string) => folder
-const WITH_SPACE = (folder: string) => join(folder, 'out folder')
-const NO_OUT = () => undefined
+/** The --out word: the folder itself. */
+function outAsGiven(folder: string): string {
+	return folder
+}
+
+/** The --out word: a child folder whose name needs quoting. */
+function outWithSpace(folder: string): string {
+	return join(folder, 'out folder')
+}
+
+/** No --out word. */
+function noOut(): undefined {
+	return undefined
+}
 
 describe('handover write: the late-edit hint', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('written with --out <folder> → the note names handover write on the lots file, quoted, with the --out word printed as given (unquoted, it needs no quoting), then --rehash', () => {
-		const { lotsPath, folder, written } = writeWith({ outWord: AS_GIVEN })
+		const { lotsPath, folder, written } = writeWith({ outWord: outAsGiven })
 
 		expect(written.status).toBe(0)
 		expect(rehashCommandOf(written.output)).toBe(
@@ -55,18 +66,18 @@ describe('handover write: the late-edit hint', { timeout: HANDOVER_CASE_TIMEOUT 
 	})
 
 	it('written with --out <folder named out folder> → the --out word printed shell-quoted, as the lots path is', () => {
-		const { lotsPath, folder, written } = writeWith({ outWord: WITH_SPACE })
+		const { lotsPath, folder, written } = writeWith({ outWord: outWithSpace })
 
 		expect(written.status).toBe(0)
 		expect(rehashCommandOf(written.output)).toBe(
-			`handover write '${lotsPath}' --out ${shellQuote(WITH_SPACE(folder))} --rehash`,
+			`handover write '${lotsPath}' --out ${shellQuote(outWithSpace(folder))} --rehash`,
 		)
 	})
 
 	it.each([
-		{ title: 'with --out', outWord: AS_GIVEN },
-		{ title: 'with --out needing quoting', outWord: WITH_SPACE },
-		{ title: 'without --out', outWord: NO_OUT },
+		{ title: 'with --out', outWord: outAsGiven },
+		{ title: 'with --out needing quoting', outWord: outWithSpace },
+		{ title: 'without --out', outWord: noOut },
 	])(
 		'written $title, then a late edit, then the printed command → accepted, exit 0',
 		({ outWord }) => {
