@@ -3,7 +3,7 @@
  * holds every record of that tree, the newest one kept per mode and key.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { readGit } from '../git.ts'
@@ -11,26 +11,23 @@ import {
 	createLockFile,
 	isWriterRunning,
 	lockWriterOfText,
-	ownProcessStartTime,
 	readLockBytes,
 	setStaleLockAside,
 } from '../pid-lock.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
+import { isGreenRecord, isSameKey, readStoredRecords } from './check-records.ts'
 import {
-	CHECK_KEY_FIELDS,
 	CHECK_STORE_FOLDER,
 	CHECK_STORE_LOCK_POLL_MS,
 	CHECK_STORE_LOCK_SUFFIX,
 	CHECK_STORE_LOCK_WAIT_MS,
 } from './gate-records.constants.ts'
 
-import type {
-	CheckKey,
-	GateRecord,
-	GateRecordMode,
-	RecordOrigin,
-	StoreCheckSeam,
-} from './gate-records.types.ts'
+import type { CheckKey, GateRecord, GateRecordMode, StoreCheckSeam } from './gate-records.types.ts'
+
+// the pure readers live in check-records.ts (no git process); re-exported for the importers of this module
+export { isGreenRecord, isSameKey, originOfRecord, readStoredRecords } from './check-records.ts'
 
 /**
  * Stores `record` under `record.key.tree`; a record without key has no tree to go under and is not stored. The
@@ -49,7 +46,7 @@ export function storeCheckRecord(params: {
 	if (!key) return
 	const folder = storeFolderOf(params)
 	const path = join(folder, `${key.tree}.json`)
-	if (isSupersededBy({ kept: readRecordsAt(path), record, key })) return
+	if (isSupersededBy({ kept: readStoredRecords({ folder, tree: key.tree }), record, key })) return
 	params.seam?.beforeWrite?.()
 	mkdirSync(folder, { recursive: true })
 	const lock = takeTreeLock({
@@ -58,7 +55,7 @@ export function storeCheckRecord(params: {
 	})
 	try {
 		// read again under the lock: what another writer stored since the first read is kept
-		const kept = readRecordsAt(path)
+		const kept = readStoredRecords({ folder, tree: key.tree })
 		if (isSupersededBy({ kept, record, key })) return
 		const records = [
 			...kept.filter((stored) => !isSameCheck({ record: stored, mode: record.mode, key })),
@@ -120,20 +117,7 @@ export function readTreeRecords(params: {
 	/** The absolute git common dir whose store to read instead of the repository's own. */
 	checkStore?: string
 }): GateRecord[] {
-	return readRecordsAt(join(storeFolderOf(params), `${params.tree}.json`))
-}
-
-/** The records the tree file at `path` holds; none when it is missing or holds no list of records. */
-function readRecordsAt(path: string): GateRecord[] {
-	if (!existsSync(path)) return []
-	try {
-		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-		// a record of another shape (written by hand, or by another cli) is no record of this one
-		return Array.isArray(parsed) ? parsed.filter(isStoredRecord) : []
-	} catch {
-		// a file another run is writing, or broken by hand: nothing to reuse from it
-		return []
-	}
+	return readStoredRecords({ folder: storeFolderOf(params), tree: params.tree })
 }
 
 /** The newest green record of `mode` whose key equals `key` field by field. */
@@ -154,34 +138,6 @@ export function findReusableRecord(params: {
 		.sort((first, second) => second.at.localeCompare(first.at))[0]
 }
 
-/** The run a record answers for: the record itself, or the run it was answered from in turn. */
-export function originOfRecord(record: GateRecord): RecordOrigin {
-	return record.reused ?? { at: record.at, head: record.head }
-}
-
-/**
- * The record ran steps and every one passed or was skipped: a run that failed, or that checked nothing, is
- * never reused.
- */
-export function isGreenRecord(record: GateRecord): boolean {
-	return (
-		record.steps.length > 0 &&
-		record.steps.every((step) => step.status === 'passed' || step.status === 'skipped')
-	)
-}
-
-/** The two keys name the same check: every field equal. */
-export function isSameKey(params: { key: CheckKey; other: CheckKey | undefined }): boolean {
-	const { key, other } = params
-	return (
-		other !== undefined &&
-		other.tree === key.tree &&
-		other.lockHash === key.lockHash &&
-		other.commandHash === key.commandHash &&
-		other.linked === key.linked
-	)
-}
-
 function isSameCheck(params: { record: GateRecord; mode: GateRecordMode; key: CheckKey }): boolean {
 	return (
 		params.record.mode === params.mode && isSameKey({ key: params.key, other: params.record.key })
@@ -200,35 +156,4 @@ function storeFolderOf(params: { root: string; checkStore?: string }): string {
 		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
 	}).trim()
 	return join(resolve(root, common), CHECK_STORE_FOLDER)
-}
-
-/** A record as the store holds them: its mode, time, HEAD, steps (each named, with a status and counts) and key. */
-function isStoredRecord(entry: unknown): entry is GateRecord {
-	if (typeof entry !== 'object' || entry === null) return false
-	const record = entry as Record<string, unknown>
-	return (
-		typeof record.mode === 'string' &&
-		typeof record.at === 'string' &&
-		typeof record.head === 'string' &&
-		Array.isArray(record.steps) &&
-		record.steps.every(isRecordedStep) &&
-		isCheckKey(record.key)
-	)
-}
-
-function isRecordedStep(entry: unknown): boolean {
-	if (typeof entry !== 'object' || entry === null) return false
-	const step = entry as Record<string, unknown>
-	return (
-		typeof step.name === 'string' &&
-		typeof step.status === 'string' &&
-		typeof step.counts === 'object' &&
-		step.counts !== null
-	)
-}
-
-function isCheckKey(entry: unknown): boolean {
-	if (typeof entry !== 'object' || entry === null) return false
-	const key = entry as Record<string, unknown>
-	return CHECK_KEY_FIELDS.every((field) => typeof key[field] === 'string')
 }

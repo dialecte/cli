@@ -107,7 +107,7 @@ import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
-import type { GateRecord, RecordedRun } from '../lib/gate-records/gate-records.types.ts'
+import type { CheckKey, GateRecord, RecordedRun } from '../lib/gate-records/gate-records.types.ts'
 import type { GateRunBase } from '../lib/gate/gate-base.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepResult } from '../lib/gate/gate.types.ts'
@@ -246,13 +246,7 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 	if (view.progress) for (const line of absentLines) view.live?.writeLine(textOf([line]))
 	const sleptMs = sleptSinceStart?.()
 	const recorded = recordGateRun({ cwd, mode, setup, results, reuse, sleptMs })
-	const exitCode = results.some((result) => result.status === 'failed') ? 1 : 0
-	const parts = partsOf({
-		results,
-		durations: new Map([...worktree.durations, ...checked.durations]),
-		reused: new Set(reuse.reused ? checked.results : []),
-	})
-	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash: recorded.stateHash })
+	endGateEvents({ recorder, argv, worktree, checked, reuse, recorded })
 	return renderGateResult({
 		mode,
 		json: hasFlag(argv, 'json'),
@@ -490,8 +484,38 @@ function absentDerivedLines(params: { setup: GateSetup; mode: GateMode }): strin
 }
 
 /**
- * The run's record, for the card and the repository's store, with the lines saying why it was not kept: the
- * working files changed while the steps ran, or no HEAD to key it on.
+ * The run's end event (D12), after its record: its exit, each part's time (the list's parts reused when a record
+ * answered them), the key of the record it stored (none when it stored nothing) and whether it ran under `--no-reuse`.
+ */
+function endGateEvents(params: {
+	recorder: StepHandle
+	argv: string[]
+	worktree: GatePhase
+	checked: GatePhase
+	reuse: GateReuse
+	recorded: RecordedRun & { key?: CheckKey }
+}): void {
+	const { worktree, checked, recorded } = params
+	const results = [...worktree.results, ...checked.results]
+	const parts = partsOf({
+		results,
+		durations: new Map([...worktree.durations, ...checked.durations]),
+		reused: new Set(params.reuse.reused ? checked.results : []),
+	})
+	params.recorder.end({
+		exit: results.some((result) => result.status === 'failed') ? 1 : 0,
+		parts,
+		reuse: reuseOf(parts),
+		stateHash: recorded.stateHash,
+		...(recorded.key && { key: recorded.key }),
+		...(hasFlag(params.argv, 'no-reuse') && { noReuse: true }),
+	})
+}
+
+/**
+ * The run's record, for the card and the repository's store, with the key it was stored under (none when it stored
+ * nothing: a reused run, a state changed while it ran) and the lines saying why it was not kept: the working files
+ * changed while the steps ran, or no HEAD to key it on.
  */
 function recordGateRun(params: {
 	cwd: string
@@ -500,7 +524,7 @@ function recordGateRun(params: {
 	results: StepResult[]
 	reuse: GateReuse
 	sleptMs: number | undefined
-}): RecordedRun & { notStored: string[] } {
+}): RecordedRun & { key?: CheckKey; notStored: string[] } {
 	const { cwd, mode, setup, reuse, sleptMs } = params
 	const { gateBase } = setup
 	if (reuse.head === undefined)
@@ -509,12 +533,14 @@ function recordGateRun(params: {
 			stateHash: null,
 			notStored: [GATE_NO_HEAD_LINE.replace('{command}', `gate --${mode}`)],
 		}
+	const keyAfter =
+		reuse.reused?.key ?? computeCheckKey({ root: cwd, commandHash: setup.commandHash })
 	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode,
 		results: params.results,
 		keyBefore: reuse.keyBefore,
-		keyAfter: reuse.reused?.key ?? computeCheckKey({ root: cwd, commandHash: setup.commandHash }),
+		keyAfter,
 		...(reuse.reused && { reused: reuse.reused.record }),
 		...(setup.checkStore && { checkStore: setup.checkStore }),
 		...(gateBase && { base: gateBase }),
@@ -526,7 +552,12 @@ function recordGateRun(params: {
 			]),
 		),
 	})
-	return { stored, stateHash, notStored: changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : [] }
+	return {
+		stored,
+		stateHash,
+		...(stored && { key: keyAfter }),
+		notStored: changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : [],
+	}
 }
 
 /**

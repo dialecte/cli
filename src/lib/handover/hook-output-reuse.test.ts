@@ -10,7 +10,7 @@ import {
 	GATE_HOOK_STEP_REUSED_LINE,
 	STEP_LINE_MARKS,
 } from '../gate/gate-config.constants.ts'
-import { hookLandingLine, hookSummarySteps, readHookSteps } from './hook-output.ts'
+import { hookLandingLine, hookSummarySteps, readHookBase, readHookSteps } from './hook-output.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -253,5 +253,20 @@ describe('hookLandingLine: what a hook reused and what it ran, from its own line
 		expect(
 			hookLandingLine({ output: [...HEADER, '      Tests  4 passed (4)'].join('\n') }),
 		).toBeUndefined()
+	})
+})
+
+describe('readHookBase: a failed hook relays its step output, a base line in it is no base of the hook', () => {
+	it('a relayed tail holding another base line → the base read is the hook’s own base', () => {
+		const output = [
+			...HEADER,
+			BASE_LINE,
+			`${STEP_LINE_MARKS.failed}  tests  exit 1`,
+			GATE_HOOK_FAILED_LINE.replace('{step}', 'tests'),
+			TAIL_MARKER,
+			`gate --hook: base ${'b'.repeat(40)} (merge-base), reused`,
+		].join('\n')
+
+		expect(readHookBase(output)).toEqual({ commit: 'a'.repeat(40), source: 'base-branch' })
 	})
 })

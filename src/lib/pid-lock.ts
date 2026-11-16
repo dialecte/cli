@@ -10,9 +10,6 @@ import { processStartTime } from './process-start-time.ts'
 
 import type { LockWriter } from './pid-lock.types.ts'
 
-// this process's start time once read: undefined until then
-let ownStart: { started: string | undefined } | undefined
-
 /** Creates the lock file holding `text`; false when one is there. */
 export function createLockFile(params: { lockPath: string; text: string }): boolean {
 	try {
@@ -47,12 +44,6 @@ export function lockWriterOfText(params: { text: string; fields?: number }): Loc
 		pid: Number.isSafeInteger(pid) && pid > 0 ? pid : undefined,
 		started: started === undefined || started === '' ? undefined : started,
 	}
-}
-
-/** This process's start time as `processStartTime` reads it, asked of `ps` once: it never changes while the process runs. */
-export function ownProcessStartTime(): string | undefined {
-	ownStart ??= { started: processStartTime(process.pid) }
-	return ownStart.started
 }
 
 /**

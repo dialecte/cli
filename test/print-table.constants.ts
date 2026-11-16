@@ -225,6 +225,11 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		json: [`--${FORGED_WORD}`, '--json'],
 	},
+	health: {
+		argv: [`--${FORGED_WORD}`],
+		quotes: true,
+		json: [`--${FORGED_WORD}`, '--json'],
+	},
 	'mutants run': { argv: ['run', '--mode', FORGED_WORD], quotes: true },
 	'mutants status': {
 		argv: ['status', '--bogus', FORGED_WORD],

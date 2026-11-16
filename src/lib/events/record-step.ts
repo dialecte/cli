@@ -131,6 +131,9 @@ export function startStep(params: StartStepParams): StepHandle {
 				durationMs: Date.now() - startedAt,
 				stateHash: typeof ending.stateHash === 'function' ? ending.stateHash() : ending.stateHash,
 				...(ending.reuse === undefined ? {} : { reuse: ending.reuse }),
+				...(ending.key === undefined ? {} : { key: ending.key }),
+				...(ending.lots === undefined ? {} : { lots: ending.lots }),
+				...(ending.noReuse === undefined ? {} : { noReuse: ending.noReuse }),
 			}
 			writeStepEvent({ file: place.file, event, parts: ending.parts })
 		})

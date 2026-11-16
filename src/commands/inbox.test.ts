@@ -326,6 +326,7 @@ describe('inbox --json', { timeout: STORE_CASE_TIMEOUT }, () => {
 				working: 2,
 				simulated: 2,
 				damaged: [],
+				health: [],
 			},
 		})
 	})
@@ -360,7 +361,7 @@ describe('inbox --json', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(withJson(inboxIn({ cwd: workspace.repository, words: ['--json'] }))).toEqual({
 			exitCode: 1,
-			json: { waiting: [], working: 1, simulated: 0, damaged: [] },
+			json: { waiting: [], working: 1, simulated: 0, damaged: [], health: [] },
 		})
 	})
 })

@@ -1,3 +1,4 @@
+import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { StepCounts, StepResult, StepSelection, StepStatus } from '../gate/gate.types.ts'
 import type { WorktreeCli } from './event.types.ts'
 
@@ -77,6 +78,12 @@ export type EndStepParams = {
 	 * outside any lot does no hash work (R3-2).
 	 */
 	stateHash: string | null | (() => string | null)
+	/** The check key of the record the run wrote (a gate, contrib or commit-hook run); left out by a step with none. */
+	key?: CheckKey
+	/** A rehearsal's lots: each lot's tree and its decision; left out by every other step. */
+	lots?: { lot: number; tree: string; decision: string }[]
+	/** A gate or contrib run given `--no-reuse`: a deliberate re-run; left out otherwise. */
+	noReuse?: true
 }
 
 /** A running recorded step: never throws, every failure becomes the one warning line. */

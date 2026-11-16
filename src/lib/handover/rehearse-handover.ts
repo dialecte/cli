@@ -30,7 +30,7 @@ import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
 import { textOf } from '../print/print.ts'
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
@@ -152,6 +152,8 @@ async function rehearseRecorded(
 		join(handover.folder, REHEARSAL_DECISIONS_FILE),
 		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
 	)
+	// each lot's tree and decision, on the rehearsal's end as rehearsal.json holds them
+	const lots = decisions.map(({ lot, tree, decision }) => ({ lot, tree, decision }))
 	const contribRun = decisions.find((decision) => decision.contrib === 'run')
 	// a contrib run of the tree the lots leave needs the clone, whatever the lots' records say
 	const everyLotReused =
@@ -191,7 +193,7 @@ async function rehearseRecorded(
 			skipCommits: true,
 			gateScope,
 		})
-		recorder.end({ exit, reuse: 'whole', stateHash: null })
+		recorder.end({ exit, reuse: 'whole', stateHash: null, lots })
 		return exit
 	}
 	const progress =
@@ -298,7 +300,7 @@ async function rehearseRecorded(
 			gateScope,
 		})
 		// after the hook record the clone's run left (D12)
-		recorder.end({ exit, reuse: 'none', stateHash: null })
+		recorder.end({ exit, reuse: 'none', stateHash: null, lots })
 		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
@@ -496,7 +498,7 @@ function prepareClone(params: {
 		args: ['clone', '-q', '--shared', '--no-checkout', repository, clone],
 	})
 	readGit({ root: clone, args: ['checkout', '-q', '-B', params.branch, head] })
-	const startTime = processStartTime(process.pid)
+	const startTime = ownProcessStartTime()
 	const marker: RehearsalMarker = {
 		pid: process.pid,
 		startedAt: new Date().toISOString(),

@@ -19,7 +19,7 @@ import {
 	setStaleLockAside,
 } from '../pid-lock.ts'
 import { LINE_FEED } from '../print/print.constants.ts'
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { readAbandonedMarker } from './handover-marker-read.ts'
 import { readRunMarker, runningRefusal } from './handover-run-marker.ts'
 import {
@@ -86,7 +86,7 @@ export function takeHandoverLock(params: {
 	scriptPath: string
 }): { before: Buffer | undefined } | { heldBy: string } {
 	const { lockPath } = params
-	const writer = [process.pid, processStartTime(process.pid) ?? ''].join(LINE_FEED).trimEnd()
+	const writer = [process.pid, ownProcessStartTime() ?? ''].join(LINE_FEED).trimEnd()
 	const text = `${params.scriptPath}\n${writer}\n`
 	let before: Buffer | undefined
 	for (let attempt = 0; attempt < LOCK_TAKE_ATTEMPTS; attempt += 1) {

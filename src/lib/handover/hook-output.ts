@@ -364,11 +364,13 @@ function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
 }
 
 /**
- * The base a hook's `gate --hook` printed it used (`GATE_HOOK_BASE_LINE`), the last one printed; undefined when
- * it printed none, or none of a source this cli knows.
+ * The base a hook's `gate --hook` printed it used (`GATE_HOOK_BASE_LINE`), the last one it printed itself (the relayed
+ * tail of a failed step is not read); undefined when it printed none, or none of a source this cli knows.
  */
 export function readHookBase(output: string): UsedGateBase | undefined {
-	const matches = [...stripVTControlCharacters(output).matchAll(GATE_HOOK_BASE_PATTERN)]
+	const matches = [
+		...ownHookText(stripVTControlCharacters(output)).matchAll(GATE_HOOK_BASE_PATTERN),
+	]
 	const last = matches.at(-1)
 	if (last === undefined) return undefined
 	const source = GATE_BASE_SOURCES.find((known) => known === last[2])
