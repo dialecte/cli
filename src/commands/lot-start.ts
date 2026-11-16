@@ -40,8 +40,16 @@ import {
 	startNextOf,
 	waitNextOf,
 } from '../lib/store/lot-next.ts'
-import { appendLotOverlaps, overlapRecordsOf } from '../lib/store/lot-overlaps.ts'
+import {
+	appendLotOverlaps,
+	isCoveredOverlap,
+	lotOverlapLines,
+	overlapGoAheadRefusal,
+	overlapRecordsOf,
+	overlapsOverLimit,
+} from '../lib/store/lot-overlaps.ts'
 import { overlapLotLabelOf, overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
+import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
@@ -68,6 +76,8 @@ import {
 	START_BELOW_REFUSAL,
 	START_EFFORT_LINE,
 	START_FLAGS,
+	START_OVERLAP_LINE,
+	START_OVERLAPS_OVER_LIMIT,
 	START_REASON,
 	START_USAGE_REASONS,
 	START_VALUE_OPTIONS,
@@ -78,9 +88,11 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
 import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
+import type { LotOverlapRecord } from '../lib/store/lot-overlaps.types.ts'
 import type { ScenarioFile } from '../lib/store/scenarios.types.ts'
 import type {
 	LotIdentity,
+	LotOverlap,
 	Refusal,
 	SynchronousPause,
 	Transition,
@@ -176,16 +188,7 @@ export function prepareStart(params: {
 	})
 	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
 	const brief = checked.checked
-	const wordRefusal =
-		goAhead &&
-		forbiddenWordRefusal({
-			root: brief.repository,
-			verb: START_VERB,
-			options: [
-				{ option: '--by', text: goAhead.by },
-				{ option: '--reason', text: goAhead.reason },
-			],
-		})
+	const wordRefusal = goAheadRefusalOf({ brief, goAhead, overlapOk, now })
 	if (wordRefusal) return { exit: lotRefusalExit({ lines: [wordRefusal], json }) }
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
@@ -214,6 +217,69 @@ export function prepareStart(params: {
 			derivation,
 		},
 	}
+}
+
+/**
+ * Why the go-ahead may not be recorded: a person's forbidden word in `--by` or `--reason`; with accepted overlaps (they
+ * reach the public records), a path, a link, a reference or a plan entry id in either, or records over the limit of
+ * one append. Undefined without a go-ahead, or when it passes.
+ */
+function goAheadRefusalOf(params: {
+	brief: CheckedBrief
+	goAhead: StartGoAhead | undefined
+	overlapOk: boolean
+	now: Date
+}): string | undefined {
+	const { brief, goAhead } = params
+	if (goAhead === undefined) return undefined
+	if (!params.overlapOk || brief.acceptedOverlaps.length === 0)
+		return forbiddenWordRefusal({
+			root: brief.repository,
+			verb: START_VERB,
+			options: [
+				{ option: '--by', text: goAhead.by },
+				{ option: '--reason', text: goAhead.reason },
+			],
+		})
+	const refusal = overlapGoAheadRefusal({
+		root: brief.repository,
+		verb: START_VERB,
+		...goAhead,
+		ids: lotPlanEntryIds({ planPath: undefined, branch: brief.branch }),
+	})
+	if (refusal !== undefined) return refusal
+	const overLimit = overlapsOverLimit(startOverlapRecordsOf({ brief, goAhead, now: params.now }))
+	return overLimit === undefined
+		? undefined
+		: START_OVERLAPS_OVER_LIMIT.replace('{message}', () => overLimit)
+}
+
+/** The lines a start prints of the overlaps it accepted (`! overlaps <lot>: ...`), its dry run too; none without. */
+function startOverlapLinesOf(params: {
+	brief: CheckedBrief
+	goAhead: StartGoAhead | undefined
+	now: Date
+}): string[] {
+	const { goAhead } = params
+	if (goAhead === undefined) return []
+	return lotOverlapLines(startOverlapRecordsOf({ ...params, goAhead })).map((line) =>
+		START_OVERLAP_LINE.replace('{overlap}', () => line),
+	)
+}
+
+/** The `overlaps.jsonl` records of a start: one per overlap its `--overlap-ok` accepted, with the go-ahead. */
+function startOverlapRecordsOf(params: {
+	brief: CheckedBrief
+	goAhead: StartGoAhead
+	now: Date
+}): LotOverlapRecord[] {
+	return overlapRecordsOf({
+		overlaps: params.brief.acceptedOverlaps,
+		verb: START_VERB,
+		at: params.now.toISOString(),
+		by: params.goAhead.by,
+		reason: params.goAhead.reason,
+	})
 }
 
 /**
@@ -254,7 +320,10 @@ export function finishStart(params: {
 			],
 			json,
 		})
-	const riskLines = riskLinesOf({ effort, derivation, goAhead: prepared.goAhead })
+	const riskLines = [
+		...riskLinesOf({ effort, derivation, goAhead: prepared.goAhead }),
+		...startOverlapLinesOf({ brief, goAhead: prepared.goAhead, now: prepared.now }),
+	]
 	if (prepared.dryRun)
 		return dryRunOutput({
 			brief,
@@ -287,8 +356,8 @@ export function finishStart(params: {
 export function recheckOverlap(params: {
 	lotFolder: string
 	caseInsensitive: boolean
-	/** The lots the start's `--overlap-ok` accepted: the re-check refuses only a lot it did not name. */
-	accepted?: readonly string[]
+	/** The overlaps the start's `--overlap-ok` accepted: the re-check refuses any other (`isCoveredOverlap`). */
+	accepted?: readonly LotOverlap[]
 	now: Date
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
@@ -302,7 +371,7 @@ export function recheckOverlap(params: {
 function recheckedFailure(params: {
 	lotFolder: string
 	caseInsensitive: boolean
-	accepted?: readonly string[]
+	accepted?: readonly LotOverlap[]
 	now: Date
 	pause?: SynchronousPause
 }): { name: string; reason: string } | undefined {
@@ -315,7 +384,7 @@ function recheckedFailure(params: {
 		caseInsensitive: params.caseInsensitive,
 		except: basename(params.lotFolder),
 		pause: params.pause,
-	}).filter((found) => !accepted.includes(found.name))
+	}).filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })
@@ -514,7 +583,7 @@ function startPublished(params: {
 	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
-		accepted: brief.acceptedOverlaps.map((accepted) => accepted.name),
+		accepted: brief.acceptedOverlaps,
 		now,
 		pause: seams.pause,
 	})
@@ -706,13 +775,7 @@ function writeStartOverlaps(params: {
 	if (brief.acceptedOverlaps.length === 0 || goAhead === undefined) return
 	appendLotOverlaps({
 		lotFolder: params.folder,
-		records: overlapRecordsOf({
-			overlaps: brief.acceptedOverlaps,
-			verb: START_VERB,
-			at: params.now.toISOString(),
-			by: goAhead.by,
-			reason: goAhead.reason,
-		}),
+		records: startOverlapRecordsOf({ brief, goAhead, now: params.now }),
 	})
 }
 

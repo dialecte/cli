@@ -30,8 +30,12 @@ export const LOT_SCOPE_TEXTS = {
 	fault: 'lot scope: {name}: {path}: {fault}: nothing written',
 	overlap: 'lot scope: {name}: the added paths meet the open lot {lot}: {met}: nothing written',
 	overlapAccepted: 'lot scope: {name} {overlaps}',
+	overlapNotAccepted:
+		'lot scope: {name}: the added paths meet the open lot {lot}: {met}: --overlap-ok accepts only an overlap that names its paths: nothing written',
+	overlapOkWithoutAdd:
+		'lot scope: {name}: --overlap-ok accepts the overlap of an add: no --add given: nothing written',
 	overlapRecordFailure:
-		'lot scope: {name}: the overlap could not be recorded: {message}: the add is undone',
+		'lot scope: {name}: the overlap could not be recorded: {message}: nothing written',
 	emptied:
 		'lot scope: {name}: the drop leaves the lot no scope: stop it instead (dialecte lot stop {name} --reason <text>): nothing written',
 	noEntry: "lot scope: {name}: {path} is no entry of the lot's scope: nothing written",

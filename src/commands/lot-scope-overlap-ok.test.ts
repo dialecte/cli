@@ -6,11 +6,15 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { BRIEF_DAMAGES, DAMAGES } from '../../test/damaged-lot-workspace.constants.ts'
+import { briefDamagedLotIn, damagedLotIn } from '../../test/damaged-lot-workspace.ts'
 import { startRealLot } from '../../test/lot-handover-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readLotOverlaps } from '../lib/store/lot-overlaps.ts'
 import { readLotScope } from '../lib/store/lot-records.ts'
+import { appendScopeChanges } from '../lib/store/scope-changes.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
+import { runLotScope } from './lot-scope.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -27,6 +31,8 @@ const OTHER_LOT = '0009-repo-docs'
 const ADDED = 'docs/setup.md'
 const BY = 'person-a'
 const REASON = 'separate lines in one file'
+/** A lot no go-ahead named. */
+const UNNAMED_LOT = '0010-repo-unnamed'
 
 /** A started lot and an open lot holding `docs/`. */
 function lotBesideDocsLot(): LotHandoverWorkspace {
@@ -62,7 +68,7 @@ describe('lot scope --overlap-ok', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(readLotScope({ lotFolder: lot.lotFolder })).toContain(ADDED)
-		expect(readLotOverlaps({ lotFolder: lot.lotFolder })).toEqual([
+		expect(readLotOverlaps({ lotFolder: lot.lotFolder }).overlaps).toEqual([
 			{
 				schema: 1,
 				at: NOW.toISOString(),
@@ -95,3 +101,128 @@ describe('lot scope --overlap-ok', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(readLotScope({ lotFolder: lot.lotFolder })).not.toContain(ADDED)
 	})
 })
+
+/** `lot scope <lot> --add <ADDED> --overlap-ok --by --reason` with the seams, from the main checkout. */
+function addOverlapOkWith(params: { lot: LotHandoverWorkspace; afterAppend: () => void }) {
+	return runLotScope({
+		cwd: params.lot.start.cwd,
+		argv: [params.lot.lotName, '--add', ADDED, '--overlap-ok', '--by', BY, '--reason', REASON],
+		now: NOW,
+		seams: { afterAppend: params.afterAppend },
+	})
+}
+
+describe(
+	'lot scope --overlap-ok: what the go-ahead does not cover',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('an unnamed lot meeting the add starts meanwhile → the add is taken back naming it', () => {
+			const lot = lotBesideDocsLot()
+
+			const result = addOverlapOkWith({
+				lot,
+				afterAppend: function startUnnamedLot() {
+					writeStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
+				},
+			})
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).toContain(
+				`the added paths meet the open lot ${UNNAMED_LOT} (changed meanwhile)`,
+			)
+			expect(readLotScope({ lotFolder: lot.lotFolder })).not.toContain(ADDED)
+		})
+
+		it('the accepted lot widens meanwhile (a new met pair) → the add is taken back naming it', () => {
+			const lot = lotBesideDocsLot()
+
+			const result = addOverlapOkWith({
+				lot,
+				afterAppend: function widenAcceptedLot() {
+					appendScopeChanges({
+						lotFolder: join(lot.start.store, OTHER_LOT),
+						changes: [
+							{
+								schema: 1,
+								at: NOW.toISOString(),
+								op: 'add',
+								paths: [ADDED],
+								by: BY,
+								reason: REASON,
+							},
+						],
+					})
+				},
+			})
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).toContain(
+				`the added paths meet the open lot ${OTHER_LOT} (changed meanwhile)`,
+			)
+			expect(readLotScope({ lotFolder: lot.lotFolder })).not.toContain(ADDED)
+		})
+
+		it('the overlap record is written before the add (it stands when the add does)', () => {
+			const lot = lotBesideDocsLot()
+			const seen: number[] = []
+
+			addOverlapOkWith({
+				lot,
+				afterAppend: function countRecords() {
+					seen.push(readLotOverlaps({ lotFolder: lot.lotFolder }).overlaps.length)
+				},
+			})
+
+			expect(seen).toEqual([1])
+		})
+
+		it.each([
+			{
+				label: 'a damaged lot whose scope reads',
+				other: (lot: LotHandoverWorkspace) =>
+					damagedLotIn({ start: lot.start, kind: DAMAGES[0].kind, scope: ['docs/'] }).name,
+			},
+			{
+				label: 'a lot whose scope cannot be read',
+				other: (lot: LotHandoverWorkspace) =>
+					briefDamagedLotIn({ start: lot.start, brief: BRIEF_DAMAGES[0].kind }).name,
+			},
+		])(
+			'$label meets the add → refused with --overlap-ok, saying why it cannot accept it',
+			({ other }) => {
+				const lot = startRealLot()
+				const name = other(lot)
+
+				const result = addWith({ lot, extra: ['--overlap-ok'] })
+
+				expect(result.exitCode).toBe(2)
+				expect(result.output).toContain(`the added paths meet the open lot ${name}`)
+				expect(result.output).toContain('--overlap-ok accepts only an overlap that names its paths')
+				expect(readLotScope({ lotFolder: lot.lotFolder })).not.toContain(ADDED)
+			},
+		)
+
+		it('--overlap-ok with only --drop → refused: there is no add to accept', () => {
+			const lot = startRealLot()
+
+			const result = runLot({
+				cwd: lot.start.cwd,
+				argv: [
+					'scope',
+					lot.lotName,
+					'--drop',
+					'src/dataflow/',
+					'--overlap-ok',
+					'--by',
+					BY,
+					'--reason',
+					REASON,
+				],
+				now: NOW,
+			})
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).toContain('--overlap-ok accepts the overlap of an add: no --add given')
+		})
+	},
+)

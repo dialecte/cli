@@ -1,8 +1,12 @@
-/** `overlaps.jsonl` read back: only a line holding every key, of its type, counts; the rest is skipped, never read. */
+/**
+ * `overlaps.jsonl` read back: only a line holding every key, of its type, counts; the rest is counted, never read, and
+ * the card's scope line warns about it.
+ */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { buildScopeLine } from '../gate-records/card-gates.ts'
 import { readLotOverlaps } from './lot-overlaps.ts'
 import { STORE_FILES } from './store.constants.ts'
 
@@ -42,12 +46,21 @@ describe('readLotOverlaps', () => {
 	])('a line with $label beside a good one → the good one alone', ({ line }) => {
 		const lotFolder = lotFolderWith(`${line}\n${JSON.stringify(RECORD)}\n`)
 
-		expect(readLotOverlaps({ lotFolder })).toEqual([RECORD])
+		expect(readLotOverlaps({ lotFolder })).toEqual({ overlaps: [RECORD], unreadable: 1 })
 	})
 
 	it('a last line without its line feed → skipped', () => {
 		const lotFolder = lotFolderWith(`${JSON.stringify(RECORD)}\n${JSON.stringify(RECORD)}`)
 
-		expect(readLotOverlaps({ lotFolder })).toEqual([RECORD])
+		expect(readLotOverlaps({ lotFolder })).toEqual({ overlaps: [RECORD], unreadable: 1 })
+	})
+	it('a line that does not read → the card scope line warns, naming how many', () => {
+		const lotFolder = lotFolderWith(`not json\n${JSON.stringify(RECORD)}\n`)
+
+		expect(buildScopeLine({ folder: lotFolder })).toEqual({
+			name: 'scope',
+			status: 'warning',
+			detail: `overlaps ${RECORD.lot}: ${RECORD.met[0]} (by ${RECORD.by}: ${RECORD.reason}) · 1 line(s) of overlaps.jsonl do not read`,
+		})
 	})
 })

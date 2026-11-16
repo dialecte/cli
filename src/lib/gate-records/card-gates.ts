@@ -1240,7 +1240,10 @@ export function buildScopeLine(params: { folder: string }): CardGateLine | undef
 	if (parts.length === 0) return undefined
 	return {
 		name: SCOPE_LINE_NAME,
-		status: scope.unreadable === undefined && overlaps.length === 0 ? 'passed' : 'warning',
+		status:
+			scope.unreadable === undefined && overlaps.overlaps.length === 0 && overlaps.unreadable === 0
+				? 'passed'
+				: 'warning',
 		detail: parts.join(LOT_OVERLAP_SEPARATOR),
 	}
 }

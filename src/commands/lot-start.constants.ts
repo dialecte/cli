@@ -15,6 +15,12 @@ export const START_USAGE_REASONS = {
 	asked: 'no effort among {efforts} after {attempts} answers',
 } as const
 
+/** The line a start prints per accepted overlap: `{overlap}` its text. */
+export const START_OVERLAP_LINE = '! {overlap}'
+
+/** The refusal of accepted overlaps whose records do not fit one append: `{message}` names the file and the size. */
+export const START_OVERLAPS_OVER_LIMIT = 'lot start: {message}: nothing written'
+
 /** The verb the forbidden-word refusal of `--by` and `--reason` names. */
 export const START_VERB = 'start'
 

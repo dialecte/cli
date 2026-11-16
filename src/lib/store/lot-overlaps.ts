@@ -7,37 +7,50 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { appendLine } from '../events/write-event.ts'
+import { appendLine, overLimitMessage } from '../events/write-event.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { forbiddenWordRefusal } from '../review-rounds/option-checks.ts'
 import {
 	LOT_OVERLAP_KEYS,
 	LOT_OVERLAP_LINE_LIMIT,
+	LOT_OVERLAP_OVER_LIMIT,
 	LOT_OVERLAP_MET_SEPARATOR,
 	LOT_OVERLAP_SCHEMA,
 	LOT_OVERLAP_SEPARATOR,
 	LOT_OVERLAP_TEXT,
+	LOT_OVERLAP_UNREADABLE,
 	LOT_OVERLAP_VERBS,
 } from './lot-overlaps.constants.ts'
+import { PUBLIC_TEXT_REFUSAL, PUBLIC_TEXT_UNCHECKED_REFUSAL } from './public-text.constants.ts'
+import { publicTextLabel } from './public-text.ts'
 import { STORE_FILES } from './store.constants.ts'
 
-import type { LotOverlapRecord, OverlapVerb } from './lot-overlaps.types.ts'
+import type { LotOverlapRecord, LotOverlaps, OverlapVerb } from './lot-overlaps.types.ts'
 import type { LotOverlap } from './store.types.ts'
 
-/** The overlaps the lot folder records, in file order; none without the file. A line that does not read is skipped. */
-export function readLotOverlaps(params: { lotFolder: string }): LotOverlapRecord[] {
+/**
+ * The overlaps the lot folder records, in file order, and how many lines do not read as one (counted, never read, a
+ * last line without its line feed among them); none without the file.
+ */
+export function readLotOverlaps(params: { lotFolder: string }): LotOverlaps {
 	let content: string
 	try {
 		content = readFileSync(lotOverlapsFileOf(params), 'utf8')
 	} catch {
-		return []
+		return { overlaps: [], unreadable: 0 }
 	}
 	const lines = content.split('\n')
-	// the text after the last line feed is a line without its end: never trusted
-	lines.pop()
-	return lines.flatMap((text) => {
+	// the text after the last line feed is a line without its end: never trusted, even when it parses
+	const torn = lines.pop()
+	const overlaps: LotOverlapRecord[] = []
+	let unreadable = torn === undefined || torn === '' ? 0 : 1
+	for (const text of lines) {
+		if (text === '') continue
 		const record = parseOverlapRecord(text)
-		return record === undefined ? [] : [record]
-	})
+		if (record === undefined) unreadable += 1
+		else overlaps.push(record)
+	}
+	return { overlaps, unreadable }
 }
 
 /** Appends the records of one call in one write; refused over the line limit. */
@@ -47,10 +60,7 @@ export function appendLotOverlaps(params: {
 }): void {
 	appendLine({
 		file: lotOverlapsFileOf(params),
-		line: Buffer.from(
-			params.records.map((record) => `${JSON.stringify(record)}\n`).join(''),
-			'utf8',
-		),
+		line: lotOverlapsBufferOf(params.records),
 		limit: LOT_OVERLAP_LINE_LIMIT,
 	})
 }
@@ -75,27 +85,110 @@ export function overlapRecordsOf(params: {
 	}))
 }
 
+/**
+ * Whether a re-check's overlap is one the go-ahead accepted: the same lot, still acceptable, and no met pair the check
+ * did not show (a lot that widened meanwhile meets more than was accepted).
+ */
+export function isCoveredOverlap(params: {
+	overlap: LotOverlap
+	accepted: readonly LotOverlap[]
+}): boolean {
+	const { overlap } = params
+	const accepted = params.accepted.find((each) => each.name === overlap.name)
+	return (
+		accepted !== undefined &&
+		isAcceptableOverlap(overlap) &&
+		overlap.met.every((pair) => accepted.met.includes(pair))
+	)
+}
+
+/** The bytes the records of one call are written as, in one append: each record's JSON and a line feed. */
+export function lotOverlapsBufferOf(records: readonly LotOverlapRecord[]): Buffer {
+	return Buffer.from(records.map((record) => `${JSON.stringify(record)}\n`).join(''), 'utf8')
+}
+
+/** Why the records of one call cannot be written in one append (over the line limit); undefined when they fit. */
+export function overlapsOverLimit(records: readonly LotOverlapRecord[]): string | undefined {
+	const bytes = lotOverlapsBufferOf(records).length
+	if (bytes <= LOT_OVERLAP_LINE_LIMIT) return undefined
+	return LOT_OVERLAP_OVER_LIMIT.replace('{message}', () =>
+		overLimitMessage({ bytes, limit: LOT_OVERLAP_LINE_LIMIT }),
+	)
+}
+
+/**
+ * Why `--by` or `--reason` of an accepted overlap may not be recorded: a person's forbidden word, then (each reaches the
+ * public records) a path, a link, a reference or a plan entry id; undefined when both pass.
+ */
+export function overlapGoAheadRefusal(params: {
+	root: string
+	verb: string
+	by: string
+	reason: string
+	ids: ReadonlySet<string>
+}): string | undefined {
+	const { root, verb } = params
+	const options = [
+		{ option: '--by', text: params.by },
+		{ option: '--reason', text: params.reason },
+	]
+	const wordRefusal = forbiddenWordRefusal({ root, verb, options })
+	if (wordRefusal) return wordRefusal
+	for (const { option, text } of options) {
+		let label: string | undefined
+		try {
+			label = publicTextLabel({ text, root, ids: params.ids })
+		} catch (error) {
+			return fillMessage({
+				template: PUBLIC_TEXT_UNCHECKED_REFUSAL,
+				values: { verb, option, reason: (error as Error).message },
+			})
+		}
+		if (label !== undefined)
+			return fillMessage({ template: PUBLIC_TEXT_REFUSAL, values: { verb, option, label } })
+	}
+	return undefined
+}
+
 /** An overlap `--overlap-ok` may accept: it names its met paths (its lot's scope reads, and the lot is not damaged). */
 export function isAcceptableOverlap(overlap: LotOverlap): boolean {
 	return overlap.everyPath !== true && overlap.damage === undefined && overlap.met.length > 0
 }
 
-/** The recorded overlaps as one text (`overlaps <lot>: <met> (by <who>: <reason>)`, joined); undefined for none. */
-export function lotOverlapsText(records: readonly LotOverlapRecord[]): string | undefined {
-	if (records.length === 0) return undefined
-	return records
-		.map((record) =>
-			fillMessage({
-				template: LOT_OVERLAP_TEXT,
-				values: {
-					lot: record.lot,
-					met: record.met.join(LOT_OVERLAP_MET_SEPARATOR),
-					by: record.by,
-					reason: record.reason,
-				},
-			}),
-		)
-		.join(LOT_OVERLAP_SEPARATOR)
+/** One line per recorded overlap (`overlaps <lot>: <met> (by <who>: <reason>)`). */
+export function lotOverlapLines(records: readonly LotOverlapRecord[]): string[] {
+	return records.map(overlapTextOf)
+}
+
+/**
+ * The recorded overlaps as one text (`overlaps <lot>: <met> (by <who>: <reason>)`, joined), then how many lines do not
+ * read; undefined for none of either.
+ */
+export function lotOverlapsText(params: {
+	overlaps: readonly LotOverlapRecord[]
+	unreadable?: number
+}): string | undefined {
+	const unreadable = params.unreadable ?? 0
+	const parts = [
+		...params.overlaps.map(overlapTextOf),
+		...(unreadable > 0
+			? [LOT_OVERLAP_UNREADABLE.replace('{count}', () => String(unreadable))]
+			: []),
+	]
+	return parts.length === 0 ? undefined : parts.join(LOT_OVERLAP_SEPARATOR)
+}
+
+/** One recorded overlap as text. */
+function overlapTextOf(record: LotOverlapRecord): string {
+	return fillMessage({
+		template: LOT_OVERLAP_TEXT,
+		values: {
+			lot: record.lot,
+			met: record.met.join(LOT_OVERLAP_MET_SEPARATOR),
+			by: record.by,
+			reason: record.reason,
+		},
+	})
 }
 
 /** The lot folder's `overlaps.jsonl`. */

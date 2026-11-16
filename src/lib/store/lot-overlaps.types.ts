@@ -14,3 +14,6 @@ export type LotOverlapRecord = {
 	by: string
 	reason: string
 }
+
+/** The lot folder's `overlaps.jsonl` read: the records in file order, and how many lines do not read as one. */
+export type LotOverlaps = { overlaps: LotOverlapRecord[]; unreadable: number }
