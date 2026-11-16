@@ -26,6 +26,7 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 					sections: [{ section: 'Fixed', text: '- the gate reads the tree.' }],
 				},
 			],
+			notes: [],
 			problems: [],
 		})
 	})
@@ -70,6 +71,7 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('no changes folder → no fragment, no problem', () => {
 		expect(readFragments({ root: createScratchRepository() })).toEqual({
 			fragments: [],
+			notes: [],
 			problems: [],
 		})
 	})
@@ -77,6 +79,28 @@ describe('readFragments', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('a file of the folder that is no .md (a .gitkeep) → ignored', () => {
 		const root = createScratchRepository({ 'changes/.gitkeep': '' })
 
-		expect(readFragments({ root })).toEqual({ fragments: [], problems: [] })
+		expect(readFragments({ root })).toEqual({ fragments: [], notes: [], problems: [] })
+	})
+})
+
+describe('readFragments: a no-entry note', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('changes/<name>.none.md holding a reason → a note, no fragment, no problem', () => {
+		const root = createScratchRepository({
+			'changes/typo.none.md': 'a wording fix in the README\n',
+		})
+
+		expect(readFragments({ root })).toEqual({
+			fragments: [],
+			notes: [{ file: 'changes/typo.none.md', reason: 'a wording fix in the README' }],
+			problems: [],
+		})
+	})
+
+	it('changes/<name>.none.md with no text → a problem: it must say why no entry', () => {
+		const root = createScratchRepository({ 'changes/typo.none.md': '\n' })
+
+		expect(readFragments({ root }).problems).toEqual([
+			{ file: 'changes/typo.none.md', problem: 'a no-entry note holds no reason' },
+		])
 	})
 })

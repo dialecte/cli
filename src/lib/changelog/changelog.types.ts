@@ -12,8 +12,20 @@ export type Fragment = { file: string; sections: SectionEntry[] }
 /** A fragment that cannot be folded, and why. */
 export type FragmentProblem = { file: string; problem: string }
 
-/** The fragments of a package, in file name order, and the problems of those that cannot be read. */
-export type FragmentsRead = { fragments: Fragment[]; problems: FragmentProblem[] }
+/** A no-entry note: its path and why the change has no changelog entry. */
+export type NoEntryNote = { file: string; reason: string }
+
+/** The fragments and no-entry notes of a package, in file name order, and the problems of those that cannot be read. */
+export type FragmentsRead = {
+	fragments: Fragment[]
+	notes: NoEntryNote[]
+	problems: FragmentProblem[]
+}
+
+/** Whether a change brings the fragment it asks for: passed with what answered (`note`), or failed with why. */
+export type FragmentCheck =
+	| { status: 'passed'; note: string }
+	| { status: 'failed'; reason: string }
 
 /** The changelog after a release fold, or why the fold is refused. */
 export type FoldResult = { text: string } | { refusal: string }

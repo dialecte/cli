@@ -1,3 +1,5 @@
+import { FRAGMENT_CHECK_LINES } from '../changelog/changelog.constants.ts'
+import { checkChangeFragment } from '../changelog/fragment-check.ts'
 /**
  * `dialecte contrib [--no-reuse] [--json]` - the contributor checks of a dialecte package, after `gate --full`
  * and before `dialecte handover`: rules, the package's steps, the release guard, the mutation line. The command
@@ -314,7 +316,12 @@ async function runRows(params: {
 			const running = progress?.start({ name: step.name, detail: `dialecte ${step.builtin}` })
 			const finishPart = recorder.startPart({ name: step.name, heavy: false })
 			const base = params.rulesBase
-			const result = step.builtin === 'rules' ? rulesResult({ root, base }) : releaseResult(root)
+			const result =
+				step.builtin === 'rules'
+					? rulesResult({ root, base })
+					: step.builtin === 'changelog'
+						? changelogResult({ root, base })
+						: releaseResult(root)
 			durations.set(result, finishPart())
 			results.push(result)
 			if (running) showLive({ result, finish: running.finish })
@@ -433,6 +440,22 @@ function rulesResult(params: { root: string; base: string | undefined }): StepRe
 	}
 }
 
+/** The changelog row: the change since `base` brings the fragment a README or help edit asks for (`checkChangeFragment`). */
+function changelogResult(params: { root: string; base: string | undefined }): StepResult {
+	const step = { name: CONTRIB_BUILTIN_STEPS.changelog.name, run: '' }
+	// no base: no change to read, said plainly rather than read as a pass
+	if (params.base === undefined)
+		return { step, status: 'passed', counts: {}, restored: [], note: FRAGMENT_CHECK_LINES.noBase }
+	const check = checkChangeFragment({ root: params.root, base: params.base })
+	return {
+		step,
+		status: check.status,
+		counts: {},
+		restored: [],
+		...(check.status === 'failed' ? { reason: check.reason } : { note: check.note }),
+	}
+}
+
 /** `first: <file>:<line>:<column> <rule>`, and how many more errors there are. */
 function firstErrorOf(errors: readonly RuleFinding[]): string {
 	const [first] = errors
@@ -476,7 +499,7 @@ function gateReusedResult(params: {
 
 /** The row is the built-in release row, the last of every run. */
 function isReleaseRow(step: { name: string }): boolean {
-	return step.name === CONTRIB_BUILTIN_STEPS.last.name
+	return step.name === CONTRIB_BUILTIN_STEPS.release.name
 }
 
 /** The package steps among the rows: those with a shell command. */

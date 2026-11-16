@@ -2229,7 +2229,9 @@ order, section by section, one entry per line, and the fragments are deleted (`c
 Code fences and a link block at the end of the changelog are kept as they are. In the commit hook the rule reads the
 version from the tree the commit records. `dialecte rules` refuses a change that edits
 `CHANGELOG.md` without bumping the package version (`changelog-edit`, an error); a package without `changes/` is not
-judged.
+judged. `dialecte contrib`'s `changelog` row (after `rules`) fails a change that edits `README.md` or the command map
+with no fragment; a wording-only edit adds `changes/<lot>.none.md` holding why it has no entry instead (the release
+deletes those notes without folding them).
 
 ### GitHub text: lot recap and text check
 

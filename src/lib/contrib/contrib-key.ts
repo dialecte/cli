@@ -28,7 +28,7 @@ export function contribKeyHash(params: {
 	head: string
 }): string {
 	const hash = contribCommandHash({ steps: params.steps, head: params.head })
-	const rules = CONTRIB_BUILTIN_STEPS.first.builtin
+	const rules = CONTRIB_BUILTIN_STEPS.rules.builtin
 	return params.steps.some((step) => 'builtin' in step && step.builtin === rules)
 		? foldMachineLists({ root: params.root, hash })
 		: hash

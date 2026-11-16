@@ -1,7 +1,8 @@
 /**
  * `dialecte changelog check | release <x.y.z> [--date YYYY-MM-DD]`: the changelog fragments of the package
  * (`changes/<name>.md`, one per lot). `check` reads every fragment; `release` folds them, after the Unreleased entries,
- * into a new version section of `CHANGELOG.md` and deletes them - nothing written when a fragment or the Unreleased
+ * into a new version section of `CHANGELOG.md` and deletes them, with the no-entry notes
+ * (`changes/<name>.none.md`) - nothing written when a fragment or the Unreleased
  * part cannot be read; `check` reads the Unreleased part too.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -64,7 +65,7 @@ export function runChangelog(params: { cwd: string; argv: string[] }): CommandRe
 	writeFileSync(file, folded.text)
 	const leftovers = deleteFragments({
 		cwd: params.cwd,
-		files: read.fragments.map((fragment) => fragment.file),
+		files: [...read.fragments, ...read.notes].map((entry) => entry.file),
 	})
 	const released = CHANGELOG_LINES.released
 		.replace('{version}', version)

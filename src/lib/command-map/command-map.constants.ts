@@ -424,6 +424,7 @@ export const COMMAND_MAP: CommandMap = {
 		usage: ['dialecte contrib [--no-reuse] [--json]'],
 		notes: [
 			'after gate --full and before handover: rules on the changed files (against the base of the lot, the order the rules step of the gate shares: the recorded base of the store lot, else the merge-base with the base branch, as the rules step of the gate takes it, else the last release tag <name>@v<version>, every error kept without any; a rehearsal against the tip its last merge lot merges, else the gate base of the repository at the HEAD of the lots file: an error on a line the base holds is a warning), the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it), no dependency named by a local folder, the mutation line when a scope is declared',
+			'the changelog row (after rules): in a package keeping changes/, a change that edits README.md or the command map adds a changelog fragment changes/<lot>.md, or a no-entry note changes/<lot>.none.md saying why; else it fails naming the file',
 			'a step a green gate --full of this tree and install passed with the same command is not run again; --no-reuse runs every row',
 			'a step whose run is npm run <script> the package lacks is not wired: it fails, default or declared; then no row runs, the others read not run: a step of the list is not wired; "dialecte": { "contrib": { "skip": { "<default step>": "<reason>" } } } (dialecte.contrib.skip) opts a default step out, a warning with its reason',
 		],
@@ -436,9 +437,9 @@ export const COMMAND_MAP: CommandMap = {
 			'Changelog fragments (changes/<lot>.md): check them, or fold them into CHANGELOG.md for a release',
 		usage: ['dialecte changelog check', 'dialecte changelog release <x.y.z> [--date YYYY-MM-DD]'],
 		notes: [
-			'a fragment: one changes/<name>.md per lot, its entries under the changelog headings ### Added, Changed, Deprecated, Removed, Fixed, Security; a package keeping a changes/ folder edits CHANGELOG.md only in a release (rules: changelog-edit)',
+			'a fragment: one changes/<name>.md per lot (a no-entry note changes/<name>.none.md holds why a visible change has none), its entries under the changelog headings ### Added, Changed, Deprecated, Removed, Fixed, Security; a package keeping a changes/ folder edits CHANGELOG.md only in a release (rules: changelog-edit)',
 			'check - every fragment readable (a known heading, no loose text, no empty or repeated section), and the Unreleased part of CHANGELOG.md',
-			'release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased] (written above the first version when missing): the Unreleased summary and entries first, then each fragment in file name order, section by section, one entry per line; deletes the fragments; nothing written when a fragment or the Unreleased part cannot be read',
+			'release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased] (written above the first version when missing): the Unreleased summary and entries first, then each fragment in file name order, section by section, one entry per line; deletes the fragments and the no-entry notes; nothing written when a fragment or the Unreleased part cannot be read',
 		],
 		exitCodes: [
 			'1  a fragment or the Unreleased part cannot be read, the release is refused (no CHANGELOG.md, version already there, nothing to release), or a fragment could not be deleted',

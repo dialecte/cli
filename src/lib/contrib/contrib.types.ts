@@ -5,7 +5,7 @@ import type { StepStatus } from '../gate/gate.types.ts'
 /** A row `dialecte contrib` runs in process rather than through a shell command. */
 export type BuiltinStep = {
 	name: string
-	builtin: 'rules' | 'release'
+	builtin: 'rules' | 'changelog' | 'release'
 }
 
 /** A row of `dialecte contrib`: a package step, or a built-in one. */

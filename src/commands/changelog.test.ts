@@ -55,6 +55,19 @@ describe('dialecte changelog', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(existsSync(join(root, 'changes/a.md'))).toBe(false)
 	})
 
+	it('release with a fragment and a no-entry note → the fragment folded, both deleted', () => {
+		const root = packageWith({
+			'changes/a.md': '### Added\n\n- a.\n',
+			'changes/b.none.md': 'a wording fix\n',
+		})
+
+		const result = runChangelog({ cwd: root, argv: ['release', '0.8.0', '--date', '2026-11-16'] })
+
+		expect(result.exitCode).toBe(0)
+		expect(existsSync(join(root, 'changes/a.md'))).toBe(false)
+		expect(existsSync(join(root, 'changes/b.none.md'))).toBe(false)
+	})
+
 	it('release with a fragment that cannot be read → exit 1, CHANGELOG.md and the fragments untouched', () => {
 		const root = packageWith({ 'changes/a.md': '### Added\n\n- a.\n', 'changes/b.md': 'loose\n' })
 

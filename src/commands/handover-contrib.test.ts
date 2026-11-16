@@ -180,7 +180,7 @@ describe(
 			const run = await runFolder({ out, argv: ['--rehearse'] })
 
 			expect(countRuns(counter)).toBe(1)
-			expect(run.text).toMatch(/✓ contrib +rules · bench · release · rehearsal/)
+			expect(run.text).toMatch(/✓ contrib +rules · changelog · bench · release · rehearsal/)
 			expect(run.exitCode).toBe(0)
 		})
 
@@ -192,7 +192,7 @@ describe(
 			const run = await runFolder({ out, argv: ['--rehearse'] })
 
 			expect(countRuns(counter)).toBe(1)
-			expect(run.text).toMatch(/✓ contrib +rules · bench · release · rehearsal/)
+			expect(run.text).toMatch(/✓ contrib +rules · changelog · bench · release · rehearsal/)
 			expect(run.exitCode).toBe(0)
 		})
 
@@ -204,7 +204,9 @@ describe(
 
 			const text = printCardAgain(out)
 
-			expect(gateLinesOf(text)).toContain('✓ contrib rules · bench · release · rehearsal')
+			expect(gateLinesOf(text)).toContain(
+				'✓ contrib rules · changelog · bench · release · rehearsal',
+			)
 		})
 
 		it('contributor, a merge lot rehearsed, then run → the contrib guard passes, the merge is committed', async () => {

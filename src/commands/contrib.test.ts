@@ -103,6 +103,7 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const record = contribRecordOf(root)
 		expect(rowNamesOf(result.output)).toEqual([
 			'rules',
+			'changelog',
 			'docs',
 			'type-bench',
 			'type-narrowing',
@@ -112,6 +113,7 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(record).toMatchObject({ mode: 'contrib', head: expect.stringMatching(/^[0-9a-f]{40}$/) })
 		expect(record?.steps.map((step) => [step.name, step.status])).toEqual([
 			['rules', 'passed'],
+			['changelog', 'passed'],
 			['docs', 'passed'],
 			['type-bench', 'passed'],
 			['release', 'passed'],
@@ -209,6 +211,7 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			parseContribJson(derivedResult.output).rows.map((row) => [row.name, row.status]),
 		).toEqual([
 			['rules', 'passed'],
+			['changelog', 'passed'],
 			['docs', 'passed'],
 			['type-narrowing', 'passed'],
 			['release', 'passed'],
@@ -216,6 +219,7 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(countRuns(counter)).toBe(1)
 		expect(parseContribJson(declaredResult.output).rows.map((row) => row.name)).toEqual([
 			'rules',
+			'changelog',
 			'narrowing',
 			'release',
 		])
@@ -230,8 +234,16 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output).toContain('skip  type-narrowing  no npm script "type-narrowing"')
-		expect(parseContribJson(json.output).rows.map((row) => row.name)).toEqual(['rules', 'release'])
-		expect(contribRecordOf(root)?.steps.map((step) => step.name)).toEqual(['rules', 'release'])
+		expect(parseContribJson(json.output).rows.map((row) => row.name)).toEqual([
+			'rules',
+			'changelog',
+			'release',
+		])
+		expect(contribRecordOf(root)?.steps.map((step) => step.name)).toEqual([
+			'rules',
+			'changelog',
+			'release',
+		])
 	})
 
 	it('a package whose type-narrowing script fails → its contrib row failed, exit 1, the verdict names it', async () => {
@@ -277,6 +289,7 @@ describe('contrib: the rows', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runContribIn({ cwd: root, argv: ['--json', '--no-reuse'] })
 		expect(parseContribJson(result.output).rows.map((row) => row.name)).toEqual([
 			'rules',
+			'changelog',
 			'release',
 		])
 	})
@@ -366,6 +379,7 @@ describe(
 			expect(reusedRun.profile).toBe('contributor')
 			expect(reusedRun.rows).toEqual([
 				{ name: 'rules', status: 'passed', detail: expect.any(String) },
+				{ name: 'changelog', status: 'passed', detail: expect.any(String) },
 				{ name: 'docs', status: 'passed', detail: expect.any(String) },
 				{ name: 'type-bench', status: 'passed', detail: expect.any(String) },
 				{ name: 'release', status: 'passed', detail: expect.any(String) },
@@ -588,5 +602,43 @@ describe('contrib given a store', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () =>
 			expect.objectContaining({ mode: 'contrib', origin: 'rehearsal' }),
 		])
 		expect(countRuns(counter)).toBe(1)
+	})
+})
+
+describe('contrib: the changelog row', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('a package keeping changes/, the README edited with no fragment → the changelog row fails naming it, exit 1', async () => {
+		const root = createContribPackage({
+			steps: [],
+			files: { 'changes/.gitkeep': '', 'README.md': '# demo\n' },
+		})
+		writeFiles({ root, files: { 'README.md': '# demo\n\nmore.\n' } })
+
+		const result = await runContribIn({ cwd: root, argv: ['--json'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(parseContribJson(result.output).rows).toContainEqual(
+			expect.objectContaining({
+				name: 'changelog',
+				status: 'failed',
+				detail: expect.stringContaining('README.md changed with no changelog fragment'),
+			}),
+		)
+	})
+
+	it('the same change with a fragment → the changelog row passes, naming it', async () => {
+		const root = createContribPackage({
+			steps: [],
+			files: { 'changes/.gitkeep': '', 'README.md': '# demo\n' },
+		})
+		writeFiles({
+			root,
+			files: { 'README.md': '# demo\n\nmore.\n', 'changes/lot.md': '### Added\n\n- more.\n' },
+		})
+
+		const result = await runContribIn({ cwd: root, argv: ['--json'] })
+
+		expect(parseContribJson(result.output).rows).toContainEqual(
+			expect.objectContaining({ name: 'changelog', status: 'passed' }),
+		)
 	})
 })

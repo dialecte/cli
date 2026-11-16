@@ -94,6 +94,7 @@ describe('resolveContribSteps marks', () => {
 
 		expect(resolveContribSteps({ packageJson })).toEqual([
 			{ name: 'rules', builtin: 'rules' },
+			{ name: 'changelog', builtin: 'changelog' },
 			{ name: 'lint', run: 'node scripts/lint.js' },
 			{ name: 'release', builtin: 'release' },
 		])
@@ -191,7 +192,7 @@ describe('resolveContribSteps refuses a dialecte.contrib.skip that is stale or u
 			contrib: { skip: { docs: 'no docs build here' } },
 		})
 
-		expect(resolveContribSteps({ packageJson })[1]).toStrictEqual({
+		expect(resolveContribSteps({ packageJson })[2]).toStrictEqual({
 			name: 'docs',
 			run: 'npm run doc:build',
 			restoresGeneratedDocs: true,

@@ -9,6 +9,29 @@ export const CHANGELOG_FILE = 'CHANGELOG.md'
 /** A fragment's extension: only these files of the folder are fragments (a `.gitkeep` is not). */
 export const FRAGMENT_EXTENSION = '.md'
 
+/** A no-entry note's extension: `changes/<name>.none.md` says why a visible change has no changelog entry. */
+export const NO_ENTRY_EXTENSION = '.none.md'
+
+/** The changed files that ask for a fragment: a visible change edits them (the help and the README). */
+export const FRAGMENT_ASKING_FILES: readonly string[] = [
+	'README.md',
+	'src/lib/command-map/command-map.constants.ts',
+]
+
+/** The check of a change: `{file}` the first changed file asking for a fragment. */
+export const FRAGMENT_CHECK_LINES = {
+	missing:
+		'{file} changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
+	noFolder: 'no changes/ folder: the package keeps no changelog fragments',
+	fragment: 'a changelog fragment: {files}',
+	note: 'no changelog entry: {reason}',
+	nothingAsked: 'no README or help change: no fragment asked',
+	release: 'a release (CHANGELOG.md edited): its version section answers the change',
+	problem: '{file}: {problem}',
+	unreadable: 'the change since {base} cannot be read: {reason}',
+	noBase: 'no base to read the change against: nothing judged',
+} as const
+
 /** The changelog's sections, in the order a release writes them (Keep a Changelog). */
 export const CHANGELOG_SECTIONS = [
 	'Added',
@@ -50,6 +73,7 @@ export const FRAGMENT_PROBLEMS = {
 	emptySection: 'section {section} holds no text',
 	noSection: 'holds no section',
 	repeatedSection: 'section {section} appears twice',
+	emptyNote: 'a no-entry note holds no reason',
 } as const
 
 /** Why a release fold is refused; `{version}` filled. */
