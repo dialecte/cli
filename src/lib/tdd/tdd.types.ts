@@ -337,6 +337,14 @@ export type LotMovedEntry = { from: string; to: string }
 /** A case a `moved` entry carries receipts from, with that entry. */
 export type MovedFrom = { entry: LotMovedEntry; from: TestCaseId }
 
+/**
+ * What a red run makes of a passing case `moved` entries name, before its run on the base: the red it may carry (from
+ * its earlier case), or why none can be carried.
+ */
+export type MovedCarry =
+	| { kind: 'carry'; from: TestCaseId; red: TddReceipt }
+	| { kind: 'refused'; reason: string }
+
 /** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
 export type RevisedHelper = { file: string; entry: LotCaseEntry }
 

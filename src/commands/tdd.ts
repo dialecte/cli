@@ -42,7 +42,7 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
-import { runCaseOnBase, trashBaseRunLeftovers } from '../lib/tdd/base-red.ts'
+import { runCaseOnBase, runCasesOnBase, trashBaseRunLeftovers } from '../lib/tdd/base-red.ts'
 import { frozenHashOf } from '../lib/tdd/case-status.ts'
 import { firstLine, notARed } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
@@ -103,8 +103,10 @@ import {
 	ONLY_REFUSAL,
 	PASSES_ON_BASE_TOO,
 	MOVED_CALL_DIFFERS,
+	MOVED_DEPENDENCY_DIFFERS,
 	MOVED_FROM,
 	MOVED_NO_RED,
+	MOVED_PASSES_ON_BASE,
 	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
@@ -123,9 +125,11 @@ import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
+import type { BaseRedVerdict } from '../lib/tdd/base-red.types.ts'
 import type {
 	LotCaseEntry,
 	LotMovedEntry,
+	MovedCarry,
 	MovedFrom,
 	ChangedTestFile,
 	DuplicateCaseId,
@@ -140,6 +144,7 @@ import type {
 	TddContext,
 	TddRunAdmission,
 	TddEntry,
+	TddFreeze,
 	TddLedger,
 	TddReceipt,
 	TddSubcommand,
@@ -334,7 +339,6 @@ async function runRed(params: {
 	const { context } = params
 	const { root } = context
 	const { testCode, changed, files, acceptances, revisions } = params.admission
-	const declaredMoves = params.admission.moves
 	const lines: string[] = []
 	const entries: TddEntry[] = []
 	const at = context.now().toISOString()
@@ -442,7 +446,24 @@ async function runRed(params: {
 		return listed
 	}
 	const frozen: Record<string, string> = {}
-	for (const file of runnable.filter((candidate) => !ranNoCase.has(candidate.file))) {
+	const judgedFiles = runnable.filter((candidate) => !ranNoCase.has(candidate.file))
+	const movedCarries = readMovedCarries({
+		context,
+		cases: cases.filter((testCase) => judgedFiles.some((file) => file.file === testCase.file)),
+		moves: params.admission.moves,
+		acceptances,
+		revisions,
+		testCode,
+		dependenciesOf: (file) => dependenciesOf(file).dependencies,
+	})
+	const movedOnBase = await runCasesOnBase({
+		root,
+		base: context.base,
+		packageJson: context.packageJson,
+		testCases: cases.filter((testCase) => movedCarries.get(caseLabel(testCase))?.kind === 'carry'),
+		observer: runnerObserverOf({ context, name: 'tdd red on the base, moved cases' }),
+	})
+	for (const file of judgedFiles) {
 		const { dependencies, unresolved: unresolvedImports } = dependenciesOf(file.file)
 		if (unresolvedImports.length) {
 			const reason = `cannot resolve the import ${unresolvedImports.map((specifier) => `"${specifier}"`).join(', ')}: ${UNRESOLVED_IMPORT_HINT}`
@@ -477,7 +498,8 @@ async function runRed(params: {
 				testCodeChanged,
 				acceptances,
 				revisions,
-				moves: declaredMoves,
+				movedCarry: movedCarries.get(caseLabel(testCase)),
+				movedOnBase: movedOnBase.get(caseLabel(testCase)),
 			})
 			judged.push(judgement)
 		}
@@ -684,8 +706,10 @@ async function judgeRed(params: {
 	acceptances: readonly LotCaseEntry[]
 	/** The cases the lot declares revised at review. */
 	revisions: readonly LotCaseEntry[]
-	/** The cases the lot declares moved after their red. */
-	moves: readonly LotMovedEntry[]
+	/** What the lot's `moved` entries make of the case (`readMovedCarries`); none name it: undefined. */
+	movedCarry: MovedCarry | undefined
+	/** How the case ran on the base's production, when it may carry a red. */
+	movedOnBase: BaseRedVerdict | undefined
 }): Promise<RedJudgement> {
 	const { testCase, productionHash } = params
 	const { ledger } = params.context
@@ -730,17 +754,9 @@ async function judgeRed(params: {
 			reason: 'failed',
 			flags: [],
 		}
-	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label; a file
-	// entry speaks only for the cases of the change, and only when one of them carries
-	const moved = counted.some((receipt) => PROOF_KINDS.includes(receipt.kind))
-		? undefined
-		: judgeMoved({
-				...params,
-				froms: findMovedFroms({ entries: params.moves, testCase }).filter(
-					({ entry }) => namesOneCase(entry.to) || testCase.ofChange,
-				),
-			})
-	if (moved) return moved
+	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label
+	if (params.movedCarry)
+		return judgeMoved({ testCase, carry: params.movedCarry, onBase: params.movedOnBase })
 	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
 	// an acceptance never overrides a proof: a case proven red → green goes the normal path, the line says so
 	if (acceptance && !isProvenRedThenGreen({ receipts: counted, caseHash: testCase.caseHash }))
@@ -758,53 +774,130 @@ async function judgeRed(params: {
 }
 
 /**
- * A passing case `moved` entries carry from earlier labels (`froms`): the last red the read rule counts of the first
- * earlier case whose red froze the case's test call under its earlier name, carried under the case's label (flag
- * `moved`, at that red's production state). None carries: refused naming why (a case entry's earlier case holds no
- * red, or an earlier red froze another call); file entries whose earlier files hold no red of it leave the case to the
- * normal path (undefined).
+ * What the lot's `moved` entries make of each passing case of the run with no proof of its own, by its label: the first
+ * earlier case (`findMovedFroms`; a file entry speaks only for the cases of the change) whose last counted red froze the
+ * case's test call under its earlier name and every changed test code it depends on as it is now carries; none: a
+ * refusal naming why (a case entry's earlier case holds no red, an earlier red froze another call or other test code),
+ * or nothing when only file entries whose earlier files hold no red of it name the case (the normal path).
  */
-function judgeMoved(params: {
-	testCase: RunCase
+function readMovedCarries(params: {
 	context: TddContext
-	froms: readonly MovedFrom[]
+	cases: readonly RunCase[]
+	moves: readonly LotMovedEntry[]
 	acceptances: readonly LotCaseEntry[]
 	revisions: readonly LotCaseEntry[]
-}): RedJudgement | undefined {
+	testCode: ReadonlyMap<string, string>
+	dependenciesOf: (file: string) => readonly string[]
+}): Map<string, MovedCarry> {
+	const { context } = params
+	const carries = new Map<string, MovedCarry>()
+	if (params.moves.length === 0) return carries
+	/** The receipts of a case the read rule counts. */
+	function countedOf(testCase: TestCaseId): TddReceipt[] {
+		return countingReceipts({
+			ledger: context.ledger,
+			testCase,
+			acceptances: params.acceptances,
+			revisions: params.revisions,
+		}).counting
+	}
+	for (const testCase of params.cases) {
+		if (testCase.state !== 'passed') continue
+		if (countedOf(idOf(testCase)).some((receipt) => PROOF_KINDS.includes(receipt.kind))) continue
+		const froms = findMovedFroms({ entries: params.moves, testCase }).filter(
+			({ entry }) => namesOneCase(entry.to) || testCase.ofChange,
+		)
+		const carry = movedCarryOf({ ...params, testCase, froms, countedOf })
+		if (carry) carries.set(caseLabel(testCase), carry)
+	}
+	return carries
+}
+
+/** The carry or the refusal of one case `froms` name (see `readMovedCarries`). */
+function movedCarryOf(params: {
+	context: TddContext
+	testCase: RunCase
+	froms: readonly MovedFrom[]
+	testCode: ReadonlyMap<string, string>
+	dependenciesOf: (file: string) => readonly string[]
+	countedOf: (testCase: TestCaseId) => TddReceipt[]
+}): MovedCarry | undefined {
 	const { testCase } = params
 	let refusal: string | undefined
 	for (const { entry, from } of params.froms) {
 		const fromLabel = caseLabel(from)
-		const red = countingReceipts({
-			ledger: params.context.ledger,
-			testCase: from,
-			acceptances: params.acceptances,
-			revisions: params.revisions,
-		})
-			.counting.filter((receipt) => receipt.kind === 'red')
+		const red = params
+			.countedOf(from)
+			.filter((receipt) => receipt.kind === 'red')
 			.at(-1)
-		if (
-			red !== undefined &&
-			caseHashOfBody({ name: from.name, body: testCase.body }) === red.caseHash
-		)
-			return {
-				testCase,
-				kind: 'red',
-				detail: MOVED_FROM.replace('{from}', () => fromLabel),
-				...(red.message !== undefined && { message: red.message }),
-				flags: ['moved'],
-				productionHash: red.productionHash,
-			}
+		const sameCall =
+			red !== undefined && caseHashOfBody({ name: from.name, body: testCase.body }) === red.caseHash
+		const differing = sameCall
+			? dependenciesUnlikeRed({
+					...params,
+					red,
+					dependencies: params.dependenciesOf(testCase.file),
+				})
+			: []
+		if (red !== undefined && sameCall && differing.length === 0) return { kind: 'carry', from, red }
 		// a file entry speaks only where its earlier file held the case's red
 		if (refusal === undefined && (red !== undefined || namesOneCase(entry.to)))
-			refusal = (red === undefined ? MOVED_NO_RED : MOVED_CALL_DIFFERS).replace(
-				'{from}',
-				() => fromLabel,
-			)
+			refusal = (
+				red === undefined
+					? MOVED_NO_RED
+					: !sameCall
+						? MOVED_CALL_DIFFERS
+						: MOVED_DEPENDENCY_DIFFERS.replace('{files}', () => differing.join(', '))
+			).replace('{from}', () => fromLabel)
 	}
-	return refusal === undefined
-		? undefined
-		: { testCase, kind: 'refused', detail: refusal, reason: refusal, flags: [] }
+	return refusal === undefined ? undefined : { kind: 'refused', reason: refusal }
+}
+
+/**
+ * The changed test code a moved case depends on now that differs from what the red it would carry froze: the freeze
+ * that red run recorded (same moment) holds another hash, or none for a file changed since the base.
+ */
+function dependenciesUnlikeRed(params: {
+	context: TddContext
+	red: TddReceipt
+	dependencies: readonly string[]
+	testCode: ReadonlyMap<string, string>
+}): string[] {
+	const freeze = params.context.ledger.entries.find(
+		(entry): entry is TddFreeze => entry.kind === 'freeze' && entry.at === params.red.at,
+	)
+	return params.dependencies.filter((file) => {
+		const now = params.testCode.get(file)
+		return now !== undefined && freeze?.files[file] !== now
+	})
+}
+
+/**
+ * A passing case its `moved` entries decided before the run (`carry`): refused for the reason given; carrying, refused
+ * when it passes on the base's production as written now (its file may assert nothing of the lot's code), else the
+ * earlier case's red under its label (flag `moved`, at that red's production state).
+ */
+function judgeMoved(params: {
+	testCase: RunCase
+	carry: MovedCarry
+	onBase: BaseRedVerdict | undefined
+}): RedJudgement {
+	const { testCase, carry } = params
+	if (carry.kind === 'refused')
+		return { testCase, kind: 'refused', detail: carry.reason, reason: carry.reason, flags: [] }
+	const fromLabel = caseLabel(carry.from)
+	if (params.onBase?.kind === 'passes') {
+		const reason = MOVED_PASSES_ON_BASE.replace('{from}', () => fromLabel)
+		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+	}
+	return {
+		testCase,
+		kind: 'red',
+		detail: MOVED_FROM.replace('{from}', () => fromLabel),
+		...(carry.red.message !== undefined && { message: carry.red.message }),
+		flags: ['moved'],
+		productionHash: carry.red.productionHash,
+	}
 }
 
 /**

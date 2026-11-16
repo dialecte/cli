@@ -603,6 +603,14 @@ export const MOVED_FROM = 'moved from {from}'
 export const MOVED_CALL_DIFFERS =
 	'moved from {from}, but its test call differs from the one that red froze: prove it red again'
 
+/** A moved case refused: test code it depends on is not as the red of `{from}` froze it, `{files}`. */
+export const MOVED_DEPENDENCY_DIFFERS =
+	'moved from {from}, but the test code it depends on differs from what that red froze: {files}'
+
+/** A moved case refused: as written now it passes on the base's production. */
+export const MOVED_PASSES_ON_BASE =
+	'moved from {from}, but it passes on the base production: the move proves nothing'
+
 /** A moved case refused: `{from}` holds no red receipt to carry. */
 export const MOVED_NO_RED = 'moved from {from}, which holds no red receipt'
 

@@ -19,7 +19,7 @@ import { dirname, join, relative } from 'node:path'
 import { copyBaseTree } from './base-tree.ts'
 import { notARed } from './classify-failure.ts'
 import { runTestCases } from './run-test-cases.ts'
-import { readRunCases } from './select-cases.ts'
+import { caseLabel, readRunCases } from './select-cases.ts'
 import {
 	hashProduction,
 	isPackageTestCode,
@@ -65,7 +65,32 @@ export async function runCaseOnBase(params: {
 	/** Told of the runner's start and end (a progress step). Default: nobody. */
 	observer?: RunnerObserver
 }): Promise<BaseRedVerdict> {
-	const { root, base, packageJson, testCase } = params
+	const verdicts = await runCasesOnBase({ ...params, testCases: [params.testCase] })
+	return (
+		verdicts.get(caseLabel(params.testCase)) ?? { kind: 'refused', reason: DID_NOT_RUN_ON_BASE }
+	)
+}
+
+/**
+ * Runs the cases on the base's production with the lot's current test code, in one copy of the base and one run of
+ * their files, and says what each did there, by its label (`caseLabel`).
+ */
+export async function runCasesOnBase(params: {
+	root: string
+	base: string
+	packageJson: PackageJson
+	testCases: readonly RunCase[]
+	/** Told of the runner's start and end (a progress step). Default: nobody. */
+	observer?: RunnerObserver
+}): Promise<Map<string, BaseRedVerdict>> {
+	const { root, base, packageJson, testCases } = params
+	const verdicts = new Map<string, BaseRedVerdict>()
+	if (testCases.length === 0) return verdicts
+	/** Every case refused for the same reason. */
+	function refuseAll(reason: string): Map<string, BaseRedVerdict> {
+		for (const testCase of testCases) verdicts.set(caseLabel(testCase), { kind: 'refused', reason })
+		return verdicts
+	}
 	// in the temporary folder, never inside the lot's tree; owned by this process (a later run trashes it only once
 	// that process is gone), removed whatever the run did
 	const throwaway = mkdtempSync(join(tmpdir(), BASE_RED_FOLDER_PREFIX))
@@ -74,7 +99,7 @@ export async function runCaseOnBase(params: {
 	mkdirSync(folder)
 	try {
 		const copied = await copyBaseTree({ root, base, folder })
-		if (copied) return { kind: 'refused', reason: copied }
+		if (copied) return refuseAll(copied)
 		// the base's production as the base holds it, before any test code is laid over
 		const productionHash = hashProduction({
 			root: folder,
@@ -91,27 +116,42 @@ export async function runCaseOnBase(params: {
 				deleted: listDeletedSince({ root, base }),
 			}),
 		})
+		const files = [...new Set(testCases.map((testCase) => testCase.file))]
 		const modules = await runTestCases({
 			root: folder,
-			files: [testCase.file],
-			filter: { names: [testCase.name] },
+			files,
+			filter: { names: [...new Set(testCases.map((testCase) => testCase.name))] },
 			interpreterRoot: root,
 			...(params.observer && { observer: params.observer }),
 		})
-		if ('failure' in modules) return { kind: 'refused', reason: modules.failure }
-		const text = readFileSync(join(folder, testCase.file), 'utf8')
+		if ('failure' in modules) return refuseAll(modules.failure)
 		const run = readRunCases({
 			root: folder,
 			packageJson,
 			modules,
-			files: [{ file: testCase.file, text, baseText: undefined }],
+			files: files.map((file) => ({
+				file,
+				text: readFileSync(join(folder, file), 'utf8'),
+				baseText: undefined,
+			})),
 		})
-		const [unlisted] = run.unlisted
-		if (unlisted) return { kind: 'refused', reason: notARed(unlisted.failure) }
-		const onBase = run.cases.find(
-			(candidate) => candidate.name === testCase.name && candidate.project === testCase.project,
-		)
-		return verdictOf({ onBase, productionHash })
+		const unlisted = new Map(run.unlisted.map((file) => [file.file, file.failure]))
+		for (const testCase of testCases) {
+			const failure = unlisted.get(testCase.file)
+			const onBase = run.cases.find(
+				(candidate) =>
+					candidate.file === testCase.file &&
+					candidate.name === testCase.name &&
+					candidate.project === testCase.project,
+			)
+			verdicts.set(
+				caseLabel(testCase),
+				failure
+					? { kind: 'refused', reason: notARed(failure) }
+					: verdictOf({ onBase, productionHash }),
+			)
+		}
+		return verdicts
 	} finally {
 		rmSync(throwaway, { recursive: true, force: true })
 	}

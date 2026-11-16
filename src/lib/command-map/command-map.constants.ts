@@ -305,7 +305,7 @@ export const COMMAND_MAP: CommandMap = {
 			'--by - one line, not empty, checked before the lot is read (answer and stop)',
 			'<id> - an index (171 = 0171), a full name, a lot folder or .dialecte/lot; a write verb needs an index unique across every store of the store list, a word naming an existing folder is that folder',
 			'exempt|accept|revised|gone|moved|mutation - write .dialecte/lot.json at the package root (tab JSON), keeping the rest',
-			'moved - a case of the lot moved by a split or a rename of its file or describe after its red (its own title is part of its test call): two cases, or a file (never a glob) and the file or glob its cases moved to under the same names, several files into one each with its entry; tdd red carries the red (flag moved) when the test call is the one that red froze, else refuses',
+			'moved - a case of the lot moved by a split or a rename of its file or describe after its red (its own title is part of its test call): two cases, or a file (never a glob) and the file or glob its cases moved to under the same names, several files into one each with its entry; tdd red carries the red (flag moved) when the test call and the test code it reads are as that red froze them and it does not pass on the base production, else refuses',
 			'accept - a case is <file>::<name>',
 			'revised - a file or a glob covers every case of its files',
 			'--remove - drops the accept, revised, gone or moved entry written exactly so (a list left empty leaves the file); an entry its list does not hold is refused, naming the closest ones, nothing written',
