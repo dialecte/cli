@@ -7,7 +7,7 @@ on:
 jobs:
   # the suite in 8 shards on 8 runners: each runs an eighth of the test files (vitest --shard), all must pass
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -51,7 +51,7 @@ jobs:
 
   # the config homes differ per platform (%APPDATA%, path keys compared whatever the case): their tests on Windows
   config-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 30
     steps:
       - name: Checkout
