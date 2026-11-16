@@ -705,3 +705,6 @@ export type ZeroCaseFiles = {
 	/** pytest files a conftest leaves out of discovery (no module reported): out of the selection as well. */
 	pytestIgnored: string[]
 }
+
+/** What a red run makes of a changed helper no changed test file depends on (`helper-dependents.ts`). */
+export type HelperVerdict = { file: string; frozen: boolean; detail: string }

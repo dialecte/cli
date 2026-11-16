@@ -78,16 +78,17 @@ describe(
 			expect(check.details).toContain(`revised  ${ORPHAN_HELPER}  ${ORPHAN_REVISION_REASON}`)
 		})
 
-		it('the same without an entry for the helper (guard) → red does not freeze it, green refuses naming it', async () => {
+		it('the same without an entry for the helper → red freezes it through its unchanged dependent, no `revised` line; green is not refused for it', async () => {
 			const root = createOrphanHelperPackage()
 
 			const red = await tdd({ cwd: root, argv: ['red'] })
 			const green = await tdd({ cwd: root, argv: ['green'] })
 
 			expect(red.output).not.toContain(`revised  ${ORPHAN_HELPER}`)
-			expect(frozenHashes({ root, file: ORPHAN_HELPER })).toEqual([])
-			expect(green.exitCode).toBe(1)
-			expect(green.output).toContain(GREEN_REFUSAL)
+			expect(frozenHashes({ root, file: ORPHAN_HELPER })).toEqual([
+				hashTestCode({ root, file: ORPHAN_HELPER }),
+			])
+			expect(green.output).not.toContain(GREEN_REFUSAL)
 		})
 
 		it('a changed test file outside the run depends on the helper, an entry naming it → today’s rule: not frozen, the `unfrozen` line names that file', async () => {

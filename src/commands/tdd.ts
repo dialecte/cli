@@ -50,6 +50,11 @@ import {
 	isDuplicateMember,
 } from '../lib/tdd/duplicate-case-ids.ts'
 import {
+	judgeHelpers,
+	listOrphanHelpers,
+	listUnchangedDependents,
+} from '../lib/tdd/helper-dependents.ts'
+import {
 	findCaseEntry,
 	namesOneCase,
 	readAcceptances,
@@ -113,6 +118,7 @@ import type {
 	LotCaseEntry,
 	ChangedTestFile,
 	DuplicateCaseId,
+	HelperVerdict,
 	ReceiptFlag,
 	RedJudgement,
 	ReportedModule,
@@ -281,9 +287,8 @@ function admitRun(params: {
 		return {
 			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${revisions.failure}`] }),
 		}
-	// a red run with no test file still runs for a changed helper a `revised` entry names: it may freeze it
-	if (files.length === 0 && !hasHelperToRevise({ root, ledger, testCode, revisions }))
-		return noFileRefusal
+	// a red run with no test file still runs for a changed helper differing from its last freeze: it may freeze it
+	if (files.length === 0 && !hasHelperToFreeze({ root, ledger, testCode })) return noFileRefusal
 	return {
 		testCode,
 		changed,
@@ -294,16 +299,15 @@ function admitRun(params: {
 	}
 }
 
-/** A changed helper a `revised` entry names differs from its last freeze: a red run may freeze it for the entry. */
-function hasHelperToRevise(params: {
+/** A changed helper differs from its last freeze: a red run may freeze it (a `revised` entry, or its dependents). */
+function hasHelperToFreeze(params: {
 	root: string
 	ledger: TddLedger
 	testCode: ReadonlyMap<string, string>
-	revisions: readonly LotCaseEntry[]
 }): boolean {
 	return [...params.testCode].some(
 		([file, hash]) =>
-			revisionOfHelper({ root: params.root, revisions: params.revisions, file }) !== undefined &&
+			!isTestFile({ root: params.root, file }) &&
 			frozenHashOf({ ledger: params.ledger, file }) !== hash,
 	)
 }
@@ -538,6 +542,23 @@ async function runRed(params: {
 				detail: HELPER_DEPENDENT_OUTSIDE_RUN.replace('{files}', outside.join(', ')),
 			}),
 		)
+	const helperVerdicts = await judgeOrphanHelpers({
+		context,
+		testCode,
+		frozen,
+		changed,
+		dependenciesOf: (file) => dependenciesOf(file).dependencies,
+	})
+	for (const verdict of helperVerdicts) {
+		if (verdict.frozen) frozen[verdict.file] = testCode.get(verdict.file) ?? ''
+		lines.push(
+			statusLine({
+				label: verdict.frozen ? 'frozen' : 'unfrozen',
+				id: verdict.file,
+				detail: verdict.detail,
+			}),
+		)
+	}
 	if (Object.keys(frozen).length)
 		entries.push({
 			kind: 'freeze',
@@ -596,6 +617,42 @@ function helpersToRevise(params: {
 		else revised.push({ file, entry })
 	}
 	return { revised, outsideRun }
+}
+
+/**
+ * The changed helpers no changed test file depends on and nothing froze yet, judged by a run of the unchanged test files
+ * importing them (`helper-dependents.ts`): none such, no run.
+ */
+async function judgeOrphanHelpers(params: {
+	context: TddContext
+	testCode: ReadonlyMap<string, string>
+	frozen: Readonly<Record<string, string>>
+	changed: readonly ChangedTestFile[]
+	dependenciesOf: (file: string) => readonly string[]
+}): Promise<HelperVerdict[]> {
+	const { context, changed } = params
+	const helpers = listOrphanHelpers({
+		root: context.root,
+		ledger: context.ledger,
+		testCode: params.testCode,
+		frozen: params.frozen,
+		changedDependents: (helper) =>
+			changed
+				.filter((file) => params.dependenciesOf(file.file).includes(helper))
+				.map((file) => file.file),
+	})
+	if (helpers.length === 0) return []
+	const dependents = listUnchangedDependents({
+		root: context.root,
+		helpers,
+		changed: new Set(changed.map((file) => file.file)),
+		dependenciesOf: params.dependenciesOf,
+	})
+	const files = [...new Set([...dependents.values()].flat())].sort()
+	const modules = files.length ? await announcedRun({ context, subcommand: 'red', files }) : []
+	if ('failure' in modules)
+		return helpers.map((file) => ({ file, frozen: false, detail: modules.failure }))
+	return judgeHelpers({ root: context.root, dependents, modules })
 }
 
 /** What a red run makes of one case. */

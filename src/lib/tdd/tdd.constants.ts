@@ -518,6 +518,17 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
+/** A changed helper no changed test file depends on, frozen through the unchanged test files importing it. */
+export const HELPER_FROZEN_THROUGH_DEPENDENTS =
+	'through the unchanged test files importing it, which pass with it: {files}'
+
+/** Why such a helper stays unfrozen: an unchanged test file importing it fails with it. */
+export const HELPER_DEPENDENT_FAILS = 'an unchanged test file importing it fails with it: {files}'
+
+/** Why such a helper stays unfrozen: no test file imports it. */
+export const HELPER_IMPORTED_BY_NONE =
+	'no test file imports it: a `revised` entry naming it lets a red run freeze it'
+
 /** Why a red run leaves a helper a `revised` entry names unfrozen: a changed dependent of it is not in the run. */
 export const HELPER_DEPENDENT_OUTSIDE_RUN =
 	'a changed test file outside this run depends on it: {files}'
