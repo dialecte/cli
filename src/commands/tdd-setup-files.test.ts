@@ -158,5 +158,47 @@ describe(
 				gate: true,
 			})
 		})
+
+		it('setupFiles and globalSetup written through same-file consts and a spread → read as written: the guard helper is production', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': [
+						`const SETUP = './${SETUP_FILE}'`,
+						'const SETUP_FILES = [SETUP]',
+						`const GLOBAL_SETUP = ['./${GLOBAL_SETUP_FILE}']`,
+						'export default { test: { setupFiles: [...SETUP_FILES], globalSetup: GLOBAL_SETUP } }',
+						'',
+					].join('\n'),
+					[SETUP_FILE]: SETUP_TEXT,
+					[GLOBAL_SETUP_FILE]: GLOBAL_SETUP_TEXT,
+					[GUARD_FILE]: GUARD_STUB,
+				},
+			})
+			writeFiles({ root, files: { [GUARD_TEST_FILE]: GUARD_TEST } })
+
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, GUARD_FILE), GUARD)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+		})
+
+		it('a setupFiles value tdd cannot read (a call) → tdd status names it, its files counted as test code', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': `function setupList() { return ['./${SETUP_FILE}'] }\nexport default { test: { setupFiles: setupList() } }\n`,
+					[SETUP_FILE]: SETUP_TEXT,
+				},
+			})
+			writeFiles({ root, files: { 'src/add.ts': ADD, 'src/add.test.ts': ADD_TEST } })
+
+			const status = await tdd({ cwd: root, argv: ['status'] })
+
+			expect(status.output.split('\n')).toContain(
+				'unread  vitest.config.ts setupFiles  setupList(): tdd cannot read which files it names; they count as test code',
+			)
+		})
 	},
 )

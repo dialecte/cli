@@ -640,6 +640,13 @@ export const ROLLBACK_LINE =
 /** The vitest option naming the files run before every test file: suite infrastructure, production for tdd. */
 export const SETUP_FILES_PROPERTY = 'setupFiles'
 
+/** A `setupFiles` or `globalSetup` value tdd cannot read, on `tdd status`: `{config}`, `{property}`, `{text}`. */
+export const UNREAD_SETUP_LINE =
+	'unread  {config} {property}  {text}: tdd cannot read which files it names; they count as test code'
+
+/** How many same-file consts a config value is followed through (`const A = [...B]`, `const B = [C]`). */
+export const CONST_FOLLOW_DEPTH = 8
+
 /** The vitest config property naming the files run once around the whole run (`globalSetup`): suite infrastructure. */
 export const GLOBAL_SETUP_PROPERTY = 'globalSetup'
 

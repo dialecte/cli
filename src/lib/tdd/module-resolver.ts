@@ -18,7 +18,13 @@ import {
 	SPECIFIER_QUERY_PATTERN,
 	TSCONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
-import { configPropertiesOf, fieldOf, pathLiteralOf, propertyName } from './vitest-configs.ts'
+import {
+	configPathsOf,
+	configPropertiesOf,
+	fieldOf,
+	pathLiteralOf,
+	propertyName,
+} from './vitest-configs.ts'
 
 import ts from 'typescript'
 
@@ -56,6 +62,9 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 		resolveGlob,
 		setupFiles: readConfigFiles({ root, property: SETUP_FILES_PROPERTY }),
 		globalSetupFiles: readConfigFiles({ root, property: GLOBAL_SETUP_PROPERTY }),
+		unreadableSetup: [SETUP_FILES_PROPERTY, GLOBAL_SETUP_PROPERTY].flatMap(
+			(property) => configPathsOf({ root, property }).unreadable,
+		),
 	})
 	function resolveModule(params: { specifier: string; from: string }): ModuleResolution {
 		// the file a Vite query or fragment names (`./x.worker?worker&url`): the query is no part of its path
@@ -114,18 +123,14 @@ function readViteAliases(root: string): ModuleAlias[] {
 
 /**
  * The files a config property (`setupFiles`, `globalSetup`) of the package's vite or vitest configs names (every
- * project's): a path or a list of paths, each relative to the package root, as the files of the package they name,
- * sorted, each once; a path naming no file is left out.
+ * project's; `configPathsOf` follows lists, spreads and same-file consts), each relative to the package root, as the
+ * files of the package they name, sorted, each once; a path naming no file is left out.
  */
 function readConfigFiles(params: { root: string; property: string }): string[] {
 	const { root } = params
-	const files = configPropertiesOf({ root, property: params.property }).flatMap((value) => {
-		const paths = ts.isArrayLiteralExpression(value) ? [...value.elements] : [value]
-		return paths.flatMap(function setupFileOf(path) {
-			if (!ts.isStringLiteralLike(path)) return []
-			const resolution = localOrUnresolved({ root, path: resolve(root, path.text) })
-			return resolution.kind === 'local' ? [resolution.file.split(sep).join(posix.sep)] : []
-		})
+	const files = configPathsOf(params).paths.flatMap(function setupFileOf(path) {
+		const resolution = localOrUnresolved({ root, path: resolve(root, path) })
+		return resolution.kind === 'local' ? [resolution.file.split(sep).join(posix.sep)] : []
 	})
 	return [...new Set(files)].sort()
 }

@@ -115,6 +115,7 @@ import {
 	ROLLBACK_LINE,
 	RUNNER_DISPLAY_NAMES,
 	TEST_CODE_CHANGED_SINCE_RED,
+	UNREAD_SETUP_LINE,
 	UNRESOLVED_IMPORT_HINT,
 	TDD_SUBCOMMANDS,
 } from '../lib/tdd/tdd.constants.ts'
@@ -1299,6 +1300,12 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 			notVitest: state.notVitest ?? [],
 			pytestIgnored: state.pytestIgnored ?? [],
 		}),
+		// the suite infrastructure a config names in a way tdd cannot read: said, never dropped in silence
+		...createModuleResolver({ root: context.root }).unreadableSetup.map((value) =>
+			UNREAD_SETUP_LINE.replace('{config}', () => value.config)
+				.replace('{property}', () => value.property)
+				.replace('{text}', () => value.text),
+		),
 	]
 	return resultOf({
 		exitCode: 0,

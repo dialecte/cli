@@ -556,7 +556,15 @@ export type ModuleResolver = {
 	setupFiles: readonly string[]
 	/** The files the package's vitest config names in `globalSetup`, which run once around the whole run. */
 	globalSetupFiles: readonly string[]
+	/** The `setupFiles` and `globalSetup` values no file could be read from (a call, an import). */
+	unreadableSetup: readonly ConfigUnreadable[]
 }
+
+/** A config value naming files that tdd cannot read: its config file, its property and its text. */
+export type ConfigUnreadable = { config: string; property: string; text: string }
+
+/** What a config property names: its path literals as written, and the values that cannot be read. */
+export type ConfigPaths = { paths: string[]; unreadable: ConfigUnreadable[] }
 
 /** The suite infrastructure of a package as last read, and what it was read from (`suite-infrastructure.ts`). */
 export type SuiteInfrastructureReading = {
