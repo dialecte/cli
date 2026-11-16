@@ -1,6 +1,6 @@
 import type { GateRecord } from '../gate-records/gate-records.types.ts'
 import type { GateStep } from '../gate/gate-config.types.ts'
-import type { StepStatus } from '../gate/gate.types.ts'
+import type { StepResult, StepStatus } from '../gate/gate.types.ts'
 
 /** A row `dialecte contrib` runs in process rather than through a shell command. */
 export type BuiltinStep = {
@@ -38,4 +38,11 @@ export type ContribRow = {
 export type ContribLine = {
 	row: ContribRow
 	under: string[]
+}
+
+/** The rows of a contrib run, how long each row that ran took, and the rows a green record answered. */
+export type ContribRowsRun = {
+	results: StepResult[]
+	durations: Map<StepResult, number>
+	reusedParts: Set<StepResult>
 }

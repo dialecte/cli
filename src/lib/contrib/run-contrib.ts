@@ -85,7 +85,7 @@ import type { StepResult } from '../gate/gate.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { LiveOutput, StepProgress } from '../progress/step-progress.types.ts'
 import type { RuleFinding } from '../rules/check-code-rules.types.ts'
-import type { ContribLine, ContribStep, FullGateRecords } from './contrib.types.ts'
+import type { ContribLine, ContribRowsRun, ContribStep, FullGateRecords } from './contrib.types.ts'
 
 export async function runContrib(params: {
 	cwd: string
@@ -111,8 +111,6 @@ export async function runContrib(params: {
 	const { packageJson, steps } = configuration
 	// the run's events: its start before any row, its end after the record (D12); contrib is heavy as a whole
 	const recorder = startStep({ cwd, step: 'contrib', heavy: true, warn: params.warn })
-	const durations = new Map<StepResult, number>()
-	const reusedParts = new Set<StepResult>()
 
 	const head = readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim()
 	const commandHash = contribKeyHash({ root: cwd, steps, head })
@@ -140,8 +138,8 @@ export async function runContrib(params: {
 	}
 	if (found && progress)
 		live?.writeLine(renderReuseLine({ command: CONTRIB_COMMAND, record: found }))
-	const results = found
-		? reusedResults({ record: found, steps: packageStepsOf(steps) })
+	const run = found
+		? reusedRun({ results: reusedResults({ record: found, steps: packageStepsOf(steps) }) })
 		: await runRows({
 				root: cwd,
 				steps,
@@ -153,10 +151,8 @@ export async function runContrib(params: {
 				showLive,
 				beforeRelease: showAbsentLive,
 				recorder,
-				durations,
-				reusedParts,
 			})
-	if (found) for (const result of results) reusedParts.add(result)
+	const { results, durations, reusedParts } = run
 	if (found && progress)
 		for (const result of results) {
 			if (isReleaseRow(result.step)) showAbsentLive()
@@ -164,12 +160,13 @@ export async function runContrib(params: {
 		}
 	showAbsentLive()
 	const original = found && originOfRecord(found)
-	const { changedWhileRunning, stateHash } = recordCheckedRun({
+	const keyAfter = found ? keyBefore : computeCheckKey({ root: cwd, commandHash })
+	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode: CONTRIB_RECORD_MODE,
 		results,
 		keyBefore,
-		keyAfter: found ? keyBefore : computeCheckKey({ root: cwd, commandHash }),
+		keyAfter,
 		...(found && { reused: found }),
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
 	})
@@ -181,7 +178,14 @@ export async function runContrib(params: {
 	const failed = lines.filter((line) => line.row.status === 'failed').map((line) => line.row.name)
 	const exitCode = failed.length ? 1 : 0
 	const parts = partsOf({ results, durations, reused: reusedParts })
-	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash })
+	// the key of the record this run stored; none when it stored nothing
+	recorder.end({
+		exit: exitCode,
+		parts,
+		reuse: reuseOf(parts),
+		stateHash,
+		...(stored && { key: keyAfter }),
+	})
 	if (json)
 		return {
 			exitCode,
@@ -273,12 +277,8 @@ async function runRows(params: {
 	beforeRelease: () => void
 	/** The run's recorder: each row that runs is timed as a part. */
 	recorder: StepHandle
-	/** Filled: how long each row ran. */
-	durations: Map<StepResult, number>
-	/** Filled: the rows a green `gate --full` answered. */
-	reusedParts: Set<StepResult>
-}): Promise<StepResult[]> {
-	const { root, packageJson, gate, progress, showLive, recorder, durations } = params
+}): Promise<ContribRowsRun> {
+	const { root, packageJson, gate, progress, showLive, recorder } = params
 	// as the gate does: every package row judged for its wiring before any row runs, a default one failed too
 	const unwired = findUnwiredSteps({
 		steps: packageStepsOf(params.steps),
@@ -288,7 +288,7 @@ async function runRows(params: {
 	})
 	if ([...unwired.values()].some((result) => result.status === 'failed'))
 		return unwiredRows({ ...params, unwired })
-	const results: StepResult[] = []
+	const run: ContribRowsRun = { results: [], durations: new Map(), reusedParts: new Set() }
 	// as the gate does: after a package step that failed, the next ones are not run
 	let packageStepFailed = false
 	for (const step of params.steps) {
@@ -298,15 +298,15 @@ async function runRows(params: {
 			const finishPart = recorder.startPart({ name: step.name, heavy: false })
 			const base = params.rulesBase
 			const result = step.builtin === 'rules' ? rulesResult({ root, base }) : releaseResult(root)
-			durations.set(result, finishPart())
-			results.push(result)
+			run.durations.set(result, finishPart())
+			run.results.push(result)
 			if (running) showLive({ result, finish: running.finish })
 			continue
 		}
 		// an opted-out row: its result as judged, never announced
 		const judged = packageStepFailed ? undefined : unwired.get(step)
 		if (judged) {
-			results.push(judged)
+			run.results.push(judged)
 			if (progress) showLive({ result: judged })
 			continue
 		}
@@ -315,8 +315,8 @@ async function runRows(params: {
 			const result: StepResult = passed
 				? gateReusedResult({ step, ...passed })
 				: { step, status: 'not-run', counts: {}, restored: [] }
-			results.push(result)
-			if (passed) params.reusedParts.add(result)
+			run.results.push(result)
+			if (passed) run.reusedParts.add(result)
 			if (progress) showLive({ result })
 			continue
 		}
@@ -332,20 +332,30 @@ async function runRows(params: {
 				})
 				const running = progress?.start({ name: announced.name, detail: announced.run })
 				return function finished(finishedResult) {
-					durations.set(finishedResult, finishPart())
+					run.durations.set(finishedResult, finishPart())
 					if (running) showLive({ result: finishedResult, finish: running.finish })
 				}
 			},
 		})
-		results.push(result)
+		run.results.push(result)
 		packageStepFailed = result.status === 'failed'
 	}
-	return results
+	return run
+}
+
+/** A run answered whole by a green record: every row reused, none timed. */
+function reusedRun(params: { results: StepResult[] }): ContribRowsRun {
+	return {
+		results: params.results,
+		durations: new Map<StepResult, number>(),
+		reusedParts: new Set(params.results),
+	}
 }
 
 /**
  * The rows of a run with a failed unwired package row: each judged row its result, every other row (the built-in
- * ones included) `not-run` with `UNWIRED_NOT_RUN_REASON`; nothing runs, each row shown live when progress is.
+ * ones included) `not-run` with `UNWIRED_NOT_RUN_REASON`; nothing runs (no row timed, none reused), each row shown
+ * live when progress is.
  */
 function unwiredRows(params: {
 	steps: readonly ContribStep[]
@@ -353,8 +363,8 @@ function unwiredRows(params: {
 	progress: StepProgress | undefined
 	showLive: (shown: { result: StepResult }) => void
 	beforeRelease: () => void
-}): StepResult[] {
-	return params.steps.map(function rowOf(step): StepResult {
+}): ContribRowsRun {
+	const results = params.steps.map(function rowOf(step): StepResult {
 		const judged = 'builtin' in step ? undefined : params.unwired.get(step)
 		const result: StepResult = judged ?? {
 			step: 'builtin' in step ? { name: step.name, run: '' } : step,
@@ -367,6 +377,7 @@ function unwiredRows(params: {
 		if (params.progress) params.showLive({ result })
 		return result
 	})
+	return { results, durations: new Map(), reusedParts: new Set() }
 }
 
 /**

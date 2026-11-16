@@ -1,0 +1,103 @@
+[
+	{
+		"mode": "full",
+		"at": "2026-11-15T02:47:50.330Z",
+		"head": "11d887cff32152c2e1a574649304aa9b2be8b092",
+		"stateHash": "fa25d3e14858301e1858002c278862e4fea08909f0350e1c72c473f4fbaa79d1",
+		"steps": [
+			{
+				"name": "tdd",
+				"status": "passed",
+				"counts": {},
+				"note": "80 case(s) of the change: 67 red then green, 12 accepted, 1 revised"
+			},
+			{
+				"name": "check",
+				"status": "passed",
+				"counts": {
+					"errors": 0,
+					"warnings": 1
+				}
+			},
+			{
+				"name": "skills",
+				"status": "passed",
+				"counts": {
+					"errors": 0,
+					"warnings": 0
+				}
+			},
+			{
+				"name": "build",
+				"status": "passed",
+				"counts": {}
+			},
+			{
+				"name": "tests",
+				"status": "passed",
+				"counts": {
+					"tests": {
+						"passed": 10448,
+						"failed": 0,
+						"skipped": 4,
+						"total": 10452
+					},
+					"testFiles": {
+						"passed": 678,
+						"failed": 0,
+						"total": 679
+					}
+				}
+			},
+			{
+				"name": "rules",
+				"status": "passed",
+				"counts": {}
+			}
+		],
+		"key": {
+			"tree": "fab7209873bff1376ecf8d5eebb7edc90de08061",
+			"lockHash": "7e6312612691436e0961fc3ffe27a14108bf6fd69642e5afdebe14cbd1e6b3a8",
+			"linked": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"commandHash": "fdf71542f94c593098b66dc6b8f71e2a0d319b64792e5a3dd3ef0b23ca72f895"
+		},
+		"base": {
+			"commit": "11d887cff32152c2e1a574649304aa9b2be8b092",
+			"source": "base-branch"
+		}
+	},
+	{
+		"mode": "hook",
+		"at": "2026-11-15T04:10:42.870Z",
+		"head": "d5c2f9e4a26254739a3f68353a9e11097a2d56bb",
+		"stateHash": "fa25d3e14858301e1858002c278862e4fea08909f0350e1c72c473f4fbaa79d1",
+		"steps": [
+			{
+				"name": "check",
+				"status": "passed",
+				"counts": {}
+			},
+			{
+				"name": "test:hook",
+				"status": "passed",
+				"counts": {},
+				"note": "reused gate --full of 2026-11-15T02:47:50.330Z (HEAD 11d887cff321)",
+				"reused": {
+					"at": "2026-11-15T02:47:50.330Z",
+					"head": "11d887cff321"
+				}
+			},
+			{
+				"name": "build",
+				"status": "passed",
+				"counts": {}
+			}
+		],
+		"key": {
+			"tree": "fab7209873bff1376ecf8d5eebb7edc90de08061",
+			"lockHash": "7e6312612691436e0961fc3ffe27a14108bf6fd69642e5afdebe14cbd1e6b3a8",
+			"linked": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"commandHash": "30349d5bdbc87047b74f3901b595badd3161daffbef50e38ad94531a029489c3"
+		}
+	}
+]

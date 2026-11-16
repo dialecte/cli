@@ -78,6 +78,10 @@ const STEP_FIELDS: readonly string[] = [
 	'parts',
 	'partsTotal',
 	'partsFailedTotal',
+	// the check key of the record a gate, contrib or commit-hook run wrote
+	'key',
+	// a rehearsal's lots: each lot's tree and its decision
+	'lots',
 ]
 
 /**

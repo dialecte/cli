@@ -91,7 +91,7 @@ describe('inbox in the map', () => {
 	})
 
 	it('is listed by dialecte --help in the Grow family after lot', () => {
-		expect(renderGlobalHelp()).toMatch(/^\s*Grow\s+lot\s+inbox\s*$/m)
+		expect(renderGlobalHelp()).toMatch(/^\s*Grow\s+lot\s+inbox\s+health\s*$/m)
 	})
 })
 

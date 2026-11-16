@@ -53,7 +53,8 @@ dialecte lot wait <id> [--timeout <seconds>]   # until the lot needs someone: re
 dialecte lot answer <id> <question> "<answer>" [--by <who>]   # answer an open question of the lot, once
 dialecte lot result <id>   # the hand-over (card, show and run lines) of a ready lot, or why it stopped; writes nothing
 dialecte lot stop <id> --reason <text>   # end the lot: its pending hand-over abandoned first, then canceled
-dialecte inbox             # what waits on someone across every lot store: questions, ready hand-overs, failed lots
+dialecte inbox             # what waits on someone across every lot store: health findings first, then questions, ready hand-overs, failed lots
+dialecte health [--since <date|duration>] [--repository <name>] [--json]   # duplicate work, slow landings, stalled runs, idle worktrees and leaked scratch, read from the records; reads only
 dialecte plan next|check|mark <plan.md>   # what can start now in a plan's lot block; the block checked; a person's mark
 dialecte lot exempt|accept|revised|gone|mutation   # the lot declaration .dialecte/lot.json
 dialecte lot finding|decide|snapshot|choice|standard|verify <id|folder> ...   # a lot's review rounds and late fixes, in its lot or hand-over folder
@@ -1698,6 +1699,26 @@ the answer.
   `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
   `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
   damaged, 1 when nothing does, 2 for a usage error.
+  The inbox also prints the `dialecte health` findings of the last 24 hours (stalled runs, idle worktrees and
+  leaked scratch folders whatever their age) before the lot lines, one line each:
+  `<✗|!> health  <repository>[  <lot>]  <rule>: <finding>  next: <command>`; a red finding counts as something
+  waiting, an amber one is listed only. It reads each repository with the registry entries its lot lines read, and
+  with `--repository` reads no other repository. `--json` gains `health: [<finding>]` (empty when none).
+- `dialecte health [--since <date|duration>] [--repository <name>] [--json]` reads the stores the inbox
+  reads, the repositories' check stores and the temporary folder, and reports what wastes time, red first:
+  duplicate work (a gate, hook or rehearsal that ran again on a tree a green record already answered, naming both
+  keys and the parts that differed: install, linked or command), slow landings (a `handover run` over
+  5 minutes broken down into guards, each commit hook reused or ran and why, and the rehearsals before it),
+  stalled runs (an open lot whose last step started under a process that is gone, ran over 2 hours (heavy:
+  3 hours), was interrupted, or a station open over 4 hours; with the command that resumes it), idle worktrees
+  (registered worktrees no open lot holds, untouched for 24 hours; amber), slow worktree adds (over 60 s)
+  and leaked scratch folders (over 6 hours; amber). Idle worktrees and leaked scratch folders sort after the
+  findings of runs of the same severity. `--since` takes `<n>h`, `<n>d`, a date (UTC midnight) or a zoned
+  time; 7 days by default; it bounds the windowed rules, the others read now. `--repository` keeps that
+  repository's findings (the scratch finding is no repository's). Reads files only, writes nothing. The step
+  events carry the key of the record their run stored (`key`) and a rehearsal's lots (`lots`: lot, tree,
+  decision), so an identical-key run is found from the events. `--json`: `{ since, findings, counts: { red,
+  amber } }`. Exit 1 when a red finding exists, 0 otherwise, 2 for a usage error.
 - `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
   `json dialecte-lots` in the plan, or `<plan without .md>.lots.json` beside it; both or neither is refused) and proposes what can
   start now; it starts, claims and writes nothing. Each entry declares an `id`, a `kind` (`lot`, `fix`, `spec`,

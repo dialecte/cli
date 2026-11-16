@@ -360,15 +360,17 @@ export async function runGate(params: {
 	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
 	if (progress) for (const line of absentLines) live?.writeLine(textOf([line]))
 	const sleptMs = sleptSinceStart?.()
+	const keyAfter =
+		head === undefined ? undefined : (reused?.key ?? computeCheckKey({ root: cwd, commandHash }))
 	const { stored, changedWhileRunning, stateHash } =
-		head === undefined
+		keyAfter === undefined
 			? { stored: false, changedWhileRunning: false, stateHash: null }
 			: recordCheckedRun({
 					root: cwd,
 					mode,
 					results,
 					keyBefore,
-					keyAfter: reused?.key ?? computeCheckKey({ root: cwd, commandHash }),
+					keyAfter,
 					...(reused && { reused: reused.record }),
 					...(gateBase && { base: gateBase }),
 					...(sleptMs !== undefined && { sleptMs }),
@@ -387,7 +389,14 @@ export async function runGate(params: {
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
 	const parts = partsOf({ results, durations, reused: reusedParts })
-	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash })
+	// the key of the record this run stored; none when it stored nothing (a reused run, a state changed while it ran)
+	recorder.end({
+		exit: exitCode,
+		parts,
+		reuse: reuseOf(parts),
+		stateHash,
+		...(stored && keyAfter !== undefined && { key: keyAfter }),
+	})
 	if (json)
 		return {
 			exitCode,

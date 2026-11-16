@@ -371,6 +371,8 @@ function endHookRun(params: {
 		reuse: reuseOf(parts),
 		// a run every record answered checked nothing of the tree itself: no state hash, as a whole reuse never had
 		stateHash: ran.length > 0 ? (recorded?.stateHash ?? null) : null,
+		// the key of the record this run stored; none when it stored nothing
+		...(recorded?.stored && { key: params.key }),
 	})
 }
 

@@ -11,6 +11,7 @@ import { run as facts } from './commands/facts.ts'
 import { run as fixture } from './commands/fixture.ts'
 import { run as gate } from './commands/gate.ts'
 import { run as handover } from './commands/handover.ts'
+import { run as health } from './commands/health.ts'
 import { run as inbox } from './commands/inbox.ts'
 import { run as lot } from './commands/lot.ts'
 import { run as members } from './commands/members.ts'
@@ -55,6 +56,7 @@ export const COMMANDS = {
 	handover,
 	lot,
 	inbox,
+	health,
 	plan,
 	mutants,
 	worktree,

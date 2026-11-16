@@ -4,7 +4,7 @@ import type { CommandFamily } from '../src/lib/command-map/command-map.types.ts'
 export const DECLARED_FAMILIES: Array<[CommandFamily, string[]]> = [
 	['Discover', ['api', 'members', 'schema', 'explain', 'standard', 'facts', 'ask']],
 	['Use', ['run', 'fixture', 'new']],
-	['Grow', ['lot', 'inbox']],
+	['Grow', ['lot', 'inbox', 'health']],
 	['Plan', ['plan']],
 	['Check', ['gate', 'tdd', 'rules', 'contrib', 'mutants']],
 	['Hand over', ['handover']],

@@ -14,6 +14,7 @@ import {
 	SCL_REPOSITORY,
 } from './inbox-workspace.constants.ts'
 import { writeStoreListFile } from './lot-stores.ts'
+import { temporaryFolder } from './scratch-repository.ts'
 import { transitionOf } from './store-records.ts'
 
 import type { InboxSeams } from '../src/commands/inbox.types.ts'
@@ -83,7 +84,12 @@ export function inboxIn(params: {
 	words?: string[]
 	seams?: InboxSeams
 }): CommandResult {
-	return runInbox({ cwd: params.cwd, argv: params.words ?? [], seams: params.seams })
+	return runInbox({
+		cwd: params.cwd,
+		argv: params.words ?? [],
+		seams: params.seams,
+		tmp: temporaryFolder('dialecte-inbox-tmp-'),
+	})
 }
 
 /** The pattern of an inbox line made of `parts`: each exactly as given, the columns between them any spacing. */

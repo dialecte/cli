@@ -337,6 +337,20 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: ['1  nothing waits and nothing is damaged'],
 		example: 'dialecte inbox --repository scl',
 	},
+	health: {
+		family: 'Grow',
+		summary:
+			'What went wrong lately across every lot store: duplicate work, slow landings, stalled runs, idle worktrees and leaked scratch folders',
+		usage: ['dialecte health [--since <date|duration>] [--repository <name>] [--json]'],
+		notes: [
+			'reads every store of the store list and the store of the current folder (each once), and the cli scratch folders of the temporary folder, files only: a header with the red and amber counts, then one block per finding (red first, newest first, idle worktrees and leaked scratch after the runs) with its detail lines and its next command; with no finding, one ok line naming the rules',
+			'--since - the window of the duplicate work, landing time and worktree add rules: <n>h, <n>d, a date (its midnight UTC) or a date and time with its zone; default 7d',
+			'--repository - the findings of the repository folder of that name only (the basename, exactly); the scratch folders, which belong to no repository, are left out',
+			'--json - { since, findings, counts: { red, amber } }',
+		],
+		exitCodes: ['1  a red finding'],
+		example: 'dialecte health --since 24h',
+	},
 	plan: {
 		family: 'Plan',
 		summary:
