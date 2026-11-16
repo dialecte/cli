@@ -82,6 +82,8 @@ export type EndStepParams = {
 	key?: CheckKey
 	/** A rehearsal's lots: each lot's tree and its decision; left out by every other step. */
 	lots?: { lot: number; tree: string; decision: string }[]
+	/** A gate or contrib run given `--no-reuse`: a deliberate re-run; left out otherwise. */
+	noReuse?: true
 }
 
 /** A running recorded step: never throws, every failure becomes the one warning line. */

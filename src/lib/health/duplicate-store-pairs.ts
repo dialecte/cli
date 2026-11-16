@@ -23,7 +23,8 @@ import type {
 
 /**
  * Each record in the window that ran something although an earlier green record of its tree could have answered
- * it: one finding per re-run, naming the newest such green record and the parts of the two keys that differ.
+ * it: one finding per re-run, naming the newest such green record and the parts of the two keys that differ. A
+ * record whose run was given `--no-reuse` is a deliberate re-run and is left out.
  */
 export function findStorePairs(params: DuplicateWorkInput): StorePairResult {
 	const { repository, window, runs, recordsByTree } = params
@@ -33,6 +34,8 @@ export function findStorePairs(params: DuplicateWorkInput): StorePairResult {
 		for (const rerun of records) {
 			if (!isInWindow({ at: rerun.at, ...window }) || !ranSomething(rerun)) continue
 			const run = findRecordRun({ record: rerun, runs })
+			// a run given --no-reuse re-checked on purpose: never duplicate work
+			if (run?.end.noReuse === true) continue
 			const green = newestGreenBefore({
 				records,
 				rerun,

@@ -204,6 +204,7 @@ export async function runContrib(params: {
 		reuse: reuseOf(parts),
 		stateHash,
 		...(stored && { key: keyAfter }),
+		...(!reusable && { noReuse: true }),
 	})
 	if (json)
 		return {

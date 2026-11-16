@@ -69,7 +69,7 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 /**
- * The health findings of the last 24 hours first, then the lots that wait on someone, grouped (person questions,
+ * The health findings first (the windowed rules over the last 24 hours, the others as they are now), then the lots that wait on someone, grouped (person questions,
  * caller questions, ready, failed), then the count of working and simulated lots; a damaged lot is a line of its own.
  * Exit 0 when something waits (a lot, a red finding) or is damaged, else 1 (an amber finding is listed and waits on
  * nobody), 2 for a usage error.
@@ -125,7 +125,7 @@ function sumOf(counts: readonly number[]): number {
 }
 
 /**
- * The health findings of the read stores' repositories over the last 24 hours, red first, then newest first; with
+ * The health findings of the read stores' repositories (the windowed rules over the last 24 hours), red first, then newest first; with
  * `--repository`, that repository's only, the others not read (the scratch folders belong to none, so they are left
  * out). Each repository is read with the registry entries its store read, so no registry is read twice.
  */

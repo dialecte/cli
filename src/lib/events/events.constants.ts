@@ -82,6 +82,8 @@ const STEP_FIELDS: readonly string[] = [
 	'key',
 	// a rehearsal's lots: each lot's tree and its decision
 	'lots',
+	// a gate or contrib run given --no-reuse: a deliberate re-run
+	'noReuse',
 ]
 
 /**

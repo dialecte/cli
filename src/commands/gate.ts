@@ -412,6 +412,7 @@ export async function runGate(params: {
 		reuse: reuseOf(parts),
 		stateHash,
 		...(stored && keyAfter !== undefined && { key: keyAfter }),
+		...(hasFlag(argv, 'no-reuse') && { noReuse: true }),
 	})
 	if (json)
 		return {

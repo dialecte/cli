@@ -361,7 +361,6 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   cover, then the linked slices. A question the ladder refuses (an `about` no dialecte declares, a tag of several
   dialectes without `--package`) scores find's own list. The answer adds `added +<n>` (`added` in `--json`): the
   items whose quote only the added slices hold. Run from a package (exit 2 outside one).
-
 - `dialecte standard eval <gold.jsonl> --packs [--effort low|medium|high] [...]`: the recall at 5 and at 10 of the
   slices the round-1 readers are given (the ask ladder; no fact read or written, no ask kept, nothing written):
   reader A in its order, and the slices of A and B together (A1, B1, A2, B2, a slice met twice kept once). The
@@ -376,8 +375,9 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   adds `reports  agreed <n>  wrong <n>  unjudged <n>  rate <n>` (`reports` in `--json`:
   `{ agreed, wrong, unjudged, rate }`); rate is wrong over agreed and wrong, `null` (printed `-`) when nothing is
   judged. Runs outside a package, writes nothing; a folder that does not exist refuses, exit 2.
-  `show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
-  `DIALECTE_STANDARD` when no standard is configured.
+
+`show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
+`DIALECTE_STANDARD` when no standard is configured.
 
 ## The facts ledger
 
@@ -1848,29 +1848,32 @@ the answer.
   listed (`wouldRefuse` in JSON, `worktree: null`), no worktree named, and `next` the same start with
   `--simulate <scenario>`; nothing claimed or written.
 - `dialecte inbox [--repository <name>] [--simulated] [--json]` lists what waits on someone across every store of
-  the store list and the store of the current folder: one line per open question (person questions first, then
-  caller questions), then the ready lots, then the failed ones, by index within a group, each line
-  `<index>  <repository>  <branch>  <what>  <next command>`, where `<what>` is `question q<k> (person|caller)
-  <question text>`, `READY` or `FAILED  <reason>` and the next command is the lot's own (the answer line of that
-  question, `handover show`, `lot result` or `lot stop`); then `working <n> · simulated <m> (listed with
-  --simulated)`. `--repository` keeps the lots whose repository folder has that name, `--simulated` lists the
+  the store list and the store of the current folder. First come the `dialecte health` findings, red first, one
+  line each: `<✗|!> health  <repository>[  <lot>]  <rule>: <finding>  next: <command>`. The inbox reads duplicate
+  work, landing time and slow worktree adds over the last 24 hours, and stalled runs, idle worktrees and leaked
+  scratch folders as they are now; a red finding counts as something waiting, an amber one is listed only. Each
+  repository is read with the registry entries its lot lines read. Then one line per open question (person
+  questions first, then caller questions), then the ready lots, then the failed ones, by index within a group,
+  each line `<index>  <repository>  <branch>  <what>  <next command>`, where `<what>` is `question q<k>
+  (person|caller) <question text>`, `READY` or `FAILED  <reason>` and the next command is the lot's own (the
+  answer line of that question, `handover show`, `lot result` or `lot stop`); then `working <n> · simulated <m>
+  (listed with --simulated)`. `--repository` keeps the lots and the health findings of the repository folder of
+  that name, and reads the health of no other repository and no scratch folder; `--simulated` lists the
   simulated lots that wait. A lot folder whose `identity.json` does not read, or whose records do not hold, is a
   `damaged <folder>: <reason>; next: dialecte lot stop <name> --reason <text>` line (a `.tmp-` folder being built,
   or a folder whose name has no lot name's shape, is no lot). The records are checked once, on read: a question id is `q<k>` (k 1 or
   more), an audience `caller` or `person`, a position's step, of and round non-negative integers, a transition's
   `at` a time, an answer file's question its file's `q<k>`. Every lot verb names such a lot damaged (exit 6 for
-  `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads files only (each registry once per store), runs no process, writes nothing. `--json`:
-  `{ waiting: [<status of each waiting lot>], working, simulated, damaged }`. Exit 0 when something waits or is
-  damaged, 1 when nothing does, 2 for a usage error.
-  The inbox also prints the `dialecte health` findings of the last 24 hours (stalled runs, idle worktrees and
-  leaked scratch folders whatever their age) before the lot lines, one line each:
-  `<✗|!> health  <repository>[  <lot>]  <rule>: <finding>  next: <command>`; a red finding counts as something
-  waiting, an amber one is listed only. It reads each repository with the registry entries its lot lines read, and
-  with `--repository` reads no other repository. `--json` gains `health: [<finding>]` (empty when none).
+  `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads
+  files only (each registry once per store, the cli scratch folders of the temporary folder), runs no process,
+  writes nothing. `--json`: `{ waiting: [<status of each waiting lot>], working, simulated, damaged, skipped,
+  health: [<finding>] }`, `skipped` (the stores not read) only when one is, `health` empty when none. Exit 0 when
+  a lot waits, a lot is damaged or a health finding is red, 1 otherwise, 2 for a usage error.
 - `dialecte health [--since <date|duration>] [--repository <name>] [--json]` reads the stores the inbox
   reads, the repositories' check stores and the temporary folder, and reports what wastes time, red first:
-  duplicate work (a gate, hook or rehearsal that ran again on a tree a green record already answered, naming both
-  keys and the parts that differed: install, linked or command), slow landings (a `handover run` over
+  duplicate work (a gate, contrib, hook or rehearsal that ran again on a tree a green record already answered,
+  naming both keys and the parts that differed: install, linked or command; a run given `--no-reuse` re-checks on
+  purpose and is never duplicate work), slow landings (a `handover run` over
   5 minutes broken down into guards, each commit hook reused or ran and why, and the rehearsals before it),
   stalled runs (an open lot whose last step started under a process that is gone, ran over 2 hours (heavy:
   3 hours), was interrupted, or a station open over 4 hours; with the command that resumes it), idle worktrees
@@ -1879,9 +1882,9 @@ the answer.
   findings of runs of the same severity. `--since` takes `<n>h`, `<n>d`, a date (UTC midnight) or a zoned
   time; 7 days by default; it bounds the windowed rules, the others read now. `--repository` keeps that
   repository's findings (the scratch finding is no repository's). Reads files only, writes nothing. The step
-  events carry the key of the record their run stored (`key`) and a rehearsal's lots (`lots`: lot, tree,
-  decision), so an identical-key run is found from the events. `--json`: `{ since, findings, counts: { red,
-  amber } }`. Exit 1 when a red finding exists, 0 otherwise, 2 for a usage error.
+  events carry the key of the record their run stored (`key`), a rehearsal's lots (`lots`: lot, tree,
+  decision) and `noReuse: true` on a gate or contrib run given `--no-reuse`, so an identical-key run is found from
+  the events. `--json`: `{ since, findings, counts: { red, amber } }`. Exit 1 when a red finding exists, 0 otherwise, 2 for a usage error.
 - `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
   `json dialecte-lots` in the plan, or `<plan without .md>.lots.json` beside it; both or neither is refused) and proposes what can
   start now; it starts, claims and writes nothing. Each entry declares an `id`, a `kind` (`lot`, `fix`, `spec`,

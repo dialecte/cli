@@ -9,7 +9,8 @@ import type { DuplicateWorkInput, EndIdentity, HealthFinding, LotRun } from './h
 
 /**
  * Each check step that ran again (not answered from a record) with the same state and the same key as an earlier
- * passed end of that step, in any lot of the repository; an end a store-pair finding already names is left out.
+ * passed end of that step, in any lot of the repository; an end a store-pair finding already names, and an end of a
+ * run given `--no-reuse` (a deliberate re-run), are left out.
  */
 export function findEventReruns(
 	params: DuplicateWorkInput & { namedEnds: ReadonlySet<LotEvent> },
@@ -29,6 +30,7 @@ export function findEventReruns(
 		if (
 			first !== undefined &&
 			end.reuse === NO_REUSE &&
+			end.noReuse !== true &&
 			isInWindow({ at: end.at, ...window }) &&
 			!namedEnds.has(end)
 		) {
