@@ -1,0 +1,285 @@
+/**
+ * The gathering half of `lot pr`: the lot's records read for its pull request, then checked as public text
+ * (`preparePullRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
+ * the pull request lands), never of a file a commit does not hold. A record missing is undefined, never a guess.
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
+import { readSections } from '../changelog/sections.ts'
+import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
+import { hashStateTree } from '../gate-records/state-hash.ts'
+import { readGit, tryReadGit } from '../git.ts'
+import { WORKTREE_FILES_ARGUMENTS } from '../review-rounds/review-record.constants.ts'
+import { readReviewRecord } from '../review-rounds/review-record.ts'
+import { riskStandingOf } from '../risk/risk-records.ts'
+import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
+import { readListedPatterns } from '../rules/committed-text.ts'
+import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
+import { lotsOf } from '../store/brief.ts'
+import { folderPlanEntryIds } from '../store/public-text.ts'
+import { STORE_FILES } from '../store/store.constants.ts'
+import { readTestsRecord } from '../tdd/tests-record.ts'
+import { missingMarkerOf } from './compose-pull-request.ts'
+import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
+import {
+	DOCS_STEP,
+	FRAGMENT_PATTERN,
+	PULL_REQUEST_LINES,
+	TEMPLATE_PATH,
+} from './pull-request.constants.ts'
+
+import type { ReferencePattern } from '../rules/committed-text.types.ts'
+import type {
+	PullRequestChangelog,
+	PullRequestSources,
+	PullRequestStep,
+} from './pull-request.types.ts'
+
+/**
+ * The lot's template and sources, checked: the repository's template holds every marker, and the free text of the
+ * records holds no reference, forbidden word, plan entry id, link or path outside the tree. The refusal line otherwise.
+ *
+ * @intent render a lot's pull request from its records, public text only
+ * @internal
+ */
+export function preparePullRequest(params: {
+	lotFolder: string
+	worktree: string
+	/** The base branch the pull request lands on, as git names it (`origin/main`). */
+	baseRef: string
+}): { template: string; sources: PullRequestSources } | { refusal: string } {
+	const template = tryReadGit({
+		root: params.worktree,
+		args: ['show', `HEAD:${TEMPLATE_PATH}`],
+	})
+	const missing = template === undefined ? 'summary' : missingMarkerOf(template)
+	if (template === undefined || missing !== undefined)
+		return {
+			refusal: PULL_REQUEST_LINES.noTemplate
+				.replace('{template}', TEMPLATE_PATH)
+				.replace('{part}', missing ?? 'summary'),
+		}
+	const sources = readPullRequestSources(params)
+	if ('refusal' in sources) return sources
+	const lists = referencePatternsOf({ root: params.worktree })
+	if ('refusal' in lists) return lists
+	const base = mergeBaseOf(params)
+	const refused = publicRefusalOf({
+		pieces: publicPiecesOf(sources),
+		patterns: lists.patterns,
+		ids: folderPlanEntryIds({ folder: params.lotFolder }),
+		isTreeFile: treeFileTestOf({ worktree: params.worktree, base }),
+	})
+	if (refused !== undefined)
+		return {
+			refusal: PULL_REQUEST_LINES.refused
+				.replace('{label}', refused.label)
+				.replace('{word}', () => (refused.word === undefined ? '' : ` \`${refused.word}\``))
+				.replace('{record}', () => refused.record),
+		}
+	return { template, sources }
+}
+
+/** The lot's sources for its pull request; the refusal when its brief does not read or names no commit message. */
+export function readPullRequestSources(params: {
+	lotFolder: string
+	worktree: string
+	baseRef: string
+}): PullRequestSources | { refusal: string } {
+	const briefPath = join(params.lotFolder, STORE_FILES.brief)
+	let brief: Record<string, unknown>
+	try {
+		brief = JSON.parse(readFileSync(briefPath, 'utf8')) as Record<string, unknown>
+	} catch (error) {
+		return { refusal: unreadBrief({ brief: briefPath, reason: (error as Error).message }) }
+	}
+	const lots = lotsOf(brief.lots)
+	if (lots.lots === undefined)
+		return {
+			refusal: unreadBrief({
+				brief: briefPath,
+				reason: lots.refused.map((refusal) => refusal.detail).join('; '),
+			}),
+		}
+	const base = mergeBaseOf(params)
+	const changes = changedFilesOf({ worktree: params.worktree, base })
+	const treeHash = hashStateTree(
+		readGit({ root: params.worktree, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
+	)
+	const standing = riskStandingOf({ folder: params.lotFolder })
+	const tests = readTestsRecord({ folder: params.lotFolder })
+	const review = readReviewRecord({ folder: params.lotFolder })
+	const changelog = changelogOf({ worktree: params.worktree, changes })
+	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
+	return {
+		messages: lots.lots.map((lot) => lot.message.trim()),
+		...(typeof brief.summary === 'string' && { summary: brief.summary }),
+		...(Array.isArray(brief.steps) && { steps: stepsOf(brief.steps) }),
+		...(typeof brief.issue === 'number' && { issue: brief.issue }),
+		...(changelog !== undefined && { changelog }),
+		...(tests !== undefined && { tests }),
+		treeHash,
+		...(review !== undefined && { review }),
+		...(standing.comparedClass !== undefined && { riskClass: standing.comparedClass }),
+		...(standing.effort !== undefined && { effort: standing.effort }),
+		...(docsPassed !== undefined && { docsPassed }),
+		versionBumped:
+			versionAt({ worktree: params.worktree, commit: base }) !==
+			versionAt({ worktree: params.worktree, commit: 'HEAD' }),
+		release:
+			changes.some((change) => change.status === 'D' && FRAGMENT_PATTERN.test(change.path)) &&
+			changes.some((change) => change.path === CHANGELOG_FILE),
+	}
+}
+
+function unreadBrief(params: { brief: string; reason: string }): string {
+	return PULL_REQUEST_LINES.unreadBrief
+		.replace('{brief}', () => params.brief)
+		.replace('{reason}', () => params.reason)
+}
+
+/** The steps of the brief as the body shows them: their titles and behaviours; a malformed one left out. */
+function stepsOf(steps: unknown[]): PullRequestStep[] {
+	return steps.flatMap(function stepOf(step): PullRequestStep[] {
+		const { title, behaviours } = (step ?? {}) as { title?: unknown; behaviours?: unknown }
+		if (typeof title !== 'string' || !Array.isArray(behaviours)) return []
+		return [
+			{
+				title,
+				behaviours: behaviours.filter(
+					(behaviour): behaviour is string => typeof behaviour === 'string',
+				),
+			},
+		]
+	})
+}
+
+/** Where the lot's branch left the base branch: its merge base, or the base itself when git cannot tell. */
+function mergeBaseOf(params: { worktree: string; baseRef: string }): string {
+	return (
+		tryReadGit({ root: params.worktree, args: ['merge-base', params.baseRef, 'HEAD'] })?.trim() ||
+		params.baseRef
+	)
+}
+
+/** The paths the lot's commits change since `base`, each with its status letter (renames as delete and add). */
+function changedFilesOf(params: {
+	worktree: string
+	base: string
+}): { status: string; path: string }[] {
+	const fields = readGit({
+		root: params.worktree,
+		args: ['diff', '--name-status', '--no-renames', '-z', params.base, 'HEAD'],
+	})
+		.split('\0')
+		.filter((field) => field !== '')
+	const changes: { status: string; path: string }[] = []
+	for (let index = 0; index + 1 < fields.length; index += 2)
+		changes.push({ status: fields[index], path: fields[index + 1] })
+	return changes
+}
+
+/**
+ * The changelog of the fragments the lot adds or changes, as its head holds them: their sections, in file order; with
+ * none, the reason of its no-entry note; undefined when the lot writes neither. A fragment that does not read is left
+ * out (the commit's own check names it).
+ */
+function changelogOf(params: {
+	worktree: string
+	changes: { status: string; path: string }[]
+}): PullRequestChangelog | undefined {
+	const written = params.changes
+		.filter((change) => change.status !== 'D' && FRAGMENT_PATTERN.test(change.path))
+		.map((change) => change.path)
+		.sort()
+	const entries = written
+		.filter((path) => !path.endsWith(NO_ENTRY_EXTENSION))
+		.flatMap(function entriesOf(file) {
+			const read = readSections({
+				text: headText({ worktree: params.worktree, path: file }),
+				mode: 'fragment',
+			})
+			return 'problem' in read ? [] : read.sections.map((entry) => ({ ...entry, file }))
+		})
+	if (entries.length > 0) return { kind: 'entries', entries }
+	const note = written.find((path) => path.endsWith(NO_ENTRY_EXTENSION))
+	if (note === undefined) return undefined
+	return {
+		kind: 'none',
+		reason: headText({ worktree: params.worktree, path: note }).trim(),
+		file: note,
+	}
+}
+
+function headText(params: { worktree: string; path: string }): string {
+	return readGit({ root: params.worktree, args: ['show', `HEAD:${params.path}`] }).replace(
+		/\r\n/g,
+		'\n',
+	)
+}
+
+/** Whether the newest gate or contrib run on the landed tree that ran the docs step passed it; undefined when none did. */
+function docsPassedOn(params: { worktree: string; treeHash: string }): boolean | undefined {
+	const contrib = readContribRecord(params.worktree)
+	const runs = [...readGateRecords(params.worktree), ...(contrib === undefined ? [] : [contrib])]
+		.filter((record) => record.stateHash === params.treeHash)
+		.filter((record) => record.steps.some((step) => step.name === DOCS_STEP))
+		.sort((left, right) => right.at.localeCompare(left.at))
+	return runs[0]?.steps.find((step) => step.name === DOCS_STEP)?.status === 'passed'
+		? true
+		: runs.length === 0
+			? undefined
+			: false
+}
+
+/** The `version` of the package.json `commit` holds; undefined without one. */
+function versionAt(params: { worktree: string; commit: string }): string | undefined {
+	const text = tryReadGit({
+		root: params.worktree,
+		args: ['show', `${params.commit}:package.json`],
+	})
+	try {
+		const version = (JSON.parse(text ?? '') as { version?: unknown }).version
+		return typeof version === 'string' ? version : undefined
+	} catch {
+		return undefined
+	}
+}
+
+/** The reference patterns of the repository's lists, or the refusal when one cannot be read. */
+function referencePatternsOf(params: {
+	root: string
+}): { patterns: ReferencePattern[] } | { refusal: string } {
+	try {
+		return {
+			patterns: [
+				...GENERIC_REFERENCE_PATTERNS,
+				...readListedPatterns(params.root),
+				...forbiddenWordPatterns(readForbiddenWords({ root: params.root })),
+			],
+		}
+	} catch (error) {
+		return {
+			refusal: PULL_REQUEST_LINES.unchecked.replace('{reason}', () => (error as Error).message),
+		}
+	}
+}
+
+/** Whether a path is a file of the lot's tree: git lists it in the worktree (not ignored) or at the base. */
+function treeFileTestOf(params: { worktree: string; base: string }): (path: string) => boolean {
+	const files = new Set([
+		...readGit({ root: params.worktree, args: [...WORKTREE_FILES_ARGUMENTS] }).split('\0'),
+		...(
+			tryReadGit({
+				root: params.worktree,
+				args: ['ls-tree', '-r', '-z', '--name-only', params.base],
+			}) ?? ''
+		).split('\0'),
+	])
+	files.delete('')
+	return function isTreeFile(path) {
+		return files.has(path)
+	}
+}

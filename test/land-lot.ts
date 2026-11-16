@@ -56,10 +56,13 @@ export function landOnOrigin(params: { origin: string; files?: Record<string, st
 }
 
 /** A host that answers from memory and records each call, and the body of each pull request it opens. */
-export function recordingHost(params: { existing?: PullRequest } = {}): RecordingHost {
+export function recordingHost(
+	params: { existing?: Omit<PullRequest, 'body'> & { body?: string } } = {},
+): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
-	let pullRequest = params.existing
+	let pullRequest: PullRequest | undefined =
+		params.existing === undefined ? undefined : { body: '', ...params.existing }
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
 			calls.push(`read ${call.ref}`)
@@ -70,6 +73,7 @@ export function recordingHost(params: { existing?: PullRequest } = {}): Recordin
 			bodies.push(call.body)
 			pullRequest = {
 				title: call.title,
+				body: call.body,
 				number: 7,
 				url: 'https://host.test/pull/7',
 				state: 'open',
@@ -81,6 +85,13 @@ export function recordingHost(params: { existing?: PullRequest } = {}): Recordin
 		},
 		retitlePullRequest: function retitlePullRequest(call) {
 			calls.push(`retitle ${call.number} "${call.title}"`)
+			return undefined
+		},
+		editPullRequest: function editPullRequest(call) {
+			calls.push(`edit ${call.number} "${call.title}"`)
+			bodies.push(call.body)
+			if (pullRequest !== undefined)
+				pullRequest = { ...pullRequest, title: call.title, body: call.body }
 			return undefined
 		},
 		closePullRequest: function closePullRequest(call) {
