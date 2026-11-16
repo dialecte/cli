@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { closestNames } from '../closest-names.ts'
 import { listRepositoryFiles } from '../git.ts'
+import { shellWord } from '../shell-quote.ts'
 import { shortMessage } from './classify-failure.ts'
 import { writtenLinesOf } from './duplicate-case-ids.ts'
 import {
@@ -10,9 +11,12 @@ import {
 	entryNamesFile,
 	findCaseEntry,
 	listRevisedHelpers,
+	namesOneCase,
 	namesRevisedHelper,
 	readAcceptances,
 	readGoneEntries,
+	readMovedEntries,
+	findMovedFroms,
 	readRevisions,
 	readTddExemption,
 } from './lot-declaration.ts'
@@ -50,8 +54,9 @@ import {
 	DUPLICATE_LINES_DETAIL,
 	TDD_BASE_LINE,
 	TDD_NEXT_STEPS,
-	UNUSED_ACCEPT_CLOSEST,
-	UNUSED_ACCEPT_CLOSEST_LIMIT,
+	UNUSED_ENTRY_CLOSEST,
+	UNUSED_ENTRY_CLOSEST_LIMIT,
+	UNUSED_ENTRY_REMOVE,
 	VITEST_PACKAGE,
 } from './tdd.constants.ts'
 import { runnerOf } from './test-runner.ts'
@@ -120,6 +125,8 @@ async function judgeTddReceipts(params: {
 	if ('failure' in revisions) return { status: 'failed', reason: revisions.failure }
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
+	const moves = readMovedEntries(root)
+	if ('failure' in moves) return { status: 'failed', reason: moves.failure }
 	const testCode = hashChangedTestCode({ root, base, packageJson })
 	// a change that only deletes test files still lists their cases, as deleted
 	if (testCode.size === 0 && listDeletedTestFiles({ root, base }).length === 0)
@@ -163,6 +170,9 @@ async function judgeTddReceipts(params: {
 			.filter((line) => line.flags.length)
 			.map((line) => `flag  ${caseLabel(line)}  ${line.flags.join(', ')}`),
 	]
+	const labels = state.cases.map((line) => caseLabel(line))
+	const files = [...new Set(state.cases.map((line) => line.file))]
+	const revisedCases = state.cases.filter((line) => line.status === 'revised')
 	evidence.push(
 		...acceptances
 			.filter(
@@ -171,18 +181,16 @@ async function judgeTddReceipts(params: {
 						entryNamesCase({ entry: acceptance.case, testCase: line, list: 'accept' }),
 					),
 			)
-			.map(function unusedAcceptLine(acceptance) {
-				const [closest] = closestNames({
-					name: acceptance.case,
-					candidates: state.cases.map((line) => caseLabel(line)),
-					limit: UNUSED_ACCEPT_CLOSEST_LIMIT,
-				})
-				const named = closest === undefined ? '' : UNUSED_ACCEPT_CLOSEST.replace('{label}', closest)
-				return `unused accept  ${acceptance.case}  no case of the change has that name${named} (${acceptance.reason})`
-			}),
-	)
-	const revisedCases = state.cases.filter((line) => line.status === 'revised')
-	evidence.push(
+			.map((acceptance) =>
+				unusedEntryLine({
+					head: 'unused accept',
+					list: 'accept',
+					entry: acceptance.case,
+					why: 'no case of the change has that name',
+					reason: acceptance.reason,
+					candidates: labels,
+				}),
+			),
 		...revisions
 			.filter(
 				(revision) =>
@@ -190,9 +198,15 @@ async function judgeTddReceipts(params: {
 						entryNamesCase({ entry: revision.case, testCase: line, list: 'revised' }),
 					) && !namesRevisedHelper({ entry: revision, helpers: revisedHelpers }),
 			)
-			.map(
-				(revision) =>
-					`unused revised entry  ${revision.case}  no case of the change stands revised by a red run (${revision.reason})`,
+			.map((revision) =>
+				unusedEntryLine({
+					head: 'unused revised entry',
+					list: 'revised',
+					entry: revision.case,
+					why: 'no case of the change stands revised by a red run',
+					reason: revision.reason,
+					candidates: namesOneCase(revision.case) ? labels : files,
+				}),
 			),
 		...gone
 			.filter(
@@ -202,9 +216,35 @@ async function judgeTddReceipts(params: {
 							finding.verb === 'gone' && entryNamesFile({ entry: entry.file, file: finding.file }),
 					),
 			)
-			.map(
+			.map((entry) =>
+				unusedEntryLine({
+					head: 'unused gone entry',
+					list: 'gone',
+					entry: entry.file,
+					why: 'no test call of the base gone without a title in a file it names',
+					reason: entry.reason,
+					candidates: files,
+				}),
+			),
+		...moves
+			.filter(
 				(entry) =>
-					`unused gone entry  ${entry.file}  no test call of the base gone without a title in a file it names (${entry.reason})`,
+					!state.cases.some(
+						(line) =>
+							line.flags.includes('moved') &&
+							findMovedFroms({ entries: [entry], testCase: line }).length > 0,
+					),
+			)
+			.map((entry) =>
+				unusedEntryLine({
+					head: 'unused moved entry',
+					list: 'moved',
+					entry: entry.to,
+					removeWords: [entry.from, entry.to],
+					why: `no case of the change carries a red from ${entry.from}`,
+					reason: entry.reason,
+					candidates: namesOneCase(entry.to) ? labels : files,
+				}),
 			),
 	)
 	const zeroCases = state.zeroCases ?? []
@@ -346,4 +386,32 @@ function isOtherRunnerFile(params: {
 }): boolean {
 	const runner = runnerOf(params)
 	return runner !== undefined && runner !== 'vitest'
+}
+
+/**
+ * The line of a lot file entry that matches nothing: what it names and why it is unused, the closest real label of the
+ * change (`candidates`: its case labels, or its test files), its reason, and the verb that drops it.
+ */
+function unusedEntryLine(params: {
+	head: string
+	list: string
+	entry: string
+	why: string
+	/** The entry's reason; a `moved` entry has none. */
+	reason?: string
+	candidates: readonly string[]
+	/** What `--remove` takes to drop the entry: the entry itself, or a move's from and to. */
+	removeWords?: readonly string[]
+}): string {
+	const [closest] = closestNames({
+		name: params.entry,
+		candidates: params.candidates,
+		limit: UNUSED_ENTRY_CLOSEST_LIMIT,
+	})
+	const named = closest === undefined ? '' : UNUSED_ENTRY_CLOSEST.replace('{label}', () => closest)
+	const remove = UNUSED_ENTRY_REMOVE.replace('{list}', params.list).replace('{entry}', () =>
+		(params.removeWords ?? [params.entry]).map((word) => shellWord(word)).join(' '),
+	)
+	const reason = params.reason === undefined ? '' : ` (${params.reason})`
+	return `${params.head}  ${params.entry}  ${params.why}${named}${reason}${remove}`
 }

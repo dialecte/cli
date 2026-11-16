@@ -15,8 +15,12 @@ import type { PythonCallParts, PythonCaseSource } from './tdd.types.ts'
 
 /** sha256 of a pytest case's name and its source (the function's text and its row), whitespace normalised. */
 export function pythonCaseHash(params: { name: string; source: PythonCaseSource }): string {
-	const { name, source } = params
-	return hashText(`${name}\0${normalized(source.call)}\0${normalized(source.row ?? '')}`)
+	return hashText(`${params.name}\0${pythonCaseBody(params.source)}`)
+}
+
+/** What a pytest case's hash covers besides its name: the function's text and its row, whitespace normalised. */
+export function pythonCaseBody(source: PythonCaseSource): string {
+	return `${normalized(source.call)}\0${normalized(source.row ?? '')}`
 }
 
 /**

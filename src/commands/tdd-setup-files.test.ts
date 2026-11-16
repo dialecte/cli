@@ -1,6 +1,7 @@
 /**
- * The vitest `setupFiles` of a package are test code no test imports: tdd counts them, from the package's vitest
- * config, as a dependency of every test file of a red run.
+ * The suite's infrastructure is the production side of a lot that fixes it: the vitest config's `setupFiles` and
+ * `globalSetup` and the test helpers they import. A red run never freezes them; a fix there after the red is the
+ * green side, as any production change.
  */
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,9 +19,28 @@ const NOW = new Date('2026-11-09T12:00:00.000Z')
 /** The package's gate is one passing step; the tdd step is added by the gate itself. */
 const GATE_CONFIG = { gate: { fast: [{ name: 'check', run: 'true' }] } }
 
-/** The setup file the package's vitest config names, and the config naming it. */
+/** The setup file and the global setup the package's vitest config names, and the configs naming them. */
 const SETUP_FILE = 'test/setup.ts'
+const GLOBAL_SETUP_FILE = 'test/guard/guard.setup.ts'
 const VITEST_CONFIG = `export default { test: { setupFiles: ['./${SETUP_FILE}'] } }\n`
+const GUARD_CONFIG = `export default { test: { setupFiles: ['./${SETUP_FILE}'], globalSetup: ['./${GLOBAL_SETUP_FILE}'] } }\n`
+
+/** The global setup runs the guard's check, a helper the guard's own test reads too. */
+const GUARD_FILE = 'test/guard/leftovers.ts'
+const GLOBAL_SETUP_TEXT =
+	"import { leftovers } from './leftovers.ts'\nexport function teardown() { leftovers([]) }\n"
+const GUARD_STUB = "export function leftovers(names: string[]): string {\n\treturn 'none'\n}\n"
+const GUARD =
+	"export function leftovers(names: string[]): string {\n\treturn names.length === 0 ? 'none' : names.join(', ')\n}\n"
+const GUARD_TEST = [
+	"import { leftovers } from './leftovers.ts'",
+	"import { describe, expect, it } from 'vitest'",
+	"describe('leftovers', () => {",
+	"\tit('two names → both listed', () => { expect(leftovers(['a', 'b'])).toBe('a, b') })",
+	'})',
+	'',
+].join('\n')
+const GUARD_TEST_FILE = 'test/guard/leftovers.test.ts'
 
 const SETUP_TEXT = 'globalThis.setupMark = 1\n'
 const EDITED_SETUP_TEXT = 'globalThis.setupMark = 2\n'
@@ -39,10 +59,6 @@ const ADD_TEST = [
 	'',
 ].join('\n')
 
-const CASE = 'src/add.test.ts::add > one plus two → three'
-const REASON = 'the review asked for the zero case'
-const SETUP_REASON = 'the setup file counts the runs'
-
 function tdd(params: { cwd: string; argv: string[] }) {
 	return runTdd({ cwd: params.cwd, argv: params.argv, now: () => NOW })
 }
@@ -58,10 +74,34 @@ function frozenFilesOf(output: string): string[] {
 }
 
 describe(
-	'tdd and the setup files of the vitest config',
+	'tdd and the suite infrastructure of the vitest config',
 	{ timeout: HELPER_SCENARIO_TIMEOUT },
 	() => {
-		it('a setup file new in the lot, a test file red → red freezes both; green passes and the gate tdd step passes', async () => {
+		it("a guard helper the global setup imports, its test red, the helper fixed after → green passes: the fix is the lot's production side", async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': GUARD_CONFIG,
+					[SETUP_FILE]: SETUP_TEXT,
+					[GLOBAL_SETUP_FILE]: GLOBAL_SETUP_TEXT,
+					[GUARD_FILE]: GUARD_STUB,
+				},
+			})
+			writeFiles({ root, files: { [GUARD_TEST_FILE]: GUARD_TEST } })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, GUARD_FILE), GUARD)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+			const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
+
+			expect(frozenFilesOf(red.output)).toEqual([GUARD_TEST_FILE])
+			expect(green.exitCode).toBe(0)
+			expect(result.output.split('\n')[1]).toBe(
+				'ok    tdd  1 case(s) of the change: 1 red then green',
+			)
+		})
+
+		it('a setup file new in the lot, a test file red → red freezes the test file only, never the setup file', async () => {
 			const root = createVitestPackage({
 				dialecte: GATE_CONFIG,
 				files: { 'vitest.config.ts': VITEST_CONFIG },
@@ -72,72 +112,30 @@ describe(
 			})
 
 			const red = await tdd({ cwd: root, argv: ['red'] })
-			writeFileSync(join(root, 'src/add.ts'), ADD)
-			const green = await tdd({ cwd: root, argv: ['green'] })
-			const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
 
-			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', SETUP_FILE])
-			expect(green.exitCode).toBe(0)
-			expect(result.output.split('\n')[1]).toBe(
-				'ok    tdd  1 case(s) of the change: 1 red then green',
-			)
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts'])
 		})
 
-		it('the setup file edited at review with a revised entry naming it, the test file revised too → red revises and freezes both; the gate tdd step passes', async () => {
+		it('a changed test/other.ts no setup file imports, which the test file imports → still test code: frozen with the test file', async () => {
 			const root = createVitestPackage({
 				dialecte: GATE_CONFIG,
-				files: {
-					'vitest.config.ts': VITEST_CONFIG,
-					'src/add.ts': ADD,
-					'src/add.test.ts': ADD_TEST,
-					[SETUP_FILE]: SETUP_TEXT,
-				},
-			})
-			writeFiles({
-				root,
-				files: {
-					'src/add.test.ts': ADD_TEST.replace(
-						'expect(add(1, 2)).toBe(3)',
-						'expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0)',
-					),
-					[SETUP_FILE]: EDITED_SETUP_TEXT,
-					'.dialecte/lot.json': JSON.stringify({
-						revised: [
-							{ case: CASE, reason: REASON },
-							{ case: SETUP_FILE, reason: SETUP_REASON },
-						],
-					}),
-				},
-			})
-
-			const red = await tdd({ cwd: root, argv: ['red'] })
-			const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
-
-			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', SETUP_FILE])
-			expect(result.output.split('\n')[1]).toBe('ok    tdd  1 case(s) of the change: 1 revised')
-		})
-
-		it('a changed test/other.ts that is neither a setup file nor imported, beside a new setup file → red freezes the test file and the setup file, never test/other.ts', async () => {
-			const root = createVitestPackage({
-				dialecte: GATE_CONFIG,
-				files: { 'vitest.config.ts': VITEST_CONFIG },
+				files: { 'vitest.config.ts': VITEST_CONFIG, [SETUP_FILE]: SETUP_TEXT },
 			})
 			writeFiles({
 				root,
 				files: {
 					'src/add.ts': ADD_STUB,
-					'src/add.test.ts': ADD_TEST,
-					[SETUP_FILE]: SETUP_TEXT,
+					'src/add.test.ts': `import { other } from '../test/other.ts'\n${ADD_TEST}`,
 					'test/other.ts': 'export const other = 1\n',
 				},
 			})
 
 			const red = await tdd({ cwd: root, argv: ['red'] })
 
-			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', SETUP_FILE])
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/other.ts'])
 		})
 
-		it('the setup file edited, a red with no case red and no revised entry naming it → not frozen, green refused naming it', async () => {
+		it('the setup file edited alone, no test changed → nothing for green to refuse, the gate tdd step passes', async () => {
 			const root = createVitestPackage({
 				dialecte: GATE_CONFIG,
 				files: {
@@ -149,14 +147,130 @@ describe(
 			})
 			writeFiles({ root, files: { [SETUP_FILE]: EDITED_SETUP_TEXT } })
 
-			const red = await tdd({ cwd: root, argv: ['red'] })
 			const green = await tdd({ cwd: root, argv: ['green'] })
+			const result = await gate({ cwd: root, argv: ['--declare', 'src/', '--declare', 'test/'] })
 
 			expect({
-				frozen: frozenFilesOf(red.output).filter(Boolean),
-				greenExitCode: green.exitCode,
-				greenNamesIt: green.output.includes(SETUP_FILE),
-			}).toEqual({ frozen: [], greenExitCode: 1, greenNamesIt: true })
+				green: green.output,
+				gate: result.output.split('\n')[1]?.startsWith('ok    tdd'),
+			}).toEqual({
+				green: 'tdd green: no test file new or changed since the base (or among the files named)',
+				gate: true,
+			})
+		})
+
+		it('setupFiles and globalSetup written through same-file consts and a spread → read as written: the guard helper is production', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': [
+						`const SETUP = './${SETUP_FILE}'`,
+						'const SETUP_FILES = [SETUP]',
+						`const GLOBAL_SETUP = ['./${GLOBAL_SETUP_FILE}']`,
+						'export default { test: { setupFiles: [...SETUP_FILES], globalSetup: GLOBAL_SETUP } }',
+						'',
+					].join('\n'),
+					[SETUP_FILE]: SETUP_TEXT,
+					[GLOBAL_SETUP_FILE]: GLOBAL_SETUP_TEXT,
+					[GUARD_FILE]: GUARD_STUB,
+				},
+			})
+			writeFiles({ root, files: { [GUARD_TEST_FILE]: GUARD_TEST } })
+
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, GUARD_FILE), GUARD)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+		})
+
+		it('a setupFiles value tdd cannot read (a call) → tdd status names it, its files counted as test code', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': `function setupList() { return ['./${SETUP_FILE}'] }\nexport default { test: { setupFiles: setupList() } }\n`,
+					[SETUP_FILE]: SETUP_TEXT,
+				},
+			})
+			writeFiles({ root, files: { 'src/add.ts': ADD, 'src/add.test.ts': ADD_TEST } })
+
+			const status = await tdd({ cwd: root, argv: ['status'] })
+
+			expect(status.output.split('\n')).toContain(
+				'unread  vitest.config.ts setupFiles  setupList(): tdd cannot read which files it names; they count as test code',
+			)
+		})
+
+		it('a helper the setup file imports that another test file imports too → still test code: frozen with that test file', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': VITEST_CONFIG,
+					[SETUP_FILE]: "import { other } from './shared.ts'\nglobalThis.setupMark = other\n",
+					'test/shared.ts': 'export const other = 1\n',
+				},
+			})
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': ADD_STUB,
+					'src/add.test.ts': `import { other } from '../test/shared.ts'\n${ADD_TEST}`,
+					'test/shared.ts': 'export const other = 2\n',
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/shared.ts'])
+		})
+
+		it('a helper the setup file imports that a test file reaches through another helper → still test code: frozen with that test file', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': VITEST_CONFIG,
+					[SETUP_FILE]: "import { deep } from './deep.ts'\nglobalThis.setupMark = deep\n",
+					'test/deep.ts': 'export const deep = 1\n',
+					'test/middle.ts': "export { deep as other } from './deep.ts'\n",
+				},
+			})
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': ADD_STUB,
+					'src/add.test.ts': `import { other } from '../test/middle.ts'\n${ADD_TEST}`,
+					'test/deep.ts': 'export const deep = 2\n',
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/deep.ts'])
+		})
+
+		it("a test file importing the global setup itself (a guard's own test) → the setup's helpers stay production: the guard fix is green", async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': GUARD_CONFIG,
+					[SETUP_FILE]: SETUP_TEXT,
+					[GLOBAL_SETUP_FILE]: GLOBAL_SETUP_TEXT,
+					[GUARD_FILE]: GUARD_STUB,
+					'test/guard/guard-setup.test.ts': [
+						"import { teardown } from './guard.setup.ts'",
+						"import { expect, it } from 'vitest'",
+						"it('the teardown runs', () => { expect(teardown()).toBeUndefined() })",
+						'',
+					].join('\n'),
+				},
+			})
+			writeFiles({ root, files: { [GUARD_TEST_FILE]: GUARD_TEST } })
+
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, GUARD_FILE), GUARD)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
 		})
 	},
 )

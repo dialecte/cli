@@ -7,9 +7,9 @@
  * snapshot file; and the files of the change an `import.meta.glob` of its test code matches (a negated
  * pattern leaves its files out, and does not name them). Every dependency found by import or glob is followed in turn, and one found by name when the
  * text names it with its folder (`fixtures/scan.ts`, a full path): a bare file name (`index.ts`) may be
- * another file, so it is a dependency but not followed. The setup files of the package's vitest config
- * (`setupFiles`, test code no test imports) are a dependency of every test file, followed as an import. A red run
- * freezes a helper only through a file that depends on it. A pytest test file is never parsed here: its
+ * another file, so it is a dependency but not followed. The suite infrastructure (the vitest setup files and
+ * the helpers they import) is production, never a dependency. A red run freezes a helper only through a file that
+ * depends on it. A pytest test file is never parsed here: its
  * dependencies are the test code its run used, as the cli's pytest plugin reported it.
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -53,16 +53,6 @@ function typescriptDependencies(params: TestDependenciesParams): TestDependencie
 	// the import.meta.glob calls of the test code read, as globs over the package's files
 	const globs: MetaGlob[] = []
 	const queue = [params.file]
-	// the vitest config's setup files run before every test file: test code no test imports, followed as an import
-	for (const setupFile of params.resolveModule.setupFiles)
-		if (
-			setupFile !== params.file &&
-			isPackageTestCode({ root, file: setupFile, packageJson: params.packageJson ?? {} })
-		) {
-			found.add(setupFile)
-			followed.add(setupFile)
-			queue.push(setupFile)
-		}
 	while (queue.length) {
 		while (queue.length) {
 			const current = queue.shift() ?? ''

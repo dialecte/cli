@@ -16,6 +16,7 @@ import {
 	VITE_CONFIG_FILE_PATTERN,
 	VITEST_CONFIG_FILE_PATTERN,
 	VITEST_CONFIG_PROPERTIES,
+	CONST_FOLLOW_DEPTH,
 } from './tdd.constants.ts'
 
 import ts from 'typescript'
@@ -23,6 +24,8 @@ import ts from 'typescript'
 import type {
 	ConfigHolding,
 	ConfigList,
+	ConfigPaths,
+	ConfigUnreadable,
 	PathHolding,
 	VitestConfig,
 	VitestConfigs,
@@ -297,6 +300,41 @@ export function configPropertiesOf(params: { root: string; property: string }): 
 		visit(source)
 	}
 	return values
+}
+
+/**
+ * The path literals a config property (`setupFiles`, `globalSetup`) names in every config of the package: a string, a
+ * list, a spread, or a top-level const of the same file holding any of them, followed; every other value (a call, an
+ * import) named as unreadable with its config and its text.
+ */
+export function configPathsOf(params: { root: string; property: string }): ConfigPaths {
+	const paths: string[] = []
+	const unreadable: ConfigUnreadable[] = []
+	for (const name of TEST_CONFIG_FILES) {
+		const source = parseConfigFile({ root: params.root, name })
+		if (!source) continue
+		/** The path literals of the value, a const followed at most `depth` times (a cycle ends). */
+		function collect(value: ts.Expression, depth: number): void {
+			if (ts.isStringLiteralLike(value)) paths.push(value.text)
+			else if (ts.isArrayLiteralExpression(value))
+				for (const element of value.elements)
+					collect(ts.isSpreadElement(element) ? element.expression : element, depth)
+			else if (ts.isIdentifier(value) && depth > 0) {
+				const initializer = variableValueOf({ source: source as ts.SourceFile, name: value.text })
+				if (initializer) collect(initializer, depth - 1)
+				else
+					unreadable.push({ config: name, property: params.property, text: value.getText(source) })
+			} else
+				unreadable.push({ config: name, property: params.property, text: value.getText(source) })
+		}
+		function visit(node: ts.Node): void {
+			if (ts.isPropertyAssignment(node) && propertyName(node.name) === params.property)
+				collect(node.initializer, CONST_FOLLOW_DEPTH)
+			ts.forEachChild(node, visit)
+		}
+		visit(source)
+	}
+	return { paths, unreadable }
 }
 
 /** The value of the field `key` written in the object itself (never a nested object's). */

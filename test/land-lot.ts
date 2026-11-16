@@ -13,8 +13,11 @@ import {
 import type { HostAdapter, PullRequest } from '../src/lib/host/host.types.ts'
 import type { LandingRepository, RecordingHost } from './land-lot.types.ts'
 
-/** `main` pushed to a bare origin, a worktree on `feat/x` one commit ahead (`src/x.ts`), and the lot's store folder. */
-export function landingRepository(): LandingRepository {
+/**
+ * `main` pushed to a bare origin, a worktree on `feat/x` one commit ahead (`src/x.ts`), and the lot's store folder whose
+ * brief names the lot's commit messages (`messages`; the commit's own subject when left out).
+ */
+export function landingRepository(params: { messages?: string[] } = {}): LandingRepository {
 	const folder = temporaryFolder('dialecte-land-')
 	const origin = join(folder, 'origin.git')
 	const root = initializeRepository({ root: join(folder, 'repo') })
@@ -26,7 +29,17 @@ export function landingRepository(): LandingRepository {
 	writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 1\n' } })
 	git({ root: worktree, args: ['add', 'src/x.ts'] })
 	git({ root: worktree, args: ['commit', '-qm', 'feat(x): x answers one'] })
-	return { root, origin, worktree, lotFolder: temporaryFolder('dialecte-land-lot-') }
+	const lotFolder = temporaryFolder('dialecte-land-lot-')
+	const messages = params.messages ?? ['feat(x): x answers one']
+	writeFiles({
+		root: lotFolder,
+		files: {
+			'brief.json': JSON.stringify({
+				lots: messages.map((message) => ({ paths: ['src/x.ts'], message })),
+			}),
+		},
+	})
+	return { root, origin, worktree, lotFolder }
 }
 
 /** A commit pushed to origin's main from another clone (what a queue landing leaves). */
@@ -42,9 +55,10 @@ export function landOnOrigin(params: { origin: string; files?: Record<string, st
 	return git({ root: other, args: ['rev-parse', 'HEAD'] }).trim()
 }
 
-/** A host that answers from memory and records each call. */
+/** A host that answers from memory and records each call, and the body of each pull request it opens. */
 export function recordingHost(params: { existing?: PullRequest } = {}): RecordingHost {
 	const calls: string[] = []
+	const bodies: string[] = []
 	let pullRequest = params.existing
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
@@ -53,7 +67,9 @@ export function recordingHost(params: { existing?: PullRequest } = {}): Recordin
 		},
 		openPullRequest: function openPullRequest(call) {
 			calls.push(`open ${call.branch} -> ${call.base} "${call.title}"${call.draft ? ' draft' : ''}`)
+			bodies.push(call.body)
 			pullRequest = {
+				title: call.title,
 				number: 7,
 				url: 'https://host.test/pull/7',
 				state: 'open',
@@ -62,6 +78,10 @@ export function recordingHost(params: { existing?: PullRequest } = {}): Recordin
 				head: '',
 			}
 			return pullRequest
+		},
+		retitlePullRequest: function retitlePullRequest(call) {
+			calls.push(`retitle ${call.number} "${call.title}"`)
+			return undefined
 		},
 		closePullRequest: function closePullRequest(call) {
 			calls.push(`close ${call.number}`)
@@ -72,5 +92,5 @@ export function recordingHost(params: { existing?: PullRequest } = {}): Recordin
 			return undefined
 		},
 	}
-	return { host, calls }
+	return { host, calls, bodies }
 }

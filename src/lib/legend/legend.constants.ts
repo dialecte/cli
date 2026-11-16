@@ -234,6 +234,12 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 		look: 'look: each one; the revision is the reason the red was taken on the base',
 	},
 	{
+		term: 'moved',
+		meaning:
+			'a case of the lot moved by a split or a rename of its file or describe after its red (its own title is part of its test call): its red carried from its earlier label by a moved entry of the lot file, its test call the one that red froze',
+		look: 'look: when the move was more than a split or a rename',
+	},
+	{
 		term: 'helper code changed near unchanged cases (noise)',
 		meaning:
 			'unchanged cases flagged because test code around them changed; nothing proven is weakened',

@@ -11,3 +11,6 @@ export type RunLotCommandParams = {
 	/** The cli named in `lot result`'s card when the repository's own cannot run hand-overs. */
 	cliPath?: string
 }
+
+/** The lists of the lot file an entry can be removed from (`lot <list> --remove <entry>`). */
+export type RemovableList = 'accept' | 'revised' | 'gone' | 'moved'

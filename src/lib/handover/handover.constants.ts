@@ -461,6 +461,7 @@ export const FLAG_ORDER: readonly string[] = [
 	'red after green',
 	'test code changed around it',
 	'red on base',
+	'moved',
 ] satisfies readonly ReceiptFlag[]
 
 /** The flag a change of helper code puts on unchanged cases too: on those, it is noise. */

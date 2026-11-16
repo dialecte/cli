@@ -59,6 +59,7 @@ function pullRequestOf(params: { state: PullRequest['state']; head: string }): P
 	return {
 		number: 7,
 		url: 'https://host.test/pull/7',
+		title: 'feat(x): x answers one',
 		state: params.state,
 		draft: false,
 		queued: false,

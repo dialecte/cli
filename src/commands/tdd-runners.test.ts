@@ -230,7 +230,14 @@ describe(
 					message: 'not implemented: add',
 					at: NOW.toISOString(),
 				},
-				{ kind: 'freeze', files: { [ADD_TEST_FILE]: testHash }, at: NOW.toISOString() },
+				{
+					kind: 'freeze',
+					files: { [ADD_TEST_FILE]: testHash },
+					ownCode: {
+						[ADD_TEST_FILE]: expect.arrayContaining([expect.stringMatching(/^[0-9a-f]{64}$/)]),
+					},
+					at: NOW.toISOString(),
+				},
 			])
 
 			const [redReceipt] = receiptsOf(root)

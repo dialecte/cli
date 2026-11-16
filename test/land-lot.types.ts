@@ -8,5 +8,5 @@ export type LandingRepository = {
 	lotFolder: string
 }
 
-/** A fake host and the calls it was asked, in order. */
-export type RecordingHost = { host: HostAdapter; calls: string[] }
+/** A fake host, the calls it was asked in order, and the body of each pull request it opened. */
+export type RecordingHost = { host: HostAdapter; calls: string[]; bodies: string[] }

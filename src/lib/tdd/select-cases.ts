@@ -9,7 +9,7 @@ import { relative } from 'node:path'
 import { realPathOf } from '../file-system.ts'
 import { isCaseOfBase, isCaseOfChange } from './case-of-change.ts'
 import { classifyFailure } from './classify-failure.ts'
-import { isPythonCaseOfBase, isPythonCaseOfChange, pythonCaseHash } from './python-case.ts'
+import { isPythonCaseOfBase, isPythonCaseOfChange, pythonCaseBody } from './python-case.ts'
 import { hashText, isProductionPath } from './tdd-files.ts'
 import { CASE_ARGUMENT_SEPARATOR } from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
@@ -96,7 +96,7 @@ export function readRunCases(params: {
 				...(testModule.runner === 'pytest'
 					? pythonIdentityOf({ file, reported })
 					: {
-							caseHash: caseHashOf({
+							...caseIdentityOf({
 								name: reported.name,
 								file: file.file,
 								text: file.text,
@@ -120,17 +120,20 @@ export function readRunCases(params: {
 function pythonIdentityOf(params: {
 	file: ChangedTestFile
 	reported: ReportedCase
-}): Pick<RunCase, 'caseHash' | 'ofChange' | 'ofBase'> {
+}): Pick<RunCase, 'caseHash' | 'body' | 'ofChange' | 'ofBase'> {
 	const { file, reported } = params
 	const { source } = reported
 	if (!source)
 		return {
-			caseHash: hashText(`${reported.name}\0${file.text}`),
+			caseHash: caseHashOfBody({ name: reported.name, body: file.text }),
+			body: file.text,
 			ofChange: file.baseText === undefined || file.baseText !== file.text,
 			ofBase: false,
 		}
+	const body = pythonCaseBody(source)
 	return {
-		caseHash: pythonCaseHash({ name: reported.name, source }),
+		caseHash: caseHashOfBody({ name: reported.name, body }),
+		body,
 		ofChange: isPythonCaseOfChange({ source, baseText: file.baseText }),
 		ofBase: isPythonCaseOfBase({
 			name: reported.name,
@@ -141,18 +144,30 @@ function pythonIdentityOf(params: {
 	}
 }
 
-/** sha256 of a case's name and the tokens of its test call: a formatter pass keeps it, an edit does not. */
-function caseHashOf(params: {
+/**
+ * A case's hash and body: the tokens of its test call (a formatter pass keeps them, an edit does not), hashed with its
+ * name.
+ */
+function caseIdentityOf(params: {
 	name: string
 	/** The test file, relative: its extension says how to parse the call. */
 	file: string
 	text: string
 	location: SourceLocation | undefined
-}): string {
+}): Pick<RunCase, 'caseHash' | 'body'> {
 	const call = params.location
 		? (testCallTextAt({ text: params.text, file: params.file, location: params.location }) ?? '')
 		: ''
-	return hashText(`${params.name}\0${testCodeTokens({ text: call, file: params.file })}`)
+	const body = testCodeTokens({ text: call, file: params.file })
+	return { caseHash: caseHashOfBody({ name: params.name, body }), body }
+}
+
+/**
+ * sha256 of a case's name and body (`RunCase.body`): the case hash a receipt records. Under an earlier name, the hash
+ * that case's receipts hold when its test call did not change (a moved case).
+ */
+export function caseHashOfBody(params: { name: string; body: string }): string {
+	return hashText(`${params.name}\0${params.body}`)
 }
 
 /** The case is one the command line names (every case when it names none). */

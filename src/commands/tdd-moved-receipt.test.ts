@@ -1,0 +1,499 @@
+/**
+ * `lot moved <from> <to>`: a case of the lot proven red, then moved by a split or a rename, keeps its red under its new
+ * label when its test call is the one the red froze; the next green proves it again.
+ */
+import { rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { writeFiles } from '../../test/scratch-repository.ts'
+import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
+import { runGate } from './gate.ts'
+import { runTdd } from './tdd.ts'
+
+import { describe, expect, it } from 'vitest'
+
+const NOW = new Date('2026-11-17T12:00:00.000Z')
+const STUB =
+	"export function add(left: number, right: number): number {\n\tthrow new Error('not implemented: add')\n}\n"
+const DONE =
+	'export function add(left: number, right: number): number {\n\treturn left + right\n}\n'
+const SUB = 'export function sub(left: number, right: number): number {\n\treturn left - right\n}\n'
+
+/** A test file the base holds, of one case on its own production. */
+const BASE_CASE = [
+	"import { sub } from './sub.ts'",
+	"import { describe, expect, it } from 'vitest'",
+	"describe('base', () => {",
+	"\tit('three minus two → one', () => { expect(sub(3, 2)).toBe(1) })",
+	'})',
+	'',
+].join('\n')
+
+/** A test file of one case in `describe(title)`, its assertion `assertion`. */
+function testText(params: { title: string; assertion?: string }): string {
+	return [
+		"import { add } from './add.ts'",
+		"import { describe, expect, it } from 'vitest'",
+		`describe('${params.title}', () => {`,
+		`\tit('one plus two → three', () => { ${params.assertion ?? 'expect(add(1, 2)).toBe(3)'} })`,
+		'})',
+		'',
+	].join('\n')
+}
+
+/** A test file of one case in `describe(title)` reading its expected sum from the shared helper test/expected.ts. */
+function readingTest(title: string): string {
+	return testText({ title, assertion: 'expect(add(1, 2)).toBe(EXPECTED)' }).replace(
+		"import { add } from './add.ts'",
+		"import { add } from './add.ts'\nimport { EXPECTED } from '../test/expected.ts'",
+	)
+}
+
+/** A test file of one case reading its expected sum from a top-level const of value `value`. */
+function constTest(value: string): string {
+	return testText({ title: 'add', assertion: 'expect(add(1, 2)).toBe(EXPECTED)' }).replace(
+		"import { describe, expect, it } from 'vitest'",
+		`import { describe, expect, it } from 'vitest'\nconst EXPECTED = ${value}`,
+	)
+}
+
+function tdd(params: { cwd: string; argv: string[] }) {
+	return runTdd({ cwd: params.cwd, argv: params.argv, now: () => NOW })
+}
+
+/** A package whose `src/a.test.ts` case was proven red then green, then moved to `src/b.test.ts` as `moved` says. */
+async function movedPackage(params: {
+	moved: unknown
+	title?: string
+	assertion?: string
+}): Promise<string> {
+	const root = createVitestPackage({
+		dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+	})
+	writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': testText({ title: 'add' }) } })
+	await tdd({ cwd: root, argv: ['red'] })
+	writeFileSync(join(root, 'src/add.ts'), DONE)
+	await tdd({ cwd: root, argv: ['green'] })
+	rmSync(join(root, 'src/a.test.ts'))
+	writeFiles({
+		root,
+		files: {
+			'src/b.test.ts': testText({ title: params.title ?? 'add', assertion: params.assertion }),
+			'.dialecte/lot.json': JSON.stringify({ moved: params.moved }),
+		},
+	})
+	return root
+}
+
+describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
+	it.each([
+		{
+			form: 'the file form',
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+			title: 'add',
+		},
+		{
+			form: 'the case form, its describe renamed',
+			moved: [
+				{
+					from: 'src/a.test.ts::add > one plus two → three',
+					to: 'src/b.test.ts::sum > one plus two → three',
+					reason: 'a split',
+				},
+			],
+			title: 'sum',
+		},
+	])(
+		'$form, its test call unchanged → red carries the red under the new label; green proves it; the gate passes',
+		async ({ moved, title }) => {
+			const root = await movedPackage({ moved, title })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const green = await tdd({ cwd: root, argv: ['green'] })
+			const result = await runGate({ cwd: root, argv: ['--declare', 'src/'] })
+
+			expect(red.output.split('\n').at(-1)).toMatch(/^tdd red: 1 red, /)
+			expect(green.exitCode).toBe(0)
+			expect(result.output.split('\n')[1]).toBe(
+				'ok    tdd  1 case(s) of the change: 1 red then green',
+			)
+		},
+	)
+
+	it('its test call edited in the move → refused: the call differs from the one its red froze', async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+			assertion: 'expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0)',
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but its test call differs from the one that red froze/,
+			),
+		)
+	})
+
+	it('moved from a case with no red receipt → refused: nothing to carry', async () => {
+		const root = await movedPackage({
+			moved: [
+				{
+					from: 'src/c.test.ts::add > one plus two → three',
+					to: 'src/b.test.ts::add > one plus two → three',
+					reason: 'a split',
+				},
+			],
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/c\.test\.ts::add > one plus two → three, which holds no red receipt/,
+			),
+		)
+	})
+
+	it('the file form into a file holding its own base case and a new passing case → the moved case carried, the base case unchanged, the new one judged as any new case', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+			files: { 'src/sub.ts': SUB, 'src/b.test.ts': BASE_CASE },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': testText({ title: 'add' }) } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': [
+					BASE_CASE.replace(
+						"import { sub } from './sub.ts'",
+						"import { sub } from './sub.ts'\nimport { add } from './add.ts'",
+					),
+					"describe('add', () => { it('one plus two → three', () => { expect(add(1, 2)).toBe(3) }) })",
+					"describe('new', () => { it('two plus two → four', () => { expect(add(2, 2)).toBe(4) }) })",
+					'',
+				].join('\n'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+		const lines = red.output.split('\n')
+
+		expect({
+			moved: lines.some((line) =>
+				/^red {6}src\/b\.test\.ts::add > one plus two → three {2}moved from/.test(line),
+			),
+			base: lines.some((line) =>
+				line.startsWith('unchanged  src/b.test.ts::base > three minus two → one'),
+			),
+			fresh: lines.some((line) =>
+				/^refused {2}src\/b\.test\.ts::new > two plus two → four {2}it ran green/.test(line),
+			),
+		}).toEqual({ moved: true, base: true, fresh: true })
+	})
+
+	it('two files merged into one, two moved entries to it → both cases carry their red', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'src/a.test.ts': testText({ title: 'a' }),
+				'src/b.test.ts': testText({ title: 'b' }),
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		rmSync(join(root, 'src/b.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/c.test.ts': [
+					testText({ title: 'a' }),
+					"describe('b', () => { it('one plus two → three', () => { expect(add(1, 2)).toBe(3) }) })",
+					'',
+				].join('\n'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [
+						{ from: 'src/a.test.ts', to: 'src/c.test.ts', reason: 'a split' },
+						{ from: 'src/b.test.ts', to: 'src/c.test.ts', reason: 'a split' },
+					],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n').at(-1)).toMatch(/^tdd red: 2 red, /)
+	})
+
+	it('the case form, its own title renamed → refused: the title is part of the test call that red froze', async () => {
+		const root = await movedPackage({
+			moved: [
+				{
+					from: 'src/a.test.ts::add > one plus two → three',
+					to: 'src/b.test.ts::add > one and two → three',
+					reason: 'a split',
+				},
+			],
+		})
+		writeFileSync(
+			join(root, 'src/b.test.ts'),
+			testText({ title: 'add' }).replace('one plus two → three', 'one and two → three'),
+		)
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one and two → three {2}moved from .*differs/,
+			),
+		)
+	})
+
+	it('its test call unchanged, but its file imports another add (a test-code fake) → refused: the test code it depends on differs from what that red froze', async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'test/fake-add.ts': DONE,
+				'src/b.test.ts': testText({ title: 'add' }).replace(
+					"from './add.ts'",
+					"from '../test/fake-add.ts'",
+				),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but the test code it depends on differs from what that red froze: test\/fake-add\.ts/,
+			),
+		)
+	})
+
+	it('its test call and own code unchanged, the base production already holding add → refused: it passes on the base production, the move proves nothing', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+			files: { 'src/add.ts': DONE },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': testText({ title: 'add' }) } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': testText({ title: 'add' }),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but it passes on the base production: the move proves nothing/,
+			),
+		)
+	})
+
+	it('its test call unchanged, a shared helper it reads edited since that red → refused naming the helper', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/add.ts': STUB,
+				'test/expected.ts': 'export const EXPECTED = 3\n',
+				'src/a.test.ts': readingTest('add'),
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': readingTest('add'),
+				'test/expected.ts': 'export const EXPECTED = 1 + 2\n',
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/differs from what that red froze: test\/expected\.ts/),
+		)
+	})
+
+	it("its file keeps a side-effect import of the lot's new module but defines add itself → refused: its own code is not in the file that red froze", async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
+		writeFileSync(
+			join(root, 'src/b.test.ts'),
+			testText({ title: 'add' }).replace(
+				"import { add } from './add.ts'",
+				"import './add.ts'\nfunction add(left: number, right: number): number {\n\treturn 3\n}",
+			),
+		)
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but its file holds code the file that red froze did not: import '\.\/add\.ts'/,
+			),
+		)
+	})
+
+	it('a top-level const of the earlier file changed in the move → refused naming it', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': constTest('3') } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': constTest('add(1, 2)'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/holds code the file that red froze did not: const EXPECTED = add\(1, 2\)/,
+			),
+		)
+	})
+
+	it('an honest split that drops a helper and an import its cases no longer use → carried', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		const before = testText({ title: 'add' })
+			.replace(
+				"import { describe, expect, it } from 'vitest'",
+				"import { describe, expect, it } from 'vitest'\nimport { join } from 'node:path'\nfunction pathOf(name: string): string {\n\treturn join('src', name)\n}",
+			)
+			.replace(
+				"\tit('one plus two → three'",
+				"\tit('a path', () => { expect(pathOf('x')).toBe('src/x') })\n\tit('one plus two → three'",
+			)
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': before } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': testText({ title: 'add' }),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/^red {6}src\/b\.test\.ts::add > one plus two → three {2}moved from/),
+		)
+	})
+
+	it('its test call unchanged, add imported from another production module → refused naming the import', async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/other-add.ts': DONE,
+				'src/b.test.ts': testText({ title: 'add' }).replace(
+					"from './add.ts'",
+					"from './other-add.ts'",
+				),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/holds code the file that red froze did not: import \{ add \} from '\.\/other-add\.ts'/,
+			),
+		)
+	})
+
+	it('a top-level const of the earlier file moved into the describe → refused: a statement in another scope is new code', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': constTest('3') } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': constTest('3')
+					.replace('\nconst EXPECTED = 3', '')
+					.replace("describe('add', () => {", "describe('add', () => {\n\tconst EXPECTED = 3"),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/holds code the file that red froze did not: const EXPECTED = 3/),
+		)
+	})
+
+	it('the tdd legend → a moved term with a meaning and a look line', () => {
+		const term = TDD_LEGEND_TERMS.find((entry) => entry.term === 'moved')
+
+		expect(term).toEqual({
+			term: 'moved',
+			meaning: expect.stringMatching(/\S/),
+			look: expect.stringMatching(/^look/),
+		})
+	})
+})

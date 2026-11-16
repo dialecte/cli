@@ -371,11 +371,14 @@ export const FOLDED_QUOTES: ReadonlyMap<string, string> = new Map([
 /** The curly quotes `FOLDED_QUOTES` folds, as one pattern. */
 export const CURLY_QUOTE_PATTERN = /[\u{2018}\u{2019}\u{201C}\u{201D}]/gu
 
-/** After an `unused accept` line's entry: the closest case title of the change, `{label}`. */
-export const UNUSED_ACCEPT_CLOSEST = '; the closest: {label}'
+/** After an unused entry's explanation: the closest real label of the change (a case, or a test file), `{label}`. */
+export const UNUSED_ENTRY_CLOSEST = '; the closest: {label}'
 
-/** How many closest titles an `unused accept` line names. */
-export const UNUSED_ACCEPT_CLOSEST_LIMIT = 1
+/** How many closest labels an unused entry's line names. */
+export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
+
+/** Ending an unused entry's line: the verb that drops it, `{list}` its list, `{entry}` the entry (a move: its from and to) as shell words. */
+export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
 export const TDD_EXEMPT_PATTERN = /^exempt:\s*(.+)$/
@@ -515,12 +518,43 @@ export const LOCAL_SPECIFIER_PATTERN = /^(#|~\/|@\/)/
 
 export const UNRESOLVED_IMPORT_HINT = 'map it in a tsconfig "paths" or a vite resolve.alias'
 
+/** A changed helper no changed test file depends on, frozen through the unchanged test files importing it. */
+export const HELPER_FROZEN_THROUGH_DEPENDENTS =
+	'through the unchanged test files importing it, which pass with it: {files}'
+
+/** Why such a helper stays unfrozen: an unchanged test file importing it fails with it. */
+export const HELPER_DEPENDENT_FAILS = 'an unchanged test file importing it fails with it: {files}'
+
+/** Why such a helper stays unfrozen: every unchanged test file importing it ran no case (all skipped or pending). */
+export const HELPER_DEPENDENTS_RAN_NO_CASE =
+	'the unchanged test files importing it ran no case: {files}'
+
+/** A module file's extension, for the name a test file writes when it imports it. */
+export const MODULE_EXTENSION_PATTERN = /\.[cm]?[jt]sx?$/
+
+/** The file a folder's import resolves to, without extension: a test file names the folder. */
+export const INDEX_MODULE_NAME = 'index'
+
+/** The most unchanged test files a red run runs to freeze changed helpers no changed test depends on. */
+export const HELPER_DEPENDENTS_LIMIT = 20
+
+/** Why such a helper stays unfrozen: no unchanged test file names it (the search goes by name). */
+export const HELPER_IMPORTED_BY_NONE =
+	'no unchanged test file found naming it (a barrel, an alias or a glob is not followed here): a `revised` entry naming it lets a red run freeze it'
+
+/** Why such a helper stays unfrozen: more unchanged test files import the helpers than a red run runs, `{count}` its. */
+export const HELPER_DEPENDENTS_OVER_LIMIT =
+	'{count} unchanged test files import it, more than a red run runs for a helper ({limit}): a `revised` entry naming it lets a red run freeze it'
+
+/** The progress step of the run of the unchanged test files importing changed helpers. */
+export const HELPER_DEPENDENTS_STEP = 'tdd red: the unchanged test files importing changed helpers'
+
 /** Why a red run leaves a helper a `revised` entry names unfrozen: a changed dependent of it is not in the run. */
 export const HELPER_DEPENDENT_OUTSIDE_RUN =
 	'a changed test file outside this run depends on it: {files}'
 
 /** The keys a lot file may hold; any other is a typo, refused. */
-export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'mutation']
+export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'moved', 'mutation']
 
 /** The keys of an `accept` or `revised` entry. */
 export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
@@ -553,7 +587,53 @@ export const HOLE_TOKEN = '<hole>'
 export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
 
 /** What `dialecte lot` writes. */
-export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone', 'mutation']
+export const LOT_VERBS: readonly string[] = [
+	'exempt',
+	'accept',
+	'revised',
+	'gone',
+	'moved',
+	'mutation',
+]
+
+/** The keys of a `moved` entry. */
+export const MOVED_ENTRY_KEYS: readonly string[] = ['from', 'to', 'reason']
+
+/** What `"moved"` of the lot file must hold. */
+export const MOVED_LIST_SHAPE =
+	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>", "reason": "..." }: two cases, or a file (never a glob) and a file or glob'
+
+/** A case label's project suffix (` [project]`), the project captured. */
+export const PROJECT_SUFFIX_PATTERN = / \[([^\]]+)\]$/
+
+/** A moved case's red line: the case its red was carried from, `{from}`. */
+export const MOVED_FROM = 'moved from {from}'
+
+/** A moved case refused: its test call is not the one the red of `{from}` froze. */
+export const MOVED_CALL_DIFFERS =
+	'moved from {from}, but its test call differs from the one that red froze: prove it red again'
+
+/** A moved case refused: test code it depends on is not as the red of `{from}` froze it, `{files}`. */
+export const MOVED_DEPENDENCY_DIFFERS =
+	'moved from {from}, but the test code it depends on differs from what that red froze: {files}'
+
+/** A moved case refused: its file holds own code its earlier file did not at that red, the first such statement `{statement}`. */
+export const MOVED_OWN_CODE_DIFFERS =
+	'moved from {from}, but its file holds code the file that red froze did not: {statement}'
+
+/** A moved case refused: the red it would carry recorded no own code of its file (a pytest file, an older ledger); what to do instead. */
+export const MOVED_NO_OWN_CODE =
+	'moved from {from}, but that red recorded no code of its file to compare with (a pytest file, or a red older than the record): prove it red again, or accept it with dialecte lot accept <case> <reason>'
+
+/** The progress step of the one run on the base's production of the moved cases that may carry a red. */
+export const MOVED_BASE_RUN_STEP = 'tdd red on the base, moved cases'
+
+/** A moved case refused: as written now it passes on the base's production. */
+export const MOVED_PASSES_ON_BASE =
+	'moved from {from}, but it passes on the base production: the move proves nothing'
+
+/** A moved case refused: `{from}` holds no red receipt to carry. */
+export const MOVED_NO_RED = 'moved from {from}, which holds no red receipt'
 
 /** The keys of a `gone` entry. */
 export const GONE_ENTRY_KEYS: readonly string[] = ['file', 'reason']
@@ -578,8 +658,24 @@ export const DELETED_PRODUCTION_FILE = 'deleted'
 export const ROLLBACK_LINE =
 	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte lot delta --worktree)"
 
-/** The vitest option naming the files run before every test file: a dependency of each test file for tdd. */
+/** The vitest option naming the files run before every test file: suite infrastructure, production for tdd. */
 export const SETUP_FILES_PROPERTY = 'setupFiles'
+
+/** A `setupFiles` or `globalSetup` value tdd cannot read, on `tdd status`: `{config}`, `{property}`, `{text}`. */
+export const UNREAD_SETUP_LINE =
+	'unread  {config} {property}  {text}: tdd cannot read which files it names; they count as test code'
+
+/** Between the parts of an own-code statement's identity: its scope's titles, its kind, its target, its names. */
+export const OWN_CODE_SEPARATOR = '\0'
+
+/** Before an import's specifier that resolves nowhere, as an own-code target. */
+export const UNRESOLVED_TARGET_PREFIX = '?'
+
+/** How many same-file consts a config value is followed through (`const A = [...B]`, `const B = [C]`). */
+export const CONST_FOLLOW_DEPTH = 8
+
+/** The vitest config property naming the files run once around the whole run (`globalSetup`): suite infrastructure. */
+export const GLOBAL_SETUP_PROPERTY = 'globalSetup'
 
 /** Config files a test project is declared in: where a test file's import aliases come from. */
 export const TEST_CONFIG_FILES = [
@@ -786,3 +882,6 @@ export const FAILED_ON_BASE_WITHOUT_ERROR = 'failed on the base without an error
 
 /** The tree entry a base run's copy links to the package's `node_modules`: never a file of the base. */
 export const NODE_MODULES_FOLDER = 'node_modules'
+
+/** The folders a walk of a tree outside git leaves out: installed packages, a repository's own folder, built output. */
+export const TREE_SKIPPED_FOLDERS: readonly string[] = [NODE_MODULES_FOLDER, '.git', 'dist']

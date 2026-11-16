@@ -18,6 +18,7 @@ function runCase(params: {
 		project: params.project ?? '',
 		state: params.state ?? 'failed',
 		caseHash: 'hash',
+		body: '',
 		ofChange: true,
 		ofBase: false,
 		...(params.line !== undefined && { location: { line: params.line, column: 1 } }),

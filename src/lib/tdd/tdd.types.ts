@@ -204,6 +204,8 @@ export type ReceiptFlag =
 	| 'test code changed around it'
 	/** A red a revised case earned on the base's production, with the lot's current test code over it. */
 	| 'red on base'
+	/** A red carried from the case's earlier label by a `moved` entry, its test call the one that red froze. */
+	| 'moved'
 
 /**
  * - `red`: the case failed for a real reason before the code;
@@ -264,6 +266,8 @@ export type TddFreeze = {
 	files: Record<string, string>
 	/** The helpers (test code that is not a test file) this run froze because a `revised` entry of the lot file names them. */
 	revised?: string[]
+	/** The token hashes of each frozen JS/TS test file's own code (`own-code.ts`): what a moved case may keep of it. */
+	ownCode?: Record<string, string[]>
 	at: string
 }
 
@@ -315,6 +319,7 @@ export type LotDeclaration = {
 	accept?: unknown
 	revised?: unknown
 	gone?: unknown
+	moved?: unknown
 	/** Whether and how `dialecte mutants run` mutates the lot: `off`, `changed`, `audit` or `gate`. */
 	mutation?: unknown
 }
@@ -324,6 +329,32 @@ export type LotDeclaration = {
  * `<file>::<name>` (` [project]` when a project runs it).
  */
 export type LotCaseEntry = { case: string; reason: string }
+
+/**
+ * A case of the lot moved after its red (a split, a rename): two cases (`<file>::<name>`, ` [project]` optional), or a
+ * file and a file or glob its cases moved to under the same names.
+ */
+export type LotMovedEntry = { from: string; to: string; reason: string }
+
+/** A case a `moved` entry carries receipts from, with that entry. */
+export type MovedFrom = { entry: LotMovedEntry; from: TestCaseId }
+
+/** One statement of a test file's own code: its text and the hash of its tokens. */
+export type OwnCodeStatement = { text: string; hash: string }
+
+/** A moved case's file against its earlier file's own code at a red: kept within it, one statement added, or nothing recorded. */
+export type OwnCodeVerdict =
+	| { kind: 'kept' }
+	| { kind: 'added'; statement: string }
+	| { kind: 'unrecorded' }
+
+/**
+ * What a red run makes of a passing case `moved` entries name, before its run on the base: the red it may carry (from
+ * its earlier case), or why none can be carried.
+ */
+export type MovedCarry =
+	| { kind: 'carry'; from: TestCaseId; red: TddReceipt }
+	| { kind: 'refused'; reason: string }
 
 /** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
 export type RevisedHelper = { file: string; entry: LotCaseEntry }
@@ -424,6 +455,7 @@ export type TddRunAdmission = {
 	files: ChangedTestFile[]
 	acceptances: LotCaseEntry[]
 	revisions: LotCaseEntry[]
+	moves: LotMovedEntry[]
 	/** The package's vitest configs, read once for the run: why a file ran no case. */
 	configs: VitestConfigs
 }
@@ -490,8 +522,10 @@ export type DuplicateCaseId = {
 export type RunCase = TestCaseId & {
 	state: ReportedCaseState
 	failure?: CaseFailure
-	/** sha256 of the case's name and its test call now. */
+	/** sha256 of the case's name and its test call now: `${name}\0${body}`. */
 	caseHash: string
+	/** What the case hash covers besides the name: its test call's tokens (a pytest case's call and row). */
+	body: string
 	/** New or changed since the base, by its test call and titles. */
 	ofChange: boolean
 	/** The base provably holds it (its file, its own title and every title written now), whatever its call. */
@@ -528,9 +562,26 @@ export type ModuleResolver = {
 	resolveGlob: (params: { pattern: string; from: string }) => string | undefined
 	/**
 	 * The files the package's vitest config names in `setupFiles` (relative to the package root, each a file of
-	 * the package): test code no test imports, which runs before every test file.
+	 * the package), which run before every test file.
 	 */
 	setupFiles: readonly string[]
+	/** The files the package's vitest config names in `globalSetup`, which run once around the whole run. */
+	globalSetupFiles: readonly string[]
+	/** The `setupFiles` and `globalSetup` values no file could be read from (a call, an import). */
+	unreadableSetup: readonly ConfigUnreadable[]
+}
+
+/** A config value naming files that tdd cannot read: its config file, its property and its text. */
+export type ConfigUnreadable = { config: string; property: string; text: string }
+
+/** What a config property names: its path literals as written, and the values that cannot be read. */
+export type ConfigPaths = { paths: string[]; unreadable: ConfigUnreadable[] }
+
+/** The suite infrastructure of a package as last read, and what it was read from (`suite-infrastructure.ts`). */
+export type SuiteInfrastructureReading = {
+	files: ReadonlySet<string>
+	/** Each config and infrastructure file read, with its size and modification time when read. */
+	signature: string
 }
 
 /** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */
@@ -696,3 +747,9 @@ export type ZeroCaseFiles = {
 	/** pytest files a conftest leaves out of discovery (no module reported): out of the selection as well. */
 	pytestIgnored: string[]
 }
+
+/** What a red run makes of a changed helper no changed test file depends on (`helper-dependents.ts`). */
+export type HelperVerdict = { file: string; frozen: boolean; detail: string }
+
+/** A source file of the package and its text, as read once for a search. */
+export type SourceText = { file: string; text: string }

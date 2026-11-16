@@ -130,6 +130,7 @@ describe('runCaseOnBase', { timeout: BASE_RED_SCENARIO_TIMEOUT }, () => {
 				file: ADD_TEST_FILE,
 				name: 'add > one',
 				project: '',
+				body: '',
 				state: 'passed',
 				caseHash: '',
 				ofChange: true,

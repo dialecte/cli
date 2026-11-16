@@ -6,7 +6,8 @@
  * exists, an honest cut of an assertion) and the cases revised at review after their proof
  * (`"revised": [{ "case", "reason" }]`: a red run then records them as revised and freezes them again; the
  * case may also be a file or a glob over files, for every case of them) and the test files whose untitled
- * test calls of the base are gone (`"gone": [{ "file": "<file or glob>", "reason": "..." }]`). Whether an
+ * test calls of the base are gone (`"gone": [{ "file": "<file or glob>", "reason": "..." }]`) and the cases moved after
+ * their red (`"moved": [{ "from", "to" }]`: two cases, or a file and the file or glob its cases moved to). Whether an
  * entry names a case or a file is decided here, for `tdd red`, the gate, `tdd status` and the card.
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -24,7 +25,11 @@ import {
 	FOLDED_QUOTES,
 	GONE_ENTRY_KEYS,
 	GONE_LIST_SHAPE,
+	GLOB_MAGIC_PATTERN,
 	LOT_KEYS,
+	PROJECT_SUFFIX_PATTERN,
+	MOVED_ENTRY_KEYS,
+	MOVED_LIST_SHAPE,
 	TDD_EXEMPT_PATTERN,
 } from './tdd.constants.ts'
 
@@ -33,6 +38,8 @@ import type {
 	LotCaseList,
 	LotDeclaration,
 	LotGoneEntry,
+	LotMovedEntry,
+	MovedFrom,
 	RevisedHelper,
 	TddExemption,
 	TddLedger,
@@ -80,6 +87,53 @@ export function readGoneEntries(root: string): LotGoneEntry[] | { failure: strin
 		if (!isGoneEntry(entry)) return shape
 	}
 	return entries as LotGoneEntry[]
+}
+
+/** The cases the lot declares moved after their red (`moved`), or why the declaration cannot be read. */
+export function readMovedEntries(root: string): LotMovedEntry[] | { failure: string } {
+	const declaration = readLotDeclaration(join(root, LOT_FILE))
+	if ('failure' in declaration) return declaration
+	const entries = declaration.moved
+	const shape = { failure: `${LOT_FILE}: ${MOVED_LIST_SHAPE}` }
+	if (entries === undefined) return []
+	if (!Array.isArray(entries)) return shape
+	for (const entry of entries) {
+		const unknown = unknownKeyOf({ entry, known: MOVED_ENTRY_KEYS })
+		if (unknown)
+			return {
+				failure: `${LOT_FILE}: unknown key "${unknown}" in a "moved" entry (known: ${MOVED_ENTRY_KEYS.join(', ')})`,
+			}
+		if (!isMovedEntry(entry)) return shape
+	}
+	return entries as LotMovedEntry[]
+}
+
+/**
+ * Every case the `moved` entries carry the receipts of `testCase` from, with its entry, in the entries' order: a case
+ * entry whose `to` is the case's label (its ` [project]` optional), its `from` read in the case's project (a `from`
+ * written with another project names another case); a file entry whose `to` (a file or a glob) matches the case's
+ * file, its `from` the case's name in that file.
+ */
+export function findMovedFroms(params: {
+	entries: readonly LotMovedEntry[]
+	testCase: TestCaseId
+}): MovedFrom[] {
+	const { testCase } = params
+	const label = caseLabel(testCase)
+	const projectSuffix = testCase.project ? ` [${testCase.project}]` : ''
+	return params.entries.flatMap(function movedFromOf(entry): MovedFrom[] {
+		if (!namesOneCase(entry.to))
+			return matchesGlob({ path: testCase.file, glob: entry.to })
+				? [{ entry, from: { file: entry.from, name: testCase.name, project: testCase.project } }]
+				: []
+		if (entry.to !== label && `${entry.to}${projectSuffix}` !== label) return []
+		const [file, ...rest] = entry.from.split(CASE_ARGUMENT_SEPARATOR)
+		const written = rest.join(CASE_ARGUMENT_SEPARATOR)
+		const project = PROJECT_SUFFIX_PATTERN.exec(written)?.[1]
+		if (project !== undefined && project !== testCase.project) return []
+		const name = project === undefined ? written : written.slice(0, -` [${project}]`.length)
+		return [{ entry, from: { file, name, project: testCase.project } }]
+	})
 }
 
 /**
@@ -228,6 +282,21 @@ function isCaseEntry(entry: unknown): entry is LotCaseEntry {
 	if (typeof entry !== 'object' || entry === null) return false
 	const { case: name, reason } = entry as Record<string, unknown>
 	return typeof name === 'string' && typeof reason === 'string' && reason.trim() !== ''
+}
+
+function isMovedEntry(entry: unknown): entry is LotMovedEntry {
+	if (typeof entry !== 'object' || entry === null) return false
+	const { from, to, reason } = entry as Record<string, unknown>
+	return (
+		typeof from === 'string' &&
+		typeof to === 'string' &&
+		typeof reason === 'string' &&
+		reason.trim() !== '' &&
+		from !== '' &&
+		to !== '' &&
+		namesOneCase(from) === namesOneCase(to) &&
+		(namesOneCase(from) || !GLOB_MAGIC_PATTERN.test(from))
+	)
 }
 
 function isGoneEntry(entry: unknown): entry is LotGoneEntry {
