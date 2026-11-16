@@ -193,9 +193,9 @@ lockfile). Build core there (`npm run build`) before running the tests. A releas
 per dependency (its field, name and spec), and says how to pin it
 (`npm install --save-exact <name>@<version>`).
 
-The cli has a commit hook: `.husky/pre-commit` runs `npm run check` (type-check, lint, format; no suite), then
-`npm run test:hook` (`dialecte gate --hook` from the sources: the suite, unless a green `gate --full` of the
-committed tree answers it), then `npm run build`. `npm install` in the
+The cli has a commit hook: `.husky/pre-commit` runs `npm run test:hook` (`dialecte gate --hook` from the sources:
+the tdd receipts of the lot, then `check` and `rules` on the touched files; no test suite: the lot's tests ran in
+`tdd red` / `tdd green` on that tree, and CI runs the whole suite on every push). `npm install` in the
 cli checkout activates it (`"prepare": "husky"` sets `core.hooksPath` to `.husky/_`), and `dialecte worktree add`
 copies `.husky/_` into each new worktree, so `handover run` proves a cli lot again at its commit, running the
 suite only for a tree no green `gate --full` checked. A hook
@@ -204,11 +204,13 @@ runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the s
 its scratch repository only, and the cli clears git's repository variables at its start.
 
 The cli gates itself with its own `dialecte.gate` (package.json). `--fast`: `check`, a scoped `tests` step
-(`node src/scoped-tests.ts`: `vitest related` over the paths changed between the gate base and the tree that a
-test can import, and an empty selection exits 0 without starting vitest; a changed path no test can import - the
+(`node src/scoped-tests.ts`: the test files vitest's import graph has the changed paths a test can import reach, run
+with `vitest run <files>` (the graph read once with the package's vitest, `src/lib/gate/test-graph.ts`), and an empty selection exits 0 without starting vitest; a changed path no test can import - the
 manifest, the entry, the vitest config, a setup file, a file a test reads - is left to the full suite on CI, said in
-one line) and a scoped `rules` step on the same changed list. Its commit hook (`dialecte.gate.hook`) runs `check`
-and that scoped `tests` step; the full suite runs on CI for every pull request. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
+one line; so is the far reach of a shared file, one more than a quarter of the package's test files and more than 50
+reach (the command map, `src/lib/git.ts`, `test/scratch-repository.ts`), named with its count: its direct tests and
+the other changed files' tests still run) and a scoped `rules` step on the same changed list. Its commit hook (`dialecte.gate.hook`) runs `check`
+and the scoped `rules` after the tdd receipts of the lot; the full suite runs on CI for every push. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
 changes since the gate base. The suite's setup file also points `XDG_CONFIG_HOME` at a folder that does not exist
 (no person's forbidden words list is read) and sets `DIALECTE_KEEP_AWAKE=0` (no run of the suite holds the machine
 awake); a case that wants either sets it itself.

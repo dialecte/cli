@@ -75,7 +75,15 @@ Flags: `--json`
   - `argument-mutation` (error): a function changes what a parameter refers to (a mutating method such as
     `.push` or `.add`, an assignment to a property, `delete`, `++`, `Object.assign` with it first); return the
     new value instead. Rebinding the parameter, a copy, a write through `query` / `tx`, a `reduce` accumulator
-    are not flagged.
+    are not flagged. A write through `this` (`this.x = ...`, `this.items.push(...)`, `delete this.x`, `this.n++`) is
+    one too, in a class the `class` rule does not admit (an opted-out class included); the constructor and static
+    blocks build, they are not judged, and `this` inside a nested `function` or class is not the instance's.
+  - `class` (error): functional first, a class passes only when a package entry exports it (a typed public
+    facade: the `exports` map of `package.json`, its sources followed through `export *`, `export * as`,
+    `export { a as b } from`, an imported name exported again and `export default`; type-only exports count), it
+    `implements` an interface (a store), or it is an `Error` subclass holding only fields and a constructor.
+    Inferred from the code, no config. Any other class is an error, kept only with
+    `// dialecte-allow class: <why>`; else write functions over explicit state.
   - `query-in-loop` (error): a query read (a method of the API indexes' `q` entries, `perf` and writes aside)
     called on a query binding inside a loop or a loop callback (`map`, `forEach`, ...); read them in one query
     before the loop. A call through a `perf` segment (`doc.query.perf.getRecord()`) is never a query read. Without an API index the rule does not run.
@@ -94,9 +102,9 @@ Flags: `--json`
   - `plan-tag` (error): a title, a table key or the file name carries a plan or round tag; say what the case
     checks.
 
-  An opt-out silences one of these eight rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
-  least 15 characters, on the finding's line or the line before it (for `argument-mutation` and
-  `long-function`, also anywhere in the comments right before the function, its doc comment included). A
+  An opt-out silences one of these nine rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
+  least 15 characters, on the finding's line or the line before it (for `argument-mutation`, `class`
+  and `long-function`, also anywhere in the comments right before the function or class, its doc comment included). A
   malformed opt-out, a rule it cannot silence or a reason too short is an `invalid-allow` error; an opt-out
   that covers no finding is an `unused-allow` warning (never for a rule that did not run). `--json` (and the
   rules record) counts the findings the opt-outs silenced, per rule, in `allowed`. With the gate base (a

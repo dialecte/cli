@@ -156,10 +156,15 @@ Flags: `--fast`, `--full`, `--base`, `--no-reuse`, `--declare`, `--json`, `--hoo
   measure their wall and monotonic time: a run whose wall time passed its monotonic time by over 60 s spanned
   a sleep of the machine all the same, its record keeps `sleptMs`, and the hand-over card's gates print
   `! slept <duration> during gate --full` for a record of the tree it checks.
-- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the `dialecte.gate.hook` steps when the package declares
-  them (a package whose full suite runs on CI commits on its fast tier: the cli declares `check` and its scoped
-  `tests`), else the steps of `--full` but the scoped ones that count
-  no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays the gate's and contrib's).
+- `dialecte gate --hook [--no-reuse]` runs in a commit hook: when the package declares `dialecte.gate.hook` (a package
+  whose full suite runs on CI on every push), the tdd receipts of the lot first - every new or changed case since the
+  lot base proven red then green (or unchanged, accepted, revised), its newest green taken at the production as
+  committed, the working files the commit for every test or production path - then the declared steps; no test suite.
+  A stale green fails naming the cases and `dialecte tdd green --base <lot base>`, files left out of the commit fail
+  naming them, a first commit and a merge commit skip the tdd step with their reason, and a failed tdd step runs no
+  declared step. The cli declares `check` and its scoped `rules`. Without a declared list: the steps of `--full` but
+  the scoped ones that count no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays
+  the gate's and contrib's), with no tdd step.
   Each step is answered by any green record that ran it as it is now - a `gate --fast`, `--full`, `--release` or an
   earlier hook's - of the committed tree, what npm installed (the version-blind install key: the installed
   packages, not the package's own name and version) and the `file:` dependencies; the tree is the one of the index
@@ -180,7 +185,9 @@ Flags: `--fast`, `--full`, `--base`, `--no-reuse`, `--declare`, `--json`, `--hoo
   steps is answered from it. Given `DIALECTE_CHECK_STORE` (an absolute path to a git common dir: `handover run
   --rehearse` hands it to its clone's commits), the hook reads and writes that repository's store and marks its
   record `origin: rehearsal`; any other value is ignored with one line; the hook's steps never see the variable.
-  It runs no hygiene and no tdd step and reads no hand-over hold (it runs inside `handover run`'s own commit).
+  It runs no hygiene and reads no hand-over hold (it runs inside `handover run`'s own commit); the tdd step runs only
+  under a declared hook list. Under husky (off a terminal) each line is printed once: what the hook printed live is
+  never in its result again.
   `--no-reuse` runs every step whatever the store holds, and so does a hook whose git variables name another
   repository than its folder's (the cli ignores them, so what is committed is unknown); `--hook` with `--fast` or
   `--full` is refused (exit 2). Write it in the hook as an npm script (`"test:hook": "dialecte gate --hook"`) and
@@ -259,7 +266,9 @@ its proof: an acceptance never overrides one, and an accepted receipt counts onl
 the file); the gate lists each acceptance with its
 reason, the hand-over card counts them by reason from the receipts (those of earlier lots, which the file
 no longer names, counted on one line), and both report an acceptance or a `revised` entry no case used (the
-gate's `unused accept` line adds `; the closest: <file>::<name>` when a case title of the change is close). An
+gate's `unused accept` line adds `; the closest: <file>::<name>` when a case title of the change is close, and
+names each unused `accept`, `revised`, `gone` or `moved` entry with the `dialecte lot <list> --remove <entry>` that
+drops it). An
 entry names a title with its quotes folded: a straight `'` or `"` matches a curly one (`’`, `‘`, `“`, `”`) and
 the reverse; nothing else (a backtick, a prime, the letter case) compares alike. The card
 lists every `gone` entry with its reason; only the gate reports a `gone` entry that covers no finding. The file is strict: an unknown key, at the top or in

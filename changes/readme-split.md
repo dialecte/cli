@@ -6,3 +6,8 @@
   `npm run check`) fails naming a stale, missing or extra page.
 - `contrib`'s changelog row: a change to a page under `doc/commands/` asks for a changelog fragment, as a README
   or help change does.
+
+### Fixed
+
+- `lot land --help` says what it lands: the committed HEAD, uncommitted files left in the worktree and named, and
+  the heads its rebases replaced kept in `landing.json`.

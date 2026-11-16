@@ -55,14 +55,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   --simulate - start a simulated lot that plays one of the scenarios (ready, question, person,
                two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry
                entry; it never blocks a real lot
-  land - the lot lands through its pull request: its worktree clean, rebased onto origin/<base> when
-         behind (a conflict undone and named, nothing pushed), pushed with a lease, its pull request
-         opened (titled with the first commit message of its brief, never the last commit of the
-         branch; the others listed in the body) or reused (retitled when it reads otherwise), then
-         queued (gh pr merge --auto: the merge queue merges it once its checks pass on top of main);
-         --draft opens a draft and never queues it, CI running on every push; the landing (number,
-         url, branch, pushed tip) recorded in <lot folder>/landing.json, read by lot close; the host
-         is GitHub through gh, which never prompts
+  land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
+         worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
+         nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
+         for a clean worktree), pushed with a lease, its pull request opened (titled with the first
+         commit message of its brief, never the last commit of the branch; the others listed in the
+         body) or reused (retitled when it reads otherwise), then queued (gh pr merge --auto: the
+         merge queue merges it once its checks pass on top of main); --draft opens a draft and never
+         queues it, CI running on every push; the landing (number, url, branch, pushed tip, the
+         heads its rebases replaced) recorded in <lot folder>/landing.json, read by lot close; the
+         host is GitHub through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -418,6 +420,15 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
   nearest package.json above the current folder) as tab-indented JSON, keeping what it holds; the same
   case (or file) again replaces its reason. `accept` needs a case `<file>::<name>`; `gone` refuses one
   (it writes `"gone": [{ "file": "<file or glob>", "reason": "..." }]`).
+- `lot accept --remove <case>`, `lot revised --remove <case|file|glob>`, `lot gone --remove <file|glob>` drop the
+  entry written exactly so, keeping the rest (a list left empty leaves the file). An entry its list does not hold is
+  refused, naming the closest entries, nothing written. A receipt only exempts, so removing one makes `tdd` and the
+  gate stricter: receipts never need a hand edit.
+- `lot moved <case> <case> <reason>` or `lot moved <file> <file|glob> <reason>` declares a case of the lot moved by a
+  split or a rename after its red. `tdd red` carries the earlier label's red under the new one (flag `moved`) when the
+  case's test call is the one that red froze; the next `tdd green` proves it as any red. A call changed in the move,
+  or an earlier case with no red, is refused. The file form covers a whole split, the cases keeping their names.
+  `lot moved --remove <from> <to>` drops one.
 - `dialecte lot mutation <off|changed|audit|gate>` writes the lot's mutation switch (`"mutation"`, no
   reason). Without it, `dialecte mutants run` mutates the changed lines when the lot's diff touches the
   declared scope and nothing otherwise; `audit` mutates the whole scope; `gate` runs as `changed`.
@@ -537,7 +548,8 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
     base branch nor a remote-tracking ref holds (a commit made on a detached HEAD: the reflog goes with the
     worktree); ignored files its removal would delete that nothing else holds (`ignored files git worktree
     remove would delete: .env`, the first three named past three): rebuilt folders (`node_modules/`, `dist/`,
-    the VitePress caches, the hooks folder, the `dialecte.rebuiltIgnored` folders), `.DS_Store`, the
+    the VitePress caches, the hooks folder, the `dialecte.rebuiltIgnored` folders, the coverage outDir read from the
+    main checkout's package, a nested `node_modules` beside its own `package.json`, `.venv/`, `.pytest_cache/`), `.DS_Store`, the
     `.dialecte/lot` link, a `.dialecte/lot.json` that is empty or byte-equal to the one archived by a
     committed hand-over of this worktree, and files byte-equal, mode included, to the same path in the main
     checkout go; anything else keeps it, `.dialecte/notes.md` included. The branch is never touched (`worktree prune` still lists the merged
@@ -654,12 +666,18 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
 
 ## Landing through the merge queue
 
-`dialecte lot land <id>` lands a lot through its pull request: the worktree clean, rebased onto `origin/<base>` when
-behind it (a conflict undone, its files named, nothing pushed), pushed with a lease, its pull request opened (titled
-with its commit message) or reused, then queued with `gh pr merge --auto`. The merge queue runs the full suite on the
+`dialecte lot land <id>` lands a lot through its pull request: the committed HEAD (a push carries only commits: uncommitted
+files stay in the worktree and are named, `uncommitted, not pushed: N files`), rebased onto `origin/<base>` when
+behind it (a conflict undone, its files named, nothing pushed; with a tracked file changed git cannot rebase: the lot
+is pushed as committed, a line saying the rebase waits for a clean worktree; CI tests the merge with the base), pushed
+with a lease, its pull request opened or reused, titled with the lot's own message (the first commit lot of its brief;
+the others listed in the body), never the branch's last commit: a merge of main never becomes the squash title; a pull
+request titled otherwise is retitled on the next landing; then queued with `gh pr merge --auto`. The merge queue runs the full suite on the
 lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches main another way. `--draft`
 opens a draft and never queues it: CI runs on every push while the lot goes on; land it again without `--draft` to
-queue it. The landing is recorded in `<lot folder>/landing.json` and as the lot's hand-over entry (`pending`); `lot close`
+queue it. The landing is recorded in `<lot folder>/landing.json` (with `replaced`, the heads its rebases replaced: `lot close`
+counts their commits as landed, so a worktree `lot land` rebased closes, and a landed lot's final record takes the head
+its landing pushed) and as the lot's hand-over entry (`pending`); `lot close`
 first marks the lot committed once that pull request merged at the head it pushed (a squash commit holds none of the
 lot's own commits), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
 last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.

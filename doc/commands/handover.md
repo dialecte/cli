@@ -401,7 +401,7 @@ Flags: `--release`, `--target`, `--out`, `--rehash`, `--json`, `--print`, `--reh
   changed.
   The rehearsal clone (`▶ rehearsal clone`) warns naming the untracked files outside
   `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
-  HEAD, your working tree on top, the hooks folder, a copy-on-write copy of `node_modules` - so the hooks
+  HEAD, your working tree on top, the hooks folder, its `node_modules` got as `worktree add` gets it - so the hooks
   run as they will for real. The clone sits in a rehearsal folder under a short root, `/tmp` on macOS
   and Linux (the system's temporary folder on Windows):
   `/tmp/dialecte-rehearse-<random>/<repository folder name>`, so a tool's socket under the hook's

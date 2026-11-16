@@ -48,9 +48,10 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   `0171-core-depth` for `feat/depth`; a new branch starts from `--from`, else the base
   branch; a `<repository>` that is no folder, or a folder in no git repository, is refused in one line, exit
   2): it copies the hooks folder `core.hooksPath` names (husky's `.husky/_` is ignored by git, so a
-  plain worktree misses it), takes a `node_modules` from the workspace's pool when one matches (below), else
-  copies the main checkout's `node_modules` copy-on-write where the file system
-  can (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
+  plain worktree misses it), takes a `node_modules` from the workspace's pool (below); on a miss it completes the
+  nearest pool entry with `npm install --prefer-offline --no-save`, else runs `npm ci --prefer-offline`, and copies
+  the main checkout's `node_modules` copy-on-write only when `npm ci` fails (offline, registry down), its first line
+  recorded (links kept, a relative link to a sibling re-pointed so it still reaches it) - from the worktree that
   has the `--from` branch checked out when it has one, else from the main checkout - lists `.dialecte/`
   once in the exclude file of the repository's common git folder (so for the main checkout and every
   worktree of it), and writes the hygiene baseline `gate --fast` compares with; it prints a card.
@@ -61,20 +62,28 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   next), and a number stays taken after its worktree is removed. Unnumbered folders and the sibling links
   (`.worktrees/core`) count for nothing and are never renamed. `--json` carries `index`.
   The pool: a finished checkout's `node_modules` waits in `.worktrees/_pool-<repository>-<n>/node_modules`,
-  with a `pool.json` beside it (`{ repository, lockHash, parkedAt }`, `lockHash` the sha256 of the
-  `package-lock.json` it was checked against), at most two entries per repository (parking a third sends
-  the oldest to the trash). A park (`lot close`, the end of a rehearsal) takes only a `node_modules` that
-  matches its `package-lock.json` (as `worktree add` reads it), rewrites absolute, in place, every link inside
-  it whose relative target leaves its checkout (a sibling repository; a link into the checkout itself, an npm
-  workspace package, stays relative and reaches the taker's own package), renames the folder into a new entry (no file is copied),
-  sends `node_modules/.vite` and `node_modules/.cache` to the trash (or leaves them in the folder already
-  going there), then writes `pool.json`; a `_pool-*` folder without one is a park that never finished,
-  never taken, and `worktree prune` names it as left over. `worktree add` takes the newest entry of the
-  repository whose `lockHash` is the new worktree's `package-lock.json` hash (a rename: two takers never
-  share one, the second goes on to the next entry), then reads it against the lockfile as it reads a copy.
-  No match, an empty pool or a rename across file systems: the copy. The card's `node_modules` row says
-  which and how long (`pooled  _pool-cli-1  0.1 s`, `copy-on-write  46.2 s`); `--json` carries
-  `nodeModules: { method, from?, seconds }`. The trash: `.worktrees/_trash/` - a worktree goes there by
+  with a `pool.json` beside it (`{ repository, lockKey, parkedAt, owner?, packages }`). `lockKey` is the lock
+  key of the `package-lock.json` it was checked against - what the lock installs, blind to the package's own
+  name and version, so an entry parked before a release bump still matches; `packages` lists the installed
+  entries the lock names (optional and platform packages left out, read from the lock alone). A repository keeps
+  up to the most of its lots open at once (from its lot store: at least 2, at most 8) and at most 2 entries of
+  one lock key; parking past either sends the oldest to the trash. An entry written by an older cli (no
+  `lockKey`) is never taken; the next park of its repository trashes it. A park (`lot close`, the end of a
+  rehearsal, `worktree prune --reclaim`) takes only a `node_modules` that matches its lockfile, rewrites absolute
+  every link inside it whose relative target leaves its checkout, holds `.vite` and `.cache` aside, renames the
+  folder into a new entry (no file is copied), writes `pool.json`, then sends the caches to the trash; any failure
+  puts back what moved, so a `_pool-*` folder without `pool.json` is never taken and never left by a park.
+  `worktree add` asks the pool in this order, the same in every repository: an entry with its lock key (the
+  owner's newest first, else the newest; a rename: two takers never share one); else the nearest entry, at
+  most 5 packages off, completed by `npm install --prefer-offline --no-save` and checked against the lock (a
+  failed install or check sends it to the trash); else `npm ci --prefer-offline`, checked; else, when `npm ci`
+  fails, the copy. A failed install's partial `node_modules` is moved aside, never deleted. The card's
+  `node_modules` row says which and how long (`pooled  _pool-cli-1  0.1 s`, `near  _pool-cli-1, 1 package(s)
+  differ  4.2 s`, `installed  npm ci (pool empty)  31.0 s`, `copy-on-write  npm ci failed: <first line>  46.2 s`);
+  `--json` carries `nodeModules: { method, from?, drift?, miss?, reason?, near?, seconds }`, `miss` saying why the
+  pool gave nothing (`pool empty`, `no entry for install <key>`, `entry busy`, `cross-device`).
+  `DIALECTE_NPM_INSTALL=off` (a machine that must stay offline, a test suite): the cli never runs npm; a worktree
+  the pool cannot serve gets the copy, the reason recorded. The trash: `.worktrees/_trash/` - a worktree goes there by
   `git worktree move` (git keeps it registered) then a background `git worktree remove --force`, a folder
   by a rename then a background `rm -rf` of that one path; nobody waits for either. A folder left there (a
   sleep, a crash) stays for you to look at. The pool and the trash are used only where the repository's
@@ -141,3 +150,15 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   hand-over folder and lists a folder reached by its path and through a link once. The pool entries and the
   trash (a worktree in `_trash/` included) are never listed nor touched: one line each,
   `pool: 2 entries (cli 1, core 1)` and `trash: 3 folders, being deleted or left over`.
+
+- `dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]` gives back the
+  `node_modules` of idle worktrees and moves no code. A worktree is idle when no lot of its repository's store
+  names it unless committed or canceled (a failed lot keeps it), no hand-over is pending in it, no process works
+  in it (processes not known: kept), it is not the main checkout, not locked, reached by no link, and its git
+  folder's index, HEAD and reflog are older than `<days>` (default 2, a positive whole number). An idle worktree
+  whose lock key is the main checkout's has its `node_modules` parked in the pool; any other, or one that fails
+  its check, has it sent to `.worktrees/_trash/`. A `node_modules` that is a link is never moved nor followed. A
+  `-round-<n>` throwaway of a closed lot goes to the trash whole (git forgets it). Every rule is read again just
+  before each move; a worktree gone, locked or active since the plan keeps its line and moves nothing. One line
+  per worktree (`park`, `trash`, `keep` with why); `--dry-run` prints them with a total (worktrees, files, size)
+  and moves nothing. No `--yes`: `--dry-run` is the preview.

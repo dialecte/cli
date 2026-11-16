@@ -142,6 +142,13 @@ Flags: `--json`, `--flags`, `--legend`
     the package root, or a vite alias; a negated `!pattern` leaves its files out and names none) are
     dependencies too, followed like an import. An import that looks local (`@/`, `~/`,
     `#`, a `paths` or alias prefix) and resolves nowhere refuses its file, naming the import as written.
+  - A changed test helper no changed test file depends on is frozen by `tdd red` through the unchanged test files
+    importing it, when they pass with it; one failing, or none importing it, leaves it unfrozen with the reason (a
+    `revised` entry naming it still freezes it).
+  - Suite infrastructure: the files the vitest configs name in `setupFiles` and `globalSetup`, and the test
+    helpers they import, are production for tdd. A lot fixing the suite gets red on the infrastructure as it is,
+    green once fixed. A helper no setup file imports, or one that test files other than its own unit test reach
+    too (an assertion helper), stays test code.
   - A test-code file moved with its bytes as at the base (git's R100: a deleted path and a new one,
     added or untracked, holding the same blob) is no change: a moved test file's cases are `unchanged`
     with no receipt to hold, its old path lists no deleted case, a moved helper or fixture waits for no
