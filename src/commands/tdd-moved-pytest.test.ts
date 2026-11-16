@@ -157,7 +157,7 @@ describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 		writeFiles({
 			root,
 			files: {
-				[MOVED_FILE]: inClass('@pytest.mark.usefixtures("tmp_path")\n'),
+				[MOVED_FILE]: inClass('@pytest.mark.usefixtures("monkeypatch")\n'),
 				'.dialecte/lot.json': JSON.stringify({
 					moved: [{ from: ADD_PYTEST_FILE, to: MOVED_FILE, reason: 'a rename' }],
 				}),
@@ -168,7 +168,7 @@ describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(
-				/holds code the file that red froze did not: @pytest\.mark\.usefixtures\("tmp_path"\)/,
+				/holds code the file that red froze did not: @pytest\.mark\.usefixtures\("monkeypatch"\)/,
 			),
 		)
 	})

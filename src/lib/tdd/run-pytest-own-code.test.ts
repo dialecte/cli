@@ -122,7 +122,7 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 					'import pytest',
 					'',
 					'',
-					'@pytest.mark.usefixtures("tmp_path")',
+					'@pytest.mark.usefixtures("monkeypatch")',
 					'class TestAdd(object):',
 					'    def test_two(self):',
 					'        assert 1 + 1 == 2',
@@ -136,7 +136,7 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 
 		expect(module?.ownCode?.map((statement) => statement.text)).toEqual([
 			'import pytest',
-			'@pytest.mark.usefixtures("tmp_path")\nclass TestAdd(object):',
+			'@pytest.mark.usefixtures("monkeypatch")\nclass TestAdd(object):',
 		])
 	})
 
