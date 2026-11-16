@@ -142,6 +142,7 @@ export const NEXT_COMMANDS = {
 	run: 'dialecte handover run {handover}',
 	stop: 'dialecte lot stop {name} --reason <text>',
 	close: 'dialecte lot close {handover}',
+	land: 'dialecte lot land {name}',
 } as const
 
 /**

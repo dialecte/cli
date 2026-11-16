@@ -6,11 +6,14 @@ import { resultOf } from '../lib/command-result.ts'
 import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { mainCheckoutOf } from '../lib/git.ts'
 import { closeHandovers } from '../lib/handover/close-handovers.ts'
+import { entryOfArgument, findHandoverStore } from '../lib/handover/handover-store.ts'
 import {
 	LOT_CLOSE_ALREADY_CLOSED,
 	LOT_CLOSE_LANDED_INDENT,
 } from '../lib/handover/handover.constants.ts'
+import { confirmLanding } from '../lib/handover/land-lot.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
+import { createGithubHost } from '../lib/host/github-host.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
@@ -19,6 +22,7 @@ import { TRASH_FOLDER } from '../lib/worktree/worktree.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { CloseResult } from '../lib/handover/handover.types.ts'
+import type { HostAdapter } from '../lib/host/host.types.ts'
 import type { BackgroundSpawner, ProcessFolder } from '../lib/worktree/worktree.types.ts'
 
 export function runLotClose(params: {
@@ -34,6 +38,8 @@ export function runLotClose(params: {
 	 * Default: this machine's (`machineScratchRoots`).
 	 */
 	scratchRoots?: readonly string[]
+	/** Where lots land through pull requests; default: GitHub through `gh`, asked only for a lot with a landing. */
+	host?: HostAdapter
 }): CommandResult {
 	const names = positionalArguments({ argv: params.argv, valueOptions: [] })
 	if (names.length === 0) return { exitCode: 2, output: renderLotUsage() }
@@ -45,6 +51,18 @@ export function runLotClose(params: {
 	}
 	// the base branch is the host's first (a queue merges there): the landed reading and the main checkout follow it
 	const synced = syncBaseBranch({ root: main })
+	// a lot the merge queue landed is committed once its pull request merged at the head its landing pushed
+	const store = findHandoverStore(main)
+	const confirmed = names.flatMap(function confirmed(name) {
+		const entry = entryOfArgument({ argument: name, store })
+		if (entry === undefined || entry.state !== 'pending') return []
+		const line = confirmLanding({
+			root: main,
+			lotFolder: entry.folder,
+			host: params.host ?? createGithubHost(),
+		})
+		return line === undefined ? [] : [line]
+	})
 	const results = closeHandovers({
 		cwd: main,
 		runFrom: params.cwd,
@@ -76,7 +94,7 @@ export function runLotClose(params: {
 			`the closed worktrees wait in ${trash}, removed in the background; their branches are kept`,
 			`the deletion is git's own git worktree remove, without --force: git may refuse a worktree written into since the check, and a refused one stays registered in ${trash} for you to look at`,
 		)
-	return resultOf({ exitCode, lines: [...synced, ...lines] })
+	return resultOf({ exitCode, lines: [...synced, ...confirmed, ...lines] })
 }
 
 /** The line of one outcome: what moved and where node_modules went, or why it was kept. */

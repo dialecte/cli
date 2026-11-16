@@ -1,4 +1,5 @@
 import type { InterleavingSeam } from '../lib/handover/handover.types.ts'
+import type { HostAdapter } from '../lib/host/host.types.ts'
 
 /** What the tests inject into `lotStop`: a seam between its steps. */
 export type StopSeams = {
@@ -20,4 +21,6 @@ export type LotStopParams = {
 	argv: string[]
 	now?: Date
 	seams?: StopSeams
+	/** Where a landing lot's pull request is closed; default: GitHub through `gh`. */
+	host?: HostAdapter
 }

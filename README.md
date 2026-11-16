@@ -2216,6 +2216,18 @@ lot's own branch is always read locally.
 The repository field of `package.json` is a URL and is never read for this. `mutants` finds `origin/<b>` through
 the same rule and no longer takes a tag named like the base branch.
 
+### Landing through the merge queue
+
+`dialecte lot land <id>` lands a lot through its pull request: the worktree clean, rebased onto `origin/<base>` when
+behind it (a conflict undone, its files named, nothing pushed), pushed with a lease, its pull request opened (titled
+with its commit message) or reused, then queued with `gh pr merge --auto`. The merge queue runs the full suite on the
+lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches main another way. `--draft`
+opens a draft and never queues it: CI runs on every push while the lot goes on; land it again without `--draft` to
+queue it. The landing is recorded in `<lot folder>/landing.json` and as the lot's hand-over entry (`pending`); `lot close`
+first marks the lot committed once that pull request merged at the head it pushed (a squash commit holds none of the
+lot's own commits), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
+last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.
+
 ### Changelog fragments
 
 A package that keeps a `changes/` folder never has two lots editing `CHANGELOG.md`: each lot writes its entry in
