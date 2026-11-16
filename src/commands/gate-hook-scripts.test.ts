@@ -14,7 +14,9 @@ describe("the cli's own scripts and commit hook", () => {
 	it('check → type-check, lint:check and format:check, no suite', () => {
 		const { check } = readScripts()
 
-		expect(check).toBe('npm run type-check && npm run lint:check && npm run format:check')
+		expect(check).toBe(
+			'npm run type-check && npm run lint:check && npm run format:check && npm run doc:check',
+		)
 	})
 
 	it('test:hook → the repository cli running gate --hook', () => {
