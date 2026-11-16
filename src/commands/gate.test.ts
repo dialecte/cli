@@ -656,7 +656,7 @@ describe('runGate: the tdd step', { timeout: 240_000 }, () => {
 
 		expect(result.output.split('\n').slice(1, 3)).toEqual([
 			'ok    tdd  1 case(s) of the change: 1 red then green',
-			'        unused accept  src/add.test.ts::nope  no case of the change has that name (a typo)',
+			'        unused accept  src/add.test.ts::nope  no case of the change has that name (a typo); drop it: dialecte lot accept --remove src/add.test.ts::nope',
 		])
 	})
 

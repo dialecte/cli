@@ -371,11 +371,14 @@ export const FOLDED_QUOTES: ReadonlyMap<string, string> = new Map([
 /** The curly quotes `FOLDED_QUOTES` folds, as one pattern. */
 export const CURLY_QUOTE_PATTERN = /[\u{2018}\u{2019}\u{201C}\u{201D}]/gu
 
-/** After an `unused accept` line's entry: the closest case title of the change, `{label}`. */
-export const UNUSED_ACCEPT_CLOSEST = '; the closest: {label}'
+/** After an unused entry's explanation: the closest real label of the change (a case, or a test file), `{label}`. */
+export const UNUSED_ENTRY_CLOSEST = '; the closest: {label}'
 
-/** How many closest titles an `unused accept` line names. */
-export const UNUSED_ACCEPT_CLOSEST_LIMIT = 1
+/** How many closest labels an unused entry's line names. */
+export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
+
+/** Ending an unused entry's line: the verb that drops it, `{list}` its list, `{entry}` the entry as one shell word. */
+export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
 export const TDD_EXEMPT_PATTERN = /^exempt:\s*(.+)$/

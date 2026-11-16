@@ -23,6 +23,7 @@ import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { shellWord } from '../lib/shell-quote.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { hashTestCode, hashText } from '../lib/tdd/tdd-files.ts'
 import { ROLLBACK_LINE } from '../lib/tdd/tdd.constants.ts'
@@ -113,6 +114,22 @@ const MUL_ROWS = [
 	"{ title: 'two by three', left: 2, right: 3, expected: 6 }",
 	"{ title: 'zero', left: 0, right: 3, expected: 0 }",
 ]
+
+/**
+ * The gate's line of an unused `revised` entry: why it is unused, any closest label, its reason, and the verb that
+ * drops it.
+ */
+function unusedRevisedLine(params: { entry: string; reason: string }) {
+	return expect.stringMatching(
+		new RegExp(
+			`^unused revised entry  ${escapeRegExp(params.entry)}  no case of the change stands revised by a red run(; the closest: .*)? \\(${escapeRegExp(params.reason)}\\); drop it: dialecte lot revised --remove ${escapeRegExp(shellWord(params.entry))}$`,
+		),
+	)
+}
+
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }, () => {
 	it('stub → red (receipt, freeze) → test edited after red refused at green → restored → implemented → green → status green', async () => {
@@ -1588,8 +1605,8 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 
 		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
 
-		expect([...(check.details ?? []), ...(check.lines ?? [])]).toContain(
-			`unused revised entry  ${HELPER}  no case of the change stands revised by a red run (${REASON})`,
+		expect([...(check.details ?? []), ...(check.lines ?? [])]).toContainEqual(
+			unusedRevisedLine({ entry: HELPER, reason: REASON }),
 		)
 	})
 
@@ -1600,9 +1617,7 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 		const check = await checkTddReceipts({ root, packageJson: readPackageJson(root) })
 
 		expect(check.status).toBe('passed')
-		expect(check.details).toContain(
-			`unused revised entry  ${HELPER}  no case of the change stands revised by a red run (${REASON})`,
-		)
+		expect(check.details).toContainEqual(unusedRevisedLine({ entry: HELPER, reason: REASON }))
 	})
 
 	it('a targeted red, a changed test file outside the run depends on the helper with a red awaiting its green → the entry does not freeze it, a line names that file', async () => {
@@ -1779,8 +1794,8 @@ describe(
 				),
 			])
 			expect(receiptLines(root)).toEqual(receiptsBefore)
-			expect(check.details).toContain(
-				`unused revised entry  ${PROOF_KIND_CASE_LABEL}  no case of the change stands revised by a red run (${REVISION_REASON})`,
+			expect(check.details).toContainEqual(
+				unusedRevisedLine({ entry: PROOF_KIND_CASE_LABEL, reason: REVISION_REASON }),
 			)
 		})
 

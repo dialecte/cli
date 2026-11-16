@@ -6,6 +6,7 @@
 
 - `dialecte lot land` titles the pull request with the lot's own commit message (the first commit lot of the brief in its store folder), never the branch's last commit: a merge of main or a helper commit no longer becomes the squash title on main. A brief with several commit lots lists the others in the body. An open pull request titled otherwise is retitled on the next landing (`gh pr edit --title`), its line saying so. A lot whose brief names no message is refused before anything is pushed.
 
+- The gate's tdd step names each unused `accept`, `revised` and `gone` entry with the closest real label of the change (a case, or a test file) and the command that drops it (`; drop it: dialecte lot <list> --remove <entry>`).
 - `dialecte tdd` counts the suite infrastructure as production: the files the vitest configs name in `setupFiles` and `globalSetup`, and the test helpers they import. A lot that fixes the suite (a setup file, a guard, a helper the guard runs) gets a red -> green path: its tests red on the infrastructure as it is, green once it is fixed, the fix no longer read as test code changed after the red. A red run never freezes those files; a helper no setup file imports stays test code. Read from the vitest configs, no config field.
 
 ### Fixed
