@@ -59,11 +59,7 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host })
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toEqual([
-			'read feat/x',
-			'open feat/x -> main "feat(x): x answers one"',
-			'queue 7',
-		])
+		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat: x"', 'queue 7'])
 		expect(JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8'))).toMatchObject({
 			number: 7,
 		})
@@ -146,6 +142,7 @@ describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, 
 			existing: {
 				number: 7,
 				url: 'https://host.test/pull/7',
+				title: 'feat: x',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -193,6 +190,7 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 			existing: {
 				number: 7,
 				url: 'https://host.test/pull/7',
+				title: 'feat: x',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -326,6 +324,7 @@ describe(
 				existing: {
 					number: 7,
 					url: 'https://host.test/pull/7',
+					title: 'feat: x',
 					state: 'merged',
 					draft: false,
 					queued: false,

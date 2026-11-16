@@ -16,3 +16,16 @@ export const HOST_VERB_ERROR_EXITS: Readonly<Record<string, readonly number[]>> 
 	station: [1, 2],
 	export: [1, 2],
 }
+
+/** `lot accept|revised|gone --remove <entry>`: the option that drops an entry of the list instead of writing one. */
+export const LOT_REMOVE_OPTION = '--remove'
+
+/** How many closest entries a `--remove` of an entry its list does not hold names. */
+export const LOT_REMOVE_CLOSEST_LIMIT = 3
+
+/** What `--remove` answers; `{path}` the lot file, `{list}` its list, `{entry}` the entry as given. */
+export const LOT_REMOVE_LINES = {
+	removed: 'lot: {path} written: removed {list} {entry} ({reason})',
+	absent: 'lot: {list} holds no {entry}{closest}; nothing written',
+	closest: ' (closest: {entries})',
+} as const

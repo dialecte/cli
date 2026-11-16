@@ -13,7 +13,7 @@ import {
 import type { HostAdapter, HostRefusal, PullRequest } from './host.types.ts'
 
 /**
- * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, queued (`gh pr merge --auto`,
+ * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, retitled, queued (`gh pr merge --auto`,
  * which joins the merge queue when the base branch has one; a draft made ready first). Reads are short, never a prompt.
  *
  * @intent land lots through GitHub's pull requests and merge queue
@@ -54,14 +54,8 @@ export function createGithubHost(): HostAdapter {
 				read ?? { refusal: `the pull request of ${params.branch} was opened but cannot be read` }
 			)
 		},
-		closePullRequest: function closePullRequest(params) {
-			const closed = runGh({
-				root: params.root,
-				args: ['pr', 'close', String(params.number)],
-				timeout: HOST_WRITE_TIMEOUT_MS,
-			})
-			return 'refusal' in closed ? closed : undefined
-		},
+		retitlePullRequest: retitleOnGithub,
+		closePullRequest: closeOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -81,6 +75,30 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
+}
+
+/** `gh pr edit <number> --title <title>`: undefined once retitled, else its refusal. */
+function retitleOnGithub(params: {
+	root: string
+	number: number
+	title: string
+}): HostRefusal | undefined {
+	const edited = runGh({
+		root: params.root,
+		args: ['pr', 'edit', String(params.number), '--title', params.title],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in edited ? edited : undefined
+}
+
+/** `gh pr close <number>`: undefined once closed, else its refusal. */
+function closeOnGithub(params: { root: string; number: number }): HostRefusal | undefined {
+	const closed = runGh({
+		root: params.root,
+		args: ['pr', 'close', String(params.number)],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in closed ? closed : undefined
 }
 
 /** One `gh` call: its standard output, or its first error line. */
@@ -111,6 +129,7 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 		return {
 			number: parsed.number,
 			url: String(parsed.url ?? ''),
+			title: String(parsed.title ?? ''),
 			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
 			draft: parsed.isDraft === true,
 			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,

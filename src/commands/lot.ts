@@ -2,7 +2,9 @@
  * `dialecte lot exempt <reason>` / `lot accept <case> <reason>` / `lot revised <case|file|glob> <reason>` /
  * `lot gone <file|glob> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
- * case, a file or a glob; a gone entry a file or a glob, never a case.
+ * case, a file or a glob; a gone entry a file or a glob, never a case. `lot accept|revised|gone --remove <entry>`
+ * drops the entry written exactly so (a list left empty leaves the file): a receipt only ever exempts, so its removal
+ * makes tdd and the gate stricter and needs no proof.
  * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
  * ones that write there run by `runRecordVerb`, `lot delta` by `runDelta`, `lot recap` by `runRecap`;
  * `lot close <hand-over name|index>...` by `runLotClose`; `lot start <brief.json>` by `startLot`, `lot status <id>`
@@ -15,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
+import { closestNames } from '../lib/closest-names.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { isFolder } from '../lib/file-system.ts'
@@ -53,6 +56,7 @@ import { lotStop } from './lot-stop.ts'
 import { printsOnStandardError } from './lot-streams.ts'
 import { runLotVerify } from './lot-verify.ts'
 import { waitLot } from './lot-wait.ts'
+import { LOT_REMOVE_CLOSEST_LIMIT, LOT_REMOVE_LINES, LOT_REMOVE_OPTION } from './lot.constants.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
@@ -193,8 +197,26 @@ export function runLot(params: {
 	if (reviewRound) return reviewRound
 	const mutationRefusal = verb === 'mutation' ? refuseMutationWords(words) : undefined
 	if (mutationRefusal) return resultOf({ exitCode: 2, lines: [`lot: ${mutationRefusal}`] })
+	return runDeclarationVerb({ cwd: params.cwd, verb, words })
+}
+
+/**
+ * The verbs of the lot declaration (`LOT_VERBS`): the words checked, then the entry written or (`--remove`) dropped;
+ * usage for a verb it does not know or the wrong number of words.
+ */
+function runDeclarationVerb(params: {
+	cwd: string
+	verb: string | undefined
+	words: string[]
+}): CommandResult {
+	const { verb, words } = params
 	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
 	const gone = verb === 'gone'
+	if ((list || gone) && words[0] === LOT_REMOVE_OPTION) {
+		if (words.length !== 2 || words[1].trim() === '')
+			return { exitCode: 2, output: renderLotUsage() }
+		return removeEntry({ cwd: params.cwd, list: list ?? 'gone', entry: words[1] })
+	}
 	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone ? 2 : 1))
 		return { exitCode: 2, output: renderLotUsage() }
 	if (list === 'accept' && !namesOneCase(words[0]))
@@ -213,6 +235,47 @@ export function runLot(params: {
 				`lot: gone names a test file or a glob over test files, not a case: ${JSON.stringify(words[0])}`,
 			],
 		})
+	return writeDeclared({ cwd: params.cwd, verb: verb ?? '', words })
+}
+
+/**
+ * `lot accept|revised <case> <reason>`, `lot gone <file> <reason>`, `lot mutation <mode>`, `lot exempt <reason>`, the
+ * words already checked: the entry written (an entry of the same case or file replaced in place), or the key set.
+ */
+function writeDeclared(params: { cwd: string; verb: string; words: string[] }): CommandResult {
+	const { verb, words } = params
+	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
+	const gone = verb === 'gone'
+	const read = readDeclarationToWrite({ cwd: params.cwd })
+	if ('exitCode' in read) return read
+	const { path, declaration } = read
+	if (list) {
+		const [testCase, reason] = words
+		const entries = Array.isArray(declaration[list]) ? (declaration[list] as LotCaseEntry[]) : []
+		const known = entries.some((entry) => entry.case === testCase)
+		declaration[list] = known
+			? entries.map((entry) => (entry.case === testCase ? { case: testCase, reason } : entry))
+			: [...entries, { case: testCase, reason }]
+	} else if (gone) {
+		const [file, reason] = words
+		const entries = Array.isArray(declaration.gone) ? (declaration.gone as LotGoneEntry[]) : []
+		const known = entries.some((entry) => entry.file === file)
+		declaration.gone = known
+			? entries.map((entry) => (entry.file === file ? { file, reason } : entry))
+			: [...entries, { file, reason }]
+	} else if (verb === 'mutation') declaration.mutation = words[0]
+	else declaration.tdd = `exempt: ${words[0]}`
+	writeDeclaration({ path, declaration })
+	return resultOf({ exitCode: 0, lines: [`lot: ${path} written`] })
+}
+
+/**
+ * The lot declaration of the package at or above `cwd` as a verb rewrites it: its path and what it holds (empty when
+ * absent), or the refusal of a missing package, a file that is not JSON or holds no object.
+ */
+function readDeclarationToWrite(params: {
+	cwd: string
+}): { path: string; declaration: Record<string, unknown> } | CommandResult {
 	const root = packageRootOf(params.cwd)
 	if (!root)
 		return resultOf({ exitCode: 1, lines: [`lot: no package.json at or above ${params.cwd}`] })
@@ -232,26 +295,77 @@ export function runLot(params: {
 			exitCode: 1,
 			lines: [`lot: ${path} holds no object (${JSON.stringify(read)}); fix or remove it first`],
 		})
-	const declaration = read as Record<string, unknown>
-	if (list) {
-		const [testCase, reason] = words
-		const entries = Array.isArray(declaration[list]) ? (declaration[list] as LotCaseEntry[]) : []
-		const known = entries.some((entry) => entry.case === testCase)
-		declaration[list] = known
-			? entries.map((entry) => (entry.case === testCase ? { case: testCase, reason } : entry))
-			: [...entries, { case: testCase, reason }]
-	} else if (gone) {
-		const [file, reason] = words
-		const entries = Array.isArray(declaration.gone) ? (declaration.gone as LotGoneEntry[]) : []
-		const known = entries.some((entry) => entry.file === file)
-		declaration.gone = known
-			? entries.map((entry) => (entry.file === file ? { file, reason } : entry))
-			: [...entries, { file, reason }]
-	} else if (verb === 'mutation') declaration.mutation = words[0]
-	else declaration.tdd = `exempt: ${words[0]}`
-	mkdirSync(dirname(path), { recursive: true })
-	writeFileSync(path, `${JSON.stringify(declaration, null, '\t')}\n`)
-	return resultOf({ exitCode: 0, lines: [`lot: ${path} written`] })
+	return { path, declaration: read as Record<string, unknown> }
+}
+
+/** The declaration written at `path`: tab-indented JSON, a final newline. */
+function writeDeclaration(params: { path: string; declaration: Record<string, unknown> }): void {
+	mkdirSync(dirname(params.path), { recursive: true })
+	writeFileSync(params.path, `${JSON.stringify(params.declaration, null, '\t')}\n`)
+}
+
+/**
+ * `lot <list> --remove <entry>`: the entry of `list` written exactly as `entry` dropped (an `accept` or `revised`
+ * entry by its case, a `gone` one by its file), the list left out once empty; refused naming the list's closest
+ * entries when it holds no such entry, nothing written.
+ */
+function removeEntry(params: {
+	cwd: string
+	list: LotCaseList | 'gone'
+	entry: string
+}): CommandResult {
+	const { list, entry } = params
+	const read = readDeclarationToWrite({ cwd: params.cwd })
+	if ('exitCode' in read) return read
+	const { path, declaration } = read
+	const entries: unknown[] = Array.isArray(declaration[list]) ? declaration[list] : []
+	const names = entries.map((item) => nameOfEntry({ item, list }))
+	const index = names.indexOf(entry)
+	if (index === -1) {
+		const closest = closestNames({
+			name: entry,
+			candidates: names.filter((name): name is string => name !== undefined),
+			limit: LOT_REMOVE_CLOSEST_LIMIT,
+		})
+		return resultOf({
+			exitCode: 1,
+			lines: [
+				LOT_REMOVE_LINES.absent
+					.replace('{list}', list)
+					.replace('{entry}', () => JSON.stringify(entry))
+					.replace('{closest}', () =>
+						closest.length === 0
+							? ''
+							: LOT_REMOVE_LINES.closest.replace('{entries}', () =>
+									closest.map((name) => JSON.stringify(name)).join(', '),
+								),
+					),
+			],
+		})
+	}
+	const removed = entries[index] as { reason?: unknown }
+	const kept = entries.filter((_, position) => position !== index)
+	if (kept.length === 0) delete declaration[list]
+	else declaration[list] = kept
+	writeDeclaration({ path, declaration })
+	return resultOf({
+		exitCode: 0,
+		lines: [
+			LOT_REMOVE_LINES.removed
+				.replace('{path}', () => path)
+				.replace('{list}', list)
+				.replace('{entry}', () => entry)
+				.replace('{reason}', () => String(removed.reason ?? '')),
+		],
+	})
+}
+
+/** What an entry of `list` names: its case (`accept`, `revised`) or its file (`gone`); undefined for a malformed one. */
+function nameOfEntry(params: { item: unknown; list: LotCaseList | 'gone' }): string | undefined {
+	const { item } = params
+	if (typeof item !== 'object' || item === null) return undefined
+	const name = (item as Record<string, unknown>)[params.list === 'gone' ? 'file' : 'case']
+	return typeof name === 'string' ? name : undefined
 }
 
 /** Why `lot mutation <mode>` refuses its words: no mode, a mode it does not know, or a reason after it. */

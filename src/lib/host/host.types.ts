@@ -2,6 +2,7 @@
 export type PullRequest = {
 	number: number
 	url: string
+	title: string
 	state: 'open' | 'merged' | 'closed'
 	draft: boolean
 	/** True while the host merges it once its checks pass (auto-merge on, or in the merge queue). */
@@ -29,6 +30,12 @@ export type HostAdapter = {
 		body: string
 		draft: boolean
 	}): PullRequest | HostRefusal
+	/** The pull request's title replaced by `title`. */
+	retitlePullRequest(params: {
+		root: string
+		number: number
+		title: string
+	}): HostRefusal | undefined
 	/** The pull request closed: taken out of the merge queue, never merged. */
 	closePullRequest(params: { root: string; number: number }): HostRefusal | undefined
 	/** The pull request queued: merged by the host once its checks pass (a draft made ready first). */

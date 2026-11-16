@@ -4,7 +4,8 @@
  * named (with a tracked file changed, git cannot rebase: the lot is pushed as committed, the line saying so). A pull request the lot's landing already merged makes the lot committed, nothing
  * pushed. Otherwise the lot is rebased onto origin's base branch when behind (a conflict undone and named), pushed
  * with a lease pinned to the head its last landing pushed (a branch it never pushed must not exist on origin), its open
- * pull request reused or a new one opened (titled with its commit message), queued unless a draft - the merge queue
+ * pull request reused or a new one opened (titled with the lot's own message, `land-title.ts`; a reused one retitled when it
+ * reads otherwise), queued unless a draft - the merge queue
  * merges it once its checks pass on top of main - and the landing recorded: `landing.json` in the lot's folder (with
  * every head a rebase of the lot's landings replaced, so `lot close` knows those commits landed), and
  * the lot's hand-over entry (state pending; committed once its pull request merged) that `lot status`, `plan next` and
@@ -21,7 +22,6 @@ import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import {
-	LANDING_BODY,
 	LANDING_FILE,
 	LANDING_LINES,
 	LANDING_SCHEMA,
@@ -31,9 +31,10 @@ import {
 	UNTRACKED_STATUS_PREFIX,
 } from './land-lot.constants.ts'
 import { readLanding, readRawLanding, readReplacedHeads } from './land-record.ts'
+import { pullRequestTextOf } from './land-title.ts'
 
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
-import type { LandingRecord, LandingResult } from './land-lot.types.ts'
+import type { LandingRecord, LandingResult, PullRequestText } from './land-lot.types.ts'
 
 /**
  * Lands the lot on `branch` checked out in `worktree` into `base` through `host`; `draft` opens a draft and never
@@ -62,6 +63,8 @@ export function landLot(params: {
 				.replace('{branch}', () => branch)
 				.replace('{head}', () => current ?? 'detached'),
 		)
+	const text = pullRequestTextOf({ lot: params.lot, lotFolder: params.lotFolder })
+	if ('refusal' in text) return refused(text.refusal)
 	const fetchProblem = fetchOrigin({ root: worktree })
 	if (fetchProblem !== undefined)
 		return refused(LANDING_LINES.fetchFailed.replace('{reason}', () => fetchProblem))
@@ -72,15 +75,9 @@ export function landLot(params: {
 	if (known.pullRequest?.state === 'merged')
 		return mergedLanding({ ...params, pullRequest: known.pullRequest })
 	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push
-	let entry: string
-	try {
-		entry = registerHandover({ root: worktree, folder: params.lotFolder, branch, now: params.now })
-	} catch (error) {
-		if ((error as Error).name !== STORE_REFUSAL) throw error
-		return refused(
-			LANDING_LINES.registryRefused.replace('{reason}', () => (error as Error).message),
-		)
-	}
+	const registered = registerLotEntry({ ...params })
+	if ('refusal' in registered) return refused(registered.refusal)
+	const { entry } = registered
 	const lines: string[] = []
 	const progress = readWorkInProgress({ worktree })
 	const rebased = rebaseOnOrigin({ worktree, base, trackedChanges: progress.tracked })
@@ -115,14 +112,39 @@ export function landLot(params: {
 			.replace('{branch}', () => branch)
 			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
 	)
-	const pull = known.pullRequest ?? openLot({ ...params })
+	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines })
+}
+
+/**
+ * After the push: the lot's pull request reused or opened, the landing recorded at once (the next push's lease needs
+ * its head, whatever the host answers next), the pull request retitled when it reads otherwise than the lot's message,
+ * then queued unless a draft. `lines` holds what the landing said so far.
+ */
+function publishLanding(params: {
+	lot: string
+	worktree: string
+	branch: string
+	base: string
+	lotFolder: string
+	host: HostAdapter
+	draft: boolean
+	now: Date
+	known: PullRequest | undefined
+	text: PullRequestText
+	head: string
+	entry: string
+	lines: string[]
+}): LandingResult {
+	const { worktree, branch, host, known, text } = params
+	const lines = [...params.lines]
+	const pull = known ?? openLot({ ...params, text })
 	if ('refusal' in pull)
 		return {
 			exitCode: 1,
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => pull.refusal)],
 		}
 	lines.push(
-		(known.pullRequest ? LANDING_LINES.existing : LANDING_LINES.opened)
+		(known ? LANDING_LINES.existing : LANDING_LINES.opened)
 			.replace('{number}', String(pull.number))
 			.replace('{url}', () => pull.url),
 	)
@@ -130,13 +152,20 @@ export function landLot(params: {
 		lotFolder: params.lotFolder,
 		pullRequest: pull,
 		branch,
-		head,
+		head: params.head,
 		replaced: readReplacedHeads({ lotFolder: params.lotFolder, branch }),
 		now: params.now,
 	})
+	const retitled = retitleLot({ worktree, host, pullRequest: pull, title: text.title })
+	if ('refusal' in retitled)
+		return {
+			exitCode: 1,
+			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => retitled.refusal)],
+		}
+	if (retitled.line !== undefined) lines.push(retitled.line)
 	lines.push(
 		LANDING_LINES.closeWhenMerged
-			.replace('{entry}', () => entry)
+			.replace('{entry}', () => params.entry)
 			.replace('{lot}', () => params.lot),
 	)
 	if (params.draft)
@@ -156,6 +185,30 @@ export function landLot(params: {
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => queued.refusal)],
 		}
 	return { exitCode: 0, lines: [...lines, LANDING_LINES.queued] }
+}
+
+/** The lot's hand-over entry registered (its name), or the store's refusal as the landing's line. */
+function registerLotEntry(params: {
+	worktree: string
+	lotFolder: string
+	branch: string
+	now: Date
+}): { entry: string } | { refusal: string } {
+	try {
+		return {
+			entry: registerHandover({
+				root: params.worktree,
+				folder: params.lotFolder,
+				branch: params.branch,
+				now: params.now,
+			}),
+		}
+	} catch (error) {
+		if ((error as Error).name !== STORE_REFUSAL) throw error
+		return {
+			refusal: LANDING_LINES.registryRefused.replace('{reason}', () => (error as Error).message),
+		}
+	}
 }
 
 /**
@@ -342,23 +395,48 @@ function pushLot(params: {
 	)
 }
 
-/** A new pull request of the lot, titled with its commit message. */
+/** A new pull request of the lot, with its text (titled with the lot's message). */
 function openLot(params: {
-	lot: string
 	worktree: string
 	branch: string
 	base: string
 	host: HostAdapter
 	draft: boolean
+	text: PullRequestText
 }): PullRequest | { refusal: string } {
 	return params.host.openPullRequest({
 		root: params.worktree,
 		branch: params.branch,
 		base: params.base,
-		title: readGit({ root: params.worktree, args: ['log', '-1', '--format=%s', 'HEAD'] }).trim(),
-		body: LANDING_BODY.replace('{lot}', () => params.lot),
+		title: params.text.title,
+		body: params.text.body,
 		draft: params.draft,
 	})
+}
+
+/**
+ * The lot's pull request titled `title`: a pull request opened before its title was the lot's message (or renamed by
+ * hand) is retitled, its line saying so; one already titled so is not asked of the host.
+ */
+function retitleLot(params: {
+	worktree: string
+	host: HostAdapter
+	pullRequest: PullRequest
+	title: string
+}): { line?: string } | { refusal: string } {
+	const { pullRequest, title } = params
+	if (pullRequest.title === title) return {}
+	const refused = params.host.retitlePullRequest({
+		root: params.worktree,
+		number: pullRequest.number,
+		title,
+	})
+	if (refused !== undefined) return refused
+	return {
+		line: LANDING_LINES.retitled
+			.replace('{number}', String(pullRequest.number))
+			.replace('{title}', () => title),
+	}
 }
 
 /** The landing record of the lot (`landing.json` in its store folder). */
