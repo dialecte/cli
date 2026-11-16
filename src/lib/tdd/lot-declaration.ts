@@ -286,10 +286,12 @@ function isCaseEntry(entry: unknown): entry is LotCaseEntry {
 
 function isMovedEntry(entry: unknown): entry is LotMovedEntry {
 	if (typeof entry !== 'object' || entry === null) return false
-	const { from, to } = entry as Record<string, unknown>
+	const { from, to, reason } = entry as Record<string, unknown>
 	return (
 		typeof from === 'string' &&
 		typeof to === 'string' &&
+		typeof reason === 'string' &&
+		reason.trim() !== '' &&
 		from !== '' &&
 		to !== '' &&
 		namesOneCase(from) === namesOneCase(to) &&

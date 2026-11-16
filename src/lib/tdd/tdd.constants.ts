@@ -597,11 +597,11 @@ export const LOT_VERBS: readonly string[] = [
 ]
 
 /** The keys of a `moved` entry. */
-export const MOVED_ENTRY_KEYS: readonly string[] = ['from', 'to']
+export const MOVED_ENTRY_KEYS: readonly string[] = ['from', 'to', 'reason']
 
 /** What `"moved"` of the lot file must hold. */
 export const MOVED_LIST_SHAPE =
-	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>" }: two cases, or a file (never a glob) and a file or glob'
+	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>", "reason": "..." }: two cases, or a file (never a glob) and a file or glob'
 
 /** A case label's project suffix (` [project]`), the project captured. */
 export const PROJECT_SUFFIX_PATTERN = / \[([^\]]+)\]$/

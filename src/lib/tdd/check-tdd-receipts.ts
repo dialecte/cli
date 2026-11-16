@@ -242,6 +242,7 @@ async function judgeTddReceipts(params: {
 					entry: entry.to,
 					removeWords: [entry.from, entry.to],
 					why: `no case of the change carries a red from ${entry.from}`,
+					reason: entry.reason,
 					candidates: namesOneCase(entry.to) ? labels : files,
 				}),
 			),

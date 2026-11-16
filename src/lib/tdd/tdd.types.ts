@@ -332,7 +332,7 @@ export type LotCaseEntry = { case: string; reason: string }
  * A case of the lot moved after its red (a split, a rename): two cases (`<file>::<name>`, ` [project]` optional), or a
  * file and a file or glob its cases moved to under the same names.
  */
-export type LotMovedEntry = { from: string; to: string }
+export type LotMovedEntry = { from: string; to: string; reason: string }
 
 /** A case a `moved` entry carries receipts from, with that entry. */
 export type MovedFrom = { entry: LotMovedEntry; from: TestCaseId }

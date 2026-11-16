@@ -83,7 +83,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 	it.each([
 		{
 			form: 'the file form',
-			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }],
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
 			title: 'add',
 		},
 		{
@@ -92,6 +92,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 				{
 					from: 'src/a.test.ts::add > one plus two → three',
 					to: 'src/b.test.ts::sum > one plus two → three',
+					reason: 'a split',
 				},
 			],
 			title: 'sum',
@@ -115,7 +116,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 
 	it('its test call edited in the move → refused: the call differs from the one its red froze', async () => {
 		const root = await movedPackage({
-			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }],
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
 			assertion: 'expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0)',
 		})
 
@@ -134,6 +135,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 				{
 					from: 'src/c.test.ts::add > one plus two → three',
 					to: 'src/b.test.ts::add > one plus two → three',
+					reason: 'a split',
 				},
 			],
 		})
@@ -170,7 +172,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 					'',
 				].join('\n'),
 				'.dialecte/lot.json': JSON.stringify({
-					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }],
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
 				}),
 			},
 		})
@@ -218,8 +220,8 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 				].join('\n'),
 				'.dialecte/lot.json': JSON.stringify({
 					moved: [
-						{ from: 'src/a.test.ts', to: 'src/c.test.ts' },
-						{ from: 'src/b.test.ts', to: 'src/c.test.ts' },
+						{ from: 'src/a.test.ts', to: 'src/c.test.ts', reason: 'a split' },
+						{ from: 'src/b.test.ts', to: 'src/c.test.ts', reason: 'a split' },
 					],
 				}),
 			},
@@ -236,6 +238,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 				{
 					from: 'src/a.test.ts::add > one plus two → three',
 					to: 'src/b.test.ts::add > one and two → three',
+					reason: 'a split',
 				},
 			],
 		})
@@ -254,7 +257,9 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 	})
 
 	it('its test call unchanged, but its file imports another add (a test-code fake) → refused: the test code it depends on differs from what that red froze', async () => {
-		const root = await movedPackage({ moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }] })
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
 		writeFiles({
 			root,
 			files: {
@@ -276,7 +281,9 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 	})
 
 	it('its test call unchanged, but its file defines add itself → refused: it passes on the base production, the move proves nothing', async () => {
-		const root = await movedPackage({ moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }] })
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
 		writeFileSync(
 			join(root, 'src/b.test.ts'),
 			testText({ title: 'add' }).replace(
@@ -316,7 +323,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 				'src/b.test.ts': readingTest('add'),
 				'test/expected.ts': 'export const EXPECTED = 1 + 2\n',
 				'.dialecte/lot.json': JSON.stringify({
-					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts' }],
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
 				}),
 			},
 		})

@@ -272,7 +272,7 @@ export const COMMAND_MAP: CommandMap = {
 			'dialecte lot accept <case> <reason> | lot accept --remove <case>',
 			'dialecte lot revised <case|file|glob> <reason> | lot revised --remove <case|file|glob>',
 			'dialecte lot gone <file|glob> <reason> | lot gone --remove <file|glob>',
-			'dialecte lot moved <case> <case> | lot moved <file> <file|glob> | lot moved --remove <from> <to>',
+			'dialecte lot moved <case> <case> <reason> | lot moved <file> <file|glob> <reason> | lot moved --remove <from> <to>',
 			'dialecte lot mutation <off|changed|audit|gate>',
 			'dialecte lot finding <id|folder> --round <n> --severity <blocking|should-fix|nit> --at <file:line> <finding>',
 			'dialecte lot decide <id|folder> <finding> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',

@@ -79,12 +79,14 @@ describe('the unused receipts of the lot file', { timeout: HELPER_SCENARIO_TIMEO
 	)
 
 	it('an unused moved entry → named with the closest test file and the --remove command of its to', async () => {
-		const root = await provenPackage({ moved: [{ from: 'src/old.test.ts', to: 'src/ad.test.ts' }] })
+		const root = await provenPackage({
+			moved: [{ from: 'src/old.test.ts', to: 'src/ad.test.ts', reason: 'a split' }],
+		})
 
 		const lines = await unusedLinesOf(root)
 
 		expect(lines).toEqual([
-			'unused moved entry  src/ad.test.ts  no case of the change carries a red from src/old.test.ts; the closest: src/add.test.ts; drop it: dialecte lot moved --remove src/old.test.ts src/ad.test.ts',
+			'unused moved entry  src/ad.test.ts  no case of the change carries a red from src/old.test.ts; the closest: src/add.test.ts (a split); drop it: dialecte lot moved --remove src/old.test.ts src/ad.test.ts',
 		])
 	})
 

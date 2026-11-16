@@ -1,6 +1,6 @@
 /**
  * `dialecte lot exempt <reason>` / `lot accept <case> <reason>` / `lot revised <case|file|glob> <reason>` /
- * `lot gone <file|glob> <reason>` / `lot moved <from> <to>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
+ * `lot gone <file|glob> <reason>` / `lot moved <from> <to> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
  * case, a file or a glob; a gone entry a file or a glob, never a case; a moved entry two cases, or a file and the file
  * or glob its cases moved to (`tdd red` carries their red). `lot accept|revised|gone|moved --remove <entry>`
@@ -236,7 +236,7 @@ function runDeclarationVerb(params: {
 			return { exitCode: 2, output: renderLotUsage() }
 		return removeEntry({ cwd: params.cwd, list: removable, words: named })
 	}
-	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone || moved ? 2 : 1))
+	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (moved ? 3 : list || gone ? 2 : 1))
 		return { exitCode: 2, output: renderLotUsage() }
 	if (
 		moved &&
@@ -275,7 +275,7 @@ function runDeclarationVerb(params: {
 }
 
 /**
- * `lot accept|revised <case> <reason>`, `lot gone <file> <reason>`, `lot moved <from> <to>`, `lot mutation <mode>`,
+ * `lot accept|revised <case> <reason>`, `lot gone <file> <reason>`, `lot moved <from> <to> <reason>`, `lot mutation <mode>`,
  * `lot exempt <reason>`, the words already checked: the entry written (an entry of the same case, file or `to` replaced
  * in place), or the key set.
  */
@@ -301,10 +301,14 @@ function writeDeclared(params: { cwd: string; verb: string; words: string[] }): 
 			? entries.map((entry) => (entry.file === file ? { file, reason } : entry))
 			: [...entries, { file, reason }]
 	} else if (verb === 'moved') {
-		const [from, to] = words
+		const [from, to, reason] = words
 		const entries = Array.isArray(declaration.moved) ? (declaration.moved as LotMovedEntry[]) : []
 		const known = entries.some((entry) => entry.from === from && entry.to === to)
-		declaration.moved = known ? entries : [...entries, { from, to }]
+		declaration.moved = known
+			? entries.map((entry) =>
+					entry.from === from && entry.to === to ? { from, to, reason } : entry,
+				)
+			: [...entries, { from, to, reason }]
 	} else if (verb === 'mutation') declaration.mutation = words[0]
 	else declaration.tdd = `exempt: ${words[0]}`
 	writeDeclaration({ path, declaration })
@@ -353,17 +357,23 @@ function writeDeclaration(params: { path: string; declaration: Record<string, un
  */
 function removeEntry(params: { cwd: string; list: RemovableList; words: string[] }): CommandResult {
 	const { list } = params
+	// shown joined by a space; compared word by word, so a space inside a path never spells another entry
 	const entry = params.words.join(' ')
 	const read = readDeclarationToWrite({ cwd: params.cwd })
 	if ('exitCode' in read) return read
 	const { path, declaration } = read
 	const entries: unknown[] = Array.isArray(declaration[list]) ? declaration[list] : []
-	const names = entries.map((item) => nameOfEntry({ item, list }))
-	const index = names.indexOf(entry)
+	const names = entries.map((item) => namesOfEntry({ item, list }))
+	/** The entry at `position` is written exactly as the words. */
+	function isNamed(position: number): boolean {
+		const named = names[position]
+		return named !== undefined && named.every((word, index) => word === params.words[index])
+	}
+	const index = names.findIndex((_, position) => isNamed(position))
 	if (index === -1) {
 		const closest = closestNames({
 			name: entry,
-			candidates: names.filter((name): name is string => name !== undefined),
+			candidates: names.flatMap((named) => (named === undefined ? [] : [named.join(' ')])),
 			limit: LOT_REMOVE_CLOSEST_LIMIT,
 		})
 		return resultOf({
@@ -388,7 +398,7 @@ function removeEntry(params: { cwd: string; list: RemovableList; words: string[]
 			? LOT_REMOVE_LINES.reason.replace('{reason}', () => String(removed.reason))
 			: ''
 	// a copy written twice by hand goes too: none of it keeps exempting
-	const kept = entries.filter((_, position) => names[position] !== entry)
+	const kept = entries.filter((_, position) => !isNamed(position))
 	if (kept.length === 0) delete declaration[list]
 	else declaration[list] = kept
 	writeDeclaration({ path, declaration })
@@ -405,14 +415,14 @@ function removeEntry(params: { cwd: string; list: RemovableList; words: string[]
 }
 
 /**
- * What an entry of `list` names (`LOT_REMOVE_KEYS`, joined by a space): its case, its file, or a move's from and to;
- * undefined for a malformed one.
+ * What an entry of `list` names (`LOT_REMOVE_KEYS`, in order): its case, its file, or a move's from and to; undefined
+ * for a malformed one.
  */
-function nameOfEntry(params: { item: unknown; list: RemovableList }): string | undefined {
+function namesOfEntry(params: { item: unknown; list: RemovableList }): string[] | undefined {
 	const { item } = params
 	if (typeof item !== 'object' || item === null) return undefined
 	const values = LOT_REMOVE_KEYS[params.list].map((key) => (item as Record<string, unknown>)[key])
-	return values.every((value) => typeof value === 'string') ? values.join(' ') : undefined
+	return values.every((value): value is string => typeof value === 'string') ? values : undefined
 }
 
 /** Why `lot mutation <mode>` refuses its words: no mode, a mode it does not know, or a reason after it. */
