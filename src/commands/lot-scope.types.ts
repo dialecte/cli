@@ -5,6 +5,8 @@ export type ScopeRequest = {
 	adds: string[]
 	by: string
 	reason: string
+	/** `--overlap-ok`: an add meeting an open lot that names its paths is written, the overlap recorded. */
+	overlapOk: boolean
 }
 
 /** A lot `lot scope` may change: its folder, name, worktree and repository, and its scope changes so far. */

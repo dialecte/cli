@@ -48,6 +48,8 @@ import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledg
 import { snapshotRounds } from '../review-rounds/round-names.ts'
 import { goAheadText, riskReasonText } from '../risk/risk-reason.ts'
 import { riskCapOf, riskStandingOf } from '../risk/risk-records.ts'
+import { LOT_OVERLAP_SEPARATOR } from '../store/lot-overlaps.constants.ts'
+import { lotOverlapsText, readLotOverlaps } from '../store/lot-overlaps.ts'
 import { lotScopeOf } from '../store/lot-records.ts'
 import { isEnded } from '../store/next-station.ts'
 import { scopeChangesText } from '../store/scope-changes.ts'
@@ -1225,17 +1227,24 @@ function roundCountOf(params: { count: number }): string {
 }
 
 /**
- * The card's `scope` line (FIX-lot-scope D8): the scope changes of the lot, the adds with who and why; a warning when a
- * change line does not read (the overlap guard then reads every path); none when the lot changed nothing.
+ * The card's `scope` line (FIX-lot-scope D8): the scope changes of the lot, the adds with who and why, then the overlaps
+ * it accepted (FIX-overlap-ok) with who and why; a warning when a change line does not read (the overlap guard then reads
+ * every path) or the lot shares paths with another open lot; none when the lot changed nothing and shares nothing.
  */
 export function buildScopeLine(params: { folder: string }): CardGateLine | undefined {
 	const scope = lotScopeOf({ lotFolder: params.folder })
-	const detail = scopeChangesText({ scope, withReason: true })
-	if (detail === undefined) return undefined
+	const overlaps = readLotOverlaps({ lotFolder: params.folder })
+	const parts = [scopeChangesText({ scope, withReason: true }), lotOverlapsText(overlaps)].filter(
+		(part): part is string => part !== undefined,
+	)
+	if (parts.length === 0) return undefined
 	return {
 		name: SCOPE_LINE_NAME,
-		status: scope.unreadable === undefined ? 'passed' : 'warning',
-		detail,
+		status:
+			scope.unreadable === undefined && overlaps.overlaps.length === 0 && overlaps.unreadable === 0
+				? 'passed'
+				: 'warning',
+		detail: parts.join(LOT_OVERLAP_SEPARATOR),
 	}
 }
 

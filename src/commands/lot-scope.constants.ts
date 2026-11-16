@@ -8,6 +8,8 @@ export const LOT_SCOPE_USAGE =
 /** The options `lot scope` reads: one value each, and the repeatable paths. */
 export const LOT_SCOPE_VALUE_OPTIONS: readonly string[] = ['by', 'reason']
 export const LOT_SCOPE_PATH_OPTIONS: readonly string[] = ['drop', 'add']
+/** The flag that accepts an add meeting an open lot, recorded with who and why (FIX-overlap-ok). */
+export const LOT_SCOPE_FLAGS: readonly string[] = ['overlap-ok']
 
 /** The lines `lot scope` prints (FIX-lot-scope D3-D6, D11). */
 export const LOT_SCOPE_TEXTS = {
@@ -27,6 +29,15 @@ export const LOT_SCOPE_TEXTS = {
 	unreadable: 'lot scope: {name}: {file} holds {count} line(s) that do not read: nothing written',
 	fault: 'lot scope: {name}: {path}: {fault}: nothing written',
 	overlap: 'lot scope: {name}: the added paths meet the open lot {lot}: {met}: nothing written',
+	overlapAccepted: 'lot scope: {name} {overlaps}',
+	overlapNotAccepted:
+		'lot scope: {name}: the added paths meet the open lot {lot}: {met}: --overlap-ok accepts only an overlap that names its paths: nothing written',
+	overlapOkWithoutAdd:
+		'lot scope: {name}: --overlap-ok accepts the overlap of an add: no --add given: nothing written',
+	overlapUndoFailure:
+		'lot scope: {name}: the add is undone, its overlap record could not be: {message}: the card still shows the overlap',
+	overlapRecordFailure:
+		'lot scope: {name}: the overlap could not be recorded: {message}: nothing written',
 	emptied:
 		'lot scope: {name}: the drop leaves the lot no scope: stop it instead (dialecte lot stop {name} --reason <text>): nothing written',
 	noEntry: "lot scope: {name}: {path} is no entry of the lot's scope: nothing written",
