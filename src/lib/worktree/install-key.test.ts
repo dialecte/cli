@@ -15,13 +15,12 @@ import {
 } from '../../../test/install-key.constants.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
 import { createScratchRepository, writeFiles } from '../../../test/scratch-repository.ts'
+import { SHA256_HEX } from '../../../test/step-reuse.constants.ts'
 import { readInstalledKey } from '../gate-records/check-key.ts'
 import { INSTALLED_LOCK_FILE, NO_INSTALLED_LOCK } from '../gate-records/gate-records.constants.ts'
 import { computeInstallKey } from './install-key.ts'
 
 import { describe, expect, it } from 'vitest'
-
-const SHA256_HEX = /^[0-9a-f]{64}$/
 
 /** A repository whose installed lock is `lock` (text), or has none. */
 function repositoryWithLock(lock: string | undefined): string {
@@ -35,6 +34,7 @@ function lockOf(params: { root: object; packages: object }): string {
 	return `${JSON.stringify({ ...params.root, packages: params.packages }, null, 2)}\n`
 }
 
+/** The sha256 of `text`, in hex: the hash the key holds of what it hashed. */
 function sha256(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
 }

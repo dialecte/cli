@@ -1,12 +1,14 @@
 /** The records by tree in the common git folder: shared by every worktree, the reusable one found by its key. */
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
 import { createScratchRepository } from '../../../test/scratch-repository.ts'
 import { addWorktree, commonGitDirOf } from '../../../test/scratch-tree.ts'
+import { processStartTime } from '../process-start-time.ts'
 import { findReusableRecord, readTreeRecords, storeCheckRecord } from './check-store.ts'
-import { CHECK_STORE_FOLDER } from './gate-records.constants.ts'
+import { CHECK_STORE_FOLDER, CHECK_STORE_LOCK_SUFFIX } from './gate-records.constants.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -193,5 +195,133 @@ describe('the store: records that are not records', { timeout: SCRATCH_REPOSITOR
 		expect(storeCheckRecord({ root, record: recordOf({ steps: [] }) })).toBeUndefined()
 
 		expect(findReusableRecord({ root, mode: 'fast', key: KEY })).toBeUndefined()
+	})
+})
+
+/** The pid of a process that ran and is gone: no live process holds it. */
+function deadPid(): number {
+	const child = spawnSync(process.execPath, ['-e', ''])
+	if (child.pid === undefined) throw new Error('no pid for the child process')
+	return child.pid
+}
+
+/** The lock file of `KEY.tree`. */
+function lockPathOf(root: string): string {
+	return join(
+		commonGitDirOf(root),
+		CHECK_STORE_FOLDER,
+		`${KEY.tree}.json${CHECK_STORE_LOCK_SUFFIX}`,
+	)
+}
+
+/** The lock of `KEY.tree` naming `pid` and `started` (two lines), as a writer that crashed or still runs leaves it. */
+function holdLock(params: { root: string; pid: number; started: string }): string {
+	mkdirSync(join(commonGitDirOf(params.root), CHECK_STORE_FOLDER), { recursive: true })
+	const lock = lockPathOf(params.root)
+	writeFileSync(lock, `${params.pid}\n${params.started}`)
+	return lock
+}
+
+/** The real start time of a live process. */
+function startTimeOf(pid: number): string {
+	const started = processStartTime(pid)
+	if (started === undefined) throw new Error(`no start time for pid ${pid}`)
+	return started
+}
+
+describe('the store: two writers of one tree', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	it('writer A read the records, writer B stores its record, then A writes → both records are in the file and no lock is left', () => {
+		const root = repository()
+		const first = recordOf({ mode: 'fast' })
+		const second = recordOf({ mode: 'full' })
+
+		storeCheckRecord({
+			root,
+			record: first,
+			seam: {
+				beforeWrite: () => {
+					expect(existsSync(lockPathOf(root))).toBe(false)
+					storeCheckRecord({ root, record: second })
+				},
+			},
+		})
+
+		expect(readTreeRecords({ root, tree: KEY.tree })).toHaveLength(2)
+		expect(readTreeRecords({ root, tree: KEY.tree })).toEqual(
+			expect.arrayContaining([first, second]),
+		)
+		expect(existsSync(lockPathOf(root))).toBe(false)
+	})
+
+	it('writer A read the records, writer B stores the same check newer, then A writes → the newer record is kept', () => {
+		const root = repository()
+		const older = recordOf({ at: '2026-01-01T00:00:00.000Z' })
+		const newer = recordOf({ at: '2026-02-02T00:00:00.000Z' })
+
+		storeCheckRecord({
+			root,
+			record: older,
+			seam: { beforeWrite: () => storeCheckRecord({ root, record: newer }) },
+		})
+
+		expect(readTreeRecords({ root, tree: KEY.tree })).toEqual([newer])
+	})
+
+	it('a lock whose process is gone → taken over: the record is stored beside the stored one, and the lock is released', () => {
+		const root = repository()
+		const stored = recordOf({ mode: 'fast' })
+		const added = recordOf({ mode: 'full' })
+		storeCheckRecord({ root, record: stored })
+		const lock = holdLock({ root, pid: deadPid(), started: 'Sat Jan  1 00:00:00 2000' })
+
+		storeCheckRecord({ root, record: added })
+
+		expect(readTreeRecords({ root, tree: KEY.tree })).toHaveLength(2)
+		expect(readTreeRecords({ root, tree: KEY.tree })).toEqual(
+			expect.arrayContaining([stored, added]),
+		)
+		expect(existsSync(lock)).toBe(false)
+	})
+
+	it("a lock naming a live pid with a start time that is not that process's → taken over: the record is stored beside the stored one, and the lock is released", () => {
+		const root = repository()
+		const stored = recordOf({ mode: 'fast' })
+		const added = recordOf({ mode: 'full' })
+		storeCheckRecord({ root, record: stored })
+		const lock = holdLock({ root, pid: process.ppid, started: 'Sat Jan  1 00:00:00 2000' })
+
+		storeCheckRecord({ root, record: added, seam: { lockWaitMs: 0 } })
+
+		expect(readTreeRecords({ root, tree: KEY.tree })).toHaveLength(2)
+		expect(readTreeRecords({ root, tree: KEY.tree })).toEqual(
+			expect.arrayContaining([stored, added]),
+		)
+		expect(existsSync(lock)).toBe(false)
+	})
+
+	it("a lock naming a live process by its real start time, never released → the writer waits the time it is given, then writes, the holder's lock left alone", () => {
+		const root = repository()
+		const stored = recordOf({ mode: 'fast' })
+		const added = recordOf({ mode: 'full' })
+		storeCheckRecord({ root, record: stored })
+		const lock = holdLock({ root, pid: process.ppid, started: startTimeOf(process.ppid) })
+
+		storeCheckRecord({ root, record: added, seam: { lockWaitMs: 0 } })
+
+		expect(readTreeRecords({ root, tree: KEY.tree })).toHaveLength(2)
+		expect(readTreeRecords({ root, tree: KEY.tree })).toEqual(
+			expect.arrayContaining([stored, added]),
+		)
+		expect(existsSync(lock)).toBe(true)
+	})
+
+	it("the write throws (the tree's file is a folder) → the call throws and its lock is released", () => {
+		const root = repository()
+		mkdirSync(join(commonGitDirOf(root), CHECK_STORE_FOLDER, `${KEY.tree}.json`), {
+			recursive: true,
+		})
+
+		expect(() => storeCheckRecord({ root, record: recordOf() })).toThrow()
+		expect(existsSync(lockPathOf(root))).toBe(false)
 	})
 })

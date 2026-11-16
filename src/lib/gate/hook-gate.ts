@@ -23,6 +23,7 @@ import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
 import { readEmptyTree, resolveGateBase } from './gate-base.ts'
 import {
+	GATE_FAILED_TAIL_LINE,
 	GATE_HOOK_BASE_LINE,
 	GATE_HOOK_FAILED_LINE,
 	GATE_HOOK_GREEN_LINE,
@@ -31,13 +32,12 @@ import {
 	GATE_HOOK_NO_STEP_LINE,
 	GATE_HOOK_RUNNING_LINE,
 	GATE_HOOK_SELECTION_WORDS,
-	STEP_DETAIL_INDENT,
 } from './gate-config.constants.ts'
 import { GateConfigError, holdsScopedStep, listHookSteps, resolveGateSteps } from './gate-config.ts'
 import { answerHookSteps } from './hook-step-answers.ts'
 import { runGateSteps } from './run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from './step-counts.ts'
-import { renderStepLine } from './step-line.ts'
+import { renderStepLines } from './step-line.ts'
 import { readStepSource } from './step-source.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
@@ -314,7 +314,7 @@ async function runHookSteps(params: {
 			const running = progress?.start({ name: step.name, detail: step.run })
 			return function finished(result) {
 				durations.set(result, finishPart())
-				running?.finish(...hookStepLines(result).map((line) => textOf([line])))
+				running?.finish(...renderStepLines(result).map((line) => textOf([line])))
 			}
 		},
 	})
@@ -401,12 +401,12 @@ function renderRunOutput(params: {
 	if (baseLine && live?.tty) live.writeLine(baseLine)
 	const own = textOf([
 		// on a terminal the lines are on the screen already
-		...(live?.tty ? [] : [...params.leading, ...ran.flatMap(hookStepLines)]),
+		...(live?.tty ? [] : [...params.leading, ...ran.flatMap(renderStepLines)]),
 		...(summary && !live?.tty ? [summary] : []),
 		...(baseLine && !live?.tty ? [baseLine] : []),
 		...params.headLines,
 		failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
-		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
+		...(failed?.tail ? [GATE_FAILED_TAIL_LINE.replace('{step}', failed.step.name)] : []),
 	])
 	return {
 		exitCode: failed ? 1 : 0,
@@ -461,12 +461,4 @@ function selectionWords(results: readonly StepResult[]): string {
 	return ids.length
 		? GATE_HOOK_SELECTION_WORDS.selected.replace('{ids}', ids.join(GATE_HOOK_ID_SEPARATOR))
 		: GATE_HOOK_SELECTION_WORDS.nothing
-}
-
-/** A test step `gate --hook` ran: its line and the lines under it (the files a rerun named). */
-function hookStepLines(result: StepResult): string[] {
-	return [
-		renderStepLine(result),
-		...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
-	]
 }

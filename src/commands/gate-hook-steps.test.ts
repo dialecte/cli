@@ -145,8 +145,8 @@ describe(
 			expect(runsOf(hookPackage)).toEqual([1, 1])
 		})
 
-		it.each([
-			{ label: 'gate --fast', argv: [] as string[], mode: 'fast' },
+		it.each<{ label: string; argv: string[]; mode: string }>([
+			{ label: 'gate --fast', argv: [], mode: 'fast' },
 			{ label: 'gate --release', argv: ['--release'], mode: 'release' },
 		])('a green $label of this tree answers every step, the lines name $mode', async (scenario) => {
 			const hookPackage = createHookPackage()
@@ -380,7 +380,8 @@ describe(
 		])(
 			'$label with a green gate --full of the tree → nothing answered, one hook-gate record all the same',
 			async (scenario) => {
-				const { root } = createHookPackage()
+				const hookPackage = createHookPackage()
+				const { root } = hookPackage
 				await seedFullGate(root)
 				const tree = indexTreeOf({ root })
 
@@ -391,6 +392,7 @@ describe(
 				})
 
 				expect(result.exitCode).toBe(0)
+				expect(runsOf(hookPackage)).toEqual([2, 2])
 				expect(hookRecordsOf({ root, tree })).toHaveLength(1)
 			},
 		)

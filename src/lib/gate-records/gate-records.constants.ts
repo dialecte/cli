@@ -288,6 +288,19 @@ export const ROUND_FOLDER_PATTERN = /^round-([1-9]\d*)$/
 /** The folder of the records by tree, in the repository's common git folder: `<tree>.json` inside. */
 export const CHECK_STORE_FOLDER = 'dialecte-checks'
 
+/**
+ * Added to a tree's file name (`<tree>.json.lock`): the lock a writer of that tree holds. It names its owner on two
+ * lines: the process id, then the process's start time (`processStartTime`). A lock whose process is gone, or alive
+ * with another start time (the pid was reused), is stale and taken over.
+ */
+export const CHECK_STORE_LOCK_SUFFIX = '.lock'
+
+/** How long, in milliseconds, a writer waits for a live holder of its tree's lock before it writes anyway. */
+export const CHECK_STORE_LOCK_WAIT_MS = 5000
+
+/** How long, in milliseconds, a writer pauses between two looks at a live holder's lock. */
+export const CHECK_STORE_LOCK_POLL_MS = 25
+
 /** What npm installed, as a check key hashes it: npm's own lock of `node_modules`, relative to the package. */
 export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'
 

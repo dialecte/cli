@@ -1,5 +1,9 @@
 /** A gate step's line as `dialecte gate` and `dialecte contrib` print it: its mark, its name, then what it said. */
-import { NOT_RUN_STEP_DETAIL, STEP_LINE_MARKS } from './gate-config.constants.ts'
+import {
+	NOT_RUN_STEP_DETAIL,
+	STEP_DETAIL_INDENT,
+	STEP_LINE_MARKS,
+} from './gate-config.constants.ts'
 import { renderStepCounts } from './step-counts.ts'
 
 import type { StepRerun, StepResult } from './gate.types.ts'
@@ -9,6 +13,14 @@ export function renderStepLine(result: StepResult): string {
 	return [STEP_LINE_MARKS[result.status], result.step.name, renderStepDetail(result)]
 		.filter(Boolean)
 		.join('  ')
+}
+
+/** A step's line, then each line under it indented: how `gate` and `gate --hook` show a step. */
+export function renderStepLines(result: StepResult): string[] {
+	return [
+		renderStepLine(result),
+		...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+	]
 }
 
 /** What a step's line says after its name: the exit code, the counts, the rerun, why it failed, its note, what was restored. */

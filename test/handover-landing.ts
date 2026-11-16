@@ -15,8 +15,14 @@ import {
 	LANDING_MOVED_FILE,
 	LANDING_MOVED_MESSAGE,
 	LANDING_MOVED_TEXT,
-	LANDING_TESTS_FAIL,
+	LANDING_NOTES_AFTER,
+	LANDING_NOTES_BEFORE,
+	LANDING_NOTES_FILE,
+	LANDING_SECOND_FILE,
+	LANDING_SECOND_LOT,
+	LANDING_SECOND_TEXT,
 	LANDING_STEP_NAMES,
+	LANDING_TESTS_FAIL,
 	LANDING_TESTS_PASS,
 } from './handover-landing.constants.ts'
 import { PACKAGES, ROOT_FIELDS_A } from './install-key.constants.ts'
@@ -40,9 +46,16 @@ import type { GateStep } from '../src/lib/gate/gate-config.types.ts'
 import type { LotsFile, MergeLotPlan } from '../src/lib/handover/handover.types.ts'
 import type { LandingCounters, LandingScenario } from './handover-landing.types.ts'
 
-/** The gate steps of the landing package: `check` and `build` count their runs, `tests` counts and reads `requires`. */
-function landingSteps(params: { counters: LandingCounters; requires: string }): GateStep[] {
-	const { counters, requires } = params
+/**
+ * The gate steps of the landing package: `check` and `build` count their runs, `tests` counts and reads `requires`
+ * (and, with `needsSecondFile`, fails while the second lot's file is not in the tree it runs on).
+ */
+function landingSteps(params: {
+	counters: LandingCounters
+	requires: string
+	needsSecondFile: boolean
+}): GateStep[] {
+	const { counters, requires, needsSecondFile } = params
 	return [
 		{ name: 'check', run: `echo run >> ${shellQuote(counters.check)}` },
 		{ name: 'build', run: `echo run >> ${shellQuote(counters.build)}` },
@@ -52,6 +65,7 @@ function landingSteps(params: { counters: LandingCounters; requires: string }): 
 				`echo run >> ${shellQuote(counters.tests)}`,
 				`printf '%s\\n' ${shellQuote(TEST_COUNT_LINE)}`,
 				`grep -qx ${LANDING_TESTS_PASS} ${shellQuote(requires)}`,
+				...(needsSecondFile ? [`test -f ${shellQuote(LANDING_SECOND_FILE)}`] : []),
 			].join(' && '),
 			counts: 'tests',
 		},
@@ -83,15 +97,18 @@ export function setTestsPassing(params: { requires: string; passing: boolean }):
 }
 
 /**
- * A package whose commit hook is the real `gate --hook` of this worktree's cli, on `feat/x` cut from `main`, which
- * then gained a file; the working files hold the scratch lot's edit; an installed lock is written. The hand-over is
- * written for the lot (and, with `merge`, a merge lot bringing main in after it). With `gated`, a green
- * `gate --full` of the lot's tree is run first.
+ * A package whose commit hook is the real `gate --hook` of this worktree's cli, on `BRANCH_NAME` cut from `main`,
+ * which then gained a file; the working files hold the scratch lot's edit; an installed lock is written. The hand-over
+ * is written for the lot, then (with `laterLot`) a second plain lot adding `LANDING_SECOND_FILE` and changing
+ * `LANDING_NOTES_FILE` (a file the base holds), then (with `merge`) a merge lot bringing main in. With
+ * `laterLot: 'required'` the `tests` step fails on any tree without the second lot's file, so the first lot alone
+ * breaks it. With `gated`, a green `gate --full` of the tree every lot leaves is run first.
  */
 export async function createLandingScenario(params: {
 	merge: boolean
 	gated: boolean
 	hookExtra?: string
+	laterLot?: 'plain' | 'required'
 }): Promise<LandingScenario> {
 	const counters: LandingCounters = {
 		check: createCounter(),
@@ -100,12 +117,21 @@ export async function createLandingScenario(params: {
 	}
 	const requires = join(temporaryFolder('dialecte-requires-'), 'tests.txt')
 	setTestsPassing({ requires, passing: true })
-	const steps = landingSteps({ counters, requires })
+	const steps = landingSteps({
+		counters,
+		requires,
+		needsSecondFile: params.laterLot === 'required',
+	})
 	const root = createScopedHookedPackage({
 		gate: { fast: steps, full: steps },
 		hookScript: [HOOK_GATE_COMMAND, ...(params.hookExtra ? [params.hookExtra] : [])].join('\n'),
 	})
 	writeInstalledLock({ root })
+	if (params.laterLot) {
+		writeFiles({ root, files: { [LANDING_NOTES_FILE]: LANDING_NOTES_BEFORE } })
+		git({ root, args: ['add', '--', LANDING_NOTES_FILE] })
+		git({ root, args: ['commit', '-q', '--no-verify', '-m', 'docs(notes): the base notes'] })
+	}
 	git({ root, args: ['branch', BRANCH_NAME] })
 	// main moves only when a merge lot brings it in: the hand-over's target guard refuses a moved main otherwise
 	if (params.merge) {
@@ -117,6 +143,15 @@ export async function createLandingScenario(params: {
 	git({ root, args: ['checkout', '-q', BRANCH_NAME] })
 	editReadLot(root)
 	const lotTree = treeOfWorkingFiles(root)
+	if (params.laterLot)
+		writeFiles({
+			root,
+			files: {
+				[LANDING_SECOND_FILE]: LANDING_SECOND_TEXT,
+				[LANDING_NOTES_FILE]: LANDING_NOTES_AFTER,
+			},
+		})
+	const finalTree = params.laterLot ? treeOfWorkingFiles(root) : lotTree
 	if (params.gated) {
 		const gated = await runGateIn({ cwd: root, argv: ['--full'] })
 		expect(gated.exitCode).toBe(0)
@@ -128,12 +163,18 @@ export async function createLandingScenario(params: {
 		resolved: {},
 		message: LANDING_MERGE_MESSAGE,
 	}
+	const plainLots = params.laterLot ? [READ_LOT, LANDING_SECOND_LOT] : [READ_LOT]
 	const { out } = writeHandoverFolder({
 		root,
-		lots: params.merge ? [READ_LOT, mergeLot] : [READ_LOT],
+		lots: params.merge ? [...plainLots, mergeLot] : plainLots,
 		branch: BRANCH_NAME,
 	})
-	return { root, out, counters, requires, lotTree }
+	return { root, out, counters, requires, lotTree, finalTree }
+}
+
+/** The tree a rehearsal prints for its merge lot (`  tree <sha>`); empty when it prints none. */
+export function mergeTreeOf(text: string): string {
+	return /^ {2}tree (\S+)$/m.exec(text)?.[1] ?? ''
 }
 
 /** The lines of a run's text that start with `start` (the landing lines: `LANDING_LINE_START`). */

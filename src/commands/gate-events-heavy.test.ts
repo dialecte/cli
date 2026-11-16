@@ -143,7 +143,6 @@ describe('gate --hook answered from a record', { timeout: SCRATCH_REPOSITORY_TIM
 
 		await runGate({ cwd: lot.worktree, argv: ['--full'] })
 		vi.mocked(writeHeavyMarker).mockClear()
-		vi.mocked(processStartTime).mockClear()
 		const result = await runGate({ cwd: lot.worktree, argv: ['--hook'] })
 		const events = eventsOfStep({ lot, step: 'gate-hook' })
 
@@ -155,7 +154,6 @@ describe('gate --hook answered from a record', { timeout: SCRATCH_REPOSITORY_TIM
 			stateHash: events[1]?.stateHash,
 			parts: partsOf(events[1]).map((part) => [part.name, part.reused, part.heavy]),
 			written: markersWritten(),
-			startTimeReads: vi.mocked(processStartTime).mock.calls.length,
 		}).toEqual({
 			exitCode: 0,
 			kinds: ['step.start', 'step.end'],
@@ -164,7 +162,6 @@ describe('gate --hook answered from a record', { timeout: SCRATCH_REPOSITORY_TIM
 			stateHash: null,
 			parts: [['tests', true, true]],
 			written: [],
-			startTimeReads: 0,
 		})
 	})
 })

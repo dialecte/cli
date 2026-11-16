@@ -17,26 +17,14 @@
  * the clone makes go to the repository's store.
  */
 import { spawnSync } from 'node:child_process'
-import {
-	cpSync,
-	existsSync,
-	lstatSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readlinkSync,
-	rmdirSync,
-	rmSync,
-	symlinkSync,
-	writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { constants, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
 import { runContrib } from '../contrib/run-contrib.ts'
 import { startStep } from '../events/record-step.ts'
-import { isPresent, realPathOf } from '../file-system.ts'
+import { realPathOf } from '../file-system.ts'
 import { CHECK_STORE_VARIABLE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
@@ -53,6 +41,7 @@ import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
+import { cloneLotTree, copyRepositoryFiles, removeEmptiedFolders } from './clone-lot-tree.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
@@ -277,6 +266,7 @@ async function rehearseRecorded(
 					clock: params.clock,
 				})
 			: undefined
+		const lotTree = cloneLotTree({ repository, clone, lots: handover.lots })
 		const exit = await runHandoverFolder({
 			handover,
 			commitRoot: clone,
@@ -302,6 +292,8 @@ async function rehearseRecorded(
 					.map((decision) => decision.lot),
 			),
 			storeRoot: repository,
+			lotTree,
+			beforeCard: lotTree.restoreLots,
 			contribUnanswerable,
 			gateScope,
 		})
@@ -556,21 +548,7 @@ function prepareClone(params: {
 function copyWorkingTree(params: { repository: string; clone: string }): number {
 	const { repository, clone } = params
 	const changed = listChangedFiles({ root: repository, withDeleted: true })
-	for (const file of changed) {
-		const source = join(repository, file)
-		const target = join(clone, file)
-		if (isPresent(source)) {
-			mkdirSync(dirname(target), { recursive: true })
-			// a link is copied as the link it is (relative, never followed), as git commits it
-			if (lstatSync(source).isSymbolicLink()) {
-				rmSync(target, { force: true })
-				symlinkSync(readlinkSync(source), target)
-			} else cpSync(source, target)
-		} else {
-			rmSync(target, { force: true })
-			removeEmptiedFolders({ clone, folder: dirname(target) })
-		}
-	}
+	copyRepositoryFiles({ repository, clone, files: changed })
 	return changed.length
 }
 
@@ -640,7 +618,6 @@ async function runContribInClone(params: {
 			removeEmptiedFolders({ clone, folder: dirname(join(clone, file)) })
 		}
 		copyWorkingTree({ repository, clone })
-		spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 	}
 }
 
@@ -657,16 +634,4 @@ function listUntracked(clone: string): string[] {
 	return readGit({ root: clone, args: ['ls-files', '--others', '--exclude-standard'] })
 		.split('\n')
 		.filter(Boolean)
-}
-
-/** A deleted file's folder, and each parent up to the clone, removed while empty: as git leaves the tree. */
-function removeEmptiedFolders(params: { clone: string; folder: string }): void {
-	for (
-		let folder = params.folder;
-		folder !== params.clone && folder.startsWith(params.clone) && existsSync(folder);
-		folder = dirname(folder)
-	) {
-		if (readdirSync(folder).length) return
-		rmdirSync(folder)
-	}
 }

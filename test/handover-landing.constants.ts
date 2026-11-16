@@ -24,3 +24,27 @@ export const ALL_RAN_LANDING = '  hook: reused none · ran check, build, tests'
 
 /** Every line starting a landing line in a run's text. */
 export const LANDING_LINE_START = '  hook: reused '
+
+/** The second plain lot of a landing scenario: a new file, a file the base holds and the lot changes, its message. */
+export const LANDING_SECOND_FILE = 'docs/two.md'
+export const LANDING_SECOND_TEXT = 'two\n'
+export const LANDING_NOTES_FILE = 'docs/notes.md'
+export const LANDING_NOTES_BEFORE = 'notes base\n'
+export const LANDING_NOTES_AFTER = 'notes two\n'
+export const LANDING_SECOND_LOT = {
+	paths: [LANDING_SECOND_FILE, LANDING_NOTES_FILE],
+	message: 'docs(two): the second lot',
+}
+
+/**
+ * A hook line logging, one line per run in `{log}`, what the tree the hook runs on holds of the second lot:
+ * `present`/`absent` for its new file, then the first line of the notes file the lot changes.
+ */
+export const SECOND_FILE_PROBE = `echo "$(if [ -f ${LANDING_SECOND_FILE} ]; then echo present; else echo absent; fi) $(head -n 1 ${LANDING_NOTES_FILE})" >> {log}`
+
+/** What the probe logs on a tree without, and with, the second lot. */
+export const PROBE_WITHOUT_SECOND_LOT = 'absent notes base'
+export const PROBE_WITH_SECOND_LOT = 'present notes two'
+
+/** The word a hand-over run names each lot with in its lines, before the lot's number. */
+export const LOT = 'lot'
