@@ -1,0 +1,52 @@
+name: publish
+
+# The push to main is the queue's merge of a commit ci.yml already tested: build, then publish and tag when the
+# version changed. No test runs here. npm trusted publishing names this file: the publish stays in publish.yml.
+on:
+  push:
+    branches:
+      - main
+
+# one publish of main at a time, never cancelled half-way
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Install Dependencies
+    uses: ./.github/workflows/_install.yml
+
+  build:
+    name: Build Project
+    needs: install
+    uses: ./.github/workflows/_build.yml
+
+  version:
+    name: Check Version
+    uses: ./.github/workflows/_check-npm-version.yml
+
+  extract-version:
+    name: Extract Version
+    uses: ./.github/workflows/_extract-version.yml
+
+  deploy:
+    name: Publish to NPM
+    if: needs.version.outputs.version_changed == 'true'
+    needs:
+      - build
+      - version
+    uses: ./.github/workflows/_publish.yml
+
+  create-release-tag:
+    name: Create Release Tag
+    if: needs.version.outputs.version_changed == 'true'
+    needs:
+      - version
+      - extract-version
+      - deploy
+    uses: ./.github/workflows/_tag-release.yml
+    with:
+      version: ${{ needs.extract-version.outputs.version }}
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
