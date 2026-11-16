@@ -22,9 +22,12 @@ export type Scope = {
 	parent: Scope | undefined
 }
 
-/** `params.state.items` as its root name and the segments after it (an index that is not a literal has no name). */
+/**
+ * `params.state.items` as its root name and the segments after it (an index that is not a literal has no name);
+ * `this.items` has the root `this`.
+ */
 export type TargetPath = {
-	root: ts.Identifier
+	root: string
 	segments: readonly (string | undefined)[]
 }
 

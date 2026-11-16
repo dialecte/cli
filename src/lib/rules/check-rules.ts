@@ -16,6 +16,7 @@ import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { readAddedLines, softenNotAdded } from './added-lines.ts'
 import { applyAllowComments } from './allow-comments.ts'
 import { checkChangelogEdit } from './changelog-edit.ts'
+import { CLASS_KEYWORD_PATTERN } from './check-class-rules.constants.ts'
 import { ALLOWABLE_RULES, TEXT_FILE_PATTERN } from './check-code-rules.constants.ts'
 import { checkCodeRules } from './check-code-rules.ts'
 import {
@@ -28,6 +29,7 @@ import {
 import { isTestShaped } from './check-test-shape-rules.ts'
 import { readListedPatterns } from './committed-text.ts'
 import { createDialecteChangeReader } from './dialecte-change.ts'
+import { readEntryClasses } from './entry-classes.ts'
 import { checkFixtureFiles, judgedAtBase, testFileLengthOf } from './file-lengths.ts'
 import {
 	ForbiddenWordsListError,
@@ -46,6 +48,7 @@ import type { RuleFinding, RuleName } from './check-code-rules.types.ts'
 import type { DialecteScope, FileCheck, RulesCheck } from './check-rules.types.ts'
 import type { ReferencePattern } from './committed-text.types.ts'
 import type { DialecteChangeEntry } from './dialecte-change.types.ts'
+import type { EntryClasses } from './entry-classes.types.ts'
 
 export function checkRules(params: {
 	root: string
@@ -127,9 +130,15 @@ function dialecteScopeOf(params: {
 	// one import reading per run: the scope and the unit context share its resolver and trees
 	const reading = createImportReading({ root })
 	const reader = createDialecteChangeReader({ root, reading })
+	// the entries are walked once, when a checked file first holds a class
+	let entryClasses: EntryClasses | undefined
 	return {
 		reader,
 		reading,
+		entryClassesOf(file) {
+			entryClasses ??= readEntryClasses({ root, reading })
+			return entryClasses.get(file) ?? new Set()
+		},
 		judgesOnlyChanges: reader.kind === 'app' && readProfile(root) !== 'contributor',
 		units: createUnitContextReader({ ...params, reading }),
 	}
@@ -276,6 +285,8 @@ function checkFile(params: {
 		xmlImports: tested.xmlImportsOf({ file: packageFile, sourceFile }),
 	}
 	const testLength = tested ? testFileLengthOf({ file, text }) : {}
+	const entryClasses =
+		scope && CLASS_KEYWORD_PATTERN.test(text) ? scope.entryClassesOf(packageFile) : undefined
 	const findings = [
 		...checkCodeRules({
 			file,
@@ -283,6 +294,7 @@ function checkFile(params: {
 			referencePatterns: params.referencePatterns,
 			queryNames: params.queryNames,
 			sourceFile,
+			...(entryClasses && { entryClasses }),
 			...(testRules && { testRules }),
 		}),
 		...(testLength.finding ? [testLength.finding] : []),
