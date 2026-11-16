@@ -30,11 +30,14 @@ export const INBOX_DAMAGED_LINE = 'damaged {folder}: {reason}; next: {stop}'
 /** The line of a store the store list names that cannot be listed: its path and why. */
 export const INBOX_SKIPPED_LINE = 'skipped store {store}: {reason}'
 
-/** Why a store is skipped; `{detail}` the error code (or message) of the listing. */
-export const INBOX_SKIPPED_REASONS = {
-	notFolder: 'not a folder',
-	unreadable: 'cannot be read ({detail})',
-} as const
+/** How far back the inbox reads the health findings of the windowed rules: 24 hours. */
+export const INBOX_HEALTH_WINDOW_MS = 86_400_000
 
-/** The error code of a listing of a path that is no folder. */
-export const NOT_A_FOLDER_CODE = 'ENOTDIR'
+/** The line of a health finding: `{lot}` is two spaces and the lot name, or nothing when the finding names none. */
+export const INBOX_HEALTH_LINE = '{mark} health  {repository}{lot}  {label}: {text}  next: {next}'
+
+/** The next command of a finding that names none: the health report of its repository, or the whole report for scratch. */
+export const INBOX_HEALTH_NEXT = {
+	repository: 'dialecte health --repository {repository}',
+	scratch: 'dialecte health',
+} as const

@@ -67,7 +67,7 @@ describe('every scenario seen from the inbox', { timeout: STORE_CASE_TIMEOUT }, 
 
 		expect(withJson(inboxIn({ cwd: start.repository, words: ['--json'] }))).toEqual({
 			exitCode: 1,
-			json: { waiting: [], working: 0, simulated: 2, damaged: [] },
+			json: { waiting: [], working: 0, simulated: 2, damaged: [], health: [] },
 		})
 	})
 })

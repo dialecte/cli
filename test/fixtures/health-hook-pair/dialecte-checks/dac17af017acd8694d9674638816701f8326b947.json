@@ -1,0 +1,86 @@
+[
+	{
+		"mode": "hook-gate",
+		"at": "2026-11-15T14:31:36.785Z",
+		"head": "abd7e64814c2c9d6a6c581d9bf7964dd056b5766",
+		"stateHash": "efd4680d80503af350ea5b224dd7a4796442c500674a592be592a79213303c3c",
+		"steps": [
+			{
+				"name": "check",
+				"status": "passed",
+				"counts": {
+					"errors": 0,
+					"warnings": 1
+				},
+				"stepHash": "88b0f5a584d5c11dbf0768a96d6c673651633d594f1bf81843ebf4ec2e71ef39"
+			},
+			{
+				"name": "skills",
+				"status": "passed",
+				"counts": {
+					"errors": 0,
+					"warnings": 0
+				},
+				"stepHash": "d7e6f8cc6c50163acc29ba11b627e908d0a602c83ad5809a8950bfedd7ad474a"
+			},
+			{
+				"name": "build",
+				"status": "passed",
+				"counts": {},
+				"stepHash": "6a8bdaae5bc0138cdd02b0515ae8a4d84df4cb9ec9eee88dc8135cd44588a901"
+			},
+			{
+				"name": "tests",
+				"status": "passed",
+				"counts": {
+					"tests": {
+						"passed": 10607,
+						"failed": 0,
+						"skipped": 4,
+						"total": 10611
+					},
+					"testFiles": {
+						"passed": 687,
+						"failed": 0,
+						"total": 688
+					}
+				},
+				"stepHash": "751d0738d35550db34fdfbac6fc0a8a48d7298d24eaaeb48283805b52f69f31c"
+			}
+		],
+		"key": {
+			"tree": "dac17af017acd8694d9674638816701f8326b947",
+			"lockHash": "29aa51b1fec505ceb305b6e9ee6ad6c9089dea27cd9faf508cc880f62a97eba8",
+			"linked": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"commandHash": "06dba104d9c93aa8566a1130a9787400394ea785c2ed47481a752af0867ea104"
+		},
+		"origin": "rehearsal"
+	},
+	{
+		"mode": "hook",
+		"at": "2026-11-15T14:31:37.643Z",
+		"head": "3bc2c0f04c018fecda79703949f179dce74c85f0",
+		"stateHash": "efd4680d80503af350ea5b224dd7a4796442c500674a592be592a79213303c3c",
+		"steps": [
+			{
+				"name": "test:hook",
+				"status": "passed",
+				"counts": {
+					"tests": {
+						"passed": 10607,
+						"failed": 0,
+						"skipped": 4,
+						"total": 10611
+					}
+				}
+			}
+		],
+		"key": {
+			"tree": "dac17af017acd8694d9674638816701f8326b947",
+			"lockHash": "29aa51b1fec505ceb305b6e9ee6ad6c9089dea27cd9faf508cc880f62a97eba8",
+			"linked": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"commandHash": "fb8a95961a066c573aa80779d89d64c6ad468803738b0421f82e0459ff33dae5"
+		},
+		"origin": "rehearsal"
+	}
+]
