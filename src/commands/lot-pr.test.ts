@@ -195,9 +195,42 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(JSON.parse(result.output)).toEqual({
 			title: LOT_MESSAGE,
 			body: expect.stringContaining(LOT_SUMMARY),
-			pullRequest: { number: 7, url: 'https://host.test/pull/7' },
+			pullRequest: { number: 7, url: 'https://host.test/pull/7', head: '' },
+			head: git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
 			sent: true,
 		})
+	})
+
+	it("--json for a pull request whose head is not the lot's → both heads given", () => {
+		const lot = pullRequestLot()
+		const { host } = recordingHost({
+			existing: { ...openPullRequest({ title: 'old', body: 'old' }), head: 'a'.repeat(40) },
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
+
+		expect(result.output).toMatch(/^\{/)
+		expect(JSON.parse(result.output)).toMatchObject({
+			pullRequest: { head: 'a'.repeat(40) },
+			head: git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
+		})
+	})
+
+	it("a ready pull request whose head is not the lot's → the line names lot land without --draft", () => {
+		const lot = pullRequestLot()
+		const { host } = recordingHost({
+			existing: {
+				...openPullRequest({ title: 'old', body: 'old' }),
+				head: 'a'.repeat(40),
+				draft: false,
+			},
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result.output.split('\n').at(-1)).toMatch(
+			new RegExp(`the text describes the lot; dialecte lot land ${LOT_NAME} pushes it$`),
+		)
 	})
 
 	it('an unknown option → the usage, nothing read or sent, exit 2', () => {

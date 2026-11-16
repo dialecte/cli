@@ -69,14 +69,14 @@ export function runLotPr(params: {
 		kept: keptTextOf({ template: prepared.template, body: read.body ?? '' }),
 	})
 	if ('refusal' in text) return refused({ line: `${LOT_PR_LINES.prefix}${text.refusal}` })
-	const sent = sendText({ host, worktree, pullRequest: read, text, json })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	const sent = sendText({ host, worktree, pullRequest: read, text, json, head })
 	if (json || sent.exitCode !== 0 || read.head === '' || read.head === head) return sent
 	return {
 		...sent,
 		output: textOf([
 			...linesOf(sent.output).filter((line) => line !== ''),
-			LOT_PR_LINES.headElsewhere
+			(read.draft ? LOT_PR_LINES.headElsewhereDraft : LOT_PR_LINES.headElsewhere)
 				.replace('{number}', String(read.number))
 				.replace('{pushed}', read.head.slice(0, SHORT_SHA_LENGTH))
 				.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
@@ -129,6 +129,8 @@ function sendText(params: {
 	pullRequest: PullRequest
 	text: PullRequestText
 	json: boolean
+	/** The lot's HEAD: the JSON gives it beside the pull request's head. */
+	head: string
 }): CommandResult {
 	const { pullRequest, text } = params
 	const same =
@@ -147,7 +149,12 @@ function sendText(params: {
 			output: textOf([
 				JSON.stringify({
 					...text,
-					pullRequest: { number: pullRequest.number, url: pullRequest.url },
+					pullRequest: {
+						number: pullRequest.number,
+						url: pullRequest.url,
+						head: pullRequest.head,
+					},
+					head: params.head,
 					sent: !same,
 				}),
 			]),
