@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { commitEmpty, commitOf } from '../../../test/rule-gaps-base-branch.ts'
 import {
+	cloneRepository,
 	git,
 	initializeRepository,
 	temporaryFolder,
@@ -23,7 +24,7 @@ function behindOrigin(): { root: string; landed: string } {
 	git({ root, args: ['remote', 'add', 'origin', origin] })
 	git({ root, args: ['push', '-q', '-u', 'origin', 'main'] })
 	const other = join(folder, 'other')
-	git({ root: folder, args: ['clone', '-q', origin, other] })
+	cloneRepository({ origin, into: other })
 	const landed = commitEmpty({ root: other, message: 'feat: landed by the queue' })
 	git({ root: other, args: ['push', '-q', 'origin', 'main'] })
 	return { root, landed }
@@ -91,7 +92,7 @@ describe('syncBaseBranch', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		git({ root, args: ['remote', 'add', 'origin', origin] })
 		git({ root, args: ['push', '-q', '-u', 'origin', 'main'] })
 		const other = join(folder, 'other')
-		git({ root: folder, args: ['clone', '-q', origin, other] })
+		cloneRepository({ origin, into: other })
 		writeFiles({ root: other, files: { 'new.txt': 'landed\n' } })
 		git({ root: other, args: ['add', 'new.txt'] })
 		git({ root: other, args: ['commit', '-qm', 'feat: new file'] })

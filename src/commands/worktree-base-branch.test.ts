@@ -10,7 +10,12 @@ import {
 	makeDevelopOriginDefault,
 	pointOriginHeadAt,
 } from '../../test/rule-gaps-base-branch.ts'
-import { git, initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
+import {
+	cloneRepository,
+	git,
+	initializeRepository,
+	temporaryFolder,
+} from '../../test/scratch-repository.ts'
 import { WORKSPACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NO_BASE_BRANCH_FOUND } from '../lib/gate/gate-base.constants.ts'
 import { readHygieneBaseline } from '../lib/worktree/hygiene.ts'
@@ -86,7 +91,7 @@ describe('worktree add: where a new branch starts', { timeout: WORKSPACE_CASE_TI
 		git({ root: core, args: ['remote', 'add', 'origin', origin] })
 		git({ root: core, args: ['push', '-q', 'origin', 'main'] })
 		const other = join(workspace, 'other')
-		git({ root: workspace, args: ['clone', '-q', origin, other] })
+		cloneRepository({ origin, into: other })
 		const landed = commitEmpty({ root: other, message: 'feat: landed by the queue' })
 		git({ root: other, args: ['push', '-q', 'origin', 'main'] })
 
