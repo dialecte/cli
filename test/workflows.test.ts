@@ -16,9 +16,23 @@ const WORKFLOWS = join(import.meta.dirname, '..', '.github', 'workflows')
  */
 function readWorkflow(file: string): {
 	on: Record<string, unknown> & {
-		workflow_call?: { outputs?: Record<string, { description?: string }> }
+		workflow_call?: {
+			inputs?: Record<string, { required?: boolean; type?: string }>
+			outputs?: Record<string, { description?: string }>
+		}
 	}
-	jobs: Record<string, { uses?: string; 'runs-on'?: string; steps?: { run?: string }[] }>
+	jobs: Record<
+		string,
+		{
+			uses?: string
+			'runs-on'?: string
+			needs?: string[]
+			if?: string
+			with?: Record<string, string>
+			permissions?: Record<string, string>
+			steps?: { run?: string }[]
+		}
+	>
 	concurrency?: unknown
 } {
 	const path = join(WORKFLOWS, file)
@@ -68,33 +82,55 @@ describe('the cli workflows', () => {
 		},
 	)
 
-	describe('_check-npm-version.yml', () => {
-		const workflow = readWorkflow('_check-npm-version.yml')
-		const script = (workflow.jobs.check?.steps ?? []).map((step) => step.run ?? '').join('\n')
+	it('publish.yml → deploy needs build and version and runs on publish; the tag job needs deploy and runs on tag, never after a failure', () => {
+		const { deploy, 'create-release-tag': tag } = readWorkflow('publish.yml').jobs
 
-		it('→ reads the version before the push from the commit the push started from, not npm latest', () => {
-			expect({
-				fetchesBefore: script.includes('git fetch --depth=1 origin "${{ github.event.before }}"'),
-				readsBeforePackage: script.includes('git show "${{ github.event.before }}:package.json"'),
-				readsNpmLatest: script.includes('npm view "$PACKAGE_NAME" version'),
-			}).toEqual({ fetchesBefore: true, readsBeforePackage: true, readsNpmLatest: false })
+		expect({
+			deployNeeds: [...(deploy?.needs ?? [])].sort(),
+			deployIf: deploy?.if,
+			deployDistTag: deploy?.with?.['dist-tag'],
+			tagNeedsDeploy: tag?.needs?.includes('deploy'),
+			tagIf: tag?.if,
+		}).toEqual({
+			deployNeeds: ['build', 'version'],
+			deployIf: "needs.version.outputs.publish == 'true'",
+			deployDistTag: '${{ needs.version.outputs.dist_tag }}',
+			tagNeedsDeploy: true,
+			tagIf: "${{ !cancelled() && !failure() && needs.version.outputs.tag == 'true' }}",
 		})
+	})
 
-		it('→ asks npm for the exact current version, so a version npm has is never published again', () => {
-			expect(script).toContain('npm view "$PACKAGE_NAME@$CURRENT_VERSION" version')
-		})
+	it('_publish.yml → id-token write, publishes under the dist-tag it is given', () => {
+		const workflow = readWorkflow('_publish.yml')
+		const script = (workflow.jobs.publish?.steps ?? []).map((step) => step.run ?? '').join('\n')
 
-		it('→ version_changed=true only when the push changed the version and npm lacks it, and its description says so', () => {
-			expect({
-				condition: script.includes(
-					'if [ "$PREVIOUS_VERSION" != "$CURRENT_VERSION" ] && [ "$PUBLISHED_VERSION" != "$CURRENT_VERSION" ]; then',
-				),
-				description: workflow.on.workflow_call?.outputs?.version_changed?.description,
-			}).toEqual({
-				condition: true,
-				description: 'Whether this push changed the package version and npm does not have it yet',
-			})
+		expect({
+			idToken: workflow.jobs.publish?.permissions?.['id-token'],
+			distTagInput: workflow.on.workflow_call?.inputs?.['dist-tag'],
+			publishes: script.includes('npm publish --access public --tag "${{ inputs.dist-tag }}"'),
+		}).toEqual({
+			idToken: 'write',
+			distTagInput: { required: true, type: 'string' },
+			publishes: true,
 		})
+	})
+
+	it.each(['_publish.yml', '_tag-release.yml'])(
+		'_publish.yml and _tag-release.yml → workflow_call only, no workflow_dispatch: %s',
+		(file) => {
+			expect(Object.keys(readWorkflow(file).on)).toEqual(['workflow_call'])
+		},
+	)
+
+	it('_check-npm-version.yml → runs the decision script, no 2>/dev/null', () => {
+		const script = (readWorkflow('_check-npm-version.yml').jobs.check?.steps ?? [])
+			.map((step) => step.run ?? '')
+			.join('\n')
+
+		expect({
+			runsDecision: script.includes('node src/publish-decision.ts'),
+			hidesErrors: script.includes('2>/dev/null'),
+		}).toEqual({ runsDecision: true, hidesErrors: false })
 	})
 
 	it('every job of every workflow file → a pinned runner image, never *-latest', () => {
