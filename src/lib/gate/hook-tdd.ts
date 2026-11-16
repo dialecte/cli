@@ -130,7 +130,8 @@ function listDifferingTddPaths(params: {
 		.filter(
 			(file) =>
 				file !== '' &&
-				(isPackageTestCode({ file, packageJson }) || isProductionPath({ file, packageJson })),
+				(isPackageTestCode({ root: cwd, file, packageJson }) ||
+					isProductionPath({ root: cwd, file, packageJson })),
 		)
 		.sort()
 }
