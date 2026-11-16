@@ -13,6 +13,8 @@
 
 - `dialecte tdd red` freezes a changed test helper no changed test file depends on through the unchanged test files importing it: they run with it, and when they pass the helper is frozen (`frozen  <helper>  through the unchanged test files importing it, which pass with it: ...`), so `tdd green` no longer refuses it. One failing with it, or none importing it, leaves it unfrozen with the reason; a `revised` entry naming it still freezes it. A red run with no test file changed runs for such a helper.
 
+- The help of `dialecte gate --hook` says what the hook runs since it stopped running tests: the lot's tdd receipts, then the declared steps (the cli's `check` and `rules`), no test suite, CI running it on every push.
+
 ### Fixed
 
 - `lot revised --remove <file>` no longer writes an entry named `--remove`.
