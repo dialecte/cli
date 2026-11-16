@@ -13,10 +13,12 @@ import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { resolveTddBase } from './tdd-base.ts'
 import {
+	CONFTEST_FILE_PATTERN,
 	DELETED_PRODUCTION_FILE,
 	FIXTURE_FOLDER_PATTERN,
 	GENERATED_FILE_PATTERN,
 	LEDGER_VERSION,
+	PYTHON_TEST_FILE_PATTERN,
 	SCRIPT_FILE_PATTERN,
 	SNAPSHOT_FILE_PATTERN,
 	SOURCE_FILE_PATTERN,
@@ -58,10 +60,16 @@ export function hashProduction(params: { root: string; packageJson: PackageJson 
 	return hash.digest('hex')
 }
 
-/** A test file, a helper or fixture in a test or fixture folder, a snapshot. */
+/** A test file of a language tdd runs: a JS/TS test or spec file, a Python `test_*.py` or `*_test.py`. */
+export function isTestFile(file: string): boolean {
+	return TEST_FILE_PATTERN.test(file) || PYTHON_TEST_FILE_PATTERN.test(file)
+}
+
+/** A test file, a pytest `conftest.py`, a helper or fixture in a test or fixture folder, a snapshot. */
 export function isTestCode(file: string): boolean {
 	return (
-		TEST_FILE_PATTERN.test(file) ||
+		isTestFile(file) ||
+		CONFTEST_FILE_PATTERN.test(file) ||
 		TEST_FOLDER_PATTERN.test(file) ||
 		SNAPSHOT_FILE_PATTERN.test(file)
 	)
@@ -77,7 +85,8 @@ export function isPackageTestCode(params: { file: string; packageJson: PackageJs
 	const declared = productionFolderOf(params)
 	if (declared !== undefined)
 		return (
-			TEST_FILE_PATTERN.test(file) ||
+			isTestFile(file) ||
+			CONFTEST_FILE_PATTERN.test(file) ||
 			FIXTURE_FOLDER_PATTERN.test(file.slice(declared.length)) ||
 			SNAPSHOT_FILE_PATTERN.test(file) ||
 			SCRIPT_FILE_PATTERN.test(file)
@@ -202,7 +211,7 @@ export function hashChangedTestCode(params: {
 		...params,
 		kindOf: function testCodeKind(file) {
 			if (!isPackageTestCode({ file, packageJson: params.packageJson })) return undefined
-			return TEST_FILE_PATTERN.test(file) ? TEST_FILE_KIND : TEST_CODE_KIND
+			return isTestFile(file) ? TEST_FILE_KIND : TEST_CODE_KIND
 		},
 	})
 	return new Map(
@@ -216,7 +225,7 @@ export function hashChangedTestCode(params: {
 
 /** A test file's kind for a move: a test file moves only to a test file. */
 function testFileKind(file: string): string | undefined {
-	return TEST_FILE_PATTERN.test(file) ? TEST_FILE_KIND : undefined
+	return isTestFile(file) ? TEST_FILE_KIND : undefined
 }
 
 /**
@@ -227,7 +236,7 @@ export function listChangedTestFiles(params: { root: string; base: string }): Ch
 	const { root, base } = params
 	const moved = listMovedFiles({ ...params, kindOf: testFileKind })
 	return listChangedSince(params)
-		.filter((file) => TEST_FILE_PATTERN.test(file) && !moved.has(file))
+		.filter((file) => isTestFile(file) && !moved.has(file))
 		.map((file) => ({
 			file,
 			text: readFileSync(join(root, file), 'utf8'),
@@ -248,9 +257,7 @@ export function listMovedTestFiles(params: { root: string; base: string }): Chan
 /** The test files of the base that the change deletes (a test file moved with its bytes is not deleted). */
 export function listDeletedTestFiles(params: { root: string; base: string }): string[] {
 	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKind }).values())
-	return listDeletedSince(params).filter(
-		(file) => TEST_FILE_PATTERN.test(file) && !sources.has(file),
-	)
+	return listDeletedSince(params).filter((file) => isTestFile(file) && !sources.has(file))
 }
 
 /**

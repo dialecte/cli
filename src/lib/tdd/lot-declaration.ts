@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { matchesGlob } from './match-glob.ts'
 import { caseLabel } from './select-cases.ts'
+import { isTestFile } from './tdd-files.ts'
 import {
 	CASE_ARGUMENT_SEPARATOR,
 	CASE_ENTRY_KEYS,
@@ -25,7 +26,6 @@ import {
 	GONE_LIST_SHAPE,
 	LOT_KEYS,
 	TDD_EXEMPT_PATTERN,
-	TEST_FILE_PATTERN,
 } from './tdd.constants.ts'
 
 import type {
@@ -132,7 +132,7 @@ export function revisionOfHelper(params: {
 	revisions: readonly LotCaseEntry[]
 	file: string
 }): LotCaseEntry | undefined {
-	if (TEST_FILE_PATTERN.test(params.file)) return undefined
+	if (isTestFile(params.file)) return undefined
 	return params.revisions.find((entry) => entryNamesFile({ entry: entry.case, file: params.file }))
 }
 

@@ -172,6 +172,7 @@ function mergeModules(modules: readonly ReportedModule[]): ReportedModule | unde
 	if (modules.length === 0) return undefined
 	return {
 		file: modules[0].file,
+		runner: modules[0].runner,
 		errors: modules.flatMap((testModule) => testModule.errors),
 		cases: modules.flatMap((testModule) => testModule.cases),
 	}

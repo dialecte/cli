@@ -38,6 +38,22 @@ export const ASSERTION_CALLEE = 'expect'
 /** Test files: what vitest includes by default. */
 export const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/
 
+/** Python test files, wherever they are: `test_*.py` and `*_test.py`. */
+export const PYTHON_TEST_FILE_PATTERN = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/
+
+/** A pytest configuration file of tests, wherever it is: test code, never production. */
+export const CONFTEST_FILE_PATTERN = /(^|\/)conftest\.py$/
+
+/** The runners in the order their groups run and print. */
+export const RUNNER_ORDER = ['vitest', 'node', 'pytest'] as const
+
+/** The failure of a runner this cli cannot run yet (`{runner}`: its name). */
+export const RUNNER_NOT_AVAILABLE_FAILURE =
+	'{runner} runner not available yet: its test files cannot run'
+
+/** The module a test file imports to run under `node --test`. */
+export const NODE_TEST_SPECIFIER = 'node:test'
+
 /** Test code beyond the test files: helpers and fixtures in a test or fixture folder, snapshots. */
 export const TEST_FOLDER_PATTERN =
 	/(^|\/)(test|tests|__tests__|__fixtures__|fixtures|__snapshots__)\//
@@ -397,8 +413,12 @@ export const ZERO_CASE_REASONS = {
 	allSkipped: 'every case is skipped',
 } as const
 
-/** The line of a selected file no vitest config includes: it leaves the selection, never refused nor frozen. */
-export const NOT_A_VITEST_FILE_LINE = 'not a vitest test file (no vitest config includes it)'
+/**
+ * The line of a selected file no runner takes (no vitest config includes it, it imports no `node:test`): it leaves
+ * the selection, never refused nor frozen.
+ */
+export const NOT_A_VITEST_FILE_LINE =
+	'not a test file of a known runner (no vitest config includes it, no node:test import)'
 
 /** The label of a refused file's or case's line (`refused  <file>  <reason>`). */
 export const REFUSED_LABEL = 'refused'

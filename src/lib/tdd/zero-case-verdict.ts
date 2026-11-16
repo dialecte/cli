@@ -72,7 +72,7 @@ export function judgeZeroCaseFiles(params: {
 
 /**
  * The lines of the files a run ran no case of, as `tdd` and the gate print them: `refused  <file>  <reason>`, and
- * `outside  <file>  not a vitest test file (...)` for a file no vitest config includes (no refusal).
+ * `outside  <file>  not a test file of a known runner (...)` for a file no runner takes (no refusal).
  */
 export function zeroCaseLines(zeroCases: ZeroCaseFiles): string[] {
 	return [

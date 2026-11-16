@@ -596,16 +596,25 @@ function hasMatcher(expectCall: ts.CallExpression): boolean {
 	return false
 }
 
-/** The modules a file names: static imports and re-exports, `import('...')`, `require('...')`, `vi.mock('...')`. */
-export function moduleSpecifiers(params: { text: string; file: string }): string[] {
-	const { text } = params
+/**
+ * The modules a file names: static imports and re-exports, `import('...')`, `require('...')`, `vi.mock('...')`.
+ * With `valuesOnly`, only the modules the file loads when it runs: no `import type` / `export type`, no
+ * `vi.mock('...')` (a call that names a module, never loads it).
+ */
+export function moduleSpecifiers(params: {
+	text: string
+	file: string
+	valuesOnly?: boolean
+}): string[] {
+	const { text, valuesOnly = false } = params
 	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
 	const specifiers: string[] = []
 	function visit(node: ts.Node): void {
 		if (
 			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
 			node.moduleSpecifier &&
-			ts.isStringLiteralLike(node.moduleSpecifier)
+			ts.isStringLiteralLike(node.moduleSpecifier) &&
+			!(valuesOnly && isTypeOnlyDeclaration(node))
 		)
 			specifiers.push(node.moduleSpecifier.text)
 		if (
@@ -617,13 +626,19 @@ export function moduleSpecifiers(params: { text: string; file: string }): string
 			const named =
 				callee.kind === ts.SyntaxKind.ImportKeyword ||
 				(ts.isIdentifier(callee) && callee.text === 'require') ||
-				(ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
+				(!valuesOnly && ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
 			if (named) specifiers.push(node.arguments[0].text)
 		}
 		ts.forEachChild(node, visit)
 	}
 	visit(source)
 	return specifiers
+}
+
+/** `import type ... from '...'` or `export type ... from '...'`: erased before the file runs. */
+function isTypeOnlyDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
+	if (ts.isExportDeclaration(node)) return node.isTypeOnly
+	return node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword
 }
 
 /**

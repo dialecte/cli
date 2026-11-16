@@ -55,7 +55,8 @@ export const OTHER_CONFIG_REFUSAL =
 	'ran no case: the file belongs to vitest.unit.config.ts, which the default config does not list (projects)'
 export const NO_CASE_REFUSAL = 'ran no case of the file'
 export const ALL_SKIPPED_REFUSAL = 'every case is skipped'
-export const NOT_VITEST_LINE = 'not a vitest test file (no vitest config includes it)'
+export const NOT_VITEST_LINE =
+	'not a test file of a known runner (no vitest config includes it, no node:test import)'
 export const CANNOT_LIST = 'cannot list its cases'
 
 /** A test file that does not parse. */

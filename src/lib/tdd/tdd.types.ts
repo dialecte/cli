@@ -1,6 +1,8 @@
 import type { PackageJson } from '../package-json.types.ts'
+import type { Clock } from '../progress/clock.types.ts'
+import type { Watchdog } from '../progress/run-child.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
+import type { RUNNER_ORDER, SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
 
 /**
  * A test case: its file, relative to the package root, its full name as vitest prints it
@@ -23,6 +25,33 @@ export type ReportedError = { name?: string; message: string; frames: ErrorFrame
 
 export type ReportedCaseState = 'passed' | 'failed' | 'skipped' | 'pending'
 
+/** The runners a test file can run under, chosen per file. */
+export type TestRunner = (typeof RUNNER_ORDER)[number]
+
+/** The test files of one runner, in the order the change lists them. */
+export type RunnerGroup = { runner: TestRunner; files: string[] }
+
+/** The test files split by runner, and the files of no runner (they leave the selection). */
+export type RunnerGroups = { groups: RunnerGroup[]; outside: string[] }
+
+/** What a runner is asked: the test files, which cases of them to run, and the bounds of the run. */
+export type RunnerParams = {
+	root: string
+	/** Test files, relative to the root. */
+	files: readonly string[]
+	/** The full names of the cases to run, every case of the files, or none (collect them only). */
+	filter: { names: readonly string[] } | 'all' | 'collect'
+	/** Default: the system clock. */
+	clock?: Clock
+	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
+	watchdog?: Watchdog
+	/** A hard bound in milliseconds: the run's process group is killed past it, the run answers a failure. */
+	timeoutMs?: number
+}
+
+/** A runner: its files in, what its run saw (or why it could not run) out. */
+export type RunnerFunction = (params: RunnerParams) => Promise<ReportedModule[] | TestRunFailure>
+
 /** One test case as the run saw it. */
 export type ReportedCase = {
 	/** The full name: the describe titles and the test's own, joined with ` > `. */
@@ -38,6 +67,8 @@ export type ReportedCase = {
 export type ReportedModule = {
 	/** Absolute path. */
 	file: string
+	/** The runner that ran the file. */
+	runner: TestRunner
 	errors: ReportedError[]
 	cases: ReportedCase[]
 }

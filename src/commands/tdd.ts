@@ -74,6 +74,7 @@ import {
 import {
 	appendEntries,
 	hashChangedTestCode,
+	isTestFile,
 	listChangedTestFiles,
 	readLedger,
 	resolveBase,
@@ -97,7 +98,6 @@ import {
 	TEST_CODE_CHANGED_SINCE_RED,
 	UNRESOLVED_IMPORT_HINT,
 	TDD_SUBCOMMANDS,
-	TEST_FILE_PATTERN,
 } from '../lib/tdd/tdd.constants.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
@@ -239,9 +239,7 @@ function admitRun(params: {
 	const testCode = hashChangedTestCode(context)
 	if (subcommand === 'green') {
 		const changedHelpers = [...testCode]
-			.filter(
-				([file, hash]) => !TEST_FILE_PATTERN.test(file) && frozenHashOf({ ledger, file }) !== hash,
-			)
+			.filter(([file, hash]) => !isTestFile(file) && frozenHashOf({ ledger, file }) !== hash)
 			.map(([file]) => file)
 		if (changedHelpers.length)
 			return {

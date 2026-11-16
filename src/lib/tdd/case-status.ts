@@ -13,7 +13,8 @@
  * longer declares, or an acceptance after a red then a green of the same case, stands for no proof.
  */
 import { countingReceipts, receiptsOf } from './counting-receipts.ts'
-import { PROOF_KINDS, TEST_FILE_PATTERN } from './tdd.constants.ts'
+import { isTestFile } from './tdd-files.ts'
+import { PROOF_KINDS } from './tdd.constants.ts'
 
 import type {
 	CaseStatus,
@@ -89,8 +90,7 @@ function lastInvalidatingFreeze(params: {
 		const invalidates = Object.entries(entry.files).some(
 			([file, hash]) =>
 				(file === params.file ||
-					(!TEST_FILE_PATTERN.test(file) &&
-						(dependencies === undefined || dependencies.includes(file)))) &&
+					(!isTestFile(file) && (dependencies === undefined || dependencies.includes(file)))) &&
 				frozen.get(file) !== hash,
 		)
 		if (invalidates) last = index

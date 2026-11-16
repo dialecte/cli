@@ -20,6 +20,7 @@ export default class TddReporter implements Reporter {
 function reportModule(testModule: TestModule): ReportedModule {
 	return {
 		file: testModule.moduleId,
+		runner: 'vitest',
 		errors: testModule.errors().map(reportError),
 		cases: [...testModule.children.allTests()].map(function reportCase(testCase) {
 			const result = testCase.result()
