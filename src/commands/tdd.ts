@@ -130,6 +130,8 @@ import {
 } from '../lib/tdd/tdd.constants.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
+import { TESTS_RECORD_STEP } from '../lib/tdd/tests-record.constants.ts'
+import { ownLotFolderOf, refreshTddPart } from '../lib/tdd/tests-record.ts'
 import { readVitestConfigs } from '../lib/tdd/vitest-configs.ts'
 import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.ts'
 
@@ -1316,7 +1318,35 @@ async function runGreen(params: {
 	// counted before: the rollback line is no case line
 	if (flags.length && countLines({ lines, label: 'green' }) > 0)
 		lines.push(ROLLBACK_LINE.replace('{files}', movedBack.join(', ')))
-	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates })
+	const warning = await recordTddPart({ context, at })
+	return finish({ context, lines, summary, refused, unjudgedMembers, duplicates, warning })
+}
+
+/**
+ * The tdd part of the `tests.json` of the lot whose own worktree runs the green, shown as a progress step while it reads
+ * the cases: the `!` line when it could not be written; nothing outside a lot's own worktree.
+ */
+async function recordTddPart(params: {
+	context: TddContext
+	at: string
+}): Promise<string | undefined> {
+	const { context } = params
+	const folder = ownLotFolderOf({ cwd: context.root })
+	if (folder === undefined) return undefined
+	const clock = createSystemClock()
+	const startedAt = clock.now()
+	const running = context.progress?.start({ name: TESTS_RECORD_STEP, detail: '' })
+	const warning = await refreshTddPart({
+		folder,
+		root: context.root,
+		packageJson: context.packageJson,
+		base: context.base,
+		at: params.at,
+	})
+	running?.finish(
+		`${warning === undefined ? '✓' : '✗'} ${TESTS_RECORD_STEP}  ${formatDuration(clock.now() - startedAt)}`,
+	)
+	return warning
 }
 
 /** The case is one the run judges: it ran (not skipped) and the command line targets it. */
@@ -1539,17 +1569,28 @@ function finish(params: {
 	/** The duplicate members the run listed without judging them. */
 	unjudgedMembers: number
 	duplicates: readonly DuplicateCaseId[]
+	/** The `!` line of a record the run could not write (its receipts stand). */
+	warning?: string
 }): CommandResult {
+	const { warning } = params
 	const exitCode = params.refused + params.unjudgedMembers > 0 ? 1 : 0
 	if (params.context.json)
 		return {
 			exitCode,
 			output: jsonOf(
-				{ lines: params.lines, refused: params.refused, duplicates: params.duplicates },
+				{
+					lines: params.lines,
+					refused: params.refused,
+					duplicates: params.duplicates,
+					...(warning !== undefined && { warning }),
+				},
 				2,
 			),
 		}
-	return resultOf({ exitCode, lines: [...params.lines, params.summary] })
+	return resultOf({
+		exitCode,
+		lines: [...params.lines, params.summary, ...(warning === undefined ? [] : [warning])],
+	})
 }
 
 /** How many output lines report `label` (red, green, refused...). */

@@ -1,5 +1,5 @@
 /** A lot's pull request carries the lot's own message: the brief's commit lot, never the branch's last commit. */
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { landingRepository, recordingHost } from '../../../test/land-lot.ts'
@@ -124,5 +124,27 @@ describe(
 			})
 			expect(calls).toEqual([])
 		})
+
+		for (const [what, lot, reason] of [
+			['names no paths', { message: MESSAGE }, 'lots[0].paths must be a non-empty array of paths'],
+			[
+				'has a blank message',
+				{ paths: ['src/x.ts'], message: '   ' },
+				'lots[0] must be an object with a one-line message',
+			],
+		] as const)
+			it(`a brief whose lot ${what} → refused with the brief reader's reason, before anything is pushed or asked`, () => {
+				const repository = landingRepository()
+				const brief = join(repository.lotFolder, 'brief.json')
+				writeFileSync(brief, JSON.stringify({ lots: [lot] }))
+				const { host, calls } = recordingHost()
+
+				const landed = land({ repository, host })
+
+				expect({ landed, calls }).toEqual({
+					landed: { exitCode: 1, lines: [`lot land: ${brief}: ${reason}: nothing pushed`] },
+					calls: [],
+				})
+			})
 	},
 )

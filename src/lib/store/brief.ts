@@ -261,7 +261,7 @@ function isNonEmptyArray(value: unknown): value is unknown[] {
 }
 
 function isOneLineText(value: unknown): value is string {
-	return typeof value === 'string' && value !== '' && !LINE_BREAK_PATTERN.test(value)
+	return typeof value === 'string' && value.trim() !== '' && !LINE_BREAK_PATTERN.test(value)
 }
 
 function unknownKeyFaults(value: Record<string, unknown>): Refusal[] {
@@ -460,8 +460,11 @@ function scopeEntriesOf(value: unknown): { refused: Refusal[]; entries: string[]
 	return { refused, entries }
 }
 
-/** The lots' shape; `lots` (paths normalised) only when it holds. */
-function lotsOf(value: unknown): { refused: Refusal[]; lots: BriefLot[] | undefined } {
+/**
+ * The commit lots of a brief's `lots` value: their shape checked, `lots` (paths normalised) only when it holds. The one
+ * reader of a brief's lots, for `lot start` and for the verbs that read a stored brief.
+ */
+export function lotsOf(value: unknown): { refused: Refusal[]; lots: BriefLot[] | undefined } {
 	if (!isNonEmptyArray(value))
 		return {
 			refused: [

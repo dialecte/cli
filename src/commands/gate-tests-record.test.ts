@@ -5,7 +5,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { addWorktreeFolder } from '../../test/lot-stores.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
+import { STEP_LOT } from '../../test/step-events-lot.constants.ts'
 import { createStepLot } from '../../test/step-events-lot.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runGate } from './gate.ts'
@@ -52,6 +54,18 @@ describe('gate - tests.json', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const lot = createStepLot({ fast: [{ name: 'quiet', run: 'true' }] })
 
 		await runGate({ cwd: lot.worktree, argv: [] })
+
+		expect(testsRecordOf(lot.lotFolder)).toBeUndefined()
+	})
+
+	it("gate --fast in the lot's review throwaway, a step counting tests -> no tests.json: only the lot's own worktree writes it", async () => {
+		const lot = createStepLot({ fast: [COUNTED_STEP] })
+		const throwaway = addWorktreeFolder({
+			workspace: lot.workspace,
+			folderName: `${STEP_LOT}-round-1`,
+		})
+
+		await runGate({ cwd: throwaway, argv: [] })
 
 		expect(testsRecordOf(lot.lotFolder)).toBeUndefined()
 	})

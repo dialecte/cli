@@ -15,6 +15,7 @@ export const PUSH_REJECTED_PATTERN = /!\s*\[(rejected|remote rejected)\].*$/m
 
 export const LANDING_LINES = {
 	noMessage: 'lot land: {brief} names no commit message (lots[0].message): nothing pushed',
+	unreadLots: 'lot land: {brief}: {reason}: nothing pushed',
 	retitled: 'pull request #{number} retitled: {title}',
 	notOnBranch:
 		'lot land: {worktree} is not on {branch} (HEAD is {head}): switch to it first, nothing pushed',

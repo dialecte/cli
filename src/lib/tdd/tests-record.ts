@@ -7,13 +7,19 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { realPathOf } from '../file-system.ts'
 import { readGateRecords } from '../gate-records/gate-records.ts'
+import { tryReadGit } from '../git.ts'
+import { readIdentity } from '../store/identity.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
+import { readLedger } from './tdd-files.ts'
+import { readTddState } from './tdd-state.ts'
 import { TESTS_RECORD_SCHEMA } from './tests-record.constants.ts'
 
 import type { GateRecord } from '../gate-records/gate-records.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
 import type { CaseStatusLine } from './tdd.types.ts'
 import type {
 	TestsRecord,
@@ -46,18 +52,57 @@ export function writeTestsRecord(params: {
 }
 
 /**
- * After a gate run in `cwd`: the gate part of the `tests.json` of the lot whose worktree holds `cwd`, from the
- * worktree's gate records. The `!` line a run adds when it could not be written (the run's own record stands);
+ * After a gate run in `cwd`: the gate part of the `tests.json` of the lot whose own worktree holds `cwd` (`ownLotFolderOf`),
+ * from the worktree's gate records. The `!` line a run adds when it could not be written (the run's own record stands);
  * undefined when it was, or when `cwd` is in no lot's worktree.
  */
 export function refreshGatePart(params: { cwd: string }): string | undefined {
 	try {
-		const folder = lotOfWorktree({ cwd: params.cwd })
+		const folder = ownLotFolderOf({ cwd: params.cwd })
 		if (folder === undefined) return undefined
 		writeTestsRecord({ folder, gateRecords: readGateRecords(params.cwd) })
 		return undefined
 	} catch (error) {
-		return `! ${STORE_FILES.tests} not written: ${(error as Error).message}`
+		return notWrittenLine((error as Error).message)
+	}
+}
+
+/**
+ * The folder of the lot whose own worktree holds `cwd`; undefined in no lot's worktree, and in a lot's review throwaway
+ * (its runs are a reviewer's, on its own tree: they never stand for the lot's tests).
+ */
+export function ownLotFolderOf(params: { cwd: string }): string | undefined {
+	const folder = lotOfWorktree({ cwd: params.cwd })
+	if (folder === undefined) return undefined
+	const worktree = readIdentity({ lotFolder: folder })?.worktree
+	const top = tryReadGit({ root: params.cwd, args: ['rev-parse', '--show-toplevel'] })?.trim()
+	if (worktree === undefined || worktree === null || top === undefined) return undefined
+	return realPathOf(worktree) === realPathOf(top) ? folder : undefined
+}
+
+/**
+ * After `tdd green` in `root`: the tdd part of the lot's `tests.json` in `folder`, the cases of the change as `tdd status`
+ * reads them once the run's receipts are written. It runs the collect `tdd status` runs, again: a green may target
+ * some cases only, the record holds every case of the change. The `!` line a run adds when it could not be written
+ * (its receipts stand); undefined when it was.
+ */
+export async function refreshTddPart(params: {
+	folder: string
+	root: string
+	packageJson: PackageJson
+	base: string
+	at: string
+}): Promise<string | undefined> {
+	const { folder, ...read } = params
+	try {
+		const ledger = readLedger(read.root)
+		if ('failure' in ledger) return notWrittenLine(ledger.failure)
+		const state = await readTddState({ ...read, ledger })
+		if ('failure' in state) return notWrittenLine(state.failure)
+		writeTestsRecord({ folder, tdd: { at: read.at, cases: state.cases } })
+		return undefined
+	} catch (error) {
+		return notWrittenLine((error as Error).message)
 	}
 }
 
@@ -116,4 +161,9 @@ function gatePartOf(records: readonly GateRecord[]): TestsRecordGate | undefined
 		tests: counts.tests,
 		...(counts.testFiles !== undefined && { testFiles: counts.testFiles }),
 	}
+}
+
+/** The `!` line of a `tests.json` that could not be written, and why. */
+function notWrittenLine(reason: string): string {
+	return `! ${STORE_FILES.tests} not written: ${reason}`
 }

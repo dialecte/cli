@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { lotsOf } from '../store/brief.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { LANDING_BODY, LANDING_LINES, LANDING_OTHER_MESSAGES } from './land-lot.constants.ts'
 
@@ -18,9 +19,8 @@ export function pullRequestTextOf(params: {
 }): PullRequestText | { refusal: string } {
 	const path = join(params.lotFolder, STORE_FILES.brief)
 	const messages = readLotMessages({ path })
-	if (messages === undefined)
-		return { refusal: LANDING_LINES.noMessage.replace('{brief}', () => path) }
-	const [title, ...others] = messages
+	if ('refusal' in messages) return messages
+	const [title, ...others] = messages.messages
 	const body = LANDING_BODY.replace('{lot}', () => params.lot)
 	return {
 		title,
@@ -31,20 +31,28 @@ export function pullRequestTextOf(params: {
 	}
 }
 
-/** The commit messages of the brief at `path`, in order; undefined when it does not read or a lot has no message. */
-function readLotMessages(params: { path: string }): string[] | undefined {
+/**
+ * The commit messages of the brief at `path`, in order, read through the brief's own reader of its lots; the refusal
+ * when the file does not read, or with the reader's reason when its lots do not hold.
+ */
+function readLotMessages(params: { path: string }): { messages: string[] } | { refusal: string } {
+	const { path } = params
 	let brief: unknown
 	try {
-		brief = JSON.parse(readFileSync(params.path, 'utf8'))
+		brief = JSON.parse(readFileSync(path, 'utf8'))
 	} catch {
-		return undefined
+		return { refusal: LANDING_LINES.noMessage.replace('{brief}', () => path) }
 	}
-	const lots = (brief as { lots?: unknown } | null)?.lots
-	if (!Array.isArray(lots) || lots.length === 0) return undefined
-	const messages = lots.map((lot) => (lot as { message?: unknown } | null)?.message)
-	return messages.every(isMessage) ? messages.map((message) => message.trim()) : undefined
-}
-
-function isMessage(message: unknown): message is string {
-	return typeof message === 'string' && message.trim() !== ''
+	const { refused, lots } = lotsOf((brief as { lots?: unknown } | null)?.lots)
+	if (lots === undefined)
+		return {
+			refusal: LANDING_LINES.unreadLots
+				.replace('{brief}', () => path)
+				.replace('{reason}', () => refused[0]?.detail ?? ''),
+		}
+	return {
+		messages: lots.map(function trimmedMessage(lot) {
+			return lot.message.trim()
+		}),
+	}
 }
