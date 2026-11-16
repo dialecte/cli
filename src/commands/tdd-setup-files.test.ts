@@ -200,5 +200,28 @@ describe(
 				'unread  vitest.config.ts setupFiles  setupList(): tdd cannot read which files it names; they count as test code',
 			)
 		})
+
+		it('a helper the setup file imports that another test file imports too → still test code: frozen with that test file', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': VITEST_CONFIG,
+					[SETUP_FILE]: "import { other } from './shared.ts'\nglobalThis.setupMark = other\n",
+					'test/shared.ts': 'export const other = 1\n',
+				},
+			})
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': ADD_STUB,
+					'src/add.test.ts': `import { other } from '../test/shared.ts'\n${ADD_TEST}`,
+					'test/shared.ts': 'export const other = 2\n',
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/shared.ts'])
+		})
 	},
 )

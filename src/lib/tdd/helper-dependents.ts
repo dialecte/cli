@@ -5,7 +5,7 @@
  * `revised` entry naming it still lets a red run freeze it).
  */
 import { readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import { listRepositoryFiles } from '../git.ts'
 import { frozenHashOf } from './case-status.ts'
@@ -16,9 +16,8 @@ import {
 	HELPER_DEPENDENTS_RAN_NO_CASE,
 	HELPER_FROZEN_THROUGH_DEPENDENTS,
 	HELPER_IMPORTED_BY_NONE,
-	INDEX_MODULE_NAME,
-	MODULE_EXTENSION_PATTERN,
 } from './tdd.constants.ts'
+import { writtenNameOf } from './written-name.ts'
 
 import type { HelperVerdict, ReportedModule, TddLedger } from './tdd.types.ts'
 
@@ -80,12 +79,6 @@ export function listUnchangedDependents(params: {
 			]
 		}),
 	)
-}
-
-/** How a test file names the helper when it imports or reads it: its file name without extension, its folder's for an index. */
-function writtenNameOf(helper: string): string {
-	const name = basename(helper).replace(MODULE_EXTENSION_PATTERN, '')
-	return name === INDEX_MODULE_NAME ? basename(dirname(helper)) : name
 }
 
 /**
