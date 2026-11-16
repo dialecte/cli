@@ -1,6 +1,7 @@
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readlinkSync,
 	realpathSync,
 	renameSync,
@@ -45,6 +46,7 @@ import {
 	takePooledNodeModules,
 } from './node-modules-pool.ts'
 import {
+	DISCARDED_CACHES_PREFIX,
 	POOL_FILE,
 	POOL_MISS_BUSY,
 	POOL_MISS_CROSS_DEVICE,
@@ -574,6 +576,186 @@ describe('parkNodeModules: never a half-made entry', { timeout: POOL_UNIT_CASE_M
 			parked: expect.stringMatching(/not parked: .*ENOSPC/),
 			nodeModules: true,
 			halfMade: [],
+		})
+	})
+})
+
+/** The folders of held caches (`.dialecte-discarded-caches-*`) directly in each of `folders`. */
+function heldCachesIn(folders: readonly string[]): string[] {
+	return folders.flatMap(function heldIn(folder) {
+		if (!existsSync(folder)) return []
+		return readdirSync(folder)
+			.filter((name) => name.startsWith(DISCARDED_CACHES_PREFIX))
+			.map((name) => join(folder, name))
+	})
+}
+
+/** The rollbacks of a park without discardInto: what fails, as the park's seams. */
+const ROLLBACKS = [
+	{
+		title: 'the relink of the leaving links throws',
+		seams: {
+			relink: function throwing() {
+				throw new Error('the relink failed')
+			},
+		},
+	},
+	{
+		title: 'the rename fails with EXDEV',
+		seams: {
+			rename: function acrossDevices() {
+				throw Object.assign(new Error('EXDEV: cross-device link not permitted'), {
+					code: 'EXDEV',
+				})
+			},
+		},
+	},
+	{
+		title: 'pool.json cannot be written after the rename',
+		seams: {
+			writeFile: function noSpace() {
+				throw new Error('ENOSPC: no space left on device')
+			},
+		},
+	},
+]
+
+describe('parkNodeModules: where the caches wait', { timeout: POOL_UNIT_CASE_MS }, () => {
+	it('a park without discardInto → the caches wait under _trash/ while node_modules moves, never in the worktree; none left held after', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: LOCK_TEXT })
+		const trash = join(worktreesFolder, '_trash')
+		const seen: { worktree: string[]; trash: string[] }[] = []
+		function rename(params: { from: string; to: string }): void {
+			seen.push({ worktree: heldCachesIn([worktree]), trash: heldCachesIn([trash]) })
+			renameSync(params.from, params.to)
+		}
+
+		expect(
+			parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[0],
+				spawner: createRecordingSpawner().spawner,
+				rename,
+			}),
+		).toEqual({ entry: expect.stringMatching(/^_pool-cli-\d+$/), trashed: [] })
+		expect({
+			seen,
+			after: heldCachesIn([worktree, worktreesFolder, trash]),
+		}).toEqual({
+			seen: [{ worktree: [], trash: [expect.any(String)] }],
+			after: [],
+		})
+	})
+
+	for (const rollback of ROLLBACKS)
+		it(`${rollback.title} → .vite and .cache back in node_modules, no held folder left in the worktree, .worktrees/ or _trash/`, () => {
+			const worktreesFolder = createWorktreesFolder()
+			const worktree = createWorktreeFolder({
+				worktreesFolder,
+				name: '0001-cli-x',
+				lock: LOCK_TEXT,
+			})
+
+			expect(
+				parkNodeModules({
+					worktree,
+					repository: repositoryOf({ worktreesFolder }),
+					worktreesFolder,
+					now: PARK_TIMES[0],
+					spawner: createRecordingSpawner().spawner,
+					...rollback.seams,
+				}),
+			).toEqual(expect.stringContaining('not parked'))
+			expect({
+				caches: REMOVED_FILES.map((file) => readTree(join(worktree, 'node_modules'))[file]),
+				held: heldCachesIn([worktree, worktreesFolder, join(worktreesFolder, '_trash')]),
+			}).toEqual({ caches: REMOVED_FILES.map(() => 'cached\n'), held: [] })
+		})
+
+	it('a whole park whose eviction cannot start its removal (EAGAIN) and whose caches cannot go to the trash → no throw: parked, the entry whole, both problems in its note', () => {
+		const worktreesFolder = createWorktreesFolder()
+		writeOldShapeEntry({ worktreesFolder, name: '_pool-cli-1' })
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0002-cli-x', lock: LOCK_TEXT })
+		function spawner(): void {
+			throw new Error('spawn rm EAGAIN')
+		}
+		let parked: ReturnType<typeof parkNodeModules> | undefined
+
+		expect(function park() {
+			parked = parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[0],
+				spawner,
+				cap: 8,
+			})
+		}).not.toThrow()
+		expect({
+			parked,
+			entries: listPoolEntries(worktreesFolder).map((entry) => entry.name),
+		}).toEqual({
+			parked: {
+				entry: '_pool-cli-2',
+				trashed: [],
+				note: expect.stringMatching(/caches.*EAGAIN.*_pool-cli-1.*EAGAIN/),
+			},
+			entries: ['_pool-cli-2'],
+		})
+	})
+
+	it('pool.json cannot be written and node_modules cannot be renamed back → no _pool-* folder without pool.json: the folder sent to the trash (one background rm), the line says where node_modules went', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: LOCK_TEXT })
+		const { spawner, calls } = createRecordingSpawner()
+		let renames = 0
+		function rename(params: { from: string; to: string }): void {
+			renames++
+			if (renames > 1) throw new Error('EBUSY: resource busy or locked')
+			renameSync(params.from, params.to)
+		}
+		function writeFile(): void {
+			throw new Error('ENOSPC: no space left on device')
+		}
+		let parked: ReturnType<typeof parkNodeModules> | undefined
+
+		expect(function park() {
+			parked = parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[0],
+				spawner,
+				rename,
+				writeFile,
+			})
+		}).not.toThrow()
+		const trashedPool = trashedNamesOf(worktreesFolder).filter((name) =>
+			name.startsWith('_pool-cli-1-'),
+		)
+		expect({
+			parked,
+			pool: poolEntriesOf(worktreesFolder),
+			trashedPool,
+			inTrash: trashedPool.map((name) =>
+				existsSync(join(worktreesFolder, '_trash', name, 'node_modules', KEPT_FILE)),
+			),
+			removal: calls.filter(
+				(call) => call.args.at(-1) === join(worktreesFolder, '_trash', trashedPool[0] ?? ''),
+			),
+			heldInWorktree: heldCachesIn([worktree]),
+		}).toEqual({
+			parked: expect.stringMatching(
+				/not parked: .*ENOSPC.*EBUSY.*node_modules sent to the trash: .*_trash\/_pool-cli-1-/,
+			),
+			pool: [],
+			trashedPool: [expect.any(String)],
+			inTrash: [true],
+			removal: [{ command: 'rm', args: ['-rf', expect.any(String)] }],
+			heldInWorktree: [],
 		})
 	})
 })

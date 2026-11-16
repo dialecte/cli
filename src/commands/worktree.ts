@@ -26,20 +26,23 @@ import { findHandoverFolders } from '../lib/handover/list-handovers.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
-import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
+import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 import {
 	addWorktree,
 	nodeModulesDetailOf,
 	refuseRepositoryPath,
 } from '../lib/worktree/add-worktree.ts'
+import { listProcessFolders } from '../lib/worktree/process-folders.ts'
 import {
 	executeReclaim,
 	planPrune,
 	planReclaim,
 	reclaimItemLine,
 	reclaimTotalLine,
+	trashPoolLeftOver,
 } from '../lib/worktree/prune-worktrees.ts'
+import { spawnDetached } from '../lib/worktree/trash.ts'
 import {
 	NODE_MODULES_PROBLEMS_SHOWN,
 	PACKAGE_LOCK_FILE,
@@ -132,11 +135,14 @@ export async function runWorktreePrune(params: {
 	formerScratchRoot?: string
 	isTerminal: boolean
 	confirm: (question: string) => Promise<boolean>
-	/** The clock `--reclaim` measures idleness from; default: now. */
+	/** The clock `--reclaim` measures idleness from, and a pool left-over's age; default: now. */
 	now?: Date
-	/** Lists the processes and their working folders for `--reclaim` (the tests stand in for it); default: the system's. */
+	/**
+	 * Lists the processes and their working folders for `--reclaim` and the pool left-overs (the tests stand in for it);
+	 * default: the system's.
+	 */
 	listProcesses?: () => ProcessFolder[] | string
-	/** Starts the background removals of `--reclaim`'s trash (the tests record them); default: `spawnDetached`. */
+	/** Starts the background removals of the trash, `--reclaim`'s and a pool left-over's (the tests record them); default: `spawnDetached`. */
 	spawner?: BackgroundSpawner
 }): Promise<CommandResult> {
 	const { argv } = params
@@ -158,8 +164,14 @@ export async function runWorktreePrune(params: {
 		}),
 		scratchRoot: params.scratchRoot,
 		formerScratchRoot: params.formerScratchRoot,
+		now: params.now,
+		listProcesses: params.listProcesses,
 	})
-	const removals = [...plan.repositories.flatMap((repository) => repository.items), ...plan.scratch]
+	const removals = [
+		...plan.repositories.flatMap((repository) => repository.items),
+		...plan.scratch,
+		...plan.poolLeftOver,
+	]
 		.filter((item) => item.command)
 		.sort((left, right) => removalOrder(left) - removalOrder(right))
 	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(plan, 2) }
@@ -182,7 +194,23 @@ export async function runWorktreePrune(params: {
 		})
 	if (!(await params.confirm(`Remove these ${removals.length} item(s)? [y/N] `)))
 		return resultOf({ exitCode: 0, lines: [...report, 'Nothing removed.'] })
+	const worktreesFolder = join(workspace, WORKTREES_FOLDER)
+	let processes: readonly ProcessFolder[] | string | undefined
+	/** The processes, listed once for the whole run and only when a pool left-over is about to go. */
+	function listProcessesOnce(): readonly ProcessFolder[] | string {
+		processes ??= (params.listProcesses ?? listProcessFolders)()
+		return processes
+	}
 	const outcomes = removals.map(function remove(item) {
+		// a park that never finished goes to the trash, its keep rules read again just before
+		if (item.kind === 'pool left-over')
+			return trashPoolLeftOver({
+				folder: item.name,
+				worktreesFolder,
+				now: params.now ?? new Date(),
+				spawner: params.spawner ?? spawnDetached,
+				listProcesses: listProcessesOnce,
+			})
 		const result = spawnSync('sh', ['-c', item.command ?? ''], { encoding: 'utf8' })
 		return result.status === 0
 			? `✓ ${item.command}`
@@ -269,7 +297,7 @@ function readOlderThanDays(argv: string[]): number | undefined {
 
 /** Worktrees first (a branch checked out in one cannot be deleted), then branches, folders, clones. */
 function removalOrder(item: PruneItem): number {
-	return ['worktree', 'branch', 'hand-over', 'rehearsal clone'].indexOf(item.kind)
+	return ['worktree', 'branch', 'hand-over', 'rehearsal clone', 'pool left-over'].indexOf(item.kind)
 }
 
 function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem[] }): string[] {
@@ -286,9 +314,9 @@ function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem
 		lines.push(
 			`pool: ${pooled} entr${pooled === 1 ? 'y' : 'ies'} (${params.plan.pool.map((repository) => `${repository.repository} ${repository.entries}`).join(', ')})`,
 		)
-	for (const folder of params.plan.poolLeftOver)
+	for (const item of params.plan.poolLeftOver)
 		lines.push(
-			`pool: ${folder} left over (no pool.json: a park that never finished), left in place`,
+			`pool: ${item.name} left over (no pool.json: a park that never finished), ${item.kept ? `kept: ${item.kept}` : 'to the trash'}`,
 		)
 	if (params.plan.trash > 0)
 		lines.push(

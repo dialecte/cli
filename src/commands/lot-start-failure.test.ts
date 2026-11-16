@@ -125,7 +125,7 @@ describe('lot start, the worktree cannot be made', { timeout: STORE_CASE_TIMEOUT
 			expect(createdBy(start)).toMatchObject({ claims: ['0001'], lots: [LOT_NAME], worktrees: [] })
 		})
 
-	it('the worktree maker gets the repository, the branch, the recorded base commit and the claimed index', () => {
+	it('the worktree maker gets the repository, the branch, the recorded base commit, the claimed index and the lot as owner', () => {
 		const start = createStartWorkspace()
 		const received: Array<Record<string, unknown>> = []
 
@@ -149,6 +149,7 @@ describe('lot start, the worktree cannot be made', { timeout: STORE_CASE_TIMEOUT
 				from: start.workspace.commit,
 				index: '0001',
 				now: START_NOW,
+				owner: LOT_NAME,
 				onPlanned: expect.any(Function),
 			},
 		])

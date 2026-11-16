@@ -204,6 +204,8 @@ async function rehearseRecorded(
 		})
 	const repository = handover.lotsFile.repository
 	const pool = params.keep ? undefined : poolOf(repository)
+	// the hand-over folder's lot owns what the clone takes from the pool and parks back; none outside every store
+	const owner = params.stepPlace === null ? undefined : basename(params.stepPlace.lot)
 	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
 	const clone = join(folder, basename(repository))
 	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
@@ -243,6 +245,7 @@ async function rehearseRecorded(
 				handoverFolder: handover.folder,
 				write,
 				pool,
+				owner,
 			})
 			const siblings = linkRehearsalSiblings({ repository, folder, clone })
 			links.push(...siblings.links)
@@ -311,6 +314,7 @@ async function rehearseRecorded(
 				clone,
 				links,
 				pool,
+				owner,
 				spawner: params.spawner ?? spawnDetached,
 				relink: params.relink,
 			}))
@@ -342,6 +346,8 @@ function trashRehearsalFolder(params: {
 	clone: string
 	links: readonly string[]
 	pool: RehearsalPool
+	/** The lot the rehearsal runs for, when known: the pool entry's owner. */
+	owner: string | undefined
 	spawner: BackgroundSpawner
 	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): string[] {
@@ -369,12 +375,13 @@ function trashRehearsalFolder(params: {
 				discardInto: params.folder,
 				check,
 				checkedLockText,
+				owner: params.owner,
 			})
 			lines.push(
 				textOf([
 					typeof parked === 'string'
 						? `node_modules not parked: ${parked}`
-						: `node_modules parked in ${parked.entry}`,
+						: `node_modules parked in ${parked.entry}${parked.note === undefined ? '' : `; ${parked.note}`}`,
 				]),
 			)
 		}
@@ -490,6 +497,8 @@ function prepareClone(params: {
 	write: WriteLine
 	/** Where the clone's `node_modules` is taken from first; none: a copy, as before. */
 	pool: RehearsalPool | undefined
+	/** The lot the rehearsal runs for, when known: the pool gives its own entry first. */
+	owner: string | undefined
 }): void {
 	const { repository, clone, write } = params
 	const head = readGit({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
@@ -533,6 +542,7 @@ function prepareClone(params: {
 		from: join(repository, 'node_modules'),
 		// the rehearsal folder goes at the end: what a failed npm ci left goes with it
 		discardInto: dirname(clone),
+		owner: params.owner,
 	})
 	if (provided) {
 		const detail = nodeModulesDetailOf(provided)

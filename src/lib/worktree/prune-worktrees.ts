@@ -33,7 +33,12 @@ import { listWorktrees } from './add-worktree.ts'
 import { checkNodeModules } from './check-node-modules.ts'
 import { readHygieneBaseline } from './hygiene.ts'
 import { computeLockKey } from './lock-key.ts'
-import { createPoolCache, listPoolEntries, readPackageLockText } from './node-modules-pool.ts'
+import {
+	createPoolCache,
+	listPoolEntries,
+	readPackageLockText,
+	readPoolCap,
+} from './node-modules-pool.ts'
 import { listProcessFolders, processWorkingIn } from './process-folders.ts'
 import { isParked, spawnDetached, trashFolder } from './trash.ts'
 import {
@@ -44,8 +49,11 @@ import {
 	PRUNE_RUN_PREFIX,
 	REBUILT_IGNORED_FOLDERS,
 	REBUILT_IGNORED_NAMES,
+	MINUTE_MS,
 	POOL_ENTRY_PATTERN,
 	POOL_FILE,
+	POOL_LEFT_OVER_KEEP_REASONS,
+	POOL_STALE_PARK_MINUTES,
 	RECLAIM_ACTIVITY_FILES,
 	RECLAIM_DAY_MS,
 	RECLAIM_GONE,
@@ -55,6 +63,7 @@ import {
 	RECLAIM_TRASH_REASONS,
 	RECLAIM_WORKTREE_GONE,
 	TRASH_FOLDER,
+	WORKTREE_LOCKED_FILE,
 	WORKTREE_STATUS_ARGUMENTS,
 } from './worktree.constants.ts'
 
@@ -72,6 +81,7 @@ import type {
 	ReclaimItem,
 	ReclaimOutcome,
 	ReclaimPlan,
+	ReclaimRepositoryRun,
 	ReclaimRound,
 	WorkspacePrunePlan,
 } from './worktree.types.ts'
@@ -85,6 +95,10 @@ export function planPrune(params: {
 	scratchRoot: string
 	/** Where earlier cli versions made rehearsal clones, looked in too when it is not `scratchRoot`. */
 	formerScratchRoot?: string
+	/** The clock a pool left-over's age is read against; default: now. */
+	now?: Date
+	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. */
+	listProcesses?: () => ProcessFolder[] | string
 }): WorkspacePrunePlan {
 	const scratchRoots = [
 		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
@@ -113,7 +127,11 @@ export function planPrune(params: {
 		repositories,
 		scratch,
 		pool: countPoolEntries(worktreesFolder),
-		poolLeftOver: listPoolLeftOver(worktreesFolder),
+		poolLeftOver: planPoolLeftOvers({
+			worktreesFolder,
+			now: params.now ?? new Date(),
+			listProcesses: params.listProcesses ?? listProcessFolders,
+		}),
 		trash: countTrashed(worktreesFolder),
 	}
 }
@@ -166,7 +184,11 @@ export function planReclaim(params: {
  * or worked in since the plan is kept, its line says why), then each `park` through the pool cache, each `trash` and
  * `trash whole` through the trash (git forgets a worktree trashed whole); what is gone since the plan (another
  * reclaim) is a line, and a move that throws (a folder moved under it by another park or take) a refused line, never
- * a throw: the next items still run.
+ * a throw: the next items still run. The workspace-wide facts (the processes, the links, each repository's worktree
+ * list, store, hand-over registry, runs and pool cap) are read once per execution, at its first move, and kept up to
+ * date in memory as items move; the facts of one worktree (gone, locked, git activity, a hand-over running in it) are
+ * read again just before its move. A process that starts working in a worktree after the execution read the
+ * processes is not seen: the window between that read and the move is known and accepted.
  *
  * @intent move only what the plan decided, and survive a concurrent reclaim
  * @internal
@@ -177,29 +199,44 @@ export function executeReclaim(params: {
 	now: Date
 	/** Starts the background removals of the trash; default: `spawnDetached`. */
 	spawner?: BackgroundSpawner
-	/** Lists the processes for the keep rules checked again before each move; default: the system's. */
+	/** Lists the processes for the keep rules checked again before each move, once per execution; default: the system's. */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
 }): ReclaimOutcome[] {
+	const { workspace } = params
 	const spawner = params.spawner ?? spawnDetached
-	const listProcesses = params.listProcesses ?? listProcessFolders
+	let shared: { processes: readonly ProcessFolder[] | string; links: FolderLink[] } | undefined
+	const runs = new Map<string, ReclaimRepositoryRun>()
+	/** The repository's facts of this execution: read at its first move, then as the moves left them. */
+	function runOf(repository: string): ReclaimRepositoryRun {
+		shared ??= {
+			processes: (params.listProcesses ?? listProcessFolders)(),
+			links: linkRootsOf({ workspace, scratchRoots: params.scratchRoots ?? [] }).flatMap((folder) =>
+				findLinks(folder),
+			),
+		}
+		const run = runs.get(repository) ?? {
+			context: readReclaimContext({ repository, workspace, cutoff: params.plan.cutoff, ...shared }),
+			cap: undefined,
+		}
+		runs.set(repository, run)
+		return run
+	}
 	return params.plan.items.map(function carryOut(item): ReclaimOutcome {
 		if (item.action === 'keep')
-			return {
-				worktree: item.worktree,
-				line: reclaimItemLine({ item, workspace: params.workspace }),
-				moved: false,
-			}
-		return moveReclaimItem({
+			return { worktree: item.worktree, line: reclaimItemLine({ item, workspace }), moved: false }
+		const run = runOf(item.repository)
+		if (item.action === 'park') run.cap ??= readPoolCap({ repository: item.repository })
+		const moved = moveReclaimItem({
 			item,
-			workspace: params.workspace,
-			cutoff: params.plan.cutoff,
+			context: run.context,
+			cap: run.cap,
 			now: params.now,
 			spawner,
-			processes: listProcesses(),
-			scratchRoots: params.scratchRoots ?? [],
 		})
+		run.context = moved.context
+		return moved.outcome
 	})
 }
 
@@ -226,16 +263,90 @@ export function linkRootsOf(params: {
 	]
 }
 
-/** The `_pool-*` folders without a `pool.json`: a park that never finished, never taken nor evicted. */
-function listPoolLeftOver(worktreesFolder: string): string[] {
+/**
+ * The `_pool-*` folders without a `pool.json` (never taken nor evicted), each an item: a park that never finished
+ * (unwritten for `POOL_STALE_PARK_MINUTES`, no process in it) goes to the trash, its command named; one written lately
+ * (a park in progress) or worked in by a process is kept with why. The processes are listed only when a folder is old
+ * enough to go.
+ */
+function planPoolLeftOvers(params: {
+	worktreesFolder: string
+	now: Date
+	listProcesses: () => ProcessFolder[] | string
+}): PruneItem[] {
+	const { worktreesFolder } = params
 	if (!isDirectory(worktreesFolder)) return []
+	let processes: readonly ProcessFolder[] | string | undefined
 	return readdirSync(worktreesFolder)
-		.filter(
-			(name) =>
-				POOL_ENTRY_PATTERN.test(name) && !existsSync(join(worktreesFolder, name, POOL_FILE)),
-		)
+		.filter((name) => POOL_ENTRY_PATTERN.test(name))
 		.sort()
 		.map((name) => join(worktreesFolder, name))
+		.filter((folder) => !existsSync(join(folder, POOL_FILE)))
+		.map(function planOf(folder): PruneItem {
+			const item = { kind: 'pool left-over' as const, name: folder }
+			const inProgress = whyParkInProgress({ folder, now: params.now })
+			if (inProgress !== undefined) return { ...item, kept: inProgress }
+			processes ??= params.listProcesses()
+			// the reclaim's rule: a process working in it, or the processes not known, keeps it
+			const working = whyKeepByProcess({ worktree: folder, processes })
+			if (working !== undefined) return { ...item, kept: working }
+			return {
+				...item,
+				command: `cd ${shellQuote(worktreesFolder)} && rm -rf ${shellQuote(basename(folder))}`,
+			}
+		})
+}
+
+/** The folder was written under `POOL_STALE_PARK_MINUTES` ago (a park may be writing it): why; undefined when older. */
+function whyParkInProgress(params: { folder: string; now: Date }): string | undefined {
+	let written: Date
+	try {
+		written = statSync(params.folder).mtime
+	} catch {
+		// gone meanwhile: a park or a take finished with it
+		return POOL_LEFT_OVER_KEEP_REASONS.finished
+	}
+	if (params.now.getTime() - written.getTime() >= POOL_STALE_PARK_MINUTES * MINUTE_MS)
+		return undefined
+	return POOL_LEFT_OVER_KEEP_REASONS.inProgress
+		.replace('{at}', written.toISOString())
+		.replace('{minutes}', String(POOL_STALE_PARK_MINUTES))
+}
+
+/**
+ * A pool left-over `prune --yes` removes, sent to the trash (a background removal) once its keep rules are read again
+ * just before: still no `pool.json` (a park that finished is an entry now), still unwritten for
+ * `POOL_STALE_PARK_MINUTES`, no process working in it (`listProcesses`, called at most once a run by the caller's
+ * memo). The line to print.
+ *
+ * @intent never trash a park that finished or is writing since the plan
+ * @internal
+ */
+export function trashPoolLeftOver(params: {
+	folder: string
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
+	/** The processes and their working folders, or why they are not known. */
+	listProcesses: () => readonly ProcessFolder[] | string
+}): string {
+	const { folder } = params
+	const kept = existsSync(join(folder, POOL_FILE))
+		? POOL_LEFT_OVER_KEEP_REASONS.finished
+		: (whyParkInProgress({ folder, now: params.now }) ??
+			whyKeepByProcess({ worktree: folder, processes: params.listProcesses() }))
+	if (kept !== undefined) return `✗ ${folder} kept: ${kept}`
+	try {
+		const { trashed } = trashFolder({
+			folder,
+			worktreesFolder: params.worktreesFolder,
+			now: params.now,
+			spawner: params.spawner,
+		})
+		return `✓ ${folder} sent to the trash: ${trashed}`
+	} catch (error) {
+		return `✗ ${folder}: ${(error as Error).message}`
+	}
 }
 
 /** The pool entries of each repository, in name order of the repositories. */
@@ -1003,53 +1114,62 @@ function sizeOf(path: string): number {
 /**
  * One planned move carried out: nothing when what it moves is gone (another reclaim) or a keep rule now holds (its
  * line says why), else the park, the trash or the whole worktree's trash; a move that throws is refused with its line.
+ * The repository's context as the move left it: a worktree git forgot leaves its list.
  */
 function moveReclaimItem(params: {
 	item: ReclaimItem
-	workspace: string
-	cutoff: Date
+	context: ReclaimContext
+	/** How many pool entries the repository keeps; a park only. */
+	cap: number | undefined
 	now: Date
 	spawner: BackgroundSpawner
-	processes: readonly ProcessFolder[] | string
-	scratchRoots: readonly string[]
-}): ReclaimOutcome {
-	const { item, workspace } = params
-	const name = relative(workspace, item.worktree) || item.worktree
-	function notMoved(why: string): ReclaimOutcome {
-		return { worktree: item.worktree, line: `kept  ${name}  ${why}`, moved: false }
+}): { outcome: ReclaimOutcome; context: ReclaimContext } {
+	const { item, context } = params
+	const name = relative(context.workspace, item.worktree) || item.worktree
+	function notMoved(why: string): { outcome: ReclaimOutcome; context: ReclaimContext } {
+		return {
+			outcome: { worktree: item.worktree, line: `kept  ${name}  ${why}`, moved: false },
+			context,
+		}
 	}
 	const whole = item.action === 'trash whole'
 	if (!isPresent(whole ? item.worktree : join(item.worktree, 'node_modules')))
 		return notMoved(whole ? RECLAIM_WORKTREE_GONE : RECLAIM_GONE)
-	const context = readReclaimContext({
-		repository: item.repository,
-		workspace,
-		cutoff: params.cutoff,
-		processes: params.processes,
-		links: linkRootsOf({ workspace, scratchRoots: params.scratchRoots }).flatMap((folder) =>
-			findLinks(folder),
-		),
-	})
+	// read while the worktree is there: a folder gone has no real path to compare
+	const real = realPathOf(item.worktree)
 	const fresh = recheckReclaim({ item, context })
 	if (fresh.action !== item.action)
 		return notMoved(fresh.reason ?? `now ${fresh.action}, not ${item.action}: nothing done`)
-	let moved: { done: string; to: string } | { refused: string }
+	let moved: { done: string; to: string; forgotten?: boolean } | { refused: string }
 	try {
 		moved =
 			item.action === 'park'
-				? parkReclaimed({ item, context, now: params.now, spawner: params.spawner })
+				? parkReclaimed({
+						item,
+						context,
+						cap: params.cap,
+						now: params.now,
+						spawner: params.spawner,
+					})
 				: trashReclaimed({ item, context, now: params.now, spawner: params.spawner })
 	} catch (error) {
 		// a last resort: this item stops with its line, the next ones still run
 		return {
-			worktree: item.worktree,
-			line: `refused  ${name}  ${item.action}: ${(error as Error).message}; ${whereNowOf(item)}`,
-			moved: false,
+			outcome: {
+				worktree: item.worktree,
+				line: `refused  ${name}  ${item.action}: ${(error as Error).message}; ${whereNowOf(item)}`,
+				moved: false,
+			},
+			context,
 		}
 	}
-	return 'refused' in moved
-		? notMoved(moved.refused)
-		: { worktree: item.worktree, line: `${moved.done}  ${name}  ${moved.to}`, moved: true }
+	if ('refused' in moved) return notMoved(moved.refused)
+	return {
+		outcome: { worktree: item.worktree, line: `${moved.done}  ${name}  ${moved.to}`, moved: true },
+		context: moved.forgotten
+			? { ...context, listed: context.listed.filter((entry) => realPathOf(entry.path) !== real) }
+			: context,
+	}
 }
 
 /** Where what a move that threw was moving is now, as far as the worktree tells: still there, or gone from it. */
@@ -1064,24 +1184,49 @@ function whereNowOf(item: ReclaimItem): string {
 		: `node_modules no longer in the worktree, ${unknown}`
 }
 
-/** The item decided again from `context`, read just now; kept when git no longer lists the worktree. */
+/**
+ * The item decided again just before its move: the keep rules from `context` (read once per execution) with the facts
+ * of this worktree read now (its lock, its git activity, a hand-over running in it); kept when git no longer lists
+ * it. What its node_modules holds is not read again: a park checks it itself, a trash needs no check.
+ */
 function recheckReclaim(params: { item: ReclaimItem; context: ReclaimContext }): ReclaimItem {
 	const { item, context } = params
+	const base = { repository: item.repository, worktree: item.worktree }
 	const real = realPathOf(item.worktree)
 	const listed = context.listed.slice(1).find((entry) => realPathOf(entry.path) === real)
 	if (listed === undefined)
 		return keepItemOf({
-			repository: item.repository,
-			worktree: item.worktree,
+			...base,
 			reason: RECLAIM_KEEP_REASONS.unlisted.replace('{repository}', item.repository),
 		})
-	return decideReclaim({ listed, context })
+	const locked = listed.locked === true || isLockedNow(item.worktree)
+	const kept = whyKeepReclaimed({
+		listed: { ...listed, ...(locked && { locked }) },
+		worktree: item.worktree,
+		context,
+	})
+	if (kept !== undefined) return keepItemOf({ ...base, reason: kept })
+	const round = roundOf({ worktree: item.worktree, context })
+	if (round === 'closed') return { ...item, action: 'trash whole' }
+	if (round !== undefined) return keepItemOf({ ...base, reason: round.open })
+	// no longer a closed lot's round: nothing planned for it now
+	if (item.action === 'trash whole') return { ...base, action: 'keep', files: 0, bytes: 0 }
+	if (isLink(join(item.worktree, 'node_modules')))
+		return keepItemOf({ ...base, reason: RECLAIM_KEEP_REASONS.nodeModulesLink })
+	return item
+}
+
+/** `git worktree lock` holds the worktree now: the lock file in its own git folder (read without git). */
+function isLockedNow(worktree: string): boolean {
+	const gitFolder = gitFolderAbove(worktree)
+	return gitFolder !== undefined && existsSync(join(gitFolder, WORKTREE_LOCKED_FILE))
 }
 
 /** The worktree's node_modules saved into its repository's pool cache: where it went, or why not. */
 function parkReclaimed(params: {
 	item: ReclaimItem
 	context: ReclaimContext
+	cap: number | undefined
 	now: Date
 	spawner: BackgroundSpawner
 }): { done: string; to: string } | { refused: string } {
@@ -1091,16 +1236,16 @@ function parkReclaimed(params: {
 		repository: item.repository,
 		worktreesFolder,
 		spawner: params.spawner,
+		cap: params.cap,
 	}).save({
 		checkout: item.worktree,
 		lockText: readPackageLockText({ worktree: item.worktree }),
 		now: params.now,
 	})
 	if ('refused' in saved) return saved
-	return {
-		done: 'parked',
-		to: `node_modules -> ${relative(params.context.workspace, join(worktreesFolder, saved.parked))}`,
-	}
+	const to = `node_modules -> ${relative(params.context.workspace, join(worktreesFolder, saved.parked))}`
+	// the entry is whole: what failed after it (an eviction, the caches' trash) is said, the park stands
+	return { done: 'parked', to: saved.note === undefined ? to : `${to}; ${saved.note}` }
 }
 
 /**
@@ -1112,7 +1257,7 @@ function trashReclaimed(params: {
 	context: ReclaimContext
 	now: Date
 	spawner: BackgroundSpawner
-}): { done: string; to: string } | { refused: string } {
+}): { done: string; to: string; forgotten?: boolean } | { refused: string } {
 	const { item, context } = params
 	const whole = item.action === 'trash whole'
 	if (whole) {
@@ -1145,7 +1290,7 @@ function trashReclaimed(params: {
 			to: `the worktree -> ${to}, still listed by git: ${(error as Error).message}`,
 		}
 	}
-	return { done: 'trashed', to: `the worktree -> ${to}, forgotten by git` }
+	return { done: 'trashed', to: `the worktree -> ${to}, forgotten by git`, forgotten: true }
 }
 
 /**

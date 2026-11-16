@@ -97,6 +97,8 @@ export function addWorktree(params: {
 	onPlanned?: (worktree: string) => void
 	/** Runs `npm install` / `npm ci` in the new worktree (the tests stand in for it); default: spawns `npm`. */
 	install?: NpmRunner
+	/** Who the worktree is for (a lot's name), when known: the pool gives that owner's entry first. */
+	owner?: string
 }): AddedWorktree | string {
 	const { branch } = params
 	const repository = mainCheckoutOf(params.repository)
@@ -148,6 +150,7 @@ export function addWorktree(params: {
 		from: nodeModules,
 		install: params.install,
 		now: params.now,
+		owner: params.owner,
 	})
 	const nodeModulesCheck = checkNodeModules({ worktree })
 	const lockfileRead = readLockedPackages({ worktree })
@@ -230,6 +233,8 @@ export function provideNodeModules(params: {
 	 * it. None: into the pool's trash, or with no pool the checkout's own `.dialecte/`.
 	 */
 	discardInto?: string
+	/** Who the checkout is for (a lot's name), when known: the pool gives that owner's entry first. */
+	owner?: string
 }): NodeModulesSource | undefined {
 	const startedAt = performance.now()
 	const install = params.install ?? runNpm
@@ -244,7 +249,11 @@ export function provideNodeModules(params: {
 					spawner,
 					rename: params.rename,
 					afterPick: params.afterPick,
-				}).restore({ checkout: params.checkout, lockText })
+				}).restore({
+					checkout: params.checkout,
+					lockText,
+					...(params.owner !== undefined && { owner: params.owner }),
+				})
 			: undefined
 	if (restored && 'taken' in restored)
 		return { method: 'pooled', from: restored.taken, seconds: secondsSince(startedAt) }

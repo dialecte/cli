@@ -44,6 +44,7 @@ import {
 	POOL_MISS_KEY_LENGTH,
 	POOL_MISS_NO_ENTRY,
 	POOL_REMOVED_CACHES,
+	TRASH_FOLDER,
 } from './worktree.constants.ts'
 
 import type { InterleavingSeam } from '../handover/handover.types.ts'
@@ -121,27 +122,50 @@ export function parkNodeModules(params: {
 		repository,
 		rename: params.rename ?? renameFolder,
 		relink: params.relink ?? relinkEscapingLinks,
-		holdIn: params.discardInto ?? worktree,
+		// never the worktree: a failure there would leave a folder in it nothing names
+		holdIn: params.discardInto ?? makeTrashFolder(worktreesFolder),
 		poolFileText: `${JSON.stringify(file, null, 2)}\n`,
 		writeFile: params.writeFile ?? writeTextFile,
+		now: params.now,
+		spawner: params.spawner,
 	})
 	if ('refused' in entry) return entry.refused
-	// the park is sure: a folder on its way out keeps the caches, else they go to the trash
+	// the entry is whole from here: what fails after it is a note, never a throw nor a refusal
+	const problems: string[] = []
+	// a folder on its way out keeps the caches, else they go to the trash
 	if (entry.held !== undefined && params.discardInto === undefined)
-		trashHeldCaches({
-			held: entry.held,
-			worktreesFolder,
-			now: params.now,
-			spawner: params.spawner,
-		})
-	const trashed = trashPastCap({
+		try {
+			trashHeldCaches({
+				held: entry.held,
+				worktreesFolder,
+				now: params.now,
+				spawner: params.spawner,
+			})
+		} catch (error) {
+			problems.push(
+				`the caches could not go to the trash (${entry.held.folder}): ${(error as Error).message}`,
+			)
+		}
+	const evicted = trashPastCap({
 		worktreesFolder,
 		repository: params.repository,
 		cap: params.cap,
 		now: params.now,
 		spawner: params.spawner,
 	})
-	return { entry: entry.name, trashed }
+	problems.push(...evicted.problems)
+	return {
+		entry: entry.name,
+		trashed: evicted.trashed,
+		...(problems.length > 0 && { note: problems.join('; ') }),
+	}
+}
+
+/** The workspace's `.worktrees/_trash/`, made when missing: a park's caches wait there, already on their way out. */
+function makeTrashFolder(worktreesFolder: string): string {
+	const trash = join(worktreesFolder, TRASH_FOLDER)
+	mkdirSync(trash, { recursive: true })
+	return trash
 }
 
 /**
@@ -174,8 +198,9 @@ function readParkableLock(params: {
 /**
  * `source` renamed into a new `_pool-<repository>-<n>` entry folder with its `pool.json`: its leaving links re-pointed
  * and its caches renamed aside into `holdIn` first, in place, and `pool.json` written after. Any failure puts back what
- * moved (the caches into `source`, `source` into the worktree, the folder removed) and makes no background removal, so
- * no `_pool-*` folder is ever left without its `pool.json`. The entry's name and the caches held, or why it was not moved.
+ * moved (the caches into `source`, `source` into the worktree, the folder removed); a folder whose `node_modules` cannot
+ * be renamed back goes to the trash, so no `_pool-*` folder is ever left without its `pool.json`. The entry's name and
+ * the caches held, or why it was not moved.
  */
 function moveIntoPool(params: {
 	source: string
@@ -187,6 +212,8 @@ function moveIntoPool(params: {
 	holdIn: string
 	poolFileText: string
 	writeFile: (params: { path: string; text: string }) => void
+	now: Date
+	spawner: BackgroundSpawner
 }): { name: string; held: HeldCaches | undefined } | { refused: string } {
 	const { source, worktreesFolder } = params
 	try {
@@ -219,26 +246,48 @@ function moveIntoPool(params: {
 		params.writeFile({ path: join(folder, POOL_FILE), text: params.poolFileText })
 	} catch (error) {
 		const undone = undoMove({ ...params, folder })
-		putCachesBack({ held, nodeModules: source })
+		const left = putCachesBack({ held, nodeModules: source })
+		// node_modules did not come back: its caches leave with it
+		if (left !== undefined) discardHeldCaches({ ...params, held: left })
 		return { refused: `${source} not parked: ${(error as Error).message}; ${undone}` }
 	}
 	return { name, held }
 }
 
-/** A move into `folder` whose `pool.json` failed, undone: `source` renamed back, the folder removed; what became of it. */
+/**
+ * A move into `folder` whose `pool.json` failed, undone: `source` renamed back, the folder removed; a folder that cannot
+ * be emptied or removed goes to the trash (a background removal), never left as a `_pool-*` folder without
+ * `pool.json`. What became of `node_modules`.
+ */
 function undoMove(params: {
 	source: string
 	folder: string
 	rename: (params: { from: string; to: string }) => void
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
 }): string {
+	let renamedBack = false
 	try {
 		// a partly written pool.json would make a half entry look whole
 		rmSync(join(params.folder, POOL_FILE), { force: true })
 		params.rename({ from: join(params.folder, 'node_modules'), to: params.source })
+		renamedBack = true
 		rmdirSync(params.folder)
 		return 'node_modules renamed back'
 	} catch (error) {
-		return `node_modules left in ${params.folder}: ${(error as Error).message}`
+		const what = renamedBack ? 'node_modules renamed back, its emptied folder' : 'node_modules'
+		try {
+			const { trashed } = trashFolder({
+				folder: params.folder,
+				worktreesFolder: params.worktreesFolder,
+				now: params.now,
+				spawner: params.spawner,
+			})
+			return `${(error as Error).message}; ${what} sent to the trash: ${trashed}`
+		} catch (trashError) {
+			return `${(error as Error).message}; ${what} left in ${params.folder}: ${(trashError as Error).message}`
+		}
 	}
 }
 
@@ -265,16 +314,41 @@ function holdCaches(params: { nodeModules: string; holdIn: string }): HeldCaches
 	return held
 }
 
-/** The held caches renamed back into `nodeModules` and their folder removed; what cannot go back stays held. */
-function putCachesBack(params: { held: HeldCaches | undefined; nodeModules: string }): void {
+/**
+ * The held caches renamed back into `nodeModules` and their folder removed: what is still held when some cannot go
+ * back (node_modules did not come back), undefined when nothing is.
+ */
+function putCachesBack(params: {
+	held: HeldCaches | undefined
+	nodeModules: string
+}): HeldCaches | undefined {
 	const { held } = params
-	if (held === undefined) return
+	if (held === undefined) return undefined
+	const back: string[] = []
 	try {
-		for (const cache of held.names)
+		for (const cache of held.names) {
 			renameSync(join(held.folder, cache), join(params.nodeModules, cache))
+			back.push(cache)
+		}
 		rmdirSync(held.folder)
+		return undefined
 	} catch {
-		// node_modules did not come back (its own rename back failed): the caches stay in their folder, named in no entry
+		// node_modules did not come back (its own rename back failed): the caches stay in their folder
+		return { folder: held.folder, names: held.names.filter((cache) => !back.includes(cache)) }
+	}
+}
+
+/** Held caches that cannot go back, sent to the trash; a failure leaves them in their folder, never in a worktree. */
+function discardHeldCaches(params: {
+	held: HeldCaches
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
+}): void {
+	try {
+		trashHeldCaches(params)
+	} catch {
+		// the held folder stays where it is: under _trash/, or in the folder on its way out the park was given
 	}
 }
 
@@ -301,7 +375,8 @@ function writeTextFile(params: { path: string; text: string }): void {
 
 /**
  * Sends to the trash, after a park, the repository's old-shape entries and the entries past the per-key limit and the
- * cap (`readPoolCap` when none is given): their names, one already gone (another park or take removed it) included.
+ * cap (`readPoolCap` when none is given): their names, one already gone (another park or take removed it) included,
+ * and what could not go (a problem each), never a throw: the new entry is whole by then.
  */
 function trashPastCap(params: {
 	worktreesFolder: string
@@ -310,7 +385,7 @@ function trashPastCap(params: {
 	cap: number | undefined
 	now: Date
 	spawner: BackgroundSpawner
-}): string[] {
+}): { trashed: string[]; problems: string[] } {
 	const { worktreesFolder } = params
 	const repository = basename(params.repository)
 	const evicted = evictedEntriesOf({
@@ -319,22 +394,23 @@ function trashPastCap(params: {
 		),
 		cap: params.cap ?? readPoolCap({ repository: params.repository }),
 	})
-	return [...listOldShapeEntries({ worktreesFolder, repository }), ...evicted].map(
-		function trash(name) {
-			try {
-				trashFolder({
-					folder: join(worktreesFolder, name),
-					worktreesFolder,
-					now: params.now,
-					spawner: params.spawner,
-				})
-			} catch (error) {
-				// another park or take removed it after the listing: already evicted
-				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-			}
-			return name
-		},
-	)
+	const trashed: string[] = []
+	const problems: string[] = []
+	for (const name of [...listOldShapeEntries({ worktreesFolder, repository }), ...evicted])
+		try {
+			trashFolder({
+				folder: join(worktreesFolder, name),
+				worktreesFolder,
+				now: params.now,
+				spawner: params.spawner,
+			})
+			trashed.push(name)
+		} catch (error) {
+			// another park or take removed it after the listing: already evicted
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') trashed.push(name)
+			else problems.push(`${name} not evicted: ${(error as Error).message}`)
+		}
+	return { trashed, problems }
 }
 
 /** Renames the newest pool entry of the repository whose lock key equals the key of `worktree`'s lock into it. */
@@ -525,7 +601,11 @@ export function createPoolCache(params: {
 		})
 		return typeof parked === 'string'
 			? { refused: parked }
-			: { parked: parked.entry, trashed: parked.trashed }
+			: {
+					parked: parked.entry,
+					trashed: parked.trashed,
+					...(parked.note !== undefined && { note: parked.note }),
+				}
 	}
 	return { restore, save, list }
 }

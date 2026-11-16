@@ -28,6 +28,7 @@ import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { createLandedProbe } from '../store/lot-entry.ts'
 import { readLotKeeps } from '../store/lot-keep.ts'
+import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
@@ -109,6 +110,8 @@ export function closeHandovers(params: {
 		probe: createLandedProbe({ root: main, packageJson, target: { found: baseBranch } }),
 	})
 	const lotKeeps = lotReading.kept
+	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
+	const lotOwners = readLotOwners(main)
 	// read once for every argument: the registry's entries, the links around the workspace
 	const registered = store ? readStoreEntries(store) : []
 	const links = readLinkScanSet({
@@ -175,6 +178,7 @@ export function closeHandovers(params: {
 					now: params.now,
 					spawner: params.spawner,
 					moved,
+					owner: lotOwners.get(key),
 				})
 				recordRemoved({ file: record.file, id: record.id, outcome: { trashed } })
 				return [key, { outcome: { handover, closed: true }, moved, nodeModules }]
@@ -489,6 +493,8 @@ export function closeWorktree(params: {
 	now: Date
 	spawner: BackgroundSpawner
 	moved: string[]
+	/** The lot the worktree was made for, when one names it: the pool entry's owner. */
+	owner?: string
 }): { trashed: string; nodeModules: string | undefined } {
 	const { worktree, main, worktreesFolder, now } = params
 	const nodeModules = join(worktree, 'node_modules')
@@ -520,9 +526,29 @@ export function closeWorktree(params: {
 			spawner: params.spawner,
 			check: params.check,
 			checkedLockText: params.checkedLockText,
+			owner: params.owner,
 		})
-		where = typeof parked === 'string' ? `trashed: ${parked}` : `pooled in ${parked.entry}`
+		where =
+			typeof parked === 'string'
+				? `trashed: ${parked}`
+				: `pooled in ${parked.entry}${parked.note === undefined ? '' : ` (${parked.note})`}`
 	}
 	for (const removal of removals) params.spawner(removal)
 	return { trashed, nodeModules: where }
+}
+
+/** The lot of the repository's store that names each worktree, by the worktree's real path; none without a store. */
+function readLotOwners(main: string): Map<string, string> {
+	const location = locateStore({ from: main })
+	if (location === undefined) return new Map()
+	return new Map(
+		listLotIdentities({ store: location.store }).flatMap(function ownerOf(entry): [
+			string,
+			string,
+		][] {
+			return typeof entry.identity.worktree === 'string'
+				? [[realPathOf(entry.identity.worktree), entry.name]]
+				: []
+		}),
+	)
 }

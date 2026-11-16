@@ -122,7 +122,7 @@ export type NodeModulesCheck = {
 
 /** One thing `worktree prune` removes, or keeps with why. */
 export type PruneItem = {
-	kind: 'worktree' | 'branch' | 'hand-over' | 'rehearsal clone'
+	kind: 'worktree' | 'branch' | 'hand-over' | 'rehearsal clone' | 'pool left-over'
 	/** The worktree or hand-over path, the branch name. */
 	name: string
 	/** Absent: removed by `command`. */
@@ -179,8 +179,11 @@ export type WorkspacePrunePlan = {
 	scratch: PruneItem[]
 	/** The pool entries of each repository, by its folder name. */
 	pool: { repository: string; entries: number }[]
-	/** The `_pool-*` folders with no `pool.json` (a park that never finished): left for the person to look at. */
-	poolLeftOver: string[]
+	/**
+	 * The `_pool-*` folders with no `pool.json`: a park that never finished goes to the trash (`command` names it), one
+	 * written lately (a park in progress) or worked in by a process is kept with why.
+	 */
+	poolLeftOver: PruneItem[]
 	/** How many folders `.worktrees/_trash/` holds. */
 	trash: number
 }
@@ -223,6 +226,8 @@ export type ParkedNodeModules = {
 	entry: string
 	/** The entries the park sent to the trash (the oldest of a repository past two), by folder name. */
 	trashed: string[]
+	/** What failed after the entry was whole (caches or an eviction that could not go to the trash): the entry stands. */
+	note?: string
 }
 
 /** A pool entry of `.worktrees/`: its folder name and its `pool.json`. */
@@ -307,7 +312,7 @@ export type CacheMiss =
 export type CacheRestore = { taken: string } | { near: string; drift: number } | { miss: CacheMiss }
 
 /** What a save answered: the entry parked and the entries it sent to the trash, or why it refused. */
-export type CacheSave = { parked: string; trashed: string[] } | { refused: string }
+export type CacheSave = { parked: string; trashed: string[]; note?: string } | { refused: string }
 
 /**
  * Where a checkout's `node_modules` comes from and goes back to, keyed on the lock key: the local store is the
@@ -386,6 +391,9 @@ export type ReclaimContext = {
 	/** The repository's mutation runs that still run or died before reporting. */
 	runs: readonly RunEntry[]
 }
+
+/** What one reclaim execution knows of a repository: its context as the moves left it, its pool cap once a park read it. */
+export type ReclaimRepositoryRun = { context: ReclaimContext; cap: number | undefined }
 
 /** A `-round-<n>` throwaway's lot: open (kept, with why) or closed (trashed whole). */
 export type ReclaimRound = { open: string } | 'closed'

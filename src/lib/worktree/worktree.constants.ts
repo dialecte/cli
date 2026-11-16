@@ -252,6 +252,21 @@ export const RECLAIM_TRASH_REASONS = {
 	differs: '{count} package(s) differ from package-lock.json: {problems}',
 } as const
 
+/**
+ * How long a `_pool-*` folder without `pool.json` may stay unwritten and still be a park in progress, in minutes: an
+ * older one is a park that never finished, and prune sends it to the trash.
+ */
+export const POOL_STALE_PARK_MINUTES = 30
+
+/** One minute in milliseconds. */
+export const MINUTE_MS = 60 * 1000
+
+/** Why `worktree prune` keeps a `_pool-*` folder without `pool.json` where it is; `{...}` filled. */
+export const POOL_LEFT_OVER_KEEP_REASONS = {
+	inProgress: 'a park in progress: written at {at}, under {minutes} min ago',
+	finished: 'its pool.json is written now: a pool entry',
+} as const
+
 /** What a reclaim says of a `-round-<n>` throwaway gone between its plan and its move. */
 export const RECLAIM_WORKTREE_GONE =
 	'worktree gone already (moved by another reclaim): nothing done'
@@ -261,6 +276,9 @@ export const RECLAIM_ROUND_PATTERN = /^(.+)-round-[1-9]\d*$/
 
 /** The git files whose last write is a worktree's activity, in its own git folder: the index, HEAD, its reflog. */
 export const RECLAIM_ACTIVITY_FILES = ['index', 'HEAD', 'logs/HEAD'] as const
+
+/** The file `git worktree lock` writes in a worktree's own git folder: the worktree is locked while it is there. */
+export const WORKTREE_LOCKED_FILE = 'locked'
 
 /** One day in milliseconds: `--older-than` counts whole days. */
 export const RECLAIM_DAY_MS = 24 * 60 * 60 * 1000

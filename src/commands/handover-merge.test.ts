@@ -30,9 +30,10 @@ import {
 	INSTALL_BACKUP_FOLDER,
 	MERGE_MARKER_FILE,
 } from '../lib/handover/handover.constants.ts'
+import { NPM_INSTALL_SWITCH } from '../lib/worktree/worktree.constants.ts'
 import { runHandover, runHandoverRun } from './handover.ts'
 
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type { LotPlan, MergeLot, MergeLotPlan } from '../lib/handover/handover.types.ts'
 
@@ -269,6 +270,19 @@ function untouched(root: string): { mergeInProgress: boolean; status: string; he
 
 function cleanAt(scenario: MergeScenario): ReturnType<typeof untouched> {
 	return { mergeInProgress: false, status: '', head: scenario.head }
+}
+
+/**
+ * The cases of this describe drive the lock sync with a witness npm on PATH: they exercise the npm path, so they run
+ * with npm on (the suite's setup turns it off with `DIALECTE_NPM_INSTALL=off`).
+ */
+function runWithNpmOn(): void {
+	beforeEach(function turnNpmOn() {
+		vi.stubEnv(NPM_INSTALL_SWITCH, '')
+	})
+	afterEach(function restoreNpmSwitch() {
+		vi.unstubAllEnvs()
+	})
 }
 
 describe('a merge lot: the hand-over written', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
@@ -625,6 +639,8 @@ describe(
 	'a commit staging a changed lock: node_modules against the lock',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
+		runWithNpmOn()
+
 		const LOCK_ONE =
 			'{\n\t"lockfileVersion": 3,\n\t"packages": {\n\t\t"": {},\n\t\t"node_modules/dep": { "version": "1.0.0" }\n\t}\n}\n'
 		const LOCK_TWO = LOCK_ONE.replace('1.0.0', '2.0.0')
@@ -736,6 +752,8 @@ const INSTALL_DEP_TWO =
 	'mkdir -p node_modules/dep\necho \'{ "name": "dep", "version": "2.0.0" }\' > node_modules/dep/package.json'
 
 describe('the lock sync installs the staged state', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	runWithNpmOn()
+
 	/**
 	 * Two plain lots: the first commits the new lock, the second the newer package.json: while the first
 	 * commits, the working package.json is not the staged one.
@@ -817,6 +835,8 @@ describe('the lock sync installs the staged state', { timeout: SCRATCH_REPOSITOR
 const INSTALL_ARGUMENTS = 'ci --ignore-scripts --prefer-offline --no-audit --no-fund'
 
 describe('the lock sync runs no install scripts', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	runWithNpmOn()
+
 	it('the installer runs npm ci --ignore-scripts --prefer-offline --no-audit --no-fund; a lock with no install script → no install-scripts note', async () => {
 		const root = createScratchRepository({
 			'package.json': PACKAGE_V0,
@@ -960,6 +980,8 @@ describe(
 	'the lock sync leaves out what an install may not bring',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
+		runWithNpmOn()
+
 		/** A lock holding `dep` and the given extra packages, each with its flag. */
 		function lockWith(extra: Record<string, Record<string, boolean>>): string {
 			return `${JSON.stringify({
@@ -1281,6 +1303,8 @@ function manifestScenario(): { root: string; out: string; backup: string; base: 
 }
 
 describe('the install backup', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	runWithNpmOn()
+
 	it('an installer that never settles, then SIGTERM during the lock sync → the working package.json and lock are back byte for byte, a later lot dependency change survives', async () => {
 		const root = createScratchRepository({
 			'package.json': PACKAGE_V0,

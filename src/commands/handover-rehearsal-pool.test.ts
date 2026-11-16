@@ -4,16 +4,17 @@ import {
 	mkdirSync,
 	readdirSync,
 	realpathSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
-import { READ_LOT } from '../../test/scratch-checks.constants.ts'
-import { editReadLot, writeHandoverFolder } from '../../test/scratch-checks.ts'
+import { READ_LOT, WRITER_CLI } from '../../test/scratch-checks.constants.ts'
+import { editReadLot, headOf, writeHandoverFolder } from '../../test/scratch-checks.ts'
 import { initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
 import {
 	LOCK_TEXT,
@@ -25,11 +26,13 @@ import {
 	createRecordingSpawner,
 	poolEntriesOf,
 	poolEntryOf,
+	readPoolFile,
 	readTree,
 	trashedNamesOf,
 	writePoolEntry,
 } from '../../test/worktree-pool.ts'
-import { runHandoverRun } from './handover.ts'
+import { handoverLockPath } from '../lib/handover/handover-lock.ts'
+import { runHandover, runHandoverRun } from './handover.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -82,6 +85,41 @@ function createScenario(params: { withWorktreesFolder?: boolean; sibling?: boole
 	// a workspace: its parent holds `.worktrees/`, where the pool and the trash live
 	if (params.withWorktreesFolder !== false) mkdirSync(join(workspace, '.worktrees'))
 	return { workspace, root, out, worktreesFolder: join(workspace, '.worktrees') }
+}
+
+/** Each pool entry of `<worktrees>` as its owner (none: null) and its node_modules marker, sorted by entry name. */
+function ownedMarkersOf(worktreesFolder: string): { owner: string | null; marker: string }[] {
+	return poolEntriesOf(worktreesFolder).map((name) => ({
+		owner: readPoolFile({ worktreesFolder, name }).owner ?? null,
+		marker: readTree(join(worktreesFolder, name, 'node_modules'))[MARKER_FILE],
+	}))
+}
+
+/**
+ * The read lot's hand-over written in a plain temporary folder, no store lot: the rehearsal knows no lot. The store
+ * lot's hand-over the scenario wrote is set aside first (its lock released): one hand-over holds a repository.
+ */
+function writePlainHandoverFolder(root: string): string {
+	rmSync(handoverLockPath(root), { force: true })
+	const lotsPath = join(realpathSync(temporaryFolder('dialecte-plain-lots-')), 'lots.json')
+	const out = join(realpathSync(temporaryFolder('dialecte-plain-handover-')), 'handover')
+	writeFileSync(
+		lotsPath,
+		JSON.stringify({
+			repository: root,
+			branch: 'main',
+			head: headOf(root),
+			gates: 'npm run check',
+			lots: [READ_LOT],
+		}),
+	)
+	const written = runHandover({
+		argv: [lotsPath, '--out', out],
+		cliPath: WRITER_CLI,
+		probe: noRepositoryCli,
+	})
+	expect(written).toMatchObject({ exitCode: 0 })
+	return out
 }
 
 /** `handover run <out> --rehearse` with the spawner recording the background removals. */
@@ -251,6 +289,60 @@ describe(
 				name.startsWith('dialecte-rehearse-'),
 			)
 			expect(trashedName).toMatch(/^dialecte-rehearse-/)
+		})
+
+		it("a hand-over in a store lot → the clone takes that lot's own pool entry over a newer one of another owner, and parks it back with the lot as owner", async () => {
+			const { out, worktreesFolder } = createScenario()
+			const lot = basename(out)
+			writePoolEntry({
+				worktreesFolder,
+				name: '_pool-repo-1',
+				entry: {
+					...poolEntryOf({
+						repository: 'repo',
+						lock: LOCK_TEXT,
+						parkedAt: '2026-11-06T09:00:00.000Z',
+					}),
+					owner: lot,
+				},
+				marker: 'own lot\n',
+			})
+			writePoolEntry({
+				worktreesFolder,
+				name: '_pool-repo-9',
+				entry: {
+					...poolEntryOf({
+						repository: 'repo',
+						lock: LOCK_TEXT,
+						parkedAt: '2099-01-01T00:00:00.000Z',
+					}),
+					owner: '0099-repo-other',
+				},
+				marker: 'another owner\n',
+			})
+
+			const result = await rehearse({ out })
+
+			expect(result.exitCode).toBe(0)
+			expect(ownedMarkersOf(worktreesFolder)).toEqual(
+				expect.arrayContaining([
+					{ owner: lot, marker: 'own lot\n' },
+					{ owner: '0099-repo-other', marker: 'another owner\n' },
+				]),
+			)
+			expect(ownedMarkersOf(worktreesFolder)).toHaveLength(2)
+		})
+
+		it('a hand-over in a plain folder, no store lot → the clone node_modules parked with no owner', async () => {
+			const { root, worktreesFolder } = createScenario()
+			const out = writePlainHandoverFolder(root)
+
+			const result = await rehearse({ out })
+
+			expect(result.exitCode).toBe(0)
+			expect(ownedMarkersOf(worktreesFolder)).toEqual([
+				{ owner: null, marker: 'from the main checkout\n' },
+			])
 		})
 
 		it('a repository with no .worktrees/ beside it → rehearsed as today: node_modules copied, the folder removed in the foreground, nothing written outside the repository folder, no background delete', async () => {

@@ -808,7 +808,7 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		})
 	})
 
-	it('a park whose eviction throws after node_modules moved (the removal cannot start) → no throw: a refused line that says node_modules left the worktree', () => {
+	it('a park whose eviction throws after the entry is whole (the removal cannot start) → no throw: parked, the eviction problem a note on its line', () => {
 		const workspace = createReclaimWorkspace()
 		const worktree = addReclaimWorktree({ workspace, name: PARKABLE })
 		ageEverything({ workspace })
@@ -842,11 +842,62 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		}).toEqual({
 			outcome: {
 				worktree: expect.any(String),
-				moved: false,
-				line: expect.stringMatching(/^refused {2}.*EAGAIN.*node_modules no longer in the worktree/),
+				moved: true,
+				line: expect.stringMatching(
+					/^parked {2}.*node_modules -> \.worktrees\/_pool-repo-\d+.*EAGAIN/,
+				),
 			},
 			nodeModules: false,
 		})
+	})
+
+	it('a park, a trash and a trash whole in one execution → the processes listed once for the whole execution, not once per item', () => {
+		const workspace = createReclaimWorkspace()
+		addReclaimWorktree({ workspace, name: PARKABLE })
+		addReclaimWorktree({ workspace, name: TRASHABLE, lock: OTHER_LOCK })
+		addReclaimWorktree({ workspace, name: ASKING, lot: 'committed' })
+		addReclaimWorktree({ workspace, name: ROUND, merged: false })
+		ageEverything({ workspace })
+		const plan = planReclaim(planArguments({ workspace }))
+		let listings = 0
+		function countingLister(): ProcessFolder[] {
+			listings++
+			return []
+		}
+		let outcomes: ReclaimOutcome[] = []
+
+		expect(function reclaim() {
+			outcomes = executeReclaim({
+				...executeArguments({ workspace, plan }),
+				listProcesses: countingLister,
+			})
+		}).not.toThrow()
+		expect({
+			moved: [PARKABLE, TRASHABLE, ROUND].map((name) => outcomeOf({ outcomes, name })?.moved),
+			listings,
+		}).toEqual({ moved: [true, true, true], listings: 1 })
+	})
+
+	it('two review-round throwaways of committed lots in one execution → both trashed whole: the first one git forgot is no other prunable worktree for the second', () => {
+		const workspace = createReclaimWorkspace()
+		const otherLot = '0005-repo-other'
+		const otherRound = `${otherLot}-round-1`
+		addReclaimWorktree({ workspace, name: ASKING, lot: 'committed' })
+		addReclaimWorktree({ workspace, name: ROUND, merged: false })
+		addReclaimWorktree({ workspace, name: otherLot, lot: 'committed' })
+		addReclaimWorktree({ workspace, name: otherRound, merged: false })
+		ageEverything({ workspace })
+		let outcomes: ReclaimOutcome[] = []
+
+		expect(function reclaim() {
+			outcomes = executeReclaim(
+				executeArguments({ workspace, plan: planReclaim(planArguments({ workspace })) }),
+			)
+		}).not.toThrow()
+		expect([ROUND, otherRound].map((name) => outcomeOf({ outcomes, name })?.line)).toEqual([
+			expect.stringMatching(/^trashed {2}.*forgotten by git$/),
+			expect.stringMatching(/^trashed {2}.*forgotten by git$/),
+		])
 	})
 
 	const CHANGED_AFTER_PLAN = [

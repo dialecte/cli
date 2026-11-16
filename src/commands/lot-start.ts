@@ -334,6 +334,8 @@ export function makeLotWorktree(params: {
 			from: identity.base.commit,
 			index: identity.index,
 			now: params.now,
+			// the pool gives the lot's own entry first (one its earlier worktree parked)
+			owner: identity.name,
 			onPlanned: function startWorktreeStep(worktree) {
 				recorder = startStep({
 					cwd: identity.repository,

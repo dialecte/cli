@@ -28,12 +28,28 @@ export function runNpm(params: {
 	/** Where the switch is read; default: `process.env`. */
 	environment?: NodeJS.ProcessEnv
 }): { status: number; output: string } {
-	const environment = params.environment ?? process.env
-	if (environment[NPM_INSTALL_SWITCH] === NPM_INSTALL_OFF) return { ...NPM_INSTALL_OFF_ANSWER }
+	const off = npmSwitchedOff({ environment: params.environment })
+	if (off !== undefined) return off
 	const spawn = params.spawn ?? spawnNpm
 	const ran = spawn({ command: 'npm', args: params.args, cwd: params.checkout })
 	// a signal or a missing npm leaves no exit status: a failure all the same
 	return { status: ran.status ?? 1, output: `${ran.stdout}${ran.stderr}` }
+}
+
+/**
+ * What npm answers with `DIALECTE_NPM_INSTALL=off` in `environment` (default: `process.env`): a failure, given without
+ * spawning; undefined when npm runs. Every npm the cli spawns asks it first.
+ *
+ * @intent hold the npm switch for every install the cli starts, whatever runs it
+ * @internal
+ */
+export function npmSwitchedOff(
+	params: { environment?: NodeJS.ProcessEnv } = {},
+): { status: number; output: string } | undefined {
+	const environment = params.environment ?? process.env
+	return environment[NPM_INSTALL_SWITCH] === NPM_INSTALL_OFF
+		? { ...NPM_INSTALL_OFF_ANSWER }
+		: undefined
 }
 
 /** `spawnSync` of the command in `cwd`, its output read as text (an npm that cannot start answers its error). */
