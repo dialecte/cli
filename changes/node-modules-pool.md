@@ -2,7 +2,7 @@
 
 - `dialecte worktree prune --reclaim [--dry-run] [--older-than <days>]`: idle worktrees give their `node_modules` back. An idle worktree (no open lot, failed lots included, no open hand-over, no process working in it, not the main checkout, not locked, reached by no link, no git activity in its index, HEAD or reflog for `<days>`, default 2) whose lock key is the main checkout's has its `node_modules` parked in the pool, any other has it moved to `.worktrees/_trash/`; the code is never touched and a `node_modules` link is never followed. A `-round-<n>` throwaway of a closed lot goes to the trash whole. Every rule is checked again just before each move. `--dry-run` prints every line and a total (worktrees, files, size) and moves nothing.
 - `DIALECTE_NPM_INSTALL=off`: the cli never runs npm (a machine that must stay offline, a test suite); a worktree the pool cannot serve then gets the copy, the reason recorded, and the hand-over's lock sync refuses the commit with that reason.
-- `dialecte worktree prune` sends a `_pool-*` folder without `pool.json` (a park that never finished) to the trash with `--yes` once it is unwritten for 30 minutes and no process works in it; a younger one, or one a process works in, is kept and named.
+- `dialecte worktree prune` sends a `_pool-*` folder without `pool.json` (a park that never finished) to the trash with `--yes` once it is unwritten for 30 minutes and no process works in it; a younger one, or one a process works in, is kept and named. The command it prints for one moves it into `.worktrees/_trash/`, as `--yes` does, never a removal.
 
 ### Fixed
 

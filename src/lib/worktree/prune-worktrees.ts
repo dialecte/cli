@@ -292,7 +292,8 @@ function planPoolLeftOvers(params: {
 			if (working !== undefined) return { ...item, kept: working }
 			return {
 				...item,
-				command: `cd ${shellQuote(worktreesFolder)} && rm -rf ${shellQuote(basename(folder))}`,
+				// what `--yes` does (a move into the trash), never a removal a person could copy
+				command: `cd ${shellQuote(worktreesFolder)} && mkdir -p ${TRASH_FOLDER} && mv ${shellQuote(basename(folder))} ${TRASH_FOLDER}/`,
 			}
 		})
 }

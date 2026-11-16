@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { git, initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
 import { LOCK_TEXT, POOL_COMMAND_CASE_MS } from '../../test/worktree-pool.constants.ts'
 import { createRecordingSpawner, poolEntryOf, writePoolEntry } from '../../test/worktree-pool.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 import { runWorktreePrune } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -153,6 +154,30 @@ describe('worktree prune: the pool and the trash', { timeout: POOL_COMMAND_CASE_
 			removals: [
 				{ command: 'rm', args: ['-rf', join(worktreesFolder, '_trash', inTrash[0] ?? '')] },
 			],
+		})
+	})
+
+	it('a _pool-x-1 with no pool.json, last written two hours ago, prune --json → its command moves it into _trash/, never an rm -rf a person could copy', async () => {
+		const { workspace, worktreesFolder, folder } = createLeftOver(120)
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--json'],
+			cwd: workspace,
+			scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+			isTerminal: false,
+			confirm: async () => false,
+			listProcesses: function noProcesses(): ProcessFolder[] {
+				return []
+			},
+		})
+		const plan = JSON.parse(result.output) as { poolLeftOver: { name: string; command?: string }[] }
+
+		expect({
+			command: plan.poolLeftOver.find((item) => item.name === folder)?.command,
+			inPlace: existsSync(join(folder, 'node_modules/file.txt')),
+		}).toEqual({
+			command: `cd ${shellQuote(worktreesFolder)} && mkdir -p _trash && mv ${shellQuote('_pool-x-1')} _trash/`,
+			inPlace: true,
 		})
 	})
 
