@@ -3,14 +3,16 @@
 Loaded with `-p dialecte_tdd_pytest`. The report is one JSON list, one entry per test file collected: its
 collection errors, its cases (name, state, def line, errors, source, skip mark in a collect), the files it
 used (conftests, the modules its imports and its conftests' imports resolve to, the files opened while it was collected and while its
-cases ran) and its own code (module-level and test-class statements, imports by what they resolve to, never the test
-functions), and the own code of its base text when DIALECTE_TDD_BASE_TEXTS names a JSON file of base texts. Imports the standard library and pytest only; Python 3.8 or later, pytest 7 or later.
+cases ran) and its own code (module-level and test-class statements, imports by what they resolve to, never the
+test functions), and the own code of its base text when DIALECTE_TDD_BASE_TEXTS names a JSON file of base texts. Imports the standard library and pytest only; Python 3.8 or later, pytest 7 or later.
 """
 
 import ast
+import copy
 import errno
 import fnmatch
 import hashlib
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -221,18 +223,20 @@ def read_base_texts():
 
 def own_code_of(path, text, tree, module_name):
     """The file's own code: each module-level statement and each statement of a test class body (scoped by its
-    class names), imports once per binding by what they resolve to and their names, never a test function; each
-    with its text and the sha256 of its scope and identity (`ast.dump`: formatting and comments left out)."""
+    class names), a test class's header (its decorators, bases and keywords) in the scope holding it, imports once
+    per binding by what they resolve to and their names (an import nested in a statement by its target too), never a
+    test function; each with its text and the sha256 of its scope and identity (`ast.dump`: formatting and comments
+    left out, its output the running Python's: an interpreter changed between the red and the move refuses the move)."""
     if tree is None:
         return []
     is_package = os.path.basename(path) == "__init__.py"
     package = module_name if is_package else module_name.rpartition(".")[0]
     statements = []
 
-    def add(scope, node, identity):
+    def add(scope, node, identity, shown=None):
         statements.append(
             {
-                "text": ast.get_source_segment(text, node) or "",
+                "text": shown if shown is not None else ast.get_source_segment(text, node) or "",
                 "hash": hashlib.sha256(OWN_CODE_SEPARATOR.join([*scope, identity]).encode("utf-8")).hexdigest(),
             }
         )
@@ -248,12 +252,51 @@ def own_code_of(path, text, tree, module_name):
             ):
                 continue
             elif isinstance(node, ast.ClassDef) and matches_option(name=node.name, option="python_classes"):
+                header = copy.copy(node)
+                header.body = []
+                add(scope, node, ast.dump(header), shown=class_header_text(text=text, node=node))
                 collect(node.body, [*scope, node.name])
             else:
-                add(scope, node, ast.dump(node))
+                add(scope, node, ast.dump(resolved_imports(node=node, package=package)))
 
     collect(tree.body, [])
     return statements
+
+
+def class_header_text(text, node):
+    """A class's header as written: its decorators, then its `class` line."""
+    decorators = ["@" + (ast.get_source_segment(text, decorator) or "") for decorator in node.decorator_list]
+    first = (ast.get_source_segment(text, node) or "").split("\n")[0]
+    return "\n".join([*decorators, first])
+
+
+def resolved_imports(node, package):
+    """A copy of the statement whose nested imports name what they resolve to (a relative import in a `try` hashed by
+    its file, not its spelling); the statement itself when it holds none."""
+    if not any(isinstance(inner, (ast.Import, ast.ImportFrom)) for inner in ast.walk(node)):
+        return node
+    copied = copy.deepcopy(node)
+    for inner in ast.walk(copied):
+        if isinstance(inner, ast.ImportFrom):
+            inner.module = import_target(absolute_module(node=inner, package=package))
+            inner.level = 0
+        elif isinstance(inner, ast.Import):
+            for alias in inner.names:
+                alias.asname = alias.asname or alias.name.partition(".")[0]
+                alias.name = import_target(alias.name)
+    return copied
+
+
+def absolute_module(node, package):
+    """The module a `from ... import` names, a relative one resolved against the package; its dotted spelling when it
+    cannot be (such a module fails to import, so its cases never pass)."""
+    base = node.module or ""
+    if not node.level:
+        return base
+    try:
+        return importlib.util.resolve_name("." * node.level + base, package)
+    except (ImportError, ValueError):
+        return "." * node.level + base
 
 
 def import_identities(node, package):
@@ -267,13 +310,7 @@ def import_identities(node, package):
             for alias in node.names
         ]
     if isinstance(node, ast.ImportFrom):
-        base = node.module or ""
-        if node.level:
-            try:
-                base = importlib.util.resolve_name("." * node.level + base, package)
-            except (ImportError, ValueError):
-                base = "." * node.level + base
-        target = import_target(base)
+        target = import_target(absolute_module(node=node, package=package))
         return [
             OWN_CODE_SEPARATOR.join(["import", target, alias.name, alias.asname or alias.name])
             for alias in node.names
@@ -282,12 +319,16 @@ def import_identities(node, package):
 
 
 def import_target(name):
-    """The package file a module name resolves to (relative to the package root), else the module name itself."""
+    """The package file a module name resolves to (relative to the package root), else the module name itself. Never
+    imports anything: a module the run did not import is found on its parent's path only when that parent is
+    imported (or on sys.path for a top-level one)."""
     file = getattr(sys.modules.get(name), "__file__", None)
     if not file:
+        parent, _, last = name.rpartition(".")
+        search = getattr(sys.modules.get(parent), "__path__", None) if parent else None
         try:
-            spec = importlib.util.find_spec(name)
-        except (ImportError, ValueError, AttributeError):
+            spec = importlib.machinery.PathFinder.find_spec(last, search) if search or not parent else None
+        except Exception:  # noqa: BLE001 - a finder failing names the module by its name, never stops the report
             spec = None
         file = getattr(spec, "origin", None) if spec else None
     if not file or not os.path.isfile(file):

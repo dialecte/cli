@@ -52,6 +52,21 @@ async function movedPytestPackage(params: {
 	return root
 }
 
+/** A test file whose one case sits in `class TestAdd`, the class written after `decorator` (empty: none). */
+function inClass(decorator: string): string {
+	return [
+		'import pytest',
+		'',
+		'from adder import add',
+		'',
+		'',
+		`${decorator}class TestAdd:`,
+		'    def test_one(self):',
+		'        assert add(1, 2) == 3',
+		'',
+	].join('\n')
+}
+
 describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 	it('proven red then green, its file renamed with a moved entry → red carries its red (flag moved)', async () => {
 		const root = await movedPytestPackage({ text: ADD_ONE_PYTEST_TEXT })
@@ -87,6 +102,74 @@ describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(/holds code the file that red froze did not: from other import add/),
+		)
+	})
+
+	it('a relative import of the package, the file renamed inside it → carried', async () => {
+		const relative = [
+			'from adder import add',
+			'from .helpers import EXPECTED',
+			'',
+			'',
+			'def test_one():',
+			'    assert add(1, 2) == EXPECTED',
+			'',
+		].join('\n')
+		const root = createPythonPackage({
+			written: {
+				[ADDER_FILE]: ADDER_STUB_TEXT,
+				'tests/pkg/__init__.py': '',
+				'tests/pkg/helpers.py': 'EXPECTED = 3\n',
+				'tests/pkg/test_add.py': relative,
+			},
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, ADDER_FILE), ADDER_IMPLEMENTED_TEXT)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'tests/pkg/test_add.py'))
+		writeFiles({
+			root,
+			files: {
+				'tests/pkg/test_sum.py': relative,
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [
+						{ from: 'tests/pkg/test_add.py', to: 'tests/pkg/test_sum.py', reason: 'a rename' },
+					],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/^red {6}tests\/pkg\/test_sum\.py::test_one {2}moved from/),
+		)
+	})
+
+	it('its test class gains a decorator in the move → refused naming the class header', async () => {
+		const root = createPythonPackage({
+			written: { [ADDER_FILE]: ADDER_STUB_TEXT, [ADD_PYTEST_FILE]: inClass('') },
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, ADDER_FILE), ADDER_IMPLEMENTED_TEXT)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, ADD_PYTEST_FILE))
+		writeFiles({
+			root,
+			files: {
+				[MOVED_FILE]: inClass('@pytest.mark.usefixtures("tmp_path")\n'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: ADD_PYTEST_FILE, to: MOVED_FILE, reason: 'a rename' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/holds code the file that red froze did not: @pytest\.mark\.usefixtures\("tmp_path"\)/,
+			),
 		)
 	})
 })
