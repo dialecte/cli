@@ -15,6 +15,8 @@ import {
 	namesRevisedHelper,
 	readAcceptances,
 	readGoneEntries,
+	readMovedEntries,
+	findMovedFrom,
 	readRevisions,
 	readTddExemption,
 } from './lot-declaration.ts'
@@ -123,6 +125,8 @@ async function judgeTddReceipts(params: {
 	if ('failure' in revisions) return { status: 'failed', reason: revisions.failure }
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
+	const moves = readMovedEntries(root)
+	if ('failure' in moves) return { status: 'failed', reason: moves.failure }
 	const testCode = hashChangedTestCode({ root, base, packageJson })
 	// a change that only deletes test files still lists their cases, as deleted
 	if (testCode.size === 0 && listDeletedTestFiles({ root, base }).length === 0)
@@ -220,6 +224,22 @@ async function judgeTddReceipts(params: {
 					why: 'no test call of the base gone without a title in a file it names',
 					reason: entry.reason,
 					candidates: files,
+				}),
+			),
+		...moves
+			.filter(
+				(entry) =>
+					!state.cases.some(
+						(line) => findMovedFrom({ entries: [entry], testCase: line }) !== undefined,
+					),
+			)
+			.map((entry) =>
+				unusedEntryLine({
+					head: 'unused moved entry',
+					list: 'moved',
+					entry: entry.to,
+					why: `no case of the change carries a red from ${entry.from}`,
+					candidates: namesOneCase(entry.to) ? labels : files,
 				}),
 			),
 	)
@@ -373,7 +393,8 @@ function unusedEntryLine(params: {
 	list: string
 	entry: string
 	why: string
-	reason: string
+	/** The entry's reason; a `moved` entry has none. */
+	reason?: string
 	candidates: readonly string[]
 }): string {
 	const [closest] = closestNames({
@@ -385,5 +406,6 @@ function unusedEntryLine(params: {
 	const remove = UNUSED_ENTRY_REMOVE.replace('{list}', params.list).replace('{entry}', () =>
 		shellWord(params.entry),
 	)
-	return `${params.head}  ${params.entry}  ${params.why}${named} (${params.reason})${remove}`
+	const reason = params.reason === undefined ? '' : ` (${params.reason})`
+	return `${params.head}  ${params.entry}  ${params.why}${named}${reason}${remove}`
 }

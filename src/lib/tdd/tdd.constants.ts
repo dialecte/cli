@@ -534,7 +534,7 @@ export const HELPER_DEPENDENT_OUTSIDE_RUN =
 	'a changed test file outside this run depends on it: {files}'
 
 /** The keys a lot file may hold; any other is a typo, refused. */
-export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'mutation']
+export const LOT_KEYS: readonly string[] = ['tdd', 'accept', 'revised', 'gone', 'moved', 'mutation']
 
 /** The keys of an `accept` or `revised` entry. */
 export const CASE_ENTRY_KEYS: readonly string[] = ['case', 'reason']
@@ -567,7 +567,31 @@ export const HOLE_TOKEN = '<hole>'
 export const TOOL_COMMENT_PATTERN = /@(vitest|jest)-environment|@vite-ignore/
 
 /** What `dialecte lot` writes. */
-export const LOT_VERBS: readonly string[] = ['exempt', 'accept', 'revised', 'gone', 'mutation']
+export const LOT_VERBS: readonly string[] = [
+	'exempt',
+	'accept',
+	'revised',
+	'gone',
+	'moved',
+	'mutation',
+]
+
+/** The keys of a `moved` entry. */
+export const MOVED_ENTRY_KEYS: readonly string[] = ['from', 'to']
+
+/** What `"moved"` of the lot file must hold. */
+export const MOVED_LIST_SHAPE =
+	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>" }, both cases or both files'
+
+/** A moved case's red line: the case its red was carried from, `{from}`. */
+export const MOVED_FROM = 'moved from {from}'
+
+/** A moved case refused: its test call is not the one the red of `{from}` froze. */
+export const MOVED_CALL_DIFFERS =
+	'moved from {from}, but its test call differs from the one that red froze: prove it red again'
+
+/** A moved case refused: `{from}` holds no red receipt to carry. */
+export const MOVED_NO_RED = 'moved from {from}, which holds no red receipt'
 
 /** The keys of a `gone` entry. */
 export const GONE_ENTRY_KEYS: readonly string[] = ['file', 'reason']

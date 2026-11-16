@@ -204,6 +204,8 @@ export type ReceiptFlag =
 	| 'test code changed around it'
 	/** A red a revised case earned on the base's production, with the lot's current test code over it. */
 	| 'red on base'
+	/** A red carried from the case's earlier label by a `moved` entry, its test call the one that red froze. */
+	| 'moved'
 
 /**
  * - `red`: the case failed for a real reason before the code;
@@ -315,6 +317,7 @@ export type LotDeclaration = {
 	accept?: unknown
 	revised?: unknown
 	gone?: unknown
+	moved?: unknown
 	/** Whether and how `dialecte mutants run` mutates the lot: `off`, `changed`, `audit` or `gate`. */
 	mutation?: unknown
 }
@@ -324,6 +327,12 @@ export type LotDeclaration = {
  * `<file>::<name>` (` [project]` when a project runs it).
  */
 export type LotCaseEntry = { case: string; reason: string }
+
+/**
+ * A case of the lot moved after its red (a split, a rename): two cases (`<file>::<name>`, ` [project]` optional), or a
+ * file and a file or glob its cases moved to under the same names.
+ */
+export type LotMovedEntry = { from: string; to: string }
 
 /** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
 export type RevisedHelper = { file: string; entry: LotCaseEntry }
@@ -424,6 +433,7 @@ export type TddRunAdmission = {
 	files: ChangedTestFile[]
 	acceptances: LotCaseEntry[]
 	revisions: LotCaseEntry[]
+	moves: LotMovedEntry[]
 	/** The package's vitest configs, read once for the run: why a file ran no case. */
 	configs: VitestConfigs
 }
@@ -490,8 +500,10 @@ export type DuplicateCaseId = {
 export type RunCase = TestCaseId & {
 	state: ReportedCaseState
 	failure?: CaseFailure
-	/** sha256 of the case's name and its test call now. */
+	/** sha256 of the case's name and its test call now: `${name}\0${body}`. */
 	caseHash: string
+	/** What the case hash covers besides the name: its test call's tokens (a pytest case's call and row). */
+	body: string
 	/** New or changed since the base, by its test call and titles. */
 	ofChange: boolean
 	/** The base provably holds it (its file, its own title and every title written now), whatever its call. */

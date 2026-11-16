@@ -1,8 +1,9 @@
 /**
  * `dialecte lot exempt <reason>` / `lot accept <case> <reason>` / `lot revised <case|file|glob> <reason>` /
- * `lot gone <file|glob> <reason>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
+ * `lot gone <file|glob> <reason>` / `lot moved <from> <to>` / `lot mutation <off|changed|audit|gate>`: writes the lot declaration `.dialecte/lot.json` of the package in the
  * current folder, formatted, keeping what it already holds. An acceptance names one case; a revision a
- * case, a file or a glob; a gone entry a file or a glob, never a case. `lot accept|revised|gone --remove <entry>`
+ * case, a file or a glob; a gone entry a file or a glob, never a case; a moved entry two cases, or a file and the file
+ * or glob its cases moved to (`tdd red` carries their red). `lot accept|revised|gone|moved --remove <entry>`
  * drops the entry written exactly so (a list left empty leaves the file): a receipt only ever exempts, so its removal
  * makes tdd and the gate stricter and needs no proof.
  * The review rounds' verbs, in the lot's hand-over folder (the table of the renamed forms lists them): the
@@ -56,7 +57,13 @@ import { lotStop } from './lot-stop.ts'
 import { printsOnStandardError } from './lot-streams.ts'
 import { runLotVerify } from './lot-verify.ts'
 import { waitLot } from './lot-wait.ts'
-import { LOT_REMOVE_CLOSEST_LIMIT, LOT_REMOVE_LINES, LOT_REMOVE_OPTION } from './lot.constants.ts'
+import {
+	LOT_MOVED_MIXED,
+	LOT_REMOVE_CLOSEST_LIMIT,
+	LOT_REMOVE_KEYS,
+	LOT_REMOVE_LINES,
+	LOT_REMOVE_OPTION,
+} from './lot.constants.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
@@ -67,8 +74,13 @@ import type { HandoverProbe } from '../lib/handover/handover.types.ts'
 import type { RiskClass } from '../lib/risk/risk.types.ts'
 import type { BriefEffort } from '../lib/store/brief.types.ts'
 import type { ResolveMode } from '../lib/store/store.types.ts'
-import type { LotCaseEntry, LotCaseList, LotGoneEntry } from '../lib/tdd/tdd.types.ts'
-import type { AskFunction, RunLotCommandParams } from './lot.types.ts'
+import type {
+	LotCaseEntry,
+	LotCaseList,
+	LotGoneEntry,
+	LotMovedEntry,
+} from '../lib/tdd/tdd.types.ts'
+import type { AskFunction, RemovableList, RunLotCommandParams } from './lot.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const [verb, ...words] = argv
@@ -212,13 +224,30 @@ function runDeclarationVerb(params: {
 	const { verb, words } = params
 	const list: LotCaseList | undefined = verb === 'accept' || verb === 'revised' ? verb : undefined
 	const gone = verb === 'gone'
-	if ((list || gone) && words[0] === LOT_REMOVE_OPTION) {
+	const moved = verb === 'moved'
+	if ((list || gone || moved) && words[0] === LOT_REMOVE_OPTION) {
 		if (words.length !== 2 || words[1].trim() === '')
 			return { exitCode: 2, output: renderLotUsage() }
-		return removeEntry({ cwd: params.cwd, list: list ?? 'gone', entry: words[1] })
+		return removeEntry({
+			cwd: params.cwd,
+			list: list ?? (gone ? 'gone' : 'moved'),
+			entry: words[1],
+		})
 	}
-	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone ? 2 : 1))
+	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone || moved ? 2 : 1))
 		return { exitCode: 2, output: renderLotUsage() }
+	if (
+		moved &&
+		(namesOneCase(words[0]) !== namesOneCase(words[1]) || words.some((word) => word.trim() === ''))
+	)
+		return resultOf({
+			exitCode: 2,
+			lines: [
+				LOT_MOVED_MIXED.replace('{from}', () => JSON.stringify(words[0])).replace('{to}', () =>
+					JSON.stringify(words[1]),
+				),
+			],
+		})
 	if (list === 'accept' && !namesOneCase(words[0]))
 		return resultOf({
 			exitCode: 2,
@@ -239,8 +268,9 @@ function runDeclarationVerb(params: {
 }
 
 /**
- * `lot accept|revised <case> <reason>`, `lot gone <file> <reason>`, `lot mutation <mode>`, `lot exempt <reason>`, the
- * words already checked: the entry written (an entry of the same case or file replaced in place), or the key set.
+ * `lot accept|revised <case> <reason>`, `lot gone <file> <reason>`, `lot moved <from> <to>`, `lot mutation <mode>`,
+ * `lot exempt <reason>`, the words already checked: the entry written (an entry of the same case, file or `to` replaced
+ * in place), or the key set.
  */
 function writeDeclared(params: { cwd: string; verb: string; words: string[] }): CommandResult {
 	const { verb, words } = params
@@ -263,6 +293,13 @@ function writeDeclared(params: { cwd: string; verb: string; words: string[] }): 
 		declaration.gone = known
 			? entries.map((entry) => (entry.file === file ? { file, reason } : entry))
 			: [...entries, { file, reason }]
+	} else if (verb === 'moved') {
+		const [from, to] = words
+		const entries = Array.isArray(declaration.moved) ? (declaration.moved as LotMovedEntry[]) : []
+		const known = entries.some((entry) => entry.to === to)
+		declaration.moved = known
+			? entries.map((entry) => (entry.to === to ? { from, to } : entry))
+			: [...entries, { from, to }]
 	} else if (verb === 'mutation') declaration.mutation = words[0]
 	else declaration.tdd = `exempt: ${words[0]}`
 	writeDeclaration({ path, declaration })
@@ -309,11 +346,7 @@ function writeDeclaration(params: { path: string; declaration: Record<string, un
  * entry by its case, a `gone` one by its file), the list left out once empty; refused naming the list's closest
  * entries when it holds no such entry, nothing written.
  */
-function removeEntry(params: {
-	cwd: string
-	list: LotCaseList | 'gone'
-	entry: string
-}): CommandResult {
+function removeEntry(params: { cwd: string; list: RemovableList; entry: string }): CommandResult {
 	const { list, entry } = params
 	const read = readDeclarationToWrite({ cwd: params.cwd })
 	if ('exitCode' in read) return read
@@ -344,6 +377,10 @@ function removeEntry(params: {
 		})
 	}
 	const removed = entries[index] as { reason?: unknown }
+	const reason =
+		typeof removed.reason === 'string'
+			? LOT_REMOVE_LINES.reason.replace('{reason}', () => String(removed.reason))
+			: ''
 	const kept = entries.filter((_, position) => position !== index)
 	if (kept.length === 0) delete declaration[list]
 	else declaration[list] = kept
@@ -355,16 +392,16 @@ function removeEntry(params: {
 				.replace('{path}', () => path)
 				.replace('{list}', list)
 				.replace('{entry}', () => entry)
-				.replace('{reason}', () => String(removed.reason ?? '')),
+				.replace('{reason}', () => reason),
 		],
 	})
 }
 
-/** What an entry of `list` names: its case (`accept`, `revised`) or its file (`gone`); undefined for a malformed one. */
-function nameOfEntry(params: { item: unknown; list: LotCaseList | 'gone' }): string | undefined {
+/** What an entry of `list` names (`LOT_REMOVE_KEYS`): its case, its file, or where a move reached; undefined for a malformed one. */
+function nameOfEntry(params: { item: unknown; list: RemovableList }): string | undefined {
 	const { item } = params
 	if (typeof item !== 'object' || item === null) return undefined
-	const name = (item as Record<string, unknown>)[params.list === 'gone' ? 'file' : 'case']
+	const name = (item as Record<string, unknown>)[LOT_REMOVE_KEYS[params.list]]
 	return typeof name === 'string' ? name : undefined
 }
 

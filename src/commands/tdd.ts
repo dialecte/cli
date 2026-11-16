@@ -59,6 +59,8 @@ import {
 	namesOneCase,
 	readAcceptances,
 	readRevisions,
+	readMovedEntries,
+	findMovedFrom,
 	revisionOfHelper,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
@@ -71,6 +73,7 @@ import {
 import { applyMoves, readMoves } from '../lib/tdd/read-moves.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
+	caseHashOfBody,
 	caseLabel,
 	isTargeted,
 	parseTargets,
@@ -96,6 +99,9 @@ import {
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
 	PASSES_ON_BASE_TOO,
+	MOVED_CALL_DIFFERS,
+	MOVED_FROM,
+	MOVED_NO_RED,
 	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
@@ -116,6 +122,7 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
+	LotMovedEntry,
 	ChangedTestFile,
 	DuplicateCaseId,
 	HelperVerdict,
@@ -287,6 +294,9 @@ function admitRun(params: {
 		return {
 			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${revisions.failure}`] }),
 		}
+	const moves = readMovedEntries(root)
+	if ('failure' in moves)
+		return { refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${moves.failure}`] }) }
 	// a red run with no test file still runs for a changed helper differing from its last freeze: it may freeze it
 	if (files.length === 0 && !hasHelperToFreeze({ root, ledger, testCode })) return noFileRefusal
 	return {
@@ -295,6 +305,7 @@ function admitRun(params: {
 		files,
 		acceptances,
 		revisions,
+		moves,
 		configs: readVitestConfigs({ root }),
 	}
 }
@@ -319,6 +330,7 @@ async function runRed(params: {
 	const { context } = params
 	const { root } = context
 	const { testCode, changed, files, acceptances, revisions } = params.admission
+	const declaredMoves = params.admission.moves
 	const lines: string[] = []
 	const entries: TddEntry[] = []
 	const at = context.now().toISOString()
@@ -461,6 +473,7 @@ async function runRed(params: {
 				testCodeChanged,
 				acceptances,
 				revisions,
+				moves: declaredMoves,
 			})
 			judged.push(judgement)
 		}
@@ -667,6 +680,8 @@ async function judgeRed(params: {
 	acceptances: readonly LotCaseEntry[]
 	/** The cases the lot declares revised at review. */
 	revisions: readonly LotCaseEntry[]
+	/** The cases the lot declares moved after their red. */
+	moves: readonly LotMovedEntry[]
 }): Promise<RedJudgement> {
 	const { testCase, productionHash } = params
 	const { ledger } = params.context
@@ -711,6 +726,10 @@ async function judgeRed(params: {
 			reason: 'failed',
 			flags: [],
 		}
+	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label
+	const moved = findMovedFrom({ entries: params.moves, testCase })
+	if (moved && !counted.some((receipt) => PROOF_KINDS.includes(receipt.kind)))
+		return judgeMoved({ ...params, from: moved.from })
 	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
 	// an acceptance never overrides a proof: a case proven red → green goes the normal path, the line says so
 	if (acceptance && !isProvenRedThenGreen({ receipts: counted, caseHash: testCase.caseHash }))
@@ -725,6 +744,46 @@ async function judgeRed(params: {
 	return acceptance
 		? { ...judged, detail: joinParts([judged.detail, ACCEPTANCE_NOT_NEEDED]) }
 		: judged
+}
+
+/**
+ * A passing case a `moved` entry carries from `from`: the last red of `from` the read rule counts, carried under the
+ * case's label (flag `moved`, at that red's production state) when the case's test call under the earlier name hashes
+ * as that red froze it; refused when `from` holds no red, or the call differs.
+ */
+function judgeMoved(params: {
+	testCase: RunCase
+	context: TddContext
+	from: TestCaseId
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+}): RedJudgement {
+	const { testCase, from } = params
+	const fromLabel = caseLabel(from)
+	const red = countingReceipts({
+		ledger: params.context.ledger,
+		testCase: from,
+		acceptances: params.acceptances,
+		revisions: params.revisions,
+	})
+		.counting.filter((receipt) => receipt.kind === 'red')
+		.at(-1)
+	if (red === undefined) {
+		const reason = MOVED_NO_RED.replace('{from}', () => fromLabel)
+		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+	}
+	if (caseHashOfBody({ name: from.name, body: testCase.body }) !== red.caseHash) {
+		const reason = MOVED_CALL_DIFFERS.replace('{from}', () => fromLabel)
+		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+	}
+	return {
+		testCase,
+		kind: 'red',
+		detail: MOVED_FROM.replace('{from}', () => fromLabel),
+		...(red.message !== undefined && { message: red.message }),
+		flags: ['moved'],
+		productionHash: red.productionHash,
+	}
 }
 
 /**
