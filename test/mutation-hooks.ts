@@ -38,6 +38,7 @@ import { noRepositoryCli } from './repository-cli-probe.ts'
 import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import { WRITER_CLI } from './scratch-checks.constants.ts'
 import { git, initializeRepository, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import { createRecordingSpawner } from './worktree-pool.ts'
 
 import type { GateRecord, RulesRecord } from '../src/lib/gate-records/gate-records.types.ts'
 import type {
@@ -288,6 +289,8 @@ export async function runFolder(params: {
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+		// a rehearsal's background removal recorded, never started: a detached rm would race the test's own cleanup
+		spawner: createRecordingSpawner().spawner,
 	})
 	return { exitCode, lines }
 }

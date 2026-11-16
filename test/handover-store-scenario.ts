@@ -39,6 +39,7 @@ import {
 import { removeHookLogs } from './hook-logs.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { createScratchRepository, git, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import { createRecordingSpawner } from './worktree-pool.ts'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
 import type { InterleavingSeam, LotsFile } from '../src/lib/handover/handover.types.ts'
@@ -261,6 +262,8 @@ export async function runIn(params: {
 }): Promise<RunOutcome> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
+	// a rehearsal's background removal recorded, never started: a detached rm would race the test's own cleanup
+	const removals = createRecordingSpawner()
 	const exitCode = await runHandoverRun({
 		argv: params.argv,
 		write: (line) => lines.push(line),
@@ -272,8 +275,9 @@ export async function runIn(params: {
 		columns: params.columns,
 		cwd: params.cwd,
 		afterCheck: params.afterCheck,
+		spawner: removals.spawner,
 	})
-	return { exitCode, lines, text: lines.join('\n') }
+	return { exitCode, lines, text: lines.join('\n'), removals: removals.calls }
 }
 
 /**
