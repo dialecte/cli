@@ -5,10 +5,25 @@ export const STANDARD_FILE = 'standard.json'
 export const STANDARD_ENVIRONMENT_VARIABLE = 'DIALECTE_STANDARD'
 
 /** The states `lot standard` takes. */
-export const STANDARD_STATES = ['consulted', 'not-consulted'] as const
+export const STANDARD_STATES = ['consulted', 'not-consulted', 'outside'] as const
 
 export const STANDARD_USAGE =
-	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason>'
+	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason> | outside <note>'
+
+/**
+ * How an `outside` note ends (section 18): every outside answer confirmed by a person, else some still unchecked;
+ * words for the reader only: the card reads the record's `confirmed` flag (R1-10).
+ */
+export const STANDARD_OUTSIDE_CONFIRMED_SUFFIX = ' (all confirmed)'
+export const STANDARD_OUTSIDE_UNCHECKED_SUFFIX = ' (all unchecked)'
+
+/** The card's standard line of an `outside` record, and at effort high with an outside answer still unchecked. */
+export const STANDARD_OUTSIDE_DETAIL = 'answered outside the documents · {note}'
+export const STANDARD_OUTSIDE_HIGH_DETAIL =
+	'answered outside the documents at effort high, not every answer confirmed by a person (dialecte ask answer <ask-id>) · {note}'
+
+/** The effort at which an unconfirmed outside record fails the card. */
+export const STANDARD_OUTSIDE_FAILING_EFFORT = 'high'
 
 /** The card's line name. */
 export const STANDARD_LINE_NAME = 'standard'

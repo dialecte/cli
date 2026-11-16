@@ -107,6 +107,7 @@ describe('standard eval: recall over a gold file', () => {
 			})
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 2,
 				notInText: 1,
@@ -135,6 +136,7 @@ describe('standard eval: recall over a gold file', () => {
 			})
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 1,
 				notInText: 0,
@@ -160,6 +162,7 @@ describe('standard eval: recall over a gold file', () => {
 			const answer = await evaluated({ gold: jsonLines([item]), exitCode: 0, extra: ['--json'] })
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 1,
 				notInText: 0,
@@ -197,6 +200,7 @@ describe('standard eval: recall over a gold file', () => {
 			})
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 1,
 				notInText: 1,
@@ -218,6 +222,7 @@ describe('standard eval: recall over a gold file', () => {
 			})
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 1,
 				notInText: 0,
@@ -297,6 +302,7 @@ describe('standard eval: recall over a gold file', () => {
 			const answer = await evaluatedIn({ workspace, gold, exitCode: 0, extra: ['--json'] })
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: NO_VOCABULARY,
 				items: 1,
 				notInText: 0,
@@ -375,6 +381,7 @@ describe('standard eval: recall over a gold file', () => {
 			const answer = await evaluatedWithTag({ item })
 
 			expect(JSON.parse(answer.output) as StandardEvalJson).toEqual({
+				schema: 1,
 				vocabulary: { packages: ['@acme/widget@1.0.0'] },
 				items: 1,
 				notInText: 0,
@@ -398,6 +405,30 @@ describe('standard eval: recall over a gold file', () => {
 					quote: TAG_QUOTE,
 					why: 'not found by find',
 				},
+			])
+		},
+		STANDARD_DISK_CASE_TIMEOUT,
+	)
+})
+
+describe('standard eval --json: the schema and the keys it carries', () => {
+	it(
+		'no flag → schema 1 and the keys vocabulary, items, notInText, recallAt5, recallAt10, misses; no packs and no reports',
+		async () => {
+			const answer = await evaluated({
+				gold: jsonLines([FOUND_ITEM]),
+				exitCode: 0,
+				extra: ['--json'],
+			})
+
+			expect(Object.keys(JSON.parse(answer.output) as StandardEvalJson).sort()).toEqual([
+				'items',
+				'misses',
+				'notInText',
+				'recallAt10',
+				'recallAt5',
+				'schema',
+				'vocabulary',
 			])
 		},
 		STANDARD_DISK_CASE_TIMEOUT,
@@ -446,6 +477,25 @@ describe('standard eval: a gold file that cannot be read → exit 2, the message
 
 			expect(answer.output.startsWith('standard eval:')).toBe(true)
 			expect(answer.output).toContain('line 2')
+		},
+		STANDARD_DISK_CASE_TIMEOUT,
+	)
+
+	it(
+		'a line whose kind is not one of the four → the message names its line number and the four kinds',
+		async () => {
+			const unknown = { question: SAMPLE_WORD, kind: 'weird', expected: [] }
+			const gold = `${JSON.stringify(FOUND_ITEM)}\n${JSON.stringify(unknown)}\n`
+
+			const answer = await evaluated({ gold, exitCode: 2 })
+
+			expect(answer.output.startsWith('standard eval:')).toBe(true)
+			expect(answer.output).toContain('line 2')
+			expect(
+				['fact', 'polarity', 'exception', 'not-in-text'].filter(
+					(kind) => !answer.output.includes(kind),
+				),
+			).toEqual([])
 		},
 		STANDARD_DISK_CASE_TIMEOUT,
 	)

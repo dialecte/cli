@@ -176,7 +176,7 @@ export function factPathOf(params: { folder: string; id: string }): string {
 }
 
 /** The path of a key's pointer file in the facts folder. */
-export function pointerPathOf(params: { folder: string; key: string }): string {
+function pointerPathOf(params: { folder: string; key: string }): string {
 	return join(params.folder, BY_KEY_FOLDER, params.key)
 }
 
@@ -216,9 +216,11 @@ function readTextOrUndefined(params: { path: string }): string | undefined {
 
 /**
  * The replacement rule (D6, Q-K2b-1): the new fact replaces a stale, forgotten or unverifiable current one; a new
- * unchecked fact replaces only an unchecked one of lower effort; a new checked fact (schema, Dialecte, standard, or
- * a person's without `unchecked: true`) replaces an unchecked one whatever the efforts (D19); a new person fact, or
- * one of higher effort, replaces the current one; else the current one is reused.
+ * unchecked fact replaces only an unchecked one of lower effort, or (U20) an unchecked person fact replaces an
+ * unchecked fact that is not a person's at any effort (a person confirming an outside answer); a new checked fact
+ * (schema, Dialecte, standard, or a person's without `unchecked: true`) replaces an unchecked one whatever the
+ * efforts (D19); a new person fact, or one of higher effort, replaces the current one; else the current one is
+ * reused.
  */
 function replacementOf(params: {
 	current: Fact
@@ -230,7 +232,11 @@ function replacementOf(params: {
 	if (params.checked === 'unverifiable') return 'replace'
 	const higherEffort = EFFORT_RANK[draft.effort] > EFFORT_RANK[current.effort]
 	const currentUnchecked = current.state === 'unchecked' || current.unchecked === true
-	if (draftIsUnchecked({ draft })) return currentUnchecked && higherEffort ? 'replace' : 'reuse'
+	if (draftIsUnchecked({ draft }))
+		return currentUnchecked &&
+			(higherEffort || (draft.source === 'person' && current.source !== 'person'))
+			? 'replace'
+			: 'reuse'
 	if (currentUnchecked) return 'replace'
 	return draft.source === 'person' || higherEffort ? 'replace' : 'reuse'
 }

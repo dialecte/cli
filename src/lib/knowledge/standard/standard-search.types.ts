@@ -209,10 +209,19 @@ export type StandardGoldExpected = {
 	quote: string
 }
 
-/** One gold item: a question, the tag it is about, and the quotes that answer it (none: not in the text). */
+/** The kinds of a gold question (D45): the list is in the constants of the gold reader. */
+export type GoldKind = 'fact' | 'polarity' | 'exception' | 'not-in-text'
+
+/**
+ * One gold item: a question, the tag it is about, and the quotes that answer it (none: not in the text); and, when
+ * the file has them (an older file does not), its `kind`, the free-text `answer` and the `status` of the item.
+ */
 export type StandardGoldItem = {
 	question: string
 	about?: string
+	kind?: GoldKind
+	answer?: string
+	status?: string
 	expected: StandardGoldExpected[]
 }
 

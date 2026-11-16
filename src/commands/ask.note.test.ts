@@ -44,9 +44,10 @@ describe("ask: the lot's standard note, recomputed from every ask of asks/ (D18)
 			await askedWith({ workspace, argv: [SEMANTIC_QUESTION, '--lot', lotFolder], exitCode: 3 })
 
 			expect(readJsonFile(join(lotFolder, STANDARD_RECORD_FILE))).toEqual({
-				state: 'consulted',
-				note: 'asks A-0001 needs-readers',
+				state: 'outside',
+				note: 'asks A-0001 needs-readers (all unchecked)',
 				at: expect.stringMatching(ISO_TIME),
+				confirmed: false,
 			})
 		},
 		STORE_CASE_TIMEOUT,
