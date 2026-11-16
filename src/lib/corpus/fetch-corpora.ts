@@ -6,19 +6,26 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { manifestEntryHashOf, readCorpusLock, sha256Of, writeCorpusLock } from './corpus-lock.ts'
-import { DOWNLOADS_FOLDER, STAGING_SUFFIX } from './corpus.constants.ts'
+import {
+	DOWNLOAD_TIMEOUT_MILLISECONDS,
+	DOWNLOADS_FOLDER,
+	LOCK_FILE,
+	STAGING_SUFFIX,
+	UNBUILT_SOURCE,
+} from './corpus.constants.ts'
 import { keptDownloadOf, keptFileOf } from './kept-download.ts'
 import { pinnedDownloadsOf, sourceProblemOf } from './source-pins.ts'
 import { sourceTreeOf } from './source-tree.ts'
 
 import type {
 	CorpusFile,
-	CorpusLock,
 	CorpusManifest,
 	FetchedSource,
 	ManifestSource,
 	SourceOutcome,
+	SourceTree,
 } from './corpus.types.ts'
 
 export async function fetchCorpora(params: {
@@ -27,6 +34,8 @@ export async function fetchCorpora(params: {
 	cache: string
 	/** The sources to fetch; every source when empty (the kept downloads no source names are then removed). */
 	ids: readonly string[]
+	/** How long one download may take (default DOWNLOAD_TIMEOUT_MILLISECONDS). */
+	timeoutMilliseconds?: number
 }): Promise<SourceOutcome[]> {
 	const { cache } = params
 	mkdirSync(cache, { recursive: true })
@@ -35,13 +44,21 @@ export async function fetchCorpora(params: {
 			? params.manifest.sources
 			: params.manifest.sources.filter((source) => params.ids.includes(source.id))
 	const outcomes: SourceOutcome[] = []
-	const lock: CorpusLock = { ...readCorpusLock({ cache }) }
-	for (const source of selected) {
-		const fetched = await fetchSource({ source, cache, overrides: params.overrides })
-		outcomes.push(fetched.outcome)
-		if (fetched.kind === 'fetched') lock[source.id] = fetched.lock
+	const signal = {
+		timeoutMilliseconds: params.timeoutMilliseconds ?? DOWNLOAD_TIMEOUT_MILLISECONDS,
 	}
-	writeCorpusLock({ cache, lock })
+	for (const source of selected) {
+		const fetched = await fetchSource({ source, cache, overrides: params.overrides, ...signal })
+		outcomes.push(fetched.outcome)
+		// written after each source: a run stopped later leaves a lock that names every tree already swapped in
+		if (fetched.kind === 'fetched')
+			writeCorpusLock({
+				cache,
+				lock: { ...readCorpusLock({ cache }).raw, [source.id]: fetched.lock },
+			})
+	}
+	if (!existsSync(join(cache, LOCK_FILE)))
+		writeCorpusLock({ cache, lock: readCorpusLock({ cache }).raw })
 	if (params.ids.length === 0) pruneDownloads({ cache, manifest: params.manifest })
 	return outcomes
 }
@@ -50,6 +67,7 @@ async function fetchSource(params: {
 	source: ManifestSource
 	cache: string
 	overrides: string
+	timeoutMilliseconds: number
 }): Promise<FetchedSource> {
 	const { source, cache } = params
 	const problem = sourceProblemOf(source)
@@ -61,13 +79,13 @@ async function fetchSource(params: {
 			cache,
 			url: download.url,
 			sha256: download.sha256 ?? '',
+			timeoutMilliseconds: params.timeoutMilliseconds,
 		})
 		if (kept.kind === 'refused') return refusedSource({ id: source.id, reason: kept.reason })
 		downloads.set(download.url, kept.bytes)
 	}
-	const tree = sourceTreeOf({ source, downloads, overrides: params.overrides })
+	const tree = writtenTreeOf({ source, downloads, cache, overrides: params.overrides })
 	if (tree.kind === 'refused') return refusedSource({ id: source.id, reason: tree.reason })
-	writeTree({ folder: join(cache, source.id), files: tree.files })
 	const bytes = tree.files.reduce((total, file) => total + file.bytes.byteLength, 0)
 	return {
 		kind: 'fetched',
@@ -87,9 +105,39 @@ function refusedSource(params: { id: string; reason: string }): FetchedSource {
 	return { kind: 'refused', outcome: { id: params.id, kind: 'refused', reason: params.reason } }
 }
 
+/**
+ * The source's tree built and written; refused with its reason when the build refuses it or fails on bytes it cannot
+ * read (a broken archive, a glob that does not compile, a path that is both a file and a folder): one source never
+ * stops the others.
+ */
+function writtenTreeOf(params: {
+	source: ManifestSource
+	downloads: ReadonlyMap<string, Uint8Array>
+	cache: string
+	overrides: string
+}): SourceTree {
+	const folder = join(params.cache, params.source.id)
+	try {
+		const tree = sourceTreeOf(params)
+		if (tree.kind === 'tree') writeTree({ folder, files: tree.files })
+		return tree
+	} catch (error) {
+		rmSync(stagingOf(folder), { recursive: true, force: true })
+		const reason = error instanceof Error ? error.message : String(error)
+		return {
+			kind: 'refused',
+			reason: fillMessage({ template: UNBUILT_SOURCE, values: { id: params.source.id, reason } }),
+		}
+	}
+}
+
+function stagingOf(folder: string): string {
+	return join(dirname(folder), `${basename(folder)}${STAGING_SUFFIX}`)
+}
+
 /** The tree written to `<folder>.staging`, then swapped in place of `folder`. */
 function writeTree(params: { folder: string; files: readonly CorpusFile[] }): void {
-	const staging = join(dirname(params.folder), `${basename(params.folder)}${STAGING_SUFFIX}`)
+	const staging = stagingOf(params.folder)
 	rmSync(staging, { recursive: true, force: true })
 	mkdirSync(staging, { recursive: true })
 	for (const file of params.files) {

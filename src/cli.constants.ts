@@ -5,6 +5,7 @@ import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
 import { run as changelog } from './commands/changelog.ts'
 import { run as contrib } from './commands/contrib.ts'
+import { run as corpus } from './commands/corpus.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
 import { explain } from './commands/explain.ts'
@@ -66,6 +67,7 @@ export const COMMANDS = {
 	review: renamedCommand('review'),
 	recap: renamedCommand('recap'),
 	text,
+	corpus,
 } satisfies Record<string, (argv: string[]) => Promise<void>>
 
 /** The registered commands by any name: `COMMANDS` keeps literal keys for the command map, a word read is a string. */

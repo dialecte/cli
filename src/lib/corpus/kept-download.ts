@@ -21,13 +21,14 @@ export async function keptDownloadOf(params: {
 	cache: string
 	url: string
 	sha256: string
+	timeoutMilliseconds: number
 }): Promise<KeptDownload> {
 	const kept = keptFileOf(params)
 	if (existsSync(kept)) {
 		const bytes = new Uint8Array(readFileSync(kept))
 		if (sha256Of(bytes) === params.sha256) return { kind: 'bytes', bytes }
 	}
-	const downloaded = await downloadOf(params.url)
+	const downloaded = await downloadOf(params)
 	if (typeof downloaded === 'string')
 		return {
 			kind: 'refused',
@@ -51,9 +52,15 @@ export async function keptDownloadOf(params: {
 }
 
 /** The response's bytes, or why there are none. */
-async function downloadOf(url: string): Promise<Uint8Array | string> {
+async function downloadOf(params: {
+	url: string
+	timeoutMilliseconds: number
+}): Promise<Uint8Array | string> {
 	try {
-		const response = await fetch(url, { headers: { 'user-agent': CORPUS_USER_AGENT } })
+		const response = await fetch(params.url, {
+			headers: { 'user-agent': CORPUS_USER_AGENT },
+			signal: AbortSignal.timeout(params.timeoutMilliseconds),
+		})
 		if (!response.ok) return `HTTP ${response.status}`
 		const body = await response.arrayBuffer()
 		return new Uint8Array(body)

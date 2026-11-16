@@ -1,5 +1,4 @@
 /** The corpus tests' fixtures: tar, tar.gz and zip archives built in memory, a local HTTP server, a scratch cache and home. */
-import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { deflateRawSync, gzipSync } from 'node:zlib'
@@ -11,10 +10,7 @@ import type { ManifestSource } from '../src/lib/corpus/corpus.types.ts'
 import type { ArchiveMember, CorpusWorkspace, FixtureServer } from './corpus-fixtures.types.ts'
 import type { AddressInfo } from 'node:net'
 
-/** The sha256 of bytes, hex. */
-export function sha256Of(bytes: Uint8Array): string {
-	return createHash('sha256').update(bytes).digest('hex')
-}
+export { sha256Of } from '../src/lib/corpus/corpus-lock.ts'
 
 /** A ustar archive of the members (names up to 100 characters, written as given: `../x` and `/x` included). */
 export function tarOf(members: readonly ArchiveMember[]): Uint8Array {
@@ -29,9 +25,12 @@ export function tarOf(members: readonly ArchiveMember[]): Uint8Array {
 		header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii')
 		header.write('00000000000\0', 136, 'ascii')
 		header.write('        ', 148, 'ascii')
-		header.write('0', 156, 'ascii')
-		header.write('ustar\0', 257, 'ascii')
-		header.write('00', 263, 'ascii')
+		header.write(member.type ?? '0', 156, 'ascii')
+		if (member.old !== true) {
+			header.write('ustar\0', 257, 'ascii')
+			header.write('00', 263, 'ascii')
+		}
+		if (member.prefix !== undefined) header.write(member.prefix, 345, 155, 'utf8')
 		const checksum = header.reduce((sum, byte) => sum + byte, 0)
 		header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii')
 		blocks.push(
@@ -57,26 +56,38 @@ export function zipOf(members: readonly ArchiveMember[]): Uint8Array {
 	for (const member of members) {
 		const name = Buffer.from(member.name, 'utf8')
 		const content = Buffer.from(member.text, 'utf8')
-		const compressed = deflateRawSync(content)
+		const method = member.stored === true ? 0 : 8
+		const compressed = member.stored === true ? content : deflateRawSync(content)
+		const flags = member.descriptor === true ? 8 : 0
 		const local = Buffer.alloc(30)
 		local.writeUInt32LE(0x04034b50, 0)
 		local.writeUInt16LE(20, 4)
-		local.writeUInt16LE(8, 8)
-		local.writeUInt32LE(compressed.length, 18)
-		local.writeUInt32LE(content.length, 22)
+		local.writeUInt16LE(flags, 6)
+		local.writeUInt16LE(method, 8)
+		if (member.descriptor !== true) {
+			local.writeUInt32LE(compressed.length, 18)
+			local.writeUInt32LE(content.length, 22)
+		}
 		local.writeUInt16LE(name.length, 26)
+		const descriptor = Buffer.alloc(member.descriptor === true ? 16 : 0)
+		if (member.descriptor === true) {
+			descriptor.writeUInt32LE(0x08074b50, 0)
+			descriptor.writeUInt32LE(compressed.length, 8)
+			descriptor.writeUInt32LE(content.length, 12)
+		}
 		const central = Buffer.alloc(46)
 		central.writeUInt32LE(0x02014b50, 0)
 		central.writeUInt16LE(20, 4)
 		central.writeUInt16LE(20, 6)
-		central.writeUInt16LE(8, 10)
+		central.writeUInt16LE(flags, 8)
+		central.writeUInt16LE(method, 10)
 		central.writeUInt32LE(compressed.length, 20)
 		central.writeUInt32LE(content.length, 24)
 		central.writeUInt16LE(name.length, 28)
 		central.writeUInt32LE(offset, 42)
-		locals.push(local, name, compressed)
+		locals.push(local, name, compressed, descriptor)
 		centrals.push(central, name)
-		offset += local.length + name.length + compressed.length
+		offset += local.length + name.length + compressed.length + descriptor.length
 	}
 	const directory = Buffer.concat(centrals)
 	const end = Buffer.alloc(22)
@@ -104,6 +115,25 @@ export async function serveFiles(
 		}
 		response.writeHead(200, { 'content-length': bytes.length })
 		response.end(bytes)
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const { port } = server.address() as AddressInfo
+	return {
+		urlOf: (path) => `http://127.0.0.1:${port}${path}`,
+		requests,
+		close: () =>
+			new Promise<void>((resolve) => {
+				server.closeAllConnections()
+				server.close(() => resolve())
+			}),
+	}
+}
+
+/** A server on 127.0.0.1 that accepts every request and never answers it. */
+export async function serveStalled(): Promise<FixtureServer> {
+	const requests: string[] = []
+	const server = createServer(function hold(request) {
+		requests.push(request.url ?? '')
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	const { port } = server.address() as AddressInfo

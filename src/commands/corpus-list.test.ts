@@ -119,7 +119,7 @@ describe('corpus list', () => {
 					state: 'fetched',
 					folder: join(workspace.cache, 'alpha'),
 					entries: [join(workspace.cache, 'alpha', 'schema.xsd')],
-					instances: ['samples/*.xml'],
+					instances: { folder: join(workspace.cache, 'alpha'), globs: ['samples/*.xml'] },
 					instanceCount: 2,
 				},
 				{
@@ -130,7 +130,7 @@ describe('corpus list', () => {
 					state: 'missing',
 					folder: join(workspace.cache, 'beta'),
 					entries: [],
-					instances: ['samples/*.xml'],
+					instances: { folder: join(workspace.cache, 'beta'), globs: ['samples/*.xml'] },
 					instanceCount: 0,
 				},
 			],
@@ -179,9 +179,8 @@ describe('corpus list', () => {
 				source: 'licensed',
 				verdict: 'schemas-only',
 				state: 'present',
-				folder: instances,
 				entries: [xsd],
-				instances: [instances],
+				instances: { folder: instances, globs: ['*'] },
 				instanceCount: 2,
 			},
 			{
@@ -190,7 +189,6 @@ describe('corpus list', () => {
 				verdict: 'schemas-only',
 				state: 'missing',
 				entries: [join(material, 'Gone.xsd')],
-				instances: [],
 				instanceCount: 0,
 			},
 		])

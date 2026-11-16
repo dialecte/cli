@@ -10,26 +10,22 @@ import { readCorpusLock, sha256Of } from './corpus-lock.ts'
 import { CORPUS_MESSAGES } from './corpus.constants.ts'
 import { openStateOf } from './list-corpora.ts'
 
-import type {
-	CorpusLockEntry,
-	CorpusManifest,
-	CorpusProblem,
-	LicensedCorpora,
-} from './corpus.types.ts'
+import type { CorpusManifest, CorpusProblem, LicensedCorpora } from './corpus.types.ts'
 
 export function checkCorpora(params: {
 	manifest: CorpusManifest
 	cache: string
 	licensed: LicensedCorpora
 }): CorpusProblem[] {
-	const lock = readCorpusLock({ cache: params.cache })
+	const lock = readCorpusLock({ cache: params.cache }).entries
 	const problems: CorpusProblem[] = []
 	for (const source of params.manifest.sources) {
 		const state = openStateOf({ source, cache: params.cache, lock })
 		if (state === 'missing') continue
 		if (state === 'stale')
 			problems.push(problemOf({ id: source.id, template: CORPUS_MESSAGES.staleSource }))
-		const locked = lock[source.id] as CorpusLockEntry
+		const locked = lock[source.id]
+		if (locked === undefined) continue
 		const folder = join(params.cache, source.id)
 		for (const [path, sha256] of Object.entries(locked.sha256)) {
 			const file = join(folder, ...path.split('/'))
@@ -66,10 +62,10 @@ function problemOf(params: { id: string; template: string; path?: string }): Cor
 	}
 }
 
-/** Every file under `folder`, relative, `/`-separated, sorted. */
+/** Every entry under `folder` but its folders (files and links), relative, `/`-separated, sorted. */
 function filesUnder(folder: string): string[] {
 	return readdirSync(folder, { recursive: true, withFileTypes: true })
-		.filter((entry) => entry.isFile())
+		.filter((entry) => !entry.isDirectory())
 		.map((entry) => relative(folder, join(entry.parentPath, entry.name)).split('\\').join('/'))
 		.sort()
 }

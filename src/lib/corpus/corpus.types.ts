@@ -93,12 +93,24 @@ export type CorpusLockEntry = {
 /** `manifest.lock.json`: what the cache holds, by source id. */
 export type CorpusLock = Record<string, CorpusLockEntry>
 
+/** The lock as read: its well-formed entries, and every entry as written (an older writer's kept as it is). */
+export type CorpusLockRead = {
+	entries: CorpusLock
+	raw: Readonly<Record<string, unknown>>
+}
+
+/** The instances of a corpus: the folder they are read from and the globs, relative to it, that pick them. */
+export type CorpusInstances = {
+	folder: string
+	globs: string[]
+}
+
 /** What one source's fetch ended with. */
 export type SourceOutcome =
 	| { id: string; kind: 'fetched'; files: number; bytes: number }
 	| { id: string; kind: 'refused'; reason: string }
 
-/** `fetched` (open, built from the current manifest entry), `stale` (built from another), `missing`, `present` (licensed, its files there). */
+/** `fetched` (open, built from the current manifest entry), `stale` (built from another, or its folder there without a lock entry the cli can read), `missing`, `present` (licensed, its files there). */
 export type CorpusState = 'fetched' | 'stale' | 'missing' | 'present'
 
 /** One entry of `dialecte corpus list --json`: an open source of the manifest or a licensed entry of config.yml. */
@@ -107,12 +119,12 @@ export type CorpusListEntry = {
 	source: 'open' | 'licensed'
 	verdict: CorpusVerdict
 	state: CorpusState
-	/** The folder the entry's files are read from: the source's cache folder, or the licensed instances folder. */
+	/** An open source's cache folder. */
 	folder?: string
 	/** The entry schemas, absolute paths (those present for an open source; the configured XSD for a licensed one). */
 	entries: string[]
-	/** Globs of the instances relative to `folder` (open), or the instances folder (licensed). */
-	instances: string[]
+	/** Where the instances are: an open source's folder with its manifest globs, a licensed folder with `*` (every file). */
+	instances?: CorpusInstances
 	instanceCount: number
 	suite?: string
 	license?: string

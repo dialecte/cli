@@ -1,5 +1,5 @@
 /** `dialecte corpus check` through `runCorpus`: a fetched source against its lock, a licensed entry against its files. */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -89,6 +89,42 @@ describe('corpus check', () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toContain('alpha: schema.xsd does not match its fetched sha256')
+	})
+
+	it('reads a lock entry without its per-file hashes (an older writer) as stale, never a crash', async () => {
+		const workspace = createCorpusWorkspace()
+		const manifest = await fetchedAlpha(workspace)
+		writeFileSync(
+			join(workspace.cache, 'manifest.lock.json'),
+			`${JSON.stringify({ alpha: { files: 1, bytes: SCHEMA.length, verdict: 'full' } })}\n`,
+		)
+
+		const checked = corpus({ workspace, manifest, argv: ['check'] })
+		const listed = corpus({ workspace, manifest, argv: ['list', '--json'] })
+
+		await expect(checked).resolves.toMatchObject({ exitCode: 1 })
+		await expect(listed).resolves.toMatchObject({ exitCode: 0 })
+		const checkAnswer = await checked
+		const listAnswer = await listed
+		expect(checkAnswer.output).toContain('alpha: fetched from another manifest entry')
+		expect(JSON.parse(listAnswer.output).corpora[0]).toMatchObject({
+			name: 'alpha',
+			state: 'stale',
+		})
+	})
+
+	it('exits 1 naming a link planted in a fetched source as not fetched', async () => {
+		const workspace = createCorpusWorkspace()
+		const manifest = await fetchedAlpha(workspace)
+		symlinkSync(
+			join(workspace.cache, 'alpha', 'schema.xsd'),
+			join(workspace.cache, 'alpha', 'planted.xsd'),
+		)
+
+		const result = await corpus({ workspace, manifest, argv: ['check'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('alpha: planted.xsd was not fetched')
 	})
 
 	it('exits 1 naming a licensed entry whose XSD or instances folder is missing', async () => {

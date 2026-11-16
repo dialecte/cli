@@ -63,7 +63,7 @@ describe('corpus add', () => {
 				source: 'licensed',
 				state: 'present',
 				entries: [join(material, 'Licensed.xsd')],
-				instances: [join(material, 'files')],
+				instances: { folder: join(material, 'files'), globs: ['*'] },
 			}),
 		])
 	})

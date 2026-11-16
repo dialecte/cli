@@ -93,3 +93,12 @@ export const CORPUS_USER_AGENT = 'dialecte-corpus/1 (+https://github.com/dialect
 export const SOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u
 export const BAD_SOURCE_ID =
 	'{id}: a source id is one folder name (letters, digits, dot, dash, underscore)'
+
+/** The glob of a licensed instances folder: every file under it (the manifest's globs, where `*` crosses folders). */
+export const LICENSED_INSTANCE_GLOB = '*'
+
+/** How long one download may take, as create's fetch allowed. */
+export const DOWNLOAD_TIMEOUT_MILLISECONDS = 120_000
+
+/** A source whose tree could not be built from its checked downloads. */
+export const UNBUILT_SOURCE = '{id}: could not be built ({reason})'

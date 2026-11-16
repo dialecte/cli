@@ -7,7 +7,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { manifestEntryHashOf, readCorpusLock } from './corpus-lock.ts'
-import { LICENSED_VERDICT } from './corpus.constants.ts'
+import { LICENSED_INSTANCE_GLOB, LICENSED_VERDICT } from './corpus.constants.ts'
 import { fnmatchesAny } from './fnmatch.ts'
 
 import type {
@@ -24,22 +24,25 @@ export function listCorpora(params: {
 	cache: string
 	licensed: LicensedCorpora
 }): CorpusListEntry[] {
-	const lock = readCorpusLock({ cache: params.cache })
+	const lock = readCorpusLock({ cache: params.cache }).entries
 	return [
 		...params.manifest.sources.map((source) => openEntryOf({ source, cache: params.cache, lock })),
 		...Object.entries(params.licensed).map(([name, entry]) => licensedEntryOf({ name, ...entry })),
 	]
 }
 
-/** `fetched` when the lock holds it from this manifest entry, `stale` from another, `missing` otherwise. */
+/**
+ * `missing` without its folder; `fetched` when the lock holds it from this manifest entry; `stale` when from another,
+ * or when the lock has no entry it can read for a folder that is there.
+ */
 export function openStateOf(params: {
 	source: ManifestSource
 	cache: string
 	lock: CorpusLock
 }): CorpusState {
+	if (!existsSync(join(params.cache, params.source.id))) return 'missing'
 	const locked = params.lock[params.source.id]
-	if (locked === undefined || !existsSync(join(params.cache, params.source.id))) return 'missing'
-	return locked.manifest === manifestEntryHashOf(params.source) ? 'fetched' : 'stale'
+	return locked?.manifest === manifestEntryHashOf(params.source) ? 'fetched' : 'stale'
 }
 
 function openEntryOf(params: {
@@ -63,7 +66,7 @@ function openEntryOf(params: {
 		entries: files
 			.filter((path) => fnmatchesAny({ path, patterns: source.entries ?? [] }))
 			.map((path) => join(folder, ...path.split('/'))),
-		instances,
+		instances: { folder, globs: instances },
 		instanceCount: files.filter((path) => fnmatchesAny({ path, patterns: instances })).length,
 	}
 }
@@ -80,9 +83,9 @@ function licensedEntryOf(params: {
 		source: 'licensed',
 		verdict: LICENSED_VERDICT,
 		state: existsSync(params.xsd) && instancesThere ? 'present' : 'missing',
-		folder: instances,
 		entries: [params.xsd],
-		instances: instances === undefined ? [] : [instances],
+		instances:
+			instances === undefined ? undefined : { folder: instances, globs: [LICENSED_INSTANCE_GLOB] },
 		instanceCount: instances !== undefined && existsSync(instances) ? fileCountOf(instances) : 0,
 	}
 }

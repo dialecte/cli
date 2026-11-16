@@ -100,6 +100,13 @@ function filesSource(params: {
 	})
 }
 
+/** A copy of a zip whose end record places its central directory past the archive's end. */
+function withCentralDirectoryPastEnd(zip: Uint8Array): Uint8Array {
+	const copy = Buffer.from(zip)
+	copy.writeUInt32LE(copy.length + 100, copy.length - 22 + 16)
+	return copy
+}
+
 /** The routes serving `files` under `/<id>/`. */
 function routesOf(params: {
 	id: string
@@ -314,6 +321,35 @@ describe('corpus fetch', () => {
 		)
 	})
 
+	it('refuses a zip member named with backslashes, writing nothing for its source', async () => {
+		const workspace = createCorpusWorkspace()
+		const archive = zipOf([
+			{ name: 'a.xsd', text: SCHEMA_A },
+			{ name: '..\\..\\escape.xsd', text: 'escaped\n' },
+		])
+		const server = await serverOf({ '/archives/bs.zip': archive })
+		const manifest: CorpusManifest = {
+			sources: [
+				reviewedSource({
+					id: 'hostile',
+					fetch: {
+						kind: 'archive',
+						url: server.urlOf('/archives/bs.zip'),
+						sha256: sha256Of(archive),
+						strip: '',
+						keep: [''],
+					},
+				}),
+			],
+		}
+
+		const result = await corpus({ workspace, manifest, argv: ['fetch'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('hostile: refused path in a downloaded source')
+		expect(existsSync(join(workspace.cache, 'hostile'))).toBe(false)
+	})
+
 	it('removes the files an exclude glob matches, its * crossing folders', async () => {
 		const workspace = createCorpusWorkspace()
 		const files = { 'a.xsd': SCHEMA_A, 'top.sch': 'top\n', 'sub/deep/more.sch': 'more\n' }
@@ -435,6 +471,52 @@ describe('corpus fetch', () => {
 			expect(result.output).toContain(`alpha: no ${field}`)
 			expect(server.requests).toEqual([])
 			expect(existsSync(join(workspace.cache, 'alpha'))).toBe(false)
+		},
+	)
+
+	it.each([
+		{
+			case: 'a zip whose central directory lies past its end',
+			archive: withCentralDirectoryPastEnd(zipOf([{ name: 'a.xsd', text: SCHEMA_A }])),
+			exclude: [],
+		},
+		{
+			case: 'a glob class out of order',
+			archive: zipOf([{ name: 'a.xsd', text: SCHEMA_A }]),
+			exclude: ['[z-a].xsd'],
+		},
+	])(
+		'refuses a source on $case, naming it, and fetches the others',
+		async ({ archive, exclude }) => {
+			const workspace = createCorpusWorkspace()
+			const server = await serverOf({
+				'/archives/broken.zip': archive,
+				...routesOf({ id: 'beta', files: { 'b.xsd': SCHEMA_B } }),
+			})
+			const manifest: CorpusManifest = {
+				sources: [
+					reviewedSource({
+						id: 'broken',
+						fetch: {
+							kind: 'archive',
+							url: server.urlOf('/archives/broken.zip'),
+							sha256: sha256Of(archive),
+							strip: '',
+							keep: [''],
+						},
+						exclude,
+					}),
+					filesSource({ id: 'beta', server, files: { 'b.xsd': SCHEMA_B } }),
+				],
+			}
+
+			const result = corpus({ workspace, manifest, argv: ['fetch'] })
+
+			await expect(result).resolves.toMatchObject({ exitCode: 1 })
+			const answer = await result
+			expect(answer.output).toContain('✗ broken:')
+			expect(existsSync(join(workspace.cache, 'broken'))).toBe(false)
+			expect(treeOf(join(workspace.cache, 'beta'))).toEqual({ 'b.xsd': SCHEMA_B })
 		},
 	)
 

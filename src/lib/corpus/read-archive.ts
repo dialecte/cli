@@ -80,7 +80,8 @@ function tarFilesOf(data: Buffer): CorpusFile[] {
 			continue
 		}
 		if (type === TAR_TYPES.longName) {
-			nextName = content.toString('utf8').replace(/\0+$/u, '')
+			const end = content.indexOf(0)
+			nextName = content.subarray(0, end === -1 ? content.length : end).toString('utf8')
 			continue
 		}
 		const prefix = fieldOf({ data, offset: contentStart - TAR_BLOCK, field: TAR_HEADER.prefix })
