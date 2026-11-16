@@ -129,6 +129,41 @@ export async function serveFiles(
 	}
 }
 
+/** A server on 127.0.0.1 answering every request with `bytes`, sent in `chunks` parts, `gapMilliseconds` apart. */
+export async function serveDribbled(params: {
+	bytes: Uint8Array
+	chunks: number
+	gapMilliseconds: number
+}): Promise<FixtureServer> {
+	const requests: string[] = []
+	const size = Math.ceil(params.bytes.length / params.chunks)
+	const server = createServer(function dribble(request, response) {
+		requests.push(request.url ?? '')
+		response.writeHead(200, { 'content-length': params.bytes.length })
+		let index = 0
+		const timer = setInterval(function sendNext() {
+			response.write(params.bytes.subarray(index * size, (index + 1) * size))
+			index++
+			if (index * size >= params.bytes.length) {
+				clearInterval(timer)
+				response.end()
+			}
+		}, params.gapMilliseconds)
+		response.on('close', () => clearInterval(timer))
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const { port } = server.address() as AddressInfo
+	return {
+		urlOf: (path) => `http://127.0.0.1:${port}${path}`,
+		requests,
+		close: () =>
+			new Promise<void>((resolve) => {
+				server.closeAllConnections()
+				server.close(() => resolve())
+			}),
+	}
+}
+
 /** A server on 127.0.0.1 that accepts every request and never answers it. */
 export async function serveStalled(): Promise<FixtureServer> {
 	const requests: string[] = []

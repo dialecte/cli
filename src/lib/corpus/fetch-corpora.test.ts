@@ -1,7 +1,12 @@
 /** `fetchCorpora` on a server that never answers: the download ends at its timeout and refuses only its source. */
 import { join } from 'node:path'
 
-import { reviewedSource, serveStalled, sha256Of } from '../../../test/corpus-fixtures.ts'
+import {
+	reviewedSource,
+	serveDribbled,
+	serveStalled,
+	sha256Of,
+} from '../../../test/corpus-fixtures.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { fetchCorpora } from './fetch-corpora.ts'
 
@@ -51,5 +56,31 @@ describe('fetchCorpora', () => {
 				reason: expect.stringContaining(`alpha: ${url} could not be downloaded`),
 			},
 		])
+	})
+
+	it('fetches a download that keeps sending, though it takes longer in all than the timeout', async () => {
+		const bytes = Buffer.from('x'.repeat(4_000))
+		const server = await serveDribbled({ bytes, chunks: 8, gapMilliseconds: 100 })
+		onTestFinished(() => server.close())
+		const cache = join(temporaryFolder('dialecte-corpora-'), 'cache')
+		const source = reviewedSource({
+			id: 'slow',
+			fetch: {
+				kind: 'files',
+				files: { 'big.xml': { url: server.urlOf('/slow/big.xml'), sha256: sha256Of(bytes) } },
+			},
+		})
+
+		const fetched = fetchCorpora({
+			manifest: { sources: [source] },
+			overrides: temporaryFolder('dialecte-corpus-overrides-'),
+			cache,
+			ids: [],
+			timeoutMilliseconds: 400,
+		})
+
+		await expect(
+			settledWithin({ promise: fetched, milliseconds: GIVE_UP_AFTER_MILLISECONDS }),
+		).resolves.toEqual([{ id: 'slow', kind: 'fetched', files: 1, bytes: bytes.length }])
 	})
 })

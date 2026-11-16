@@ -34,7 +34,7 @@ export async function fetchCorpora(params: {
 	cache: string
 	/** The sources to fetch; every source when empty (the kept downloads no source names are then removed). */
 	ids: readonly string[]
-	/** How long one download may take (default DOWNLOAD_TIMEOUT_MILLISECONDS). */
+	/** How long a download may go without receiving anything (default DOWNLOAD_TIMEOUT_MILLISECONDS). */
 	timeoutMilliseconds?: number
 }): Promise<SourceOutcome[]> {
 	const { cache } = params

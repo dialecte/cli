@@ -7,7 +7,12 @@ import { join } from 'node:path'
 
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { sha256Of } from './corpus-lock.ts'
-import { CORPUS_MESSAGES, CORPUS_USER_AGENT, DOWNLOADS_FOLDER } from './corpus.constants.ts'
+import {
+	CORPUS_MESSAGES,
+	CORPUS_USER_AGENT,
+	DOWNLOADS_FOLDER,
+	IDLE_DOWNLOAD,
+} from './corpus.constants.ts'
 
 import type { KeptDownload } from './corpus.types.ts'
 
@@ -52,23 +57,52 @@ export async function keptDownloadOf(params: {
 }
 
 /** The response's bytes, or why there are none. */
+/**
+ * The response's bytes, or why there are none. The timeout is an idle one, as create's per-read timeout was: it is
+ * armed before the request and again on every chunk of the body, so a slow download that keeps sending finishes and
+ * one that stops sending is aborted.
+ */
 async function downloadOf(params: {
 	url: string
 	timeoutMilliseconds: number
 }): Promise<Uint8Array | string> {
+	const controller = new AbortController()
+	let timer: NodeJS.Timeout | undefined
+	function rearm(): void {
+		clearTimeout(timer)
+		timer = setTimeout(function abortIdle() {
+			controller.abort(
+				new Error(
+					fillMessage({
+						template: IDLE_DOWNLOAD,
+						values: { milliseconds: String(params.timeoutMilliseconds) },
+					}),
+				),
+			)
+		}, params.timeoutMilliseconds)
+	}
 	try {
+		rearm()
 		const response = await fetch(params.url, {
 			headers: { 'user-agent': CORPUS_USER_AGENT },
-			signal: AbortSignal.timeout(params.timeoutMilliseconds),
+			signal: controller.signal,
 		})
 		if (!response.ok) return `HTTP ${response.status}`
-		const body = await response.arrayBuffer()
-		return new Uint8Array(body)
+		if (response.body === null) return new Uint8Array()
+		const chunks: Uint8Array[] = []
+		for await (const chunk of response.body) {
+			rearm()
+			chunks.push(chunk)
+		}
+		return new Uint8Array(Buffer.concat(chunks))
 	} catch (error) {
-		return error instanceof Error
-			? error.cause instanceof Error
-				? error.cause.message
-				: error.message
-			: String(error)
+		const reason = controller.signal.aborted ? controller.signal.reason : error
+		return reason instanceof Error
+			? reason.cause instanceof Error
+				? reason.cause.message
+				: reason.message
+			: String(reason)
+	} finally {
+		clearTimeout(timer)
 	}
 }

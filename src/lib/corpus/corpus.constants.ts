@@ -97,8 +97,11 @@ export const BAD_SOURCE_ID =
 /** The glob of a licensed instances folder: every file under it (the manifest's globs, where `*` crosses folders). */
 export const LICENSED_INSTANCE_GLOB = '*'
 
-/** How long one download may take, as create's fetch allowed. */
+/** How long a download may go without receiving anything, as create's per-read timeout allowed. */
 export const DOWNLOAD_TIMEOUT_MILLISECONDS = 120_000
 
 /** A source whose tree could not be built from its checked downloads. */
 export const UNBUILT_SOURCE = '{id}: could not be built ({reason})'
+
+/** Why an idle download was aborted. */
+export const IDLE_DOWNLOAD = 'no data for {milliseconds} ms'
