@@ -44,6 +44,10 @@ export const VITEST_REPORT_ARGUMENTS = [
 /** A shared path as the left-to-CI line names it: how many of the package's test files reach it. */
 export const SHARED_PATH_TEXT = '{path} ({related} of {total} test files)'
 
+/** A shared path whose own tests (the test files importing it themselves) ran here: `{direct}` how many. */
+export const SHARED_PATH_DIRECT_RAN_TEXT =
+	'{path} ({related} of {total} test files; the {direct} importing it directly ran here)'
+
 /** The script that reads the package's test import graph with its own vitest, run with node in the package root. */
 export const TEST_GRAPH_SCRIPT = fileURLToPath(new URL('./test-graph.ts', import.meta.url))
 
@@ -94,9 +98,9 @@ export const NESTED_TWICE_LINE =
 	'scoped tests: cannot start inside a scoped run nested twice (DIALECTE_SCOPED_TESTS_DEPTH {depth}): nothing run'
 
 /**
- * A changed file is shared, its related tests left to the full suite on CI, when vitest's import graph has more than
- * this share of the package's test files reach it: running a quarter of the suite or more costs the machine what a CI
- * shard costs.
+ * A changed file is shared, its far reach left to the full suite on CI (its own direct tests still run), when vitest's
+ * import graph has more than this share of the package's test files reach it: running a quarter of the suite or more
+ * costs the machine what a CI shard costs. The same share of direct importers sends a hub helper to CI whole.
  */
 export const SHARED_FILE_SHARE = 0.25
 

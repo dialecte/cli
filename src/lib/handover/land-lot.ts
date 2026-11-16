@@ -11,13 +11,13 @@
  * `lot close` read.
  */
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
+import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import {
@@ -300,7 +300,11 @@ function recordReplacedHead(params: { lotFolder: string; branch: string; head: s
 		branch: params.branch,
 		replaced: [...readReplacedHeads(params), params.head],
 	}
-	writeFileSync(join(params.lotFolder, LANDING_FILE), `${JSON.stringify(record, null, 2)}\n`)
+	// whole or not at all: a crash mid-write never truncates the record (its head and replaced heads)
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify(record, null, 2)}\n`,
+	})
 }
 
 /**
@@ -375,7 +379,11 @@ function writeLanding(params: {
 		replaced: [...params.replaced],
 		at: params.now.toISOString(),
 	}
-	writeFileSync(join(params.lotFolder, LANDING_FILE), `${JSON.stringify(record, null, 2)}\n`)
+	// whole or not at all: a crash mid-write never truncates the record (its head and replaced heads)
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify(record, null, 2)}\n`,
+	})
 }
 
 /**

@@ -31,6 +31,7 @@ import {
 	NO_TEST_REACHED_LINE,
 	SHARED_FILE_FLOOR,
 	SHARED_FILE_SHARE,
+	SHARED_PATH_DIRECT_RAN_TEXT,
 	SHARED_PATH_TEXT,
 	TEST_GRAPH_SCRIPT,
 	LEFT_TO_CI_FILE_PATTERN,
@@ -51,9 +52,11 @@ import type { SpawnSyncReturns } from 'node:child_process'
 
 /**
  * Runs the tests the gate's change can reach and writes its selection. A changed path no related run can follow (the
- * manifest, the entry, the vitest config, a file a test reads) is left to the full suite CI runs; so is a shared file,
- * one vitest's import graph has more than a quarter of the package's test files reach (and more than
- * `SHARED_FILE_FLOOR`): both said in one line and skipped in the selection. The test files the other importable
+ * manifest, the entry, the vitest config, a file a test reads) is left to the full suite CI runs; so is the far reach
+ * of a shared file, one vitest's import graph has more than a quarter of the package's test files reach (and more
+ * than `SHARED_FILE_FLOOR`): its own tests, the test files importing it themselves, still run here, unless they too
+ * are past that share (a hub helper goes to CI whole). Both said in one line and skipped in the selection. The test
+ * files the other importable
  * changed paths reach run with `vitest run`; nothing, exit 0, when none does. The gate's serial rerun (its flag and the
  * failing files after the changed paths) runs those files alone.
  * @intent run on the machine only the tests a change reaches, the full suite being CI's
@@ -202,9 +205,11 @@ function leftLineOf(params: {
 	const named = [
 		...params.leftToCi,
 		...params.shared.map((shared) =>
-			SHARED_PATH_TEXT.replace('{path}', () => shared.path)
+			(shared.directRan ? SHARED_PATH_DIRECT_RAN_TEXT : SHARED_PATH_TEXT)
+				.replace('{path}', () => shared.path)
 				.replace('{related}', String(shared.related))
-				.replace('{total}', String(shared.total)),
+				.replace('{total}', String(shared.total))
+				.replace('{direct}', String(shared.direct)),
 		),
 	]
 	return named.length > 0 ? `${textOf([`${LEFT_TO_CI_LINE_START}${named.join(', ')}`])}\n` : ''
@@ -241,11 +246,24 @@ function reachedTestFiles(params: {
 		const related = testFiles.filter(function reaches(file) {
 			return file === path || graph.dependencies[file].includes(path)
 		})
-		if (related.length > SHARED_FILE_FLOOR && related.length > SHARED_FILE_SHARE * total)
-			shared.push({ path, related: related.length, total })
-		else for (const file of related) reached.add(file)
+		if (!isPastShare({ count: related.length, total })) {
+			for (const file of related) reached.add(file)
+			continue
+		}
+		// its own tests (a test file importing it itself) run here, unless they are a hub's share themselves
+		const direct = testFiles.filter(function imports(file) {
+			return file === path || (graph.imports[file] ?? []).includes(path)
+		})
+		const directRan = direct.length > 0 && !isPastShare({ count: direct.length, total })
+		if (directRan) for (const file of direct) reached.add(file)
+		shared.push({ path, related: related.length, total, direct: direct.length, directRan })
 	}
 	return { testFiles: [...reached].sort(), shared }
+}
+
+/** Whether `count` test files of `total` are past the share and the floor: a run the machine leaves to CI. */
+function isPastShare(params: { count: number; total: number }): boolean {
+	return params.count > SHARED_FILE_FLOOR && params.count > SHARED_FILE_SHARE * params.total
 }
 
 /**
