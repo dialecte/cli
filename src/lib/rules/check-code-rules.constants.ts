@@ -21,6 +21,7 @@ export const RULE_NAMES = [
 	'temporary-root-shared',
 	'unreadable-file',
 	'argument-mutation',
+	'class',
 	'query-in-loop',
 	'long-function',
 	'table-branch',
@@ -48,6 +49,7 @@ export const RULE_NAMES = [
 /** The quality rules a `dialecte-allow` comment may silence. */
 export const ALLOWABLE_RULES = [
 	'argument-mutation',
+	'class',
 	'query-in-loop',
 	'long-function',
 	'table-branch',

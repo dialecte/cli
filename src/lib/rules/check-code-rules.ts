@@ -128,7 +128,12 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 			})
 
 	if (kind === 'implementation' && !isTestShaped(file))
-		for (const finding of checkQualityRules({ sourceFile, kind, queryNames: params.queryNames }))
+		for (const finding of checkQualityRules({
+			sourceFile,
+			kind,
+			queryNames: params.queryNames,
+			...(params.entryClasses && { entryClasses: params.entryClasses }),
+		}))
 			findings.push({ file, ...finding })
 
 	if (isTestShaped(file))

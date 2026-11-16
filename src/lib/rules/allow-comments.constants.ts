@@ -18,11 +18,12 @@ export const ALLOW_REASON_MIN_LENGTH = 15
 export const ALLOW_GRAMMAR = 'dialecte-allow <rule>[, <rule>]: <reason>'
 
 /**
- * The rules judged on a whole function: an opt-out in the comments right before the function (above or inside its
- * doc comment) covers their findings too.
+ * The rules judged on a whole function or class: an opt-out in the comments right before it (above or inside its doc
+ * comment) covers their findings too.
  */
 export const FUNCTION_WIDE_RULES: readonly RuleName[] = [
 	'argument-mutation',
+	'class',
 	'long-function',
 	'act-repeats-call',
 	'act-snapshot',

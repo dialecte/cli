@@ -36,6 +36,8 @@ export type DialecteScope = {
 	judgesOnlyChanges: boolean
 	/** The unit context of each test-shaped Dialecte-change file. */
 	units: UnitContextReader
+	/** The names of a package file's classes the package's entries export (read once per run, when first asked). */
+	entryClassesOf(file: string): ReadonlySet<string>
 }
 
 /** One file's result: its findings, what its opt-outs silenced, its verdict, and whether the rules judged it. */
