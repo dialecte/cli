@@ -6,7 +6,7 @@
  * registered worktree (or one already in the trash or the pool), one on another branch than the hand-over's, a
  * locked one, a mutation run from it, a process working in it, processes that cannot be listed, another
  * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, commits only
- * its HEAD reflog reaches, ignored files its removal would delete that nothing else holds; nothing done for a
+ * its HEAD reflog reaches (a head a rebase of `lot land` replaced holds its commits: they landed rebased), ignored files its removal would delete that nothing else holds; nothing done for a
  * hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
  * else a catch-up one read back) and the `removing` intent, any failure keeping the worktree; after it, the
  * `removed` outcome. Every decision is taken for every argument before anything
@@ -16,11 +16,15 @@
  * touched. Each hand-over closed records `closed` (the time) on its registry entry; a hand-over whose entry holds
  * it is already closed, nothing decided nor moved (a worktree removed by hand, never closed, is still kept).
  */
-import { existsSync } from 'node:fs'
+import { constants, copyFileSync, existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
-import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
+import {
+	archivedDeclarationsOf,
+	isOwnLandedDeclaration,
+	removableIgnored,
+} from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
@@ -37,11 +41,21 @@ import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-p
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
-import { IGNORED_FILES_SHOWN, WORKTREE_STATUS_ARGUMENTS } from '../worktree/worktree.constants.ts'
+import {
+	IGNORED_FILES_SHOWN,
+	LOT_FILE,
+	WORKTREE_STATUS_ARGUMENTS,
+} from '../worktree/worktree.constants.ts'
 import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
+import { PATCH_DIFF_OPTIONS } from './close-handovers.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
 import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
-import { CLOSE_FROM_INSIDE, HEAD_REFLOG_COMMITS_SHOWN } from './handover.constants.ts'
+import {
+	ARCHIVED_LOT_FILE,
+	CLOSE_FROM_INSIDE,
+	HEAD_REFLOG_COMMITS_SHOWN,
+} from './handover.constants.ts'
+import { readReplacedHeads } from './land-record.ts'
 
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -169,6 +183,9 @@ export function closeHandovers(params: {
 						})
 			if ('kept' in record) return [key, { outcome: { handover, kept: record.kept }, moved }]
 			try {
+				// a landed lot's declaration kept in its folder before the worktree goes (the removal rule counted it)
+				for (const entry of entriesReaching({ key, targets, keys, registered }))
+					archiveLandedDeclaration({ entry, worktree: decision.worktree.path })
 				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
@@ -393,6 +410,7 @@ export function whyKeep(params: {
 		worktree: worktree.path,
 		branch: entry.branch,
 		baseRef: params.baseBranch?.ref,
+		replaced: readReplacedHeads({ lotFolder: entry.folder, branch: entry.branch }),
 	})
 	const holders = [entry.branch, ...(params.baseBranch ? [params.baseBranch.branch] : [])]
 	if (unreached.length)
@@ -443,15 +461,18 @@ function linkFromOutside(params: {
 }
 
 /**
- * The commits (short) the worktree's HEAD reflog reaches that neither the hand-over's branch, the base branch nor
- * a remote-tracking ref holds: deleted with the worktree, its reflog the only way back to them. A ref the
- * repository does not hold is left out of the comparison.
+ * The commits (short) the worktree's HEAD reflog reaches that neither the hand-over's branch, the base branch, a
+ * remote-tracking ref nor a head its landings' rebases replaced holds, and whose patch (stable patch id) no commit of
+ * the branch since the base holds (a rebase no record names): deleted with the worktree, its reflog the only way back
+ * to them. A ref or head the repository does not hold is left out of the comparison.
  */
 function commitsOnlyInHeadReflog(params: {
 	worktree: string
 	branch: string
 	/** The base branch's full ref; undefined when none was found (nothing held through it). */
 	baseRef: string | undefined
+	/** The heads `lot land` rebased away (`landing.json`): their commits landed as the rebased ones. */
+	replaced: readonly string[]
 }): string[] {
 	const root = params.worktree
 	// a reflog git cannot read throws: the worktree is kept with git's message
@@ -461,17 +482,102 @@ function commitsOnlyInHeadReflog(params: {
 	const held = [
 		`refs/heads/${params.branch}`,
 		...(params.baseRef === undefined ? [] : [params.baseRef]),
+		...params.replaced,
 	].filter(
-		(ref) => tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', ref] }) !== undefined,
+		(ref) =>
+			tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] }) !==
+			undefined,
 	)
 	// the reflog's commits on standard input (read as wanted, whatever `--not` says): no argument-length limit
-	return readGit({
+	const unreached = readGit({
 		root,
-		args: ['rev-list', '--abbrev-commit', '--stdin', '--not', ...held, '--remotes'],
+		args: ['rev-list', '--stdin', '--not', ...held, '--remotes'],
 		input: `${commits.join('\n')}\n`,
 	})
 		.split('\n')
 		.filter(Boolean)
+	if (unreached.length === 0) return []
+	// a rebase no record names (a lot landed before `replaced` was kept): the same patch as a commit of the branch
+	const landed = patchIdsOf({
+		root,
+		patches: readGit({
+			root,
+			args: [
+				'log',
+				'-p',
+				...PATCH_DIFF_OPTIONS,
+				'--format=commit %H',
+				`refs/heads/${params.branch}`,
+				...(params.baseRef === undefined ? [] : ['--not', params.baseRef]),
+			],
+		}),
+	})
+	const unreachedPatches = readGit({
+		root,
+		args: ['show', '-p', ...PATCH_DIFF_OPTIONS, '--format=commit %H', '--stdin'],
+		input: `${unreached.join('\n')}\n`,
+	})
+	// full ids on both sides; git abbreviates the ones left only to name them
+	const samePatch = new Set(
+		[...patchIdsOf({ root, patches: unreachedPatches })]
+			.filter(function isLandedPatch([patchId]) {
+				return landed.has(patchId)
+			})
+			.map(function commitOf([, commit]) {
+				return commit
+			}),
+	)
+	const left = unreached.filter(function notSamePatch(commit) {
+		return !samePatch.has(commit)
+	})
+	if (left.length === 0) return []
+	return readGit({
+		root,
+		args: ['rev-list', '--no-walk', '--abbrev-commit', '--stdin'],
+		input: `${left.join('\n')}\n`,
+	})
+		.split('\n')
+		.filter(Boolean)
+}
+
+/**
+ * The patch id of each commit of `patches` (`git log -p` / `git show -p` with `commit <sha>` headers), as a map from
+ * patch id to commit; a commit with no change (an empty or merge commit) has none. Verbatim: whitespace counts, so a
+ * commit that differs only in its indentation is another patch (a YAML, Python or Markdown change is never lost).
+ */
+function patchIdsOf(params: { root: string; patches: string }): Map<string, string> {
+	if (params.patches.trim() === '') return new Map()
+	const lines = readGit({
+		root: params.root,
+		args: ['patch-id', '--verbatim'],
+		input: params.patches,
+	})
+		.split('\n')
+		.filter(Boolean)
+	return new Map(
+		lines.map(function pairOf(line) {
+			const [patchId, commit] = line.split(' ')
+			return [patchId, commit] as const
+		}),
+	)
+}
+
+/**
+ * A committed lot landed through its pull request (`landing.json` in its folder, the worktree's `.dialecte/lot` link
+ * pointing there) with nothing archived there: the worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
+ * worktree without one. A copy that cannot be written throws: the worktree stays.
+ */
+function archiveLandedDeclaration(params: { entry: StoreEntry; worktree: string }): void {
+	const { entry } = params
+	if (
+		entry.state !== 'committed' ||
+		!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })
+	)
+		return
+	const archived = join(entry.folder, ARCHIVED_LOT_FILE)
+	const own = join(params.worktree, LOT_FILE)
+	if (existsSync(archived) || !existsSync(own)) return
+	copyFileSync(own, archived, constants.COPYFILE_EXCL)
 }
 
 /**

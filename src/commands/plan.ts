@@ -11,6 +11,7 @@ import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { readMachineLoad } from '../lib/heavy/machine-load.ts'
 import { entryStates } from '../lib/plan/entry-state.ts'
+import { findLandedCommits } from '../lib/plan/landed-commit.ts'
 import { readPlanBlock } from '../lib/plan/plan-block.ts'
 import { readPlanHeavy } from '../lib/plan/plan-heavy.ts'
 import { appendPlanMark, readPlanMarks } from '../lib/plan/plan-marks.ts'
@@ -36,8 +37,10 @@ import {
 } from './plan.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { PlanBlock, PlanFault } from '../lib/plan/plan-block.types.ts'
+import type { PlanBlock, PlanEntry, PlanFault } from '../lib/plan/plan-block.types.ts'
+import type { LandedCommit } from '../lib/plan/plan.types.ts'
 import type { RoundArguments } from '../lib/review-rounds/review-rounds.types.ts'
+import type { StateFolderLocation } from '../lib/store/store.types.ts'
 import type { PlanSeams, RunPlanParams } from './plan.types.ts'
 
 /** Runs `dialecte plan` in the current folder: an answer (exit 0 or 1) on stdout, a refusal (exit 2) on stderr. */
@@ -126,11 +129,16 @@ function runCheck(params: RunPlanParams): CommandResult {
 	})
 }
 
-/** `plan mark <plan.md> <id> done --by <who> [--reason <text>]`: a person entry only, once. */
+/**
+ * `plan mark <plan.md> <id> done --by <who> [--reason <text>]` for a person entry, once; `--landed <sha> --reason
+ * <text>` for a lot or fix entry landed outside the lot store (the commit held by origin's base branch of one of its
+ * repositories; an entry its records already say done takes none).
+ */
 function runMark(params: RunPlanParams): CommandResult {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: [PLAN_MARK_OPTIONS.by, PLAN_MARK_OPTIONS.reason],
+		repeatable: [PLAN_MARK_OPTIONS.landed],
 	})
 	if (typeof read === 'string') return usageOf({ problem: `mark: ${read}` })
 	const [plan, id, state] = read.words
@@ -144,12 +152,10 @@ function runMark(params: RunPlanParams): CommandResult {
 	const entry = loaded.block.lots.find((candidate) => candidate.id === id)
 	if (entry === undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: no entry ${id} in ${plan}`] })
-	if (entry.kind !== 'person')
-		return refusalOf({
-			lines: [
-				`${PLAN_COMMAND_NAME} mark: ${id} is a ${entry.kind} entry; only a person entry takes a mark (its state comes from its records)`,
-			],
-		})
+	const landedGiven = read.lists.get(PLAN_MARK_OPTIONS.landed)
+	const kindFault = markKindFaultOf({ id, kind: entry.kind, landed: landedGiven, read })
+	if (kindFault !== undefined)
+		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: ${kindFault}`] })
 	const location = params.seams?.state
 	const by = read.values.get(PLAN_MARK_OPTIONS.by) as string
 	if (readPlanMarks({ planPath: loaded.planPath, location }).some((mark) => mark.id === id))
@@ -157,12 +163,23 @@ function runMark(params: RunPlanParams): CommandResult {
 			exitCode: PLAN_EXIT.answered,
 			lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - already recorded`],
 		})
+	const landed =
+		landedGiven === undefined
+			? undefined
+			: landedOfEntry({ ...loaded, entry, given: landedGiven, location })
+	if (landed !== undefined && 'refusal' in landed) return landed.refusal
+	if (landed !== undefined && 'done' in landed)
+		return resultOf({
+			exitCode: PLAN_EXIT.answered,
+			lines: [`${PLAN_COMMAND_NAME} mark: ${id} is already done by its records - nothing recorded`],
+		})
 	try {
 		appendPlanMark({
 			planPath: loaded.planPath,
 			id,
 			by,
 			reason: read.values.get(PLAN_MARK_OPTIONS.reason),
+			landed,
 			location,
 			now: params.seams?.now,
 		})
@@ -175,8 +192,63 @@ function runMark(params: RunPlanParams): CommandResult {
 	}
 	return resultOf({
 		exitCode: PLAN_EXIT.answered,
-		lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by})`],
+		lines: [
+			`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by}${landed === undefined ? '' : `, landed as ${landed.map(landedText).join(', ')}`})`,
+		],
 	})
+}
+
+/**
+ * Why the entry takes no such mark: a person entry takes no `--landed`; a lot or fix entry takes only `--landed` with a
+ * `--reason` (its state comes from its records otherwise).
+ */
+function markKindFaultOf(params: {
+	id: string
+	kind: string
+	landed: readonly string[] | undefined
+	read: RoundArguments
+}): string | undefined {
+	const { id, kind } = params
+	if (kind === 'person')
+		return params.landed === undefined
+			? undefined
+			: `${id} is a person entry; --landed is for a lot or fix entry`
+	if (kind !== 'lot' && kind !== 'fix')
+		return `${id} is a ${kind} entry; only a person entry takes a mark, a lot or fix entry --landed (its state comes from its records)`
+	if (params.landed === undefined)
+		return `${id} is a ${kind} entry; it takes --landed <sha> --reason <text> (a plain mark is a person entry's)`
+	if (params.read.values.get(PLAN_MARK_OPTIONS.reason) === undefined)
+		return '--landed needs --reason <text> (why the entry landed outside the lot store)'
+	return undefined
+}
+
+/**
+ * The landed commit of a lot or fix entry: done already by its records (nothing to record), the commit origin's base
+ * branch holds in one of its repositories, or the refusal naming why none does.
+ */
+function landedOfEntry(params: {
+	block: PlanBlock
+	planPath: string
+	entry: PlanEntry
+	given: readonly string[]
+	location: StateFolderLocation | undefined
+}): LandedCommit[] | { done: true } | { refusal: CommandResult } {
+	const { block, entry } = params
+	const facts = readPlanFacts({ block, planPath: params.planPath, stateLocation: params.location })
+	const state = entryStates({ block, facts }).entries.find((status) => status.id === entry.id)
+	if (state?.state === 'done') return { done: true }
+	const found = findLandedCommits({
+		given: params.given,
+		scope: entry.scope,
+		repositories: block.repositories,
+	})
+	if ('refusal' in found)
+		return {
+			refusal: refusalOf({
+				lines: [`${PLAN_COMMAND_NAME} mark: ${entry.id} not marked: ${found.refusal}`],
+			}),
+		}
+	return found
 }
 
 /** What is wrong with `--by` and `--reason`: `--by` given, not empty, one line; `--reason` one line. */
@@ -253,4 +325,9 @@ function isFile(params: { path: string }): boolean {
 	} catch {
 		return false
 	}
+}
+
+/** One landed commit as the recorded line names it: `<commit> in <repository>`. */
+function landedText(landed: LandedCommit): string {
+	return `${landed.commit} in ${landed.repository}`
 }

@@ -16,7 +16,12 @@ export type PlanMark = {
 	by: string
 	reason: string | null
 	at: string
+	/** A lot or fix entry's mark (`--landed`): one commit per repository of the entry, each on its origin base branch. */
+	landed?: LandedCommit[]
 }
+
+/** A commit origin's base branch holds, in the plan repository it was found in. */
+export type LandedCommit = { commit: string; repository: string }
 
 /** A lot of a repository's store. */
 export type StoreLotFact = {

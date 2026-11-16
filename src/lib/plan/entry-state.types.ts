@@ -6,7 +6,7 @@ export type EntryStateName = 'done' | 'open' | 'ready' | 'waiting' | 'parked' | 
 
 /** The record that makes an entry done or open. */
 export type EntryRealization = {
-	kind: 'store' | 'registry' | 'worktree' | 'mark' | 'spec'
+	kind: 'store' | 'registry' | 'worktree' | 'mark' | 'spec' | 'landed'
 	name: string
 	folder: string | null
 	worktree: string | null

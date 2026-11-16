@@ -174,3 +174,36 @@ export const PLAN_COMMAND = 'dialecte plan'
 
 /** The indent of every `plan` JSON answer. */
 export const PLAN_JSON_INDENT = 2
+
+/** Where origin's copy of a base branch is read: `refs/remotes/origin/<base>`. */
+export const ORIGIN_BASE_REF_PREFIX = 'refs/remotes/origin/'
+
+/** Why `plan mark --landed` refuses its commits; `{…}` filled. */
+export const LANDED_COMMIT_LINES = {
+	notFetched: 'origin not fetched ({reason})',
+	noOriginBase: 'no {origin} to check against',
+	noCommit: 'no commit {sha}',
+	notLanded: '{sha} is not on {origin}',
+	outsideScope: '{sha} touches none of {scope}',
+	missing:
+		'the entry spans {repositories}: one --landed <repository>:<sha> for each (missing: {missing})',
+	bareOverSeveral:
+		'the entry spans {repositories}: name the repository of each commit, --landed <repository>:<sha>',
+	notInScope: '{repository} is not a repository of the entry ({repositories})',
+	twice: 'two commits for {repository}: one --landed per repository',
+} as const
+
+/** What separates a `--landed` value's repository from its commit: `<repository>:<sha>`. */
+export const LANDED_REPOSITORY_SEPARATOR = ':'
+
+/** The paths a commit changes, its first parent's diff for a merge, the repository's own diff. */
+export const CHANGED_PATHS_ARGUMENTS = [
+	'diff-tree',
+	'--no-commit-id',
+	'--name-only',
+	'-r',
+	'-m',
+	'--first-parent',
+	'--no-ext-diff',
+	'--no-textconv',
+] as const

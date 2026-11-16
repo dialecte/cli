@@ -11,7 +11,7 @@ export const PLAN_NEXT_FLAGS: readonly string[] = ['json', 'all']
 export const PLAN_CHECK_FLAGS: readonly string[] = ['json']
 
 /** The value options of `plan mark`. */
-export const PLAN_MARK_OPTIONS = { by: 'by', reason: 'reason' } as const
+export const PLAN_MARK_OPTIONS = { by: 'by', reason: 'reason', landed: 'landed' } as const
 
 /** The one state `plan mark` records. */
 export const PLAN_MARK_STATE = 'done'
