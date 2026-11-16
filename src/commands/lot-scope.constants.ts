@@ -34,6 +34,8 @@ export const LOT_SCOPE_TEXTS = {
 		'lot scope: {name}: the added paths meet the open lot {lot}: {met}: --overlap-ok accepts only an overlap that names its paths: nothing written',
 	overlapOkWithoutAdd:
 		'lot scope: {name}: --overlap-ok accepts the overlap of an add: no --add given: nothing written',
+	overlapUndoFailure:
+		'lot scope: {name}: the add is undone, its overlap record could not be: {message}: the card still shows the overlap',
 	overlapRecordFailure:
 		'lot scope: {name}: the overlap could not be recorded: {message}: nothing written',
 	emptied:

@@ -17,3 +17,12 @@ export type LotOverlapRecord = {
 
 /** The lot folder's `overlaps.jsonl` read: the records in file order, and how many lines do not read as one. */
 export type LotOverlaps = { overlaps: LotOverlapRecord[]; unreadable: number }
+
+/** A line of `overlaps.jsonl` that cancels the newest record of the same lot and met pairs: its add was taken back. */
+export type LotOverlapUndo = {
+	schema: 1
+	at: string
+	verb: 'undo'
+	lot: string
+	met: string[]
+}

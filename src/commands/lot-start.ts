@@ -7,7 +7,7 @@
  * is an exported function, so the race of two starts can be played in a forced order.
  */
 import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import { resultOf } from '../lib/command-result.ts'
 import { NODE_MODULES_WORDS, NPM_RUN_METHODS } from '../lib/events/record-step.constants.ts'
@@ -188,7 +188,13 @@ export function prepareStart(params: {
 	})
 	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
 	const brief = checked.checked
-	const wordRefusal = goAheadRefusalOf({ brief, goAhead, overlapOk, now })
+	const wordRefusal = goAheadRefusalOf({
+		brief,
+		goAhead,
+		overlapOk,
+		now,
+		briefFile: resolve(params.cwd, briefPath),
+	})
 	if (wordRefusal) return { exit: lotRefusalExit({ lines: [wordRefusal], json }) }
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
@@ -229,6 +235,8 @@ function goAheadRefusalOf(params: {
 	goAhead: StartGoAhead | undefined
 	overlapOk: boolean
 	now: Date
+	/** The brief file's absolute path: its plan's entry ids are among those refused. */
+	briefFile: string
 }): string | undefined {
 	const { brief, goAhead } = params
 	if (goAhead === undefined) return undefined
@@ -245,7 +253,10 @@ function goAheadRefusalOf(params: {
 		root: brief.repository,
 		verb: START_VERB,
 		...goAhead,
-		ids: lotPlanEntryIds({ planPath: undefined, branch: brief.branch }),
+		ids: lotPlanEntryIds({
+			planPath: briefPlanPathOf({ brief, briefFile: params.briefFile }),
+			branch: brief.branch,
+		}),
 	})
 	if (refusal !== undefined) return refusal
 	const overLimit = overlapsOverLimit(startOverlapRecordsOf({ brief, goAhead, now: params.now }))
@@ -265,6 +276,13 @@ function startOverlapLinesOf(params: {
 	return lotOverlapLines(startOverlapRecordsOf({ ...params, goAhead })).map((line) =>
 		START_OVERLAP_LINE.replace('{overlap}', () => line),
 	)
+}
+
+/** The brief's own plan file (its `plan`, beside the brief file); undefined when the brief names none. */
+function briefPlanPathOf(params: { brief: CheckedBrief; briefFile: string }): string | undefined {
+	const parsed: unknown = JSON.parse(params.brief.briefText)
+	const plan = (parsed as { plan?: unknown }).plan
+	return typeof plan === 'string' ? resolve(dirname(params.briefFile), plan) : undefined
 }
 
 /** The `overlaps.jsonl` records of a start: one per overlap its `--overlap-ok` accepted, with the go-ahead. */

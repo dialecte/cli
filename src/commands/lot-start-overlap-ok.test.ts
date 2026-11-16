@@ -3,8 +3,10 @@
  * starts, the overlap recorded with who accepted it and why, and shown on the card's scope line. Without the flag the
  * overlap stays a refusal; an other lot whose scope cannot be read names no paths and stays refused with it.
  */
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { PLAN_FILE, PLAN_TEXT } from '../../test/brief-workspace.constants.ts'
 import { writeStoreLot } from '../../test/brief-workspace.ts'
 import { BRIEF_DAMAGES, DAMAGES } from '../../test/damaged-lot-workspace.constants.ts'
 import { briefDamagedLotIn, damagedLotIn, refusalsOf } from '../../test/damaged-lot-workspace.ts'
@@ -39,6 +41,21 @@ const UNNAMED_LOT = '0010-repo-unnamed'
 const WIDENED_PATH = 'src/dataflow/unsubscribe.ts'
 /** A reason one line long, too long for one overlap record. */
 const LONG_REASON = 'r'.repeat(5_000)
+/** An entry id of the brief's own plan, and that plan: `PLAN_TEXT` with a lot block naming the entry. */
+const PLAN_ENTRY_ID = 'RX7'
+const PLAN_WITH_ENTRY = `${PLAN_TEXT}\n\`\`\`json dialecte-lots\n${JSON.stringify({
+	schema: 1,
+	repositories: { repo: '../../repo' },
+	lots: [
+		{
+			id: PLAN_ENTRY_ID,
+			title: 'an entry',
+			kind: 'lot',
+			scope: { repo: ['src/'] },
+			match: { branch: 'feat/elsewhere' },
+		},
+	],
+})}\n\`\`\`\n`
 /** The folder name a case reads when the start made no lot. */
 const NO_STARTED_LOT = 'no-started-lot'
 
@@ -264,6 +281,20 @@ describe(
 			expect(started.output.split('\n')).toContain(
 				`! overlaps ${OTHER_LOT}: ${MET.join('; ')} (by ${BY}: ${REASON})`,
 			)
+		})
+
+		it("a --reason naming an entry id of the brief's own plan (it would reach a public record) → refused, no lot made", () => {
+			const start = overlappedWorkspace()
+			writeFileSync(join(start.workspace.briefFolder, PLAN_FILE), PLAN_WITH_ENTRY)
+
+			const started = startWith({
+				start,
+				extra: ['--overlap-ok', '--by', BY, '--reason', `shares a file with ${PLAN_ENTRY_ID}`],
+			})
+
+			expect(started.exitCode).toBe(2)
+			expect(JSON.stringify(started.json)).toContain('lot start: --reason holds a plan entry id')
+			expect(entriesOf(start.store)).toEqual([OTHER_LOT])
 		})
 	},
 )

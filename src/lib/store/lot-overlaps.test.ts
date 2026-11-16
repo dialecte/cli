@@ -63,4 +63,27 @@ describe('readLotOverlaps', () => {
 			detail: `overlaps ${RECORD.lot}: ${RECORD.met[0]} (by ${RECORD.by}: ${RECORD.reason}) · 1 line(s) of overlaps.jsonl do not read`,
 		})
 	})
+
+	it.each([
+		{
+			label: 'an undo of the record',
+			undo: { lot: RECORD.lot, met: RECORD.met },
+			overlaps: [],
+			unreadable: 0,
+		},
+		{
+			label: 'an undo holding a key it does not name',
+			undo: { lot: RECORD.lot, met: RECORD.met, by: 'person-a' },
+			overlaps: [RECORD],
+			unreadable: 1,
+		},
+	])(
+		'a record then $label → what stands, and how many lines do not read',
+		({ undo, overlaps, unreadable }) => {
+			const undoLine = JSON.stringify({ schema: 1, at: RECORD.at, verb: 'undo', ...undo })
+			const lotFolder = lotFolderWith(`${JSON.stringify(RECORD)}\n${undoLine}\n`)
+
+			expect(readLotOverlaps({ lotFolder })).toEqual({ overlaps, unreadable })
+		},
+	)
 })

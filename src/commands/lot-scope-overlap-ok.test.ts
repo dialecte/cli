@@ -224,5 +224,58 @@ describe(
 			expect(result.exitCode).toBe(2)
 			expect(result.output).toContain('--overlap-ok accepts the overlap of an add: no --add given')
 		})
+
+		it('an add taken back meanwhile → its overlap record is undone too: no overlap stands', () => {
+			const lot = lotBesideDocsLot()
+
+			addOverlapOkWith({
+				lot,
+				afterAppend: function startUnnamedLot() {
+					writeStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
+				},
+			})
+
+			expect(readLotOverlaps({ lotFolder: lot.lotFolder })).toEqual({ overlaps: [], unreadable: 0 })
+		})
+
+		it.each([
+			{
+				label: 'a path in --by',
+				by: 'docs/person.md',
+				reason: REASON,
+				says: '--by holds a path or a link',
+			},
+			{
+				label: 'a --reason too long for its overlap record',
+				by: BY,
+				reason: 'r'.repeat(3_960),
+				says: 'overlaps.jsonl',
+			},
+		])('$label → refused, nothing written', ({ by, reason, says }) => {
+			const lot = lotBesideDocsLot()
+
+			const result = runLot({
+				cwd: lot.start.cwd,
+				argv: [
+					'scope',
+					lot.lotName,
+					'--add',
+					ADDED,
+					'--overlap-ok',
+					'--by',
+					by,
+					'--reason',
+					reason,
+				],
+				now: NOW,
+			})
+
+			expect(result.exitCode).toBe(2)
+			expect(result.output).toContain(says)
+			expect({
+				scope: readLotScope({ lotFolder: lot.lotFolder }).includes(ADDED),
+				overlaps: readLotOverlaps({ lotFolder: lot.lotFolder }).overlaps,
+			}).toEqual({ scope: false, overlaps: [] })
+		})
 	},
 )

@@ -18,6 +18,12 @@ export const LOT_OVERLAP_KEYS: readonly string[] = [
 	'reason',
 ]
 
+/** The verb of an undo line: the add an overlap was recorded with was taken back. */
+export const LOT_OVERLAP_UNDO_VERB = 'undo'
+
+/** The keys an undo line holds, each one required: the record it cancels is the newest of the same lot and pairs. */
+export const LOT_OVERLAP_UNDO_KEYS: readonly string[] = ['schema', 'at', 'verb', 'lot', 'met']
+
 /** The verbs that accept an overlap. */
 export const LOT_OVERLAP_VERBS: readonly string[] = ['start', 'scope']
 

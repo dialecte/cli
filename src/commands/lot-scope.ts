@@ -21,6 +21,7 @@ import {
 } from '../lib/store/brief-scope.ts'
 import { probeCaseInsensitive } from '../lib/store/brief.ts'
 import {
+	appendLotOverlapUndos,
 	appendLotOverlaps,
 	isAcceptableOverlap,
 	isCoveredOverlap,
@@ -419,7 +420,8 @@ function recordChanges(params: {
 	}
 	params.seams?.afterAppend?.()
 	const late = params.recheck?.()
-	if (late !== undefined) return undoneChanges({ ...params, overlap: late })
+	if (late !== undefined)
+		return undoneChanges({ ...params, overlap: late, records: accepted.records })
 	const effective = effectiveScopeOf({ brief: params.scope, changes })
 	const changedLine = fillMessage({
 		template: changedTemplateOf({ changes }),
@@ -543,6 +545,8 @@ function undoneChanges(params: {
 	added: string[]
 	removed: string[]
 	overlap: LotOverlap
+	/** The overlap records the call wrote: undone with the add. */
+	records: readonly LotOverlapRecord[]
 	now: Date
 }): CommandResult {
 	const { target, added, removed, overlap } = params
@@ -565,11 +569,40 @@ function undoneChanges(params: {
 			],
 		})
 	}
+	const undoFailure = undoRecords({ ...params, records: params.records })
+	if (undoFailure !== undefined) return undoFailure
 	return refused({
 		template:
 			removed.length > 0 ? LOT_SCOPE_TEXTS.lateOverlapNarrowed : LOT_SCOPE_TEXTS.lateOverlap,
 		values: { name: target.name, lot: overlapLotLabelOf(overlap), met: overlapMetText(overlap) },
 	})
+}
+
+/** Undoes the overlap records of a call taken back; undefined once written (or none to undo), else the failure (exit 1). */
+function undoRecords(params: {
+	target: ScopeTarget
+	records: readonly LotOverlapRecord[]
+	now: Date
+}): CommandResult | undefined {
+	if (params.records.length === 0) return undefined
+	try {
+		appendLotOverlapUndos({
+			lotFolder: params.target.lotFolder,
+			records: params.records,
+			at: params.now.toISOString(),
+		})
+	} catch (error) {
+		return answerOf({
+			exitCode: 1,
+			lines: [
+				fillMessage({
+					template: LOT_SCOPE_TEXTS.overlapUndoFailure,
+					values: { name: params.target.name, message: (error as Error).message },
+				}),
+			],
+		})
+	}
+	return undefined
 }
 
 /**

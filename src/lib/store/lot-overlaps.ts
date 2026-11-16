@@ -18,6 +18,8 @@ import {
 	LOT_OVERLAP_SCHEMA,
 	LOT_OVERLAP_SEPARATOR,
 	LOT_OVERLAP_TEXT,
+	LOT_OVERLAP_UNDO_KEYS,
+	LOT_OVERLAP_UNDO_VERB,
 	LOT_OVERLAP_UNREADABLE,
 	LOT_OVERLAP_VERBS,
 } from './lot-overlaps.constants.ts'
@@ -25,7 +27,12 @@ import { PUBLIC_TEXT_REFUSAL, PUBLIC_TEXT_UNCHECKED_REFUSAL } from './public-tex
 import { publicTextLabel } from './public-text.ts'
 import { STORE_FILES } from './store.constants.ts'
 
-import type { LotOverlapRecord, LotOverlaps, OverlapVerb } from './lot-overlaps.types.ts'
+import type {
+	LotOverlapRecord,
+	LotOverlaps,
+	LotOverlapUndo,
+	OverlapVerb,
+} from './lot-overlaps.types.ts'
 import type { LotOverlap } from './store.types.ts'
 
 /**
@@ -46,9 +53,14 @@ export function readLotOverlaps(params: { lotFolder: string }): LotOverlaps {
 	let unreadable = torn === undefined || torn === '' ? 0 : 1
 	for (const text of lines) {
 		if (text === '') continue
-		const record = parseOverlapRecord(text)
-		if (record === undefined) unreadable += 1
-		else overlaps.push(record)
+		const line = parseOverlapLine(text)
+		if (line === undefined) unreadable += 1
+		else if (line.verb !== LOT_OVERLAP_UNDO_VERB) overlaps.push(line)
+		else {
+			// an undo cancels the newest record of the same lot and pairs: that add was taken back
+			const index = overlaps.map((record) => isUndoneBy({ record, undo: line })).lastIndexOf(true)
+			if (index >= 0) overlaps.splice(index, 1)
+		}
 	}
 	return { overlaps, unreadable }
 }
@@ -196,8 +208,41 @@ function lotOverlapsFileOf(params: { lotFolder: string }): string {
 	return join(params.lotFolder, STORE_FILES.overlaps)
 }
 
-/** The record a line holds: every key, no other, each of its type; undefined when it does not read as one. */
-function parseOverlapRecord(text: string): LotOverlapRecord | undefined {
+/**
+ * Appends, in one write, an undo of each record: the add they were recorded with was taken back, so the overlap no
+ * longer stands (`readLotOverlaps` drops the record each undo names).
+ */
+export function appendLotOverlapUndos(params: {
+	lotFolder: string
+	records: readonly LotOverlapRecord[]
+	at: string
+}): void {
+	const undos: LotOverlapUndo[] = params.records.map((record) => ({
+		schema: LOT_OVERLAP_SCHEMA,
+		at: params.at,
+		verb: LOT_OVERLAP_UNDO_VERB,
+		lot: record.lot,
+		met: record.met,
+	}))
+	appendLine({
+		file: lotOverlapsFileOf(params),
+		line: Buffer.from(undos.map((undo) => `${JSON.stringify(undo)}\n`).join(''), 'utf8'),
+		limit: LOT_OVERLAP_LINE_LIMIT,
+	})
+}
+
+/** Whether the undo names the record: the same lot and the same met pairs, in order. */
+function isUndoneBy(params: { record: LotOverlapRecord; undo: LotOverlapUndo }): boolean {
+	const { record, undo } = params
+	return (
+		record.lot === undo.lot &&
+		record.met.length === undo.met.length &&
+		record.met.every((pair, index) => pair === undo.met[index])
+	)
+}
+
+/** The record or undo a line holds; undefined when it reads as neither. */
+function parseOverlapLine(text: string): LotOverlapRecord | LotOverlapUndo | undefined {
 	let value: unknown
 	try {
 		value = JSON.parse(text)
@@ -205,7 +250,27 @@ function parseOverlapRecord(text: string): LotOverlapRecord | undefined {
 		return undefined
 	}
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-	const record = value as Record<string, unknown>
+	const line = value as Record<string, unknown>
+	return line.verb === LOT_OVERLAP_UNDO_VERB ? parseOverlapUndo(line) : parseOverlapRecord(line)
+}
+
+/** The undo a line holds: its keys alone, each of its type. */
+function parseOverlapUndo(line: Record<string, unknown>): LotOverlapUndo | undefined {
+	const keys = Object.keys(line)
+	if (
+		keys.length !== LOT_OVERLAP_UNDO_KEYS.length ||
+		!LOT_OVERLAP_UNDO_KEYS.every((key) => key in line)
+	)
+		return undefined
+	const { schema, at, lot, met } = line
+	if (schema !== LOT_OVERLAP_SCHEMA || typeof at !== 'string' || at === '') return undefined
+	if (typeof lot !== 'string' || lot === '') return undefined
+	if (!Array.isArray(met) || !met.every((pair) => typeof pair === 'string')) return undefined
+	return line as LotOverlapUndo
+}
+
+/** The record a line holds: every key, no other, each of its type; undefined when it does not read as one. */
+function parseOverlapRecord(record: Record<string, unknown>): LotOverlapRecord | undefined {
 	const keys = Object.keys(record)
 	if (keys.length !== LOT_OVERLAP_KEYS.length || !LOT_OVERLAP_KEYS.every((key) => key in record))
 		return undefined
