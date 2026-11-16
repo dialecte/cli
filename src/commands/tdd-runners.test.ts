@@ -25,6 +25,9 @@ import {
 	LEFTOVER_AGE_MS,
 	LOT_ACCEPT_HINT_PATTERN,
 	LOT_FIRST_INTERPRETER_TEXT,
+	MISSING_FILE_MESSAGE_BASE_TEXT,
+	MISSING_FILE_MESSAGE_FILE,
+	MISSING_FILE_MESSAGE_TEXT,
 	NAMED_PROJECT_TOML_TEXT,
 	NO_PYTHONPATH_TOML_TEXT,
 	NODE_REVISED_TEST_TEXT,
@@ -33,6 +36,7 @@ import {
 	TOTAL_FILE,
 	TOTAL_TEXT,
 	VITEST_CORRECTED_TEST_TEXT,
+	VITEST_ENOENT_ASSERTION_TEST_TEXT,
 	VITEST_HELPER_TEST_TEXT,
 	VITEST_NEW_EXPORT_TEST_TEXT,
 	VITEST_REVISED_TEST_TEXT,
@@ -1434,6 +1438,25 @@ describe(
 			expect(caseLines(red.output)).toEqual([`refused  ${ADD_CASE}  ${BASE_LACKS_IGNORED_INPUT}`])
 			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
 			expect(frozenFiles(root)).toEqual([])
+		})
+
+		it('a revised case whose assertion fails on the base with ENOENT in its message → a real red: recorded red on base, not refused as a missing input', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { [MISSING_FILE_MESSAGE_FILE]: MISSING_FILE_MESSAGE_BASE_TEXT },
+				written: {
+					[MISSING_FILE_MESSAGE_FILE]: MISSING_FILE_MESSAGE_TEXT,
+					[ADD_TEST_FILE]: VITEST_ENOENT_ASSERTION_TEST_TEXT,
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(receiptsOf(root)).toEqual([
+				expect.objectContaining({ kind: 'red', flags: [RED_ON_BASE_FLAG] }),
+			])
 		})
 
 		it("a pytest case revised, the lot's own .venv interpreter git-ignored → the base run runs with that interpreter, from the base copy", async () => {

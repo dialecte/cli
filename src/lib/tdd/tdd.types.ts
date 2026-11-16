@@ -26,6 +26,8 @@ export type ErrorFrame = SourceLocation & { file: string }
  */
 export type ReportedError = {
 	name?: string
+	/** The error's own code when it has one (node's `ENOENT`, `ERR_MODULE_NOT_FOUND`; Python's errno name). */
+	code?: string
 	message: string
 	frames: ErrorFrame[]
 	inAssertion?: boolean
@@ -183,7 +185,11 @@ export type FailureKind =
 	| 'timeout'
 	| 'error'
 
-export type CaseFailure = { kind: FailureKind; message: string }
+/**
+ * Why a case failed, and its message. `missingInput`: the error thrown is a missing file or path, told by its code
+ * or name (`isMissingInputError`), never by its message's words; present only when true.
+ */
+export type CaseFailure = { kind: FailureKind; message: string; missingInput?: true }
 
 /** What a red, green or refusal says about the evidence, for the reviewer. */
 export type ReceiptFlag =
@@ -425,6 +431,8 @@ export type TddRunAdmission = {
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */
 export type RunnerError = {
 	name?: string
+	/** The serialized error's own `code` property, whatever its type. */
+	code?: unknown
 	message?: string
 	stacks?: readonly { file: string; line: number; column: number }[]
 }

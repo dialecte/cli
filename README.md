@@ -1185,9 +1185,10 @@ the answer.
     the copy's folder first on `PYTHONPATH` for the processes its tests start). Red there for a real reason: a red receipt flagged `red on base` at the base's
     production hash, its file frozen as at any red; `tdd green` then proves it as any red. Otherwise
     refused, nothing frozen: `passes on the base too: the revision proves nothing; prove it red or accept
-    it: lot accept <case> <reason>`; a failure naming a missing file or path (`ENOENT`, `No such file or
-    directory`, `FileNotFoundError`, `Cannot find module` of a path) `the base copy lacks a git-ignored
-    input, not a proof`; a pytest package its interpreter holds installed editable (`direct_url.json`
+    it: lot accept <case> <reason>`; a thrown error (never an assertion or a stub's red, whatever its
+    message says) that is a missing file or path by its code or name (`ENOENT`, `FileNotFoundError`, a
+    module-not-found code for a relative or absolute path) `the base copy lacks a git-ignored input, not a
+    proof`; a pytest package its interpreter holds installed editable (`direct_url.json`
     editable, an `__editable__` or `.pth` file of the project its `pyproject.toml` names) `the package is
     installed editable: a base run would import the lot's code`; a failure that is no red, with its kind's
     reason; a case that did not run there. The lot's tree is never touched: the throwaway folder (it holds

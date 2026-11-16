@@ -742,11 +742,28 @@ export const BASE_RED_OWNER_FILE = 'owner.pid'
 export const BASE_RED_TREE_FOLDER = 'tree'
 
 /**
- * A failure naming a missing file or path (node's ENOENT, Python's FileNotFoundError, a module of a relative or
- * absolute path not found): on a base copy, an input git ignores that the copy lacks.
+ * What a thrown error that is a missing file or path is, by its code or name: node's (and an OSError's) `ENOENT`,
+ * Python's `FileNotFoundError`, node's module-not-found codes when the module is a relative or absolute path (the
+ * path is only in the message). On a base copy, an input git ignores that the copy lacks.
  */
-export const MISSING_INPUT_PATTERN =
-	/\bENOENT\b|no such file or directory|\bFileNotFoundError\b|Cannot find module ['"](?:\.{1,2}[\\/]|[\\/])/i
+export const MISSING_FILE_CODE = 'ENOENT'
+export const MISSING_FILE_ERROR_NAME = 'FileNotFoundError'
+export const MODULE_NOT_FOUND_CODES: readonly string[] = [
+	'ERR_MODULE_NOT_FOUND',
+	'MODULE_NOT_FOUND',
+]
+export const MODULE_PATH_NOT_FOUND_PATTERN =
+	/Cannot find (?:module|package) ['"](?:\.{1,2}[\\/]|[\\/])/
+
+/**
+ * The failure kinds of a thrown error a base run may blame on a missing input: never an assertion or a stub's
+ * red, whatever their message says.
+ */
+export const MISSING_INPUT_KINDS: readonly FailureKind[] = [
+	'error',
+	'error-in-production',
+	'type-error',
+]
 
 /**
  * The entries of a `node_modules` folder a tool writes its caches into (Vite's `.vite` and `.vite-temp`, `.cache`):

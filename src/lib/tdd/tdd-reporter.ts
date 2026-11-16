@@ -38,6 +38,7 @@ function reportModule(testModule: TestModule): ReportedModule {
 function reportError(error: RunnerError): ReportedError {
 	return {
 		...(error.name && { name: error.name }),
+		...(typeof error.code === 'string' && { code: error.code }),
 		message: error.message ?? '',
 		frames: (error.stacks ?? []).map((frame) => ({
 			file: frame.file,

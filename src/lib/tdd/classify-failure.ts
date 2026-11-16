@@ -13,6 +13,10 @@ import {
 	BROWSER_PATH_PREFIX_PATTERN,
 	MESSAGE_LINES,
 	MISSING_EXPORT_PATTERN,
+	MISSING_FILE_CODE,
+	MISSING_FILE_ERROR_NAME,
+	MODULE_NOT_FOUND_CODES,
+	MODULE_PATH_NOT_FOUND_PATTERN,
 	NOT_CALLABLE_PATTERN,
 	NOT_IMPLEMENTED_PATTERN,
 	PYTEST_FAILED_NAME,
@@ -46,7 +50,21 @@ export function classifyFailure(params: {
 	return {
 		kind: kindOf(params),
 		message: shortMessage(params.error.message) || (params.error.name ?? ''),
+		...(isMissingInputError(params.error) && { missingInput: true }),
 	}
+}
+
+/**
+ * The error thrown is a missing file or path, told by its code or name (`ENOENT`, `FileNotFoundError`, a module of
+ * a relative or absolute path not found), never by words its message happens to hold.
+ */
+function isMissingInputError(error: ReportedError): boolean {
+	if (error.code === MISSING_FILE_CODE || error.name === MISSING_FILE_ERROR_NAME) return true
+	return (
+		error.code !== undefined &&
+		MODULE_NOT_FOUND_CODES.includes(error.code) &&
+		MODULE_PATH_NOT_FOUND_PATTERN.test(stripVTControlCharacters(error.message))
+	)
 }
 
 function kindOf(params: {

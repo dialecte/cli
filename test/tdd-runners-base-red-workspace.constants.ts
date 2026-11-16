@@ -172,6 +172,27 @@ export const VITEST_TOTAL_TEST_TEXT = [
 	'',
 ].join('\n')
 
+/**
+ * A production module wording a missing file's error: the base's words it wrong, the lot's names ENOENT. An
+ * assertion over it fails on the base with ENOENT in its message, a real red.
+ */
+export const MISSING_FILE_MESSAGE_FILE = 'src/message.ts'
+export const MISSING_FILE_MESSAGE_BASE_TEXT =
+	"export function missingFileMessage(): string {\n\treturn 'file found'\n}\n"
+export const MISSING_FILE_MESSAGE_TEXT =
+	"export function missingFileMessage(): string {\n\treturn 'ENOENT: no such file or directory'\n}\n"
+/** The vitest case `add > one` asserting the message names ENOENT. */
+export const VITEST_ENOENT_ASSERTION_TEST_TEXT = [
+	"import { missingFileMessage } from './message.ts'",
+	"import { describe, expect, it } from 'vitest'",
+	"describe('add', () => {",
+	"\tit('one', () => {",
+	"\t\texpect(missingFileMessage()).toContain('ENOENT')",
+	'\t})',
+	'})',
+	'',
+].join('\n')
+
 /** A vitest config written in TypeScript: Vite bundles it into a temporary folder beside its cache. */
 export const VITEST_CONFIG_FILE = 'vitest.config.ts'
 export const VITEST_CONFIG_TEXT = [

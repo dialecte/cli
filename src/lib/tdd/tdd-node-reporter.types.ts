@@ -4,7 +4,7 @@ export type NodeTestError = {
 	/** `testCodeFailure`, `testTimeoutFailure`, `subtestsFailed`, ... */
 	failureType?: string
 	message?: string
-	cause?: { name?: string; message?: string; stack?: string } | string
+	cause?: { name?: string; code?: unknown; message?: string; stack?: string } | string
 }
 
 /** The data of one `node --test` event, as a reporter receives it (only what the cli reads). */

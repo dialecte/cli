@@ -139,9 +139,11 @@ function reportError(error: NodeTestError): ReportedError {
 	const { cause } = error
 	const message = typeof cause === 'string' ? cause : (cause?.message ?? error.message ?? '')
 	const name = typeof cause === 'object' ? cause.name : undefined
+	const code = typeof cause === 'object' ? cause.code : undefined
 	const stack = typeof cause === 'object' ? cause.stack : undefined
 	return {
 		...(name && { name }),
+		...(typeof code === 'string' && { code }),
 		message: error.failureType === NODE_TIMEOUT_FAILURE ? timeoutMessage(message) : message,
 		frames: stack === undefined ? [] : framesOf(stack),
 	}

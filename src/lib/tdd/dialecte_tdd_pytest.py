@@ -7,6 +7,7 @@ cases ran). Imports the standard library and pytest only; Python 3.8 or later, p
 """
 
 import ast
+import errno
 import importlib.util
 import json
 import os
@@ -352,12 +353,17 @@ def phase_error(item, call, report):
         return {"name": "Failed", "message": str(report.longrepr), "frames": [], "inAssertion": False}
     frames = frames_of(excinfo=excinfo, test_path=test_path)
     test_frame = next((frame for frame in frames if frame["file"] == test_path), None)
-    return {
+    error = {
         "name": excinfo.typename,
         "message": str(excinfo.value),
         "frames": frames,
         "inAssertion": test_frame is not None and is_in_assert(path=test_path, line=test_frame["line"]),
     }
+    # an OSError's code as node names it (ENOENT): what the error is, never read from its message
+    code = errno.errorcode.get(getattr(excinfo.value, "errno", None) or -1)
+    if isinstance(excinfo.value, OSError) and code:
+        error["code"] = code
+    return error
 
 
 def is_hidden(frame, excinfo):

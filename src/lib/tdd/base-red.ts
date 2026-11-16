@@ -33,7 +33,7 @@ import {
 	BASE_RED_TREE_FOLDER,
 	DID_NOT_RUN_ON_BASE,
 	FAILED_ON_BASE_WITHOUT_ERROR,
-	MISSING_INPUT_PATTERN,
+	MISSING_INPUT_KINDS,
 	NODE_MODULES_FOLDER,
 	RED_KINDS,
 } from './tdd.constants.ts'
@@ -162,7 +162,8 @@ function verdictOf(params: {
 	if (onBase?.state !== 'failed') return { kind: 'refused', reason: DID_NOT_RUN_ON_BASE }
 	if (!onBase.failure) return { kind: 'refused', reason: FAILED_ON_BASE_WITHOUT_ERROR }
 	// the copy holds what git tracks: a file it misses is an input git ignores, the environment, not production
-	if (MISSING_INPUT_PATTERN.test(onBase.failure.message))
+	// a thrown error only (never an assertion or a stub's red, whatever its message says), told by its code or name
+	if (onBase.failure.missingInput && MISSING_INPUT_KINDS.includes(onBase.failure.kind))
 		return { kind: 'refused', reason: BASE_LACKS_IGNORED_INPUT }
 	if (!RED_KINDS.includes(onBase.failure.kind))
 		return { kind: 'refused', reason: notARed(onBase.failure) }
