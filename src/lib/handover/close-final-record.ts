@@ -20,6 +20,7 @@ import {
 	REMOVED_NOT_WRITTEN,
 	SIBLING_KEPT,
 } from './handover.constants.ts'
+import { readLanding } from './land-record.ts'
 import { readHandoverFolder } from './read-handover-folder.ts'
 import { buildCardLine, lotOfHandoverFolder } from './record-card-line.ts'
 
@@ -182,7 +183,8 @@ function hasCard(params: {
  * The catch-up `card` line: the card rebuilt (no probe) when the folder holds a written hand-over and the head is
  * known, else `null` (the usage then read from the folder). A
  * committed lot's head is the last of its lot commits when every lot is found (they name the lot exactly; a hook
- * record naming another commit is no reason to keep). Else the `sole-owner` takes the hook record's (no other
+ * record naming another commit is no reason to keep). Else a lot landed through its pull request takes the head its
+ * landing pushed (`landing.json`: the queue squashed that head onto the base branch). Else the `sole-owner` takes the hook record's (no other
  * committed or abandoned lot shares the worktree: its last hooked commit is this lot's), a `sibling` writes `head: null` (its
  * commit is not the closed lot's concern), and an owner with neither keeps the worktree. A canceled lot's head is the
  * worktree's HEAD.
@@ -203,7 +205,9 @@ function catchUpLine(params: {
 	const head =
 		state === 'canceled'
 			? headOf({ worktree })
-			: (located ?? (role === 'sole-owner' ? readHookHead({ worktree }) : undefined))
+			: (located ??
+				readLanding({ lotFolder: entry.folder })?.head ??
+				(role === 'sole-owner' ? readHookHead({ worktree }) : undefined))
 	if (head === undefined && role !== 'sibling')
 		return { kept: LOT_COMMIT_NOT_KNOWN.replaceAll('{worktree}', params.shown) }
 	// a sibling whose commit is not known: its lots are not in this worktree's tree, no card to rebuild from it

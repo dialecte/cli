@@ -133,12 +133,6 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 	it.each([
 		{
-			label: 'uncommitted changes',
-			arrange: (repository: LandingRepository) =>
-				writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 3\n' } }),
-			line: 'holds uncommitted changes',
-		},
-		{
 			label: 'a detached HEAD',
 			arrange: (repository: LandingRepository) =>
 				git({ root: repository.worktree, args: ['checkout', '-q', '--detach'] }),
@@ -168,6 +162,170 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(landed.exitCode).toBe(1)
 		expect(landed.lines.join('\n')).toContain(line)
 		expect(calls).toEqual([])
+	})
+
+	it('work in progress (a tracked file changed, an untracked one added) → the committed head pushed and opened, the work left in place and named', () => {
+		const repository = landingRepository()
+		const committed = tipOf(repository)
+		writeFiles({
+			root: repository.worktree,
+			files: { 'src/x.ts': 'export const x = 3\n', 'src/x.test.ts': 'red\n' },
+		})
+		const { host, calls } = recordingHost()
+
+		const landed = land({ repository, host, draft: true })
+
+		expect(landed.exitCode).toBe(0)
+		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat(x): x answers one" draft'])
+		expect(
+			git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+		).toContain(committed)
+		expect(landed.lines).toContain('uncommitted, not pushed: 2 files')
+		expect(readFileSync(join(repository.worktree, 'src/x.ts'), 'utf8')).toBe('export const x = 3\n')
+		expect(existsSync(join(repository.worktree, 'src/x.test.ts'))).toBe(true)
+	})
+
+	it("work in progress on a tracked file and origin's main moved → not rebased, the committed head pushed, the line says the rebase waits", () => {
+		const repository = landingRepository()
+		landOnOrigin({ origin: repository.origin, files: { 'src/other.ts': 'export {}\n' } })
+		const committed = tipOf(repository)
+		writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 3\n' } })
+		const { host } = recordingHost()
+
+		const landed = land({ repository, host, draft: true })
+
+		expect(landed.exitCode).toBe(0)
+		expect(tipOf(repository)).toBe(committed)
+		expect(landed.lines.join('\n')).toContain(
+			'not rebased onto origin/main: the worktree holds uncommitted changes',
+		)
+		expect(landed.lines).toContain('uncommitted, not pushed: 1 file')
+		expect(readFileSync(join(repository.worktree, 'src/x.ts'), 'utf8')).toBe('export const x = 3\n')
+	})
+
+	it('a land that rebases → landing.json records the head it replaced; a second rebasing land keeps both', () => {
+		const repository = landingRepository()
+		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
+		const first = tipOf(repository)
+		land({ repository, host: recordingHost().host, draft: true })
+		const pushed = tipOf(repository)
+		landOnOrigin({ origin: repository.origin, files: { 'src/two.ts': 'export {}\n' } })
+
+		land({
+			repository,
+			host: recordingHost({ existing: pullRequestOf({ state: 'open', head: pushed }) }).host,
+			draft: true,
+		})
+
+		const landing = JSON.parse(
+			readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8'),
+		) as {
+			head: string
+			replaced: string[]
+		}
+		expect(landing.replaced).toEqual([first, pushed])
+		expect(landing.head).toBe(tipOf(repository))
+	})
+
+	it('a land with nothing to rebase → no head replaced', () => {
+		const repository = landingRepository()
+
+		land({ repository, host: recordingHost().host, draft: true })
+
+		expect(
+			JSON.parse(readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8')),
+		).toMatchObject({ replaced: [] })
+	})
+
+	it('the host refuses to open after a rebase → the head the rebase replaced is kept: the next landing records it', () => {
+		const repository = landingRepository()
+		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
+		const first = tipOf(repository)
+		const { host } = recordingHost()
+		const refusing: HostAdapter = {
+			...host,
+			openPullRequest: function refuseOpen() {
+				return { refusal: 'the host is down' }
+			},
+		}
+		expect(land({ repository, host: refusing, draft: true }).exitCode).toBe(1)
+
+		land({ repository, host: recordingHost().host, draft: true })
+
+		const landing = JSON.parse(
+			readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8'),
+		) as {
+			replaced: string[]
+		}
+		expect(landing.replaced).toEqual([first])
+	})
+
+	it('an untracked folder of two files → named as two files, whatever git status shows by default', () => {
+		const repository = landingRepository()
+		writeFiles({
+			root: repository.worktree,
+			files: { 'src/new/a.ts': 'export {}\n', 'src/new/b.ts': 'export {}\n' },
+		})
+		git({ root: repository.worktree, args: ['config', 'status.showUntrackedFiles', 'normal'] })
+
+		const landed = land({ repository, host: recordingHost().host, draft: true })
+
+		expect(landed.lines).toContain('uncommitted, not pushed: 2 files')
+	})
+
+	it("an untracked file origin's main adds → refused naming the untracked file the rebase would overwrite, not a conflict", () => {
+		const repository = landingRepository()
+		landOnOrigin({ origin: repository.origin, files: { 'src/other.ts': 'export const o = 1\n' } })
+		writeFiles({ root: repository.worktree, files: { 'src/other.ts': 'export const o = 2\n' } })
+		const before = tipOf(repository)
+
+		const landed = land({ repository, host: recordingHost().host, draft: true })
+
+		expect(landed.exitCode).toBe(1)
+		expect(landed.lines.join('\n')).toContain('would overwrite')
+		expect(landed.lines.join('\n')).toContain('src/other.ts')
+		expect(landed.lines.join('\n')).not.toContain('conflicts in')
+		expect(tipOf(repository)).toBe(before)
+		expect(readFileSync(join(repository.worktree, 'src/other.ts'), 'utf8')).toBe(
+			'export const o = 2\n',
+		)
+	})
+
+	it('work in progress and a push refused → the refusal still names the uncommitted files', () => {
+		const repository = landingRepository()
+		git({ root: repository.worktree, args: ['push', '-q', 'origin', 'feat/x'] })
+		git({
+			root: repository.worktree,
+			args: ['commit', '-q', '--allow-empty', '-m', 'feat(x): more'],
+		})
+		writeFiles({ root: repository.worktree, files: { 'src/x.test.ts': 'red\n' } })
+
+		const landed = land({ repository, host: recordingHost().host, draft: true })
+
+		expect(landed.exitCode).toBe(1)
+		expect(landed.lines).toContain('uncommitted, not pushed: 1 file')
+	})
+
+	it('a landing recorded before heads were kept (no replaced) → its next rebasing land records the head it replaced', () => {
+		const repository = landingRepository()
+		const { host } = recordingHost()
+		land({ repository, host, draft: true })
+		const pushed = tipOf(repository)
+		const path = join(repository.lotFolder, 'landing.json')
+		const old = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+		delete old.replaced
+		writeFileSync(path, JSON.stringify(old))
+		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
+
+		land({
+			repository,
+			host: recordingHost({ existing: pullRequestOf({ state: 'open', head: pushed }) }).host,
+			draft: true,
+		})
+
+		expect((JSON.parse(readFileSync(path, 'utf8')) as { replaced: string[] }).replaced).toEqual([
+			pushed,
+		])
 	})
 
 	it('its pull request already open → pushed again and queued, not opened twice', () => {
@@ -283,7 +441,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 	it('no landing.json before → none left behind by a refused landing', () => {
 		const repository = landingRepository()
-		writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 3\n' } })
+		git({ root: repository.worktree, args: ['checkout', '-q', '--detach'] })
 
 		land({ repository, host: recordingHost().host })
 
