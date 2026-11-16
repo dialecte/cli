@@ -29,6 +29,18 @@ import {
 } from '../../test/tdd-runners-node-workspace.constants.ts'
 import { createNodePackage } from '../../test/tdd-runners-node-workspace.ts'
 import {
+	PROGRESS_SCENARIO_TIMEOUT,
+	SUM_FILE,
+	SUM_IMPLEMENTED_TEXT,
+	THROWING_VITEST_CONFIG_TEXT,
+} from '../../test/tdd-runners-progress-workspace.constants.ts'
+import {
+	createMixedPackage,
+	recordingLiveOutput,
+	withoutDurations,
+	writeText,
+} from '../../test/tdd-runners-progress-workspace.ts'
+import {
 	ADDER_FILE,
 	ADDER_IMPLEMENTED_TEXT,
 	ADDER_LIMITED_TEXT,
@@ -747,6 +759,86 @@ describe(
 					`refused  ${SKIPS_ONLY_PYTEST_FILE}  ${ALL_SKIPPED_REFUSAL}`,
 				]),
 			})
+		})
+	},
+)
+
+describe(
+	'tdd red and tdd green announce one progress step per runner',
+	{ timeout: PROGRESS_SCENARIO_TIMEOUT },
+	() => {
+		it('a package of one vitest file, one node:test file and one pytest file, tdd red → one step per runner in the order vitest, node --test, pytest, each announced before its run and finished by its own line', async () => {
+			const root = createMixedPackage({ vitest: true, node: true, pytest: true })
+			const { live, lines } = recordingLiveOutput()
+
+			const red = await runTdd({ cwd: root, argv: ['red'], now: () => NOW, live })
+
+			expect(red.exitCode).toBe(0)
+			expect(withoutDurations(lines)).toEqual([
+				'▶ tdd red: vitest - 1 test file(s)',
+				'✓ tdd red: vitest ran 1 test file(s)',
+				'▶ tdd red: node --test - 1 test file(s)',
+				'✓ tdd red: node --test ran 1 test file(s)',
+				'▶ tdd red: pytest - 1 test file(s)',
+				'✓ tdd red: pytest ran 1 test file(s)',
+			])
+			expect(lines.filter((line) => line.startsWith('✓'))).toEqual([
+				expect.stringMatching(/^✓ tdd red: vitest ran 1 test file\(s\) {2}\d/u),
+				expect.stringMatching(/^✓ tdd red: node --test ran 1 test file\(s\) {2}\d/u),
+				expect.stringMatching(/^✓ tdd red: pytest ran 1 test file\(s\) {2}\d/u),
+			])
+		})
+
+		it('a package of one vitest file only, tdd red → the one vitest step, announced then finished by its line', async () => {
+			const root = createMixedPackage({ vitest: true, node: false, pytest: false })
+			const { live, lines } = recordingLiveOutput()
+
+			const red = await runTdd({ cwd: root, argv: ['red'], now: () => NOW, live })
+
+			expect(red.exitCode).toBe(0)
+			expect(withoutDurations(lines)).toEqual([
+				'▶ tdd red: vitest - 1 test file(s)',
+				'✓ tdd red: vitest ran 1 test file(s)',
+			])
+		})
+
+		it('a package of a vitest file, a node:test file and a pytest file, the vitest run answering a failure, tdd red → the vitest line starts with ✗ and the node --test and pytest steps announce nothing', async () => {
+			const root = createMixedPackage({
+				vitest: true,
+				node: true,
+				pytest: true,
+				extra: { 'vitest.config.ts': THROWING_VITEST_CONFIG_TEXT },
+			})
+			const { live, lines } = recordingLiveOutput()
+
+			const red = await runTdd({ cwd: root, argv: ['red'], now: () => NOW, live })
+
+			expect(red.exitCode).toBe(1)
+			expect(withoutDurations(lines)).toEqual([
+				'▶ tdd red: vitest - 1 test file(s)',
+				'✗ tdd red: vitest ran 1 test file(s)',
+			])
+		})
+
+		it('a package of one vitest file, one node:test file and one pytest file, all red then implemented, tdd green → the same three steps named green, in the same order', async () => {
+			const root = createMixedPackage({ vitest: true, node: true, pytest: true })
+			await runTdd({ cwd: root, argv: ['red'], now: () => NOW })
+			writeText({ root, file: SUM_FILE, text: SUM_IMPLEMENTED_TEXT })
+			writeText({ root, file: ADD_FILE, text: ADD_IMPLEMENTED_TEXT })
+			writeText({ root, file: ADDER_FILE, text: ADDER_IMPLEMENTED_TEXT })
+			const { live, lines } = recordingLiveOutput()
+
+			const green = await runTdd({ cwd: root, argv: ['green'], now: () => NOW, live })
+
+			expect(green.exitCode).toBe(0)
+			expect(withoutDurations(lines)).toEqual([
+				'▶ tdd green: vitest - 1 test file(s)',
+				'✓ tdd green: vitest ran 1 test file(s)',
+				'▶ tdd green: node --test - 1 test file(s)',
+				'✓ tdd green: node --test ran 1 test file(s)',
+				'▶ tdd green: pytest - 1 test file(s)',
+				'✓ tdd green: pytest ran 1 test file(s)',
+			])
 		})
 	},
 )

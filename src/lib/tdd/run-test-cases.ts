@@ -17,6 +17,7 @@ import type {
 	ChangedTestFile,
 	ReportedModule,
 	RunnerFunction,
+	RunnerObserver,
 	RunnerParams,
 	TestRunFailure,
 	TestRunner,
@@ -26,9 +27,11 @@ export async function runTestCases(
 	params: RunnerParams & {
 		/** The runner of each kind of test file. Default: the real ones. */
 		runners?: Partial<Record<TestRunner, RunnerFunction>>
+		/** Told of each runner's start and end (a progress step per runner). Default: nobody. */
+		observer?: RunnerObserver
 	},
 ): Promise<ReportedModule[] | TestRunFailure> {
-	const { runners, ...runnerParams } = params
+	const { runners, observer, ...runnerParams } = params
 	const { groups } = groupFilesByRunner({
 		root: params.root,
 		files: params.files.map((file) => testFileOf({ root: params.root, file })),
@@ -37,7 +40,9 @@ export async function runTestCases(
 	const modules: ReportedModule[] = []
 	for (const group of groups) {
 		const run = runners?.[group.runner] ?? defaultRunner(group.runner)
+		const running = observer?.start({ runner: group.runner, fileCount: group.files.length })
 		const reported = await run({ ...runnerParams, files: group.files })
+		running?.finish({ failed: 'failure' in reported })
 		if ('failure' in reported) return namedFailure({ runner: group.runner, failure: reported })
 		modules.push(...reported)
 	}

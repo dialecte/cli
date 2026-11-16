@@ -58,6 +58,13 @@ export const CONFTEST_FILE_PATTERN = /(^|\/)conftest\.py$/
 /** The runners in the order their groups run and print. */
 export const RUNNER_ORDER = ['vitest', 'node', 'pytest'] as const
 
+/** How each runner is named on a progress line. */
+export const RUNNER_DISPLAY_NAMES = {
+	vitest: 'vitest',
+	node: 'node --test',
+	pytest: 'pytest',
+} as const satisfies Record<(typeof RUNNER_ORDER)[number], string>
+
 /** The module a test file imports to run under `node --test`. */
 export const NODE_TEST_SPECIFIER = 'node:test'
 

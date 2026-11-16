@@ -51,6 +51,16 @@ export type TestRunner = (typeof RUNNER_ORDER)[number]
 /** The test files of one runner, in the order the change lists them. */
 export type RunnerGroup = { runner: TestRunner; files: string[] }
 
+/**
+ * What the dispatcher tells its caller about each runner's run: `start` before the runner runs its files, and the
+ * `finish` it answers once the runner has answered (`failed`: it answered a failure, the later runners are not started).
+ */
+export type RunnerObserver = {
+	start(params: { runner: TestRunner; fileCount: number }): {
+		finish(params: { failed: boolean }): void
+	}
+}
+
 /** The test files split by runner, and the files of no runner (they leave the selection). */
 export type RunnerGroups = { groups: RunnerGroup[]; outside: string[] }
 

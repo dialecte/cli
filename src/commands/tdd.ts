@@ -95,6 +95,7 @@ import {
 	RED_KINDS,
 	REVISION_NOT_NEEDED,
 	ROLLBACK_LINE,
+	RUNNER_DISPLAY_NAMES,
 	TEST_CODE_CHANGED_SINCE_RED,
 	UNRESOLVED_IMPORT_HINT,
 	TDD_SUBCOMMANDS,
@@ -1039,22 +1040,26 @@ async function announcedRun(params: {
 	files: string[]
 	filter?: RunnerParams['filter']
 }): Promise<Awaited<ReturnType<typeof runTestCases>>> {
-	const { context, files } = params
+	const { context } = params
 	const clock = createSystemClock()
-	const startedAt = clock.now()
-	const running = context.progress?.start({
-		name: `tdd ${params.subcommand}: vitest`,
-		detail: `${files.length} test file(s)`,
-	})
-	const modules = await runTestCases({
+	return runTestCases({
 		root: context.root,
-		files,
+		files: params.files,
 		filter: params.filter ?? 'all',
+		observer: {
+			start: ({ runner, fileCount }) => {
+				const startedAt = clock.now()
+				const name = `tdd ${params.subcommand}: ${RUNNER_DISPLAY_NAMES[runner]}`
+				const running = context.progress?.start({ name, detail: `${fileCount} test file(s)` })
+				return {
+					finish: ({ failed }) =>
+						running?.finish(
+							`${failed ? '✗' : '✓'} ${name} ran ${fileCount} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
+						),
+				}
+			},
+		},
 	})
-	running?.finish(
-		`${'failure' in modules ? '✗' : '✓'} tdd ${params.subcommand}: vitest ran ${files.length} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
-	)
-	return modules
 }
 
 /** A refusal of a whole file (it cannot run, or holds a focus marker), kept in the ledger. */
