@@ -2,12 +2,15 @@
  * The card's `standard` line: whether a standard is configured and what the station recorded about it. A standard
  * is configured when `DIALECTE_STANDARD` names a file or folder that exists (the environment only: no committed
  * file names it). Configured and consulted passes; configured with no consultation recorded fails; none
- * configured warns, with the recorded not-consulted reason when there is one, and never blocks.
+ * configured warns, with the recorded note when there is one, and never blocks. An `outside` record (the lot's asks
+ * answered outside the documents) warns at every effort and fails at effort high unless a person confirmed every
+ * outside answer. The recorded note is shown in every branch.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { DETAIL_SEPARATOR } from '../gate-records/gate-records.constants.ts'
+import { effectiveEffort } from '../risk/risk-records.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { readStandardRoot } from './read-standard-root.ts'
 import {
@@ -17,6 +20,9 @@ import {
 	STANDARD_NOT_CONFIGURED_DETAIL,
 	STANDARD_NOT_CONSULTED_DETAIL,
 	STANDARD_NOT_RECORDED_DETAIL,
+	STANDARD_OUTSIDE_DETAIL,
+	STANDARD_OUTSIDE_FAILING_EFFORT,
+	STANDARD_OUTSIDE_HIGH_DETAIL,
 	STANDARD_RECORDED_NOT_CONSULTED_DETAIL,
 	STANDARD_STATES,
 } from './standard.constants.ts'
@@ -24,14 +30,15 @@ import {
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
 import type { StandardRecord } from './standard.types.ts'
 
+/** The card's standard line of a hand-over folder, read from the environment and the folder's record. */
 export function readStandardLine(params: { folder: string }): CardGateLine {
 	const record = readStandardRecord(params.folder)
+	if (record?.state === 'outside') return outsideLineOf({ folder: params.folder, record })
 	if (!isStandardConfigured()) {
 		return {
 			name: STANDARD_LINE_NAME,
 			status: 'warning',
-			// the reason a station gave for not consulting one; a consulted note has nothing to add here
-			detail: [STANDARD_NOT_CONFIGURED_DETAIL, record?.state === 'not-consulted' ? record.note : '']
+			detail: [STANDARD_NOT_CONFIGURED_DETAIL, record?.note ?? '']
 				.filter(Boolean)
 				.join(DETAIL_SEPARATOR),
 		}
@@ -45,13 +52,19 @@ export function readStandardLine(params: { folder: string }): CardGateLine {
 	return {
 		name: STANDARD_LINE_NAME,
 		status: 'failed',
-		detail: STANDARD_NOT_CONSULTED_DETAIL.replace('{folder}', shellQuote(params.folder)),
+		detail: [
+			STANDARD_NOT_CONSULTED_DETAIL.replace('{folder}', shellQuote(params.folder)),
+			record?.note ?? '',
+		]
+			.filter(Boolean)
+			.join(DETAIL_SEPARATOR),
 	}
 }
 
 /**
  * A committed (DONE) card's standard line: the state recorded on the lot, never one recomputed from the
- * environment of the shell that ran the hand-over. Consulted passes; not consulted, or nothing recorded, warns.
+ * environment of the shell that ran the hand-over. Consulted passes; outside, not consulted, or nothing recorded,
+ * warns.
  */
 export function readRecordedStandardLine(params: { folder: string }): CardGateLine {
 	const record = readStandardRecord(params.folder)
@@ -61,12 +74,38 @@ export function readRecordedStandardLine(params: { folder: string }): CardGateLi
 			status: 'passed',
 			detail: STANDARD_CONSULTED_DETAIL.replace('{note}', record.note),
 		}
+	if (record?.state === 'outside')
+		return {
+			name: STANDARD_LINE_NAME,
+			status: 'warning',
+			detail: STANDARD_OUTSIDE_DETAIL.replace('{note}', record.note),
+		}
 	return {
 		name: STANDARD_LINE_NAME,
 		status: 'warning',
 		detail: record
 			? STANDARD_RECORDED_NOT_CONSULTED_DETAIL.replace('{note}', record.note)
 			: STANDARD_NOT_RECORDED_DETAIL,
+	}
+}
+
+/**
+ * The line of an `outside` record (section 18): a warning, failed at the folder's effort high unless the record's
+ * `confirmed` flag says a person confirmed every outside answer (R1-10: the flag decides, never the note's text; a
+ * record without the flag reads as not confirmed).
+ */
+function outsideLineOf(params: { folder: string; record: StandardRecord }): CardGateLine {
+	const { record } = params
+	const failing =
+		effectiveEffort({ folder: params.folder }) === STANDARD_OUTSIDE_FAILING_EFFORT &&
+		record.confirmed !== true
+	return {
+		name: STANDARD_LINE_NAME,
+		status: failing ? 'failed' : 'warning',
+		detail: (failing ? STANDARD_OUTSIDE_HIGH_DETAIL : STANDARD_OUTSIDE_DETAIL).replace(
+			'{note}',
+			record.note,
+		),
 	}
 }
 
@@ -95,6 +134,7 @@ function isStandardRecord(entry: unknown): entry is StandardRecord {
 	return (
 		STANDARD_STATES.some((state) => state === record.state) &&
 		typeof record.note === 'string' &&
-		typeof record.at === 'string'
+		typeof record.at === 'string' &&
+		(record.confirmed === undefined || typeof record.confirmed === 'boolean')
 	)
 }

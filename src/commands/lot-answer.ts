@@ -3,10 +3,12 @@
  * once, then prints the lot's status after it with `recorded` and the wait line as `next`. A refusal exits 2; an
  * `onAnswered` hook that throws exits 1, the answer kept.
  */
+import { askAnswerHook } from '../lib/knowledge/ask/ask-answer-hook.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { registerAnswerHook } from '../lib/store/answer-hooks.ts'
 import { recordAnswer } from '../lib/store/answers.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { waitNextOf } from '../lib/store/lot-next.ts'
@@ -23,6 +25,9 @@ import { lotStatusLines, lotStatusOf } from './lot-status.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RecordedAnswer } from '../lib/store/answers.types.ts'
 import type { LotAnswerJson, LotAnswerParams } from './lot-answer.types.ts'
+
+// an ask's question answered here records the person's fact (U10): a question without `ask` is left alone
+registerAnswerHook({ hook: askAnswerHook })
 
 /**
  * Answers a question of the lot `<id>` names (an index unique across every store), as text or `--json`: exit 0

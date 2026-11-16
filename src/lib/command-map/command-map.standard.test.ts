@@ -17,7 +17,7 @@ const STANDARD_USAGE = [
 	'dialecte standard index [--standard <id>] [--package <name>] [--rebuild] [--json]',
 	'dialecte standard find "<terms>" [--standard <id>] [--package <name>] [--about <Tag>] [--limit <n>] [--json]',
 	'dialecte standard show <file id>:<from>-<to> [--json]',
-	'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--angles] [--json]',
+	'dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--angles] [--packs [--effort low|medium|high]] [--reports <asks folder>] [--json]',
 ]
 
 /** The cli run as a process in an empty folder of its own, with no standard configured. */
@@ -85,7 +85,18 @@ describe('the command map: standard', () => {
 		expect(standardOfHelpJson(renderHelpJson())).toMatchObject({
 			name: 'standard',
 			verbs: ['index', 'find', 'show', 'eval'],
-			flags: ['--standard', '--package', '--rebuild', '--json', '--about', '--limit', '--angles'],
+			flags: [
+				'--standard',
+				'--package',
+				'--rebuild',
+				'--json',
+				'--about',
+				'--limit',
+				'--angles',
+				'--packs',
+				'--effort',
+				'--reports',
+			],
 		})
 	})
 

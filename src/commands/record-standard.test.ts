@@ -23,7 +23,7 @@ function standardOf(folder: string): unknown {
 
 /** The usage a refused call answers with, under its new name. */
 const STANDARD_USAGE =
-	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason>'
+	'lot standard: expected <id|folder> consulted <note> | not-consulted <reason> | outside <note>'
 
 describe('record standard', () => {
 	it('consulted <note> → exit 0, standard.json with the state, the note and the time', () => {
@@ -57,6 +57,24 @@ describe('record standard', () => {
 			state: 'not-consulted',
 			note: 'the change touches no standard',
 			at: expect.stringMatching(ISO_TIME_PATTERN),
+		})
+	})
+
+	it('outside <note> → exit 0, standard.json with the state outside, the note and the time', () => {
+		const folder = handoverFolder()
+
+		const result = runRecord({
+			cwd: dirname(folder),
+			argv: ['standard', folder, 'outside', 'asks A-0001 needs-readers (all unchecked)'],
+		})
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toMatch(/^lot standard: outside - /)
+		expect(standardOf(folder)).toEqual({
+			state: 'outside',
+			note: 'asks A-0001 needs-readers (all unchecked)',
+			at: expect.stringMatching(ISO_TIME_PATTERN),
+			confirmed: false,
 		})
 	})
 

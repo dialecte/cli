@@ -45,7 +45,7 @@ export function ladderSlicesOf(params: LadderSlicesOfParams): StandardSlice[] {
 }
 
 /** An ask's slice as `find` gives one: no title, no matched terms (the scoring reads only its file and lines). */
-function standardSliceOf(slice: AskSlice): StandardSlice {
+export function standardSliceOf(slice: AskSlice): StandardSlice {
 	return {
 		file: slice.file,
 		from: slice.from,

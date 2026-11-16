@@ -12,13 +12,13 @@ import {
 import { workspaceFactsFolder } from '../../test/ask-fix-1-fixtures.ts'
 import { createCoreOnlyWorkspace } from '../../test/ask-fix-3-fixtures.ts'
 import {
+	ANSWER_OF_UNKNOWN_ASK,
 	CORE_CODE_QUESTION,
 	CORE_ONLY_PACKAGE,
 	CORE_ONLY_SEMANTIC_QUESTION,
 	EMPTY_TAGS_REFUSAL_PART,
 	FIRST_FACT_ID,
-	UNBUILT_VERBS,
-	UNBUILT_WORDS,
+	UNKNOWN_ASK_WORDS,
 } from '../../test/ask-fix-3.constants.ts'
 import { CORE_CATALOGUE_CODE } from '../../test/ask-fix-3.constants.ts'
 import { readFactFile } from '../../test/fact-fixtures.ts'
@@ -68,18 +68,18 @@ describe('ask: a folder where only core is installed', () => {
 	)
 })
 
-describe('ask: pack and answer are not built yet', () => {
-	it.each(Object.entries(UNBUILT_VERBS))(
-		'ask %s -> exit 2, one line saying the verb is not built yet, no ask folder and no event',
-		async (_name, argv) => {
+describe('ask answer: an ask no folder holds', () => {
+	it(
+		'ask answer A-0001 x --by person-a with no ask folder -> exit 2, one line naming the ask, no ask folder and no event',
+		async () => {
 			const workspace = createAskCommandWorkspace()
 			const asks = join(workspace.state, ...STATE_ASKS_SEGMENTS)
 
-			const answer = await askedWith({ workspace, argv, exitCode: 2 })
+			const answer = await askedWith({ workspace, argv: ANSWER_OF_UNKNOWN_ASK, exitCode: 2 })
 
 			expect({
 				message: answer.output.trim().split('\n').length,
-				words: UNBUILT_WORDS.test(answer.output),
+				words: UNKNOWN_ASK_WORDS.test(answer.output),
 				asks: namesIn(asks),
 				events: existsSync(eventsPathIn(join(workspace.state, 'dialecte'))),
 			}).toEqual({ message: 1, words: true, asks: [], events: false })

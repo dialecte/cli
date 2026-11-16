@@ -13,15 +13,11 @@ export const CORE_ONLY_SEMANTIC_QUESTION = 'Explain the intent of AA_1'
 /** The refusal text that must never appear with an empty tag list. */
 export const EMPTY_TAGS_REFUSAL_PART = 'declares all of'
 
-/** The verbs that are not built yet, with the arguments the tests give them. */
-export const UNBUILT_VERBS: Record<string, string[]> = {
-	pack: ['pack', 'A-0001'],
-	'pack --outside': ['pack', 'A-0001', '--outside'],
-	answer: ['answer', 'A-0001', 'x', '--by', 'person-a'],
-}
+/** `ask answer` for an ask no folder holds, with the arguments the test gives it. */
+export const ANSWER_OF_UNKNOWN_ASK: string[] = ['answer', 'A-0001', 'x', '--by', 'person-a']
 
-/** What the one-line refusal of an unbuilt verb says. */
-export const UNBUILT_WORDS = /not built yet/u
+/** What the one-line refusal says: it names the ask and never calls the verb unbuilt. */
+export const UNKNOWN_ASK_WORDS = /^(?!.*not built yet).*A-0001/su
 
 /** The id of the first fact an ask records. */
 export const FIRST_FACT_ID = 'F-0001'

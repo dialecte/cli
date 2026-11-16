@@ -1,19 +1,16 @@
 import { wordsOf } from '../../api/find-methods.ts'
 import { attributesAdmitting } from '../../schema/attributes-admitting.ts'
 import { describeElement } from '../../schema/describe-element.ts'
-import { fillMessage } from '../standard/fill-message.ts'
 import { LINK_STRENGTHS } from '../standard/standard-search.constants.ts'
 import {
 	ANGLE_FAMILIES,
 	ANGLE_ID_PREFIX,
 	BOUNDED_NAME_FLAGS,
 	BOUNDED_NAME_INSENSITIVE_FLAGS,
-	BOUNDED_NAME_TEMPLATE,
 	DEFINITION_TEXT_SEPARATOR,
-	REGEX_SPECIAL_PATTERN,
-	REGEX_SPECIAL_REPLACEMENT,
 	TYPE_NAMESPACE_PATTERN,
 } from './ask.constants.ts'
+import { boundedNamePatternOf } from './bounded-name-pattern-of.ts'
 
 import type { ElementDescription } from '../../schema/schema.types.ts'
 import type { StandardSearchIndex, StandardUnit } from '../standard/standard-search.types.ts'
@@ -153,16 +150,7 @@ function vocabularyTagsOf(params: AnglesOfParams): string[] {
 /** The tags a text names word-bounded, case kept, in the vocabulary's order. */
 function tagsNamedIn(params: { text: string; tags: string[] }): string[] {
 	return params.tags.filter((tag) =>
-		boundedPatternOf({ name: tag, flags: BOUNDED_NAME_FLAGS }).test(params.text),
-	)
-}
-
-/** A name met word-bounded, its pattern characters escaped. */
-function boundedPatternOf(params: { name: string; flags: string }): RegExp {
-	const name = params.name.replace(REGEX_SPECIAL_PATTERN, REGEX_SPECIAL_REPLACEMENT)
-	return new RegExp(
-		fillMessage({ template: BOUNDED_NAME_TEMPLATE, values: { name } }),
-		params.flags,
+		boundedNamePatternOf({ name: tag, flags: BOUNDED_NAME_FLAGS }).test(params.text),
 	)
 }
 
@@ -174,7 +162,7 @@ function subjectWordsOf(params: AnglesOfParams): string[] {
 /** Each defined term whose term or definition text names a subject word, case-insensitive (D11b). */
 function definitionTermsOf(params: AnglesOfParams): string[] {
 	const patterns = subjectWordsOf(params).map((name) =>
-		boundedPatternOf({ name, flags: BOUNDED_NAME_INSENSITIVE_FLAGS }),
+		boundedNamePatternOf({ name, flags: BOUNDED_NAME_INSENSITIVE_FLAGS }),
 	)
 	if (patterns.length === 0) return []
 	return params.standard.flatMap((index) =>

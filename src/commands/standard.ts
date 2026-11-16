@@ -4,20 +4,23 @@
  * in the cache (`$XDG_CACHE_HOME/dialecte`, else `~/.cache/dialecte`); nothing is written anywhere else, and
  * neither the root, a standard folder nor the cache may lie inside a git work tree.
  */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { closestNames } from '../lib/closest-names.ts'
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
+import { GOLD_RUN_EFFORT } from '../lib/knowledge/ask/ask.constants.ts'
 import { ladderSlicesOf } from '../lib/knowledge/ask/ladder-slices-of.ts'
 import { loadAskSetup } from '../lib/knowledge/ask/load-ask-setup.ts'
 import { loadStandardIndexes } from '../lib/knowledge/ask/load-standard-indexes.ts'
 import { identityOf } from '../lib/knowledge/ask/merge-slices.ts'
+import { packRecallsOf } from '../lib/knowledge/ask/pack-recalls-of.ts'
+import { reportsMeasureOf } from '../lib/knowledge/ask/reports-measure-of.ts'
 import { evaluateGold } from '../lib/knowledge/standard/evaluate-gold.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { findInStandard } from '../lib/knowledge/standard/find-in-standard.ts'
 import { logicalLinesIn } from '../lib/knowledge/standard/logical-lines-in.ts'
 import { matchableTextOf } from '../lib/knowledge/standard/matchable-text-of.ts'
+import { readGold } from '../lib/knowledge/standard/read-gold.ts'
 import { showStandardRange } from '../lib/knowledge/standard/show-standard-range.ts'
 import { MANIFEST_HASH_PREFIX } from '../lib/knowledge/standard/standard-cache.constants.ts'
 import { NAME_LIST_SEPARATOR } from '../lib/knowledge/standard/standard-input.constants.ts'
@@ -28,18 +31,26 @@ import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createStreamLiveOutput } from '../lib/progress/stream-live-output.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
 import {
 	ADDED_LINE_PREFIX,
 	CLOSEST_NAME_LIMIT,
 	COLUMN_SEPARATOR,
+	COLUMN_VALUE_PLACEHOLDER,
+	EVAL_JSON_SCHEMA,
 	LIMIT_PATTERN,
+	NO_RATE_TEXT,
 	NOISE_PERCENT_DECIMALS,
 	NOISE_RATIO_DECIMALS,
+	PACKS_LINE_COLUMNS,
+	PACKS_LINE_PREFIX,
 	QUOTE_LINE_SEPARATOR,
 	RANGE_ARGUMENT_PATTERN,
 	RECALL_DECIMALS,
 	REPEATED_LINES_SHOWN,
 	REPEATED_TEXT_CUT,
+	REPORTS_LINE_COLUMNS,
+	REPORTS_LINE_PREFIX,
 	SHORT_MANIFEST_LENGTH,
 	SKIPPED_STATE,
 	STANDARD_COMMAND,
@@ -50,7 +61,8 @@ import {
 } from './standard.constants.ts'
 
 import type { CommandOutput } from '../lib/command-output.types.ts'
-import type { AskSetup } from '../lib/knowledge/ask/ask.types.ts'
+import type { AskSetup, PackRecalls, ReportsMeasure } from '../lib/knowledge/ask/ask.types.ts'
+import type { FactEffort } from '../lib/knowledge/facts/facts.types.ts'
 import type {
 	StandardInstalledVocabulary,
 	StandardReadyIndex,
@@ -58,7 +70,6 @@ import type {
 import type { StandardFileIndex } from '../lib/knowledge/standard/standard-index.types.ts'
 import type {
 	StandardEvaluation,
-	StandardGoldExpected,
 	StandardGoldItem,
 	StandardSearchIndex,
 	StandardSlice,
@@ -254,43 +265,76 @@ async function runEval(params: StandardVerbParams): Promise<CommandOutput> {
 	if (extra.length > 0) return unexpectedWords({ verb: 'eval', words: extra })
 	const gold = readGold({ path: resolve(params.cwd, goldWord) })
 	if (typeof gold === 'string') return verbError({ verb: 'eval', message: gold })
+	const { flags, values } = params.read
+	// the effort and the recorded reports are read before anything is opened: no ladder runs for the reports
+	const options = evalOptionsOf({ params, gold })
+	if ('output' in options) return options.output
+	const { effort, reports } = options
 	const opened = await openStandards({
 		verb: 'eval',
 		params,
 		scores: true,
-		standardId: params.read.values.get('standard'),
+		standardId: values.get('standard'),
 	})
 	if (opened.kind === 'output') return opened.output
 	const searches = opened.opened.indexes.map((index) => index.search)
-	const finds = await goldFindsOf({ params, opened: opened.opened, searches })
-	if ('output' in finds) return finds.output
+	const files = searches.flatMap((search) => search.files)
+	const ladder =
+		flags.has('angles') || flags.has('packs')
+			? await goldSetupOf({ params, opened: opened.opened })
+			: undefined
+	if (ladder !== undefined && 'output' in ladder) return ladder.output
+	const finds = goldFindsOf({ searches, setup: flags.has('angles') ? ladder?.setup : undefined })
+	const packs =
+		flags.has('packs') && ladder !== undefined
+			? packRecallsOf({ setup: ladder.setup, items: gold, effort, files })
+			: undefined
 	const evaluation = evaluateGold({
 		items: gold,
 		find: ({ item }) => finds.find({ item, limit: DEFAULT_FIND_LIMIT }),
 		findWide: ({ item }) => finds.find({ item, limit: WIDE_FIND_LIMIT }),
-		files: searches.flatMap((search) => search.files),
+		files,
 	})
 	const { installed } = opened.opened
-	const added = params.read.flags.has('angles')
+	const added = flags.has('angles')
 		? addedItemsOf({
 				items: gold,
 				plain: ({ item }) => findForGold({ searches, item, limit: DEFAULT_FIND_LIMIT }),
 				angled: ({ item }) => finds.find({ item, limit: DEFAULT_FIND_LIMIT }),
-				files: searches.flatMap((search) => search.files),
+				files,
 			})
 		: undefined
-	const { misses, ...recalls } = evaluation
 	return {
-		output: params.read.flags.has('json')
-			? jsonAnswerOf({
-					vocabulary: vocabularyJsonOf(installed),
-					...recalls,
-					...(added === undefined ? {} : { added }),
-					misses,
-				})
-			: textOf([vocabularyLineOf(installed), ...evalLinesOf({ evaluation, added }), '']),
+		output: flags.has('json')
+			? evalJsonOf({ installed, evaluation, added, packs, reports })
+			: textOf([
+					vocabularyLineOf(installed),
+					...evalLinesOf({ evaluation, added, packs, reports }),
+					'',
+				]),
 		exitCode: evaluation.items === 0 ? 1 : 0,
 	}
+}
+
+/** `eval --json`: the schema, the vocabulary, the recalls, `added`, `packs` and `reports` only when asked, the misses. */
+function evalJsonOf(params: {
+	installed: StandardInstalledVocabulary
+	evaluation: StandardEvaluation
+	added: number | undefined
+	packs: PackRecalls | undefined
+	reports: ReportsMeasure | undefined
+}): PrintedText {
+	const { installed, added, packs, reports } = params
+	const { misses, ...recalls } = params.evaluation
+	return jsonAnswerOf({
+		schema: EVAL_JSON_SCHEMA,
+		vocabulary: vocabularyJsonOf(installed),
+		...recalls,
+		...(added === undefined ? {} : { added }),
+		...(packs === undefined ? {} : { packs }),
+		...(reports === undefined ? {} : { reports }),
+		misses,
+	})
 }
 
 /**
@@ -339,23 +383,14 @@ function holdsQuote(params: {
 }
 
 /**
- * How `eval` finds a gold item's slices: `find` alone, or with `--angles` the ask ladder (D21) over the same indexes,
- * its setup loaded once; the answer that stops the verb when that setup cannot be read (exit 2).
+ * The setup the ask ladder reads in a gold run (`--angles`, `--packs`): the package's, no fact read or written and no
+ * ask kept, over the indexes `eval` opened; the answer that stops the verb when it cannot be read (exit 2).
  */
-async function goldFindsOf(params: {
+async function goldSetupOf(params: {
 	params: StandardVerbParams
 	opened: OpenedStandards
-	searches: StandardSearchIndex[]
-}): Promise<{ find: GoldFind } | { output: CommandOutput }> {
-	const { searches } = params
+}): Promise<{ setup: AskSetup } | { output: CommandOutput }> {
 	const verb = params.params
-	if (!verb.read.flags.has('angles'))
-		return {
-			find: function findAlone({ item, limit }) {
-				return findForGold({ searches, item, limit })
-			},
-		}
-	// no fact is read or written and no ask is kept: the gold run leaves nothing behind
 	const loaded = await loadAskSetup({
 		cwd: verb.cwd,
 		environment: verb.environment,
@@ -363,7 +398,23 @@ async function goldFindsOf(params: {
 		facts: false,
 	})
 	if ('refused' in loaded) return { output: verbError({ verb: 'eval', message: loaded.refused }) }
-	const setup: AskSetup = { ...loaded.setup, standard: params.opened.documents }
+	return { setup: { ...loaded.setup, standard: params.opened.documents } }
+}
+
+/**
+ * How `eval` finds a gold item's slices: `find` alone, or with `--angles` the ask ladder (D21) over the same indexes
+ * (the setup of `goldSetupOf`).
+ */
+function goldFindsOf(params: { searches: StandardSearchIndex[]; setup: AskSetup | undefined }): {
+	find: GoldFind
+} {
+	const { searches, setup } = params
+	if (setup === undefined)
+		return {
+			find: function findAlone({ item, limit }) {
+				return findForGold({ searches, item, limit })
+			},
+		}
 	// the recall and the `added` count read the same ladder run of an item: each item and limit runs once
 	const runs = new Map<StandardGoldItem, Map<number, StandardSlice[]>>()
 	return {
@@ -501,63 +552,6 @@ function closestOf(params: { name: string; candidates: string[] }): string {
 		: ''
 }
 
-/** The gold items of a JSON-lines file (blank lines skipped), or why it cannot be read. */
-function readGold(params: { path: string }): StandardGoldItem[] | string {
-	let text: string
-	try {
-		text = readFileSync(params.path, 'utf8')
-	} catch {
-		return fillMessage({
-			template: STANDARD_MESSAGES.goldUnreadable,
-			values: { path: params.path },
-		})
-	}
-	const items: StandardGoldItem[] = []
-	for (const [index, line] of text.split('\n').entries()) {
-		if (line.trim() === '') continue
-		const reason = goldItemOf({ line })
-		if (typeof reason === 'string')
-			return fillMessage({
-				template: STANDARD_MESSAGES.goldMalformed,
-				values: { path: params.path, line: String(index + 1), reason },
-			})
-		items.push(reason)
-	}
-	return items
-}
-
-/** One gold line as an item, or what is wrong with it. */
-function goldItemOf(params: { line: string }): StandardGoldItem | string {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(params.line)
-	} catch {
-		return STANDARD_MESSAGES.goldNotJson
-	}
-	if (typeof parsed !== 'object' || parsed === null) return STANDARD_MESSAGES.goldNotJson
-	const { question, about, expected } = parsed as Record<string, unknown>
-	const expectedValid =
-		Array.isArray(expected) &&
-		expected.every(
-			(entry: unknown) =>
-				typeof entry === 'object' &&
-				entry !== null &&
-				typeof (entry as Record<string, unknown>).file === 'string' &&
-				typeof (entry as Record<string, unknown>).quote === 'string',
-		)
-	if (typeof question !== 'string' || !expectedValid) return STANDARD_MESSAGES.goldShape
-	if (about !== undefined && typeof about !== 'string') return STANDARD_MESSAGES.goldShape
-	return {
-		question,
-		...(about === undefined ? {} : { about }),
-		// a file id is lowercased, as every id is
-		expected: expected.map((entry: StandardGoldExpected) => ({
-			file: entry.file.toLowerCase(),
-			quote: entry.quote,
-		})),
-	}
-}
-
 /** `index` as text: per standard its line, its files' lines, their repeated lines; the skipped folders. */
 function indexLinesOf(opened: OpenedStandards): string[] {
 	const lines: string[] = []
@@ -670,12 +664,50 @@ function findLinesOf(params: { slices: StandardSlice[]; indexes: StandardReadyIn
 	})
 }
 
-/** `eval` as text: the recall line, the `added +<n>` line with `--angles`, then one line per miss. */
+/** The effort and the recorded-reports measure `eval` is asked for, or the answer that stops it (exit 2). */
+function evalOptionsOf(params: {
+	params: StandardVerbParams
+	gold: StandardGoldItem[]
+}): { effort: FactEffort; reports: ReportsMeasure | undefined } | { output: CommandOutput } {
+	const { read, cwd } = params.params
+	const effort = effortOf({ word: read.values.get('effort'), packs: read.flags.has('packs') })
+	if ('refused' in effort) return { output: verbError({ verb: 'eval', message: effort.refused }) }
+	const reportsFolder = read.values.get('reports')
+	if (reportsFolder === undefined) return { effort: effort.effort, reports: undefined }
+	const reports = reportsMeasureOf({ items: params.gold, asksFolder: resolve(cwd, reportsFolder) })
+	if ('refused' in reports) return { output: verbError({ verb: 'eval', message: reports.refused }) }
+	return { effort: effort.effort, reports }
+}
+
+/**
+ * The effort of `eval --packs`: `--effort`, else medium; the refusal of one that is not an effort, or given without
+ * `--packs`.
+ */
+function effortOf(params: {
+	word: string | undefined
+	packs: boolean
+}): { effort: FactEffort } | { refused: string } {
+	const { word } = params
+	if (word === undefined) return { effort: GOLD_RUN_EFFORT }
+	if (!params.packs) return { refused: STANDARD_MESSAGES.effortNeedsPacks }
+	const effort = BRIEF_EFFORTS.find((known) => known === word)
+	if (effort !== undefined) return { effort }
+	return {
+		refused: fillMessage({
+			template: STANDARD_MESSAGES.unknownEffort,
+			values: { effort: word, efforts: BRIEF_EFFORTS.join(NAME_LIST_SEPARATOR) },
+		}),
+	}
+}
+
+/** `eval` as text: the recall line, the `added +<n>` line with `--angles`, the `packs` and `reports` lines, the misses. */
 function evalLinesOf(params: {
 	evaluation: StandardEvaluation
 	added: number | undefined
+	packs: PackRecalls | undefined
+	reports: ReportsMeasure | undefined
 }): string[] {
-	const { evaluation, added } = params
+	const { evaluation, added, packs, reports } = params
 	const lines = [
 		[
 			`recall@5 ${evaluation.recallAt5.toFixed(RECALL_DECIMALS)}`,
@@ -684,11 +716,47 @@ function evalLinesOf(params: {
 			`not in text ${evaluation.notInText}`,
 		].join(COLUMN_SEPARATOR),
 		...(added === undefined ? [] : [`${ADDED_LINE_PREFIX}${added}`]),
+		...(packs === undefined ? [] : [packsLineOf({ packs })]),
+		...(reports === undefined ? [] : [reportsLineOf({ reports })]),
 		...evaluation.misses.map((miss) =>
 			['miss', miss.file, miss.why, miss.question].join(COLUMN_SEPARATOR),
 		),
 	]
 	return lines
+}
+
+/** `packs  reader A recall@5 <n>  recall@10 <n>  union recall@5 <n>  recall@10 <n>` (D44). */
+function packsLineOf(params: { packs: PackRecalls }): string {
+	const { readerA, union } = params.packs
+	return [
+		PACKS_LINE_PREFIX,
+		columnOf({ template: PACKS_LINE_COLUMNS.readerAAt5, value: readerA.recallAt5 }),
+		columnOf({ template: PACKS_LINE_COLUMNS.readerAAt10, value: readerA.recallAt10 }),
+		columnOf({ template: PACKS_LINE_COLUMNS.unionAt5, value: union.recallAt5 }),
+		columnOf({ template: PACKS_LINE_COLUMNS.unionAt10, value: union.recallAt10 }),
+	].join(COLUMN_SEPARATOR)
+}
+
+/** One labelled column: a number at RECALL_DECIMALS, a count as it is, a text as written. */
+function columnOf(params: { template: string; value: number | string; decimals?: false }): string {
+	const { value } = params
+	const text =
+		typeof value === 'string' || params.decimals === false
+			? String(value)
+			: value.toFixed(RECALL_DECIMALS)
+	return params.template.replace(COLUMN_VALUE_PLACEHOLDER, text)
+}
+
+/** `reports  agreed <n>  wrong <n>  unjudged <n>  rate <n>`, the rate a dash when nothing is judged (D44, D45). */
+function reportsLineOf(params: { reports: ReportsMeasure }): string {
+	const { agreed, wrong, unjudged, rate } = params.reports
+	return [
+		REPORTS_LINE_PREFIX,
+		columnOf({ template: REPORTS_LINE_COLUMNS.agreed, value: agreed, decimals: false }),
+		columnOf({ template: REPORTS_LINE_COLUMNS.wrong, value: wrong, decimals: false }),
+		columnOf({ template: REPORTS_LINE_COLUMNS.unjudged, value: unjudged, decimals: false }),
+		columnOf({ template: REPORTS_LINE_COLUMNS.rate, value: rate === null ? NO_RATE_TEXT : rate }),
+	].join(COLUMN_SEPARATOR)
 }
 
 /** The first line of a text answer: the dialectes whose definition is the vocabulary, or none. */
