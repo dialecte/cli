@@ -89,7 +89,7 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(calls).toContain('queue 7')
 	})
 
-	it('cut from a commit main does not hold → a stack: refused, nothing asked of the host', () => {
+	it('cut from a commit main does not hold, named by its sha → a stack: refused naming the commit, nothing asked of the host', () => {
 		const { workspace } = landableLot()
 		const parent = join(workspace.workspace, '.worktrees', 'parent')
 		git({
@@ -109,14 +109,16 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 			branch: 'feat/y',
 			repository: workspace.repository,
 			worktree: child,
-			base: { ref: 'feat/parent', commit: cut },
+			base: { ref: cut.slice(0, 7), commit: cut },
 		})
 		const { host, calls } = recordingHost()
 
 		const result = runLotLand({ cwd: workspace.repository, argv: ['0002-repo-y'], host })
 
 		expect(result.exitCode).toBe(1)
-		expect(result.output).toContain('a stacked lot lands as a stack')
+		expect(result.output).toContain(
+			`was cut from ${cut.slice(0, 7)} (${cut.slice(0, 12)}), which main does not hold`,
+		)
 		expect(calls).toEqual([])
 	})
 

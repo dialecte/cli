@@ -59,7 +59,8 @@ export function runLotLand(params: {
 	const base = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
 	if ('refusal' in base) return { exitCode: 1, output: textOf([`lot land: ${base.refusal}`]) }
 	// a lot cut from another lot lands as a stack (33CI CI4): never rebased onto the base branch with its parent's
-	// commits. Cut from the base is what the base holds, however the brief named it (a branch, a sha)
+	// commits. Cut from the base is a cut commit the base holds, however the brief named it (a branch, a sha): a child
+	// whose parent merged without a squash lands alone; after a squash merge it still carries the parent's commits
 	if (!isAncestorCommit({ root: main, ancestor: identity.base.commit, descendant: base.ref }))
 		return {
 			exitCode: 1,
@@ -67,6 +68,7 @@ export function runLotLand(params: {
 				LOT_LAND_LINES.stacked
 					.replace('{lot}', () => ids[0])
 					.replace('{from}', () => identity.base.ref)
+					.replace('{commit}', () => identity.base.commit.slice(0, 12))
 					.replace('{base}', () => base.branch),
 			]),
 		}
