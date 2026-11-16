@@ -40,6 +40,8 @@ export type CheckCodeRulesParams = {
 	queryNames?: ReadonlySet<string>
 	/** The syntax tree of `text`, when the caller already parsed it (with parent nodes set): not parsed again. */
 	sourceFile?: ts.SourceFile
+	/** The names of the file's classes a package entry exports (the `class` rule admits them); absent, none is. */
+	entryClasses?: ReadonlySet<string>
 	/** Given for a Dialecte change: the test rules of a Dialecte change run; absent, they do not. */
 	testRules?: TestRulesContext
 }

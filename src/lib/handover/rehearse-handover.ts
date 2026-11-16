@@ -17,42 +17,31 @@
  * the clone makes go to the repository's store.
  */
 import { spawnSync } from 'node:child_process'
-import {
-	cpSync,
-	existsSync,
-	lstatSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readlinkSync,
-	rmdirSync,
-	rmSync,
-	symlinkSync,
-	writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { constants, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
 import { runContrib } from '../contrib/run-contrib.ts'
 import { startStep } from '../events/record-step.ts'
-import { isPresent, realPathOf } from '../file-system.ts'
+import { realPathOf } from '../file-system.ts'
 import { CHECK_STORE_VARIABLE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
 import { textOf } from '../print/print.ts'
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { provideNodeModules } from '../worktree/add-worktree.ts'
-import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
+import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
+import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
-import { parkNodeModules } from '../worktree/node-modules-pool.ts'
+import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
+import { cloneLotTree, copyRepositoryFiles, removeEmptiedFolders } from './clone-lot-tree.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
 	POSIX_REHEARSAL_SCRATCH_ROOT,
@@ -163,6 +152,8 @@ async function rehearseRecorded(
 		join(handover.folder, REHEARSAL_DECISIONS_FILE),
 		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
 	)
+	// each lot's tree and decision, on the rehearsal's end as rehearsal.json holds them
+	const lots = decisions.map(({ lot, tree, decision }) => ({ lot, tree, decision }))
 	const contribRun = decisions.find((decision) => decision.contrib === 'run')
 	// a contrib run of the tree the lots leave needs the clone, whatever the lots' records say
 	const everyLotReused =
@@ -202,7 +193,7 @@ async function rehearseRecorded(
 			skipCommits: true,
 			gateScope,
 		})
-		recorder.end({ exit, reuse: 'whole', stateHash: null })
+		recorder.end({ exit, reuse: 'whole', stateHash: null, lots })
 		return exit
 	}
 	const progress =
@@ -213,6 +204,8 @@ async function rehearseRecorded(
 		})
 	const repository = handover.lotsFile.repository
 	const pool = params.keep ? undefined : poolOf(repository)
+	// the hand-over folder's lot owns what the clone takes from the pool and parks back; none outside every store
+	const owner = params.stepPlace === null ? undefined : basename(params.stepPlace.lot)
 	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
 	const clone = join(folder, basename(repository))
 	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
@@ -252,6 +245,7 @@ async function rehearseRecorded(
 				handoverFolder: handover.folder,
 				write,
 				pool,
+				owner,
 			})
 			const siblings = linkRehearsalSiblings({ repository, folder, clone })
 			links.push(...siblings.links)
@@ -277,6 +271,7 @@ async function rehearseRecorded(
 					clock: params.clock,
 				})
 			: undefined
+		const lotTree = cloneLotTree({ repository, clone, lots: handover.lots })
 		const exit = await runHandoverFolder({
 			handover,
 			commitRoot: clone,
@@ -302,11 +297,13 @@ async function rehearseRecorded(
 					.map((decision) => decision.lot),
 			),
 			storeRoot: repository,
+			lotTree,
+			beforeCard: lotTree.restoreLots,
 			contribUnanswerable,
 			gateScope,
 		})
 		// after the hook record the clone's run left (D12)
-		recorder.end({ exit, reuse: 'none', stateHash: null })
+		recorder.end({ exit, reuse: 'none', stateHash: null, lots })
 		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
@@ -317,6 +314,7 @@ async function rehearseRecorded(
 				clone,
 				links,
 				pool,
+				owner,
 				spawner: params.spawner ?? spawnDetached,
 				relink: params.relink,
 			}))
@@ -348,6 +346,8 @@ function trashRehearsalFolder(params: {
 	clone: string
 	links: readonly string[]
 	pool: RehearsalPool
+	/** The lot the rehearsal runs for, when known: the pool entry's owner. */
+	owner: string | undefined
 	spawner: BackgroundSpawner
 	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): string[] {
@@ -358,8 +358,8 @@ function trashRehearsalFolder(params: {
 	// a park that fails never replaces the rehearsal's result: one line, and the folder goes all the same
 	try {
 		// read and re-pointed while the sibling links beside the clone still resolve its `file:` dependencies
-		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
-		const checkedLockHash = lockHashOf(params.clone)
+		// the lock text read with the check: the pool entry is stamped with the key of what the check read
+		const checkedLockText = readPackageLockText({ worktree: params.clone })
 		const check = existsSync(nodeModules) ? checkNodeModules({ worktree: params.clone }) : undefined
 		if (check)
 			(params.relink ?? relinkEscapingLinks)({ from: nodeModules, to: nodeModules, real: true })
@@ -374,13 +374,14 @@ function trashRehearsalFolder(params: {
 				// the caches go with the rehearsal folder
 				discardInto: params.folder,
 				check,
-				checkedLockHash,
+				checkedLockText,
+				owner: params.owner,
 			})
 			lines.push(
 				textOf([
 					typeof parked === 'string'
 						? `node_modules not parked: ${parked}`
-						: `node_modules parked in ${parked.entry}`,
+						: `node_modules parked in ${parked.entry}${parked.note === undefined ? '' : `; ${parked.note}`}`,
 				]),
 			)
 		}
@@ -496,6 +497,8 @@ function prepareClone(params: {
 	write: WriteLine
 	/** Where the clone's `node_modules` is taken from first; none: a copy, as before. */
 	pool: RehearsalPool | undefined
+	/** The lot the rehearsal runs for, when known: the pool gives its own entry first. */
+	owner: string | undefined
 }): void {
 	const { repository, clone, write } = params
 	const head = readGit({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
@@ -504,7 +507,7 @@ function prepareClone(params: {
 		args: ['clone', '-q', '--shared', '--no-checkout', repository, clone],
 	})
 	readGit({ root: clone, args: ['checkout', '-q', '-B', params.branch, head] })
-	const startTime = processStartTime(process.pid)
+	const startTime = ownProcessStartTime()
 	const marker: RehearsalMarker = {
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
@@ -537,15 +540,19 @@ function prepareClone(params: {
 		repository: params.pool?.main ?? repository,
 		worktreesFolder: params.pool?.worktreesFolder,
 		from: join(repository, 'node_modules'),
+		// the rehearsal folder goes at the end: what a failed npm ci left goes with it
+		discardInto: dirname(clone),
+		owner: params.owner,
 	})
-	if (provided)
+	if (provided) {
+		const detail = nodeModulesDetailOf(provided)
+		const relinked = 'relinked' in provided ? provided.relinked.length : 0
 		write(
 			textOf([
-				provided.method === 'pooled'
-					? `  node_modules: pooled ${provided.from}`
-					: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
+				`  node_modules: ${provided.method}${detail && ` ${detail}`}${relinked ? `, ${relinked} link(s) re-pointed` : ''}`,
 			]),
 		)
+	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 }
 
@@ -556,21 +563,7 @@ function prepareClone(params: {
 function copyWorkingTree(params: { repository: string; clone: string }): number {
 	const { repository, clone } = params
 	const changed = listChangedFiles({ root: repository, withDeleted: true })
-	for (const file of changed) {
-		const source = join(repository, file)
-		const target = join(clone, file)
-		if (isPresent(source)) {
-			mkdirSync(dirname(target), { recursive: true })
-			// a link is copied as the link it is (relative, never followed), as git commits it
-			if (lstatSync(source).isSymbolicLink()) {
-				rmSync(target, { force: true })
-				symlinkSync(readlinkSync(source), target)
-			} else cpSync(source, target)
-		} else {
-			rmSync(target, { force: true })
-			removeEmptiedFolders({ clone, folder: dirname(target) })
-		}
-	}
+	copyRepositoryFiles({ repository, clone, files: changed })
 	return changed.length
 }
 
@@ -640,7 +633,6 @@ async function runContribInClone(params: {
 			removeEmptiedFolders({ clone, folder: dirname(join(clone, file)) })
 		}
 		copyWorkingTree({ repository, clone })
-		spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 	}
 }
 
@@ -657,16 +649,4 @@ function listUntracked(clone: string): string[] {
 	return readGit({ root: clone, args: ['ls-files', '--others', '--exclude-standard'] })
 		.split('\n')
 		.filter(Boolean)
-}
-
-/** A deleted file's folder, and each parent up to the clone, removed while empty: as git leaves the tree. */
-function removeEmptiedFolders(params: { clone: string; folder: string }): void {
-	for (
-		let folder = params.folder;
-		folder !== params.clone && folder.startsWith(params.clone) && existsSync(folder);
-		folder = dirname(folder)
-	) {
-		if (readdirSync(folder).length) return
-		rmdirSync(folder)
-	}
 }

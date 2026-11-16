@@ -1,7 +1,8 @@
 import type { CheckKey, RecordOrigin } from '../gate-records/gate-records.types.ts'
 import type { ModeCommandHashes } from '../gate-records/mode-command-hashes.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
-import type { GateRunBase } from './gate-base.types.ts'
+import type { LiveOutput } from '../progress/step-progress.types.ts'
+import type { GateRunBase, HandoverBase } from './gate-base.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 import type { StepResult } from './gate.types.ts'
 
@@ -59,4 +60,31 @@ export type GivenCheckStore = {
 	checkStore?: string
 	/** The line the hook starts with when the value given is no such path. */
 	ignored?: string
+}
+
+/** The steps `gate --hook` runs of its own before the declared ones (its tdd step), with how long each took. */
+export type OwnHookSteps = {
+	results: StepResult[]
+	durations: ReadonlyMap<StepResult, number>
+}
+
+/** What `gate --hook` is run with (`runHookGate`). */
+export type HookGateParams = {
+	cwd: string
+	argv: string[]
+	/** The index file git handed the commit hook (relative: to the worktree top); default: the worktree's own index. */
+	indexFile: string | undefined
+	/** False when what is committed is unknown (git variables naming another repository): every step runs. */
+	reusable: boolean
+	live: LiveOutput | undefined
+	/** The base a hand-over run handed down. */
+	handoverBase: HandoverBase | undefined
+	/** Why a hand-over variable given without the other was ignored. */
+	handoverIgnored: string | undefined
+	/** The absolute git common dir whose store the hook reads and writes (a rehearsal clone's); its records are a rehearsal's. */
+	checkStore?: string
+	/** The line saying why a given store was ignored: the hook's first line. */
+	checkStoreIgnored?: string
+	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
+	warn?: (line: string) => void
 }

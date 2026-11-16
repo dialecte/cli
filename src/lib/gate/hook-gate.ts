@@ -1,5 +1,7 @@
 /**
- * `gate --hook`: the full gate's hook steps (all but the scoped ones that count no tests) for the commit being made,
+ * `gate --hook`: with a declared `dialecte.gate.hook`, the tdd receipts of the lot first (`runHookTddStep`, run every
+ * time, never recorded; a failure runs no step), then the declared steps; else the full gate's hook steps (all but the
+ * scoped ones that count no tests). For the commit being made,
  * each answered by the newest green record of the committed tree and install that ran it as it is now (any mode),
  * else run - every step not answered in one run, in list order. When the full steps hold a scoped step, the hook
  * base is resolved once (the hand-over base, else the base branch's merge-base, else the empty tree) and enters a
@@ -21,9 +23,11 @@ import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
+import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
 import { readEmptyTree, resolveGateBase } from './gate-base.ts'
 import {
+	GATE_FAILED_TAIL_LINE,
 	GATE_HOOK_BASE_LINE,
 	GATE_HOOK_FAILED_LINE,
 	GATE_HOOK_GREEN_LINE,
@@ -32,7 +36,6 @@ import {
 	GATE_HOOK_NO_STEP_LINE,
 	GATE_HOOK_RUNNING_LINE,
 	GATE_HOOK_SELECTION_WORDS,
-	STEP_DETAIL_INDENT,
 } from './gate-config.constants.ts'
 import {
 	GateConfigError,
@@ -41,9 +44,11 @@ import {
 	resolveHookSteps,
 } from './gate-config.ts'
 import { answerHookSteps } from './hook-step-answers.ts'
+import { HOOK_TDD_STEP_DETAIL } from './hook-tdd.constants.ts'
+import { runHookTddStep } from './hook-tdd.ts'
 import { runGateSteps } from './run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from './step-counts.ts'
-import { renderStepLine } from './step-line.ts'
+import { renderStepLines } from './step-line.ts'
 import { readStepSource } from './step-source.ts'
 
 import type { CommandResult } from '../command-result.types.ts'
@@ -55,39 +60,28 @@ import type { Refusal } from '../refusal.types.ts'
 import type { GateRunBase, HandoverBase, UsedGateBase } from './gate-base.types.ts'
 import type { GateStep } from './gate-config.types.ts'
 import type { StepResult } from './gate.types.ts'
-import type { HookAnswers, PreparedHookRun } from './hook-gate.types.ts'
+import type {
+	HookAnswers,
+	HookGateParams,
+	OwnHookSteps,
+	PreparedHookRun,
+} from './hook-gate.types.ts'
 
 /**
- * `gate --hook` in the worktree `cwd`. Every step answered: one reused line per step naming the run that really ran
+ * `gate --hook` in the worktree `cwd`. A declared hook list's tdd step comes first: failed, its lines and the verdict
+ * alone; else its line before the others. Every step answered: one reused line per step naming the run that really ran
  * it. Nothing answered: the running line, the steps' lines, one vitest summary line of their summed counts, then the
  * verdict. Some answered: their reused lines, then the lines of the steps run, then the verdict. With a scoped hook
  * step, the lines about the base (a hand-over variable given alone, a hand-over base ignored, the note of rule 4)
  * come first and the base line before the verdict. Throws a `GateConfigError` for a gate config the cli cannot
  * run; a set `dialecte.baseBranch` naming no branch fails (exit 1) with its refusal, no step run.
  */
-export async function runHookGate(params: {
-	cwd: string
-	argv: string[]
-	/** The index file git handed the commit hook (relative: to the worktree top); default: the worktree's own index. */
-	indexFile: string | undefined
-	/** False when what is committed is unknown (git variables naming another repository): every step runs. */
-	reusable: boolean
-	live: LiveOutput | undefined
-	/** The base a hand-over run handed down. */
-	handoverBase: HandoverBase | undefined
-	/** Why a hand-over variable given without the other was ignored. */
-	handoverIgnored: string | undefined
-	/** The absolute git common dir whose store the hook reads and writes (a rehearsal clone's); its records are a rehearsal's. */
-	checkStore?: string
-	/** The line saying why a given store was ignored: the hook's first line. */
-	checkStoreIgnored?: string
-	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
-	warn?: (line: string) => void
-}): Promise<CommandResult> {
+export async function runHookGate(params: HookGateParams): Promise<CommandResult> {
 	const notices = params.checkStoreIgnored ? [params.checkStoreIgnored] : []
 	const prepared = prepareHookRun(params)
 	if ('result' in prepared) return withNotices({ result: prepared.result, notices })
-	const { hookSteps, shown, tree } = prepared
+	// a live output gets the notices first and every line once: what it printed is never in the result again
+	if (params.live) for (const line of notices) params.live.writeLine(textOf([line]))
 	// the run's events: a hook answered from records is a run too
 	const recorder = startStep({
 		cwd: params.cwd,
@@ -95,6 +89,27 @@ export async function runHookGate(params: {
 		heavy: false,
 		warn: params.warn,
 	})
+	// a declared hook list (a package whose suite runs on CI) commits on the tdd receipts of the lot first
+	const own = await runOwnHookSteps({ cwd: params.cwd, prepared, live: params.live, recorder })
+	if (own.results.some((result) => result.status === 'failed'))
+		return endFailedOwnRun({ own, recorder, live: params.live, notices })
+	return answerOrRunHookSteps({ params, prepared, recorder, own, notices })
+}
+
+/**
+ * The declared (or default) hook steps after the hook's own: each answered by a record, else run; the run recorded,
+ * its output rendered (`runHookGate`).
+ */
+async function answerOrRunHookSteps(args: {
+	params: HookGateParams
+	prepared: PreparedHookRun
+	recorder: StepHandle
+	own: OwnHookSteps
+	notices: readonly string[]
+}): Promise<CommandResult> {
+	const { params, prepared, recorder, own, notices } = args
+	const { hookSteps, shown, tree } = prepared
+	const ownLines = own.results.flatMap(renderStepLines)
 	const answers = findHookAnswers({
 		cwd: params.cwd,
 		prepared,
@@ -105,29 +120,36 @@ export async function runHookGate(params: {
 		cwd: params.cwd,
 		recorder,
 		hasHead: prepared.hasHead,
-		key: {
-			tree,
-			...prepared.treeKey,
-			commandHash: hashHookGateCommand(prepared),
-		},
+		key: { tree, ...prepared.treeKey, commandHash: hashHookGateCommand(prepared) },
 		steps: hookSteps,
 		stepHashes: prepared.stepHashes,
 		answers,
+		own,
 		checkStore: params.checkStore,
 	}
 	const baseLines = shown?.lines ?? []
 	const toRun = hookSteps.filter((step) => !answers.origins.has(step.name))
 	if (toRun.length === 0) {
 		endHookRun({ ...recordOf, ran: [], durations: new Map(), ranOnTree: true })
-		return renderAnsweredOutput({ notices, baseLines, answers, base: shown?.base })
+		return renderAnsweredOutput({
+			// live, the notices and the own steps' lines are printed already
+			notices: params.live ? [] : [...notices, ...ownLines],
+			baseLines,
+			answers,
+			base: shown?.base,
+		})
 	}
 	const { live } = params
-	const leading = showLeadingLines({ notices, baseLines, answers, tree, steps: toRun, live })
-	const {
-		results: ran,
-		durations,
-		ranOnTree,
-	} = await runHookSteps({
+	const leading = showLeadingLines({
+		notices,
+		ownLines,
+		baseLines,
+		answers,
+		tree,
+		steps: toRun,
+		live,
+	})
+	const run = await runHookSteps({
 		cwd: params.cwd,
 		committedTree: prepared.hasHead ? tree : undefined,
 		steps: toRun,
@@ -137,9 +159,9 @@ export async function runHookGate(params: {
 		// the scoped steps select on the tree the commit records, against the hook base
 		...(shown && { scope: { base: shown.base.commit, tree } }),
 	})
-	endHookRun({ ...recordOf, ran, durations, ranOnTree })
+	endHookRun({ ...recordOf, ran: run.results, durations: run.durations, ranOnTree: run.ranOnTree })
 	return renderRunOutput({
-		ran,
+		ran: run.results,
 		live,
 		leading,
 		base: shown?.base,
@@ -148,12 +170,14 @@ export async function runHookGate(params: {
 }
 
 /**
- * The lines before the steps a hook runs: the notices (a given store ignored), the base lines, the reused lines, and
- * the running line when nothing was answered. On a terminal they are written now, before the steps; else the notices
- * and the running line alone go live.
+ * The lines before the steps a hook runs: the notices (a given store ignored), the own steps' lines, the base lines,
+ * the reused lines, and the running line when nothing was answered. With a live output, terminal or not, the base,
+ * reused and running lines are written now, before the steps (the notices and the own steps' lines are already).
  */
 function showLeadingLines(params: {
 	notices: readonly string[]
+	/** The lines of the hook's own steps (its tdd step): with a live output their progress showed them already. */
+	ownLines: readonly string[]
 	baseLines: readonly string[]
 	answers: HookAnswers
 	tree: string
@@ -169,14 +193,9 @@ function showLeadingLines(params: {
 					() => params.steps.map((step) => step.name).join(GATE_HOOK_ID_SEPARATOR),
 				)
 			: undefined
-	const leading = [
-		...params.notices,
-		...params.baseLines,
-		...answers.lines,
-		...(running ? [running] : []),
-	]
-	const shownNow = live?.tty ? leading : [...params.notices, ...(running ? [running] : [])]
-	if (live) for (const line of shownNow) live.writeLine(textOf([line]))
+	const later = [...params.baseLines, ...answers.lines, ...(running ? [running] : [])]
+	const leading = [...params.notices, ...params.ownLines, ...later]
+	if (live) for (const line of later) live.writeLine(textOf([line]))
 	return leading
 }
 
@@ -332,7 +351,7 @@ async function runHookSteps(params: {
 			const running = progress?.start({ name: step.name, detail: step.run })
 			return function finished(result) {
 				durations.set(result, finishPart())
-				running?.finish(...hookStepLines(result).map((line) => textOf([line])))
+				running?.finish(...renderStepLines(result).map((line) => textOf([line])))
 			}
 		},
 	})
@@ -356,6 +375,8 @@ function endHookRun(params: {
 	steps: readonly GateStep[]
 	stepHashes: ReadonlyMap<string, string>
 	answers: HookAnswers
+	/** The hook's own steps that ran before the declared ones (its tdd step): in the run's events, never in the record. */
+	own: OwnHookSteps
 	ran: readonly StepResult[]
 	durations: ReadonlyMap<StepResult, number>
 	checkStore: string | undefined
@@ -379,8 +400,8 @@ function endHookRun(params: {
 				})
 			: undefined
 	const parts = partsOf({
-		results,
-		durations: new Map(params.durations),
+		results: [...params.own.results, ...results],
+		durations: new Map([...params.own.durations, ...params.durations]),
 		reused: new Set(answers.results),
 	})
 	params.recorder.end({
@@ -389,12 +410,65 @@ function endHookRun(params: {
 		reuse: reuseOf(parts),
 		// a run every record answered checked nothing of the tree itself: no state hash, as a whole reuse never had
 		stateHash: ran.length > 0 ? (recorded?.stateHash ?? null) : null,
+		// the key of the record this run stored; none when it stored nothing
+		...(recorded?.stored && { key: params.key }),
 	})
 }
 
 /**
- * The output of a hook that ran steps: off a terminal the leading lines and the steps' lines (on a terminal they are
- * on the screen already), the summary, the base line, the no-HEAD line, the verdict, and a failed step's last lines.
+ * The hook's own steps, before the declared ones: the tdd receipts of the lot (`runHookTddStep`) when the package
+ * declares `dialecte.gate.hook`, none otherwise (the default hook commits inside a hand-over's clones, which hold no
+ * receipts). Timed for the run's events, shown live as a step.
+ */
+async function runOwnHookSteps(params: {
+	cwd: string
+	prepared: PreparedHookRun
+	live: LiveOutput | undefined
+	recorder: StepHandle
+}): Promise<OwnHookSteps> {
+	const { packageJson, tree } = params.prepared
+	if (packageJson.dialecte?.gate?.hook === undefined) return { results: [], durations: new Map() }
+	const progress = params.live
+		? createStepProgress({ live: params.live, clock: createSystemClock() })
+		: undefined
+	const running = progress?.start({ name: TDD_STEP.name, detail: HOOK_TDD_STEP_DETAIL })
+	const finishPart = params.recorder.startPart({ name: TDD_STEP.name, heavy: false })
+	const result = await runHookTddStep({ cwd: params.cwd, packageJson, tree })
+	const duration = finishPart()
+	running?.finish(...renderStepLines(result).map((line) => textOf([line])))
+	return { results: [result], durations: new Map([[result, duration]]) }
+}
+
+/**
+ * A hook whose own step (its tdd step) failed: no declared step runs and nothing is recorded; the run's events end
+ * with that part, the output is its lines and the verdict.
+ */
+function endFailedOwnRun(params: {
+	own: OwnHookSteps
+	recorder: StepHandle
+	live: LiveOutput | undefined
+	notices: readonly string[]
+}): CommandResult {
+	const { own } = params
+	const parts = partsOf({
+		results: own.results,
+		durations: new Map(own.durations),
+		reused: new Set(),
+	})
+	params.recorder.end({ exit: 1, parts, reuse: reuseOf(parts), stateHash: null })
+	return renderRunOutput({
+		ran: own.results,
+		live: params.live,
+		leading: params.notices,
+		base: undefined,
+		headLines: [],
+	})
+}
+
+/**
+ * The output of a hook that ran steps: without a live output the leading lines and the steps' lines (a live output
+ * printed them already), off a terminal the summary and the base line (written live on one), the no-HEAD line, the
+ * verdict, and a failed step's last lines.
  */
 function renderRunOutput(params: {
 	ran: readonly StepResult[]
@@ -418,13 +492,13 @@ function renderRunOutput(params: {
 		: undefined
 	if (baseLine && live?.tty) live.writeLine(baseLine)
 	const own = textOf([
-		// on a terminal the lines are on the screen already
-		...(live?.tty ? [] : [...params.leading, ...ran.flatMap(hookStepLines)]),
+		// with a live output, terminal or not, the leading and step lines are printed already
+		...(live ? [] : [...params.leading, ...ran.flatMap(renderStepLines)]),
 		...(summary && !live?.tty ? [summary] : []),
 		...(baseLine && !live?.tty ? [baseLine] : []),
 		...params.headLines,
 		failed ? GATE_HOOK_FAILED_LINE.replace('{step}', failed.step.name) : GATE_HOOK_GREEN_LINE,
-		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
+		...(failed?.tail ? [GATE_FAILED_TAIL_LINE.replace('{step}', failed.step.name)] : []),
 	])
 	return {
 		exitCode: failed ? 1 : 0,
@@ -479,12 +553,4 @@ function selectionWords(results: readonly StepResult[]): string {
 	return ids.length
 		? GATE_HOOK_SELECTION_WORDS.selected.replace('{ids}', ids.join(GATE_HOOK_ID_SEPARATOR))
 		: GATE_HOOK_SELECTION_WORDS.nothing
-}
-
-/** A test step `gate --hook` ran: its line and the lines under it (the files a rerun named). */
-function hookStepLines(result: StepResult): string[] {
-	return [
-		renderStepLine(result),
-		...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
-	]
 }

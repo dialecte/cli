@@ -75,6 +75,31 @@ export type ScriptsRun = {
 /** A step whose command runs other scripts, while its scripts may still start. */
 export type HookParentStep = ScriptsRun & { step: HookStep }
 
+/** Who hears a hook step reader: each step as it starts, each warning or error line with the step holding it. */
+export type HookReaderListeners = {
+	onStep?: (step: HookStep) => void
+	onFlagged?: (flagged: FlaggedHookLine, step: HookStep) => void
+}
+
+/** The steps a hook step reader builds from its lines (`createStepLines`). */
+export type HookStepLines = {
+	/** A line of the current step, or a leading one. */
+	append(line: string): void
+	/** An npm script header and its `> <command>` line. */
+	start(header: { line: string; command: string }): void
+	/** The last line read was blank (or none was read): an npm header may follow. */
+	afterBlank(): boolean
+	/** The output ended: the steps it held (none read: one step `hook` of the leading lines). */
+	end(): HookStep[]
+}
+
+/** The open steps running scripts of a hook's output, nearest last. */
+export type HookParentStack = {
+	/** The nearest open step running the script `name`; the ones opened after it are done and dropped. */
+	nearestRunning(name: string): HookParentStep | undefined
+	push(parent: HookParentStep): void
+}
+
 /** Reads a hook's output a line at a time, as it comes. */
 export type HookStepReader = {
 	read(line: string): void

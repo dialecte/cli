@@ -27,24 +27,26 @@
  * `dialecte.gate.release` (default: the full steps) like `--full`, its scoped steps against the empty tree, and
  * records `dialecte-gate-release.json`. A gate config the cli cannot run exits 2 (1 under `--hook`).
  *
- * `--hook [--no-reuse]` runs in a commit hook the hook steps of `--full`: every full step but the scoped ones that
- * count no tests (a commit has no lot base for them). Each step is answered by the newest green record of what is
- * committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
+ * `--hook [--no-reuse]` runs in a commit hook the `dialecte.gate.hook` steps when the package declares them (a package
+ * whose suite runs on CI), after the tdd receipts of the lot (`runHookTddStep`: they prove the commit, so no test
+ * runs; a failure runs no step); else the hook steps of `--full`: every full step but the scoped ones that count no
+ * tests (a commit has no lot base for them), with no tdd step. Each step is answered by the newest green record of what
+ * is committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
  * of the index git hands the hook (never the working files: a merge commit and a partial commit check what they
- * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the
- * hook base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran
- * it: `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in
- * list order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older
- * cli, with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git
- * variables naming another repository, answer nothing. No hygiene, no tdd step, no hand-over hold (it runs inside
- * `handover run`'s own commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its
- * hash, an answered one with the run it came from; it goes to the repository's store, or - given
- * `DIALECTE_CHECK_STORE`, the absolute git common dir of the repository a rehearsal clones - to that store, marked as
- * a rehearsal's (any other value is ignored, said on the hook's first line; no step ever sees the variable). The
- * record is kept only when the working files were the committed tree before and after the steps ran: a step reads
- * the working files, so a run on others answers nothing of the tree. When a hook step is scoped it resolves the hook base once - the hand-over base `handover run` hands
- * down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live run of that folder holds it, else the
- * base branch's - and prints it on one more line with what was selected (or `reused`).
+ * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the hook
+ * base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran it:
+ * `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in list
+ * order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older cli,
+ * with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git variables
+ * naming another repository, answer nothing. No hygiene, no hand-over hold (it runs inside `handover run`'s own
+ * commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its hash, an answered one with
+ * the run it came from; it goes to the repository's store, or - given `DIALECTE_CHECK_STORE`, the absolute git common
+ * dir of the repository a rehearsal clones - to that store, marked as a rehearsal's (any other value is ignored, said
+ * on the hook's first line; no step ever sees the variable). The record is kept only when the working files were the
+ * committed tree before and after the steps ran: a step reads the working files, so a run on others answers nothing of
+ * the tree. When a hook step is scoped it resolves the hook base once - the hand-over base `handover run` hands down
+ * (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live run of that folder holds it, else the base
+ * branch's - and prints it on one more line with what was selected (or `reused`).
  */
 import { join } from 'node:path'
 
@@ -68,12 +70,12 @@ import {
 	GATE_BASE_FLAG_LINE,
 	GATE_BASE_REFUSAL_LINE,
 	GATE_CONFIG_REFUSAL,
+	GATE_FAILED_TAIL_LINE,
 	GATE_HOOK_MODE_REFUSAL,
 	GATE_RELEASE_MODE_REFUSAL,
 	GATE_REUSED_VERDICT,
 	GATE_STATE_CHANGED_LINE,
 	RELEASE_NOT_COVERING_LINE,
-	STEP_DETAIL_INDENT,
 } from '../lib/gate/gate-config.constants.ts'
 import {
 	GateConfigError,
@@ -85,8 +87,9 @@ import {
 import { readGivenCheckStore } from '../lib/gate/given-check-store.ts'
 import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
-import { renderStepLine } from '../lib/gate/step-line.ts'
+import { renderStepLines } from '../lib/gate/step-line.ts'
 import { readStepSource } from '../lib/gate/step-source.ts'
+import { runTddStep } from '../lib/gate/tdd-step.ts'
 import { namesAnotherRepository } from '../lib/git-environment.ts'
 import { readHeadOrNone } from '../lib/git.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
@@ -98,21 +101,21 @@ import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
-import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
+import { shellQuote, shellWord } from '../lib/shell-quote.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { CheckKey, GateRecord } from '../lib/gate-records/gate-records.types.ts'
-import type { GateRunBase, HandoverBase } from '../lib/gate/gate-base.types.ts'
+import type { StepHandle } from '../lib/events/record-step.types.ts'
+import type { CheckKey, GateRecord, RecordedRun } from '../lib/gate-records/gate-records.types.ts'
+import type { GateRunBase } from '../lib/gate/gate-base.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepResult } from '../lib/gate/gate.types.ts'
-import type { AwakeHolder } from '../lib/keep-awake/keep-awake.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
-import type { RunClocks } from '../lib/progress/slept.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 import type { Refusal } from '../lib/refusal.types.ts'
+import type { GatePhase, GateReuse, GateRunParams, GateSetup, GateView } from './gate.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	// git hands a commit hook the index it commits; the cli cleared it from its own environment at start. When the
@@ -145,145 +148,79 @@ export async function run(argv: string[]): Promise<void> {
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export async function runGate(params: {
-	cwd: string
-	argv: string[]
-	/** Where each step's start line (or spinner) goes while it runs; the result is returned at the end. */
-	live?: LiveOutput
-	/** `--hook`: the index file git handed the commit hook (relative: to the worktree top); default: the worktree's own index. */
-	indexFile?: string
-	/** `--hook`: false when what is committed is unknown (git variables naming another repository): the tests run. */
-	reusable?: boolean
-	/**
-	 * `--hook`: the base a hand-over run handed down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER` in the
-	 * cli's given environment), given to `resolveGateBase` (rule 2).
-	 */
-	handoverBase?: HandoverBase
-	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
-	handoverIgnored?: string
-	/**
-	 * The absolute git common dir of the repository whose store holds the gate's records, any mode
-	 * (`DIALECTE_CHECK_STORE` in the cli's given environment); its records are marked as a rehearsal's.
-	 */
-	checkStore?: string
-	/** The line saying why a given store was ignored (no absolute path to a folder); the gate starts with it. */
-	checkStoreIgnored?: string
-	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
-	holdAwake?: AwakeHolder
-	/** The clock pair a `--full` or `--release` run measures a sleep with. Default: the process's. */
-	runClocks?: RunClocks
-	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
-	warn?: (line: string) => void
-}): Promise<CommandResult> {
-	const { cwd, argv } = params
+export async function runGate(params: GateRunParams): Promise<CommandResult> {
+	const refused = refuseModeFlags(params.argv)
+	if (refused) return refused
+	if (hasFlag(params.argv, 'hook')) return runHookMode(params)
+	return runModeGate({ ...params, mode: modeOf(params.argv) })
+}
+
+/** The refusal of flags that name two modes at once; undefined when the command line names one at most. */
+function refuseModeFlags(argv: string[]): CommandResult | undefined {
 	if (
 		hasFlag(argv, 'release') &&
 		(hasFlag(argv, 'fast') || hasFlag(argv, 'full') || hasFlag(argv, 'hook'))
 	)
 		return resultOf({ exitCode: 2, lines: [GATE_RELEASE_MODE_REFUSAL] })
-	if (hasFlag(argv, 'hook')) {
-		if (hasFlag(argv, 'fast') || hasFlag(argv, 'full'))
-			return resultOf({ exitCode: 2, lines: [GATE_HOOK_MODE_REFUSAL] })
-		try {
-			return await runHookGate({
-				cwd,
-				argv,
-				indexFile: params.indexFile,
-				reusable: params.reusable ?? true,
-				live: params.live,
-				handoverBase: params.handoverBase,
-				handoverIgnored: params.handoverIgnored,
-				...(params.checkStore && { checkStore: params.checkStore }),
-				...(params.checkStoreIgnored && { checkStoreIgnored: params.checkStoreIgnored }),
-				warn: params.warn,
-			})
-		} catch (error) {
-			// a broken gate config stops the commit, as any broken gate does
-			if (error instanceof GateConfigError)
-				return resultOf({
-					exitCode: 1,
-					lines: [GATE_CONFIG_REFUSAL.replace('{message}', () => error.message)],
-				})
-			throw error
-		}
-	}
+	if (hasFlag(argv, 'hook') && (hasFlag(argv, 'fast') || hasFlag(argv, 'full')))
+		return resultOf({ exitCode: 2, lines: [GATE_HOOK_MODE_REFUSAL] })
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
 		return resultOf({ exitCode: 2, lines: ['gate: --fast or --full, not both'] })
-	const mode = modeOf(argv)
-	const json = hasFlag(argv, 'json')
+	return undefined
+}
+
+/** The mode of a run that is not `--hook`: `--release`, `--full`, else `--fast`. */
+function modeOf(argv: string[]): GateMode {
+	if (hasFlag(argv, 'release')) return 'release'
+	return hasFlag(argv, 'full') ? 'full' : 'fast'
+}
+
+/** `--hook`: the commit hook's run (`runHookGate`); a gate config the cli cannot run stops the commit (exit 1). */
+async function runHookMode(params: GateRunParams): Promise<CommandResult> {
+	try {
+		return await runHookGate({
+			cwd: params.cwd,
+			argv: params.argv,
+			indexFile: params.indexFile,
+			reusable: params.reusable ?? true,
+			live: params.live,
+			handoverBase: params.handoverBase,
+			handoverIgnored: params.handoverIgnored,
+			...(params.checkStore && { checkStore: params.checkStore }),
+			...(params.checkStoreIgnored && { checkStoreIgnored: params.checkStoreIgnored }),
+			warn: params.warn,
+		})
+	} catch (error) {
+		// a broken gate config stops the commit, as any broken gate does
+		if (error instanceof GateConfigError)
+			return resultOf({
+				exitCode: 1,
+				lines: [GATE_CONFIG_REFUSAL.replace('{message}', () => error.message)],
+			})
+		throw error
+	}
+}
+
+/**
+ * A `--fast`, `--full` or `--release` run: the worktree's own steps (the hygiene, the tdd step), then the steps of
+ * the list, answered by a green record of the same key or run; the run is recorded, then said.
+ */
+async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<CommandResult> {
+	const { cwd, argv, mode } = params
 	// a long run: the machine stays awake while it lasts, and its record says when it slept all the same
 	const sleptSinceStart =
 		mode === 'fast'
 			? undefined
 			: startLongRun({ holdAwake: params.holdAwake, runClocks: params.runClocks })
-
-	const hold = readHandoverHold(cwd)
-	if ('refusal' in hold) return resultOf({ exitCode: 1, lines: [`gate: ${hold.refusal}`] })
-	const underHandover =
-		'folder' in hold
-			? [
-					GATE_UNDER_HANDOVER.replace('{folder}', hold.folder).replace(
-						'{lots}',
-						join(hold.folder, HANDOVER_FILES.lots),
-					),
-				]
-			: []
-
-	// a node_modules that does not install the lock being checked: no step runs, nothing is recorded
-	const installRefusal =
-		readHeadOrNone(cwd) === undefined
-			? undefined
-			: checkInstallMatchesTree({ root: cwd, tree: computeStateTree(cwd) })
-	if (installRefusal !== undefined)
-		return resultOf({ exitCode: 1, lines: [`gate: ${installRefusal}`] })
-
-	const source = readStepSource(cwd)
-	if ('refusal' in source)
-		return resultOf({
-			exitCode: 2,
-			lines: [GATE_CONFIG_REFUSAL.replace('{message}', () => source.refusal)],
-		})
-	const { packageJson } = source
-	const resolved = resolveStepsOf({ packageJson, mode })
-	if ('refusal' in resolved) return resultOf({ exitCode: 2, lines: [resolved.refusal] })
-	const { steps } = resolved
-	// the gate base, once per run and only for a list holding a scoped step; without one `--base` reads the tdd
-	// step only, which runs every time: it is no part of what the steps check
-	const scope = holdsScopedStep(steps)
-		? resolveScopeOf({ cwd, mode, ref: getArg(argv, 'base') })
-		: undefined
-	if (scope && 'refusal' in scope)
-		return resultOf({
-			exitCode: 2,
-			lines: [GATE_BASE_REFUSAL_LINE.replace('{refusal}', () => scope.refusal)],
-		})
-	const gateBase = scope?.base
-	const commandHash = gateCommandHash({ root: cwd, steps, gateBase: gateBase?.commit })
-	const shownLive = new Set<StepResult>()
-	const progress = params.live
-		? createStepProgress({ live: params.live, clock: createSystemClock() })
-		: undefined
-	const { live } = params
-	/** The step's line (and the lines under it), live, in run order. */
-	function showLive(shown: { result: StepResult; running?: RunningStep }): void {
-		const lines = [
-			renderStepLine(shown.result),
-			...(shown.result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
-		].map((line) => textOf([line]))
-		if (shown.running) shown.running.finish(...lines)
-		else for (const line of lines) live?.writeLine(line)
-		shownLive.add(shown.result)
-	}
-	// said once, before the steps: where the base came from, and a release list that answers no full gate
-	const noticeLines = [
-		...(params.checkStoreIgnored ? [params.checkStoreIgnored] : []),
-		...(scope?.lines ?? []),
-		...(mode === 'release' ? notCoveringLines(packageJson) : []),
-	]
-	if (progress) for (const line of noticeLines) live?.writeLine(textOf([line]))
-	const results: StepResult[] = []
-	let reused: { record: GateRecord; key: CheckKey } | undefined
-	let keyBefore: CheckKey | undefined
+	const setup = readGateSetup(params)
+	if ('refused' in setup) return setup.refused
+	const view: GateView = params.live
+		? {
+				live: params.live,
+				progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
+			}
+		: {}
+	if (view.progress) for (const line of setup.noticeLines) view.live?.writeLine(textOf([line]))
 	// the run's events: its start before any step, its end after the record (D12)
 	const kind = GATE_STEP_KINDS[mode]
 	const recorder = startStep({
@@ -292,158 +229,398 @@ export async function runGate(params: {
 		heavy: HEAVY_STEP_KINDS.includes(kind),
 		warn: params.warn,
 	})
-	const durations = new Map<StepResult, number>()
-	const reusedParts = new Set<StepResult>()
+	const { packageJson } = setup.source
+	const worktree = await runWorktreeSteps({ cwd, argv, mode, packageJson, recorder, view })
+	const worktreeFailed = worktree.results.some((result) => result.status === 'failed')
+	const reuse = findReuse({ cwd, argv, mode, setup, failed: worktreeFailed })
+	const checked = await runListSteps({
+		cwd,
+		mode,
+		setup,
+		recorder,
+		view,
+		reuse,
+		failed: worktreeFailed,
+	})
+	const results = [...worktree.results, ...checked.results]
+	const absentLines = absentDerivedLines({ setup, mode })
+	if (view.progress) for (const line of absentLines) view.live?.writeLine(textOf([line]))
+	const sleptMs = sleptSinceStart?.()
+	const recorded = recordGateRun({ cwd, mode, setup, results, reuse, sleptMs })
+	endGateEvents({ recorder, argv, worktree, checked, reuse, recorded })
+	return renderGateResult({
+		mode,
+		json: hasFlag(argv, 'json'),
+		live: params.live,
+		setup,
+		results,
+		shown: new Set([...worktree.shown, ...checked.shown]),
+		absentLines,
+		notStored: recorded.notStored,
+		stored: recorded.stored,
+		reused: reuse.reused?.record,
+	})
+}
+
+/**
+ * What a run reads before any step: the hand-over hold, the install of the lock being checked, the step source, the
+ * steps of `mode` and - only for a list holding a scoped step - the gate base, once per run; a refusal of any of them
+ * is the run's answer.
+ */
+function readGateSetup(
+	params: Pick<GateRunParams, 'cwd' | 'argv' | 'checkStore' | 'checkStoreIgnored'> & {
+		mode: GateMode
+	},
+): GateSetup | { refused: CommandResult } {
+	const { cwd, mode } = params
+	const hold = readHandoverHold(cwd)
+	if ('refusal' in hold)
+		return { refused: resultOf({ exitCode: 1, lines: [`gate: ${hold.refusal}`] }) }
+	// a node_modules that does not install the lock being checked: no step runs, nothing is recorded
+	const installRefusal =
+		readHeadOrNone(cwd) === undefined
+			? undefined
+			: checkInstallMatchesTree({ root: cwd, tree: computeStateTree(cwd) })
+	if (installRefusal !== undefined)
+		return { refused: resultOf({ exitCode: 1, lines: [`gate: ${installRefusal}`] }) }
+	const source = readStepSource(cwd)
+	if ('refusal' in source) {
+		const line = GATE_CONFIG_REFUSAL.replace('{message}', () => source.refusal)
+		return { refused: resultOf({ exitCode: 2, lines: [line] }) }
+	}
+	const resolved = resolveStepsOf({ packageJson: source.packageJson, mode })
+	if ('refusal' in resolved)
+		return { refused: resultOf({ exitCode: 2, lines: [resolved.refusal] }) }
+	const { steps } = resolved
+	// without a scoped step `--base` reads the tdd step only, which runs every time: no part of what the steps check
+	const scope = holdsScopedStep(steps)
+		? resolveScopeOf({ cwd, mode, ref: getArg(params.argv, 'base') })
+		: undefined
+	if (scope && 'refusal' in scope) {
+		const line = GATE_BASE_REFUSAL_LINE.replace('{refusal}', () => scope.refusal)
+		return { refused: resultOf({ exitCode: 2, lines: [line] }) }
+	}
+	const gateBase = scope?.base
+	return {
+		underHandover:
+			'folder' in hold
+				? [
+						// the folder's own lots file and the folder as --out: the command works from any place in the repository
+						GATE_UNDER_HANDOVER.replace('{folder}', () => hold.folder)
+							.replace('{lots}', () => shellQuote(join(hold.folder, HANDOVER_FILES.lots)))
+							.replace('{out}', () => ` --out ${shellWord(hold.folder)}`),
+					]
+				: [],
+		source,
+		steps,
+		...(gateBase && { gateBase }),
+		...(params.checkStore && { checkStore: params.checkStore }),
+		commandHash: gateCommandHash({ root: cwd, steps, gateBase: gateBase?.commit }),
+		noticeLines: [
+			...(params.checkStoreIgnored ? [params.checkStoreIgnored] : []),
+			...(scope?.lines ?? []),
+			...(mode === 'release' ? notCoveringLines(source.packageJson) : []),
+		],
+	}
+}
+
+/** A step's line and the lines under it, shown live: under its running line when it has one. */
+function showStepLive(params: { view: GateView; result: StepResult; running?: RunningStep }): void {
+	const lines = renderStepLines(params.result).map((line) => textOf([line]))
+	if (params.running) params.running.finish(...lines)
+	else for (const line of lines) params.view.live?.writeLine(line)
+}
+
+/** The worktree's own steps, run every time: the hygiene (`--fast` only), then the tdd step unless it failed. */
+async function runWorktreeSteps(params: {
+	cwd: string
+	argv: string[]
+	mode: GateMode
+	packageJson: PackageJson
+	recorder: StepHandle
+	view: GateView
+}): Promise<GatePhase> {
+	const { cwd, argv, mode, recorder, view } = params
+	const phase: GatePhase = { results: [], durations: new Map(), shown: new Set() }
 	if (mode === 'fast') {
 		const finishHygiene = recorder.startPart({ name: HYGIENE_STEP_NAME, heavy: false })
 		const hygiene = hygieneStep({ cwd, declared: declaredPaths(argv) })
-		durations.set(hygiene, finishHygiene())
-		results.push(hygiene)
-		if (progress) showLive({ result: hygiene })
+		phase.durations.set(hygiene, finishHygiene())
+		phase.results.push(hygiene)
+		if (view.progress) {
+			showStepLive({ view, result: hygiene })
+			phase.shown.add(hygiene)
+		}
 	}
-	if (results.some((result) => result.status === 'failed')) results.push(notRun(TDD_STEP))
-	else {
-		const running = progress?.start({ name: TDD_STEP.name, detail: 'the receipts of the change' })
-		const finishTdd = recorder.startPart({ name: TDD_STEP.name, heavy: false })
-		const tdd = await tddStep({
-			cwd,
-			packageJson,
-			ref: getArg(argv, 'base'),
-			wholeBranch: mode !== 'fast',
-		})
-		durations.set(tdd, finishTdd())
-		results.push(tdd)
-		if (running) showLive({ result: tdd, running })
+	if (phase.results.some((result) => result.status === 'failed')) {
+		phase.results.push(notRun(TDD_STEP))
+		return phase
 	}
-	// a record is keyed on HEAD: a repository with no commit yet reuses and keeps none (its tdd step refuses first
-	// today; the guard holds should that step ever pass without a commit)
+	const running = view.progress?.start({
+		name: TDD_STEP.name,
+		detail: 'the receipts of the change',
+	})
+	const finishTdd = recorder.startPart({ name: TDD_STEP.name, heavy: false })
+	const tdd = await runTddStep({
+		cwd,
+		packageJson: params.packageJson,
+		ref: getArg(argv, 'base'),
+		wholeBranch: mode !== 'fast',
+	})
+	phase.durations.set(tdd, finishTdd())
+	phase.results.push(tdd)
+	if (running) {
+		showStepLive({ view, result: tdd, running })
+		phase.shown.add(tdd)
+	}
+	return phase
+}
+
+/**
+ * HEAD, the key of the state the steps start on, and the green record of the same mode and key that answers them
+ * (none under `--no-reuse`). A repository with no commit yet reuses and keeps none (its tdd step refuses first today;
+ * the guard holds should that step ever pass without a commit); a failed worktree step keys nothing.
+ */
+function findReuse(params: {
+	cwd: string
+	argv: string[]
+	mode: GateMode
+	setup: GateSetup
+	failed: boolean
+}): GateReuse {
+	const { cwd } = params
 	const head = readHeadOrNone(cwd)
-	// the key of the state the steps start on: a record is stored only when they leave it the same
-	keyBefore =
-		head === undefined || results.some((result) => result.status === 'failed')
+	// a record is stored only when the steps leave this state the same
+	const keyBefore =
+		head === undefined || params.failed
 			? undefined
-			: computeCheckKey({ root: cwd, commandHash })
+			: computeCheckKey({ root: cwd, commandHash: params.setup.commandHash })
 	const found =
-		keyBefore && !hasFlag(argv, 'no-reuse')
+		keyBefore && !hasFlag(params.argv, 'no-reuse')
 			? findReusableRecord({
 					root: cwd,
-					mode,
+					mode: params.mode,
 					key: keyBefore,
-					...(params.checkStore && { checkStore: params.checkStore }),
+					...(params.setup.checkStore && { checkStore: params.setup.checkStore }),
 				})
 			: undefined
-	reused = found && keyBefore && { record: found, key: keyBefore }
-	if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
-	else if (reused) {
-		if (progress)
-			live?.writeLine(renderReuseLine({ command: `gate --${mode}`, record: reused.record }))
-		for (const result of reusedResults({
-			record: reused.record,
-			steps,
-			leftOut: [TDD_STEP.name],
-		})) {
-			results.push(result)
-			reusedParts.add(result)
-			if (progress) showLive({ result })
-		}
-	} else {
-		const stepResults = await runGateSteps({
-			root: cwd,
-			steps,
-			packageJson,
-			// the tree the key holds: the one the scoped steps select on
-			...(gateBase && keyBefore && { scope: { base: gateBase.commit, tree: keyBefore.tree } }),
-			// a default step without its npm script fails a full or release run; a fast one says it and goes on
-			failDefaultUnwired: mode !== 'fast',
-			// always: the run's events time each part, progress shown or not (D8)
-			announce: function announce(step) {
-				const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
-				const running = progress?.start({ name: step.name, detail: step.run })
-				return function finished(result) {
-					durations.set(result, finishPart())
-					if (running) showLive({ result, running })
-				}
-			},
-		})
-		results.push(...stepResults)
+	return {
+		head,
+		...(keyBefore && { keyBefore }),
+		...(found && keyBefore && { reused: { record: found, key: keyBefore } }),
 	}
-	// a derived step the package has no script for: one skip line, no step of the record
-	// only a package.json has npm scripts to derive from: a repository without one says nothing of them
+}
+
+/** The steps of the list: not run after a failed worktree step, answered by the record found, else run. */
+async function runListSteps(params: {
+	cwd: string
+	mode: GateMode
+	setup: GateSetup
+	recorder: StepHandle
+	view: GateView
+	reuse: GateReuse
+	failed: boolean
+}): Promise<GatePhase> {
+	const { setup, view, recorder } = params
+	const phase: GatePhase = { results: [], durations: new Map(), shown: new Set() }
+	if (params.failed) return { ...phase, results: setup.steps.map(notRun) }
+	const { reused, keyBefore } = params.reuse
+	if (reused) {
+		if (view.progress)
+			view.live?.writeLine(
+				renderReuseLine({ command: `gate --${params.mode}`, record: reused.record }),
+			)
+		const answered = reusedResults({
+			record: reused.record,
+			steps: setup.steps,
+			leftOut: [TDD_STEP.name],
+		})
+		for (const result of answered) {
+			phase.results.push(result)
+			if (view.progress) {
+				showStepLive({ view, result })
+				phase.shown.add(result)
+			}
+		}
+		return phase
+	}
+	const results = await runGateSteps({
+		root: params.cwd,
+		steps: setup.steps,
+		packageJson: setup.source.packageJson,
+		// the tree the key holds: the one the scoped steps select on
+		...(setup.gateBase &&
+			keyBefore && { scope: { base: setup.gateBase.commit, tree: keyBefore.tree } }),
+		// a default step without its npm script fails a full or release run; a fast one says it and goes on
+		failDefaultUnwired: params.mode !== 'fast',
+		// always: the run's events time each part, progress shown or not (D8)
+		announce: function announce(step) {
+			const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
+			const running = view.progress?.start({ name: step.name, detail: step.run })
+			return function finished(result) {
+				phase.durations.set(result, finishPart())
+				if (running) {
+					showStepLive({ view, result, running })
+					phase.shown.add(result)
+				}
+			}
+		},
+	})
+	return { ...phase, results }
+}
+
+/**
+ * The skip line of each derived step the package has no script for (no step of the record): `--full`, and
+ * `--release` without its own list. Only a package.json has npm scripts to derive from: a repository without one
+ * says nothing of them.
+ */
+function absentDerivedLines(params: { setup: GateSetup; mode: GateMode }): string[] {
+	const { source, steps } = params.setup
+	const { mode } = params
 	const derives =
 		source.origin === 'package.json' &&
-		(mode === 'full' || (mode === 'release' && packageJson.dialecte?.gate?.release === undefined))
-	const absentLines = derives ? renderAbsentDerivedLines({ packageJson, steps }) : []
-	if (progress) for (const line of absentLines) live?.writeLine(textOf([line]))
-	const sleptMs = sleptSinceStart?.()
-	const { stored, changedWhileRunning, stateHash } =
-		head === undefined
-			? { stored: false, changedWhileRunning: false, stateHash: null }
-			: recordCheckedRun({
-					root: cwd,
-					mode,
-					results,
-					keyBefore,
-					keyAfter: reused?.key ?? computeCheckKey({ root: cwd, commandHash }),
-					...(reused && { reused: reused.record }),
-					...(params.checkStore && { checkStore: params.checkStore }),
-					...(gateBase && { base: gateBase }),
-					...(sleptMs !== undefined && { sleptMs }),
-					stepHashes: new Map(
-						steps.map((step) => [
-							step.name,
-							hashGateStep({ root: cwd, step, gateBase: gateBase?.commit }),
-						]),
-					),
-				})
-	const notStored = [
-		...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
-		...(head === undefined ? [GATE_NO_HEAD_LINE.replace('{command}', `gate --${mode}`)] : []),
-	]
+		(mode === 'full' ||
+			(mode === 'release' && source.packageJson.dialecte?.gate?.release === undefined))
+	return derives ? renderAbsentDerivedLines({ packageJson: source.packageJson, steps }) : []
+}
 
+/**
+ * The run's end event (D12), after its record: its exit, each part's time (the list's parts reused when a record
+ * answered them), the key of the record it stored (none when it stored nothing) and whether it ran under `--no-reuse`.
+ */
+function endGateEvents(params: {
+	recorder: StepHandle
+	argv: string[]
+	worktree: GatePhase
+	checked: GatePhase
+	reuse: GateReuse
+	recorded: RecordedRun & { key?: CheckKey }
+}): void {
+	const { worktree, checked, recorded } = params
+	const results = [...worktree.results, ...checked.results]
+	const parts = partsOf({
+		results,
+		durations: new Map([...worktree.durations, ...checked.durations]),
+		reused: new Set(params.reuse.reused ? checked.results : []),
+	})
+	params.recorder.end({
+		exit: results.some((result) => result.status === 'failed') ? 1 : 0,
+		parts,
+		reuse: reuseOf(parts),
+		stateHash: recorded.stateHash,
+		...(recorded.key && { key: recorded.key }),
+		...(hasFlag(params.argv, 'no-reuse') && { noReuse: true }),
+	})
+}
+
+/**
+ * The run's record, for the card and the repository's store, with the key it was stored under (none when it stored
+ * nothing: a reused run, a state changed while it ran) and the lines saying why it was not kept: the working files
+ * changed while the steps ran, or no HEAD to key it on.
+ */
+function recordGateRun(params: {
+	cwd: string
+	mode: GateMode
+	setup: GateSetup
+	results: StepResult[]
+	reuse: GateReuse
+	sleptMs: number | undefined
+}): RecordedRun & { key?: CheckKey; notStored: string[] } {
+	const { cwd, mode, setup, reuse, sleptMs } = params
+	const { gateBase } = setup
+	if (reuse.head === undefined)
+		return {
+			stored: false,
+			stateHash: null,
+			notStored: [GATE_NO_HEAD_LINE.replace('{command}', `gate --${mode}`)],
+		}
+	const keyAfter =
+		reuse.reused?.key ?? computeCheckKey({ root: cwd, commandHash: setup.commandHash })
+	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
+		root: cwd,
+		mode,
+		results: params.results,
+		keyBefore: reuse.keyBefore,
+		keyAfter,
+		...(reuse.reused && { reused: reuse.reused.record }),
+		...(setup.checkStore && { checkStore: setup.checkStore }),
+		...(gateBase && { base: gateBase }),
+		...(sleptMs !== undefined && { sleptMs }),
+		stepHashes: new Map(
+			setup.steps.map((step) => [
+				step.name,
+				hashGateStep({ root: cwd, step, gateBase: gateBase?.commit }),
+			]),
+		),
+	})
+	return {
+		stored,
+		stateHash,
+		...(stored && { key: keyAfter }),
+		notStored: changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : [],
+	}
+}
+
+/**
+ * What the run says: its JSON, or its lines - the hold, the notices, each step not shown live yet with the reuse line
+ * after the tdd step, the skip lines, why it was not stored, the verdict - then the failed step's own last lines.
+ */
+function renderGateResult(params: {
+	mode: GateMode
+	json: boolean
+	live: LiveOutput | undefined
+	setup: GateSetup
+	results: StepResult[]
+	shown: ReadonlySet<StepResult>
+	absentLines: string[]
+	notStored: string[]
+	stored: boolean
+	reused: GateRecord | undefined
+}): CommandResult {
+	const { mode, results, reused } = params
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
-	const parts = partsOf({ results, durations, reused: reusedParts })
-	recorder.end({ exit: exitCode, parts, reuse: reuseOf(parts), stateHash })
-	if (json)
+	if (params.json)
 		return {
 			exitCode,
 			output: jsonOf(
-				{ mode, ok: !failed, ...(reused && { reused: true }), stored, steps: results },
+				{
+					mode,
+					ok: !failed,
+					...(reused && { reused: true }),
+					stored: params.stored,
+					steps: results,
+				},
 				2,
 			),
 		}
-	const reuseLine = reused && renderReuseLine({ command: `gate --${mode}`, record: reused.record })
+	const tty = params.live?.tty
+	const reuseLine = reused && renderReuseLine({ command: `gate --${mode}`, record: reused })
 	const own = textOf([
-		...underHandover,
-		...(params.live?.tty ? [] : noticeLines),
+		...params.setup.underHandover,
+		...(tty ? [] : params.setup.noticeLines),
 		// on a terminal a step's line is on the screen already: the summary does not repeat it
 		...results
-			.filter((result) => !(params.live?.tty && shownLive.has(result)))
+			.filter((result) => !(tty && params.shown.has(result)))
 			.flatMap((result) => [
-				renderStepLine(result),
-				...(result.details ?? []).map((line) => `${STEP_DETAIL_INDENT}${line}`),
+				...renderStepLines(result),
 				// the steps after the tdd step are the record's: said once, before them
 				...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
 			]),
-		...(params.live?.tty ? [] : absentLines),
-		...notStored,
+		...(tty ? [] : params.absentLines),
+		...params.notStored,
 		failed
 			? `gate --${mode}: failed at ${failed.step.name}`
 			: reused
 				? GATE_REUSED_VERDICT.replace('{mode}', mode)
 				: `gate --${mode}: green`,
-		...(failed?.tail ? [`--- last lines of ${failed.step.name} ---`] : []),
+		...(failed?.tail ? [GATE_FAILED_TAIL_LINE.replace('{step}', failed.step.name)] : []),
 	])
 	return {
 		exitCode,
 		// the failed step's last lines are its own output, relayed line by line
 		output: failed?.tail ? joinedOf([own, relayedTextOf(childLinesOf(failed.tail))]) : own,
 	}
-}
-
-/** The mode the flags ask for: `--release`, else `--full`, else `fast`. */
-function modeOf(argv: string[]): GateMode {
-	return hasFlag(argv, 'release') ? 'release' : hasFlag(argv, 'full') ? 'full' : 'fast'
 }
 
 /** The steps of `mode`, or the refusal of a config the cli cannot run (`GateConfigError`). */
@@ -509,39 +686,6 @@ function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 			...(note && { note }),
 		}
 	return { step, status: 'passed', counts: {}, restored: [], ...(note && { note }) }
-}
-
-/** The receipts of the change's test cases, after the hygiene. */
-async function tddStep(params: {
-	cwd: string
-	packageJson: PackageJson
-	ref: string | undefined
-	wholeBranch: boolean
-}): Promise<StepResult> {
-	const check = await checkTddReceipts({
-		root: params.cwd,
-		packageJson: params.packageJson,
-		ref: params.ref,
-		wholeBranch: params.wholeBranch,
-	})
-	// the whole-branch base under the step's line (a skipped step measured nothing from it)
-	const details = [
-		...(check.baseNote && check.status !== 'skipped' ? [check.baseNote] : []),
-		...(check.details ?? []),
-	]
-	return {
-		step: TDD_STEP,
-		status: check.status,
-		counts: {},
-		restored: [],
-		...(check.reason && { reason: check.reason }),
-		...(check.note && { note: check.note }),
-		...(check.lines?.length && { tail: check.lines.join('\n') }),
-		...(details.length && { details }),
-		...(check.cases && { cases: check.cases }),
-		...(check.moved?.length && { moved: check.moved }),
-		...(check.duplicates?.length && { duplicates: check.duplicates }),
-	}
 }
 
 /** Every `--declare <path>` of the command line. */

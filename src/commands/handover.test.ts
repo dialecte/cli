@@ -750,13 +750,13 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(lines.at(-1)).toBe(`node '${WRITER_CLI}' handover run '${realpathSync(out)}'`)
 	})
 
-	it('written → above the command: the repository held until every lot is committed, the gate still running under this hand-over, a late edit re-gated then --rehash on the lots file written (its path quoted)', () => {
+	it('written → above the command: the repository held until every lot is committed, the gate still running under this hand-over, a late edit re-gated then handover write --rehash on the lots file written (its path quoted)', () => {
 		const { lotsPath } = prepare({ plain: true })
 
 		const lines = writeHandover({ lotsPath }).output.split('\n')
 
 		expect(lines.at(-2)).toBe(
-			`Review the card, then run it. The repository is held until every lot is committed; \`dialecte gate\` still runs under this hand-over (after a late edit: re-gate, then \`dialecte handover '${lotsPath}' --rehash\`):`,
+			`Review the card, then run it. The repository is held until every lot is committed; \`dialecte gate\` still runs under this hand-over (after a late edit: re-gate, then \`dialecte handover write '${lotsPath}' --rehash\`):`,
 		)
 	})
 

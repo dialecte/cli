@@ -94,9 +94,8 @@
 					"run": "npm run check"
 				},
 				{
-					"name": "tests",
-					"run": "node src/scoped-tests.ts",
-					"counts": "tests",
+					"name": "rules",
+					"run": "node src/cli.ts rules",
 					"scoped": true
 				}
 			],

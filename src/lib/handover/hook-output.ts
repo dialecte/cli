@@ -24,6 +24,7 @@ import {
 	HOOK_LANDING_NONE,
 	HOOK_LANDING_SEPARATOR,
 	HOOK_LINE_PATTERNS,
+	HOOK_FAILED_TAIL_PATTERN,
 	HOOK_RAN_STEP_PATTERN,
 	HOOK_REUSED_TESTS_STEP,
 	HOOK_WARNING_KINDS,
@@ -53,8 +54,11 @@ import type {
 	CountedFlaggedLine,
 	FlaggedHookLine,
 	HookLineKind,
+	HookParentStack,
 	HookParentStep,
+	HookReaderListeners,
 	HookStep,
+	HookStepLines,
 	HookStepReader,
 	HookSummaryStep,
 	PlacedFlaggedLine,
@@ -98,74 +102,10 @@ function readHookOutput(params: { output: string }): {
  * parallel by its parent is none: its lines stay the parent's), `onFlagged` each warning or error line with
  * the step holding it, its last line. In a test step only its failures are flagged.
  */
-export function createHookStepReader(params: {
-	onStep?: (step: HookStep) => void
-	onFlagged?: (flagged: FlaggedHookLine, step: HookStep) => void
-}): HookStepReader {
-	const steps: HookStep[] = []
-	const parents: HookParentStep[] = []
-	const testSteps = new Set<HookStep>()
-	// the lines before the first step: a step `hook` once one is not blank
-	const leading: string[] = []
-	let current: HookStep | undefined
-	let previousBlank = true
+export function createHookStepReader(listeners: HookReaderListeners): HookStepReader {
+	const stepLines = createStepLines(listeners)
+	// an npm header line read after a blank line: a step's start once its `> <command>` line follows
 	let pendingHeader: string | undefined
-
-	function append(line: string): void {
-		previousBlank = line.trim() === ''
-		if (current) current.lines.push(line)
-		else {
-			leading.push(line)
-			if (previousBlank) return
-			current = { name: PLAIN_HOOK_STEP, lines: leading, runsScripts: false }
-			steps.push(current)
-			params.onStep?.(current)
-		}
-		const kind = classifyHookLine(line)
-		if (!kind) return
-		if (testSteps.has(current) && !TEST_STEP_KINDS.includes(kind)) return
-		params.onFlagged?.(
-			{
-				line,
-				kind,
-				step: current.name,
-				label: `${STEP_LABEL.replace('{step}', current.name)}${line}`,
-			},
-			current,
-		)
-	}
-
-	function startStep(header: { line: string; command: string }): void {
-		previousBlank = false
-		const name = NPM_SCRIPT_HEADER.exec(header.line)?.[1] ?? PLAIN_HOOK_STEP
-		const run = readScriptsRun(header.command)
-		// the nearest step running this script; the steps it ran after that one are done
-		while (
-			parents.length > 0 &&
-			!parents[parents.length - 1].scripts.some((script) =>
-				matchesScript({ pattern: script, name }),
-			)
-		)
-			parents.pop()
-		const parent = parents.at(-1)
-		if (parent?.parallel) {
-			parent.step.lines.push(header.line, header.command)
-			current = parent.step
-			return
-		}
-		const step: HookStep = {
-			name,
-			lines: [header.command],
-			runsScripts: run.scripts.length > 0,
-			...(parent && { parent: parent.step.name }),
-		}
-		steps.push(step)
-		current = step
-		if (isTestStep({ name, commandLine: header.command })) testSteps.add(step)
-		if (step.runsScripts) parents.push({ ...run, step })
-		params.onStep?.(step)
-	}
-
 	return {
 		read(text) {
 			const line = visibleLine(text)
@@ -173,25 +113,120 @@ export function createHookStepReader(params: {
 				const header = pendingHeader
 				pendingHeader = undefined
 				if (NPM_COMMAND_LINE.test(line)) {
-					startStep({ line: header, command: line })
+					stepLines.start({ line: header, command: line })
 					return
 				}
-				append(header)
+				stepLines.append(header)
 			}
-			if (previousBlank && NPM_SCRIPT_HEADER.test(line)) {
+			if (stepLines.afterBlank() && NPM_SCRIPT_HEADER.test(line)) {
 				pendingHeader = line
 				return
 			}
-			append(line)
+			stepLines.append(line)
 		},
 		end() {
-			if (pendingHeader !== undefined) append(pendingHeader)
+			if (pendingHeader !== undefined) stepLines.append(pendingHeader)
 			pendingHeader = undefined
+			return stepLines.end()
+		},
+	}
+}
+
+/**
+ * The steps of a hook's output as its lines come: a line goes to the current step, else it leads (the step `hook`
+ * opens at the first one not blank); a header starts a step, or - a script its parent runs in parallel - adds two
+ * lines to the parent's step. A step running scripts becomes the parent of the headers that follow.
+ */
+function createStepLines(listeners: HookReaderListeners): HookStepLines {
+	const steps: HookStep[] = []
+	const parents = createParentStack()
+	const testSteps = new Set<HookStep>()
+	// the lines before the first step: a step `hook` once one is not blank
+	const leading: string[] = []
+	let current: HookStep | undefined
+	let previousBlank = true
+	return {
+		append(line) {
+			previousBlank = line.trim() === ''
+			if (current) current.lines.push(line)
+			else {
+				leading.push(line)
+				if (previousBlank) return
+				current = { name: PLAIN_HOOK_STEP, lines: leading, runsScripts: false }
+				steps.push(current)
+				listeners.onStep?.(current)
+			}
+			flagHookLine({ listeners, step: current, line, testStep: testSteps.has(current) })
+		},
+		start(header) {
+			previousBlank = false
+			const name = NPM_SCRIPT_HEADER.exec(header.line)?.[1] ?? PLAIN_HOOK_STEP
+			const run = readScriptsRun(header.command)
+			const parent = parents.nearestRunning(name)
+			if (parent?.parallel) {
+				parent.step.lines.push(header.line, header.command)
+				current = parent.step
+				return
+			}
+			const step: HookStep = {
+				name,
+				lines: [header.command],
+				runsScripts: run.scripts.length > 0,
+				...(parent && { parent: parent.step.name }),
+			}
+			steps.push(step)
+			current = step
+			if (isTestStep({ name, commandLine: header.command })) testSteps.add(step)
+			if (step.runsScripts) parents.push({ ...run, step })
+			listeners.onStep?.(step)
+		},
+		afterBlank() {
+			return previousBlank
+		},
+		end() {
 			if (steps.length === 0)
 				steps.push({ name: PLAIN_HOOK_STEP, lines: leading, runsScripts: false })
 			return steps
 		},
 	}
+}
+
+/** The open steps running scripts, nearest last. */
+function createParentStack(): HookParentStack {
+	const parents: HookParentStep[] = []
+	return {
+		nearestRunning(name) {
+			// the steps it ran after the nearest step running this script are done
+			while (
+				parents.length > 0 &&
+				!parents[parents.length - 1].scripts.some((script) =>
+					matchesScript({ pattern: script, name }),
+				)
+			)
+				parents.pop()
+			return parents.at(-1)
+		},
+		push(parent) {
+			parents.push(parent)
+		},
+	}
+}
+
+/** `line` told to `onFlagged` with its step when it is a warning or error line (in a test step only its failures). */
+function flagHookLine(params: {
+	listeners: HookReaderListeners
+	step: HookStep
+	line: string
+	testStep: boolean
+}): void {
+	const { step, line } = params
+	const kind = classifyHookLine(line)
+	if (!kind) return
+	if (params.testStep && !TEST_STEP_KINDS.includes(kind)) return
+	params.listeners.onFlagged?.(
+		{ line, kind, step: step.name, label: `${STEP_LABEL.replace('{step}', step.name)}${line}` },
+		step,
+	)
 }
 
 /**
@@ -313,10 +348,11 @@ function readFlakyFiles(lines: readonly string[]): string[] {
 
 /**
  * The record `gate --hook` says it answered from (`GATE_HOOK_REUSED_LINE`): its time and short HEAD; or, when it
- * answered every step one by one (no line of a step it ran), the latest run it answered from.
+ * answered every step one by one (no line of a step it ran), the OLDEST run it answered from (the step proven longest ago bounds the evidence).
+ * Only the lines before the failed tail marker are read: the relayed tail is the failed step's output.
  */
 function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
-	const text = stripVTControlCharacters(lines.join('\n'))
+	const text = ownHookText(stripVTControlCharacters(lines.join('\n')))
 	const match = GATE_HOOK_REUSED_PATTERN.exec(text)
 	if (match) return { at: match[2], head: match[3] }
 	if (new RegExp(HOOK_RAN_STEP_PATTERN).test(text)) return undefined
@@ -324,15 +360,17 @@ function readHookReuse(lines: readonly string[]): RecordOrigin | undefined {
 		at: step[3],
 		head: step[4],
 	}))
-	return answers.sort((first, second) => first.at.localeCompare(second.at)).at(-1)
+	return answers.sort((first, second) => first.at.localeCompare(second.at)).at(0)
 }
 
 /**
- * The base a hook's `gate --hook` printed it used (`GATE_HOOK_BASE_LINE`), the last one printed; undefined when
- * it printed none, or none of a source this cli knows.
+ * The base a hook's `gate --hook` printed it used (`GATE_HOOK_BASE_LINE`), the last one it printed itself (the relayed
+ * tail of a failed step is not read); undefined when it printed none, or none of a source this cli knows.
  */
 export function readHookBase(output: string): UsedGateBase | undefined {
-	const matches = [...stripVTControlCharacters(output).matchAll(GATE_HOOK_BASE_PATTERN)]
+	const matches = [
+		...ownHookText(stripVTControlCharacters(output)).matchAll(GATE_HOOK_BASE_PATTERN),
+	]
 	const last = matches.at(-1)
 	if (last === undefined) return undefined
 	const source = GATE_BASE_SOURCES.find((known) => known === last[2])
@@ -463,10 +501,11 @@ function renderHookCounts(counts: StepCounts): string {
 /**
  * The landing line (`HOOK_LANDING_LINE`) of a hook's output, read from the lines `gate --hook` printed: a step
  * answered by `gate --hook: reused {step} from {mode} {at} (HEAD {head})`, a step it ran by its `ok` or `FAIL` step
- * line. Undefined when the output holds none of its lines (a hook that is not `gate --hook`).
+ * line, each read before the failed tail marker only (nothing after it is a line of the hook). Undefined when the
+ * output holds none of its lines there (a hook that is not `gate --hook`).
  */
 export function hookLandingLine(params: { output: string }): string | undefined {
-	const text = stripVTControlCharacters(params.output)
+	const text = ownHookText(stripVTControlCharacters(params.output))
 	if (!GATE_HOOK_LINE_PATTERN.test(text)) return undefined
 	const reused = [...text.matchAll(GATE_HOOK_STEP_REUSED_PATTERN)].map(
 		(match) => `${match[1]} (${match[2]} ${match[3]})`,
@@ -476,6 +515,14 @@ export function hookLandingLine(params: { output: string }): string | undefined 
 	// the gate prints a step's line as it ends and again in its summary: each step once
 	const ran = [...new Set([...text.matchAll(HOOK_RAN_STEP_PATTERN)].map((match) => match[1]))]
 	return HOOK_LANDING_LINE.replace('{reused}', listOrNone(reused)).replace('{ran}', listOrNone(ran))
+}
+
+/**
+ * The text `gate --hook` printed itself: everything before the failed tail marker, after which it relays the failed
+ * step's own output (a line there shaped like one of its lines is the step's, never the hook's).
+ */
+function ownHookText(text: string): string {
+	return text.slice(0, HOOK_FAILED_TAIL_PATTERN.exec(text)?.index ?? text.length)
 }
 
 /** The names joined by `HOOK_LANDING_SEPARATOR`; `none` for an empty list. */

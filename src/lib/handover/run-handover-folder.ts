@@ -37,6 +37,7 @@ import { recordCardLine } from './record-card-line.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
+import type { CloneLotTree } from './clone-lot-tree.types.ts'
 import type { HandoverGateScope } from './handover-gate-scope.types.ts'
 import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.ts'
 import type { NotALotGoAhead } from './store-lot-guard.types.ts'
@@ -76,6 +77,8 @@ export async function runHandoverFolder(params: {
 	withoutHook?: ReadonlySet<number>
 	/** The repository whose store holds the hook records, when the lots are committed in a clone of it. */
 	storeRoot?: string
+	/** A rehearsal clone's working tree around each lot: it holds exactly that lot's tree while it is committed. */
+	lotTree?: CloneLotTree
 	/** A rehearsal whose contrib run in the clone cannot answer the real run: why, for the `contrib` guard. */
 	contribUnanswerable?: string
 	/** The gate scope a rehearsal read before its clone; default: read here, before the guards. */
@@ -123,6 +126,7 @@ export async function runHandoverFolder(params: {
 				tty: params.tty,
 				withoutHook: params.withoutHook,
 				storeRoot: params.storeRoot,
+				lotTree: params.lotTree,
 				scoped: gateScope.scoped,
 				handoverBase: gateScope.handoverBase,
 				// the record lands in the hand-over folder, the refusal names the repository (never a rehearsal clone)

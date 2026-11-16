@@ -1,3 +1,4 @@
+import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { StepCounts, StepResult, StepSelection, StepStatus } from '../gate/gate.types.ts'
 import type { WorktreeCli } from './event.types.ts'
 
@@ -61,8 +62,12 @@ export type StartStepParams = {
 	warn?: (line: string) => void
 }
 
-/** How a `worktree-add` step got its `node_modules`; the cli never runs `npm ci`. */
-export type WorktreeAddParts = { nodeModules: 'pooled' | 'cloned' | 'none'; npmCi: false }
+/** How a `worktree-add` step got its `node_modules`, and whether npm ran for it. */
+export type WorktreeAddParts = {
+	nodeModules: 'pooled' | 'near' | 'installed' | 'cloned' | 'none'
+	/** npm ran in the new worktree: an incremental install (near) or `npm ci` (installed). */
+	npmCi: boolean
+}
 
 /** What ends a recorded step: its exit, or that it was interrupted, and what it checked. */
 export type EndStepParams = {
@@ -77,6 +82,12 @@ export type EndStepParams = {
 	 * outside any lot does no hash work (R3-2).
 	 */
 	stateHash: string | null | (() => string | null)
+	/** The check key of the record the run wrote (a gate, contrib or commit-hook run); left out by a step with none. */
+	key?: CheckKey
+	/** A rehearsal's lots: each lot's tree and its decision; left out by every other step. */
+	lots?: { lot: number; tree: string; decision: string }[]
+	/** A gate or contrib run given `--no-reuse`: a deliberate re-run; left out otherwise. */
+	noReuse?: true
 }
 
 /** A running recorded step: never throws, every failure becomes the one warning line. */

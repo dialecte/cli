@@ -32,14 +32,22 @@ export const HEAVY_STEP_KINDS: readonly RecordedStepKind[] = [
 	'contrib',
 ]
 
-/** How a new worktree got its `node_modules`, as a `worktree-add` event says it: a copy or a clone reads `cloned`. */
+/**
+ * How a new worktree got its `node_modules`, as a `worktree-add` event says it: a near entry `near`, `npm ci`
+ * `installed`, a copy or a clone reads `cloned`.
+ */
 export const NODE_MODULES_WORDS: Readonly<
 	Record<NodeModulesSource['method'], WorktreeAddParts['nodeModules']>
 > = {
 	pooled: 'pooled',
+	near: 'near',
+	installed: 'installed',
 	copy: 'cloned',
 	'copy-on-write': 'cloned',
 }
+
+/** The `node_modules` sources npm ran for in the new worktree: the incremental install of a near entry, `npm ci`. */
+export const NPM_RUN_METHODS: readonly NodeModulesSource['method'][] = ['near', 'installed']
 
 /** The status of a part a cut never hides behind a passing one. */
 export const FAILED_PART_STATUS = 'failed'

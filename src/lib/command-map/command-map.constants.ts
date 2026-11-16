@@ -340,16 +340,31 @@ export const COMMAND_MAP: CommandMap = {
 	inbox: {
 		family: 'Grow',
 		summary:
-			'What waits on someone across every lot store: questions for a person, questions for a caller, ready hand-overs, failed lots',
+			'What waits on someone across every lot store: health findings, questions for a person, questions for a caller, ready hand-overs, failed lots',
 		usage: ['dialecte inbox [--repository <name>] [--simulated] [--json]'],
 		notes: [
-			'reads every store of the store list and the store of the current folder, files only: one line per waiting lot (one per open question), grouped person, caller, ready, failed and by index, each with its exact next command; then working <n> · simulated <m>; a lot whose records do not read is a damaged line',
-			'--repository - the lots of the repository folder of that name only (the basename, exactly), the counts too',
+			'reads every store of the store list and the store of the current folder, and the cli scratch folders of the temporary folder, files only: first one line per health finding, red first (duplicate work, landing time and slow worktree adds of the last 24 hours; stalled runs, idle worktrees and leaked scratch folders as they are now), <✗|!> health  <repository>[  <lot>]  <rule>: <finding>  next: <command>; a red finding waits, an amber one is listed only',
+			'then one line per waiting lot (one per open question), grouped person, caller, ready, failed and by index, each with its exact next command; then working <n> · simulated <m>; a lot whose records do not read is a damaged line',
+			'--repository - the lots and the health findings of the repository folder of that name only (the basename, exactly), the counts too; the health of no other repository and no scratch folder is read',
 			'--simulated - the simulated lots that wait are listed in their groups (they are only counted without it)',
-			'--json - { waiting: the status of each waiting lot, working, simulated, damaged }',
+			'--json - { waiting: the status of each waiting lot, working, simulated, damaged, skipped: the stores not read (only when one is), health: the findings (empty when none) }',
 		],
-		exitCodes: ['1  nothing waits and nothing is damaged'],
+		exitCodes: ['1  no lot waits, no lot is damaged and no health finding is red'],
 		example: 'dialecte inbox --repository scl',
+	},
+	health: {
+		family: 'Grow',
+		summary:
+			'What went wrong lately across every lot store: duplicate work, slow landings, stalled runs, idle worktrees and leaked scratch folders',
+		usage: ['dialecte health [--since <date|duration>] [--repository <name>] [--json]'],
+		notes: [
+			'reads every store of the store list and the store of the current folder (each once), and the cli scratch folders of the temporary folder, files only: a header with the red and amber counts, then one block per finding (red first, newest first, idle worktrees and leaked scratch after the runs) with its detail lines and its next command; with no finding, one ok line naming the rules',
+			'--since - the window of the duplicate work, landing time and worktree add rules: <n>h, <n>d, a date (its midnight UTC) or a date and time with its zone; default 7d',
+			'--repository - the findings of the repository folder of that name only (the basename, exactly); the scratch folders, which belong to no repository, are left out',
+			'--json - { since, findings, counts: { red, amber } }',
+		],
+		exitCodes: ['1  a red finding'],
+		example: 'dialecte health --since 24h',
 	},
 	plan: {
 		family: 'Plan',
@@ -517,10 +532,12 @@ export const COMMAND_MAP: CommandMap = {
 		usage: [
 			'dialecte worktree add <repository> <branch> [--from <ref>] [--json]',
 			'dialecte worktree prune [--root <workspace>] [--yes] [--json]',
+			'dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]',
 		],
 		notes: [
-			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json (else a copy-on-write copy), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
+			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json's lock key, else a near entry (at most 5 packages off) completed by npm install --prefer-offline --no-save, else npm ci, a copy-on-write copy only when npm ci fails (the reason on the card), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
 			'prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with their cd; a worktree an open lot names (working, input-required, ready, failed) is kept first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal; the pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never touched',
+			"prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index, HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked in the pool when its lock key is the main checkout's and it installs that lock, else sent to .worktrees/_trash/, its code never touched; a node_modules that is a link is never moved; a -round-<n> throwaway of a closed lot trashed whole and forgotten by git; every rule checked again just before each move; one line per worktree, the total (worktrees, files, size) last; --dry-run moves nothing; --dry-run or --older-than without --reclaim, or an --older-than that is no positive whole number, exit 2",
 		],
 		exitCodes: [
 			'0  add: the worktree exists, whatever the links and the lockfile say',
