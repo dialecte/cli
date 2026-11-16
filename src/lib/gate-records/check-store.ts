@@ -105,8 +105,13 @@ function takeTreeLock(params: { lockPath: string; waitMs: number }): string | un
 	}
 }
 
-/** The lock's writer is gone: its pid is dead, or alive with another start time (the pid was reused). */
+/**
+ * The lock's writer is gone: its pid is dead, or alive with another start time (the pid was reused). An empty lock
+ * is not stale: a writer that creates it in two steps (another cli) is between them; the bounded wait covers one
+ * that never fills it.
+ */
 function isStaleLock(bytes: Buffer): boolean {
+	if (bytes.length === 0) return false
 	return !isWriterRunning(lockWriterOfText({ text: bytes.toString('utf8') }))
 }
 

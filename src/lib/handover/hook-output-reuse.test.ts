@@ -257,14 +257,15 @@ describe('hookLandingLine: what a hook reused and what it ran, from its own line
 })
 
 describe('readHookBase: a failed hook relays its step output, a base line in it is no base of the hook', () => {
-	it('a relayed tail holding another base line → the base read is the hook’s own base', () => {
+	it('a relayed tail holding another base line of a known source → the base read is the hook’s own base', () => {
 		const output = [
 			...HEADER,
 			BASE_LINE,
 			`${STEP_LINE_MARKS.failed}  tests  exit 1`,
 			GATE_HOOK_FAILED_LINE.replace('{step}', 'tests'),
 			TAIL_MARKER,
-			`gate --hook: base ${'b'.repeat(40)} (merge-base), reused`,
+			// a source the cli knows: only a read that stops at the tail marker leaves this line out
+			`gate --hook: base ${'b'.repeat(40)} (handover), reused`,
 		].join('\n')
 
 		expect(readHookBase(output)).toEqual({ commit: 'a'.repeat(40), source: 'base-branch' })

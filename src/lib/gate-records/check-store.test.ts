@@ -1,6 +1,6 @@
 /** The records by tree in the common git folder: shared by every worktree, the reusable one found by its key. */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
@@ -313,6 +313,22 @@ describe('the store: two writers of one tree', { timeout: SCRATCH_REPOSITORY_TIM
 			expect.arrayContaining([stored, added]),
 		)
 		expect(existsSync(lock)).toBe(true)
+	})
+
+	it('a lock present but empty (its writer between creating and filling it) → not stale: the writer waits the time it is given, then writes, that lock left alone', () => {
+		const root = repository()
+		const stored = recordOf({ mode: 'fast' })
+		const added = recordOf({ mode: 'full' })
+		storeCheckRecord({ root, record: stored })
+		const lock = lockPathOf(root)
+		writeFileSync(lock, '')
+
+		storeCheckRecord({ root, record: added, seam: { lockWaitMs: 0 } })
+
+		expect({
+			records: readTreeRecords({ root, tree: KEY.tree }).length,
+			lock: existsSync(lock) && readFileSync(lock, 'utf8'),
+		}).toEqual({ records: 2, lock: '' })
 	})
 
 	it("the write throws (the tree's file is a folder) → the call throws and its lock is released", () => {

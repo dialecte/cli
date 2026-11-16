@@ -6,7 +6,7 @@
  * refuses.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { realPathOf, realPathThroughAncestors } from '../file-system.ts'
@@ -16,6 +16,7 @@ import {
 	isWriterRunning,
 	lockWriterOfText,
 	readLockBytes,
+	replaceLockFile,
 	setStaleLockAside,
 } from '../pid-lock.ts'
 import { LINE_FEED } from '../print/print.constants.ts'
@@ -156,7 +157,7 @@ export function restoreLock(params: {
 	if (!isOwnLock({ lockPath, scriptPath })) return
 	const named = bytes !== undefined && realPathOf(holderOf(bytes).script) === realPathOf(scriptPath)
 	if (bytes === undefined || (params.committed && named)) rmSync(lockPath, { force: true })
-	else writeFileSync(lockPath, bytes)
+	else replaceLockFile({ lockPath, text: bytes })
 }
 
 /** Whether the lock at `lockPath` still is `scriptPath`'s (by real path) and no other live writer's. */

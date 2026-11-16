@@ -853,9 +853,10 @@ the answer.
   the gate says so in one line before its verdict (`"stored": false` with `--json`). A run whose steps
   ran is also stored by its tree in the repository's common git folder, `dialecte-checks/<tree>.json`
   (`git rev-parse --git-common-dir`), which every worktree of the repository reads (the newest record
-  kept per mode and key). A writer takes the tree's lock first, `<tree>.json.lock` (its pid and its start time),
-  reads the file again under it and merges its record in, so two writers of one tree lose no record; a lock whose
-  pid is gone, or alive with another start time (a reused pid), is stale and taken over; a live holder is waited
+  kept per mode and key). A writer takes the tree's lock first, `<tree>.json.lock` (its pid and its start time,
+  written beside it and linked into place, so the lock is never seen empty), reads the file again under it and
+  merges its record in, so two writers of one tree lose no record within the wait; a lock whose pid is gone, or
+  alive with another start time (a reused pid), is stale and taken over; a live holder, or an empty lock, is waited
   for up to 5 s, then the write goes ahead without the lock (re-read, merged, the holder's lock left alone).
   Before its steps, a gate looks there: a green record of the same mode and the
   same key answers instead of running them -

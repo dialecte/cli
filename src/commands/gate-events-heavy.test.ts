@@ -1,8 +1,8 @@
 /**
  * Heavy steps of a gate run (33L0 section 4 "Heavy steps", case 17): the run's and the part's `heavy`, and the
  * marker `<kind>: <part>` of a heavy part, written while that part runs only. Writes of markers are counted
- * through a spy wrapped around the real writer (a reused or undeclared part must not write one, so makes no `ps`
- * call).
+ * through a spy wrapped around the real writer (a reused or undeclared part must not write one, so asks no start
+ * time: no `ps` call, no ask of this process's own).
  */
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import { TEST_SUMMARY_COMMAND } from '../../test/step-events-lot.constants.ts'
@@ -16,7 +16,7 @@ import {
 	seenFile,
 } from '../../test/step-events-lot.ts'
 import { writeHeavyMarker } from '../lib/events/heavy-markers.ts'
-import { processStartTime } from '../lib/process-start-time.ts'
+import { ownProcessStartTime, processStartTime } from '../lib/process-start-time.ts'
 import { runGate } from './gate.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,15 +26,21 @@ vi.mock('../lib/events/heavy-markers.ts', async (importOriginal) => {
 	return { ...actual, writeHeavyMarker: vi.fn(actual.writeHeavyMarker) }
 })
 
-// the start time is read through `ps`: a part that writes no marker must not ask for it (no `ps` call)
+// a part that writes no marker must not ask for a start time: neither another process's (`ps`) nor this process's
+// own (read once, then cached, so only the ask of it can be counted)
 vi.mock('../lib/process-start-time.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../lib/process-start-time.ts')>()
-	return { ...actual, processStartTime: vi.fn(actual.processStartTime) }
+	return {
+		...actual,
+		processStartTime: vi.fn(actual.processStartTime),
+		ownProcessStartTime: vi.fn(actual.ownProcessStartTime),
+	}
 })
 
 beforeEach(function clearSpy() {
 	vi.mocked(writeHeavyMarker).mockClear()
 	vi.mocked(processStartTime).mockClear()
+	vi.mocked(ownProcessStartTime).mockClear()
 })
 
 afterEach(function restoreEnvironment() {
@@ -97,6 +103,7 @@ describe('gate --fast with a heavy part', { timeout: SCRATCH_REPOSITORY_TIMEOUT 
 		await runGate({ cwd: lot.worktree, argv: [] })
 		vi.mocked(writeHeavyMarker).mockClear()
 		vi.mocked(processStartTime).mockClear()
+		vi.mocked(ownProcessStartTime).mockClear()
 		await runGate({ cwd: lot.worktree, argv: [] })
 		const end = eventsOfStep({ lot, step: 'gate-fast' })[3]
 
@@ -108,12 +115,14 @@ describe('gate --fast with a heavy part', { timeout: SCRATCH_REPOSITORY_TIMEOUT 
 				.map((part) => [part.heavy, part.reused]),
 			written: markersWritten(),
 			startTimeReads: vi.mocked(processStartTime).mock.calls.length,
+			ownStartTimeAsks: vi.mocked(ownProcessStartTime).mock.calls.length,
 		}).toEqual({
 			reuse: 'whole',
 			runHeavy: false,
 			browser: [[true, true]],
 			written: [],
 			startTimeReads: 0,
+			ownStartTimeAsks: 0,
 		})
 	})
 
