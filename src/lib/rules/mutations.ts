@@ -1,7 +1,7 @@
 /**
  * The changes of a value the quality rules see on the syntax tree: a mutating method call, an assignment to a
- * property, a `delete`, a `++`/`--` or an `Object.assign`, each as the name path it changes (`params.state.items`,
- * `this.items`).
+ * property (a destructuring target included), a `delete`, a `++`/`--` or an `Object.assign`, each as the name path
+ * it changes (`params.state.items`, `this.items`).
  */
 import { LEADING_POSITIONAL_PARAMETERS } from './check-code-rules.constants.ts'
 import { MUTATING_METHODS, THIS_ROOT } from './check-quality-rules.constants.ts'
@@ -11,8 +11,46 @@ import ts from 'typescript'
 
 import type { Mutation, TargetPath } from './check-quality-rules.types.ts'
 
+/**
+ * The changes at `node`: a mutating method call, an assignment to a property (each property a destructuring
+ * assignment or a `for … of` / `for … in` head writes), a `delete`, a `++`/`--` or an `Object.assign`.
+ */
+export function mutationsAt(node: ts.Node): Mutation[] {
+	if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+		const left = unwrapped(node.left)
+		if (ts.isArrayLiteralExpression(left) || ts.isObjectLiteralExpression(left))
+			return destructuredMutationsOf(left)
+	}
+	if (
+		(ts.isForOfStatement(node) || ts.isForInStatement(node)) &&
+		!ts.isVariableDeclarationList(node.initializer)
+	)
+		return destructuredMutationsOf(node.initializer)
+	const mutation = mutationAt(node)
+	return mutation ? [mutation] : []
+}
+
+/** The property writes of a destructuring target, nested patterns, defaults and rest elements followed. */
+function destructuredMutationsOf(target: ts.Expression): Mutation[] {
+	const inner = unwrapped(target)
+	if (ts.isArrayLiteralExpression(inner))
+		return inner.elements.flatMap((element) => destructuredMutationsOf(element))
+	if (ts.isObjectLiteralExpression(inner))
+		return inner.properties.flatMap((property) => {
+			if (ts.isPropertyAssignment(property)) return destructuredMutationsOf(property.initializer)
+			if (ts.isSpreadAssignment(property)) return destructuredMutationsOf(property.expression)
+			// a shorthand (`{ a } = o`) rebinds a local name: nothing changes
+			return []
+		})
+	if (ts.isSpreadElement(inner)) return destructuredMutationsOf(inner.expression)
+	if (ts.isBinaryExpression(inner) && inner.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+		return destructuredMutationsOf(inner.left)
+	const mutation = propertyMutationOf({ node: inner, target: inner, label: '=' })
+	return mutation ? [mutation] : []
+}
+
 /** A mutating method call, an assignment to a property, a `delete`, a `++`/`--` or an `Object.assign`. */
-export function mutationAt(node: ts.Node): Mutation | undefined {
+function mutationAt(node: ts.Node): Mutation | undefined {
 	if (ts.isCallExpression(node)) return callMutationOf(node)
 	if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind))
 		return propertyMutationOf({
@@ -85,7 +123,7 @@ export function isDomainWrite(path: TargetPath): boolean {
  * `params.state.items` as a root name and its segments, `this.items` with `this` as its root; undefined for anything
  * that is not a name path.
  */
-function pathOf(expression: ts.Expression): TargetPath | undefined {
+export function pathOf(expression: ts.Expression): TargetPath | undefined {
 	const inner = unwrapped(expression)
 	if (ts.isIdentifier(inner)) return { root: inner.text, segments: [] }
 	if (inner.kind === ts.SyntaxKind.ThisKeyword) return { root: THIS_ROOT, segments: [] }

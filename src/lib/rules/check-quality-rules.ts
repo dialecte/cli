@@ -9,7 +9,7 @@ import { calleeName } from './callee-name.ts'
 import { checkClassRules } from './check-class-rules.ts'
 import { LONG_FUNCTION_LINES, THIS_ROOT } from './check-quality-rules.constants.ts'
 import { checkQueryInLoop } from './check-query-in-loop.ts'
-import { isDomainWrite, mutationAt, pathKeyOf, targetNameOf } from './mutations.ts'
+import { isDomainWrite, mutationsAt, pathKeyOf, targetNameOf } from './mutations.ts'
 import {
 	bindingNamesOf,
 	childNodesOf,
@@ -87,27 +87,21 @@ function mutationsIn(params: {
 }): OwnedMutation[] {
 	const { node, sourceFile } = params
 	const scope = scopeAt({ node, scope: params.scope, sourceFile })
-	const own = ownedMutationAt({ node, scope })
+	const own = ownedMutationsAt({ node, scope })
 	const nested = childNodesOf(node).flatMap((child) =>
 		mutationsIn({ node: child, scope, sourceFile }),
 	)
-	return own ? [own, ...nested] : nested
+	return [...own, ...nested]
 }
 
-/** The mutation at `node` when it changes a parameter outside a domain write (`tx`, `query`). */
-function ownedMutationAt(params: {
-	node: ts.Node
-	scope: Scope | undefined
-}): OwnedMutation | undefined {
-	const mutation = mutationAt(params.node)
-	// a write through `this` is the class rule's to judge (`checkClassRules`), never a parameter's
-	if (!mutation || mutation.path.root === THIS_ROOT || isDomainWrite(mutation.path))
-		return undefined
-	const owner = bindingOf({
-		scope: params.scope,
-		name: mutation.path.root,
-	})?.owner
-	return owner ? { owner, mutation } : undefined
+/** The mutations at `node` that change a parameter outside a domain write (`tx`, `query`). */
+function ownedMutationsAt(params: { node: ts.Node; scope: Scope | undefined }): OwnedMutation[] {
+	return mutationsAt(params.node).flatMap((mutation): OwnedMutation[] => {
+		// a write through `this` is the class rule's to judge (`checkClassRules`), never a parameter's
+		if (mutation.path.root === THIS_ROOT || isDomainWrite(mutation.path)) return []
+		const owner = bindingOf({ scope: params.scope, name: mutation.path.root })?.owner
+		return owner ? [{ owner, mutation }] : []
+	})
 }
 
 // scopes

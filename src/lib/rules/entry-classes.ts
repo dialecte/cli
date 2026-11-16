@@ -5,8 +5,9 @@
  * package's public face. A module of another package ends the walk.
  */
 import { readExportEntries } from '../skills/export-entries.ts'
-import { classNameOf } from './check-class-rules.ts'
+import { classNameOf } from './class-name.ts'
 import { ALL_EXPORTS, DEFAULT_EXPORT, STAR_EXPORTS } from './entry-classes.constants.ts'
+import { unwrapped } from './syntax-nodes.ts'
 
 import ts from 'typescript'
 
@@ -79,6 +80,12 @@ function answerOf(params: {
 			for (const declaration of statement.declarationList.declarations)
 				if (ts.isIdentifier(declaration.name) && wanted(declaration.name.text))
 					local(declaration.name.text)
+		if (
+			ts.isTypeAliasDeclaration(statement) &&
+			hasModifier({ node: statement, kind: ts.SyntaxKind.ExportKeyword }) &&
+			wanted(statement.name.text)
+		)
+			local(statement.name.text)
 		if (ts.isExportAssignment(statement) && !statement.isExportEquals && wanted(DEFAULT_EXPORT)) {
 			const expression = statement.expression
 			if (ts.isIdentifier(expression)) local(expression.text)
@@ -112,22 +119,36 @@ function answerOf(params: {
 
 /**
  * What a module-level name is: a class declared there (or a class expression a variable holds), an imported name
- * (followed to the module it comes from), else nothing a class rule cares for.
+ * (followed to the module it comes from), a const or a type alias naming another of them (`const Store = Memory`,
+ * `type Facade = Impl<T>`), followed until a class or an import, each name once; else nothing a class rule cares for.
  */
-function localOf(params: { source: ts.SourceFile; name: string }): ModuleName | undefined {
+function localOf(params: {
+	source: ts.SourceFile
+	name: string
+	followed?: ReadonlySet<string>
+}): ModuleName | undefined {
 	const { source, name } = params
+	if (params.followed?.has(name)) return undefined
+	const followed = new Set([...(params.followed ?? []), name])
 	for (const statement of source.statements) {
 		if (ts.isClassDeclaration(statement) && statement.name?.text === name)
 			return { kind: 'class', name }
+		if (ts.isTypeAliasDeclaration(statement) && statement.name.text === name) {
+			const named = ts.isTypeReferenceNode(statement.type) ? statement.type.typeName : undefined
+			return named && ts.isIdentifier(named)
+				? localOf({ source, name: named.text, followed })
+				: undefined
+		}
 		if (ts.isVariableStatement(statement))
-			for (const declaration of statement.declarationList.declarations)
-				if (
-					ts.isIdentifier(declaration.name) &&
-					declaration.name.text === name &&
-					declaration.initializer &&
-					ts.isClassExpression(declaration.initializer)
-				)
-					return { kind: 'class', name: classNameOf(declaration.initializer) }
+			for (const declaration of statement.declarationList.declarations) {
+				if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name) continue
+				const initializer = declaration.initializer && unwrapped(declaration.initializer)
+				if (initializer && ts.isClassExpression(initializer))
+					return { kind: 'class', name: classNameOf(initializer) }
+				return initializer && ts.isIdentifier(initializer)
+					? localOf({ source, name: initializer.text, followed })
+					: undefined
+			}
 		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
 			continue
 		const imported = importedNameOf({ clause: statement.importClause, name })
@@ -161,7 +182,7 @@ function isDefault(node: ts.ClassDeclaration): boolean {
 }
 
 function hasModifier(params: {
-	node: ts.ClassDeclaration | ts.VariableStatement
+	node: ts.ClassDeclaration | ts.VariableStatement | ts.TypeAliasDeclaration
 	kind: ts.SyntaxKind
 }): boolean {
 	return (ts.getModifiers(params.node) ?? []).some((modifier) => modifier.kind === params.kind)
