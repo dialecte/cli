@@ -237,6 +237,9 @@ export const PYTEST_ROOT_VARIABLE = 'DIALECTE_TDD_ROOT'
 /** The environment variable naming the JSON file of base texts the cli's pytest plugin reads own code from too. */
 export const PYTEST_BASE_TEXTS_VARIABLE = 'DIALECTE_TDD_BASE_TEXTS'
 
+/** The environment variable asking the cli's pytest plugin for each test file's own code (`1`: a red run). */
+export const PYTEST_OWN_CODE_VARIABLE = 'DIALECTE_TDD_OWN_CODE'
+
 /** The variables of a python run: no bytecode written beside the sources, the import path the plugin joins. */
 export const PYTHON_NO_BYTECODE_VARIABLE = 'PYTHONDONTWRITEBYTECODE'
 export const PYTHON_PATH_VARIABLE = 'PYTHONPATH'
@@ -630,6 +633,10 @@ export const MOVED_NO_OWN_CODE =
 
 /** The progress step of the one run on the base's production of the moved cases that may carry a red. */
 export const MOVED_BASE_RUN_STEP = 'tdd red on the base, moved cases'
+
+/** A moved pytest case refused: it runs under other conftests than at that red, `{files}` those not in both. */
+export const MOVED_CONFTESTS_DIFFER =
+	'moved from {from}, but its conftests differ from those of that red: {files}'
 
 /** A moved case refused: as written now it passes on the base's production. */
 export const MOVED_PASSES_ON_BASE =

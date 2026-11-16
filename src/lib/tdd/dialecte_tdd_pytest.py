@@ -26,6 +26,9 @@ REPORT_VARIABLE = "DIALECTE_TDD_REPORT"
 NAMES_VARIABLE = "DIALECTE_TDD_NAMES"
 ROOT_VARIABLE = "DIALECTE_TDD_ROOT"
 BASE_TEXTS_VARIABLE = "DIALECTE_TDD_BASE_TEXTS"
+OWN_CODE_VARIABLE = "DIALECTE_TDD_OWN_CODE"
+# a parametrize call's literal values, which each case's row covers
+ROWS_PLACEHOLDER = "<rows>"
 # between the parts of an own-code identity: its scope, its kind, its target, its names
 OWN_CODE_SEPARATOR = "\0"
 NAME_SEPARATOR = " > "
@@ -200,15 +203,22 @@ def module_report(path, module, base_texts):
             {key: value for key, value in case.items() if key != "unmappable"} for case in module["cases"]
         ],
         "dependencies": sorted(dependencies_of(path=path, module=module)),
-        "ownCode": own_code_of(path=path, text=text, tree=tree, module_name=name),
     }
+    if os.environ.get(OWN_CODE_VARIABLE) != "1":
+        return report
+    collected = {case["location"]["line"] for case in module["cases"] if "location" in case}
+    report["ownCode"] = own_code_of(
+        path=path, text=text, tree=tree, module_name=name, is_test=lambda node: node.lineno in collected
+    )
     base_text = base_texts.get(os.path.relpath(os.path.realpath(path), RUN["root"] or ""))
     if base_text is not None:
         try:
             base_tree = ast.parse(base_text)
         except (SyntaxError, ValueError):
             base_tree = None
-        report["baseOwnCode"] = own_code_of(path=path, text=base_text, tree=base_tree, module_name=name)
+        report["baseOwnCode"] = own_code_of(
+            path=path, text=base_text, tree=base_tree, module_name=name, is_test=is_test_by_pattern
+        )
     return report
 
 
@@ -217,15 +227,34 @@ def read_base_texts():
     path = os.environ.get(BASE_TEXTS_VARIABLE)
     if not path:
         return {}
-    with open(path, encoding="utf-8") as texts:
-        return {os.path.normpath(key): value for key, value in json.load(texts).items()}
+    try:
+        with open(path, encoding="utf-8") as texts:
+            return {os.path.normpath(key): value for key, value in json.load(texts).items()}
+    except (OSError, ValueError, AttributeError):
+        # an unreadable file loses the base own code only, never the report
+        return {}
 
 
-def own_code_of(path, text, tree, module_name):
+def is_test_by_pattern(node):
+    """A function of a base text is a test when pytest's `python_functions` names it and no fixture decorates it (the
+    base text did not run: its collection is not known)."""
+    return matches_option(name=node.name, option="python_functions") and not any(
+        is_fixture(decorator) for decorator in node.decorator_list
+    )
+
+
+def is_fixture(decorator):
+    """`@fixture`, `@pytest.fixture`, called or not."""
+    called = decorator.func if isinstance(decorator, ast.Call) else decorator
+    name = called.attr if isinstance(called, ast.Attribute) else getattr(called, "id", None)
+    return name == "fixture"
+
+
+def own_code_of(path, text, tree, module_name, is_test):
     """The file's own code: each module-level statement and each statement of a test class body (scoped by its
     class names), a test class's header (its decorators, bases and keywords) in the scope holding it, imports once
     per binding by what they resolve to and their names (an import nested in a statement by its target too), never a
-    test function; each with its text and the sha256 of its scope and identity (`ast.dump`: formatting and comments
+    test function (`is_test`: the functions pytest collected, by their def line) nor a leading docstring; each with its text and the sha256 of its scope and identity (`ast.dump`: formatting and comments
     left out, its output the running Python's: an interpreter changed between the red and the move refuses the move)."""
     if tree is None:
         return []
@@ -242,15 +271,17 @@ def own_code_of(path, text, tree, module_name):
         )
 
     def collect(body, scope):
-        for node in body:
+        for position, node in enumerate(body):
+            if position == 0 and is_docstring(node):
+                continue
             imported = import_identities(node=node, package=package)
             if imported is not None:
                 for identity in imported:
                     add(scope, node, identity)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and matches_option(
-                name=node.name, option="python_functions"
-            ):
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and is_test(node):
                 continue
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.decorator_list:
+                add(scope, node, ast.dump(resolved_imports(node=node, package=package)), shown=decorated_text(text, node))
             elif isinstance(node, ast.ClassDef) and matches_option(name=node.name, option="python_classes"):
                 header = copy.copy(node)
                 header.body = []
@@ -261,6 +292,19 @@ def own_code_of(path, text, tree, module_name):
 
     collect(tree.body, [])
     return statements
+
+
+def is_docstring(node):
+    """A string standing alone as a statement: a module's or a class's docstring when it comes first."""
+    return (
+        isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    )
+
+
+def decorated_text(text, node):
+    """A decorated definition as written: its decorators, then its own text."""
+    decorators = ["@" + (ast.get_source_segment(text, decorator) or "") for decorator in node.decorator_list]
+    return "\n".join([*decorators, ast.get_source_segment(text, node) or ""])
 
 
 def class_header_text(text, node):
@@ -436,6 +480,10 @@ def case_source(path, node, item):
     ]
     call = "\n".join(decorators + [ast.get_source_segment(text, node) or ""])
     source = {"call": call}
+    # each parametrize call but its literal values (the case's row stands for those): its names, ids, indirect, scope
+    settings = [parametrize_settings(decorator) for decorator in node.decorator_list if is_parametrize(decorator)]
+    if settings:
+        source["parametrize"] = ROW_SEPARATOR.join(settings)
     callspec = getattr(item, "callspec", None)
     if callspec is None:
         return source
@@ -451,6 +499,22 @@ def case_source(path, node, item):
     if rows:
         source["row"] = ROW_SEPARATOR.join(rows)
     return source
+
+
+def parametrize_settings(decorator):
+    """A parametrize call as `ast.dump` reads it, its literal values replaced by one placeholder: a change of names,
+    ids, indirect, scope or of a values expression shows, a row added does not."""
+    copied = copy.deepcopy(decorator)
+    values = argument_of(copied, 1, "argvalues")
+    if isinstance(values, (ast.List, ast.Tuple)):
+        placeholder = ast.Constant(value=ROWS_PLACEHOLDER)
+        if len(copied.args) > 1:
+            copied.args[1] = placeholder
+        else:
+            for given in copied.keywords:
+                if given.arg == "argvalues":
+                    given.value = placeholder
+    return ast.dump(copied)
 
 
 def argument_of(decorator, position, keyword):

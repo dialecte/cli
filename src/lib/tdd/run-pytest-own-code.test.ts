@@ -74,7 +74,12 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 			written: { [ADDER_FILE]: ADDER_IMPLEMENTED_TEXT, [OWN_CODE_FILE]: OWN_CODE_TEXT },
 		})
 
-		const modules = await runPytestCases({ root, files: [OWN_CODE_FILE], filter: 'all' })
+		const modules = await runPytestCases({
+			root,
+			files: [OWN_CODE_FILE],
+			filter: 'all',
+			ownCode: true,
+		})
 		const module = ownModuleOf(modules)
 
 		expect(module?.ownCode?.map((statement) => statement.text)).toEqual([
@@ -98,6 +103,7 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 			root,
 			files: [OWN_CODE_FILE],
 			filter: 'all',
+			ownCode: true,
 			baseTexts: { [OWN_CODE_FILE]: OWN_CODE_BASE_TEXT },
 		})
 		const module = ownModuleOf(modules)
@@ -131,7 +137,12 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 			},
 		})
 
-		const modules = await runPytestCases({ root, files: [OWN_CODE_FILE], filter: 'all' })
+		const modules = await runPytestCases({
+			root,
+			files: [OWN_CODE_FILE],
+			filter: 'all',
+			ownCode: true,
+		})
 		const module = ownModuleOf(modules)
 
 		expect(module?.ownCode?.map((statement) => statement.text)).toEqual([
@@ -158,6 +169,7 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 			root,
 			files: ['tests/one/test_limit.py', 'tests/two/test_limit.py'],
 			filter: 'all',
+			ownCode: true,
 		})
 		const hashes = 'failure' in modules ? [] : modules.map((module) => module.ownCode?.[0]?.hash)
 
@@ -179,10 +191,59 @@ describe('the pytest plugin reports own code', { timeout: PYTHON_RUN_CASE_TIMEOU
 			root,
 			files: [OWN_CODE_FILE],
 			filter: 'all',
+			ownCode: true,
 			baseTexts: { [OWN_CODE_FILE]: 'import broken.sub\n\n\ndef test_one():\n    pass\n' },
 		})
 		const module = ownModuleOf(modules)
 
 		expect(module?.baseOwnCode?.map((statement) => statement.text)).toEqual(['import broken.sub'])
+	})
+
+	it('a module and a test class docstring, a decorated helper → the docstrings left out, the helper shown with its decorator', async () => {
+		const root = createPythonPackage({
+			written: {
+				[OWN_CODE_FILE]: [
+					'"""The module."""',
+					'import functools',
+					'',
+					'',
+					'@functools.lru_cache',
+					'def helper():',
+					'    return 1',
+					'',
+					'',
+					'class TestAdd:',
+					'    """The class."""',
+					'',
+					'    def test_two(self):',
+					'        assert helper() == 1',
+					'',
+				].join('\n'),
+			},
+		})
+
+		const modules = await runPytestCases({
+			root,
+			files: [OWN_CODE_FILE],
+			filter: 'all',
+			ownCode: true,
+		})
+		const module = ownModuleOf(modules)
+
+		expect(module?.ownCode?.map((statement) => statement.text)).toEqual([
+			'import functools',
+			'@functools.lru_cache\ndef helper():\n    return 1',
+			'class TestAdd:',
+		])
+	})
+
+	it('a run not asking for own code → none reported', async () => {
+		const root = createPythonPackage({
+			written: { [ADDER_FILE]: ADDER_IMPLEMENTED_TEXT, [OWN_CODE_FILE]: OWN_CODE_TEXT },
+		})
+
+		const modules = await runPytestCases({ root, files: [OWN_CODE_FILE], filter: 'all' })
+
+		expect(ownModuleOf(modules)?.ownCode).toBeUndefined()
 	})
 })

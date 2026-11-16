@@ -18,9 +18,9 @@ export function pythonCaseHash(params: { name: string; source: PythonCaseSource 
 	return hashText(`${params.name}\0${pythonCaseBody(params.source)}`)
 }
 
-/** What a pytest case's hash covers besides its name: the function's text and its row, whitespace normalised. */
+/** What a pytest case's hash covers besides its name: the function's text, its row and its parametrize settings, whitespace normalised. */
 export function pythonCaseBody(source: PythonCaseSource): string {
-	return `${normalized(source.call)}\0${normalized(source.row ?? '')}`
+	return [source.call, source.row ?? '', source.parametrize ?? ''].map(normalized).join('\0')
 }
 
 /**

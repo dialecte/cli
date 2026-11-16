@@ -27,11 +27,14 @@
  *   the test calls of the base the lot file declares gone); `status --legend`: the tdd terms of the
  *   hand-over card's legend.
  */
+import { posix, relative, sep } from 'node:path'
+
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { startStep } from '../lib/events/record-step.ts'
+import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
@@ -109,8 +112,10 @@ import {
 	ONLY_REFUSAL,
 	PASSES_ON_BASE_TOO,
 	MOVED_CALL_DIFFERS,
+	MOVED_CONFTESTS_DIFFER,
 	MOVED_DEPENDENCY_DIFFERS,
 	MOVED_FROM,
+	CONFTEST_FILE_PATTERN,
 	MOVED_BASE_RUN_STEP,
 	MOVED_NO_OWN_CODE,
 	MOVED_NO_RED,
@@ -387,6 +392,7 @@ async function runRed(params: {
 				files: runnable.map((file) => file.file),
 				filter: targetedFilter(context.targets),
 				baseTexts: pythonBaseTextsOf(runnable),
+				ownCode: true,
 			})
 		: []
 	if ('failure' in modules) return runFailureResult({ subcommand: 'red', failure: modules })
@@ -612,12 +618,14 @@ async function runRed(params: {
 		)
 	}
 	const ownCode = ownCodeOfRun({ root, files: runnable, frozen, resolveModule, modules: reported })
+	const conftests = conftestsOfRun({ root, files: runnable, frozen, modules: reported })
 	if (Object.keys(frozen).length)
 		entries.push({
 			kind: 'freeze',
 			files: frozen,
 			...(revisedHelpers.length && { revised: revisedHelpers.map(({ file }) => file) }),
 			...(Object.keys(ownCode).length && { ownCode }),
+			...(Object.keys(conftests).length && { conftests }),
 			at,
 		})
 	appendEntries({ root, entries, production })
@@ -857,6 +865,34 @@ function pythonBaseTextsOf(files: readonly ChangedTestFile[]): Record<string, st
 	)
 }
 
+/** The conftests each frozen pytest file of the run ran under (`conftestsOf`): a moved case keeps them. */
+function conftestsOfRun(params: {
+	root: string
+	files: readonly ChangedTestFile[]
+	frozen: Readonly<Record<string, string>>
+	modules: readonly ReportedModule[]
+}): Record<string, string[]> {
+	return Object.fromEntries(
+		params.files
+			.filter((file) => file.file in params.frozen && PYTHON_FILE_PATTERN.test(file.file))
+			.map((file) => [file.file, conftestsOf({ ...params, file: file.file })]),
+	)
+}
+
+/** The conftests a pytest file ran under, as its run reported its dependencies: relative to the root, sorted. */
+function conftestsOf(params: {
+	root: string
+	file: string
+	modules: readonly ReportedModule[]
+}): string[] {
+	const realRoot = realPathOf(params.root)
+	const [reported] = modulesOf({ root: params.root, modules: params.modules, file: params.file })
+	return (reported?.dependencies ?? [])
+		.filter((dependency) => CONFTEST_FILE_PATTERN.test(dependency))
+		.map((dependency) => relative(realRoot, realPathOf(dependency)).split(sep).join(posix.sep))
+		.sort()
+}
+
 /** What a moved case may keep of each frozen test file of the run: its own code by hash (`ownCodeOf`). */
 function ownCodeOfRun(params: {
 	root: string
@@ -1006,6 +1042,8 @@ function movedRefusalOf(params: {
 		return MOVED_DEPENDENCY_DIFFERS.replace('{files}', () => params.differing.join(', '))
 	if (ownCode?.kind === 'added')
 		return MOVED_OWN_CODE_DIFFERS.replace('{statement}', () => firstLine(ownCode.statement))
+	if (ownCode?.kind === 'conftests')
+		return MOVED_CONFTESTS_DIFFER.replace('{files}', () => ownCode.files.join(', '))
 	return MOVED_NO_OWN_CODE
 }
 
@@ -1037,6 +1075,17 @@ function ownCodeUnlikeRed(params: {
 	// what the earlier file held at that red, and what the target file held at the base (a move into an existing file)
 	const held = new Set([...recorded, ...atBase.map((statement) => statement.hash)])
 	const added = now.find((statement) => !held.has(statement.hash))
+	if (added === undefined && PYTHON_FILE_PATTERN.test(target.file)) {
+		// a pytest case runs under its folder's conftests: moved under others, its fixtures may be others
+		const recordedConftests = freeze?.conftests?.[params.from.file]
+		if (recordedConftests === undefined) return { kind: 'unrecorded' }
+		const nowConftests = conftestsOf({ ...params, file: target.file })
+		const differing = [
+			...nowConftests.filter((file) => !recordedConftests.includes(file)),
+			...recordedConftests.filter((file) => !nowConftests.includes(file)),
+		]
+		if (differing.length > 0) return { kind: 'conftests', files: differing }
+	}
 	return added === undefined ? { kind: 'kept' } : { kind: 'added', statement: added.text }
 }
 
@@ -1554,6 +1603,7 @@ async function announcedRun(params: {
 	files: string[]
 	filter?: RunnerParams['filter']
 	baseTexts?: RunnerParams['baseTexts']
+	ownCode?: boolean
 }): Promise<Awaited<ReturnType<typeof runTestCases>>> {
 	const { context } = params
 	return runTestCases({
@@ -1561,6 +1611,7 @@ async function announcedRun(params: {
 		files: params.files,
 		filter: params.filter ?? 'all',
 		...(params.baseTexts && { baseTexts: params.baseTexts }),
+		...(params.ownCode && { ownCode: true }),
 		observer: runnerObserverOf({ context, name: `tdd ${params.subcommand}` }),
 	})
 }
