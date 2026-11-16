@@ -155,7 +155,8 @@ export type StoreFileNames = Readonly<
 		| 'verify'
 		| 'risk'
 		| 'scopeChanges'
-		| 'review',
+		| 'review'
+		| 'tests',
 		string
 	>
 >

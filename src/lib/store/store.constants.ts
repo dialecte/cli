@@ -27,6 +27,8 @@ export const STORE_FILES: StoreFileNames = {
 	scopeChanges: 'scope-changes.jsonl',
 	// the review's public rows, written whole by `lot finding`, `lot decide`, `lot verify` and a review station's end
 	review: 'review.jsonl',
+	// the tests' public record, its tdd part written by `tdd green`, its gate part by the gate
+	tests: 'tests.json',
 }
 
 /** The folder of the store in the repository's git common folder. */
