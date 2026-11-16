@@ -6,6 +6,10 @@ export const GATE_BASE_REFUSAL = '--base {ref}: no such commit'
 /** Rule 4: no base branch, or none sharing a commit with HEAD; `{branch}` is the base branch's name. */
 export const NO_BASE_BRANCH_NOTE = 'no base branch {branch}: everything selected'
 
+/** The note of a local base branch holding commits origin's lacks: `{branch}`, `{count}`. */
+export const DIVERGED_BASE_NOTE =
+	'local {branch} holds {count} commit(s) origin/{branch} does not: the base is read from origin/{branch}'
+
 /** Why a hand-over base was not honoured; `{base}` is the base as given, `{folder}` its hand-over folder. */
 export const HANDOVER_BASE_IGNORED_REASONS = {
 	noLiveRun: 'hand-over base {base} ignored: no live hand-over run of {folder}',

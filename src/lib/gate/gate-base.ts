@@ -13,6 +13,7 @@ import {
 	HANDOVER_HALF_GIVEN_REASONS,
 	LOCAL_BRANCH_REF,
 	NO_BASE_BRANCH_FOUND,
+	DIVERGED_BASE_NOTE,
 	NO_BASE_BRANCH_NOTE,
 	NO_CONFIGURED_BASE_BRANCH,
 	ORIGIN_BRANCH_REF_PREFIX,
@@ -73,14 +74,29 @@ export function resolveGateBase(params: {
 		branchRef === undefined
 			? undefined
 			: tryReadGit({ root, args: ['merge-base', head, branchRef] })?.trim()
+	const diverged = branchRef === undefined ? undefined : divergedNoteOf({ root, branch })
 	const resolved: GateBase = mergeBase
-		? { commit: mergeBase, source: 'base-branch' }
+		? { commit: mergeBase, source: 'base-branch', ...(diverged && { note: diverged }) }
 		: {
 				commit: readEmptyTree(root),
 				source: 'none',
 				note: NO_BASE_BRANCH_NOTE.replace('{branch}', () => branch),
 			}
 	return ignored === undefined ? resolved : { ...resolved, ignored }
+}
+
+/**
+ * The note of a local `branch` holding commits origin's lacks (`findBaseRef` then reads origin's, silently): the count
+ * of those commits; undefined when either ref is missing or the local branch holds nothing origin's lacks.
+ */
+function divergedNoteOf(params: { root: string; branch: string }): string | undefined {
+	const { root } = params
+	const local = LOCAL_BRANCH_REF.replace('{branch}', () => params.branch)
+	const origin = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
+	if (!isCommitRef({ root, ref: local }) || !isCommitRef({ root, ref: origin })) return undefined
+	if (isAncestorCommit({ root, ancestor: local, descendant: origin })) return undefined
+	const count = readGit({ root, args: ['rev-list', '--count', `${origin}..${local}`] }).trim()
+	return DIVERGED_BASE_NOTE.replaceAll('{branch}', () => params.branch).replace('{count}', count)
 }
 
 /** The id of the empty tree in the repository of `root`, as git computes it (`hash-object -t tree /dev/null`). */

@@ -73,6 +73,7 @@ export function createSharedScratchRepository(files: Record<string, string> = {}
  * signing, as `initializeRepository` gives its repositories.
  */
 export function cloneRepository(params: { origin: string; into: string }): string {
+	// dialecte-allow raw-git-repository: the scratch helper itself, which gives the clone its identity below
 	git({ root: dirname(params.into), args: ['clone', '-q', params.origin, params.into] })
 	git({ root: params.into, args: ['config', 'user.email', 'scratch@example.com'] })
 	git({ root: params.into, args: ['config', 'user.name', 'Scratch'] })
@@ -88,6 +89,7 @@ export function initializeRepository(params: {
 	const { root } = params
 	const files = params.files ?? {}
 	mkdirSync(root, { recursive: true })
+	// dialecte-allow raw-git-repository: the scratch helper itself, which gives the repository its identity below
 	git({ root, args: ['init', '-q', '-b', 'main'] })
 	git({ root, args: ['config', 'user.email', 'scratch@example.com'] })
 	git({ root, args: ['config', 'user.name', 'Scratch'] })

@@ -17,6 +17,8 @@ import {
 } from './check-code-rules.constants.ts'
 import { checkFixtureRules } from './check-fixture-rules.ts'
 import { checkQualityRules } from './check-quality-rules.ts'
+import { RAW_GIT_REPOSITORY_MESSAGE } from './check-raw-git.constants.ts'
+import { findRawGitRepositories } from './check-raw-git.ts'
 import { checkTestShapeRules, isTestShaped } from './check-test-shape-rules.ts'
 import { findReferences, isReferenceChecked } from './committed-text.ts'
 import { fileKindOf } from './file-kind.ts'
@@ -125,6 +127,15 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 				severity: 'error',
 				message:
 					"the system's temporary folder itself as a root: other tests and processes share it - give the test a folder of its own (`mkdtempSync(join(tmpdir(), '<prefix>-'))`)",
+			})
+
+	if (isTestShaped(file))
+		for (const node of findRawGitRepositories(sourceFile))
+			report({
+				node,
+				rule: 'raw-git-repository',
+				severity: 'error',
+				message: RAW_GIT_REPOSITORY_MESSAGE,
 			})
 
 	if (kind === 'implementation' && !isTestShaped(file))

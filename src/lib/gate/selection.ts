@@ -9,6 +9,7 @@ import { isAbsolute, join } from 'node:path'
 import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readGitBytes } from '../git.ts'
+import { onSignalExit } from '../progress/interrupt-forwarding.ts'
 import {
 	CHANGED_FILE_NAME,
 	GATE_SCOPE_FOLDER_PREFIX,
@@ -37,7 +38,8 @@ import type { ScopedTestsEnvironment } from './scoped-tests.types.ts'
 /**
  * Makes the run's temporary folder (outside the package) and writes its changed file: the paths of
  * `git diff --name-only -z --no-renames <base> <tree>` (a rename is its two paths), raw, byte-sorted,
- * each followed by a NUL. The caller removes the folder (`removeScopeRun`) once the run returns.
+ * each followed by a NUL. The caller removes the folder (`removeScopeRun`) once the run returns; a process ending by a
+ * forwarded signal (no `finally` runs then) removes it on its way out.
  */
 export function createScopeRun(params: { root: string; scope: GateScope }): ScopeRun {
 	const { base, tree } = params.scope
@@ -55,6 +57,9 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 		Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
 	)
 	let selections = 0
+	const dropSignalExitRemoval = onSignalExit(function removeScopeFolder() {
+		rmSync(folder, { recursive: true, force: true })
+	})
 	return {
 		base,
 		tree,
@@ -65,6 +70,7 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 			selections += 1
 			return join(folder, SELECTION_FILE_NAME.replace('{index}', String(selections)))
 		},
+		dropSignalExitRemoval,
 	}
 }
 
@@ -125,8 +131,9 @@ export function writeSelectionFile(params: {
 	writeFileSync(scope.selection, `${JSON.stringify(selection)}\n`)
 }
 
-/** Removes the run's temporary folder: its changed file and every selection path. */
+/** Removes the run's temporary folder (its changed file and every selection path) and drops its signal-exit removal. */
 export function removeScopeRun(scopeRun: ScopeRun): void {
+	scopeRun.dropSignalExitRemoval()
 	rmSync(scopeRun.folder, { recursive: true, force: true })
 }
 

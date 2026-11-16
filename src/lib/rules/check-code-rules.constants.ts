@@ -19,6 +19,7 @@ export const RULE_NAMES = [
 	'abbreviation',
 	'committed-text-reference',
 	'temporary-root-shared',
+	'raw-git-repository',
 	'unreadable-file',
 	'argument-mutation',
 	'class',
@@ -48,6 +49,7 @@ export const RULE_NAMES = [
 
 /** The quality rules a `dialecte-allow` comment may silence. */
 export const ALLOWABLE_RULES = [
+	'raw-git-repository',
 	'argument-mutation',
 	'class',
 	'query-in-loop',

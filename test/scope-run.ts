@@ -16,5 +16,7 @@ export function scopeRunOf(params: {
 		nextSelectionPath() {
 			return `${params.folder}/selection-next.json`
 		},
+		// no signal-exit removal registered: the reader never removes the folder
+		dropSignalExitRemoval() {},
 	}
 }
