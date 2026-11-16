@@ -17,3 +17,15 @@ export const IGNORED_ENTRY_PREFIX = '!! '
 
 /** The status letters of an entry git follows with its original path, as one more NUL-separated field. */
 export const STATUS_WITH_ORIGINAL_PATH = ['R', 'C'] as const
+
+/** Folders python rebuilds, removable wherever they sit (a folder only: a file or a link of that name keeps). */
+export const PYTHON_REBUILT_FOLDERS = ['.venv', '.pytest_cache'] as const
+
+/** npm's install folder: below the root, removable when its parent folder holds a package.json that parses. */
+export const NESTED_INSTALL_FOLDER = 'node_modules'
+
+/** The manifest a nested install folder is rebuilt from, beside it. */
+export const PACKAGE_MANIFEST = 'package.json'
+
+/** A coverage outDir as the cli spells it (`./benchmarks/types/v1/generated`): its leading `./`, dropped. */
+export const CURRENT_FOLDER_PREFIX = './'

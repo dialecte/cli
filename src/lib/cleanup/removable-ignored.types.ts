@@ -36,11 +36,17 @@ export type IgnoredWalk = {
 	declaredByFolder: Map<string, DeclaredRebuilt>
 }
 
-/** The package of the main checkout nearest a folder, and the valid folders its package.json declares rebuilt. */
+/**
+ * The package of the main checkout nearest a folder, and the valid folders it rebuilds: those its package.json
+ * declares and the coverage outDir of each version the cli discovers there.
+ */
 export type DeclaredRebuilt = {
 	/** The package root relative to the main checkout (`''` for its root, `packages/x`). */
 	packageRoot: string
-	/** Relative to the package root, each ending with `/`; empty when no package.json up to the main checkout. */
+	/**
+	 * Relative to the package root, each ending with `/` (declared ones, then the outDirs); empty when no package.json
+	 * up to the main checkout.
+	 */
 	folders: readonly string[]
 }
 

@@ -11,7 +11,7 @@ import {
 	POOL_LOCK_TEXT,
 	POOL_PARKED_AT,
 } from './step-events-worktree.constants.ts'
-import { sha256Of, writePoolEntry } from './worktree-pool.ts'
+import { poolEntryOf, writePoolEntry } from './worktree-pool.ts'
 
 import { vi } from 'vitest'
 
@@ -55,7 +55,7 @@ export function createWorktreeScene(params: { variant: NodeModulesVariant }): St
 		writePoolEntry({
 			worktreesFolder: start.worktreesFolder,
 			name: POOL_ENTRY_NAME,
-			entry: { repository: 'repo', lockHash: sha256Of(POOL_LOCK_TEXT), parkedAt: POOL_PARKED_AT },
+			entry: poolEntryOf({ repository: 'repo', lock: POOL_LOCK_TEXT, parkedAt: POOL_PARKED_AT }),
 			marker: 'pooled\n',
 			outsideTarget: join(start.worktreesFolder, '..'),
 		})

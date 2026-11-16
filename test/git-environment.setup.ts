@@ -8,6 +8,7 @@
 import { HANDOVER_VARIABLES } from '../src/lib/gate/selection.constants.ts'
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
 import { STANDARD_ENVIRONMENT_VARIABLE } from '../src/lib/standard/standard.constants.ts'
+import { NPM_INSTALL_OFF, NPM_INSTALL_SWITCH } from '../src/lib/worktree/worktree.constants.ts'
 import {
 	CONFIG_ENVIRONMENT_VARIABLES,
 	DISCOVERY_ENVIRONMENT_VARIABLES,
@@ -32,3 +33,7 @@ process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 // the standard the person works against is theirs, not the suite's: the cases that need one set it themselves
 delete process.env[STANDARD_ENVIRONMENT_VARIABLE]
+
+// a miss never spawns npm in the suite (workers and the children they start): the default npm runner answers a
+// failure and the checkout gets the copy; the cases of the npm path inject their own runner
+process.env[NPM_INSTALL_SWITCH] = NPM_INSTALL_OFF

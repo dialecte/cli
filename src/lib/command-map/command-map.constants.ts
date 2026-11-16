@@ -532,10 +532,12 @@ export const COMMAND_MAP: CommandMap = {
 		usage: [
 			'dialecte worktree add <repository> <branch> [--from <ref>] [--json]',
 			'dialecte worktree prune [--root <workspace>] [--yes] [--json]',
+			'dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]',
 		],
 		notes: [
-			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json (else a copy-on-write copy), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
+			"add - under the workspace's .worktrees/: hooks folder, the links its file: and link: dependencies need to sibling checkouts, node_modules taken from the pool when an entry matches package-lock.json's lock key, else a near entry (at most 5 packages off) completed by npm install --prefer-offline --no-save, else npm ci, a copy-on-write copy only when npm ci fails (the reason on the card), read against package-lock.json (the npm ci to run when it differs), hygiene baseline",
 			'prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with their cd; a worktree an open lot names (working, input-required, ready, failed) is kept first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal; the pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never touched',
+			"prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index, HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked in the pool when its lock key is the main checkout's and it installs that lock, else sent to .worktrees/_trash/, its code never touched; a node_modules that is a link is never moved; a -round-<n> throwaway of a closed lot trashed whole and forgotten by git; every rule checked again just before each move; one line per worktree, the total (worktrees, files, size) last; --dry-run moves nothing; --dry-run or --older-than without --reclaim, or an --older-than that is no positive whole number, exit 2",
 		],
 		exitCodes: [
 			'0  add: the worktree exists, whatever the links and the lockfile say',

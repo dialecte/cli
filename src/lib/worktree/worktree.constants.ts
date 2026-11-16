@@ -99,16 +99,92 @@ export const POOL_FOLDER_PREFIX = '_pool-'
 /** A pool entry's name: its repository, then its number. */
 export const POOL_ENTRY_PATTERN = /^_pool-(.+)-(\d+)$/
 
-/** The file beside a pooled `node_modules`: `{ repository, lockHash, parkedAt }`. */
+/** The file beside a pooled `node_modules`: `{ repository, lockKey, parkedAt, owner?, packages }`. */
 export const POOL_FILE = 'pool.json'
 
-/** How many pool entries a repository keeps: parking one more sends the oldest to the trash. */
-export const POOL_ENTRIES_PER_REPOSITORY = 2
+/** The fewest pool entries a repository keeps, whatever its store shows (none: this many). */
+export const POOL_ENTRIES_FLOOR = 2
+
+/** The most pool entries a repository keeps, however many of its lots were open at once. */
+export const POOL_ENTRIES_CEILING = 8
+
+/** How many pool entries of one lock key a repository keeps: parking one more sends the oldest of that key to the trash. */
+export const POOL_ENTRIES_PER_KEY = 2
+
+/**
+ * The most packages (by lock key, a version that differs or a key on one side only) a pool entry of the repository may
+ * differ from the checkout's lock in to be taken as a near entry, then completed by an incremental install.
+ */
+export const POOL_DRIFT_LIMIT = 5
+
+/** The environment variable that switches the default npm runner off: `off` answers a failure, nothing spawned. */
+export const NPM_INSTALL_SWITCH = 'DIALECTE_NPM_INSTALL'
+
+/** The value of NPM_INSTALL_SWITCH that switches npm off (any other value, or none, runs npm). */
+export const NPM_INSTALL_OFF = 'off'
+
+/** What the default npm runner answers with the switch off: the reason a miss records before its copy. */
+export const NPM_INSTALL_OFF_ANSWER = {
+	status: 1,
+	output: 'npm install off (DIALECTE_NPM_INSTALL)',
+} as const
+
+/** The incremental install that completes a near pool entry in the checkout, the lock left as it is. */
+export const NPM_NEAR_INSTALL_ARGS = ['install', '--prefer-offline', '--no-save'] as const
+
+/** The clean install of a checkout the pool gave nothing (from the local npm cache first). */
+export const NPM_CI_ARGS = ['ci', '--prefer-offline'] as const
+
+/** Why npm failed when it printed nothing: its exit status in `{status}`. */
+export const NPM_SILENT_FAILURE = 'npm exited {status} with no output'
+
+/** Why a near entry was given up after its install: the check still lists `{count}` packages, the first named. */
+export const NEAR_CHECK_FAILURE =
+	'{count} package(s) still differ from package-lock.json: {package} {problem}'
+
+/** Why a near entry was given up after its install: its `package-lock.json` read for no packages (`{reason}`). */
+export const NEAR_NOT_CHECKED = 'package-lock.json {reason}: not checked'
+
+/** What a near source says after its method: the entry and how many packages it differed in. */
+export const NEAR_DETAIL = '{from}, {drift} package(s) differ'
+
+/** What an installed source says after its method when there was no pool to ask. */
+export const INSTALLED_DETAIL = 'npm ci'
+
+/** What an installed source says after its method: why the pool gave nothing in `{miss}`. */
+export const MISSED_INSTALLED_DETAIL = 'npm ci ({miss})'
+
+/** What a copy says after its method when npm ci failed first: its first line in `{reason}`. */
+export const COPY_REASON_DETAIL = 'npm ci failed: {reason}'
+
+/** The checkout's own folder a failed `npm ci`'s `node_modules` is renamed into when there is no pool to trash it in. */
+export const CHECKOUT_DISCARD_FOLDER = '.dialecte'
+
+/** The name a failed `npm ci`'s `node_modules` is renamed to, followed by the next free number. */
+export const DISCARDED_NODE_MODULES_PREFIX = 'discarded-node_modules-'
+
+/** A restore's miss: the repository has no pool entry. */
+export const POOL_MISS_EMPTY = 'pool empty'
+
+/** A restore's miss: entries of the repository, none with the checkout's lock key (followed by its first characters). */
+export const POOL_MISS_NO_ENTRY = 'no entry for install'
+
+/** How many characters of the lock key a `no entry for install` miss names. */
+export const POOL_MISS_KEY_LENGTH = 8
+
+/** A restore's miss: the matching entries were renamed away by another taker. */
+export const POOL_MISS_BUSY = 'entry busy'
+
+/** A restore's miss: the pool is on another file system than the checkout. */
+export const POOL_MISS_CROSS_DEVICE = 'cross-device'
 
 /** The caches a park removes from `node_modules`: rebuilt by the tools that wrote them, tied to the old checkout. */
 export const POOL_REMOVED_CACHES = ['.vite', '.cache'] as const
 
-/** The folder a park renames the caches into, inside a folder already on its way to removal. */
+/**
+ * The folder a park renames the caches into until it is sure: inside a folder already on its way to removal, else in
+ * the worktree (then trashed once the park is done, put back when it fails).
+ */
 export const DISCARDED_CACHES_PREFIX = '.dialecte-discarded-caches-'
 
 /** The folder of `.worktrees/` where worktrees and folders wait for their background removal. */
@@ -145,3 +221,77 @@ export const BASE_SYNC_LINES = {
 	elsewhere: '{branch} not fast-forwarded: checked out in {worktree}',
 	failed: '{branch} not fast-forwarded: {reason}',
 } as const
+
+/** `worktree prune --reclaim`: the days without git activity (index, HEAD, reflog) after which a worktree is idle, by default. */
+export const RECLAIM_OLDER_THAN_DAYS = 2
+
+/** Why `worktree prune --reclaim` leaves a worktree untouched, on its line; `{...}` filled. */
+export const RECLAIM_KEEP_REASONS = {
+	main: 'the main checkout',
+	locked: 'locked (git worktree lock)',
+	process: 'a process works in it: pid {pid}',
+	activity: 'git activity after the cutoff: {file} at {at}',
+	link: 'the link {link} points to it',
+	handover: 'hand-over {name} {state} names it',
+	nodeModulesLink: 'node_modules is a link: never moved',
+	noNodeModules: 'no node_modules',
+	missing: 'not on disk',
+	noGitFolder: 'its git folder cannot be found: its activity is not known',
+	handoverRunning: 'a hand-over runs in it',
+	roundOfOpenLot: 'a review round of {lot}',
+	unlisted: 'no longer a worktree of {repository}',
+	otherPrunable: 'git worktree prune would also forget {worktrees}',
+} as const
+
+/** Why `worktree prune --reclaim` sends an idle worktree's node_modules to the trash instead of the pool; `{...}` filled. */
+export const RECLAIM_TRASH_REASONS = {
+	noLock: 'no package-lock.json: its node_modules installs no lock in use',
+	mainNoLock: 'the main checkout has no package-lock.json: no lock in use',
+	otherKey: 'lock key {key} is not the main checkout’s {main}',
+	notChecked: 'node_modules not checked: {reason}',
+	differs: '{count} package(s) differ from package-lock.json: {problems}',
+} as const
+
+/**
+ * How long a `_pool-*` folder without `pool.json` may stay unwritten and still be a park in progress, in minutes: an
+ * older one is a park that never finished, and prune sends it to the trash.
+ */
+export const POOL_STALE_PARK_MINUTES = 30
+
+/** One minute in milliseconds. */
+export const MINUTE_MS = 60 * 1000
+
+/** Why `worktree prune` keeps a `_pool-*` folder without `pool.json` where it is; `{...}` filled. */
+export const POOL_LEFT_OVER_KEEP_REASONS = {
+	inProgress: 'a park in progress: written at {at}, under {minutes} min ago',
+	finished: 'its pool.json is written now: a pool entry',
+} as const
+
+/** What a reclaim says of a `-round-<n>` throwaway gone between its plan and its move. */
+export const RECLAIM_WORKTREE_GONE =
+	'worktree gone already (moved by another reclaim): nothing done'
+
+/** A review round's throwaway worktree, `<lot worktree>-round-<n>`: the lot worktree's folder name first. */
+export const RECLAIM_ROUND_PATTERN = /^(.+)-round-[1-9]\d*$/
+
+/** The git files whose last write is a worktree's activity, in its own git folder: the index, HEAD, its reflog. */
+export const RECLAIM_ACTIVITY_FILES = ['index', 'HEAD', 'logs/HEAD'] as const
+
+/** The file `git worktree lock` writes in a worktree's own git folder: the worktree is locked while it is there. */
+export const WORKTREE_LOCKED_FILE = 'locked'
+
+/** One day in milliseconds: `--older-than` counts whole days. */
+export const RECLAIM_DAY_MS = 24 * 60 * 60 * 1000
+
+/** The size units of a reclaim's total, each 1000 times the one before. */
+export const RECLAIM_SIZE_UNITS = ['B', 'kB', 'MB', 'GB'] as const
+
+/** The usage of `worktree prune --reclaim`, named by every refusal of its flags. */
+export const RECLAIM_USAGE =
+	'dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]'
+
+/** A valid `--older-than`: a positive whole number of days. */
+export const RECLAIM_OLDER_THAN_PATTERN = /^[1-9]\d*$/
+
+/** What a reclaim says of a worktree whose node_modules went between its plan and its move (another reclaim). */
+export const RECLAIM_GONE = 'node_modules gone already (moved by another reclaim): nothing done'

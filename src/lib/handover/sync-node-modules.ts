@@ -16,6 +16,7 @@ import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { onSignalExit } from '../progress/interrupt-forwarding.ts'
 import { runChild } from '../progress/run-child.ts'
+import { npmSwitchedOff } from '../worktree/npm-runner.ts'
 import {
 	ABSENT_SUFFIX,
 	INSTALL_BACKUP_FOLDER,
@@ -275,7 +276,13 @@ function skippedScriptsNote(params: {
 	return `${SKIPPED_INSTALL_SCRIPTS_NOTE}${named.join(', ')}${others > 0 ? ` and ${others} more` : ''}`
 }
 
-function installWithNpm(params: { root: string }): ReturnType<Installer> {
+/**
+ * `npm ci` in `root` through the watched child (stdin closed, stall watchdog, interrupts passed on); with npm switched
+ * off (`DIALECTE_NPM_INSTALL=off`), its failure answered without spawning.
+ */
+async function installWithNpm(params: { root: string }): ReturnType<Installer> {
+	const off = npmSwitchedOff()
+	if (off !== undefined) return { exitCode: off.status, output: off.output }
 	const [command, ...args] = INSTALL_COMMAND
 	return runChild({ command, args, cwd: params.root })
 }

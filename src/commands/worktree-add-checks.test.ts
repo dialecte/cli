@@ -151,7 +151,7 @@ describe(
 			expect(readlinkSync(link)).toBe('../core')
 		})
 
-		it('the card → a links row naming the link made, a lockfile row counting the packages that match, no npm ci', () => {
+		it('the card → a links row naming the link made, a lockfile row counting the packages that match, no npm ci next-command row', () => {
 			const { workspace, cli } = createWorkspace({})
 
 			const result = add({ workspace, cli, branch: 'feat/thing' })
@@ -161,7 +161,8 @@ describe(
 			expect(result.output).toMatch(
 				/^│ lockfile +✓ node_modules matches package-lock\.json \(2 packages\) +│$/m,
 			)
-			expect(result.output).not.toContain('npm ci')
+			// the next-command row `cd <worktree> && npm ci` a differing node_modules gets; the copy line may name npm ci
+			expect(result.output).not.toMatch(/&& npm ci/)
 		})
 
 		it('no file: nor link: dependency → no links row; the lockfile row still there', () => {

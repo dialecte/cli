@@ -23,6 +23,7 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../test/scratch-repository.ts'
+import { identityOf, transitionOf, writeRecordFile } from '../../test/store-records.ts'
 import {
 	HOLDING_PROCESS_SECONDS,
 	HOLDING_PROCESS_START_MS,
@@ -36,10 +37,11 @@ import {
 	createFakeNodeModules,
 	createRecordingSpawner,
 	poolEntriesOf,
+	poolEntryOf,
 	readPoolFile,
 	readTree,
-	sha256Of,
 	trashedNamesOf,
+	writePoolEntry,
 } from '../../test/worktree-pool.ts'
 import {
 	handoverStoreOf,
@@ -48,7 +50,9 @@ import {
 	registerHandover,
 } from '../lib/handover/handover-store.ts'
 import { startRun } from '../lib/mutation/run-store.ts'
+import { computeLockKey } from '../lib/worktree/lock-key.ts'
 import { runLotClose } from './lot-close.ts'
+import { makeLotWorktree } from './lot-start.ts'
 
 import { describe, expect, it, onTestFinished } from 'vitest'
 
@@ -197,7 +201,8 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 			expect(poolEntriesOf(worktreesFolder)).toHaveLength(1)
 			expect(readPoolFile({ worktreesFolder, name: entry })).toMatchObject({
 				repository: 'repo',
-				lockHash: sha256Of(LOCK_TEXT),
+				lockKey: computeLockKey({ text: LOCK_TEXT }),
+				packages: {},
 			})
 			expect(readTree(join(worktreesFolder, entry, 'node_modules'))[MARKER_FILE]).toBe('lot x\n')
 			const trashed = trashedNamesOf(worktreesFolder).filter((trashedName) =>
@@ -622,6 +627,44 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 		expect(calls).toEqual([])
 	})
 
+	it('a committed hand-over whose worktree holds only what the cli and python rebuild (the coverage outDir benchmarks/types/v1/generated/, python/.venv/, ignored) → closed: node_modules parked, the worktree in _trash/, exit 0', () => {
+		const scenario = createScenario()
+		const { repository, worktreesFolder } = scenario
+		// a dialect the coverage discovers (src/v1/definition), its outDir ignored by the repository
+		writeFiles({
+			root: repository,
+			files: {
+				'.gitignore': 'node_modules\nbenchmarks/types/*/generated/\n.venv/\n',
+				'src/v1/definition/constants.generated.ts': 'export {}\n',
+				'src/v1/definition/definition.generated.ts': 'export {}\n',
+			},
+		})
+		git({ root: repository, args: ['add', '-A'] })
+		git({ root: repository, args: ['commit', '-q', '-m', 'feat: a dialect v1'] })
+		const { name, worktree } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
+		writeFiles({
+			root: worktree,
+			files: {
+				'benchmarks/types/v1/generated/coverage.bench.ts': 'export {}\n',
+				'python/.venv/pyvenv.cfg': 'home = /usr/bin\n',
+			},
+		})
+		const { call } = closing({ scenario, argv: [name] })
+
+		expect(runLotClose(call)).toEqual({
+			exitCode: 0,
+			output: expect.stringMatching(new RegExp(`closed +${name}[^\\n]*pooled in _pool-repo-1`)),
+		})
+
+		expect(poolEntriesOf(worktreesFolder)).toHaveLength(1)
+		expect(existsSync(worktree)).toBe(false)
+		expect(
+			trashedNamesOf(worktreesFolder).filter((trashedName) =>
+				trashedName.startsWith('0001-repo-x'),
+			),
+		).toEqual([expect.stringMatching(/^0001-repo-x-\d/)])
+	})
+
 	it('a close whose park worked → the line says where node_modules went: pooled in <entry>', () => {
 		const scenario = createScenario()
 		const { name } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
@@ -950,5 +993,95 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 			exitCode: 0,
 			output: expect.stringMatching(new RegExp(`"handover": "${name}"[\\s\\S]*"closed": true`)),
 		})
+	})
+})
+
+/**
+ * The store lot `name` of the scenario's repository, canceled (it keeps no worktree), its identity naming `worktree`, `branch` and `index`
+ * (the base: main's HEAD); its folder.
+ */
+function writeClosedStoreLot(params: {
+	scenario: Scenario
+	name: string
+	worktree: string
+	branch: string
+	index: string
+	lotFolder?: string
+}): string {
+	const { repository } = params.scenario
+	const store = join(repository, '.git', 'dialecte-lots')
+	const lotFolder = params.lotFolder ?? join(store, params.name)
+	writeRecordFile({
+		folder: lotFolder,
+		name: 'identity.json',
+		text: `${JSON.stringify({
+			...identityOf({ name: params.name }),
+			index: params.index,
+			repository,
+			store,
+			worktree: params.worktree,
+			branch: params.branch,
+			base: {
+				ref: 'main',
+				commit: git({ root: repository, args: ['rev-parse', 'main'] }).trim(),
+			},
+		})}\n`,
+	})
+	writeRecordFile({
+		folder: lotFolder,
+		name: 'transitions/000001.json',
+		text: `${JSON.stringify({ ...transitionOf({ seq: 1, state: 'canceled' }), lot: params.name })}\n`,
+	})
+	return lotFolder
+}
+
+describe('lot close and lot start: the pool owner', { timeout: POOL_COMMAND_CASE_MS }, () => {
+	it("a lot's closed worktree parks with the lot as its owner; the lot's next worktree takes its own entry over a newer one of another owner", () => {
+		const scenario = createScenario()
+		const { worktreesFolder, repository } = scenario
+		const { name, worktree } = createLot({ scenario, index: '0001', tail: 'x', state: 'committed' })
+		const lot = '0001-repo-x'
+		writeClosedStoreLot({ scenario, name: lot, worktree, branch: 'feat/x', index: '0001' })
+		const { call } = closing({ scenario, argv: [name] })
+
+		expect(runLotClose(call)).toEqual({ exitCode: 0, output: expect.any(String) })
+		const [own] = poolEntriesOf(worktreesFolder)
+		const parkedOwner = readPoolFile({ worktreesFolder, name: own }).owner
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-repo-9',
+			entry: {
+				...poolEntryOf({
+					repository: 'repo',
+					lock: LOCK_TEXT,
+					parkedAt: '2099-01-01T00:00:00.000Z',
+				}),
+				owner: '0002-repo-other',
+			},
+			marker: 'another owner\n',
+		})
+		const nextLotFolder = writeClosedStoreLot({
+			scenario,
+			name: lot,
+			worktree: join(worktreesFolder, '0003-repo-x-next'),
+			branch: 'feat/x-next',
+			index: '0003',
+			lotFolder: join(realpathSync(temporaryFolder('dialecte-next-lot-')), lot),
+		})
+
+		const made = makeLotWorktree({ lotFolder: nextLotFolder, now: NOW })
+
+		expect({
+			parkedOwner,
+			made: 'failed' in made ? made.failed : 'made',
+			marker: readTree(join(worktreesFolder, '0003-repo-x-next', 'node_modules'))[MARKER_FILE],
+			left: poolEntriesOf(worktreesFolder),
+		}).toEqual({
+			parkedOwner: lot,
+			made: 'made',
+			marker: 'lot x\n',
+			left: ['_pool-repo-9'],
+		})
+		expect(repository).toBe(scenario.repository)
 	})
 })

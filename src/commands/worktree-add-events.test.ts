@@ -4,7 +4,7 @@
  * `node_modules` came (pooled, cloned or none) and that `npm ci` never ran; `worktree add` by hand records nothing,
  * even inside a lot's worktree.
  */
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { briefWith, writeBriefFile } from '../../test/brief-workspace.ts'
@@ -16,6 +16,7 @@ import { spyOnWarnings } from '../../test/step-events-tdd.ts'
 import {
 	COPIED_PACKAGE_FILE,
 	POOL_ENTRY_NAME,
+	POOL_LOCK_TEXT,
 	SECOND_BRIEF,
 	SECOND_LOT_NAME,
 	WORKTREE_NOW,
@@ -23,6 +24,9 @@ import {
 import { createWorktreeScene, stubCloneRefusingCp } from '../../test/step-events-worktree.ts'
 import { writeEvent } from '../lib/events/write-event.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
+import { computeLockKey } from '../lib/worktree/lock-key.ts'
+import { POOL_FILE } from '../lib/worktree/worktree.constants.ts'
+import { worktreeAddPartsOf } from './lot-start.ts'
 import { runLot } from './lot.ts'
 import { runWorktreeAdd } from './worktree.ts'
 
@@ -129,6 +133,26 @@ describe('lot start: the worktree it adds', { timeout: SCRATCH_REPOSITORY_TIMEOU
 				poolEntryLeft: false,
 			})
 		})
+
+	it("a pool entry stamped with the lock key of the checkout's lock → lot start takes it: the parts say pooled, the entry gone", () => {
+		const start = createWorktreeScene({ variant: 'pooled' })
+		const stamp = JSON.parse(
+			readFileSync(join(start.worktreesFolder, POOL_ENTRY_NAME, POOL_FILE), 'utf8'),
+		) as { lockKey?: string }
+
+		runLot({ cwd: start.repository, argv: ['start', start.workspace.briefPath], now: START_NOW })
+		const events = eventsOf({ store: start.store, lot: LOT_NAME })
+
+		expect({
+			stamp: stamp.lockKey,
+			nodeModules: (events[1]?.parts as { nodeModules?: string } | undefined)?.nodeModules,
+			poolEntryLeft: existsSync(join(start.worktreesFolder, POOL_ENTRY_NAME)),
+		}).toEqual({
+			stamp: computeLockKey({ text: POOL_LOCK_TEXT }),
+			nodeModules: 'pooled',
+			poolEntryLeft: false,
+		})
+	})
 
 	it('a file system that refuses copy-on-write (the plain cp is the fallback) → the parts still say cloned', () => {
 		const start = createWorktreeScene({ variant: 'cloned' })
@@ -247,4 +271,26 @@ describe('worktree add by hand', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => 
 			writes: vi.mocked(writeEvent).mock.calls.length,
 		}).toEqual({ exitCode: 0, eventsInLot: 0, writes: 0 })
 	})
+})
+
+describe('the worktree-add parts: whether npm ran', () => {
+	it.each([
+		{
+			source: { method: 'near', from: '_pool-cli-1', drift: 1, seconds: 2 },
+			parts: { nodeModules: 'near', npmCi: true },
+		},
+		{
+			source: { method: 'installed', seconds: 30, miss: 'pool empty' },
+			parts: { nodeModules: 'installed', npmCi: true },
+		},
+		{
+			source: { method: 'pooled', from: '_pool-cli-1', seconds: 0.1 },
+			parts: { nodeModules: 'pooled', npmCi: false },
+		},
+	] as const)(
+		'node_modules $source.method → nodeModules $parts.nodeModules, npmCi $parts.npmCi',
+		({ source, parts }) => {
+			expect(worktreeAddPartsOf({ worktree: '/w', nodeModules: source })).toEqual(parts)
+		},
+	)
 })

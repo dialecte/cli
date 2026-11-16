@@ -36,10 +36,10 @@ import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { provideNodeModules } from '../worktree/add-worktree.ts'
-import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
+import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
+import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
-import { parkNodeModules } from '../worktree/node-modules-pool.ts'
+import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
 import { cloneLotTree, copyRepositoryFiles, removeEmptiedFolders } from './clone-lot-tree.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
@@ -204,6 +204,8 @@ async function rehearseRecorded(
 		})
 	const repository = handover.lotsFile.repository
 	const pool = params.keep ? undefined : poolOf(repository)
+	// the hand-over folder's lot owns what the clone takes from the pool and parks back; none outside every store
+	const owner = params.stepPlace === null ? undefined : basename(params.stepPlace.lot)
 	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
 	const clone = join(folder, basename(repository))
 	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
@@ -243,6 +245,7 @@ async function rehearseRecorded(
 				handoverFolder: handover.folder,
 				write,
 				pool,
+				owner,
 			})
 			const siblings = linkRehearsalSiblings({ repository, folder, clone })
 			links.push(...siblings.links)
@@ -311,6 +314,7 @@ async function rehearseRecorded(
 				clone,
 				links,
 				pool,
+				owner,
 				spawner: params.spawner ?? spawnDetached,
 				relink: params.relink,
 			}))
@@ -342,6 +346,8 @@ function trashRehearsalFolder(params: {
 	clone: string
 	links: readonly string[]
 	pool: RehearsalPool
+	/** The lot the rehearsal runs for, when known: the pool entry's owner. */
+	owner: string | undefined
 	spawner: BackgroundSpawner
 	relink?: (params: { from: string; to: string; real: boolean }) => void
 }): string[] {
@@ -352,8 +358,8 @@ function trashRehearsalFolder(params: {
 	// a park that fails never replaces the rehearsal's result: one line, and the folder goes all the same
 	try {
 		// read and re-pointed while the sibling links beside the clone still resolve its `file:` dependencies
-		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
-		const checkedLockHash = lockHashOf(params.clone)
+		// the lock text read with the check: the pool entry is stamped with the key of what the check read
+		const checkedLockText = readPackageLockText({ worktree: params.clone })
 		const check = existsSync(nodeModules) ? checkNodeModules({ worktree: params.clone }) : undefined
 		if (check)
 			(params.relink ?? relinkEscapingLinks)({ from: nodeModules, to: nodeModules, real: true })
@@ -368,13 +374,14 @@ function trashRehearsalFolder(params: {
 				// the caches go with the rehearsal folder
 				discardInto: params.folder,
 				check,
-				checkedLockHash,
+				checkedLockText,
+				owner: params.owner,
 			})
 			lines.push(
 				textOf([
 					typeof parked === 'string'
 						? `node_modules not parked: ${parked}`
-						: `node_modules parked in ${parked.entry}`,
+						: `node_modules parked in ${parked.entry}${parked.note === undefined ? '' : `; ${parked.note}`}`,
 				]),
 			)
 		}
@@ -490,6 +497,8 @@ function prepareClone(params: {
 	write: WriteLine
 	/** Where the clone's `node_modules` is taken from first; none: a copy, as before. */
 	pool: RehearsalPool | undefined
+	/** The lot the rehearsal runs for, when known: the pool gives its own entry first. */
+	owner: string | undefined
 }): void {
 	const { repository, clone, write } = params
 	const head = readGit({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
@@ -531,15 +540,19 @@ function prepareClone(params: {
 		repository: params.pool?.main ?? repository,
 		worktreesFolder: params.pool?.worktreesFolder,
 		from: join(repository, 'node_modules'),
+		// the rehearsal folder goes at the end: what a failed npm ci left goes with it
+		discardInto: dirname(clone),
+		owner: params.owner,
 	})
-	if (provided)
+	if (provided) {
+		const detail = nodeModulesDetailOf(provided)
+		const relinked = 'relinked' in provided ? provided.relinked.length : 0
 		write(
 			textOf([
-				provided.method === 'pooled'
-					? `  node_modules: pooled ${provided.from}`
-					: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
+				`  node_modules: ${provided.method}${detail && ` ${detail}`}${relinked ? `, ${relinked} link(s) re-pointed` : ''}`,
 			]),
 		)
+	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 }
 
