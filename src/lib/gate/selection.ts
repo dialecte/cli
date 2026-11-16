@@ -51,15 +51,23 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 		}),
 	).sort(Buffer.compare)
 	const folder = mkdtempSync(join(tmpdir(), GATE_SCOPE_FOLDER_PREFIX))
-	const changedFile = join(folder, CHANGED_FILE_NAME)
-	writeFileSync(
-		changedFile,
-		Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
-	)
-	let selections = 0
+	// registered before anything is written: a signal from here on never leaves the folder
 	const dropSignalExitRemoval = onSignalExit(function removeScopeFolder() {
 		rmSync(folder, { recursive: true, force: true })
 	})
+	const changedFile = join(folder, CHANGED_FILE_NAME)
+	try {
+		writeFileSync(
+			changedFile,
+			Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
+		)
+	} catch (error) {
+		// a run that cannot start leaves nothing behind either
+		dropSignalExitRemoval()
+		rmSync(folder, { recursive: true, force: true })
+		throw error
+	}
+	let selections = 0
 	return {
 		base,
 		tree,

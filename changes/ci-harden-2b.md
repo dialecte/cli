@@ -1,6 +1,6 @@
 ### Added
 
-- `dialecte rules`: `raw-git-repository` (an error, allowable) - a test or test support file that runs `git clone` or `git init` itself (an argument list starting with `clone` or `init` in a `git` call, `init --bare` aside) makes a repository with no identity, green where git falls back to user@host and red on a CI machine; make it with the scratch helpers (`cloneRepository` / `initializeRepository`).
+- `dialecte rules`: `raw-git-repository` (an error, allowable) - a test or test support file that runs `git clone` or `git init` itself (an argument list whose subcommand, after `-C`/`-c` options, is `clone` or `init`, in a `git` call or one of the cli's git readers, `--bare` aside) makes a repository with no identity, green where git falls back to user@host and red on a CI machine; make it with the scratch helpers (`cloneRepository` / `initializeRepository`).
 
 ### Fixed
 

@@ -47,7 +47,13 @@ function pidIn(file: string): number | undefined {
  * sends `signal` to the cli once the step runs, waits for the end, and answers what the lot's file and marker folder
  * hold. Whatever happens, the cli and the step's child are killed.
  */
-async function interruptedGate(params: { signal: NodeJS.Signals; scoped?: boolean; tmp?: string }) {
+async function interruptedGate(params: {
+	signal: NodeJS.Signals
+	scoped?: boolean
+	tmp?: string
+	/** What must hold before the signal is sent, beside the step running. */
+	ready?: () => boolean
+}) {
 	const { signal } = params
 	const deadline = Date.now() + SCRATCH_REPOSITORY_TIMEOUT - CLEANUP_MARGIN_MS
 	const pidFile = seenFile()
@@ -68,7 +74,10 @@ async function interruptedGate(params: { signal: NodeJS.Signals; scoped?: boolea
 	let childPid: number | undefined
 	try {
 		const exited = new Promise<number | null>((resolveExit) => run.on('exit', resolveExit))
-		await waitFor({ check: () => pidIn(pidFile) !== undefined, deadline })
+		await waitFor({
+			check: () => pidIn(pidFile) !== undefined && (params.ready?.() ?? true),
+			deadline,
+		})
 		childPid = pidIn(pidFile)
 		run.kill(signal)
 		const exitCode = await exited
@@ -118,11 +127,23 @@ describe('gate --full killed after its start', { timeout: SCRATCH_REPOSITORY_TIM
 		expect(events.map((event) => event.kind)).toEqual(['step.start'])
 	})
 
-	it('SIGTERM while a scoped step runs → the gate-scope folder of the run is removed', async () => {
+	it('SIGTERM while a scoped step runs → the gate-scope folder the run made is removed', async () => {
 		const tmp = temporaryFolder('dialecte-gate-tmp-')
+		function scopeFolders(): string[] {
+			return readdirSync(tmp).filter((name) => name.startsWith(GATE_SCOPE_FOLDER_PREFIX))
+		}
+		let made = 0
 
-		await interruptedGate({ signal: 'SIGTERM', scoped: true, tmp })
+		await interruptedGate({
+			signal: 'SIGTERM',
+			scoped: true,
+			tmp,
+			ready: function scopeFolderMade() {
+				made = scopeFolders().length
+				return made > 0
+			},
+		})
 
-		expect(readdirSync(tmp).filter((name) => name.startsWith(GATE_SCOPE_FOLDER_PREFIX))).toEqual([])
+		expect({ made, left: scopeFolders() }).toEqual({ made: 1, left: [] })
 	})
 })

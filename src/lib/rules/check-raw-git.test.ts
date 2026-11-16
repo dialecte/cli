@@ -1,4 +1,5 @@
 import { checkCodeRules } from './check-code-rules.ts'
+import { RAW_GIT_REPOSITORY_MESSAGE } from './check-raw-git.constants.ts'
 import { GENERIC_REFERENCE_PATTERNS } from './committed-text.constants.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -10,8 +11,7 @@ type TestCase = {
 	only?: boolean
 }
 
-const MESSAGE =
-	'a raw `git clone` or `git init` in a test: the repository has no identity (green on macOS, red on Linux CI) - make it with `cloneRepository` / `initializeRepository` of `test/scratch-repository.ts`'
+const MESSAGE = RAW_GIT_REPOSITORY_MESSAGE
 
 function rawGitFindingsOf(testCase: TestCase): { line: number; message: string }[] {
 	return checkCodeRules({
@@ -34,6 +34,16 @@ describe('raw-git-repository', () => {
 			file: 'test/land-lot.ts',
 			text: "import { spawnSync } from 'node:child_process'\nspawnSync('git', ['init', '-q', root])\n",
 			expected: [{ line: 2, message: MESSAGE }],
+		},
+		"spawnSync('git', ['-C', root, 'init']) in a test → reported (options before the subcommand)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "spawnSync('git', ['-C', root, 'init', '-q'])\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"readGit({ root, args: ['clone', ...] }) in a test → reported (the cli's own git readers)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "readGit({ root, args: ['clone', '-q', origin, into] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
 		},
 		'git init --bare in a test → not reported (nothing is committed in a bare repository)': {
 			file: 'src/commands/lot-land.test.ts',
