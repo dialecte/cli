@@ -18,12 +18,12 @@ describe('the lot file is strict', () => {
 	it('an unknown top-level key ("acept") → refused, naming it', () => {
 		expect(readAcceptances(rootWith({ acept: [] }))).toEqual({
 			failure:
-				'.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised, gone, mutation)',
+				'.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised, gone, moved, mutation)',
 		})
 		expect(readTddExemption(rootWith({ tdd: 'exempt: a rename', acept: [] }))).toEqual({
 			kind: 'invalid',
 			reason:
-				'.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised, gone, mutation)',
+				'.dialecte/lot.json: unknown key "acept" (known: tdd, accept, revised, gone, moved, mutation)',
 		})
 	})
 

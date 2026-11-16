@@ -203,6 +203,7 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 	'lot accept': { argv: ['accept', FORGED_WORD, 'a reason'], quotes: true },
 	'lot revised': { argv: ['revised', FORGED_WORD], quotes: false, reason: WRITES_DECLARATION },
 	'lot gone': { argv: ['gone', FORGED_WORD], quotes: false, reason: WRITES_DECLARATION },
+	'lot moved': { argv: ['moved', FORGED_WORD], quotes: false, reason: WRITES_DECLARATION },
 	'lot mutation': { argv: ['mutation', FORGED_WORD], quotes: true },
 	'lot finding': {
 		argv: ['finding', FORGED_WORD, '--round', '1', '--severity', 'nit', '--at', 'a.ts:1', 'text'],
