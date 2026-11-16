@@ -11,4 +11,4 @@
 
 - `.github/pull_request_template.md` holds the renderer's markers (`<!-- dialecte:<part> -->`, then `<!-- dialecte:kept -->` above the reviewer's checklist); a repository whose template lacks one is refused (`<template> is not the renderer's template (missing marker <part>)`).
 - `lot start` checks each step's title and behaviours like the summary: a path, a link, a reference of the lists, a forbidden word or an entry id of the plans that hold the lot is refused (`steps[<n>].title holds a <label>`, `steps[<n>].behaviours[<m>] holds a <label>`), the text never printed.
-- A plan entry id made of letters only (`CONFIG`, `T`) is an ordinary word too: the public-text checks match it only as written ("Reads the config once" passes); an id holding a digit, `-` or `.` still matches in any case.
+- A plan entry id made of letters only is an ordinary word too: the public-text checks match it only as written ("Reads the config once" passes); an id holding a digit, `-` or `.` still matches in any case.
