@@ -115,12 +115,14 @@ import type {
 	RedJudgement,
 	RevisedHelper,
 	RunCase,
+	RunnerParams,
 	TddContext,
 	TddRunAdmission,
 	TddEntry,
 	TddLedger,
 	TddReceipt,
 	TddSubcommand,
+	TddTargets,
 	TestCaseId,
 	TestRunFailure,
 } from '../lib/tdd/tdd.types.ts'
@@ -335,6 +337,7 @@ async function runRed(params: {
 				context,
 				subcommand: 'red',
 				files: runnable.map((file) => file.file),
+				filter: targetedFilter(context.targets),
 			})
 		: []
 	if ('failure' in modules) return runFailureResult({ subcommand: 'red', failure: modules })
@@ -1016,11 +1019,21 @@ function runFailureResult(params: {
 	return { exitCode: 1, output: tail?.length ? joinedOf([own, relayedTextOf(tail)]) : own }
 }
 
-/** Every case of the files, run by vitest, the run announced first (a start line or a spinner). */
+/**
+ * The cases a red run asks its runners for: the cases the command line names, when it names cases and no whole
+ * file (`<file>::<case>` runs only that case: vitest skips the others, node never starts them); else every case.
+ */
+function targetedFilter(targets: TddTargets): RunnerParams['filter'] {
+	if (targets.cases.length === 0 || targets.files.length > 0) return 'all'
+	return { names: targets.cases.map((testCase) => testCase.name) }
+}
+
+/** The cases of the files `filter` asks (default: every one), run by their runners, the run announced first (a start line or a spinner). */
 async function announcedRun(params: {
 	context: TddContext
 	subcommand: TddSubcommand
 	files: string[]
+	filter?: RunnerParams['filter']
 }): Promise<Awaited<ReturnType<typeof runTestCases>>> {
 	const { context, files } = params
 	const clock = createSystemClock()
@@ -1032,7 +1045,7 @@ async function announcedRun(params: {
 	const modules = await runTestCases({
 		root: context.root,
 		files,
-		filter: 'all',
+		filter: params.filter ?? 'all',
 	})
 	running?.finish(
 		`${'failure' in modules ? '✗' : '✓'} tdd ${params.subcommand}: vitest ran ${files.length} test file(s)  ${formatDuration(clock.now() - startedAt)}`,

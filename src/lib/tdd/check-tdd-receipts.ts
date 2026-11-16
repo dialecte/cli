@@ -23,13 +23,14 @@ import { movedLines } from './moved-cases.ts'
  * (the untitled test calls the lot file declares gone, with its reason) and the entries of the lot file
  * nothing used are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
- * that does not test with vitest skips the step.
+ * that does not test with vitest and changes no test file of another runner (`node:test`) skips the step.
  */
 import { caseLabel } from './select-cases.ts'
 import { resolveTddBase, shortCommitOf } from './tdd-base.ts'
 import {
 	countChangedFiles,
 	hashChangedTestCode,
+	listChangedTestFiles,
 	listDeletedTestFiles,
 	readLedger,
 } from './tdd-files.ts'
@@ -44,6 +45,8 @@ import {
 	UNUSED_ACCEPT_CLOSEST_LIMIT,
 	VITEST_PACKAGE,
 } from './tdd.constants.ts'
+import { runnerOf } from './test-runner.ts'
+import { readVitestConfigs } from './vitest-configs.ts'
 import { zeroCaseLines } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
@@ -98,7 +101,7 @@ async function judgeTddReceipts(params: {
 			note: `exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
 		}
 	}
-	if (!testsWithVitest(packageJson))
+	if (!testsWithVitest(packageJson) && !changesTestsOfOtherRunner({ root, base }))
 		return { status: 'skipped', reason: 'the package does not test with vitest' }
 	const ledger = readLedger(root)
 	if ('failure' in ledger) return { status: 'failed', reason: ledger.failure }
@@ -276,4 +279,14 @@ function testsWithVitest(packageJson: PackageJson): boolean {
 	return Boolean(
 		packageJson.devDependencies?.[VITEST_PACKAGE] ?? packageJson.dependencies?.[VITEST_PACKAGE],
 	)
+}
+
+/** A test file the change touches runs under a runner other than vitest (a `node:test` file): the package tests with it. */
+function changesTestsOfOtherRunner(params: { root: string; base: string }): boolean {
+	const { root } = params
+	const configs = readVitestConfigs({ root })
+	return listChangedTestFiles(params).some(function runsUnderOtherRunner(changed) {
+		const runner = runnerOf({ root, file: changed.file, text: changed.text, configs })
+		return runner !== undefined && runner !== 'vitest'
+	})
 }

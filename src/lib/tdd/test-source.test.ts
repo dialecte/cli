@@ -9,6 +9,8 @@ import {
 
 import { describe, expect, it } from 'vitest'
 
+import type { SourceLocation } from './tdd.types.ts'
+
 describe('findOnlyMarkers', () => {
 	const CASES: Record<string, { text: string; lines: number[] }> = {
 		'it.only, describe.only, test.only.each → each line': {
@@ -159,4 +161,132 @@ describe('the other readers in a .ts file with a cast or a generic arrow before 
 				expect(read(prefix)).toEqual(EXPECTED[name])
 			})
 	}
+})
+
+/** Where the first `marker` starts in `text`, as a 1-based line and column. */
+function locationOf(params: { text: string; marker: string }): SourceLocation {
+	const offset = params.text.indexOf(params.marker)
+	const before = params.text.slice(0, offset).split('\n')
+	return { line: before.length, column: (before.at(-1) ?? '').length + 1 }
+}
+
+/** `isInsideAssertion` at the first `boom()` of the text, in a `.test.ts` file. */
+function boomIsAsserted(text: string): boolean {
+	return isInsideAssertion({
+		text,
+		file: 'a.test.ts',
+		location: locationOf({ text, marker: 'boom()' }),
+	})
+}
+
+describe('isInsideAssertion on a node:assert call', () => {
+	it('boom() in assert.equal(...), assert a default import of node:assert → inside an assertion', () => {
+		expect(boomIsAsserted("import assert from 'node:assert'\nassert.equal(boom(), 1)\n")).toBe(true)
+	})
+
+	it('boom() in assert.equal(...), assert a namespace import of node:assert → inside an assertion', () => {
+		expect(boomIsAsserted("import * as assert from 'node:assert'\nassert.equal(boom(), 1)\n")).toBe(
+			true,
+		)
+	})
+
+	it('boom() in equal(...), equal a named import of node:assert → inside an assertion', () => {
+		expect(boomIsAsserted("import { equal } from 'node:assert'\nequal(boom(), 1)\n")).toBe(true)
+	})
+
+	it('boom() in eq(...), eq the local name of a named import of node:assert → inside an assertion', () => {
+		expect(boomIsAsserted("import { equal as eq } from 'node:assert'\neq(boom(), 1)\n")).toBe(true)
+	})
+
+	it('boom() in deepStrictEqual(...), a named import of node:assert/strict → inside an assertion', () => {
+		expect(
+			boomIsAsserted(
+				"import { deepStrictEqual } from 'node:assert/strict'\ndeepStrictEqual(boom(), 1)\n",
+			),
+		).toBe(true)
+	})
+
+	it('boom() in assert.equal(...), assert a default import of node:assert/strict → inside an assertion', () => {
+		expect(
+			boomIsAsserted("import assert from 'node:assert/strict'\nassert.equal(boom(), 1)\n"),
+		).toBe(true)
+	})
+
+	it('boom() in assert.equal(...), assert a default import of assert → inside an assertion', () => {
+		expect(boomIsAsserted("import assert from 'assert'\nassert.equal(boom(), 1)\n")).toBe(true)
+	})
+
+	it('boom() in assert(...) called itself, assert a default import of node:assert → inside an assertion', () => {
+		expect(boomIsAsserted("import assert from 'node:assert'\nassert(boom())\n")).toBe(true)
+	})
+
+	it('boom() in assert.strict.equal(...), assert a default import of node:assert → inside an assertion', () => {
+		expect(
+			boomIsAsserted("import assert from 'node:assert'\nassert.strict.equal(boom(), 1)\n"),
+		).toBe(true)
+	})
+
+	it('boom() in assert.equal(...), assert the strict binding of node:assert renamed → inside an assertion', () => {
+		expect(
+			boomIsAsserted("import { strict as assert } from 'node:assert'\nassert.equal(boom(), 1)\n"),
+		).toBe(true)
+	})
+
+	it('boom() in t.assert.equal(...), t the test context, no import → inside an assertion', () => {
+		expect(boomIsAsserted("it('a', (t) => {\n\tt.assert.equal(boom(), 1)\n})\n")).toBe(true)
+	})
+
+	it('boom() nested in another call inside assert.equal(...) → inside an assertion', () => {
+		expect(
+			boomIsAsserted("import assert from 'node:assert'\nassert.equal(wrap(boom()), 1)\n"),
+		).toBe(true)
+	})
+
+	it('boom() called in a const before assert.equal(...) → not inside an assertion', () => {
+		expect(
+			boomIsAsserted("import assert from 'node:assert'\nconst r = boom()\nassert.equal(r, 1)\n"),
+		).toBe(false)
+	})
+
+	it('boom() in equal(...), equal not imported from node:assert → not inside an assertion', () => {
+		expect(boomIsAsserted("import { equal } from './helpers.ts'\nequal(boom(), 1)\n")).toBe(false)
+	})
+
+	it('boom() in other(...) while only equal is imported from node:assert → not inside an assertion', () => {
+		expect(boomIsAsserted("import { equal } from 'node:assert'\nother(boom(), 1)\n")).toBe(false)
+	})
+})
+
+describe('testCallTextAt where node locates a modified call', () => {
+	it('a location on skip of it.skip(...) → the whole call', () => {
+		const text = "describe('add', () => {\n  it.skip('sk', () => {})\n})\n"
+
+		expect(
+			testCallTextAt({ text, file: 'a.test.ts', location: locationOf({ text, marker: 'skip(' }) }),
+		).toBe("it.skip('sk', () => {})")
+	})
+
+	it('a location on only of it.only(...) → the whole call', () => {
+		const text = "describe('add', () => {\n  it.only('on', () => {})\n})\n"
+
+		expect(
+			testCallTextAt({ text, file: 'a.test.ts', location: locationOf({ text, marker: 'only(' }) }),
+		).toBe("it.only('on', () => {})")
+	})
+
+	it('a location on skip of describe.skip(...) holding a case → the describe call, never the case inside', () => {
+		const text = "describe.skip('add', () => {\n  it('one', () => {})\n})\n"
+
+		expect(
+			testCallTextAt({ text, file: 'a.test.ts', location: locationOf({ text, marker: 'skip(' }) }),
+		).toBe("describe.skip('add', () => {\n  it('one', () => {})\n})")
+	})
+
+	it('a location on a property that is no call callee → no call text', () => {
+		const text = 'const value = options.skip\n'
+
+		expect(
+			testCallTextAt({ text, file: 'a.test.ts', location: locationOf({ text, marker: 'skip' }) }),
+		).toBeUndefined()
+	})
 })

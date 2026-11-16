@@ -35,6 +35,17 @@ export const SYNTAX_FAILURE_PATTERN = /PARSE_ERROR|Transform failed|SyntaxError|
 /** Calls that assert: the stub's error counts as a red only when thrown from inside their arguments. */
 export const ASSERTION_CALLEE = 'expect'
 
+/** The modules whose bindings assert: a call through one (`assert.equal(...)`, `deepStrictEqual(...)`) asserts. */
+export const NODE_ASSERT_SPECIFIERS: readonly string[] = [
+	'node:assert',
+	'node:assert/strict',
+	'assert',
+	'assert/strict',
+]
+
+/** A member chain through this segment asserts without an import: the test context's `t.assert.equal(...)`. */
+export const NODE_ASSERT_SEGMENT = 'assert'
+
 /** Test files: what vitest includes by default. */
 export const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/
 
@@ -53,6 +64,45 @@ export const RUNNER_NOT_AVAILABLE_FAILURE =
 
 /** The module a test file imports to run under `node --test`. */
 export const NODE_TEST_SPECIFIER = 'node:test'
+
+/** The events of a `node --test` run the cli's node reporter reads; it ignores every other. */
+export const NODE_EVENT_TYPES = {
+	start: 'test:start',
+	pass: 'test:pass',
+	fail: 'test:fail',
+	stderr: 'test:stderr',
+} as const
+
+/** The events of the tests and suites of a file: a start opens a title, an end records a case or an error. */
+export const NODE_TEST_EVENT_TYPES: readonly string[] = [
+	NODE_EVENT_TYPES.start,
+	NODE_EVENT_TYPES.pass,
+	NODE_EVENT_TYPES.fail,
+]
+
+/** The `failureType` of a test or suite whose own code threw (not a failure of a test under it). */
+export const NODE_CODE_FAILURE = 'testCodeFailure'
+
+/** The `failureType` of a test that ran out of time. */
+export const NODE_TIMEOUT_FAILURE = 'testTimeoutFailure'
+
+/** The bound in node's timeout message (`test timed out after 10ms`). */
+export const NODE_TIMEOUT_BOUND_PATTERN = /(\d+)\s*ms/
+
+/** A node timeout as vitest words it, so `TIMEOUT_PATTERN` reads it: `{ms}` the bound. */
+export const NODE_TIMEOUT_MESSAGE = 'Test timed out in {ms}ms'
+
+/** A V8 stack frame: `at fn (file:///p:L:C)` or `at file:///p:L:C`. */
+export const V8_FRAME_PATTERN = /^\s*at (?:.*? \()?(.+?):(\d+):(\d+)\)?$/
+
+/** A frame of node's own code (`node:internal/...`): left out, as vitest leaves it out. */
+export const NODE_INTERNAL_FRAME_PREFIX = 'node:'
+
+/** The node reporter module, next to the cli's entry (built) or next to this file (sources). */
+export const NODE_REPORTER_FILE_NAMES = ['tdd-node-reporter.js', 'tdd-node-reporter.ts'] as const
+
+/** The environment of a nested `node --test` run: with it, a run reports to its parent instead of its reporters. */
+export const NODE_TEST_CONTEXT_VARIABLE = 'NODE_TEST_CONTEXT'
 
 /** Test code beyond the test files: helpers and fixtures in a test or fixture folder, snapshots. */
 export const TEST_FOLDER_PATTERN =

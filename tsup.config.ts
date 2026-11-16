@@ -43,10 +43,11 @@ const CONFIGS: Options[] = [
 	},
 	{
 		...SHARED,
-		// files another tool loads by path, next to the bin: the vitest reporter `dialecte tdd` hands the package's
-		// vitest, and the ignore rules Stryker loads as a plugin (`dialecte mutants run`)
+		// files another tool loads by path, next to the bin: the vitest and node --test reporters `dialecte tdd` hands
+		// the package's runners, and the ignore rules Stryker loads as a plugin (`dialecte mutants run`)
 		entry: {
 			'tdd-reporter': 'src/lib/tdd/tdd-reporter.ts',
+			'tdd-node-reporter': 'src/lib/tdd/tdd-node-reporter.ts',
 			ignorers: 'src/lib/mutation/ignorers.ts',
 		},
 	},

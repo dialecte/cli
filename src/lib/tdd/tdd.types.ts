@@ -49,6 +49,19 @@ export type RunnerParams = {
 	timeoutMs?: number
 }
 
+/**
+ * One run of a runner's process through the cli's reporter: the command and its arguments, the environment it adds
+ * (the report's path is added to it) and the variables it removes, and the run asked.
+ */
+export type ReportingRun = {
+	runner: TestRunner
+	command: string
+	args: string[]
+	environment: Record<string, string>
+	unset?: string[]
+	run: RunnerParams
+}
+
 /** A runner: its files in, what its run saw (or why it could not run) out. */
 export type RunnerFunction = (params: RunnerParams) => Promise<ReportedModule[] | TestRunFailure>
 
