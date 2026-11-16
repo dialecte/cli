@@ -535,9 +535,19 @@ export const MODULE_EXTENSION_PATTERN = /\.[cm]?[jt]sx?$/
 /** The file a folder's import resolves to, without extension: a test file names the folder. */
 export const INDEX_MODULE_NAME = 'index'
 
-/** Why such a helper stays unfrozen: no test file imports it. */
+/** The most unchanged test files a red run runs to freeze changed helpers no changed test depends on. */
+export const HELPER_DEPENDENTS_LIMIT = 20
+
+/** Why such a helper stays unfrozen: no unchanged test file names it (the search goes by name). */
 export const HELPER_IMPORTED_BY_NONE =
-	'no test file imports it: a `revised` entry naming it lets a red run freeze it'
+	'no unchanged test file found naming it (a barrel, an alias or a glob is not followed here): a `revised` entry naming it lets a red run freeze it'
+
+/** Why such a helper stays unfrozen: more unchanged test files import the helpers than a red run runs, `{count}` its. */
+export const HELPER_DEPENDENTS_OVER_LIMIT =
+	'{count} unchanged test files import it, more than a red run runs for a helper ({limit}): a `revised` entry naming it lets a red run freeze it'
+
+/** The progress step of the run of the unchanged test files importing changed helpers. */
+export const HELPER_DEPENDENTS_STEP = 'tdd red: the unchanged test files importing changed helpers'
 
 /** Why a red run leaves a helper a `revised` entry names unfrozen: a changed dependent of it is not in the run. */
 export const HELPER_DEPENDENT_OUTSIDE_RUN =

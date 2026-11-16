@@ -11,8 +11,9 @@ import {
 	ORPHAN_HELPER,
 } from '../../test/rule-gaps-orphan-helper.constants.ts'
 import { createOrphanHelperPackage } from '../../test/rule-gaps-orphan-helper.ts'
-import { git } from '../../test/scratch-repository.ts'
+import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { HELPER_DEPENDENTS_LIMIT } from '../lib/tdd/tdd.constants.ts'
 import { runTdd } from './tdd.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -61,7 +62,7 @@ describe(
 			const red = await tdd({ cwd: root, argv: ['red'] })
 
 			expect(red.output.split('\n')).toContain(
-				'unfrozen  test/unused.ts  no test file imports it: a `revised` entry naming it lets a red run freeze it',
+				'unfrozen  test/unused.ts  no unchanged test file found naming it (a barrel, an alias or a glob is not followed here): a `revised` entry naming it lets a red run freeze it',
 			)
 		})
 
@@ -80,6 +81,25 @@ describe(
 
 			expect(red.output.split('\n')).toContain(
 				`unfrozen  ${ORPHAN_HELPER}  the unchanged test files importing it ran no case: ${ORPHAN_DEPENDENT_TEST}`,
+			)
+		})
+
+		it('more unchanged test files import it than a red run runs for a helper → not frozen, none run, the line gives the count and the revised entry', async () => {
+			const root = createOrphanHelperPackage()
+			const dependents = Object.fromEntries(
+				Array.from({ length: HELPER_DEPENDENTS_LIMIT + 1 }, (_, index) => [
+					`src/extra-${index}.test.ts`,
+					readFileSync(join(root, ORPHAN_DEPENDENT_TEST), 'utf8'),
+				]),
+			)
+			writeFiles({ root, files: dependents })
+			git({ root, args: ['add', '-A', 'src'] })
+			git({ root, args: ['commit', '-q', '-m', 'test: more dependents'] })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.output.split('\n')).toContain(
+				`unfrozen  ${ORPHAN_HELPER}  ${HELPER_DEPENDENTS_LIMIT + 2} unchanged test files import it, more than a red run runs for a helper (${HELPER_DEPENDENTS_LIMIT}): a \`revised\` entry naming it lets a red run freeze it`,
 			)
 		})
 	},

@@ -98,6 +98,10 @@ import {
 	DUPLICATE_LABEL,
 	FROZEN_AFTER_RED,
 	HELPER_DEPENDENT_OUTSIDE_RUN,
+	HELPER_DEPENDENTS_LIMIT,
+	HELPER_DEPENDENTS_OVER_LIMIT,
+	HELPER_DEPENDENTS_STEP,
+	HELPER_IMPORTED_BY_NONE,
 	NO_RED_RECEIPT,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
@@ -689,7 +693,27 @@ async function judgeOrphanHelpers(params: {
 		dependenciesOf: params.dependenciesOf,
 	})
 	const files = [...new Set([...dependents.values()].flat())].sort()
-	const modules = files.length ? await announcedRun({ context, subcommand: 'red', files }) : []
+	// a refactor of a widely shared helper never runs most of the suite here: the revised entry stands instead
+	if (files.length > HELPER_DEPENDENTS_LIMIT)
+		return [...dependents].map(([file, of]) => ({
+			file,
+			frozen: false,
+			detail:
+				of.length === 0
+					? HELPER_IMPORTED_BY_NONE
+					: HELPER_DEPENDENTS_OVER_LIMIT.replace('{count}', String(of.length)).replace(
+							'{limit}',
+							String(HELPER_DEPENDENTS_LIMIT),
+						),
+		}))
+	const modules = files.length
+		? await runTestCases({
+				root: context.root,
+				files,
+				filter: 'all',
+				observer: runnerObserverOf({ context, name: HELPER_DEPENDENTS_STEP }),
+			})
+		: []
 	if ('failure' in modules)
 		return helpers.map((file) => ({ file, frozen: false, detail: modules.failure }))
 	return judgeHelpers({ root: context.root, dependents, modules })
