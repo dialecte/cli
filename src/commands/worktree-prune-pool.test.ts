@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { git, initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
 import { LOCK_TEXT, POOL_COMMAND_CASE_MS } from '../../test/worktree-pool.constants.ts'
-import { sha256Of, writePoolEntry } from '../../test/worktree-pool.ts'
+import { poolEntryOf, writePoolEntry } from '../../test/worktree-pool.ts'
 import { runWorktreePrune } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -28,11 +28,11 @@ describe('worktree prune: the pool and the trash', { timeout: POOL_COMMAND_CASE_
 			writePoolEntry({
 				worktreesFolder,
 				name: `_pool-${repository}-1`,
-				entry: {
+				entry: poolEntryOf({
 					repository,
-					lockHash: sha256Of(LOCK_TEXT),
+					lock: LOCK_TEXT,
 					parkedAt: '2026-11-06T09:00:00.000Z',
-				},
+				}),
 			})
 
 		const result = await runWorktreePrune({

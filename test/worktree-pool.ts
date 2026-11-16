@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { join, relative } from 'node:path'
 
+import { computeLockKey } from '../src/lib/worktree/lock-key.ts'
 import { temporaryFolder } from './scratch-repository.ts'
 import {
 	EXECUTED_REMOVE_MS,
@@ -85,6 +86,21 @@ export function createBareWorktreeFolder(params: {
 
 export function sha256Of(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
+}
+
+/** The `pool.json` a park writes for `repository`: the lock key of `lock`, `packages` (none by default). */
+export function poolEntryOf(params: {
+	repository: string
+	lock: string
+	parkedAt: string
+	packages?: Record<string, string>
+}): PoolEntryFile {
+	return {
+		repository: params.repository,
+		lockKey: computeLockKey({ text: params.lock }),
+		parkedAt: params.parkedAt,
+		packages: params.packages ?? {},
+	}
 }
 
 /** A pool entry as a park leaves it: `<worktrees>/<name>/node_modules` (fake, with `marker`) and `pool.json`. */

@@ -30,9 +30,9 @@ import { createLandedProbe } from '../store/lot-entry.ts'
 import { readLotKeeps } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
-import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
+import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
-import { parkNodeModules } from '../worktree/node-modules-pool.ts'
+import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked, trashWorktree } from '../worktree/trash.ts'
@@ -169,7 +169,7 @@ export function closeHandovers(params: {
 				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
-					checkedLockHash: decision.checkedLockHash,
+					checkedLockText: decision.checkedLockText,
 					main,
 					worktreesFolder,
 					now: params.now,
@@ -286,7 +286,7 @@ function decideTarget(params: {
 	| {
 			worktree: ListedWorktree
 			check: NodeModulesCheck | undefined
-			checkedLockHash: string | undefined
+			checkedLockText: string | undefined
 	  } {
 	// an earlier close recorded it on the entry: nothing to decide, nothing to move
 	if (params.target.entry?.closed !== undefined) return { alreadyClosed: true }
@@ -299,11 +299,11 @@ function decideTarget(params: {
 			}
 		const { worktree } = why
 		if (!existsSync(join(worktree.path, 'node_modules')))
-			return { worktree, check: undefined, checkedLockHash: undefined }
-		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
+			return { worktree, check: undefined, checkedLockText: undefined }
+		// the lock text read with the check: the pool entry is stamped with the key of what the check read
 		return {
 			worktree,
-			checkedLockHash: lockHashOf(worktree.path),
+			checkedLockText: readPackageLockText({ worktree: worktree.path }),
 			check: checkNodeModules({ worktree: worktree.path }),
 		}
 	} catch (error) {
@@ -482,8 +482,8 @@ export function closeWorktree(params: {
 	worktree: string
 	/** `node_modules` read against the lockfile where it was, before the move. */
 	check: NodeModulesCheck | undefined
-	/** sha256 of the lockfile `check` read, read with it. */
-	checkedLockHash: string | undefined
+	/** The `package-lock.json` text `check` read, read with it. */
+	checkedLockText: string | undefined
 	main: string
 	worktreesFolder: string
 	now: Date
@@ -519,7 +519,7 @@ export function closeWorktree(params: {
 			// the caches go to their own trash entries: a folder of them left in the worktree would make git refuse it
 			spawner: params.spawner,
 			check: params.check,
-			checkedLockHash: params.checkedLockHash,
+			checkedLockText: params.checkedLockText,
 		})
 		where = typeof parked === 'string' ? `trashed: ${parked}` : `pooled in ${parked.entry}`
 	}

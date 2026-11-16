@@ -99,11 +99,32 @@ export const POOL_FOLDER_PREFIX = '_pool-'
 /** A pool entry's name: its repository, then its number. */
 export const POOL_ENTRY_PATTERN = /^_pool-(.+)-(\d+)$/
 
-/** The file beside a pooled `node_modules`: `{ repository, lockHash, parkedAt }`. */
+/** The file beside a pooled `node_modules`: `{ repository, lockKey, parkedAt, owner?, packages }`. */
 export const POOL_FILE = 'pool.json'
 
-/** How many pool entries a repository keeps: parking one more sends the oldest to the trash. */
-export const POOL_ENTRIES_PER_REPOSITORY = 2
+/** The fewest pool entries a repository keeps, whatever its store shows (none: this many). */
+export const POOL_ENTRIES_FLOOR = 2
+
+/** The most pool entries a repository keeps, however many of its lots were open at once. */
+export const POOL_ENTRIES_CEILING = 8
+
+/** How many pool entries of one lock key a repository keeps: parking one more sends the oldest of that key to the trash. */
+export const POOL_ENTRIES_PER_KEY = 2
+
+/** A restore's miss: the repository has no pool entry. */
+export const POOL_MISS_EMPTY = 'pool empty'
+
+/** A restore's miss: entries of the repository, none with the checkout's lock key (followed by its first characters). */
+export const POOL_MISS_NO_ENTRY = 'no entry for install'
+
+/** How many characters of the lock key a `no entry for install` miss names. */
+export const POOL_MISS_KEY_LENGTH = 8
+
+/** A restore's miss: the matching entries were renamed away by another taker. */
+export const POOL_MISS_BUSY = 'entry busy'
+
+/** A restore's miss: the pool is on another file system than the checkout. */
+export const POOL_MISS_CROSS_DEVICE = 'cross-device'
 
 /** The caches a park removes from `node_modules`: rebuilt by the tools that wrote them, tied to the old checkout. */
 export const POOL_REMOVED_CACHES = ['.vite', '.cache'] as const

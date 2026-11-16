@@ -38,7 +38,6 @@ import {
 	poolEntriesOf,
 	readPoolFile,
 	readTree,
-	sha256Of,
 	trashedNamesOf,
 } from '../../test/worktree-pool.ts'
 import {
@@ -48,6 +47,7 @@ import {
 	registerHandover,
 } from '../lib/handover/handover-store.ts'
 import { startRun } from '../lib/mutation/run-store.ts'
+import { computeLockKey } from '../lib/worktree/lock-key.ts'
 import { runLotClose } from './lot-close.ts'
 
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -197,7 +197,8 @@ describe('lot close', { timeout: POOL_COMMAND_CASE_MS }, () => {
 			expect(poolEntriesOf(worktreesFolder)).toHaveLength(1)
 			expect(readPoolFile({ worktreesFolder, name: entry })).toMatchObject({
 				repository: 'repo',
-				lockHash: sha256Of(LOCK_TEXT),
+				lockKey: computeLockKey({ text: LOCK_TEXT }),
+				packages: {},
 			})
 			expect(readTree(join(worktreesFolder, entry, 'node_modules'))[MARKER_FILE]).toBe('lot x\n')
 			const trashed = trashedNamesOf(worktreesFolder).filter((trashedName) =>

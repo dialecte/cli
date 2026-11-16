@@ -1,4 +1,10 @@
 import type { HandoverFolder } from '../handover/handover.types.ts'
+import type {
+	POOL_MISS_BUSY,
+	POOL_MISS_CROSS_DEVICE,
+	POOL_MISS_EMPTY,
+	POOL_MISS_NO_ENTRY,
+} from './worktree.constants.ts'
 
 /** How `node_modules` was copied, and the package links re-pointed so they still reach their target. */
 export type NodeModulesCopy = {
@@ -191,10 +197,14 @@ export type BackgroundSpawner = (params: { command: string; args: string[]; cwd?
 export type PoolEntryFile = {
 	/** The repository's folder name (`cli`). */
 	repository: string
-	/** sha256 (hex) of the `package-lock.json` the `node_modules` was checked against. */
-	lockHash: string
+	/** The lock key (`computeLockKey`) of the `package-lock.json` text the `node_modules` was checked against. */
+	lockKey: string
 	/** ISO time. */
 	parkedAt: string
+	/** Who parked it (a lot's owner), when known. */
+	owner?: string
+	/** The version of each package that lock installs, by its lock key (`node_modules/x`): read by a near match. */
+	packages: Record<string, string>
 }
 
 /** A `node_modules` parked in the pool. */
@@ -211,7 +221,11 @@ export type PoolEntry = { name: string; file: PoolEntryFile }
 /** Where a new checkout's `node_modules` came from, and how long it took (seconds, one decimal). */
 export type NodeModulesSource =
 	| { method: 'pooled'; from: string; seconds: number }
-	| (NodeModulesCopy & { seconds: number })
+	| (NodeModulesCopy & {
+			seconds: number
+			/** Why the pool gave nothing (a `CacheMiss` text); none when there was no pool to ask. */
+			miss?: string
+	  })
 
 /** One worktree of `git worktree list --porcelain`: its path, its branch (none when detached), locked or not. */
 export type ListedWorktree = { path: string; branch?: string; locked?: boolean }
@@ -223,6 +237,35 @@ export type ProcessFolder = { pid: number; folder: string }
 export type PoolTake =
 	| { taken: string }
 	| { notTaken: 'no match' | 'cross-device' | 'taken by another' }
+
+/** Why the dependency cache gave nothing: `pool empty`, `no entry for install <key, 8 chars>`, `entry busy`, `cross-device`. */
+export type CacheMiss =
+	| typeof POOL_MISS_EMPTY
+	| `${typeof POOL_MISS_NO_ENTRY} ${string}`
+	| typeof POOL_MISS_BUSY
+	| typeof POOL_MISS_CROSS_DEVICE
+
+/** What a restore answered: the entry taken, a near entry and its drift (packages that differ), or why none. */
+export type CacheRestore = { taken: string } | { near: string; drift: number } | { miss: CacheMiss }
+
+/** What a save answered: the entry parked and the entries it sent to the trash, or why it refused. */
+export type CacheSave = { parked: string; trashed: string[] } | { refused: string }
+
+/**
+ * Where a checkout's `node_modules` comes from and goes back to, keyed on the lock key: the local store is the
+ * pool of `.worktrees/` (`createPoolCache`); a CI or cloud cache is another adapter.
+ */
+export type DependencyCache = {
+	/** Gives `checkout` a `node_modules` installing `lockText` (the checkout's lock), or says why not. */
+	restore: (params: { checkout: string; lockText: string; owner?: string }) => CacheRestore
+	/**
+	 * Keeps `checkout`'s `node_modules`, stamped with the key of `lockText` (the lock it was checked against;
+	 * none: the lock on disk, read with the check), or says why not.
+	 */
+	save: (params: { checkout: string; lockText?: string; owner?: string; now: Date }) => CacheSave
+	/** The entries the store holds. */
+	list: () => PoolEntry[]
+}
 
 /** A worktree or a folder sent to `.worktrees/_trash/`: where it is now. */
 export type TrashedFolder = { trashed: string }

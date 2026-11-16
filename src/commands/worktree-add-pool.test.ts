@@ -3,7 +3,8 @@ import { join } from 'node:path'
 
 import { initializeRepository, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { MARKER_FILE, POOL_COMMAND_CASE_MS } from '../../test/worktree-pool.constants.ts'
-import { readTree, sha256Of, writePoolEntry } from '../../test/worktree-pool.ts'
+import { poolEntryOf, readTree, writePoolEntry } from '../../test/worktree-pool.ts'
+import { computeLockKey } from '../lib/worktree/lock-key.ts'
 import { runWorktreeAdd } from './worktree.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -49,12 +50,12 @@ function createWorkspace(): { workspace: string; cli: string; core: string } {
 	return { workspace, cli, core }
 }
 
-/** A pool entry for `cli` as a park leaves it: the lockfile's hash, the `core` link absolute, a marker. */
+/** A pool entry for `cli` as a park leaves it: the lockfile's lock key, the `core` link absolute, a marker. */
 function poolEntryFor(params: { workspace: string; core: string; name: string; parkedAt: string }) {
 	return writePoolEntry({
 		worktreesFolder: join(params.workspace, '.worktrees'),
 		name: params.name,
-		entry: { repository: 'cli', lockHash: sha256Of(LOCK_TEXT), parkedAt: params.parkedAt },
+		entry: poolEntryOf({ repository: 'cli', lock: LOCK_TEXT, parkedAt: params.parkedAt }),
 		marker: 'pooled\n',
 		outsideTarget: params.core,
 	})
@@ -102,28 +103,30 @@ describe('worktree add: the node_modules pool', { timeout: POOL_COMMAND_CASE_MS 
 		expect(existsSync(join(worktree, 'node_modules/main-only.txt'))).toBe(true)
 	})
 
-	it('a pool entry of another lockfile only → copied as today, the entry left where it was', () => {
+	it('a pool entry of another lockfile only → copied, the entry left where it was, --json nodeModules.miss names no entry for install and the key', () => {
 		const { workspace, cli, core } = createWorkspace()
 		const entry = writePoolEntry({
 			worktreesFolder: join(workspace, '.worktrees'),
 			name: '_pool-cli-1',
-			entry: {
+			entry: poolEntryOf({
 				repository: 'cli',
-				lockHash: sha256Of('another lockfile\n'),
+				lock: 'another lockfile\n',
 				parkedAt: '2026-11-06T09:00:00.000Z',
-			},
+			}),
 			marker: 'pooled\n',
 			outsideTarget: core,
 		})
 
-		const result = add({ workspace, cli, branch: 'feat/thing' })
+		const result = add({ workspace, cli, branch: 'feat/thing', json: true })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.output).toMatch(/^│ node_modules +copy-on-write +\d+\.\d s +│$/m)
+		expect(JSON.parse(result.output).nodeModules).toMatchObject({
+			miss: `no entry for install ${computeLockKey({ text: LOCK_TEXT }).slice(0, 8)}`,
+		})
 		expect(existsSync(join(entry, 'node_modules'))).toBe(true)
 	})
 
-	it('--json → nodeModules { method, from, seconds } for a pooled one, { method, seconds } for a copy', () => {
+	it('--json → nodeModules { method, from, seconds } and no miss for a pooled one, { method, seconds, miss: pool empty } for the copy after it', () => {
 		const { workspace, cli, core } = createWorkspace()
 		poolEntryFor({ workspace, core, name: '_pool-cli-1', parkedAt: '2026-11-06T09:00:00.000Z' })
 
@@ -140,5 +143,7 @@ describe('worktree add: the node_modules pool', { timeout: POOL_COMMAND_CASE_MS 
 			seconds: expect.any(Number),
 		})
 		expect(copied.nodeModules).not.toHaveProperty('from')
+		expect(pooled.nodeModules).not.toHaveProperty('miss')
+		expect(copied.nodeModules).toMatchObject({ miss: 'pool empty' })
 	})
 })

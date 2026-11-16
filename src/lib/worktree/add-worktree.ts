@@ -24,7 +24,7 @@ import { checkNodeModules } from './check-node-modules.ts'
 import { copyNodeModules } from './copy-node-modules.ts'
 import { writeHygieneBaseline } from './hygiene.ts'
 import { readLockedPackages } from './locked-packages.ts'
-import { takePooledNodeModules } from './node-modules-pool.ts'
+import { createPoolCache, readPackageLockText } from './node-modules-pool.ts'
 import { linkSiblings } from './sibling-links.ts'
 import { claimWorktreeIndex, worktreeFolderName } from './worktree-index.ts'
 import {
@@ -34,6 +34,7 @@ import {
 	WORKTREE_INDEX_FOLDER,
 } from './worktree.constants.ts'
 
+import type { InterleavingSeam } from '../handover/handover.types.ts'
 import type { Refusal } from '../refusal.types.ts'
 import type {
 	AddedWorktree,
@@ -169,8 +170,9 @@ export function listWorktrees(repository: string): ListedWorktree[] {
 }
 
 /**
- * The `node_modules` of a new checkout: the newest pool entry whose lockfile matches (a rename), else a copy of
- * `from` when it exists (copy-on-write where it can); how long it took.
+ * The `node_modules` of a new checkout: the newest pool entry with the lock key of the checkout's lock (a rename),
+ * else a copy of `from` when it exists (copy-on-write where it can) carrying why the pool gave nothing; how long it
+ * took.
  */
 export function provideNodeModules(params: {
 	checkout: string
@@ -180,20 +182,32 @@ export function provideNodeModules(params: {
 	worktreesFolder: string | undefined
 	/** The `node_modules` copied when the pool has none. */
 	from: string
+	/** Renames a pool entry into the checkout (the tests stand in for it); default: `fs.renameSync`. */
+	rename?: (params: { from: string; to: string }) => void
+	/** Called between the pick of a pool entry and its rename. */
+	afterPick?: InterleavingSeam
 }): NodeModulesSource | undefined {
 	const startedAt = performance.now()
-	const take = params.worktreesFolder
-		? takePooledNodeModules({
-				worktree: params.checkout,
-				repository: params.repository,
-				worktreesFolder: params.worktreesFolder,
-			})
-		: undefined
-	if (take && 'taken' in take)
-		return { method: 'pooled', from: take.taken, seconds: secondsSince(startedAt) }
+	// keyed on the checkout's own lock, never the repository's: the checkout installs what it locks
+	const lockText = readPackageLockText({ worktree: params.checkout })
+	const restored =
+		params.worktreesFolder !== undefined && lockText !== undefined
+			? createPoolCache({
+					repository: params.repository,
+					worktreesFolder: params.worktreesFolder,
+					rename: params.rename,
+					afterPick: params.afterPick,
+				}).restore({ checkout: params.checkout, lockText })
+			: undefined
+	if (restored && 'taken' in restored)
+		return { method: 'pooled', from: restored.taken, seconds: secondsSince(startedAt) }
 	if (!existsSync(params.from)) return undefined
 	const copy = copyNodeModules({ from: params.from, to: join(params.checkout, 'node_modules') })
-	return { ...copy, seconds: secondsSince(startedAt) }
+	return {
+		...copy,
+		seconds: secondsSince(startedAt),
+		...(restored && 'miss' in restored && { miss: restored.miss }),
+	}
 }
 
 /**

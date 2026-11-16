@@ -49,9 +49,9 @@ import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { provideNodeModules } from '../worktree/add-worktree.ts'
-import { checkNodeModules, lockHashOf } from '../worktree/check-node-modules.ts'
+import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
-import { parkNodeModules } from '../worktree/node-modules-pool.ts'
+import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { spawnDetached, trashFolder } from '../worktree/trash.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
@@ -358,8 +358,8 @@ function trashRehearsalFolder(params: {
 	// a park that fails never replaces the rehearsal's result: one line, and the folder goes all the same
 	try {
 		// read and re-pointed while the sibling links beside the clone still resolve its `file:` dependencies
-		// the lockfile's hash read with the check: the pool entry is stamped with what the check read
-		const checkedLockHash = lockHashOf(params.clone)
+		// the lock text read with the check: the pool entry is stamped with the key of what the check read
+		const checkedLockText = readPackageLockText({ worktree: params.clone })
 		const check = existsSync(nodeModules) ? checkNodeModules({ worktree: params.clone }) : undefined
 		if (check)
 			(params.relink ?? relinkEscapingLinks)({ from: nodeModules, to: nodeModules, real: true })
@@ -374,7 +374,7 @@ function trashRehearsalFolder(params: {
 				// the caches go with the rehearsal folder
 				discardInto: params.folder,
 				check,
-				checkedLockHash,
+				checkedLockText,
 			})
 			lines.push(
 				textOf([

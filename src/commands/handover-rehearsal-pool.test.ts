@@ -24,8 +24,8 @@ import {
 	createFakeNodeModules,
 	createRecordingSpawner,
 	poolEntriesOf,
+	poolEntryOf,
 	readTree,
-	sha256Of,
 	trashedNamesOf,
 	writePoolEntry,
 } from '../../test/worktree-pool.ts'
@@ -116,11 +116,11 @@ describe(
 			writePoolEntry({
 				worktreesFolder,
 				name: '_pool-repo-1',
-				entry: {
+				entry: poolEntryOf({
 					repository: 'repo',
-					lockHash: sha256Of(LOCK_TEXT),
+					lock: LOCK_TEXT,
 					parkedAt: '2026-11-06T09:00:00.000Z',
-				},
+				}),
 				marker: 'pooled\n',
 				outsideTarget: join(workspace, 'core'),
 			})
@@ -153,11 +153,11 @@ describe(
 			writePoolEntry({
 				worktreesFolder,
 				name: '_pool-repo-1',
-				entry: {
+				entry: poolEntryOf({
 					repository: 'repo',
-					lockHash: sha256Of(LOCK_TEXT),
+					lock: LOCK_TEXT,
 					parkedAt: '2026-11-06T09:00:00.000Z',
-				},
+				}),
 				marker: 'pooled\n',
 				outsideTarget: join(workspace, 'core'),
 			})
