@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 /**
  * The identity git passes to a hook: a scratch repository sets its own, the hook's must not
  * override it.
@@ -29,3 +31,9 @@ export const CONFIG_ENVIRONMENT_VARIABLES = [
 	'GIT_CONFIG_PARAMETERS',
 	'GIT_CONFIG_COUNT',
 ] as const
+
+/**
+ * The suite's global git config (GIT_CONFIG_GLOBAL): no background maintenance, nothing else. A file, not the
+ * environment's GIT_CONFIG_COUNT: git drops that for the receive-pack a local push runs in the other repository.
+ */
+export const SUITE_GIT_CONFIG_FILE = join(import.meta.dirname, 'suite.gitconfig')

@@ -2,13 +2,31 @@
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
+import { threadId } from 'node:worker_threads'
 
-import { afterAll, onTestFinished, vi } from 'vitest'
+import { SUITE_GIT_CONFIG_FILE } from './git-environment.constants.ts'
+import { ORIGINS_VARIABLE } from './suite-guard/temp-folder-guard.constants.ts'
+import { recordOrigin } from './suite-guard/temp-leftovers.ts'
 
-/** A new empty folder under the system's temporary folder, removed when the current test ends. */
+import { afterAll, expect, onTestFinished, vi } from 'vitest'
+
+/**
+ * A new empty folder under the system's temporary folder, removed when the current test ends. Under the suite guard
+ * the folder's maker is recorded (its origins file outlives the removal): a process that writes the folder again
+ * after its test leaves a leftover the guard names with that test.
+ */
 export function temporaryFolder(prefix: string): string {
 	const folder = mkdtempSync(join(tmpdir(), prefix))
+	const origins = process.env[ORIGINS_VARIABLE]
+	if (origins && dirname(origins) === dirname(folder)) {
+		const state = expect.getState()
+		recordOrigin({
+			file: join(origins, `${process.pid}-${threadId}`),
+			name: basename(folder),
+			origin: `${relative(process.cwd(), state.testPath ?? '<no test file>')} > ${state.currentTestName ?? '<no test>'}`,
+		})
+	}
 	onTestFinished(function removeFolder() {
 		rmSync(folder, { recursive: true, force: true })
 	})
@@ -17,11 +35,13 @@ export function temporaryFolder(prefix: string): string {
 
 /**
  * Git reads only a config of the test's own, holding `userName` when given, for the rest of the test: never the
- * machine's global nor system config. The caller restores the environment (`vi.unstubAllEnvs`).
+ * machine's global nor system config. It includes the suite's (no background maintenance). The caller restores the
+ * environment (`vi.unstubAllEnvs`).
  */
 export function isolateGitConfig(params: { userName?: string } = {}): void {
 	const file = join(temporaryFolder('dialecte-git-config-'), 'gitconfig')
-	writeFileSync(file, params.userName ? `[user]\n\tname = ${params.userName}\n` : '')
+	const user = params.userName ? `[user]\n\tname = ${params.userName}\n` : ''
+	writeFileSync(file, `[include]\n\tpath = ${SUITE_GIT_CONFIG_FILE}\n${user}`)
 	vi.stubEnv('GIT_CONFIG_GLOBAL', file)
 	vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
 }
