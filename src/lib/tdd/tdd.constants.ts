@@ -377,7 +377,7 @@ export const UNUSED_ENTRY_CLOSEST = '; the closest: {label}'
 /** How many closest labels an unused entry's line names. */
 export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
 
-/** Ending an unused entry's line: the verb that drops it, `{list}` its list, `{entry}` the entry as one shell word. */
+/** Ending an unused entry's line: the verb that drops it, `{list}` its list, `{entry}` the entry (a move: its from and to) as shell words. */
 export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
@@ -525,6 +525,16 @@ export const HELPER_FROZEN_THROUGH_DEPENDENTS =
 /** Why such a helper stays unfrozen: an unchanged test file importing it fails with it. */
 export const HELPER_DEPENDENT_FAILS = 'an unchanged test file importing it fails with it: {files}'
 
+/** Why such a helper stays unfrozen: every unchanged test file importing it ran no case (all skipped or pending). */
+export const HELPER_DEPENDENTS_RAN_NO_CASE =
+	'the unchanged test files importing it ran no case: {files}'
+
+/** A module file's extension, for the name a test file writes when it imports it. */
+export const MODULE_EXTENSION_PATTERN = /\.[cm]?[jt]sx?$/
+
+/** The file a folder's import resolves to, without extension: a test file names the folder. */
+export const INDEX_MODULE_NAME = 'index'
+
 /** Why such a helper stays unfrozen: no test file imports it. */
 export const HELPER_IMPORTED_BY_NONE =
 	'no test file imports it: a `revised` entry naming it lets a red run freeze it'
@@ -581,7 +591,10 @@ export const MOVED_ENTRY_KEYS: readonly string[] = ['from', 'to']
 
 /** What `"moved"` of the lot file must hold. */
 export const MOVED_LIST_SHAPE =
-	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>" }, both cases or both files'
+	'each "moved" entry must be { "from": "<case or file>", "to": "<case, file or glob>" }: two cases, or a file (never a glob) and a file or glob'
+
+/** A case label's project suffix (` [project]`), the project captured. */
+export const PROJECT_SUFFIX_PATTERN = / \[([^\]]+)\]$/
 
 /** A moved case's red line: the case its red was carried from, `{from}`. */
 export const MOVED_FROM = 'moved from {from}'
@@ -616,10 +629,10 @@ export const DELETED_PRODUCTION_FILE = 'deleted'
 export const ROLLBACK_LINE =
 	"rollback: production moved back to an earlier content: {files} - a red or a green at code put back proves nothing about the order the code and its test came in; run a fix's test on the previous round's snapshot (dialecte lot delta --worktree)"
 
-/** The vitest option naming the files run before every test file: a dependency of each test file for tdd. */
+/** The vitest option naming the files run before every test file: suite infrastructure, production for tdd. */
 export const SETUP_FILES_PROPERTY = 'setupFiles'
 
-/** The vitest config property naming the files run once around the whole run (`globalSetup`). */
+/** The vitest config property naming the files run once around the whole run (`globalSetup`): suite infrastructure. */
 export const GLOBAL_SETUP_PROPERTY = 'globalSetup'
 
 /** Config files a test project is declared in: where a test file's import aliases come from. */

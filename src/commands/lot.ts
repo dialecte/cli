@@ -33,7 +33,7 @@ import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
 import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import { requireLot, resolveLot } from '../lib/store/resolve-lot.ts'
 import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
-import { LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
+import { GLOB_MAGIC_PATTERN, LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
 import { lotAnswer } from './lot-answer.ts'
 import { runLotClose } from './lot-close.ts'
@@ -58,6 +58,7 @@ import { printsOnStandardError } from './lot-streams.ts'
 import { runLotVerify } from './lot-verify.ts'
 import { waitLot } from './lot-wait.ts'
 import {
+	LOT_MOVED_GLOB_FROM,
 	LOT_MOVED_MIXED,
 	LOT_REMOVE_CLOSEST_LIMIT,
 	LOT_REMOVE_KEYS,
@@ -226,13 +227,14 @@ function runDeclarationVerb(params: {
 	const gone = verb === 'gone'
 	const moved = verb === 'moved'
 	if ((list || gone || moved) && words[0] === LOT_REMOVE_OPTION) {
-		if (words.length !== 2 || words[1].trim() === '')
+		const removable: RemovableList = list ?? (gone ? 'gone' : 'moved')
+		const named = words.slice(1)
+		if (
+			named.length !== LOT_REMOVE_KEYS[removable].length ||
+			named.some((word) => word.trim() === '')
+		)
 			return { exitCode: 2, output: renderLotUsage() }
-		return removeEntry({
-			cwd: params.cwd,
-			list: list ?? (gone ? 'gone' : 'moved'),
-			entry: words[1],
-		})
+		return removeEntry({ cwd: params.cwd, list: removable, words: named })
 	}
 	if (!LOT_VERBS.includes(verb ?? '') || words.length !== (list || gone || moved ? 2 : 1))
 		return { exitCode: 2, output: renderLotUsage() }
@@ -247,6 +249,11 @@ function runDeclarationVerb(params: {
 					JSON.stringify(words[1]),
 				),
 			],
+		})
+	if (moved && !namesOneCase(words[0]) && GLOB_MAGIC_PATTERN.test(words[0]))
+		return resultOf({
+			exitCode: 2,
+			lines: [LOT_MOVED_GLOB_FROM.replace('{from}', () => JSON.stringify(words[0]))],
 		})
 	if (list === 'accept' && !namesOneCase(words[0]))
 		return resultOf({
@@ -296,10 +303,8 @@ function writeDeclared(params: { cwd: string; verb: string; words: string[] }): 
 	} else if (verb === 'moved') {
 		const [from, to] = words
 		const entries = Array.isArray(declaration.moved) ? (declaration.moved as LotMovedEntry[]) : []
-		const known = entries.some((entry) => entry.to === to)
-		declaration.moved = known
-			? entries.map((entry) => (entry.to === to ? { from, to } : entry))
-			: [...entries, { from, to }]
+		const known = entries.some((entry) => entry.from === from && entry.to === to)
+		declaration.moved = known ? entries : [...entries, { from, to }]
 	} else if (verb === 'mutation') declaration.mutation = words[0]
 	else declaration.tdd = `exempt: ${words[0]}`
 	writeDeclaration({ path, declaration })
@@ -342,12 +347,13 @@ function writeDeclaration(params: { path: string; declaration: Record<string, un
 }
 
 /**
- * `lot <list> --remove <entry>`: the entry of `list` written exactly as `entry` dropped (an `accept` or `revised`
- * entry by its case, a `gone` one by its file), the list left out once empty; refused naming the list's closest
- * entries when it holds no such entry, nothing written.
+ * `lot <list> --remove <entry>`: every entry of `list` written exactly as `words` (an `accept` or `revised` entry by
+ * its case, a `gone` one by its file, a `moved` one by its from and to) dropped, the list left out once empty; refused
+ * naming the list's closest entries when it holds no such entry, nothing written.
  */
-function removeEntry(params: { cwd: string; list: RemovableList; entry: string }): CommandResult {
-	const { list, entry } = params
+function removeEntry(params: { cwd: string; list: RemovableList; words: string[] }): CommandResult {
+	const { list } = params
+	const entry = params.words.join(' ')
 	const read = readDeclarationToWrite({ cwd: params.cwd })
 	if ('exitCode' in read) return read
 	const { path, declaration } = read
@@ -381,7 +387,8 @@ function removeEntry(params: { cwd: string; list: RemovableList; entry: string }
 		typeof removed.reason === 'string'
 			? LOT_REMOVE_LINES.reason.replace('{reason}', () => String(removed.reason))
 			: ''
-	const kept = entries.filter((_, position) => position !== index)
+	// a copy written twice by hand goes too: none of it keeps exempting
+	const kept = entries.filter((_, position) => names[position] !== entry)
 	if (kept.length === 0) delete declaration[list]
 	else declaration[list] = kept
 	writeDeclaration({ path, declaration })
@@ -397,12 +404,15 @@ function removeEntry(params: { cwd: string; list: RemovableList; entry: string }
 	})
 }
 
-/** What an entry of `list` names (`LOT_REMOVE_KEYS`): its case, its file, or where a move reached; undefined for a malformed one. */
+/**
+ * What an entry of `list` names (`LOT_REMOVE_KEYS`, joined by a space): its case, its file, or a move's from and to;
+ * undefined for a malformed one.
+ */
 function nameOfEntry(params: { item: unknown; list: RemovableList }): string | undefined {
 	const { item } = params
 	if (typeof item !== 'object' || item === null) return undefined
-	const name = (item as Record<string, unknown>)[LOT_REMOVE_KEYS[params.list]]
-	return typeof name === 'string' ? name : undefined
+	const values = LOT_REMOVE_KEYS[params.list].map((key) => (item as Record<string, unknown>)[key])
+	return values.every((value) => typeof value === 'string') ? values.join(' ') : undefined
 }
 
 /** Why `lot mutation <mode>` refuses its words: no mode, a mode it does not know, or a reason after it. */

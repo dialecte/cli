@@ -40,12 +40,28 @@ describe('dialecte lot moved', () => {
 		expect(declarationOf(root)).toEqual({ tdd: 'exempt: a rename', moved: [{ from, to }] })
 	})
 
-	it('the same <to> again → its from replaced, no duplicate', () => {
-		const root = declaredPackage({ moved: [{ from: 'src/x.test.ts::a > one', to: NEW_CASE }] })
+	it('a second file moved into the same file → both entries kept; the same pair again → no duplicate', () => {
+		const root = declaredPackage({ moved: [{ from: 'src/a.test.ts', to: 'src/c.test.ts' }] })
 
-		runLot({ cwd: root, argv: ['moved', OLD_CASE, NEW_CASE] })
+		runLot({ cwd: root, argv: ['moved', 'src/b.test.ts', 'src/c.test.ts'] })
+		runLot({ cwd: root, argv: ['moved', 'src/a.test.ts', 'src/c.test.ts'] })
 
-		expect(declarationOf(root)).toEqual({ moved: [{ from: OLD_CASE, to: NEW_CASE }] })
+		expect(declarationOf(root)).toEqual({
+			moved: [
+				{ from: 'src/a.test.ts', to: 'src/c.test.ts' },
+				{ from: 'src/b.test.ts', to: 'src/c.test.ts' },
+			],
+		})
+	})
+
+	it('a glob as from → refused: the cases moved from one file, nothing written', () => {
+		const root = declaredPackage({})
+
+		expect(runLot({ cwd: root, argv: ['moved', 'src/a-*.test.ts', 'src/b.test.ts'] })).toEqual({
+			exitCode: 2,
+			output: 'lot: moved takes the file the cases moved from, not a glob: "src/a-*.test.ts"',
+		})
+		expect(declarationOf(root)).toEqual({})
 	})
 
 	it('a case moved to a file → refused: both name cases, or both name files, nothing written', () => {
@@ -53,17 +69,24 @@ describe('dialecte lot moved', () => {
 
 		expect(runLot({ cwd: root, argv: ['moved', OLD_CASE, 'src/b.test.ts'] })).toEqual({
 			exitCode: 2,
-			output: `lot: moved takes two cases (<file>::<name>) or two files or globs, not "${OLD_CASE}" and "src/b.test.ts"`,
+			output: `lot: moved takes two cases (<file>::<name>) or a file and a file or glob, not "${OLD_CASE}" and "src/b.test.ts"`,
 		})
 		expect(declarationOf(root)).toEqual({})
 	})
 
-	it('moved --remove <to> → the entry dropped', () => {
-		const root = declaredPackage({ moved: [{ from: OLD_CASE, to: NEW_CASE }] })
+	it('moved --remove <from> <to> → that entry dropped, another into the same file kept', () => {
+		const root = declaredPackage({
+			moved: [
+				{ from: 'src/a.test.ts', to: 'src/c.test.ts' },
+				{ from: 'src/b.test.ts', to: 'src/c.test.ts' },
+			],
+		})
 
-		expect(runLot({ cwd: root, argv: ['moved', '--remove', NEW_CASE] }).exitCode).toBe(0)
+		expect(
+			runLot({ cwd: root, argv: ['moved', '--remove', 'src/a.test.ts', 'src/c.test.ts'] }).exitCode,
+		).toBe(0)
 
-		expect(declarationOf(root)).toEqual({})
+		expect(declarationOf(root)).toEqual({ moved: [{ from: 'src/b.test.ts', to: 'src/c.test.ts' }] })
 	})
 
 	it('moved with one word → usage, exit 2', () => {

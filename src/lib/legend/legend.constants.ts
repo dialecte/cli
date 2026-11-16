@@ -236,7 +236,7 @@ export const TDD_LEGEND_TERMS: LegendGroup = [
 	{
 		term: 'moved',
 		meaning:
-			'a case of the lot moved by a split or a rename after its red: its red carried from its earlier label by a moved entry of the lot file, its test call the one that red froze',
+			'a case of the lot moved by a split or a rename of its file or describe after its red (its own title is part of its test call): its red carried from its earlier label by a moved entry of the lot file, its test call the one that red froze',
 		look: 'look: when the move was more than a split or a rename',
 	},
 	{

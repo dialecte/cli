@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 /**
  * A changed test helper no changed test file depends on is frozen through the run of the unchanged test files that
  * import it: they pass with it, so the red run freezes it and green takes it; one failing with it, or none importing
@@ -11,6 +11,7 @@ import {
 	ORPHAN_HELPER,
 } from '../../test/rule-gaps-orphan-helper.constants.ts'
 import { createOrphanHelperPackage } from '../../test/rule-gaps-orphan-helper.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runTdd } from './tdd.ts'
 
@@ -61,6 +62,24 @@ describe(
 
 			expect(red.output.split('\n')).toContain(
 				'unfrozen  test/unused.ts  no test file imports it: a `revised` entry naming it lets a red run freeze it',
+			)
+		})
+
+		it('its only unchanged dependent runs no case (all skipped) → not frozen, the line says it ran no case', async () => {
+			const root = createOrphanHelperPackage()
+			writeFileSync(
+				join(root, ORPHAN_DEPENDENT_TEST),
+				readFileSync(join(root, ORPHAN_DEPENDENT_TEST), 'utf8').replace("\tit('", "\tit.skip('"),
+			)
+			git({
+				root,
+				args: ['commit', '-q', '-m', 'test: skip the dependent', '--', ORPHAN_DEPENDENT_TEST],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.output.split('\n')).toContain(
+				`unfrozen  ${ORPHAN_HELPER}  the unchanged test files importing it ran no case: ${ORPHAN_DEPENDENT_TEST}`,
 			)
 		})
 	},

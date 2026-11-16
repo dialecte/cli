@@ -16,7 +16,7 @@ import {
 	readAcceptances,
 	readGoneEntries,
 	readMovedEntries,
-	findMovedFrom,
+	findMovedFroms,
 	readRevisions,
 	readTddExemption,
 } from './lot-declaration.ts'
@@ -230,7 +230,9 @@ async function judgeTddReceipts(params: {
 			.filter(
 				(entry) =>
 					!state.cases.some(
-						(line) => findMovedFrom({ entries: [entry], testCase: line }) !== undefined,
+						(line) =>
+							line.flags.includes('moved') &&
+							findMovedFroms({ entries: [entry], testCase: line }).length > 0,
 					),
 			)
 			.map((entry) =>
@@ -238,6 +240,7 @@ async function judgeTddReceipts(params: {
 					head: 'unused moved entry',
 					list: 'moved',
 					entry: entry.to,
+					removeWords: [entry.from, entry.to],
 					why: `no case of the change carries a red from ${entry.from}`,
 					candidates: namesOneCase(entry.to) ? labels : files,
 				}),
@@ -396,6 +399,8 @@ function unusedEntryLine(params: {
 	/** The entry's reason; a `moved` entry has none. */
 	reason?: string
 	candidates: readonly string[]
+	/** What `--remove` takes to drop the entry: the entry itself, or a move's from and to. */
+	removeWords?: readonly string[]
 }): string {
 	const [closest] = closestNames({
 		name: params.entry,
@@ -404,7 +409,7 @@ function unusedEntryLine(params: {
 	})
 	const named = closest === undefined ? '' : UNUSED_ENTRY_CLOSEST.replace('{label}', () => closest)
 	const remove = UNUSED_ENTRY_REMOVE.replace('{list}', params.list).replace('{entry}', () =>
-		shellWord(params.entry),
+		(params.removeWords ?? [params.entry]).map((word) => shellWord(word)).join(' '),
 	)
 	const reason = params.reason === undefined ? '' : ` (${params.reason})`
 	return `${params.head}  ${params.entry}  ${params.why}${named}${reason}${remove}`

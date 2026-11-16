@@ -4,14 +4,20 @@
  * proven by the tests that read it); one failing with it, or none importing it, leaves it unfrozen with the reason (a
  * `revised` entry naming it still lets a red run freeze it).
  */
+import { readFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+
 import { listRepositoryFiles } from '../git.ts'
 import { frozenHashOf } from './case-status.ts'
 import { modulesOf } from './select-cases.ts'
 import { isTestFile } from './tdd-files.ts'
 import {
 	HELPER_DEPENDENT_FAILS,
+	HELPER_DEPENDENTS_RAN_NO_CASE,
 	HELPER_FROZEN_THROUGH_DEPENDENTS,
 	HELPER_IMPORTED_BY_NONE,
+	INDEX_MODULE_NAME,
+	MODULE_EXTENSION_PATTERN,
 } from './tdd.constants.ts'
 
 import type { HelperVerdict, ReportedModule, TddLedger } from './tdd.types.ts'
@@ -41,7 +47,11 @@ export function listOrphanHelpers(params: {
 		.map(([file]) => file)
 }
 
-/** The unchanged test files of the repository importing each helper (by `dependenciesOf`), in path order. */
+/**
+ * The unchanged test files of the repository importing each helper (by `dependenciesOf`), in path order. A test file
+ * whose text never writes the helper's name (its file name without extension, a folder's for an `index`) cannot
+ * import it nor read it by name: never parsed.
+ */
 export function listUnchangedDependents(params: {
 	root: string
 	helpers: readonly string[]
@@ -52,12 +62,30 @@ export function listUnchangedDependents(params: {
 	const testFiles = listRepositoryFiles({ root: params.root, folder: '.' })
 		.filter((file) => !params.changed.has(file) && isTestFile({ root: params.root, file }))
 		.sort()
+	const texts = new Map<string, string>()
+	/** The test file's text, read once. */
+	function textOf(file: string): string {
+		const text = texts.get(file) ?? readFileSync(join(params.root, file), 'utf8')
+		texts.set(file, text)
+		return text
+	}
 	return new Map(
-		params.helpers.map((helper) => [
-			helper,
-			testFiles.filter((file) => params.dependenciesOf(file).includes(helper)),
-		]),
+		params.helpers.map((helper) => {
+			const name = writtenNameOf(helper)
+			return [
+				helper,
+				testFiles.filter(
+					(file) => textOf(file).includes(name) && params.dependenciesOf(file).includes(helper),
+				),
+			]
+		}),
 	)
+}
+
+/** How a test file names the helper when it imports or reads it: its file name without extension, its folder's for an index. */
+function writtenNameOf(helper: string): string {
+	const name = basename(helper).replace(MODULE_EXTENSION_PATTERN, '')
+	return name === INDEX_MODULE_NAME ? basename(dirname(helper)) : name
 }
 
 /**
@@ -69,32 +97,57 @@ export function judgeHelpers(params: {
 	dependents: ReadonlyMap<string, readonly string[]>
 	modules: readonly ReportedModule[]
 }): HelperVerdict[] {
-	/** A dependent failed with the helpers: not run, an error, no case, or a failing case (every project's module). */
-	function failed(file: string): boolean {
-		const modules = modulesOf({ root: params.root, modules: params.modules, file })
-		return (
-			modules.length === 0 ||
-			modules.some(
-				(module) =>
-					module.errors.length > 0 ||
-					module.cases.length === 0 ||
-					module.cases.some((testCase) => testCase.state === 'failed'),
-			)
-		)
-	}
 	return [...params.dependents].map(function verdictOf([file, dependents]): HelperVerdict {
 		if (dependents.length === 0) return { file, frozen: false, detail: HELPER_IMPORTED_BY_NONE }
-		const failing = dependents.filter(failed)
+		const outcomes = dependents.map((dependent) => ({
+			dependent,
+			outcome: outcomeOf({ root: params.root, modules: params.modules, file: dependent }),
+		}))
+		const failing = outcomes.filter(({ outcome }) => outcome === 'failed')
 		if (failing.length > 0)
 			return {
 				file,
 				frozen: false,
-				detail: HELPER_DEPENDENT_FAILS.replace('{files}', () => failing.join(', ')),
+				detail: HELPER_DEPENDENT_FAILS.replace('{files}', () =>
+					failing.map(({ dependent }) => dependent).join(', '),
+				),
+			}
+		const passing = outcomes.filter(({ outcome }) => outcome === 'passed')
+		if (passing.length === 0)
+			return {
+				file,
+				frozen: false,
+				detail: HELPER_DEPENDENTS_RAN_NO_CASE.replace('{files}', () => dependents.join(', ')),
 			}
 		return {
 			file,
 			frozen: true,
-			detail: HELPER_FROZEN_THROUGH_DEPENDENTS.replace('{files}', () => dependents.join(', ')),
+			detail: HELPER_FROZEN_THROUGH_DEPENDENTS.replace('{files}', () =>
+				passing.map(({ dependent }) => dependent).join(', '),
+			),
 		}
 	})
+}
+
+/**
+ * How an unchanged dependent ran with the helpers (every project's module): failed (not run, an error, a failing
+ * case), passed (a case passed), or none (every case skipped or pending).
+ */
+function outcomeOf(params: {
+	root: string
+	modules: readonly ReportedModule[]
+	file: string
+}): 'failed' | 'passed' | 'none' {
+	const modules = modulesOf(params)
+	if (
+		modules.length === 0 ||
+		modules.some(
+			(module) =>
+				module.errors.length > 0 || module.cases.some((testCase) => testCase.state === 'failed'),
+		)
+	)
+		return 'failed'
+	return modules.some((module) => module.cases.some((testCase) => testCase.state === 'passed'))
+		? 'passed'
+		: 'none'
 }

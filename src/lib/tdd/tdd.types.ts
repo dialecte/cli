@@ -334,6 +334,9 @@ export type LotCaseEntry = { case: string; reason: string }
  */
 export type LotMovedEntry = { from: string; to: string }
 
+/** A case a `moved` entry carries receipts from, with that entry. */
+export type MovedFrom = { entry: LotMovedEntry; from: TestCaseId }
+
 /** A test helper (test code that is not a test file) a red run froze at its current hash because a `revised` entry names it. */
 export type RevisedHelper = { file: string; entry: LotCaseEntry }
 

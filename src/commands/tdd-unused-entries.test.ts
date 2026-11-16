@@ -84,7 +84,7 @@ describe('the unused receipts of the lot file', { timeout: HELPER_SCENARIO_TIMEO
 		const lines = await unusedLinesOf(root)
 
 		expect(lines).toEqual([
-			'unused moved entry  src/ad.test.ts  no case of the change carries a red from src/old.test.ts; the closest: src/add.test.ts; drop it: dialecte lot moved --remove src/ad.test.ts',
+			'unused moved entry  src/ad.test.ts  no case of the change carries a red from src/old.test.ts; the closest: src/add.test.ts; drop it: dialecte lot moved --remove src/old.test.ts src/ad.test.ts',
 		])
 	})
 

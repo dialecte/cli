@@ -71,6 +71,14 @@ describe('dialecte lot <list> --remove', () => {
 		expect(declarationOf(root)).toEqual({ tdd: 'exempt: a rename' })
 	})
 
+	it('an entry written twice by hand → --remove drops both copies', () => {
+		const root = declaredPackage({ accept: [DECLARATION.accept[0], DECLARATION.accept[0]] })
+
+		runLot({ cwd: root, argv: ['accept', '--remove', CASE_A] })
+
+		expect(declarationOf(root)).toEqual({})
+	})
+
 	it('--remove of an entry its list does not hold → refused naming the closest entries, nothing written', () => {
 		const root = declaredPackage(DECLARATION)
 

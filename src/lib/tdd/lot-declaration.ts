@@ -25,7 +25,9 @@ import {
 	FOLDED_QUOTES,
 	GONE_ENTRY_KEYS,
 	GONE_LIST_SHAPE,
+	GLOB_MAGIC_PATTERN,
 	LOT_KEYS,
+	PROJECT_SUFFIX_PATTERN,
 	MOVED_ENTRY_KEYS,
 	MOVED_LIST_SHAPE,
 	TDD_EXEMPT_PATTERN,
@@ -37,6 +39,7 @@ import type {
 	LotDeclaration,
 	LotGoneEntry,
 	LotMovedEntry,
+	MovedFrom,
 	RevisedHelper,
 	TddExemption,
 	TddLedger,
@@ -106,32 +109,31 @@ export function readMovedEntries(root: string): LotMovedEntry[] | { failure: str
 }
 
 /**
- * The case a `moved` entry carries the receipts of `testCase` from, with the entry: a case entry whose `to` is the
- * case's label (its ` [project]` optional), its `from` read in the case's project; or a file entry whose `to` (a file
- * or a glob) matches the case's file, its `from` the case's name in that file. Undefined when no entry names it.
+ * Every case the `moved` entries carry the receipts of `testCase` from, with its entry, in the entries' order: a case
+ * entry whose `to` is the case's label (its ` [project]` optional), its `from` read in the case's project (a `from`
+ * written with another project names another case); a file entry whose `to` (a file or a glob) matches the case's
+ * file, its `from` the case's name in that file.
  */
-export function findMovedFrom(params: {
+export function findMovedFroms(params: {
 	entries: readonly LotMovedEntry[]
 	testCase: TestCaseId
-}): { entry: LotMovedEntry; from: TestCaseId } | undefined {
+}): MovedFrom[] {
 	const { testCase } = params
 	const label = caseLabel(testCase)
 	const projectSuffix = testCase.project ? ` [${testCase.project}]` : ''
-	for (const entry of params.entries) {
-		if (namesOneCase(entry.to)) {
-			if (entry.to !== label && `${entry.to}${projectSuffix}` !== label) continue
-			const [file, ...rest] = entry.from.split(CASE_ARGUMENT_SEPARATOR)
-			const written = rest.join(CASE_ARGUMENT_SEPARATOR)
-			const name =
-				projectSuffix && written.endsWith(projectSuffix)
-					? written.slice(0, -projectSuffix.length)
-					: written
-			return { entry, from: { file, name, project: testCase.project } }
-		}
-		if (matchesGlob({ path: testCase.file, glob: entry.to }))
-			return { entry, from: { file: entry.from, name: testCase.name, project: testCase.project } }
-	}
-	return undefined
+	return params.entries.flatMap(function movedFromOf(entry): MovedFrom[] {
+		if (!namesOneCase(entry.to))
+			return matchesGlob({ path: testCase.file, glob: entry.to })
+				? [{ entry, from: { file: entry.from, name: testCase.name, project: testCase.project } }]
+				: []
+		if (entry.to !== label && `${entry.to}${projectSuffix}` !== label) return []
+		const [file, ...rest] = entry.from.split(CASE_ARGUMENT_SEPARATOR)
+		const written = rest.join(CASE_ARGUMENT_SEPARATOR)
+		const project = PROJECT_SUFFIX_PATTERN.exec(written)?.[1]
+		if (project !== undefined && project !== testCase.project) return []
+		const name = project === undefined ? written : written.slice(0, -` [${project}]`.length)
+		return [{ entry, from: { file, name, project: testCase.project } }]
+	})
 }
 
 /**
@@ -290,7 +292,8 @@ function isMovedEntry(entry: unknown): entry is LotMovedEntry {
 		typeof to === 'string' &&
 		from !== '' &&
 		to !== '' &&
-		namesOneCase(from) === namesOneCase(to)
+		namesOneCase(from) === namesOneCase(to) &&
+		(namesOneCase(from) || !GLOB_MAGIC_PATTERN.test(from))
 	)
 }
 

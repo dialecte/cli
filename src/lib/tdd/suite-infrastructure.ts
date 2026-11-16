@@ -2,8 +2,9 @@
  * The suite infrastructure of a package: the files its vitest configs name in `setupFiles` and `globalSetup`, and the
  * test helpers they import (followed through test code, never into production nor a test file). A lot fixing them
  * fixes the suite, not a test: tdd counts them as production, so a red run never freezes them and a fix there after
- * the red is the green side. Read from the configs, no config field; read again only when a config or one of the files
- * changed (size or modification time).
+ * the red is the green side. Read from the configs, no config field; read again only when a vite, vitest or tsconfig
+ * file or one of the infrastructure files changed (size or modification time), and every time while a setup file
+ * imports a local file that does not exist yet (it may be written next).
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, posix, sep } from 'node:path'
@@ -11,6 +12,7 @@ import { join, posix, sep } from 'node:path'
 import { createModuleResolver } from './module-resolver.ts'
 import {
 	TEST_FILE_PATTERN,
+	TSCONFIG_FILE_PATTERN,
 	VITE_CONFIG_FILE_PATTERN,
 	VITEST_CONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
@@ -34,25 +36,32 @@ export function listSuiteInfrastructure(params: {
 	const known = readings.get(root)
 	if (known && known.signature === signatureOf({ root, files: [...configs, ...known.files] }))
 		return known.files
-	const files = readInfrastructure(params)
-	readings.set(root, { files, signature: signatureOf({ root, files: [...configs, ...files] }) })
+	const { files, complete } = readInfrastructure(params)
+	if (complete)
+		readings.set(root, { files, signature: signatureOf({ root, files: [...configs, ...files] }) })
+	else readings.delete(root)
 	return files
 }
 
-/** The setup and global setup files, then every test helper they reach by import. */
-function readInfrastructure(params: {
-	root: string
-	isTestSupport: (file: string) => boolean
-}): ReadonlySet<string> {
+/**
+ * The setup and global setup files, then every test helper they reach by import; complete unless an import that looks
+ * local resolves to no file.
+ */
+function readInfrastructure(params: { root: string; isTestSupport: (file: string) => boolean }): {
+	files: ReadonlySet<string>
+	complete: boolean
+} {
 	const { root } = params
 	const resolveModule = createModuleResolver({ root })
 	const files = new Set([...resolveModule.setupFiles, ...resolveModule.globalSetupFiles])
 	const queue = [...files]
+	let complete = true
 	while (queue.length > 0) {
 		const current = queue.shift() ?? ''
 		const text = readFileSync(join(root, current), 'utf8')
 		for (const specifier of moduleSpecifiers({ text, file: current })) {
 			const resolution = resolveModule({ specifier, from: current })
+			if (resolution.kind === 'unresolved') complete = false
 			if (resolution.kind !== 'local') continue
 			const file = resolution.file.split(sep).join(posix.sep)
 			if (files.has(file) || TEST_FILE_PATTERN.test(file) || !params.isTestSupport(file)) continue
@@ -60,15 +69,18 @@ function readInfrastructure(params: {
 			queue.push(file)
 		}
 	}
-	return files
+	return { files, complete }
 }
 
-/** The vite and vitest config files of the root, sorted. */
+/** The vite, vitest and tsconfig files of the root (the resolver reads `paths` there), sorted. */
 function listConfigFiles(params: { root: string }): string[] {
 	try {
 		return readdirSync(params.root)
 			.filter(
-				(name) => VITEST_CONFIG_FILE_PATTERN.test(name) || VITE_CONFIG_FILE_PATTERN.test(name),
+				(name) =>
+					VITEST_CONFIG_FILE_PATTERN.test(name) ||
+					VITE_CONFIG_FILE_PATTERN.test(name) ||
+					TSCONFIG_FILE_PATTERN.test(name),
 			)
 			.sort()
 	} catch {

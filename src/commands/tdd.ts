@@ -11,9 +11,12 @@
  *   kept, one the lot declares revised at review (a proven case, or an edited case the base provably
  *   holds) is recorded revised. A file with a refusal still records its other cases' receipts, and is frozen
  *   only when one of them is red (the refused case stays unproven); the files without a refusal are frozen,
- *   and the changed helpers, fixtures and snapshots (the vitest config's setup files among them) a red
- *   or a revised case of theirs depends on, or a `revised` entry names when every test file depending on
- *   them is frozen without a red (recorded revised). The change is measured from HEAD (the
+ *   and the changed helpers, fixtures and snapshots a red or a revised case of theirs depends on, or a
+ *   `revised` entry names when every test file depending on them is frozen without a red (recorded revised),
+ *   or, with no changed test file depending on them, that the unchanged test files importing them pass with
+ *   (`helper-dependents.ts`). The suite infrastructure (vitest setup files and the helpers they import) is
+ *   production, never frozen. A passing case a `moved` entry names carries the red of its earlier label
+ *   when its test call is the one that red froze. The change is measured from HEAD (the
  *   uncommitted lot), or from where HEAD left `--base <ref>`. An acceptance never overrides a proof: a
  *   case proven red → green keeps its proof, the line says the acceptance is not needed.
  * - Every subcommand reads a case's receipts through `countingReceipts`: an acceptance or a revision the lot
@@ -60,7 +63,7 @@ import {
 	readAcceptances,
 	readRevisions,
 	readMovedEntries,
-	findMovedFrom,
+	findMovedFroms,
 	revisionOfHelper,
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
@@ -123,6 +126,7 @@ import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
 	LotMovedEntry,
+	MovedFrom,
 	ChangedTestFile,
 	DuplicateCaseId,
 	HelperVerdict,
@@ -726,10 +730,17 @@ async function judgeRed(params: {
 			reason: 'failed',
 			flags: [],
 		}
-	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label
-	const moved = findMovedFrom({ entries: params.moves, testCase })
-	if (moved && !counted.some((receipt) => PROOF_KINDS.includes(receipt.kind)))
-		return judgeMoved({ ...params, from: moved.from })
+	// a case moved after its red, with no proof of its own yet: its red is carried from its earlier label; a file
+	// entry speaks only for the cases of the change, and only when one of them carries
+	const moved = counted.some((receipt) => PROOF_KINDS.includes(receipt.kind))
+		? undefined
+		: judgeMoved({
+				...params,
+				froms: findMovedFroms({ entries: params.moves, testCase }).filter(
+					({ entry }) => namesOneCase(entry.to) || testCase.ofChange,
+				),
+			})
+	if (moved) return moved
 	const acceptance = findCaseEntry({ entries: params.acceptances, testCase, list: 'accept' })
 	// an acceptance never overrides a proof: a case proven red → green goes the normal path, the line says so
 	if (acceptance && !isProvenRedThenGreen({ receipts: counted, caseHash: testCase.caseHash }))
@@ -747,43 +758,53 @@ async function judgeRed(params: {
 }
 
 /**
- * A passing case a `moved` entry carries from `from`: the last red of `from` the read rule counts, carried under the
- * case's label (flag `moved`, at that red's production state) when the case's test call under the earlier name hashes
- * as that red froze it; refused when `from` holds no red, or the call differs.
+ * A passing case `moved` entries carry from earlier labels (`froms`): the last red the read rule counts of the first
+ * earlier case whose red froze the case's test call under its earlier name, carried under the case's label (flag
+ * `moved`, at that red's production state). None carries: refused naming why (a case entry's earlier case holds no
+ * red, or an earlier red froze another call); file entries whose earlier files hold no red of it leave the case to the
+ * normal path (undefined).
  */
 function judgeMoved(params: {
 	testCase: RunCase
 	context: TddContext
-	from: TestCaseId
+	froms: readonly MovedFrom[]
 	acceptances: readonly LotCaseEntry[]
 	revisions: readonly LotCaseEntry[]
-}): RedJudgement {
-	const { testCase, from } = params
-	const fromLabel = caseLabel(from)
-	const red = countingReceipts({
-		ledger: params.context.ledger,
-		testCase: from,
-		acceptances: params.acceptances,
-		revisions: params.revisions,
-	})
-		.counting.filter((receipt) => receipt.kind === 'red')
-		.at(-1)
-	if (red === undefined) {
-		const reason = MOVED_NO_RED.replace('{from}', () => fromLabel)
-		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+}): RedJudgement | undefined {
+	const { testCase } = params
+	let refusal: string | undefined
+	for (const { entry, from } of params.froms) {
+		const fromLabel = caseLabel(from)
+		const red = countingReceipts({
+			ledger: params.context.ledger,
+			testCase: from,
+			acceptances: params.acceptances,
+			revisions: params.revisions,
+		})
+			.counting.filter((receipt) => receipt.kind === 'red')
+			.at(-1)
+		if (
+			red !== undefined &&
+			caseHashOfBody({ name: from.name, body: testCase.body }) === red.caseHash
+		)
+			return {
+				testCase,
+				kind: 'red',
+				detail: MOVED_FROM.replace('{from}', () => fromLabel),
+				...(red.message !== undefined && { message: red.message }),
+				flags: ['moved'],
+				productionHash: red.productionHash,
+			}
+		// a file entry speaks only where its earlier file held the case's red
+		if (refusal === undefined && (red !== undefined || namesOneCase(entry.to)))
+			refusal = (red === undefined ? MOVED_NO_RED : MOVED_CALL_DIFFERS).replace(
+				'{from}',
+				() => fromLabel,
+			)
 	}
-	if (caseHashOfBody({ name: from.name, body: testCase.body }) !== red.caseHash) {
-		const reason = MOVED_CALL_DIFFERS.replace('{from}', () => fromLabel)
-		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
-	}
-	return {
-		testCase,
-		kind: 'red',
-		detail: MOVED_FROM.replace('{from}', () => fromLabel),
-		...(red.message !== undefined && { message: red.message }),
-		flags: ['moved'],
-		productionHash: red.productionHash,
-	}
+	return refusal === undefined
+		? undefined
+		: { testCase, kind: 'refused', detail: refusal, reason: refusal, flags: [] }
 }
 
 /**
