@@ -41,6 +41,7 @@ import {
 	reclaimItemLine,
 	reclaimTotalLine,
 	trashPoolLeftOver,
+	trashPrunedFolder,
 } from '../lib/worktree/prune-worktrees.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
 import {
@@ -210,6 +211,14 @@ export async function runWorktreePrune(params: {
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 				listProcesses: listProcessesOnce,
+			})
+		// a hand-over folder or a rehearsal clone goes to the trash too: the move its line shows, never a removal in place
+		if (item.kind === 'hand-over' || item.kind === 'rehearsal clone')
+			return trashPrunedFolder({
+				folder: item.name,
+				worktreesFolder,
+				now: params.now ?? new Date(),
+				spawner: params.spawner ?? spawnDetached,
 			})
 		const result = spawnSync('sh', ['-c', item.command ?? ''], { encoding: 'utf8' })
 		return result.status === 0

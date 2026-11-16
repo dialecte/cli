@@ -112,17 +112,17 @@ export function planPrune(params: {
 	const links = linkRootsOf({ workspace: params.workspace, scratchRoots }).flatMap((folder) =>
 		findLinks(folder),
 	)
+	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
 	const repositories = listMainCheckouts(params.workspace).map((repository) =>
-		planRepository({ repository, handovers, links }),
+		planRepository({ repository, handovers, links, worktreesFolder }),
 	)
 	const scratch = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
 		if (!existsSync(scratchRoot)) return []
 		return readdirSync(scratchRoot)
 			.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
 			.sort()
-			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
+			.map((name) => planRehearsalClone({ scratchRoot, name, links, worktreesFolder }))
 	})
-	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
 	return {
 		repositories,
 		scratch,
@@ -292,8 +292,7 @@ function planPoolLeftOvers(params: {
 			if (working !== undefined) return { ...item, kept: working }
 			return {
 				...item,
-				// what `--yes` does (a move into the trash), never a removal a person could copy
-				command: `cd ${shellQuote(worktreesFolder)} && mkdir -p ${TRASH_FOLDER} && mv ${shellQuote(basename(folder))} ${TRASH_FOLDER}/`,
+				command: trashMoveCommand({ folder, worktreesFolder }),
 			}
 		})
 }
@@ -337,17 +336,36 @@ export function trashPoolLeftOver(params: {
 		: (whyParkInProgress({ folder, now: params.now }) ??
 			whyKeepByProcess({ worktree: folder, processes: params.listProcesses() }))
 	if (kept !== undefined) return `✗ ${folder} kept: ${kept}`
+	return trashPrunedFolder(params)
+}
+
+/**
+ * A folder `prune --yes` removes (a committed hand-over, a finished rehearsal clone, a pool left-over) moved into the
+ * trash, its background removal started there: the line to print, where it went or why it stayed (a move that cannot
+ * be made - another file system, a trash that is no folder - leaves it in place, nothing deleted).
+ *
+ * @intent never delete in place what prune shows as a move into the trash
+ * @internal
+ */
+export function trashPrunedFolder(params: {
+	folder: string
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
+}): string {
+	const { folder } = params
 	try {
-		const { trashed } = trashFolder({
-			folder,
-			worktreesFolder: params.worktreesFolder,
-			now: params.now,
-			spawner: params.spawner,
-		})
+		const { trashed } = trashFolder(params)
 		return `✓ ${folder} sent to the trash: ${trashed}`
 	} catch (error) {
 		return `✗ ${folder}: ${(error as Error).message}`
 	}
+}
+
+/** What `prune` shows for a folder `--yes` moves into the trash: the move a person could run, never a removal. */
+function trashMoveCommand(params: { folder: string; worktreesFolder: string }): string {
+	const trash = join(params.worktreesFolder, TRASH_FOLDER)
+	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}`
 }
 
 /** The pool entries of each repository, in name order of the repositories. */
@@ -392,6 +410,8 @@ function planRepository(params: {
 	handovers: readonly PruneHandover[]
 	/** The links found around the workspace: what they reach is kept. */
 	links: readonly FolderLink[]
+	/** The workspace's worktrees folder, whose trash a removed hand-over folder goes to. */
+	worktreesFolder: string
 }): PrunePlan {
 	const { repository } = params
 	const found = findBaseBranchRef({ root: repository, packageJson: readPackageJson(repository) })
@@ -543,7 +563,7 @@ function planRepository(params: {
 				: {
 						kind: 'hand-over',
 						name: folder,
-						command: `cd ${shellQuote(dirname(folder))} && rm -rf ${shellQuote(basename(folder))}`,
+						command: trashMoveCommand({ folder, worktreesFolder: params.worktreesFolder }),
 					},
 		)
 	}
@@ -631,6 +651,8 @@ function planRehearsalClone(params: {
 	scratchRoot: string
 	name: string
 	links: readonly FolderLink[]
+	/** The workspace's worktrees folder, whose trash a finished clone goes to. */
+	worktreesFolder: string
 }): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
 	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
@@ -653,7 +675,7 @@ function planRehearsalClone(params: {
 	return {
 		kind: 'rehearsal clone',
 		name: clone,
-		command: `cd ${shellQuote(params.scratchRoot)} && rm -rf ${shellQuote(params.name)}`,
+		command: trashMoveCommand({ folder: clone, worktreesFolder: params.worktreesFolder }),
 	}
 }
 

@@ -1,0 +1,8 @@
+# After a merge (git pull, lot close's fast-forward): the main checkout's dist/ rebuilt, so `node dist/cli.js` and
+# the bin never read the store with old code. A linked worktree, or a checkout without dist/, builds nothing; a
+# failed build says so on one line and never fails the merge.
+# the main checkout: its git folder is the common one (both read physically, a linked path never tells them apart)
+[ "$(cd "$(git rev-parse --git-dir)" && pwd -P)" = "$(cd "$(git rev-parse --git-common-dir)" && pwd -P)" ] || exit 0
+[ -d dist ] || exit 0
+npm run build --silent >/dev/null 2>&1 || echo "post-merge: dist/ not rebuilt (npm run build failed): run it yourself" >&2
+exit 0

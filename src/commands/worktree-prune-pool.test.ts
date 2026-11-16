@@ -176,7 +176,7 @@ describe('worktree prune: the pool and the trash', { timeout: POOL_COMMAND_CASE_
 			command: plan.poolLeftOver.find((item) => item.name === folder)?.command,
 			inPlace: existsSync(join(folder, 'node_modules/file.txt')),
 		}).toEqual({
-			command: `cd ${shellQuote(worktreesFolder)} && mkdir -p _trash && mv ${shellQuote('_pool-x-1')} _trash/`,
+			command: `mkdir -p ${shellQuote(join(worktreesFolder, '_trash'))} && mv ${shellQuote(folder)} ${shellQuote(`${join(worktreesFolder, '_trash')}/`)}`,
 			inPlace: true,
 		})
 	})

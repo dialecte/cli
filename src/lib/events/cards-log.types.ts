@@ -38,8 +38,11 @@ export type CardInput = {
 	recomputed?: boolean
 }
 
-/** A `card` line as read: `cut` is true when the writer cut a list. */
-export type CardLine = CardInput & { schema: 1; kind: 'card'; cut?: boolean }
+/**
+ * A `card` line as read: `cut` is true when the writer cut a list; `summary` when the card was too big for its line
+ * and holds its summary (lists and objects as their counts), the full card in the lot's folder.
+ */
+export type CardLine = CardInput & { schema: 1; kind: 'card'; cut?: boolean; summary?: boolean }
 
 /** What a caller gives to write a `removing` line (the intent, before the move). */
 export type RemovingInput = {

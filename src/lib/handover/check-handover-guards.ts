@@ -13,9 +13,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
+import { CONTRIB_RECORD_MODE } from '../contrib/contrib.constants.ts'
 import { isPresent } from '../file-system.ts'
 import { lateFixesDetailOf } from '../gate-records/card-gates.ts'
-import { isGreenRecord, originOfRecord } from '../gate-records/check-store.ts'
+import { isGreenRecord, originOfRecord, readTreeRecords } from '../gate-records/check-store.ts'
 import { LATE_FIXES_LINE_NAME } from '../gate-records/gate-records.constants.ts'
 import { computeStateHash, computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
@@ -26,6 +27,7 @@ import { readPackageJson } from '../package-json.ts'
 import { textOf } from '../print/print.ts'
 import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
+import { readCliVersion } from '../read-cli-version.ts'
 import { readLateFixes } from '../review-rounds/late-fixes.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
@@ -44,6 +46,7 @@ import {
 	HEAD_GUARD_NAME,
 	MERGE_NOTE_SHA_LENGTH,
 	NO_GREEN_CONTRIB_DETAIL,
+	OTHER_KEY_CONTRIB_DETAIL,
 	REHEARSAL_CONTRIB_DETAIL,
 	TARGET_GUARD_NAME,
 	TARGET_HELD_DETAIL,
@@ -593,8 +596,24 @@ function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): Gu
 		ok: false,
 		detail: failed.length
 			? FAILED_CONTRIB_DETAIL.replace('{rows}', failed.join(', '))
-			: NO_GREEN_CONTRIB_DETAIL,
+			: `${NO_GREEN_CONTRIB_DETAIL}${otherKeyContribDetail({ root, tree })}`,
 	}
+}
+
+/**
+ * The note on a green contrib record of `tree` stored under another key than this cli computes (the newest), naming
+ * when it ran and this cli's version; empty without one.
+ */
+function otherKeyContribDetail(params: { root: string; tree: string }): string {
+	const green = readTreeRecords(params)
+		.filter((record) => record.mode === CONTRIB_RECORD_MODE && isGreenRecord(record))
+		.sort((first, second) => second.at.localeCompare(first.at))[0]
+	return green === undefined
+		? ''
+		: OTHER_KEY_CONTRIB_DETAIL.replace('{at}', originOfRecord(green).at).replace(
+				'{version}',
+				readCliVersion(),
+			)
 }
 
 /** The full sha of a revision, or undefined when the repository has no such commit. */
