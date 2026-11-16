@@ -496,13 +496,12 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		).toBe('pending')
 	})
 
-	it.each([
-		{ label: 'merged at another head', state: 'merged' as const },
-		{ label: 'still open', state: 'open' as const },
-	])("the landing's pull request $label → nothing changes, no line", ({ state }) => {
+	it("the landing's pull request merged at another head → nothing marked, a line naming the heads", () => {
 		const repository = landingRepository()
 		land({ repository, host: recordingHost().host })
-		const { host } = recordingHost({ existing: pullRequestOf({ state, head: 'f'.repeat(40) }) })
+		const { host } = recordingHost({
+			existing: pullRequestOf({ state: 'merged', head: 'f'.repeat(40) }),
+		})
 
 		const line = confirmLanding({
 			root: repository.worktree,
@@ -510,12 +509,34 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			host,
 		})
 
-		expect(line).toBeUndefined()
-		expect(
-			registeredEntryOf({
+		expect({
+			line: line?.startsWith(`pull request #7 merged at ${'f'.repeat(12)}, not at the landed head`),
+			state: registeredEntryOf({
 				store: handoverStoreOf(repository.worktree),
 				folder: repository.lotFolder,
 			})?.state,
-		).toBe('pending')
+		}).toEqual({ line: true, state: 'pending' })
+	})
+
+	it("the landing's pull request still open → nothing marked, no line", () => {
+		const repository = landingRepository()
+		land({ repository, host: recordingHost().host })
+		const { host } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: 'f'.repeat(40) }),
+		})
+
+		const line = confirmLanding({
+			root: repository.worktree,
+			lotFolder: repository.lotFolder,
+			host,
+		})
+
+		expect({
+			line,
+			state: registeredEntryOf({
+				store: handoverStoreOf(repository.worktree),
+				folder: repository.lotFolder,
+			})?.state,
+		}).toEqual({ line: undefined, state: 'pending' })
 	})
 })

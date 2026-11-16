@@ -20,6 +20,7 @@ import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
+import { LANDING_MERGED_AT_OTHER_HEAD } from './close-handovers.constants.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import {
 	LANDING_FILE,
@@ -465,9 +466,11 @@ function writeLanding(params: {
 }
 
 /**
- * A lot whose landing's pull request merged at the head it recorded is committed: its hand-over entry says so, the
- * line naming the pull request. A host that cannot say (offline, `gh` missing) changes nothing, its line says why.
- * Undefined when there is no landing, or the pull request is not merged at that head.
+ * A lot whose landing's pull request merged is committed when it merged at the head the landing recorded, or at the
+ * worktree's HEAD (the lot's tip, pushed outside `lot land`: the record then takes that head, the one it named kept in
+ * `replaced`); its hand-over entry says so, the line naming the pull request. Merged at another head: a line naming
+ * the heads, nothing marked. A host that cannot say (offline, `gh` missing) changes nothing, its line says why.
+ * Undefined when there is no landing, or the pull request is not merged.
  *
  * @intent mark a lot committed once the merge queue landed it
  * @internal
@@ -475,6 +478,8 @@ function writeLanding(params: {
 export function confirmLanding(params: {
 	root: string
 	lotFolder: string
+	/** The lot's worktree, whose HEAD is the lot's tip; left out when it has none. */
+	worktree?: string
 	host: HostAdapter
 }): string | undefined {
 	const landing = readLanding({ lotFolder: params.lotFolder })
@@ -487,8 +492,19 @@ export function confirmLanding(params: {
 		return LANDING_LINES.hostSilent
 			.replace('{number}', String(landing.number))
 			.replace('{reason}', () => pullRequest.refusal)
-	if (pullRequest === undefined) return undefined
-	if (pullRequest.state !== 'merged' || pullRequest.head !== landing.head) return undefined
+	if (pullRequest === undefined || pullRequest.state !== 'merged') return undefined
+	if (pullRequest.head !== landing.head) {
+		const tip =
+			params.worktree === undefined
+				? undefined
+				: tryReadGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] })?.trim()
+		if (pullRequest.head !== tip)
+			return LANDING_MERGED_AT_OTHER_HEAD.replace('{number}', String(pullRequest.number))
+				.replace('{merged}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
+				.replace('{landed}', landing.head.slice(0, SHORT_SHA_LENGTH))
+				.replace('{head}', (tip ?? 'none').slice(0, SHORT_SHA_LENGTH))
+		refreshLandingHead({ lotFolder: params.lotFolder, landing, head: pullRequest.head })
+	}
 	recordHandoverState({
 		store: findHandoverStore(params.root),
 		folder: params.lotFolder,
@@ -496,8 +512,27 @@ export function confirmLanding(params: {
 	})
 	return LANDING_LINES.committed
 		.replace('{number}', String(pullRequest.number))
-		.replace('{commit}', landing.head.slice(0, SHORT_SHA_LENGTH))
+		.replace('{commit}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
 		.replace('{url}', () => pullRequest.url)
+}
+
+/** The landing record's head moved to `head` (what merged), the head it named kept last in `replaced`. */
+function refreshLandingHead(params: {
+	lotFolder: string
+	landing: LandingRecord
+	head: string
+}): void {
+	const raw = readRawLanding({ lotFolder: params.lotFolder }) ?? {}
+	const record = {
+		...raw,
+		head: params.head,
+		replaced: [...params.landing.replaced, params.landing.head],
+	}
+	// whole or not at all, as every landing record write
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify(record, null, 2)}\n`,
+	})
 }
 
 function refused(line: string): LandingResult {

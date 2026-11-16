@@ -32,6 +32,8 @@ import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { createLandedProbe } from '../store/lot-entry.ts'
 import { readLotKeeps } from '../store/lot-keep.ts'
+import { readLotScope } from '../store/lot-records.ts'
+import { isCoveredBy } from '../store/scope-changes.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
@@ -56,6 +58,7 @@ import {
 	HEAD_REFLOG_COMMITS_SHOWN,
 } from './handover.constants.ts'
 import { readReplacedHeads } from './land-record.ts'
+import { readHandoverFolder } from './read-handover-folder.ts'
 
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -85,7 +88,8 @@ export function closeHandovers(params: {
 }): CloseResult[] | { unknown: string[] } {
 	const main = mainCheckoutOf(params.cwd)
 	const store = findHandoverStore(params.cwd)
-	const entries = params.names.map((argument) => entryOfArgument({ argument, store }))
+	const lotStore = locateStore({ from: main })?.store
+	const entries = params.names.map((argument) => entryOfArgument({ argument, store, lotStore }))
 	if (entries.some((entry) => entry === undefined))
 		return { unknown: params.names.filter((_name, index) => entries[index] === undefined) }
 	// a worktree already in the trash or the pool is on its way out: never a target again
@@ -411,6 +415,7 @@ export function whyKeep(params: {
 		branch: entry.branch,
 		baseRef: params.baseBranch?.ref,
 		replaced: readReplacedHeads({ lotFolder: entry.folder, branch: entry.branch }),
+		lotPaths: lotPathsOf({ folder: entry.folder }),
 	})
 	const holders = [entry.branch, ...(params.baseBranch ? [params.baseBranch.branch] : [])]
 	if (unreached.length)
@@ -462,9 +467,10 @@ function linkFromOutside(params: {
 
 /**
  * The commits (short) the worktree's HEAD reflog reaches that neither the hand-over's branch, the base branch, a
- * remote-tracking ref nor a head its landings' rebases replaced holds, and whose patch (stable patch id) no commit of
- * the branch since the base holds (a rebase no record names): deleted with the worktree, its reflog the only way back
- * to them. A ref or head the repository does not hold is left out of the comparison.
+ * remote-tracking ref nor a head its landings' rebases replaced holds, whose patch (stable patch id) no commit of
+ * the branch since the base holds (a rebase no record names), and that the lot did not supersede (`supersededOf`):
+ * deleted with the worktree, its reflog the only way back to them. A ref or head the repository does not hold is left
+ * out of the comparison.
  */
 function commitsOnlyInHeadReflog(params: {
 	worktree: string
@@ -473,11 +479,14 @@ function commitsOnlyInHeadReflog(params: {
 	baseRef: string | undefined
 	/** The heads `lot land` rebased away (`landing.json`): their commits landed as the rebased ones. */
 	replaced: readonly string[]
+	/** The lot's paths (its scope, else its hand-over lots' paths): what a superseded commit may change. */
+	lotPaths: readonly string[]
 }): string[] {
 	const root = params.worktree
 	// a reflog git cannot read throws: the worktree is kept with git's message
 	const reflog = readGit({ root, args: ['reflog', 'show', '--format=%H', 'HEAD', '--'] })
-	const commits = [...new Set(reflog.split('\n').filter(Boolean))]
+	const entries = reflog.split('\n').filter(Boolean)
+	const commits = [...new Set(entries)]
 	if (commits.length === 0) return []
 	const held = [
 		`refs/heads/${params.branch}`,
@@ -527,8 +536,18 @@ function commitsOnlyInHeadReflog(params: {
 				return commit
 			}),
 	)
-	const left = unreached.filter(function notSamePatch(commit) {
+	const notLanded = unreached.filter(function notSamePatch(commit) {
 		return !samePatch.has(commit)
+	})
+	const superseded = supersededOf({
+		root,
+		entries,
+		branch: params.branch,
+		commits: notLanded,
+		lotPaths: params.lotPaths,
+	})
+	const left = notLanded.filter(function notSuperseded(commit) {
+		return !superseded.has(commit)
 	})
 	if (left.length === 0) return []
 	return readGit({
@@ -538,6 +557,58 @@ function commitsOnlyInHeadReflog(params: {
 	})
 		.split('\n')
 		.filter(Boolean)
+}
+
+/**
+ * The commits of `commits` the lot superseded: each changes at least one file and only files inside the lot's paths,
+ * and every one of its reflog entries is older than the first where HEAD reached the branch's tip - work in progress
+ * dropped before the lot's final commits were made (a reset to rebuild them). A commit made after the tip was reached,
+ * then dropped, is not superseded. Order is the reflog's (`entries`, newest first), never commit dates; none when the
+ * reflog never reached the tip or the lot names no path.
+ */
+function supersededOf(params: {
+	root: string
+	entries: readonly string[]
+	branch: string
+	commits: readonly string[]
+	lotPaths: readonly string[]
+}): Set<string> {
+	const { root, entries, lotPaths } = params
+	if (params.commits.length === 0 || lotPaths.length === 0) return new Set()
+	const tip = tryReadGit({
+		root,
+		args: ['rev-parse', '--verify', '--quiet', `refs/heads/${params.branch}^{commit}`],
+	})?.trim()
+	const reachedTip = tip === undefined ? -1 : entries.lastIndexOf(tip)
+	if (reachedTip === -1) return new Set()
+	return new Set(
+		params.commits.filter(function isSuperseded(commit) {
+			// newest first: an entry at or before the tip's first one is newer than it
+			if (entries.indexOf(commit) <= reachedTip) return false
+			const files = readGit({
+				root,
+				args: ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit],
+			})
+				.split('\n')
+				.filter(Boolean)
+			return (
+				files.length > 0 &&
+				files.every(function isLotPath(path) {
+					return lotPaths.some((entry) => isCoveredBy({ path, entry }))
+				})
+			)
+		}),
+	)
+}
+
+/** The lot's paths: the effective scope of its folder's brief, else the files of its hand-over's lots; none else. */
+function lotPathsOf(params: { folder: string }): string[] {
+	const scope = readLotScope({ lotFolder: params.folder })
+	if (scope.length > 0) return scope
+	const handover = readHandoverFolder(params.folder)
+	return typeof handover === 'string'
+		? []
+		: handover.lots.flatMap((lot) => [...lot.files, ...lot.deletedFiles])
 }
 
 /**

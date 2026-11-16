@@ -167,6 +167,196 @@ describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, 
 	})
 })
 
+describe(
+	'dialecte lot close after a push outside lot land',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		/**
+		 * The lot landed as a draft, then a fix committed and pushed by hand (the recorded head is the draft's), then closed
+		 * with its pull request merged at `mergedAt` (given the worktree's HEAD).
+		 */
+		function closeAfterHandPush(params: { mergedAt: (head: string) => string }) {
+			const { workspace, lotFolder } = landableLot()
+			const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
+			runLotLand({
+				cwd: workspace.repository,
+				argv: ['0001-repo-x', '--draft'],
+				host: recordingHost().host,
+			})
+			const drafted = git({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+			writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 2\n' } })
+			git({ root: worktree, args: ['commit', '-qam', 'fix(x): x answers two'] })
+			git({ root: worktree, args: ['push', '-q', 'origin', 'feat/x'] })
+			const head = git({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+			const merged = recordingHost({
+				existing: {
+					number: 7,
+					url: 'https://host.test/pull/7',
+					title: 'feat: x',
+					state: 'merged',
+					draft: false,
+					queued: false,
+					head: params.mergedAt(head),
+				},
+			})
+			const store = handoverStoreOf(workspace.repository)
+			const name = registeredEntryOf({ store, folder: lotFolder })?.name ?? ''
+			const closed = runLotClose({
+				cwd: workspace.repository,
+				argv: [name],
+				host: merged.host,
+				spawner: createRecordingSpawner().spawner,
+			})
+			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
+				head: string
+				replaced?: string[]
+			}
+			return {
+				closed,
+				drafted,
+				head,
+				landing,
+				state: registeredEntryOf({ store, folder: lotFolder })?.state,
+			}
+		}
+
+		it("merged at the worktree's HEAD, landing.json naming the draft's head → committed, the record's head refreshed, the draft's head kept as replaced", () => {
+			const { closed, drafted, head, landing, state } = closeAfterHandPush({
+				mergedAt: (worktreeHead) => worktreeHead,
+			})
+
+			expect({
+				line: closed.output.includes(`pull request #7 merged at ${head.slice(0, 12)}`),
+				state,
+				head: landing.head,
+				replaced: landing.replaced,
+			}).toEqual({ line: true, state: 'committed', head, replaced: [drafted] })
+		})
+
+		it("merged at a head neither recorded nor the worktree's → not committed, a line naming both heads", () => {
+			const other = 'f'.repeat(40)
+			const { closed, drafted, state } = closeAfterHandPush({ mergedAt: () => other })
+
+			expect({ state, output: closed.output }).toEqual({
+				state: 'pending',
+				output: expect.stringContaining(
+					`pull request #7 merged at ${other.slice(0, 12)}, not at the landed head ${drafted.slice(0, 12)} nor the worktree's HEAD`,
+				),
+			})
+		})
+	},
+)
+
+describe(
+	'dialecte lot close of a lot rebuilt before its landing',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		/**
+		 * The lot's commit dropped, a work-in-progress commit writing `wip` made then dropped (a reset to rebuild the lot),
+		 * the lot committed again, landed, and closed with its pull request merged at the landed head.
+		 */
+		function closeRebuiltLot(params: { wip: Record<string, string> }) {
+			const { workspace, lotFolder } = landableLot()
+			const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
+			git({ root: worktree, args: ['reset', '-q', '--hard', 'HEAD~1'] })
+			writeFiles({ root: worktree, files: params.wip })
+			git({ root: worktree, args: ['add', '-A'] })
+			git({ root: worktree, args: ['commit', '-qm', 'wip: before the rebuild'] })
+			git({ root: worktree, args: ['reset', '-q', '--hard', 'HEAD~1'] })
+			writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 1\n' } })
+			git({ root: worktree, args: ['add', 'src/x.ts'] })
+			git({ root: worktree, args: ['commit', '-qm', 'feat(x): x answers one, rebuilt'] })
+			runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
+				head: string
+			}
+			const merged = recordingHost({
+				existing: {
+					number: 7,
+					url: 'https://host.test/pull/7',
+					title: 'feat: x',
+					state: 'merged',
+					draft: false,
+					queued: false,
+					head: landing.head,
+				},
+			})
+			const name =
+				registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })
+					?.name ?? ''
+			const closed = runLotClose({
+				cwd: workspace.repository,
+				argv: [name],
+				host: merged.host,
+				spawner: createRecordingSpawner().spawner,
+				listProcesses: function none() {
+					return []
+				},
+			})
+			return { closed, worktree }
+		}
+
+		it('a dropped work-in-progress commit changing only lot paths, made before the landed tip → counted landed, the worktree closes', () => {
+			const { closed, worktree } = closeRebuiltLot({ wip: { 'src/x.ts': 'export const x = 0\n' } })
+
+			expect({
+				reflog: closed.output.includes('HEAD reflog'),
+				worktree: existsSync(worktree),
+			}).toEqual({
+				reflog: false,
+				worktree: false,
+			})
+		})
+
+		it('a dropped work-in-progress commit touching a file outside the lot paths → still kept, named', () => {
+			const { closed, worktree } = closeRebuiltLot({ wip: { 'README.md': 'wip\n' } })
+
+			expect({
+				reflog: closed.output.includes('HEAD reflog reaches 1 commit(s)'),
+				worktree: existsSync(worktree),
+			}).toEqual({ reflog: true, worktree: true })
+		})
+	},
+)
+
+describe('dialecte lot close named by its lot id', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('the lot folder name of a landed lot whose hand-over entry has another name → that entry confirmed and closed', () => {
+		const { workspace, lotFolder } = landableLot()
+		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+		const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
+			head: string
+		}
+		const merged = recordingHost({
+			existing: {
+				number: 7,
+				url: 'https://host.test/pull/7',
+				title: 'feat: x',
+				state: 'merged',
+				draft: false,
+				queued: false,
+				head: landing.head,
+			},
+		})
+
+		const closed = runLotClose({
+			cwd: workspace.repository,
+			argv: ['0001-repo-x'],
+			host: merged.host,
+			spawner: createRecordingSpawner().spawner,
+			listProcesses: function none() {
+				return []
+			},
+		})
+
+		expect({
+			confirmed: closed.output.includes('pull request #7 merged'),
+			exitCode: closed.exitCode,
+			state: registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })
+				?.state,
+		}).toEqual({ confirmed: true, exitCode: 0, state: 'committed' })
+	})
+})
+
 describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CASE_TIMEOUT }, () => {
 	/** The lot landed after origin's main moved (rebased), then closed with its pull request merged at the pushed head. */
 	function landRebasedThenClose(
