@@ -5,15 +5,15 @@ on:
   workflow_call:
 
 jobs:
-  # the suite in 4 shards on 4 runners: each runs a quarter of the test files (vitest --shard), all must pass
+  # the suite in 8 shards on 8 runners: each runs an eighth of the test files (vitest --shard), all must pass
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    name: test (shard ${{ matrix.shard }}/4)
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    name: test (shard ${{ matrix.shard }}/8)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -47,7 +47,7 @@ jobs:
       - name: Run Tests
         env:
           DIALECTE_XDIST_PYTHON: ${{ steps.setup-python.outputs.python-path }}
-        run: npx vitest run --shard=${{ matrix.shard }}/4
+        run: npx vitest run --shard=${{ matrix.shard }}/8
 
   # the config homes differ per platform (%APPDATA%, path keys compared whatever the case): their tests on Windows
   config-windows:
