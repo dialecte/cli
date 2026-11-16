@@ -12,6 +12,7 @@ import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts
 import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { isPytestTestFile } from './pytest-test-file.ts'
+import { listSuiteInfrastructure } from './suite-infrastructure.ts'
 import { resolveTddBase } from './tdd-base.ts'
 import {
 	CONFTEST_FILE_PATTERN,
@@ -96,7 +97,9 @@ function isTestSupport(file: string): boolean {
 /**
  * Test code of the package: a test file (`isTestFile`) or test support (`isTestCode`), except under a folder the
  * package declares production (`"dialecte": { "tdd": { "production": ["src/test"] } }`), where only the test
- * files, conftests, fixtures, snapshots and `*.script.ts` are.
+ * files, conftests, fixtures, snapshots and `*.script.ts` are; and except the suite infrastructure (the vitest
+ * setup and global setup files and the helpers they import, `listSuiteInfrastructure`): production of the lot that
+ * fixes it.
  */
 export function isPackageTestCode(params: {
 	root: string
@@ -104,6 +107,12 @@ export function isPackageTestCode(params: {
 	packageJson: PackageJson
 }): boolean {
 	const { file } = params
+	if (
+		!TEST_FILE_PATTERN.test(file) &&
+		isTestSupport(file) &&
+		listSuiteInfrastructure({ root: params.root, isTestSupport }).has(file)
+	)
+		return false
 	const declared = productionFolderOf(params)
 	if (declared !== undefined)
 		return (

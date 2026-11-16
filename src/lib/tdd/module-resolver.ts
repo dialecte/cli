@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join, normalize, posix, relative, resolve, sep } f
 import {
 	LOCAL_SPECIFIER_PATTERN,
 	MODULE_EXTENSIONS,
+	GLOBAL_SETUP_PROPERTY,
 	SETUP_FILES_PROPERTY,
 	SPECIFIER_QUERY_PATTERN,
 	TSCONFIG_FILE_PATTERN,
@@ -51,7 +52,11 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 		const glob = relative(root, absolute).split(sep).join(posix.sep)
 		return glob.startsWith('..') ? undefined : glob
 	}
-	return Object.assign(resolveModule, { resolveGlob, setupFiles: readSetupFiles(root) })
+	return Object.assign(resolveModule, {
+		resolveGlob,
+		setupFiles: readConfigFiles({ root, property: SETUP_FILES_PROPERTY }),
+		globalSetupFiles: readConfigFiles({ root, property: GLOBAL_SETUP_PROPERTY }),
+	})
 	function resolveModule(params: { specifier: string; from: string }): ModuleResolution {
 		// the file a Vite query or fragment names (`./x.worker?worker&url`): the query is no part of its path
 		const specifier = params.specifier.replace(SPECIFIER_QUERY_PATTERN, '')
@@ -108,11 +113,13 @@ function readViteAliases(root: string): ModuleAlias[] {
 }
 
 /**
- * `setupFiles` of the package's vite or vitest configs (every project's): a path or a list of paths, each relative
- * to the package root, as the files of the package they name, sorted, each once; a path naming no file is left out.
+ * The files a config property (`setupFiles`, `globalSetup`) of the package's vite or vitest configs names (every
+ * project's): a path or a list of paths, each relative to the package root, as the files of the package they name,
+ * sorted, each once; a path naming no file is left out.
  */
-function readSetupFiles(root: string): string[] {
-	const files = configPropertiesOf({ root, property: SETUP_FILES_PROPERTY }).flatMap((value) => {
+function readConfigFiles(params: { root: string; property: string }): string[] {
+	const { root } = params
+	const files = configPropertiesOf({ root, property: params.property }).flatMap((value) => {
 		const paths = ts.isArrayLiteralExpression(value) ? [...value.elements] : [value]
 		return paths.flatMap(function setupFileOf(path) {
 			if (!ts.isStringLiteralLike(path)) return []

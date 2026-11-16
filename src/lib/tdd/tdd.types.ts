@@ -528,9 +528,18 @@ export type ModuleResolver = {
 	resolveGlob: (params: { pattern: string; from: string }) => string | undefined
 	/**
 	 * The files the package's vitest config names in `setupFiles` (relative to the package root, each a file of
-	 * the package): test code no test imports, which runs before every test file.
+	 * the package), which run before every test file.
 	 */
 	setupFiles: readonly string[]
+	/** The files the package's vitest config names in `globalSetup`, which run once around the whole run. */
+	globalSetupFiles: readonly string[]
+}
+
+/** The suite infrastructure of a package as last read, and what it was read from (`suite-infrastructure.ts`). */
+export type SuiteInfrastructureReading = {
+	files: ReadonlySet<string>
+	/** Each config and infrastructure file read, with its size and modification time when read. */
+	signature: string
 }
 
 /** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */

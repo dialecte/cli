@@ -581,6 +581,9 @@ export const ROLLBACK_LINE =
 /** The vitest option naming the files run before every test file: a dependency of each test file for tdd. */
 export const SETUP_FILES_PROPERTY = 'setupFiles'
 
+/** The vitest config property naming the files run once around the whole run (`globalSetup`). */
+export const GLOBAL_SETUP_PROPERTY = 'globalSetup'
+
 /** Config files a test project is declared in: where a test file's import aliases come from. */
 export const TEST_CONFIG_FILES = [
 	'vitest.config.ts',
