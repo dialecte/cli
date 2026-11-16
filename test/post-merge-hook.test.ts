@@ -11,23 +11,35 @@ import { createScratchRepository, git, temporaryFolder } from './scratch-reposit
 
 import { describe, expect, it } from 'vitest'
 
-const HOOK = join(import.meta.dirname, '..', '.husky', 'post-merge')
+const HOOKS = join(import.meta.dirname, '..', '.husky')
 
-/** A checkout whose build script writes `built.txt`; `dist/` made when asked. */
-function checkoutWith(params: { dist: boolean }): string {
+/** A checkout whose build script writes `built.txt` (or fails, when asked); `dist/` made when asked. */
+function checkoutWith(params: { dist: boolean; failingBuild?: boolean }): string {
+	const build = params.failingBuild
+		? 'node -e "process.exit(3)"'
+		: "node -e \"require('node:fs').writeFileSync('built.txt', 'built')\""
 	const root = createScratchRepository({
-		'package.json': `${JSON.stringify({
-			name: 'demo',
-			scripts: { build: "node -e \"require('node:fs').writeFileSync('built.txt', 'built')\"" },
-		})}\n`,
+		'package.json': `${JSON.stringify({ name: 'demo', scripts: { build } })}\n`,
 	})
 	if (params.dist) mkdirSync(join(root, 'dist'))
 	return root
 }
 
-/** Runs the hook in `cwd` as git runs it after a merge; its exit code. */
+/** Runs the hook `hook` (`post-merge` by default) in `cwd` as git runs it, with `argument`; its exit code and stderr. */
+function runHookOf(params: { cwd: string; hook?: string; argument?: string }): {
+	exitCode: number | null
+	stderr: string
+} {
+	const run = spawnSync('sh', [join(HOOKS, params.hook ?? 'post-merge'), params.argument ?? '0'], {
+		cwd: params.cwd,
+		encoding: 'utf8',
+	})
+	return { exitCode: run.status, stderr: run.stderr }
+}
+
+/** Runs the post-merge hook in `cwd`; its exit code. */
 function runHook(cwd: string): number | null {
-	return spawnSync('sh', [HOOK, '0'], { cwd, encoding: 'utf8' }).status
+	return runHookOf({ cwd }).exitCode
 }
 
 describe('the post-merge hook', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
@@ -60,6 +72,39 @@ describe('the post-merge hook', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const root = checkoutWith({ dist: false })
 
 		const exitCode = runHook(root)
+
+		expect({ exitCode, built: existsSync(join(root, 'built.txt')) }).toEqual({
+			exitCode: 0,
+			built: false,
+		})
+	})
+
+	it('a merge in the main checkout whose build fails → the merge not failed, one line saying dist/ was not rebuilt', () => {
+		const root = checkoutWith({ dist: true, failingBuild: true })
+
+		const { exitCode, stderr } = runHookOf({ cwd: root })
+
+		expect({ exitCode, said: stderr.includes('dist/ not rebuilt') }).toEqual({
+			exitCode: 0,
+			said: true,
+		})
+	})
+
+	it('a rebase rewriting the main checkout (git pull --rebase) holding dist/ → npm run build runs', () => {
+		const root = checkoutWith({ dist: true })
+
+		const { exitCode } = runHookOf({ cwd: root, hook: 'post-rewrite', argument: 'rebase' })
+
+		expect({ exitCode, built: existsSync(join(root, 'built.txt')) }).toEqual({
+			exitCode: 0,
+			built: true,
+		})
+	})
+
+	it('an amend in the main checkout holding dist/ → nothing built', () => {
+		const root = checkoutWith({ dist: true })
+
+		const { exitCode } = runHookOf({ cwd: root, hook: 'post-rewrite', argument: 'amend' })
 
 		expect({ exitCode, built: existsSync(join(root, 'built.txt')) }).toEqual({
 			exitCode: 0,

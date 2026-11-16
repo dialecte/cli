@@ -121,7 +121,7 @@ export function planPrune(params: {
 		return readdirSync(scratchRoot)
 			.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
 			.sort()
-			.map((name) => planRehearsalClone({ scratchRoot, name, links, worktreesFolder }))
+			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
 	})
 	return {
 		repositories,
@@ -362,7 +362,10 @@ export function trashPrunedFolder(params: {
 	}
 }
 
-/** What `prune` shows for a folder `--yes` moves into the trash: the move a person could run, never a removal. */
+/**
+ * What `prune` shows for a folder `--yes` moves into the trash of `worktreesFolder` (the workspace's, or a rehearsal
+ * clone's scratch root): the move a person could run, never a removal.
+ */
 function trashMoveCommand(params: { folder: string; worktreesFolder: string }): string {
 	const trash = join(params.worktreesFolder, TRASH_FOLDER)
 	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}`
@@ -651,8 +654,6 @@ function planRehearsalClone(params: {
 	scratchRoot: string
 	name: string
 	links: readonly FolderLink[]
-	/** The workspace's worktrees folder, whose trash a finished clone goes to. */
-	worktreesFolder: string
 }): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
 	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
@@ -675,7 +676,8 @@ function planRehearsalClone(params: {
 	return {
 		kind: 'rehearsal clone',
 		name: clone,
-		command: trashMoveCommand({ folder: clone, worktreesFolder: params.worktreesFolder }),
+		// the scratch root's own trash: a move never crosses file systems (/tmp is often its own)
+		command: trashMoveCommand({ folder: clone, worktreesFolder: params.scratchRoot }),
 	}
 }
 

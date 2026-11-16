@@ -4,5 +4,6 @@
 # the main checkout: its git folder is the common one (both read physically, a linked path never tells them apart)
 [ "$(cd "$(git rev-parse --git-dir)" && pwd -P)" = "$(cd "$(git rev-parse --git-common-dir)" && pwd -P)" ] || exit 0
 [ -d dist ] || exit 0
+echo "post-merge: rebuilding dist/ (npm run build)..." >&2
 npm run build --silent >/dev/null 2>&1 || echo "post-merge: dist/ not rebuilt (npm run build failed): run it yourself" >&2
 exit 0

@@ -309,9 +309,12 @@ describe('worktree add', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 	})
 })
 
-/** The move into the workspace's trash that prune shows for `folder` (what `--yes` does), never a removal. */
-function trashMove(params: { workspace: string; folder: string }): string {
-	const trash = join(params.workspace, '.worktrees', '_trash')
+/**
+ * The move into a trash that prune shows for `folder` (what `--yes` does), never a removal: the trash of `root` - the
+ * workspace's worktrees folder for a hand-over folder, the clone's own scratch root for a rehearsal clone.
+ */
+function trashMove(params: { trashRoot: string; folder: string }): string {
+	const trash = join(params.trashRoot, '_trash')
 	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}`
 }
 
@@ -424,7 +427,10 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`cd '${core}' && git worktree remove '${worktrees.merged}'`,
 				`cd '${core}' && git branch -d 'feat/merged'`,
 				`cd '${core}' && git branch -d 'old-merged'`,
-				trashMove({ workspace, folder: join(scratchRoot, 'dialecte-rehearse-abc123') }),
+				trashMove({
+					trashRoot: scratchRoot,
+					folder: join(scratchRoot, 'dialecte-rehearse-abc123'),
+				}),
 			]),
 		)
 		expect(result.output).not.toContain('old-unmerged')
@@ -492,11 +498,14 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.output).toContain(
-			trashMove({ workspace, folder: join(workspace, '_commit-plan', 'pending-topic') }),
+			trashMove({
+				trashRoot: join(workspace, '.worktrees'),
+				folder: join(workspace, '_commit-plan', 'pending-topic'),
+			}),
 		)
 	})
 
-	it('--yes, a committed hand-over folder and a dead rehearsal clone → each moved into the trash, its background removal started there', async () => {
+	it('--yes, a committed hand-over folder and a dead rehearsal clone → each moved into a trash on its own file system (a clone in its own scratch root), its background removal started there', async () => {
 		const { workspace, worktrees } = createPruneWorkspace()
 		git({ root: worktrees.pending, args: ['add', 'CHANGELOG.md'] })
 		git({ root: worktrees.pending, args: ['commit', '-q', '-m', 'docs(changelog): pending'] })
@@ -518,7 +527,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 			spawner: recording.spawner,
 		})
 
-		const trash = join(workspace, '.worktrees', '_trash')
+		const trashes = [join(workspace, '.worktrees', '_trash'), join(scratchRoot, '_trash')]
 		const trashed = result.output
 			.split('\n')
 			.filter((line) => line.includes(' sent to the trash: '))
@@ -526,7 +535,11 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		expect({
 			handover: existsSync(handover),
 			clone: existsSync(clone),
-			trashed: trashed.map((path) => path.startsWith(`${trash}/`) && existsSync(path)),
+			trashed: trashed.map(
+				(path) =>
+					trashes.findIndex((trash) => path.startsWith(`${trash}/`)) !== -1 && existsSync(path),
+			),
+			clonesTrash: trashed.some((path) => path.startsWith(`${trashes[1]}/`)),
 			removals: recording.calls
 				.filter((call) => call.command === 'rm')
 				.map((call) => call.args.at(-1))
@@ -535,6 +548,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 			handover: false,
 			clone: false,
 			trashed: [true, true],
+			clonesTrash: true,
 			removals: [...trashed].sort(),
 		})
 	})
@@ -648,7 +662,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-bare')}  (no rehearsal marker: not made by this cli, or still starting)`,
-				trashMove({ workspace, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
+				trashMove({ trashRoot: scratchRoot, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
 			]),
 		)
 		expect(result.output).not.toContain(
@@ -685,8 +699,11 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  remove  ${join(formerScratchRoot, 'dialecte-rehearse-former')}`,
-				trashMove({ workspace, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
-				trashMove({ workspace, folder: join(formerScratchRoot, 'dialecte-rehearse-former') }),
+				trashMove({ trashRoot: scratchRoot, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
+				trashMove({
+					trashRoot: formerScratchRoot,
+					folder: join(formerScratchRoot, 'dialecte-rehearse-former'),
+				}),
 			]),
 		)
 		expect(result.output).not.toContain(

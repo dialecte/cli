@@ -607,7 +607,7 @@ function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): Gu
 function otherKeyContribDetail(params: { root: string; tree: string }): string {
 	const green = readTreeRecords(params)
 		.filter((record) => record.mode === CONTRIB_RECORD_MODE && isGreenRecord(record))
-		.sort((first, second) => second.at.localeCompare(first.at))[0]
+		.sort((first, second) => originOfRecord(second).at.localeCompare(originOfRecord(first).at))[0]
 	return green === undefined
 		? ''
 		: OTHER_KEY_CONTRIB_DETAIL.replace('{at}', originOfRecord(green).at).replace(

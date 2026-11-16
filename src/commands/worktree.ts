@@ -216,7 +216,8 @@ export async function runWorktreePrune(params: {
 		if (item.kind === 'hand-over' || item.kind === 'rehearsal clone')
 			return trashPrunedFolder({
 				folder: item.name,
-				worktreesFolder,
+				// a clone goes to its scratch root's own trash: a move never crosses file systems
+				worktreesFolder: item.kind === 'rehearsal clone' ? dirname(item.name) : worktreesFolder,
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 			})
