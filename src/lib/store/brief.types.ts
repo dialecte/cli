@@ -1,4 +1,4 @@
-import type { Refusal } from './store.types.ts'
+import type { LotOverlap, Refusal } from './store.types.ts'
 
 export type BriefEffort = 'low' | 'medium' | 'high'
 
@@ -57,6 +57,8 @@ export type CheckedBrief = {
 	caseInsensitive: boolean
 	/** A simulated start's overlap and branch findings, which refused nothing; none for a real start. */
 	wouldRefuse: Refusal[]
+	/** The overlaps `--overlap-ok` accepted instead of refusing (each names its paths); none without it. */
+	acceptedOverlaps: LotOverlap[]
 }
 
 /** `checked` is defined exactly when `refused` is empty. */

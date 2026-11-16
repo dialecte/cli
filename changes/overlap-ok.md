@@ -1,0 +1,3 @@
+### Added
+
+- `dialecte lot start <brief> --overlap-ok --by <who> --reason <text>` and `dialecte lot scope <id> --add <path> --overlap-ok --by <who> --reason <text>`: a scope meeting another open lot is accepted instead of refused, for an overlap that names its paths (an other lot whose scope cannot be read, or a damaged one, stays refused). Each accepted overlap is recorded in the lot folder's `overlaps.jsonl` (the other lot, the met pairs, who and why) and shown on the hand-over card's `scope` line as a warning; the race re-check after `lot start` and the late re-check after `lot scope` still refuse a lot the go-ahead did not name. `lot start --overlap-ok` without `--by` and `--reason` is a usage error.

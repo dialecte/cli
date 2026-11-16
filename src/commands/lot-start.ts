@@ -40,6 +40,7 @@ import {
 	startNextOf,
 	waitNextOf,
 } from '../lib/store/lot-next.ts'
+import { appendLotOverlaps, overlapRecordsOf } from '../lib/store/lot-overlaps.ts'
 import { overlapLotLabelOf, overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
@@ -157,6 +158,10 @@ export function prepareStart(params: {
 		}
 	const goAhead = goAheadOf({ by: read.values.get('by'), reason: read.values.get('reason') })
 	if (typeof goAhead === 'string') return { exit: lotUsageExit({ reason: goAhead, json }) }
+	// an accepted overlap is always named: who accepts it and why (the same go-ahead an effort below the class takes)
+	const overlapOk = read.flags.has('overlap-ok')
+	if (overlapOk && goAhead === undefined)
+		return { exit: lotUsageExit({ reason: START_USAGE_REASONS.overlapOk, json }) }
 	const seams = params.seams ?? {}
 	const scenarioName = read.values.get('simulate')
 	const simulation = scenarioName === undefined ? undefined : simulationOf({ scenarioName, seams })
@@ -167,6 +172,7 @@ export function prepareStart(params: {
 		cwd: params.cwd,
 		simulated: simulation !== undefined,
 		pause: seams.pause,
+		overlapOk,
 	})
 	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
 	const brief = checked.checked
@@ -281,6 +287,8 @@ export function finishStart(params: {
 export function recheckOverlap(params: {
 	lotFolder: string
 	caseInsensitive: boolean
+	/** The lots the start's `--overlap-ok` accepted: the re-check refuses only a lot it did not name. */
+	accepted?: readonly string[]
 	now: Date
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
@@ -294,10 +302,12 @@ export function recheckOverlap(params: {
 function recheckedFailure(params: {
 	lotFolder: string
 	caseInsensitive: boolean
+	accepted?: readonly string[]
 	now: Date
 	pause?: SynchronousPause
 }): { name: string; reason: string } | undefined {
 	const store = dirname(params.lotFolder)
+	const accepted = params.accepted ?? []
 	const [overlap] = overlappingOpenLots({
 		store,
 		registry: registryOfCommonFolder(dirname(store)),
@@ -305,7 +315,7 @@ function recheckedFailure(params: {
 		caseInsensitive: params.caseInsensitive,
 		except: basename(params.lotFolder),
 		pause: params.pause,
-	})
+	}).filter((found) => !accepted.includes(found.name))
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })
@@ -470,6 +480,7 @@ function startChecked(params: {
 		...(simulation === undefined && {
 			beforeIdentity: function writeRiskLines(temporary: string) {
 				writeStartRiskLines({ folder: temporary, risk, now })
+				writeStartOverlaps({ folder: temporary, brief, goAhead: risk.goAhead, now })
 			},
 		}),
 	})
@@ -503,6 +514,7 @@ function startPublished(params: {
 	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
+		accepted: brief.acceptedOverlaps.map((accepted) => accepted.name),
 		now,
 		pause: seams.pause,
 	})
@@ -678,6 +690,30 @@ function riskLinesOf(params: {
 			},
 		}),
 	]
+}
+
+/**
+ * The `overlaps.jsonl` lines of a real start: one per open lot its `--overlap-ok` accepted, with the go-ahead's who and
+ * why (the usage refuses the flag without one); none when it accepted none.
+ */
+function writeStartOverlaps(params: {
+	folder: string
+	brief: CheckedBrief
+	goAhead: StartGoAhead | undefined
+	now: Date
+}): void {
+	const { brief, goAhead } = params
+	if (brief.acceptedOverlaps.length === 0 || goAhead === undefined) return
+	appendLotOverlaps({
+		lotFolder: params.folder,
+		records: overlapRecordsOf({
+			overlaps: brief.acceptedOverlaps,
+			verb: START_VERB,
+			at: params.now.toISOString(),
+			by: goAhead.by,
+			reason: goAhead.reason,
+		}),
+	})
 }
 
 /** The `risk.jsonl` lines of a real start: the effort line of a go-ahead, then the derived line (from `start`). */

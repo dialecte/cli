@@ -29,6 +29,8 @@ export const STORE_FILES: StoreFileNames = {
 	review: 'review.jsonl',
 	// the tests' public record, its tdd part written by `tdd green`, its gate part by the gate
 	tests: 'tests.json',
+	// `lot start` / `lot scope --overlap-ok` append the overlaps the lot accepted, with who and why (FIX-overlap-ok)
+	overlaps: 'overlaps.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

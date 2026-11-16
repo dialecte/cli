@@ -2,7 +2,7 @@ import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
 
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
 export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate', 'by', 'reason']
-export const START_FLAGS: readonly string[] = ['dry-run', 'json']
+export const START_FLAGS: readonly string[] = ['dry-run', 'json', 'overlap-ok']
 
 /** Why `lot start` is a usage error: `{extra}` the words beyond the brief, `{effort}` and `{efforts}` the flag's. */
 export const START_USAGE_REASONS = {
@@ -11,6 +11,7 @@ export const START_USAGE_REASONS = {
 	effort: '--effort {effort} is not one of {efforts}',
 	goAheadHalf: '--by and --reason go together: {option} alone',
 	goAheadLine: '{option} takes one non-empty line',
+	overlapOk: '--overlap-ok takes --by <who> and --reason <text>: who accepts the overlap and why',
 	asked: 'no effort among {efforts} after {attempts} answers',
 } as const
 

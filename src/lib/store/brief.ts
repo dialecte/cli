@@ -39,6 +39,7 @@ import {
 	SUMMARY_UNCHECKED_DETAIL,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
+import { isAcceptableOverlap } from './lot-overlaps.ts'
 import {
 	overlapLotLabelOf,
 	overlapMetText,
@@ -66,6 +67,7 @@ import type {
 } from './brief.types.ts'
 import type {
 	LotIdentity,
+	LotOverlap,
 	Refusal,
 	RefusalRule,
 	StoreLocation,
@@ -141,6 +143,8 @@ export function checkBrief(params: {
 	caseInsensitive?: boolean
 	/** A simulated start: the overlap and branch findings go to `wouldRefuse`. */
 	simulated?: boolean
+	/** `--overlap-ok`: an overlap that names its paths is accepted (`acceptedOverlaps`), never a refusal. */
+	overlapOk?: boolean
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
 }): CheckBriefResult {
@@ -164,6 +168,7 @@ export function checkBrief(params: {
 	const caseInsensitive =
 		params.caseInsensitive ??
 		(repository.main !== undefined && probeCaseInsensitive({ path: repository.main }))
+	const overlaps = overlapFaults({ ...params, brief: value, location, caseInsensitive })
 	const faults = [
 		...fields.refused,
 		...repository.refused,
@@ -172,7 +177,7 @@ export function checkBrief(params: {
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
 		...summaryReferenceFaults({ fields, repository: repository.main, value, briefFolder }),
-		...overlapFaults({ brief: value, location, caseInsensitive, pause: params.pause }),
+		...overlaps.refused,
 	]
 	const findings = params.simulated
 		? faults.filter((fault) => SIMULATED_FINDING_RULES.includes(fault.rule))
@@ -198,6 +203,7 @@ export function checkBrief(params: {
 			briefFile: { text, bytes },
 			caseInsensitive,
 			findings,
+			acceptedOverlaps: overlaps.accepted,
 		}),
 	}
 }
@@ -211,6 +217,7 @@ function checkedOf(params: {
 	briefFile: { text: string; bytes: Buffer }
 	caseInsensitive: boolean
 	findings: Refusal[]
+	acceptedOverlaps: LotOverlap[]
 }): CheckedBrief {
 	const { brief, plan, briefFile } = params
 	return {
@@ -231,6 +238,7 @@ function checkedOf(params: {
 		...(brief.issue !== undefined && { issue: brief.issue }),
 		caseInsensitive: params.caseInsensitive,
 		wouldRefuse: params.findings,
+		acceptedOverlaps: params.acceptedOverlaps,
 	}
 }
 
@@ -768,31 +776,38 @@ function realLotIdentities(location: StoreLocation | undefined): LotIdentity[] {
 
 /**
  * One `overlap` refusal per open real lot of the store a scope entry of the brief overlaps (D12: not committed, not
- * canceled, not simulated, not failed by an overlap), a damaged lot named with its damage (P2.2). Skipped when the
- * scope's shape fails; refused entries are left out.
+ * canceled, not simulated, not failed by an overlap), a damaged lot named with its damage (P2.2); with `overlapOk`, an
+ * overlap that names its paths is accepted instead (FIX-overlap-ok). Skipped when the scope's shape fails; refused
+ * entries are left out.
  */
 function overlapFaults(params: {
 	brief: Record<string, unknown>
 	location: StoreLocation | undefined
 	caseInsensitive: boolean
-	pause: SynchronousPause | undefined
-}): Refusal[] {
+	pause?: SynchronousPause
+	overlapOk?: boolean
+}): { refused: Refusal[]; accepted: LotOverlap[] } {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
-	if (!location || !entries) return []
-	return overlappingOpenLots({
+	if (!location || !entries) return { refused: [], accepted: [] }
+	const overlaps = overlappingOpenLots({
 		store: location.store,
 		registry: location.registry,
 		scope: entries,
 		caseInsensitive: params.caseInsensitive,
 		pause: params.pause,
-	}).map((overlap) =>
-		refusalOf({
-			field: 'scope',
-			rule: 'overlap',
-			detail: `overlap with ${overlapLotLabelOf(overlap)}: ${overlapMetText(overlap)}`,
-		}),
-	)
+	})
+	const accepted = params.overlapOk ? overlaps.filter(isAcceptableOverlap) : []
+	const refused = overlaps
+		.filter((overlap) => !accepted.includes(overlap))
+		.map((overlap) =>
+			refusalOf({
+				field: 'scope',
+				rule: 'overlap',
+				detail: `overlap with ${overlapLotLabelOf(overlap)}: ${overlapMetText(overlap)}`,
+			}),
+		)
+	return { refused, accepted }
 }
 
 function hashOf(bytes: Buffer): string {

@@ -156,7 +156,8 @@ export type StoreFileNames = Readonly<
 		| 'risk'
 		| 'scopeChanges'
 		| 'review'
-		| 'tests',
+		| 'tests'
+		| 'overlaps',
 		string
 	>
 >

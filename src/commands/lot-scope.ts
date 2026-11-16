@@ -21,6 +21,12 @@ import {
 } from '../lib/store/brief-scope.ts'
 import { probeCaseInsensitive } from '../lib/store/brief.ts'
 import {
+	appendLotOverlaps,
+	isAcceptableOverlap,
+	lotOverlapsText,
+	overlapRecordsOf,
+} from '../lib/store/lot-overlaps.ts'
+import {
 	commonFolderOfLotFolder,
 	overlapLotLabelOf,
 	overlapMetText,
@@ -47,6 +53,7 @@ import {
 import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
 import {
 	LOT_SCOPE_LIST_SEPARATOR,
+	LOT_SCOPE_FLAGS,
 	LOT_SCOPE_PATH_OPTIONS,
 	LOT_SCOPE_TEXTS,
 	LOT_SCOPE_USAGE,
@@ -112,6 +119,7 @@ function requestOf(params: { argv: string[] }): ScopeRequest | undefined {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: LOT_SCOPE_VALUE_OPTIONS,
+		flags: LOT_SCOPE_FLAGS,
 		repeatable: LOT_SCOPE_PATH_OPTIONS,
 	})
 	if (typeof read === 'string' || read.words.length !== 1) return undefined
@@ -122,7 +130,7 @@ function requestOf(params: { argv: string[] }): ScopeRequest | undefined {
 	const reason = read.values.get('reason')
 	if (drops.length === 0 && adds.length === 0) return undefined
 	if (!isOneLine(by) || !isOneLine(reason)) return undefined
-	return { id, drops, adds, by, reason }
+	return { id, drops, adds, by, reason, overlapOk: read.flags.has('overlap-ok') }
 }
 
 /** The lot to change, or the refusal of a lot that is gone, damaged, or committed, canceled or failed. */
@@ -207,24 +215,15 @@ function changeScope(params: {
 		const coverage = coverageRefusal({ target, scope, dropped, changes })
 		if (coverage !== undefined) return coverage
 	}
-	if (added.length > 0) {
-		const overlap = addOverlapOf({ target, added })
-		if (overlap !== undefined)
-			return refused({
-				template: LOT_SCOPE_TEXTS.overlap,
-				values: {
-					name: target.name,
-					lot: overlapLotLabelOf(overlap),
-					met: overlapMetText(overlap),
-				},
-			})
-	}
+	const overlap = overlapDecisionOf({ request: params.request, target, added })
+	if ('refusal' in overlap) return overlap.refusal
 	return recordChanges({
 		...params,
 		changes,
 		added,
 		removed,
-		recheck: added.length > 0 ? () => addOverlapOf({ target, added }) : undefined,
+		accepted: overlap.accepted,
+		recheck: overlap.recheck,
 	})
 }
 
@@ -291,17 +290,55 @@ function coverageRefusal(params: {
 	return undefined
 }
 
-/** The first open lot, other than the target, whose effective scope the added paths meet; none when they meet none. */
-function addOverlapOf(params: { target: ScopeTarget; added: string[] }): LotOverlap | undefined {
+/**
+ * What the add's overlaps allow: with `--overlap-ok`, every overlap that names its paths is accepted, any other refuses
+ * the call; without it, the first refuses. The re-check after the write takes the add back for a lot that started or
+ * widened meanwhile and was never named by the go-ahead.
+ */
+function overlapDecisionOf(params: {
+	request: ScopeRequest
+	target: ScopeTarget
+	added: string[]
+}):
+	| { refusal: CommandResult }
+	| { accepted: LotOverlap[]; recheck: (() => LotOverlap | undefined) | undefined } {
+	const { target, added } = params
+	if (added.length === 0) return { accepted: [], recheck: undefined }
+	const overlaps = addOverlapsOf({ target, added })
+	const accepted = params.request.overlapOk ? overlaps.filter(isAcceptableOverlap) : []
+	const [unaccepted] = overlaps.filter((overlap) => !accepted.includes(overlap))
+	if (unaccepted !== undefined)
+		return {
+			refusal: refused({
+				template: LOT_SCOPE_TEXTS.overlap,
+				values: {
+					name: target.name,
+					lot: overlapLotLabelOf(unaccepted),
+					met: overlapMetText(unaccepted),
+				},
+			}),
+		}
+	const acceptedNames = accepted.map((overlap) => overlap.name)
+	return {
+		accepted,
+		recheck: function recheckAdd() {
+			return addOverlapsOf({ target, added }).find(
+				(overlap) => !acceptedNames.includes(overlap.name),
+			)
+		},
+	}
+}
+
+/** The open lots, other than the target, whose effective scope the added paths meet; none when they meet none. */
+function addOverlapsOf(params: { target: ScopeTarget; added: string[] }): LotOverlap[] {
 	const { target } = params
-	const [overlap] = overlappingOpenLots({
+	return overlappingOpenLots({
 		store: dirname(target.lotFolder),
 		registry: registryOfLotFolder(target.lotFolder),
 		scope: params.added,
 		caseInsensitive: probeCaseInsensitive({ path: target.repository }),
 		except: basename(target.lotFolder),
 	})
-	return overlap
 }
 
 /** The files the lot's worktree lists as changed (git status); undefined when it has none or it cannot be read. */
@@ -328,6 +365,8 @@ function recordChanges(params: {
 	removed: string[]
 	now: Date
 	seams?: ScopeSeams
+	/** The overlaps `--overlap-ok` accepted: recorded once the add stands. */
+	accepted: readonly LotOverlap[]
 	recheck?: () => LotOverlap | undefined
 }): CommandResult {
 	const { target, changes } = params
@@ -368,6 +407,8 @@ function recordChanges(params: {
 	params.seams?.afterAppend?.()
 	const late = params.recheck?.()
 	if (late !== undefined) return undoneChanges({ ...params, overlap: late })
+	const overlapLines = recordAcceptedOverlaps(params)
+	if (overlapLines.failure !== undefined) return overlapLines.failure
 	const effective = effectiveScopeOf({ brief: params.scope, changes })
 	const changedLine = fillMessage({
 		template: changedTemplateOf({ changes }),
@@ -382,7 +423,71 @@ function recordChanges(params: {
 	const failures = changes
 		.map((change) => writeScopeEvent({ target, change }))
 		.filter((line): line is string => line !== undefined)
-	return answerOf({ exitCode: 0, lines: [changedLine, ...failures] })
+	return answerOf({ exitCode: 0, lines: [changedLine, ...overlapLines.lines, ...failures] })
+}
+
+/**
+ * Records the overlaps `--overlap-ok` accepted, the add written: the line naming them, or, when they cannot be written,
+ * the add taken back (an overlap is never held without its record) and the failure (exit 1).
+ */
+function recordAcceptedOverlaps(params: {
+	request: ScopeRequest
+	target: ScopeTarget
+	added: string[]
+	removed: string[]
+	accepted: readonly LotOverlap[]
+	now: Date
+}): { lines: string[]; failure?: CommandResult } {
+	const { request, target } = params
+	if (params.accepted.length === 0) return { lines: [] }
+	const records = overlapRecordsOf({
+		overlaps: params.accepted,
+		verb: LOT_SCOPE_VERB,
+		at: params.now.toISOString(),
+		by: request.by,
+		reason: request.reason,
+	})
+	try {
+		appendLotOverlaps({ lotFolder: target.lotFolder, records })
+	} catch (error) {
+		const failureLine = fillMessage({
+			template: LOT_SCOPE_TEXTS.overlapRecordFailure,
+			values: { name: target.name, message: (error as Error).message },
+		})
+		const takeBack = takeBackLines({ ...params, failureLine })
+		return { lines: [], failure: answerOf({ exitCode: 1, lines: takeBack }) }
+	}
+	return {
+		lines: [
+			fillMessage({
+				template: LOT_SCOPE_TEXTS.overlapAccepted,
+				values: { name: target.name, overlaps: lotOverlapsText(records) ?? '' },
+			}),
+		],
+	}
+}
+
+/** Takes the call back after its overlap record failed: the failure line, then the take-back's own failure if any. */
+function takeBackLines(params: {
+	request: ScopeRequest
+	target: ScopeTarget
+	added: string[]
+	removed: string[]
+	now: Date
+	failureLine: string
+}): string[] {
+	try {
+		appendScopeChanges({ lotFolder: params.target.lotFolder, changes: takeBackOf(params) })
+	} catch (error) {
+		return [
+			params.failureLine,
+			fillMessage({
+				template: LOT_SCOPE_TEXTS.writeFailure,
+				values: { message: (error as Error).message },
+			}),
+		]
+	}
+	return [params.failureLine]
 }
 
 /** The line a written change prints: a drop, an add, or a drop with its adds. */
