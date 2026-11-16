@@ -14,11 +14,12 @@ import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { tryReadGit } from '../git.ts'
 import { readIdentity } from '../store/identity.ts'
 import { AGAIN_VERDICTS } from '../store/next-station.constants.ts'
-import { holdsPathOrGenericReference } from '../store/public-text.ts'
+import { folderPlanEntryIds, publicWordTestOf } from '../store/public-text.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { findLedgerTable, tableCells, unescapeCell } from './findings-ledger.ts'
 import {
+	BASE_FILES_ARGUMENTS,
 	CURRENT_FOLDER_PREFIX,
 	LEDGER_ROW_CELLS,
 	LINE_SUFFIX_PATTERN,
@@ -36,6 +37,7 @@ import type { LotEvent } from '../events/event.types.ts'
 import type {
 	FindingRow,
 	ReviewRecord,
+	PublicWordTest,
 	ReviewRow,
 	TreeFileTest,
 	VerdictRow,
@@ -60,11 +62,16 @@ export function readReviewRecord(params: { folder: string }): ReviewRecord | und
  */
 export function writeReviewRecord(params: { folder: string }): void {
 	const { folder } = params
-	const verdicts = [...stationVerdictRowsOf(folder), ...verifyVerdictRowsOf(folder)].sort(
-		function byTime(left, right) {
-			return left.at.localeCompare(right.at)
-		},
-	)
+	const isPublicWord = publicWordTestOf({
+		root: worktreeOf(folder),
+		ids: folderPlanEntryIds({ folder }),
+	})
+	const verdicts = [
+		...stationVerdictRowsOf({ folder, isPublicWord }),
+		...verifyVerdictRowsOf({ folder, isPublicWord }),
+	].sort(function byTime(left, right) {
+		return left.at.localeCompare(right.at)
+	})
 	const rows: ReviewRow[] = [
 		...findingRowsOf({ folder, inTree: treeFileTestOf(folder) }),
 		...verdicts,
@@ -176,10 +183,7 @@ function treeFileTestOf(folder: string): TreeFileTest {
 		files ??= new Set(
 			[
 				tryReadGit({ root: worktree, args: [...WORKTREE_FILES_ARGUMENTS] }),
-				tryReadGit({
-					root: worktree,
-					args: ['ls-tree', '-r', '--name-only', '-z', identity.base.commit],
-				}),
+				tryReadGit({ root: worktree, args: [...BASE_FILES_ARGUMENTS, identity.base.commit] }),
 			]
 				.join('\0')
 				.split('\0'),
@@ -188,11 +192,21 @@ function treeFileTestOf(folder: string): TreeFileTest {
 	}
 }
 
+/** The worktree the folder's identity names; undefined for a hand-over folder or a lot without one. */
+function worktreeOf(folder: string): string | undefined {
+	return readIdentity({ lotFolder: folder })?.worktree ?? undefined
+}
+
 /**
  * The verdict rows of the review stations' ends in the folder's events: a station run again (`failed`, `limit`) gives
- * none, nor a verdict outside the station vocabulary (a line edited by hand). The vendor and model are the end's, else those of the start it pairs with.
+ * none, nor a verdict outside the station vocabulary (a line edited by hand). The vendor and model are the end's,
+ * else those of the start it pairs with, each kept only when it is a public word.
  */
-function stationVerdictRowsOf(folder: string): VerdictRow[] {
+function stationVerdictRowsOf(params: {
+	folder: string
+	isPublicWord: PublicWordTest
+}): VerdictRow[] {
+	const { folder, isPublicWord } = params
 	const file = join(folder, STORE_FILES.events)
 	if (!existsSync(file)) return []
 	const { events } = readEvents({ file })
@@ -211,8 +225,8 @@ function stationVerdictRowsOf(folder: string): VerdictRow[] {
 			kind: 'verdict',
 			at: end.at,
 			by: { kind: 'station', station, ...(typeof round === 'number' && { round }) },
-			...wordOf({ key: 'vendor', end, start }),
-			...wordOf({ key: 'model', end, start }),
+			...wordOf({ key: 'vendor', end, start, isPublicWord }),
+			...wordOf({ key: 'model', end, start, isPublicWord }),
 			verdict,
 		})
 	}
@@ -220,22 +234,29 @@ function stationVerdictRowsOf(folder: string): VerdictRow[] {
 }
 
 /**
- * `{ [key]: word }` of the end, else of its start, when it is a word a public row may hold (`VERDICT_WORD_PATTERN`);
- * nothing when neither holds one.
+ * `{ [key]: word }` of the end, else of its start, when it is one plain word (`VERDICT_WORD_PATTERN`) that passes the
+ * public-text check; nothing otherwise.
  */
 function wordOf(params: {
 	key: 'vendor' | 'model'
 	end: LotEvent
 	start: LotEvent | undefined
+	isPublicWord: PublicWordTest
 }): Partial<Record<'vendor' | 'model', string>> {
 	const word = [params.end[params.key], params.start?.[params.key]].find(function isGiven(value) {
 		return typeof value === 'string'
 	})
-	return typeof word === 'string' && VERDICT_WORD_PATTERN.test(word) ? { [params.key]: word } : {}
+	return typeof word === 'string' && VERDICT_WORD_PATTERN.test(word) && params.isPublicWord(word)
+		? { [params.key]: word }
+		: {}
 }
 
-/** The verdict rows of the folder's `verify.jsonl`, one per line read: by its name, never its note. */
-function verifyVerdictRowsOf(folder: string): VerdictRow[] {
+/** The verdict rows of the folder's `verify.jsonl`, one per line read: by its name when it is a public word, never its note. */
+function verifyVerdictRowsOf(params: {
+	folder: string
+	isPublicWord: PublicWordTest
+}): VerdictRow[] {
+	const { folder, isPublicWord } = params
 	const file = join(folder, STORE_FILES.verify)
 	if (!existsSync(file)) return []
 	const rows: VerdictRow[] = []
@@ -246,12 +267,9 @@ function verifyVerdictRowsOf(folder: string): VerdictRow[] {
 			schema: REVIEW_RECORD_SCHEMA,
 			kind: 'verdict',
 			at: parsed.at,
-			// `lot verify` checks its `--by`; a line written by hand or by an older cli keeps its name only when it holds
-			// no path, link or reference
-			by: {
-				kind: 'verify',
-				...(!holdsPathOrGenericReference(parsed.by) && { name: parsed.by }),
-			},
+			// `lot verify` checks its `--by`; a line written by hand or by an older cli keeps its name only when it passes
+			// the same check
+			by: { kind: 'verify', ...(isPublicWord(parsed.by) && { name: parsed.by }) },
 			verdict: VERIFY_VERDICT,
 		})
 	}

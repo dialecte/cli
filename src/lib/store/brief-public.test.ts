@@ -11,6 +11,7 @@ import { briefWith, checkArgumentsOf, createBriefWorkspace } from '../../../test
 import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { appendPlanMark } from '../plan/plan-marks.ts'
 import { checkBrief, checkBriefFields } from './brief.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -142,28 +143,31 @@ describe('brief summary - references and forbidden words', { timeout: STORE_CASE
 	})
 })
 
+/** A plan of `PLAN_TEXT` whose lot block holds the entries given; its repository is the workspace's. */
+function planWithBlock(lots: readonly Record<string, unknown>[]): string {
+	return `${PLAN_TEXT}\n\`\`\`json dialecte-lots\n${JSON.stringify({
+		schema: 1,
+		repositories: { repo: '../../repo' },
+		lots,
+	})}\n\`\`\`\n`
+}
+
+/** A lot entry of the plan block: `id`, on `branch`. */
+function entryOf(params: { id: string; branch: string }): Record<string, unknown> {
+	return {
+		id: params.id,
+		title: 'an entry',
+		kind: 'lot',
+		scope: { repo: ['src/'] },
+		match: { branch: params.branch },
+	}
+}
+
 /** A lot plan whose block names the entries `RX7` and `BETA2`: the brief's plan. */
-const PLAN_WITH_ENTRIES = `${PLAN_TEXT}\n\`\`\`json dialecte-lots\n${JSON.stringify({
-	schema: 1,
-	repositories: { repo: '../../repo' },
-	lots: [
-		{
-			id: 'RX7',
-			title: 'the records',
-			kind: 'lot',
-			scope: { repo: ['src/'] },
-			match: { branch: 'feat/records' },
-		},
-		{
-			id: 'BETA2',
-			title: 'the reader',
-			kind: 'lot',
-			dependsOn: ['RX7'],
-			scope: { repo: ['test/'] },
-			match: { branch: 'feat/reader' },
-		},
-	],
-})}\n\`\`\`\n`
+const PLAN_WITH_ENTRIES = planWithBlock([
+	entryOf({ id: 'RX7', branch: 'feat/records' }),
+	{ ...entryOf({ id: 'BETA2', branch: 'feat/reader' }), dependsOn: ['RX7'] },
+])
 
 describe('brief summary - the ids of the lot plan', { timeout: STORE_CASE_TIMEOUT }, () => {
 	for (const summary of ['Adds the records RX7 asked for.', 'Reads them, as in BETA2.'])
@@ -192,3 +196,61 @@ describe('brief summary - the ids of the lot plan', { timeout: STORE_CASE_TIMEOU
 		).toEqual([])
 	})
 })
+
+/**
+ * Writes two plans beside the brief, each marked done on this machine as `dialecte plan mark` does: one holding the
+ * lot's entry `RX7` (on the brief's branch) and the entry `T`, the other holding only `QZ9`, on another branch. The
+ * brief's own plan is a third one, with no block.
+ */
+function markLotPlans(briefFolder: string): void {
+	for (const [file, lots] of [
+		[
+			'lot-plan.md',
+			[
+				entryOf({ id: 'RX7', branch: 'feat/dataflow-subscribe' }),
+				entryOf({ id: 'T', branch: 'feat/t-entry' }),
+			],
+		],
+		['other-plan.md', [entryOf({ id: 'QZ9', branch: 'feat/elsewhere' })]],
+	] as const) {
+		const planPath = join(briefFolder, file)
+		writeFileSync(planPath, planWithBlock(lots))
+		appendPlanMark({ planPath, id: String(lots[0].id), by: 'a person' })
+	}
+}
+
+describe(
+	'brief summary - the ids of the plan that holds the lot',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		for (const summary of [
+			'Adds the records RX7 asked for.',
+			'Adds the records rx7 asked for.',
+			'Kept by the rx7-lot reader.',
+			'Fixes the T reader.',
+		])
+			it(`a summary "${summary}" holding an entry id of a marked plan that holds the lot -> refused`, () => {
+				const workspace = createBriefWorkspace()
+				markLotPlans(workspace.briefFolder)
+
+				expect(
+					checkBrief(checkArgumentsOf({ workspace, brief: briefWith({ summary }) })).refused,
+				).toEqual([
+					{ field: 'summary', rule: 'public-text', detail: 'summary holds a plan entry id' },
+				])
+			})
+
+		for (const [what, summary] of [
+			['an id of a marked plan that does not hold the lot', 'Adds the QZ9 records.'],
+			['a one-letter id in another case', "Doesn't drop t now."],
+		])
+			it(`a summary holding ${what} -> no refusal`, () => {
+				const workspace = createBriefWorkspace()
+				markLotPlans(workspace.briefFolder)
+
+				expect(
+					checkBrief(checkArgumentsOf({ workspace, brief: briefWith({ summary }) })).refused,
+				).toEqual([])
+			})
+	},
+)

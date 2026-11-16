@@ -131,7 +131,7 @@ import {
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
 import { TESTS_RECORD_STEP } from '../lib/tdd/tests-record.constants.ts'
-import { ownLotFolderOf, refreshTddPart } from '../lib/tdd/tests-record.ts'
+import { refreshTddPart, testsRecordFolderOf } from '../lib/tdd/tests-record.ts'
 import { readVitestConfigs } from '../lib/tdd/vitest-configs.ts'
 import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.ts'
 
@@ -1331,8 +1331,9 @@ async function recordTddPart(params: {
 	at: string
 }): Promise<string | undefined> {
 	const { context } = params
-	const folder = ownLotFolderOf({ cwd: context.root })
-	if (folder === undefined) return undefined
+	const found = testsRecordFolderOf({ cwd: context.root })
+	if (found === undefined || 'warning' in found) return found?.warning
+	const { folder } = found
 	const clock = createSystemClock()
 	const startedAt = clock.now()
 	const running = context.progress?.start({ name: TESTS_RECORD_STEP, detail: '' })

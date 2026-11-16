@@ -44,3 +44,6 @@ export type ReviewRecord = { findings: FindingRow[]; verdicts: VerdictRow[] }
 
 /** Whether a path names a file of the lot's tree; undefined when the folder names no worktree. */
 export type TreeFileTest = ((path: string) => boolean) | undefined
+
+/** Whether a free word (a verify name, a station vendor or model) may reach a public row. */
+export type PublicWordTest = (text: string) => boolean

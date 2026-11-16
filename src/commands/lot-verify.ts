@@ -28,7 +28,7 @@ import {
 	PUBLIC_TEXT_REFUSAL,
 	PUBLIC_TEXT_UNCHECKED_REFUSAL,
 } from '../lib/store/public-text.constants.ts'
-import { publicTextLabel } from '../lib/store/public-text.ts'
+import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -48,9 +48,9 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 			exitCode: 1,
 			line: `lot verify: ${params.cwd} is in no git work tree: run lot verify inside the lot's worktree`,
 		})
-	const textRefusal = optionTextRefusal({ root, by, note })
-	if (textRefusal) return answerOf({ exitCode: 2, line: textRefusal })
 	const folder = resolve(params.cwd, read.words[0])
+	const textRefusal = optionTextRefusal({ root, folder, by, note })
+	if (textRefusal) return answerOf({ exitCode: 2, line: textRefusal })
 	const worktreeRefusal = otherWorktreeRefusal({ root, folder })
 	if (worktreeRefusal) return answerOf({ exitCode: 2, line: worktreeRefusal })
 	if (snapshotRounds(folder).length === 0)
@@ -80,9 +80,15 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 
 /**
  * The refusal of a `--by` or `--note` holding a forbidden word, or of a `--by` holding what a public record never
- * holds (it is copied to `review.jsonl`; the note stays private), or whose lists cannot be read; undefined when none.
+ * holds, an entry id of the plans that hold the lot included (it is copied to `review.jsonl`; the note stays private),
+ * or whose lists cannot be read; undefined when none.
  */
-function optionTextRefusal(params: { root: string; by: string; note: string }): string | undefined {
+function optionTextRefusal(params: {
+	root: string
+	folder: string
+	by: string
+	note: string
+}): string | undefined {
 	const { root, by } = params
 	const wordRefusal = forbiddenWordRefusal({
 		root,
@@ -95,7 +101,7 @@ function optionTextRefusal(params: { root: string; by: string; note: string }): 
 	if (wordRefusal) return wordRefusal
 	let label: string | undefined
 	try {
-		label = publicTextLabel({ text: by, root })
+		label = publicTextLabel({ text: by, root, ids: folderPlanEntryIds({ folder: params.folder }) })
 	} catch (error) {
 		return fillMessage({
 			template: PUBLIC_TEXT_UNCHECKED_REFUSAL,

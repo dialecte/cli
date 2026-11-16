@@ -2,7 +2,7 @@
  * The gate part of a lot's `tests.json` (33CI CI2a): a gate run in the lot's worktree writes the counts of its newest
  * run that counted tests, and the tree it ran on; a run that counted none writes no part.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { addWorktreeFolder } from '../../test/lot-stores.ts'
@@ -68,5 +68,35 @@ describe('gate - tests.json', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		await runGate({ cwd: throwaway, argv: [] })
 
 		expect(testsRecordOf(lot.lotFolder)).toBeUndefined()
+	})
+
+	it('a tests.json that cannot be written -> the run stands: the ! line before the verdict', async () => {
+		const lot = createStepLot({ fast: [COUNTED_STEP] })
+		mkdirSync(join(lot.lotFolder, STORE_FILES.tests, 'blocked'), { recursive: true })
+
+		const result = await runGate({ cwd: lot.worktree, argv: [] })
+
+		expect({
+			exitCode: result.exitCode,
+			lines: result.output.trimEnd().split('\n').slice(-2),
+		}).toEqual({
+			exitCode: 0,
+			lines: [expect.stringMatching(/^! tests\.json not written: /), 'gate --fast: green'],
+		})
+	})
+
+	it('a tests.json that cannot be written, gate --json -> the ! line in its warnings', async () => {
+		const lot = createStepLot({ fast: [COUNTED_STEP] })
+		mkdirSync(join(lot.lotFolder, STORE_FILES.tests, 'blocked'), { recursive: true })
+
+		const result = await runGate({ cwd: lot.worktree, argv: ['--json'] })
+
+		expect({
+			exitCode: result.exitCode,
+			warnings: (JSON.parse(result.output) as { warnings?: unknown }).warnings,
+		}).toEqual({
+			exitCode: 0,
+			warnings: [expect.stringMatching(/^! tests\.json not written: /)],
+		})
 	})
 })

@@ -48,6 +48,8 @@ const CASES: CaseStatusLine[] = [
 /** The tdd part those cases give. */
 const TDD_PART = {
 	at: '2026-11-17T10:00:00.000Z',
+	head: 'f'.repeat(40),
+	stateHash: '0'.repeat(64),
 	cases: [
 		{ file: 'src/a.test.ts', name: 'a -> b', status: 'green' },
 		{ file: 'src/a.test.ts', name: 'c -> d', status: 'accepted' },
@@ -107,10 +109,13 @@ function textOf(folder: string): string {
 }
 
 describe('writeTestsRecord - the tdd part', () => {
-	it('the cases of tdd green -> each case with its status, the counts by status; no reason, no skipped receipt', () => {
+	it('the cases of tdd green -> each case with its status, the counts by status, the tree; no reason, no skipped receipt', () => {
 		const folder = temporaryFolder('tests-record-')
 
-		writeTestsRecord({ folder, tdd: { at: TDD_PART.at, cases: CASES } })
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
 
 		expect({
 			file: fileOf(folder),
@@ -125,7 +130,10 @@ describe('writeTestsRecord - the tdd part', () => {
 			gateRecords: [gateRecord({ mode: 'full', at: '2026-11-17T09:00:00.000Z' })],
 		})
 
-		writeTestsRecord({ folder, tdd: { at: TDD_PART.at, cases: CASES } })
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
 
 		expect(fileOf(folder)).toEqual({
 			schema: 1,
@@ -138,7 +146,10 @@ describe('writeTestsRecord - the tdd part', () => {
 describe('writeTestsRecord - the gate part', () => {
 	it('records of fast and full -> the newest that counted tests, the tdd part kept', () => {
 		const folder = temporaryFolder('tests-record-')
-		writeTestsRecord({ folder, tdd: { at: TDD_PART.at, cases: CASES } })
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
 
 		writeTestsRecord({
 			folder,
@@ -187,7 +198,10 @@ describe('readTestsRecord', () => {
 
 	it('a written record -> read back as written', () => {
 		const folder = temporaryFolder('tests-record-')
-		writeTestsRecord({ folder, tdd: { at: TDD_PART.at, cases: CASES } })
+		writeTestsRecord({
+			folder,
+			tdd: { at: TDD_PART.at, head: TDD_PART.head, stateHash: TDD_PART.stateHash, cases: CASES },
+		})
 
 		expect(readTestsRecord({ folder })).toEqual({ schema: 1, tdd: TDD_PART })
 	})

@@ -14,3 +14,6 @@ export const NIT_ROW = {
 	file: TREE_FILE,
 	state: 'open',
 }
+
+/** The id of the entry the plan that holds the lot names. */
+export const PLAN_ENTRY_ID = 'RX7'

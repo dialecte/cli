@@ -3,7 +3,15 @@
  * file named by the plan's real path.
  */
 import { createHash } from 'node:crypto'
-import { closeSync, constants, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs'
+import {
+	closeSync,
+	constants,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	writeSync,
+} from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
@@ -82,6 +90,29 @@ function marksFileOf(params: { plan: string; location?: StateFolderLocation }): 
 		...PLAN_MARKS_SEGMENTS,
 		`${digest.slice(0, PLAN_MARKS_NAME_LENGTH)}${PLAN_MARKS_EXTENSION}`,
 	)
+}
+
+/**
+ * The plans marked on this machine: the real path each marks file names, each once, sorted. None when
+ * no plan was marked (no marks folder) or the folder cannot be read; a file that names no plan is skipped.
+ */
+export function listMarkedPlans(params: { location?: StateFolderLocation } = {}): string[] {
+	const folder = join(stateFolder(params.location), ...PLAN_MARKS_SEGMENTS)
+	let names: string[]
+	try {
+		names = readdirSync(folder).filter(function isMarksFile(name) {
+			return name.endsWith(PLAN_MARKS_EXTENSION)
+		})
+	} catch {
+		return []
+	}
+	const plans = names.flatMap(function planOfFile(name) {
+		const [first] = marksTextOf({ file: join(folder, name) })
+			.split('\n')
+			.flatMap((line) => markOfLine({ line }))
+		return first === undefined ? [] : [first.plan]
+	})
+	return [...new Set(plans)].sort()
 }
 
 /** The marks file's text; empty when there is none yet. */

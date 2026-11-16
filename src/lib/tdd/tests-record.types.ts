@@ -1,6 +1,6 @@
 import type { GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { StepCounts } from '../gate/gate.types.ts'
-import type { CaseStatus, ReceiptFlag } from './tdd.types.ts'
+import type { CaseStatus, CaseStatusLine, ReceiptFlag } from './tdd.types.ts'
 
 /** A case of the change as a public row: where it is, its tdd status and flags; never a reason or a message. */
 export type TestsRecordCase = {
@@ -17,6 +17,9 @@ export type TestsRecordCase = {
 export type TestsRecordTdd = {
 	/** ISO time of the `tdd green` that wrote it. */
 	at: string
+	/** The commit and the state hash of the tree the cases were read on. */
+	head: string
+	stateHash: string
 	cases: TestsRecordCase[]
 	counts: Partial<Record<CaseStatus, number>>
 }
@@ -33,3 +36,11 @@ export type TestsRecordGate = {
 
 /** A lot's `tests.json`: each part absent until its writer ran. */
 export type TestsRecord = { schema: 1; tdd?: TestsRecordTdd; gate?: TestsRecordGate }
+
+/** What the tdd part is written from: the time and tree of the `tdd green`, and the cases of the change. */
+export type TddPartSource = {
+	at: string
+	head: string
+	stateHash: string
+	cases: readonly CaseStatusLine[]
+}

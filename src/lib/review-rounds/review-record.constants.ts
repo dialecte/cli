@@ -47,3 +47,6 @@ export const WORKTREE_FILES_ARGUMENTS: readonly string[] = [
 	'--others',
 	'--exclude-standard',
 ]
+
+/** `git ls-tree` of a commit's files, NUL-separated: the base commit follows. */
+export const BASE_FILES_ARGUMENTS: readonly string[] = ['ls-tree', '-r', '--name-only', '-z']

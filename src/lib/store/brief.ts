@@ -46,7 +46,12 @@ import {
 	readLotStateInput,
 } from './lot-records.ts'
 import { PLAN_ENTRY_ID_LABEL } from './public-text.constants.ts'
-import { holdsPathOrLink, holdsPlanEntryId, referenceLabelIn } from './public-text.ts'
+import {
+	holdsPathOrLink,
+	holdsPlanEntryId,
+	lotPlanEntryIds,
+	referenceLabelIn,
+} from './public-text.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
@@ -166,11 +171,7 @@ export function checkBrief(params: {
 		...base.refused,
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
-		...summaryReferenceFaults({
-			summary: fields.brief?.summary,
-			repository: repository.main,
-			planPath: typeof value.plan === 'string' ? resolve(briefFolder, value.plan) : undefined,
-		}),
+		...summaryReferenceFaults({ fields, repository: repository.main, value, briefFolder }),
 		...overlapFaults({ brief: value, location, caseInsensitive, pause: params.pause }),
 	]
 	const findings = params.simulated
@@ -339,14 +340,17 @@ function issueFaults(value: unknown): Refusal[] {
 /**
  * The fault of a summary holding a reference a public text never holds (`referenceLabelIn`: every generic pattern,
  * those the package declares, a contributor's consumer names, the machine's forbidden words), else an entry id of the
- * lot plan the brief names. One refusal naming the label, never the text; none without a summary or a repository.
+ * plans that hold the lot (`lotPlanEntryIds`). One refusal naming the label, never the text; none without a summary or
+ * a repository.
  */
 function summaryReferenceFaults(params: {
-	summary: string | undefined
+	fields: BriefFieldsResult
 	repository: string | undefined
-	planPath: string | undefined
+	value: Record<string, unknown>
+	briefFolder: string
 }): Refusal[] {
-	const { summary, repository, planPath } = params
+	const { repository, value } = params
+	const summary = params.fields.brief?.summary
 	if (summary === undefined || repository === undefined) return []
 	let label: string | undefined
 	try {
@@ -365,8 +369,14 @@ function summaryReferenceFaults(params: {
 	}
 	if (
 		label === undefined &&
-		planPath !== undefined &&
-		holdsPlanEntryId({ text: summary, planPath })
+		holdsPlanEntryId({
+			text: summary,
+			ids: lotPlanEntryIds({
+				planPath:
+					typeof value.plan === 'string' ? resolve(params.briefFolder, value.plan) : undefined,
+				branch: typeof value.branch === 'string' ? value.branch : undefined,
+			}),
+		})
 	)
 		label = PLAN_ENTRY_ID_LABEL
 	if (label === undefined) return []

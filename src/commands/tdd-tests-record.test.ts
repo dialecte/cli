@@ -1,14 +1,16 @@
 /**
  * The tdd part of a lot's `tests.json` (33CI CI2a): `tdd green` in the lot's worktree writes the cases of the change
- * with their status, as `tdd status` reads them after the run; `tdd red` writes none. The package is a scratch one that
+ * with their status, as `tdd status` reads them after the run, and the tree they were read on; `tdd red` writes none. The package is a scratch one that
  * tests with the cli's own vitest (the receipts need a real run).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { git } from '../../test/scratch-repository.ts'
 import { ADD_CODE, ADD_FILE, ADD_TEST_FILE, TDD_NOW } from '../../test/step-events-tdd.constants.ts'
 import { createTddLot } from '../../test/step-events-tdd.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runTdd } from './tdd.ts'
 
@@ -30,7 +32,7 @@ function testsRecordOf(lotFolder: string): unknown {
 }
 
 describe('tdd - tests.json', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
-	it('tdd red, the code, tdd green -> the tdd part: the case green, its count, the time of the run', async () => {
+	it('tdd red, the code, tdd green -> the tdd part: the case green, its count, the time and tree of the run', async () => {
 		const lot = createTddLot()
 		await tdd({ cwd: lot.worktree, argv: ['red'] })
 		writeFileSync(join(lot.worktree, ADD_FILE), ADD_CODE)
@@ -41,6 +43,8 @@ describe('tdd - tests.json', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 			schema: 1,
 			tdd: {
 				at: TDD_NOW.toISOString(),
+				head: git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
+				stateHash: computeStateHash(lot.worktree),
 				cases: [{ file: ADD_TEST_FILE, name: 'add > one plus two → three', status: 'green' }],
 				counts: { green: 1 },
 			},

@@ -28,6 +28,9 @@ export const PUBLIC_TEXT_REFUSAL = 'lot {verb}: {option} holds a {label}: nothin
 /** A word of a text, as plan entry ids are matched against it: letters, digits, `_` and inner `-` or `.`. */
 export const WORD_PATTERN = /[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*/g
 
+/** Where a word splits into the parts a plan entry id is also matched against (`ci2a-lot`: `ci2a`, `lot`). */
+export const WORD_PART_SEPARATOR = '-'
+
 /** The label of a plan entry id, as a refusal names it (`holds a plan entry id`). */
 export const PLAN_ENTRY_ID_LABEL = 'plan entry id'
 

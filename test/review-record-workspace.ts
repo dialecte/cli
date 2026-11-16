@@ -1,13 +1,17 @@
 /** A scratch store lot whose review rounds write `review.jsonl`, and the reads of it the cases compare. */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runLot } from '../src/commands/lot.ts'
+import { appendPlanMark } from '../src/lib/plan/plan-marks.ts'
 import { STORE_FILES } from '../src/lib/store/store.constants.ts'
+import { VALID_BRIEF } from './brief-workspace.constants.ts'
 import { SNAPSHOT_TIME } from './late-fixes-workspace.constants.ts'
 import { lotWithStory } from './late-fixes-workspace.ts'
-import { PRIVATE_TEXT, TREE_FILE } from './review-record-workspace.constants.ts'
-import { writeFiles } from './scratch-repository.ts'
+import { PLAN_ENTRY_ID, PRIVATE_TEXT, TREE_FILE } from './review-record-workspace.constants.ts'
+import { temporaryFolder, writeFiles } from './scratch-repository.ts'
+
+import { vi } from 'vitest'
 
 import type { CommandResult } from '../src/lib/command-result.types.ts'
 import type { StoryTarget } from './late-fixes-workspace.types.ts'
@@ -72,4 +76,31 @@ export function reviewRowsOf(folder: string): unknown[] {
 		.map(function rowOfLine(line) {
 			return JSON.parse(line)
 		})
+}
+
+/**
+ * A plan holding the entry `PLAN_ENTRY_ID` on the branch of the lot's brief, its repository the lot's worktree, marked
+ * done on this machine (a scratch state folder) as `dialecte plan mark` does: the plan that holds the lot.
+ */
+export function markLotPlan(lot: StoryTarget): void {
+	vi.stubEnv('XDG_STATE_HOME', temporaryFolder('review-record-state-'))
+	const planPath = join(temporaryFolder('review-record-plan-'), 'plan.md')
+	const block = {
+		schema: 1,
+		repositories: { repo: lot.cwd },
+		lots: [
+			{
+				id: PLAN_ENTRY_ID,
+				title: 'the records',
+				kind: 'lot',
+				scope: { repo: ['src/'] },
+				match: { branch: VALID_BRIEF.branch },
+			},
+		],
+	}
+	writeFileSync(
+		planPath,
+		`# The plan\n\n\`\`\`json dialecte-lots\n${JSON.stringify(block)}\n\`\`\`\n`,
+	)
+	appendPlanMark({ planPath, id: PLAN_ENTRY_ID, by: 'a person' })
 }

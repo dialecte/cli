@@ -595,6 +595,7 @@ function renderGateResult(params: {
 					...(reused && { reused: true }),
 					stored: params.stored,
 					steps: results,
+					...(params.notStored.length > 0 && { warnings: params.notStored }),
 				},
 				2,
 			),

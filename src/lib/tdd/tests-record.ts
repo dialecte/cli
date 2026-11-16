@@ -9,6 +9,7 @@ import { join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { readGateRecords } from '../gate-records/gate-records.ts'
+import { computeStateHash } from '../gate-records/state-hash.ts'
 import { tryReadGit } from '../git.ts'
 import { readIdentity } from '../store/identity.ts'
 import { replaceWhole } from '../store/publish.ts'
@@ -16,7 +17,12 @@ import { lotOfWorktree } from '../store/resolve-lot.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readLedger } from './tdd-files.ts'
 import { readTddState } from './tdd-state.ts'
-import { TESTS_RECORD_SCHEMA } from './tests-record.constants.ts'
+import {
+	HEAD_ARGUMENTS,
+	NO_HEAD_REASON,
+	TESTS_RECORD_SCHEMA,
+	WORKTREE_TOP_ARGUMENTS,
+} from './tests-record.constants.ts'
 
 import type { GateRecord } from '../gate-records/gate-records.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
@@ -26,6 +32,7 @@ import type {
 	TestsRecordCase,
 	TestsRecordGate,
 	TestsRecordTdd,
+	TddPartSource,
 } from './tests-record.types.ts'
 
 /**
@@ -35,7 +42,7 @@ import type {
  */
 export function writeTestsRecord(params: {
 	folder: string
-	tdd?: { at: string; cases: readonly CaseStatusLine[] }
+	tdd?: TddPartSource
 	gateRecords?: readonly GateRecord[]
 }): void {
 	const path = join(params.folder, STORE_FILES.tests)
@@ -52,15 +59,15 @@ export function writeTestsRecord(params: {
 }
 
 /**
- * After a gate run in `cwd`: the gate part of the `tests.json` of the lot whose own worktree holds `cwd` (`ownLotFolderOf`),
- * from the worktree's gate records. The `!` line a run adds when it could not be written (the run's own record stands);
+ * After a gate run in `cwd`: the gate part of the `tests.json` of the lot whose own worktree holds `cwd`
+ * (`testsRecordFolderOf`), from the worktree's gate records. The `!` line a run adds when it could not be written (the run's own record stands);
  * undefined when it was, or when `cwd` is in no lot's worktree.
  */
 export function refreshGatePart(params: { cwd: string }): string | undefined {
+	const found = testsRecordFolderOf(params)
+	if (found === undefined || 'warning' in found) return found?.warning
 	try {
-		const folder = ownLotFolderOf({ cwd: params.cwd })
-		if (folder === undefined) return undefined
-		writeTestsRecord({ folder, gateRecords: readGateRecords(params.cwd) })
+		writeTestsRecord({ folder: found.folder, gateRecords: readGateRecords(params.cwd) })
 		return undefined
 	} catch (error) {
 		return notWrittenLine((error as Error).message)
@@ -68,21 +75,28 @@ export function refreshGatePart(params: { cwd: string }): string | undefined {
 }
 
 /**
- * The folder of the lot whose own worktree holds `cwd`; undefined in no lot's worktree, and in a lot's review throwaway
- * (its runs are a reviewer's, on its own tree: they never stand for the lot's tests).
+ * The folder of the lot whose own worktree holds `cwd`, the `tests.json` a run there writes; undefined in no lot's
+ * worktree and in a lot's review throwaway (its runs are a reviewer's, on its own tree: they never stand for the lot's
+ * tests). A store that cannot be read gives the `!` line a run adds, never "no lot".
  */
-export function ownLotFolderOf(params: { cwd: string }): string | undefined {
-	const folder = lotOfWorktree({ cwd: params.cwd })
-	if (folder === undefined) return undefined
-	const worktree = readIdentity({ lotFolder: folder })?.worktree
-	const top = tryReadGit({ root: params.cwd, args: ['rev-parse', '--show-toplevel'] })?.trim()
-	if (worktree === undefined || worktree === null || top === undefined) return undefined
-	return realPathOf(worktree) === realPathOf(top) ? folder : undefined
+export function testsRecordFolderOf(params: {
+	cwd: string
+}): { folder: string } | { warning: string } | undefined {
+	try {
+		const folder = lotOfWorktree({ cwd: params.cwd })
+		if (folder === undefined) return undefined
+		const worktree = readIdentity({ lotFolder: folder })?.worktree
+		const top = tryReadGit({ root: params.cwd, args: [...WORKTREE_TOP_ARGUMENTS] })?.trim()
+		if (worktree === undefined || worktree === null || top === undefined) return undefined
+		return realPathOf(worktree) === realPathOf(top) ? { folder } : undefined
+	} catch (error) {
+		return { warning: notWrittenLine((error as Error).message) }
+	}
 }
 
 /**
  * After `tdd green` in `root`: the tdd part of the lot's `tests.json` in `folder`, the cases of the change as `tdd status`
- * reads them once the run's receipts are written. It runs the collect `tdd status` runs, again: a green may target
+ * reads them once the run's receipts are written, and the tree they were read on (its HEAD and state hash). It runs the collect `tdd status` runs, again: a green may target
  * some cases only, the record holds every case of the change. The `!` line a run adds when it could not be written
  * (its receipts stand); undefined when it was.
  */
@@ -99,7 +113,12 @@ export async function refreshTddPart(params: {
 		if ('failure' in ledger) return notWrittenLine(ledger.failure)
 		const state = await readTddState({ ...read, ledger })
 		if ('failure' in state) return notWrittenLine(state.failure)
-		writeTestsRecord({ folder, tdd: { at: read.at, cases: state.cases } })
+		const head = tryReadGit({ root: read.root, args: [...HEAD_ARGUMENTS] })?.trim()
+		if (head === undefined) return notWrittenLine(NO_HEAD_REASON)
+		writeTestsRecord({
+			folder,
+			tdd: { at: read.at, head, stateHash: computeStateHash(read.root), cases: state.cases },
+		})
 		return undefined
 	} catch (error) {
 		return notWrittenLine((error as Error).message)
@@ -122,10 +141,16 @@ export function readTestsRecord(params: { folder: string }): TestsRecord | undef
 }
 
 /** The tdd part of the cases of the change: each as a public row, in the given order, and the count of each status. */
-function tddPartOf(params: { at: string; cases: readonly CaseStatusLine[] }): TestsRecordTdd {
+function tddPartOf(params: TddPartSource): TestsRecordTdd {
 	const counts: TestsRecordTdd['counts'] = {}
 	for (const line of params.cases) counts[line.status] = (counts[line.status] ?? 0) + 1
-	return { at: params.at, cases: params.cases.map(publicCaseOf), counts }
+	return {
+		at: params.at,
+		head: params.head,
+		stateHash: params.stateHash,
+		cases: params.cases.map(publicCaseOf),
+		counts,
+	}
 }
 
 /** A case status line without what stays private (its skipped receipts and their reasons). */

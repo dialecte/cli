@@ -6,12 +6,15 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
+import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { lotWithStory } from '../../test/late-fixes-workspace.ts'
 import { station } from '../../test/lot-station-workspace.ts'
 import { NIT_ROW, PRIVATE_TEXT, TREE_FILE } from '../../test/review-record-workspace.constants.ts'
 import {
 	finding,
 	lotVerb,
+	markLotPlan,
 	reviewedLot,
 	reviewRowsOf,
 	reviewTextOf,
@@ -219,3 +222,100 @@ describe(
 		})
 	},
 )
+
+describe(
+	'review.jsonl - the words of the plan that holds the lot',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		for (const by of ['RX7', 'rx7-lot'])
+			it(`lot verify --by "${by}", an entry id of the plan that holds the lot -> exit 2, nothing written`, () => {
+				const lot = lotWithStory([{ snapshot: 1 }])
+				markLotPlan(lot)
+
+				const result = lotVerb({ lot, verb: 'verify', words: ['--by', by, '--note', 'checked'] })
+
+				expect({ result, review: reviewTextOf(lot.lotFolder) }).toEqual({
+					result: {
+						exitCode: 2,
+						output: 'lot verify: --by holds a plan entry id: nothing written',
+					},
+					review: '',
+				})
+			})
+
+		it('a verify line written by hand whose by holds an entry id of the plan -> its verdict row names no one', () => {
+			const lot = reviewedLot()
+			markLotPlan(lot)
+			appendFileSync(
+				join(lot.lotFolder, STORE_FILES.verify),
+				`${JSON.stringify({ schema: 1, at: '2026-11-16T10:00:00.000Z', by: 'rx7-lot', note: 'checked', state: 'a'.repeat(64) })}\n`,
+			)
+
+			finding({ lot, severity: 'nit', at: `${TREE_FILE}:3` })
+
+			expect(reviewRowsOf(lot.lotFolder)).toEqual([
+				NIT_ROW,
+				{
+					schema: 1,
+					kind: 'verdict',
+					at: '2026-11-16T10:00:00.000Z',
+					by: { kind: 'verify' },
+					verdict: 'verified',
+				},
+			])
+		})
+	},
+)
+
+describe("review.jsonl - the machine's forbidden words", { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('a verify line written by hand whose by is a forbidden word -> its verdict row names no one', () => {
+		const lot = reviewedLot()
+		configureMachine({ userFileLines: [FIRST_WORD] })
+		appendFileSync(
+			join(lot.lotFolder, STORE_FILES.verify),
+			`${JSON.stringify({ schema: 1, at: '2026-11-16T10:00:00.000Z', by: FIRST_WORD, note: 'checked', state: 'a'.repeat(64) })}\n`,
+		)
+
+		finding({ lot, severity: 'nit', at: `${TREE_FILE}:3` })
+
+		expect(reviewRowsOf(lot.lotFolder)).toEqual([
+			NIT_ROW,
+			{
+				schema: 1,
+				kind: 'verdict',
+				at: '2026-11-16T10:00:00.000Z',
+				by: { kind: 'verify' },
+				verdict: 'verified',
+			},
+		])
+	})
+
+	it('a station vendor that is a forbidden word and a model that is a plan entry id -> the row holds neither', () => {
+		const lot = reviewedLot()
+		configureMachine({ userFileLines: [FIRST_WORD] })
+		markLotPlan(lot)
+
+		station(lot, [
+			'end',
+			'reviewer',
+			'--round',
+			'1',
+			'--verdict',
+			'approve',
+			'--vendor',
+			FIRST_WORD,
+			'--model',
+			'rx7',
+		])
+
+		expect(reviewRowsOf(lot.lotFolder)).toEqual([
+			{
+				schema: 1,
+				kind: 'verdict',
+				at: expect.any(String),
+				by: { kind: 'station', station: 'reviewer', round: 1 },
+				verdict: 'approve',
+			},
+		])
+	})
+})
