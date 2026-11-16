@@ -6,9 +6,15 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createScratchRepository, git, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import {
+	createScratchRepository,
+	git,
+	isolateGitConfig,
+	temporaryFolder,
+	writeFiles,
+} from './scratch-repository.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const PACKAGE_ROOT = join(import.meta.dirname, '..')
 
@@ -152,4 +158,47 @@ describe('git variables a commit hook inherits', () => {
 			warning: '',
 		})
 	})
+})
+
+/** The git commands a GIT_TRACE2_EVENT `trace` file says were started as `git maintenance`. */
+function maintenanceStartsIn(trace: string): string[] {
+	if (!existsSync(trace)) return []
+	return readFileSync(trace, 'utf8')
+		.split('\n')
+		.filter((line) => line.startsWith('{'))
+		.map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+		.filter((event) => event.event === 'child_start' && event.argv?.includes('maintenance'))
+		.map((event) => (event.argv ?? []).join(' '))
+}
+
+const MAINTENANCE_CASES: Record<string, (root: string) => void> = {
+	'a commit': function commit(root) {
+		git({ root, args: ['commit', '-q', '--allow-empty', '-m', 'more'] })
+	},
+	"a commit with the test's own global config": function commitWithOwnConfig(root) {
+		isolateGitConfig()
+		git({ root, args: ['commit', '-q', '--allow-empty', '-m', 'more'] })
+	},
+	'a push into a bare repository': function push(root) {
+		const bare = join(temporaryFolder('dialecte-bare-'), 'bare.git')
+		git({ root, args: ['init', '-q', '--bare', bare] })
+		git({ root, args: ['push', '-q', bare, 'main'] })
+	},
+}
+
+describe('git started under the suite setup', () => {
+	afterEach(function restoreEnvironment() {
+		vi.unstubAllEnvs()
+	})
+
+	for (const [name, act] of Object.entries(MAINTENANCE_CASES))
+		it(`${name} → no background git maintenance started (it would outlive the test's folder)`, () => {
+			const root = createScratchRepository()
+			const trace = join(temporaryFolder('dialecte-trace-'), 'trace.json')
+			vi.stubEnv('GIT_TRACE2_EVENT', trace)
+
+			act(root)
+
+			expect(maintenanceStartsIn(trace)).toEqual([])
+		})
 })

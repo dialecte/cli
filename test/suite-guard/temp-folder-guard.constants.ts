@@ -16,3 +16,12 @@ export const SUITE_STATE_FOLDER = 'state'
 
 /** The suite's data folder (XDG_DATA_HOME) inside its temporary folder: removed before the leftover check. */
 export const SUITE_DATA_FOLDER = 'data'
+
+/**
+ * The suite's origins folder inside its temporary folder: one file per worker, a line per `temporaryFolder` naming
+ * the test that made it; read for the leftovers' names, then removed before the leftover check.
+ */
+export const SUITE_ORIGINS_FOLDER = 'origins'
+
+/** The variable naming the origins folder for the workers (set by the guard's setup). */
+export const ORIGINS_VARIABLE = 'DIALECTE_TEST_ORIGINS'

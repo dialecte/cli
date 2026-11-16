@@ -3,7 +3,8 @@
  * GIT_DIR, GIT_INDEX_FILE, its config and the commit's identity. The tests spawn git in scratch
  * repositories with this process's environment: cleared here, before any test, those commands act
  * on their own folder only. Nor do they read the person's global or system git config (a `dialecte.*` key, an
- * alias, a default branch): the suite sees what a CI machine sees, an empty one.
+ * alias, a default branch): the suite sees what a CI machine sees, an empty one, but for its git starting no
+ * background maintenance.
  */
 import { HANDOVER_VARIABLES } from '../src/lib/gate/selection.constants.ts'
 import { clearRepositoryEnvironment } from '../src/lib/git-environment.ts'
@@ -13,6 +14,7 @@ import {
 	CONFIG_ENVIRONMENT_VARIABLES,
 	DISCOVERY_ENVIRONMENT_VARIABLES,
 	IDENTITY_ENVIRONMENT_VARIABLES,
+	SUITE_GIT_CONFIG_FILE,
 } from './git-environment.constants.ts'
 
 clearRepositoryEnvironment(process.env)
@@ -27,8 +29,8 @@ for (const name of [
 // a case spawning its own scratch hook must never read or write the real repository's store with them
 for (const name of HANDOVER_VARIABLES) delete process.env[name]
 
-// git reads /dev/null as an empty config file
-process.env.GIT_CONFIG_GLOBAL = '/dev/null'
+// the suite's own global config: background maintenance off, nothing else
+process.env.GIT_CONFIG_GLOBAL = SUITE_GIT_CONFIG_FILE
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 // the standard the person works against is theirs, not the suite's: the cases that need one set it themselves

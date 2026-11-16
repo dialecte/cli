@@ -1,0 +1,6 @@
+# The suite's global git config (GIT_CONFIG_GLOBAL, set by test/git-environment.setup.ts): no git the suite starts
+# - a commit, a fetch, a push and the receive-pack it runs in the other repository - leaves a detached
+# `git maintenance` running, which would write into a test's repository after the test removed it.
+[maintenance]
+	auto = false
+	autoDetach = false
