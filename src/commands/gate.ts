@@ -28,7 +28,7 @@
  * records `dialecte-gate-release.json`. A gate config the cli cannot run exits 2 (1 under `--hook`).
  *
  * `--hook [--no-reuse]` runs in a commit hook the `dialecte.gate.hook` steps when the package declares them (a package
- * whose suite runs on CI), after the tdd receipts of the commit (`runHookTddStep`: they prove the commit, so no test
+ * whose suite runs on CI), after the tdd receipts of the lot (`runHookTddStep`: they prove the commit, so no test
  * runs; a failure runs no step); else the hook steps of `--full`: every full step but the scoped ones that count no
  * tests (a commit has no lot base for them), with no tdd step. Each step is answered by the newest green record of what
  * is committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree

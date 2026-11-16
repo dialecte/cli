@@ -1,6 +1,6 @@
 /**
- * `gate --hook` of a package declaring `dialecte.gate.hook`: the tdd receipts of the commit first (measured from HEAD),
- * then the declared steps; no test suite. Without a declared hook list, no tdd step.
+ * `gate --hook` of a package declaring `dialecte.gate.hook`: the tdd receipts of the lot first (measured from the lot
+ * base), then the declared steps; no test suite. Without a declared hook list, no tdd step.
  */
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -9,6 +9,7 @@ import { runHookIn } from '../../test/gate-hook.ts'
 import { countRuns, countingStep, createCounter } from '../../test/scratch-checks.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { shortCommitOf } from '../lib/tdd/tdd-base.ts'
 import { runTdd } from './tdd.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -21,6 +22,8 @@ const IMPLEMENTED =
 	'export function add(left: number, right: number): number {\n\treturn left + right\n}\n'
 const REFACTORED =
 	'export function add(left: number, right: number): number {\n\treturn right + left\n}\n'
+const BROKEN =
+	'export function add(left: number, right: number): number {\n\treturn left - right\n}\n'
 const ADD_TEST = [
 	"import { add } from './add.ts'",
 	"import { expect, it } from 'vitest'",
@@ -30,6 +33,16 @@ const ADD_TEST = [
 const CASE = 'src/add.test.ts::one plus two → three'
 const NEXT_STEPS =
 	'the test station runs `dialecte tdd red`, the implement station `dialecte tdd green`'
+
+/** The commit HEAD names in `root`. */
+function headOf(root: string): string {
+	return git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+}
+
+/** The line under a stale failure: the green to run again over the lot, from its base. */
+function greenAgainLine(params: { root: string; base: string }): string {
+	return `run \`dialecte tdd green --base ${shortCommitOf({ root: params.root, commit: params.base })}\` again`
+}
 
 /** A vitest package whose full gate and, when `declared`, hook list run one counting `check` step. */
 function hookPackage(params: { declared: boolean }): { root: string; counter: string } {
@@ -82,10 +95,11 @@ describe('gate --hook: the tdd receipts of the commit', { timeout: 240_000 }, ()
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output.split('\n')).toEqual([
-			'FAIL  tdd  1 case(s) green before the production changed: run `dialecte tdd green` again',
+			'FAIL  tdd  1 case(s) of the lot green before the production changed',
 			'gate --hook: failed at tdd',
 			'--- last lines of tdd ---',
 			`stale  ${CASE}`,
+			greenAgainLine({ root, base: headOf(root) }),
 		])
 		expect(countRuns(counter)).toBe(0)
 	})
@@ -133,6 +147,51 @@ describe('gate --hook: the tdd receipts of the commit', { timeout: 240_000 }, ()
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output).not.toContain('tdd')
+		expect(countRuns(counter)).toBe(1)
+	})
+})
+
+describe('gate --hook: the cases of the whole lot', { timeout: 240_000 }, () => {
+	/** A package on main, a lot branch cut from it with one commit: tests and code, red then green. */
+	async function lotWithGreenCommit(): Promise<{ root: string; counter: string; base: string }> {
+		const { root, counter } = hookPackage({ declared: true })
+		const base = headOf(root)
+		git({ root, args: ['checkout', '-q', '-b', 'lot'] })
+		await redThenGreen(root)
+		git({ root, args: ['commit', '-q', '--no-verify', '-m', 'tests and code'] })
+		return { root, counter, base }
+	}
+
+	it('a production-only commit after a green commit (a refactor breaking add) → FAIL tdd naming the lot case, measured from the lot base', async () => {
+		const { root, counter, base } = await lotWithGreenCommit()
+		writeFileSync(join(root, 'src/add.ts'), BROKEN)
+		git({ root, args: ['add', '-A'] })
+
+		const result = await runHookIn({ cwd: root })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output.split('\n')).toEqual([
+			'FAIL  tdd  1 case(s) of the lot green before the production changed',
+			'gate --hook: failed at tdd',
+			'--- last lines of tdd ---',
+			`stale  ${CASE}`,
+			greenAgainLine({ root, base }),
+		])
+		expect(countRuns(counter)).toBe(0)
+	})
+
+	it('a production-only commit after a green commit, tdd green over the lot run again → the hook passes', async () => {
+		const { root, counter, base } = await lotWithGreenCommit()
+		writeFileSync(join(root, 'src/add.ts'), REFACTORED)
+		await tdd({ root, argv: ['green', '--base', base] })
+		git({ root, args: ['add', '-A'] })
+
+		const result = await runHookIn({ cwd: root })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output.split('\n')[0]).toBe(
+			'ok    tdd  1 case(s) of the change: 1 red then green',
+		)
 		expect(countRuns(counter)).toBe(1)
 	})
 })
@@ -190,6 +249,21 @@ describe(
 				'the receipts prove the working files: commit them, or set the rest aside (git stash push --keep-index --include-untracked)',
 			])
 			expect(countRuns(counter)).toBe(0)
+		})
+
+		it('a first commit (no HEAD yet) → tdd skipped with its reason, the declared step runs', async () => {
+			const { root, counter } = hookPackage({ declared: true })
+			git({ root, args: ['update-ref', '-d', 'HEAD'] })
+			writeFiles({ root, files: { 'src/add.ts': IMPLEMENTED, 'src/add.test.ts': ADD_TEST } })
+			git({ root, args: ['add', '-A'] })
+
+			const result = await runHookIn({ cwd: root })
+
+			expect(result.exitCode).toBe(0)
+			expect(result.output.split('\n')[0]).toBe(
+				'skip  tdd  a first commit: no receipt can be taken before one, CI runs the suite',
+			)
+			expect(countRuns(counter)).toBe(1)
 		})
 
 		it('a merge commit → tdd skipped with its reason, the declared step runs', async () => {

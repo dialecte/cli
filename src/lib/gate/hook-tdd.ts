@@ -1,13 +1,15 @@
 /**
  * The tdd step of `gate --hook` (a package declaring `dialecte.gate.hook`): the receipts prove the commit, so the hook
- * runs no test. A merge commit skips it. Otherwise it fails when the working files are not the commit for a path tdd
- * reads (the receipts were taken on the working files), when a case of the commit (measured from HEAD) lacks its red
- * then green as `gate --fast` judges it, or when a case's newest green was taken before the production changed.
+ * runs no test. A first commit and a merge commit skip it. Otherwise it fails when the working files are not the
+ * commit for a path tdd reads (the receipts were taken on the working files), when a case of the lot (measured from
+ * the lot base, as `gate --full` measures it) lacks its red then green, or when a case's newest green was taken before
+ * the production changed: a commit of production alone can make an earlier commit's green stale.
  */
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { checkTddReceipts } from '../tdd/check-tdd-receipts.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
+import { resolveTddBase, shortCommitOf } from '../tdd/tdd-base.ts'
 import {
 	hashProduction,
 	isPackageTestCode,
@@ -16,6 +18,8 @@ import {
 } from '../tdd/tdd-files.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import {
+	HOOK_TDD_FIRST_COMMIT_REASON,
+	HOOK_TDD_GREEN_AGAIN_LINE,
 	HOOK_TDD_MERGE_REASON,
 	HOOK_TDD_NOT_THE_COMMIT_HINT,
 	HOOK_TDD_NOT_THE_COMMIT_REASON,
@@ -40,32 +44,20 @@ export async function runHookTddStep(params: {
 	tree: string
 }): Promise<StepResult> {
 	const { cwd, packageJson } = params
-	if (isMergeInProgress(cwd))
-		return {
-			step: TDD_STEP,
-			status: 'skipped',
-			counts: {},
-			restored: [],
-			reason: HOOK_TDD_MERGE_REASON,
-		}
+	if (!hasHead(cwd)) return skipped(HOOK_TDD_FIRST_COMMIT_REASON)
+	if (isMergeInProgress(cwd)) return skipped(HOOK_TDD_MERGE_REASON)
 	const differing = listDifferingTddPaths(params)
 	if (differing.length > 0)
-		return {
-			step: TDD_STEP,
-			status: 'failed',
-			counts: {},
-			restored: [],
+		return failed({
 			reason: HOOK_TDD_NOT_THE_COMMIT_REASON.replace('{paths}', () =>
 				differing.join(HOOK_TDD_PATH_SEPARATOR),
 			),
 			tail: HOOK_TDD_NOT_THE_COMMIT_HINT,
-		}
-	const check = await checkTddReceipts({
-		root: cwd,
-		packageJson,
-		ref: undefined,
-		wholeBranch: false,
-	})
+		})
+	// the whole lot: a commit of production alone can make an earlier commit's green stale
+	const base = resolveTddBase({ root: cwd, packageJson, wholeBranch: true })
+	if ('failure' in base) return failed({ reason: base.failure })
+	const check = await checkTddReceipts({ root: cwd, packageJson, ref: base.commit })
 	const result = tddStepResultOf(check)
 	if (result.status !== 'passed') return result
 	const greens = (result.cases ?? [])
@@ -79,8 +71,28 @@ export async function runHookTddStep(params: {
 		...judged,
 		status: 'failed',
 		reason: HOOK_TDD_STALE_REASON.replace('{count}', () => String(stale.length)),
-		tail: stale.map((label) => HOOK_TDD_STALE_LINE.replace('{label}', () => label)).join('\n'),
+		tail: [
+			...stale.map((label) => HOOK_TDD_STALE_LINE.replace('{label}', () => label)),
+			HOOK_TDD_GREEN_AGAIN_LINE.replace('{base}', () =>
+				shortCommitOf({ root: cwd, commit: base.commit }),
+			),
+		].join('\n'),
 	}
+}
+
+/** The step skipped for `reason`. */
+function skipped(reason: string): StepResult {
+	return { step: TDD_STEP, status: 'skipped', counts: {}, restored: [], reason }
+}
+
+/** The step failed for `reason`, with the lines under it. */
+function failed(params: { reason: string; tail?: string }): StepResult {
+	return { step: TDD_STEP, status: 'failed', counts: {}, restored: [], ...params }
+}
+
+/** The repository has a commit: a first commit has no base to measure a lot from, and no receipt before it. */
+function hasHead(cwd: string): boolean {
+	return tryReadGit({ root: cwd, args: ['rev-parse', '-q', '--verify', 'HEAD'] }) !== undefined
 }
 
 /** A merge is being committed: git keeps MERGE_HEAD until it is. */
@@ -92,8 +104,7 @@ function isMergeInProgress(cwd: string): boolean {
 
 /**
  * The package's paths tdd reads (test code, production) where the working files differ from the commit's tree,
- * relative to the package, sorted: what is staged against what is on disk, untracked files included. None without a
- * HEAD (no receipt is measured there).
+ * relative to the package, sorted: what is staged against what is on disk, untracked files included.
  */
 function listDifferingTddPaths(params: {
 	cwd: string
@@ -101,8 +112,6 @@ function listDifferingTddPaths(params: {
 	tree: string
 }): string[] {
 	const { cwd, packageJson } = params
-	if (tryReadGit({ root: cwd, args: ['rev-parse', '-q', '--verify', 'HEAD'] }) === undefined)
-		return []
 	const working = computeStateTree(cwd)
 	return readGit({
 		root: cwd,

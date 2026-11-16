@@ -1,5 +1,5 @@
 /**
- * `gate --hook`: with a declared `dialecte.gate.hook`, the tdd receipts of the commit first (`runHookTddStep`, run every
+ * `gate --hook`: with a declared `dialecte.gate.hook`, the tdd receipts of the lot first (`runHookTddStep`, run every
  * time, never recorded; a failure runs no step), then the declared steps; else the full gate's hook steps (all but the
  * scoped ones that count no tests). For the commit being made,
  * each answered by the newest green record of the committed tree and install that ran it as it is now (any mode),
@@ -80,6 +80,8 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 	const notices = params.checkStoreIgnored ? [params.checkStoreIgnored] : []
 	const prepared = prepareHookRun(params)
 	if ('result' in prepared) return withNotices({ result: prepared.result, notices })
+	// a live output gets the notices first and every line once: what it printed is never in the result again
+	if (params.live) for (const line of notices) params.live.writeLine(textOf([line]))
 	// the run's events: a hook answered from records is a run too
 	const recorder = startStep({
 		cwd: params.cwd,
@@ -87,7 +89,7 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 		heavy: false,
 		warn: params.warn,
 	})
-	// a declared hook list (a package whose suite runs on CI) commits on the tdd receipts of the commit first
+	// a declared hook list (a package whose suite runs on CI) commits on the tdd receipts of the lot first
 	const own = await runOwnHookSteps({ cwd: params.cwd, prepared, live: params.live, recorder })
 	if (own.results.some((result) => result.status === 'failed'))
 		return endFailedOwnRun({ own, recorder, live: params.live, notices })
@@ -130,7 +132,8 @@ async function answerOrRunHookSteps(args: {
 	if (toRun.length === 0) {
 		endHookRun({ ...recordOf, ran: [], durations: new Map(), ranOnTree: true })
 		return renderAnsweredOutput({
-			notices: [...notices, ...ownLines],
+			// live, the notices and the own steps' lines are printed already
+			notices: params.live ? [] : [...notices, ...ownLines],
 			baseLines,
 			answers,
 			base: shown?.base,
@@ -167,13 +170,13 @@ async function answerOrRunHookSteps(args: {
 }
 
 /**
- * The lines before the steps a hook runs: the notices (a given store ignored), the base lines, the reused lines, and
- * the running line when nothing was answered. On a terminal they are written now, before the steps; else the notices
- * and the running line alone go live.
+ * The lines before the steps a hook runs: the notices (a given store ignored), the own steps' lines, the base lines,
+ * the reused lines, and the running line when nothing was answered. With a live output, terminal or not, the base,
+ * reused and running lines are written now, before the steps (the notices and the own steps' lines are already).
  */
 function showLeadingLines(params: {
 	notices: readonly string[]
-	/** The lines of the hook's own steps (its tdd step): on a terminal their progress showed them already. */
+	/** The lines of the hook's own steps (its tdd step): with a live output their progress showed them already. */
 	ownLines: readonly string[]
 	baseLines: readonly string[]
 	answers: HookAnswers
@@ -192,10 +195,7 @@ function showLeadingLines(params: {
 			: undefined
 	const later = [...params.baseLines, ...answers.lines, ...(running ? [running] : [])]
 	const leading = [...params.notices, ...params.ownLines, ...later]
-	const shownNow = live?.tty
-		? [...params.notices, ...later]
-		: [...params.notices, ...(running ? [running] : [])]
-	if (live) for (const line of shownNow) live.writeLine(textOf([line]))
+	if (live) for (const line of later) live.writeLine(textOf([line]))
 	return leading
 }
 
@@ -416,7 +416,7 @@ function endHookRun(params: {
 }
 
 /**
- * The hook's own steps, before the declared ones: the tdd receipts of the commit (`runHookTddStep`) when the package
+ * The hook's own steps, before the declared ones: the tdd receipts of the lot (`runHookTddStep`) when the package
  * declares `dialecte.gate.hook`, none otherwise (the default hook commits inside a hand-over's clones, which hold no
  * receipts). Timed for the run's events, shown live as a step.
  */
@@ -466,8 +466,9 @@ function endFailedOwnRun(params: {
 }
 
 /**
- * The output of a hook that ran steps: off a terminal the leading lines and the steps' lines (on a terminal they are
- * on the screen already), the summary, the base line, the no-HEAD line, the verdict, and a failed step's last lines.
+ * The output of a hook that ran steps: without a live output the leading lines and the steps' lines (a live output
+ * printed them already), off a terminal the summary and the base line (written live on one), the no-HEAD line, the
+ * verdict, and a failed step's last lines.
  */
 function renderRunOutput(params: {
 	ran: readonly StepResult[]
@@ -491,8 +492,8 @@ function renderRunOutput(params: {
 		: undefined
 	if (baseLine && live?.tty) live.writeLine(baseLine)
 	const own = textOf([
-		// on a terminal the lines are on the screen already
-		...(live?.tty ? [] : [...params.leading, ...ran.flatMap(renderStepLines)]),
+		// with a live output, terminal or not, the leading and step lines are printed already
+		...(live ? [] : [...params.leading, ...ran.flatMap(renderStepLines)]),
 		...(summary && !live?.tty ? [summary] : []),
 		...(baseLine && !live?.tty ? [baseLine] : []),
 		...params.headLines,
