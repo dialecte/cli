@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -9,6 +9,7 @@ import {
 	composePage,
 	renderCommandBlock,
 	renderIndexBlock,
+	renamedRowsOf,
 	writeReferencePages,
 } from './command-reference.ts'
 import { listedCommands } from './render-help.ts'
@@ -59,7 +60,6 @@ function packageWithPages(): string {
 	folders.push(root)
 	writeFileSync(join(root, '.oxfmtrc.json'), readFileSync(join(PACKAGE_ROOT, '.oxfmtrc.json')))
 	writeReferencePages({ root })
-	mkdirSync(join(root, 'doc', 'commands'), { recursive: true })
 	return root
 }
 
@@ -93,6 +93,15 @@ describe('the command reference blocks', () => {
 			'| `dialecte lot finding` | `dialecte record review` |',
 			'| `dialecte lot recap` | `dialecte recap` |',
 		])
+	})
+
+	it('the renamed forms of the map -> each new form with its usage line, its pipes escaped in the index', () => {
+		const block = renderIndexBlock({ commands: [], renamed: renamedRowsOf() })
+
+		expect(block).toContain(
+			'| `dialecte lot finding <id\\|folder> --round <n> --severity <blocking\\|should-fix\\|nit> --at <file:line> <finding>` | `dialecte record review` |',
+		)
+		expect(block).toContain('| `dialecte lot recap <id\\|folder>` | `dialecte recap` |')
 	})
 })
 
@@ -150,6 +159,17 @@ describe('the reference pages against the command map', () => {
 
 		expect(run.status).toBe(1)
 		expect(run.stderr).toContain('doc/commands/gate.md: stale - run npm run doc:generate')
+	})
+
+	it('a package whose oxfmt cannot format -> writing names the folder unformatted', () => {
+		const root = mkdtempSync(join(tmpdir(), 'dialecte-reference-'))
+		folders.push(root)
+		writeFileSync(join(root, '.oxfmtrc.json'), '{ not json')
+
+		expect(writeReferencePages({ root }).faults).toContainEqual({
+			path: 'doc/commands',
+			kind: 'unformatted',
+		})
 	})
 
 	it('the committed pages -> no fault, a page per listed command and the index', () => {

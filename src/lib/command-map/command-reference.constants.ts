@@ -37,6 +37,8 @@ export const REFERENCE_LINES = {
 	stale: '{path}: stale - run npm run doc:generate',
 	missing: '{path}: missing - run npm run doc:generate',
 	extra: '{path}: no listed command of that name - remove it or add the command to the map',
+	unformatted:
+		'{path}: oxfmt could not format the pages - fix the oxfmt config or install, then run npm run doc:generate',
 	fresh: 'doc/commands: {count} pages match the command map',
 	written: 'doc/commands: {count} pages written from the command map',
 } as const

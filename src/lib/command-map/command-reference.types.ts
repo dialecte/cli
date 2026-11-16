@@ -10,10 +10,13 @@ export type ReferenceSource = { commands: ReferenceCommand[]; renamed: RenamedWo
 export type ReferencePage = { path: string; title: string; block: string }
 
 /** Why a page of the reference does not match the command map. */
-export type ReferenceFaultKind = 'stale' | 'missing' | 'extra'
+export type ReferenceFaultKind = 'stale' | 'missing' | 'extra' | 'unformatted'
 
 /** One page that does not match the command map. */
 export type ReferenceFault = { path: string; kind: ReferenceFaultKind }
 
 /** The reference pages checked against the command map: how many it declares, and the faults. */
 export type ReferenceCheck = { pages: number; faults: ReferenceFault[] }
+
+/** Texts after the package's oxfmt: whether it formatted them, and the texts as they are then. */
+export type FormattedPages = { formatted: boolean; texts: string[] }

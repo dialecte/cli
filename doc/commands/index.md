@@ -74,15 +74,15 @@
 
 ## Renamed in 1.0
 
-| 1.0                     | Before                     |
-| ----------------------- | -------------------------- |
-| `dialecte lot finding`  | `dialecte record review`   |
-| `dialecte lot decide`   | `dialecte record decision` |
-| `dialecte lot snapshot` | `dialecte record snapshot` |
-| `dialecte lot choice`   | `dialecte record choice`   |
-| `dialecte lot standard` | `dialecte record standard` |
-| `dialecte lot delta`    | `dialecte review delta`    |
-| `dialecte lot recap`    | `dialecte recap`           |
+| 1.0                                                                                                                                 | Before                     |
+| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `dialecte lot finding <id\|folder> --round <n> --severity <blocking\|should-fix\|nit> --at <file:line> <finding>`                   | `dialecte record review`   |
+| `dialecte lot decide <id\|folder> <finding> <open \| fix-to-verify \| fixed <round> [note] \| accepted <reason> \| logged <where>>` | `dialecte record decision` |
+| `dialecte lot snapshot <id\|folder> --round <n> [--beyond-cap --by <who> --reason <text>]`                                          | `dialecte record snapshot` |
+| `dialecte lot choice <id\|folder> --by <who> <decision>`                                                                            | `dialecte record choice`   |
+| `dialecte lot standard <id\|folder> consulted <note> \| not-consulted <reason> \| outside <note>`                                   | `dialecte record standard` |
+| `dialecte lot delta <id\|folder> --round <n> [--worktree] [--json]`                                                                 | `dialecte review delta`    |
+| `dialecte lot recap <id\|folder>`                                                                                                   | `dialecte recap`           |
 
 <!-- /dialecte-reference -->
 
@@ -91,5 +91,6 @@ The review rounds' commands moved under `lot`. The old forms run nothing and wri
 command with the same arguments, or, with no arguments, the new form's usage line; `record` or `review`
 without a verb lists every form that replaced it. Asked with `--help`, an old form prints the same answer on
 stdout, with the words given before `--help`, exit 0; with `--help --json` it prints
+`{ renamed: [{ old, new }] }`, the words after `dialecte` (`record` lists its five forms).
 
 `dialecte handover write <lots.json>` names what `dialecte handover <lots.json>` does; the old form stays.

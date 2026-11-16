@@ -143,7 +143,7 @@ The hand-over follows the profile:
 
 ## Contributing to a Dialecte package
 
-Twelve commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
+Fourteen commands for whoever changes a Dialecte package, a person or an agent. Each answers the same way
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 

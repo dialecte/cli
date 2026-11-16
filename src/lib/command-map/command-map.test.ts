@@ -99,7 +99,7 @@ describe('the command map', () => {
 	})
 
 	const LOT_NEW_LINES = [
-		'dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]',
+		'dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]',
 		'dialecte lot status <id> [--json]',
 		'dialecte lot risk <id|folder> [--json]',
 		'dialecte lot risk <id|folder> --effort low|medium|high [--class high|medium|light] --by <who> [--reason <text>]',
@@ -109,6 +109,20 @@ describe('the command map', () => {
 			expect(COMMAND_MAP.lot.usage).toContain(line)
 			expect(renderCommandSection({ name: 'lot', entry: COMMAND_MAP.lot })).toContain(line)
 		})
+
+	it('the lot section lists lot scope with --overlap-ok, and the start and scope notes say what it accepts', () => {
+		const notes = COMMAND_MAP.lot.notes ?? []
+		const overlapNotes = notes.filter(
+			(note) =>
+				(note.startsWith('start - ') || note.startsWith('scope - ')) &&
+				note.includes('--overlap-ok'),
+		)
+
+		expect(COMMAND_MAP.lot.usage).toContain(
+			'dialecte lot scope <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>',
+		)
+		expect(overlapNotes.map((note) => note.split(' - ')[0])).toEqual(['start', 'scope'])
+	})
 
 	for (const verb of ['start', 'status'])
 		it(`the lot section notes ${verb} with a ${verb} - line`, () => {

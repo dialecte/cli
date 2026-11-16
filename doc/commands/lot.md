@@ -7,7 +7,7 @@ A lot: started from a brief into the lot store, its declaration .dialecte/lot.js
 ```text
 lot - A lot: started from a brief into the lot store, its declaration .dialecte/lot.json, and its review rounds in its lot or hand-over folder
 
-  dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
+  dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
   dialecte lot status <id> [--json]
   dialecte lot risk <id|folder> [--json]
   dialecte lot risk <id|folder> --effort low|medium|high [--class high|medium|light] --by <who> [--reason <text>]
@@ -15,7 +15,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot answer <id> <question> "<answer>" [--by <who>] [--json]
   dialecte lot result <id> [--json]
   dialecte lot stop <id> --reason <text> [--by <who>] [--json]
-  dialecte lot scope <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>
+  dialecte lot scope <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>
   dialecte lot station <id> start <station> [--step <n>] [--round <n>] [--attempt <n>] [--agent <name>] [--executor host|command] [--vendor <name>] [--model <name>] [--tier <name>] [--effort <word>] [--session <id>] [--skill <name|path>]... [--skill-asked <name|path>]... [--event <id>] [--json]
   dialecte lot station <id> end <station> [--run <run>] [--step <n>] [--round <n>] [--attempt <n>] [--agent <name>] [--vendor <name>] [--model <name>] [--tier <name>] [--effort <word>] [--session <id>] [--skill <name|path>]... [--skill-asked <name|path>]... [--event <id>] [--tokens-in <n>] [--tokens-out <n>] [--tokens-cache-read <n>] [--tokens-cache-write <n>] [--tokens-total <n>] [--money <amount> <currency>] [--duration <seconds>] [--exit <n>] [--verdict <word>] [--suite <name>=<runs>]... [--json]
   dialecte lot station <id> --from <file.json> [--json]
@@ -46,6 +46,13 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           (the lot failed, nothing removed, next: lot stop); a link that cannot be made leaves the
           lot working with a note; every --json exit is JSON, a usage error { error, usage, next:
           null } included
+  start - --overlap-ok accepts a scope meeting another open lot instead of refusing it, for an
+          overlap that names its paths (a lot whose scope cannot be read, or a damaged one, stays
+          refused); it takes --by <who> --reason <text>, the same go-ahead as an effort below the
+          class; each accepted overlap is a line of the lot folder's overlaps.jsonl (the other lot,
+          the met pairs, who and why), printed by the start and its dry run (! overlaps <lot>: ...)
+          and shown on the card's scope line as a warning; the re-check after the start refuses a
+          lot the go-ahead did not name
   start - the effort: the risk class of the brief's scope (high when an entry reaches the package's
           dialecte.risk.high list) sets the default (high, medium or low); on a terminal, without
           --json or --dry-run, the effort is asked with that default; an effort below the class
@@ -120,16 +127,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           worktree that cannot be read, a drop leaving the lot no scope, or a file the lot's
           worktree changed inside a dropped entry that no entry left covers (an equal entry, a
           literal folder holding it, or a glob matching it; the call's adds count); an add is
-          refused when a path is no valid scope entry or meets another open lot's scope; a call
-          whose lines would pass the line limit is refused; an add a lot started or widened
-          meanwhile meets is taken back by an undo line, the entries a drop of the same call removed
-          put back (exit 2), a take-back that would pass the line limit refusing the call first
-          (exit 2), a take-back that cannot be written exiting 1 naming the paths and that lot; each
-          change is one line of scope-changes.jsonl ({ schema, at, op, paths, by?, reason? }) and a
-          scope.changed event; the effective scope (the brief's with the changes) is what the
-          overlap guard, lot status and the card read; a damaged, simulated, committed, canceled or
-          failed lot, a forbidden word and a change line that does not read are refused (exit 2),
-          nothing written; a line that cannot be written exits 1
+          refused when a path is no valid scope entry or meets another open lot's scope, unless
+          --overlap-ok accepts an overlap that names its paths (recorded in overlaps.jsonl before
+          the add with the other lot, the met pairs, --by and --reason, undone with a taken-back
+          add; a lot whose scope cannot be read, or a damaged one, stays refused; --overlap-ok
+          without --add is refused); a call whose lines would pass the line limit is refused; an add
+          a lot started or widened meanwhile meets is taken back by an undo line, the entries a drop
+          of the same call removed put back (exit 2), a take-back that would pass the line limit
+          refusing the call first (exit 2), a take-back that cannot be written exiting 1 naming the
+          paths and that lot; each change is one line of scope-changes.jsonl ({ schema, at, op,
+          paths, by?, reason? }) and a scope.changed event; the effective scope (the brief's with
+          the changes) is what the overlap guard, lot status and the card read; a damaged,
+          simulated, committed, canceled or failed lot, a forbidden word and a change line that does
+          not read are refused (exit 2), nothing written; a line that cannot be written exits 1
   station - appends one station event (by: host) to the lot's events.jsonl, never rewriting a line:
             start answers its run and the end command; end pairs with --run, else with the one open
             start of its station, step, round and attempt (several: refused), else repeats the last
@@ -253,7 +263,7 @@ e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "
 
 Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `land`, `close`
 
-Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -268,7 +278,9 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
   a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it
   (a lot path is inside a scope entry by path segments: `lib/x` is inside `lib/`, `lib-other/x` and `libx` are
   not; an entry whose glob cuts a name, `src/data*`, compares by string prefix), no
-  overlap with an open lot of the same store. Then it claims the next worktree index, publishes the lot folder
+  overlap with an open lot of the same store, unless `--overlap-ok --by <who> --reason <text>` accepts an
+  overlap that names its paths (each one a line of the lot folder's `overlaps.jsonl`, printed `! overlaps <lot>: ...`
+  and shown on the card; `lot scope --add --overlap-ok` accepts one the same way). Then it claims the next worktree index, publishes the lot folder
   `<git common folder>/dialecte-lots/<index>-<repository>-<branch tail>/` (the brief, a copy of the plan, the
   first transition, `identity.json` last; every record written once, read-only), makes the numbered worktree at
   the recorded base commit and its `.dialecte/lot` link to the lot folder. The store is appended to the user's

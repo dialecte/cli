@@ -36,7 +36,7 @@ afterEach(function restoreEnvironment() {
 const NOW = new Date('2026-11-15T10:00:00.000Z')
 const AT = NOW.toISOString()
 const USAGE =
-	'lot scope: expected <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>'
+	'lot scope: expected <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>'
 /** An entry long enough that two lines naming such paths pass the line limit together, never alone. */
 const LONG_ENTRY = `docs/${'x'.repeat(2_200)}`
 

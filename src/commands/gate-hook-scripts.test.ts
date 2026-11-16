@@ -11,7 +11,7 @@ function readScripts(): Record<string, string> {
 }
 
 describe("the cli's own scripts and commit hook", () => {
-	it('check → type-check, lint:check and format:check, no suite', () => {
+	it('check → type-check, lint:check, format:check and doc:check, no suite', () => {
 		const { check } = readScripts()
 
 		expect(check).toBe(

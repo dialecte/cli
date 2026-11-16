@@ -3,7 +3,7 @@ export const LOT_SCOPE_VERB = 'scope'
 
 /** The one usage line of `lot scope`, for every usage fault. */
 export const LOT_SCOPE_USAGE =
-	'lot scope: expected <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>'
+	'lot scope: expected <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>'
 
 /** The options `lot scope` reads: one value each, and the repeatable paths. */
 export const LOT_SCOPE_VALUE_OPTIONS: readonly string[] = ['by', 'reason']
