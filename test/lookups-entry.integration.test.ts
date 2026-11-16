@@ -131,6 +131,7 @@ describe('@dialecte/cli/lookups', () => {
 	it('builds the bin, the library entry and the tdd reporter the bin hands to vitest', () => {
 		expect(readdirSync(join(BUILT, 'dist')).sort()).toEqual([
 			'cli.js',
+			'corpus',
 			'dialecte_tdd_pytest.py',
 			'ignorers.js',
 			'lookups.d.ts',
@@ -151,6 +152,20 @@ describe('@dialecte/cli/lookups', () => {
 			'rules.schema.json',
 			'scope-change.schema.json',
 		])
+	})
+
+	it('ships the corpus manifest and its override files in dist/corpus, as in the sources', () => {
+		const shipped = join(BUILT, 'dist', 'corpus')
+		expect(existsSync(join(shipped, 'manifest.json'))).toBe(true)
+		expect(readdirSync(shipped).sort()).toEqual(['manifest.json', 'overrides'])
+		expect(readdirSync(join(shipped, 'overrides')).sort()).toEqual([
+			'fhir-xhtml.xsd',
+			'xlink.xsd',
+			'xml.xsd',
+		])
+		expect(readFileSync(join(shipped, 'manifest.json'), 'utf8')).toBe(
+			readFileSync(join(ROOT, 'src/lib/corpus/manifest.json'), 'utf8'),
+		)
 	})
 
 	it('leaves the checkout’s dist/ as it was: the build went to its own folder', () => {
