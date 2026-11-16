@@ -280,6 +280,20 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		noJson: PLAIN_TEXT,
 	},
 	'text check': { argv: ['check', FORGED_WORD], quotes: true },
+	'corpus fetch': { argv: ['fetch', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'corpus list': {
+		argv: ['list', FORGED_WORD],
+		quotes: false,
+		reason: USAGE_ONLY,
+		noJson: PLAIN_TEXT,
+	},
+	'corpus check': {
+		argv: ['check', FORGED_WORD],
+		quotes: false,
+		reason: USAGE_ONLY,
+		noJson: PLAIN_TEXT,
+	},
+	'corpus add': { argv: ['add', 'a-corpus', '--xsd', FORGED_WORD], quotes: true },
 	'plan next': { argv: ['next', FORGED_WORD], quotes: true, json: ['next', FORGED_WORD, '--json'] },
 	'plan check': {
 		argv: ['check', FORGED_WORD],

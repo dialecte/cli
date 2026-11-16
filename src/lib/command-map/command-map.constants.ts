@@ -587,6 +587,28 @@ export const COMMAND_MAP: CommandMap = {
 		exitCodes: [],
 		example: 'dialecte skills sync --agent claude',
 	},
+	corpus: {
+		family: 'Workspace',
+		summary: 'The open-licence corpora fetched into a cache, and the licensed ones of config.yml',
+		usage: [
+			'dialecte corpus fetch [<id>...] [--json]',
+			'dialecte corpus list [--json]',
+			'dialecte corpus check [--json]',
+			'dialecte corpus add <name> --xsd <path> [--instances <folder>]',
+		],
+		notes: [
+			'fetch - the sources of the shipped manifest (every one, or the ids named): each refused without its licence, terms and verdict or a sha256 pin; each download checked against its pin (a kept one in _downloads/ first, so a run without network rebuilds), its archive members kept and stripped, a member outside its folder refusing the source, then exclude, marker, substitute and wrappers; written to <cache>/<id>/ and named in manifest.lock.json; a refused source changes nothing of what it had; the cache: $DIALECTE_CORPORA_DIR, else corpora/ in the cli cache folder ($XDG_CACHE_HOME/dialecte, else ~/.cache/dialecte); never committed',
+			'list - every open source (fetched, stale: fetched from another manifest entry or without a lock entry the cli reads, or missing) and every licensed entry of config.yml corpora: (present or missing), with its verdict, entry schemas, instances (a folder and its globs) and instance count; exit 0 whatever is missing; --json is the reader for a validation tier',
+			'check - a fetched source whose files no longer match its fetch (edited, missing, added) or its manifest entry, and a licensed entry whose files are missing, one line each',
+			'add - writes corpora.<name> of the personal config.yml with absolute paths, its comments kept; refused for a name holding a dot or a path that does not exist',
+		],
+		exitCodes: [
+			'0  list: whatever is missing',
+			'1  fetch: a source refused; check: a problem named',
+			'2  fetch: an unknown source id; add: no --xsd, a name holding a dot, a path that does not exist; a refused config.yml',
+		],
+		example: 'dialecte corpus list --json',
+	},
 	bench: {
 		family: 'Maintain',
 		summary: 'Measure type-instantiation cost (tsc --extendedDiagnostics); --check to gate CI',
@@ -631,28 +653,6 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		exitCodes: [],
 		example: 'dialecte text check pr.md --kind pr',
-	},
-	corpus: {
-		family: 'Workspace',
-		summary: 'The open-licence corpora fetched into a cache, and the licensed ones of config.yml',
-		usage: [
-			'dialecte corpus fetch [<id>...] [--json]',
-			'dialecte corpus list [--json]',
-			'dialecte corpus check [--json]',
-			'dialecte corpus add <name> --xsd <path> [--instances <folder>]',
-		],
-		notes: [
-			'fetch - the sources of the shipped manifest (every one, or the ids named): each refused without its licence, terms and verdict or a sha256 pin; each download checked against its pin (a kept one in _downloads/ first, so a run without network rebuilds), its archive members kept and stripped, a member outside its folder refusing the source, then exclude, marker, substitute and wrappers; written to <cache>/<id>/ and named in manifest.lock.json; a refused source changes nothing of what it had; the cache: $DIALECTE_CORPORA_DIR, else corpora/ in the cli cache folder ($XDG_CACHE_HOME/dialecte, else ~/.cache/dialecte); never committed',
-			'list - every open source (fetched, stale: fetched from another manifest entry or without a lock entry the cli reads, or missing) and every licensed entry of config.yml corpora: (present or missing), with its verdict, entry schemas, instances (a folder and its globs) and instance count; exit 0 whatever is missing; --json is the reader for a validation tier',
-			'check - a fetched source whose files no longer match its fetch (edited, missing, added) or its manifest entry, and a licensed entry whose files are missing, one line each',
-			'add - writes corpora.<name> of the personal config.yml with absolute paths, its comments kept; refused for a name holding a dot or a path that does not exist',
-		],
-		exitCodes: [
-			'0  list: whatever is missing',
-			'1  fetch: a source refused; check: a problem named',
-			'2  fetch: an unknown source id; add: no --xsd, a name holding a dot, a path that does not exist; a refused config.yml',
-		],
-		example: 'dialecte corpus list --json',
 	},
 	// the renamed commands: one key per command of the renamed forms, derived from that table
 	...renamedEntriesOf(),
