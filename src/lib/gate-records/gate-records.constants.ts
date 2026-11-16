@@ -288,11 +288,8 @@ export const ROUND_FOLDER_PATTERN = /^round-([1-9]\d*)$/
 /** The folder of the records by tree, in the repository's common git folder: `<tree>.json` inside. */
 export const CHECK_STORE_FOLDER = 'dialecte-checks'
 
-/** What npm installed, as a check key hashes it: npm's own lock of `node_modules`, relative to the package. */
-export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'
-
-/** A check key's `lockHash` when nothing is installed. */
-export const NO_INSTALLED_LOCK = 'none'
+/** A check key's `lockHash` when the checked tree holds no package-lock.json. */
+export const NO_LOCK_KEY = 'none'
 
 /** A dependency installed from a folder of the machine: `"file:../core"`. */
 export const FILE_DEPENDENCY_PREFIX = 'file:'

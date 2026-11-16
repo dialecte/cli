@@ -8,6 +8,7 @@ import { calleeName } from './callee-name.ts'
 import {
 	COMMITTED_PLAN_TAG_LABEL,
 	EXPORT_QUERY_FIELDS,
+	FIXTURES_MODULE_NAME_PATTERN,
 	PLAN_TAG_PATTERNS,
 	RUNNER_WITH_EXPORT,
 	RUNNER_WITHOUT_EXPORT,
@@ -22,7 +23,7 @@ import {
 } from './check-test-shape-rules.constants.ts'
 import { GENERIC_REFERENCE_PATTERNS } from './committed-text.constants.ts'
 import { fileKindOf } from './file-kind.ts'
-import { isFunctionNode, positionOf, unwrapped } from './syntax-nodes.ts'
+import { isExported, isFunctionNode, positionOf, unwrapped } from './syntax-nodes.ts'
 import { literalTextOf, pathTextOf, testCalleeOf, testShapeOf } from './test-shape-tables.ts'
 
 import ts from 'typescript'
@@ -41,18 +42,30 @@ export function isTestShaped(file: string): boolean {
 	)
 }
 
-/** Checks the five test-shape rules of one test-shaped file. */
+/** Is the file a fixtures module: `*.test-fixtures.ts`, `*-fixtures.ts` or `*.fixtures.ts`? */
+export function isFixturesModule(file: string): boolean {
+	return FIXTURES_MODULE_NAME_PATTERN.test(file)
+}
+
+/**
+ * Checks the five test-shape rules of one test-shaped file. On a Dialecte change a fixture builder is an error,
+ * and an exported builder of a fixtures module is left to `fixtures-module`.
+ */
 export function checkTestShapeRules(params: {
 	file: string
 	sourceFile: ts.SourceFile
+	/** The file's tables and acts, when the caller already read them. */
+	shape?: TestShape
+	dialecteChange?: boolean
 }): QualityFinding[] {
 	const { file, sourceFile } = params
-	const shape = testShapeOf(sourceFile)
+	const shape = params.shape ?? testShapeOf(sourceFile)
+	const dialecteChange = params.dialecteChange ?? false
 	return [
 		...tableBranchesOf({ shape, sourceFile }),
 		...withoutExportXmlOf({ shape, sourceFile }),
 		...exportsWithoutQueriesOf({ shape, sourceFile }),
-		...fixtureBuildersOf(sourceFile),
+		...fixtureBuildersOf({ file, sourceFile, dialecteChange }),
 		...planTagsOf({ file, shape, sourceFile }),
 	]
 }
@@ -158,12 +171,18 @@ function withoutExportXmlOf(params: {
 
 /** Does `node` call an XML export, or ask a snapshot for XML (`getSnapshot({ as: 'xml' })`)? */
 function readsExportedXml(node: ts.Node): boolean {
-	if (ts.isCallExpression(node)) {
-		const name = calleeName(unwrapped(node.expression))
-		if (XML_EXPORT_CALLS.includes(name)) return true
-		if (name === XML_SNAPSHOT_CALL && node.arguments.some(asksForXml)) return true
-	}
+	if (isXmlExportCall(node)) return true
 	return ts.forEachChild(node, readsExportedXml) ?? false
+}
+
+/** Is the node a call whose value is exported XML: an XML export (`exportXml(doc)`) or `getSnapshot({ as: 'xml' })`? */
+export function isXmlExportCall(node: ts.Node): node is ts.CallExpression {
+	if (!ts.isCallExpression(node)) return false
+	const name = calleeName(unwrapped(node.expression))
+	return (
+		XML_EXPORT_CALLS.includes(name) ||
+		(name === XML_SNAPSHOT_CALL && node.arguments.some(asksForXml))
+	)
 }
 
 function asksForXml(argument: ts.Expression): boolean {
@@ -218,16 +237,25 @@ function lacksQueries(testCase: TableCase): boolean {
 
 // fixture-builder
 
-/** Every function of the file whose returned value builds XML around a substitution. */
-function fixtureBuildersOf(sourceFile: ts.SourceFile): QualityFinding[] {
+/**
+ * Every function of the file whose returned value builds XML around a substitution: an error on a Dialecte
+ * change, a warning elsewhere. On a Dialecte change, an exported one in a fixtures module is `fixtures-module`'s.
+ */
+function fixtureBuildersOf(params: {
+	file: string
+	sourceFile: ts.SourceFile
+	dialecteChange: boolean
+}): QualityFinding[] {
+	const { sourceFile, dialecteChange } = params
+	const fixturesModule = dialecteChange && isFixturesModule(params.file)
 	const findings: QualityFinding[] = []
 	function visit(node: ts.Node): void {
-		if (isFunctionNode(node) && returnedValuesOf(node).some(buildsXml)) {
+		if (isFixtureBuilder(node) && !(fixturesModule && isExportedFunction(node))) {
 			const name = functionNameOf(node)
 			findings.push({
 				...positionOf({ node: functionStartOf(node), sourceFile }),
 				rule: 'fixture-builder',
-				severity: 'warning',
+				severity: dialecteChange ? 'error' : 'warning',
 				message: `${name ? `\`${name}\`` : 'a function'} builds fixture XML: write each fixture as inline XML`,
 			})
 		}
@@ -237,8 +265,19 @@ function fixtureBuildersOf(sourceFile: ts.SourceFile): QualityFinding[] {
 	return findings
 }
 
+/** Is the node a function whose returned value builds XML around a substitution? */
+export function isFixtureBuilder(node: ts.Node): node is ts.FunctionLikeDeclaration {
+	return isFunctionNode(node) && returnedValuesOf(node).some(buildsXml)
+}
+
+/** An exported function: a declaration with `export`, or the function of an exported `const`. */
+export function isExportedFunction(node: ts.FunctionLikeDeclaration): boolean {
+	if (ts.isFunctionDeclaration(node)) return isExported(node)
+	return ts.isVariableDeclaration(node.parent) && isExported(node.parent)
+}
+
 /** The values a function returns: its expression body, or its `return` values outside nested functions. */
-function returnedValuesOf(node: ts.FunctionLikeDeclaration): ts.Expression[] {
+export function returnedValuesOf(node: ts.FunctionLikeDeclaration): ts.Expression[] {
 	if (!node.body) return []
 	if (!ts.isBlock(node.body)) return [node.body]
 	const values: ts.Expression[] = []

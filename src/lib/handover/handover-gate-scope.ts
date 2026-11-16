@@ -9,6 +9,7 @@ import {
 	GateConfigError,
 	holdsScopedStep,
 	resolveGateSteps,
+	resolveHookSteps,
 	validateGateConfig,
 } from '../gate/gate-config.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -45,8 +46,11 @@ export function resolveHandoverGateScope(params: {
 	const base = resolveConfiguredBase({ root, packageJson, head: lotsFile.head })
 	// a set dialecte.baseBranch naming no branch: refused before any guard, nothing staged
 	if (base !== undefined && 'refusal' in base) return base
-	// the hook keys its full records with a base whenever a full step is scoped: it gets the hand-over's then
-	const handsDown = holdsScopedStep(resolveGateSteps({ packageJson, mode: 'full' }))
+	// the hook keys its records with a base whenever a full or hook step is scoped: it gets the hand-over's then
+	const handsDown = holdsScopedStep([
+		...resolveGateSteps({ packageJson, mode: 'full' }),
+		...resolveHookSteps({ packageJson }),
+	])
 	return {
 		scoped: hasScopedHookStep(packageJson),
 		...(base && { base }),

@@ -256,10 +256,10 @@ export const GATE_HOOK_RUNNING_LINE =
 /** Before a line `gate --hook` says about its base (a note, a hand-over base it ignored). */
 export const GATE_HOOK_LINE_PREFIX = 'gate --hook: '
 
-/** `gate --hook` given a store it does not honour (`DIALECTE_CHECK_STORE`): its first line; `{why}` says why. */
-export const GATE_HOOK_CHECK_STORE_IGNORED_LINE = `gate --hook: ${CHECK_STORE_VARIABLE} ignored: {why}`
+/** A gate given a store it does not honour (`DIALECTE_CHECK_STORE`): its first line; `{command}` the gate, `{why}` why. */
+export const GATE_CHECK_STORE_IGNORED_LINE = `{command}: ${CHECK_STORE_VARIABLE} ignored: {why}`
 
-/** Why a given store is not honoured, as `GATE_HOOK_CHECK_STORE_IGNORED_LINE`'s `{why}` says it; `{value}` as given. */
+/** Why a given store is not honoured, as `GATE_CHECK_STORE_IGNORED_LINE`'s `{why}` says it; `{value}` as given. */
 export const GATE_HOOK_CHECK_STORE_IGNORED_WHY = {
 	notAbsolute: 'not an absolute path: {value}',
 	notAFolder: 'no folder at {value}',

@@ -82,6 +82,8 @@ export function recordCheckedRun(params: {
 	reused?: GateRecord
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
+	/** The absolute git common dir whose store holds the record instead (`DIALECTE_CHECK_STORE`): a rehearsal's. */
+	checkStore?: string
 	/** The gate base the run resolved for its scoped steps; absent without one. */
 	base?: GateRecord['base']
 	/** How long the machine slept during the run, when it did. */
@@ -102,6 +104,7 @@ export function recordCheckedRun(params: {
 		...(changedTree === undefined ? { key: keyAfter } : { checkedTree: changedTree }),
 		...(params.reused && { reused: originOfRecord(params.reused) }),
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
+		...(params.checkStore && { checkStore: params.checkStore }),
 		...(params.base && { base: params.base }),
 		...(params.sleptMs !== undefined && { sleptMs: params.sleptMs }),
 		...(stepHashes && { stepHashes }),

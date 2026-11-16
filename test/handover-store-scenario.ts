@@ -8,6 +8,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	statSync,
 	writeFileSync,
 	rmSync,
@@ -23,10 +24,13 @@ import {
 import { commonGitFolderOf, listChangedFiles } from '../src/lib/git.ts'
 import { handoverLockPath } from '../src/lib/handover/handover-lock.ts'
 import { HANDOVER_STORE_FOLDER } from '../src/lib/handover/handover.constants.ts'
+import { LOT_FOLDER_NAME_PATTERN, STORE_FOLDER } from '../src/lib/store/store.constants.ts'
+import { writeStoreLot } from './brief-workspace.ts'
 import { createFakeClock } from './fake-clock.ts'
 import {
 	ABANDONED_MARKER_TIME,
 	CLI_SOURCE,
+	HANDOVER_LOT_NAME,
 	STORE_BRANCH,
 	STORE_NOW,
 	STORE_WRITER_CLI,
@@ -57,6 +61,48 @@ export function createLinkedWorktree(params: { root: string; branch: string }): 
 /** The store of the repository `root` belongs to, as the cli keeps it. */
 export function storeOf(root: string): string {
 	return join(commonGitFolderOf(root), HANDOVER_STORE_FOLDER)
+}
+
+/**
+ * A store lot of the repository `root` belongs to, written with the store's own record writer (identity naming it,
+ * `working`): the folder a hand-over is written into so the lot guard of `handover run` accepts it. The lot is named
+ * `<next index>-<name>` (a second lot of the same store takes the next index); its identity names `root` as
+ * repository and worktree and the branch `root` is on, never simulated: create the lot after any checkout (its identity
+ * takes `root`'s branch at that moment). The lot folder's real path.
+ */
+export function storeLotFolder(params: { root: string; name: string }): string {
+	const { root } = params
+	const store = join(commonGitFolderOf(root), STORE_FOLDER)
+	const taken = existsSync(store)
+		? readdirSync(store).filter((entry) => LOT_FOLDER_NAME_PATTERN.test(entry))
+		: []
+	const index = Math.max(0, ...taken.map((entry) => Number.parseInt(entry, 10))) + 1
+	const folder = writeStoreLot({
+		workspace: {
+			workspace: root,
+			repository: root,
+			briefFolder: root,
+			briefPath: join(root, 'brief.json'),
+			store,
+			registry: storeOf(root),
+			commit: headOf(root),
+			storeList: join(root, 'lot-stores'),
+		},
+		name: `${String(index).padStart(4, '0')}-${params.name}`,
+		scope: ['src/'],
+		branch: currentBranch(root),
+		repository: root,
+		worktree: root,
+	})
+	return realpathSync(folder)
+}
+
+/**
+ * A folder for a hand-over that is not a store lot (a new temporary folder, not created): for the cases whose
+ * subject is a hand-over outside the store, such as the abandon of one (a lot's hand-over is ended with the lot).
+ */
+export function plainHandoverFolder(): string {
+	return join(temporaryFolder('dialecte-handover-out-'), 'handover')
 }
 
 export function headOf(root: string): string {
@@ -105,7 +151,7 @@ export function writeLotsFile(params: {
 }
 
 /**
- * Writes a hand-over into a folder of its own (`--out`, a new temporary folder unless `folder` is given): first
+ * Writes a hand-over into a folder of its own (`--out`, a new store lot of `root`'s store unless `folder` is given): first
  * the `changes` into the working tree, the branch checked out (created at HEAD when it is another one), then the
  * hand-over, which registers itself in the store. `name` is the registered name the case expects (the hand-over
  * is named by the cli, never by the helper); it also tells the lot's message apart. The repository's lock is
@@ -127,7 +173,7 @@ export function writeStoreHandover(params: {
 		git({ root, args: ['checkout', '-q', '-B', params.branch] })
 	writeFiles({ root, files: params.changes ?? {} })
 	const lotsPath = writeLotsFile({ root, name: params.name, lots: params.lots })
-	const folder = params.folder ?? join(temporaryFolder('dialecte-handover-out-'), 'handover')
+	const folder = params.folder ?? storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const written = runHandover({
 		argv: [lotsPath, '--out', folder],
 		cliPath: STORE_WRITER_CLI,
@@ -230,9 +276,16 @@ export async function runIn(params: {
 	return { exitCode, lines, text: lines.join('\n') }
 }
 
-/** Commits a hand-over through its folder (the code that exists today), failing loudly when it does not. */
-export async function commitStoreHandover(params: { root: string; folder: string }): Promise<void> {
-	const outcome = await runIn({ cwd: params.root, argv: [params.folder] })
+/**
+ * Commits a hand-over through its folder (the code that exists today), failing loudly when it does not; `argv` is
+ * what follows the folder (the go-ahead `--not-a-lot --by --reason` for a hand-over that is not a store lot).
+ */
+export async function commitStoreHandover(params: {
+	root: string
+	folder: string
+	argv?: readonly string[]
+}): Promise<void> {
+	const outcome = await runIn({ cwd: params.root, argv: [params.folder, ...(params.argv ?? [])] })
 	if (outcome.exitCode !== 0) throw new Error(`could not commit ${params.folder}: ${outcome.text}`)
 }
 

@@ -20,6 +20,8 @@ import { abandonRun, finishRun, startRun } from '../src/lib/mutation/run-store.t
 import { deadPid } from './dead-pid.ts'
 import { createFakeClock } from './fake-clock.ts'
 import { gitPathOf } from './gate-records.ts'
+import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
+import { storeLotFolder } from './handover-store-scenario.ts'
 import { removeHookLogs } from './hook-logs.ts'
 import {
 	FOLLOW_UP,
@@ -235,7 +237,7 @@ export function writeGreenRecords(root: string): void {
 	writeFileSync(gitPathOf({ root, name: 'dialecte-rules.json' }), JSON.stringify(rules, null, 2))
 }
 
-/** Two changed files in a repository, a lots file for each, the hand-over not written yet. */
+/** Two changed files in a repository, a lots file for each in a new store lot, the hand-over not written yet. */
 export function hooksHandover(params: { declared: boolean }): {
 	root: string
 	lotsPath: string
@@ -249,7 +251,7 @@ export function hooksHandover(params: { declared: boolean }): {
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	writeFileSync(
 		lotsPath,
@@ -375,7 +377,7 @@ export function mergeHandover(params: { tree?: string }): {
 	writeFiles({ root, files: { 'main.txt': 'main\n' } })
 	git({ root, args: ['add', '-A'] })
 	git({ root, args: ['commit', '-q', '-m', 'feat: the main work'] })
-	const out = temporaryFolder('dialecte-merge-handover-')
+	const out = storeLotFolder({ root, name: 'merge-handover' })
 	const lotsPath = join(out, 'lots.json')
 	writeFileSync(
 		lotsPath,

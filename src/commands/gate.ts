@@ -61,6 +61,7 @@ import {
 	renderReuseLine,
 	reusedResults,
 } from '../lib/gate-records/record-reuse.ts'
+import { computeStateTree } from '../lib/gate-records/state-hash.ts'
 import { hashGateStep } from '../lib/gate-records/step-reuse.ts'
 import { readEmptyTree, readGivenHandoverBase, resolveGateBase } from '../lib/gate/gate-base.ts'
 import {
@@ -100,6 +101,7 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
+import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { CheckKey, GateRecord } from '../lib/gate-records/gate-records.types.ts'
@@ -123,8 +125,11 @@ export async function run(argv: string[]): Promise<void> {
 	const indexFile = ignoredGivenRepository ? undefined : GIVEN_ENVIRONMENT.GIT_INDEX_FILE
 	// the base a hand-over run hands its hooks: only `--hook` reads it
 	const given = hasFlag(argv, 'hook') ? readGivenHandoverBase(GIVEN_ENVIRONMENT) : {}
-	// a rehearsal clone's hook reads and writes the store of the repository it rehearses: an absolute folder only
-	const store = hasFlag(argv, 'hook') ? readGivenCheckStore(GIVEN_ENVIRONMENT) : {}
+	// a rehearsal clone's gate reads and writes the store of the repository it rehearses: an absolute folder only
+	const store = readGivenCheckStore({
+		environment: GIVEN_ENVIRONMENT,
+		command: `gate --${hasFlag(argv, 'hook') ? 'hook' : modeOf(argv)}`,
+	})
 	const result = await runGate({
 		cwd: process.cwd(),
 		argv,
@@ -157,11 +162,11 @@ export async function runGate(params: {
 	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
 	handoverIgnored?: string
 	/**
-	 * `--hook`: the absolute git common dir of the repository whose store holds the hook's records
+	 * The absolute git common dir of the repository whose store holds the gate's records, any mode
 	 * (`DIALECTE_CHECK_STORE` in the cli's given environment); its records are marked as a rehearsal's.
 	 */
 	checkStore?: string
-	/** `--hook`: the line saying why a given store was ignored (no absolute path to a folder); the hook starts with it. */
+	/** The line saying why a given store was ignored (no absolute path to a folder); the gate starts with it. */
 	checkStoreIgnored?: string
 	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
 	holdAwake?: AwakeHolder
@@ -204,11 +209,7 @@ export async function runGate(params: {
 	}
 	if (hasFlag(argv, 'fast') && hasFlag(argv, 'full'))
 		return resultOf({ exitCode: 2, lines: ['gate: --fast or --full, not both'] })
-	const mode: GateMode = hasFlag(argv, 'release')
-		? 'release'
-		: hasFlag(argv, 'full')
-			? 'full'
-			: 'fast'
+	const mode = modeOf(argv)
 	const json = hasFlag(argv, 'json')
 	// a long run: the machine stays awake while it lasts, and its record says when it slept all the same
 	const sleptSinceStart =
@@ -227,6 +228,14 @@ export async function runGate(params: {
 					),
 				]
 			: []
+
+	// a node_modules that does not install the lock being checked: no step runs, nothing is recorded
+	const installRefusal =
+		readHeadOrNone(cwd) === undefined
+			? undefined
+			: checkInstallMatchesTree({ root: cwd, tree: computeStateTree(cwd) })
+	if (installRefusal !== undefined)
+		return resultOf({ exitCode: 1, lines: [`gate: ${installRefusal}`] })
 
 	const source = readStepSource(cwd)
 	if ('refusal' in source)
@@ -267,6 +276,7 @@ export async function runGate(params: {
 	}
 	// said once, before the steps: where the base came from, and a release list that answers no full gate
 	const noticeLines = [
+		...(params.checkStoreIgnored ? [params.checkStoreIgnored] : []),
 		...(scope?.lines ?? []),
 		...(mode === 'release' ? notCoveringLines(packageJson) : []),
 	]
@@ -315,7 +325,12 @@ export async function runGate(params: {
 			: computeCheckKey({ root: cwd, commandHash })
 	const found =
 		keyBefore && !hasFlag(argv, 'no-reuse')
-			? findReusableRecord({ root: cwd, mode, key: keyBefore })
+			? findReusableRecord({
+					root: cwd,
+					mode,
+					key: keyBefore,
+					...(params.checkStore && { checkStore: params.checkStore }),
+				})
 			: undefined
 	reused = found && keyBefore && { record: found, key: keyBefore }
 	if (results.some((result) => result.status === 'failed')) results.push(...steps.map(notRun))
@@ -372,6 +387,7 @@ export async function runGate(params: {
 					keyBefore,
 					keyAfter,
 					...(reused && { reused: reused.record }),
+					...(params.checkStore && { checkStore: params.checkStore }),
 					...(gateBase && { base: gateBase }),
 					...(sleptMs !== undefined && { sleptMs }),
 					stepHashes: new Map(
@@ -432,6 +448,11 @@ export async function runGate(params: {
 		// the failed step's last lines are its own output, relayed line by line
 		output: failed?.tail ? joinedOf([own, relayedTextOf(childLinesOf(failed.tail))]) : own,
 	}
+}
+
+/** The mode the flags ask for: `--release`, else `--full`, else `fast`. */
+function modeOf(argv: string[]): GateMode {
+	return hasFlag(argv, 'release') ? 'release' : hasFlag(argv, 'full') ? 'full' : 'fast'
 }
 
 /** The steps of `mode`, or the refusal of a config the cli cannot run (`GateConfigError`). */

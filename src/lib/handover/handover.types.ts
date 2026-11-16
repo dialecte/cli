@@ -2,6 +2,7 @@ import type { CardLine } from '../card/card.types.ts'
 import type { AgentTime } from '../events/attribute-steps.types.ts'
 import type { LotTokenTotals, MoneySum } from '../events/token-totals.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
 import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
@@ -428,12 +429,15 @@ export type RehearsalDecision = {
 /** A rehearsal's decision for a lot, before its number and tree are added. */
 export type LotDecision = Omit<RehearsalDecision, 'lot' | 'tree'>
 
-/** What every lot's decision of a rehearsal reads: the repository, what is installed, the commands, the hook. */
+/** What every lot's decision of a rehearsal reads: the repository, what the tree locks, the commands, the hook. */
 export type RehearsalPlanContext = {
 	root: string
 	/** The branch the hand-over commits on. */
 	branch: string
-	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	/** What the lot's tree locks, and the `file:` dependencies (`readTreeKey`). */
+	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
+	/** False when the package declares its hook list (`dialecte.gate.hook`): a hook record then proves no full suite. */
+	hookProvesFull: boolean
 	/**
 	 * The command hash a record of each mode must hold to be reused, at the hand-over base; `release` only when the
 	 * release list covers `full` (its scoped steps against the empty tree).
@@ -443,6 +447,12 @@ export type RehearsalPlanContext = {
 	base?: string
 	/** What the commit hook's text names that stages files, if anything. */
 	stages: string | undefined
+}
+
+/** What every lot's plan context shares: the repository, the branch, the worktree's package.json. */
+export type SharedPlanContext = Pick<RehearsalPlanContext, 'root' | 'branch' | 'base'> & {
+	/** The worktree's package.json: a lot tree that holds none is read with it. */
+	packageJson: PackageJson
 }
 
 /** The tree a lot of a hand-over starts from and the tree its commit will hold. */

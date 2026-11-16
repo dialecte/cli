@@ -213,6 +213,7 @@ function worktreeCard(added: AddedWorktree): Card {
 			{ label: 'repository', lines: [added.repository] },
 			{ label: 'worktree', lines: [added.worktree] },
 			{ label: 'branch', lines: [`${added.branch} (from ${added.from})`] },
+			...(added.fetchProblem ? [{ label: 'origin', lines: [added.fetchProblem] }] : []),
 			{ label: 'HEAD', lines: [added.head.slice(0, 12)] },
 			{ label: 'hooks', lines: [added.hooks ? `${added.hooks} copied` : 'none to copy'] },
 			...linksRows({

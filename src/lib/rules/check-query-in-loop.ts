@@ -72,7 +72,7 @@ function queryReadsIn(params: {
  * a `LOOP_CALLBACK_METHODS` call starts a loop; a loop header, the iterated expression and a callback
  * method's receiver stay in the loop around it.
  */
-function loopOfChild(params: {
+export function loopOfChild(params: {
 	parent: ts.Node
 	child: ts.Node
 	loop: LoopContext | undefined
@@ -163,7 +163,7 @@ function goesThroughPerf(expression: ts.Expression): boolean {
  * A name path rooted at `query`, `tx`, `transaction` or a name ending in `Query` / `Tx`, or going through
  * `.query`, `.tx` or `.any` (`context.query.any`, `doc.query.ns`).
  */
-function isQueryReceiver(expression: ts.Expression): boolean {
+export function isQueryReceiver(expression: ts.Expression): boolean {
 	const inner = unwrapped(expression)
 	if (ts.isIdentifier(inner))
 		return (

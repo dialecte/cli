@@ -4,9 +4,6 @@ import type { RecordedStep } from '../src/lib/gate-records/gate-records.types.ts
 export const GATE_TIME = '2026-11-06T10:00:00.000Z'
 export const NEWER_TIME = '2026-11-06T11:00:00.000Z'
 
-/** A `lockHash` no install here has: a record made against another `node_modules`. */
-export const FOREIGN_LOCK_HASH = 'f'.repeat(64)
-
 /** What a step the standing hook did not run reads like. */
 export const MERGED_TREE_WORDS = 'merged'
 

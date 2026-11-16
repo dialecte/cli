@@ -34,6 +34,7 @@ describe('buildContribLines', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(buildContribLines(contribParamsOf(root))).toEqual([
 			{ name: 'rules', status: 'passed', detail: expect.any(String) },
+			{ name: 'changelog', status: 'passed', detail: expect.any(String) },
 			{ name: 'docs', status: 'passed', detail: expect.any(String) },
 			{ name: 'release', status: 'passed', detail: expect.any(String) },
 		])
@@ -46,6 +47,7 @@ describe('buildContribLines', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(buildContribLines(contribParamsOf(root))).toEqual([
 			{ name: 'rules', status: 'passed', detail: expect.any(String) },
+			{ name: 'changelog', status: 'passed', detail: expect.any(String) },
 			{ name: 'release', status: 'passed', detail: expect.any(String) },
 			{ name: 'mutation', status: 'failed', detail: expect.any(String) },
 		])

@@ -34,6 +34,7 @@ import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
 import { lotAnswer } from './lot-answer.ts'
 import { runLotClose } from './lot-close.ts'
 import { lotExport } from './lot-export.ts'
+import { runLotLand } from './lot-land.ts'
 import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
 import { LOT_RISK_EFFORT_OPTION, LOT_RISK_VALUE_OPTIONS } from './lot-risk.constants.ts'
@@ -164,6 +165,7 @@ export function runLot(params: {
 }): CommandResult {
 	const [verb, ...words] = params.argv
 	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words })
 	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })

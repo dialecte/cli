@@ -1,0 +1,122 @@
+/** The GitHub host adapter: pull requests and the merge queue through the `gh` cli. */
+import { spawnSync } from 'node:child_process'
+
+import {
+	GH_COMMAND,
+	HOST_ENVIRONMENT,
+	HOST_READ_TIMEOUT_MS,
+	HOST_WRITE_TIMEOUT_MS,
+	NO_PULL_REQUEST_PATTERN,
+	PULL_REQUEST_FIELDS,
+} from './host.constants.ts'
+
+import type { HostAdapter, HostRefusal, PullRequest } from './host.types.ts'
+
+/**
+ * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, queued (`gh pr merge --auto`,
+ * which joins the merge queue when the base branch has one; a draft made ready first). Reads are short, never a prompt.
+ *
+ * @intent land lots through GitHub's pull requests and merge queue
+ * @internal
+ */
+export function createGithubHost(): HostAdapter {
+	const host: HostAdapter = {
+		readPullRequest: function readPullRequest(params) {
+			const run = runGh({
+				root: params.root,
+				args: ['pr', 'view', params.ref, '--json', PULL_REQUEST_FIELDS],
+				timeout: HOST_READ_TIMEOUT_MS,
+			})
+			if ('refusal' in run) return NO_PULL_REQUEST_PATTERN.test(run.refusal) ? undefined : run
+			return pullRequestOf({ text: run.output })
+		},
+		openPullRequest: function openPullRequest(params) {
+			const created = runGh({
+				root: params.root,
+				args: [
+					'pr',
+					'create',
+					'--base',
+					params.base,
+					'--head',
+					params.branch,
+					'--title',
+					params.title,
+					'--body',
+					params.body,
+					...(params.draft ? ['--draft'] : []),
+				],
+				timeout: HOST_WRITE_TIMEOUT_MS,
+			})
+			if ('refusal' in created) return created
+			const read = host.readPullRequest({ root: params.root, ref: params.branch })
+			return (
+				read ?? { refusal: `the pull request of ${params.branch} was opened but cannot be read` }
+			)
+		},
+		closePullRequest: function closePullRequest(params) {
+			const closed = runGh({
+				root: params.root,
+				args: ['pr', 'close', String(params.number)],
+				timeout: HOST_WRITE_TIMEOUT_MS,
+			})
+			return 'refusal' in closed ? closed : undefined
+		},
+		queuePullRequest: function queuePullRequest(params) {
+			const number = String(params.number)
+			if (params.draft) {
+				const ready = runGh({
+					root: params.root,
+					args: ['pr', 'ready', number],
+					timeout: HOST_WRITE_TIMEOUT_MS,
+				})
+				if ('refusal' in ready) return ready
+			}
+			const queued = runGh({
+				root: params.root,
+				args: ['pr', 'merge', number, '--auto'],
+				timeout: HOST_WRITE_TIMEOUT_MS,
+			})
+			return 'refusal' in queued ? queued : undefined
+		},
+	}
+	return host
+}
+
+/** One `gh` call: its standard output, or its first error line. */
+function runGh(params: {
+	root: string
+	args: string[]
+	timeout: number
+}): { output: string } | HostRefusal {
+	const run = spawnSync(GH_COMMAND, params.args, {
+		cwd: params.root,
+		encoding: 'utf8',
+		timeout: params.timeout,
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: { ...process.env, ...HOST_ENVIRONMENT },
+	})
+	if (run.status === 0) return { output: run.stdout }
+	const reason = run.error?.message ?? (run.stderr.trim().split('\n')[0] || `exit ${run.status}`)
+	return { refusal: `${GH_COMMAND} ${params.args.slice(0, 2).join(' ')}: ${reason}` }
+}
+
+/** A pull request from `gh pr view --json`; a refusal when the text is not what gh writes. */
+function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
+	try {
+		const parsed = JSON.parse(params.text) as Record<string, unknown>
+		if (typeof parsed.number !== 'number' || typeof parsed.state !== 'string')
+			return { refusal: `gh pr view: no number or state in ${params.text.slice(0, 80)}` }
+		const state = parsed.state.toLowerCase()
+		return {
+			number: parsed.number,
+			url: String(parsed.url ?? ''),
+			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
+			draft: parsed.isDraft === true,
+			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
+			head: String(parsed.headRefOid ?? ''),
+		}
+	} catch {
+		return { refusal: `gh pr view: not the JSON it writes: ${params.text.slice(0, 80)}` }
+	}
+}

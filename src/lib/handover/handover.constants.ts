@@ -197,9 +197,6 @@ export const SKIPPED_SCRIPTS_NAMED = 5
 /** The folder segment before a package's name in a lock path (`vite/node_modules/fsevents`). */
 export const NODE_MODULES_SEGMENT = 'node_modules/'
 
-/** The manifest written over with its staged copy while the staged lock is installed. */
-export const PACKAGE_MANIFEST_FILE = 'package.json'
-
 /** The oldest git with `merge-tree --write-tree` (the trial merge of a merge lot): major, minor. */
 export const MERGE_LOT_GIT_VERSION = [2, 38] as const
 
@@ -686,7 +683,7 @@ export const REHEARSAL_REASONS = {
 	mergeChangesLock: 'the merge changes package-lock.json',
 	hookStages: 'the hook stages files ({match})',
 	branchMoved: '{branch} moved: the merge leaves tree {tree}, the tip holds {tip}',
-	installChanged: 'node_modules changed since the record',
+	installChanged: 'the lock of the tree is not the one the record ran on',
 	linkedChanged: 'a linked dependency changed since the record',
 	commandChanged: 'the {mode} command changed since the record',
 	full: '--full',

@@ -28,8 +28,21 @@ export const RULE_NAMES = [
 	'export-without-queries',
 	'fixture-builder',
 	'plan-tag',
+	'xml-splice',
+	'xml-replace',
+	'fixtures-module',
+	'transaction-spy',
+	'act-repeats-call',
+	'act-snapshot',
+	'act-format-check',
+	'inline-document-long',
+	'expected-fixture',
+	'fixture-case-comment',
+	'test-file-long',
+	'fixture-file-long',
 	'invalid-allow',
 	'unused-allow',
+	'changelog-edit',
 ] as const
 
 /** The quality rules a `dialecte-allow` comment may silence. */
@@ -42,6 +55,18 @@ export const ALLOWABLE_RULES = [
 	'export-without-queries',
 	'fixture-builder',
 	'plan-tag',
+	'xml-splice',
+	'xml-replace',
+	'fixtures-module',
+	'transaction-spy',
+	'act-repeats-call',
+	'act-snapshot',
+	'act-format-check',
+	'inline-document-long',
+	'expected-fixture',
+	'fixture-case-comment',
+	'test-file-long',
+	'fixture-file-long',
 ] as const
 
 /** A module constant by its name: `MAX_DEPTH`, `ROOTS`. */

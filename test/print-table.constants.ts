@@ -116,6 +116,9 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		reason: REFUSES_COMBINATION,
 		noJson: PLAIN_TEXT,
 	},
+	'lot land': { argv: ['land', FORGED_WORD], quotes: true },
+	'changelog check': { argv: ['check', FORGED_WORD], quotes: false, reason: RUNS_CHECKS },
+	'changelog release': { argv: ['release', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
 	contrib: {
 		argv: ['--bogus', FORGED_WORD],
 		quotes: false,
@@ -151,7 +154,10 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		json: ['status', FORGED_WORD, '--json'],
 	},
 	'lot risk': { argv: ['risk', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
-	'lot scope': { argv: ['scope', FORGED_WORD, '--drop', 'a.md'], quotes: true },
+	'lot scope': {
+		argv: ['scope', FORGED_WORD, '--drop', 'a.md', '--by', 'a-person', '--reason', 'a reason'],
+		quotes: true,
+	},
 	'lot wait': { argv: ['wait', FORGED_WORD], quotes: true, json: ['wait', FORGED_WORD, '--json'] },
 	'lot answer': {
 		argv: ['answer', FORGED_WORD, 'q1', 'keep'],

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 
-import { readInstalledKey } from '../gate-records/check-key.ts'
+import { readTreeKey } from '../gate-records/check-key.ts'
 import { readGit } from '../git.ts'
 import { hashFile, hashText } from '../tdd/tdd-files.ts'
 import {
@@ -13,7 +13,7 @@ import type { StrykerOptions } from './mutation.types.ts'
 
 /**
  * The key of the fast tier's incremental file: sha256 (hex) of the whole tree the run reads (`tree`, as
- * `computeStateTree` gives it), the package's path in the repository, the installed lock, the linked `file:`
+ * `computeStateTree` gives it), the package's path in the repository, the lock that tree holds, the linked `file:`
  * dependencies, the fast tier's options (minus the per-run fields), the cli version and the ignorer plugin's
  * bytes. Stryker's incremental mode reuses a verdict whenever the killing test's name and file are unchanged and
  * never reads helpers or fixtures, so a cached file is only sound on an identical tree: reruns, other targets,
@@ -33,7 +33,7 @@ export function computeIncrementalKey(params: {
 	const keyed = {
 		tree,
 		packagePath: packagePathOf(root),
-		...readInstalledKey(root),
+		...readTreeKey({ root, tree }),
 		options: withoutPerRunFields(options),
 		cliVersion,
 		ignorer: existsSync(ignorerPlugin) ? hashFile(ignorerPlugin) : MISSING_KEY_INPUT,

@@ -6,7 +6,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runHandover } from '../src/commands/handover.ts'
-import { INSTALLED_LOCK_FILE } from '../src/lib/gate-records/gate-records.constants.ts'
 import { HOOK_LANDING_LINE } from '../src/lib/handover/hook-output.constants.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { HOOK_GATE_COMMAND } from './gate-hook.constants.ts'
@@ -19,7 +18,7 @@ import {
 	LANDING_STEP_NAMES,
 	LANDING_TESTS_PASS,
 } from './handover-landing.constants.ts'
-import { PACKAGES, ROOT_FIELDS_A } from './install-key.constants.ts'
+import { INSTALLED_LOCK_FILE, PACKAGES, ROOT_FIELDS_A } from './lock-key.constants.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { createScopedHookedPackage } from './scoped-hook-package.ts'
 import { BRANCH_NAME, READ_LOT, TEST_COUNT_LINE, WRITER_CLI } from './scratch-checks.constants.ts'

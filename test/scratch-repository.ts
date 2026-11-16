@@ -48,6 +48,18 @@ export function createSharedScratchRepository(files: Record<string, string> = {}
 	}
 }
 
+/**
+ * A clone of `origin` at `into`, given the scratch identity a commit needs (a CI runner has no global one) and no
+ * signing, as `initializeRepository` gives its repositories.
+ */
+export function cloneRepository(params: { origin: string; into: string }): string {
+	git({ root: dirname(params.into), args: ['clone', '-q', params.origin, params.into] })
+	git({ root: params.into, args: ['config', 'user.email', 'scratch@example.com'] })
+	git({ root: params.into, args: ['config', 'user.name', 'Scratch'] })
+	git({ root: params.into, args: ['config', 'commit.gpgsign', 'false'] })
+	return params.into
+}
+
 /** A repository on `main` with one commit holding `files`, made in `root` (a folder of the test's own). */
 export function initializeRepository(params: {
 	root: string

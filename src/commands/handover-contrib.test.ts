@@ -1,5 +1,6 @@
 /** `handover run`: the `contrib` guard of a contributor, and the rehearsal that makes the contrib record of a tree. */
 
+import { rekeyStoredLocks } from '../../test/gate-records.ts'
 import {
 	CONTRIB_NEVER_RUN,
 	NO_GREEN_CONTRIB,
@@ -15,6 +16,7 @@ import {
 	writeMergeHandoverWithTree,
 	writeProfileHandover,
 } from '../../test/handover-profile.ts'
+import { FOREIGN_LOCK_HASH } from '../../test/lock-key.constants.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import {
 	countRuns,
@@ -133,11 +135,11 @@ describe('handover run: the contrib guard', { timeout: SCRATCH_REPOSITORY_TIMEOU
 		expect(headOf(root)).toBe(head)
 	})
 
-	it('contributor with a green contrib record of the tree, then a new install → refused at contrib, no commit', async () => {
+	it('contributor with a green contrib record of the tree keyed on another lock (an older cli keyed the installed one) → refused at contrib, no commit', async () => {
 		const root = editedPackage({ steps: [] })
 		installAgain(root)
 		await runContribIn({ cwd: root })
-		writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{"a":{}}}\n' } })
+		rekeyStoredLocks({ root, lockHash: FOREIGN_LOCK_HASH })
 		const out = writeProfileHandover({ root })
 		const head = headOf(root)
 
@@ -178,7 +180,7 @@ describe(
 			const run = await runFolder({ out, argv: ['--rehearse'] })
 
 			expect(countRuns(counter)).toBe(1)
-			expect(run.text).toMatch(/✓ contrib +rules · bench · release · rehearsal/)
+			expect(run.text).toMatch(/✓ contrib +rules · changelog · bench · release · rehearsal/)
 			expect(run.exitCode).toBe(0)
 		})
 
@@ -190,7 +192,7 @@ describe(
 			const run = await runFolder({ out, argv: ['--rehearse'] })
 
 			expect(countRuns(counter)).toBe(1)
-			expect(run.text).toMatch(/✓ contrib +rules · bench · release · rehearsal/)
+			expect(run.text).toMatch(/✓ contrib +rules · changelog · bench · release · rehearsal/)
 			expect(run.exitCode).toBe(0)
 		})
 
@@ -202,7 +204,9 @@ describe(
 
 			const text = printCardAgain(out)
 
-			expect(gateLinesOf(text)).toContain('✓ contrib rules · bench · release · rehearsal')
+			expect(gateLinesOf(text)).toContain(
+				'✓ contrib rules · changelog · bench · release · rehearsal',
+			)
 		})
 
 		it('contributor, a merge lot rehearsed, then run → the contrib guard passes, the merge is committed', async () => {

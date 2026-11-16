@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import { schemaFaultsOf } from '../../test/json-schema-faults.ts'
 import {
 	createScratchRepository,
 	git,
@@ -16,10 +17,10 @@ import { runLotRisk } from './lot-risk.ts'
 
 import { describe, expect, it } from 'vitest'
 
-type Schema = Record<string, unknown>
+import type { JsonSchema } from '../../test/json-schema-faults.types.ts'
 
 const SCHEMA_URL = new URL('./lot-risk.schema.json', import.meta.url)
-const ROOT_SCHEMA = JSON.parse(readFileSync(SCHEMA_URL, 'utf8')) as Schema
+const ROOT_SCHEMA = JSON.parse(readFileSync(SCHEMA_URL, 'utf8')) as JsonSchema
 
 const PACKAGE_JSON =
 	'{\n\t"name": "scratch",\n\t"version": "1.0.0",\n\t"bin": { "scratch": "scratch.js" },\n\t"dialecte": { "risk": { "high": ["src/lib/store/**"] } }\n}\n'
@@ -28,84 +29,9 @@ const PACKAGE_JSON =
 const EFFORT_MEDIUM =
 	'{"schema":1,"kind":"effort","at":"2026-11-13T08:00:00.000Z","effort":"medium","by":"person-a"}\n'
 
-/** The faults of `value` against `schema` (the keywords above only); empty when it validates. */
-function faultsOf(params: { value: unknown; schema: Schema; path: string }): string[] {
-	const { value, path } = params
-	const schema = resolved(params.schema)
-	const faults: string[] = []
-	if (Array.isArray(schema.oneOf)) {
-		const options = schema.oneOf as Schema[]
-		const holds = options.some(function validates(option) {
-			return faultsOf({ value, schema: option, path }).length === 0
-		})
-		return holds ? [] : [`${path}: matches none of oneOf`]
-	}
-	if (schema.type !== undefined && !hasType({ value, type: schema.type as string }))
-		return [`${path}: not a ${String(schema.type)}`]
-	if (Array.isArray(schema.enum) && !schema.enum.includes(value))
-		faults.push(`${path}: not in enum`)
-	if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum)
-		faults.push(`${path}: below minimum`)
-	if (Array.isArray(value) && schema.items !== undefined)
-		faults.push(
-			...value.flatMap(function itemFaults(item, index) {
-				return faultsOf({ value: item, schema: schema.items as Schema, path: `${path}[${index}]` })
-			}),
-		)
-	if (schema.type === 'object') faults.push(...objectFaultsOf({ value, schema, path }))
-	return faults
-}
-
-/** The faults of an object: a missing required key, an unknown key when none is allowed, each property. */
-function objectFaultsOf(params: { value: unknown; schema: Schema; path: string }): string[] {
-	const record = params.value as Record<string, unknown>
-	const properties = (params.schema.properties ?? {}) as Record<string, Schema>
-	const required = (params.schema.required ?? []) as string[]
-	const missing = required
-		.filter(function isMissing(key) {
-			return !(key in record)
-		})
-		.map(function missingFault(key) {
-			return `${params.path}.${key}: missing`
-		})
-	const unknown =
-		params.schema.additionalProperties === false
-			? Object.keys(record)
-					.filter(function isUnknown(key) {
-						return !(key in properties)
-					})
-					.map(function unknownFault(key) {
-						return `${params.path}.${key}: unknown key`
-					})
-			: []
-	const inner = Object.keys(properties).flatMap(function propertyFaults(key) {
-		return key in record
-			? faultsOf({ value: record[key], schema: properties[key], path: `${params.path}.${key}` })
-			: []
-	})
-	return [...missing, ...unknown, ...inner]
-}
-
-/** The schema a `$ref` of the root points at (`#/$defs/<name>`); the schema itself otherwise. */
-function resolved(schema: Schema): Schema {
-	if (typeof schema.$ref !== 'string') return schema
-	const name = schema.$ref.replace('#/$defs/', '')
-	return (ROOT_SCHEMA.$defs as Record<string, Schema>)[name]
-}
-
-/** Whether `value` is of the JSON type `type`. */
-function hasType(params: { value: unknown; type: string }): boolean {
-	const { value, type } = params
-	if (type === 'array') return Array.isArray(value)
-	if (type === 'null') return value === null
-	if (type === 'integer') return Number.isInteger(value)
-	if (type === 'object') return typeof value === 'object' && value !== null && !Array.isArray(value)
-	return typeof value === type
-}
-
 /** The faults of a value against the schema of `lot risk --json`. */
 function outputFaultsOf(value: unknown): string[] {
-	return faultsOf({ value, schema: ROOT_SCHEMA, path: '$' })
+	return schemaFaultsOf({ value, schema: ROOT_SCHEMA })
 }
 
 /** The answer of `lot risk`; a throw is an answer too (exit -1, the message), so a case fails on its assertion. */

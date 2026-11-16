@@ -45,9 +45,10 @@ export function resolveContribSteps(params: { packageJson: PackageJson }): Contr
 		skip: contrib?.skip,
 	})
 	return [
-		CONTRIB_BUILTIN_STEPS.first,
+		CONTRIB_BUILTIN_STEPS.rules,
+		CONTRIB_BUILTIN_STEPS.changelog,
 		...steps,
 		...derivedSteps({ packageJson, steps }).added,
-		CONTRIB_BUILTIN_STEPS.last,
+		CONTRIB_BUILTIN_STEPS.release,
 	]
 }

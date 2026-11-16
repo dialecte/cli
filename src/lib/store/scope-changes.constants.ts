@@ -1,5 +1,5 @@
 /** The version of a `scope-changes.jsonl` line. */
-export const SCOPE_CHANGE_SCHEMA = 1
+export const SCOPE_CHANGE_SCHEMA = 1 as const
 
 /** The most bytes a `scope-changes.jsonl` line may hold (one atomic append). */
 export const SCOPE_CHANGE_LINE_LIMIT = 4_096
@@ -13,6 +13,8 @@ export const SCOPE_CHANGE_OPS = ['drop', 'add', 'undo'] as const
 /** How readers name the changes: a drop, an add with who (and why when asked), joined; and an unreadable file. */
 export const SCOPE_CHANGE_TEXTS = {
 	dropped: 'dropped {paths}',
+	droppedBy: 'dropped {paths} (by {by})',
+	droppedWithReason: 'dropped {paths} (by {by}: {reason})',
 	undone: 'undid the add of {paths}',
 	added: 'added {paths} (by {by})',
 	addedWithReason: 'added {paths} (by {by}: {reason})',

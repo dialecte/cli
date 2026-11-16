@@ -22,7 +22,7 @@ import {
 import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { runRecap } from '../../commands/recap.ts'
 import { buildCardGateLines } from './card-gates.ts'
-import { hashHookCommand, readInstalledKey } from './check-key.ts'
+import { hashHookCommand, readTreeKey } from './check-key.ts'
 import { storeCheckRecord } from './check-store.ts'
 import { computeStateTree, hashStateTree } from './state-hash.ts'
 
@@ -107,7 +107,7 @@ async function mergeFixture(): Promise<MergeFixture> {
 function hookKeyOf(params: { root: string; tree: string }): NonNullable<GateRecord['key']> {
 	return {
 		tree: params.tree,
-		...readInstalledKey(params.root),
+		...readTreeKey({ root: params.root, tree: params.tree }),
 		commandHash: hashHookCommand(params.root),
 	}
 }

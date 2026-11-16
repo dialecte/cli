@@ -13,6 +13,8 @@ import { basename, dirname, join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
+import { HANDOVER_LOT_NAME } from '../../test/handover-store-scenario.constants.ts'
+import { storeLotFolder } from '../../test/handover-store-scenario.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import {
 	CORE_FAILING_CHECK_STEP_LINES,
@@ -118,7 +120,7 @@ function prepareWithHook(script: string): { out: string } {
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: root,

@@ -33,12 +33,12 @@ export function hashGateStep(params: { root: string; step: GateStep; gateBase?: 
 export function findStepAnswer(params: {
 	root: string
 	tree: string
-	installed: Pick<CheckKey, 'lockHash' | 'linked'>
+	treeKey: Pick<CheckKey, 'lockHash' | 'linked'>
 	stepHash: string
 	/** The absolute git common dir whose store to read instead of the repository's own. */
 	checkStore?: string
 }): { record: GateRecord; recorded: RecordedStep } | undefined {
-	const { installed, stepHash } = params
+	const { treeKey, stepHash } = params
 	const answers = readTreeRecords({
 		root: params.root,
 		tree: params.tree,
@@ -47,8 +47,8 @@ export function findStepAnswer(params: {
 		.filter(
 			(record) =>
 				record.key?.tree === params.tree &&
-				record.key.lockHash === installed.lockHash &&
-				record.key.linked === installed.linked &&
+				record.key.lockHash === treeKey.lockHash &&
+				record.key.linked === treeKey.linked &&
 				isGreenRecord(record),
 		)
 		.sort((first, second) => second.at.localeCompare(first.at))

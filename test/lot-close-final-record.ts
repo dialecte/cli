@@ -22,7 +22,12 @@ import {
 } from '../src/lib/handover/handover-store.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
 import { gitPathOf } from './gate-records.ts'
-import { commitLotByHand, storeOf, writeStoreHandover } from './handover-store-scenario.ts'
+import {
+	commitLotByHand,
+	plainHandoverFolder,
+	storeOf,
+	writeStoreHandover,
+} from './handover-store-scenario.ts'
 import {
 	ASK_FILE_NAME,
 	CANCELED_AT,
@@ -97,7 +102,7 @@ export function createClosableHandover(params: {
 		root: worktree,
 		name: params.tail,
 		changes: { [sourceFile]: 'export {}\n' },
-		folder: lotFolder,
+		folder: lotFolder ?? plainHandoverFolder(),
 	})
 	const folder = realpathSync(written.folder)
 	// a canceled lot takes no hand-over: it is canceled once the hand-over is written
@@ -150,6 +155,7 @@ export function registerCommittedHandover(params: { worktree: string; tail: stri
 		root: worktree,
 		name: tail,
 		changes: { [`src/close-${tail}.ts`]: 'export {}\n' },
+		folder: plainHandoverFolder(),
 	})
 	const folder = realpathSync(written.folder)
 	commitLotByHand({

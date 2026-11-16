@@ -6,6 +6,8 @@ import { basename, join } from 'node:path'
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { ISO_TIME_PATTERN, SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { gitPathOf, readRecordFile } from '../../test/gate-records.ts'
+import { HANDOVER_LOT_NAME } from '../../test/handover-store-scenario.constants.ts'
+import { storeLotFolder } from '../../test/handover-store-scenario.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import { FAILING_HOOK_LINES, PASSING_HOOK_LINES } from '../../test/hook-output-lines.constants.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
@@ -65,7 +67,7 @@ function prepare(script: string | undefined): { root: string; out: string } {
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: root,
@@ -269,7 +271,7 @@ describe(
 				gitPathOf({ root, name: 'dialecte-gate-fast.json' }),
 				`${JSON.stringify(fastRecord, null, 2)}\n`,
 			)
-			const next = temporaryFolder('dialecte-handover-')
+			const next = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 			const lotsPath = join(next, 'lots.json')
 			const lotsFile: LotsFile = {
 				repository: root,

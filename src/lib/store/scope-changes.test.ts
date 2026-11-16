@@ -19,7 +19,7 @@ import { checkBrief } from './brief.ts'
 import { readLotScope } from './lot-records.ts'
 import { SCOPE_CHANGE_KEYS } from './scope-changes.constants.ts'
 import {
-	appendScopeChange,
+	appendScopeChanges,
 	effectiveScopeOf,
 	readScopeChanges,
 	scopeChangesText,
@@ -41,6 +41,11 @@ const AT = '2026-11-14T10:00:00.000Z'
 /** A drop of `paths`. */
 function dropOf(paths: string[]): ScopeChange {
 	return { schema: 1, at: AT, op: 'drop', paths }
+}
+
+/** A drop of `paths` with who and why, as the verb writes it since every drop requires them. */
+function dropWithWhoOf(paths: string[]): ScopeChange {
+	return { schema: 1, at: AT, op: 'drop', paths, by: 'person-a', reason: 'hand back' }
 }
 
 /** An add of `paths`, by a person, with a reason. */
@@ -149,6 +154,16 @@ describe('readScopeChanges', () => {
 			expected: { changes: [dropOf(['README.md']), addOf(['src/b'])], unreadable: 0 },
 		},
 		{
+			title: 'a drop with who and why',
+			text: jsonLines(dropWithWhoOf(['src/a'])),
+			expected: { changes: [dropWithWhoOf(['src/a'])], unreadable: 0 },
+		},
+		{
+			title: 'a drop with who and no why',
+			text: jsonLines({ ...dropOf(['src/a']), by: 'person-a' }),
+			expected: { changes: [], unreadable: 1 },
+		},
+		{
 			title: 'an add and its undo',
 			text: jsonLines(addOf(['src/b']), undoOf(['src/b'])),
 			expected: { changes: [addOf(['src/b']), undoOf(['src/b'])], unreadable: 0 },
@@ -211,15 +226,15 @@ describe('readScopeChanges', () => {
 	/** Appends a drop then an add to a fresh lot folder: the file's text and what a reader reads back. */
 	function appendedTwice() {
 		const lotFolder = temporaryFolder('dialecte-scope-changes-')
-		appendScopeChange({ lotFolder, change: dropOf(['README.md']) })
-		appendScopeChange({ lotFolder, change: addOf(['src/b']) })
+		appendScopeChanges({ lotFolder, changes: [dropOf(['README.md'])] })
+		appendScopeChanges({ lotFolder, changes: [addOf(['src/b'])] })
 		return {
 			text: readFileSync(join(lotFolder, SCOPE_CHANGES_FILE), 'utf8'),
 			read: readScopeChanges({ lotFolder }),
 		}
 	}
 
-	it('appendScopeChange writes one whole line a reader reads back', () => {
+	it('appendScopeChanges writes whole lines a reader reads back', () => {
 		let appended: ReturnType<typeof appendedTwice> | undefined
 
 		expect(() => {
@@ -238,6 +253,7 @@ describe('scope-change.schema.json', () => {
 		required: string[]
 		properties: Record<string, { const?: unknown }>
 		additionalProperties: boolean
+		dependentRequired?: Record<string, string[]>
 	}
 
 	/** The schema's definition of the line's op. */
@@ -259,14 +275,69 @@ describe('scope-change.schema.json', () => {
 			...definition.required.filter((key) => !keys.includes(key)).map((key) => `missing ${key}`),
 			...keys.filter((key) => !(key in definition.properties)).map((key) => `unnamed ${key}`),
 			...(definition.additionalProperties === false ? [] : ['additional properties allowed']),
+			...Object.entries(definition.dependentRequired ?? {}).flatMap(([key, needed]) =>
+				keys.includes(key)
+					? needed
+							.filter((other) => !keys.includes(other))
+							.map((other) => `${key} without ${other}`)
+					: [],
+			),
 		]
 	}
 
 	const LINES: { title: string; change: ScopeChange }[] = [
 		{ title: 'a drop', change: dropOf(['README.md']) },
+		{ title: 'a drop with who and why', change: dropWithWhoOf(['README.md']) },
 		{ title: 'an add', change: addOf(['src/b']) },
 		{ title: 'an undo', change: undoOf(['src/b']) },
 	]
+
+	const REFUSED_SHAPES: { title: string; line: Record<string, unknown>; violation: string }[] = [
+		{
+			title: 'a drop with who and no why',
+			line: { ...dropOf(['src/a']), by: 'person-a' },
+			violation: 'by without reason',
+		},
+		{
+			title: 'a drop with why and no who',
+			line: { ...dropOf(['src/a']), reason: 'r' },
+			violation: 'reason without by',
+		},
+	]
+
+	for (const { title, line, violation } of REFUSED_SHAPES)
+		it(`${title} -> the schema refuses it and the reader counts it unreadable`, () => {
+			const lotFolder = temporaryFolder('dialecte-scope-changes-')
+			writeFileSync(join(lotFolder, SCOPE_CHANGES_FILE), jsonLines(line))
+
+			expect({
+				schema: violationsOf({ line }),
+				read: readScopeChanges({ lotFolder }).unreadable,
+			}).toEqual({
+				schema: [violation],
+				read: 1,
+			})
+		})
+
+	it('a drop and an add appended in one write -> two lines, each the schema accepts', () => {
+		const lotFolder = temporaryFolder('dialecte-scope-changes-')
+		let lines: Record<string, unknown>[] = []
+
+		expect(() => {
+			appendScopeChanges({ lotFolder, changes: [dropWithWhoOf(['src/a']), addOf(['src/a/x.ts'])] })
+			lines = readFileSync(join(lotFolder, SCOPE_CHANGES_FILE), 'utf8')
+				.split('\n')
+				.filter((text) => text !== '')
+				.map((text) => JSON.parse(text) as Record<string, unknown>)
+		}).not.toThrow()
+		expect({
+			ops: lines.map((line) => line.op),
+			violations: lines.flatMap((line) => violationsOf({ line })),
+		}).toEqual({
+			ops: ['drop', 'add'],
+			violations: [],
+		})
+	})
 
 	for (const { title, change } of LINES)
 		it(`${title} appended -> its line holds every key the schema requires and none it does not name`, () => {
@@ -274,7 +345,7 @@ describe('scope-change.schema.json', () => {
 			let line: Record<string, unknown> | undefined
 
 			expect(() => {
-				appendScopeChange({ lotFolder, change })
+				appendScopeChanges({ lotFolder, changes: [change] })
 				line = JSON.parse(readFileSync(join(lotFolder, SCOPE_CHANGES_FILE), 'utf8')) as Record<
 					string,
 					unknown
@@ -304,6 +375,18 @@ describe('scopeChangesText', () => {
 			changes: [addOf(['src/b']), undoOf(['src/b'])],
 			withReason: true,
 			text: 'added src/b (by person-a: approved widening); undid the add of src/b',
+		},
+		{
+			title: 'a drop with who and why, with reasons',
+			changes: [dropWithWhoOf(['src/a'])],
+			withReason: true,
+			text: 'dropped src/a (by person-a: hand back)',
+		},
+		{
+			title: 'a drop with who and why, without reasons',
+			changes: [dropWithWhoOf(['src/a'])],
+			withReason: false,
+			text: 'dropped src/a (by person-a)',
 		},
 		{
 			title: 'a drop and an add, without reasons',

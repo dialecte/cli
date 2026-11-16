@@ -8,14 +8,14 @@
  * tree again after the rehearsal. No check is dropped silently: a step the hook did not run reads
  * `! <step>  not run on the merged tree` (a warning, not stale; `not run by the commit hook on this tree` when
  * the tree checked is the worktree's own), a failed one stays `✗ ... (the tree changed since)`, and the tdd step
- * stays. The worktree's own hook record counts, like a stored one, only when it ran against what is installed now.
+ * stays. The worktree's own hook record counts, like a stored one, only when it ran against what the tree locks.
  * The gate records are the worktree's last runs and the records of the tree the card checks that any worktree
  * of the repository stored, their tdd steps left out (a tdd verdict is the worktree's own, not the tree's).
  * So the tdd line is the worktree's: stale only when its record is of another tree than the worktree's now, never
  * because the tree checked is a merge's.
  * A line from a record made at a commit outside HEAD's history (a branch commit's hook record read for a
  * merge on main) ends `· from <commit>`, a rehearsal's `· rehearsal`. A stored record counts only when it
- * ran against what is installed now (the same `node_modules`, the same `file:` dependencies) with the
+ * ran against what the tree locks (the same lock, the same `file:` dependencies) with the
  * command of its mode now. A record of another tree than the one checked is marked stale: it warns, or stays
  * failed. Beside them, each line the card composes: the rules (the recap's), what the package owes its mutation
  * runs (read from the mutation store when the card is built), the review from the hand-over folder's findings
@@ -54,7 +54,7 @@ import { scopeChangesText } from '../store/scope-changes.ts'
 import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
-import { readInstalledKey } from './check-key.ts'
+import { readTreeKey } from './check-key.ts'
 import { findReusableRecord, isGreenRecord, isSameKey, readTreeRecords } from './check-store.ts'
 import {
 	BASE_MOVED_SUFFIX,
@@ -82,6 +82,7 @@ import {
 	GATE_RELEASE_LINE_NAME,
 	HOOK_BASE_DETAIL,
 	HOOK_RECORD_DETAIL,
+	HOOK_GATE_RECORD_MODE,
 	HOOK_RECORD_MODE,
 	HOOK_REUSED_DETAIL,
 	GATE_BASE_PROBLEM_DETAIL,
@@ -191,13 +192,13 @@ export function buildCardGateLines(params: {
 	release?: boolean
 }): CardGateLine[] {
 	const { root, tree } = params
-	const config = readCardGateConfig({ root, head: params.head })
+	const config = readCardGateConfig({ root, tree, head: params.head })
 	const own = readGateRecords(root)
 	const others = readTreeRecords({ root, tree }).filter(
 		(record) => !own.some((ownRecord) => isSameRun({ record, other: ownRecord })),
 	)
 	const stored = others.filter(currentStoredRecord({ root, tree, config })).map(withoutTddStep)
-	const records = [...own.filter(ownHookOfThisInstall(root)), ...stored]
+	const records = [...own.filter(ownHookOfTree({ root, tree })), ...stored]
 	const stateHash = hashStateTree(tree)
 	const worktreeStateHash = params.stateHash ?? hashStateTree(computeStateTree(root))
 	return [
@@ -210,6 +211,7 @@ export function buildCardGateLines(params: {
 			ownLotStateHash: params.ownLotStateHash,
 			outsideHistory: commitsOutsideHistory({ root, records }),
 			baseCheck: recordBaseCheck({ root, base: config.base }),
+			hookProvesFull: config.hookProvesFull ?? true,
 		}),
 		...sleptGateLines({ root, tree }),
 		...(config.invalid === undefined
@@ -268,11 +270,16 @@ export function sleptLineOf(params: { sleptMs: number; run: string }): CardGateL
 
 /**
  * The package's gate config as the card reads it, once: the base resolved on `head` when a gate list holds a
- * scoped step, the command hash of each mode at that base; the message of a config the cli cannot run; nothing
- * of a package.json the gate itself could not read (no stored record can be told current then).
+ * scoped step, the command hash of each mode at that base, read at the tree the card checks (its hook files and
+ * package.json: a merge's tree holds its own); the message of a config the cli cannot run; nothing of a
+ * package.json the gate itself could not read (no stored record can be told current then).
  */
-function readCardGateConfig(params: { root: string; head: string | undefined }): CardGateConfig {
-	const { root } = params
+function readCardGateConfig(params: {
+	root: string
+	tree: string
+	head: string | undefined
+}): CardGateConfig {
+	const { root, tree } = params
 	try {
 		const packageJson = readPackageJson(root)
 		const base = resolveConfiguredBase({
@@ -284,7 +291,8 @@ function readCardGateConfig(params: { root: string; head: string | undefined }):
 		if (base !== undefined && 'refusal' in base) return { baseRefusal: base.refusal }
 		return {
 			...(base && { base }),
-			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit }),
+			hashes: readModeCommandHashes({ root, packageJson, gateBase: base?.commit, tree }),
+			hookProvesFull: packageJson.dialecte?.gate?.hook === undefined,
 		}
 	} catch (error) {
 		if (error instanceof GateConfigError) return { invalid: error.message }
@@ -330,7 +338,7 @@ function releaseLine(params: { root: string; tree: string; config: CardGateConfi
 	const key =
 		releaseHash === undefined
 			? undefined
-			: { tree, ...readInstalledKey(root), commandHash: releaseHash }
+			: { tree, ...readTreeKey({ root, tree }), commandHash: releaseHash }
 	const green: CardGateLine = {
 		name: GATE_RELEASE_LINE_NAME,
 		status: 'passed',
@@ -366,7 +374,7 @@ function failedReleaseLine(record: GateRecord): CardGateLine {
 /**
  * A contributor's contrib rows: the rules, the package steps and release from the contrib record of the checked
  * tree, then the live `mutation` row (`pendingVerdict`). The record counts when its key is the one the `contrib`
- * guard asks for: a contrib run at `head` (the lots file's HEAD) on that tree, against what is installed now, with
+ * guard asks for: a contrib run at `head` (the lots file's HEAD) on that tree, against what the tree locks, with
  * the package's contrib rows. Without one, the worktree's last contrib record, each row stale and saying what
  * changed since (the tree, HEAD, or the install and the rows); without either, one failed `contrib` line saying to
  * run it.
@@ -467,7 +475,7 @@ function commitsOutsideHistory(params: {
 
 /**
  * Which stored records of `tree` count for the worktree `root`: those whose key is the key a run there would
- * have now - what is installed, the `file:` dependencies, the command of the record's mode at the card's base
+ * have now - what `tree` locks, the `file:` dependencies, the command of the record's mode at the card's base
  * (`readCommandHashes`); a release record only when green and its list covers `full`, standing in for a full one.
  */
 function currentStoredRecord(params: {
@@ -477,29 +485,29 @@ function currentStoredRecord(params: {
 }): (record: GateRecord) => boolean {
 	const { root, tree } = params
 	// what a run here would hold now is read only when another run's record is there to compare with
-	let installed: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
+	let treeKey: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
 	const commands = readCommandHashes(params.config)
 	return function isCurrent(record) {
 		const commandHash = commands[record.mode]
 		if (commandHash === undefined) return false
 		if (record.mode === RELEASE_RECORD_MODE && !isGreenRecord(record)) return false
-		installed ??= readInstalledKey(root)
-		return isSameKey({ key: { tree, ...installed, commandHash }, other: record.key })
+		treeKey ??= readTreeKey({ root, tree })
+		return isSameKey({ key: { tree, ...treeKey, commandHash }, other: record.key })
 	}
 }
 
 /**
  * Which of the worktree's own records count: every gate record, and a commit hook's record only when it ran against
- * what is installed now (the same `node_modules`, the same `file:` dependencies), as a stored record must; a hook
- * record of another install supersedes nothing and gives no line.
+ * what `tree` locks and the same `file:` dependencies, as a stored record must; a hook record of another lock
+ * supersedes nothing and gives no line.
  */
-function ownHookOfThisInstall(root: string): (record: GateRecord) => boolean {
-	// what is installed is read only when an own hook record is there to compare with
-	let installed: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
-	return function isOfThisInstall(record) {
+function ownHookOfTree(params: { root: string; tree: string }): (record: GateRecord) => boolean {
+	// what the tree locks is read only when an own hook record is there to compare with
+	let expected: Pick<CheckKey, 'lockHash' | 'linked'> | undefined
+	return function isOfTree(record) {
 		if (record.mode !== HOOK_RECORD_MODE || record.key === undefined) return true
-		installed ??= readInstalledKey(root)
-		return record.key.lockHash === installed.lockHash && record.key.linked === installed.linked
+		expected ??= readTreeKey(params)
+		return record.key.lockHash === expected.lockHash && record.key.linked === expected.linked
 	}
 }
 
@@ -515,6 +523,7 @@ function readCommandHashes(config: CardGateConfig): Partial<Record<GateRecordMod
 		fast: hashes.fast,
 		full: hashes.full,
 		[HOOK_RECORD_MODE]: hashes.hook,
+		[HOOK_GATE_RECORD_MODE]: hashes.hookGate,
 		...(hashes.releaseCoversFull && { [RELEASE_RECORD_MODE]: hashes.release }),
 	}
 }
@@ -547,14 +556,18 @@ function gateStepLines(params: {
 	outsideHistory: ReadonlySet<string>
 	/** How a record's gate base reads against the card's (`recordBaseCheck`). */
 	baseCheck: (record: GateRecord) => RecordBaseCheck | undefined
+	/** False under a declared hook list: a hook's test step answers no full test step. */
+	hookProvesFull: boolean
 }): CardGateLine[] {
 	if (params.records.length === 0)
 		return [{ name: GATE_LINE_NAME, status: 'failed', detail: NEVER_RUN_DETAIL }]
 	const latest = new Map<string, { step: RecordedStep; record: GateRecord }>()
 	const { stateHash } = params
-	const oldestFirst = currentRecords({ records: params.records, stateHash }).sort((first, second) =>
-		first.at.localeCompare(second.at),
-	)
+	const oldestFirst = currentRecords({
+		records: params.records,
+		stateHash,
+		hookProvesFull: params.hookProvesFull,
+	}).sort((first, second) => first.at.localeCompare(second.at))
 	const superseded = isSuperseded({ records: oldestFirst, stateHash })
 	const tddStateHashes = currentTddStateHashes({ ...params, records: oldestFirst })
 	for (const record of oldestFirst)
@@ -620,6 +633,7 @@ function currentTddStateHashes(params: {
 function currentRecords(params: {
 	records: readonly GateRecord[]
 	stateHash: string
+	hookProvesFull: boolean
 }): GateRecord[] {
 	const { records, stateHash } = params
 	const gates = records.filter((record) => record.mode !== HOOK_RECORD_MODE)
@@ -635,7 +649,9 @@ function currentRecords(params: {
 	if (checkedHooks.length === 0) return standing
 	const superseded = isSuperseded({ records: standing, stateHash })
 	return standing.map(function supersededByHook(record) {
-		return superseded(record) ? withoutAnsweredSteps({ record, hooks: checkedHooks }) : record
+		return superseded(record)
+			? withoutAnsweredSteps({ record, hooks: checkedHooks, hookProvesFull: params.hookProvesFull })
+			: record
 	})
 }
 
@@ -664,11 +680,13 @@ function newestAt(records: readonly GateRecord[]): string {
 /**
  * A gate record a standing hook record of the checked tree superseded, without the steps `hooks` answer: a hook
  * step of the same name, or, for a step counting tests, a hook step counting tests (the hook runs the full gate's
- * test steps). Its tdd step (the worktree's own) and its failed steps always stay.
+ * test steps). Its tdd step (the worktree's own) and its failed steps always stay, and its test steps under a declared
+ * hook list (`hookProvesFull` false: the hook runs the fast tier).
  */
 function withoutAnsweredSteps(params: {
 	record: GateRecord
 	hooks: readonly GateRecord[]
+	hookProvesFull: boolean
 }): GateRecord {
 	const hookSteps = params.hooks.flatMap((hook) => hook.steps)
 	const hookCountsTests = hookSteps.some((step) => step.counts.tests !== undefined)
@@ -676,6 +694,7 @@ function withoutAnsweredSteps(params: {
 		...params.record,
 		steps: params.record.steps.filter(function unanswered(step) {
 			if (step.name === TDD_STEP.name || step.status === 'failed') return true
+			if (step.counts.tests !== undefined && !params.hookProvesFull) return true
 			if (hookSteps.some((hookStep) => hookStep.name === step.name)) return false
 			return !(step.counts.tests !== undefined && hookCountsTests)
 		}),

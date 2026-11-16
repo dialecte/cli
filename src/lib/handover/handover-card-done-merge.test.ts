@@ -21,7 +21,7 @@ import {
 } from '../../../test/scratch-checks.ts'
 import { git } from '../../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { hashHookCommand, readInstalledKey } from '../gate-records/check-key.ts'
+import { hashHookCommand, readTreeKey } from '../gate-records/check-key.ts'
 import { storeCheckRecord } from '../gate-records/check-store.ts'
 import { CHECK_STORE_FOLDER } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
@@ -82,7 +82,11 @@ async function provenMergeHandover(): Promise<{ root: string; out: string; merge
 		head: headOf(root),
 		stateHash: hashStateTree(mergedTree),
 		steps: HOOK_STEPS,
-		key: { tree: mergedTree, ...readInstalledKey(root), commandHash: hashHookCommand(root) },
+		key: {
+			tree: mergedTree,
+			...readTreeKey({ root, tree: mergedTree }),
+			commandHash: hashHookCommand(root),
+		},
 	}
 	writeFileSync(gitPathOf({ root, name: HOOK_RECORD_FILE }), `${JSON.stringify(hook, null, 2)}\n`)
 	storeCheckRecord({ root, record: hook })
@@ -116,7 +120,11 @@ function leaveOnlyAnotherTreeHook(params: { root: string; mergedTree: string }):
 		head: headOf(root),
 		stateHash: hashStateTree(EMPTY_TREE),
 		steps: HOOK_STEPS,
-		key: { tree: EMPTY_TREE, ...readInstalledKey(root), commandHash: hashHookCommand(root) },
+		key: {
+			tree: EMPTY_TREE,
+			...readTreeKey({ root, tree: EMPTY_TREE }),
+			commandHash: hashHookCommand(root),
+		},
 	}
 	writeFileSync(gitPathOf({ root, name: HOOK_RECORD_FILE }), `${JSON.stringify(other, null, 2)}\n`)
 }

@@ -18,8 +18,10 @@ import {
 	show,
 	snapshotOf,
 	subjectsOf,
+	plainHandoverFolder,
 	writeStoreHandover,
 } from '../../test/handover-store-scenario.ts'
+import { GO_AHEAD_ARGV } from '../../test/store-lot-guard-workspace.constants.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { handoverLockPath } from '../lib/handover/handover-lock.ts'
 import {
@@ -50,6 +52,7 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('a store hand-over holds the worktree, no argument → abandoned marker written, the lock gone, index and HEAD unchanged, exit 0', () => {
 		const root = createBranchRepository()
 		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
 			root,
 			name: STORE_FIRST_NAME,
 			changes: CHANGES,
@@ -74,6 +77,7 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('<name> while a real run of it is marked in progress → refused, exit 2, marker absent, lock kept', () => {
 		const root = createBranchRepository()
 		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
 			root,
 			name: STORE_FIRST_NAME,
 			changes: CHANGES,
@@ -99,8 +103,13 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 
 	it('a hand-over with every lot committed → refused, exit 2, marker absent', async () => {
 		const root = createBranchRepository()
-		const { folder } = writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
-		await commitStoreHandover({ root, folder })
+		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
+		await commitStoreHandover({ root, folder, argv: GO_AHEAD_ARGV })
 		const entryBefore = readEntry({ root, name: STORE_FIRST_NAME })
 
 		expect(abandon({ cwd: root, argv: [STORE_FIRST_NAME] })).toMatchObject({ exitCode: 2 })
@@ -113,6 +122,7 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('a partly committed hand-over → abandoned, its commits kept', () => {
 		const root = createBranchRepository()
 		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
 			root,
 			name: STORE_FIRST_NAME,
 			changes: TWO_LOT_CHANGES,
@@ -130,8 +140,18 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 
 	it('<name> whose script the lock does not name → marked, the lock naming another script kept, one line says so', () => {
 		const root = createBranchRepository()
-		const other = writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
-		const holder = writeStoreHandover({ root, name: SECOND_NAME, keepLock: true })
+		const other = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
+		const holder = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: SECOND_NAME,
+			keepLock: true,
+		})
 		const lockBefore = readFileSync(handoverLockPath(root), 'utf8')
 
 		expect(abandon({ cwd: root, argv: [STORE_FIRST_NAME] })).toMatchObject({
@@ -155,7 +175,12 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 
 	it('abandoned twice → the second says it already is, exit 0', () => {
 		const root = createBranchRepository()
-		writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
+		writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
 
 		expect(abandon({ cwd: root, argv: [STORE_FIRST_NAME] })).toMatchObject({ exitCode: 0 })
 
@@ -169,7 +194,12 @@ describe('handover abandon', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 describe('an abandoned hand-over', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('show prints ABANDONED and no run command', () => {
 		const root = createBranchRepository()
-		const { folder } = writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
+		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
 		markAbandoned({ folder, file: HANDOVER_FILES.abandoned })
 
 		expect(boxLines(show({ cwd: root, argv: [STORE_FIRST_NAME] }).output).join('\n')).toContain(
@@ -180,7 +210,12 @@ describe('an abandoned hand-over', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 
 	it('run without an argument skips it: the other pending hand-over runs', async () => {
 		const root = createBranchRepository()
-		const abandoned = writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
+		const abandoned = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
 		writeStoreHandover({ root, name: SECOND_NAME, changes: OTHER_CHANGES })
 		markAbandoned({ folder: abandoned.folder, file: HANDOVER_FILES.abandoned })
 
@@ -191,7 +226,12 @@ describe('an abandoned hand-over', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 
 	it('run <abandoned> → exit 2 naming the marker, nothing committed', async () => {
 		const root = createBranchRepository()
-		const { folder } = writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
+		const { folder } = writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
 		markAbandoned({ folder, file: HANDOVER_FILES.abandoned })
 		const headBefore = headOf(root)
 
@@ -207,7 +247,12 @@ describe('an abandoned hand-over', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 describe('abandon chained with show and run', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('a real abandon, then show prints ABANDONED with no run command, and run without an argument runs the other pending hand-over', async () => {
 		const root = createBranchRepository()
-		writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: CHANGES })
+		writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: CHANGES,
+		})
 		writeStoreHandover({ root, name: SECOND_NAME, changes: OTHER_CHANGES })
 
 		expect(abandon({ cwd: root, argv: [STORE_FIRST_NAME] })).toMatchObject({ exitCode: 0 })

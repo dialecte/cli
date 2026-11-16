@@ -13,7 +13,11 @@ import { REHEARSAL_FOLDER_PREFIX } from '../src/lib/handover/handover.constants.
 import { readHandoverFolder } from '../src/lib/handover/read-handover-folder.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { createFakeClock } from './fake-clock.ts'
+import { rekeyStoredLocks } from './gate-records.ts'
+import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
+import { storeLotFolder } from './handover-store-scenario.ts'
 import { removeHookLogs } from './hook-logs.ts'
+import { FOREIGN_LOCK_HASH } from './lock-key.constants.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { WIRED_DEFAULT_SCRIPTS } from './rule-gaps-unwired.constants.ts'
 import {
@@ -188,13 +192,16 @@ export function editReadLot(root: string): void {
 	})
 }
 
-/** The hand-over folder written for `lots` (the lots file, snapshot and card): its folder and the card printed. */
+/**
+ * The hand-over folder written for `lots` (the lots file, snapshot and card): its folder, a new store lot of the
+ * repository's store, and the card printed.
+ */
 export function writeHandoverFolder(params: {
 	root: string
 	lots: LotsFile['lots']
 	branch?: string
 }): { out: string; output: string } {
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root: params.root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: params.root,
@@ -379,9 +386,9 @@ export async function createRehearsedScenario(variant: RehearsedVariant): Promis
 		if (lock) reason = 'the lot changes package-lock.json'
 		if (variant === 'the hook stages files') reason = 'the hook stages files (git add)'
 		if (variant === '--full') reason = '--full'
-		if (variant === 'node_modules/.package-lock.json changed since the gate') {
-			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } })
-			reason = 'node_modules changed since the record'
+		if (variant === 'the gate record keyed on another lock') {
+			rekeyStoredLocks({ root, lockHash: FOREIGN_LOCK_HASH })
+			reason = 'the lock of the tree is not the one the record ran on'
 		}
 		if (variant === 'a linked dependency changed since the gate') {
 			writeFiles({ root: join(root, '..', 'dep'), files: { 'lib/a.js': 'one, and more\n' } })

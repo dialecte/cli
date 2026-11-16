@@ -589,6 +589,29 @@ describe('checkCodeRules test-shape: findings by line', () => {
 			rule: 'plan-tag',
 			body: ["test('step 3 of the ladder resolves', () => {})" + FLAG_MARK],
 		},
+		'plan-tag: a test title with a station word and a number → flagged': {
+			rule: 'plan-tag',
+			body: ["it('station 2 accepts the widget', () => {})" + FLAG_MARK],
+		},
+		'plan-tag: a table key with a station word, an underscore and a number → flagged': {
+			rule: 'plan-tag',
+			body: [
+				'const testCases = {',
+				"\t'station_3 accepts the widget': { sourceXml: '<Widget/>' }," + FLAG_MARK,
+				'}',
+				'runTestCases.withExport({ testCases, act: async () => {} })',
+			],
+		},
+		'plan-tag: a title with the plural station word and no number → not flagged': {
+			rule: 'plan-tag',
+			controlled: true,
+			body: ["it('stations of the loop accept the widget', () => {})"],
+		},
+		'plan-tag: a title with a longer word ending in station and a number → not flagged': {
+			rule: 'plan-tag',
+			controlled: true,
+			body: ["it('a workstation 2 accepts the widget', () => {})"],
+		},
 		'plan-tag: an it.each title with a round word and a number → flagged': {
 			rule: 'plan-tag',
 			body: ["it.each([1, 2])('a round 2 of retries', () => {})" + FLAG_MARK],

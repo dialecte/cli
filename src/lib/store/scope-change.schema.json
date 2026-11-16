@@ -34,7 +34,17 @@
 						"type": "string"
 					},
 					"minItems": 1
+				},
+				"by": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string"
 				}
+			},
+			"dependentRequired": {
+				"by": ["reason"],
+				"reason": ["by"]
 			}
 		},
 		"addLine": {

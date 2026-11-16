@@ -5,9 +5,15 @@ on:
   workflow_call:
 
 jobs:
+  # the suite in 4 shards on 4 runners: each runs a quarter of the test files (vitest --shard), all must pass
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: test (shard ${{ matrix.shard }}/4)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -15,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 'latest'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Restore node_modules cache
@@ -28,4 +34,33 @@ jobs:
         run: sudo apt-get install -y libxml2-utils
 
       - name: Run Tests
-        run: npm run test
+        run: npx vitest run --shard=${{ matrix.shard }}/4
+
+  # the config homes differ per platform (%APPDATA%, path keys compared whatever the case): their tests on Windows
+  config-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      # the install workflow fills the Linux cache only: a Windows cache miss installs here
+      - name: Install dependencies
+        run: npm ci
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+
+      - name: Run config tests
+        run: npx vitest run src/lib/config/ src/commands/config src/lib/release/

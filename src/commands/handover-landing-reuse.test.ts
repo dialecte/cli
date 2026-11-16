@@ -25,7 +25,7 @@ import {
 	setTestsPassing,
 	writeInstalledLock,
 } from '../../test/handover-landing.ts'
-import { PACKAGES, PACKAGES_A_NEWER, ROOT_FIELDS_B } from '../../test/install-key.constants.ts'
+import { PACKAGES_A_NEWER, ROOT_FIELDS_B } from '../../test/lock-key.constants.ts'
 import { READ_LOT, SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import {
 	createCounter,
@@ -180,27 +180,6 @@ describe(
 				expect(hookRecordsOf({ root, tree }).map((record) => record.origin)).toEqual([undefined])
 		})
 
-		it('the installed packages changed between the rehearsal and the real run → both hooks ran every step, the landing lines name them', async () => {
-			const { root, out, counters, lotTree } = await createLandingScenario({
-				merge: true,
-				gated: true,
-			})
-			const rehearsed = await runFolder({ out, argv: ['--rehearse'] })
-			expect(rehearsed.exitCode).toBe(0)
-			recordMergeTree({ root, out, lotTree })
-			const before = runCounts(counters)
-			writeInstalledLock({ root, packages: PACKAGES_A_NEWER })
-
-			const ran = await runFolder({ out })
-
-			expect(ran.exitCode).toBe(0)
-			expect(runCounts(counters).map((count, index) => count - before[index])).toEqual([2, 2, 2])
-			expect(landingLinesOf({ text: ran.text, start: LANDING_LINE_START })).toEqual([
-				ALL_RAN_LANDING,
-				ALL_RAN_LANDING,
-			])
-		})
-
 		it('the rehearsal’s hook failed on the merge lot (a failing test step) → the real run’s hook runs the merge lot’s steps again, the first lot’s hook answers', async () => {
 			const { root, out, counters, requires, lotTree } = await createLandingScenario({
 				merge: true,
@@ -223,7 +202,7 @@ describe(
 			])
 		})
 
-		it('the same packages written with another root version and name between the rehearsal and the real run → nothing runs', async () => {
+		it("npm's installed lock rewritten between the rehearsal and the real run (other packages, another root version and name), the trees locking nothing → nothing runs: the key reads the tree's lock", async () => {
 			const { root, out, counters, lotTree } = await createLandingScenario({
 				merge: true,
 				gated: true,
@@ -235,7 +214,7 @@ describe(
 			writeInstalledLock({
 				root,
 				fields: { ...ROOT_FIELDS_B, version: '9.9.9' },
-				packages: PACKAGES,
+				packages: PACKAGES_A_NEWER,
 			})
 
 			const ran = await runFolder({ out })

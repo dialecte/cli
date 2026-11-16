@@ -15,6 +15,7 @@ import {
 	show,
 	subjectsOf,
 	writeStoreHandover,
+	plainHandoverFolder,
 } from '../../test/handover-store-scenario.ts'
 import { git, temporaryFolder } from '../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -135,7 +136,12 @@ describe('a hand-over written from a numbered worktree', { timeout: HANDOVER_CAS
 	it('abandon 0171 → its entry abandoned, exit 0', () => {
 		const root = createBranchRepository()
 		const worktree = createNumberedWorktree({ root, index: '0171' })
-		writeStoreHandover({ root: worktree, name: INDEXED_NAME, changes: CHANGES })
+		writeStoreHandover({
+			root: worktree,
+			name: INDEXED_NAME,
+			changes: CHANGES,
+			folder: plainHandoverFolder(),
+		})
 
 		expect(abandon({ cwd: root, argv: ['0171'] })).toMatchObject({ exitCode: 0 })
 		expect(readEntry({ root, name: INDEXED_NAME })).toMatchObject({ state: 'abandoned' })

@@ -8,11 +8,13 @@ import { errorReasonOf } from '../error-reason.ts'
 import { tryReadGit } from '../git.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { PERF_PATH_SEGMENT } from './check-quality-rules.constants.ts'
+import { CORE_PACKAGE_NAME } from './dialecte-change.constants.ts'
 import {
 	QUERY_IN_LOOP_NOT_RUN_LINE,
 	QUERY_NAMES_CACHE_FILE,
 	QUERY_NAMES_MANIFEST,
 } from './query-names.constants.ts'
+import { segmentsPastBinding } from './unit-under-test.ts'
 
 import type { ApiJson } from '../api/api-json.types.ts'
 import type { QueryNamesCache, QueryNamesRead } from './query-names.types.ts'
@@ -34,14 +36,31 @@ export function queryNamesOf(params: { indexes: readonly ApiJson[] }): ReadonlyS
 	)
 }
 
+/**
+ * Core's namespaces: the first segment past the binding of each `q` / `tx` path of core's index with two or more
+ * segments there (`progress` of `tx.progress.plan`, `perf` of `doc.query.perf.count`).
+ */
+export function coreGroupsOf(params: { indexes: readonly ApiJson[] }): ReadonlySet<string> {
+	return new Set(
+		params.indexes
+			.filter((index) => index.package === CORE_PACKAGE_NAME)
+			.flatMap((index) => index.methods)
+			.filter((method) => method.root === 'q' || method.root === 'tx')
+			.flatMap((method) => {
+				const [namespace, ...rest] = segmentsPastBinding(method.path.split('.'))
+				return rest.length > 0 ? [namespace] : []
+			}),
+	)
+}
+
 /** The query read names of the API indexes reachable from `root`: none when one cannot be read (never a throw). */
 export function readQueryNames(params: { root: string }): ReadonlySet<string> {
 	return readQueryNamesWithNote(params).names
 }
 
 /**
- * The query read names of the API indexes reachable from `root`, cached in the git folder keyed by the index files'
- * paths and content and the cli's version; when the indexes cannot be listed or one is not an index, no name and the line saying
+ * The query read names and core's namespaces of the API indexes reachable from `root`, cached in the git folder keyed
+ * by the index files' paths and content and the cli's version; when the indexes cannot be listed or one is not an index, no name and the line saying
  * `query-in-loop` did not run, naming the file and why.
  */
 export function readQueryNamesWithNote(params: { root: string }): QueryNamesRead {
@@ -56,22 +75,29 @@ export function readQueryNamesWithNote(params: { root: string }): QueryNamesRead
 	const cachePath = cachePathOf(root)
 	const key = cachePath === undefined ? undefined : cacheKeyOf({ root, files })
 	const cached = cachePath === undefined ? undefined : readCache(cachePath)
-	if (cached !== undefined && cached.key === key) return { names: new Set(cached.names) }
+	if (cached !== undefined && cached.key === key)
+		return { names: new Set(cached.names), coreGroups: new Set(cached.coreGroups) }
 	const indexes: ApiJson[] = []
 	for (const file of files) {
 		const read = parseApiJson(file)
 		if ('problem' in read) return notRun({ file: relative(root, file), why: read.problem })
 		indexes.push(read.index)
 	}
-	const names = queryNamesOf({ indexes: firstPerPackage(indexes) })
+	const firstIndexes = firstPerPackage(indexes)
+	const names = queryNamesOf({ indexes: firstIndexes })
+	const coreGroups = coreGroupsOf({ indexes: firstIndexes })
 	if (cachePath !== undefined && key !== undefined)
-		writeCache({ path: cachePath, cache: { schema: 1, key, names: [...names].sort() } })
-	return { names }
+		writeCache({
+			path: cachePath,
+			cache: { schema: 1, key, names: [...names].sort(), coreGroups: [...coreGroups].sort() },
+		})
+	return { names, coreGroups }
 }
 
 function notRun(params: { file: string; why: string }): QueryNamesRead {
 	return {
 		names: new Set(),
+		coreGroups: new Set(),
 		note: QUERY_IN_LOOP_NOT_RUN_LINE.replace('{file}', params.file).replace('{why}', params.why),
 	}
 }
@@ -130,6 +156,9 @@ function isQueryNamesCache(value: unknown): value is QueryNamesCache {
 		typeof value.key === 'string' &&
 		'names' in value &&
 		Array.isArray(value.names) &&
-		value.names.every((name) => typeof name === 'string')
+		value.names.every((name) => typeof name === 'string') &&
+		'coreGroups' in value &&
+		Array.isArray(value.coreGroups) &&
+		value.coreGroups.every((group) => typeof group === 'string')
 	)
 }

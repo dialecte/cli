@@ -1,0 +1,51 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "rules.schema.json",
+	"$comment": "Output of `dialecte rules [<files...>] --json`, schema version 1.",
+	"title": "The answer of rules --json",
+	"type": "object",
+	"required": ["files", "errors", "warnings", "findings"],
+	"additionalProperties": false,
+	"properties": {
+		"files": { "type": "array", "items": { "type": "string" } },
+		"errors": { "type": "integer", "minimum": 0 },
+		"warnings": { "type": "integer", "minimum": 0 },
+		"findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+		"allowed": {
+			"type": "object",
+			"additionalProperties": { "type": "integer", "minimum": 1 }
+		},
+		"noForbiddenWordsList": { "type": "string" },
+		"queryInLoopNotRun": { "type": "string" },
+		"dialecteChanges": { "type": "array", "items": { "$ref": "#/$defs/dialecteChange" } },
+		"notJudged": { "type": "integer", "minimum": 1 },
+		"baseLine": { "type": "string" }
+	},
+	"$defs": {
+		"finding": {
+			"type": "object",
+			"required": ["file", "line", "column", "rule", "severity", "message"],
+			"additionalProperties": false,
+			"properties": {
+				"file": { "type": "string" },
+				"line": { "type": "integer", "minimum": 1 },
+				"column": { "type": "integer", "minimum": 1 },
+				"rule": { "type": "string" },
+				"severity": { "enum": ["error", "warning"] },
+				"message": { "type": "string" }
+			}
+		},
+		"dialecteChange": {
+			"type": "object",
+			"required": ["file", "dialecteChange", "rule"],
+			"additionalProperties": false,
+			"properties": {
+				"file": { "type": "string" },
+				"dialecteChange": { "type": "boolean" },
+				"rule": {
+					"enum": ["package-source", "template", "import", "own-import", "cli", "file-kind", "none"]
+				}
+			}
+		}
+	}
+}
