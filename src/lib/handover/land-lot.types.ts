@@ -9,5 +9,7 @@ export type LandingRecord = {
 	branch: string
 	/** The tip pushed for the pull request. */
 	head: string
+	/** The heads the rebases of the lot's landings replaced, oldest first: their commits landed as rebased ones. */
+	replaced: string[]
 	at: string
 }

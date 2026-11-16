@@ -1,0 +1,9 @@
+### Changed
+
+- The cli's scoped `tests` step (its commit hook and `gate --fast`) leaves a shared file's far reach to the full suite on CI: a changed file that vitest's import graph has more than a quarter of the package's test files reach, and more than 50, runs here only its own tests, the test files importing it themselves. A hub helper whose direct importers are past that share too (the cli's `test/scratch-repository.ts`) goes to CI whole, as the manifest does. The left-to-CI line names each shared file with its count (`src/lib/git.ts (485 of 803 test files; the 3 importing it directly ran here)`), and the selection skips it as `left-to-ci`. The graph is read once with the package's own vitest, and the tests run with `vitest run <files>`, no longer `vitest related`. No config: the share and the floor are fixed.
+- `dialecte lot land` lands a lot with work in progress: a push carries only commits, so the committed head is pushed and the uncommitted files stay where they are, named on one line (`uncommitted, not pushed: N files`). With a tracked file changed git cannot rebase: a lot behind `origin/<base>` is pushed as committed, and a line says the rebase waits for a clean worktree (CI tests the merge with the base anyway). Every untracked file counts on its own, whatever `status.showUntrackedFiles` says. A rebase that would overwrite an untracked file is undone and refused, naming the files to move aside, not as a conflict. Detached HEAD, another branch, a fetch failure and a stacked lot are still refused.
+- `dialecte lot land` records in `landing.json` the heads its rebases replaced (`replaced`, oldest first, kept across landings), written as soon as a rebase is done, so a push or host refusal after it loses nothing; the record is replaced whole (a temporary file renamed over it). A landed lot's final record at `lot close` takes the head its landing pushed.
+
+### Removed
+
+- `lot land`'s refusal of a worktree with uncommitted changes.

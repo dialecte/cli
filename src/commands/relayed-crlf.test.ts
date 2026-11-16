@@ -3,12 +3,13 @@
  * the line end whatever it is. Two relay sites: a failing gate step's tail and the scoped tests entry.
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import { createGatePackage } from '../../test/scratch-checks.ts'
 import { createScratchRepository, temporaryFolder } from '../../test/scratch-repository.ts'
+import { VITEST_FOLDER } from '../../test/scratch-vitest-package.constants.ts'
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runGate } from './gate.ts'
 import {
@@ -52,6 +53,8 @@ describe(
 			const root = createScratchRepository(SCOPED_PACKAGE_FILES)
 			const binary = join(root, 'node_modules', '.bin', 'vitest')
 			mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true })
+			// the real vitest reads the graph, the stand-in binary runs the tests
+			symlinkSync(VITEST_FOLDER, join(root, 'node_modules', 'vitest'))
 			writeFileSync(binary, VITEST_WITH_CRLF)
 			chmodSync(binary, 0o755)
 			const scope = temporaryFolder('dialecte-crlf-scope-')

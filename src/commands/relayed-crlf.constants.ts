@@ -20,11 +20,15 @@ export const VITEST_WITH_CRLF = [
 	'',
 ].join('\n')
 
-/** The package the scoped tests entry runs over: a changed module and a manifest. */
+/**
+ * The package the scoped tests entry runs over: a changed module, the test that imports it (the entry reads which
+ * tests reach a change from the package's vitest, so the test links the cli's own) and a manifest.
+ */
 export const SCOPED_PACKAGE_FILES = {
 	'package.json': `${JSON.stringify({ name: 'demo', type: 'module' }, null, '\t')}\n`,
 	'.gitignore': 'node_modules\n',
 	'src/a.ts': 'export const a = 1\n',
+	'src/a.test.ts': "import { a } from './a.ts'\n\nexport const used = a\n",
 }
 
 /** The entry the gate runs for its scoped tests step. */
