@@ -78,6 +78,7 @@ import {
 	isRollbackGreen,
 	readProductionState,
 } from '../lib/tdd/production-states.ts'
+import { pythonBaseTextsOf } from '../lib/tdd/python-case.ts'
 import { applyMoves, readMoves } from '../lib/tdd/read-moves.ts'
 import { runTestCases } from '../lib/tdd/run-test-cases.ts'
 import {
@@ -851,20 +852,6 @@ async function decideMovedCases(params: {
 	return { carries, onBase }
 }
 
-/**
- * The base texts of the run's changed pytest files: the cli's pytest plugin reads their own code too (a move into an
- * existing file keeps what that file held).
- */
-function pythonBaseTextsOf(files: readonly ChangedTestFile[]): Record<string, string> {
-	return Object.fromEntries(
-		files.flatMap((file) =>
-			PYTHON_FILE_PATTERN.test(file.file) && file.baseText !== undefined
-				? [[file.file, file.baseText]]
-				: [],
-		),
-	)
-}
-
 /** The conftests each frozen pytest file of the run ran under (`conftestsOf`): a moved case keeps them. */
 function conftestsOfRun(params: {
 	root: string
@@ -1313,6 +1300,7 @@ async function runGreen(params: {
 	const modules = await announcedRun({
 		context,
 		subcommand: 'green',
+		baseTexts: pythonBaseTextsOf(files),
 		files: files.map((file) => file.file),
 	})
 	if ('failure' in modules) return runFailureResult({ subcommand: 'green', failure: modules })

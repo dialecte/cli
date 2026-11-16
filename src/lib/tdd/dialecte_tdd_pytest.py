@@ -54,6 +54,9 @@ RUN = {
     "collect_only": False,
     "root": None,
     "config": None,
+    "base_texts": {},
+    "base_trees": {},
+    "collected_lines": {},
 }
 
 
@@ -66,6 +69,7 @@ def pytest_configure(config):
         config.option.dist = "no"
     RUN["collect_only"] = bool(config.getoption("collectonly"))
     RUN["config"] = config
+    RUN["base_texts"] = read_base_texts()
     RUN["root"] = os.path.realpath(os.environ.get(ROOT_VARIABLE) or str(config.rootpath))
     if not RUN["audited"]:
         sys.addaudithook(note_opened_file)
@@ -112,6 +116,16 @@ def pytest_collection_modifyitems(session, config, items):
     ignored = {path for path in RUN["modules"] if is_ignored(session=session, config=config, path=path)}
     for path in ignored:
         del RUN["modules"][path]
+    # every test function collected, deselected ones too: none of them is own code of its file
+    for item in items:
+        path = os.path.abspath(str(item.path))
+        node = function_node(
+            path=path,
+            classes=item.nodeid.split("::")[1:-1],
+            name=getattr(item, "originalname", None) or item.name,
+        )
+        if node is not None:
+            RUN["collected_lines"].setdefault(path, set()).add(node.lineno)
     listed = os.environ.get(NAMES_VARIABLE)
     names = set(json.loads(listed)) if listed else None
     kept = [
@@ -178,8 +192,7 @@ def pytest_sessionfinish(session, exitstatus):
     path = os.environ.get(REPORT_VARIABLE)
     if not path:
         return
-    base_texts = read_base_texts()
-    modules = [module_report(file, module, base_texts) for file, module in RUN["modules"].items()]
+    modules = [module_report(file, module, RUN["base_texts"]) for file, module in RUN["modules"].items()]
     with open(path, "w", encoding="utf-8") as report:
         json.dump(modules, report)
 
@@ -206,7 +219,7 @@ def module_report(path, module, base_texts):
     }
     if os.environ.get(OWN_CODE_VARIABLE) != "1":
         return report
-    collected = {case["location"]["line"] for case in module["cases"] if "location" in case}
+    collected = RUN["collected_lines"].get(path, set())
     report["ownCode"] = own_code_of(
         path=path, text=text, tree=tree, module_name=name, is_test=lambda node: node.lineno in collected
     )
@@ -444,9 +457,10 @@ def parsed(path):
     return RUN["trees"][path]
 
 
-def function_node(path, classes, name):
-    """The definition of the case's function: the last `def <name>` in the classes of its node id."""
-    tree = parsed(path)[1]
+def function_node(path, classes, name, tree=None):
+    """The definition of the case's function: the last `def <name>` in the classes of its node id (in `tree`, else in
+    the file's own tree)."""
+    tree = tree if tree is not None else parsed(path)[1]
     if tree is None:
         return None
     body = tree.body
@@ -484,6 +498,11 @@ def case_source(path, node, item):
     settings = [parametrize_settings(decorator) for decorator in node.decorator_list if is_parametrize(decorator)]
     if settings:
         source["parametrize"] = ROW_SEPARATOR.join(settings)
+    base = base_function_node(path=path, item=item)
+    if base is not None:
+        source["baseParametrize"] = ROW_SEPARATOR.join(
+            parametrize_settings(decorator) for decorator in base.decorator_list if is_parametrize(decorator)
+        )
     callspec = getattr(item, "callspec", None)
     if callspec is None:
         return source
@@ -499,6 +518,28 @@ def case_source(path, node, item):
     if rows:
         source["row"] = ROW_SEPARATOR.join(rows)
     return source
+
+
+def base_function_node(path, item):
+    """The case's function in the file's base text, when the cli gave it and it defines that function."""
+    key = os.path.relpath(os.path.realpath(path), RUN["root"] or "")
+    base_text = RUN["base_texts"].get(key)
+    if base_text is None:
+        return None
+    if key not in RUN["base_trees"]:
+        try:
+            RUN["base_trees"][key] = ast.parse(base_text)
+        except (SyntaxError, ValueError):
+            RUN["base_trees"][key] = None
+    tree = RUN["base_trees"][key]
+    if tree is None:
+        return None
+    return function_node(
+        path=path,
+        classes=item.nodeid.split("::")[1:-1],
+        name=getattr(item, "originalname", None) or item.name,
+        tree=tree,
+    )
 
 
 def parametrize_settings(decorator):

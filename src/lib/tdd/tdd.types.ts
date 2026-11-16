@@ -41,7 +41,13 @@ export type ReportedError = {
  * A pytest case's source as the cli's plugin reads it: its function with its decorators but its parametrize ones
  * (`call`), its row of each parametrize call (`row`), and each parametrize call but its literal values (`parametrize`).
  */
-export type PythonCaseSource = { call: string; row?: string; parametrize?: string }
+export type PythonCaseSource = {
+	call: string
+	row?: string
+	parametrize?: string
+	/** The same function's parametrize settings in the base text, when the run was given it and the base defines it. */
+	baseParametrize?: string
+}
 
 /**
  * A pytest case's `call` split at its `def` line: the name it defines, each decorator above that line alone

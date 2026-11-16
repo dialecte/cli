@@ -210,6 +210,32 @@ describe('pythonCaseHash', () => {
 })
 
 describe('isPythonCaseOfChange', () => {
+	it('its parametrize settings other than at the base (indirect, a values expression), its row held → of change', () => {
+		expect(
+			isPythonCaseOfChange({
+				source: {
+					...ROW_SOURCE,
+					parametrize: 'settings now',
+					baseParametrize: 'settings at the base',
+				},
+				baseText: BASE_TEXT,
+			}),
+		).toBe(true)
+	})
+
+	it('its parametrize settings as at the base, its row held → not of change', () => {
+		expect(
+			isPythonCaseOfChange({
+				source: {
+					...ROW_SOURCE,
+					parametrize: 'the same settings',
+					baseParametrize: 'the same settings',
+				},
+				baseText: BASE_TEXT,
+			}),
+		).toBe(false)
+	})
+
 	it('a row 0 the base table lacks, though the base body holds the text 0 → of change', () => {
 		expect(
 			isPythonCaseOfChange({ source: { call: ROW_CALL, row: '0' }, baseText: BASE_TEXT }),

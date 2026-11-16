@@ -302,4 +302,48 @@ describe('a moved pytest case', { timeout: HELPER_SCENARIO_TIMEOUT }, () => {
 			),
 		)
 	})
+
+	it('a targeted red of a case moved from a file holding another test → carried: the other test is no own code', async () => {
+		const twoCases = `${ADD_ONE_PYTEST_TEXT}\n\ndef test_two():\n    assert add(2, 2) == 4\n`
+		const root = createPythonPackage({
+			written: { [ADDER_FILE]: ADDER_STUB_TEXT, [ADD_PYTEST_FILE]: twoCases },
+		})
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, ADDER_FILE), ADDER_IMPLEMENTED_TEXT)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, ADD_PYTEST_FILE))
+		writeFiles({
+			root,
+			files: {
+				[MOVED_FILE]: twoCases,
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: ADD_PYTEST_FILE, to: MOVED_FILE, reason: 'a rename' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red', `${MOVED_FILE}::test_one`] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/^red {6}tests\/test_sum\.py::test_one {2}moved from/),
+		)
+	})
+
+	it('a base case whose parametrize gains indirect= in the lot, its rows unchanged → a case of change: red asks for a red', async () => {
+		const root = createPythonPackage({
+			committed: { [ADDER_FILE]: ADDER_IMPLEMENTED_TEXT, [ADD_PYTEST_FILE]: parametrizedTest('') },
+		})
+		writeFiles({
+			root,
+			files: {
+				[ADD_PYTEST_FILE]: parametrizedTest(', indirect=False'),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/^refused {2}tests\/test_add\.py::test_one\[1-2-3\] {2}it ran green/),
+		)
+	})
 })
