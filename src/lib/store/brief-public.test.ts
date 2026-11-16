@@ -1,9 +1,13 @@
-import { briefWith, checkArgumentsOf, createBriefWorkspace } from '../../../test/brief-workspace.ts'
 /**
  * A brief's public fields (33CI CI2a): `summary`, one public sentence a pull request may show, and `issue`, the issue
  * it closes. Both optional; a summary holding a line break, a path, a link, a reference or a forbidden word is refused
  * at the start like every brief field, the refusal naming the field and the rule's label, never the word.
  */
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { PLAN_FILE, PLAN_TEXT } from '../../../test/brief-workspace.constants.ts'
+import { briefWith, checkArgumentsOf, createBriefWorkspace } from '../../../test/brief-workspace.ts'
 import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
@@ -60,6 +64,8 @@ describe('brief summary and issue - the fields', () => {
 		['a bare web link', 'Explained at www.example.org for readers.'],
 		['a root path in parentheses', 'Reads the defaults (/etc) once.'],
 		['a drive path', 'Copies C:\\notes\\plan.md into the record.'],
+		['a drive path with forward slashes', 'Copies C:/Users/someone into the record.'],
+		['a dot-folder path', 'Keeps the lot under .dialecte/plan as it was.'],
 	])
 		it(`a summary holding ${what} -> refused: summary holds a path or a link`, () => {
 			expect(checkBriefFields({ value: briefWith({ summary }) }).refused).toEqual([
@@ -73,6 +79,7 @@ describe('brief summary and issue - the fields', () => {
 		'Needs a 2/3 majority of the reviews.',
 		'Moves to v1.2, e.g. with fewer steps.',
 		'Runs at 3:30 each night.',
+		'Reads the profile:3 times faster.',
 	])
 		it(`an ordinary sentence "${summary}" -> no refusal`, () => {
 			expect(checkBriefFields({ value: briefWith({ summary }) }).refused).toEqual([])
@@ -132,5 +139,56 @@ describe('brief summary - references and forbidden words', { timeout: STORE_CASE
 			summary: checked.checked?.summary,
 			issue: checked.checked?.issue,
 		}).toEqual({ refused: [], summary: PUBLIC_SUMMARY, issue: 7 })
+	})
+})
+
+/** A lot plan whose block names the entries `RX7` and `BETA2`: the brief's plan. */
+const PLAN_WITH_ENTRIES = `${PLAN_TEXT}\n\`\`\`json dialecte-lots\n${JSON.stringify({
+	schema: 1,
+	repositories: { repo: '../../repo' },
+	lots: [
+		{
+			id: 'RX7',
+			title: 'the records',
+			kind: 'lot',
+			scope: { repo: ['src/'] },
+			match: { branch: 'feat/records' },
+		},
+		{
+			id: 'BETA2',
+			title: 'the reader',
+			kind: 'lot',
+			dependsOn: ['RX7'],
+			scope: { repo: ['test/'] },
+			match: { branch: 'feat/reader' },
+		},
+	],
+})}\n\`\`\`\n`
+
+describe('brief summary - the ids of the lot plan', { timeout: STORE_CASE_TIMEOUT }, () => {
+	for (const summary of ['Adds the records RX7 asked for.', 'Reads them, as in BETA2.'])
+		it(`a summary "${summary}" holding an entry id of the brief's plan -> refused, the id never named`, () => {
+			const workspace = createBriefWorkspace()
+			writeFileSync(join(workspace.briefFolder, PLAN_FILE), PLAN_WITH_ENTRIES)
+
+			expect(
+				checkBrief(checkArgumentsOf({ workspace, brief: briefWith({ summary }) })).refused,
+			).toEqual([
+				{ field: 'summary', rule: 'public-text', detail: 'summary holds a plan entry id' },
+			])
+		})
+
+	it('a summary holding a word that only contains an entry id (RX70) -> no refusal', () => {
+		const workspace = createBriefWorkspace()
+		writeFileSync(join(workspace.briefFolder, PLAN_FILE), PLAN_WITH_ENTRIES)
+
+		expect(
+			checkBrief(
+				checkArgumentsOf({
+					workspace,
+					brief: briefWith({ summary: 'Moves the RX70 reader aside.' }),
+				}),
+			).refused,
+		).toEqual([])
 	})
 })

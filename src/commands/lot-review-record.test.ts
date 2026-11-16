@@ -251,7 +251,7 @@ describe('review.jsonl - verdicts', { timeout: STORE_CASE_TIMEOUT }, () => {
 		lotVerb({ lot, verb: 'verify', words: ['--by', 'person-a', '--note', PRIVATE_TEXT] })
 
 		expect(
-			reviewRowsOf(lot.lotFolder).map((row) => {
+			reviewRowsOf(lot.lotFolder).map(function rowName(row) {
 				const { kind, id, verdict } = row as { kind: string; id?: string; verdict?: string }
 				return id ?? `${kind} ${verdict}`
 			}),

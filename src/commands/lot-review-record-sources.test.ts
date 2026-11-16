@@ -3,7 +3,7 @@
  * a file of the lot's tree, a hand-written ledger row read cell by cell, a folder without a lot, a record that cannot
  * be written, a station end retried after a crash, and the free words that reach a verdict row.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { lotWithStory } from '../../test/late-fixes-workspace.ts'
@@ -181,3 +181,41 @@ describe('review.jsonl - the free words of a verdict', { timeout: STORE_CASE_TIM
 		])
 	})
 })
+
+describe(
+	'review.jsonl - sources written by hand or by an older cli',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a verify line whose by holds a path -> its verdict row names no one', () => {
+			const lot = reviewedLot()
+			appendFileSync(
+				join(lot.lotFolder, STORE_FILES.verify),
+				`${JSON.stringify({ schema: 1, at: '2026-11-16T10:00:00.000Z', by: 'per plans/x/BRIEF.md', note: PRIVATE_TEXT, state: 'a'.repeat(64) })}\n`,
+			)
+
+			finding({ lot, severity: 'nit', at: `${TREE_FILE}:3` })
+
+			expect(reviewRowsOf(lot.lotFolder)).toEqual([
+				NIT_ROW,
+				{
+					schema: 1,
+					kind: 'verdict',
+					at: '2026-11-16T10:00:00.000Z',
+					by: { kind: 'verify' },
+					verdict: 'verified',
+				},
+			])
+		})
+
+		it('a review station end whose verdict is no station verdict -> no verdict row', () => {
+			const lot = reviewedLot()
+			station(lot, ['end', 'reviewer', '--round', '1', '--verdict', 'approve'])
+			const events = join(lot.lotFolder, STORE_FILES.events)
+			writeFileSync(events, readFileSync(events, 'utf8').replace('"approve"', '"see plans/x.md"'))
+
+			finding({ lot, severity: 'nit', at: `${TREE_FILE}:3` })
+
+			expect(reviewRowsOf(lot.lotFolder)).toEqual([NIT_ROW])
+		})
+	},
+)

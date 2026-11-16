@@ -10,9 +10,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readEvents } from '../events/read-events.ts'
+import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { tryReadGit } from '../git.ts'
 import { readIdentity } from '../store/identity.ts'
 import { AGAIN_VERDICTS } from '../store/next-station.constants.ts'
+import { holdsPathOrGenericReference } from '../store/public-text.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { findLedgerTable, tableCells, unescapeCell } from './findings-ledger.ts'
@@ -188,7 +190,7 @@ function treeFileTestOf(folder: string): TreeFileTest {
 
 /**
  * The verdict rows of the review stations' ends in the folder's events: a station run again (`failed`, `limit`) gives
- * none. The vendor and model are the end's, else those of the start it pairs with.
+ * none, nor a verdict outside the station vocabulary (a line edited by hand). The vendor and model are the end's, else those of the start it pairs with.
  */
 function stationVerdictRowsOf(folder: string): VerdictRow[] {
 	const file = join(folder, STORE_FILES.events)
@@ -201,6 +203,7 @@ function stationVerdictRowsOf(folder: string): VerdictRow[] {
 		const { station, verdict, round } = end
 		if (end.kind !== 'station.end' || typeof station !== 'string') continue
 		if (!REVIEW_STATIONS.includes(station) || typeof verdict !== 'string') continue
+		if (!STATION_VERDICTS.includes(verdict)) continue
 		if ((AGAIN_VERDICTS as readonly string[]).includes(verdict)) continue
 		const start = typeof end.run === 'string' ? starts.get(end.run) : undefined
 		rows.push({
@@ -243,7 +246,12 @@ function verifyVerdictRowsOf(folder: string): VerdictRow[] {
 			schema: REVIEW_RECORD_SCHEMA,
 			kind: 'verdict',
 			at: parsed.at,
-			by: { kind: 'verify', name: parsed.by },
+			// `lot verify` checks its `--by`; a line written by hand or by an older cli keeps its name only when it holds
+			// no path, link or reference
+			by: {
+				kind: 'verify',
+				...(!holdsPathOrGenericReference(parsed.by) && { name: parsed.by }),
+			},
 			verdict: VERIFY_VERDICT,
 		})
 	}

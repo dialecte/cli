@@ -6,9 +6,6 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
-import { findReferences, readListedPatterns } from '../rules/committed-text.ts'
-import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
 import { findWorkspace } from '../workspace.ts'
 import {
 	coversEntry,
@@ -48,7 +45,8 @@ import {
 	overlappingOpenLots,
 	readLotStateInput,
 } from './lot-records.ts'
-import { holdsPathOrLink, referenceLabelIn } from './public-text.ts'
+import { PLAN_ENTRY_ID_LABEL } from './public-text.constants.ts'
+import { holdsPathOrLink, holdsPlanEntryId, referenceLabelIn } from './public-text.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
@@ -168,7 +166,11 @@ export function checkBrief(params: {
 		...base.refused,
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
-		...summaryReferenceFaults({ summary: fields.brief?.summary, repository: repository.main }),
+		...summaryReferenceFaults({
+			summary: fields.brief?.summary,
+			repository: repository.main,
+			planPath: typeof value.plan === 'string' ? resolve(briefFolder, value.plan) : undefined,
+		}),
 		...overlapFaults({ brief: value, location, caseInsensitive, pause: params.pause }),
 	]
 	const findings = params.simulated
@@ -335,15 +337,16 @@ function issueFaults(value: unknown): Refusal[] {
 }
 
 /**
- * The fault of a summary holding a reference a public text never holds: every generic pattern (none allowed, a tag
- * included), those the repository's package declares, a contributor's consumer names, the machine's forbidden words.
- * One refusal naming the first label found, never the text; none without a summary or a repository.
+ * The fault of a summary holding a reference a public text never holds (`referenceLabelIn`: every generic pattern,
+ * those the package declares, a contributor's consumer names, the machine's forbidden words), else an entry id of the
+ * lot plan the brief names. One refusal naming the label, never the text; none without a summary or a repository.
  */
 function summaryReferenceFaults(params: {
 	summary: string | undefined
 	repository: string | undefined
+	planPath: string | undefined
 }): Refusal[] {
-	const { summary, repository } = params
+	const { summary, repository, planPath } = params
 	if (summary === undefined || repository === undefined) return []
 	let label: string | undefined
 	try {
@@ -360,6 +363,12 @@ function summaryReferenceFaults(params: {
 			}),
 		]
 	}
+	if (
+		label === undefined &&
+		planPath !== undefined &&
+		holdsPlanEntryId({ text: summary, planPath })
+	)
+		label = PLAN_ENTRY_ID_LABEL
 	if (label === undefined) return []
 	return [
 		refusalOf({

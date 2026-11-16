@@ -1,7 +1,8 @@
 /** Who gave a review's verdict: a review station of the lot's loop, a `lot verify` by its name, or a person. */
 export type ReviewerOf =
 	| { kind: 'station'; station: string; round?: number }
-	| { kind: 'verify'; name: string }
+	/** `name` absent when the line's `--by` holds a path, a link or a reference (a line written by hand). */
+	| { kind: 'verify'; name?: string }
 	| { kind: 'person'; name: string }
 
 /**
