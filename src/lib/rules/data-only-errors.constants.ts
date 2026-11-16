@@ -9,3 +9,6 @@ export const FUNCTION_TYPE_NAMES: readonly string[] = [
 export const OBJECT_NAME = 'Object'
 
 export const SET_PROTOTYPE_METHOD = 'setPrototypeOf'
+
+/** The second argument it may take: `<Name>.prototype` or `new.target.prototype`. */
+export const PROTOTYPE_PROPERTY = 'prototype'

@@ -11,6 +11,7 @@ import { classNameOf } from './class-name.ts'
 import {
 	FUNCTION_TYPE_NAMES,
 	OBJECT_NAME,
+	PROTOTYPE_PROPERTY,
 	SET_PROTOTYPE_METHOD,
 } from './data-only-errors.constants.ts'
 import { bindingNamesOf, childNodesOf, isFunctionNode } from './syntax-nodes.ts'
@@ -119,15 +120,31 @@ function isBuildingStatement(params: { statement: ts.Statement; context: ValueCo
 	)
 }
 
-/** `Object.setPrototypeOf(this, …)`: an error subclass restoring its prototype, the one call a constructor may make. */
+/**
+ * `Object.setPrototypeOf(this, <Name>.prototype)` or `(this, new.target.prototype)`: an error subclass restoring its
+ * prototype, the one call a constructor may make; any other second argument is refused.
+ */
 function isSetPrototypeOfThis(call: ts.CallExpression): boolean {
 	const callee = call.expression
+	const [target, prototype, ...rest] = call.arguments
 	return (
 		ts.isPropertyAccessExpression(callee) &&
 		ts.isIdentifier(callee.expression) &&
 		callee.expression.text === OBJECT_NAME &&
 		callee.name.text === SET_PROTOTYPE_METHOD &&
-		call.arguments[0]?.kind === ts.SyntaxKind.ThisKeyword
+		target?.kind === ts.SyntaxKind.ThisKeyword &&
+		prototype !== undefined &&
+		rest.length === 0 &&
+		isClassPrototype(prototype)
+	)
+}
+
+/** `<Name>.prototype` or `new.target.prototype`. */
+function isClassPrototype(expression: ts.Expression): boolean {
+	return (
+		ts.isPropertyAccessExpression(expression) &&
+		expression.name.text === PROTOTYPE_PROPERTY &&
+		(ts.isIdentifier(expression.expression) || ts.isMetaProperty(expression.expression))
 	)
 }
 
