@@ -165,7 +165,8 @@ export function planReclaim(params: {
  * Carries out a reclaim plan: every keep rule checked again just before each move (a worktree locked, active, named
  * or worked in since the plan is kept, its line says why), then each `park` through the pool cache, each `trash` and
  * `trash whole` through the trash (git forgets a worktree trashed whole); what is gone since the plan (another
- * reclaim) is a line, never a throw.
+ * reclaim) is a line, and a move that throws (a folder moved under it by another park or take) a refused line, never
+ * a throw: the next items still run.
  *
  * @intent move only what the plan decided, and survive a concurrent reclaim
  * @internal
@@ -1001,7 +1002,7 @@ function sizeOf(path: string): number {
 
 /**
  * One planned move carried out: nothing when what it moves is gone (another reclaim) or a keep rule now holds (its
- * line says why), else the park, the trash or the whole worktree's trash.
+ * line says why), else the park, the trash or the whole worktree's trash; a move that throws is refused with its line.
  */
 function moveReclaimItem(params: {
 	item: ReclaimItem
@@ -1032,13 +1033,35 @@ function moveReclaimItem(params: {
 	const fresh = recheckReclaim({ item, context })
 	if (fresh.action !== item.action)
 		return notMoved(fresh.reason ?? `now ${fresh.action}, not ${item.action}: nothing done`)
-	const moved =
-		item.action === 'park'
-			? parkReclaimed({ item, context, now: params.now, spawner: params.spawner })
-			: trashReclaimed({ item, context, now: params.now, spawner: params.spawner })
+	let moved: { done: string; to: string } | { refused: string }
+	try {
+		moved =
+			item.action === 'park'
+				? parkReclaimed({ item, context, now: params.now, spawner: params.spawner })
+				: trashReclaimed({ item, context, now: params.now, spawner: params.spawner })
+	} catch (error) {
+		// a last resort: this item stops with its line, the next ones still run
+		return {
+			worktree: item.worktree,
+			line: `refused  ${name}  ${item.action}: ${(error as Error).message}; ${whereNowOf(item)}`,
+			moved: false,
+		}
+	}
 	return 'refused' in moved
 		? notMoved(moved.refused)
 		: { worktree: item.worktree, line: `${moved.done}  ${name}  ${moved.to}`, moved: true }
+}
+
+/** Where what a move that threw was moving is now, as far as the worktree tells: still there, or gone from it. */
+function whereNowOf(item: ReclaimItem): string {
+	const unknown = 'where it went is unknown (see .worktrees/_pool-* and _trash/)'
+	if (item.action === 'trash whole')
+		return isPresent(item.worktree)
+			? 'the worktree still in place'
+			: `the worktree folder gone, ${unknown}`
+	return isPresent(join(item.worktree, 'node_modules'))
+		? 'node_modules still in place'
+		: `node_modules no longer in the worktree, ${unknown}`
 }
 
 /** The item decided again from `context`, read just now; kept when git no longer lists the worktree. */

@@ -181,7 +181,10 @@ export const POOL_MISS_CROSS_DEVICE = 'cross-device'
 /** The caches a park removes from `node_modules`: rebuilt by the tools that wrote them, tied to the old checkout. */
 export const POOL_REMOVED_CACHES = ['.vite', '.cache'] as const
 
-/** The folder a park renames the caches into, inside a folder already on its way to removal. */
+/**
+ * The folder a park renames the caches into until it is sure: inside a folder already on its way to removal, else in
+ * the worktree (then trashed once the park is done, put back when it fails).
+ */
 export const DISCARDED_CACHES_PREFIX = '.dialecte-discarded-caches-'
 
 /** The folder of `.worktrees/` where worktrees and folders wait for their background removal. */

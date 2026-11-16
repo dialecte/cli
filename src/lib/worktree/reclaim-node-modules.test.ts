@@ -42,9 +42,11 @@ import {
 	createFakeNodeModules,
 	createRecordingSpawner,
 	poolEntriesOf,
+	poolEntryOf,
 	readPoolFile,
 	readTree,
 	trashedNamesOf,
+	writePoolEntry,
 } from '../../../test/worktree-pool.ts'
 import {
 	handoverStoreOf,
@@ -65,7 +67,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { BriefWorkspace } from '../../../test/brief-workspace.types.ts'
 import type { LotKeepState } from '../../../test/lot-keep-workspace.types.ts'
-import type { ProcessFolder, ReclaimItem, ReclaimOutcome, ReclaimPlan } from './worktree.types.ts'
+import type {
+	BackgroundSpawner,
+	ProcessFolder,
+	ReclaimItem,
+	ReclaimOutcome,
+	ReclaimPlan,
+} from './worktree.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -739,6 +747,105 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 			worktree: expect.any(String),
 			moved: false,
 			line: expect.stringMatching(/gone/),
+		})
+	})
+
+	it('a park whose eviction finds its entry removed by another park (ENOENT) → no throw: already evicted, the park says parked, the trash item after it still moved', () => {
+		const workspace = createReclaimWorkspace()
+		addReclaimWorktree({ workspace, name: PARKABLE })
+		addReclaimWorktree({ workspace, name: TRASHABLE, lock: OTHER_LOCK })
+		ageEverything({ workspace })
+		const worktreesFolder = join(workspace.workspace, '.worktrees')
+		// an old-shape entry (trashed first), then two of the main lock key: the park's third evicts _pool-repo-2
+		const oldShape = writePoolEntry({
+			worktreesFolder,
+			name: '_pool-repo-1',
+			entry: poolEntryOf({
+				repository: 'repo',
+				lock: MAIN_LOCK,
+				parkedAt: '2026-11-01T09:00:00.000Z',
+			}),
+		})
+		writeFileSync(
+			join(oldShape, POOL_FILE),
+			`${JSON.stringify({ repository: 'repo', lockHash: computeLockKey({ text: MAIN_LOCK }), parkedAt: '2026-11-01T09:00:00.000Z' })}\n`,
+		)
+		for (const [name, parkedAt] of [
+			['_pool-repo-2', '2026-11-02T09:00:00.000Z'],
+			['_pool-repo-3', '2026-11-03T09:00:00.000Z'],
+		])
+			writePoolEntry({
+				worktreesFolder,
+				name,
+				entry: poolEntryOf({ repository: 'repo', lock: MAIN_LOCK, parkedAt }),
+			})
+		const evicted = join(worktreesFolder, '_pool-repo-2')
+		// another park removes the entry the eviction picked, while the old-shape one goes to the trash
+		function spawner(params: Parameters<BackgroundSpawner>[0]): void {
+			if (basename(params.args.at(-1) ?? '').startsWith('_pool-repo-1-'))
+				rmSync(evicted, { recursive: true, force: true })
+		}
+		const plan = planReclaim(planArguments({ workspace }))
+		const ordered = {
+			...plan,
+			items: [PARKABLE, TRASHABLE].flatMap((name) => itemOf({ plan, name }) ?? []),
+		}
+		let outcomes: ReclaimOutcome[] = []
+
+		expect(function reclaim() {
+			outcomes = executeReclaim({ ...executeArguments({ workspace, plan: ordered }), spawner })
+		}).not.toThrow()
+		expect({
+			parkable: outcomeOf({ outcomes, name: PARKABLE }),
+			trashable: outcomeOf({ outcomes, name: TRASHABLE })?.moved,
+		}).toEqual({
+			parkable: {
+				worktree: expect.any(String),
+				moved: true,
+				line: expect.stringMatching(/^parked {2}/),
+			},
+			trashable: true,
+		})
+	})
+
+	it('a park whose eviction throws after node_modules moved (the removal cannot start) → no throw: a refused line that says node_modules left the worktree', () => {
+		const workspace = createReclaimWorkspace()
+		const worktree = addReclaimWorktree({ workspace, name: PARKABLE })
+		ageEverything({ workspace })
+		const worktreesFolder = join(workspace.workspace, '.worktrees')
+		const oldShape = writePoolEntry({
+			worktreesFolder,
+			name: '_pool-repo-1',
+			entry: poolEntryOf({
+				repository: 'repo',
+				lock: MAIN_LOCK,
+				parkedAt: '2026-11-01T09:00:00.000Z',
+			}),
+		})
+		writeFileSync(
+			join(oldShape, POOL_FILE),
+			`${JSON.stringify({ repository: 'repo', lockHash: computeLockKey({ text: MAIN_LOCK }), parkedAt: '2026-11-01T09:00:00.000Z' })}\n`,
+		)
+		function spawner(params: Parameters<BackgroundSpawner>[0]): void {
+			if (basename(params.args.at(-1) ?? '').startsWith('_pool-repo-1-'))
+				throw new Error('spawn rm EAGAIN')
+		}
+		const plan = planReclaim(planArguments({ workspace }))
+		let outcomes: ReclaimOutcome[] = []
+
+		expect(function reclaim() {
+			outcomes = executeReclaim({ ...executeArguments({ workspace, plan }), spawner })
+		}).not.toThrow()
+		expect({
+			outcome: outcomeOf({ outcomes, name: PARKABLE }),
+			nodeModules: existsSync(join(worktree, 'node_modules')),
+		}).toEqual({
+			outcome: {
+				worktree: expect.any(String),
+				moved: false,
+				line: expect.stringMatching(/^refused {2}.*EAGAIN.*node_modules no longer in the worktree/),
+			},
+			nodeModules: false,
 		})
 	})
 

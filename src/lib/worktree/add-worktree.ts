@@ -2,10 +2,11 @@
  * `dialecte worktree add`: a git worktree `.worktrees/<index>-<repository>-<branch tail>` of the workspace (the
  * index the next of the workspace's counter, or the one given), ready to work in - the
  * hooks folder of `core.hooksPath` copied (husky's `.husky/_` is ignored by git, so a new worktree misses
- * it and git skips every hook), `node_modules` taken from the workspace's pool when an entry matches the
- * worktree's `package-lock.json`, else copied on write with its links (from the worktree that has
- * the `--from` branch checked out when there is one, else from the main checkout), the links its `file:`
- * and `link:` dependencies need to reach sibling checkouts through `.worktrees/` (made before the copy),
+ * it and git skips every hook), `node_modules` taken from the workspace's pool when an entry has the lock key of the
+ * worktree's `package-lock.json`, else a near entry completed by `npm install --prefer-offline --no-save`, else
+ * `npm ci`, and only when `npm ci` fails copied on write with its links (from the worktree that has the `--from`
+ * branch checked out when there is one, else from the main checkout), the reason on the card; the links its `file:`
+ * and `link:` dependencies need to reach sibling checkouts through `.worktrees/` (made before `node_modules`),
  * that `node_modules` read against the worktree's `package-lock.json`, `.dialecte/` (the lot declaration,
  * never committed) in the repository's `.git/info/exclude`, and the hygiene baseline `gate --fast`
  * compares with.

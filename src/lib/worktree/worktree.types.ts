@@ -204,8 +204,17 @@ export type PoolEntryFile = {
 	parkedAt: string
 	/** Who parked it (a lot's owner), when known. */
 	owner?: string
-	/** The version of each package that lock installs, by its lock key (`node_modules/x`): read by a near match. */
+	/**
+	 * The version of each package that lock installs, by its lock key (`node_modules/x`), but those npm may leave out
+	 * (`optional`, an `os` / `cpu` list), read from the lock alone: read by a near match.
+	 */
 	packages: Record<string, string>
+}
+
+/** The caches of a `node_modules` being parked, renamed aside until the park is sure: their folder and names. */
+export type HeldCaches = {
+	folder: string
+	names: string[]
 }
 
 /** A `node_modules` parked in the pool. */

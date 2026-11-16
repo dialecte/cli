@@ -8,7 +8,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 import { temporaryFolder, initializeRepository } from '../../../test/scratch-repository.ts'
 import { identityOf, transitionOf, writeRecordFile } from '../../../test/store-records.ts'
@@ -475,6 +475,108 @@ describe(
 		})
 	},
 )
+
+/** Every `_pool-*` folder of `worktreesFolder` without a `pool.json`: a half-made entry. */
+function entriesWithoutPoolFile(worktreesFolder: string): string[] {
+	return poolEntriesOf(worktreesFolder).filter(
+		(name) => !existsSync(join(worktreesFolder, name, POOL_FILE)),
+	)
+}
+
+describe('parkNodeModules: never a half-made entry', { timeout: POOL_UNIT_CASE_MS }, () => {
+	it('the eviction finds its pick gone (another park trashed it after the listing) → the park succeeds: the new entry listed, the gone one counted evicted, no throw', () => {
+		const worktreesFolder = createWorktreesFolder()
+		writeOldShapeEntry({ worktreesFolder, name: '_pool-cli-1' })
+		for (const [index, name] of ['_pool-cli-2', '_pool-cli-3'].entries())
+			writePoolEntry({
+				worktreesFolder,
+				name,
+				entry: entryFile({ parkedAt: PARK_TIMES[index] }),
+			})
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0004-cli-x', lock: LOCK_TEXT })
+		// the old-shape entry goes to the trash first: meanwhile another park removes _pool-cli-2, the eviction's pick
+		function spawner(params: { command: string; args: string[] }): void {
+			if (basename(params.args.at(-1) ?? '').startsWith('_pool-cli-1-'))
+				rmSync(join(worktreesFolder, '_pool-cli-2'), { recursive: true, force: true })
+		}
+		let parked: ReturnType<typeof parkNodeModules> | undefined
+
+		expect(function park() {
+			parked = parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[2],
+				spawner,
+				cap: 8,
+			})
+		}).not.toThrow()
+		expect({
+			parked,
+			entries: listPoolEntries(worktreesFolder)
+				.map((entry) => entry.name)
+				.sort(),
+		}).toEqual({
+			parked: { entry: '_pool-cli-4', trashed: ['_pool-cli-1', '_pool-cli-2'] },
+			entries: ['_pool-cli-3', '_pool-cli-4'],
+		})
+	})
+
+	it('the caches cannot be discarded (their bin cannot be made) → refused before any move: node_modules in the worktree, no _pool-* folder', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: LOCK_TEXT })
+		let parked: ReturnType<typeof parkNodeModules> | undefined
+
+		expect(function park() {
+			parked = parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[0],
+				spawner: createRecordingSpawner().spawner,
+				discardInto: join(worktreesFolder, 'no-such-folder'),
+			})
+		}).not.toThrow()
+		expect({
+			parked,
+			nodeModules: existsSync(join(worktree, 'node_modules', KEPT_FILE)),
+			pool: poolEntriesOf(worktreesFolder),
+		}).toEqual({
+			parked: expect.stringMatching(/not parked: .*ENOENT/),
+			nodeModules: true,
+			pool: [],
+		})
+	})
+
+	it('pool.json cannot be written after the rename → node_modules renamed back into the worktree, the entry folder removed, refused', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const worktree = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: LOCK_TEXT })
+		function writeFile(): void {
+			throw new Error('ENOSPC: no space left on device')
+		}
+		let parked: ReturnType<typeof parkNodeModules> | undefined
+
+		expect(function park() {
+			parked = parkNodeModules({
+				worktree,
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				now: PARK_TIMES[0],
+				spawner: createRecordingSpawner().spawner,
+				writeFile,
+			})
+		}).not.toThrow()
+		expect({
+			parked,
+			nodeModules: existsSync(join(worktree, 'node_modules', KEPT_FILE)),
+			halfMade: entriesWithoutPoolFile(worktreesFolder),
+		}).toEqual({
+			parked: expect.stringMatching(/not parked: .*ENOSPC/),
+			nodeModules: true,
+			halfMade: [],
+		})
+	})
+})
 
 describe('parkNodeModules: the check and the stamp', { timeout: POOL_UNIT_CASE_MS }, () => {
 	it('the node_modules checked against lock A, the lockfile changed to B before the park → the entry is stamped with the key and packages of A (the lock the check was made against)', () => {
@@ -1639,6 +1741,35 @@ function nearPackagesDifferingIn(count: number): Record<string, string> {
 	)
 }
 
+/**
+ * A lockfile installing `demo` at `demoVersion`, `opt` (optional), `native-here` (optional, this machine's os and cpu,
+ * as a platform binary package) and `native-other` (optional, another os: never installed here).
+ */
+function platformLockOf(params: { demoVersion: string }): string {
+	return `${JSON.stringify({
+		name: 'demo-app',
+		version: '1.0.0',
+		lockfileVersion: 3,
+		requires: true,
+		packages: {
+			'': { name: 'demo-app', version: '1.0.0' },
+			'node_modules/demo': { version: params.demoVersion },
+			'node_modules/opt': { version: '1.0.0', optional: true },
+			'node_modules/native-here': {
+				version: '1.0.0',
+				optional: true,
+				os: [process.platform],
+				cpu: [process.arch],
+			},
+			'node_modules/native-other': {
+				version: '1.0.0',
+				optional: true,
+				os: [process.platform === 'aix' ? 'sunos' : 'aix'],
+			},
+		},
+	})}\n`
+}
+
 describe('createPoolCache restore: a near entry', { timeout: POOL_UNIT_CASE_MS }, () => {
 	it.each([
 		{ label: '1 package at another version', packages: nearPackagesDifferingIn(1), drift: 1 },
@@ -1827,6 +1958,38 @@ describe('createPoolCache restore: a near entry', { timeout: POOL_UNIT_CASE_MS }
 
 		expect(cache.restore({ checkout, lockText })).toEqual({ taken: '_pool-cli-1' })
 		expect(existsSync(join(worktreesFolder, '_pool-cli-2/node_modules'))).toBe(true)
+	})
+
+	it('the entry parked from a node_modules holding an installed optional package and an os-specific one, the checkout lock otherwise 1 package off (no node_modules there) → near with drift 1: both sides read by the lock alone', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const parkedLock = platformLockOf({ demoVersion: '1.0.0' })
+		const parked = createWorktreeFolder({ worktreesFolder, name: '0001-cli-x', lock: parkedLock })
+		for (const name of ['opt', 'native-here']) {
+			mkdirSync(join(parked, 'node_modules', name))
+			writeFileSync(
+				join(parked, 'node_modules', name, 'package.json'),
+				`{ "name": "${name}", "version": "1.0.0" }\n`,
+			)
+		}
+		const { spawner } = createRecordingSpawner()
+		const cache = createPoolCache({
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			spawner,
+		})
+		expect(cache.save({ checkout: parked, lockText: parkedLock, now: PARK_TIMES[0] })).toEqual({
+			parked: expect.stringMatching(/^_pool-cli-\d+$/),
+			trashed: [],
+		})
+		const [entry] = poolEntriesOf(worktreesFolder)
+		const lockText = platformLockOf({ demoVersion: '2.0.0' })
+		const checkout = createBareWorktreeFolder({
+			worktreesFolder,
+			name: '0002-cli-y',
+			lock: lockText,
+		})
+
+		expect(cache.restore({ checkout, lockText })).toEqual({ near: entry, drift: 1 })
 	})
 
 	it("another repository's entry with the very packages of the checkout lock → never near: pool empty", () => {

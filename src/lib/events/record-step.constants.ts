@@ -46,8 +46,8 @@ export const NODE_MODULES_WORDS: Readonly<
 	'copy-on-write': 'cloned',
 }
 
-/** The status of a part a cut never hides behind a passing one. */
 /** The `node_modules` sources npm ran for in the new worktree: the incremental install of a near entry, `npm ci`. */
 export const NPM_RUN_METHODS: readonly NodeModulesSource['method'][] = ['near', 'installed']
 
+/** The status of a part a cut never hides behind a passing one. */
 export const FAILED_PART_STATUS = 'failed'

@@ -1,9 +1,10 @@
 /**
- * The `node_modules` pool: `.worktrees/_pool-<repository>-<n>/node_modules` with a `pool.json` beside it, at
- * most two entries per repository. A finished checkout parks its `node_modules` there (a rename), a new
- * checkout whose lock installs the same packages (its lock key, `computeLockKey`) takes the newest one (a
- * rename), so neither pays for a copy or a delete. A `node_modules` is never shared: a take renames it away
- * from the pool, a second taker finds it gone.
+ * The `node_modules` pool: `.worktrees/_pool-<repository>-<n>/node_modules` with a `pool.json` beside it. A repository
+ * keeps as many entries as it had lots open at once (at least 2, at most 8), at most 2 per lock key; parking past
+ * either sends the oldest to the trash. A finished checkout parks its `node_modules` there (a rename), a new checkout
+ * whose lock installs the same packages (its lock key, `computeLockKey`) takes one (a rename: its owner's first, else
+ * the newest), else a near entry (the fewest packages off, at most `POOL_DRIFT_LIMIT`), so neither pays for a copy or
+ * a delete. A `node_modules` is never shared: a take renames it away from the pool, a second taker finds it gone.
  */
 import {
 	existsSync,
@@ -52,6 +53,8 @@ import type {
 	CacheRestore,
 	CacheSave,
 	DependencyCache,
+	HeldCaches,
+	LockfileEntry,
 	ParkedNodeModules,
 	PoolEntry,
 	PoolEntryFile,
@@ -90,6 +93,8 @@ export function parkNodeModules(params: {
 	owner?: string
 	/** How many entries the repository keeps (the tests set it); default: `readPoolCap` of the repository. */
 	cap?: number
+	/** Writes the entry's `pool.json` (the tests stand in for it); default: `fs.writeFileSync`. */
+	writeFile?: (params: { path: string; text: string }) => void
 }): ParkedNodeModules | string {
 	const { worktree, worktreesFolder } = params
 	const source = join(worktree, 'node_modules')
@@ -101,24 +106,8 @@ export function parkNodeModules(params: {
 	})
 	if ('refused' in checked) return checked.refused
 	const { lockText } = checked
-	// read while node_modules is still in place: an optional package counts when it is installed
 	const packages = lockedVersionsOf({ worktree, lockText })
 	const repository = basename(params.repository)
-	const entry = moveIntoPool({
-		source,
-		worktreesFolder,
-		repository,
-		rename: params.rename ?? renameFolder,
-		relink: params.relink ?? relinkEscapingLinks,
-	})
-	if ('refused' in entry) return entry.refused
-	discardCaches({
-		parked: join(worktreesFolder, entry.name, 'node_modules'),
-		discardInto: params.discardInto,
-		worktreesFolder,
-		now: params.now,
-		spawner: params.spawner,
-	})
 	const file: PoolEntryFile = {
 		repository,
 		lockKey: computeLockKey({ text: lockText }),
@@ -126,7 +115,25 @@ export function parkNodeModules(params: {
 		...(params.owner !== undefined && { owner: params.owner }),
 		packages,
 	}
-	writeFileSync(join(worktreesFolder, entry.name, POOL_FILE), `${JSON.stringify(file, null, 2)}\n`)
+	const entry = moveIntoPool({
+		source,
+		worktreesFolder,
+		repository,
+		rename: params.rename ?? renameFolder,
+		relink: params.relink ?? relinkEscapingLinks,
+		holdIn: params.discardInto ?? worktree,
+		poolFileText: `${JSON.stringify(file, null, 2)}\n`,
+		writeFile: params.writeFile ?? writeTextFile,
+	})
+	if ('refused' in entry) return entry.refused
+	// the park is sure: a folder on its way out keeps the caches, else they go to the trash
+	if (entry.held !== undefined && params.discardInto === undefined)
+		trashHeldCaches({
+			held: entry.held,
+			worktreesFolder,
+			now: params.now,
+			spawner: params.spawner,
+		})
 	const trashed = trashPastCap({
 		worktreesFolder,
 		repository: params.repository,
@@ -165,8 +172,10 @@ function readParkableLock(params: {
 }
 
 /**
- * `source` renamed into a new `_pool-<repository>-<n>` entry folder, its leaving links re-pointed first (a failure
- * leaves no half-made entry): the entry's name, or why it was not moved.
+ * `source` renamed into a new `_pool-<repository>-<n>` entry folder with its `pool.json`: its leaving links re-pointed
+ * and its caches renamed aside into `holdIn` first, in place, and `pool.json` written after. Any failure puts back what
+ * moved (the caches into `source`, `source` into the worktree, the folder removed) and makes no background removal, so
+ * no `_pool-*` folder is ever left without its `pool.json`. The entry's name and the caches held, or why it was not moved.
  */
 function moveIntoPool(params: {
 	source: string
@@ -174,7 +183,11 @@ function moveIntoPool(params: {
 	repository: string
 	rename: (params: { from: string; to: string }) => void
 	relink: (params: { from: string; to: string }) => void
-}): { name: string } | { refused: string } {
+	/** Where the caches wait, on the file system of `source`, until the park is sure. */
+	holdIn: string
+	poolFileText: string
+	writeFile: (params: { path: string; text: string }) => void
+}): { name: string; held: HeldCaches | undefined } | { refused: string } {
 	const { source, worktreesFolder } = params
 	try {
 		// in place, before the rename: a failure leaves no half-made pool entry
@@ -182,22 +195,113 @@ function moveIntoPool(params: {
 	} catch (error) {
 		return { refused: `${source} not parked: ${(error as Error).message}` }
 	}
-	const name = createEntryFolder({ worktreesFolder, repository: params.repository })
+	let held: HeldCaches | undefined
+	let name: string
 	try {
-		params.rename({ from: source, to: join(worktreesFolder, name, 'node_modules') })
+		held = holdCaches({ nodeModules: source, holdIn: params.holdIn })
+		name = createEntryFolder({ worktreesFolder, repository: params.repository })
 	} catch (error) {
-		rmdirSync(join(worktreesFolder, name))
+		putCachesBack({ held, nodeModules: source })
+		return { refused: `${source} not parked: ${(error as Error).message}` }
+	}
+	const folder = join(worktreesFolder, name)
+	try {
+		params.rename({ from: source, to: join(folder, 'node_modules') })
+	} catch (error) {
+		rmdirSync(folder)
+		putCachesBack({ held, nodeModules: source })
 		const code = (error as NodeJS.ErrnoException).code
 		return {
 			refused: `${source} not parked: ${code === 'EXDEV' ? 'cross-device, the pool is on another file system' : (error as Error).message}`,
 		}
 	}
-	return { name }
+	try {
+		params.writeFile({ path: join(folder, POOL_FILE), text: params.poolFileText })
+	} catch (error) {
+		const undone = undoMove({ ...params, folder })
+		putCachesBack({ held, nodeModules: source })
+		return { refused: `${source} not parked: ${(error as Error).message}; ${undone}` }
+	}
+	return { name, held }
+}
+
+/** A move into `folder` whose `pool.json` failed, undone: `source` renamed back, the folder removed; what became of it. */
+function undoMove(params: {
+	source: string
+	folder: string
+	rename: (params: { from: string; to: string }) => void
+}): string {
+	try {
+		// a partly written pool.json would make a half entry look whole
+		rmSync(join(params.folder, POOL_FILE), { force: true })
+		params.rename({ from: join(params.folder, 'node_modules'), to: params.source })
+		rmdirSync(params.folder)
+		return 'node_modules renamed back'
+	} catch (error) {
+		return `node_modules left in ${params.folder}: ${(error as Error).message}`
+	}
+}
+
+/**
+ * `.vite` and `.cache` of `nodeModules` renamed into a new folder of `holdIn`: that folder and the names it holds, none
+ * when there is no cache. A rename that fails puts back the ones already moved, then throws.
+ */
+function holdCaches(params: { nodeModules: string; holdIn: string }): HeldCaches | undefined {
+	const names = POOL_REMOVED_CACHES.filter((cache) => existsSync(join(params.nodeModules, cache)))
+	if (names.length === 0) return undefined
+	const held: HeldCaches = {
+		folder: mkdtempSync(join(params.holdIn, DISCARDED_CACHES_PREFIX)),
+		names: [],
+	}
+	try {
+		for (const cache of names) {
+			renameSync(join(params.nodeModules, cache), join(held.folder, cache))
+			held.names.push(cache)
+		}
+	} catch (error) {
+		putCachesBack({ held, nodeModules: params.nodeModules })
+		throw error
+	}
+	return held
+}
+
+/** The held caches renamed back into `nodeModules` and their folder removed; what cannot go back stays held. */
+function putCachesBack(params: { held: HeldCaches | undefined; nodeModules: string }): void {
+	const { held } = params
+	if (held === undefined) return
+	try {
+		for (const cache of held.names)
+			renameSync(join(held.folder, cache), join(params.nodeModules, cache))
+		rmdirSync(held.folder)
+	} catch {
+		// node_modules did not come back (its own rename back failed): the caches stay in their folder, named in no entry
+	}
+}
+
+/** Each held cache sent to the trash with its own background removal, then their emptied folder removed. */
+function trashHeldCaches(params: {
+	held: HeldCaches
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
+}): void {
+	for (const cache of params.held.names)
+		trashFolder({
+			folder: join(params.held.folder, cache),
+			worktreesFolder: params.worktreesFolder,
+			now: params.now,
+			spawner: params.spawner,
+		})
+	rmdirSync(params.held.folder)
+}
+
+function writeTextFile(params: { path: string; text: string }): void {
+	writeFileSync(params.path, params.text)
 }
 
 /**
  * Sends to the trash, after a park, the repository's old-shape entries and the entries past the per-key limit and the
- * cap (`readPoolCap` when none is given): their names.
+ * cap (`readPoolCap` when none is given): their names, one already gone (another park or take removed it) included.
  */
 function trashPastCap(params: {
 	worktreesFolder: string
@@ -217,12 +321,17 @@ function trashPastCap(params: {
 	})
 	return [...listOldShapeEntries({ worktreesFolder, repository }), ...evicted].map(
 		function trash(name) {
-			trashFolder({
-				folder: join(worktreesFolder, name),
-				worktreesFolder,
-				now: params.now,
-				spawner: params.spawner,
-			})
+			try {
+				trashFolder({
+					folder: join(worktreesFolder, name),
+					worktreesFolder,
+					now: params.now,
+					spawner: params.spawner,
+				})
+			} catch (error) {
+				// another park or take removed it after the listing: already evicted
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+			}
 			return name
 		},
 	)
@@ -622,40 +731,24 @@ function listOldShapeEntries(params: { worktreesFolder: string; repository: stri
 		})
 }
 
-/** The version each package of `lockText` installs in `worktree`, by its lock key; a link holds what it resolves to. */
+/**
+ * The version each package of `lockText` installs, by its lock key; a link holds what it resolves to. Read from the lock
+ * alone, never from what is installed: a package npm may leave out (`optional`, or an `os` / `cpu` list) is never
+ * counted, so a park (its `node_modules` in place) and a restore (none yet) stamp the same lock alike.
+ */
 function lockedVersionsOf(params: { worktree: string; lockText: string }): Record<string, string> {
 	const read = readLockedPackages(params)
 	if ('notChecked' in read) return {}
 	return Object.fromEntries(
-		read.packages.map(({ key, entry }) => [key, entry.version ?? entry.resolved ?? '']),
+		read.packages
+			.filter(({ entry }) => !isPlatformOrOptional(entry))
+			.map(({ key, entry }) => [key, entry.version ?? entry.resolved ?? '']),
 	)
 }
 
-/**
- * `.vite` and `.cache` out of a parked `node_modules`: renamed into `discardInto` when given (a folder already
- * on its way out), else each sent to the trash with its own background removal.
- */
-function discardCaches(params: {
-	parked: string
-	discardInto: string | undefined
-	worktreesFolder: string
-	now: Date
-	spawner: BackgroundSpawner
-}): void {
-	const caches = POOL_REMOVED_CACHES.map((cache) => join(params.parked, cache)).filter((cache) =>
-		existsSync(cache),
-	)
-	if (caches.length === 0) return
-	const bin = params.discardInto && mkdtempSync(join(params.discardInto, DISCARDED_CACHES_PREFIX))
-	for (const cache of caches)
-		if (bin) renameSync(cache, join(bin, basename(cache)))
-		else
-			trashFolder({
-				folder: cache,
-				worktreesFolder: params.worktreesFolder,
-				now: params.now,
-				spawner: params.spawner,
-			})
+/** The lock entry says npm may leave it out of an install: `optional`, or restricted to some `os` or `cpu`. */
+function isPlatformOrOptional(entry: LockfileEntry): boolean {
+	return Boolean(entry.optional) || Boolean(entry.os?.length) || Boolean(entry.cpu?.length)
 }
 
 /** The entries, the latest parked first. */

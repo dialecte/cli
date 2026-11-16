@@ -1,8 +1,10 @@
 /**
  * `dialecte worktree add <repository> <branch> [--from <ref>] [--json]` - a worktree under the
  * workspace's `.worktrees/`, with the hooks folder, the links to sibling checkouts its `file:`
- * dependencies need, a copy-on-write `node_modules` read against `package-lock.json` and the hygiene
- * baseline; prints its card (with the `npm ci` to run when `node_modules` differs from the lockfile).
+ * dependencies need, a `node_modules` (the pool's entry of its lock key, else a near entry completed by an
+ * incremental install, else `npm ci`, a copy-on-write copy only when `npm ci` fails) read against
+ * `package-lock.json` and the hygiene baseline; prints its card (with the `npm ci` to run when `node_modules`
+ * differs from the lockfile).
  *
  * `dialecte worktree prune [--root <workspace>] [--yes] [--json]` - what a merge leaves behind: merged
  * worktrees and branches, committed hand-over folders, rehearsal clones. Prints each removal command with
