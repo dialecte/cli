@@ -65,6 +65,7 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 	const resolveModule = createModuleResolver({ root })
 	const files = new Set([...resolveModule.setupFiles, ...resolveModule.globalSetupFiles])
 	const isShared = createSharedHelperTest({
+		entries: new Set(files),
 		root,
 		resolveModule,
 		isTestSupport: params.isTestSupport,
@@ -90,7 +91,8 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 
 /**
  * Whether test files other than the helper's own unit test (`<helper>.test.ts` beside it) reach the helper: one imports
- * it, or imports a test helper that reaches it (followed back through the helpers that import it, a cycle ending). The
+ * it, or imports a test helper that reaches it (followed back through the helpers that import it, a cycle ending, never
+ * through a setup file: a guard's own test imports its setup, which does not make the setup's helpers test code). The
  * package's test files and helpers are read once, on the first question; each is searched for the helper's written
  * name before its imports are resolved. `isTestSupport` tells the helpers.
  */
@@ -98,12 +100,18 @@ function createSharedHelperTest(params: {
 	root: string
 	resolveModule: ModuleResolver
 	isTestSupport: (file: string) => boolean
+	/** The setup and global setup files: the walk back never goes through them (a guard's test imports its setup). */
+	entries: ReadonlySet<string>
 }): (helper: string) => boolean {
 	const { root, resolveModule } = params
 	let sources: { tests: SourceText[]; helpers: SourceText[] } | undefined
 	const answers = new Map<string, boolean>()
 	/** The sources among `candidates` that import `helper`, by the resolver. */
-	function importersOf(helper: string, candidates: readonly SourceText[]): SourceText[] {
+	function importersOf(search: {
+		helper: string
+		candidates: readonly SourceText[]
+	}): SourceText[] {
+		const { helper, candidates } = search
 		const name = writtenNameOf(helper)
 		return candidates.filter(
 			({ file, text }) =>
@@ -117,17 +125,27 @@ function createSharedHelperTest(params: {
 				}),
 		)
 	}
+	/** Whether a test reaches the helper, not walking back through `visiting` (a cycle) nor through a setup file. */
+	function reaches(walk: { helper: string; visiting: ReadonlySet<string> }): boolean {
+		const { helper, visiting } = walk
+		const reading = sources ?? { tests: [], helpers: [] }
+		const ownTest = helper.replace(MODULE_EXTENSION_PATTERN, '')
+		if (
+			importersOf({ helper, candidates: reading.tests }).some(
+				({ file }) => file.replace(TEST_FILE_PATTERN, '') !== ownTest,
+			)
+		)
+			return true
+		const next = new Set([...visiting, helper])
+		return importersOf({ helper, candidates: reading.helpers }).some(
+			({ file }) =>
+				!next.has(file) && !params.entries.has(file) && reaches({ helper: file, visiting: next }),
+		)
+	}
 	return function isShared(helper: string): boolean {
 		sources ??= readSources({ root, isTestSupport: params.isTestSupport })
-		const known = answers.get(helper)
-		if (known !== undefined) return known
-		// asked again while answering (a cycle of helpers): no test reaches it that way
-		answers.set(helper, false)
-		const ownTest = helper.replace(MODULE_EXTENSION_PATTERN, '')
-		const shared: boolean =
-			importersOf(helper, sources.tests).some(
-				({ file }) => file.replace(TEST_FILE_PATTERN, '') !== ownTest,
-			) || importersOf(helper, sources.helpers).some(({ file }) => isShared(file))
+		// only a whole answer is kept: a walk cut by a cycle answers its start alone
+		const shared = answers.get(helper) ?? reaches({ helper, visiting: new Set() })
 		answers.set(helper, shared)
 		return shared
 	}

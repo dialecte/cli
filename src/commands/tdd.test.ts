@@ -154,7 +154,14 @@ describe('runTdd: red, green, status on a scratch package', { timeout: 240_000 }
 				message: 'not implemented: add',
 				at: NOW.toISOString(),
 			},
-			{ kind: 'freeze', files: { 'src/add.test.ts': testHash(root) }, at: NOW.toISOString() },
+			{
+				kind: 'freeze',
+				files: { 'src/add.test.ts': testHash(root) },
+				ownCode: {
+					'src/add.test.ts': expect.arrayContaining([expect.stringMatching(/^[0-9a-f]{64}$/)]),
+				},
+				at: NOW.toISOString(),
+			},
 		])
 
 		writeFileSync(
@@ -1429,6 +1436,9 @@ describe('a `revised` entry naming a test helper', { timeout: HELPER_SCENARIO_TI
 				[HELPER]: hashTestCode({ root, file: HELPER }),
 			},
 			revised: [HELPER],
+			ownCode: {
+				'src/add.test.ts': expect.arrayContaining([expect.stringMatching(/^[0-9a-f]{64}$/)]),
+			},
 			at: NOW.toISOString(),
 		})
 	})

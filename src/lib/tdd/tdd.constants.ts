@@ -625,6 +625,9 @@ export const MOVED_OWN_CODE_DIFFERS =
 export const MOVED_NO_OWN_CODE =
 	'moved from {from}, but that red recorded no code of its file to compare with (a pytest file, or a red older than the record): prove it red again, or accept it with dialecte lot accept <case> <reason>'
 
+/** The progress step of the one run on the base's production of the moved cases that may carry a red. */
+export const MOVED_BASE_RUN_STEP = 'tdd red on the base, moved cases'
+
 /** A moved case refused: as written now it passes on the base's production. */
 export const MOVED_PASSES_ON_BASE =
 	'moved from {from}, but it passes on the base production: the move proves nothing'
@@ -661,6 +664,12 @@ export const SETUP_FILES_PROPERTY = 'setupFiles'
 /** A `setupFiles` or `globalSetup` value tdd cannot read, on `tdd status`: `{config}`, `{property}`, `{text}`. */
 export const UNREAD_SETUP_LINE =
 	'unread  {config} {property}  {text}: tdd cannot read which files it names; they count as test code'
+
+/** Between the parts of an own-code statement's identity: its scope's titles, its kind, its target, its names. */
+export const OWN_CODE_SEPARATOR = '\0'
+
+/** Before an import's specifier that resolves nowhere, as an own-code target. */
+export const UNRESOLVED_TARGET_PREFIX = '?'
 
 /** How many same-file consts a config value is followed through (`const A = [...B]`, `const B = [C]`). */
 export const CONST_FOLLOW_DEPTH = 8
@@ -873,3 +882,6 @@ export const FAILED_ON_BASE_WITHOUT_ERROR = 'failed on the base without an error
 
 /** The tree entry a base run's copy links to the package's `node_modules`: never a file of the base. */
 export const NODE_MODULES_FOLDER = 'node_modules'
+
+/** The folders a walk of a tree outside git leaves out: installed packages, a repository's own folder, built output. */
+export const TREE_SKIPPED_FOLDERS: readonly string[] = [NODE_MODULES_FOLDER, '.git', 'dist']

@@ -367,7 +367,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(
-				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but its file holds code the file that red froze did not: function add\(left: number, right: number\): number \{/,
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but its file holds code the file that red froze did not: import '\.\/add\.ts'/,
 			),
 		)
 	})
@@ -432,6 +432,58 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(/^red {6}src\/b\.test\.ts::add > one plus two → three {2}moved from/),
+		)
+	})
+
+	it('its test call unchanged, add imported from another production module → refused naming the import', async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
+		writeFiles({
+			root,
+			files: {
+				'src/other-add.ts': DONE,
+				'src/b.test.ts': testText({ title: 'add' }).replace(
+					"from './add.ts'",
+					"from './other-add.ts'",
+				),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/holds code the file that red froze did not: import \{ add \} from '\.\/other-add\.ts'/,
+			),
+		)
+	})
+
+	it('a top-level const of the earlier file moved into the describe → refused: a statement in another scope is new code', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': constTest('3') } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': constTest('3')
+					.replace('\nconst EXPECTED = 3', '')
+					.replace("describe('add', () => {", "describe('add', () => {\n\tconst EXPECTED = 3"),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/holds code the file that red froze did not: const EXPECTED = 3/),
 		)
 	})
 

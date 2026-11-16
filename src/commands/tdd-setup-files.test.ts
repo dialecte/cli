@@ -247,5 +247,30 @@ describe(
 
 			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/deep.ts'])
 		})
+
+		it("a test file importing the global setup itself (a guard's own test) → the setup's helpers stay production: the guard fix is green", async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': GUARD_CONFIG,
+					[SETUP_FILE]: SETUP_TEXT,
+					[GLOBAL_SETUP_FILE]: GLOBAL_SETUP_TEXT,
+					[GUARD_FILE]: GUARD_STUB,
+					'test/guard/guard-setup.test.ts': [
+						"import { teardown } from './guard.setup.ts'",
+						"import { expect, it } from 'vitest'",
+						"it('the teardown runs', () => { expect(teardown()).toBeUndefined() })",
+						'',
+					].join('\n'),
+				},
+			})
+			writeFiles({ root, files: { [GUARD_TEST_FILE]: GUARD_TEST } })
+
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, GUARD_FILE), GUARD)
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+		})
 	},
 )

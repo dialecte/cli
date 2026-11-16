@@ -69,7 +69,7 @@ import {
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
 import { movedCaseLabels } from '../lib/tdd/moved-cases.ts'
-import { listOwnCode } from '../lib/tdd/own-code.ts'
+import { listOwnCode, targetResolverOf } from '../lib/tdd/own-code.ts'
 import {
 	filesMovedBack,
 	isRollbackGreen,
@@ -110,6 +110,7 @@ import {
 	MOVED_CALL_DIFFERS,
 	MOVED_DEPENDENCY_DIFFERS,
 	MOVED_FROM,
+	MOVED_BASE_RUN_STEP,
 	MOVED_NO_OWN_CODE,
 	MOVED_NO_RED,
 	MOVED_OWN_CODE_DIFFERS,
@@ -139,6 +140,7 @@ import type {
 	LotCaseEntry,
 	LotMovedEntry,
 	MovedCarry,
+	ModuleResolver,
 	MovedFrom,
 	OwnCodeVerdict,
 	ChangedTestFile,
@@ -457,22 +459,16 @@ async function runRed(params: {
 	}
 	const frozen: Record<string, string> = {}
 	const judgedFiles = runnable.filter((candidate) => !ranNoCase.has(candidate.file))
-	const movedCarries = readMovedCarries({
+	const { carries: movedCarries, onBase: movedOnBase } = await decideMovedCases({
 		context,
-		texts: new Map(judgedFiles.map((file) => [file.file, file.text])),
+		resolveModule,
+		files: judgedFiles,
 		cases: cases.filter((testCase) => judgedFiles.some((file) => file.file === testCase.file)),
 		moves: params.admission.moves,
 		acceptances,
 		revisions,
 		testCode,
 		dependenciesOf: (file) => dependenciesOf(file).dependencies,
-	})
-	const movedOnBase = await runCasesOnBase({
-		root,
-		base: context.base,
-		packageJson: context.packageJson,
-		testCases: cases.filter((testCase) => movedCarries.get(caseLabel(testCase))?.kind === 'carry'),
-		observer: runnerObserverOf({ context, name: 'tdd red on the base, moved cases' }),
 	})
 	for (const file of judgedFiles) {
 		const { dependencies, unresolved: unresolvedImports } = dependenciesOf(file.file)
@@ -609,15 +605,7 @@ async function runRed(params: {
 			}),
 		)
 	}
-	// what a moved case may keep of each frozen test file of the run: its own code by token hash
-	const ownCode = Object.fromEntries(
-		runnable
-			.filter((file) => file.file in frozen && !PYTHON_FILE_PATTERN.test(file.file))
-			.map((file) => [
-				file.file,
-				listOwnCode({ text: file.text, file: file.file }).map((statement) => statement.hash),
-			]),
-	)
+	const ownCode = ownCodeOfRun({ files: runnable, frozen, resolveModule })
 	if (Object.keys(frozen).length)
 		entries.push({
 			kind: 'freeze',
@@ -816,6 +804,58 @@ async function judgeRed(params: {
 }
 
 /**
+ * The moved cases of a red run decided before their judgement: what the lot's `moved` entries make of each case
+ * (`readMovedCarries`), then one run on the base's production of every case that may carry a red.
+ */
+async function decideMovedCases(params: {
+	context: TddContext
+	resolveModule: ModuleResolver
+	files: readonly ChangedTestFile[]
+	cases: readonly RunCase[]
+	moves: readonly LotMovedEntry[]
+	acceptances: readonly LotCaseEntry[]
+	revisions: readonly LotCaseEntry[]
+	testCode: ReadonlyMap<string, string>
+	dependenciesOf: (file: string) => readonly string[]
+}): Promise<{ carries: Map<string, MovedCarry>; onBase: Map<string, BaseRedVerdict> }> {
+	const { context } = params
+	const carries = readMovedCarries({
+		...params,
+		files: new Map(params.files.map((file) => [file.file, file])),
+	})
+	const onBase = await runCasesOnBase({
+		root: context.root,
+		base: context.base,
+		packageJson: context.packageJson,
+		testCases: params.cases.filter(
+			(testCase) => carries.get(caseLabel(testCase))?.kind === 'carry',
+		),
+		observer: runnerObserverOf({ context, name: MOVED_BASE_RUN_STEP }),
+	})
+	return { carries, onBase }
+}
+
+/** What a moved case may keep of each frozen JS/TS test file of the run: its own code by token hash (`own-code.ts`). */
+function ownCodeOfRun(params: {
+	files: readonly ChangedTestFile[]
+	frozen: Readonly<Record<string, string>>
+	resolveModule: ModuleResolver
+}): Record<string, string[]> {
+	return Object.fromEntries(
+		params.files
+			.filter((file) => file.file in params.frozen && !PYTHON_FILE_PATTERN.test(file.file))
+			.map((file) => [
+				file.file,
+				listOwnCode({
+					text: file.text,
+					file: file.file,
+					resolveTarget: targetResolverOf({ resolveModule: params.resolveModule, from: file.file }),
+				}).map((statement) => statement.hash),
+			]),
+	)
+}
+
+/**
  * What the lot's `moved` entries make of each passing case of the run with no proof of its own, by its label: the first
  * earlier case (`findMovedFroms`; a file entry speaks only for the cases of the change) whose last counted red froze the
  * case's test call under its earlier name and every changed test code it depends on as it is now carries; none: a
@@ -824,8 +864,9 @@ async function judgeRed(params: {
  */
 function readMovedCarries(params: {
 	context: TddContext
-	/** The text of each test file of the run. */
-	texts: ReadonlyMap<string, string>
+	resolveModule: ModuleResolver
+	/** Each test file of the run, its text now and at the base. */
+	files: ReadonlyMap<string, ChangedTestFile>
 	cases: readonly RunCase[]
 	moves: readonly LotMovedEntry[]
 	acceptances: readonly LotCaseEntry[]
@@ -860,7 +901,8 @@ function readMovedCarries(params: {
 /** The carry or the refusal of one case `froms` name (see `readMovedCarries`). */
 function movedCarryOf(params: {
 	context: TddContext
-	texts: ReadonlyMap<string, string>
+	resolveModule: ModuleResolver
+	files: ReadonlyMap<string, ChangedTestFile>
 	testCase: RunCase
 	froms: readonly MovedFrom[]
 	testCode: ReadonlyMap<string, string>
@@ -917,30 +959,37 @@ function movedRefusalOf(params: {
 }
 
 /**
- * Whether a moved case's file keeps only own code its earlier file held at the red it would carry (`own-code.ts`): the
- * freeze of that red run recorded the earlier file's statements; one statement of the new file not among them is
- * named; a red that recorded none (a pytest file, an older ledger) leaves nothing to compare.
+ * Whether a moved case's file keeps only own code its earlier file held at the red it would carry (`own-code.ts`), or
+ * that the file itself held at the base (a move into an existing file): the freeze of that red run recorded the earlier
+ * file's statements; one statement of the new file in neither is named; a red that recorded none (a pytest file, an
+ * older ledger) leaves nothing to compare.
  */
 function ownCodeUnlikeRed(params: {
 	context: TddContext
+	resolveModule: ModuleResolver
 	testCase: RunCase
 	from: TestCaseId
 	red: TddReceipt
-	texts: ReadonlyMap<string, string>
+	files: ReadonlyMap<string, ChangedTestFile>
 }): OwnCodeVerdict {
 	const freeze = params.context.ledger.entries.find(
 		(entry): entry is TddFreeze => entry.kind === 'freeze' && entry.at === params.red.at,
 	)
 	const recorded = freeze?.ownCode?.[params.from.file]
-	const text = params.texts.get(params.testCase.file)
-	if (
-		recorded === undefined ||
-		text === undefined ||
-		PYTHON_FILE_PATTERN.test(params.testCase.file)
-	)
+	const target = params.files.get(params.testCase.file)
+	if (recorded === undefined || target === undefined || PYTHON_FILE_PATTERN.test(target.file))
 		return { kind: 'unrecorded' }
-	const held = new Set(recorded)
-	const added = listOwnCode({ text, file: params.testCase.file }).find(
+	const resolveTarget = targetResolverOf({ resolveModule: params.resolveModule, from: target.file })
+	// what the earlier file held at that red, and what the target file held at the base (a move into an existing file)
+	const held = new Set([
+		...recorded,
+		...(target.baseText === undefined
+			? []
+			: listOwnCode({ text: target.baseText, file: target.file, resolveTarget }).map(
+					(statement) => statement.hash,
+				)),
+	])
+	const added = listOwnCode({ text: target.text, file: target.file, resolveTarget }).find(
 		(statement) => !held.has(statement.hash),
 	)
 	return added === undefined ? { kind: 'kept' } : { kind: 'added', statement: added.text }
