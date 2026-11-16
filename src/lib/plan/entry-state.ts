@@ -163,7 +163,12 @@ function landedRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryRe
 	)
 	if (mark?.landed === undefined) return undefined
 	return doneOf({
-		realizedBy: { kind: 'landed', name: mark.landed.commit, folder: null, worktree: null },
+		realizedBy: {
+			kind: 'landed',
+			name: mark.landed.map((landed) => landed.commit).join(', '),
+			folder: null,
+			worktree: null,
+		},
 	})
 }
 

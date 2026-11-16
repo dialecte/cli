@@ -27,8 +27,8 @@ export function appendPlanMark(params: {
 	id: string
 	by: string
 	reason?: string
-	/** A lot or fix entry's landed commit (`--landed`). */
-	landed?: LandedCommit
+	/** A lot or fix entry's landed commits (`--landed`), one per repository. */
+	landed?: LandedCommit[]
 	location?: StateFolderLocation
 	now?: Date
 }): void {
@@ -122,12 +122,16 @@ function markOfLine(params: { line: string }): PlanMark[] {
 	}
 }
 
-/** A mark's `landed` when it holds a commit and a repository; nothing otherwise. */
-function landedOf(params: { value: unknown }): { landed?: LandedCommit } {
-	const { value } = params
-	if (typeof value !== 'object' || value === null) return {}
-	const { commit, repository } = value as Partial<LandedCommit>
-	return typeof commit === 'string' && typeof repository === 'string'
-		? { landed: { commit, repository } }
-		: {}
+/** A mark's `landed` when it holds a list of commits with their repositories; nothing otherwise. */
+function landedOf(params: { value: unknown }): { landed?: LandedCommit[] } {
+	if (!Array.isArray(params.value) || params.value.length === 0) return {}
+	const list: unknown[] = params.value
+	const landed = list.flatMap(function commitOf(item): LandedCommit[] {
+		if (typeof item !== 'object' || item === null) return []
+		const { commit, repository } = item as Partial<LandedCommit>
+		return typeof commit === 'string' && typeof repository === 'string'
+			? [{ commit, repository }]
+			: []
+	})
+	return landed.length === list.length ? { landed } : {}
 }

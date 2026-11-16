@@ -11,7 +11,7 @@ import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { readMachineLoad } from '../lib/heavy/machine-load.ts'
 import { entryStates } from '../lib/plan/entry-state.ts'
-import { findLandedCommit } from '../lib/plan/landed-commit.ts'
+import { findLandedCommits } from '../lib/plan/landed-commit.ts'
 import { readPlanBlock } from '../lib/plan/plan-block.ts'
 import { readPlanHeavy } from '../lib/plan/plan-heavy.ts'
 import { appendPlanMark, readPlanMarks } from '../lib/plan/plan-marks.ts'
@@ -137,7 +137,8 @@ function runCheck(params: RunPlanParams): CommandResult {
 function runMark(params: RunPlanParams): CommandResult {
 	const read = readArguments({
 		argv: params.argv,
-		valueOptions: [PLAN_MARK_OPTIONS.by, PLAN_MARK_OPTIONS.reason, PLAN_MARK_OPTIONS.landed],
+		valueOptions: [PLAN_MARK_OPTIONS.by, PLAN_MARK_OPTIONS.reason],
+		repeatable: [PLAN_MARK_OPTIONS.landed],
 	})
 	if (typeof read === 'string') return usageOf({ problem: `mark: ${read}` })
 	const [plan, id, state] = read.words
@@ -151,8 +152,8 @@ function runMark(params: RunPlanParams): CommandResult {
 	const entry = loaded.block.lots.find((candidate) => candidate.id === id)
 	if (entry === undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: no entry ${id} in ${plan}`] })
-	const landedSha = read.values.get(PLAN_MARK_OPTIONS.landed)
-	const kindFault = markKindFaultOf({ id, kind: entry.kind, landed: landedSha, read })
+	const landedGiven = read.lists.get(PLAN_MARK_OPTIONS.landed)
+	const kindFault = markKindFaultOf({ id, kind: entry.kind, landed: landedGiven, read })
 	if (kindFault !== undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: ${kindFault}`] })
 	const location = params.seams?.state
@@ -163,9 +164,9 @@ function runMark(params: RunPlanParams): CommandResult {
 			lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - already recorded`],
 		})
 	const landed =
-		landedSha === undefined
+		landedGiven === undefined
 			? undefined
-			: landedOfEntry({ ...loaded, entry, sha: landedSha, location })
+			: landedOfEntry({ ...loaded, entry, given: landedGiven, location })
 	if (landed !== undefined && 'refusal' in landed) return landed.refusal
 	if (landed !== undefined && 'done' in landed)
 		return resultOf({
@@ -192,7 +193,7 @@ function runMark(params: RunPlanParams): CommandResult {
 	return resultOf({
 		exitCode: PLAN_EXIT.answered,
 		lines: [
-			`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by}${landed === undefined ? '' : `, landed as ${landed.commit} in ${landed.repository}`})`,
+			`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by}${landed === undefined ? '' : `, landed as ${landed.map(landedText).join(', ')}`})`,
 		],
 	})
 }
@@ -204,7 +205,7 @@ function runMark(params: RunPlanParams): CommandResult {
 function markKindFaultOf(params: {
 	id: string
 	kind: string
-	landed: string | undefined
+	landed: readonly string[] | undefined
 	read: RoundArguments
 }): string | undefined {
 	const { id, kind } = params
@@ -229,18 +230,17 @@ function landedOfEntry(params: {
 	block: PlanBlock
 	planPath: string
 	entry: PlanEntry
-	sha: string
+	given: readonly string[]
 	location: StateFolderLocation | undefined
-}): LandedCommit | { done: true } | { refusal: CommandResult } {
+}): LandedCommit[] | { done: true } | { refusal: CommandResult } {
 	const { block, entry } = params
 	const facts = readPlanFacts({ block, planPath: params.planPath, stateLocation: params.location })
 	const state = entryStates({ block, facts }).entries.find((status) => status.id === entry.id)
 	if (state?.state === 'done') return { done: true }
-	const found = findLandedCommit({
-		sha: params.sha,
-		repositories: Object.fromEntries(
-			Object.keys(entry.scope).map((name) => [name, block.repositories[name]]),
-		),
+	const found = findLandedCommits({
+		given: params.given,
+		scope: entry.scope,
+		repositories: block.repositories,
 	})
 	if ('refusal' in found)
 		return {
@@ -325,4 +325,9 @@ function isFile(params: { path: string }): boolean {
 	} catch {
 		return false
 	}
+}
+
+/** One landed commit as the recorded line names it: `<commit> in <repository>`. */
+function landedText(landed: LandedCommit): string {
+	return `${landed.commit} in ${landed.repository}`
 }

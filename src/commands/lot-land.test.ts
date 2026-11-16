@@ -1,10 +1,10 @@
 /** `dialecte lot land <id>`: the store lot resolved, its worktree's branch landed through the host into the base. */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
-import { git, writeFiles } from '../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
@@ -238,6 +238,37 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 		expect(existsSync(worktree)).toBe(true)
 	})
 
+	/** After the landing: a commit beside the lot's own (same parent) adding `src/x.ts` as `text`, then dropped. */
+	function dropSibling(text: string) {
+		return function dropOne(landed: { worktree: string; lotFolder: string }) {
+			const root = landed.worktree
+			const tip = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+			git({ root, args: ['reset', '-q', '--hard', 'HEAD~1'] })
+			writeFiles({ root, files: { 'src/x.ts': text } })
+			git({ root, args: ['add', 'src/x.ts'] })
+			git({ root, args: ['commit', '-qm', 'wip: a sibling'] })
+			git({ root, args: ['reset', '-q', '--hard', tip] })
+		}
+	}
+
+	it('a dropped commit the same as the lot one but for its indentation -> still kept, never counted landed', () => {
+		const { closed, worktree } = landRebasedThenClose({
+			afterLanding: dropSibling('  export const x = 1\n'),
+		})
+
+		expect(closed.output).toContain('HEAD reflog reaches')
+		expect(existsSync(worktree)).toBe(true)
+	})
+
+	it('a dropped commit with another patch, no replaced head reaching it -> still kept', () => {
+		const { closed, worktree } = landRebasedThenClose({
+			afterLanding: dropSibling('export const x = 2\n'),
+		})
+
+		expect(closed.output).toContain('HEAD reflog reaches')
+		expect(existsSync(worktree)).toBe(true)
+	})
+
 	it('a rebase no record names (landed before replaced was kept), its pre-rebase commit the same patch as one its branch holds → the worktree closes', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: function forgetReplaced(landed) {
@@ -257,8 +288,20 @@ describe(
 	'dialecte lot close of a landed lot holding its own declaration',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		/** The lot landed (no rebase) with `.dialecte/lot.json` and `extra` ignored files in its worktree, then closed merged. */
-		function landWithDeclarationThenClose(params: { extra?: Record<string, string> } = {}) {
+		/**
+		 * The lot landed (no rebase) with `.dialecte/lot.json` and `extra` ignored files in its worktree, then closed
+		 * merged. `link`: where its `.dialecte/lot` points (`own`, the default: this lot's folder; `other`: another lot's
+		 * folder); `archived`: a `lot.json` already archived in the lot folder; `readOnly`: the lot folder read-only during
+		 * the close (the archive copy cannot be written).
+		 */
+		function landWithDeclarationThenClose(
+			params: {
+				extra?: Record<string, string>
+				link?: 'own' | 'other'
+				archived?: string
+				readOnly?: boolean
+			} = {},
+		) {
 			const { workspace, lotFolder } = landableLot()
 			const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
 			writeFiles({
@@ -272,7 +315,12 @@ describe(
 					...params.extra,
 				},
 			})
+			symlinkSync(
+				params.link === 'other' ? temporaryFolder('dialecte-other-lot-') : lotFolder,
+				join(worktree, '.dialecte', 'lot'),
+			)
 			runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host: recordingHost().host })
+			if (params.archived !== undefined) writeFileSync(join(lotFolder, 'lot.json'), params.archived)
 			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
 				head: string
 			}
@@ -289,16 +337,22 @@ describe(
 			const name =
 				registeredEntryOf({ store: handoverStoreOf(workspace.repository), folder: lotFolder })
 					?.name ?? ''
-			const closed = runLotClose({
-				cwd: workspace.repository,
-				argv: [name, '--json'],
-				host: merged.host,
-				spawner: createRecordingSpawner().spawner,
-				listProcesses: function none() {
-					return []
-				},
-			})
-			return { closed, worktree, lotFolder }
+			if (params.readOnly) chmodSync(lotFolder, 0o555)
+			try {
+				const closed = runLotClose({
+					cwd: workspace.repository,
+					argv: [name, '--json'],
+					host: merged.host,
+					spawner: createRecordingSpawner().spawner,
+					listProcesses: function none() {
+						return []
+					},
+				})
+				return { closed, worktree, lotFolder }
+			} finally {
+				// writable again: the suite removes what the case made
+				chmodSync(lotFolder, 0o755)
+			}
 		}
 
 		it('its only ignored file its own .dialecte/lot.json -> the worktree closes, the declaration archived in the lot folder', () => {
@@ -309,6 +363,31 @@ describe(
 			expect(readFileSync(join(lotFolder, 'lot.json'), 'utf8')).toBe(
 				'{"accept":[{"case":"a","reason":"b"}]}\n',
 			)
+		})
+
+		it('its .dialecte/lot pointing at another lot (new work started there) -> kept, the declaration named', () => {
+			const { closed, worktree } = landWithDeclarationThenClose({ link: 'other' })
+
+			expect(closed.output).toContain('.dialecte/lot.json')
+			expect(existsSync(worktree)).toBe(true)
+		})
+
+		it('a lot.json already archived in the lot folder that differs from the worktree one -> kept, the archive never overwritten', () => {
+			const { closed, worktree, lotFolder } = landWithDeclarationThenClose({
+				archived: '{"accept":[]}\n',
+			})
+
+			expect(closed.output).toContain('.dialecte/lot.json')
+			expect(existsSync(worktree)).toBe(true)
+			expect(readFileSync(join(lotFolder, 'lot.json'), 'utf8')).toBe('{"accept":[]}\n')
+		})
+
+		it('the archive copy cannot be written (a read-only lot folder) -> kept, nothing moved', () => {
+			const { closed, worktree, lotFolder } = landWithDeclarationThenClose({ readOnly: true })
+
+			expect(closed.output).toContain('"kept"')
+			expect(existsSync(worktree)).toBe(true)
+			expect(existsSync(join(lotFolder, 'lot.json'))).toBe(false)
 		})
 
 		it('another ignored file beside it -> still kept, that file named', () => {

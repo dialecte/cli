@@ -29,31 +29,76 @@ afterEach(function restoreEnvironment() {
 const NOW = new Date('2026-11-17T10:00:00.000Z')
 const QUIET = { load: 1, cores: 12, available: 8 * 1024 ** 3, source: 'vm_stat' } as const
 
+/** `<root>/<name>`, a real repository on `main` with `files` committed as `message` and pushed to a bare origin. */
+function repositoryWithOrigin(params: {
+	root: string
+	name: string
+	files: Record<string, string>
+	message: string
+}): { path: string; landed: string } {
+	const path = initializeRepository({ root: join(params.root, params.name) })
+	const origin = join(temporaryFolder('dialecte-plan-origin-'), 'origin.git')
+	git({ root: params.root, args: ['init', '-q', '--bare', '-b', 'main', origin] })
+	git({ root: path, args: ['remote', 'add', 'origin', origin] })
+	writeFiles({ root: path, files: params.files })
+	git({ root: path, args: ['add', '-A'] })
+	git({ root: path, args: ['commit', '-qm', params.message] })
+	git({ root: path, args: ['push', '-q', '-u', 'origin', 'main'] })
+	return { path, landed: git({ root: path, args: ['rev-parse', 'HEAD'] }).trim() }
+}
+
 /**
- * The plan workspace with `<root>/cli` a real repository on `main` pushed to a bare origin, one commit `landed` on
- * origin's main and one `local` on a branch origin never got; the plan holds A (a lot), F (a fix) and K0 (a person).
+ * The plan workspace with `<root>/cli` and `<root>/core` real repositories pushed to bare origins. In `cli`: `landed`
+ * (src/a/) and `unrelated` (README only) on origin's main, `local` on a branch origin never got. In `core`: `coreLanded`
+ * (src/m/). The plan holds A (a lot, cli src/a/), F (a fix, cli src/a/), M (a lot over cli src/a/ and core src/m/) and
+ * K0 (a person).
  */
 function landedWorkspace() {
 	const workspace = createPlanWorkspace()
-	const cli = initializeRepository({ root: join(workspace.root, 'cli') })
-	const origin = join(temporaryFolder('dialecte-plan-origin-'), 'origin.git')
-	git({ root: workspace.root, args: ['init', '-q', '--bare', '-b', 'main', origin] })
-	git({ root: cli, args: ['remote', 'add', 'origin', origin] })
-	writeFiles({ root: cli, files: { 'src/a/a.ts': 'export const a = 1\n' } })
-	git({ root: cli, args: ['add', '-A'] })
-	git({ root: cli, args: ['commit', '-qm', 'feat(a): a, landed by hand'] })
-	git({ root: cli, args: ['push', '-q', '-u', 'origin', 'main'] })
-	const landed = git({ root: cli, args: ['rev-parse', 'HEAD'] }).trim()
-	git({ root: cli, args: ['switch', '-q', '-c', 'feat/local'] })
-	git({ root: cli, args: ['commit', '-q', '--allow-empty', '-m', 'feat: only here'] })
-	const local = git({ root: cli, args: ['rev-parse', 'HEAD'] }).trim()
-	git({ root: cli, args: ['switch', '-q', 'main'] })
-	const commandWorkspace: CommandWorkspace = { ...workspace, cli, common: join(cli, '.git') }
+	const cli = repositoryWithOrigin({
+		root: workspace.root,
+		name: 'cli',
+		files: { 'src/a/a.ts': 'export const a = 1\n' },
+		message: 'feat(a): a, landed by hand',
+	})
+	const core = repositoryWithOrigin({
+		root: workspace.root,
+		name: 'core',
+		files: { 'src/m/m.ts': 'export const m = 1\n' },
+		message: 'feat(m): m, landed by hand',
+	})
+	writeFiles({ root: cli.path, files: { 'README.md': 'readme\n' } })
+	git({ root: cli.path, args: ['add', '-A'] })
+	git({ root: cli.path, args: ['commit', '-qm', 'docs: unrelated'] })
+	git({ root: cli.path, args: ['push', '-q', 'origin', 'main'] })
+	const unrelated = git({ root: cli.path, args: ['rev-parse', 'HEAD'] }).trim()
+	git({ root: cli.path, args: ['switch', '-q', '-c', 'feat/local'] })
+	git({ root: cli.path, args: ['commit', '-q', '--allow-empty', '-m', 'feat: only here'] })
+	const local = git({ root: cli.path, args: ['rev-parse', 'HEAD'] }).trim()
+	git({ root: cli.path, args: ['switch', '-q', 'main'] })
+	const commandWorkspace: CommandWorkspace = {
+		...workspace,
+		cli: cli.path,
+		common: join(cli.path, '.git'),
+	}
 	writePlanWithBlock({
 		workspace: commandWorkspace,
-		lots: [lotJson('A'), { ...lotJson('F'), kind: 'fix' }, personJson('K0')],
+		repositories: { cli: '../cli', core: '../core' },
+		lots: [
+			lotJson('A'),
+			{ ...lotJson('F'), kind: 'fix', scope: { cli: ['src/a/'] } },
+			{ ...lotJson('M'), scope: { cli: ['src/a/'], core: ['src/m/'] } },
+			personJson('K0'),
+		],
 	})
-	return { workspace: commandWorkspace, landed, local }
+	return {
+		workspace: commandWorkspace,
+		landed: cli.landed,
+		unrelated,
+		local,
+		coreLanded: core.landed,
+		cliPath: cli.path,
+	}
 }
 
 function seamsOf(workspace: CommandWorkspace): PlanSeams {
@@ -110,7 +155,7 @@ describe(
 					state: 'done',
 					by: 'tester',
 					reason: 'landed by hand (CI1)',
-					landed: { commit: landed, repository: 'cli' },
+					landed: [{ commit: landed, repository: 'cli' }],
 				},
 			])
 			const next = JSON.parse(runPlan(callOf(workspace, 'next', 'plan.md', '--json')).output) as {
@@ -137,7 +182,7 @@ describe(
 					),
 				).exitCode,
 			).toBe(0)
-			expect(marksOf(workspace)).toMatchObject([{ id: 'F', landed: { commit: landed } }])
+			expect(marksOf(workspace)).toMatchObject([{ id: 'F', landed: [{ commit: landed }] }])
 		})
 
 		it('a lot entry its records already say done -> answered, nothing recorded', () => {
@@ -159,9 +204,56 @@ describe(
 			expect(marksOf(workspace)).toEqual([])
 		})
 
+		it('a commit pushed to origin by someone else since the last fetch -> origin fetched first: recorded', () => {
+			const { workspace, cliPath } = landedWorkspace()
+			const other = join(temporaryFolder('dialecte-plan-other-'), 'other')
+			const origin = git({ root: cliPath, args: ['remote', 'get-url', 'origin'] }).trim()
+			git({ root: workspace.root, args: ['clone', '-q', origin, other] })
+			writeFiles({ root: other, files: { 'src/a/b.ts': 'export const b = 1\n' } })
+			git({ root: other, args: ['add', '-A'] })
+			git({ root: other, args: ['commit', '-qm', 'feat(a): b, by a colleague'] })
+			git({ root: other, args: ['push', '-q', 'origin', 'main'] })
+			const pushed = git({ root: other, args: ['rev-parse', 'HEAD'] }).trim()
+
+			expect(
+				runPlan(
+					callOf(workspace, ...landedMark({ id: 'A', sha: pushed, reason: 'by a colleague' })),
+				).exitCode,
+			).toBe(0)
+			expect(marksOf(workspace)).toMatchObject([{ id: 'A', landed: [{ commit: pushed }] }])
+		})
+
+		it('an entry over two repositories, one commit per repository named -> recorded with both', () => {
+			const { workspace, landed, coreLanded } = landedWorkspace()
+
+			const marked = runPlan(
+				callOf(
+					workspace,
+					...['mark', 'plan.md', 'M', 'done', '--landed', `cli:${landed}`],
+					...['--landed', `core:${coreLanded}`, '--by', 'tester', '--reason', 'landed by hand'],
+				),
+			)
+
+			expect(marked.exitCode).toBe(0)
+			expect(marksOf(workspace)).toMatchObject([
+				{
+					id: 'M',
+					landed: [
+						{ commit: landed, repository: 'cli' },
+						{ commit: coreLanded, repository: 'core' },
+					],
+				},
+			])
+		})
+
 		type RefusalRow = {
 			name: string
-			argv: (shas: { landed: string; local: string }) => string[]
+			argv: (shas: {
+				landed: string
+				local: string
+				unrelated: string
+				coreLanded: string
+			}) => string[]
 			fragment: string
 		}
 
@@ -170,6 +262,16 @@ describe(
 				name: 'a commit origin main does not hold (a local branch only)',
 				argv: ({ local }) => landedMark({ id: 'A', sha: local, reason: 'not landed' }),
 				fragment: 'origin/main',
+			},
+			{
+				name: 'a commit on origin main touching none of the entry scope (an unrelated one)',
+				argv: ({ unrelated }) => landedMark({ id: 'A', sha: unrelated, reason: 'not this one' }),
+				fragment: 'touches none of src/a',
+			},
+			{
+				name: 'an entry over two repositories, one commit given',
+				argv: ({ landed }) => landedMark({ id: 'M', sha: landed, reason: 'half of it' }),
+				fragment: 'core',
 			},
 			{
 				name: 'no such commit',
@@ -194,9 +296,9 @@ describe(
 		]
 
 		it.each(REFUSAL_ROWS)('$name -> exit 2, nothing recorded', ({ argv, fragment }) => {
-			const { workspace, landed, local } = landedWorkspace()
+			const { workspace, landed, local, unrelated, coreLanded } = landedWorkspace()
 
-			const marked = runPlan(callOf(workspace, ...argv({ landed, local })))
+			const marked = runPlan(callOf(workspace, ...argv({ landed, local, unrelated, coreLanded })))
 
 			expect({
 				exitCode: marked.exitCode,

@@ -20,7 +20,11 @@ import { constants, copyFileSync, existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
-import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
+import {
+	archivedDeclarationsOf,
+	isOwnLandedDeclaration,
+	removableIgnored,
+} from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
@@ -43,6 +47,7 @@ import {
 	WORKTREE_STATUS_ARGUMENTS,
 } from '../worktree/worktree.constants.ts'
 import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
+import { PATCH_DIFF_OPTIONS } from './close-handovers.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
 import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
 import {
@@ -50,7 +55,7 @@ import {
 	CLOSE_FROM_INSIDE,
 	HEAD_REFLOG_COMMITS_SHOWN,
 } from './handover.constants.ts'
-import { readLanding, readReplacedHeads } from './land-record.ts'
+import { readReplacedHeads } from './land-record.ts'
 
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -500,6 +505,7 @@ function commitsOnlyInHeadReflog(params: {
 			args: [
 				'log',
 				'-p',
+				...PATCH_DIFF_OPTIONS,
 				'--format=commit %H',
 				`refs/heads/${params.branch}`,
 				...(params.baseRef === undefined ? [] : ['--not', params.baseRef]),
@@ -508,16 +514,22 @@ function commitsOnlyInHeadReflog(params: {
 	})
 	const unreachedPatches = readGit({
 		root,
-		args: ['show', '-p', '--format=commit %H', '--stdin'],
+		args: ['show', '-p', ...PATCH_DIFF_OPTIONS, '--format=commit %H', '--stdin'],
 		input: `${unreached.join('\n')}\n`,
 	})
 	// full ids on both sides; git abbreviates the ones left only to name them
 	const samePatch = new Set(
 		[...patchIdsOf({ root, patches: unreachedPatches })]
-			.filter(([patchId]) => landed.has(patchId))
-			.map(([, commit]) => commit),
+			.filter(function isLandedPatch([patchId]) {
+				return landed.has(patchId)
+			})
+			.map(function commitOf([, commit]) {
+				return commit
+			}),
 	)
-	const left = unreached.filter((commit) => !samePatch.has(commit))
+	const left = unreached.filter(function notSamePatch(commit) {
+		return !samePatch.has(commit)
+	})
 	if (left.length === 0) return []
 	return readGit({
 		root,
@@ -529,14 +541,15 @@ function commitsOnlyInHeadReflog(params: {
 }
 
 /**
- * The stable patch id of each commit of `patches` (`git log -p` / `git show -p` with `commit <sha>` headers), as a
- * map from patch id to commit; a commit with no change (an empty or merge commit) has none.
+ * The patch id of each commit of `patches` (`git log -p` / `git show -p` with `commit <sha>` headers), as a map from
+ * patch id to commit; a commit with no change (an empty or merge commit) has none. Verbatim: whitespace counts, so a
+ * commit that differs only in its indentation is another patch (a YAML, Python or Markdown change is never lost).
  */
 function patchIdsOf(params: { root: string; patches: string }): Map<string, string> {
 	if (params.patches.trim() === '') return new Map()
 	const lines = readGit({
 		root: params.root,
-		args: ['patch-id', '--stable'],
+		args: ['patch-id', '--verbatim'],
 		input: params.patches,
 	})
 		.split('\n')
@@ -550,13 +563,17 @@ function patchIdsOf(params: { root: string; patches: string }): Map<string, stri
 }
 
 /**
- * A committed lot landed through its pull request (`landing.json` in its folder) with nothing archived there: the
- * worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
+ * A committed lot landed through its pull request (`landing.json` in its folder, the worktree's `.dialecte/lot` link
+ * pointing there) with nothing archived there: the worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
  * worktree without one. A copy that cannot be written throws: the worktree stays.
  */
 function archiveLandedDeclaration(params: { entry: StoreEntry; worktree: string }): void {
 	const { entry } = params
-	if (entry.state !== 'committed' || readLanding({ lotFolder: entry.folder }) === undefined) return
+	if (
+		entry.state !== 'committed' ||
+		!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })
+	)
+		return
 	const archived = join(entry.folder, ARCHIVED_LOT_FILE)
 	const own = join(params.worktree, LOT_FILE)
 	if (existsSync(archived) || !existsSync(own)) return

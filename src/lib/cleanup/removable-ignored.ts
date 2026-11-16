@@ -128,11 +128,26 @@ export function archivedDeclarationsOf(params: {
 		.flatMap(function archivedOf(entry): Buffer[] {
 			const archived = readOrUndefined(join(entry.folder, ARCHIVED_LOT_FILE))
 			if (archived) return [archived]
-			if (readLanding({ lotFolder: entry.folder }) === undefined) return []
+			if (!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })) return []
 			// a landed lot: its own declaration, archived by the close before the move
 			const own = readOrUndefined(join(params.worktree, LOT_FILE))
 			return own ? [own] : []
 		})
+}
+
+/**
+ * Whether the worktree's `.dialecte/lot.json` is the declaration of the landed lot whose folder is `folder`: the lot
+ * landed through its pull request (`landing.json` there) and the worktree's `.dialecte/lot` link resolves to that
+ * folder. A link to another lot (new work started in the worktree after the landing), or none, says no.
+ *
+ * @intent tell a landed lot's own declaration from new work's
+ * @internal
+ */
+export function isOwnLandedDeclaration(params: { worktree: string; folder: string }): boolean {
+	if (readLanding({ lotFolder: params.folder }) === undefined) return false
+	const link = join(params.worktree, ...LOT_LINK_SEGMENTS)
+	const target = realPathOf(link)
+	return target !== link && target === realPathOf(params.folder)
 }
 
 /** The paths under `path` (relative to the worktree) that keep the worktree: files and links, a folder never entered. */
