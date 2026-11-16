@@ -823,8 +823,10 @@ the answer.
   holds the repository (`dialecte handover <lots.json>` wrote its lock), the gate runs only under the
   hand-over written for this repository - the script the lock names exists and the `lots.json` beside it
   names this repository, real paths compared - and says so in one line with the command that refreshes
-  the hand-over once the gate is green (`dialecte handover <lots.json> --rehash`): an author re-gates
-  after a late edit without touching the lock. It refuses under a hand-over of another repository, a
+  the hand-over once the gate is green (`dialecte handover write '<folder>/lots.json' --out <folder> --rehash`:
+  the hand-over folder's own lots file, shell-quoted, and the folder as one shell word, both by their real paths, so
+  the command works as printed from any folder of the repository): an author re-gates after a late edit without
+  touching the lock. It refuses under a hand-over of another repository, a
   script that is gone, a folder without a lots file, and while a real `handover run` of that folder is
   in progress (its `running.json` names a live process; that refusal names the marker file, in the
   hand-over folder, so a person can tell a pid reused by another process). A refusal names the script and the lock and
@@ -851,7 +853,12 @@ the answer.
   the gate says so in one line before its verdict (`"stored": false` with `--json`). A run whose steps
   ran is also stored by its tree in the repository's common git folder, `dialecte-checks/<tree>.json`
   (`git rev-parse --git-common-dir`), which every worktree of the repository reads (the newest record
-  kept per mode and key). Before its steps, a gate looks there: a green record of the same mode and the
+  kept per mode and key). A writer takes the tree's lock first, `<tree>.json.lock` (its pid and its start time,
+  written beside it and linked into place, so the lock is never seen empty), reads the file again under it and
+  merges its record in, so two writers of one tree lose no record within the wait; a lock whose pid is gone, or
+  alive with another start time (a reused pid), is stale and taken over; a live holder, or an empty lock, is waited
+  for up to 5 s, then the write goes ahead without the lock (re-read, merged, the holder's lock left alone).
+  Before its steps, a gate looks there: a green record of the same mode and the
   same key answers instead of running them -
   `reused: gate --<mode> green on this tree at <time> (HEAD <sha>)`, the record's step lines, then
   `gate --<mode>: green (reused)` (`"reused": true` with `--json`) - and the worktree's record is
@@ -898,7 +905,11 @@ the answer.
   repository than its folder's (the cli ignores them, so what is committed is unknown); `--hook` with `--fast` or
   `--full` is refused (exit 2). Write it in the hook as an npm script (`"test:hook": "dialecte gate --hook"`) and
   make it the hook's only line: a `check` or `build` line beside it runs a second time. The hand-over reads it as a
-  test step of its own: its card line reads `reused by the hook` when every hook step was answered. The cli's own
+  test step of its own: its card line reads `reused by the hook` when every hook step was answered, and the hook's
+  record names the run it was answered from (`reused`: its time and short HEAD; steps answered from several runs
+  name the oldest, the step proven longest ago). Only the lines `gate --hook` printed itself are read: after a
+  failing hook, the failed step's output it relays under `--- last lines of <step> ---` is never taken for one of
+  its lines. The cli's own
   hook is the single line `npm run test:hook`.
 - A running step looks running. Each `gate` step and `tdd`'s vitest run is announced before its work:
   off a terminal a start line `▶ <step>` (then a line every 30 s of silence and the result), on a
@@ -1449,7 +1460,9 @@ the answer.
   its count), those 30 lines
   and the log's path. Under it, when the hook is `gate --hook`, one landing line
   `hook: reused <step> (<mode> <time>), ... · ran <steps>` (`none` for an empty list) says what the commit's hook
-  answered from records and what it ran. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
+  answered from records and what it ran, read from the lines `gate --hook` printed before its failed tail marker
+  (`--- last lines of <step> ---`): a line of the relayed tail shaped like a reuse or a step line is the failed
+  step's output, in neither list. A hook that ended (passed or failed; not one stopped as stalled) is recorded in
   the git folder of the repository it committed in (`dialecte-gate-hook.json`, mode `hook`): HEAD after
   it (the new commit, or the base when it failed), the state hash of the tree before the commit and the
   steps its summary names with their status and counts; the card reads it with the gate records, so a
@@ -1497,7 +1510,13 @@ the answer.
   back after it, the files the run left removed) and
   the reused lots are committed in it with `--no-verify` (their hook skipped, in the clone only), the
   others with their hook, handed `DIALECTE_CHECK_STORE` (the repository's git common dir): a `gate --hook` in
-  the clone reads the repository's records and writes its own there, marked as a rehearsal's. A real run (no
+  the clone reads the repository's records and writes its own there, marked as a rehearsal's. Each lot is
+  committed on its own tree: before it is staged, the files of every later lot go back to what the clone's index
+  holds (HEAD's content: a later lot's new file absent, a file it deletes present), so the commit and its hook see
+  HEAD plus the lots up to that one, and a lot that needs a later lot fails its rehearsal alone; once it is
+  committed, those files come back from your working tree as it is then (an edit made during the rehearsal reaches
+  the clone's later lots). A rehearsal that stops brings every lot's files back before its card, which sizes the
+  lots not committed from them. A real run (no
   `--rehearse`) runs every commit's hook, whatever the store holds; a `gate --hook` there answers each step from
   the rehearsal's records (or a gate's) of the same tree and install, so the commits take seconds when nothing
   changed.

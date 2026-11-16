@@ -1,4 +1,6 @@
 /** How a hook's output is read: npm's script headers, the scripts a command runs, the lines worth showing. */
+import { GATE_FAILED_TAIL_LINE } from '../gate/gate-config.constants.ts'
+
 import type { HookLineKind, HookLinePattern } from './hook-output.types.ts'
 
 /**
@@ -109,6 +111,15 @@ export const GATE_HOOK_LINE_PATTERN = /^gate --hook: /m
 
 /** The line of a step `gate --hook` ran (`renderStepLine`, passed or failed): its name in group 1. */
 export const HOOK_RAN_STEP_PATTERN = /^(?:ok|FAIL) +(\S+)(?: .*)?$/gm
+
+/**
+ * The line `gate --hook` prints before the failed step's own output it relays (`GATE_FAILED_TAIL_LINE`): nothing
+ * after it is a step line of the hook.
+ */
+export const HOOK_FAILED_TAIL_PATTERN = new RegExp(
+	`^${GATE_FAILED_TAIL_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{step\\}', '.+')}$`,
+	'm',
+)
 
 /** The step an older cli's whole-tests reuse line answers. */
 export const HOOK_REUSED_TESTS_STEP = 'tests'

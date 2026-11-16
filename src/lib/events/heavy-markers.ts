@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { join } from 'node:path'
 
 import { isProcessAlive } from '../process-alive.ts'
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime, processStartTime } from '../process-start-time.ts'
 import { publishOnce } from '../store/publish.ts'
 import { stateFolder } from '../store/state-folder.ts'
 import { HEAVY_MARKER_NAME_PATTERN, HEAVY_MARKER_SEGMENTS } from './heavy-markers.constants.ts'
@@ -17,9 +17,6 @@ import type {
 	HeavyMarkerLocation,
 	WriteHeavyMarkerParams,
 } from './heavy-markers.types.ts'
-
-/** This process's own start time once read (`undefined` inside when it could not be); unread until the first ask. */
-let ownStartTime: { value: string | undefined } | undefined
 
 /** The markers this process wrote so far: the `n` of the next name. */
 let markerCount = 0
@@ -162,8 +159,9 @@ function startTimeOf(params: {
 
 /** This process's start time, read once per process. */
 function ownStartTimeOf(params: { check: HeavyMarkerCheck | undefined }): string | undefined {
-	ownStartTime ??= { value: startTimeOf({ pid: process.pid, check: params.check }) }
-	return ownStartTime.value
+	return ownProcessStartTime({
+		read: (pid) => startTimeOf({ pid, check: params.check }),
+	})
 }
 
 /** Orders markers by `started`, then by file name. */

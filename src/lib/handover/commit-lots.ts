@@ -60,6 +60,7 @@ import type { CheckKey, GateRecord, RecordedStep } from '../gate-records/gate-re
 import type { HandoverBase } from '../gate/gate-base.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
+import type { CloneLotTree } from './clone-lot-tree.types.ts'
 import type { Installer, ResolvedLot, WriteLine } from './handover.types.ts'
 import type { HookSummaryStep } from './hook-output.types.ts'
 
@@ -94,6 +95,8 @@ export async function commitLots(params: {
 	withoutHook?: ReadonlySet<number>
 	/** The repository whose store holds the hook records, when `root` is a rehearsal clone of it. */
 	storeRoot?: string
+	/** A rehearsal clone's working tree around each lot (the real run passes none: its working tree never changes). */
+	lotTree?: CloneLotTree
 	/**
 	 * The test steps the hook's `gate --hook` runs hold a scoped step: a hook record's command hash folds the base the
 	 * hook printed, and a hook that printed none is recorded without a key.
@@ -143,6 +146,7 @@ export async function commitLots(params: {
 					: stillStaged({ unstaged, lot: number }),
 			])
 		}
+		params.lotTree?.prepareLot({ number })
 		if (lot.merge) {
 			const prepared = runMergeLot({ root, merge: lot.merge })
 			if ('refusal' in prepared) {
@@ -260,6 +264,7 @@ export async function commitLots(params: {
 		}
 		const sha = readGit({ root, args: ['rev-parse', 'HEAD'] }).trim()
 		commits.push(sha)
+		params.lotTree?.afterLot({ number })
 		running.finish(
 			...hookLines,
 			textOf([`✓ ${sha.slice(0, 12)} ${subject}  ${formatDuration(clock.now() - startedAt)}`]),

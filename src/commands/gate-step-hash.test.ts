@@ -22,8 +22,8 @@ import { describe, expect, it } from 'vitest'
 import type { GateRecord, RecordedStep } from '../lib/gate-records/gate-records.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 
-const MODES = [
-	{ label: '--fast', argv: [] as string[], file: FAST_RECORD_FILE },
+const MODES: { label: string; argv: string[]; file: string }[] = [
+	{ label: '--fast', argv: [], file: FAST_RECORD_FILE },
 	{ label: '--full', argv: ['--full'], file: FULL_RECORD_FILE },
 	{ label: '--release', argv: ['--release'], file: RELEASE_RECORD_FILE },
 ]
@@ -36,12 +36,14 @@ function scopedGatePackage() {
 	return { root, steps }
 }
 
+/** The gate record `file` of the worktree at `root`; a missing record fails the case. */
 function recordOf(params: { root: string; file: string }): GateRecord {
 	const record = readRecordFile<GateRecord>({ root: params.root, name: params.file })
 	if (!record) throw new Error(`no ${params.file} record`)
 	return record
 }
 
+/** The step `name` as `record` holds it, or undefined when the record has none of that name. */
 function recordedStep(params: { record: GateRecord; name: string }): RecordedStep | undefined {
 	return params.record.steps.find((step) => step.name === params.name)
 }

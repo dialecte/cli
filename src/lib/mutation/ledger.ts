@@ -27,7 +27,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
-import { processStartTime } from '../process-start-time.ts'
+import { ownProcessStartTime } from '../process-start-time.ts'
 import { isListed } from './judge.ts'
 import {
 	LEDGER_KEY_SEPARATOR,
@@ -358,7 +358,7 @@ function createLock(lock: string): boolean {
 		throw error
 	}
 	try {
-		const owner = { pid: process.pid, startedAt: processStartTime(process.pid) }
+		const owner = { pid: process.pid, startedAt: ownProcessStartTime() }
 		writeSync(descriptor, `${JSON.stringify(owner)}\n`)
 	} catch (error) {
 		closeSync(descriptor)
@@ -443,7 +443,7 @@ function removeStaleLock(params: {
 function isThisProcess(holder: { pid: number; startedAt?: string }): boolean {
 	return (
 		holder.pid === process.pid &&
-		(holder.startedAt === undefined || holder.startedAt === processStartTime(process.pid))
+		(holder.startedAt === undefined || holder.startedAt === ownProcessStartTime())
 	)
 }
 

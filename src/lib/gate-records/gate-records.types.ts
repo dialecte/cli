@@ -169,3 +169,14 @@ export type RecordBaseCheck = 'same' | 'older' | 'moved'
 
 /** A part of the review line with the status it asks for. */
 export type ReviewLinePart = { status: CardGateStatus; detail: string }
+
+/** What a test hands `storeCheckRecord` to force an order the store must survive; none in production. */
+export type StoreCheckSeam = {
+	/**
+	 * Runs after the writer's first read of the tree's records and BEFORE it takes the tree's lock: another writer
+	 * lands here.
+	 */
+	beforeWrite?: () => void
+	/** The most a writer waits for a live holder of the tree's lock, in milliseconds, before it writes anyway (default `CHECK_STORE_LOCK_WAIT_MS`). A writer that waited out a live holder still writes. */
+	lockWaitMs?: number
+}

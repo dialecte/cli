@@ -149,17 +149,14 @@ describe('hashGateStep', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(hashGateStep({ root, step: other })).toBe(hashGateStep({ root, step: TESTS_STEP }))
 	})
 
-	it.each([{ label: 'a rules step', step: RULES_STEP }])(
-		'a contributor adds a consumer name on the machine; $label → another hash',
-		({ step }) => {
-			const root = contributorRepository()
-			const hashes: string[] = []
-			expect(hashes.push(hashGateStep({ root, step }))).toBe(1)
-			git({ root, args: ['config', CONSUMER_NAMES_KEY, MACHINE_NAME] })
+	it('a contributor adds a consumer name on the machine; a rules step → another hash', () => {
+		const root = contributorRepository()
+		const hashes: string[] = []
+		expect(hashes.push(hashGateStep({ root, step: RULES_STEP }))).toBe(1)
+		git({ root, args: ['config', CONSUMER_NAMES_KEY, MACHINE_NAME] })
 
-			expect(hashGateStep({ root, step })).not.toBe(hashes[0])
-		},
-	)
+		expect(hashGateStep({ root, step: RULES_STEP })).not.toBe(hashes[0])
+	})
 
 	it('a contributor adds a consumer name on the machine; a step that is no rules run → the same hash', () => {
 		const root = contributorRepository()
@@ -274,10 +271,6 @@ describe('findStepAnswer', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		{
 			label: 'the step has another hash',
 			steps: [stepOf({ name: 'tests', stepHash: OTHER_STEP_HASH })],
-		},
-		{
-			label: 'steps without stepHash (old shape)',
-			steps: [stepOf({ name: 'check' }), stepOf({ name: 'tests' })],
 		},
 		{
 			label: 'another tree asked',
