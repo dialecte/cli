@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+
 import { readCliVersion } from '../../read-cli-version.ts'
 import { ensureStandardIndex } from '../standard/ensure-standard-index.ts'
 import {
@@ -6,14 +9,19 @@ import {
 } from '../standard/read-installed-vocabulary.ts'
 import { workTreeRefusal } from '../standard/read-standard-input.ts'
 import { standardCacheRoot } from '../standard/standard-cache-root.ts'
-import { standardFolderFilesKey } from '../standard/standard-files-key.ts'
+import { standardFilesKey } from '../standard/standard-files-key.ts'
+import { LINE_BREAK_PATTERN } from '../standard/standard-index.constants.ts'
+import { SETUP_HASH_ALGORITHM, SETUP_HASH_ENCODING } from './ask.constants.ts'
 import { isReadableFolder, selectedFoldersOf } from './selected-folders-of.ts'
 
 import type { StandardInstalledVocabularyAnswer } from '../standard/standard-cache.types.ts'
+import type { StandardFolder } from '../standard/standard-input.types.ts'
+import type { StandardSearchIndex } from '../standard/standard-search.types.ts'
 import type {
 	LoadedStandardIndexes,
 	LoadedStandards,
 	LoadStandardIndexesParams,
+	StandardFileRead,
 } from './ask.types.ts'
 
 /**
@@ -45,7 +53,9 @@ export async function loadStandardIndexes(
 		standard: { kind: 'documents', indexes: [], folders: [] },
 		ready: [],
 		skipped: [],
+		manifest: [],
 		installed,
+		originalLines: new Map(),
 	}
 	for (const standard of selected.folders) {
 		if (!isReadableFolder({ folder: standard })) {
@@ -64,12 +74,34 @@ export async function loadStandardIndexes(
 		if (answer.kind === 'aborted') return answer
 		loaded.ready.push(answer.index)
 		loaded.standard.indexes.push(answer.index.search)
-		loaded.standard.folders.push({
-			id: standard.id,
-			files: standardFolderFilesKey({ standard }),
-		})
+		const read = filesReadOf({ standard, search: answer.index.search })
+		const manifest = read.map((entry) => entry.manifest)
+		loaded.manifest.push(...manifest)
+		for (const entry of read) loaded.originalLines.set(entry.manifest.id, entry.lines)
+		loaded.standard.folders.push({ id: standard.id, files: standardFilesKey({ files: manifest }) })
 	}
 	return loaded
+}
+
+/**
+ * Each file of a folder as its bytes are now: its id, sha256 and original line count (from its index), with its
+ * original lines from the same bytes (a cite's range reads them, R1-9).
+ */
+function filesReadOf(params: {
+	standard: StandardFolder
+	search: StandardSearchIndex
+}): StandardFileRead[] {
+	return params.standard.files.map(function fileReadOf(file): StandardFileRead {
+		const bytes = readFileSync(file.path)
+		return {
+			manifest: {
+				id: file.id,
+				sha256: createHash(SETUP_HASH_ALGORITHM).update(bytes).digest(SETUP_HASH_ENCODING),
+				lines: params.search.files.find((index) => index.fileId === file.id)?.lineCount ?? 0,
+			},
+			lines: bytes.toString('utf8').split(LINE_BREAK_PATTERN),
+		}
+	})
 }
 
 /** The installed vocabulary (of `packageName` only, when given), or an empty one when the load reads none. */

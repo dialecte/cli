@@ -1,7 +1,8 @@
 /**
- * `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>`: writes `standard.json` in the
- * hand-over folder - the state, the note (a reason for `not-consulted`) and the time. The line references of
- * what was read stay in the findings ledger.
+ * `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason> | outside <note>`: writes
+ * `standard.json` in the hand-over folder - the state, the note (a reason for `not-consulted`; for `outside`, the
+ * asks answered outside the documents) and the time. The line references of what was read stay in the findings
+ * ledger.
  */
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -43,6 +44,8 @@ export function recordStandard(params: {
 		state,
 		note,
 		at: (params.now ?? new Date()).toISOString(),
+		// an outside record written by hand confirms no outside answer (R1-10): only the ask's note writer sets it
+		...(state === 'outside' ? { confirmed: false } : {}),
 	}
 	replaceWhole({
 		path,

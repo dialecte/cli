@@ -33,7 +33,7 @@ export type AskJson = {
 	fact: string | null
 	source: string | null
 	candidates: { fact: string; why: string }[]
-	slices: { id: string; file: string; from: number; to: number }[]
+	slices: { id: string; file: string; from: number; to: number; angles: string[] }[]
 	next: string | null
 	effort: { level: string }
 	standard: {

@@ -31,7 +31,7 @@ export function capSliceRange(params: {
 }
 
 /** The original lines `from` to `to` but the dropped ones. */
-function countedLines(params: {
+export function countedLines(params: {
 	from: number
 	to: number
 	noiseRanges: StandardOriginalRange[]

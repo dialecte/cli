@@ -120,7 +120,7 @@ describe('the command map', () => {
 		'dialecte lot decide <id|folder> <finding> <open | fix-to-verify | fixed <round> [note] | accepted <reason> | logged <where>>',
 		'dialecte lot snapshot <id|folder> --round <n> [--beyond-cap --by <who> --reason <text>]',
 		'dialecte lot choice <id|folder> --by <who> <decision>',
-		'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>',
+		'dialecte lot standard <id|folder> consulted <note> | not-consulted <reason> | outside <note>',
 		'dialecte lot delta <id|folder> --round <n> [--worktree] [--json]',
 		'dialecte lot recap <id|folder>',
 		'dialecte lot verify <id|folder> --by <who> --note <text>',

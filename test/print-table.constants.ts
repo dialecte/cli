@@ -14,6 +14,9 @@ export const TABLE_PACKAGE_JSON = '{"name":"scratch","version":"0.0.0"}\n'
 
 /** The `--json` flag a usage line writes, the prefix of a usage line in the map, and the prefix of a fixed row's key. */
 export const JSON_FLAG = '--json'
+
+/** What a flag of a usage line starts with. */
+export const FLAG_PREFIX = '-'
 export const USAGE_PREFIX = 'dialecte '
 
 /** The prefix of the scratch standards root a row with `emptyStandard` names in `DIALECTE_STANDARD`. */
@@ -109,6 +112,9 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		noJson: PLAIN_TEXT,
 	},
 	ask: { argv: ['a question', '--kind', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'ask pack': { argv: ['pack', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'ask answer': { argv: ['answer', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'ask verdict': { argv: ['verdict', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	rules: { argv: [FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	gate: {
 		argv: ['--fast', '--full', FORGED_WORD],
