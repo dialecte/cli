@@ -163,6 +163,8 @@ async function rehearseRecorded(
 		join(handover.folder, REHEARSAL_DECISIONS_FILE),
 		`${JSON.stringify({ at: new Date().toISOString(), lots: decisions }, null, 2)}\n`,
 	)
+	// each lot's tree and decision, on the rehearsal's end as rehearsal.json holds them
+	const lots = decisions.map(({ lot, tree, decision }) => ({ lot, tree, decision }))
 	const contribRun = decisions.find((decision) => decision.contrib === 'run')
 	// a contrib run of the tree the lots leave needs the clone, whatever the lots' records say
 	const everyLotReused =
@@ -202,7 +204,7 @@ async function rehearseRecorded(
 			skipCommits: true,
 			gateScope,
 		})
-		recorder.end({ exit, reuse: 'whole', stateHash: null })
+		recorder.end({ exit, reuse: 'whole', stateHash: null, lots })
 		return exit
 	}
 	const progress =
@@ -306,7 +308,7 @@ async function rehearseRecorded(
 			gateScope,
 		})
 		// after the hook record the clone's run left (D12)
-		recorder.end({ exit, reuse: 'none', stateHash: null })
+		recorder.end({ exit, reuse: 'none', stateHash: null, lots })
 		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)

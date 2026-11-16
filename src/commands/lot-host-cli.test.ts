@@ -35,7 +35,7 @@ describe('the host verbs through the cli', { timeout: CLI_SURFACE_CASE_TIMEOUT }
 			),
 		).toEqual({
 			exitCode: 1,
-			json: { waiting: [], working: 0, simulated: 0, damaged: [] },
+			json: { waiting: [], working: 0, simulated: 0, damaged: [], health: [] },
 		})
 	})
 
