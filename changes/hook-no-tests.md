@@ -1,0 +1,4 @@
+### Changed
+
+- `dialecte gate --hook` in a package that declares `dialecte.gate.hook` checks the tdd receipts of the commit before the declared steps: every new or changed case of the commit proven red then green (or unchanged, accepted, revised), its newest green taken at the production as committed, and the working files the commit for every test or production path (the receipts were taken on them). A stale green fails the hook naming the cases (`stale  <case>`; run `dialecte tdd green` again), files left out of the commit fail it naming them, a merge commit skips the step with its reason. A failed tdd step runs no declared step. Without a declared hook list the hook runs as before, with no tdd step.
+- The cli's own commit hook runs `check` and `rules` (on the touched files) after the tdd receipts, no test suite: CI runs the whole suite on every push. `gate --fast` keeps its scoped tests.

@@ -27,25 +27,26 @@
  * `dialecte.gate.release` (default: the full steps) like `--full`, its scoped steps against the empty tree, and
  * records `dialecte-gate-release.json`. A gate config the cli cannot run exits 2 (1 under `--hook`).
  *
- * `--hook [--no-reuse]` runs in a commit hook the hook steps of `--full`: every full step but the scoped ones that
- * count no tests (a commit has no lot base for them). Each step is answered by the newest green record of what is
- * committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
+ * `--hook [--no-reuse]` runs in a commit hook the `dialecte.gate.hook` steps when the package declares them (a package
+ * whose suite runs on CI), after the tdd receipts of the commit (`runHookTddStep`: they prove the commit, so no test
+ * runs; a failure runs no step); else the hook steps of `--full`: every full step but the scoped ones that count no
+ * tests (a commit has no lot base for them), with no tdd step. Each step is answered by the newest green record of what
+ * is committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
  * of the index git hands the hook (never the working files: a merge commit and a partial commit check what they
- * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the
- * hook base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran
- * it: `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in
- * list order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older
- * cli, with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git
- * variables naming another repository, answer nothing. No hygiene, no tdd step, no hand-over hold (it runs inside
- * `handover run`'s own commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its
- * hash, an answered one with the run it came from; it goes to the repository's store, or - given
- * `DIALECTE_CHECK_STORE`, the absolute git common dir of the repository a rehearsal clones - to that store, marked as
- * a rehearsal's (any other value is ignored, said on the hook's first line; no step ever sees the variable). The
- * record is kept only when the working files were the committed tree before and after the steps ran: a step reads the
- * working files, so a run on others answers nothing of the tree. When a hook step is scoped it resolves the hook base
- * once - the hand-over base `handover run` hands down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when
- * a live run of that folder holds it, else the base branch's - and prints it on one more line with what was selected
- * (or `reused`).
+ * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the hook
+ * base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran it:
+ * `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in list
+ * order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older cli,
+ * with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git variables
+ * naming another repository, answer nothing. No hygiene, no hand-over hold (it runs inside `handover run`'s own
+ * commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its hash, an answered one with
+ * the run it came from; it goes to the repository's store, or - given `DIALECTE_CHECK_STORE`, the absolute git common
+ * dir of the repository a rehearsal clones - to that store, marked as a rehearsal's (any other value is ignored, said
+ * on the hook's first line; no step ever sees the variable). The record is kept only when the working files were the
+ * committed tree before and after the steps ran: a step reads the working files, so a run on others answers nothing of
+ * the tree. When a hook step is scoped it resolves the hook base once - the hand-over base `handover run` hands down
+ * (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live run of that folder holds it, else the base
+ * branch's - and prints it on one more line with what was selected (or `reused`).
  */
 import { join } from 'node:path'
 
@@ -88,6 +89,7 @@ import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
 import { renderStepLines } from '../lib/gate/step-line.ts'
 import { readStepSource } from '../lib/gate/step-source.ts'
+import { runTddStep } from '../lib/gate/tdd-step.ts'
 import { namesAnotherRepository } from '../lib/git-environment.ts'
 import { readHeadOrNone } from '../lib/git.ts'
 import { GIVEN_ENVIRONMENT } from '../lib/given-environment.constants.ts'
@@ -100,7 +102,6 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { shellQuote, shellWord } from '../lib/shell-quote.ts'
-import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
@@ -360,7 +361,7 @@ async function runWorktreeSteps(params: {
 		detail: 'the receipts of the change',
 	})
 	const finishTdd = recorder.startPart({ name: TDD_STEP.name, heavy: false })
-	const tdd = await tddStep({
+	const tdd = await runTddStep({
 		cwd,
 		packageJson: params.packageJson,
 		ref: getArg(argv, 'base'),
@@ -685,39 +686,6 @@ function hygieneStep(params: { cwd: string; declared: string[] }): StepResult {
 			...(note && { note }),
 		}
 	return { step, status: 'passed', counts: {}, restored: [], ...(note && { note }) }
-}
-
-/** The receipts of the change's test cases, after the hygiene. */
-async function tddStep(params: {
-	cwd: string
-	packageJson: PackageJson
-	ref: string | undefined
-	wholeBranch: boolean
-}): Promise<StepResult> {
-	const check = await checkTddReceipts({
-		root: params.cwd,
-		packageJson: params.packageJson,
-		ref: params.ref,
-		wholeBranch: params.wholeBranch,
-	})
-	// the whole-branch base under the step's line (a skipped step measured nothing from it)
-	const details = [
-		...(check.baseNote && check.status !== 'skipped' ? [check.baseNote] : []),
-		...(check.details ?? []),
-	]
-	return {
-		step: TDD_STEP,
-		status: check.status,
-		counts: {},
-		restored: [],
-		...(check.reason && { reason: check.reason }),
-		...(check.note && { note: check.note }),
-		...(check.lines?.length && { tail: check.lines.join('\n') }),
-		...(details.length && { details }),
-		...(check.cases && { cases: check.cases }),
-		...(check.moved?.length && { moved: check.moved }),
-		...(check.duplicates?.length && { duplicates: check.duplicates }),
-	}
 }
 
 /** Every `--declare <path>` of the command line. */
