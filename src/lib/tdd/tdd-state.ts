@@ -47,6 +47,7 @@ import type {
 	CaseStatusLine,
 	ChangedTestFile,
 	LotGoneEntry,
+	ReportedModule,
 	TddFinding,
 	TddLedger,
 	TddMoves,
@@ -92,6 +93,8 @@ export async function readTddState(params: {
 		filter: 'collect',
 	})
 	if ('failure' in modules) return modules
+	// what the collect saw, for the listing of each file's dependencies below (a pytest file's come from its run)
+	const reported: readonly ReportedModule[] = modules
 	const { cases, unlisted } = readRunCases({
 		root,
 		packageJson: params.packageJson,
@@ -132,6 +135,7 @@ export async function readTddState(params: {
 			changedTestCode: [...testCode.keys()],
 			resolveModule,
 			packageJson: params.packageJson,
+			modules: reported,
 		}).dependencies
 		dependencies.set(file, found)
 		return found

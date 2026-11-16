@@ -15,7 +15,7 @@ import { findMovedByName, findMovedCases, movedCaseLabels } from './moved-cases.
 import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
 import { listDeletedTestFiles, readAtBase } from './tdd-files.ts'
-import { BASE_COLLECT_TIMEOUT_MS } from './tdd.constants.ts'
+import { BASE_COLLECT_TIMEOUT_MS, PYTHON_TEST_FILE_PATTERN } from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 import { indexTestCalls, listSurroundings, testCallAt } from './test-source.ts'
 
@@ -31,8 +31,26 @@ import type {
 } from './tdd.types.ts'
 import type { ChildProcess } from 'node:child_process'
 
-/** The moves of the cases of `files` (the new and changed test files of the run) from the base. */
-export async function readMoves(params: {
+/**
+ * The moves of the cases of `files` (the new and changed test files of the run) from the base. A pytest case never
+ * moves across files (moved, it is a new case: a red or an accept): its files and cases are left out.
+ */
+export function readMoves(params: {
+	root: string
+	base: string
+	packageJson: PackageJson
+	files: readonly ChangedTestFile[]
+	cases: readonly RunCase[]
+}): Promise<TddMoves> {
+	return readScriptMoves({
+		...params,
+		files: params.files.filter((file) => !PYTHON_TEST_FILE_PATTERN.test(file.file)),
+		cases: params.cases.filter((testCase) => !PYTHON_TEST_FILE_PATTERN.test(testCase.file)),
+	})
+}
+
+/** The moves of the cases of JS/TS test files, from the JS/TS test files the change deletes too. */
+async function readScriptMoves(params: {
 	root: string
 	base: string
 	packageJson: PackageJson
@@ -40,10 +58,12 @@ export async function readMoves(params: {
 	cases: readonly RunCase[]
 }): Promise<TddMoves> {
 	const { root, base } = params
-	const deleted = listDeletedTestFiles({ root, base }).flatMap((file): DeletedTestFile[] => {
-		const baseText = readAtBase({ root, base, file })
-		return baseText === undefined ? [] : [{ file, baseText }]
-	})
+	const deleted = listDeletedTestFiles({ root, base })
+		.filter((file) => !PYTHON_TEST_FILE_PATTERN.test(file))
+		.flatMap((file): DeletedTestFile[] => {
+			const baseText = readAtBase({ root, base, file })
+			return baseText === undefined ? [] : [{ file, baseText }]
+		})
 	const exact = findMovedCases({
 		files: params.files,
 		deleted,

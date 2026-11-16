@@ -113,6 +113,7 @@ import type {
 	DuplicateCaseId,
 	ReceiptFlag,
 	RedJudgement,
+	ReportedModule,
 	RevisedHelper,
 	RunCase,
 	RunnerParams,
@@ -341,6 +342,8 @@ async function runRed(params: {
 			})
 		: []
 	if ('failure' in modules) return runFailureResult({ subcommand: 'red', failure: modules })
+	// what the run saw, for the listing of each file's dependencies below (a pytest file's come from its run)
+	const reported: readonly ReportedModule[] = modules
 	const run = readRunCases({
 		root,
 		packageJson: context.packageJson,
@@ -405,6 +408,7 @@ async function runRed(params: {
 				changedTestCode,
 				resolveModule,
 				packageJson: context.packageJson,
+				modules: reported,
 			})
 		listedDependencies.set(file, listed)
 		return listed

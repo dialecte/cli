@@ -8,8 +8,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runNodeCases } from './run-node-cases.ts'
+import { runPytestCases } from './run-pytest-cases.ts'
 import { runVitestCases } from './run-vitest-cases.ts'
-import { RUNNER_NOT_AVAILABLE_FAILURE } from './tdd.constants.ts'
 import { groupFilesByRunner } from './test-runner.ts'
 import { readVitestConfigs } from './vitest-configs.ts'
 
@@ -58,9 +58,7 @@ function testFileOf(params: { root: string; file: string }): ChangedTestFile {
 function defaultRunner(runner: TestRunner): RunnerFunction {
 	if (runner === 'vitest') return runVitestCases
 	if (runner === 'node') return runNodeCases
-	return async function notAvailable() {
-		return { failure: RUNNER_NOT_AVAILABLE_FAILURE.replace('{runner}', runner) }
-	}
+	return runPytestCases
 }
 
 /** The failure, opening with the runner's name unless it already does. */

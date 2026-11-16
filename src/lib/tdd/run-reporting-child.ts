@@ -46,7 +46,7 @@ export async function runReportingChild(
 			}),
 			command: params.command,
 			args: params.args,
-			cwd: run.root,
+			cwd: params.cwd ?? run.root,
 			environment: { ...params.environment, [REPORT_ENVIRONMENT_VARIABLE]: reportPath },
 			...(params.unset && { unset: params.unset }),
 			clock: run.clock,

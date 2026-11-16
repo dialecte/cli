@@ -58,10 +58,6 @@ export const CONFTEST_FILE_PATTERN = /(^|\/)conftest\.py$/
 /** The runners in the order their groups run and print. */
 export const RUNNER_ORDER = ['vitest', 'node', 'pytest'] as const
 
-/** The failure of a runner this cli cannot run yet (`{runner}`: its name). */
-export const RUNNER_NOT_AVAILABLE_FAILURE =
-	'{runner} runner not available yet: its test files cannot run'
-
 /** The module a test file imports to run under `node --test`. */
 export const NODE_TEST_SPECIFIER = 'node:test'
 
@@ -103,6 +99,96 @@ export const NODE_REPORTER_FILE_NAMES = ['tdd-node-reporter.js', 'tdd-node-repor
 
 /** The environment of a nested `node --test` run: with it, a run reports to its parent instead of its reporters. */
 export const NODE_TEST_CONTEXT_VARIABLE = 'NODE_TEST_CONTEXT'
+
+/**
+ * The files that make a folder a pytest folder, each with the section it must hold (none: the file alone does):
+ * `pytest.ini`, a `pyproject.toml` with `[tool.pytest`, a `tox.ini` with `[pytest]`, a `setup.cfg` with
+ * `[tool:pytest]`.
+ */
+export const PYTEST_CONFIG_FILES: ReadonlyArray<{ name: string; section?: string }> = [
+	{ name: 'pytest.ini' },
+	{ name: 'pyproject.toml', section: '[tool.pytest' },
+	{ name: 'tox.ini', section: '[pytest]' },
+	{ name: 'setup.cfg', section: '[tool:pytest]' },
+]
+
+/** A folder's own virtual environment interpreter, on POSIX and on Windows. */
+export const VENV_PYTHON_PATH = ['.venv', 'bin', 'python'] as const
+export const VENV_WINDOWS_PYTHON_PATH = ['.venv', 'Scripts', 'python.exe'] as const
+
+/** The lock file of a uv project, and the command that runs its python with the lock as it is. */
+export const UV_LOCK_FILE = 'uv.lock'
+export const UV_PYTHON_COMMAND = ['uv', 'run', '--frozen', 'python'] as const
+
+/** The python on the PATH when no folder has its own: `python3`, or `python` on Windows. */
+export const DEFAULT_PYTHON_COMMAND = 'python3'
+export const DEFAULT_WINDOWS_PYTHON_COMMAND = 'python'
+
+/** The cli's pytest plugin: the module name `-p` loads, and its file next to the cli's entry or this file. */
+export const PYTEST_PLUGIN_MODULE = 'dialecte_tdd_pytest'
+export const PYTEST_PLUGIN_FILE_NAMES = ['dialecte_tdd_pytest.py'] as const
+
+/**
+ * The arguments of every pytest run after the interpreter's own: the cli's plugin loaded, no cache folder written,
+ * the other files run when one fails to collect, the short output.
+ */
+export const PYTEST_ARGUMENTS = [
+	'-m',
+	'pytest',
+	'-p',
+	PYTEST_PLUGIN_MODULE,
+	'-p',
+	'no:cacheprovider',
+	'--continue-on-collection-errors',
+	'-q',
+] as const
+
+/** The pytest argument that lists the cases and runs none. */
+export const PYTEST_COLLECT_ARGUMENT = '--collect-only'
+
+/** The environment the plugin reads: the case names to keep (JSON, every case without it), the package root. */
+export const PYTEST_NAMES_VARIABLE = 'DIALECTE_TDD_NAMES'
+export const PYTEST_ROOT_VARIABLE = 'DIALECTE_TDD_ROOT'
+
+/** The variables of a python run: no bytecode written beside the sources, the import path the plugin joins. */
+export const PYTHON_NO_BYTECODE_VARIABLE = 'PYTHONDONTWRITEBYTECODE'
+export const PYTHON_PATH_VARIABLE = 'PYTHONPATH'
+
+/** What a python prints when pytest is not importable: the run is then no pytest run at all. */
+export const NO_PYTEST_PATTERN = /No module named pytest/
+
+/** The failure of a pytest folder whose python has no pytest (`{folder}` relative with a `/`, `{reason}` its line). */
+export const NO_PYTEST_FAILURE = 'pytest is not installed for {folder} ({reason})'
+
+/** The rows of stacked parametrize decorators, as the plugin joins them in a case's source. */
+export const PYTHON_ROW_SEPARATOR = '\0'
+
+/** A Python name of a failed `pytest.raises` / `pytest.warns`: an assertion when its message says the miss. */
+export const PYTEST_FAILED_NAME = 'Failed'
+export const PYTEST_MISSED_PATTERN = /^DID NOT (RAISE|WARN)\b/
+
+/** pytest-timeout's `Failed: Timeout >1.0s`: a case that ran out of time. */
+export const PYTEST_TIMEOUT_PATTERN = /^Timeout\b/
+
+/** The Python stub: `raise NotImplementedError`, whatever its message. */
+export const PYTHON_STUB_NAME = 'NotImplementedError'
+
+/** The Python errors of a file that does not parse. */
+export const PYTHON_SYNTAX_ERROR_NAMES: readonly string[] = [
+	'SyntaxError',
+	'IndentationError',
+	'TabError',
+]
+
+/** A Python import of a name its module lacks. */
+export const PYTHON_MISSING_NAME_PATTERN = /cannot import name '[^']+'/
+
+/** A Python attribute read on a module that lacks it: `module 'pkg.gen' has no attribute 'x'` (the module dotted). */
+export const PYTHON_MISSING_ATTRIBUTE_PATTERN = /^module '([\w.]+)' has no attribute '[^']+'/
+
+/** The file of a Python module, from a folder: `<parts>.py` or `<parts>/__init__.py`. */
+export const PYTHON_MODULE_SUFFIX = '.py'
+export const PYTHON_PACKAGE_FILE = '__init__.py'
 
 /** Test code beyond the test files: helpers and fixtures in a test or fixture folder, snapshots. */
 export const TEST_FOLDER_PATTERN =

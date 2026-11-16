@@ -1,3 +1,6 @@
+import { join } from 'node:path'
+
+import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
 import { classifyFailure } from './classify-failure.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -193,4 +196,239 @@ describe('classifyFailure', () => {
 				...(testCase.message && { message: testCase.message }),
 			})
 		})
+})
+
+/** A pytest test file the cli never reads as TypeScript: the plugin says whether an error is in an assertion. */
+const PYTHON_TEST_PATH = '/package/tests/test_add.py'
+const PYTHON_TEST_TEXT = 'this is not typescript ((('
+
+/** The raise of the stub in production code, and the line of the test function that called it. */
+const PYTHON_STUB_FRAME = { file: '/package/adder.py', line: 2, column: 1 }
+const PYTHON_TEST_FRAME = { file: PYTHON_TEST_PATH, line: 5, column: 1 }
+
+/** Production code is every file outside a tests folder. */
+function isPythonProductionFile(path: string): boolean {
+	return !path.includes('/tests/')
+}
+
+/** The failure of an error pytest reported, its test file at `testPath` (the scratch package's own when given). */
+function classifyPytest(params: {
+	error: ReportedError
+	atImport?: boolean
+	testPath?: string
+}): ReturnType<typeof classifyFailure> {
+	return classifyFailure({
+		error: params.error,
+		testFile: { path: params.testPath ?? PYTHON_TEST_PATH, text: PYTHON_TEST_TEXT },
+		atImport: params.atImport ?? false,
+		isProductionFile: isPythonProductionFile,
+	})
+}
+
+/** A package of one production module `gen`, a test helper `helpers` and a test file; answers the test file's path. */
+function pythonPackageTestPath(): string {
+	const root = temporaryFolder('dialecte-classify-')
+	writeFiles({
+		root,
+		files: {
+			'gen.py': 'def make():\n    return 1\n',
+			'pkg/gen.py': 'def make():\n    return 2\n',
+			'tests/helpers.py': 'def double(value):\n    return value * 2\n',
+			'tests/test_add.py': PYTHON_TEST_TEXT,
+		},
+	})
+	return join(root, 'tests', 'test_add.py')
+}
+
+describe('classifyFailure on the errors pytest reports', () => {
+	it('a NotImplementedError with no message raised inside an assert, the plugin saying so → not-implemented, the test source never read', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'NotImplementedError',
+					message: '',
+					frames: [PYTHON_STUB_FRAME, PYTHON_TEST_FRAME],
+					inAssertion: true,
+				},
+			}),
+		).toMatchObject({ kind: 'not-implemented' })
+	})
+
+	it('a NotImplementedError carrying the stub message inside an assert, the plugin saying so → not-implemented', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'NotImplementedError',
+					message: 'not implemented: add',
+					frames: [PYTHON_STUB_FRAME, PYTHON_TEST_FRAME],
+					inAssertion: true,
+				},
+			}),
+		).toMatchObject({ kind: 'not-implemented' })
+	})
+
+	it('a NotImplementedError raised before the assert, the plugin saying it is not in one → not-implemented-outside-assertion', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'NotImplementedError',
+					message: '',
+					frames: [PYTHON_STUB_FRAME, PYTHON_TEST_FRAME],
+					inAssertion: false,
+				},
+			}),
+		).toMatchObject({ kind: 'not-implemented-outside-assertion' })
+	})
+
+	it('a NotImplementedError raised while the file loads → not-implemented-at-import', () => {
+		expect(
+			classifyPytest({
+				error: { name: 'NotImplementedError', message: '', frames: [PYTHON_STUB_FRAME] },
+				atImport: true,
+			}),
+		).toMatchObject({ kind: 'not-implemented-at-import' })
+	})
+
+	it('Failed: DID NOT RAISE from pytest.raises → assertion, its message kept', () => {
+		expect(
+			classifyPytest({
+				error: { name: 'Failed', message: "DID NOT RAISE <class 'ValueError'>", frames: [] },
+			}),
+		).toMatchObject({ kind: 'assertion', message: "DID NOT RAISE <class 'ValueError'>" })
+	})
+
+	it('Failed: DID NOT WARN from pytest.warns → assertion', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'Failed',
+					message: 'DID NOT WARN. No warnings of type UserWarning',
+					frames: [],
+				},
+			}),
+		).toMatchObject({ kind: 'assertion' })
+	})
+
+	it('any other Failed (pytest.fail called by the test) → error', () => {
+		expect(
+			classifyPytest({ error: { name: 'Failed', message: 'the data is missing', frames: [] } }),
+		).toMatchObject({ kind: 'error' })
+	})
+
+	it("ImportError: cannot import name 'nope' while the file loads → missing-export", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'ImportError',
+					message: "cannot import name 'nope' from 'adder' (/package/adder.py)",
+					frames: [],
+				},
+				atImport: true,
+			}),
+		).toMatchObject({ kind: 'missing-export' })
+	})
+
+	it("AttributeError: module 'gen' has no attribute 'nope', gen a production module → missing-export", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'AttributeError',
+					message: "module 'gen' has no attribute 'nope'",
+					frames: [],
+				},
+				testPath: pythonPackageTestPath(),
+			}),
+		).toMatchObject({ kind: 'missing-export' })
+	})
+
+	it("AttributeError: module 'pkg.gen' has no attribute 'nope', pkg.gen resolving to pkg/gen.py in production → missing-export", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'AttributeError',
+					message: "module 'pkg.gen' has no attribute 'nope'",
+					frames: [],
+				},
+				testPath: pythonPackageTestPath(),
+			}),
+		).toMatchObject({ kind: 'missing-export' })
+	})
+
+	it("AttributeError: module 'other.gen' has no attribute 'nope', no other/gen.py though gen.py and pkg/gen.py exist → error", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'AttributeError',
+					message: "module 'other.gen' has no attribute 'nope'",
+					frames: [],
+				},
+				testPath: pythonPackageTestPath(),
+			}),
+		).toMatchObject({ kind: 'error' })
+	})
+
+	it("AttributeError: module 'os' has no attribute 'nope', os resolving to no file of the package → error", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'AttributeError',
+					message: "module 'os' has no attribute 'nope'",
+					frames: [],
+				},
+				testPath: pythonPackageTestPath(),
+			}),
+		).toMatchObject({ kind: 'error' })
+	})
+
+	it("AttributeError: module 'helpers' has no attribute 'nope', helpers a test helper → error", () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'AttributeError',
+					message: "module 'helpers' has no attribute 'nope'",
+					frames: [],
+				},
+				testPath: pythonPackageTestPath(),
+			}),
+		).toMatchObject({ kind: 'error' })
+	})
+
+	it('an IndentationError while the file loads → syntax-error', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'IndentationError',
+					message: 'unexpected indent (test_add.py, line 3)',
+					frames: [],
+				},
+				atImport: true,
+			}),
+		).toMatchObject({ kind: 'syntax-error' })
+	})
+
+	it('a TabError while the file loads → syntax-error', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'TabError',
+					message: 'inconsistent use of tabs and spaces in indentation (test_add.py, line 4)',
+					frames: [],
+				},
+				atImport: true,
+			}),
+		).toMatchObject({ kind: 'syntax-error' })
+	})
+
+	it('a ValueError raised by production code inside an assert, the plugin saying so → error-in-production', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'ValueError',
+					message: 'depth must be positive',
+					frames: [PYTHON_STUB_FRAME, PYTHON_TEST_FRAME],
+					inAssertion: true,
+				},
+			}),
+		).toMatchObject({ kind: 'error-in-production' })
+	})
 })

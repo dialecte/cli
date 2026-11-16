@@ -28,7 +28,7 @@ function findBinary(params: { root: string }): string | undefined {
 }
 
 /** The folders from the package root up to the nearest repository root, or the package root alone. */
-function walkedFolders(params: { root: string }): string[] {
+export function walkedFolders(params: { root: string }): string[] {
 	const folders: string[] = []
 	let folder = params.root
 	for (;;) {

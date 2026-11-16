@@ -9,6 +9,7 @@ import { relative } from 'node:path'
 import { realPathOf } from '../file-system.ts'
 import { isCaseOfBase, isCaseOfChange } from './case-of-change.ts'
 import { classifyFailure } from './classify-failure.ts'
+import { isPythonCaseOfBase, isPythonCaseOfChange, pythonCaseHash } from './python-case.ts'
 import { hashText, isProductionPath } from './tdd-files.ts'
 import { CASE_ARGUMENT_SEPARATOR } from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
@@ -92,19 +93,52 @@ export function readRunCases(params: {
 				project: reported.project,
 				state: reported.state,
 				...(failure && { failure }),
-				caseHash: caseHashOf({
-					name: reported.name,
-					file: file.file,
-					text: file.text,
-					location: reported.location,
-				}),
-				ofChange: isCaseOfChange({ file, name: reported.name, location: reported.location }),
-				ofBase: isCaseOfBase({ file, name: reported.name }),
+				...(testModule.runner === 'pytest'
+					? pythonIdentityOf({ file, reported })
+					: {
+							caseHash: caseHashOf({
+								name: reported.name,
+								file: file.file,
+								text: file.text,
+								location: reported.location,
+							}),
+							ofChange: isCaseOfChange({ file, name: reported.name, location: reported.location }),
+							ofBase: isCaseOfBase({ file, name: reported.name }),
+						}),
 				...(reported.location && { location: reported.location }),
 			})
 		}
 	}
 	return { cases, unlisted }
+}
+
+/**
+ * A pytest case's hash, change and base, read from the source the plugin reported (the TypeScript readers never
+ * parse Python); a case it reported no source of is judged by its whole file: changed when the file changed, never
+ * provably of the base.
+ */
+function pythonIdentityOf(params: {
+	file: ChangedTestFile
+	reported: ReportedCase
+}): Pick<RunCase, 'caseHash' | 'ofChange' | 'ofBase'> {
+	const { file, reported } = params
+	const { source } = reported
+	if (!source)
+		return {
+			caseHash: hashText(`${reported.name}\0${file.text}`),
+			ofChange: file.baseText === undefined || file.baseText !== file.text,
+			ofBase: false,
+		}
+	return {
+		caseHash: pythonCaseHash({ name: reported.name, source }),
+		ofChange: isPythonCaseOfChange({ source, baseText: file.baseText }),
+		ofBase: isPythonCaseOfBase({
+			name: reported.name,
+			source,
+			text: file.text,
+			baseText: file.baseText,
+		}),
+	}
 }
 
 /** sha256 of a case's name and the tokens of its test call: a formatter pass keeps it, an edit does not. */

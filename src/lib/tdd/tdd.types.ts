@@ -20,8 +20,28 @@ export type SourceLocation = { line: number; column: number }
 /** One frame of an error's stack, as the test runner parsed it. */
 export type ErrorFrame = SourceLocation & { file: string }
 
-/** An error as the test runner reported it. */
-export type ReportedError = { name?: string; message: string; frames: ErrorFrame[] }
+/**
+ * An error as the test runner reported it. `inAssertion` is the pytest plugin's own answer: the innermost frame in
+ * the test file lies inside an `assert` statement (undefined for the runners whose test source the cli reads).
+ */
+export type ReportedError = {
+	name?: string
+	message: string
+	frames: ErrorFrame[]
+	inAssertion?: boolean
+}
+
+/**
+ * What the pytest plugin reports of a case's source: the test function's own text without its parametrize
+ * decorators, and, for a parametrized case, the text of its parameter row (the rows of stacked decorators joined).
+ */
+export type PythonCaseSource = { call: string; row?: string }
+
+/** The interpreter of a pytest folder: a command and the arguments before `-m pytest`. */
+export type PackagePython = {
+	command: string
+	arguments: readonly string[]
+}
 
 export type ReportedCaseState = 'passed' | 'failed' | 'skipped' | 'pending'
 
@@ -59,6 +79,8 @@ export type ReportingRun = {
 	args: string[]
 	environment: Record<string, string>
 	unset?: string[]
+	/** The folder the process runs in. Default: the run's root. */
+	cwd?: string
 	run: RunnerParams
 }
 
@@ -74,6 +96,10 @@ export type ReportedCase = {
 	project: string
 	location?: SourceLocation
 	errors: ReportedError[]
+	/** pytest: the case's source, as the plugin read it. */
+	source?: PythonCaseSource
+	/** pytest, in a collect: a skip or a skipif that is true marks the case. */
+	skipMarked?: boolean
 }
 
 /** One test file as the run saw it: an error at collection (a syntax error, a throw at import) and its cases. */
@@ -84,6 +110,8 @@ export type ReportedModule = {
 	runner: TestRunner
 	errors: ReportedError[]
 	cases: ReportedCase[]
+	/** pytest: the files of test code (absolute paths) the file used: conftests, helpers, data it opened. */
+	dependencies?: string[]
 }
 
 /**
