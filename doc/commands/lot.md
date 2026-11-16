@@ -257,7 +257,12 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
-  (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`).
+  (`schema`, `feature`, `repository`, `branch`, `base`, `goal`, `plan`, `scope`, `steps`, `lots`, `effort`, and
+  the optional public `summary` and `issue`). `summary` is one sentence a pull request may show (one line, at most
+  200 characters); a path, a link or a `file:line` in it is refused (`summary: public-text - summary holds a path or
+  a link`), as are a plan tag, a ticket number, a standard citation, a reference the package declares, a consumer
+  name and a forbidden word (`summary holds a <label>`, the text never printed). `issue` is a positive integer, the
+  issue the lot's pull request closes. `goal` stays private.
   Every check runs first and every refusal is printed at once (`<field>: <rule> - <detail>`, `{ refused }` with
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
   a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it
@@ -484,6 +489,14 @@ Flags: `--effort`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--c
     forbidden word in either, a run in another work tree than the lot identity's worktree (both named), or
     no snapshot yet (nothing is late), nothing written; 1 outside a git work tree, or a line over the event
     line limit.
+  - `review.jsonl` in the folder holds the review's public rows, what a pull request may show, derived and written
+    whole by `lot finding`, `lot decide`, `lot verify` and a `reviewer` / `independent-reviewer` `lot station end`:
+    a `finding` row per ledger row (`id`, `round`, `severity` blocking / should-fix / nit, `file`, `state` open /
+    fix-to-verify / fixed / accepted / logged, `closedBy: { round }` for fixed), then a `verdict` row per review by
+    time (`by: { kind: "station", station, round }` with the `vendor` and `model` its end or start gave, or
+    `by: { kind: "verify", name }` with verdict `verified`). Never a finding's text, a note, a reason or a where; a
+    `file` only when the lot's worktree or base holds it; a cell the parser cannot read is left out. A record not
+    written adds `! review.jsonl not written: <reason>`, the verb's own write standing.
   - `lot delta <id|folder> --round <n> [--worktree] [--json]` (n ≥ 2) prints, for each file of
     `round-<n-1>/`, of `round-<n-1>.deleted` or of the worktree's status, what changed since round n-1,
     in the form that fits where the file is: the snapshot copy against the worktree file (or
