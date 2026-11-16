@@ -25,6 +25,8 @@ export const STORE_FILES: StoreFileNames = {
 	risk: 'risk.jsonl',
 	// `lot scope` appends a started lot's scope changes here; the brief stays as published (FIX-lot-scope)
 	scopeChanges: 'scope-changes.jsonl',
+	// the review's public rows, written whole by `lot finding`, `lot decide`, `lot verify` and a review station's end
+	review: 'review.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

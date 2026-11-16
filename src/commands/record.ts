@@ -22,6 +22,7 @@ import {
 	replaceStateCell,
 } from '../lib/review-rounds/findings-ledger.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
+import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { recordVerbOfWord, verbPrefix } from '../lib/review-rounds/review-round-verbs.ts'
 import {
 	BEYOND_CAP_DECISION,
@@ -92,6 +93,14 @@ export function runRecordVerb(params: {
 	} catch (error) {
 		return answerOf({ exitCode: 1, line: `${verbPrefix(verb)}: ${(error as Error).message}` })
 	}
+}
+
+/** A success: its line, then the warning of a `review.jsonl` not written, when there is one. */
+function linesOf(params: { line: string; warning: string | undefined }): CommandResult {
+	return resultOf({
+		exitCode: 0,
+		lines: params.warning === undefined ? [params.line] : [params.line, params.warning],
+	})
 }
 
 /** A result of one line. */
@@ -174,7 +183,10 @@ function recordFinding(params: {
 		finding,
 		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
-	return answerOf({ exitCode: 0, line: `${verbPrefix('finding')}: ${id} open - ${ledger}` })
+	return linesOf({
+		line: `${verbPrefix('finding')}: ${id} open - ${ledger}`,
+		warning: refreshReviewRecord({ folder }),
+	})
 }
 
 function recordDecision(params: {
@@ -222,9 +234,9 @@ function recordDecision(params: {
 		text: lines.join('\n'),
 		afterTemporaryWritten: params.afterTemporaryWritten,
 	})
-	return answerOf({
-		exitCode: 0,
+	return linesOf({
 		line: `${verbPrefix('decide')}: ${id} ${decision.written} - ${ledger}`,
+		warning: refreshReviewRecord({ folder }),
 	})
 }
 

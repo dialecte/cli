@@ -19,6 +19,10 @@ export type ParsedBrief = {
 	steps: BriefStep[]
 	lots: BriefLot[]
 	effort: BriefEffort | undefined
+	/** One public sentence a pull request may show; absent when the brief gives none. */
+	summary?: string
+	/** The issue the lot's pull request closes; absent when the brief gives none. */
+	issue?: number
 }
 
 /** What the git-free field checks return: the refusals, and the parsed brief only when there is none. */
@@ -45,6 +49,10 @@ export type CheckedBrief = {
 	/** Paths normalised. */
 	lots: BriefLot[]
 	effort: BriefEffort | undefined
+	/** One public sentence a pull request may show; absent when the brief gives none. */
+	summary?: string
+	/** The issue the lot's pull request closes; absent when the brief gives none. */
+	issue?: number
 	/** Whether the repository sits on a case-insensitive volume (probed, or the injected value). */
 	caseInsensitive: boolean
 	/** A simulated start's overlap and branch findings, which refused nothing; none for a real start. */

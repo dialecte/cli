@@ -23,6 +23,8 @@ import { isPathArgument } from '../lib/handover/handover-store-read.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
+import { REVIEW_STATIONS } from '../lib/review-rounds/review-record.constants.ts'
+import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { SKILL_NAME_PATTERN } from '../lib/skills/skill-file.constants.ts'
 import { AGENT_SKILL_FOLDERS } from '../lib/skills/sync-skills.constants.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
@@ -83,7 +85,9 @@ export function lotStation(params: LotStationParams): CommandResult {
 				})
 			writeEvent({ file, event: decision.write, limit: EVENT_LINE_LIMIT })
 		}
-		return answerOf({ outcome: decision.outcome, request, identity, json })
+		// a retried end (`already`) writes the record too: it heals one a crash left behind
+		const warning = isReviewEnd(request) ? refreshReviewRecord({ folder: lotFolder }) : undefined
+		return answerOf({ outcome: decision.outcome, request, identity, json, warning })
 	} catch (error) {
 		return lotFailureExit({
 			lines: [
@@ -92,6 +96,11 @@ export function lotStation(params: LotStationParams): CommandResult {
 			json,
 		})
 	}
+}
+
+/** True for the end of a review station: its verdict is a row of the lot's `review.jsonl`. */
+function isReviewEnd(request: StationRequest): boolean {
+	return request.phase === 'end' && REVIEW_STATIONS.includes(request.station)
 }
 
 /** True when the call must read the events first: an end (pairing, retries) or an `--event` id. */
@@ -306,11 +315,16 @@ function answerOf(params: {
 	request: StationRequest
 	identity: LotIdentity
 	json: boolean
+	/** The `!` line of a `review.jsonl` that could not be written after a review station's end. */
+	warning: string | undefined
 }): CommandResult {
-	const { outcome, request } = params
+	const { outcome, request, warning } = params
 	if (params.json) {
 		const { recorded, run, next } = outcome
-		return { exitCode: 0, output: jsonOf({ recorded, run, next }, 2) }
+		return {
+			exitCode: 0,
+			output: jsonOf({ recorded, run, next, ...(warning !== undefined && { warning }) }, 2),
+		}
 	}
 	const named = `lot station: ${params.identity.name} ${request.station}`
 	const lines =
@@ -320,6 +334,7 @@ function answerOf(params: {
 					`${named} ${request.phase === 'start' ? 'started' : 'ended'}, run ${outcome.run}${outcome.alone ? ' (no open start: recorded alone)' : ''}`,
 				]
 	if (outcome.next !== null) lines.push(`next: ${outcome.next}`)
+	if (warning !== undefined) lines.push(warning)
 	return { exitCode: 0, output: textOf(lines) }
 }
 

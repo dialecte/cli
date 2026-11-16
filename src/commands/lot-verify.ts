@@ -11,6 +11,7 @@ import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
+import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import {
 	NOTHING_LATE_REFUSAL,
 	OTHER_WORKTREE_REFUSAL,
@@ -23,6 +24,8 @@ import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { snapshotRounds } from '../lib/review-rounds/round-names.ts'
 import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
 import { readIdentity } from '../lib/store/identity.ts'
+import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
+import { publicTextLabel } from '../lib/store/public-text.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -51,6 +54,16 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 		],
 	})
 	if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
+	// `--by` is copied to the public record (`review.jsonl`); the note stays private
+	const label = publicTextLabel({ text: by, root })
+	if (label !== undefined)
+		return answerOf({
+			exitCode: 2,
+			line: fillMessage({
+				template: PUBLIC_TEXT_REFUSAL,
+				values: { verb: 'verify', option: '--by', label },
+			}),
+		})
 	const folder = resolve(params.cwd, read.words[0])
 	const worktreeRefusal = otherWorktreeRefusal({ root, folder })
 	if (worktreeRefusal) return answerOf({ exitCode: 2, line: worktreeRefusal })
@@ -74,10 +87,9 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 	} catch (error) {
 		return answerOf({ exitCode: 1, line: `lot verify: ${(error as Error).message}` })
 	}
-	return answerOf({
-		exitCode: 0,
-		line: `lot verify: ${state.slice(0, VERIFY_SHOWN_STATE_LENGTH)} by ${by} - ${file}`,
-	})
+	const warning = refreshReviewRecord({ folder })
+	const answer = `lot verify: ${state.slice(0, VERIFY_SHOWN_STATE_LENGTH)} by ${by} - ${file}`
+	return resultOf({ exitCode: 0, lines: warning === undefined ? [answer] : [answer, warning] })
 }
 
 /**

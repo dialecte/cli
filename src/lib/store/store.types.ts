@@ -154,7 +154,8 @@ export type StoreFileNames = Readonly<
 		| 'registry'
 		| 'verify'
 		| 'risk'
-		| 'scopeChanges',
+		| 'scopeChanges'
+		| 'review',
 		string
 	>
 >
@@ -211,6 +212,7 @@ export type RefusalRule =
 	| 'lots-outside-scope'
 	| 'scope-not-covered'
 	| 'overlap'
+	| 'public-text'
 
 /** One refusal of a brief: the field it concerns, the rule token, what is wrong (the overlap's lot is named here). */
 export type Refusal = { field: string; rule: RefusalRule; detail: string }
