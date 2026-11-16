@@ -10,7 +10,7 @@ import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs
 import { basename, dirname, join } from 'node:path'
 
 import { resultOf } from '../lib/command-result.ts'
-import { NODE_MODULES_WORDS } from '../lib/events/record-step.constants.ts'
+import { NODE_MODULES_WORDS, NPM_RUN_METHODS } from '../lib/events/record-step.constants.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../lib/file-system.ts'
 import { branchExists } from '../lib/git.ts'
@@ -372,14 +372,14 @@ export function makeLotWorktree(params: {
 }
 
 /** The parts of a `worktree-add` event: how `node_modules` came (none when a seam made the worktree without one). */
-function worktreeAddPartsOf(made: {
+export function worktreeAddPartsOf(made: {
 	worktree: string
 	nodeModules?: NodeModulesSource
 }): WorktreeAddParts {
 	return {
 		nodeModules:
 			made.nodeModules === undefined ? 'none' : NODE_MODULES_WORDS[made.nodeModules.method],
-		npmCi: false,
+		npmCi: made.nodeModules !== undefined && NPM_RUN_METHODS.includes(made.nodeModules.method),
 	}
 }
 

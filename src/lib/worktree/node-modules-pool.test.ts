@@ -574,18 +574,21 @@ describe('the pool key: what the lock installs', { timeout: POOL_UNIT_CASE_MS },
 			checkout: lockTextOf({
 				packages: { 'node_modules/demo': '1.0.0', 'node_modules/extra': '1.0.0' },
 			}),
+			drift: 1,
 		},
 		{
 			label: 'a dependency moved under another',
 			checkout: lockTextOf({ packages: { 'node_modules/other/node_modules/demo': '1.0.0' } }),
+			drift: 2,
 		},
 		{
 			label: 'a dependency at another version',
 			checkout: lockTextOf({ packages: { 'node_modules/demo': '1.0.1' } }),
+			drift: 1,
 		},
 	])(
-		'an entry of the repository, the checkout lock with $label → another key: no take, the miss names the key',
-		({ checkout }) => {
+		'an entry of the repository, the checkout lock with $label → another key: no exact take, a near one with the packages that differ by lock key ($drift)',
+		({ checkout, drift }) => {
 			const worktreesFolder = createWorktreesFolder()
 			writePoolEntry({
 				worktreesFolder,
@@ -601,9 +604,10 @@ describe('the pool key: what the lock installs', { timeout: POOL_UNIT_CASE_MS },
 			})
 
 			expect(cache.restore({ checkout: next, lockText: checkout })).toEqual({
-				miss: noEntryMissOf(checkout),
+				near: '_pool-cli-1',
+				drift,
 			})
-			expect(existsSync(join(worktreesFolder, '_pool-cli-1/node_modules'))).toBe(true)
+			expect(existsSync(join(next, 'node_modules'))).toBe(true)
 		},
 	)
 
@@ -1614,3 +1618,238 @@ describe(
 		})
 	},
 )
+
+/** The packages a near restore's checkout locks: `node_modules/a` to `node_modules/f`, each at 1.0.0. */
+const NEAR_PACKAGES: Record<string, string> = {
+	'node_modules/a': '1.0.0',
+	'node_modules/b': '1.0.0',
+	'node_modules/c': '1.0.0',
+	'node_modules/d': '1.0.0',
+	'node_modules/e': '1.0.0',
+	'node_modules/f': '1.0.0',
+}
+
+/** NEAR_PACKAGES with the first `count` of them at 2.0.0: `count` packages differ. */
+function nearPackagesDifferingIn(count: number): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries(NEAR_PACKAGES).map(([key, version], index) => [
+			key,
+			index < count ? '2.0.0' : version,
+		]),
+	)
+}
+
+describe('createPoolCache restore: a near entry', { timeout: POOL_UNIT_CASE_MS }, () => {
+	it.each([
+		{ label: '1 package at another version', packages: nearPackagesDifferingIn(1), drift: 1 },
+		{
+			label: 'a package missing and one extra',
+			packages: {
+				...Object.fromEntries(Object.entries(NEAR_PACKAGES).slice(1)),
+				'node_modules/g': '1.0.0',
+			},
+			drift: 2,
+		},
+		{
+			label: '5 packages at another version (the limit)',
+			packages: nearPackagesDifferingIn(5),
+			drift: 5,
+		},
+	])(
+		"the repository's only entry of another key, $label → near: the entry and its drift, its node_modules in the checkout",
+		({ packages, drift }) => {
+			const worktreesFolder = createWorktreesFolder()
+			writePoolEntry({
+				worktreesFolder,
+				name: '_pool-cli-1',
+				entry: entryFile({ lock: keyedLockOf(1), packages }),
+				marker: 'near\n',
+			})
+			const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+			const checkout = createBareWorktreeFolder({
+				worktreesFolder,
+				name: '0002-cli-y',
+				lock: lockText,
+			})
+			const { spawner } = createRecordingSpawner()
+			const cache = createPoolCache({
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				spawner,
+			})
+
+			expect(cache.restore({ checkout, lockText })).toEqual({ near: '_pool-cli-1', drift })
+			expect(readTree(join(checkout, 'node_modules'))[MARKER_FILE]).toBe('near\n')
+			expect(existsSync(join(worktreesFolder, '_pool-cli-1'))).toBe(false)
+		},
+	)
+
+	it("the repository's only entry 6 packages off (past the limit) → miss: no entry for install, the entry stays", () => {
+		const worktreesFolder = createWorktreesFolder()
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-cli-1',
+			entry: entryFile({ lock: keyedLockOf(1), packages: nearPackagesDifferingIn(6) }),
+		})
+		const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+		const checkout = createBareWorktreeFolder({
+			worktreesFolder,
+			name: '0002-cli-y',
+			lock: lockText,
+		})
+		const { spawner } = createRecordingSpawner()
+		const cache = createPoolCache({
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			spawner,
+		})
+
+		expect(cache.restore({ checkout, lockText })).toEqual({ miss: noEntryMissOf(lockText) })
+		expect(existsSync(join(worktreesFolder, '_pool-cli-1/node_modules'))).toBe(true)
+		expect(existsSync(join(checkout, 'node_modules'))).toBe(false)
+	})
+
+	it('two entries within the limit, _pool-cli-1 the newer 3 packages off and _pool-cli-2 the older 1 → near: _pool-cli-2, the fewest packages differing (neither the newest nor the first by name)', () => {
+		const worktreesFolder = createWorktreesFolder()
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-cli-1',
+			entry: entryFile({
+				lock: keyedLockOf(1),
+				packages: nearPackagesDifferingIn(3),
+				parkedAt: PARK_TIMES[1],
+			}),
+		})
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-cli-2',
+			entry: entryFile({
+				lock: keyedLockOf(2),
+				packages: nearPackagesDifferingIn(1),
+				parkedAt: PARK_TIMES[0],
+			}),
+		})
+		const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+		const checkout = createBareWorktreeFolder({
+			worktreesFolder,
+			name: '0002-cli-y',
+			lock: lockText,
+		})
+		const { spawner } = createRecordingSpawner()
+		const cache = createPoolCache({
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			spawner,
+		})
+
+		expect(cache.restore({ checkout, lockText })).toEqual({ near: '_pool-cli-2', drift: 1 })
+		expect(existsSync(join(worktreesFolder, '_pool-cli-1/node_modules'))).toBe(true)
+	})
+
+	it.each([
+		{
+			label: 'no owner given → the newest (_pool-cli-2, not the first by name)',
+			owners: [undefined, undefined],
+			parkedAt: [PARK_TIMES[0], PARK_TIMES[1]],
+			owner: undefined,
+			near: '_pool-cli-2',
+		},
+		{
+			label: "the owner lot-a → its own entry (_pool-cli-2), older than the other owner's",
+			owners: ['lot-b', 'lot-a'],
+			parkedAt: [PARK_TIMES[1], PARK_TIMES[0]],
+			owner: 'lot-a',
+			near: '_pool-cli-2',
+		},
+	])(
+		'two entries 2 packages off each (a drift tie), $label',
+		({ owners, parkedAt, owner, near }) => {
+			const worktreesFolder = createWorktreesFolder()
+			for (const index of [0, 1])
+				writePoolEntry({
+					worktreesFolder,
+					name: `_pool-cli-${index + 1}`,
+					entry: entryFile({
+						lock: keyedLockOf(index + 1),
+						packages: nearPackagesDifferingIn(2),
+						parkedAt: parkedAt[index],
+						owner: owners[index],
+					}),
+				})
+			const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+			const checkout = createBareWorktreeFolder({
+				worktreesFolder,
+				name: '0002-cli-y',
+				lock: lockText,
+			})
+			const { spawner } = createRecordingSpawner()
+			const cache = createPoolCache({
+				repository: repositoryOf({ worktreesFolder }),
+				worktreesFolder,
+				spawner,
+			})
+
+			expect(cache.restore({ checkout, lockText, ...(owner !== undefined && { owner }) })).toEqual({
+				near,
+				drift: 2,
+			})
+		},
+	)
+
+	it('an entry with the lock key and a newer one 1 package off → taken: the exact entry before any near one', () => {
+		const worktreesFolder = createWorktreesFolder()
+		const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-cli-1',
+			entry: entryFile({ lock: lockText, packages: NEAR_PACKAGES, parkedAt: PARK_TIMES[0] }),
+		})
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-cli-2',
+			entry: entryFile({
+				lock: keyedLockOf(2),
+				packages: nearPackagesDifferingIn(1),
+				parkedAt: PARK_TIMES[1],
+			}),
+		})
+		const checkout = createBareWorktreeFolder({
+			worktreesFolder,
+			name: '0002-cli-y',
+			lock: lockText,
+		})
+		const { spawner } = createRecordingSpawner()
+		const cache = createPoolCache({
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			spawner,
+		})
+
+		expect(cache.restore({ checkout, lockText })).toEqual({ taken: '_pool-cli-1' })
+		expect(existsSync(join(worktreesFolder, '_pool-cli-2/node_modules'))).toBe(true)
+	})
+
+	it("another repository's entry with the very packages of the checkout lock → never near: pool empty", () => {
+		const worktreesFolder = createWorktreesFolder()
+		writePoolEntry({
+			worktreesFolder,
+			name: '_pool-core-1',
+			entry: entryFile({ repository: 'core', lock: keyedLockOf(1), packages: NEAR_PACKAGES }),
+		})
+		const lockText = lockTextOf({ packages: NEAR_PACKAGES })
+		const checkout = createBareWorktreeFolder({
+			worktreesFolder,
+			name: '0002-cli-y',
+			lock: lockText,
+		})
+		const { spawner } = createRecordingSpawner()
+		const cache = createPoolCache({
+			repository: repositoryOf({ worktreesFolder }),
+			worktreesFolder,
+			spawner,
+		})
+
+		expect(cache.restore({ checkout, lockText })).toEqual({ miss: POOL_MISS_EMPTY })
+		expect(existsSync(join(worktreesFolder, '_pool-core-1/node_modules'))).toBe(true)
+	})
+})

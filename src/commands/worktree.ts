@@ -7,6 +7,10 @@
  * `dialecte worktree prune [--root <workspace>] [--yes] [--json]` - what a merge leaves behind: merged
  * worktrees and branches, committed hand-over folders, rehearsal clones. Prints each removal command with
  * its absolute `cd`; runs them only with `--yes`, after a confirmation on a terminal.
+ *
+ * `dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]` - the node_modules of
+ * worktrees idle for `--older-than` days (default 2) parked in the pool or sent to the trash, the code left; a
+ * `-round-<n>` throwaway of a closed lot trashed whole; one line per worktree and the total; `--dry-run` moves nothing.
  */
 import { spawnSync } from 'node:child_process'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -22,19 +26,35 @@ import { jsonOf, printOut } from '../lib/print/print.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
-import { addWorktree, refuseRepositoryPath } from '../lib/worktree/add-worktree.ts'
-import { planPrune } from '../lib/worktree/prune-worktrees.ts'
+import {
+	addWorktree,
+	nodeModulesDetailOf,
+	refuseRepositoryPath,
+} from '../lib/worktree/add-worktree.ts'
+import {
+	executeReclaim,
+	planPrune,
+	planReclaim,
+	reclaimItemLine,
+	reclaimTotalLine,
+} from '../lib/worktree/prune-worktrees.ts'
 import {
 	NODE_MODULES_PROBLEMS_SHOWN,
 	PACKAGE_LOCK_FILE,
+	RECLAIM_OLDER_THAN_DAYS,
+	RECLAIM_OLDER_THAN_PATTERN,
+	RECLAIM_USAGE,
 } from '../lib/worktree/worktree.constants.ts'
 
 import type { Card, CardRow } from '../lib/card/card.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type {
 	AddedWorktree,
+	BackgroundSpawner,
 	NodeModulesSource,
+	NpmRunner,
 	PruneItem,
+	ProcessFolder,
 	PrunePlan,
 	SiblingLink,
 	WorkspacePrunePlan,
@@ -61,7 +81,7 @@ export async function run(argv: string[]): Promise<void> {
 				: resultOf({
 						exitCode: 2,
 						lines: [
-							'worktree: add <repository> <branch> [--from <ref>] | prune [--root <dir>] [--yes]',
+							'worktree: add <repository> <branch> [--from <ref>] | prune [--root <dir>] [--yes] | prune [--root <dir>] --reclaim [--dry-run] [--older-than <days>]',
 						],
 					})
 	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
@@ -73,6 +93,8 @@ export function runWorktreeAdd(params: {
 	cwd: string
 	now: Date
 	colour: boolean
+	/** Runs `npm install` / `npm ci` in the new worktree (the tests stand in for it); default: spawns `npm`. */
+	install?: NpmRunner
 }): CommandResult {
 	const { argv } = params
 	const [repository, branch] = positionalArguments({ argv, valueOptions: ['from'] })
@@ -89,6 +111,7 @@ export function runWorktreeAdd(params: {
 		branch,
 		from: getArg(argv, 'from'),
 		now: params.now,
+		install: params.install,
 	})
 	if (typeof added === 'string') return resultOf({ exitCode: 1, lines: [`worktree add: ${added}`] })
 	if (hasFlag(argv, 'json')) return { exitCode: 0, output: jsonOf(added, 2) }
@@ -107,8 +130,20 @@ export async function runWorktreePrune(params: {
 	formerScratchRoot?: string
 	isTerminal: boolean
 	confirm: (question: string) => Promise<boolean>
+	/** The clock `--reclaim` measures idleness from; default: now. */
+	now?: Date
+	/** Lists the processes and their working folders for `--reclaim` (the tests stand in for it); default: the system's. */
+	listProcesses?: () => ProcessFolder[] | string
+	/** Starts the background removals of `--reclaim`'s trash (the tests record them); default: `spawnDetached`. */
+	spawner?: BackgroundSpawner
 }): Promise<CommandResult> {
 	const { argv } = params
+	if (hasFlag(argv, 'reclaim')) return runWorktreeReclaim(params)
+	if (hasFlag(argv, 'dry-run') || hasFlag(argv, 'older-than'))
+		return resultOf({
+			exitCode: 2,
+			lines: ['worktree prune: --dry-run and --older-than go with --reclaim', RECLAIM_USAGE],
+		})
 	const workspace = resolve(
 		params.cwd,
 		getArg(argv, 'root') ?? findWorkspace(params.cwd) ?? params.cwd,
@@ -155,6 +190,79 @@ export async function runWorktreePrune(params: {
 		exitCode: outcomes.some((line) => line.startsWith('✗')) ? 1 : 0,
 		lines: [...report, ...outcomes],
 	})
+}
+
+/**
+ * `worktree prune --reclaim [--dry-run] [--older-than <days>]`: one line per worktree, the moves done (none with
+ * `--dry-run`), the total (worktrees, files, size) at the end.
+ */
+function runWorktreeReclaim(params: {
+	argv: string[]
+	cwd: string
+	scratchRoot: string
+	formerScratchRoot?: string
+	now?: Date
+	listProcesses?: () => ProcessFolder[] | string
+	spawner?: BackgroundSpawner
+}): CommandResult {
+	const { argv } = params
+	const olderThanDays = readOlderThanDays(argv)
+	if (olderThanDays === undefined)
+		return resultOf({
+			exitCode: 2,
+			lines: [
+				'worktree prune --reclaim: --older-than takes a positive whole number of days',
+				RECLAIM_USAGE,
+			],
+		})
+	const workspace = resolve(
+		params.cwd,
+		getArg(argv, 'root') ?? findWorkspace(params.cwd) ?? params.cwd,
+	)
+	const scratchRoots = [
+		...new Set([params.scratchRoot, params.formerScratchRoot ?? params.scratchRoot]),
+	]
+	const now = params.now ?? new Date()
+	const plan = planReclaim({
+		workspace,
+		now,
+		olderThanDays,
+		listProcesses: params.listProcesses,
+		scratchRoots,
+	})
+	if (hasFlag(argv, 'dry-run'))
+		return resultOf({
+			exitCode: 0,
+			lines: [
+				...plan.items.map((item) => reclaimItemLine({ item, workspace })),
+				reclaimTotalLine(plan.items),
+			],
+		})
+	const outcomes = executeReclaim({
+		plan,
+		workspace,
+		now,
+		spawner: params.spawner,
+		listProcesses: params.listProcesses,
+		scratchRoots,
+	})
+	const moved = new Set(
+		outcomes.filter((outcome) => outcome.moved).map((outcome) => outcome.worktree),
+	)
+	return resultOf({
+		exitCode: 0,
+		lines: [
+			...outcomes.map((outcome) => outcome.line),
+			reclaimTotalLine(plan.items.filter((item) => moved.has(item.worktree))),
+		],
+	})
+}
+
+/** `--older-than <days>`: a positive whole number, `RECLAIM_OLDER_THAN_DAYS` without the flag; undefined when invalid. */
+function readOlderThanDays(argv: string[]): number | undefined {
+	if (!hasFlag(argv, 'older-than')) return RECLAIM_OLDER_THAN_DAYS
+	const value = getArg(argv, 'older-than') ?? ''
+	return RECLAIM_OLDER_THAN_PATTERN.test(value) ? Number(value) : undefined
 }
 
 /** Worktrees first (a branch checked out in one cannot be deleted), then branches, folders, clones. */
@@ -262,11 +370,14 @@ function linksRows(params: {
 	]
 }
 
-/** Where `node_modules` came from and how long it took: `pooled  _pool-cli-1  0.1 s`, `copy-on-write  46.2 s`. */
+/**
+ * Where `node_modules` came from and how long it took: `pooled  _pool-cli-1  0.1 s`, `near  _pool-cli-1, 1 package(s)
+ * differ  4.2 s`, `installed  npm ci (pool empty)  31.0 s`, `copy-on-write  npm ci failed: <its first line>  46.2 s`.
+ */
 function nodeModulesLine(source: NodeModulesSource | undefined): string {
 	if (!source) return 'none in the main checkout'
-	const from = source.method === 'pooled' ? `  ${source.from}` : ''
-	return `${source.method}${from}  ${source.seconds.toFixed(1)} s`
+	const detail = nodeModulesDetailOf(source)
+	return `${source.method}${detail && `  ${detail}`}  ${source.seconds.toFixed(1)} s`
 }
 
 /** `node_modules` against the lockfile: matching, the first packages that differ, or not checked. */

@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	readdirSync,
@@ -23,7 +24,11 @@ import {
 	REMOVED_FILES,
 } from './worktree-pool.constants.ts'
 
-import type { BackgroundSpawner, PoolEntryFile } from '../src/lib/worktree/worktree.types.ts'
+import type {
+	BackgroundSpawner,
+	NpmRunner,
+	PoolEntryFile,
+} from '../src/lib/worktree/worktree.types.ts'
 
 /**
  * A fake node_modules at `folder`: a package, a link that stays inside (`.bin/demo`), a link that leaves it
@@ -195,6 +200,62 @@ export function createRecordingSpawner(): {
 		calls,
 		spawner: function record(params) {
 			calls.push(params)
+		},
+	}
+}
+
+/**
+ * An npm runner standing in for `npm install` and `npm ci`: it records each call (its checkout, its args, whether the
+ * checkout held a node_modules then) and answers the outcome of the command (`args[0]`): a failure's status and output,
+ * (after writing the file `partial` into the checkout's node_modules when given), or a success that writes into the
+ * checkout's node_modules each of `packages` (lock key to version, a `package.json`),
+ * each of `links` (lock key to the link's target as written) and the marker file with `marker` when given. A command
+ * with no outcome throws: the case did not expect npm to run it.
+ */
+export function createFakeNpm(params: {
+	outcomes: Partial<
+		Record<
+			'install' | 'ci',
+			| { status: number; output: string; partial?: string }
+			| { packages: Record<string, string>; links?: Record<string, string>; marker?: string }
+		>
+	>
+}): {
+	install: NpmRunner
+	calls: { checkout: string; args: string[]; hadNodeModules: boolean }[]
+} {
+	const calls: { checkout: string; args: string[]; hadNodeModules: boolean }[] = []
+	return {
+		calls,
+		install: function fakeNpm({ checkout, args }) {
+			const nodeModules = join(checkout, 'node_modules')
+			calls.push({ checkout, args, hadNodeModules: existsSync(nodeModules) })
+			const command = args[0]
+			const outcome =
+				command === 'install' || command === 'ci' ? params.outcomes[command] : undefined
+			if (outcome === undefined) throw new Error(`unexpected npm ${args.join(' ')}`)
+			if ('status' in outcome) {
+				// a failed install may leave what it began: the file `partial` (a path in node_modules)
+				if (outcome.partial !== undefined) {
+					mkdirSync(join(nodeModules, outcome.partial, '..'), { recursive: true })
+					writeFileSync(join(nodeModules, outcome.partial), 'half written\n')
+				}
+				return { status: outcome.status, output: outcome.output }
+			}
+			for (const [key, version] of Object.entries(outcome.packages)) {
+				const folder = join(checkout, key)
+				mkdirSync(folder, { recursive: true })
+				const name = key.split('node_modules/').at(-1) ?? key
+				writeFileSync(join(folder, 'package.json'), `${JSON.stringify({ name, version })}\n`)
+			}
+			for (const [key, target] of Object.entries(outcome.links ?? {})) {
+				mkdirSync(join(checkout, key, '..'), { recursive: true })
+				if (!existsSync(join(checkout, key))) symlinkSync(target, join(checkout, key))
+			}
+			mkdirSync(nodeModules, { recursive: true })
+			if (outcome.marker !== undefined)
+				writeFileSync(join(nodeModules, MARKER_FILE), outcome.marker)
+			return { status: 0, output: '' }
 		},
 	}
 }

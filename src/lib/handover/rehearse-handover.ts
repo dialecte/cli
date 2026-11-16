@@ -48,7 +48,7 @@ import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { provideNodeModules } from '../worktree/add-worktree.ts'
+import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
@@ -539,15 +539,18 @@ function prepareClone(params: {
 		repository: params.pool?.main ?? repository,
 		worktreesFolder: params.pool?.worktreesFolder,
 		from: join(repository, 'node_modules'),
+		// the rehearsal folder goes at the end: what a failed npm ci left goes with it
+		discardInto: dirname(clone),
 	})
-	if (provided)
+	if (provided) {
+		const detail = nodeModulesDetailOf(provided)
+		const relinked = 'relinked' in provided ? provided.relinked.length : 0
 		write(
 			textOf([
-				provided.method === 'pooled'
-					? `  node_modules: pooled ${provided.from}`
-					: `  node_modules: ${provided.method}${provided.relinked.length ? `, ${provided.relinked.length} link(s) re-pointed` : ''}`,
+				`  node_modules: ${provided.method}${detail && ` ${detail}`}${relinked ? `, ${relinked} link(s) re-pointed` : ''}`,
 			]),
 		)
+	}
 	spawnSync('git', ['update-index', '-q', '--refresh'], { cwd: clone })
 }
 

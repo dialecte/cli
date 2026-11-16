@@ -280,6 +280,335 @@ const DECLARED_ROWS: Row[] = [
 	},
 ]
 
+/**
+ * A dialect package the cli's coverage discovers (`src/v1/definition/{constants,definition}.generated.ts`): its
+ * coverage outDir is `benchmarks/types/v1/generated/`. Laid out in the worktree and in the main checkout alike.
+ */
+const DIALECT_PACKAGE_FILES = {
+	'package.json': '{"name":"@demo/dialect"}\n',
+	'src/v1/definition/constants.generated.ts': 'export {}\n',
+	'src/v1/definition/definition.generated.ts': 'export {}\n',
+}
+
+/** Core: the cli benches it through its test dialect, outDir `benchmarks/types/generated/`. */
+const CORE_PACKAGE_FILES = { 'package.json': '{"name":"@dialecte/core"}\n' }
+
+/** What the cli itself writes and rebuilds (coverage outDir), what npm and python rebuild below the root. */
+const CLI_REBUILT_ROWS: Row[] = [
+	{
+		name: "a dialect's coverage outDir (benchmarks/types/v1/generated/), git printing the folder → not kept",
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/v1/generated/a.bench.ts': 'x\n' },
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/v1/generated/'],
+		expected: [],
+	},
+	{
+		name: "a dialect's coverage outDir, git printing its entries → not kept",
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'benchmarks/types/v1/generated/a.bench.ts': 'x\n',
+				'benchmarks/types/v1/generated/deep/b.bench.ts': 'y\n',
+			},
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: [
+			'!! benchmarks/types/v1/generated/a.bench.ts',
+			'!! benchmarks/types/v1/generated/deep/b.bench.ts',
+		],
+		expected: [],
+	},
+	{
+		name: 'the coverage outDir holding a file the cli never writes (notes.md) → not kept: the folder goes whole, never read',
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'benchmarks/types/v1/generated/a.bench.ts': 'x\n',
+				'benchmarks/types/v1/generated/notes.md': 'mine\n',
+			},
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/v1/generated/'],
+		expected: [],
+	},
+	{
+		name: "core's coverage outDir (benchmarks/types/generated/) → not kept",
+		worktree: {
+			files: { ...CORE_PACKAGE_FILES, 'benchmarks/types/generated/a.bench.ts': 'x\n' },
+		},
+		main: { files: CORE_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/generated/'],
+		expected: [],
+	},
+	{
+		name: 'a folder merely named generated outside the outDir (src/generated/, benchmarks/generated/) → kept, named',
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'src/generated/x.ts': 'x\n',
+				'benchmarks/generated/y.ts': 'y\n',
+			},
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! src/generated/', '!! benchmarks/generated/'],
+		expected: ['benchmarks/generated/y.ts', 'src/generated/x.ts'],
+	},
+	{
+		name: 'a folder that only starts like the outDir (benchmarks/types/v1/generated-old/) → kept, named',
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/v1/generated-old/a.bench.ts': 'x\n' },
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/v1/generated-old/'],
+		expected: ['benchmarks/types/v1/generated-old/a.bench.ts'],
+	},
+	{
+		name: 'a nested node_modules beside a package.json (packages/x/) → not kept',
+		worktree: {
+			files: {
+				'packages/x/package.json': '{"name":"x"}\n',
+				'packages/x/node_modules/a/index.js': 'x\n',
+			},
+		},
+		main: { files: { 'packages/x/package.json': '{"name":"x"}\n' } },
+		lines: ['!! packages/x/node_modules/'],
+		expected: [],
+	},
+	{
+		name: "a nested node_modules beside a package.json in an agent's .tmp/ → the node_modules goes, the .tmp/ package.json kept, named",
+		worktree: {
+			files: {
+				'.tmp/packaging-1/package.json': '{"name":"p"}\n',
+				'.tmp/packaging-1/node_modules/a/index.js': 'x\n',
+			},
+		},
+		lines: ['!! .tmp/'],
+		expected: ['.tmp/packaging-1/package.json'],
+	},
+	{
+		name: 'a nested node_modules with no package.json beside it (src/node_modules/) → kept as a whole, never read',
+		worktree: { files: { 'src/node_modules/a/index.js': 'x\n' } },
+		lines: ['!! src/node_modules/'],
+		expected: ['src/node_modules/'],
+	},
+	{
+		name: 'a nested node_modules whose package.json lies only in the main checkout → kept as a whole',
+		worktree: { files: { 'src/node_modules/a/index.js': 'x\n' } },
+		main: { files: { 'src/package.json': '{"name":"s"}\n' } },
+		lines: ['!! src/node_modules/'],
+		expected: ['src/node_modules/'],
+	},
+	...['.venv', 'python/.venv', '.pytest_cache', 'python/.pytest_cache'].map(
+		function pythonRow(folder): Row {
+			return {
+				name: `a python ${folder}/ (git printing the folder) → not kept`,
+				worktree: { files: { [`${folder}/lib/x.py`]: 'x\n', [`${folder}/notes.md`]: 'mine\n' } },
+				lines: [`!! ${folder}/`],
+				expected: [],
+			}
+		},
+	),
+	{
+		name: 'a python .venv/ whose entries git prints one by one → not kept',
+		worktree: { files: { 'python/.venv/bin/python': 'x\n', 'python/.venv/pyvenv.cfg': 'y\n' } },
+		lines: ['!! python/.venv/bin/python', '!! python/.venv/pyvenv.cfg'],
+		expected: [],
+	},
+	{
+		name: 'a .venv file (not a folder) → kept, named',
+		worktree: { files: { '.venv': 'VIRTUAL_ENV=x\n', 'python/.pytest_cache': 'x\n' } },
+		lines: ['!! .venv', '!! python/.pytest_cache'],
+		expected: ['.venv', 'python/.pytest_cache'],
+	},
+	{
+		name: 'a .venv link to a folder full of files → kept, the link named, never entered',
+		worktree: { links: { '.venv': `${SANDBOX}/outside` } },
+		lines: ['!! .venv'],
+		expected: ['.venv'],
+	},
+	{
+		name: "the outDir, a venv and a nested node_modules beside an agent's .tmp/ file and the user settings → only the .tmp/ file and the settings kept, named",
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'benchmarks/types/v1/generated/a.bench.ts': 'x\n',
+				'python/.venv/pyvenv.cfg': 'y\n',
+				'packages/x/package.json': '{"name":"x"}\n',
+				'packages/x/node_modules/a/index.js': 'x\n',
+				'.tmp/notes.md': 'research\n',
+				'.claude/settings.local.json': '{}\n',
+				'.vscode/settings.json': '{}\n',
+			},
+		},
+		main: { files: { ...DIALECT_PACKAGE_FILES, 'packages/x/package.json': '{"name":"x"}\n' } },
+		lines: [
+			'!! benchmarks/types/v1/generated/',
+			'!! python/.venv/',
+			'!! packages/x/node_modules/',
+			'!! .tmp/',
+			'!! .claude/settings.local.json',
+			'!! .vscode/settings.json',
+		],
+		expected: ['.claude/settings.local.json', '.tmp/notes.md', '.vscode/settings.json'],
+	},
+]
+
+/** The dialect package with a `dialecte.out` of its own: the outDir of every version is that folder. */
+function dialectPackageWithOut(out: unknown): Record<string, string> {
+	return {
+		...DIALECT_PACKAGE_FILES,
+		'package.json': JSON.stringify({ name: '@demo/dialect', dialecte: { out } }),
+	}
+}
+
+/** The outDir read from the main checkout (package.json and definitions), at the package root, core's in core only. */
+const OUT_DIR_SOURCE_ROWS: Row[] = [
+	{
+		name: 'a dialecte.out of the main checkout (./bench/out) → bench/out/ not kept, the default outDir kept, named',
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'bench/out/a.bench.ts': 'x\n',
+				'benchmarks/types/v1/generated/a.bench.ts': 'y\n',
+			},
+		},
+		main: { files: dialectPackageWithOut('./bench/out') },
+		lines: ['!! bench/out/', '!! benchmarks/types/v1/generated/'],
+		expected: ['benchmarks/types/v1/generated/a.bench.ts'],
+	},
+	...[
+		{ label: 'empty', out: '' },
+		{ label: 'dot', out: '.' },
+		{ label: 'dot slash', out: './' },
+		{ label: 'slash', out: '/' },
+		{ label: 'parent', out: '..' },
+		{ label: 'a parent folder', out: '../x' },
+		{ label: 'absolute', out: '/abs' },
+	].map(function invalidOutRow({ label, out }): Row {
+		return {
+			name: `an invalid dialecte.out (${label}) is ignored → the content stays kept, named`,
+			worktree: { files: { ...DIALECT_PACKAGE_FILES, '.tmp/notes.md': 'research\n' } },
+			main: { files: dialectPackageWithOut(out) },
+			lines: ['!! .tmp/'],
+			expected: ['.tmp/notes.md'],
+		}
+	}),
+	{
+		name: 'a main checkout package.json that does not parse → the outDir kept, named, no throw',
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/v1/generated/a.bench.ts': 'x\n' },
+		},
+		main: { files: { ...DIALECT_PACKAGE_FILES, 'package.json': '{' } },
+		lines: ['!! benchmarks/types/v1/generated/'],
+		expected: ['benchmarks/types/v1/generated/a.bench.ts'],
+	},
+	{
+		name: 'the outDir of a version the main checkout does not hold (v2, only v1 discovered) → kept, named',
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/v2/generated/a.bench.ts': 'x\n' },
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/v2/generated/'],
+		expected: ['benchmarks/types/v2/generated/a.bench.ts'],
+	},
+	{
+		name: 'the outDir path below the package root (packages/x/benchmarks/types/v1/generated/) → kept, named',
+		worktree: {
+			files: {
+				...DIALECT_PACKAGE_FILES,
+				'packages/x/benchmarks/types/v1/generated/a.bench.ts': 'x\n',
+			},
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! packages/x/benchmarks/types/v1/generated/'],
+		expected: ['packages/x/benchmarks/types/v1/generated/a.bench.ts'],
+	},
+	{
+		name: 'a dialecte.out declared by the worktree package.json only → kept, named',
+		worktree: { files: { ...dialectPackageWithOut('./bench/out'), 'bench/out/a.bench.ts': 'x\n' } },
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! bench/out/'],
+		expected: ['bench/out/a.bench.ts'],
+	},
+	{
+		name: 'the dialect package and definitions in the worktree only (the main checkout holds none) → the outDir kept, named',
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/v1/generated/a.bench.ts': 'x\n' },
+		},
+		lines: ['!! benchmarks/types/v1/generated/'],
+		expected: ['benchmarks/types/v1/generated/a.bench.ts'],
+	},
+	{
+		name: "core's outDir path (benchmarks/types/generated/) in a package that is not core → kept, named",
+		worktree: {
+			files: { ...DIALECT_PACKAGE_FILES, 'benchmarks/types/generated/a.bench.ts': 'x\n' },
+		},
+		main: { files: DIALECT_PACKAGE_FILES },
+		lines: ['!! benchmarks/types/generated/'],
+		expected: ['benchmarks/types/generated/a.bench.ts'],
+	},
+]
+
+/** The edges of the nested node_modules and python rules. */
+const REBUILT_BOUNDARY_ROWS: Row[] = [
+	{
+		name: 'a nested node_modules beside a package.json, git printing its entries one by one → not kept',
+		worktree: {
+			files: {
+				'packages/x/package.json': '{"name":"x"}\n',
+				'packages/x/node_modules/a/index.js': 'x\n',
+				'packages/x/node_modules/b/index.js': 'y\n',
+			},
+		},
+		main: { files: { 'packages/x/package.json': '{"name":"x"}\n' } },
+		lines: ['!! packages/x/node_modules/a/index.js', '!! packages/x/node_modules/b/index.js'],
+		expected: [],
+	},
+	{
+		name: 'a nested node_modules beside a package.json that does not parse → kept as a whole',
+		worktree: {
+			files: { 'packages/x/package.json': '{', 'packages/x/node_modules/a/index.js': 'x\n' },
+		},
+		main: { files: { 'packages/x/package.json': '{' } },
+		lines: ['!! packages/x/node_modules/'],
+		expected: ['packages/x/node_modules/'],
+	},
+	{
+		name: 'a nested node_modules beside a package.json that is a folder → kept as a whole',
+		worktree: {
+			files: {
+				'packages/x/package.json/inner.txt': 'x\n',
+				'packages/x/node_modules/a/index.js': 'x\n',
+			},
+		},
+		lines: ['!! packages/x/node_modules/'],
+		expected: ['packages/x/node_modules/'],
+	},
+	{
+		name: 'a nested node_modules beside a package.json that is a link → kept as a whole',
+		worktree: {
+			files: { 'packages/x/node_modules/a/index.js': 'x\n' },
+			links: { 'packages/x/package.json': `${SANDBOX}/outside/a.txt` },
+		},
+		lines: ['!! packages/x/node_modules/'],
+		expected: ['packages/x/node_modules/'],
+	},
+	{
+		name: 'folders that only start like the python ones (.venv-old/, .pytest_cache_x/) → kept, named',
+		worktree: { files: { '.venv-old/x.py': 'x\n', '.pytest_cache_x/y': 'y\n' } },
+		lines: ['!! .venv-old/', '!! .pytest_cache_x/'],
+		expected: ['.pytest_cache_x/y', '.venv-old/x.py'],
+	},
+	{
+		name: 'a .pytest_cache link to a folder full of files → kept, the link named, never entered',
+		worktree: { links: { '.pytest_cache': `${SANDBOX}/outside` } },
+		lines: ['!! .pytest_cache'],
+		expected: ['.pytest_cache'],
+	},
+]
+
 const DIALECTE_CASES: DialecteCase[] = [
 	{
 		name: 'lot a link to a folder full of files → not kept, never entered',
@@ -585,6 +914,9 @@ const EXACT_PATH_ROWS: Row[] = [
 const ROWS: Row[] = [
 	...REBUILT_ROWS,
 	...DECLARED_ROWS,
+	...CLI_REBUILT_ROWS,
+	...OUT_DIR_SOURCE_ROWS,
+	...REBUILT_BOUNDARY_ROWS,
 	...dialecteRows(DIALECTE_CASES),
 	...COPY_ROWS,
 	...EXACT_PATH_ROWS,

@@ -26,6 +26,7 @@ import { writeEvent } from '../lib/events/write-event.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { computeLockKey } from '../lib/worktree/lock-key.ts'
 import { POOL_FILE } from '../lib/worktree/worktree.constants.ts'
+import { worktreeAddPartsOf } from './lot-start.ts'
 import { runLot } from './lot.ts'
 import { runWorktreeAdd } from './worktree.ts'
 
@@ -270,4 +271,26 @@ describe('worktree add by hand', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => 
 			writes: vi.mocked(writeEvent).mock.calls.length,
 		}).toEqual({ exitCode: 0, eventsInLot: 0, writes: 0 })
 	})
+})
+
+describe('the worktree-add parts: whether npm ran', () => {
+	it.each([
+		{
+			source: { method: 'near', from: '_pool-cli-1', drift: 1, seconds: 2 },
+			parts: { nodeModules: 'near', npmCi: true },
+		},
+		{
+			source: { method: 'installed', seconds: 30, miss: 'pool empty' },
+			parts: { nodeModules: 'installed', npmCi: true },
+		},
+		{
+			source: { method: 'pooled', from: '_pool-cli-1', seconds: 0.1 },
+			parts: { nodeModules: 'pooled', npmCi: false },
+		},
+	] as const)(
+		'node_modules $source.method → nodeModules $parts.nodeModules, npmCi $parts.npmCi',
+		({ source, parts }) => {
+			expect(worktreeAddPartsOf({ worktree: '/w', nodeModules: source })).toEqual(parts)
+		},
+	)
 })

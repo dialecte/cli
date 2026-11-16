@@ -30,6 +30,7 @@ import { spawnDetached, trashFolder } from './trash.ts'
 import {
 	DISCARDED_CACHES_PREFIX,
 	PACKAGE_LOCK_FILE,
+	POOL_DRIFT_LIMIT,
 	POOL_ENTRIES_CEILING,
 	POOL_ENTRIES_FLOOR,
 	POOL_ENTRIES_PER_KEY,
@@ -47,6 +48,7 @@ import {
 import type { InterleavingSeam } from '../handover/handover.types.ts'
 import type {
 	BackgroundSpawner,
+	CacheMiss,
 	CacheRestore,
 	CacheSave,
 	DependencyCache,
@@ -90,40 +92,28 @@ export function parkNodeModules(params: {
 	cap?: number
 }): ParkedNodeModules | string {
 	const { worktree, worktreesFolder } = params
-	const rename = params.rename ?? renameFolder
-	const relink = params.relink ?? relinkEscapingLinks
 	const source = join(worktree, 'node_modules')
 	if (!existsSync(source)) return `${worktree} has no node_modules to park`
-	// only a node_modules that holds what its lock locks is stamped with that lock's key: the lock the check was
-	// made against, whatever the lockfile holds now
-	const lockText = params.checkedLockText ?? readPackageLockText({ worktree })
-	if (lockText === undefined)
-		return `${worktree} has no ${PACKAGE_LOCK_FILE} its node_modules was checked against: not parked`
-	const check =
-		params.check ??
-		checkNodeModules({ worktree, ...(params.checkedLockText !== undefined && { lockText }) })
-	if (check.notChecked || check.problems.length)
-		return `${source} not parked: ${check.notChecked ?? `${check.problems.length} package(s) differ from ${PACKAGE_LOCK_FILE}`}`
+	const checked = readParkableLock({
+		worktree,
+		check: params.check,
+		checkedLockText: params.checkedLockText,
+	})
+	if ('refused' in checked) return checked.refused
+	const { lockText } = checked
 	// read while node_modules is still in place: an optional package counts when it is installed
 	const packages = lockedVersionsOf({ worktree, lockText })
-	try {
-		// in place, before the rename: a failure leaves no half-made pool entry
-		relink({ from: source, to: source })
-	} catch (error) {
-		return `${source} not parked: ${(error as Error).message}`
-	}
 	const repository = basename(params.repository)
-	const entry = createEntryFolder({ worktreesFolder, repository })
-	const parked = join(worktreesFolder, entry, 'node_modules')
-	try {
-		rename({ from: source, to: parked })
-	} catch (error) {
-		rmdirSync(join(worktreesFolder, entry))
-		const code = (error as NodeJS.ErrnoException).code
-		return `${source} not parked: ${code === 'EXDEV' ? 'cross-device, the pool is on another file system' : (error as Error).message}`
-	}
+	const entry = moveIntoPool({
+		source,
+		worktreesFolder,
+		repository,
+		rename: params.rename ?? renameFolder,
+		relink: params.relink ?? relinkEscapingLinks,
+	})
+	if ('refused' in entry) return entry.refused
 	discardCaches({
-		parked,
+		parked: join(worktreesFolder, entry.name, 'node_modules'),
 		discardInto: params.discardInto,
 		worktreesFolder,
 		now: params.now,
@@ -136,14 +126,96 @@ export function parkNodeModules(params: {
 		...(params.owner !== undefined && { owner: params.owner }),
 		packages,
 	}
-	writeFileSync(join(worktreesFolder, entry, POOL_FILE), `${JSON.stringify(file, null, 2)}\n`)
+	writeFileSync(join(worktreesFolder, entry.name, POOL_FILE), `${JSON.stringify(file, null, 2)}\n`)
+	const trashed = trashPastCap({
+		worktreesFolder,
+		repository: params.repository,
+		cap: params.cap,
+		now: params.now,
+		spawner: params.spawner,
+	})
+	return { entry: entry.name, trashed }
+}
+
+/**
+ * The lock a park stamps (`checkedLockText`, else the lockfile on disk) once `node_modules` installs it (`check`, else
+ * read now against it), or why the park is refused.
+ */
+function readParkableLock(params: {
+	worktree: string
+	check: NodeModulesCheck | undefined
+	checkedLockText: string | undefined
+}): { lockText: string } | { refused: string } {
+	const { worktree } = params
+	// only a node_modules that holds what its lock locks is stamped with that lock's key: the lock the check was
+	// made against, whatever the lockfile holds now
+	const lockText = params.checkedLockText ?? readPackageLockText({ worktree })
+	if (lockText === undefined)
+		return {
+			refused: `${worktree} has no ${PACKAGE_LOCK_FILE} its node_modules was checked against: not parked`,
+		}
+	const check =
+		params.check ??
+		checkNodeModules({ worktree, ...(params.checkedLockText !== undefined && { lockText }) })
+	if (check.notChecked || check.problems.length)
+		return {
+			refused: `${join(worktree, 'node_modules')} not parked: ${check.notChecked ?? `${check.problems.length} package(s) differ from ${PACKAGE_LOCK_FILE}`}`,
+		}
+	return { lockText }
+}
+
+/**
+ * `source` renamed into a new `_pool-<repository>-<n>` entry folder, its leaving links re-pointed first (a failure
+ * leaves no half-made entry): the entry's name, or why it was not moved.
+ */
+function moveIntoPool(params: {
+	source: string
+	worktreesFolder: string
+	repository: string
+	rename: (params: { from: string; to: string }) => void
+	relink: (params: { from: string; to: string }) => void
+}): { name: string } | { refused: string } {
+	const { source, worktreesFolder } = params
+	try {
+		// in place, before the rename: a failure leaves no half-made pool entry
+		params.relink({ from: source, to: source })
+	} catch (error) {
+		return { refused: `${source} not parked: ${(error as Error).message}` }
+	}
+	const name = createEntryFolder({ worktreesFolder, repository: params.repository })
+	try {
+		params.rename({ from: source, to: join(worktreesFolder, name, 'node_modules') })
+	} catch (error) {
+		rmdirSync(join(worktreesFolder, name))
+		const code = (error as NodeJS.ErrnoException).code
+		return {
+			refused: `${source} not parked: ${code === 'EXDEV' ? 'cross-device, the pool is on another file system' : (error as Error).message}`,
+		}
+	}
+	return { name }
+}
+
+/**
+ * Sends to the trash, after a park, the repository's old-shape entries and the entries past the per-key limit and the
+ * cap (`readPoolCap` when none is given): their names.
+ */
+function trashPastCap(params: {
+	worktreesFolder: string
+	/** The repository's main checkout. */
+	repository: string
+	cap: number | undefined
+	now: Date
+	spawner: BackgroundSpawner
+}): string[] {
+	const { worktreesFolder } = params
+	const repository = basename(params.repository)
 	const evicted = evictedEntriesOf({
 		entries: listPoolEntries(worktreesFolder).filter(
 			(pooled) => pooled.file.repository === repository,
 		),
 		cap: params.cap ?? readPoolCap({ repository: params.repository }),
 	})
-	const trashed = [...listOldShapeEntries({ worktreesFolder, repository }), ...evicted].map(
+	return [...listOldShapeEntries({ worktreesFolder, repository }), ...evicted].map(
 		function trash(name) {
 			trashFolder({
 				folder: join(worktreesFolder, name),
@@ -154,7 +226,6 @@ export function parkNodeModules(params: {
 			return name
 		},
 	)
-	return { entry, trashed }
 }
 
 /** Renames the newest pool entry of the repository whose lock key equals the key of `worktree`'s lock into it. */
@@ -183,17 +254,91 @@ export function takePooledNodeModules(params: {
 			(entry) => entry.file.repository === repository && entry.file.lockKey === lockKey,
 		),
 	)
-	// the owner's own entries first (newest first), then the others (newest first)
-	const ordered = [
-		...matching.filter((entry) => isOwnedBy({ entry, owner: params.owner })),
-		...matching.filter((entry) => !isOwnedBy({ entry, owner: params.owner })),
+	return renameFirstEntry({
+		entries: ownersFirst({ entries: matching, owner: params.owner }),
+		worktree,
+		worktreesFolder,
+		rename,
+		afterPick: params.afterPick,
+	})
+}
+
+/**
+ * Renames the near pool entry of `entries` (of another lock key) whose stamped packages differ from `lockText`'s in the
+ * fewest packages, at most `POOL_DRIFT_LIMIT`, into `worktree`: on a tie the owner's, then the newest.
+ */
+function takeNearEntry(params: {
+	worktree: string
+	worktreesFolder: string
+	entries: readonly PoolEntry[]
+	lockText: string
+	rename?: (params: { from: string; to: string }) => void
+	afterPick?: InterleavingSeam
+	owner?: string
+}): { near: string; drift: number } | Exclude<PoolTake, { taken: string }> {
+	const locked = lockedVersionsOf({ worktree: params.worktree, lockText: params.lockText })
+	const lockKey = computeLockKey({ text: params.lockText })
+	const drifts = new Map(
+		params.entries
+			.filter((entry) => entry.file.lockKey !== lockKey)
+			.map((entry) => [entry.name, driftOf({ stamped: entry.file.packages, locked })] as const)
+			.filter(([, drift]) => drift <= POOL_DRIFT_LIMIT),
+	)
+	const near = newestFirst(params.entries.filter((entry) => drifts.has(entry.name)))
+	// the fewest packages first; among equals the owner's (newest first), then the others (newest first)
+	const ordered = ownersFirst({ entries: near, owner: params.owner }).sort(
+		(left, right) => (drifts.get(left.name) ?? 0) - (drifts.get(right.name) ?? 0),
+	)
+	const take = renameFirstEntry({
+		entries: ordered,
+		worktree: params.worktree,
+		worktreesFolder: params.worktreesFolder,
+		rename: params.rename ?? renameFolder,
+		afterPick: params.afterPick,
+	})
+	return 'taken' in take ? { near: take.taken, drift: drifts.get(take.taken) ?? 0 } : take
+}
+
+/** How many lock keys differ between two package stamps: a version that differs, or a key on one side only. */
+function driftOf(params: {
+	stamped: Readonly<Record<string, string>>
+	locked: Readonly<Record<string, string>>
+}): number {
+	const keys = new Set([...Object.keys(params.stamped), ...Object.keys(params.locked)])
+	return [...keys].filter((key) => params.stamped[key] !== params.locked[key]).length
+}
+
+/** The entries of `owner` first, then the others, each in their given order. */
+function ownersFirst(params: {
+	entries: readonly PoolEntry[]
+	owner: string | undefined
+}): PoolEntry[] {
+	return [
+		...params.entries.filter((entry) => isOwnedBy({ entry, owner: params.owner })),
+		...params.entries.filter((entry) => !isOwnedBy({ entry, owner: params.owner })),
 	]
+}
+
+/**
+ * Renames the `node_modules` of the first of `entries` still there into `worktree` and removes its emptied folder: its
+ * name, or why none was taken (another taker renamed them first, or the pool is on another file system).
+ */
+function renameFirstEntry(params: {
+	entries: readonly PoolEntry[]
+	worktree: string
+	worktreesFolder: string
+	rename: (params: { from: string; to: string }) => void
+	afterPick?: InterleavingSeam
+}): PoolTake {
 	let takenByAnother = false
-	for (const entry of ordered) {
+	for (const entry of params.entries) {
 		params.afterPick?.()
-		const folder = join(worktreesFolder, entry.name)
+		const folder = join(params.worktreesFolder, entry.name)
 		try {
-			rename({ from: join(folder, 'node_modules'), to: join(worktree, 'node_modules') })
+			params.rename({
+				from: join(folder, 'node_modules'),
+				to: join(params.worktree, 'node_modules'),
+			})
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code
 			if (code === 'EXDEV') return { notTaken: 'cross-device' }
@@ -242,23 +387,14 @@ export function createPoolCache(params: {
 		return listPoolEntries(worktreesFolder).filter((entry) => entry.file.repository === repository)
 	}
 	function restore(restored: { checkout: string; lockText: string; owner?: string }): CacheRestore {
-		const entries = list()
-		if (entries.length === 0) return { miss: POOL_MISS_EMPTY }
-		const lockKey = computeLockKey({ text: restored.lockText })
-		if (!entries.some((entry) => entry.file.lockKey === lockKey))
-			return { miss: `${POOL_MISS_NO_ENTRY} ${lockKey.slice(0, POOL_MISS_KEY_LENGTH)}` }
-		const take = takePooledNodeModules({
-			worktree: restored.checkout,
+		return restoreFromPool({
 			repository: params.repository,
 			worktreesFolder,
-			lockText: restored.lockText,
+			entries: list(),
 			rename,
 			afterPick,
-			owner: restored.owner,
+			...restored,
 		})
-		if ('taken' in take) return { taken: take.taken }
-		// a matching entry was there at the pick: gone by the rename means another taker had it
-		return { miss: take.notTaken === 'cross-device' ? POOL_MISS_CROSS_DEVICE : POOL_MISS_BUSY }
 	}
 	function save(saved: {
 		checkout: string
@@ -283,6 +419,66 @@ export function createPoolCache(params: {
 			: { parked: parked.entry, trashed: parked.trashed }
 	}
 	return { restore, save, list }
+}
+
+/**
+ * A restore from the pool's `entries` of the repository: the newest entry with `lockText`'s key renamed into
+ * `checkout`, else the nearest of another key, else why none.
+ */
+function restoreFromPool(params: {
+	/** The repository's main checkout. */
+	repository: string
+	worktreesFolder: string
+	entries: readonly PoolEntry[]
+	checkout: string
+	lockText: string
+	owner?: string
+	rename?: (params: { from: string; to: string }) => void
+	afterPick?: InterleavingSeam
+}): CacheRestore {
+	const { entries, checkout, lockText, owner, worktreesFolder, rename, afterPick } = params
+	if (entries.length === 0) return { miss: POOL_MISS_EMPTY }
+	const lockKey = computeLockKey({ text: lockText })
+	const exact = entries.some((entry) => entry.file.lockKey === lockKey)
+	const take = exact
+		? takePooledNodeModules({
+				worktree: checkout,
+				repository: params.repository,
+				worktreesFolder,
+				lockText,
+				rename,
+				afterPick,
+				owner,
+			})
+		: undefined
+	if (take && 'taken' in take) return { taken: take.taken }
+	if (take?.notTaken === 'cross-device') return { miss: POOL_MISS_CROSS_DEVICE }
+	// no exact entry, or another taker had them: the nearest entry of another key
+	const near = takeNearEntry({
+		worktree: checkout,
+		worktreesFolder,
+		entries,
+		lockText,
+		rename,
+		afterPick,
+		owner,
+	})
+	if ('near' in near) return near
+	if (near.notTaken === 'cross-device') return { miss: POOL_MISS_CROSS_DEVICE }
+	// a matching entry was there at the pick: gone by the rename means another taker had it
+	if (exact || near.notTaken === 'taken by another') return { miss: POOL_MISS_BUSY }
+	return { miss: noEntryMissOf({ lockText }) }
+}
+
+/**
+ * The miss of a restore whose repository has entries, none with `lockText`'s key nor near it: `no entry for install`
+ * and the key's first characters.
+ *
+ * @intent name the same miss whether the restore found no near entry or the near one it gave was given up
+ * @internal
+ */
+export function noEntryMissOf(params: { lockText: string }): CacheMiss {
+	return `${POOL_MISS_NO_ENTRY} ${computeLockKey({ text: params.lockText }).slice(0, POOL_MISS_KEY_LENGTH)}`
 }
 
 /**

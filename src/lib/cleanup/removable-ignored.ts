@@ -8,6 +8,7 @@
 import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
+import { resolveTargets } from '../config.ts'
 import { isAtOrInside, realPathOf } from '../file-system.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
@@ -24,8 +25,12 @@ import {
 	REBUILT_IGNORED_NAMES,
 } from '../worktree/worktree.constants.ts'
 import {
+	CURRENT_FOLDER_PREFIX,
 	IGNORED_ENTRY_PREFIX,
 	IGNORED_STATUS_ARGUMENTS,
+	NESTED_INSTALL_FOLDER,
+	PACKAGE_MANIFEST,
+	PYTHON_REBUILT_FOLDERS,
 	STATUS_WITH_ORIGINAL_PATH,
 } from './removable-ignored.constants.ts'
 
@@ -149,6 +154,7 @@ function keptUnder(params: { walk: IgnoredWalk; path: string }): string[] {
 			inside: segments.slice(dialecteIndex + 1).join('/'),
 		})
 	if (isDeclaredRebuilt({ walk, path, spelled })) return []
+	if (isInToolRebuiltFolder({ walk, path, isFolder })) return []
 	// a rebuilt folder below the root: kept as a whole, never read
 	if (isFolder && REBUILT_IGNORED_FOLDERS.some((folder) => `/${spelled}`.endsWith(`/${folder}`)))
 		return [spelled]
@@ -242,8 +248,35 @@ function readDeclaredRebuilt(params: { main: string; folder: string }): Declared
 	}
 	return {
 		packageRoot,
-		folders: Array.isArray(declared) ? declared.filter(isValidDeclaredFolder) : [],
+		folders: [
+			...(Array.isArray(declared) ? declared.filter(isValidDeclaredFolder) : []),
+			...readCoverageOutFolders(root),
+		],
 	}
+}
+
+/**
+ * The coverage outDir of each version the cli discovers in the main checkout's package at `root` (core's in core
+ * only), relative to it and ending with `/`; an outDir that is not a valid folder below the package root is none,
+ * and a package.json the discovery cannot read gives none.
+ */
+function readCoverageOutFolders(root: string): string[] {
+	let outDirs: string[]
+	try {
+		outDirs = resolveTargets([], root).map((target) => target.outDir)
+	} catch {
+		// a package.json that does not parse: no outDir is proven
+		return []
+	}
+	return outDirs.map(packageFolderOf).filter(isValidDeclaredFolder)
+}
+
+/** An outDir as the cli spells it (`./benchmarks/types/v1/generated`), as a folder of the package (`benchmarks/types/v1/generated/`). */
+function packageFolderOf(outDir: string): string {
+	const folder = outDir.startsWith(CURRENT_FOLDER_PREFIX)
+		? outDir.slice(CURRENT_FOLDER_PREFIX.length)
+		: outDir
+	return folder.endsWith('/') ? folder : `${folder}/`
 }
 
 /** A folder relative to its package root, ending with `/`, with no empty, `.` or `..` part: never wider. */
@@ -253,6 +286,58 @@ function isValidDeclaredFolder(entry: unknown): entry is string {
 		.slice(0, -1)
 		.split('/')
 		.every((part) => part !== '' && part !== '.' && part !== '..')
+}
+
+/**
+ * The entry is, or lies in, a folder a tool rebuilds wherever it sits: a python `.venv/` or `.pytest_cache/`, or a
+ * `node_modules/` whose parent folder in the worktree holds a package.json file that parses. Only real folders count
+ * (a link of that name is never one); the entry itself is checked only when it is a folder.
+ */
+function isInToolRebuiltFolder(params: {
+	walk: IgnoredWalk
+	path: string
+	isFolder: boolean
+}): boolean {
+	const { walk, path, isFolder } = params
+	const segments = path.split('/')
+	const depth = isFolder ? segments.length : segments.length - 1
+	for (let length = 1; length <= depth; length++) {
+		if (
+			isToolRebuiltFolder({ worktree: walk.worktree, folder: segments.slice(0, length).join('/') })
+		)
+			return true
+	}
+	return false
+}
+
+/**
+ * The folder (relative to the worktree) is a python one, or a nested install folder beside a package.json file that
+ * parses; a real folder either way. Read for each entry: git lists a rebuilt folder's entries one by one only when it
+ * holds a tracked file, and a walk never enters one.
+ */
+function isToolRebuiltFolder(params: { worktree: string; folder: string }): boolean {
+	const { worktree, folder } = params
+	const name = basename(folder)
+	const isPython = PYTHON_REBUILT_FOLDERS.some((python) => python === name)
+	if (!isPython && name !== NESTED_INSTALL_FOLDER) return false
+	if (!lstatOrUndefined(join(worktree, folder))?.isDirectory()) return false
+	if (isPython) return true
+	return holdsParsedManifest(join(worktree, dirname(folder)))
+}
+
+/** The folder holds a package.json that is a file (never a link nor a folder) and parses. */
+function holdsParsedManifest(folder: string): boolean {
+	const manifest = join(folder, PACKAGE_MANIFEST)
+	if (!lstatOrUndefined(manifest)?.isFile()) return false
+	const bytes = readOrUndefined(manifest)
+	if (!bytes) return false
+	try {
+		JSON.parse(bytes.toString('utf8'))
+		return true
+	} catch {
+		// a package.json that does not parse rebuilds nothing
+		return false
+	}
 }
 
 /** A file or link byte-equal to the same path in the main checkout: a file's mode included, a link by its text. */

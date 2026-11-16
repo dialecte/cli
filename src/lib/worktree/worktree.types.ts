@@ -1,4 +1,5 @@
-import type { HandoverFolder } from '../handover/handover.types.ts'
+import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
+import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	POOL_MISS_BUSY,
 	POOL_MISS_CROSS_DEVICE,
@@ -218,14 +219,62 @@ export type ParkedNodeModules = {
 /** A pool entry of `.worktrees/`: its folder name and its `pool.json`. */
 export type PoolEntry = { name: string; file: PoolEntryFile }
 
-/** Where a new checkout's `node_modules` came from, and how long it took (seconds, one decimal). */
+/**
+ * A near pool entry taken and given up: the entry, how many packages it differed in from the lock, and why (the first
+ * line of the incremental install's failure, or the first problem the check still listed).
+ */
+export type NearAttempt = { from: string; drift: number; reason: string }
+
+/**
+ * Where a new checkout's `node_modules` came from, and how long it took (seconds, one decimal): an exact pool entry, a
+ * near one completed by `npm install`, `npm ci`, or a copy when `npm ci` failed.
+ */
 export type NodeModulesSource =
 	| { method: 'pooled'; from: string; seconds: number }
+	| {
+			method: 'near'
+			/** The pool entry's folder name. */
+			from: string
+			/** How many packages it differed in from the lock (by lock key), before the install. */
+			drift: number
+			seconds: number
+	  }
+	| {
+			method: 'installed'
+			seconds: number
+			/** Why the pool gave nothing (a `CacheMiss` text); none when there was no pool to ask. */
+			miss?: string
+			/** The near entry tried first, when there was one. */
+			near?: NearAttempt
+	  }
 	| (NodeModulesCopy & {
 			seconds: number
 			/** Why the pool gave nothing (a `CacheMiss` text); none when there was no pool to ask. */
 			miss?: string
+			/** Why `npm ci` did not install it (the first line of its failure); none when it did not run. */
+			reason?: string
+			/** The near entry tried first, when there was one. */
+			near?: NearAttempt
 	  })
+
+/**
+ * Runs npm with `args` in `checkout` and waits for it: its exit status and its output (stdout then stderr). The default
+ * spawns `npm`; the tests stand in for it so no case ever runs npm.
+ */
+export type NpmRunner = (params: { checkout: string; args: string[] }) => {
+	status: number
+	output: string
+}
+
+/**
+ * Spawns a command in `cwd` and waits for it (the default npm runner's seam; default `spawnSync`): its exit status (null
+ * when a signal ended it), its stdout and its stderr.
+ */
+export type NpmSpawn = (params: { command: string; args: string[]; cwd: string }) => {
+	status: number | null
+	stdout: string
+	stderr: string
+}
 
 /** One worktree of `git worktree list --porcelain`: its path, its branch (none when detached), locked or not. */
 export type ListedWorktree = { path: string; branch?: string; locked?: boolean }
@@ -269,3 +318,65 @@ export type DependencyCache = {
 
 /** A worktree or a folder sent to `.worktrees/_trash/`: where it is now. */
 export type TrashedFolder = { trashed: string }
+
+/**
+ * What `worktree prune --reclaim` does with one worktree: its `node_modules` parked in the pool or sent to the trash
+ * (the code stays), the whole worktree trashed (a `-round-<n>` throwaway whose lot is closed), or nothing.
+ */
+export type ReclaimAction = 'park' | 'trash' | 'trash whole' | 'keep'
+
+/** One worktree of a reclaim plan. */
+export type ReclaimItem = {
+	/** The repository's main checkout. */
+	repository: string
+	/** The worktree's path, as `git worktree list` gives it, spelled under the workspace. */
+	worktree: string
+	action: ReclaimAction
+	/** Why it is kept (`keep`), or why its node_modules goes to the trash (`trash`). */
+	reason?: string
+	/** What would move: the files (and links) of its node_modules, or of the whole worktree for `trash whole`; 0 when kept. */
+	files: number
+	/** Their size in bytes; 0 when kept. */
+	bytes: number
+}
+
+/** `worktree prune --reclaim` for a workspace: every worktree of every repository, with what happens to it. */
+export type ReclaimPlan = {
+	/** Git activity after this time keeps a worktree. */
+	cutoff: Date
+	items: ReclaimItem[]
+}
+
+/** What a reclaim did with one worktree of its plan: its line, and whether something moved. */
+export type ReclaimOutcome = { worktree: string; line: string; moved: boolean }
+
+/**
+ * What a reclaim reads once for a repository to decide each of its worktrees: files and one `git worktree list`, never
+ * a git command that writes (an index refreshed would read as activity).
+ */
+export type ReclaimContext = {
+	/** The repository's main checkout. */
+	repository: string
+	workspace: string
+	/** Git activity after this time keeps a worktree. */
+	cutoff: Date
+	/** The lock key of the main checkout's `package-lock.json`; none without one. */
+	mainLockKey: string | undefined
+	/** `git worktree list`, the main checkout first. */
+	listed: readonly ListedWorktree[]
+	/** The worktrees open lots name, by real path, with their reason `lot <name> <state>`. */
+	lotKeeps: ReadonlyMap<string, string>
+	/** The worktrees any lot of the store names (open or closed), by real path. */
+	lotWorktrees: ReadonlySet<string>
+	/** The hand-over registry of the repository. */
+	handovers: readonly StoreEntry[]
+	/** The processes and their working folders, or why they are not known. */
+	processes: readonly ProcessFolder[] | string
+	/** The links around the workspace: what they reach is kept. */
+	links: readonly FolderLink[]
+	/** The repository's mutation runs that still run or died before reporting. */
+	runs: readonly RunEntry[]
+}
+
+/** A `-round-<n>` throwaway's lot: open (kept, with why) or closed (trashed whole). */
+export type ReclaimRound = { open: string } | 'closed'
