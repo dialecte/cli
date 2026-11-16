@@ -223,7 +223,7 @@ function productionFileJudge(params: {
 		return (
 			!file.startsWith('..') &&
 			!file.startsWith('/') &&
-			isProductionPath({ file, packageJson: params.packageJson })
+			isProductionPath({ root: params.root, file, packageJson: params.packageJson })
 		)
 	}
 }

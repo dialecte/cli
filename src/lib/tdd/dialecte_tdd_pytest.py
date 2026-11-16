@@ -2,7 +2,7 @@
 
 Loaded with `-p dialecte_tdd_pytest`. The report is one JSON list, one entry per test file collected: its
 collection errors, its cases (name, state, def line, errors, source, skip mark in a collect) and the files it
-used (conftests, the modules its imports resolve to, the files opened while it was collected and while its
+used (conftests, the modules its imports and its conftests' imports resolve to, the files opened while it was collected and while its
 cases ran). Imports the standard library and pytest only; Python 3.8 or later, pytest 7 or later.
 """
 
@@ -10,6 +10,7 @@ import ast
 import importlib.util
 import json
 import os
+import pathlib
 import re
 import sys
 
@@ -26,6 +27,8 @@ UNMAPPABLE_NAME_MESSAGE = (
 )
 COLLECTION_ERROR_LINE = re.compile(r"^E\s+([A-Za-z_][\w.]*)(?::\s?(.*))?$")
 CACHE_FOLDER = "__pycache__"
+# the context managers that assert their body raises or warns
+EXPECTING_CALLS = ("raises", "warns")
 
 # what the run saw so far: the test files by path in collection order, the cases by node id, the file
 # whose collection or case is running now (the files opened then are its), the parsed sources by path
@@ -34,6 +37,7 @@ RUN = {
     "cases": {},
     "opening": None,
     "trees": {},
+    "conftest_imports": {},
     "audited": False,
     "collect_only": False,
     "root": None,
@@ -88,17 +92,33 @@ def pytest_make_collect_report(collector):
         module["name"] = None
 
 
-def pytest_collection_modifyitems(config, items):
-    """Keeps only the cases DIALECTE_TDD_NAMES lists (their full names), when it lists any."""
+def pytest_collection_modifyitems(session, config, items):
+    """Leaves out the test files a conftest leaves out of discovery, then keeps only the cases DIALECTE_TDD_NAMES
+    lists (their full names), when it lists any."""
+    ignored = {path for path in RUN["modules"] if is_ignored(session=session, config=config, path=path)}
+    for path in ignored:
+        del RUN["modules"][path]
     listed = os.environ.get(NAMES_VARIABLE)
-    if not listed:
-        return
-    names = set(json.loads(listed))
-    kept = [item for item in items if case_name(item) in names]
-    left = [item for item in items if case_name(item) not in names]
+    names = set(json.loads(listed)) if listed else None
+    kept = [
+        item
+        for item in items
+        if os.path.abspath(str(item.path)) not in ignored and (names is None or case_name(item) in names)
+    ]
+    kept_items = set(kept)
+    left = [item for item in items if item not in kept_items]
     if left:
         config.hook.pytest_deselected(items=left)
     items[:] = kept
+
+
+def is_ignored(session, config, path):
+    """pytest's own ignore hook leaves the file out of discovery (`collect_ignore`, `collect_ignore_glob`, a
+    conftest's `pytest_ignore_collect`): pytest 8 and 9 still collect a file named on the command line, which a
+    plain run of the package would never collect."""
+    collection_path = pathlib.Path(path)
+    hook = session.gethookproxy(collection_path)
+    return bool(hook.pytest_ignore_collect(collection_path=collection_path, config=config))
 
 
 def pytest_collection_finish(session):
@@ -369,14 +389,37 @@ def frames_of(excinfo, test_path):
 
 
 def is_in_assert(path, line):
-    """The line lies inside an `assert` statement of the file."""
+    """The line lies inside an assertion of the file: an `assert` statement, or the body of a `with` of
+    `pytest.raises(...)` / `pytest.warns(...)`."""
     tree = parsed(path)[1]
     if tree is None:
         return False
     return any(
-        isinstance(node, ast.Assert) and node.lineno <= line <= (getattr(node, "end_lineno", None) or node.lineno)
+        (isinstance(node, ast.Assert) and node.lineno <= line <= end_line_of(node))
+        or (isinstance(node, (ast.With, ast.AsyncWith)) and is_expecting_body_line(node=node, line=line))
         for node in ast.walk(tree)
     )
+
+
+def end_line_of(node):
+    """The last line of a node (its first one on a Python without end positions)."""
+    return getattr(node, "end_lineno", None) or node.lineno
+
+
+def is_expecting_body_line(node, line):
+    """The line lies in the body of a `with` one of whose items is a `raises(...)` / `warns(...)` call."""
+    if not node.body or not any(is_expecting_call(item.context_expr) for item in node.items):
+        return False
+    return node.body[0].lineno <= line <= end_line_of(node.body[-1])
+
+
+def is_expecting_call(expression):
+    """The expression is a call of `raises` or `warns`, bare or as an attribute (`pytest.raises(...)`)."""
+    if not isinstance(expression, ast.Call):
+        return False
+    function = expression.func
+    name = function.attr if isinstance(function, ast.Attribute) else getattr(function, "id", None)
+    return name in EXPECTING_CALLS
 
 
 def source_path(path):
@@ -395,13 +438,33 @@ def is_under_root(path):
 
 
 def dependencies_of(path, module):
-    """The package files a test file used: conftests up to the rootdir, imports followed, files opened."""
+    """The package files a test file used: conftests up to the rootdir, the imports of the test file and of each
+    conftest followed, files opened."""
     found = {source_path(opened) for opened in module["opened"]}
-    found |= conftests_of(path)
+    conftests = conftests_of(path)
+    found |= conftests
+    for conftest in conftests:
+        found |= conftest_imports(conftest)
     if module["name"]:
         found |= imported_files(path=path, module_name=module["name"], seen=set())
     found.discard(path)
     return {file for file in found if is_under_root(file) and os.path.isfile(file)}
+
+
+def conftest_imports(path):
+    """The package files a conftest's imports resolve to, followed through their own imports; read once."""
+    if path not in RUN["conftest_imports"]:
+        RUN["conftest_imports"][path] = imported_files(path=path, module_name=module_name_of(path), seen=set())
+    return RUN["conftest_imports"][path]
+
+
+def module_name_of(path):
+    """The name the file was imported under (`sys.modules`), else its file name without `.py`."""
+    for name, imported in list(sys.modules.items()):
+        file = getattr(imported, "__file__", None)
+        if file and source_path(os.path.abspath(file)) == path:
+            return name
+    return os.path.splitext(os.path.basename(path))[0]
 
 
 def conftests_of(path):

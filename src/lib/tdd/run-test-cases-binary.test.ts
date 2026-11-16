@@ -43,6 +43,7 @@ describe('runTestCases starts the package binary', { timeout: 30_000 }, () => {
 			'--includeTaskLocation',
 			'--passWithNoTests',
 			'--update=none',
+			'--cache=false',
 		])
 	})
 

@@ -83,6 +83,86 @@ const BEFORE_TABLE_TEXT = [
 const PLAIN_TEXT = 'def test_plain():\n    assert 1 == 1\n'
 const PLAIN_CALL = 'def test_plain():\n    assert 1 == 1'
 
+/** A method marked slow above its parametrize table: the plugin's text of it keeps the mark, not the table. */
+const SLOW_TABLE_TEXT = [
+	'import pytest',
+	'',
+	'',
+	'class TestRows:',
+	'    @pytest.mark.slow',
+	'    @pytest.mark.parametrize("value", [1, 2])',
+	'    def test_row(self, value):',
+	'        assert value > 0',
+	'',
+].join('\n')
+const SLOW_ROW_CALL = '@pytest.mark.slow\ndef test_row(self, value):\n        assert value > 0'
+
+/** The same method marked slow below its table, and a function the base marks slow beside an unmarked one. */
+const SLOW_BELOW_TABLE_TEXT = [
+	'import pytest',
+	'',
+	'',
+	'class TestRows:',
+	'    @pytest.mark.parametrize("value", [1, 2])',
+	'    @pytest.mark.slow',
+	'    def test_row(self, value):',
+	'        assert value > 0',
+	'',
+].join('\n')
+const SLOW_ELSEWHERE_TEXT = [
+	'import pytest',
+	'',
+	'',
+	'@pytest.mark.slow',
+	'def test_other():',
+	'    assert 2 == 2',
+	'',
+	'',
+	'def test_plain():',
+	'    assert 1 == 1',
+	'',
+].join('\n')
+const SLOW_PLAIN_CALL = '@pytest.mark.slow\ndef test_plain():\n    assert 1 == 1'
+
+/** A plain function under a skipif mark. */
+const SKIPIF_TEXT = [
+	'import pytest',
+	'',
+	'',
+	'@pytest.mark.skipif(False, reason="never")',
+	'def test_plain():',
+	'    assert 1 == 1',
+	'',
+].join('\n')
+const SKIPIF_CALL =
+	'@pytest.mark.skipif(False, reason="never")\ndef test_plain():\n    assert 1 == 1'
+
+/** A function under two patches, a then b (the order binds the mocks). */
+const PATCHED_TEXT = [
+	'from unittest.mock import patch',
+	'',
+	'',
+	'@patch("a")',
+	'@patch("b")',
+	'def test_mocks(b, a):',
+	'    assert a is not b',
+	'',
+].join('\n')
+const PATCHED_BODY = 'def test_mocks(b, a):\n    assert a is not b'
+const PATCHED_SWAPPED_CALL = `@patch("b")\n@patch("a")\n${PATCHED_BODY}`
+const PATCHED_DUPLICATED_CALL = `@patch("a")\n@patch("a")\n@patch("b")\n${PATCHED_BODY}`
+
+/** A plain function under a skip mark, as a base holds it. */
+const SKIPPED_TEXT = [
+	'import pytest',
+	'',
+	'',
+	'@pytest.mark.skip(reason="later")',
+	'def test_plain():',
+	'    assert 1 == 1',
+	'',
+].join('\n')
+
 const ROW_CALL = 'def test_row(self, value):\n        assert value > 0'
 const ROW_NAME = 'TestRows > test_row[1]'
 const ROW_SOURCE: PythonCaseSource = { call: ROW_CALL, row: '1' }
@@ -198,6 +278,69 @@ describe('isPythonCaseOfChange', () => {
 			isPythonCaseOfChange({ source: { call: ROW_CALL, row: '2' }, baseText: BASE_TEXT }),
 		).toBe(false)
 	})
+
+	it('a method marked slow above its table, the mark, the body and the row as the base holds them → not of change', () => {
+		expect(
+			isPythonCaseOfChange({
+				source: { call: SLOW_ROW_CALL, row: '1' },
+				baseText: SLOW_TABLE_TEXT,
+			}),
+		).toBe(false)
+	})
+
+	it('a method marked slow below its table, as the base holds it → not of change', () => {
+		expect(
+			isPythonCaseOfChange({
+				source: { call: SLOW_ROW_CALL, row: '2' },
+				baseText: SLOW_BELOW_TABLE_TEXT,
+			}),
+		).toBe(false)
+	})
+
+	it('a row the base table of a method marked slow lacks → of change', () => {
+		expect(
+			isPythonCaseOfChange({
+				source: { call: SLOW_ROW_CALL, row: '3' },
+				baseText: SLOW_TABLE_TEXT,
+			}),
+		).toBe(true)
+	})
+
+	it('a slow mark added to a method whose body and row the base holds → of change', () => {
+		expect(
+			isPythonCaseOfChange({ source: { call: SLOW_ROW_CALL, row: '1' }, baseText: BASE_TEXT }),
+		).toBe(true)
+	})
+
+	it('a slow mark added to a function, the base marking another function slow → of change', () => {
+		expect(
+			isPythonCaseOfChange({ source: { call: SLOW_PLAIN_CALL }, baseText: SLOW_ELSEWHERE_TEXT }),
+		).toBe(true)
+	})
+
+	it('a function under a skipif mark, as the base holds it → not of change', () => {
+		expect(isPythonCaseOfChange({ source: { call: SKIPIF_CALL }, baseText: SKIPIF_TEXT })).toBe(
+			false,
+		)
+	})
+
+	it('two patches swapped since the base (patch a, b → b, a) → of change', () => {
+		expect(
+			isPythonCaseOfChange({ source: { call: PATCHED_SWAPPED_CALL }, baseText: PATCHED_TEXT }),
+		).toBe(true)
+	})
+
+	it('a patch duplicated since the base → of change', () => {
+		expect(
+			isPythonCaseOfChange({ source: { call: PATCHED_DUPLICATED_CALL }, baseText: PATCHED_TEXT }),
+		).toBe(true)
+	})
+
+	it('a skip mark removed since the base → of change', () => {
+		expect(isPythonCaseOfChange({ source: { call: PLAIN_CALL }, baseText: SKIPPED_TEXT })).toBe(
+			true,
+		)
+	})
 })
 
 describe('isPythonCaseOfBase', () => {
@@ -307,6 +450,50 @@ describe('isPythonCaseOfBase', () => {
 				source: { call: ROW_CALL, row: '3' },
 				text: BASE_TEXT,
 				baseText: BASE_TEXT,
+			}),
+		).toBe(false)
+	})
+
+	it('a row of a method marked slow above its table, the base holding the row → of the base', () => {
+		expect(
+			isPythonCaseOfBase({
+				name: ROW_NAME,
+				source: { call: SLOW_ROW_CALL, row: '1' },
+				text: SLOW_TABLE_TEXT,
+				baseText: SLOW_TABLE_TEXT,
+			}),
+		).toBe(true)
+	})
+
+	it('a function under a skipif mark, its def line in the base → of the base', () => {
+		expect(
+			isPythonCaseOfBase({
+				name: 'test_plain',
+				source: { call: SKIPIF_CALL },
+				text: SKIPIF_TEXT,
+				baseText: SKIPIF_TEXT,
+			}),
+		).toBe(true)
+	})
+
+	it('two patches swapped since the base → not of the base', () => {
+		expect(
+			isPythonCaseOfBase({
+				name: 'test_mocks',
+				source: { call: PATCHED_SWAPPED_CALL },
+				text: PATCHED_TEXT,
+				baseText: PATCHED_TEXT,
+			}),
+		).toBe(false)
+	})
+
+	it('a skip mark removed since the base → not of the base', () => {
+		expect(
+			isPythonCaseOfBase({
+				name: 'test_plain',
+				source: { call: PLAIN_CALL },
+				text: PLAIN_TEXT,
+				baseText: SKIPPED_TEXT,
 			}),
 		).toBe(false)
 	})

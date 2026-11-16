@@ -1,23 +1,19 @@
 /**
- * The runner of each test file, inferred from the file and the package: a Python test file runs under pytest, a
- * JS/TS test file importing `node:test` under `node --test`, a JS/TS test file a vitest config holds under
- * vitest; any other file runs under no known runner.
+ * The runner of each test file, inferred from the file and the package: a Python file pytest collects runs under
+ * pytest, a JS/TS test file importing `node:test` under `node --test`, a JS/TS test file a vitest config holds
+ * under vitest; any other file runs under no known runner.
  */
-import {
-	NODE_TEST_SPECIFIER,
-	PYTHON_TEST_FILE_PATTERN,
-	RUNNER_ORDER,
-	TEST_FILE_PATTERN,
-} from './tdd.constants.ts'
+import { isPytestTestFile } from './pytest-test-file.ts'
+import { NODE_TEST_SPECIFIER, RUNNER_ORDER, TEST_FILE_PATTERN } from './tdd.constants.ts'
 import { moduleSpecifiers } from './test-source.ts'
 import { configHolding } from './vitest-configs.ts'
 
 import type { ChangedTestFile, RunnerGroups, TestRunner, VitestConfigs } from './tdd.types.ts'
 
 /**
- * The runner of one test file: pytest for `test_*.py` / `*_test.py`; node for a JS/TS test file that loads
- * `node:test` (a type-only import or a `vi.mock` does not); vitest for one a vitest config holds or may hold
- * (unknown fails closed); none otherwise.
+ * The runner of one test file of the package at `root`: pytest for a Python file pytest collects
+ * (`isPytestTestFile`); node for a JS/TS test file that loads `node:test` (a type-only import or a `vi.mock` does
+ * not); vitest for one a vitest config holds or may hold (unknown fails closed); none otherwise.
  */
 export function runnerOf(params: {
 	root: string
@@ -26,7 +22,7 @@ export function runnerOf(params: {
 	configs: VitestConfigs
 }): TestRunner | undefined {
 	const { file } = params
-	if (PYTHON_TEST_FILE_PATTERN.test(file)) return 'pytest'
+	if (isPytestTestFile(params)) return 'pytest'
 	if (!TEST_FILE_PATTERN.test(file)) return undefined
 	const loaded = moduleSpecifiers({ text: params.text, file, valuesOnly: true })
 	if (loaded.includes(NODE_TEST_SPECIFIER)) return 'node'

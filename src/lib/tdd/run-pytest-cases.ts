@@ -33,7 +33,7 @@ export async function runPytestCases(
 ): Promise<ReportedModule[] | TestRunFailure> {
 	const modules: ReportedModule[] = []
 	for (const [folder, files] of filesByFolder(params)) {
-		const python = resolvePython({ root: params.root, folder })
+		const python = resolvePython({ folder })
 		const reported = await runPytestFolder({ params, folder, files, python })
 		if ('failure' in reported) return reported
 		modules.push(...reported)

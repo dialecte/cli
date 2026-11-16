@@ -2,8 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, join, relative, resolve } from 'node:path'
 
 import { walkedFolders } from './package-vitest.ts'
+import { readPytestConfig } from './pytest-config.ts'
 import {
+	DEFAULT_NORECURSEDIRS,
 	DEFAULT_PYTHON_COMMAND,
+	DEFAULT_PYTHON_FILES,
 	DEFAULT_WINDOWS_PYTHON_COMMAND,
 	PYTEST_CONFIG_FILES,
 	UV_LOCK_FILE,
@@ -12,29 +15,50 @@ import {
 	VENV_WINDOWS_PYTHON_PATH,
 } from './tdd.constants.ts'
 
-import type { PackagePython } from './tdd.types.ts'
+import type { PackagePython, PytestConfig, PytestFolder } from './tdd.types.ts'
 
 /**
  * The folder a pytest test file runs from (absolute, spelled as `root` is): the nearest ancestor of the file, up to
- * the package root, holding a pytest configuration (`pytest.ini`, a `pyproject.toml` with `[tool.pytest`, a
- * `tox.ini` with `[pytest]`, a `setup.cfg` with `[tool:pytest]`); the package root when none does.
+ * the package root, holding a file that configures pytest (`readPytestConfig`: a `pytest.toml`, a `pytest.ini`, a
+ * `pyproject.toml` with a pytest table, a `tox.ini` with `[pytest]`, a `setup.cfg` with `[tool:pytest]`...); the
+ * package root when none does.
  */
 export function resolvePytestFolder(params: { root: string; file: string }): string {
+	return resolvePytestConfig(params).folder
+}
+
+/**
+ * The file's pytest folder (`resolvePytestFolder`) with the configuration it holds: the first of its files, in the
+ * order pytest looks for them, that configures pytest; pytest's defaults when none does.
+ */
+export function resolvePytestConfig(params: { root: string; file: string }): PytestFolder {
 	const root = resolve(params.root)
 	for (let folder = dirname(join(root, params.file)); ; folder = dirname(folder)) {
-		if (holdsPytestConfig(folder)) return folder
+		const config = folderPytestConfig(folder)
+		if (config) return { folder, config }
 		if (folder === root || relative(root, folder).startsWith('..') || dirname(folder) === folder)
-			return root
+			return { folder: root, config: folderPytestConfig(root) ?? defaultPytestConfig() }
 	}
 }
 
-/** The folder holds a file that configures pytest. */
-function holdsPytestConfig(folder: string): boolean {
-	return PYTEST_CONFIG_FILES.some(function configures(config) {
-		const path = join(folder, config.name)
-		if (!existsSync(path)) return false
-		return config.section === undefined || readFileSync(path, 'utf8').includes(config.section)
-	})
+/** The configuration the folder's first pytest configuration file holds; undefined when none configures pytest. */
+function folderPytestConfig(folder: string): PytestConfig | undefined {
+	for (const name of PYTEST_CONFIG_FILES) {
+		const path = join(folder, name)
+		if (!existsSync(path)) continue
+		const config = readPytestConfig({ name, text: readFileSync(path, 'utf8') })
+		if (config) return config
+	}
+	return undefined
+}
+
+/** pytest's discovery settings when no file configures it. */
+function defaultPytestConfig(): PytestConfig {
+	return {
+		pythonFiles: [...DEFAULT_PYTHON_FILES],
+		testpaths: [],
+		norecursedirs: [...DEFAULT_NORECURSEDIRS],
+	}
 }
 
 /**
@@ -44,7 +68,6 @@ function holdsPytestConfig(folder: string): boolean {
  * the machine's) picks the Windows spellings: `.venv\Scripts\python.exe`, and `python` in place of `python3`.
  */
 export function resolvePython(params: {
-	root: string
 	folder: string
 	hasCommand?: (command: string) => boolean
 	platform?: NodeJS.Platform

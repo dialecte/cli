@@ -4,9 +4,14 @@
  * holds it. The TypeScript readers never parse Python: these read the plugin's texts and the base text only.
  */
 import { hashText } from './tdd-files.ts'
-import { CASE_NAME_SEPARATOR, PYTHON_ROW_SEPARATOR } from './tdd.constants.ts'
+import {
+	CASE_NAME_SEPARATOR,
+	PYTHON_DEF_LINE_PATTERN,
+	PYTHON_PARAMETRIZE_DECORATOR_PATTERN,
+	PYTHON_ROW_SEPARATOR,
+} from './tdd.constants.ts'
 
-import type { PythonCaseSource } from './tdd.types.ts'
+import type { PythonCallParts, PythonCaseSource } from './tdd.types.ts'
 
 /** sha256 of a pytest case's name and its source (the function's text and its row), whitespace normalised. */
 export function pythonCaseHash(params: { name: string; source: PythonCaseSource }): string {
@@ -16,7 +21,9 @@ export function pythonCaseHash(params: { name: string; source: PythonCaseSource 
 
 /**
  * Whether a pytest case is new or changed since the base: its file is new (`baseText` undefined), or the base text
- * holds neither the function's text nor the row of the case.
+ * lacks the function's text from its `def` on, or its decorators in order and count above a `def` of that function
+ * (the parametrize ones left out, so a table line between them changes nothing), or the row of the case. A text
+ * defining no function is a change.
  */
 export function isPythonCaseOfChange(params: {
 	source: PythonCaseSource
@@ -24,13 +31,19 @@ export function isPythonCaseOfChange(params: {
 }): boolean {
 	const { source, baseText } = params
 	if (baseText === undefined) return true
-	if (!normalized(baseText).includes(normalized(source.call))) return true
-	return source.row !== undefined && !holdsRow({ text: baseText, source })
+	const parts = callPartsOf(source.call)
+	if (parts === undefined) return true
+	if (!normalized(baseText).includes(normalized(parts.body))) return true
+	if (!holdsDecorators({ text: baseText, parts })) return true
+	return (
+		source.row !== undefined &&
+		!holdsRow({ text: baseText, functionName: parts.functionName, row: source.row })
+	)
 }
 
 /**
  * Whether the base provably holds the case, whatever its body: its function's `def` line as many times or more
- * than the file holds it now, every class of its name, and its row.
+ * than the file holds it now, its decorators as they are (order and count), every class of its name, and its row.
  */
 export function isPythonCaseOfBase(params: {
 	name: string
@@ -41,13 +54,15 @@ export function isPythonCaseOfBase(params: {
 }): boolean {
 	const { source, text, baseText } = params
 	if (baseText === undefined) return false
-	const functionName = functionNameOf(source.call)
-	if (functionName === undefined) return false
+	const parts = callPartsOf(source.call)
+	if (parts === undefined) return false
+	const { functionName } = parts
 	const atBase = defLineIndexes({ text: baseText, functionName }).length
 	if (atBase === 0 || defLineIndexes({ text, functionName }).length > atBase) return false
+	if (!holdsDecorators({ text: baseText, parts })) return false
 	const classes = params.name.split(CASE_NAME_SEPARATOR).slice(0, -1)
 	if (!classes.every((className) => holdsClass({ text: baseText, className }))) return false
-	return source.row === undefined || holdsRow({ text: baseText, source })
+	return source.row === undefined || holdsRow({ text: baseText, functionName, row: source.row })
 }
 
 /** The text with every run of whitespace one space, trimmed: a re-indent or a reflow keeps it. */
@@ -55,9 +70,54 @@ function normalized(text: string): string {
 	return text.replace(/\s+/g, ' ').trim()
 }
 
-/** The name the function's text defines (`def <name>(`), or undefined when it defines none. */
-function functionNameOf(call: string): string | undefined {
-	return /^\s*(?:async\s+)?def\s+(\w+)\s*\(/.exec(call)?.[1]
+/**
+ * The function's text split at its first `def <name>(` line outside a bracket (any line of it: the plugin writes the
+ * kept decorators above it), or undefined when it defines none.
+ */
+function callPartsOf(call: string): PythonCallParts | undefined {
+	const lines = call.split('\n')
+	const depths = bracketDepthsAtLineStarts(call)
+	const defLine = lines.findIndex(
+		(line, index) => depths[index] === 0 && PYTHON_DEF_LINE_PATTERN.test(line),
+	)
+	if (defLine < 0) return undefined
+	const functionName = PYTHON_DEF_LINE_PATTERN.exec(lines[defLine])?.[1]
+	if (functionName === undefined) return undefined
+	return {
+		functionName,
+		decorators: decoratorsOf(lines.slice(0, defLine).join('\n')),
+		body: lines.slice(defLine).join('\n'),
+	}
+}
+
+/** Each decorator of a text of decorator lines, normalised: a line starting with `@` outside a bracket opens one. */
+function decoratorsOf(text: string): string[] {
+	const depths = bracketDepthsAtLineStarts(text)
+	const decorators: string[] = []
+	text.split('\n').forEach(function addLine(line, index) {
+		if (depths[index] === 0 && line.trim().startsWith('@')) decorators.push(line)
+		else if (decorators.length) decorators[decorators.length - 1] += `\n${line}`
+	})
+	return decorators.map(normalized)
+}
+
+/**
+ * The case's decorators are, in order and count, the non-parametrize decorators directly above one `def` of its
+ * function in the text: a reorder (it changes how mocks bind), a duplicate, one added or one removed is no match.
+ */
+function holdsDecorators(params: { text: string; parts: PythonCallParts }): boolean {
+	const { parts } = params
+	return decoratorBlocks({ text: params.text, functionName: parts.functionName }).some(
+		function equalsCaseDecorators(block) {
+			const kept = decoratorsOf(block).filter(
+				(decorator) => !PYTHON_PARAMETRIZE_DECORATOR_PATTERN.test(decorator),
+			)
+			return (
+				kept.length === parts.decorators.length &&
+				kept.every((decorator, index) => decorator === parts.decorators[index])
+			)
+		},
+	)
 }
 
 /** The indexes of the lines of the text that define the function (`def <name>(`, at any indentation). */
@@ -77,18 +137,21 @@ function holdsClass(params: { text: string; className: string }): boolean {
  * the decorators directly above a `def` of the case's function: bounded by `[`, `(` or `,` before and `,`, `]` or
  * `)` after, whitespace allowed. A row written anywhere else (another function's table, the body) is no proof.
  */
-function holdsRow(params: { text: string; source: PythonCaseSource }): boolean {
-	const { text, source } = params
-	const functionName = functionNameOf(source.call)
-	if (functionName === undefined || source.row === undefined) return false
-	const lines = text.split('\n')
-	const depths = bracketDepthsAtLineStarts(text)
-	const blocks = defLineIndexes({ text, functionName }).map((defLine) =>
-		decoratorBlock({ lines, depths, defLine }),
-	)
-	return source.row
+function holdsRow(params: { text: string; functionName: string; row: string }): boolean {
+	const blocks = decoratorBlocks({ text: params.text, functionName: params.functionName })
+	return params.row
 		.split(PYTHON_ROW_SEPARATOR)
 		.every((row) => blocks.some((block) => isElementOf({ block, row })))
+}
+
+/** The decorator block of each `def` of the function in the text. */
+function decoratorBlocks(params: { text: string; functionName: string }): string[] {
+	const { text } = params
+	const lines = text.split('\n')
+	const depths = bracketDepthsAtLineStarts(text)
+	return defLineIndexes({ text, functionName: params.functionName }).map((defLine) =>
+		decoratorBlock({ lines, depths, defLine }),
+	)
 }
 
 /**

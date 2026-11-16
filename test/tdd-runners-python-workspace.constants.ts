@@ -307,6 +307,61 @@ export const ROWS_REWRITTEN_TEST_TEXT = [
 	'',
 ].join('\n')
 
+/** The same table under a slow mark written above it, as a base holds it; then a third row. */
+export const SLOW_ROWS_BASE_TEST_TEXT = [
+	'import pytest',
+	'',
+	'from adder import add',
+	'',
+	'',
+	'class TestRows:',
+	'    @pytest.mark.slow',
+	'    @pytest.mark.parametrize("value", [1, 2])',
+	'    def test_row(self, value):',
+	'        assert add(value, value) == value * 2',
+	'',
+].join('\n')
+export const SLOW_ROWS_THREE_TEST_TEXT = [
+	'import pytest',
+	'',
+	'from adder import add',
+	'',
+	'',
+	'class TestRows:',
+	'    @pytest.mark.slow',
+	'    @pytest.mark.parametrize("value", [1, 2, 3])',
+	'    def test_row(self, value):',
+	'        assert add(value, value) == value * 2',
+	'',
+].join('\n')
+
+/** A conftest whose fixture comes from a support module only the conftest imports, and a case using the fixture. */
+export const IMPORTING_CONFTEST_TEXT = [
+	'import pytest',
+	'',
+	'from support import base_value',
+	'',
+	'',
+	'@pytest.fixture',
+	'def sample():',
+	'    return base_value()',
+	'',
+].join('\n')
+export const SUPPORT_FILE = 'tests/support.py'
+export const SUPPORT_TEXT = 'def base_value():\n    return 3\n'
+export const SAMPLE_TEST_FILE = 'tests/test_sample.py'
+export const SAMPLE_TEST_TEXT = [
+	'from adder import add',
+	'',
+	'',
+	'def test_uses_sample(sample):',
+	'    assert add(sample, 2) == 5',
+	'',
+].join('\n')
+
+/** The helper edited: test code that is no test file. */
+export const HELPERS_EDITED_TEXT = 'def double(value):\n    return value + value\n'
+
 /** Two cases in one file, then the first moved to another file. */
 export const FIRST_TEST_FILE = 'tests/test_first.py'
 export const SECOND_TEST_FILE = 'tests/test_second.py'
@@ -340,3 +395,32 @@ export const FOLDER_A_TEST_TEXT =
 export const FOLDER_B_TEST_FILE = 'b/test_second.py'
 export const FOLDER_B_TEST_TEXT =
 	'def test_two():\n    assert 1 == 1\n\n\ndef check_ignored():\n    assert 1 == 1\n'
+
+/** The package's configuration, its discovery never entering a `fixtures` folder. */
+export const NORECURSE_FIXTURES_TOML_TEXT =
+	'[tool.pytest.ini_options]\npythonpath = ["."]\ntestpaths = ["tests"]\nnorecursedirs = ["fixtures"]\n'
+/** A fixture named as a test module, in a folder pytest's discovery does not enter. */
+export const FIXTURE_MODULE_FILE = 'tests/fixtures/test_x.py'
+export const FIXTURE_MODULE_TEXT = 'def test_shape():\n    assert True\n'
+/** A script named as a test module, outside the package's testpaths (`tests`). */
+export const TOOL_SCRIPT_FILE = 'scripts/test_tool.py'
+export const TOOL_SCRIPT_TEXT = 'def test_tool():\n    assert True\n'
+
+/** A conftest leaving out of collection one file by `collect_ignore`, one by `collect_ignore_glob`, one by its hook. */
+export const IGNORING_CONFTEST_TEXT = [
+	'collect_ignore = ["test_ignored.py"]',
+	'collect_ignore_glob = ["test_glob*.py"]',
+	'',
+	'',
+	'def pytest_ignore_collect(collection_path, config):',
+	'    if collection_path.name == "test_hooked.py":',
+	'        return True',
+	'    return None',
+	'',
+].join('\n')
+export const IGNORED_TEST_FILE = 'tests/test_ignored.py'
+export const GLOB_IGNORED_TEST_FILE = 'tests/test_globbed.py'
+export const HOOK_IGNORED_TEST_FILE = 'tests/test_hooked.py'
+/** The outside line of a file a conftest leaves out of collection: no refusal, nothing frozen. */
+export const PYTEST_IGNORED_OUTSIDE_LINE =
+	"not a test file pytest collects (a conftest's collect_ignore, collect_ignore_glob or pytest_ignore_collect leaves it out)"

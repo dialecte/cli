@@ -42,7 +42,11 @@ export function classifyFailure(params: {
 	/** An absolute path of production code (not test code, not a dependency). */
 	isProductionFile: (path: string) => boolean
 }): CaseFailure {
-	return { kind: kindOf(params), message: shortMessage(params.error.message) }
+	// an error raised bare (`raise NotImplementedError`) carries no message: its name says what it was
+	return {
+		kind: kindOf(params),
+		message: shortMessage(params.error.message) || (params.error.name ?? ''),
+	}
 }
 
 function kindOf(params: {
@@ -149,4 +153,14 @@ export function normalizeFramePath(file: string): string {
 /** The first lines of a message, without terminal colours. */
 export function shortMessage(message: string): string {
 	return stripVTControlCharacters(message).trim().split('\n').slice(0, MESSAGE_LINES).join('\n')
+}
+
+/** The first line of a message, without terminal colours. */
+export function firstLine(message: string): string {
+	return shortMessage(message).split('\n')[0]
+}
+
+/** Why a failure is no red: its kind and the first line of its message. */
+export function notARed(failure: CaseFailure): string {
+	return `${failure.kind} (not a red): ${firstLine(failure.message)}`
 }

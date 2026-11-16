@@ -254,6 +254,19 @@ describe('classifyFailure on the errors pytest reports', () => {
 		).toMatchObject({ kind: 'not-implemented' })
 	})
 
+	it('a bare NotImplementedError, no message → its message is the error name', () => {
+		expect(
+			classifyPytest({
+				error: {
+					name: 'NotImplementedError',
+					message: '',
+					frames: [PYTHON_STUB_FRAME, PYTHON_TEST_FRAME],
+					inAssertion: true,
+				},
+			}),
+		).toEqual({ kind: 'not-implemented', message: 'NotImplementedError' })
+	})
+
 	it('a NotImplementedError carrying the stub message inside an assert, the plugin saying so → not-implemented', () => {
 		expect(
 			classifyPytest({

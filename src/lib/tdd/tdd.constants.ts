@@ -49,8 +49,44 @@ export const NODE_ASSERT_SEGMENT = 'assert'
 /** Test files: what vitest includes by default. */
 export const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/
 
-/** Python test files, wherever they are: `test_*.py` and `*_test.py`. */
-export const PYTHON_TEST_FILE_PATTERN = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/
+/** A Python file: the only files pytest collects test modules from. */
+export const PYTHON_FILE_PATTERN = /\.py$/
+
+/** pytest's `python_files` when a configuration declares none. */
+export const DEFAULT_PYTHON_FILES = ['test_*.py', '*_test.py'] as const
+
+/** pytest's `norecursedirs` when a configuration declares none. */
+export const DEFAULT_NORECURSEDIRS = [
+	'*.egg',
+	'.*',
+	'_darcs',
+	'build',
+	'CVS',
+	'dist',
+	'node_modules',
+	'venv',
+	'{arch}',
+] as const
+
+/** The settings of a pytest configuration that decide which files its discovery collects. */
+export const PYTEST_DISCOVERY_KEYS = {
+	pythonFiles: 'python_files',
+	testpaths: 'testpaths',
+	norecursedirs: 'norecursedirs',
+} as const
+
+/** The folder pytest's discovery never enters, and the files that mark a folder as a virtual environment it skips. */
+export const PYTHON_CACHE_FOLDER = '__pycache__'
+export const VIRTUAL_ENVIRONMENT_MARKERS: ReadonlyArray<readonly string[]> = [
+	['pyvenv.cfg'],
+	['conda-meta', 'history'],
+]
+
+/** The characters that start a comment line of an ini file (pytest keeps a `#` after a value). */
+export const INI_COMMENT_CHARACTERS = '#;'
+
+/** The characters that make a `testpaths` entry a glob. */
+export const GLOB_MAGIC_PATTERN = /[*?[]/
 
 /** A pytest configuration file of tests, wherever it is: test code, never production. */
 export const CONFTEST_FILE_PATTERN = /(^|\/)conftest\.py$/
@@ -108,16 +144,34 @@ export const NODE_REPORTER_FILE_NAMES = ['tdd-node-reporter.js', 'tdd-node-repor
 export const NODE_TEST_CONTEXT_VARIABLE = 'NODE_TEST_CONTEXT'
 
 /**
- * The files that make a folder a pytest folder, each with the section it must hold (none: the file alone does):
- * `pytest.ini`, a `pyproject.toml` with `[tool.pytest`, a `tox.ini` with `[pytest]`, a `setup.cfg` with
- * `[tool:pytest]`.
+ * The files that may make a folder a pytest folder, in the order pytest looks for them in one folder (the first that
+ * configures pytest wins, `readPytestConfig` says which does).
  */
-export const PYTEST_CONFIG_FILES: ReadonlyArray<{ name: string; section?: string }> = [
-	{ name: 'pytest.ini' },
-	{ name: 'pyproject.toml', section: '[tool.pytest' },
-	{ name: 'tox.ini', section: '[pytest]' },
-	{ name: 'setup.cfg', section: '[tool:pytest]' },
+export const PYTEST_CONFIG_FILES = [
+	'pytest.toml',
+	'.pytest.toml',
+	'pytest.ini',
+	'.pytest.ini',
+	'pyproject.toml',
+	'tox.ini',
+	'setup.cfg',
+] as const
+
+/** The configuration files that configure pytest even with no pytest section. */
+export const ALWAYS_PYTEST_CONFIG_FILES: readonly string[] = [
+	'pytest.toml',
+	'.pytest.toml',
+	'pytest.ini',
+	'.pytest.ini',
 ]
+
+/** Where each kind of configuration file keeps pytest's settings. */
+export const PYTEST_INI_SECTION = 'pytest'
+export const PYTEST_CFG_SECTION = 'tool:pytest'
+export const PYTEST_TOML_TABLE = 'pytest'
+export const PYPROJECT_PYTEST_TABLE = 'tool.pytest'
+export const PYPROJECT_INI_OPTIONS_TABLE = 'tool.pytest.ini_options'
+export const PYPROJECT_FILE = 'pyproject.toml'
 
 /** A folder's own virtual environment interpreter, on POSIX and on Windows. */
 export const VENV_PYTHON_PATH = ['.venv', 'bin', 'python'] as const
@@ -169,6 +223,12 @@ export const NO_PYTEST_FAILURE = 'pytest is not installed for {folder} ({reason}
 
 /** The rows of stacked parametrize decorators, as the plugin joins them in a case's source. */
 export const PYTHON_ROW_SEPARATOR = '\0'
+
+/** A line that defines a Python function (`def <name>(`, `async def <name>(`, at any indentation): its name. */
+export const PYTHON_DEF_LINE_PATTERN = /^\s*(?:async\s+)?def\s+(\w+)\s*\(/
+
+/** A normalised decorator that is a `...parametrize(...)` call, as the plugin leaves it out of a case's text. */
+export const PYTHON_PARAMETRIZE_DECORATOR_PATTERN = /^@\s*[\w.\s]*\.\s*parametrize\s*\(/
 
 /** A Python name of a failed `pytest.raises` / `pytest.warns`: an assertion when its message says the miss. */
 export const PYTEST_FAILED_NAME = 'Failed'
@@ -569,6 +629,13 @@ export const REFUSED_LABEL = 'refused'
 /** The label of that line (`outside  <file>  <line>`): no case line, never counted as a refusal. */
 export const NOT_A_VITEST_FILE_LABEL = 'outside'
 
+/**
+ * The line of a pytest file a conftest leaves out of collection (`outside  <file>  <line>`): pytest collects a file
+ * named on its command line whatever a conftest says, so the cli's plugin asks pytest's own ignore hook.
+ */
+export const PYTEST_IGNORED_FILE_LINE =
+	"not a test file pytest collects (a conftest's collect_ignore, collect_ignore_glob or pytest_ignore_collect leaves it out)"
+
 /** The case states of a run that ran no case: skipped (`.skip`, `.todo`) or never started. */
 export const NOT_RUN_CASE_STATES: readonly string[] = ['skipped', 'pending']
 
@@ -607,3 +674,21 @@ export const VITEST_CONFIG_PROPERTIES = {
 	exclude: 'exclude',
 	projects: 'projects',
 } as const
+
+/** The flag of a red a revised case earned on the base's production (its file frozen as at any red). */
+export const RED_ON_BASE_FLAG = 'red on base'
+
+/** A revised case that passes on the base's production too: the revision proves nothing. */
+export const PASSES_ON_BASE_TOO = 'passes on the base too: the revision proves nothing'
+
+/** The name prefix of the throwaway folder a base run works in, in the temporary folder: removed when the run ends. */
+export const BASE_RED_FOLDER_PREFIX = 'dialecte-base-red-'
+
+/** A revised case the base run did not run (skipped there, or not found): the base proves nothing of it. */
+export const DID_NOT_RUN_ON_BASE = 'did not run on the base: the revision proves nothing'
+
+/** A revised case that failed on the base without an error to classify: no red. */
+export const FAILED_ON_BASE_WITHOUT_ERROR = 'failed on the base without an error'
+
+/** The tree entry a base run's copy links to the package's `node_modules`: never a file of the base. */
+export const NODE_MODULES_FOLDER = 'node_modules'

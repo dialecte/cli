@@ -39,8 +39,9 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
+import { runCaseOnBase } from '../lib/tdd/base-red.ts'
 import { frozenHashOf } from '../lib/tdd/case-status.ts'
-import { shortMessage } from '../lib/tdd/classify-failure.ts'
+import { firstLine, notARed } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
 import { isDataDependency } from '../lib/tdd/data-dependency.ts'
 import {
@@ -87,12 +88,13 @@ import {
 	FROZEN_AFTER_RED,
 	HELPER_DEPENDENT_OUTSIDE_RUN,
 	NO_RED_RECEIPT,
-	NOT_PROVABLY_OF_THE_BASE,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
+	PASSES_ON_BASE_TOO,
 	PROOF_KINDS,
 	PROVES_NOTHING,
 	RED_KINDS,
+	RED_ON_BASE_FLAG,
 	REVISION_NOT_NEEDED,
 	ROLLBACK_LINE,
 	RUNNER_DISPLAY_NAMES,
@@ -109,7 +111,6 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type {
 	LotCaseEntry,
-	CaseFailure,
 	ChangedTestFile,
 	DuplicateCaseId,
 	ReceiptFlag,
@@ -117,6 +118,7 @@ import type {
 	ReportedModule,
 	RevisedHelper,
 	RunCase,
+	RunnerObserver,
 	RunnerParams,
 	TddContext,
 	TddRunAdmission,
@@ -243,7 +245,9 @@ function admitRun(params: {
 	const testCode = hashChangedTestCode(context)
 	if (subcommand === 'green') {
 		const changedHelpers = [...testCode]
-			.filter(([file, hash]) => !isTestFile(file) && frozenHashOf({ ledger, file }) !== hash)
+			.filter(
+				([file, hash]) => !isTestFile({ root, file }) && frozenHashOf({ ledger, file }) !== hash,
+			)
 			.map(([file]) => file)
 		if (changedHelpers.length)
 			return {
@@ -277,7 +281,7 @@ function admitRun(params: {
 			refusal: resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${revisions.failure}`] }),
 		}
 	// a red run with no test file still runs for a changed helper a `revised` entry names: it may freeze it
-	if (files.length === 0 && !hasHelperToRevise({ ledger, testCode, revisions }))
+	if (files.length === 0 && !hasHelperToRevise({ root, ledger, testCode, revisions }))
 		return noFileRefusal
 	return {
 		testCode,
@@ -291,13 +295,14 @@ function admitRun(params: {
 
 /** A changed helper a `revised` entry names differs from its last freeze: a red run may freeze it for the entry. */
 function hasHelperToRevise(params: {
+	root: string
 	ledger: TddLedger
 	testCode: ReadonlyMap<string, string>
 	revisions: readonly LotCaseEntry[]
 }): boolean {
 	return [...params.testCode].some(
 		([file, hash]) =>
-			revisionOfHelper({ revisions: params.revisions, file }) !== undefined &&
+			revisionOfHelper({ root: params.root, revisions: params.revisions, file }) !== undefined &&
 			frozenHashOf({ ledger: params.ledger, file }) !== hash,
 	)
 }
@@ -395,6 +400,7 @@ async function runRed(params: {
 		...unlisted.map((file) => file.file),
 		...zeroCases.refused.map((refusal) => refusal.file),
 		...zeroCases.notVitest,
+		...zeroCases.pytestIgnored,
 	])
 	const changedTestCode = [...testCode.keys()]
 	const resolveModule = createModuleResolver({ root })
@@ -433,22 +439,26 @@ async function runRed(params: {
 		const unjudged = ofFile.filter(
 			(testCase) => memberReasons.has(caseLabel(testCase)) && !isJudgedByRun({ testCase, context }),
 		)
-		const judged = ofFile
-			.filter((testCase) => testCase.state !== 'skipped' && !unjudged.includes(testCase))
-			.map(function judgeCase(testCase): RedJudgement {
-				const reason = memberReasons.get(caseLabel(testCase))
-				if (reason !== undefined)
-					return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
-				return judgeRed({
-					testCase,
-					context,
-					productionHash,
-					movedBack: movedBack.length > 0,
-					testCodeChanged,
-					acceptances,
-					revisions,
-				})
+		const judged: RedJudgement[] = []
+		// one case at a time: a revised case may run once more on the base
+		for (const testCase of ofFile) {
+			if (testCase.state === 'skipped' || unjudged.includes(testCase)) continue
+			const reason = memberReasons.get(caseLabel(testCase))
+			if (reason !== undefined) {
+				judged.push({ testCase, kind: 'refused', detail: reason, reason, flags: [] })
+				continue
+			}
+			const judgement = await judgeRed({
+				testCase,
+				context,
+				productionHash,
+				movedBack: movedBack.length > 0,
+				testCodeChanged,
+				acceptances,
+				revisions,
 			})
+			judged.push(judgement)
+		}
 		const refused = judged.some((judgement) => judgement.kind === 'refused')
 		for (const judgement of judged) {
 			const recordable = judgement.kind !== 'kept' || judgement.flags.length > 0
@@ -458,7 +468,7 @@ async function runRed(params: {
 						...idOf(judgement.testCase),
 						testFileHash: testCode.get(file.file) ?? '',
 						caseHash: judgement.testCase.caseHash,
-						productionHash,
+						productionHash: judgement.productionHash ?? productionHash,
 						...(judgement.message && { message: judgement.message }),
 						...(judgement.reason && { reason: judgement.reason }),
 						...(judgement.flags.length && { flags: judgement.flags }),
@@ -569,7 +579,11 @@ function helpersToRevise(params: {
 	const revised: RevisedHelper[] = []
 	const outsideRun: Array<{ file: string; outside: string[] }> = []
 	for (const [file, hash] of params.testCode) {
-		const entry = revisionOfHelper({ revisions: params.revisions, file })
+		const entry = revisionOfHelper({
+			root: params.context.root,
+			revisions: params.revisions,
+			file,
+		})
 		if (!entry || file in frozen) continue
 		if (frozenHashOf({ ledger: params.context.ledger, file }) === hash) continue
 		const dependents = params.dependents(file)
@@ -584,7 +598,7 @@ function helpersToRevise(params: {
 }
 
 /** What a red run makes of one case. */
-function judgeRed(params: {
+async function judgeRed(params: {
 	testCase: RunCase
 	context: TddContext
 	productionHash: string
@@ -595,7 +609,7 @@ function judgeRed(params: {
 	acceptances: readonly LotCaseEntry[]
 	/** The cases the lot declares revised at review. */
 	revisions: readonly LotCaseEntry[]
-}): RedJudgement {
+}): Promise<RedJudgement> {
 	const { testCase, productionHash } = params
 	const { ledger } = params.context
 	const receipts = receiptsOf({ ledger, testCase: idOf(testCase) }).filter(
@@ -649,14 +663,18 @@ function judgeRed(params: {
 			reason: acceptance.reason,
 			flags: [],
 		}
-	const judged = judgePass({ ...params, counted })
+	const judged = await judgePass({ ...params, counted })
 	return acceptance
 		? { ...judged, detail: joinParts([judged.detail, ACCEPTANCE_NOT_NEEDED]) }
 		: judged
 }
 
-/** What a red run makes of a passing case no acceptance decides, from the receipts of it that count. */
-function judgePass(params: {
+/**
+ * What a red run makes of a passing case no acceptance decides, from the receipts of it that count. A revised
+ * case nothing else can prove runs once more on the base's production (`judgeOnBase`): one not of the base, and
+ * one whose own test call changed since its red that still awaits its green.
+ */
+async function judgePass(params: {
 	testCase: RunCase
 	context: TddContext
 	productionHash: string
@@ -664,11 +682,14 @@ function judgePass(params: {
 	revisions: readonly LotCaseEntry[]
 	/** The receipts of the case the read rule counts, refusals left out. */
 	counted: readonly TddReceipt[]
-}): RedJudgement {
+}): Promise<RedJudgement> {
 	const { testCase, productionHash, counted } = params
 	const { ledger } = params.context
 	const prior = counted.at(-1)
 	const revision = findCaseEntry({ entries: params.revisions, testCase, list: 'revised' })
+	// its test corrected before its green: only the base can still show it red
+	if (revision && prior && prior.caseHash !== testCase.caseHash && awaitsGreen(counted))
+		return await judgeOnBase({ testCase, context: params.context })
 	// a file or glob entry never stands for the green a red case still owes; an exact entry may
 	const covers = revision !== undefined && (namesOneCase(revision.case) || !awaitsGreen(counted))
 	// a proven case edited at review passes: the lot's reason stands for a new red
@@ -735,8 +756,7 @@ function judgePass(params: {
 				reason: revision.reason,
 				flags: [],
 			}
-		const reason = `${PROVES_NOTHING}; ${NOT_PROVABLY_OF_THE_BASE}`
-		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
+		return await judgeOnBase({ testCase, context: params.context })
 	}
 	if (testCase.ofChange) {
 		const lastGreen = [...ledger.entries]
@@ -749,6 +769,43 @@ function judgePass(params: {
 		return { testCase, kind: 'refused', detail: reason, reason, flags: [] }
 	}
 	return { testCase, kind: 'unchanged', detail: '', flags: [] }
+}
+
+/**
+ * A revised case passing now, run on the base's production with the lot's current test code: red there is a real
+ * red flagged `red on base` at the base's production state; passing there, or failing for no real reason, is
+ * refused.
+ */
+async function judgeOnBase(params: {
+	testCase: RunCase
+	context: TddContext
+}): Promise<RedJudgement> {
+	const { testCase, context } = params
+	const verdict = await runCaseOnBase({
+		root: context.root,
+		base: context.base,
+		packageJson: context.packageJson,
+		testCase,
+		observer: runnerObserverOf({ context, name: 'tdd red on the base' }),
+	})
+	if (verdict.kind === 'passes')
+		return {
+			testCase,
+			kind: 'refused',
+			detail: PASSES_ON_BASE_TOO,
+			reason: PASSES_ON_BASE_TOO,
+			flags: [],
+		}
+	if (verdict.kind === 'refused')
+		return { testCase, kind: 'refused', detail: verdict.reason, reason: verdict.reason, flags: [] }
+	return {
+		testCase,
+		kind: 'red',
+		detail: `${verdict.failure.kind}: ${firstLine(verdict.failure.message)}`,
+		message: verdict.failure.message,
+		flags: [RED_ON_BASE_FLAG],
+		productionHash: verdict.productionHash,
+	}
 }
 
 /** The case's last proof is a red with no green after it: its green is still owed. */
@@ -1006,7 +1063,11 @@ async function runStatus(context: TddContext): Promise<CommandResult> {
 			(file) =>
 				`cannot list  ${file.file}  ${file.failure.kind}: ${firstLine(file.failure.message)}`,
 		),
-		...zeroCaseLines({ refused: state.zeroCases ?? [], notVitest: state.notVitest ?? [] }),
+		...zeroCaseLines({
+			refused: state.zeroCases ?? [],
+			notVitest: state.notVitest ?? [],
+			pytestIgnored: state.pytestIgnored ?? [],
+		}),
 	]
 	return resultOf({
 		exitCode: 0,
@@ -1041,25 +1102,32 @@ async function announcedRun(params: {
 	filter?: RunnerParams['filter']
 }): Promise<Awaited<ReturnType<typeof runTestCases>>> {
 	const { context } = params
-	const clock = createSystemClock()
 	return runTestCases({
 		root: context.root,
 		files: params.files,
 		filter: params.filter ?? 'all',
-		observer: {
-			start: ({ runner, fileCount }) => {
-				const startedAt = clock.now()
-				const name = `tdd ${params.subcommand}: ${RUNNER_DISPLAY_NAMES[runner]}`
-				const running = context.progress?.start({ name, detail: `${fileCount} test file(s)` })
-				return {
-					finish: ({ failed }) =>
-						running?.finish(
-							`${failed ? '✗' : '✓'} ${name} ran ${fileCount} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
-						),
-				}
-			},
-		},
+		observer: runnerObserverOf({ context, name: `tdd ${params.subcommand}` }),
 	})
+}
+
+/** Each runner's run shown as a progress step `<name>: <runner>`: a running line, then its mark and duration. */
+function runnerObserverOf(params: { context: TddContext; name: string }): RunnerObserver {
+	const { context } = params
+	const clock = createSystemClock()
+	return {
+		start: function startRunnerStep({ runner, fileCount }) {
+			const startedAt = clock.now()
+			const name = `${params.name}: ${RUNNER_DISPLAY_NAMES[runner]}`
+			const running = context.progress?.start({ name, detail: `${fileCount} test file(s)` })
+			return {
+				finish: function finishRunnerStep({ failed }) {
+					running?.finish(
+						`${failed ? '✗' : '✓'} ${name} ran ${fileCount} test file(s)  ${formatDuration(clock.now() - startedAt)}`,
+					)
+				},
+			}
+		},
+	}
 }
 
 /** A refusal of a whole file (it cannot run, or holds a focus marker), kept in the ledger. */
@@ -1081,10 +1149,6 @@ function fileRefusal(params: {
 		reason: params.reason,
 		at: params.at,
 	}
-}
-
-function notARed(failure: CaseFailure): string {
-	return `${failure.kind} (not a red): ${firstLine(failure.message)}`
 }
 
 /** A red or green run's result: exit 1 on a refusal or a duplicate member left unjudged; `--json` with the groups. */
@@ -1121,10 +1185,6 @@ function statusLine(params: { label: string; id: string; detail: string }): stri
 /** The parts of a line's detail that are not empty, two spaces apart. */
 function joinParts(parts: readonly string[]): string {
 	return parts.filter(Boolean).join('  ')
-}
-
-function firstLine(message: string): string {
-	return shortMessage(message).split('\n')[0]
 }
 
 function idOf(testCase: TestCaseId): TestCaseId {

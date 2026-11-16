@@ -3,7 +3,9 @@
  * state: the run reports no module or no case of it -> the package's vitest configs say why (held by the default
  * config or unknown (a config the reader cannot fully read may hold it: fail closed), by a config the default one does
  * not list, or by none: no vitest test file, out of the selection; a node or a pytest test file was given to its
- * runner: no case of it ran); every case it reports is skipped or a todo -> refused, a skipped case proves nothing
+ * runner: no case of it ran); a pytest file the run reports no module of -> a conftest leaves it out of discovery
+ * (the plugin asked pytest's ignore hook): out of the selection, never refused nor frozen; every case it reports is
+ * skipped or a todo -> refused, a skipped case proves nothing
  * (in a collect, the skip marks pytest read, or the TypeScript source).
  */
 import { modulesOf } from './select-cases.ts'
@@ -11,6 +13,7 @@ import {
 	NOT_A_VITEST_FILE_LABEL,
 	NOT_A_VITEST_FILE_LINE,
 	NOT_RUN_CASE_STATES,
+	PYTEST_IGNORED_FILE_LINE,
 	REFUSED_LABEL,
 	ZERO_CASE_REASONS,
 } from './tdd.constants.ts'
@@ -37,7 +40,7 @@ export function judgeZeroCaseFiles(params: {
 	/** A collect-only run reports every case skipped: which ones the file skips is read from its source. */
 	collectOnly: boolean
 }): ZeroCaseFiles {
-	const verdicts: ZeroCaseFiles = { refused: [], notVitest: [] }
+	const verdicts: ZeroCaseFiles = { refused: [], notVitest: [], pytestIgnored: [] }
 	for (const file of params.files) {
 		if (params.unlisted.some((unlisted) => unlisted.file === file.file)) continue
 		const modules = modulesOf({ root: params.root, modules: params.modules, file: file.file })
@@ -51,6 +54,11 @@ export function judgeZeroCaseFiles(params: {
 				text: file.text,
 				configs: params.configs,
 			})
+			// a pytest file given to pytest with no module back: a conftest leaves it out of discovery
+			if (runner === 'pytest' && modules.length === 0) {
+				verdicts.pytestIgnored.push(file.file)
+				continue
+			}
 			const holding =
 				modules.length > 0 || runner === 'node' || runner === 'pytest'
 					? { kind: 'default' as const }
@@ -93,6 +101,9 @@ export function zeroCaseLines(zeroCases: ZeroCaseFiles): string[] {
 		...zeroCases.refused.map((refusal) => `${REFUSED_LABEL}  ${refusal.file}  ${refusal.reason}`),
 		...zeroCases.notVitest.map(
 			(file) => `${NOT_A_VITEST_FILE_LABEL}  ${file}  ${NOT_A_VITEST_FILE_LINE}`,
+		),
+		...zeroCases.pytestIgnored.map(
+			(file) => `${NOT_A_VITEST_FILE_LABEL}  ${file}  ${PYTEST_IGNORED_FILE_LINE}`,
 		),
 	]
 }

@@ -2,14 +2,13 @@
  * The runner of each test file: a Python test file under pytest, a file importing `node:test` under node, a file a
  * vitest config holds under vitest, any other file under none; and the changed test files split by runner.
  */
+import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { DEFAULT_VITEST_EXCLUDE } from './tdd.constants.ts'
 import { groupFilesByRunner, runnerOf } from './test-runner.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { ChangedTestFile, RunnerGroups, TestRunner, VitestConfigs } from './tdd.types.ts'
-
-const ROOT = '/work/package'
 
 /** No config file: vitest's own defaults hold every `*.test.*` and `*.spec.*` file. */
 const NO_CONFIG: VitestConfigs = { configs: [], defaultConfig: undefined }
@@ -224,9 +223,11 @@ const RUNNER_CASES: {
 describe('runnerOf', () => {
 	for (const scenario of RUNNER_CASES)
 		it(scenario.title, () => {
+			const root = temporaryFolder('dialecte-package-')
+
 			expect(
 				runnerOf({
-					root: ROOT,
+					root,
 					file: scenario.file,
 					text: scenario.text,
 					configs: scenario.configs,
@@ -303,8 +304,10 @@ const GROUP_CASES: {
 describe('groupFilesByRunner', () => {
 	for (const scenario of GROUP_CASES)
 		it(scenario.title, () => {
+			const root = temporaryFolder('dialecte-package-')
+
 			expect(
-				groupFilesByRunner({ root: ROOT, files: scenario.files, configs: scenario.configs }),
+				groupFilesByRunner({ root, files: scenario.files, configs: scenario.configs }),
 			).toEqual(scenario.expected)
 		})
 })

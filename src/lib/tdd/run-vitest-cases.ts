@@ -2,7 +2,8 @@
  * Runs test cases of a package with its own vitest (`node_modules/.bin/vitest` up to the repository root,
  * else `npx --no-install vitest run`; its projects as it declares them), filtered to the files and the case
  * names asked, and answers what the run saw through the cli's reporter.
- * Snapshots are never written (`--update=none`, CI): a test's expected value is its own.
+ * Snapshots are never written (`--update=none`, CI): a test's expected value is its own. No results cache is
+ * written either (`--cache=false`): the run leaves the tree as it found it.
  * The run goes through `runReportingChild`: stdin closed, stopped as stalled or past its bound.
  */
 import { resolvePackageVitest } from './package-vitest.ts'
@@ -32,6 +33,9 @@ export async function runVitestCases(
 			'--passWithNoTests',
 			// a snapshot never writes its own expected value: a missing or different one fails
 			'--update=none',
+			// no results cache under node_modules: a run leaves the package's tree (and a base copy's linked
+			// node_modules) as it found it
+			'--cache=false',
 			...nameFilter,
 		],
 		environment: { CI: 'true', FORCE_COLOR: '0', NO_COLOR: '1' },

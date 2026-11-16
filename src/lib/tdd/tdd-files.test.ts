@@ -1,10 +1,15 @@
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createScratchRepository, writeFiles } from '../../../test/scratch-repository.ts'
+import {
+	createScratchRepository,
+	temporaryFolder,
+	writeFiles,
+} from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import {
 	appendEntries,
+	isPackageTestCode,
 	isProductionPath,
 	isTestCode,
 	isTestFile,
@@ -79,7 +84,9 @@ const TEST_FILE_CASES: { title: string; file: string; expected: boolean }[] = [
 describe('isTestFile', () => {
 	for (const scenario of TEST_FILE_CASES)
 		it(scenario.title, () => {
-			expect(isTestFile(scenario.file)).toBe(scenario.expected)
+			const root = temporaryFolder('dialecte-package-')
+
+			expect(isTestFile({ root, file: scenario.file })).toBe(scenario.expected)
 		})
 })
 
@@ -122,10 +129,14 @@ const PYTHON_TEST_CODE_CASES: { title: string; file: string; expected: boolean }
 	},
 ]
 
-describe('isTestCode on python files', () => {
+describe('isPackageTestCode on python files', () => {
 	for (const scenario of PYTHON_TEST_CODE_CASES)
 		it(scenario.title, () => {
-			expect(isTestCode(scenario.file)).toBe(scenario.expected)
+			const root = temporaryFolder('dialecte-package-')
+
+			expect(isPackageTestCode({ root, file: scenario.file, packageJson: PACKAGE_JSON })).toBe(
+				scenario.expected,
+			)
 		})
 })
 
@@ -171,7 +182,9 @@ const PYTHON_PRODUCTION_CASES: { title: string; file: string; expected: boolean 
 describe('isProductionPath on python files', () => {
 	for (const scenario of PYTHON_PRODUCTION_CASES)
 		it(scenario.title, () => {
-			expect(isProductionPath({ file: scenario.file, packageJson: PACKAGE_JSON })).toBe(
+			const root = temporaryFolder('dialecte-package-')
+
+			expect(isProductionPath({ root, file: scenario.file, packageJson: PACKAGE_JSON })).toBe(
 				scenario.expected,
 			)
 		})

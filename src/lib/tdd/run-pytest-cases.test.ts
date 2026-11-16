@@ -24,11 +24,15 @@ import {
 	FOLDER_B_INI_TEXT,
 	FOLDER_B_TEST_FILE,
 	FOLDER_B_TEST_TEXT,
+	GLOB_IGNORED_TEST_FILE,
 	HANGING_INTERPRETER_TEXT,
 	HELPERS_FILE,
 	HELPERS_TEXT,
+	HOOK_IGNORED_TEST_FILE,
 	IDS_TEST_FILE,
 	IDS_TEST_TEXT,
+	IGNORED_TEST_FILE,
+	IGNORING_CONFTEST_TEXT,
 	INDENTATION_ERROR_TEST_TEXT,
 	NO_TEST_FILE,
 	NO_TEST_TEXT,
@@ -224,6 +228,29 @@ describe('runPytestCases reports what pytest saw', { timeout: PYTHON_RUN_CASE_TI
 		await expect(
 			runPytestCases({ root, files: [NO_TEST_FILE], filter: 'all' }),
 		).resolves.not.toHaveProperty('failure')
+	})
+
+	it("files a conftest leaves out by collect_ignore, collect_ignore_glob and pytest_ignore_collect, named on the command line (pytest 8.4 and 9.0 still collect a named file) → no module for them, only the other file's", async () => {
+		const root = packageWith({
+			adder: ADDER_IMPLEMENTED_TEXT,
+			written: {
+				[CONFTEST_FILE]: IGNORING_CONFTEST_TEXT,
+				[IGNORED_TEST_FILE]: TRIVIAL_TEST_TEXT,
+				[GLOB_IGNORED_TEST_FILE]: TRIVIAL_TEST_TEXT,
+				[HOOK_IGNORED_TEST_FILE]: TRIVIAL_TEST_TEXT,
+				[ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT,
+			},
+		})
+
+		const result = await runPytestCases({
+			root,
+			files: [IGNORED_TEST_FILE, GLOB_IGNORED_TEST_FILE, HOOK_IGNORED_TEST_FILE, ADD_PYTEST_FILE],
+			filter: 'all',
+		})
+
+		expect('failure' in result ? result : result.map((module) => module.file)).toEqual([
+			expect.stringMatching(/tests\/test_add\.py$/),
+		])
 	})
 })
 

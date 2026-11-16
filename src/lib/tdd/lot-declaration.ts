@@ -129,10 +129,19 @@ export function entryNamesFile(params: { entry: string; file: string }): boolean
  * entry matching it; a `<file>::<name>` entry never names a helper.
  */
 export function revisionOfHelper(params: {
+	root: string
 	revisions: readonly LotCaseEntry[]
 	file: string
 }): LotCaseEntry | undefined {
-	if (isTestFile(params.file)) return undefined
+	if (isTestFile(params)) return undefined
+	return revisionNaming(params)
+}
+
+/** The first file or glob entry of `revised` matching the file. */
+function revisionNaming(params: {
+	revisions: readonly LotCaseEntry[]
+	file: string
+}): LotCaseEntry | undefined {
 	return params.revisions.find((entry) => entryNamesFile({ entry: entry.case, file: params.file }))
 }
 
@@ -150,8 +159,9 @@ export function listRevisedHelpers(params: {
 	const used = new Map<string, RevisedHelper>()
 	for (const freeze of params.ledger.entries) {
 		if (freeze.kind !== 'freeze') continue
+		// a freeze's `revised` lists helpers only: the red run that froze them judged each one no test file
 		for (const file of freeze.revised ?? []) {
-			const entry = revisionOfHelper({ revisions: params.revisions, file })
+			const entry = revisionNaming({ revisions: params.revisions, file })
 			const now = params.testCode.get(file)
 			if (entry && now !== undefined && freeze.files[file] === now) used.set(file, { file, entry })
 		}

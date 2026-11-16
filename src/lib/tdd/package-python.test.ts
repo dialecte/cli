@@ -108,6 +108,34 @@ describe('resolvePytestFolder', () => {
 
 		expect(resolvePytestFolder({ root, file: 'tests/test_a.py' })).toBe(root)
 	})
+
+	it('a pytest.toml holding [pytest] (pytest 9) → its folder', () => {
+		const root = packageWith({
+			'checks/pytest.toml': '[pytest]\ntestpaths = ["tests"]\n',
+			'checks/tests/test_a.py': TRIVIAL_TEST_TEXT,
+		})
+
+		expect(resolvePytestFolder({ root, file: 'checks/tests/test_a.py' })).toBe(join(root, 'checks'))
+	})
+
+	it('a hidden .pytest.ini → its folder', () => {
+		const root = packageWith({
+			'checks/.pytest.ini': '[pytest]\n',
+			'checks/tests/test_a.py': TRIVIAL_TEST_TEXT,
+		})
+
+		expect(resolvePytestFolder({ root, file: 'checks/tests/test_a.py' })).toBe(join(root, 'checks'))
+	})
+
+	it('a pyproject.toml naming [tool.pytest.ini_options] in a comment only → the package root', () => {
+		const root = packageWith({
+			'checks/pyproject.toml':
+				'[project]\nname = "demo"\n# [tool.pytest.ini_options] comes later\n',
+			'checks/tests/test_a.py': TRIVIAL_TEST_TEXT,
+		})
+
+		expect(resolvePytestFolder({ root, file: 'checks/tests/test_a.py' })).toBe(root)
+	})
 })
 
 describe('resolvePython', () => {
@@ -115,7 +143,7 @@ describe('resolvePython', () => {
 		const root = packageWith({ [`python/${VENV_PYTHON_PATH}`]: '' })
 		const folder = join(root, 'python')
 
-		expect(resolvePython({ root, folder, hasCommand: pathHolding('uv') })).toEqual({
+		expect(resolvePython({ folder, hasCommand: pathHolding('uv') })).toEqual({
 			command: join(folder, VENV_PYTHON_PATH),
 			arguments: [],
 		})
@@ -124,16 +152,17 @@ describe('resolvePython', () => {
 	it('a .venv at the repository root, the pytest folder below it → the root interpreter', () => {
 		const root = packageWith({ [VENV_PYTHON_PATH]: '', 'python/pytest.ini': PYTEST_INI_TEXT })
 
-		expect(
-			resolvePython({ root, folder: join(root, 'python'), hasCommand: pathHolding() }),
-		).toEqual({ command: join(root, VENV_PYTHON_PATH), arguments: [] })
+		expect(resolvePython({ folder: join(root, 'python'), hasCommand: pathHolding() })).toEqual({
+			command: join(root, VENV_PYTHON_PATH),
+			arguments: [],
+		})
 	})
 
 	it('a .venv in the pytest folder and one at the repository root → the folder one', () => {
 		const root = packageWith({ [VENV_PYTHON_PATH]: '', [`python/${VENV_PYTHON_PATH}`]: '' })
 		const folder = join(root, 'python')
 
-		expect(resolvePython({ root, folder, hasCommand: pathHolding() })).toEqual({
+		expect(resolvePython({ folder, hasCommand: pathHolding() })).toEqual({
 			command: join(folder, VENV_PYTHON_PATH),
 			arguments: [],
 		})
@@ -144,7 +173,7 @@ describe('resolvePython', () => {
 		writeFiles({ root: outside, files: { [VENV_PYTHON_PATH]: '' } })
 		const root = initializeRepository({ root: join(outside, 'repository') })
 
-		expect(resolvePython({ root, folder: root, hasCommand: pathHolding() })).toEqual({
+		expect(resolvePython({ folder: root, hasCommand: pathHolding() })).toEqual({
 			command: 'python3',
 			arguments: [],
 		})
@@ -153,15 +182,16 @@ describe('resolvePython', () => {
 	it('no .venv, a uv.lock on the walk, uv on the PATH → uv run --frozen python', () => {
 		const root = packageWith({ 'uv.lock': '', 'python/pytest.ini': PYTEST_INI_TEXT })
 
-		expect(
-			resolvePython({ root, folder: join(root, 'python'), hasCommand: pathHolding('uv') }),
-		).toEqual({ command: 'uv', arguments: ['run', '--frozen', 'python'] })
+		expect(resolvePython({ folder: join(root, 'python'), hasCommand: pathHolding('uv') })).toEqual({
+			command: 'uv',
+			arguments: ['run', '--frozen', 'python'],
+		})
 	})
 
 	it('no .venv, a uv.lock on the walk, uv not on the PATH → python3', () => {
 		const root = packageWith({ 'uv.lock': '' })
 
-		expect(resolvePython({ root, folder: root, hasCommand: pathHolding() })).toEqual({
+		expect(resolvePython({ folder: root, hasCommand: pathHolding() })).toEqual({
 			command: 'python3',
 			arguments: [],
 		})
@@ -170,7 +200,7 @@ describe('resolvePython', () => {
 	it('no .venv, no uv.lock, uv on the PATH → python3', () => {
 		const root = packageWith({})
 
-		expect(resolvePython({ root, folder: root, hasCommand: pathHolding('uv') })).toEqual({
+		expect(resolvePython({ folder: root, hasCommand: pathHolding('uv') })).toEqual({
 			command: 'python3',
 			arguments: [],
 		})
@@ -181,7 +211,7 @@ describe('resolvePython', () => {
 		const root = join(repository, 'packages', 'demo')
 		writeFiles({ root, files: { 'pytest.ini': PYTEST_INI_TEXT } })
 
-		expect(resolvePython({ root, folder: root, hasCommand: pathHolding() })).toEqual({
+		expect(resolvePython({ folder: root, hasCommand: pathHolding() })).toEqual({
 			command: join(repository, VENV_PYTHON_PATH),
 			arguments: [],
 		})
@@ -190,31 +220,34 @@ describe('resolvePython', () => {
 	it('win32, a .venv with Scripts/python.exe in the pytest folder → that interpreter', () => {
 		const root = packageWith({ [VENV_WINDOWS_PYTHON_PATH]: '' })
 
-		expect(
-			resolvePython({ root, folder: root, hasCommand: pathHolding(), platform: 'win32' }),
-		).toEqual({ command: join(root, VENV_WINDOWS_PYTHON_PATH), arguments: [] })
+		expect(resolvePython({ folder: root, hasCommand: pathHolding(), platform: 'win32' })).toEqual({
+			command: join(root, VENV_WINDOWS_PYTHON_PATH),
+			arguments: [],
+		})
 	})
 
 	it('win32, a .venv holding only bin/python → not taken, python', () => {
 		const root = packageWith({ [VENV_PYTHON_PATH]: '' })
 
-		expect(
-			resolvePython({ root, folder: root, hasCommand: pathHolding(), platform: 'win32' }),
-		).toEqual({ command: 'python', arguments: [] })
+		expect(resolvePython({ folder: root, hasCommand: pathHolding(), platform: 'win32' })).toEqual({
+			command: 'python',
+			arguments: [],
+		})
 	})
 
 	it('win32, no .venv → python', () => {
 		const root = packageWith({})
 
-		expect(
-			resolvePython({ root, folder: root, hasCommand: pathHolding(), platform: 'win32' }),
-		).toEqual({ command: 'python', arguments: [] })
+		expect(resolvePython({ folder: root, hasCommand: pathHolding(), platform: 'win32' })).toEqual({
+			command: 'python',
+			arguments: [],
+		})
 	})
 
 	it('a .venv and a uv.lock → the .venv interpreter', () => {
 		const root = packageWith({ [VENV_PYTHON_PATH]: '', 'uv.lock': '' })
 
-		expect(resolvePython({ root, folder: root, hasCommand: pathHolding('uv') })).toEqual({
+		expect(resolvePython({ folder: root, hasCommand: pathHolding('uv') })).toEqual({
 			command: join(root, VENV_PYTHON_PATH),
 			arguments: [],
 		})

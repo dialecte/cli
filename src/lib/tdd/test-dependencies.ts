@@ -19,34 +19,31 @@ import { realPathOf } from '../file-system.ts'
 import { matchesGlob } from './match-glob.ts'
 import { modulesOf } from './select-cases.ts'
 import { isPackageTestCode } from './tdd-files.ts'
-import {
-	NEGATED_GLOB_PREFIX,
-	PYTHON_TEST_FILE_PATTERN,
-	SOURCE_FILE_PATTERN,
-} from './tdd.constants.ts'
+import { NEGATED_GLOB_PREFIX, PYTHON_FILE_PATTERN, SOURCE_FILE_PATTERN } from './tdd.constants.ts'
 import { metaGlobs, moduleSpecifiers } from './test-source.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { MetaGlob, ModuleResolver, ReportedModule } from './tdd.types.ts'
+import type {
+	MetaGlob,
+	ModuleResolver,
+	ReportedModule,
+	TestDependencies,
+	TestDependenciesParams,
+} from './tdd.types.ts'
 
-export function listTestDependencies(params: {
-	root: string
-	/** The test file, relative to the root. */
-	file: string
-	/** The test-code files of the change, relative to the root. */
-	changedTestCode: readonly string[]
-	resolveModule: ModuleResolver
-	/** Its declared production folders; none when not given. */
-	packageJson?: PackageJson
-	/** The modules the run reported: a pytest test file's dependencies are the ones its run used. */
-	modules?: readonly ReportedModule[]
-}): { dependencies: string[]; unresolved: string[] } {
-	const { root } = params
-	if (PYTHON_TEST_FILE_PATTERN.test(params.file))
+export function listTestDependencies(params: TestDependenciesParams): TestDependencies {
+	// a test file here is one already: a Python one is a pytest file
+	if (PYTHON_FILE_PATTERN.test(params.file))
 		return {
 			dependencies: pythonDependencies({ ...params, modules: params.modules ?? [] }),
 			unresolved: [],
 		}
+	return typescriptDependencies(params)
+}
+
+/** The test code a JS/TS test file depends on, read from its source and the sources it reaches. */
+function typescriptDependencies(params: TestDependenciesParams): TestDependencies {
+	const { root } = params
 	const found = new Set<string>()
 	const texts: string[] = []
 	const unresolved = new Set<string>()
@@ -60,7 +57,7 @@ export function listTestDependencies(params: {
 	for (const setupFile of params.resolveModule.setupFiles)
 		if (
 			setupFile !== params.file &&
-			isPackageTestCode({ file: setupFile, packageJson: params.packageJson ?? {} })
+			isPackageTestCode({ root, file: setupFile, packageJson: params.packageJson ?? {} })
 		) {
 			found.add(setupFile)
 			followed.add(setupFile)
@@ -95,7 +92,7 @@ export function listTestDependencies(params: {
 				if (resolution.kind !== 'local') continue
 				const resolved = resolution.file
 				if (resolved === params.file || found.has(resolved)) continue
-				if (isPackageTestCode({ file: resolved, packageJson: params.packageJson ?? {} })) {
+				if (isPackageTestCode({ root, file: resolved, packageJson: params.packageJson ?? {} })) {
 					found.add(resolved)
 					followed.add(resolved)
 					queue.push(resolved)
@@ -146,7 +143,7 @@ function pythonDependencies(params: {
 				file !== params.file &&
 				!file.startsWith('..') &&
 				!isAbsolute(file) &&
-				isPackageTestCode({ file, packageJson: params.packageJson ?? {} }),
+				isPackageTestCode({ root: params.root, file, packageJson: params.packageJson ?? {} }),
 		)
 	return [...new Set(files)].sort()
 }

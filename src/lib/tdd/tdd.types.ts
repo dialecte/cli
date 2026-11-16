@@ -37,11 +37,48 @@ export type ReportedError = {
  */
 export type PythonCaseSource = { call: string; row?: string }
 
+/**
+ * A pytest case's `call` split at its `def` line: the name it defines, each decorator above that line alone
+ * (whitespace normalised), and the function's text from `def` on.
+ */
+export type PythonCallParts = { functionName: string; decorators: string[]; body: string }
+
 /** The interpreter of a pytest folder: a command and the arguments before `-m pytest`. */
 export type PackagePython = {
 	command: string
 	arguments: readonly string[]
 }
+
+/** What a pytest configuration says of test discovery, pytest's defaults for what it does not declare. */
+export type PytestConfig = {
+	/** `python_files`: the patterns a test module matches (by its name, or by its path when a pattern holds `/`). */
+	pythonFiles: string[]
+	/** `testpaths`: where discovery starts, relative to the configuration's folder (globs); none: the folder itself. */
+	testpaths: string[]
+	/** `norecursedirs`: the patterns of the folders discovery never enters below where it starts. */
+	norecursedirs: string[]
+}
+
+/** A pytest folder (absolute) with the configuration it holds: pytest's defaults when it holds none. */
+export type PytestFolder = { folder: string; config: PytestConfig }
+
+/** A pytest setting as written: a string (split as a shell splits a line) or a list (a TOML array). */
+export type PytestSetting = string | string[]
+
+/** The sections of an ini file (`[name]`), each with its keys and their values as written. */
+export type IniSections = Map<string, Map<string, string>>
+
+/** The values of a TOML document by their dotted key paths (`tool.pytest.ini_options.testpaths`), and its tables. */
+export type TomlDocument = { values: Map<string, TomlValue>; tables: Set<string> }
+
+/** Where the TOML reader stands in a text. */
+export type TomlCursor = { text: string; index: number }
+
+/** A value the TOML reader read, with the index just after it. */
+export type TomlRead<T> = { value: T; end: number }
+
+/** A TOML value as the pytest reader keeps it: a string, a list, or another value it does not read. */
+export type TomlValue = string | TomlValue[] | { unread: string }
 
 export type ReportedCaseState = 'passed' | 'failed' | 'skipped' | 'pending'
 
@@ -154,6 +191,8 @@ export type ReceiptFlag =
 	| 'red after green'
 	/** A green case kept at a red run that froze test code it depends on at a new state. */
 	| 'test code changed around it'
+	/** A red a revised case earned on the base's production, with the lot's current test code over it. */
+	| 'red on base'
 
 /**
  * - `red`: the case failed for a real reason before the code;
@@ -420,6 +459,8 @@ export type TddState = {
 	zeroCases?: ZeroCaseRefusal[]
 	/** The changed test files no vitest config includes: out of the selection; absent when none. */
 	notVitest?: string[]
+	/** The changed pytest files a conftest leaves out of discovery: out of the selection; absent when none. */
+	pytestIgnored?: string[]
 	/** What the cases of the change moved from; absent when nothing moved and no base collect ran. */
 	moves?: TddMoves
 }
@@ -454,6 +495,8 @@ export type RedJudgement = {
 	message?: string
 	reason?: string
 	flags: ReceiptFlag[]
+	/** The production state the receipt names when it is not the tree's now: a red on base, the base's. */
+	productionHash?: string
 }
 
 /** Where an import of a test file leads. */
@@ -479,6 +522,23 @@ export type ModuleResolver = {
 
 /** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */
 export type MetaGlob = { include: string[]; exclude: string[] }
+
+/** What the test code of a test file is listed from. */
+export type TestDependenciesParams = {
+	root: string
+	/** The test file, relative to the root. */
+	file: string
+	/** The test-code files of the change, relative to the root. */
+	changedTestCode: readonly string[]
+	resolveModule: ModuleResolver
+	/** Its declared production folders; none when not given. */
+	packageJson?: PackageJson
+	/** The modules the run reported: a pytest test file's dependencies are the ones its run used. */
+	modules?: readonly ReportedModule[]
+}
+
+/** The test code a test file depends on, and the local-looking specifiers that resolve nowhere. */
+export type TestDependencies = { dependencies: string[]; unresolved: string[] }
 
 /** A vite alias: the specifier prefix and the absolute folder it stands for. */
 export type ModuleAlias = { find: string; replacement: string }
@@ -620,4 +680,6 @@ export type ZeroCaseFiles = {
 	refused: ZeroCaseRefusal[]
 	/** No vitest config includes them: they leave the selection, never refused nor frozen. */
 	notVitest: string[]
+	/** pytest files a conftest leaves out of discovery (no module reported): out of the selection as well. */
+	pytestIgnored: string[]
 }

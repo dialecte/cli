@@ -146,6 +146,7 @@ export async function readTddState(params: {
 			if (movedFiles.has(testCase.file)) return { ...id, status: 'unchanged' as const, flags: [] }
 			const { skipped } = countingReceipts({ ledger, testCase: id, acceptances, revisions })
 			const status = caseStatusOf({
+				root,
 				ledger,
 				testCase: id,
 				testFileHash: testCode.get(testCase.file) ?? '',
@@ -165,11 +166,14 @@ export async function readTddState(params: {
 		}),
 		duplicates,
 		// a file no vitest config includes is no test code tdd measures
-		unfrozen: unfrozen.filter((file) => !zeroCases.notVitest.includes(file)),
+		unfrozen: unfrozen.filter(
+			(file) => !zeroCases.notVitest.includes(file) && !zeroCases.pytestIgnored.includes(file),
+		),
 		findings,
 		unlisted,
 		...(zeroCases.refused.length && { zeroCases: zeroCases.refused }),
 		...(zeroCases.notVitest.length && { notVitest: zeroCases.notVitest }),
+		...(zeroCases.pytestIgnored.length && { pytestIgnored: zeroCases.pytestIgnored }),
 		...(hasMoves(moves) && { moves }),
 	}
 }

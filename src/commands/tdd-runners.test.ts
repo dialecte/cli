@@ -2,10 +2,36 @@
  * `tdd red`, `tdd green`, `tdd status` and the gate's tdd state over a package of `node --test` files: the cases of
  * a node file get the same receipts, freezes and refusals as a vitest one.
  */
-import { writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { ALL_SKIPPED_REFUSAL } from '../../test/tdd-bugs-zero-cases.constants.ts'
+import {
+	ADD_AND_MULTIPLY_TEXT,
+	ADD_CASE,
+	ADD_PYTEST_CASE,
+	ADD_SECOND_CASE,
+	BASE_RED_SCENARIO_TIMEOUT,
+	EXPECTED_BASE_TEXT,
+	EXPECTED_FILE,
+	EXPECTED_REVISED_TEXT,
+	NODE_REVISED_TEST_TEXT,
+	PYTEST_REVISED_TEST_TEXT,
+	REVISION_REASON,
+	VITEST_CORRECTED_TEST_TEXT,
+	VITEST_HELPER_TEST_TEXT,
+	VITEST_NEW_EXPORT_TEST_TEXT,
+	VITEST_REVISED_TEST_TEXT,
+	VITEST_TWO_CASES_TEST_TEXT,
+} from '../../test/tdd-runners-base-red-workspace.constants.ts'
+import {
+	createBaseRedPackage,
+	loggingVitestTestText,
+	snapshotTree,
+} from '../../test/tdd-runners-base-red-workspace.ts'
+import { FLAG_CARD_CASE_TIMEOUT } from '../../test/tdd-runners-handover-flags.constants.ts'
+import { handoverFlagRows } from '../../test/tdd-runners-handover-flags.ts'
 import {
 	ADD_FILE,
 	ADD_IMPLEMENTED_TEXT,
@@ -57,33 +83,55 @@ import {
 	FIRST_TEST_FILE,
 	FIXTURE_EDITED_TEXT,
 	FIXTURE_FILE,
+	FIXTURE_MODULE_FILE,
+	FIXTURE_MODULE_TEXT,
 	FIXTURE_TEXT,
+	HELPERS_EDITED_TEXT,
 	HELPERS_FILE,
 	HELPERS_TEXT,
 	IDS_TEST_FILE,
 	IDS_TEST_TEXT,
+	IGNORED_TEST_FILE,
+	IGNORING_CONFTEST_TEXT,
+	IMPORTING_CONFTEST_TEXT,
 	INDENTATION_ERROR_TEST_TEXT,
+	NORECURSE_FIXTURES_TOML_TEXT,
+	PYTEST_IGNORED_OUTSIDE_LINE,
 	READS_TEST_FILE,
 	READS_TEST_TEXT,
 	ROWS_BASE_TEST_TEXT,
 	ROWS_REWRITTEN_TEST_TEXT,
 	ROWS_TEST_FILE,
 	ROWS_THREE_TEST_TEXT,
+	SAMPLE_TEST_FILE,
+	SAMPLE_TEST_TEXT,
 	SECOND_TEST_FILE,
 	SETUP_ERROR_TEST_TEXT,
 	SKIPS_ONLY_PYTEST_FILE,
 	SKIPS_ONLY_PYTEST_TEXT,
+	SLOW_ROWS_BASE_TEST_TEXT,
+	SLOW_ROWS_THREE_TEST_TEXT,
 	STAY_ONLY_TEST_TEXT,
+	SUPPORT_FILE,
+	SUPPORT_TEXT,
 	SYNTAX_ERROR_TEST_TEXT,
 	TOML_PYTEST_TEXT,
+	TOOL_SCRIPT_FILE,
+	TOOL_SCRIPT_TEXT,
 	TRIVIAL_TEST_TEXT,
 	WITHOUT_PYTEST_INTERPRETER_TEXT,
 } from '../../test/tdd-runners-python-workspace.constants.ts'
 import { createPythonPackage, installInterpreter } from '../../test/tdd-runners-python-workspace.ts'
+import { TDD_LEGEND_TERMS } from '../lib/legend/legend.constants.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
-import { hashTestCode, readLedger } from '../lib/tdd/tdd-files.ts'
-import { PROVES_NOTHING } from '../lib/tdd/tdd.constants.ts'
+import { hashProduction, hashTestCode, readLedger } from '../lib/tdd/tdd-files.ts'
+import {
+	BASE_RED_FOLDER_PREFIX,
+	PASSES_ON_BASE_TOO,
+	PROVES_NOTHING,
+	RED_ON_BASE_FLAG,
+} from '../lib/tdd/tdd.constants.ts'
 import { runTdd } from './tdd.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -374,6 +422,22 @@ describe(
 				cases: [{ label: 'src/add.test.ts::add > one', status: 'missing receipt' }],
 			})
 		})
+
+		it("the gate's tdd step in a package without vitest, its only node:test file deleted → run, not skipped: the deleted file shown", async () => {
+			const root = createNodePackage({
+				committed: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT, [ADD_TEST_FILE]: ADD_ONE_TEST_TEXT },
+			})
+			rmSync(join(root, ADD_TEST_FILE))
+
+			await expect(
+				checkTddReceipts({ root, packageJson: readPackageJson(root) }),
+			).resolves.toMatchObject({
+				status: 'passed',
+				details: expect.arrayContaining([
+					`deleted  ${ADD_TEST_FILE}  the test file of the base is deleted`,
+				]),
+			})
+		})
 	},
 )
 
@@ -430,6 +494,31 @@ describe('tdd over a package of pytest files', { timeout: TDD_RUNNERS_SCENARIO_T
 		])
 	})
 
+	it("a stubbed file a conftest's collect_ignore names, beside a stubbed case → that file outside, neither refused nor frozen; the other case red", async () => {
+		const root = createPythonPackage({
+			written: {
+				[ADDER_FILE]: ADDER_STUB_TEXT,
+				[CONFTEST_FILE]: IGNORING_CONFTEST_TEXT,
+				[ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT,
+				[IGNORED_TEST_FILE]: ADD_ONE_PYTEST_TEXT,
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect({
+			exitCode: red.exitCode,
+			outside: red.output.split('\n').filter((line) => line.startsWith('outside')),
+			receipts: receiptLines(root),
+			frozen: sortedFrozenFiles(root),
+		}).toEqual({
+			exitCode: 0,
+			outside: [`outside  ${IGNORED_TEST_FILE}  ${PYTEST_IGNORED_OUTSIDE_LINE}`],
+			receipts: ['red test_one'],
+			frozen: [CONFTEST_FILE, ADD_PYTEST_FILE],
+		})
+	})
+
 	it('a case reading a data file, importing a helper, under a conftest, over a production module → red freezes the test file, the conftest, the helper and the data file, never the production module', async () => {
 		const root = createPythonPackage({
 			written: {
@@ -451,6 +540,39 @@ describe('tdd over a package of pytest files', { timeout: TDD_RUNNERS_SCENARIO_T
 		expect(sortedFrozenFiles(root)).toEqual(
 			[CONFTEST_FILE, FIXTURE_FILE, HELPERS_FILE, READS_TEST_FILE].sort(),
 		)
+	})
+
+	it('a case using a fixture of a conftest that imports a support module → red freezes the support module beside the conftest and the test file', async () => {
+		const root = createPythonPackage({
+			written: {
+				[ADDER_FILE]: ADDER_STUB_TEXT,
+				[CONFTEST_FILE]: IMPORTING_CONFTEST_TEXT,
+				[SUPPORT_FILE]: SUPPORT_TEXT,
+				[SAMPLE_TEST_FILE]: SAMPLE_TEST_TEXT,
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(red.output)).toEqual([
+			expect.stringMatching(/^red {6}tests\/test_sample\.py::test_uses_sample {2}not-implemented/),
+		])
+		expect(sortedFrozenFiles(root)).toEqual([CONFTEST_FILE, SAMPLE_TEST_FILE, SUPPORT_FILE].sort())
+	})
+
+	it('the stub raised inside the body of with pytest.raises(ValueError) → red, not-implemented', async () => {
+		const root = createPythonPackage({
+			written: { [ADDER_FILE]: ADDER_STUB_TEXT, [ADD_PYTEST_FILE]: ADD_RAISES_TEST_TEXT },
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.exitCode).toBe(0)
+		expect(caseLines(red.output)).toEqual([
+			expect.stringMatching(
+				/^red {6}tests\/test_add\.py::test_rejects_negative {2}not-implemented: NotImplementedError$/,
+			),
+		])
 	})
 
 	it('the data file edited after red → tdd green refuses naming it, and records no green', async () => {
@@ -515,6 +637,23 @@ describe('tdd over a package of pytest files', { timeout: TDD_RUNNERS_SCENARIO_T
 		const root = createPythonPackage({
 			committed: { [ADDER_FILE]: ADDER_LIMITED_TEXT, [ROWS_TEST_FILE]: ROWS_BASE_TEST_TEXT },
 			written: { [ROWS_TEST_FILE]: ROWS_THREE_TEST_TEXT },
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(caseLines(red.output)).toEqual([
+			expect.stringMatching(/^unchanged +tests\/test_rows\.py::TestRows > test_row\[1\] *$/),
+			expect.stringMatching(/^unchanged +tests\/test_rows\.py::TestRows > test_row\[2\] *$/),
+			expect.stringMatching(
+				/^red {6}tests\/test_rows\.py::TestRows > test_row\[3\] {2}not-implemented/,
+			),
+		])
+	})
+
+	it('a row added to a table under a slow mark the base holds → the two old rows unchanged, the new one red', async () => {
+		const root = createPythonPackage({
+			committed: { [ADDER_FILE]: ADDER_LIMITED_TEXT, [ROWS_TEST_FILE]: SLOW_ROWS_BASE_TEST_TEXT },
+			written: { [ROWS_TEST_FILE]: SLOW_ROWS_THREE_TEST_TEXT },
 		})
 
 		const red = await tdd({ cwd: root, argv: ['red'] })
@@ -746,6 +885,56 @@ describe(
 			})
 		})
 
+		it("the gate's tdd step in a package without vitest, only a helper of its pytest files edited → run, not skipped: failed naming the helper changed outside tdd red", async () => {
+			const root = createPythonPackage({
+				committed: {
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[CONFTEST_FILE]: CONFTEST_TEXT,
+					[HELPERS_FILE]: HELPERS_TEXT,
+					[FIXTURE_FILE]: FIXTURE_TEXT,
+					[READS_TEST_FILE]: READS_TEST_TEXT,
+				},
+				written: { [HELPERS_FILE]: HELPERS_EDITED_TEXT },
+			})
+
+			await expect(
+				checkTddReceipts({ root, packageJson: readPackageJson(root) }),
+			).resolves.toMatchObject({
+				status: 'failed',
+				reason: `test code changed outside tdd red: ${HELPERS_FILE}`,
+			})
+		})
+
+		it("the gate's tdd step in a package without vitest, norecursedirs = fixtures, only tests/fixtures/test_x.py written → no pytest test file, no case of it listed: failed naming it as test code changed outside tdd red", async () => {
+			const root = createPythonPackage({
+				committed: {
+					'pyproject.toml': NORECURSE_FIXTURES_TOML_TEXT,
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT,
+				},
+				written: { [FIXTURE_MODULE_FILE]: FIXTURE_MODULE_TEXT },
+			})
+
+			await expect(
+				checkTddReceipts({ root, packageJson: readPackageJson(root) }),
+			).resolves.toMatchObject({
+				status: 'failed',
+				reason: `test code changed outside tdd red: ${FIXTURE_MODULE_FILE}`,
+				cases: [],
+			})
+		})
+
+		it("the gate's tdd step in a package without vitest, testpaths = tests, only scripts/test_tool.py written → no pytest test file, no test code: skipped", async () => {
+			const root = createPythonPackage({
+				committed: { [ADDER_FILE]: ADDER_IMPLEMENTED_TEXT, [ADD_PYTEST_FILE]: ADD_ONE_PYTEST_TEXT },
+				written: { [TOOL_SCRIPT_FILE]: TOOL_SCRIPT_TEXT },
+			})
+
+			await expect(checkTddReceipts({ root, packageJson: readPackageJson(root) })).resolves.toEqual(
+				{ status: 'skipped', reason: 'the package does not test with vitest' },
+			)
+		})
+
 		it("the gate's tdd step on a pytest file of skips only → failed, the file refused: every case is skipped, the skip marks read from a collect", async () => {
 			const root = createPythonPackage({
 				written: { [SKIPS_ONLY_PYTEST_FILE]: SKIPS_ONLY_PYTEST_TEXT },
@@ -839,6 +1028,358 @@ describe(
 				'▶ tdd green: pytest - 1 test file(s)',
 				'✓ tdd green: pytest ran 1 test file(s)',
 			])
+		})
+	},
+)
+
+describe('the red on base flag in the hand-over card and its legend', () => {
+	it(
+		'a ledger holding red on base, test code changed around it, rollback and an unknown flag → the card counts them in the flag order: rollback, red after green, test code changed around it, red on base, then the unknown one',
+		{ timeout: FLAG_CARD_CASE_TIMEOUT },
+		() => {
+			expect(
+				handoverFlagRows({
+					flags: [
+						'an unknown flag',
+						RED_ON_BASE_FLAG,
+						'test code changed around it',
+						'red after green',
+						'rollback',
+					],
+				}),
+			).toEqual([
+				'1 flag: rollback',
+				'1 flag: red after green',
+				'1 flag: test code changed around it',
+				`1 flag: ${RED_ON_BASE_FLAG}`,
+				'1 flag: an unknown flag',
+			])
+		},
+	)
+
+	it('the tdd legend → a red on base term with a meaning and a look line', () => {
+		const term = TDD_LEGEND_TERMS.find((entry) => entry.term === RED_ON_BASE_FLAG)
+
+		expect(term).toEqual({
+			term: RED_ON_BASE_FLAG,
+			meaning: expect.stringMatching(/\S/),
+			look: expect.stringMatching(/^look/),
+		})
+	})
+})
+
+/** The package's production hash with only the base's files in it: what a base run's receipt holds. */
+function baseProductionHash(params: {
+	runner: 'vitest' | 'node' | 'pytest'
+	committed: Record<string, string>
+}) {
+	const root = createBaseRedPackage({ runner: params.runner, committed: params.committed })
+	return hashProduction({ root, packageJson: readPackageJson(root) })
+}
+
+describe(
+	'tdd red runs a revised case on the base when it passes now',
+	{ timeout: BASE_RED_SCENARIO_TIMEOUT },
+	() => {
+		/** A base holding the wrong production only: a case of a test file the lot adds is not of the base. */
+		const WRONG_PRODUCTION_BASE = { [ADD_FILE]: ADD_SUBTRACTING_TEXT }
+		const RED_ON_BASE_LINE = new RegExp(
+			`^red {6}${ADD_CASE.replaceAll('/', '\\/')} {2}(assertion|not-implemented): .+ {2}flags: ${RED_ON_BASE_FLAG}$`,
+		)
+
+		it('a vitest case revised, not of the base, passing now, failing on the base production → a red receipt flagged red on base at the production hash of the base, its file frozen; green then counts it proven for the gate', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: WRONG_PRODUCTION_BASE,
+				written: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT, [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(receiptsOf(root)).toEqual([
+				expect.objectContaining({
+					kind: 'red',
+					file: ADD_TEST_FILE,
+					name: 'add > one',
+					flags: [RED_ON_BASE_FLAG],
+					productionHash: baseProductionHash({
+						runner: 'vitest',
+						committed: WRONG_PRODUCTION_BASE,
+					}),
+					testFileHash: hashTestCode({ root, file: ADD_TEST_FILE }),
+				}),
+			])
+			expect(frozenFiles(root)).toEqual([ADD_TEST_FILE])
+			await expect(tdd({ cwd: root, argv: ['status'] })).resolves.toMatchObject({
+				output: `red  ${ADD_CASE}  flags: ${RED_ON_BASE_FLAG}`,
+			})
+
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+			expect(caseLines(green.output)).toEqual([`green    ${ADD_CASE}`])
+			expect(receiptLines(root)).toEqual(['red add > one', 'green add > one'])
+			await expect(
+				checkTddReceipts({ root, packageJson: readPackageJson(root) }),
+			).resolves.toMatchObject({
+				status: 'passed',
+				cases: [{ label: ADD_CASE, status: 'green' }],
+			})
+		})
+
+		it('a vitest case revised, not of the base, that passes on the base production too → refused: the revision proves nothing, no receipt, nothing frozen', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT },
+				written: { [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([`refused  ${ADD_CASE}  ${PASSES_ON_BASE_TOO}`])
+			expect(receiptLines(root)).toEqual(['refused add > one'])
+			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
+			expect(frozenFiles(root)).toEqual([])
+		})
+
+		it('a new vitest case passing now, no revised entry → refused as it ran green, and the base is never run', async () => {
+			const log = join(temporaryFolder('dialecte-loads-log-'), 'loads.log')
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { [ADD_FILE]: ADD_SUBTRACTING_TEXT },
+				written: {
+					[ADD_FILE]: ADD_IMPLEMENTED_TEXT,
+					[ADD_TEST_FILE]: loggingVitestTestText({ log, expected: 3 }),
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([`refused  ${ADD_CASE}  ${PROVES_NOTHING}`])
+			expect(readFileSync(log, 'utf8')).toBe('loaded\n')
+		})
+
+		it('a vitest case red on a stub, its test corrected before review and passing now, declared revised → a second red flagged red on base at the production hash of the base; green then counts it proven for the gate', async () => {
+			const committed = { [ADD_FILE]: ADD_STUB_TEXT }
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed,
+				written: { [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+			await tdd({ cwd: root, argv: ['red'] })
+			writeFileSync(join(root, ADD_FILE), ADD_IMPLEMENTED_TEXT)
+			writeFileSync(join(root, ADD_TEST_FILE), VITEST_CORRECTED_TEST_TEXT)
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(receiptsOf(root).at(-1)).toMatchObject({
+				kind: 'red',
+				flags: [RED_ON_BASE_FLAG],
+				productionHash: baseProductionHash({ runner: 'vitest', committed }),
+				testFileHash: hashTestCode({ root, file: ADD_TEST_FILE }),
+			})
+
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(green.exitCode).toBe(0)
+			expect(receiptLines(root)).toEqual(['red add > one', 'red add > one', 'green add > one'])
+			await expect(
+				checkTddReceipts({ root, packageJson: readPackageJson(root) }),
+			).resolves.toMatchObject({
+				status: 'passed',
+				cases: [{ label: ADD_CASE, status: 'green' }],
+			})
+		})
+
+		it('a vitest case revised that the base holds, passing now → recorded revised at once, and the base is never run', async () => {
+			const log = join(temporaryFolder('dialecte-loads-log-'), 'loads.log')
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: {
+					...WRONG_PRODUCTION_BASE,
+					[ADD_TEST_FILE]: loggingVitestTestText({ log, expected: -1 }),
+				},
+				written: {
+					[ADD_FILE]: ADD_IMPLEMENTED_TEXT,
+					[ADD_TEST_FILE]: loggingVitestTestText({ log, expected: 3 }),
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([`revised  ${ADD_CASE}  ${REVISION_REASON}`])
+			expect(receiptLines(root)).toEqual(['revised add > one'])
+			expect(readFileSync(log, 'utf8')).toBe('loaded\n')
+		})
+
+		it('a revised file entry naming the test file, its case passing now and failing on the base production → red on base', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: WRONG_PRODUCTION_BASE,
+				written: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT, [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_TEST_FILE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(receiptsOf(root)).toEqual([
+				expect.objectContaining({ kind: 'red', name: 'add > one', flags: [RED_ON_BASE_FLAG] }),
+			])
+		})
+
+		it("a revised case whose test imports an export the base lacks → refused with the base run's kind (missing-export), no receipt, nothing frozen", async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: WRONG_PRODUCTION_BASE,
+				written: {
+					[ADD_FILE]: ADD_AND_MULTIPLY_TEXT,
+					[ADD_TEST_FILE]: VITEST_NEW_EXPORT_TEST_TEXT,
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					new RegExp(`^refused {2}${ADD_CASE.replaceAll('/', '\\/')} {2}.*missing-export`),
+				),
+			])
+			expect(receiptLines(root)).toEqual(['refused add > one'])
+			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
+			expect(frozenFiles(root)).toEqual([])
+		})
+
+		it('a file of two cases, the revised one passing on the base production and the other failing there → the revised one refused: passes on the base too (the base run is filtered to its case)', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: WRONG_PRODUCTION_BASE,
+				written: {
+					[ADD_FILE]: ADD_IMPLEMENTED_TEXT,
+					[ADD_TEST_FILE]: VITEST_TWO_CASES_TEST_TEXT,
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				`refused  ${ADD_CASE}  ${PASSES_ON_BASE_TOO}`,
+				`refused  ${ADD_SECOND_CASE}  ${PROVES_NOTHING}`,
+			])
+			expect(receiptLines(root)).toEqual(['refused add > one', 'refused add > two'])
+			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
+		})
+
+		it('a node:test case revised, not of the base, passing now, failing on the base production → a red flagged red on base, then green', async () => {
+			const committed = WRONG_PRODUCTION_BASE
+			const root = createBaseRedPackage({
+				runner: 'node',
+				committed,
+				written: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT, [ADD_TEST_FILE]: NODE_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(receiptsOf(root)[0]).toMatchObject({
+				kind: 'red',
+				flags: [RED_ON_BASE_FLAG],
+				productionHash: baseProductionHash({ runner: 'node', committed }),
+			})
+			expect(green.exitCode).toBe(0)
+			expect(receiptLines(root)).toEqual(['red add > one', 'green add > one'])
+		})
+
+		it('a pytest case revised, not of the base, passing now, failing on the base production → a red flagged red on base, then green', async () => {
+			const committed = { [ADDER_FILE]: ADDER_SUBTRACTING_TEXT }
+			const root = createBaseRedPackage({
+				runner: 'pytest',
+				committed,
+				written: {
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[ADD_PYTEST_FILE]: PYTEST_REVISED_TEST_TEXT,
+				},
+				revised: [ADD_PYTEST_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const green = await tdd({ cwd: root, argv: ['green'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					new RegExp(
+						`^red {6}${ADD_PYTEST_CASE} {2}(assertion|not-implemented): .+ {2}flags: ${RED_ON_BASE_FLAG}$`,
+					),
+				),
+			])
+			expect(receiptsOf(root)[0]).toMatchObject({
+				kind: 'red',
+				flags: [RED_ON_BASE_FLAG],
+				productionHash: baseProductionHash({ runner: 'pytest', committed }),
+			})
+			expect(green.exitCode).toBe(0)
+			expect(receiptLines(root)).toEqual(['red test_one', 'green test_one'])
+		})
+
+		it("a base run of a revised case → the lot's tree untouched (git status and every entry's modification time as before) and no base run folder left in the temporary folder", async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: WRONG_PRODUCTION_BASE,
+				written: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT, [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+			const temporary = temporaryFolder('dialecte-isolated-tmp-')
+			vi.stubEnv('TMPDIR', temporary)
+			const before = snapshotTree(root)
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(snapshotTree(root)).toEqual(before)
+			expect(
+				readdirSync(temporary).filter((name) => name.startsWith(BASE_RED_FOLDER_PREFIX)),
+			).toEqual([])
+		})
+
+		it('a revised case whose test imports a helper the lot changed → the base run sees the current helper: red on base, not a pass on the old helper', async () => {
+			const committed = { ...WRONG_PRODUCTION_BASE, [EXPECTED_FILE]: EXPECTED_BASE_TEXT }
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed,
+				written: {
+					[ADD_FILE]: ADD_IMPLEMENTED_TEXT,
+					[ADD_TEST_FILE]: VITEST_HELPER_TEST_TEXT,
+					[EXPECTED_FILE]: EXPECTED_REVISED_TEXT,
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
+			expect(sortedFrozenFiles(root)).toEqual([EXPECTED_FILE, ADD_TEST_FILE].sort())
 		})
 	},
 )

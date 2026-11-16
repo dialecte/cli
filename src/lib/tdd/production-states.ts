@@ -25,13 +25,13 @@ export function readProductionState(params: {
 	const { root, base, packageJson } = params
 	const files: Record<string, string> = {}
 	for (const file of listChangedSince({ root, base }))
-		if (isProductionPath({ file, packageJson })) files[file] = hashFile(join(root, file))
+		if (isProductionPath({ root, file, packageJson })) files[file] = hashFile(join(root, file))
 	const deleted = readGit({
 		root,
 		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=D', base],
 	})
 	for (const file of deleted.split('\n'))
-		if (file && isProductionPath({ file, packageJson })) files[file] = DELETED_PRODUCTION_FILE
+		if (file && isProductionPath({ root, file, packageJson })) files[file] = DELETED_PRODUCTION_FILE
 	return { hash: hashProduction({ root, packageJson }), base, files }
 }
 

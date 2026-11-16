@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts'
 import { gitBlobIds } from '../handover/committed-bytes.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
+import { isPytestTestFile } from './pytest-test-file.ts'
 import { resolveTddBase } from './tdd-base.ts'
 import {
 	CONFTEST_FILE_PATTERN,
@@ -18,7 +19,6 @@ import {
 	FIXTURE_FOLDER_PATTERN,
 	GENERATED_FILE_PATTERN,
 	LEDGER_VERSION,
-	PYTHON_TEST_FILE_PATTERN,
 	SCRIPT_FILE_PATTERN,
 	SNAPSHOT_FILE_PATTERN,
 	SOURCE_FILE_PATTERN,
@@ -49,26 +49,44 @@ export function hashTestCode(params: { root: string; file: string }): string {
 	)
 }
 
-/** sha256 over the production files of the package: each path with the hash of its content, sorted. */
-export function hashProduction(params: { root: string; packageJson: PackageJson }): string {
+/**
+ * sha256 over the production files of the package: each path with the hash of its content, sorted. `files`: the
+ * files of the tree, sorted (default: the repository's, tracked and untracked; a tree outside git names its own).
+ */
+export function hashProduction(params: {
+	root: string
+	packageJson: PackageJson
+	files?: readonly string[]
+}): string {
 	const hash = createHash('sha256')
-	for (const file of listRepositoryFiles({ root: params.root, folder: '.' })) {
-		if (!isProductionPath({ file, packageJson: params.packageJson })) continue
+	for (const file of params.files ?? listRepositoryFiles({ root: params.root, folder: '.' })) {
+		if (!isProductionPath({ root: params.root, file, packageJson: params.packageJson })) continue
 		const path = join(params.root, file)
 		hash.update(`${file}\0${existsSync(path) ? hashFile(path) : DELETED_PRODUCTION_FILE}\n`)
 	}
 	return hash.digest('hex')
 }
 
-/** A test file of a language tdd runs: a JS/TS test or spec file, a Python `test_*.py` or `*_test.py`. */
-export function isTestFile(file: string): boolean {
-	return TEST_FILE_PATTERN.test(file) || PYTHON_TEST_FILE_PATTERN.test(file)
+/**
+ * A test file of a language tdd runs: a JS/TS test or spec file; a Python file pytest collects from the package
+ * (`isPytestTestFile`: its pytest folder's `python_files`, `testpaths` and `norecursedirs`).
+ */
+export function isTestFile(params: { root: string; file: string }): boolean {
+	return TEST_FILE_PATTERN.test(params.file) || isPytestTestFile(params)
 }
 
-/** A test file, a pytest `conftest.py`, a helper or fixture in a test or fixture folder, a snapshot. */
+/**
+ * Test code by its path alone: a JS/TS test file, a pytest `conftest.py`, a helper or fixture in a test or fixture
+ * folder, a snapshot. A Python file is a test file by its pytest configuration only, which `isPackageTestCode`
+ * reads; the rules' unit context asks about JS/TS files alone.
+ */
 export function isTestCode(file: string): boolean {
+	return TEST_FILE_PATTERN.test(file) || isTestSupport(file)
+}
+
+/** A pytest `conftest.py`, a file in a test or fixture folder, a snapshot. */
+function isTestSupport(file: string): boolean {
 	return (
-		isTestFile(file) ||
 		CONFTEST_FILE_PATTERN.test(file) ||
 		TEST_FOLDER_PATTERN.test(file) ||
 		SNAPSHOT_FILE_PATTERN.test(file)
@@ -76,22 +94,26 @@ export function isTestCode(file: string): boolean {
 }
 
 /**
- * Test code of the package: as `isTestCode`, except under a folder the package declares production
- * (`"dialecte": { "tdd": { "production": ["src/test"] } }`), where only the test files, fixtures,
- * snapshots and `*.script.ts` are.
+ * Test code of the package: a test file (`isTestFile`) or test support (`isTestCode`), except under a folder the
+ * package declares production (`"dialecte": { "tdd": { "production": ["src/test"] } }`), where only the test
+ * files, conftests, fixtures, snapshots and `*.script.ts` are.
  */
-export function isPackageTestCode(params: { file: string; packageJson: PackageJson }): boolean {
+export function isPackageTestCode(params: {
+	root: string
+	file: string
+	packageJson: PackageJson
+}): boolean {
 	const { file } = params
 	const declared = productionFolderOf(params)
 	if (declared !== undefined)
 		return (
-			isTestFile(file) ||
+			isTestFile(params) ||
 			CONFTEST_FILE_PATTERN.test(file) ||
 			FIXTURE_FOLDER_PATTERN.test(file.slice(declared.length)) ||
 			SNAPSHOT_FILE_PATTERN.test(file) ||
 			SCRIPT_FILE_PATTERN.test(file)
 		)
-	return isTestCode(file)
+	return isTestFile(params) || isTestSupport(file)
 }
 
 /** The folder the package declares production (`dialecte.tdd.production`) that holds the file; undefined when none. */
@@ -106,7 +128,11 @@ export function productionFolderOf(params: {
 }
 
 /** A file of the package that is production: not test code, not generated, not the lot declaration. */
-export function isProductionPath(params: { file: string; packageJson: PackageJson }): boolean {
+export function isProductionPath(params: {
+	root: string
+	file: string
+	packageJson: PackageJson
+}): boolean {
 	const { file } = params
 	const generated = params.packageJson.dialecte?.generatedDocs ?? []
 	return (
@@ -207,25 +233,26 @@ export function hashChangedTestCode(params: {
 	base: string
 	packageJson: PackageJson
 }): Map<string, string> {
+	const { root, packageJson } = params
 	const moved = listMovedFiles({
 		...params,
 		kindOf: function testCodeKind(file) {
-			if (!isPackageTestCode({ file, packageJson: params.packageJson })) return undefined
-			return isTestFile(file) ? TEST_FILE_KIND : TEST_CODE_KIND
+			if (!isPackageTestCode({ root, file, packageJson })) return undefined
+			return isTestFile({ root, file }) ? TEST_FILE_KIND : TEST_CODE_KIND
 		},
 	})
 	return new Map(
 		listChangedSince(params)
-			.filter(
-				(file) => !moved.has(file) && isPackageTestCode({ file, packageJson: params.packageJson }),
-			)
-			.map((file) => [file, hashTestCode({ root: params.root, file })]),
+			.filter((file) => !moved.has(file) && isPackageTestCode({ root, file, packageJson }))
+			.map((file) => [file, hashTestCode({ root, file })]),
 	)
 }
 
-/** A test file's kind for a move: a test file moves only to a test file. */
-function testFileKind(file: string): string | undefined {
-	return isTestFile(file) ? TEST_FILE_KIND : undefined
+/** A test file's kind for a move, in the package at `root`: a test file moves only to a test file. */
+function testFileKindIn(root: string): (file: string) => string | undefined {
+	return function testFileKind(file) {
+		return isTestFile({ root, file }) ? TEST_FILE_KIND : undefined
+	}
 }
 
 /**
@@ -234,9 +261,9 @@ function testFileKind(file: string): string | undefined {
  */
 export function listChangedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
 	const { root, base } = params
-	const moved = listMovedFiles({ ...params, kindOf: testFileKind })
+	const moved = listMovedFiles({ ...params, kindOf: testFileKindIn(root) })
 	return listChangedSince(params)
-		.filter((file) => isTestFile(file) && !moved.has(file))
+		.filter((file) => isTestFile({ root, file }) && !moved.has(file))
 		.map((file) => ({
 			file,
 			text: readFileSync(join(root, file), 'utf8'),
@@ -246,7 +273,7 @@ export function listChangedTestFiles(params: { root: string; base: string }): Ch
 
 /** The test files moved since the base with their bytes (R100): their text is the base text of the old path. */
 export function listMovedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
-	return [...listMovedFiles({ ...params, kindOf: testFileKind }).keys()]
+	return [...listMovedFiles({ ...params, kindOf: testFileKindIn(params.root) }).keys()]
 		.sort()
 		.map(function movedTestFile(file) {
 			const text = readFileSync(join(params.root, file), 'utf8')
@@ -254,10 +281,14 @@ export function listMovedTestFiles(params: { root: string; base: string }): Chan
 		})
 }
 
-/** The test files of the base that the change deletes (a test file moved with its bytes is not deleted). */
+/**
+ * The test files of the base that the change deletes (a test file moved with its bytes is not deleted), each
+ * judged by the package's pytest configuration as it is now.
+ */
 export function listDeletedTestFiles(params: { root: string; base: string }): string[] {
-	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKind }).values())
-	return listDeletedSince(params).filter((file) => isTestFile(file) && !sources.has(file))
+	const { root } = params
+	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKindIn(root) }).values())
+	return listDeletedSince(params).filter((file) => isTestFile({ root, file }) && !sources.has(file))
 }
 
 /**
@@ -312,7 +343,7 @@ export function listMovedFiles(params: {
 }
 
 /** The files of the base the change deletes, relative to the root. */
-function listDeletedSince(params: { root: string; base: string }): string[] {
+export function listDeletedSince(params: { root: string; base: string }): string[] {
 	return readGit({
 		root: params.root,
 		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=D', params.base],
@@ -347,11 +378,8 @@ export function countChangedFiles(params: {
 	const files = [...new Set(`${changed}\n${untracked}`.split('\n').filter(Boolean))].filter(
 		(file) => !LOT_FILE_PATTERN.test(file),
 	)
-	const test = files.filter((file) =>
-		isPackageTestCode({ file, packageJson: params.packageJson }),
-	).length
-	const production = files.filter((file) =>
-		isProductionPath({ file, packageJson: params.packageJson }),
-	).length
+	const { root, packageJson } = params
+	const test = files.filter((file) => isPackageTestCode({ root, file, packageJson })).length
+	const production = files.filter((file) => isProductionPath({ root, file, packageJson })).length
 	return { production, test }
 }

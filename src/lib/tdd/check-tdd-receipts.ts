@@ -1,4 +1,8 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { closestNames } from '../closest-names.ts'
+import { listRepositoryFiles } from '../git.ts'
 import { shortMessage } from './classify-failure.ts'
 import { writtenLinesOf } from './duplicate-case-ids.ts'
 import {
@@ -23,15 +27,20 @@ import { movedLines } from './moved-cases.ts'
  * (the untitled test calls the lot file declares gone, with its reason) and the entries of the lot file
  * nothing used are shown for the review. A lot the orchestrator
  * declared exempt in `.dialecte/lot.json` passes with its reason and what the change touches; a package
- * that does not test with vitest and changes no test file of another runner (`node:test`) skips the step.
+ * that does not test with vitest and touches no test code of another runner (`node:test`, pytest) skips the step.
  */
 import { caseLabel } from './select-cases.ts'
 import { resolveTddBase, shortCommitOf } from './tdd-base.ts'
 import {
 	countChangedFiles,
 	hashChangedTestCode,
+	isPackageTestCode,
+	isTestFile,
+	listChangedSince,
 	listChangedTestFiles,
+	listDeletedSince,
 	listDeletedTestFiles,
+	readAtBase,
 	readLedger,
 } from './tdd-files.ts'
 import { findingLine, movesLines, readTddState, skippedReceiptsLine } from './tdd-state.ts'
@@ -50,7 +59,7 @@ import { readVitestConfigs } from './vitest-configs.ts'
 import { zeroCaseLines } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddBase, TddCheck, TddState } from './tdd.types.ts'
+import type { TddBase, TddCheck, TddState, VitestConfigs } from './tdd.types.ts'
 
 export async function checkTddReceipts(params: {
 	root: string
@@ -101,7 +110,7 @@ async function judgeTddReceipts(params: {
 			note: `exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
 		}
 	}
-	if (!testsWithVitest(packageJson) && !changesTestsOfOtherRunner({ root, base }))
+	if (!testsWithVitest(packageJson) && !changesTestsOfOtherRunner({ root, base, packageJson }))
 		return { status: 'skipped', reason: 'the package does not test with vitest' }
 	const ledger = readLedger(root)
 	if ('failure' in ledger) return { status: 'failed', reason: ledger.failure }
@@ -205,9 +214,15 @@ async function judgeTddReceipts(params: {
 			(file) =>
 				`cannot list  ${file.file}  ${file.failure.kind}: ${shortMessage(file.failure.message).split('\n')[0]}`,
 		),
-		...zeroCaseLines({ refused: zeroCases, notVitest: [] }),
+		...zeroCaseLines({ refused: zeroCases, notVitest: [], pytestIgnored: [] }),
 	]
-	evidence.push(...zeroCaseLines({ refused: [], notVitest: state.notVitest ?? [] }))
+	evidence.push(
+		...zeroCaseLines({
+			refused: [],
+			notVitest: state.notVitest ?? [],
+			pytestIgnored: state.pytestIgnored ?? [],
+		}),
+	)
 	const caseLines = open.map((line) => `${line.status}  ${caseLabel(line)}`)
 	// a shared id names no single case: whatever else is wrong, the step says it first
 	if (state.duplicates.length) {
@@ -281,12 +296,54 @@ function testsWithVitest(packageJson: PackageJson): boolean {
 	)
 }
 
-/** A test file the change touches runs under a runner other than vitest (a `node:test` file): the package tests with it. */
-function changesTestsOfOtherRunner(params: { root: string; base: string }): boolean {
-	const { root } = params
+/**
+ * The change touches test code of a runner other than vitest (`node:test`, pytest): a changed test file of that
+ * runner; a deleted one (its runner read from its base text); or other test code (a helper, a fixture, a conftest)
+ * changed or deleted in a package that holds a test file of that runner.
+ */
+function changesTestsOfOtherRunner(params: {
+	root: string
+	base: string
+	packageJson: PackageJson
+}): boolean {
+	const { root, base, packageJson } = params
 	const configs = readVitestConfigs({ root })
-	return listChangedTestFiles(params).some(function runsUnderOtherRunner(changed) {
-		const runner = runnerOf({ root, file: changed.file, text: changed.text, configs })
-		return runner !== undefined && runner !== 'vitest'
+	if (
+		listChangedTestFiles({ root, base }).some((changed) =>
+			isOtherRunnerFile({ root, file: changed.file, text: changed.text, configs }),
+		)
+	)
+		return true
+	if (
+		listDeletedTestFiles({ root, base }).some((file) =>
+			isOtherRunnerFile({ root, file, text: readAtBase({ root, base, file }) ?? '', configs }),
+		)
+	)
+		return true
+	const touchesOtherTestCode = [
+		...listChangedSince({ root, base }),
+		...listDeletedSince({ root, base }),
+	].some((file) => !isTestFile({ root, file }) && isPackageTestCode({ root, file, packageJson }))
+	return touchesOtherTestCode && holdsOtherRunnerFile({ root, configs })
+}
+
+/** The package holds a test file of a runner other than vitest. */
+function holdsOtherRunnerFile(params: { root: string; configs: VitestConfigs }): boolean {
+	const { root, configs } = params
+	return listRepositoryFiles({ root, folder: '.' }).some(function isOtherRunnerTestFile(file) {
+		const path = join(root, file)
+		if (!isTestFile({ root, file }) || !existsSync(path)) return false
+		return isOtherRunnerFile({ root, file, text: readFileSync(path, 'utf8'), configs })
 	})
+}
+
+/** The test file runs under a known runner other than vitest. */
+function isOtherRunnerFile(params: {
+	root: string
+	file: string
+	text: string
+	configs: VitestConfigs
+}): boolean {
+	const runner = runnerOf(params)
+	return runner !== undefined && runner !== 'vitest'
 }
