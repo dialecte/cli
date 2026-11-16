@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
-import { mainCheckoutOf, readGit } from '../git.ts'
+import { fetchOrigin, mainCheckoutOf, readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { checkNodeModules } from './check-node-modules.ts'
@@ -132,6 +132,7 @@ export function addWorktree(params: {
 		index,
 		branch,
 		from: start ? start.name : branch,
+		...(start?.fetchProblem !== undefined && { fetchProblem: start.fetchProblem }),
 		head: baseline.head,
 		hooks: copiedHooks,
 		nodeModules: provided,
@@ -196,14 +197,16 @@ export function provideNodeModules(params: {
 }
 
 /**
- * Where a new branch starts: `from` as given, else the base branch's ref (`findBaseBranchRef`), which may be
- * origin's and is then never tracked; the resolver's refusal when there is neither.
+ * Where a new branch starts: `from` as given, else the base branch's ref (`findBaseBranchRef`) once origin is fetched
+ * (the queue lands on the host: a local base branch may be behind it), which may be origin's and is then never
+ * tracked; the resolver's refusal when there is neither. A fetch that fails says so and the last known refs are read.
  */
 function newBranchStart(params: {
 	repository: string
 	from: string | undefined
 }): NewBranchStart | Refusal {
 	if (params.from !== undefined) return { ref: params.from, name: params.from, options: [] }
+	const fetchProblem = fetchOrigin({ root: params.repository })
 	const found = findBaseBranchRef({
 		root: params.repository,
 		packageJson: readPackageJson(params.repository),
@@ -214,6 +217,7 @@ function newBranchStart(params: {
 		ref: found.ref,
 		name: onOrigin ? `origin/${found.branch}` : found.branch,
 		options: ['--no-track'],
+		...(fetchProblem !== undefined && { fetchProblem }),
 	}
 }
 

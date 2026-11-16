@@ -13,6 +13,7 @@ import {
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
+import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
 import { TRASH_FOLDER } from '../lib/worktree/worktree.constants.ts'
 
@@ -42,6 +43,8 @@ export function runLotClose(params: {
 	} catch {
 		return resultOf({ exitCode: 2, lines: [`lot close: ${params.cwd} is in no git repository`] })
 	}
+	// the base branch is the host's first (a queue merges there): the landed reading and the main checkout follow it
+	const synced = syncBaseBranch({ root: main })
 	const results = closeHandovers({
 		cwd: main,
 		runFrom: params.cwd,
@@ -73,7 +76,7 @@ export function runLotClose(params: {
 			`the closed worktrees wait in ${trash}, removed in the background; their branches are kept`,
 			`the deletion is git's own git worktree remove, without --force: git may refuse a worktree written into since the check, and a refused one stays registered in ${trash} for you to look at`,
 		)
-	return resultOf({ exitCode, lines })
+	return resultOf({ exitCode, lines: [...synced, ...lines] })
 }
 
 /** The line of one outcome: what moved and where node_modules went, or why it was kept. */

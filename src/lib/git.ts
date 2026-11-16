@@ -3,7 +3,14 @@ import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { CAT_FILE_HEADER_PATTERN, GIT_READ_ENVIRONMENT } from './git.constants.ts'
+import {
+	CAT_FILE_HEADER_PATTERN,
+	FETCH_ENVIRONMENT,
+	FETCH_FAILED_LINE,
+	FETCH_TIMEOUT_MS,
+	GIT_READ_ENVIRONMENT,
+	ORIGIN_REMOTE,
+} from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
 
 /** Runs git in `root` and answers its standard output; throws with git's message when it fails. */
@@ -225,4 +232,28 @@ export function listStagedFiles(root: string): string[] {
 		.split('\n')
 		.filter(Boolean)
 		.sort()
+}
+
+/**
+ * Fetches `origin` into its remote-tracking refs (pruned) for the repository at `root`, so a base branch read next is
+ * the host's (a merge queue lands there): undefined when it fetched or there is no `origin`; the line saying why not
+ * otherwise (offline, a timeout) - the last known refs are then read, nothing thrown.
+ *
+ * @intent bring the host's base branch here before a lot is cut or closed
+ * @internal
+ */
+export function fetchOrigin(params: { root: string }): string | undefined {
+	const remotes = tryReadGit({ root: params.root, args: ['remote'] })?.split('\n') ?? []
+	if (!remotes.includes(ORIGIN_REMOTE)) return undefined
+	const run = spawnSync('git', ['fetch', '--quiet', '--prune', ORIGIN_REMOTE], {
+		cwd: params.root,
+		encoding: 'utf8',
+		timeout: FETCH_TIMEOUT_MS,
+		// never a prompt: a credential or passphrase asked would hold the command until the timeout
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: { ...process.env, ...FETCH_ENVIRONMENT },
+	})
+	if (run.status === 0) return undefined
+	const reason = run.error?.message ?? (run.stderr.trim().split('\n')[0] || `exit ${run.status}`)
+	return FETCH_FAILED_LINE.replace('{reason}', () => reason)
 }

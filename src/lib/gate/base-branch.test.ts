@@ -4,6 +4,7 @@ import {
 	developAheadOfMain,
 	makeDevelopOriginDefault,
 	commitEmpty,
+	commitOf,
 	pointOriginHeadAt,
 } from '../../../test/rule-gaps-base-branch.ts'
 import { createScratchRepository, git } from '../../../test/scratch-repository.ts'
@@ -223,6 +224,63 @@ const ROWS: BaseBranchRow[] = [
 		},
 		packageJson: {},
 		expected: { refusal: NO_BASE_BRANCH_FOUND },
+	},
+	{
+		title:
+			'the remote is the truth: origin/main a commit ahead of a stale local main (a queue merged on the host) → origin main, source main',
+		build() {
+			const root = createScratchRepository()
+			const local = commitOf({ root, rev: 'HEAD' })
+			commitEmpty({ root, message: 'feat: landed by the queue' })
+			addOriginBranch({ root, branch: 'main' })
+			git({ root, args: ['reset', '-q', '--hard', local] })
+			return root
+		},
+		packageJson: {},
+		expected: { ref: 'refs/remotes/origin/main', branch: 'main', source: 'main' },
+	},
+	{
+		title:
+			'local main a commit ahead of origin/main (not pushed yet) → the local main, source main',
+		build() {
+			const root = createScratchRepository()
+			addOriginBranch({ root, branch: 'main' })
+			commitEmpty({ root, message: 'feat: local only' })
+			return root
+		},
+		packageJson: {},
+		expected: { ref: 'refs/heads/main', branch: 'main', source: 'main' },
+	},
+	{
+		title: 'local main and origin/main diverged → origin main: the remote is the truth',
+		build() {
+			const root = createScratchRepository()
+			const start = commitOf({ root, rev: 'HEAD' })
+			commitEmpty({ root, message: 'feat: on origin' })
+			addOriginBranch({ root, branch: 'main' })
+			git({ root, args: ['reset', '-q', '--hard', start] })
+			commitEmpty({ root, message: 'feat: local only' })
+			return root
+		},
+		packageJson: {},
+		expected: { ref: 'refs/remotes/origin/main', branch: 'main', source: 'main' },
+	},
+	{
+		title:
+			'origin/HEAD names origin/develop, a local develop behind it → origin develop, source origin-head',
+		build() {
+			const root = createScratchRepository()
+			git({ root, args: ['branch', 'develop'] })
+			git({ root, args: ['switch', '-q', 'develop'] })
+			commitEmpty({ root, message: 'feat: develop on origin' })
+			addOriginBranch({ root, branch: 'develop' })
+			git({ root, args: ['reset', '-q', '--hard', 'main'] })
+			git({ root, args: ['switch', '-q', 'main'] })
+			pointOriginHeadAt({ root, branch: 'develop' })
+			return root
+		},
+		packageJson: {},
+		expected: { ref: 'refs/remotes/origin/develop', branch: 'develop', source: 'origin-head' },
 	},
 	{
 		title:

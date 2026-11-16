@@ -2193,18 +2193,25 @@ script. Adding or removing an opt-out changes the gate record's key, so the gate
 Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `worktree add` and `worktree prune`,
 `lot close`, the hand-over's target) finds it the same way, the first rule that answers winning:
 
-1. `dialecte.baseBranch` when set (an optional override): the local branch, else origin's. Set to a branch that
+1. `dialecte.baseBranch` when set (an optional override). Set to a branch that
    exists nowhere, it is refused, never replaced by another (a package without a `dialecte.gate` config too: its
    default lists hold the scoped `rules` step): exit 2 for the gate's base, `mutants`, `handover write`
    and `handover run`, exit 1 for `worktree add` of a new branch without `--from`; the commit hook fails, and the
    tdd step of `gate --full` fails with the same text.
-2. The branch `origin/HEAD` names (recorded at clone), when that branch exists; the local one is preferred.
-3. `main`, local, else origin's.
-4. `master`, local, else origin's.
+2. The branch `origin/HEAD` names (recorded at clone), when that branch exists.
+3. `main`.
+4. `master`.
 5. Nothing found: refused with `no base branch found (no dialecte.baseBranch, no origin/HEAD, no main, no master):
    name it as dialecte.baseBranch in package.json`. The gate alone keeps selecting everything (with a note) in that
    case; `worktree add` without `--from` refuses, `worktree prune` skips the repository with the text, `lot close`
    holds nothing through the base, and `tdd` measures from HEAD.
+
+Each rule reads the branch where it is newest: the local branch or origin's, whichever is ahead of the other, and
+origin's when they diverged. The remote is the truth: a merge queue lands on the host, so a local base branch goes
+stale. `worktree add` (without `--from`) fetches origin before it cuts the branch, and `lot close` fetches it and
+fast-forwards the local base branch (merged in the main checkout when it is checked out there and clean, its ref
+moved otherwise; a line says when it does not move). A fetch that fails says so and the last known refs are read. A
+lot's own branch is always read locally.
 
 The repository field of `package.json` is a URL and is never read for this. `mutants` finds `origin/<b>` through
 the same rule and no longer takes a tag named like the base branch.

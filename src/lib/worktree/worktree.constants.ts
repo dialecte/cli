@@ -135,3 +135,13 @@ export const TREE_INSTALL_REFUSALS = {
 	/** The checked lock cannot be read package by package: `{reason}` is the reader's. */
 	unreadable: 'the package-lock.json being checked {reason}: fix it, then run {command}',
 } as const
+
+/** What `syncBaseBranch` says; `{branch}`, `{commit}` filled. */
+export const BASE_SYNC_LINES = {
+	moved: '{branch} fast-forwarded to origin/{branch} {commit}',
+	changes: '{branch} not fast-forwarded: the main checkout holds changes',
+	diverged:
+		'{branch} not fast-forwarded: it holds commits origin/{branch} does not (the remote is the truth: look)',
+	elsewhere: '{branch} not fast-forwarded: checked out in {worktree}',
+	failed: '{branch} not fast-forwarded: {reason}',
+} as const

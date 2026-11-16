@@ -2,7 +2,8 @@
  * Whether the target branch moved past a hand-over: its tip held by the lots file's `head` or by the tip of one of its
  * merge lots, or not (the lot that lands second must merge the target first).
  */
-import { findBaseBranchRef, findBranchRef } from '../gate/gate-base.ts'
+import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
+import { findBaseBranchRef, findBaseRef } from '../gate/gate-base.ts'
 import { isAncestorCommit, readGit, tryReadGit } from '../git.ts'
 import {
 	TARGET_BRANCH_NOT_FOUND,
@@ -78,12 +79,16 @@ export function targetMoved(params: {
 export function targetLineOf(verdict: TargetVerdict): string | undefined {
 	if (verdict.kind === 'missing') return verdict.refusal
 	if (verdict.kind !== 'moved') return undefined
+	// the ref judged names what to merge: origin's when the local branch is behind it (a queue landed on the host)
+	const name = verdict.ref.startsWith(ORIGIN_BRANCH_REF_PREFIX)
+		? `origin/${verdict.branch}`
+		: verdict.branch
 	// a branch name taken as it is (a `$` in it is no replacement pattern)
-	const line = TARGET_MOVED_LINE.replaceAll('{branch}', () => verdict.branch)
+	const line = TARGET_MOVED_LINE.replaceAll('{branch}', () => name)
 		.replace('{count}', String(verdict.behind))
 		.replace('{tip}', verdict.tip.slice(0, TARGET_TIP_LENGTH))
 	return verdict.resuming
-		? `${line}${TARGET_RESUME_SUFFIX.replaceAll('{branch}', () => verdict.branch)}`
+		? `${line}${TARGET_RESUME_SUFFIX.replaceAll('{branch}', () => name)}`
 		: line
 }
 
@@ -102,7 +107,7 @@ export function findTargetRef(params: {
 		const found = findBaseBranchRef({ root, packageJson: params.packageJson })
 		return 'refusal' in found ? found : { branch: found.branch, ref: found.ref }
 	}
-	const ref = findBranchRef({ root, branch: target })
+	const ref = findBaseRef({ root, branch: target })
 	return ref === undefined
 		? { refusal: TARGET_BRANCH_NOT_FOUND.replace('{branch}', () => target) }
 		: { branch: target, ref }

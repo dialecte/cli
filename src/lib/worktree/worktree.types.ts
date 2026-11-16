@@ -41,6 +41,8 @@ export type AddedWorktree = {
 	branch: string
 	/** Where the branch started: the given ref, the base branch, or the existing branch. */
 	from: string
+	/** Why origin could not be fetched before the base branch was read; absent when it was, or there is none. */
+	fetchProblem?: string
 	head: string
 	/** The hooks folder copied from the main checkout, if any. */
 	hooks: string | undefined
@@ -132,7 +134,13 @@ export type FolderLink = { link: string; target: string }
  * Where `worktree add` starts a new branch: the commit-ish, its name as the report says it (`main`,
  * `origin/develop`) and the options it is added with (`--no-track`).
  */
-export type NewBranchStart = { ref: string; name: string; options: string[] }
+export type NewBranchStart = {
+	ref: string
+	name: string
+	options: string[]
+	/** Why origin could not be fetched first; absent when it was, or there is none. */
+	fetchProblem?: string
+}
 
 /** `worktree prune` for one repository. */
 export type PrunePlan = {
