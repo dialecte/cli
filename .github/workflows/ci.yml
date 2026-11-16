@@ -1,19 +1,16 @@
 name: ci
 
-# One workflow for every event. A pull request and the merge queue run every check (the full suite in shards): each
-# push of a lot gets the whole answer early, and the queue proves the lot on top of main and the lots ahead of it.
-# A push to main is the queue's merge of a commit it already tested: it builds and publishes, never tests again.
+# The checks: a pull request and the merge queue run every one (the full suite in shards): each push of a lot gets the
+# whole answer early, and the queue proves the lot on top of main and the lots ahead of it. The push to main that the
+# queue's merge makes is publish.yml's: it builds and publishes, never tests again.
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - main
   merge_group:
-  push:
-    branches:
-      - main
 
-# a new push of a pull request cancels the run it supersedes; queue and main runs always finish
+# a new push of a pull request cancels the run it supersedes; queue runs always finish
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -30,20 +27,18 @@ jobs:
 
   test:
     name: Run Tests
-    if: github.event_name != 'push'
     needs: install
     uses: ./.github/workflows/_test.yml
 
   lint:
     name: Lint Code
-    if: github.event_name != 'push'
     needs: install
     uses: ./.github/workflows/_lint.yml
 
   # the one check the ruleset requires: green only when every check of this run passed (none skipped)
   ci-ok:
     name: ci-ok
-    if: always() && github.event_name != 'push'
+    if: always()
     needs:
       - build
       - test
@@ -56,35 +51,3 @@ jobs:
           test "${{ needs.build.result }}" = success
           test "${{ needs.test.result }}" = success
           test "${{ needs.lint.result }}" = success
-
-  version:
-    name: Check Version
-    if: github.event_name == 'push'
-    uses: ./.github/workflows/_check-npm-version.yml
-
-  extract-version:
-    name: Extract Version
-    if: github.event_name == 'push'
-    uses: ./.github/workflows/_extract-version.yml
-
-  # publish and tag only on main's push: a pull request or a queue run never publishes
-  deploy:
-    name: Publish to NPM
-    if: github.event_name == 'push' && needs.version.outputs.version_changed == 'true'
-    needs:
-      - build
-      - version
-    uses: ./.github/workflows/_publish.yml
-
-  create-release-tag:
-    name: Create Release Tag
-    if: github.event_name == 'push' && needs.version.outputs.version_changed == 'true'
-    needs:
-      - version
-      - extract-version
-      - deploy
-    uses: ./.github/workflows/_tag-release.yml
-    with:
-      version: ${{ needs.extract-version.outputs.version }}
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
