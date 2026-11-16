@@ -86,15 +86,17 @@ export function resolveGateBase(params: {
 }
 
 /**
- * The note of a local `branch` holding commits origin's lacks (`findBaseRef` then reads origin's, silently): the count
- * of those commits; undefined when either ref is missing or the local branch holds nothing origin's lacks.
+ * The note of a local `branch` diverged from origin's (`findBaseRef` then reads origin's, silently): the count of the
+ * commits origin's lacks; undefined when either ref is missing, or one is an ancestor of the other.
  */
 function divergedNoteOf(params: { root: string; branch: string }): string | undefined {
 	const { root } = params
 	const local = LOCAL_BRANCH_REF.replace('{branch}', () => params.branch)
 	const origin = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
 	if (!isCommitRef({ root, ref: local }) || !isCommitRef({ root, ref: origin })) return undefined
+	// behind origin's (origin's read) or only ahead of it (the local one read): no base moved silently
 	if (isAncestorCommit({ root, ancestor: local, descendant: origin })) return undefined
+	if (isAncestorCommit({ root, ancestor: origin, descendant: local })) return undefined
 	const count = readGit({ root, args: ['rev-list', '--count', `${origin}..${local}`] }).trim()
 	return DIVERGED_BASE_NOTE.replaceAll('{branch}', () => params.branch).replace('{count}', count)
 }
