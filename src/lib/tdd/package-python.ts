@@ -1,21 +1,33 @@
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, join, relative, resolve } from 'node:path'
+import { promisify } from 'node:util'
 
 import { walkedFolders } from './package-vitest.ts'
 import { readPytestConfig } from './pytest-config.ts'
+import { readToml } from './read-toml.ts'
 import {
 	DEFAULT_NORECURSEDIRS,
 	DEFAULT_PYTHON_COMMAND,
 	DEFAULT_PYTHON_FILES,
 	DEFAULT_WINDOWS_PYTHON_COMMAND,
+	EDITABLE_PROBE_ANSWER,
+	EDITABLE_PROBE_SCRIPT,
+	EDITABLE_PROBE_TIMEOUT,
+	PROJECT_NAME_KEY,
+	PYPROJECT_FILE,
 	PYTEST_CONFIG_FILES,
 	UV_LOCK_FILE,
+	UV_PROJECT_OPTION,
 	UV_PYTHON_COMMAND,
 	VENV_PYTHON_PATH,
 	VENV_WINDOWS_PYTHON_PATH,
 } from './tdd.constants.ts'
 
 import type { PackagePython, PytestConfig, PytestFolder } from './tdd.types.ts'
+
+/** A child process run to its end without blocking the event loop (the running line stays live). */
+const runFile = promisify(execFile)
 
 /**
  * The folder a pytest test file runs from (absolute, spelled as `root` is): the nearest ancestor of the file, up to
@@ -84,6 +96,62 @@ export function resolvePython(params: {
 	return {
 		command: windows ? DEFAULT_WINDOWS_PYTHON_COMMAND : DEFAULT_PYTHON_COMMAND,
 		arguments: [],
+	}
+}
+
+/**
+ * The python a pytest folder of a base copy runs with: the lot's own, resolved (`resolvePython`) from the same
+ * folder of the lot's tree (its `.venv` is git-ignored, the copy has none), `uv run` pointed at the lot's project.
+ */
+export function resolveLotPython(params: { lotFolder: string }): PackagePython {
+	const python = resolvePython({ folder: params.lotFolder })
+	if (python.command !== UV_PYTHON_COMMAND[0]) return python
+	return {
+		command: python.command,
+		arguments: [
+			...python.arguments.slice(0, 1),
+			UV_PROJECT_OPTION,
+			params.lotFolder,
+			...python.arguments.slice(1),
+		],
+	}
+}
+
+/**
+ * The lot's package is installed editable in `python`: the project a `pyproject.toml` names (the nearest from
+ * `lotFolder` up to `lotRoot`) has an editable distribution there. False when no project is named, or the probe
+ * cannot run (the run itself then says why).
+ */
+export async function isInstalledEditable(params: {
+	python: PackagePython
+	lotFolder: string
+	lotRoot: string
+}): Promise<boolean> {
+	const name = projectNameOf(params)
+	if (name === undefined) return false
+	try {
+		const { stdout } = await runFile(
+			params.python.command,
+			[...params.python.arguments, '-c', EDITABLE_PROBE_SCRIPT, name],
+			{ cwd: params.lotFolder, timeout: EDITABLE_PROBE_TIMEOUT, encoding: 'utf8' },
+		)
+		return stdout.trim() === EDITABLE_PROBE_ANSWER
+	} catch {
+		return false
+	}
+}
+
+/** The project name of the nearest `pyproject.toml` naming one, from the folder up to the package root. */
+function projectNameOf(params: { lotFolder: string; lotRoot: string }): string | undefined {
+	const root = resolve(params.lotRoot)
+	for (let folder = resolve(params.lotFolder); ; folder = dirname(folder)) {
+		const path = join(folder, PYPROJECT_FILE)
+		const name = existsSync(path)
+			? readToml(readFileSync(path, 'utf8')).values.get(PROJECT_NAME_KEY)
+			: undefined
+		if (typeof name === 'string') return name
+		if (folder === root || relative(root, folder).startsWith('..') || dirname(folder) === folder)
+			return undefined
 	}
 }
 

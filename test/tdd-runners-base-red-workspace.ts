@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { git, writeFiles } from './scratch-repository.ts'
 import { createVitestPackage } from './scratch-vitest-package.ts'
 import {
+	FOLDER_LOGGING_INTERPRETER_TEMPLATE,
 	LOGGING_VITEST_TEST_TEMPLATE,
 	REVISION_REASON,
 } from './tdd-runners-base-red-workspace.constants.ts'
@@ -47,6 +48,11 @@ export function loggingVitestTestText(params: { log: string; expected: number })
 	return LOGGING_VITEST_TEST_TEMPLATE.replace('{log}', () => params.log).replace('{expected}', () =>
 		String(params.expected),
 	)
+}
+
+/** An interpreter script that appends the folder it runs from to `log` each time it runs, then runs python3. */
+export function folderLoggingInterpreter(params: { log: string }): string {
+	return FOLDER_LOGGING_INTERPRETER_TEMPLATE.replace('{log}', () => params.log)
 }
 
 /**

@@ -114,6 +114,11 @@ export type RunnerParams = {
 	watchdog?: Watchdog
 	/** A hard bound in milliseconds: the run's process group is killed past it, the run answers a failure. */
 	timeoutMs?: number
+	/**
+	 * `root` is a copy of this package (a base run): pytest runs with this package's own interpreter, the copy's
+	 * folder first on the import path, and is refused when the package is installed editable there. Default: none.
+	 */
+	interpreterRoot?: string
 }
 
 /**

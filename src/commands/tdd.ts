@@ -39,7 +39,7 @@ import { formatDuration } from '../lib/progress/format-duration.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
-import { runCaseOnBase } from '../lib/tdd/base-red.ts'
+import { runCaseOnBase, trashBaseRunLeftovers } from '../lib/tdd/base-red.ts'
 import { frozenHashOf } from '../lib/tdd/case-status.ts'
 import { firstLine, notARed } from '../lib/tdd/classify-failure.ts'
 import { countingReceipts, isProvenRedThenGreen, receiptsOf } from '../lib/tdd/counting-receipts.ts'
@@ -196,6 +196,7 @@ export async function runTdd(params: {
 		}),
 	}
 	if (subcommand === 'red' || subcommand === 'green') {
+		trashBaseRunLeftovers()
 		const admission = admitRun({ context, subcommand })
 		if ('refusal' in admission) return admission.refusal
 		// the step's events: its lot from the worktree; a refused run writes none; the end after the ledger entry (D12)

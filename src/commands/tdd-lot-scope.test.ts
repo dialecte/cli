@@ -1098,7 +1098,7 @@ describe(
 			])
 		})
 
-		it('a title the file computes (a template), not written as a string at the base → refused: not provably a case of the base', async () => {
+		it('a title the file computes (a template), not written as a string at the base → run on the base, refused: passes on the base too', async () => {
 			function computedTitleTest(call: string): string {
 				return [
 					"import { add } from './add.ts'",

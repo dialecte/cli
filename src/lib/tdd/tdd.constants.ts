@@ -189,13 +189,36 @@ export const DEFAULT_WINDOWS_PYTHON_COMMAND = 'python'
 export const PYTEST_PLUGIN_MODULE = 'dialecte_tdd_pytest'
 export const PYTEST_PLUGIN_FILE_NAMES = ['dialecte_tdd_pytest.py'] as const
 
+/** The interpreter's arguments that run pytest, in a package's own run. */
+export const PYTEST_MODULE_ARGUMENTS = ['-m', 'pytest'] as const
+
 /**
- * The arguments of every pytest run after the interpreter's own: the cli's plugin loaded, no cache folder written,
+ * The interpreter's arguments that run pytest in a base copy's run, the copy's pytest folder next: whatever the
+ * python's version, that folder goes first on `sys.path` and the entries of the current folder (`''`, the cwd)
+ * leave it before pytest is imported, so the copy's modules win over any other folder on the path (the lot's own,
+ * an interpreter or `PYTHONPATH` put first). A python without pytest says so as `-m pytest` does.
+ */
+export const BASE_COPY_PYTEST_ARGUMENTS = [
+	'-c',
+	[
+		'import os, sys',
+		'folder = sys.argv[1]',
+		'current = {"", os.getcwd(), folder}',
+		'sys.path[:] = [folder] + [entry for entry in sys.path if entry not in current]',
+		'sys.argv = ["pytest"] + sys.argv[2:]',
+		'try:',
+		'    import pytest',
+		'except ImportError:',
+		'    sys.exit("No module named pytest")',
+		'sys.exit(pytest.console_main())',
+	].join('\n'),
+] as const
+
+/**
+ * The pytest arguments of every run after the interpreter's own: the cli's plugin loaded, no cache folder written,
  * the other files run when one fails to collect, the short output.
  */
 export const PYTEST_ARGUMENTS = [
-	'-m',
-	'pytest',
 	'-p',
 	PYTEST_PLUGIN_MODULE,
 	'-p',
@@ -214,6 +237,36 @@ export const PYTEST_ROOT_VARIABLE = 'DIALECTE_TDD_ROOT'
 /** The variables of a python run: no bytecode written beside the sources, the import path the plugin joins. */
 export const PYTHON_NO_BYTECODE_VARIABLE = 'PYTHONDONTWRITEBYTECODE'
 export const PYTHON_PATH_VARIABLE = 'PYTHONPATH'
+
+/** The uv option naming the project whose environment `uv run` uses: the lot's, for a base copy's run. */
+export const UV_PROJECT_OPTION = '--project'
+
+/** The key of a `pyproject.toml` naming its project. */
+export const PROJECT_NAME_KEY = 'project.name'
+
+/**
+ * Asks an interpreter how the project its first argument names is installed: prints `editable` when its
+ * distribution says so (`direct_url.json` `dir_info.editable`, or an `__editable__` / `.pth` file it installs),
+ * `installed` otherwise, nothing when it is not installed.
+ */
+export const EDITABLE_PROBE_SCRIPT = [
+	'import json, sys',
+	'from importlib import metadata',
+	'try:',
+	'    found = metadata.distribution(sys.argv[1])',
+	'except metadata.PackageNotFoundError:',
+	'    sys.exit(0)',
+	'direct = json.loads(found.read_text("direct_url.json") or "{}")',
+	'paths = [str(path) for path in (found.files or [])]',
+	'editable = direct.get("dir_info", {}).get("editable") or any(',
+	'    "__editable__" in path or path.endswith(".pth") for path in paths',
+	')',
+	'print("editable" if editable else "installed")',
+].join('\n')
+export const EDITABLE_PROBE_ANSWER = 'editable'
+
+/** The bound of the editable probe, in milliseconds: a guard against a hang, never a measure of speed. */
+export const EDITABLE_PROBE_TIMEOUT = 60_000
 
 /** What a python prints when pytest is not importable: the run is then no pytest run at all. */
 export const NO_PYTEST_PATTERN = /No module named pytest/
@@ -515,9 +568,6 @@ export const GLOB_SPECIAL_CHARACTER_PATTERN = /[.+^${}()|[\]\\]/g
 /** A test call of the base gone without a title: the finding a `gone` entry of the lot file covers. */
 export const UNTITLED_CALL_GONE = 'a test call of the base is gone'
 
-/** A passing case a `revised` entry names that the base cannot be shown to hold. */
-export const NOT_PROVABLY_OF_THE_BASE = 'not provably a case of the base: accept it or prove it red'
-
 /** What a production state records for a file of the base the change deletes. */
 export const DELETED_PRODUCTION_FILE = 'deleted'
 
@@ -678,11 +728,38 @@ export const VITEST_CONFIG_PROPERTIES = {
 /** The flag of a red a revised case earned on the base's production (its file frozen as at any red). */
 export const RED_ON_BASE_FLAG = 'red on base'
 
-/** A revised case that passes on the base's production too: the revision proves nothing. */
-export const PASSES_ON_BASE_TOO = 'passes on the base too: the revision proves nothing'
+/** A revised case that passes on the base's production too: the revision proves nothing; accept it or prove it red. */
+export const PASSES_ON_BASE_TOO =
+	'passes on the base too: the revision proves nothing; prove it red or accept it: lot accept <case> <reason>'
 
 /** The name prefix of the throwaway folder a base run works in, in the temporary folder: removed when the run ends. */
 export const BASE_RED_FOLDER_PREFIX = 'dialecte-base-red-'
+
+/** The file of a base run's throwaway folder holding the id of the process that owns it. */
+export const BASE_RED_OWNER_FILE = 'owner.pid'
+
+/** The folder of a base run's throwaway folder the base's tree is written into, beside its owner file. */
+export const BASE_RED_TREE_FOLDER = 'tree'
+
+/**
+ * A failure naming a missing file or path (node's ENOENT, Python's FileNotFoundError, a module of a relative or
+ * absolute path not found): on a base copy, an input git ignores that the copy lacks.
+ */
+export const MISSING_INPUT_PATTERN =
+	/\bENOENT\b|no such file or directory|\bFileNotFoundError\b|Cannot find module ['"](?:\.{1,2}[\\/]|[\\/])/i
+
+/**
+ * The entries of a `node_modules` folder a tool writes its caches into (Vite's `.vite` and `.vite-temp`, `.cache`):
+ * never linked into a base copy, so a base run writes its own there.
+ */
+export const NODE_MODULES_CACHE_ENTRY_PATTERN = /^\.(?:vite|cache)/
+
+/** A revised case whose base run failed on a missing file or path: the base copy lacks what git ignores. */
+export const BASE_LACKS_IGNORED_INPUT = 'the base copy lacks a git-ignored input, not a proof'
+
+/** A pytest base run refused: the lot's interpreter imports the package from the lot's tree. */
+export const INSTALLED_EDITABLE =
+	"the package is installed editable: a base run would import the lot's code"
 
 /** A revised case the base run did not run (skipped there, or not found): the base proves nothing of it. */
 export const DID_NOT_RUN_ON_BASE = 'did not run on the base: the revision proves nothing'

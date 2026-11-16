@@ -141,3 +141,77 @@ export const LOGGING_VITEST_TEST_TEMPLATE = [
 	'})',
 	'',
 ].join('\n')
+
+/** The hint a refusal for passing on the base too ends with. */
+export const LOT_ACCEPT_HINT_PATTERN = /lot accept <case> <reason>$/
+
+/**
+ * A production module reading an input git ignores (`data/values.json`): the lot's tree holds it, a base copy
+ * (`git archive`) does not.
+ */
+export const TOTAL_FILE = 'src/total.ts'
+export const TOTAL_TEXT = [
+	"import { readFileSync } from 'node:fs'",
+	'export function readTotal(): number {',
+	"\treturn JSON.parse(readFileSync(new URL('../data/values.json', import.meta.url), 'utf8')).total",
+	'}',
+	'',
+].join('\n')
+export const IGNORED_VALUES_FILE = 'data/values.json'
+export const IGNORED_VALUES_TEXT = '{ "total": 3 }\n'
+export const IGNORING_VALUES_GITIGNORE_TEXT = 'node_modules\ndata/values.json\n'
+/** The vitest case `add > one` over the module reading the git-ignored input. */
+export const VITEST_TOTAL_TEST_TEXT = [
+	"import { readTotal } from './total.ts'",
+	"import { describe, expect, it } from 'vitest'",
+	"describe('add', () => {",
+	"\tit('one', () => {",
+	'\t\texpect(readTotal()).toBe(3)',
+	'\t})',
+	'})',
+	'',
+].join('\n')
+
+/** A vitest config written in TypeScript: Vite bundles it into a temporary folder beside its cache. */
+export const VITEST_CONFIG_FILE = 'vitest.config.ts'
+export const VITEST_CONFIG_TEXT = [
+	"import { defineConfig } from 'vitest/config'",
+	'export default defineConfig({})',
+	'',
+].join('\n')
+
+/** `{log}`: an interpreter script appending the folder it runs from to this file, then running python3. */
+export const FOLDER_LOGGING_INTERPRETER_TEMPLATE = '#!/bin/sh\npwd >> "{log}"\nexec python3 "$@"\n'
+
+/**
+ * The pytest package's configuration naming its project `demo`, and an interpreter in whose import path `demo` is
+ * installed editable (a `.dist-info` with an editable `direct_url.json` and an `__editable__` path file, under the
+ * git-ignored `.venv`).
+ */
+export const NAMED_PROJECT_TOML_TEXT =
+	'[project]\nname = "demo"\nversion = "0.1"\n\n[tool.pytest.ini_options]\npythonpath = ["."]\ntestpaths = ["tests"]\n'
+export const EDITABLE_DIST_FILES = {
+	'.venv/site/demo-0.1.dist-info/METADATA': 'Metadata-Version: 2.1\nName: demo\nVersion: 0.1\n',
+	'.venv/site/demo-0.1.dist-info/direct_url.json':
+		'{"url": "file:///lot", "dir_info": {"editable": true}}\n',
+	'.venv/site/demo-0.1.dist-info/RECORD': '__editable__.demo-0.1.pth,,\n',
+	'.venv/site/__editable__.demo-0.1.pth': '/lot\n',
+}
+export const EDITABLE_INTERPRETER_TEXT =
+	'#!/bin/sh\nPYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(dirname "$0")/../site" exec python3 "$@"\n'
+
+/**
+ * A pytest configuration that puts nothing on the import path: the test imports the production module from the
+ * folder pytest runs in.
+ */
+export const NO_PYTHONPATH_TOML_TEXT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+
+/**
+ * The lot's interpreter putting the lot's own folder (the root, two folders above `.venv/bin`) first on
+ * `PYTHONPATH`, then running python3: the lot's production module is importable from any folder.
+ */
+export const LOT_FIRST_INTERPRETER_TEXT =
+	'#!/bin/sh\nPYTHONPATH="$(cd "$(dirname "$0")/../.." && pwd)${PYTHONPATH:+:$PYTHONPATH}" exec python3 "$@"\n'
+
+/** How old a leftover base-run folder is made: an hour before the run. */
+export const LEFTOVER_AGE_MS = 3_600_000

@@ -4,14 +4,17 @@
  * touched.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+
+import { NODE_MODULES_CACHE_ENTRY_PATTERN, NODE_MODULES_FOLDER } from './tdd.constants.ts'
 
 import type { ChildProcess } from 'node:child_process'
 
 /**
- * Writes the package's tree at the base into `folder` (`git archive`), and links the `node_modules` the
- * package resolves from, so the base files import what they imported; why it could not, or undefined.
+ * Writes the package's tree at the base into `folder` (`git archive`), and links the entries of the
+ * `node_modules` the package resolves from (`linkNodeModules`), so the base files import what they imported;
+ * why it could not, or undefined.
  */
 export async function copyBaseTree(params: {
 	root: string
@@ -40,8 +43,22 @@ export async function copyBaseTree(params: {
 	if (extracted.code !== 0 || pipeError)
 		return `tar failed: ${[extracted.errors.trim(), pipeError].filter(Boolean).join('; ')}`
 	const modules = nearestNodeModules(params.root)
-	if (modules) symlinkSync(modules, join(params.folder, 'node_modules'))
+	if (modules) linkNodeModules({ modules, folder: params.folder })
 	return undefined
+}
+
+/**
+ * Gives the copy a `node_modules` folder of its own holding a link to each entry of `modules` but the cache ones:
+ * the copy imports what the package imports, and a tool writing its cache under `node_modules` (Vite's cacheDir,
+ * its bundled config) writes it in the copy, never in the package's tree.
+ */
+function linkNodeModules(params: { modules: string; folder: string }): void {
+	const target = join(params.folder, NODE_MODULES_FOLDER)
+	// a base that commits entries of its own keeps them: only the missing ones are linked
+	mkdirSync(target, { recursive: true })
+	for (const entry of readdirSync(params.modules))
+		if (!NODE_MODULES_CACHE_ENTRY_PATTERN.test(entry) && !existsSync(join(target, entry)))
+			symlinkSync(join(params.modules, entry), join(target, entry))
 }
 
 /** How a child ended: its exit code (undefined when it could not start) and what it printed on stderr. */

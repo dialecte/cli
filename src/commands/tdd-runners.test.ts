@@ -2,7 +2,8 @@
  * `tdd red`, `tdd green`, `tdd status` and the gate's tdd state over a package of `node --test` files: the cases of
  * a node file get the same receipts, freezes and refusals as a vitest one.
  */
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { temporaryFolder } from '../../test/scratch-repository.ts'
@@ -13,20 +14,34 @@ import {
 	ADD_PYTEST_CASE,
 	ADD_SECOND_CASE,
 	BASE_RED_SCENARIO_TIMEOUT,
+	EDITABLE_DIST_FILES,
+	EDITABLE_INTERPRETER_TEXT,
 	EXPECTED_BASE_TEXT,
 	EXPECTED_FILE,
 	EXPECTED_REVISED_TEXT,
+	IGNORED_VALUES_FILE,
+	IGNORED_VALUES_TEXT,
+	IGNORING_VALUES_GITIGNORE_TEXT,
+	LEFTOVER_AGE_MS,
+	LOT_ACCEPT_HINT_PATTERN,
+	LOT_FIRST_INTERPRETER_TEXT,
+	NAMED_PROJECT_TOML_TEXT,
+	NO_PYTHONPATH_TOML_TEXT,
 	NODE_REVISED_TEST_TEXT,
 	PYTEST_REVISED_TEST_TEXT,
 	REVISION_REASON,
+	TOTAL_FILE,
+	TOTAL_TEXT,
 	VITEST_CORRECTED_TEST_TEXT,
 	VITEST_HELPER_TEST_TEXT,
 	VITEST_NEW_EXPORT_TEST_TEXT,
 	VITEST_REVISED_TEST_TEXT,
+	VITEST_TOTAL_TEST_TEXT,
 	VITEST_TWO_CASES_TEST_TEXT,
 } from '../../test/tdd-runners-base-red-workspace.constants.ts'
 import {
 	createBaseRedPackage,
+	folderLoggingInterpreter,
 	loggingVitestTestText,
 	snapshotTree,
 } from '../../test/tdd-runners-base-red-workspace.ts'
@@ -127,7 +142,10 @@ import { readPackageJson } from '../lib/package-json.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { hashProduction, hashTestCode, readLedger } from '../lib/tdd/tdd-files.ts'
 import {
+	BASE_LACKS_IGNORED_INPUT,
 	BASE_RED_FOLDER_PREFIX,
+	BASE_RED_OWNER_FILE,
+	INSTALLED_EDITABLE,
 	PASSES_ON_BASE_TOO,
 	PROVES_NOTHING,
 	RED_ON_BASE_FLAG,
@@ -1380,6 +1398,146 @@ describe(
 			expect(red.exitCode).toBe(0)
 			expect(caseLines(red.output)).toEqual([expect.stringMatching(RED_ON_BASE_LINE)])
 			expect(sortedFrozenFiles(root)).toEqual([EXPECTED_FILE, ADD_TEST_FILE].sort())
+		})
+
+		it('a revised case that passes on the base production too → its refusal ends with the lot accept hint', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT },
+				written: { [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(new RegExp(`^refused {2}${ADD_CASE.replaceAll('/', '\\/')} {2}`)),
+			])
+			expect(caseLines(red.output)[0]).toMatch(LOT_ACCEPT_HINT_PATTERN)
+		})
+
+		it('a revised case whose production reads an input git ignores, failing on the base copy that lacks it → refused: the base copy lacks a git-ignored input, no red receipt, nothing frozen', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { '.gitignore': IGNORING_VALUES_GITIGNORE_TEXT, [TOTAL_FILE]: TOTAL_TEXT },
+				written: {
+					[IGNORED_VALUES_FILE]: IGNORED_VALUES_TEXT,
+					[ADD_TEST_FILE]: VITEST_TOTAL_TEST_TEXT,
+				},
+				revised: [ADD_CASE],
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([`refused  ${ADD_CASE}  ${BASE_LACKS_IGNORED_INPUT}`])
+			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
+			expect(frozenFiles(root)).toEqual([])
+		})
+
+		it("a pytest case revised, the lot's own .venv interpreter git-ignored → the base run runs with that interpreter, from the base copy", async () => {
+			const log = join(temporaryFolder('dialecte-interpreter-log-'), 'folders.log')
+			const root = createBaseRedPackage({
+				runner: 'pytest',
+				committed: { [ADDER_FILE]: ADDER_SUBTRACTING_TEXT },
+				written: {
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[ADD_PYTEST_FILE]: PYTEST_REVISED_TEST_TEXT,
+				},
+				revised: [ADD_PYTEST_CASE],
+			})
+			installInterpreter({ root, folder: '', script: folderLoggingInterpreter({ log }) })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(0)
+			expect(receiptsOf(root)[0]).toMatchObject({ kind: 'red', flags: [RED_ON_BASE_FLAG] })
+			expect(
+				readFileSync(log, 'utf8')
+					.split('\n')
+					.some((folder) => folder.includes(BASE_RED_FOLDER_PREFIX)),
+			).toBe(true)
+		})
+
+		it("a pytest case revised, the lot's interpreter putting the lot's own folder first on the import path → the base run imports the base copy's production, never the lot's: red on base", async () => {
+			const root = createBaseRedPackage({
+				runner: 'pytest',
+				committed: {
+					'pyproject.toml': NO_PYTHONPATH_TOML_TEXT,
+					[ADDER_FILE]: ADDER_SUBTRACTING_TEXT,
+				},
+				written: {
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[ADD_PYTEST_FILE]: PYTEST_REVISED_TEST_TEXT,
+				},
+				revised: [ADD_PYTEST_CASE],
+			})
+			installInterpreter({ root, folder: '', script: LOT_FIRST_INTERPRETER_TEXT })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					new RegExp(`^red {6}${ADD_PYTEST_CASE} {2}assertion: .+ {2}flags: ${RED_ON_BASE_FLAG}$`),
+				),
+			])
+			expect(receiptsOf(root)[0]).toMatchObject({ kind: 'red', flags: [RED_ON_BASE_FLAG] })
+		})
+
+		it("a pytest case revised, the package installed editable in the lot's interpreter → refused: a base run would import the lot's code, no red receipt", async () => {
+			const root = createBaseRedPackage({
+				runner: 'pytest',
+				committed: {
+					'pyproject.toml': NAMED_PROJECT_TOML_TEXT,
+					[ADDER_FILE]: ADDER_SUBTRACTING_TEXT,
+				},
+				written: {
+					...EDITABLE_DIST_FILES,
+					[ADDER_FILE]: ADDER_IMPLEMENTED_TEXT,
+					[ADD_PYTEST_FILE]: PYTEST_REVISED_TEST_TEXT,
+				},
+				revised: [ADD_PYTEST_CASE],
+			})
+			installInterpreter({ root, folder: '', script: EDITABLE_INTERPRETER_TEXT })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(red.exitCode).toBe(1)
+			expect(caseLines(red.output)).toEqual([
+				expect.stringMatching(
+					new RegExp(`^refused {2}${ADD_PYTEST_CASE} {2}.*${INSTALLED_EDITABLE}$`),
+				),
+			])
+			expect(receiptsOf(root).map((receipt) => receipt.kind)).not.toContain('red')
+		})
+
+		it('base-run folders a killed run left, older than the running process → the next tdd run trashes those whose owner is gone, keeps the one a live process owns and any other folder', async () => {
+			const root = createBaseRedPackage({
+				runner: 'vitest',
+				committed: { [ADD_FILE]: ADD_IMPLEMENTED_TEXT },
+				written: { [ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT },
+			})
+			const temporary = temporaryFolder('dialecte-leftovers-tmp-')
+			vi.stubEnv('TMPDIR', temporary)
+			const gone = spawnSync('true').pid
+			const past = new Date(Date.now() - LEFTOVER_AGE_MS)
+			const leftovers = {
+				[`${BASE_RED_FOLDER_PREFIX}gone`]: String(gone),
+				[`${BASE_RED_FOLDER_PREFIX}live`]: String(process.pid),
+				'another-tool-folder': String(gone),
+			}
+			for (const [name, pid] of Object.entries(leftovers)) {
+				mkdirSync(join(temporary, name, 'tree'), { recursive: true })
+				writeFileSync(join(temporary, name, BASE_RED_OWNER_FILE), pid)
+				utimesSync(join(temporary, name), past, past)
+			}
+
+			await tdd({ cwd: root, argv: ['red'] })
+
+			expect(readdirSync(temporary).sort()).toEqual(
+				['another-tool-folder', `${BASE_RED_FOLDER_PREFIX}live`].sort(),
+			)
 		})
 	},
 )

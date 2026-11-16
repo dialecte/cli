@@ -1,5 +1,21 @@
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
-import { selectBaseOverlay } from './base-red.ts'
+import { createVitestPackage } from '../../../test/scratch-vitest-package.ts'
+import {
+	BASE_RED_SCENARIO_TIMEOUT,
+	VITEST_CONFIG_FILE,
+	VITEST_CONFIG_TEXT,
+	VITEST_REVISED_TEST_TEXT,
+} from '../../../test/tdd-runners-base-red-workspace.constants.ts'
+import {
+	ADD_FILE,
+	ADD_SUBTRACTING_TEXT,
+	ADD_TEST_FILE,
+} from '../../../test/tdd-runners-node-workspace.constants.ts'
+import { readPackageJson } from '../package-json.ts'
+import { runCaseOnBase, selectBaseOverlay } from './base-red.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -93,4 +109,35 @@ describe('selectBaseOverlay', () => {
 				}),
 			).toEqual(testCase.overlay)
 		})
+})
+
+describe('runCaseOnBase', { timeout: BASE_RED_SCENARIO_TIMEOUT }, () => {
+	it("a vitest base run of a package with a TypeScript vitest config → Vite's caches written in the throwaway, the lot's node_modules as it was", async () => {
+		const root = createVitestPackage({
+			files: {
+				[VITEST_CONFIG_FILE]: VITEST_CONFIG_TEXT,
+				[ADD_FILE]: ADD_SUBTRACTING_TEXT,
+				[ADD_TEST_FILE]: VITEST_REVISED_TEST_TEXT,
+			},
+		})
+		const before = readdirSync(join(root, 'node_modules')).sort()
+
+		const verdict = await runCaseOnBase({
+			root,
+			base: 'HEAD',
+			packageJson: readPackageJson(root),
+			testCase: {
+				file: ADD_TEST_FILE,
+				name: 'add > one',
+				project: '',
+				state: 'passed',
+				caseHash: '',
+				ofChange: true,
+				ofBase: false,
+			},
+		})
+
+		expect(verdict).toMatchObject({ kind: 'red' })
+		expect(readdirSync(join(root, 'node_modules')).sort()).toEqual(before)
+	})
 })
