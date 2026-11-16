@@ -35,11 +35,11 @@ export const SUMMARY_MAX_LENGTH = 200
 /** The detail of a summary holding a path or a link. */
 export const SUMMARY_PATH_DETAIL = 'summary holds a path or a link'
 
-/** The detail of a summary holding a reference: `{label}` the rule's label (`plan tag`, `forbidden word`), never the text. */
-export const SUMMARY_REFERENCE_DETAIL = 'summary holds a {label}'
+/** The detail of a public text holding a reference: `{field}` it, `{label}` the rule's label, never the text. */
+export const PUBLIC_TEXT_DETAIL = '{field} holds a {label}'
 
 /** The detail of a summary not checked because the machine's lists cannot be read: `{reason}` why. */
-export const SUMMARY_UNCHECKED_DETAIL = 'summary not checked: {reason}'
+export const PUBLIC_TEXT_UNCHECKED_DETAIL = '{field} not checked: {reason}'
 
 /** The detail of an issue that is not a positive integer. */
 export const ISSUE_DETAIL = 'issue must be a positive integer'

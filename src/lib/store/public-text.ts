@@ -7,16 +7,16 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
 import { readPlanBlock } from '../plan/plan-block.ts'
-import { listMarkedPlans } from '../plan/plan-marks.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
 import { findReferences, readListedPatterns } from '../rules/committed-text.ts'
 import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
+import { plansHoldingLot, readPlanEntry } from './plan-entry.ts'
 import {
 	PATH_OR_LINK_LABEL,
 	PATH_OR_LINK_PATTERN,
 	PLAN_ENTRY_ID_LABEL,
+	WORD_LIKE_ID_PATTERN,
 	WORD_PART_SEPARATOR,
 	WORD_PATTERN,
 } from './public-text.constants.ts'
@@ -93,46 +93,45 @@ export function publicWordTestOf(params: {
 }
 
 /**
- * The entry ids of the plans that hold a lot: the plan at `planPath` when its block reads (the brief's own plan), and
- * every plan marked on this machine one of whose entries matches `branch` - the plan whose lot block holds the lot,
- * when the brief names a lot-local plan. A plan whose block cannot be read names none.
+ * The entry ids of the plans that hold a lot (`plansHoldingLot`): the brief's own plan, and every plan marked on this
+ * machine one of whose entries is on `branch`.
  */
 export function lotPlanEntryIds(params: {
 	planPath: string | undefined
 	branch: string | undefined
 }): ReadonlySet<string> {
-	const ids = new Set<string>()
-	const own = params.planPath === undefined ? undefined : realPathOf(params.planPath)
-	const plans = [...(own === undefined ? [] : [own]), ...listMarkedPlans()]
-	for (const planPath of new Set(plans)) {
-		const read = readPlanBlock({ planPath })
-		if ('faults' in read) continue
-		const { lots } = read.block
-		const holdsLot =
-			planPath === own ||
-			lots.some(function isOfBranch(entry) {
-				return params.branch !== undefined && entry.match?.branch === params.branch
-			})
-		if (holdsLot) for (const entry of lots) ids.add(entry.id)
-	}
-	return ids
+	return new Set(
+		plansHoldingLot(params).flatMap(function idsOf({ block }) {
+			return block.lots.map((entry) => entry.id)
+		}),
+	)
 }
 
 /**
  * The entry ids of the plans that hold the lot of a store or hand-over folder: its stored plan and its brief's
- * branch (`lotPlanEntryIds`); none for what the folder does not hold.
+ * branch (`lotPlanEntryIds`), and the plan of its recorded entry (`plan-entry.json`) whatever the marks say now; none
+ * for what the folder does not hold.
  */
 export function folderPlanEntryIds(params: { folder: string }): ReadonlySet<string> {
 	const planPath = join(params.folder, STORE_FILES.plan)
-	return lotPlanEntryIds({
+	const held = lotPlanEntryIds({
 		planPath: existsSync(planPath) ? planPath : undefined,
 		branch: briefBranchOf(join(params.folder, STORE_FILES.brief)),
 	})
+	const recorded = readPlanEntry({ folder: params.folder })
+	if (recorded === undefined) return held
+	const read = readPlanBlock({ planPath: recorded.plan })
+	return new Set([
+		...held,
+		recorded.id,
+		...('faults' in read ? [] : read.block.lots.map((entry) => entry.id)),
+	])
 }
 
 /**
  * Whether the text holds one of the plan entry `ids` as a word, or as a part of a word split at `-` (`ci2a-lot`):
- * case-insensitive, except for a one-character id, matched as written (a lone `t` of prose is no entry `T`).
+ * case-insensitive, except for an id of letters only, matched as written: it is an ordinary word too (`T`, `CONFIG`:
+ * "a lone t", "reads the config" name no entry).
  */
 export function holdsPlanEntryId(params: { text: string; ids: ReadonlySet<string> }): boolean {
 	return planEntryIdIn(params) !== undefined
@@ -150,7 +149,7 @@ export function planEntryIdIn(params: {
 	})
 	return words.find(function isId(word) {
 		return ids.some(function matches(id) {
-			return id.length === 1 ? word === id : word.toLowerCase() === id.toLowerCase()
+			return WORD_LIKE_ID_PATTERN.test(id) ? word === id : word.toLowerCase() === id.toLowerCase()
 		})
 	})
 }

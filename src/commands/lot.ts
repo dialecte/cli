@@ -36,6 +36,7 @@ import { namesOneCase } from '../lib/tdd/lot-declaration.ts'
 import { GLOB_MAGIC_PATTERN, LOT_VERBS } from '../lib/tdd/tdd.constants.ts'
 import { LOT_FILE } from '../lib/worktree/worktree.constants.ts'
 import { lotAnswer } from './lot-answer.ts'
+import { runLotBrief } from './lot-brief.ts'
 import { runLotClose } from './lot-close.ts'
 import { lotExport } from './lot-export.ts'
 import { runLotLand } from './lot-land.ts'
@@ -185,6 +186,7 @@ export function runLot(params: {
 	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words })
 	if (verb === 'pr') return runLotPr({ cwd: params.cwd, argv: words })
+	if (verb === 'brief') return runLotBrief({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })

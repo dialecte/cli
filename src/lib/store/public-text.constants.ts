@@ -37,3 +37,6 @@ export const PLAN_ENTRY_ID_LABEL = 'plan entry id'
 /** A verb that could not read the lists its public-text check needs: `{reason}` why; nothing written. */
 export const PUBLIC_TEXT_UNCHECKED_REFUSAL =
 	'lot {verb}: {option} not checked: {reason}: nothing written'
+
+/** A plan entry id made of letters only: an ordinary word too, matched only as written (`CONFIG`, `T`). */
+export const WORD_LIKE_ID_PATTERN = /^[A-Za-z]+$/
