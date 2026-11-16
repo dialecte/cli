@@ -8,12 +8,14 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import {
 	BODY_LINES,
 	CHECKLIST_LINES,
+	CRLF_PATTERN,
 	DONE_CASE_STATUSES,
 	FILLED_PARTS,
 	KEPT_PART,
 	NOT_RECORDED,
 	PART_MARKER_PATTERN,
 	RENDERER_COMMENT_PATTERN,
+	TEMPLATE_FAULTS,
 } from './pull-request.constants.ts'
 
 import type { FindingRow, ReviewerOf, VerdictRow } from '../review-rounds/review-record.types.ts'
@@ -27,9 +29,9 @@ export function composePullRequest(params: {
 	/** A person's part of the current body (`keptTextOf`); the template's own when undefined. */
 	kept: string | undefined
 }): PullRequestText | { refusal: string } {
-	const missing = missingMarkerOf(params.template)
-	if (missing !== undefined) return { refusal: `missing marker ${missing}` }
-	const lines = params.template.replace(/\r\n/g, '\n').split('\n')
+	const fault = templateFaultOf(params.template)
+	if (fault !== undefined) return { refusal: fault }
+	const lines = linesOf(params.template)
 	const markers = lines.map(markerOf)
 	const keptAt = markers.indexOf(KEPT_PART)
 	const kept =
@@ -49,21 +51,39 @@ export function composePullRequest(params: {
 	}
 }
 
-/** The first part the template does not mark (in the renderer's order); undefined when it marks them all. */
-export function missingMarkerOf(template: string): string | undefined {
-	const markers = template.replace(/\r\n/g, '\n').split('\n').map(markerOf)
-	return [...FILLED_PARTS, KEPT_PART].find((part) => !markers.includes(part))
+/**
+ * Why the template is not the renderer's: a part it does not mark (in the renderer's order), a part it marks twice, or
+ * a filled part marked after the kept marker (it would never render); undefined for the renderer's template.
+ */
+export function templateFaultOf(template: string): string | undefined {
+	const markers = linesOf(template).map(markerOf)
+	const parts = [...FILLED_PARTS, KEPT_PART]
+	const missing = parts.find((part) => !markers.includes(part))
+	if (missing !== undefined) return TEMPLATE_FAULTS.missing.replace('{part}', missing)
+	const twice = parts.find((part) => markers.indexOf(part) !== markers.lastIndexOf(part))
+	if (twice !== undefined) return TEMPLATE_FAULTS.twice.replace('{part}', twice)
+	const keptAt = markers.indexOf(KEPT_PART)
+	const late = FILLED_PARTS.find((part) => markers.indexOf(part) > keptAt)
+	return late === undefined ? undefined : TEMPLATE_FAULTS.afterKept.replace('{part}', late)
 }
 
-/** The person's part of the current `body`: from the kept part's first line on; undefined when the body has none. */
+/**
+ * The person's part of the current `body`: from the kept part's first line on, its last occurrence (a rendered part
+ * can never push it out); undefined when the body has none.
+ */
 export function keptTextOf(params: { template: string; body: string }): string | undefined {
-	const lines = params.template.replace(/\r\n/g, '\n').split('\n')
+	const lines = linesOf(params.template)
 	const keptAt = lines.map(markerOf).indexOf(KEPT_PART)
 	const first = lines.slice(keptAt + 1).find((line) => line.trim() !== '')
 	if (keptAt === -1 || first === undefined) return undefined
-	const body = params.body.replace(/\r\n/g, '\n').split('\n')
-	const at = body.indexOf(first)
+	const body = linesOf(params.body)
+	const at = body.lastIndexOf(first)
 	return at === -1 ? undefined : body.slice(at).join('\n').trim()
+}
+
+/** The lines of a text, whatever line ends another system gave it. */
+export function linesOf(text: string): string[] {
+	return text.replace(CRLF_PATTERN, '\n').split('\n')
 }
 
 /** The part a template line marks; undefined for any other line. */

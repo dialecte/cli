@@ -30,6 +30,13 @@ export const FRAGMENT_PATTERN = /^changes\/[^/]+\.md$/
 /** The gate or contrib step that builds the documentation. */
 export const DOCS_STEP = 'docs'
 
+/** Why a template is not the renderer's: `{part}` the marker. */
+export const TEMPLATE_FAULTS = {
+	missing: 'missing marker {part}',
+	twice: 'marker {part} twice',
+	afterKept: 'marker {part} after kept',
+} as const
+
 /** A part whose record is missing: never a guess. */
 export const NOT_RECORDED = 'not recorded'
 
@@ -53,7 +60,8 @@ export const BODY_LINES = {
 
 /** The author's checklist, each box ticked from a record or left for the reviewer. */
 export const CHECKLIST_LINES = {
-	tests: 'Tests: every case of the change proven red then green on this tree, no gate failure',
+	tests:
+		'Tests: every case of the change answered by tdd on this tree (green, accepted, revised or unchanged), no gate failure recorded on it',
 	changelog: 'Changelog: a fragment, or a no-entry note with its reason',
 	docs: "Documentation: the gate's docs step passed",
 	version: 'Version: bumped only by a release lot',
@@ -77,12 +85,20 @@ export const PRIVATE_PATH_LABEL = 'path outside the tree or a link'
 /** A link: a scheme or `www.`; never a path of the tree. */
 export const LINK_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/|^www\./i
 
+/** What separates the tokens of a text, as its paths are looked up. */
+export const TOKEN_SEPARATOR_PATTERN = /\s+/
+
+/** A line end of a text another system wrote (`\r\n`): read as `\n`. */
+export const CRLF_PATTERN = /\r\n/g
+
 /** A whitespace-delimited token, stripped of the punctuation around it, as a path is looked up. */
 export const TOKEN_TRIM_PATTERN = /^[`'"([{<]+|[`'")\]}>.,;:!?]+$/g
 
 export const PULL_REQUEST_LINES = {
+	noTemplateFile: "the lot's head holds no {template}: copy the cli's template into the repository",
+	worktreeGone: 'the worktree {worktree} is gone: nothing rendered',
 	noTemplate:
-		"{template} is not the renderer's template (missing marker {part}): copy the cli's template into the repository",
+		"{template} is not the renderer's template ({fault}): copy the cli's template into the repository",
 	refused:
 		'the pull request text holds a {label}{word} in {record}: rewrite that record, nothing sent',
 	unreadBrief: '{brief}: {reason}: nothing sent',

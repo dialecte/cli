@@ -215,7 +215,7 @@ Closes #12
 
 ### Checklist
 
-- [x] Tests: every case of the change proven red then green on this tree, no gate failure
+- [x] Tests: every case of the change answered by tdd on this tree (green, accepted, revised or unchanged), no gate failure recorded on it
 - [x] Changelog: a fragment, or a no-entry note with its reason
 - [x] Documentation: the gate's docs step passed
 - [x] Version: bumped only by a release lot
@@ -317,6 +317,21 @@ Closes #12
 		).toBe(true)
 	})
 
+	it.each([
+		[
+			'marking a part twice',
+			`${TEMPLATE.replace('### Issue', '<!-- dialecte:review -->\n\n### Issue')}`,
+			'marker review twice',
+		],
+		[
+			'marking a filled part after the kept marker',
+			TEMPLATE.replace('<!-- dialecte:checklist -->', '').concat('\n<!-- dialecte:checklist -->\n'),
+			'marker checklist after kept',
+		],
+	])('a template %s → refused, the marker named', (_name, template, refusal) => {
+		expect(composePullRequest({ template, sources: FULL, kept: undefined })).toEqual({ refusal })
+	})
+
 	it('a template missing a marker → refused, the marker named', () => {
 		const text = composePullRequest({
 			template: TEMPLATE.replace('<!-- dialecte:review -->', ''),
@@ -331,6 +346,30 @@ Closes #12
 describe("keptTextOf reads a person's part of the current body", () => {
 	it('a body holding the kept heading → from that heading on', () => {
 		const body = 'rendered\n\n### For the reviewer\n\n- [x] The code is reviewed\n'
+
+		expect(keptTextOf({ template: TEMPLATE, body })).toBe(
+			'### For the reviewer\n\n- [x] The code is reviewed',
+		)
+	})
+
+	it('a body holding the kept heading inside its rendered part too → from the last one on', () => {
+		const body = [
+			'### For the reviewer',
+			'',
+			'- [ ] a stale copy rendered by a behaviour holding a line break',
+			'',
+			'### For the reviewer',
+			'',
+			'- [x] The code is reviewed',
+		].join('\n')
+
+		expect(keptTextOf({ template: TEMPLATE, body })).toBe(
+			'### For the reviewer\n\n- [x] The code is reviewed',
+		)
+	})
+
+	it('a body with Windows line ends → read as the same text', () => {
+		const body = 'rendered\r\n\r\n### For the reviewer\r\n\r\n- [x] The code is reviewed\r\n'
 
 		expect(keptTextOf({ template: TEMPLATE, body })).toBe(
 			'### For the reviewer\n\n- [x] The code is reviewed',

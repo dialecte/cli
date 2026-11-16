@@ -30,13 +30,26 @@ function cliTemplate(): string {
  * fields with `brief` applied, and its tests record taken on the landed tree (on another tree when `staleTests`).
  */
 export function pullRequestLot(
-	params: { brief?: Record<string, unknown>; template?: string; staleTests?: boolean } = {},
+	params: {
+		brief?: Record<string, unknown>
+		template?: string
+		staleTests?: boolean
+		/** Files main holds besides the template, before the lot is cut. */
+		mainFiles?: Record<string, string>
+		/** Files the lot's commit writes besides `src/x.ts` and its fragment (`changes/x.md` replaced when given). */
+		lotFiles?: Record<string, string>
+		/** Paths the lot's commit deletes. */
+		lotDeletes?: string[]
+	} = {},
 ): PullRequestLot {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
 	writeFiles({
 		root: repository,
-		files: { '.github/pull_request_template.md': params.template ?? cliTemplate() },
+		files: {
+			'.github/pull_request_template.md': params.template ?? cliTemplate(),
+			...params.mainFiles,
+		},
 	})
 	git({ root: repository, args: ['add', '-A'] })
 	git({ root: repository, args: ['commit', '-qm', 'chore: the template'] })
@@ -49,8 +62,12 @@ export function pullRequestLot(
 	const main = git({ root: repository, args: ['rev-parse', 'main'] }).trim()
 	writeFiles({
 		root: worktree,
-		files: { 'src/x.ts': 'export const x = 1\n', 'changes/x.md': LOT_FRAGMENT },
+		files: {
+			'src/x.ts': 'export const x = 1\n',
+			...(params.lotFiles ?? { 'changes/x.md': LOT_FRAGMENT }),
+		},
 	})
+	for (const path of params.lotDeletes ?? []) git({ root: worktree, args: ['rm', '-q', path] })
 	git({ root: worktree, args: ['add', '-A'] })
 	git({ root: worktree, args: ['commit', '-qm', LOT_MESSAGE] })
 	const lotFolder = writeStoreLot({

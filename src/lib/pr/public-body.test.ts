@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { PublicPiece, PullRequestSources } from './pull-request.types.ts'
 
 const PATTERNS = [...GENERIC_REFERENCE_PATTERNS, ...forbiddenWordPatterns(['zorbco'])]
-const TREE_FILES = new Set(['src/x.ts', 'changes/x.md'])
+const TREE_FILES = new Set(['src/x.ts', 'changes/x.md', 'src/lib/pr/x.ts'])
 
 /** The refusal of one piece of `text` from the summary, plan entry `CI2a` and `ci2a-lot`, the test tree. */
 function refusalOf(text: string) {
@@ -19,7 +19,7 @@ function refusalOf(text: string) {
 		pieces: [{ record: 'brief.json summary', text }],
 		patterns: PATTERNS,
 		ids: new Set(['CI2a', 'ci2a-lot']),
-		isTreeFile: (path) => TREE_FILES.has(path),
+		treeFiles: TREE_FILES,
 	})
 }
 
@@ -45,12 +45,45 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 		[
 			'a plan entry id',
 			'Done after ci2a.',
-			{ record: 'brief.json summary', label: 'plan entry id' },
+			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a' },
 		],
 		[
 			'a plan entry id part of a word',
 			'Folded from ci2a-lot.',
-			{ record: 'brief.json summary', label: 'plan entry id' },
+			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a-lot' },
+		],
+		['a folder of the tree', 'Moves the readers to `src/lib/pr/`.', undefined],
+		[
+			'a folder outside the tree',
+			'Moves them to `plans/a/b/`.',
+			{
+				record: 'brief.json summary',
+				label: 'path outside the tree or a link',
+				word: 'plans/a/b/',
+			},
+		],
+		[
+			'an absolute path',
+			'Read from /Users/x/y.md first.',
+			{
+				record: 'brief.json summary',
+				label: 'path outside the tree or a link',
+				word: '/Users/x/y.md',
+			},
+		],
+		[
+			'a parent path',
+			'Read ../x/y.md first.',
+			{ record: 'brief.json summary', label: 'path outside the tree or a link', word: '../x/y.md' },
+		],
+		[
+			'a drive path',
+			'Read C:\\x\\y.md first.',
+			{
+				record: 'brief.json summary',
+				label: 'path outside the tree or a link',
+				word: 'C:\\x\\y.md',
+			},
 		],
 		[
 			'a path outside the tree',
@@ -90,7 +123,7 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 		]
 
 		expect(
-			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), isTreeFile: () => false }),
+			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), treeFiles: new Set() }),
 		).toEqual({ record: 'changes/x.md', label: 'forbidden word', word: 'zorbco' })
 	})
 })

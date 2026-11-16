@@ -2,6 +2,9 @@
  * `dialecte lot pr <id>`: the lot's pull request rendered from its records through the repository's template, its
  * open pull request updated when it reads otherwise; a body holding what a public text never holds is not sent.
  */
+import { rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { recordingHost } from '../../test/land-lot.ts'
 import {
 	FORBIDDEN_WORD,
@@ -13,6 +16,7 @@ import {
 import { pullRequestLot } from '../../test/lot-pr.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { runLotPr } from './lot-pr.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -193,6 +197,110 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			body: expect.stringContaining(LOT_SUMMARY),
 			pullRequest: { number: 7, url: 'https://host.test/pull/7' },
 			sent: true,
+		})
+	})
+
+	it('an unknown option → the usage, nothing read or sent, exit 2', () => {
+		const lot = pullRequestLot()
+		const { host, calls } = recordingHost()
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--prnit'], host })
+
+		expect(result.exitCode).toBe(2)
+		expect(calls).toEqual([])
+		expect(result.output).toBe(renderLotUsage())
+	})
+
+	it('a lot already landed → its pull request read by the landing number', () => {
+		const lot = pullRequestLot()
+		writeFileSync(
+			join(lot.lotFolder, 'landing.json'),
+			JSON.stringify({
+				schema: 1,
+				number: 7,
+				url: 'u',
+				branch: 'feat/x',
+				head: 'h',
+				replaced: [],
+				at: '',
+			}),
+		)
+		const { host, calls } = recordingHost({
+			existing: openPullRequest({ title: 'old', body: 'old' }),
+		})
+
+		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(calls[0]).toBe('read 7')
+	})
+
+	it('the host refusing the edit → its reason, exit 1', () => {
+		const lot = pullRequestLot()
+		const { host } = recordingHost({
+			existing: openPullRequest({ title: 'old', body: 'old' }),
+			editRefusal: 'gh pr edit: HTTP 403',
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toBe('lot pr: gh pr edit: HTTP 403')
+	})
+
+	it('a body the host gives back with Windows line ends, the same text → nothing sent', () => {
+		const lot = pullRequestLot()
+		const { host, bodies } = recordingHost({
+			existing: openPullRequest({ title: 'old', body: 'old' }),
+		})
+		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		const windows = recordingHost({
+			existing: openPullRequest({ title: LOT_MESSAGE, body: bodies[0].replaceAll('\n', '\r\n') }),
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host: windows.host })
+
+		expect(windows.calls).toEqual(['read feat/x'])
+		expect(result.output).toContain('already reads the lot records')
+	})
+
+	it("a pull request whose head is not the lot's HEAD → updated, and the line says lot land pushes the rest", () => {
+		const lot = pullRequestLot()
+		const { host } = recordingHost({
+			existing: { ...openPullRequest({ title: 'old', body: 'old' }), head: 'a'.repeat(40) },
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result.output.split('\n').at(-1)).toBe(
+			`! pull request #7 is at aaaaaaaaaaaa, the lot at ${git({ root: lot.worktree, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()}: the text describes the lot; dialecte lot land ${LOT_NAME} --draft pushes it`,
+		)
+	})
+
+	it('a template the lot head does not hold → refused, the template named as missing, exit 1', () => {
+		const lot = pullRequestLot({ lotDeletes: ['.github/pull_request_template.md'] })
+		const { host } = recordingHost()
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toBe(
+			"lot pr: the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
+		)
+	})
+
+	it('a lot whose worktree is gone → refused, the worktree named, exit 1', () => {
+		const lot = pullRequestLot()
+		rmSync(lot.worktree, { recursive: true, force: true })
+		const { host } = recordingHost()
+
+		function run() {
+			return runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+		}
+
+		expect(run).not.toThrow()
+		expect(run()).toEqual({
+			exitCode: 1,
+			output: expect.stringMatching(/^lot pr: the worktree .* is gone: nothing rendered\n?$/),
 		})
 	})
 })

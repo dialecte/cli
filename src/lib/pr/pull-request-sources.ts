@@ -1,7 +1,7 @@
 /**
  * The gathering half of `lot pr`: the lot's records read for its pull request, then checked as public text
  * (`preparePullRequest`). Every read is of the lot's store folder or of the committed head of its worktree (the tree
- * the pull request lands), never of a file a commit does not hold. A record missing is undefined, never a guess.
+ * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -11,7 +11,6 @@ import { readSections } from '../changelog/sections.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
-import { WORKTREE_FILES_ARGUMENTS } from '../review-rounds/review-record.constants.ts'
 import { readReviewRecord } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
@@ -21,7 +20,7 @@ import { lotsOf } from '../store/brief.ts'
 import { folderPlanEntryIds } from '../store/public-text.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readTestsRecord } from '../tdd/tests-record.ts'
-import { missingMarkerOf } from './compose-pull-request.ts'
+import { linesOf, templateFaultOf } from './compose-pull-request.ts'
 import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import {
 	DOCS_STEP,
@@ -32,6 +31,7 @@ import {
 
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
+	ChangedFile,
 	PullRequestChangelog,
 	PullRequestSources,
 	PullRequestStep,
@@ -54,12 +54,14 @@ export function preparePullRequest(params: {
 		root: params.worktree,
 		args: ['show', `HEAD:${TEMPLATE_PATH}`],
 	})
-	const missing = template === undefined ? 'summary' : missingMarkerOf(template)
-	if (template === undefined || missing !== undefined)
+	if (template === undefined)
+		return { refusal: PULL_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
+	const fault = templateFaultOf(template)
+	if (fault !== undefined)
 		return {
 			refusal: PULL_REQUEST_LINES.noTemplate
 				.replace('{template}', TEMPLATE_PATH)
-				.replace('{part}', missing ?? 'summary'),
+				.replace('{fault}', fault),
 		}
 	const sources = readPullRequestSources(params)
 	if ('refusal' in sources) return sources
@@ -70,7 +72,7 @@ export function preparePullRequest(params: {
 		pieces: publicPiecesOf(sources),
 		patterns: lists.patterns,
 		ids: folderPlanEntryIds({ folder: params.lotFolder }),
-		isTreeFile: treeFileTestOf({ worktree: params.worktree, base }),
+		treeFiles: treeFilesOf({ worktree: params.worktree, base }),
 	})
 	if (refused !== undefined)
 		return {
@@ -165,17 +167,14 @@ function mergeBaseOf(params: { worktree: string; baseRef: string }): string {
 }
 
 /** The paths the lot's commits change since `base`, each with its status letter (renames as delete and add). */
-function changedFilesOf(params: {
-	worktree: string
-	base: string
-}): { status: string; path: string }[] {
+function changedFilesOf(params: { worktree: string; base: string }): ChangedFile[] {
 	const fields = readGit({
 		root: params.worktree,
 		args: ['diff', '--name-status', '--no-renames', '-z', params.base, 'HEAD'],
 	})
 		.split('\0')
 		.filter((field) => field !== '')
-	const changes: { status: string; path: string }[] = []
+	const changes: ChangedFile[] = []
 	for (let index = 0; index + 1 < fields.length; index += 2)
 		changes.push({ status: fields[index], path: fields[index + 1] })
 	return changes
@@ -188,7 +187,7 @@ function changedFilesOf(params: {
  */
 function changelogOf(params: {
 	worktree: string
-	changes: { status: string; path: string }[]
+	changes: ChangedFile[]
 }): PullRequestChangelog | undefined {
 	const written = params.changes
 		.filter((change) => change.status !== 'D' && FRAGMENT_PATTERN.test(change.path))
@@ -214,8 +213,7 @@ function changelogOf(params: {
 }
 
 function headText(params: { worktree: string; path: string }): string {
-	return readGit({ root: params.worktree, args: ['show', `HEAD:${params.path}`] }).replace(
-		/\r\n/g,
+	return linesOf(readGit({ root: params.worktree, args: ['show', `HEAD:${params.path}`] })).join(
 		'\n',
 	)
 }
@@ -267,19 +265,21 @@ function referencePatternsOf(params: {
 	}
 }
 
-/** Whether a path is a file of the lot's tree: git lists it in the worktree (not ignored) or at the base. */
-function treeFileTestOf(params: { worktree: string; base: string }): (path: string) => boolean {
-	const files = new Set([
-		...readGit({ root: params.worktree, args: [...WORKTREE_FILES_ARGUMENTS] }).split('\0'),
-		...(
-			tryReadGit({
-				root: params.worktree,
-				args: ['ls-tree', '-r', '-z', '--name-only', params.base],
-			}) ?? ''
-		).split('\0'),
-	])
+/**
+ * The files of the lot's tree: those its committed head holds and those its base holds (a file the lot deletes still
+ * names the tree). An untracked file of the worktree is none: no commit of the pull request holds it.
+ */
+function treeFilesOf(params: { worktree: string; base: string }): ReadonlySet<string> {
+	const files = new Set(
+		[params.base, 'HEAD'].flatMap(function filesAt(commit) {
+			return (
+				tryReadGit({
+					root: params.worktree,
+					args: ['ls-tree', '-r', '-z', '--name-only', commit],
+				}) ?? ''
+			).split('\0')
+		}),
+	)
 	files.delete('')
-	return function isTreeFile(path) {
-		return files.has(path)
-	}
+	return files
 }

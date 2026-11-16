@@ -135,16 +135,23 @@ export function folderPlanEntryIds(params: { folder: string }): ReadonlySet<stri
  * case-insensitive, except for a one-character id, matched as written (a lone `t` of prose is no entry `T`).
  */
 export function holdsPlanEntryId(params: { text: string; ids: ReadonlySet<string> }): boolean {
-	if (params.ids.size === 0) return false
+	return planEntryIdIn(params) !== undefined
+}
+
+/** The first word (or part of a word) of the text that is one of the plan entry `ids`, as `holdsPlanEntryId` matches. */
+export function planEntryIdIn(params: {
+	text: string
+	ids: ReadonlySet<string>
+}): string | undefined {
+	if (params.ids.size === 0) return undefined
+	const ids = [...params.ids]
 	const words = (params.text.match(WORD_PATTERN) ?? []).flatMap(function wordAndParts(word) {
 		return [word, ...word.split(WORD_PART_SEPARATOR)]
 	})
-	return [...params.ids].some(function isHeld(id) {
-		return id.length === 1
-			? words.includes(id)
-			: words.some(function isId(word) {
-					return word.toLowerCase() === id.toLowerCase()
-				})
+	return words.find(function isId(word) {
+		return ids.some(function matches(id) {
+			return id.length === 1 ? word === id : word.toLowerCase() === id.toLowerCase()
+		})
 	})
 }
 

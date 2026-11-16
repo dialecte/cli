@@ -41,3 +41,6 @@ export type PublicPiece = { record: string; text: string }
 
 /** Why a body is not sent: what a piece holds (the rule's label, the word when it is no private reference). */
 export type PublicRefusal = { record: string; label: string; word?: string }
+
+/** A path the lot's commits change since the merge base, with git's status letter (`A`, `M`, `D`). */
+export type ChangedFile = { status: string; path: string }

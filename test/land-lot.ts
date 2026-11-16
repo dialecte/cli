@@ -57,7 +57,11 @@ export function landOnOrigin(params: { origin: string; files?: Record<string, st
 
 /** A host that answers from memory and records each call, and the body of each pull request it opens. */
 export function recordingHost(
-	params: { existing?: Omit<PullRequest, 'body'> & { body?: string } } = {},
+	params: {
+		existing?: Omit<PullRequest, 'body'> & { body?: string }
+		/** The host's refusal of an edit; edits are taken when absent. */
+		editRefusal?: string
+	} = {},
 ): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
@@ -89,6 +93,7 @@ export function recordingHost(
 		},
 		editPullRequest: function editPullRequest(call) {
 			calls.push(`edit ${call.number} "${call.title}"`)
+			if (params.editRefusal !== undefined) return { refusal: params.editRefusal }
 			bodies.push(call.body)
 			if (pullRequest !== undefined)
 				pullRequest = { ...pullRequest, title: call.title, body: call.body }
