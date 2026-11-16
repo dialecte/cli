@@ -84,25 +84,51 @@ function describeLeftover(leftover: Leftover): string {
 }
 
 /**
- * The first `LEFTOVER_PATHS_NAMED` innermost paths under `entry` (files, links, empty folders), relative to it and
- * sorted; none for a file or a link.
+ * The first `LEFTOVER_PATHS_NAMED` innermost paths under `entry` (files, links, empty or unreadable folders), relative
+ * to it and sorted; none for a file, a link or an entry gone by now. A process may still change the entry while it is
+ * read: what could be read is named, never an error in place of the guard's message.
  */
 function innermostPaths(params: { entry: string }): string[] {
-	if (!lstatSync(params.entry).isDirectory()) return []
+	if (isFolder(params.entry) !== true) return []
 	return innermostUnder({ folder: params.entry, root: params.entry })
 }
 
-/** The innermost paths under `folder`, depth first in name order, at most `LEFTOVER_PATHS_NAMED` of them. */
+/**
+ * The innermost paths under `folder`, depth first in name order, at most `LEFTOVER_PATHS_NAMED` of them; a folder it
+ * cannot read is named itself, an entry gone meanwhile is left out.
+ */
 function innermostUnder(params: { folder: string; root: string }): string[] {
-	const names = readdirSync(params.folder).sort()
-	if (names.length === 0)
-		return params.folder === params.root ? [] : [`${relative(params.root, params.folder)}/`]
+	const names = namesIn(params.folder)
+	const itself = params.folder === params.root ? [] : [`${relative(params.root, params.folder)}/`]
+	if (names === undefined || names.length === 0) return itself
 	return names.reduce<string[]>(function addPaths(found, name) {
 		if (found.length >= LEFTOVER_PATHS_NAMED) return found
 		const path = join(params.folder, name)
-		const paths = lstatSync(path).isDirectory()
-			? innermostUnder({ folder: path, root: params.root })
-			: [relative(params.root, path)]
+		const folder = isFolder(path)
+		const paths =
+			folder === undefined
+				? []
+				: folder
+					? innermostUnder({ folder: path, root: params.root })
+					: [relative(params.root, path)]
 		return [...found, ...paths].slice(0, LEFTOVER_PATHS_NAMED)
 	}, [])
+}
+
+/** Whether `path` is a folder (a link is not); undefined when it is gone or cannot be read. */
+function isFolder(path: string): boolean | undefined {
+	try {
+		return lstatSync(path).isDirectory()
+	} catch {
+		return undefined
+	}
+}
+
+/** The names in `folder`, sorted; undefined when it is gone or cannot be read. */
+function namesIn(folder: string): string[] | undefined {
+	try {
+		return readdirSync(folder).sort()
+	} catch {
+		return undefined
+	}
 }

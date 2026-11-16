@@ -12,3 +12,6 @@ export const LEFTOVER_HOLDERS_NAMED = 3
 
 /** Linux's process folder: `<pid>/cwd` and `<pid>/fd/*` link into what a process holds, `<pid>/cmdline` its words. */
 export const PROCESS_FOLDER = '/proc'
+
+/** How long the guard waits for `lsof` (where /proc is missing) before it names no holder: a failing run never hangs. */
+export const LSOF_TIMEOUT_MILLISECONDS = 10_000

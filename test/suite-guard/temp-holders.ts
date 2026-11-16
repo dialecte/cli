@@ -7,7 +7,11 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { join, sep } from 'node:path'
 
-import { LEFTOVER_HOLDERS_NAMED, PROCESS_FOLDER } from './temp-leftovers.constants.ts'
+import {
+	LEFTOVER_HOLDERS_NAMED,
+	LSOF_TIMEOUT_MILLISECONDS,
+	PROCESS_FOLDER,
+} from './temp-leftovers.constants.ts'
 
 /** `<pid> <command line>` of the first processes holding `path`, by pid. */
 export function holdersOf(params: { path: string }): string[] {
@@ -62,11 +66,16 @@ function holdersFromProcesses(params: { path: string }): string[] {
 		.map((pid) => `${pid} ${commandOf(pid)}`)
 }
 
-/** `lsof -F pc +D <path>`: one `p<pid>` line, then its `c<command>` line, per process. */
+/**
+ * `lsof -F pc +D <path>`: one `p<pid>` line, then its `c<command>` line, per process; what it printed before a timeout
+ * or a failure, none when it printed nothing.
+ */
 function holdersFromLsof(params: { path: string }): string[] {
-	const run = spawnSync('lsof', ['-n', '-F', 'pc', '+D', params.path], { encoding: 'utf8' })
-	if (run.error || typeof run.stdout !== 'string') return []
-	const lines = run.stdout.split('\n')
+	const run = spawnSync('lsof', ['-n', '-F', 'pc', '+D', params.path], {
+		encoding: 'utf8',
+		timeout: LSOF_TIMEOUT_MILLISECONDS,
+	})
+	const lines = (typeof run.stdout === 'string' ? run.stdout : '').split('\n')
 	return lines.flatMap(function holderAt(line, index) {
 		if (!line.startsWith('p') || line.slice(1) === String(process.pid)) return []
 		const next = lines[index + 1] ?? ''

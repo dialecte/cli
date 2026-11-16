@@ -4,6 +4,7 @@
  */
 import { spawn } from 'node:child_process'
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -98,6 +99,28 @@ describe('leftoverOf', () => {
 				readHolders: noHolder,
 			}),
 		).toEqual({ name: 'left.txt', origin: 'a.test.ts > one', holds: [], holders: [] })
+	})
+
+	it('a folder holding a folder it cannot read → still named, the unreadable folder among what it holds', () => {
+		const root = temporaryFolder('dlt-leftover-')
+		mkdirSync(join(root, 'left', 'a-locked'), { recursive: true })
+		writeFileSync(join(root, 'left', 'z.txt'), 'z\n')
+		chmodSync(join(root, 'left', 'a-locked'), 0o000)
+		try {
+			expect(
+				leftoverOf({ folder: root, name: 'left', origins: new Map(), readHolders: noHolder }),
+			).toEqual({ name: 'left', holds: ['a-locked/', 'z.txt'], holders: [] })
+		} finally {
+			chmodSync(join(root, 'left', 'a-locked'), 0o700)
+		}
+	})
+
+	it('a leftover gone by the time it is read → still named, nothing held', () => {
+		const root = temporaryFolder('dlt-leftover-')
+
+		expect(
+			leftoverOf({ folder: root, name: 'gone', origins: new Map(), readHolders: noHolder }),
+		).toEqual({ name: 'gone', holds: [], holders: [] })
 	})
 })
 
