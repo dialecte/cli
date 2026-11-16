@@ -20,8 +20,11 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-/** A store lot `0001-repo-x` whose worktree holds one commit on `feat/x`, the repository pushed to a bare origin. */
-function landableLot() {
+/**
+ * A store lot `0001-repo-x` whose worktree holds one commit on `feat/x`, the repository pushed to a bare origin; its
+ * identity names the base it was cut from as `baseRef` (`main` when left out) at main's commit.
+ */
+function landableLot(params: { baseRef?: (main: string) => string } = {}) {
 	const workspace = createBriefWorkspace()
 	const origin = join(workspace.workspace, 'origin.git')
 	git({ root: workspace.workspace, args: ['init', '-q', '--bare', '-b', 'main', origin] })
@@ -32,6 +35,7 @@ function landableLot() {
 		root: workspace.repository,
 		args: ['worktree', 'add', '-q', '-b', 'feat/x', worktree, 'main'],
 	})
+	const main = git({ root: workspace.repository, args: ['rev-parse', 'main'] }).trim()
 	writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 1\n' } })
 	git({ root: worktree, args: ['add', 'src/x.ts'] })
 	git({ root: worktree, args: ['commit', '-qm', 'feat(x): x answers one'] })
@@ -42,6 +46,7 @@ function landableLot() {
 		branch: 'feat/x',
 		repository: workspace.repository,
 		worktree,
+		base: { ref: params.baseRef?.(main) ?? 'main', commit: main },
 	})
 	return { workspace, lotFolder }
 }
@@ -72,6 +77,49 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x', '--draft'], host })
 
 		expect(calls.at(-1)).toContain('draft')
+	})
+
+	it('a base named by its commit, which main holds → not a stack: landed into main', () => {
+		const { workspace } = landableLot({ baseRef: (main) => main.slice(0, 7) })
+		const { host, calls } = recordingHost()
+
+		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host })
+
+		expect(result.exitCode).toBe(0)
+		expect(calls).toContain('queue 7')
+	})
+
+	it('cut from a commit main does not hold, named by its sha → a stack: refused naming the commit, nothing asked of the host', () => {
+		const { workspace } = landableLot()
+		const parent = join(workspace.workspace, '.worktrees', 'parent')
+		git({
+			root: workspace.repository,
+			args: ['worktree', 'add', '-q', '-b', 'feat/parent', parent, 'main'],
+		})
+		writeFiles({ root: parent, files: { 'src/p.ts': 'export const p = 1\n' } })
+		git({ root: parent, args: ['add', 'src/p.ts'] })
+		git({ root: parent, args: ['commit', '-qm', 'feat(p): p answers one'] })
+		const cut = git({ root: parent, args: ['rev-parse', 'HEAD'] }).trim()
+		const child = join(workspace.workspace, '.worktrees', '0002-repo-y')
+		git({ root: workspace.repository, args: ['worktree', 'add', '-q', '-b', 'feat/y', child, cut] })
+		writeStoreLot({
+			workspace,
+			name: '0002-repo-y',
+			scope: ['src/y/'],
+			branch: 'feat/y',
+			repository: workspace.repository,
+			worktree: child,
+			base: { ref: cut.slice(0, 7), commit: cut },
+		})
+		const { host, calls } = recordingHost()
+
+		const result = runLotLand({ cwd: workspace.repository, argv: ['0002-repo-y'], host })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain(
+			`was cut from ${cut.slice(0, 7)} (${cut.slice(0, 12)}), which main does not hold`,
+		)
+		expect(calls).toEqual([])
 	})
 
 	it.each([
