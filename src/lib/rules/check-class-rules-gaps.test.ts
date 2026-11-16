@@ -122,7 +122,7 @@ describe('checkCodeRules: a data-only error holds no function value', () => {
 			],
 			expected: [{ rule: 'class', line: 2, functionLine: 2 }],
 		},
-		'a field assigned an imported name → refused: what it holds cannot be told here': {
+		'a field assigned an imported name → admitted: a name read is data': {
 			lines: [
 				"import { DEFAULT_REASON } from './refusal.constants.ts'",
 				'class Refusal extends Error {',
@@ -132,7 +132,7 @@ describe('checkCodeRules: a data-only error holds no function value', () => {
 				'\t}',
 				'}',
 			],
-			expected: [{ rule: 'class', line: 2, functionLine: 2 }],
+			expected: [],
 		},
 		'fields taken from typed parameters, destructured, in a template or a literal → data-only, no finding':
 			{

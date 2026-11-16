@@ -1,13 +1,18 @@
 /**
  * The data-only error classes of a file: an error class (it extends `Error`, a base named `*Error`, or another
- * data-only error of the file) whose body holds only fields, index signatures and a constructor that builds them. A
- * field or a constructor assignment holds data only: no function, method, class, call or `new` anywhere in its value,
- * and every name in it told data here, a parameter by its declared type, a local by what it holds, a module name by
- * its declaration. A name the file cannot tell (an import, a global) is not data.
+ * data-only error of the file) whose body holds only fields, index signatures and a constructor that builds them
+ * (`super(…)`, locals, `this.<field> = …`, and `Object.setPrototypeOf(this, …)`, the error idiom). A field or a
+ * constructor assignment holds data: no function, method, class, call or `new` anywhere in its value. A name read is
+ * data unless the file shows it holds a function: a parameter declared with a function type or a function default, a
+ * local or module const holding one, a module function or class. An import or a global is a value read: data.
  */
 import { ERROR_BASE_PATTERN } from './check-class-rules.constants.ts'
 import { classNameOf } from './class-name.ts'
-import { ALWAYS_DATA_NAMES, FUNCTION_TYPE_NAMES } from './data-only-errors.constants.ts'
+import {
+	FUNCTION_TYPE_NAMES,
+	OBJECT_NAME,
+	SET_PROTOTYPE_METHOD,
+} from './data-only-errors.constants.ts'
 import { bindingNamesOf, childNodesOf, isFunctionNode } from './syntax-nodes.ts'
 
 import ts from 'typescript'
@@ -77,9 +82,9 @@ function constructorContextOf(params: {
 	sourceFile: ts.SourceFile
 }): ValueContext {
 	const { member, sourceFile } = params
-	const parameters = new Map<string, ts.TypeNode | undefined>()
+	const parameters = new Map<string, ts.ParameterDeclaration>()
 	for (const parameter of member.parameters)
-		for (const name of bindingNamesOf(parameter.name)) parameters.set(name, parameter.type)
+		for (const name of bindingNamesOf(parameter.name)) parameters.set(name, parameter)
 	const locals = new Map<string, ts.Expression>()
 	for (const statement of member.body?.statements ?? [])
 		if (ts.isVariableStatement(statement))
@@ -90,7 +95,7 @@ function constructorContextOf(params: {
 	return { sourceFile, parameters, locals, judging: new Set() }
 }
 
-/** `super(…)`, a local holding data, or `this.<field> = <data>`. */
+/** `super(…)`, `Object.setPrototypeOf(this, …)`, a local holding data, or `this.<field> = <data>`. */
 function isBuildingStatement(params: { statement: ts.Statement; context: ValueContext }): boolean {
 	const { statement, context } = params
 	if (ts.isVariableStatement(statement))
@@ -102,7 +107,9 @@ function isBuildingStatement(params: { statement: ts.Statement; context: ValueCo
 	if (!ts.isExpressionStatement(statement)) return false
 	const expression = statement.expression
 	if (ts.isCallExpression(expression))
-		return expression.expression.kind === ts.SyntaxKind.SuperKeyword
+		return (
+			expression.expression.kind === ts.SyntaxKind.SuperKeyword || isSetPrototypeOfThis(expression)
+		)
 	return (
 		ts.isBinaryExpression(expression) &&
 		expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -112,7 +119,19 @@ function isBuildingStatement(params: { statement: ts.Statement; context: ValueCo
 	)
 }
 
-/** No function, method, class, call or `new` in the value, and each name in it told data. */
+/** `Object.setPrototypeOf(this, …)`: an error subclass restoring its prototype, the one call a constructor may make. */
+function isSetPrototypeOfThis(call: ts.CallExpression): boolean {
+	const callee = call.expression
+	return (
+		ts.isPropertyAccessExpression(callee) &&
+		ts.isIdentifier(callee.expression) &&
+		callee.expression.text === OBJECT_NAME &&
+		callee.name.text === SET_PROTOTYPE_METHOD &&
+		call.arguments[0]?.kind === ts.SyntaxKind.ThisKeyword
+	)
+}
+
+/** No function, method, class, call or `new` in the value, and no name in it the file shows holding a function. */
 function isDataValue(params: { expression: ts.Node; context: ValueContext }): boolean {
 	const { expression: node, context } = params
 	if (
@@ -123,6 +142,7 @@ function isDataValue(params: { expression: ts.Node; context: ValueContext }): bo
 		ts.isTaggedTemplateExpression(node)
 	)
 		return false
+	if (ts.isMetaProperty(node)) return true
 	if (ts.isIdentifier(node)) return isDataName({ name: node.text, context })
 	if (ts.isShorthandPropertyAssignment(node)) return isDataName({ name: node.name.text, context })
 	// a property's name or key is no value: only what it is read from, or what it holds
@@ -134,23 +154,31 @@ function isDataValue(params: { expression: ts.Node; context: ValueContext }): bo
 		.every((child) => isDataValue({ expression: child, context }))
 }
 
-/** A parameter by its declared type, a local or module const by what it holds, an enum; else not told data. */
+/**
+ * A name read is data unless the file shows it holds a function: a parameter by its declared type or its default, a
+ * local or module const by what it holds, a module function or class never; an import, a global, a name met again
+ * (a cycle) are value reads.
+ */
 function isDataName(params: { name: string; context: ValueContext }): boolean {
 	const { name, context } = params
-	if (ALWAYS_DATA_NAMES.includes(name)) return true
-	if (context.judging.has(name)) return false
+	if (context.judging.has(name)) return true
 	const judging = new Set([...context.judging, name])
-	if (context.parameters.has(name)) {
-		const type = context.parameters.get(name)
-		return type !== undefined && isDataType({ type, sourceFile: context.sourceFile })
+	const parameter = context.parameters.get(name)
+	if (parameter !== undefined) {
+		if (parameter.type !== undefined)
+			return isDataType({ type: parameter.type, sourceFile: context.sourceFile })
+		return (
+			parameter.initializer === undefined ||
+			isDataValue({ expression: parameter.initializer, context: { ...context, judging } })
+		)
 	}
 	const local = context.locals.get(name)
 	if (local !== undefined)
 		return isDataValue({ expression: local, context: { ...context, judging } })
 	const declared = moduleValueOf({ sourceFile: context.sourceFile, name })
-	if (declared === 'enum') return true
+	if (declared === 'behaviour') return false
 	return (
-		declared !== undefined &&
+		declared === undefined ||
 		isDataValue({
 			expression: declared,
 			context: {
@@ -163,13 +191,17 @@ function isDataName(params: { name: string; context: ValueContext }): boolean {
 	)
 }
 
-/** What a module-level name holds: a const's initializer, `enum` for an enum; undefined for anything else. */
+/** What a module-level name holds: a const's initializer, `behaviour` for a function or a class; undefined otherwise. */
 function moduleValueOf(params: {
 	sourceFile: ts.SourceFile
 	name: string
-}): ts.Expression | 'enum' | undefined {
+}): ts.Expression | 'behaviour' | undefined {
 	for (const statement of params.sourceFile.statements) {
-		if (ts.isEnumDeclaration(statement) && statement.name.text === params.name) return 'enum'
+		if (
+			(ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+			statement.name?.text === params.name
+		)
+			return 'behaviour'
 		if (!ts.isVariableStatement(statement)) continue
 		if (!(statement.declarationList.flags & ts.NodeFlags.Const)) continue
 		for (const declaration of statement.declarationList.declarations)

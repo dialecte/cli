@@ -1,6 +1,7 @@
 /**
  * The writes through `this` of a class the class rule refuses: each member's body, walked with the names that alias
- * the instance or a field of it (`const self = this`, `const { items } = this`). A method's body is judged whole; the
+ * the instance or a field of it (`const self = this`, `const { items } = this`), scoped as declared: a parameter or an
+ * inner declaration of the same name shadows an alias. A method's body is judged whole; the
  * constructor's own statements and a field's initializer build the instance, so only the functions they create, which
  * run later, are judged. `this` inside a function that is no arrow, a method or a class is not the instance's, but an
  * alias reaches into any of them.
@@ -29,9 +30,8 @@ export function thisWritesOf(params: {
 }): QualityFinding[] {
 	const { name, sourceFile } = params
 	return regionsOf({ node: params.node, sourceFile }).flatMap((region) => {
-		const aliases = aliasesIn(region)
 		const reported = new Set<string>()
-		return writesIn({ region, aliases }).flatMap((write): QualityFinding[] => {
+		return writesIn(region).flatMap((write): QualityFinding[] => {
 			const key = writtenTextOf({ node: write.node, sourceFile })
 			if (reported.has(key)) return []
 			reported.add(key)
@@ -74,49 +74,30 @@ function regionsOf(params: {
 	})
 }
 
-/** The names that alias the instance or a field of it in the region, in source order. */
-function aliasesIn(region: WriteRegion): ReadonlySet<string> {
-	const aliases = new Set<string>()
-	for (const { node, state } of walk(region)) {
-		if (!ts.isVariableDeclaration(node) || node.initializer === undefined) continue
-		if (reachesInstance({ expression: node.initializer, state, aliases }))
-			for (const name of bindingNamesOf(node.name)) aliases.add(name)
-	}
-	return aliases
-}
-
-/** The judged writes of the region whose path starts at the instance: `this` where it is the class's, or an alias. */
-function writesIn(params: { region: WriteRegion; aliases: ReadonlySet<string> }): ThisWrite[] {
-	const { aliases } = params
-	return walk(params.region).flatMap(({ node, state }) =>
+/**
+ * The judged writes of the region whose path starts at the instance: `this` where it is the class's, or a name that,
+ * where it is written, is bound to an alias of the instance.
+ */
+function writesIn(region: WriteRegion): ThisWrite[] {
+	return walk(region).flatMap(({ node, state }) =>
 		state.judged
 			? mutationsAt(node)
 					.filter(
 						(mutation) =>
 							(mutation.path.root === THIS_ROOT && state.thisIsInstance) ||
-							aliases.has(mutation.path.root),
+							state.bindings.get(mutation.path.root) === true,
 					)
 					.map((mutation) => ({ node: mutation.node, label: mutation.label }))
 			: [],
 	)
 }
 
-function reachesInstance(params: {
-	expression: ts.Expression
-	state: WalkState
-	aliases: ReadonlySet<string>
-}): boolean {
-	const path = pathOf(unwrapped(params.expression))
-	if (path === undefined) return false
-	if (path.root === THIS_ROOT) return params.state.thisIsInstance
-	return params.aliases.has(path.root)
-}
-
-/** Every node of the region with what holds there: whether a write is judged, whether `this` is the instance. */
+/** Every node of the region with what holds there: whether a write is judged, `this` is the instance, a name an alias. */
 function walk(region: WriteRegion): { node: ts.Node; state: WalkState }[] {
 	const start: WalkState = {
 		judged: region.judgedWhole || isFunctionNode(region.root),
 		thisIsInstance: true,
+		bindings: new Map(),
 	}
 	return walkFrom({ node: region.root, root: region.root, state: start })
 }
@@ -127,17 +108,67 @@ function walkFrom(params: {
 	state: WalkState
 }): { node: ts.Node; state: WalkState }[] {
 	const { node, root } = params
-	const state: WalkState =
+	const entered: WalkState =
 		node === root
 			? params.state
 			: {
+					...params.state,
 					judged: params.state.judged || isFunctionNode(node),
 					thisIsInstance: params.state.thisIsInstance && !ownsThis(node),
 				}
+	const state = { ...entered, bindings: bindingsAt({ node, state: entered }) }
 	return [
 		{ node, state },
 		...childNodesOf(node).flatMap((child) => walkFrom({ node: child, root, state })),
 	]
+}
+
+/**
+ * The names bound inside `node`, over those around it: a function's parameters, a block's declarations (an alias when
+ * its value reaches the instance, in order), a loop's or a catch clause's variables. An inner name shadows an alias.
+ */
+function bindingsAt(params: { node: ts.Node; state: WalkState }): ReadonlyMap<string, boolean> {
+	const { node, state } = params
+	const bindings = new Map(state.bindings)
+	if (isFunctionNode(node))
+		for (const parameter of node.parameters)
+			for (const name of bindingNamesOf(parameter.name)) bindings.set(name, false)
+	if (ts.isBlock(node) || ts.isSourceFile(node) || ts.isModuleBlock(node))
+		for (const statement of node.statements) {
+			if (ts.isFunctionDeclaration(statement) && statement.name)
+				bindings.set(statement.name.text, false)
+			if (!ts.isVariableStatement(statement)) continue
+			for (const declaration of statement.declarationList.declarations) {
+				const alias =
+					declaration.initializer !== undefined &&
+					reachesInstance({
+						expression: declaration.initializer,
+						state: { ...state, bindings },
+					})
+				for (const name of bindingNamesOf(declaration.name)) bindings.set(name, alias)
+			}
+		}
+	for (const name of loopOrCatchNamesOf(node)) bindings.set(name, false)
+	return bindings
+}
+
+/** The variables a `for` head or a `catch` clause declares. */
+function loopOrCatchNamesOf(node: ts.Node): string[] {
+	if (ts.isCatchClause(node))
+		return node.variableDeclaration ? bindingNamesOf(node.variableDeclaration.name) : []
+	if (!ts.isForStatement(node) && !ts.isForOfStatement(node) && !ts.isForInStatement(node))
+		return []
+	const head = node.initializer
+	return head !== undefined && ts.isVariableDeclarationList(head)
+		? head.declarations.flatMap((declaration) => bindingNamesOf(declaration.name))
+		: []
+}
+
+function reachesInstance(params: { expression: ts.Expression; state: WalkState }): boolean {
+	const path = pathOf(unwrapped(params.expression))
+	if (path === undefined) return false
+	if (path.root === THIS_ROOT) return params.state.thisIsInstance
+	return params.state.bindings.get(path.root) === true
 }
 
 /** A node with a `this` of its own: a function that is no arrow, a method or accessor, a class. */
