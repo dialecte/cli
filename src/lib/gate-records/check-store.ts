@@ -10,11 +10,11 @@ import { readGit } from '../git.ts'
 import {
 	createLockFile,
 	isWriterRunning,
-	lockWriterOf,
+	lockWriterOfText,
+	ownProcessStartTime,
 	readLockBytes,
 	setStaleLockAside,
 } from '../pid-lock.ts'
-import { processStartTime } from '../process-start-time.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
 import {
 	CHECK_KEY_FIELDS,
@@ -47,22 +47,18 @@ export function storeCheckRecord(params: {
 	const { record } = params
 	const { key } = record
 	if (!key) return
-	const { tree } = key
-	function read(): GateRecord[] {
-		return readTreeRecords({ root: params.root, tree, checkStore: params.checkStore })
-	}
-	if (isSupersededBy({ kept: read(), record, key })) return
-	params.seam?.beforeWrite?.()
 	const folder = storeFolderOf(params)
-	mkdirSync(folder, { recursive: true })
 	const path = join(folder, `${key.tree}.json`)
+	if (isSupersededBy({ kept: readRecordsAt(path), record, key })) return
+	params.seam?.beforeWrite?.()
+	mkdirSync(folder, { recursive: true })
 	const lock = takeTreeLock({
 		lockPath: `${path}${CHECK_STORE_LOCK_SUFFIX}`,
 		waitMs: params.seam?.lockWaitMs ?? CHECK_STORE_LOCK_WAIT_MS,
 	})
 	try {
 		// read again under the lock: what another writer stored since the first read is kept
-		const kept = read()
+		const kept = readRecordsAt(path)
 		if (isSupersededBy({ kept, record, key })) return
 		const records = [
 			...kept.filter((stored) => !isSameCheck({ record: stored, mode: record.mode, key })),
@@ -96,7 +92,7 @@ function isSupersededBy(params: {
  */
 function takeTreeLock(params: { lockPath: string; waitMs: number }): string | undefined {
 	const { lockPath } = params
-	const text = `${process.pid}\n${processStartTime(process.pid) ?? ''}\n`
+	const text = `${process.pid}\n${ownProcessStartTime() ?? ''}\n`
 	const clock = createSystemClock()
 	const deadline = clock.now() + params.waitMs
 	for (;;) {
@@ -114,8 +110,7 @@ function takeTreeLock(params: { lockPath: string; waitMs: number }): string | un
 
 /** The lock's writer is gone: its pid is dead, or alive with another start time (the pid was reused). */
 function isStaleLock(bytes: Buffer): boolean {
-	const [pidLine, startedLine] = bytes.toString('utf8').trim().split('\n')
-	return !isWriterRunning(lockWriterOf({ pidLine, startedLine }))
+	return !isWriterRunning(lockWriterOfText({ text: bytes.toString('utf8') }))
 }
 
 /** Every record of `tree`, any worktree of the repository. */
@@ -125,7 +120,11 @@ export function readTreeRecords(params: {
 	/** The absolute git common dir whose store to read instead of the repository's own. */
 	checkStore?: string
 }): GateRecord[] {
-	const path = join(storeFolderOf(params), `${params.tree}.json`)
+	return readRecordsAt(join(storeFolderOf(params), `${params.tree}.json`))
+}
+
+/** The records the tree file at `path` holds; none when it is missing or holds no list of records. */
+function readRecordsAt(path: string): GateRecord[] {
 	if (!existsSync(path)) return []
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))

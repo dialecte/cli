@@ -1,10 +1,11 @@
 /** The note under the card `handover write` prints: the command it names for a late edit is the one that works, and it does work. */
 import { spawnSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { CLI_SOURCE } from '../../test/handover-store-scenario.constants.ts'
 import { createBranchRepository, writeLotsFile } from '../../test/handover-store-scenario.ts'
-import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 
@@ -28,9 +29,30 @@ function rehashCommandOf(output: string): string | undefined {
 	return /re-gate, then `dialecte (handover [^`]*)`/.exec(output)?.[1]
 }
 
-/** A repository with a change, a lots file for it and the hand-over written with `outWord` as its `--out` (none for undefined). */
-function writeWith(params: { outWord: (folder: string) => string | undefined }) {
+/** The command the gate's line under a hand-over names to refresh it, without its `dialecte`. */
+function gateRefreshCommandOf(output: string): string | undefined {
+	return /refresh it with `dialecte (handover [^`]*)`/.exec(output)?.[1]
+}
+
+/** The gate's own steps, committed on the base: one step that always passes, so the gate runs its steps. */
+const GATE_CONFIG = {
+	'dialecte.json': `${JSON.stringify({ schema: 1, gate: { fast: [{ name: 'check', run: 'true' }], full: [{ name: 'check', run: 'true' }] } })}\n`,
+}
+
+/**
+ * A repository with a change, a lots file for it and the hand-over written with `outWord` as its `--out` (none for
+ * undefined); `base` files are committed before the change.
+ */
+function writeWith(params: {
+	outWord: (folder: string) => string | undefined
+	base?: Record<string, string>
+}) {
 	const root = createBranchRepository()
+	if (params.base) {
+		writeFiles({ root, files: params.base })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', 'gate steps'] })
+	}
 	writeFiles({ root, files: CHANGES })
 	const lotsPath = writeLotsFile({ root, name: 'one' })
 	const folder = temporaryFolder('dialecte-handover-out-')
@@ -93,4 +115,24 @@ describe('handover write: the late-edit hint', { timeout: HANDOVER_CASE_TIMEOUT 
 			expect(rehashed.status).toBe(0)
 		},
 	)
+})
+
+describe('gate under a hand-over: the refresh command', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
+	it('written with --out <folder named out folder>, then a late edit, then the command the gate prints → names the lots file and the hand-over folder by their real paths, shell-quoted, and is accepted, exit 0', () => {
+		const { root, folder } = writeWith({ outWord: outWithSpace, base: GATE_CONFIG })
+		writeFiles({ root, files: LATE_EDIT })
+		const gated = runCli({ argv: ['gate'], cwd: root })
+		const printed = gateRefreshCommandOf(gated.output)
+
+		// the hold knows the hand-over folder by its real path
+		const held = realpathSync(outWithSpace(folder))
+		expect(printed).toBe(
+			`handover write ${shellQuote(join(held, 'lots.json'))} --out ${shellQuote(held)} --rehash`,
+		)
+		const rehashed = spawnSync('sh', ['-c', `node '${CLI_SOURCE}' ${printed}`], {
+			encoding: 'utf8',
+			cwd: root,
+		})
+		expect(rehashed.status).toBe(0)
+	})
 })

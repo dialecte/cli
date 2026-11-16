@@ -2,7 +2,7 @@
  * Scratch package for the landing's hook reuse: real git hooks running this worktree's cli `gate --hook`, counting
  * check, build and tests steps, a lot then a merge lot of a main that moved, a hand-over written around them.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runHandover } from '../src/commands/handover.ts'
@@ -10,6 +10,9 @@ import { HOOK_LANDING_LINE } from '../src/lib/handover/hook-output.constants.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
 import { HOOK_GATE_COMMAND } from './gate-hook.constants.ts'
 import {
+	LANDING_DELETED_FILE,
+	LANDING_DELETED_TEXT,
+	LANDING_DELETING_LOT,
 	LANDING_MERGE_MESSAGE,
 	LANDING_MOVED_FILE,
 	LANDING_MOVED_MESSAGE,
@@ -101,13 +104,14 @@ export function setTestsPassing(params: { requires: string; passing: boolean }):
  * is written for the lot, then (with `laterLot`) a second plain lot adding `LANDING_SECOND_FILE` and changing
  * `LANDING_NOTES_FILE` (a file the base holds), then (with `merge`) a merge lot bringing main in. With
  * `laterLot: 'required'` the `tests` step fails on any tree without the second lot's file, so the first lot alone
- * breaks it. With `gated`, a green `gate --full` of the tree every lot leaves is run first.
+ * breaks it. With `laterLot: 'deleting'` the second lot instead deletes `LANDING_DELETED_FILE`, a file the base holds.
+ * With `gated`, a green `gate --full` of the tree every lot leaves is run first.
  */
 export async function createLandingScenario(params: {
 	merge: boolean
 	gated: boolean
 	hookExtra?: string
-	laterLot?: 'plain' | 'required'
+	laterLot?: 'plain' | 'required' | 'deleting'
 }): Promise<LandingScenario> {
 	const counters: LandingCounters = {
 		check: createCounter(),
@@ -126,9 +130,13 @@ export async function createLandingScenario(params: {
 		hookScript: [HOOK_GATE_COMMAND, ...(params.hookExtra ? [params.hookExtra] : [])].join('\n'),
 	})
 	writeInstalledLock({ root })
+	const deleting = params.laterLot === 'deleting'
 	if (params.laterLot) {
-		writeFiles({ root, files: { [LANDING_NOTES_FILE]: LANDING_NOTES_BEFORE } })
-		git({ root, args: ['add', '--', LANDING_NOTES_FILE] })
+		const baseFiles: Record<string, string> = deleting
+			? { [LANDING_DELETED_FILE]: LANDING_DELETED_TEXT }
+			: { [LANDING_NOTES_FILE]: LANDING_NOTES_BEFORE }
+		writeFiles({ root, files: baseFiles })
+		git({ root, args: ['add', '--', ...Object.keys(baseFiles)] })
 		git({ root, args: ['commit', '-q', '--no-verify', '-m', 'docs(notes): the base notes'] })
 	}
 	git({ root, args: ['branch', BRANCH_NAME] })
@@ -142,7 +150,8 @@ export async function createLandingScenario(params: {
 	git({ root, args: ['checkout', '-q', BRANCH_NAME] })
 	editReadLot(root)
 	const lotTree = treeOfWorkingFiles(root)
-	if (params.laterLot)
+	if (deleting) rmSync(join(root, LANDING_DELETED_FILE))
+	else if (params.laterLot)
 		writeFiles({
 			root,
 			files: {
@@ -162,7 +171,8 @@ export async function createLandingScenario(params: {
 		resolved: {},
 		message: LANDING_MERGE_MESSAGE,
 	}
-	const plainLots = params.laterLot ? [READ_LOT, LANDING_SECOND_LOT] : [READ_LOT]
+	const laterLots = deleting ? [LANDING_DELETING_LOT] : [LANDING_SECOND_LOT]
+	const plainLots = params.laterLot ? [READ_LOT, ...laterLots] : [READ_LOT]
 	const { out } = writeHandoverFolder({
 		root,
 		lots: params.merge ? [...plainLots, mergeLot] : plainLots,

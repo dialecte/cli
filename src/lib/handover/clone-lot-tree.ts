@@ -3,7 +3,9 @@
  * working tree on top; before it commits a lot, the files of every later lot go back to what its index holds (the
  * commit before: HEAD's content, absent when HEAD lacks the file, a later lot's deleted file present), so the commit
  * and its hook see HEAD plus the lots up to that one, and nothing more. Once the lot is committed those files come
- * back as the repository's working tree has them. Only the clone's files and index change, never the repository's.
+ * back from the repository's working tree as it is then, not as it was when the clone was made: an edit made in the
+ * repository during the rehearsal reaches the clone's later lots. Only the clone's files and index change, never the
+ * repository's.
  */
 import { spawnSync } from 'node:child_process'
 import {

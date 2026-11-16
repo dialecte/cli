@@ -4,10 +4,14 @@
  */
 import { linkSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 
+import { LINE_FEED } from './print/print.constants.ts'
 import { isProcessAlive } from './process-alive.ts'
 import { processStartTime } from './process-start-time.ts'
 
 import type { LockWriter } from './pid-lock.types.ts'
+
+// this process's start time once read: undefined until then
+let ownStart: { started: string | undefined } | undefined
 
 /** Creates the lock file holding `text`; false when one is there. */
 export function createLockFile(params: { lockPath: string; text: string }): boolean {
@@ -30,19 +34,25 @@ export function readLockBytes(lockPath: string): Buffer | undefined {
 	}
 }
 
-/** The writer a lock's pid line and start-time line name: a pid that is no positive integer, or an empty start time, is none. */
-export function lockWriterOf(params: {
-	pidLine: string | undefined
-	startedLine: string | undefined
-}): LockWriter {
-	const pid = Number(params.pidLine)
+/**
+ * The writer a lock's text names: its pid on the line after the `fields` lines the lock holds first (its own data,
+ * none by default), its start time on the next. A pid that is no positive integer, or an empty start time, is none.
+ */
+export function lockWriterOfText(params: { text: string; fields?: number }): LockWriter {
+	const lines = params.text.trim().split(LINE_FEED)
+	const at = params.fields ?? 0
+	const pid = Number(lines[at])
+	const started = lines[at + 1]
 	return {
 		pid: Number.isSafeInteger(pid) && pid > 0 ? pid : undefined,
-		started:
-			params.startedLine === undefined || params.startedLine === ''
-				? undefined
-				: params.startedLine,
+		started: started === undefined || started === '' ? undefined : started,
 	}
+}
+
+/** This process's start time as `processStartTime` reads it, asked of `ps` once: it never changes while the process runs. */
+export function ownProcessStartTime(): string | undefined {
+	ownStart ??= { started: processStartTime(process.pid) }
+	return ownStart.started
 }
 
 /**

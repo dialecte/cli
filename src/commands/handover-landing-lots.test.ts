@@ -9,8 +9,12 @@ import { join } from 'node:path'
 import { hookRecordsOf } from '../../test/gate-hook.ts'
 import {
 	ALL_REUSED_LANDING,
+	DELETED_FILE_PROBE,
 	LANDING_LINE_START,
+	LANDING_SECOND_LOT,
 	LOT,
+	PROBE_DELETED_ABSENT,
+	PROBE_DELETED_PRESENT,
 	PROBE_WITH_SECOND_LOT,
 	PROBE_WITHOUT_SECOND_LOT,
 	SECOND_FILE_PROBE,
@@ -26,6 +30,7 @@ import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.
 import { runFolder } from '../../test/scratch-checks.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { treeOfWorkingFiles } from '../../test/scratch-tree.ts'
+import { MINUS_SIGN } from '../lib/handover/handover.constants.ts'
 import { shellQuote } from '../lib/shell-quote.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -147,6 +152,40 @@ describe(
 				PROBE_WITH_SECOND_LOT,
 			])
 			expect([before, treeOfWorkingFiles(root)]).toEqual([finalTree, finalTree])
+		})
+
+		it('two plain lots, the second deleting a file the base holds, no record, rehearsed → the clone’s hook of the first lot sees the file, the hook of the second lot no longer does', async () => {
+			const log = join(temporaryFolder('dialecte-probe-'), 'deleted-file.log')
+			const { out } = await createLandingScenario({
+				merge: false,
+				gated: false,
+				laterLot: 'deleting',
+				hookExtra: DELETED_FILE_PROBE.replace('{log}', shellQuote(log)),
+			})
+
+			const rehearsed = await runFolder({ out, argv: ['--rehearse'] })
+
+			expect(rehearsed.exitCode).toBe(0)
+			expect(readFileSync(log, 'utf8').split('\n').filter(Boolean)).toEqual([
+				PROBE_DELETED_PRESENT,
+				PROBE_DELETED_ABSENT,
+			])
+		})
+
+		it('two plain lots whose first lot alone fails the tests step, rehearsed → the stopped rehearsal’s card sizes the second lot from its own files: +2 −1 on its row', async () => {
+			const { out } = await createLandingScenario({
+				merge: false,
+				gated: true,
+				laterLot: 'required',
+			})
+
+			const rehearsed = await runFolder({ out, argv: ['--rehearse'] })
+
+			expect(rehearsed.exitCode).not.toBe(0)
+			const secondRow = rehearsed.text
+				.split('\n')
+				.filter((line) => line.includes(LANDING_SECOND_LOT.message))
+			expect(secondRow).toEqual([expect.stringContaining(`+2 ${MINUS_SIGN}1`)])
 		})
 	},
 )

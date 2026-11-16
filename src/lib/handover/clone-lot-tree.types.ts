@@ -5,7 +5,7 @@
 export type CloneLotTree = {
 	/** Before lot `number` is staged: the files of every later lot back as the clone's index holds them. */
 	prepareLot: (params: { number: number }) => void
-	/** After lot `number` is committed: the files of every later lot back as the repository's working tree has them. */
+	/** After lot `number` is committed: the files of every later lot back as the repository's working tree has them then. */
 	afterLot: (params: { number: number }) => void
 	/**
 	 * Once the commits stopped (all made, or a lot refused): every lot's files as the repository's working tree has

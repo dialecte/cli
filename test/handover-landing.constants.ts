@@ -46,5 +46,20 @@ export const SECOND_FILE_PROBE = `echo "$(if [ -f ${LANDING_SECOND_FILE} ]; then
 export const PROBE_WITHOUT_SECOND_LOT = 'absent notes base'
 export const PROBE_WITH_SECOND_LOT = 'present notes two'
 
+/** A later lot that deletes a file the base holds: the file, its base text, the lot. */
+export const LANDING_DELETED_FILE = 'docs/old.md'
+export const LANDING_DELETED_TEXT = 'old\n'
+export const LANDING_DELETING_LOT = {
+	paths: [LANDING_DELETED_FILE],
+	message: 'docs(old): the old notes go',
+}
+
+/** A hook line logging, one line per run in `{log}`, whether the tree the hook runs on holds the deleted file. */
+export const DELETED_FILE_PROBE = `echo "old $(if [ -f ${LANDING_DELETED_FILE} ]; then echo present; else echo absent; fi)" >> {log}`
+
+/** What the probe logs on a tree holding the deleted file, and on one without it. */
+export const PROBE_DELETED_PRESENT = 'old present'
+export const PROBE_DELETED_ABSENT = 'old absent'
+
 /** The word a hand-over run names each lot with in its lines, before the lot's number. */
 export const LOT = 'lot'

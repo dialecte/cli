@@ -14,7 +14,7 @@ import { gitFolderOf, readGit } from '../git.ts'
 import {
 	createLockFile,
 	isWriterRunning,
-	lockWriterOf,
+	lockWriterOfText,
 	readLockBytes,
 	setStaleLockAside,
 } from '../pid-lock.ts'
@@ -117,8 +117,9 @@ function isLiveHolder(holder: HandoverLockHolder): boolean {
 
 /** The script, the writer and its start time a lock file's text names (an older cli's lock names fewer). */
 function holderOf(bytes: Buffer): HandoverLockHolder {
-	const [script = '', pidLine, startedLine] = bytes.toString('utf8').trim().split(LINE_FEED)
-	return { script, ...lockWriterOf({ pidLine, startedLine }) }
+	const text = bytes.toString('utf8')
+	const [script = ''] = text.trim().split(LINE_FEED)
+	return { script, ...lockWriterOfText({ text, fields: 1 }) }
 }
 
 /**

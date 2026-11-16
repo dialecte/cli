@@ -175,6 +175,35 @@ describe('hookLandingLine: a failed hook relays its step output, which is no ste
 	})
 })
 
+describe('a failed hook relays its step output: reuse-shaped lines in it are no answer of the hook', () => {
+	const WHOLE_REUSED_LINE = `gate --hook: tests reused from gate --full green on tree ${WRITTEN_REUSE_TREE} at ${WRITTEN_REUSE_AT} (HEAD ${WRITTEN_REUSE_HEAD})`
+	const OWN_LINES = [
+		reusedLineOf({ step: 'check', mode: 'full', at: FULL_AT }),
+		`${STEP_LINE_MARKS.failed}  tests  exit 1`,
+		GATE_HOOK_FAILED_LINE.replace('{step}', 'tests'),
+		TAIL_MARKER,
+	]
+
+	it('a relayed tail holding a step reuse line and a whole-tests reuse line → the landing line reuses check only', () => {
+		const output = [
+			...HEADER,
+			...OWN_LINES,
+			reusedLineOf({ step: 'build', mode: 'release', at: OLDER_AT }),
+			WHOLE_REUSED_LINE,
+		].join('\n')
+
+		expect(hookLandingLine({ output })).toBe(`  hook: reused check (full ${FULL_AT}) · ran tests`)
+	})
+
+	it('a relayed tail holding a whole-tests reuse line → the failed test:hook is not marked reused', () => {
+		const steps = readHookSteps([...HEADER, ...OWN_LINES, WHOLE_REUSED_LINE].join('\n'))
+		const [step] = hookSummarySteps({ steps, passed: false })
+
+		expect(step).toMatchObject({ name: 'test:hook', failed: true })
+		expect(step).not.toHaveProperty('reused')
+	})
+})
+
 describe('hookLandingLine: what a hook reused and what it ran, from its own lines', () => {
 	it.each([
 		{

@@ -397,9 +397,9 @@ export function runHandover(params: {
 			...(outNote === undefined ? [] : [textOf([outNote])]),
 			box,
 			textOf([
-				HANDOVER_WRITTEN_NOTE.replace('{lots}', shellQuote(absoluteLotsPath)).replace(
+				HANDOVER_WRITTEN_NOTE.replace('{lots}', () => shellQuote(absoluteLotsPath)).replace(
 					'{out}',
-					outWord === undefined ? '' : ` --out ${shellWord(outWord)}`,
+					() => (outWord === undefined ? '' : ` --out ${shellWord(outWord)}`),
 				),
 				card.command,
 				...(riskWarning === undefined ? [] : [riskWarning]),

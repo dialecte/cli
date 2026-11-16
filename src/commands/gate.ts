@@ -99,6 +99,7 @@ import { childLinesOf, relayedTextOf } from '../lib/print/relayed.ts'
 import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
+import { shellQuote, shellWord } from '../lib/shell-quote.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
@@ -309,10 +310,10 @@ function readGateSetup(
 		underHandover:
 			'folder' in hold
 				? [
-						GATE_UNDER_HANDOVER.replace('{folder}', hold.folder).replace(
-							'{lots}',
-							join(hold.folder, HANDOVER_FILES.lots),
-						),
+						// the folder's own lots file and the folder as --out: the command works from any place in the repository
+						GATE_UNDER_HANDOVER.replace('{folder}', () => hold.folder)
+							.replace('{lots}', () => shellQuote(join(hold.folder, HANDOVER_FILES.lots)))
+							.replace('{out}', () => ` --out ${shellWord(hold.folder)}`),
 					]
 				: [],
 		source,

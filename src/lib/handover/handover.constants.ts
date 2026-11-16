@@ -252,7 +252,10 @@ export const HANDOVER_WRITTEN_NOTE =
 export const HANDOVER_RUNNING_REFUSAL =
 	'the hand-over {folder} is running (pid {pid}, since {startedAt}, marked by {marker}): wait until its run ends, then run the gate again'
 
-/** The gate's line when it runs under the hand-over written for its repository. */
+/**
+ * The gate's line when it runs under the hand-over written for its repository: `{folder}` the hand-over folder, `{lots}`
+ * its lots file, quoted, `{out}` ` --out <folder>` (the folder as one shell word).
+ */
 export const GATE_UNDER_HANDOVER =
 	'under the hand-over {folder} of this repository: once the gate is green, refresh it with `dialecte handover write {lots}{out} --rehash`'
 
