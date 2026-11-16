@@ -18,6 +18,7 @@ const PLAN_USAGE = [
 	'dialecte plan next <plan.md> [--json] [--all]',
 	'dialecte plan check <plan.md> [--json]',
 	'dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]',
+	'dialecte plan mark <plan.md> <id> done --landed <sha> --by <who> --reason <text>',
 ]
 
 /** The cli run as a process in an empty folder of its own. */

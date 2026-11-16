@@ -1,0 +1,8 @@
+### Added
+
+- `dialecte plan mark <plan.md> <id> done --landed <sha> --by <who> --reason <text>`: marks a `lot` or `fix` entry done when it landed outside the lot store (a lot landed by hand, or stopped after its work landed in another lot). Origin is fetched and the commit must be on origin's base branch of one of the entry's repositories, else the mark is refused, naming why for each repository. The mark records the full commit and the repository with who and why; `plan next` then reads the entry done, `realizedBy` of kind `landed` naming the commit. An entry its records already say done takes no mark (answered, nothing recorded). A lot or fix entry takes no plain mark, and a person entry no `--landed`.
+
+### Fixed
+
+- `lot close` closes a worktree whose commits landed rebased: a commit only its HEAD reflog reaches counts as landed when a head `lot land` recorded as replaced (`replaced` in `landing.json`) reaches it, or when its stable patch id equals a commit of the lot's branch since its base (a rebase no record names, such as a lot landed before `replaced` was kept). A reflog commit neither rule matches still keeps the worktree. Commits are compared by their full ids.
+- `lot close` closes a landed lot's worktree that holds its own `.dialecte/lot.json`. A lot landed through its pull request (`landing.json` in its folder) has nothing archived, so its declaration kept the worktree as an ignored file. Close now counts that declaration as removable and copies it into the lot's folder (`lot.json`, never over an archived one) before the move. Any other ignored file still keeps the worktree.

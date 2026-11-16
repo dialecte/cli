@@ -16,10 +16,10 @@ import {
 } from './plan.constants.ts'
 
 import type { StateFolderLocation } from '../store/store.types.ts'
-import type { PlanMark } from './plan.types.ts'
+import type { LandedCommit, PlanMark } from './plan.types.ts'
 
 /**
- * Appends one line `{ plan, id, state: 'done', by, reason, at }` to the plan's marks file
+ * Appends one line `{ plan, id, state: 'done', by, reason, at }` (and `landed` for a lot or fix entry) to the plan's marks file
  * (`<state>/dialecte/plans/<sha256 of the plan's real path, 16 hex>.jsonl`), one `O_APPEND` write.
  */
 export function appendPlanMark(params: {
@@ -27,6 +27,8 @@ export function appendPlanMark(params: {
 	id: string
 	by: string
 	reason?: string
+	/** A lot or fix entry's landed commit (`--landed`). */
+	landed?: LandedCommit
 	location?: StateFolderLocation
 	now?: Date
 }): void {
@@ -38,6 +40,7 @@ export function appendPlanMark(params: {
 		by: params.by,
 		reason: params.reason ?? null,
 		at: (params.now ?? new Date()).toISOString(),
+		...(params.landed === undefined ? {} : { landed: params.landed }),
 	}
 	const file = marksFileOf({ plan, location: params.location })
 	mkdirSync(dirname(file), { recursive: true })
@@ -111,9 +114,20 @@ function markOfLine(params: { line: string }): PlanMark[] {
 				by: value.by,
 				reason: typeof value.reason === 'string' ? value.reason : null,
 				at: value.at,
+				...landedOf({ value: value.landed }),
 			},
 		]
 	} catch {
 		return []
 	}
+}
+
+/** A mark's `landed` when it holds a commit and a repository; nothing otherwise. */
+function landedOf(params: { value: unknown }): { landed?: LandedCommit } {
+	const { value } = params
+	if (typeof value !== 'object' || value === null) return {}
+	const { commit, repository } = value as Partial<LandedCommit>
+	return typeof commit === 'string' && typeof repository === 'string'
+		? { landed: { commit, repository } }
+		: {}
 }

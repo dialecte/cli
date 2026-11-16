@@ -156,6 +156,17 @@ function markRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryReco
 	return doneOf({ realizedBy: { kind: 'mark', name: mark.by, folder: null, worktree: null } })
 }
 
+/** A lot or fix entry its records do not say done is done by a mark naming the commit it landed as (`--landed`). */
+function landedRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryRecord | undefined {
+	const mark = params.facts.marks.find(
+		(candidate) => candidate.id === params.entry.id && candidate.landed !== undefined,
+	)
+	if (mark?.landed === undefined) return undefined
+	return doneOf({
+		realizedBy: { kind: 'landed', name: mark.landed.commit, folder: null, worktree: null },
+	})
+}
+
 /** A spec entry is done when its file is written. */
 function specRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryRecord | undefined {
 	const { spec } = params.entry
@@ -165,7 +176,7 @@ function specRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryReco
 
 /**
  * A `lot` or `fix` entry from its repositories' records: unknown when one cannot be read; done by a committed
- * registry entry or store lot; open by an open store lot (its brief scope held) or a pending registry entry (the
+ * registry entry or store lot, else by a landed mark (`plan mark --landed`); open by an open store lot (its brief scope held) or a pending registry entry (the
  * entry's scope held, its date named).
  */
 function repositoryRecordOf(params: {
@@ -199,7 +210,11 @@ function repositoryRecordOf(params: {
 			isRegistryEntryOf({ entry, record }),
 		),
 	)
-	return committedRecordOf({ storeLots, registry }) ?? openRecordOf({ entry, storeLots, registry })
+	return (
+		committedRecordOf({ storeLots, registry }) ??
+		landedRecordOf({ entry, facts }) ??
+		openRecordOf({ entry, storeLots, registry })
+	)
 }
 
 /** Done by the first committed registry entry, else the first committed store lot. */
