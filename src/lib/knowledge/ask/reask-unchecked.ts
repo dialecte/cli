@@ -30,7 +30,13 @@ export function reaskUnchecked(params: ReaskUncheckedParams): string[] {
 		if (readHistory({ folder, id: fact.id }).some(isDocumentsRecheck)) continue
 		const file = historyPathOf({ folder, id: fact.id })
 		const ask = claim({ question: fact.question })
-		params.keep?.({ ask, question: fact.question, fact: fact.id })
+		params.keep?.({
+			ask,
+			question: fact.question,
+			fact: fact.id,
+			subject: fact.subject,
+			kind: fact.kind,
+		})
 		appendHistory({
 			file,
 			line: fittedHistoryLine({

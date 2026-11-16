@@ -11,6 +11,7 @@ import { printFaultsOf } from './print-faults.ts'
 import {
 	FIXED_KEY_PREFIX,
 	FIXED_ROWS,
+	FLAG_PREFIX,
 	FORGED_WORD,
 	FORGED_WORD_ESCAPED_OVERRIDE,
 	JSON_FLAG,
@@ -34,7 +35,9 @@ import type {
 
 /**
  * The rows the command map asks for: a command with no verb gives one key, a command with verbs one key per verb
- * (`lot status`). `hasJson` is whether the usage lines of that command or verb write `--json`.
+ * (`lot status`), plus the bare-form key `name` when one of its usage lines starts with `dialecte <name> ` and the
+ * next word is neither one of its verbs nor a flag (`dialecte ask "<question>"`; `dialecte handover --legend` is no
+ * bare form). `hasJson` is whether the usage lines of that command or verb write `--json`.
  */
 export function rowKeysOf(): RowKey[] {
 	return Object.entries(COMMAND_MAP).flatMap(function keysOfCommand([name, entry]): RowKey[] {
@@ -53,12 +56,26 @@ export function rowKeysOf(): RowKey[] {
 					hasJson: usageOf(name).some((line) => line.includes(JSON_FLAG)),
 				},
 			]
-		return verbs.map((verb) => ({
+		const verbKeys: RowKey[] = verbs.map((verb) => ({
 			key: `${name} ${verb}`,
 			name,
 			verb,
 			hasJson: usageOf(`${name} ${verb}`).some((line) => line.includes(JSON_FLAG)),
 		}))
+		const bare = usageOf(`${name} `).filter(function isBareForm(line) {
+			const next = line.slice(`${USAGE_PREFIX}${name} `.length).split(' ')[0]
+			return !verbs.includes(next) && !next.startsWith(FLAG_PREFIX)
+		})
+		if (bare.length === 0) return verbKeys
+		return [
+			{
+				key: name,
+				name,
+				verb: undefined,
+				hasJson: bare.some((line) => line.includes(JSON_FLAG)),
+			},
+			...verbKeys,
+		]
 	})
 }
 

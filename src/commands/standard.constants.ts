@@ -3,7 +3,10 @@ export const STANDARD_VERB_OPTIONS = {
 	index: { valueOptions: ['standard', 'package'], flags: ['rebuild', 'json'] },
 	find: { valueOptions: ['standard', 'package', 'about', 'limit'], flags: ['json'] },
 	show: { valueOptions: [], flags: ['json'] },
-	eval: { valueOptions: ['standard', 'package'], flags: ['angles', 'json'] },
+	eval: {
+		valueOptions: ['standard', 'package', 'effort', 'reports'],
+		flags: ['angles', 'packs', 'json'],
+	},
 } as const
 
 /** The command's name, the start of every usage error (`standard <verb>: ...`). */
@@ -28,10 +31,35 @@ export const STANDARD_MESSAGES = {
 	beyondLastLine: '{id} has {lines} lines: the range {argument} ends after its last line',
 	nothingToShow: '{argument} holds only blank or dropped lines',
 	evalExpected: 'expected <gold.jsonl>',
-	goldUnreadable: 'cannot read the gold file {path}',
-	goldMalformed: '{path} line {line}: {reason}',
-	goldNotJson: 'not a JSON object',
-	goldShape: 'expected { question, about?, expected: [{ file, quote }] }',
+	unknownEffort: '--effort {effort} is no effort: pass one of {efforts}',
+	effortNeedsPacks: '--effort applies to --packs only: add --packs, or leave --effort out',
+} as const
+
+/** The schema of `eval --json`. */
+export const EVAL_JSON_SCHEMA = 1
+
+/** The first words of the `packs` and `reports` lines of `eval`, and what the rate of nothing judged prints. */
+export const PACKS_LINE_PREFIX = 'packs'
+export const REPORTS_LINE_PREFIX = 'reports'
+export const NO_RATE_TEXT = '-'
+
+/** The place of a column's value in its label. */
+export const COLUMN_VALUE_PLACEHOLDER = '{value}'
+
+/** The labelled columns of the `packs` line (I-13): `{value}` is the recall, at RECALL_DECIMALS. */
+export const PACKS_LINE_COLUMNS = {
+	readerAAt5: 'reader A recall@5 {value}',
+	readerAAt10: 'recall@10 {value}',
+	unionAt5: 'union recall@5 {value}',
+	unionAt10: 'recall@10 {value}',
+} as const
+
+/** The labelled columns of the `reports` line (I-13): `{value}` is the count, or the rate. */
+export const REPORTS_LINE_COLUMNS = {
+	agreed: 'agreed {value}',
+	wrong: 'wrong {value}',
+	unjudged: 'unjudged {value}',
+	rate: 'rate {value}',
 } as const
 
 /** A `show` argument: `<file id>:<from>-<to>`, the file id holding its standard. */

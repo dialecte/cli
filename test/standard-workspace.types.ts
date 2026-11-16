@@ -63,6 +63,7 @@ export type StandardShowJson = {
 
 /** What `eval --json` prints. */
 export type StandardEvalJson = {
+	schema: number
 	vocabulary: { packages: string[] }
 	items: number
 	notInText: number
@@ -70,5 +71,12 @@ export type StandardEvalJson = {
 	recallAt10: number
 	/** `eval --angles` only: the items whose quote only the slices the angles added hold. */
 	added?: number
+	/** `eval --packs` only: the recall of reader A's slices and of the A and B slices together. */
+	packs?: {
+		readerA: { recallAt5: number; recallAt10: number }
+		union: { recallAt5: number; recallAt10: number }
+	}
+	/** `eval --reports` only: the judged asks, agreed-wrong over judged. */
+	reports?: { agreed: number; wrong: number; unjudged: number; rate: number | null }
 	misses: Array<{ question: string; file: string; quote: string; why: string }>
 }

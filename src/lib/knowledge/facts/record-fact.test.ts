@@ -178,6 +178,11 @@ const REUSED_ROWS: ReplacementRow[] = [
 	},
 	{ name: 'equal effort', current: {}, next: {} },
 	{
+		name: 'current person fact with unchecked: true, new person fact with unchecked: true at equal effort',
+		current: { source: 'person', effort: 'medium', sources: [], unchecked: true },
+		next: { source: 'person', effort: 'medium', sources: [], unchecked: true },
+	},
+	{
 		name: 'current valid standard medium, new outside (unchecked) high',
 		current: { effort: 'medium' },
 		next: {
@@ -304,6 +309,21 @@ function expectReplaced(run: ReplacementRun): void {
 		newEvents: ['created'],
 	})
 }
+
+describe('recordFact: a person confirmation of an outside answer', () => {
+	it('current outside (unchecked) medium, new person fact with unchecked: true at equal effort → replaced: a new fact that supersedes it', () => {
+		const run = runReplacement({
+			current: {
+				source: 'outside',
+				effort: 'medium',
+				sources: [{ kind: 'outside', url: 'https://example.com' }],
+			},
+			next: { source: 'person', effort: 'medium', sources: [], unchecked: true },
+		})
+
+		expect(run.outcome).toEqual({ outcome: 'replaced', id: 'F-0002', previous: 'F-0001' })
+	})
+})
 
 describe('recordFact: the replacement rule', () => {
 	it.each(STALE_OR_FORGOTTEN_ROWS)('$name → replaced', (row) => {

@@ -43,6 +43,9 @@ dialecte explain <code>    # what an error or diagnostic code means, when it is 
 dialecte standard index|find|show|eval   # index and search the standards kept on this machine, outside every repository
 dialecte facts list|show|forget   # the facts recorded in your data folder: their state now, their history; forget one
 dialecte ask "<question>"  # answer from a fact, the definition, the catalogues and api indexes, else the standard's slices for readers
+dialecte ask pack <ask-id>  # the next round of readers of an ask: one brief and one nonce per reader, or the adjudicator's brief
+dialecte ask verdict <ask-id> <report.json>...   # check the readers' reports, close the round, record an agreed answer as a fact
+dialecte ask answer <ask-id> "<answer>" --by <who>   # the person's answer (rung 6), or the confirmation of an outside answer
 dialecte run <script.ts>   # run a script on an in-memory project of the installed dialecte: one structured outcome
 dialecte fixture <Tag>     # the smallest valid XML document holding an element, built by the dialecte's engine
 dialecte new verb <namespace> <query|transaction> <name>
@@ -89,15 +92,15 @@ without a verb lists every form that replaced it. Asked with `--help`, an old fo
 stdout, with the words given before `--help`, exit 0; with `--help --json` it prints
 `{ renamed: [{ old, new }] }`, the words after `dialecte` (`record` lists its five forms).
 
-| 1.0                                                                                       | Before                     |
-| ----------------------------------------------------------------------------------------- | -------------------------- |
-| `dialecte lot finding <id\|folder> --round <n> --severity <s> --at <file:line> <finding>` | `dialecte record review`   |
-| `dialecte lot decide <id\|folder> <finding> <state>`                                      | `dialecte record decision` |
-| `dialecte lot snapshot <id\|folder> --round <n>`                                          | `dialecte record snapshot` |
-| `dialecte lot choice <id\|folder> --by <who> <decision>`                                  | `dialecte record choice`   |
-| `dialecte lot standard <id\|folder> consulted <note> \| not-consulted <reason>`           | `dialecte record standard` |
-| `dialecte lot delta <id\|folder> --round <n> [--worktree] [--json]`                       | `dialecte review delta`    |
-| `dialecte lot recap <id\|folder>`                                                         | `dialecte recap`           |
+| 1.0                                                                                               | Before                     |
+| ------------------------------------------------------------------------------------------------- | -------------------------- |
+| `dialecte lot finding <id\|folder> --round <n> --severity <s> --at <file:line> <finding>`         | `dialecte record review`   |
+| `dialecte lot decide <id\|folder> <finding> <state>`                                              | `dialecte record decision` |
+| `dialecte lot snapshot <id\|folder> --round <n>`                                                  | `dialecte record snapshot` |
+| `dialecte lot choice <id\|folder> --by <who> <decision>`                                          | `dialecte record choice`   |
+| `dialecte lot standard <id\|folder> consulted <note> \| not-consulted <reason> \| outside <note>` | `dialecte record standard` |
+| `dialecte lot delta <id\|folder> --round <n> [--worktree] [--json]`                               | `dialecte review delta`    |
+| `dialecte lot recap <id\|folder>`                                                                 | `dialecte recap`           |
 
 `dialecte handover write <lots.json>` names what `dialecte handover <lots.json>` does; the old form stays.
 
@@ -346,7 +349,7 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   last line.
 - `dialecte standard eval <gold.jsonl> [--standard <id>] [--package <name>] [--json]`: recall at 5 and at 10 of `find` over a gold
   file you keep, one `{ "question": ..., "about"?: ..., "expected": [{ "file": "<file id>", "quote": ... }] }` per
-  line (other fields are ignored). The expected quotes of an item are alternatives: the item is found at the best
+  line (other fields are ignored); a line may also hold `kind` (`fact`, `polarity`, `exception`, `not-in-text`; another word refuses the line, naming the four), `answer` and `status` (free text). The expected quotes of an item are alternatives: the item is found at the best
   rank of any of them. A quote is matched in plain words: table pipes, `<br>` tags, `**`/`__` and a leading `#`
   run are left out on both sides, then the text is normalised and case is ignored. Each missed item names its
   closest quote and why (`ranked <r>`, `not found by find`, `not in the text`, `unknown file <id>`). Items with
@@ -359,8 +362,22 @@ characters, never split nor stemmed; its plural (the acronym and one lowercase `
   dialectes without `--package`) scores find's own list. The answer adds `added +<n>` (`added` in `--json`): the
   items whose quote only the added slices hold. Run from a package (exit 2 outside one).
 
-`show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
-`DIALECTE_STANDARD` when no standard is configured.
+- `dialecte standard eval <gold.jsonl> --packs [--effort low|medium|high] [...]`: the recall at 5 and at 10 of the
+  slices the round-1 readers are given (the ask ladder; no fact read or written, no ask kept, nothing written):
+  reader A in its order, and the slices of A and B together (A1, B1, A2, B2, a slice met twice kept once). The
+  answer adds `packs  reader A recall@5 <n>  recall@10 <n>  union recall@5 <n>  recall@10 <n>` (`packs` in `--json`:
+  `{ readerA: { recallAt5, recallAt10 }, union: { ... } }`); `--effort` sets the readers (default `medium`), and
+  needs `--packs`. Run from a package with a dialecte installed (exit 2 otherwise).
+- `dialecte standard eval <gold.jsonl> --reports <asks folder> [...]`: the agreed-wrong rate of recorded asks. The
+  asks of the folder whose question equals a gold question are judged by their last readers' round that answered
+  (the adjudicator's round is never judged): wrong for a `not-in-text` item the readers did not agree
+  `not-in-text`, an item with an answer they agreed `not-in-text`, a gold answer starting yes or no and the other
+  verdict, or a value the gold answer does not hold; agreed otherwise; unjudged when no rule decides. The answer
+  adds `reports  agreed <n>  wrong <n>  unjudged <n>  rate <n>` (`reports` in `--json`:
+  `{ agreed, wrong, unjudged, rate }`); rate is wrong over agreed and wrong, `null` (printed `-`) when nothing is
+  judged. Runs outside a package, writes nothing; a folder that does not exist refuses, exit 2.
+  `show`, `find` and `eval` build the index first when it is missing. Every verb answers exit 2 with how to set
+  `DIALECTE_STANDARD` when no standard is configured.
 
 ## The facts ledger
 
@@ -472,25 +489,163 @@ documents cannot answer), and is the outside route without them. `--person-only`
 rung 2. Once documents exist, each `unchecked` fact of the dialecte's standard is asked again, once: a new ask
 holding its question and `reask: <fact id>` (never its answer), and a `rechecked` line on the fact.
 
-**States and exit codes.** `answered` exit 0; `needs-person` exit 1 (next: `dialecte ask answer <id> ...`);
-`needs-readers` exit 3 (next: `dialecte ask pack <id>`, with `--outside` without documents); exit 2 for usage and
-refusals, nothing written: an unknown `--about` tag or attribute (the closest named), an attribute the element
-lacks, several dialectes without `--package`, two standard folders of one key, `--no-standard` with documents,
-an `--effort` other than the lot's, a `--lot` folder inside a repository.
+**States and exit codes.** `answered` exit 0; `needs-person` exit 1; `needs-readers` exit 3 (next:
+`dialecte ask pack <id>`, with `--outside` without documents); exit 2 for usage and refusals, nothing written: an
+unknown `--about` tag or attribute (the closest named), an attribute the element lacks, several dialectes without
+`--package`, two standard folders of one key, `--no-standard` with documents, an `--effort` other than the lot's,
+a `--lot` folder inside a repository. A `needs-person` ask names `dialecte ask answer <id> "<answer>" --by <who>`
+as its next command; in a store lot it raises one question on the lot (its text `<ask-id>: <question>`, at most
+500 characters, the full text in its details) and its next is `dialecte lot answer <lot> <question>`.
 
 **The ask folder.** Each ask is a folder `A-<n>` holding `ask.json` (the `--json` object, versioned by its `schema`
 member, now `1`: the subject, kind, rung, state, answer, fact, source, boundary, conflict, candidates, methods,
 angles, slices, effort, next and what was read of the documents). With `--lot <id|folder>` (a store lot by index, name or folder, or a hand-over folder outside every
 repository) it is in `<lot folder>/asks/`; run in a lot's worktree, in that lot; else in
-`$XDG_STATE_HOME/dialecte/asks/`. An ask of a lot that reaches the documents or the outside route rewrites the
-lot's `standard.json` (`consulted`, a note listing every ask of the lot and its state). A lot's ask takes the
-lot's effort; elsewhere `--effort`, else `medium`.
+`$XDG_STATE_HOME/dialecte/asks/`. An ask of a lot that reaches the documents or the outside route rewrites the lot's note (see **The lot note**
+below). The ask folder also keeps `request.json`, what the ask read: the request (question, `about`, `code`,
+`method`, `package`, kind, `decision`, limit, effort) and the documents (configured or not, the declared name and
+its key, the folders and their files keys, and the manifest: each file's id, sha256 and line count), so a later
+`ask pack`, `ask verdict` or `ask answer` reads the documents as the ask read them. A lot's ask takes the lot's
+effort; elsewhere `--effort`, else `medium`.
 
 **Events.** `ask.parsed`, `ask.rung` (one per rung run, with its time), `ask.fact` and `ask.state` go to the
 lot's `events.jsonl`, else `$XDG_STATE_HOME/dialecte/asks/events.jsonl`; they hold the question's length and key
-hash, never its text, a quote or a slice's text; `ask.state` says `conflict: true|false`, never what
-conflicts. An event that cannot be written prints one line on stderr and
-never changes the exit code.
+hash, never its text, a quote or a slice's text; `ask.state` says `conflict: true|false`, never what conflicts.
+`ask pack` adds `ask.pack` (`{ round, readers, skipped }`); `ask verdict` adds `ask.state`, `ask.verdict`
+(`{ round, state, reason, accepted, refused: { <reason>: <n> }, polarityConflicts, adjudicator }`) and, on a fact
+recorded, `ask.fact` (`{ hit: null, candidates: 0, new: <fact id>, stale: 0, rung }`, rung 4 the readers, 5 the
+adjudicator); `ask answer` and the `lot answer` hook add `ask.answer` (`{ rung: 6, miss, citeRefused }`) and
+`ask.state` (answered, rung 6). None holds a question, an answer, a quote or a url. An event that cannot be
+written prints one line on stderr and never changes the exit code.
+
+### Readers: `ask pack`
+
+`dialecte ask pack <ask-id> [--out <dir>] [--outside] [--web] [--lot <id|folder>] [--json]` opens the ask's next
+round of readers (rung 4). The pool is rebuilt from `request.json`: the documents read again as the ask read them
+(a file of its manifest moved, removed, or one added since, refuses, exit 2, naming the ask to make again), then
+the ask's own list of slices first and a wider search's other slices.
+
+- Readers: effort low and medium give readers A and B, high A, B and C. A reads the slices by rank, B by angle
+  family, C as B without the top-ranked slice; each is given up to 1,500 non-noise lines, never an unreadable
+  slice. A later round gives no reader a slice its letter had, and withholds a slice found only by an angle a
+  verified cite already came from.
+- The round folder `rounds/round-<r>/` gets, per reader, `reader-<L>.md` and `reader-<L>.json` (the question, the
+  subject, the angles, the slices with their original line numbers, the report schema, a nonce of its own), then
+  `pack.json` last (`schema: 1`: the ask, the round, `outside`, `web`, and each reader's letter, nonce, slice ids
+  and the slices as the ranges it was given, `{ id, file, from, to, clause, linked }`); the round is open from
+  `pack.json`. Packing an open round again prints the same briefs, nothing rewritten; `--out <dir>` copies the
+  briefs there too.
+- `--outside` opens the one round of outside readers of an ask without documents: no slice, the declared name of
+  the standard, the model's own knowledge; `--web` lets them search the web too. A second outside pack has
+  nothing to give.
+- The adjudicator: after a high round closed at `needs-adjudicator`, the pack writes the adjudicator's brief in
+  the next round folder instead: `adjudicator.md` and `adjudicator.json` (the readers' accepted reports with their
+  checks, from the round's `accepted.json`; the union of their cited ranges; its own nonce).
+- Nothing new to give: the round is recorded skipped, `rounds/round-<r>/skipped.json` (`schema: 1`,
+  `{ ask, round, state: "needs-person", reason, at }`, written once; a pack again answers the same), the ask is at
+  `needs-person` and the person route follows (in a store lot the question raised once, next `lot answer`). A high
+  documents round whose last accepted reports hold an answering one goes to the adjudicator's brief instead.
+- `--json` (`schema: 1`): `ask`, `round`, `state` (`needs-readers`, `needs-adjudicator`, `needs-person`),
+  `readers` (`letter`, `brief`, `slices`), `next`.
+- Exit 0 the briefs ready (the adjudicator's too); 1 nothing new to give; 2 usage, an unknown or answered ask, an
+  ask without `request.json` (made before the readers), a file changed since the ask, `--outside` on a documents
+  ask or the reverse, a round being written.
+
+### Readers' reports: `ask verdict`
+
+`dialecte ask verdict <ask-id> [<report.json>...] [--missing <letter>]... [--adjudicator] [--lot <id|folder>]
+[--json]` checks the reports of the open round, closes it, and records an agreed answer as a fact.
+
+- A report is one JSON object as its brief shows (`schema` 1: the ask, the round, the reader, its nonce, the
+  verdict `yes`, `no`, `depends`, `value` or `not-in-text` (`not-known` for an outside reader), the value, the
+  answer, the claims with their cites, what was not found, the families read, the session, optionally its model
+  `tier`). It is accepted against the ask, the round, the nonce issued to that reader and not used before (claimed
+  by an exclusive file `rounds/round-<r>/used/<nonce>`), one accepted report per session and no body equal to an
+  earlier one, across every round of the ask; a report of another ask or round, or one that does not read, is
+  never counted.
+- Each cite must name a file of the manifest unchanged since the ask, lie inside a slice given to its reader (the
+  ranges `pack.json` recorded; the adjudicator: its brief's ranges), span at most 40 non-noise lines, and quote 8
+  to 40 words (or one whole table row or code line) found on word boundaries in the named lines only; a quote that
+  folds to nothing is refused `quote-length`. Each claim must name a key term and the subject (or sit in a clause
+  headed by it) and back the report's verdict. A claim saying the opposite of the question, or an exception cue
+  quoted without a `depends` condition, is a polarity conflict: it never counts toward agreement.
+- Every reader the round gave a brief needs a report file (accepted or refused), or `--missing <letter>` when it
+  wrote nothing (recorded refused `missing`); with every letter declared, no file is needed. A letter missing
+  otherwise refuses, exit 2, naming `--missing <letter>`, nothing recorded.
+- Agreement: equal verdicts, equal values (as sets for a list) and verified cites sharing a line or a clause. Effort
+  low takes 2 readers and 1 round, medium 2 readers and 2 rounds, high 3 readers and 3 rounds; a verified dissent
+  asks for another round, two votes never outvote it. Nothing verified searches again while something is left to
+  give, up to 5 rounds. A round with nothing left goes to the adjudicator at high, else to the person.
+- The adjudicator: `--adjudicator` checks its one report against its brief's ranges; verified, the fact is
+  recorded at rung 5; refused, a polarity conflict or `not-in-text`: the person.
+- Outside readers answer in one round: every reader agreeing, none `not-known` or hedged, no polarity conflict,
+  and not contradicting the definition read live (`contradicts-definition`); the fact is recorded `unchecked`, by
+  its sources (`model`, `web`).
+- A re-ask whose readers agree on another answer than its unchecked fact (or a person's fact without
+  `--verdict`) records nothing: the person is next, reason `reask-differs`, the readers' answer kept in
+  `verdict.json`.
+- An agreed answer is recorded as a fact: the union of the verified cites, the shortest agreeing answer, the
+  agreeing readers' tiers; a `--decision` ask's answer held inside the boundary.
+- The round keeps `verdict.json` (`schema: 1`: each report with its claims' checks, a claim reading a poor block
+  flagged `quality: "poor"`, and of each accepted report its session, the sha256 of its body, its answer,
+  `familiesRead`, `notFound` and `notKnown`; the outcome and its reason, the angles verified, the state, `next`
+  and the fact). A round closed for the adjudicator also keeps `accepted.json` (`schema: 1`, the accepted reports
+  with their checks). While it closes, the round holds `answering.json` (`schema: 1`: the ask, the round, the
+  nonces claimed, the key of the fact draft): a retry after a crash counts those nonces as its own and finishes on
+  the fact already recorded.
+- `--json` (`schema: 1`): `ask`, `round`, `state`, `reason` (null once answered), `reports` (never a session, a
+  body hash or a reader's text), `fact`, `conflict`, `next`.
+- Exit 0 answered; 1 the person next (in a store lot the question raised once, after the round is closed, its
+  details pointing to the round's `verdict.json`, next `dialecte lot answer <lot> <question>`; elsewhere
+  `dialecte ask answer <id> "<answer>" --by <who>`); 2 usage or a refusal, nothing recorded (an answered ask, no
+  round open, a closed round, no report of the round, a missing letter, `--adjudicator` on an ask not waiting for
+  it, another run holding the round or the ask); 3 another round or the adjudicator next (`dialecte ask pack <id>`).
+  Run again on a round closed at the person in a store lot, it raises the question if none is open, then refuses
+  the closed round naming its `lot answer` next.
+
+### The person: `ask answer`
+
+`dialecte ask answer <ask-id> "<answer>" --by <who> [--verdict yes|no|depends|value] [--cite <file id>:<from>-<to>
+--quote "<quote>"] [--lot <id|folder>] [--json]` records the person's answer to an ask that is not answered
+(rung 6).
+
+- A person fact by `<who>`, holding the text; `unchecked: true` when the ask read no documents (an outside ask, a
+  `--person-only` one), so it is asked again once documents exist. The ask folder keeps `answer.json` (`schema: 1`:
+  the ask, who, the text, the cite, `citeRefused`, the reader miss, the fact, the time), published once.
+- `--verdict` keeps that verdict on the person fact (`value`: the answer as its value), so a later re-ask whose
+  readers agree with it supersedes it; without it the fact says `person` and a re-ask's readers are shown to the
+  person. Another word is refused, exit 2, naming it and the four.
+- `--cite` (with `--quote`) is checked as a reader cite against the whole documents, then recorded as a reader
+  miss: given or not to a reader, and the first round it was given in. A refused cite is named (`citeRefused`; a
+  file changed since the ask: `file-changed`) and the answer is recorded all the same, without evidence.
+- An ask the outside readers answered takes the person's confirmation: a person fact supersedes the outside fact
+  (unchecked while the ask read no documents) and `<ask>/confirm.json` (`schema: 1`, `{ ask, fact, by, at }`)
+  marks the ask confirmed; a second confirmation is refused, naming it confirmed. Every other answered ask is
+  refused.
+- `--json` (`schema: 1`): `ask`, `fact`, `miss`, `citeRefused`.
+- Exit 0 recorded; 2 usage or a refusal, nothing recorded (an unknown or answered ask, one made before the readers,
+  no `--by`, `--cite` without `--quote`, an unknown `--verdict`, another run holding the ask).
+- `lot answer <lot> <question> "<answer>" --by <who>` on the question an ask raised records the same person fact
+  through a registered `onAnswered` hook, under the same claim, and rewrites the lot note before it returns.
+
+### Claims
+
+`ask verdict` and `ask answer` (and the hook) hold `<ask>/ask.claim`, so one of them records the ask's fact and
+the other is refused as in progress; a verdict also holds `rounds/round-<r>/verdict.claim`; the note writer holds
+`<lot folder>/standard.json.lock`. A claim file holds its holder's pid and its start time, one per line. A claim
+whose process is gone, or whose pid runs under another start time (a pid reused; read with `ps` in the C locale,
+an unknown start time leaving the running pid to decide), is taken over once older than its stale limit, under an
+exclusive `<claim>.takeover` file; any claim held more than 10 minutes is taken over. A held claim refuses with
+the claim, its process and when it may be taken over.
+
+### The lot note
+
+After `ask`, `ask verdict`, `ask answer` and a skipped pack, the lot's `standard.json` is written again, whole,
+from every ask's latest state: `consulted` with a note naming each ask and its state (`asks A-0001 answered F-0002
+· A-0002 needs-readers`); `outside` when any ask past rung 2 went outside the documents (the documents asks listed
+beside them), with `confirmed: true` and the note ending `(all confirmed)` when a person answered or confirmed each
+outside ask, else `confirmed: false` and `(all unchecked)`. A lot whose asks all stopped at rungs 0-2 records
+nothing. A note that cannot be written prints one line on stderr; the command's exit code is kept.
 
 ## MCP server
 
@@ -566,7 +721,7 @@ The hand-over follows the profile:
   install, the linked dependencies), no record can answer the real run: the rehearsal says which part, and
   does not run contrib.
 - Both profiles get the card's `standard` line (see the hand-over card below) and
-  `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>`.
+  `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason> | outside <note>`.
 
 ## Contributing to a Dialecte package
 
@@ -1172,10 +1327,10 @@ the answer.
     it). `✓ standard  consulted · <note>` when one is configured and the station recorded a consultation;
     `✗ standard  configured, not consulted: dialecte lot standard <folder> consulted <note>` (blocks) when
     one is configured and none is recorded; `! standard  not consulted: none configured (DIALECTE_STANDARD)`
-    otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. A DONE card
+    otherwise, with the recorded not-consulted reason when there is one: a warning that never blocks. An `outside` record (the lot's asks answered outside the documents) gives `! standard  answered outside the documents · <note>`, a warning at every effort; at effort high, unless the record's `confirmed` flag is true, it fails: `✗ standard  answered outside the documents at effort high, not every answer confirmed by a person (dialecte ask answer <ask-id>) · <note>`. The flag decides, never the note's text; a record without it reads as not confirmed. A DONE card
     (committed) shows the state recorded on the lot, never one read from the shell that ran the hand-over:
-    `✓ standard  consulted · <note>`, `! standard  not consulted · <reason>`, or
-    `! standard  not consulted: none recorded on the lot`. The station records it
+    `✓ standard  consulted · <note>`, `! standard  not consulted · <reason>`,
+    `! standard  answered outside the documents · <note>`, or `! standard  not consulted: none recorded on the lot`. The station records it
     with `dialecte lot standard <id|folder> consulted <note>` or `not-consulted <reason>` (the card's line
     names the hand-over's folder).
   - `contrib` (a contributor's): the rows of the `dialecte contrib` record of the tree the hand-over commits,
@@ -1767,10 +1922,12 @@ the answer.
 - `dialecte lot mutation <off|changed|audit|gate>` writes the lot's mutation switch (`"mutation"`, no
   reason). Without it, `dialecte mutants run` mutates the changed lines when the lot's diff touches the
   declared scope and nothing otherwise; `audit` mutates the whole scope; `gate` runs as `changed`.
-- `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason>` writes `<folder>/standard.json`
-  (`{ state, note, at }`, the note's words joined by single spaces) for the card's `standard` line; the line
-  references of what was read stay in the findings ledger. Another state, or no note, is a usage error
-  (exit 2); a folder inside a repository is refused as below.
+- `dialecte lot standard <id|folder> consulted <note> | not-consulted <reason> | outside <note>` writes
+  `<folder>/standard.json` (`{ state, note, at }`, the note's words joined by single spaces) for the card's
+  `standard` line; `outside` records that the lot's asks were answered outside the documents, with
+  `confirmed: false` (only an ask's own note sets it true). The line references of what was read stay in the
+  findings ledger. Another state, or no note, is a usage error (exit 2); a folder inside a repository is refused as
+  below.
 - `dialecte lot finding`, `decide`, `snapshot`, `choice`, `delta` and `verify` keep a lot's review rounds in its
   lot folder, or in a hand-over folder (`_commit-plan/<topic>-<date>/`) that stays outside every repository:
   each refuses any other folder inside a git work tree or a git folder (`.git/`, a bare repository). `--` ends the options: the
