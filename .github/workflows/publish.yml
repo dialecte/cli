@@ -2,15 +2,12 @@ name: publish
 
 # The push to main is the queue's merge of a commit ci.yml already tested: build, then publish and tag when the
 # version changed. No test runs here. npm trusted publishing names this file: the publish stays in publish.yml.
+# Only the commit that changes the version publishes it (_check-npm-version.yml). No concurrency group: every push runs
+# to its end, a pending run is never replaced by a later one's.
 on:
   push:
     branches:
       - main
-
-# one publish of main at a time, never cancelled half-way
-concurrency:
-  group: publish-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   install:

@@ -19,6 +19,7 @@ function readWorkflow(file: string): {
 		workflow_call?: { outputs?: Record<string, { description?: string }> }
 	}
 	jobs: Record<string, { uses?: string; 'runs-on'?: string; steps?: { run?: string }[] }>
+	concurrency?: unknown
 } {
 	const path = join(WORKFLOWS, file)
 	return existsSync(path) ? parse(readFileSync(path, 'utf8')) : { on: {}, jobs: {} }
@@ -47,6 +48,10 @@ describe('the cli workflows', () => {
 
 	it('publish.yml → listens to the push to main only', () => {
 		expect(readWorkflow('publish.yml').on).toEqual({ push: { branches: ['main'] } })
+	})
+
+	it('publish.yml → no concurrency group, so a pending run (maybe the version-changing push) is never replaced by a later one', () => {
+		expect(readWorkflow('publish.yml').concurrency).toBeUndefined()
 	})
 
 	it.each(['ci.yml', 'publish.yml'])(
