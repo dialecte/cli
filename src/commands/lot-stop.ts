@@ -4,14 +4,16 @@
  * abandon of `handover abandon`, and the move aside of a damaged lot's folder (P2.4). It moves no worktree and
  * deletes nothing.
  */
-import { basename } from 'node:path'
+import { basename, dirname } from 'node:path'
 
 import { abandonHandover } from '../lib/handover/abandon-handover.ts'
 import { linkedWorktreeLockPath } from '../lib/handover/handover-lock.ts'
 import { readRunMarker } from '../lib/handover/handover-marker-read.ts'
 import { runningRefusal } from '../lib/handover/handover-run-marker.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
+import { recordHandoverState } from '../lib/handover/handover-store.ts'
 import { HANDOVER_ABANDON_TEXTS } from '../lib/handover/handover.constants.ts'
+import { createGithubHost } from '../lib/host/github-host.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
@@ -115,7 +117,24 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const target = { folder: lotFolder, registry, lockPath, now }
 	// step 2: the hand-over first; a refusal publishes nothing, the person's run decides
 	const lockLines: string[] = []
-	if (pending) {
+	// a lot landing through its pull request: the pull request closed (out of the queue), its entry abandoned
+	if (pending && input.landing !== undefined) {
+		const closed = (params.host ?? createGithubHost()).closePullRequest({
+			root: identity.worktree ?? dirname(registry),
+			number: input.landing.number,
+		})
+		if (closed !== undefined)
+			return lotRefusalExit({
+				lines: [
+					STOP_TEXTS.landingNotClosed
+						.replace('{number}', String(input.landing.number))
+						.replace('{reason}', () => closed.refusal),
+				],
+				json,
+			})
+		recordHandoverState({ store: registry, folder: lotFolder, state: 'abandoned' })
+		lockLines.push(STOP_TEXTS.landingClosed.replace('{number}', String(input.landing.number)))
+	} else if (pending) {
 		const abandoned = abandonOf({ ...target, afterCheck: params.seams?.afterCheck })
 		if ('refused' in abandoned) return lotRefusalExit({ lines: [abandoned.refused], json })
 		lockLines.push(...abandoned.lockLines)

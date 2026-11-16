@@ -116,6 +116,7 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		reason: REFUSES_COMBINATION,
 		noJson: PLAIN_TEXT,
 	},
+	'lot land': { argv: ['land', FORGED_WORD], quotes: true },
 	'changelog check': { argv: ['check', FORGED_WORD], quotes: false, reason: RUNS_CHECKS },
 	'changelog release': { argv: ['release', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
 	contrib: {

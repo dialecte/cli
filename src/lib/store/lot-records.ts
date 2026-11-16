@@ -12,6 +12,8 @@ import {
 	readStoreEntries,
 	registryOfCommonFolder,
 } from '../handover/handover-store-read.ts'
+import { HANDOVER_FILES } from '../handover/handover.constants.ts'
+import { readLanding } from '../handover/land-record.ts'
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
 import { committedElsewhereEntry, isResumedAfterEntry } from './committed-elsewhere.ts'
@@ -111,8 +113,16 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			registryEntry,
 			abandonedMarker: abandoned && { at: abandoned.at },
 			runMarker,
+			...landingOf({ lotFolder }),
 		},
 	}
+}
+
+/** The landing of a lot that lands through its pull request: a landing record and no written hand-over. */
+function landingOf(params: { lotFolder: string }): Pick<LotStateInput, 'landing'> {
+	const landing = readLanding({ lotFolder: params.lotFolder })
+	if (landing === undefined || isPresent(join(params.lotFolder, HANDOVER_FILES.lots))) return {}
+	return { landing: { number: landing.number, url: landing.url } }
 }
 
 /**
