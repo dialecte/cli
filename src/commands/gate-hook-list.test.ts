@@ -84,7 +84,7 @@ describe('resolveHookSteps', () => {
 		).toBe(true)
 	})
 
-	it("the cli's own package.json → the hook runs check and the scoped tests, the full suite stays for CI", () => {
+	it("the cli's own package.json → the hook runs check and the scoped rules, no test suite (CI runs it)", () => {
 		const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8'))
 
 		expect(
@@ -94,7 +94,7 @@ describe('resolveHookSteps', () => {
 			})),
 		).toEqual([
 			{ name: 'check', scoped: false },
-			{ name: 'tests', scoped: true },
+			{ name: 'rules', scoped: true },
 		])
 	})
 })
