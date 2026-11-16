@@ -1,7 +1,7 @@
 /**
  * The suite infrastructure of a package: the files its vitest configs name in `setupFiles` and `globalSetup`, and the
  * test helpers they import (followed through test code, never into production nor a test file), except a helper test
- * files other than its own unit test import too: an assertion helper the setup also reads stays test code, so a lot
+ * files other than its own unit test reach too (directly, or through another helper): an assertion helper the setup also reads stays test code, so a lot
  * cannot turn what its tests assert with into production by importing it from a setup file. A lot fixing them
  * fixes the suite, not a test: tdd counts them as production, so a red run never freezes them and a fix there after
  * the red is the green side. Read from the configs, no config field; read again only when a vite, vitest or tsconfig
@@ -16,8 +16,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, posix, sep } from 'node:path'
 
-import { listRepositoryFiles } from '../git.ts'
 import { createModuleResolver } from './module-resolver.ts'
+import { listPackageFiles } from './package-files.ts'
 import {
 	MODULE_EXTENSION_PATTERN,
 	TEST_FILE_PATTERN,
@@ -28,7 +28,7 @@ import {
 import { moduleSpecifiers } from './test-source.ts'
 import { writtenNameOf } from './written-name.ts'
 
-import type { ModuleResolver, SuiteInfrastructureReading } from './tdd.types.ts'
+import type { ModuleResolver, SourceText, SuiteInfrastructureReading } from './tdd.types.ts'
 
 /** The last reading of each package root, kept while its configs and infrastructure files stay as read. */
 const readings = new Map<string, SuiteInfrastructureReading>()
@@ -64,7 +64,11 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 	const { root } = params
 	const resolveModule = createModuleResolver({ root })
 	const files = new Set([...resolveModule.setupFiles, ...resolveModule.globalSetupFiles])
-	const isShared = createSharedHelperTest({ root, resolveModule })
+	const isShared = createSharedHelperTest({
+		root,
+		resolveModule,
+		isTestSupport: params.isTestSupport,
+	})
 	const queue = [...files]
 	let complete = true
 	while (queue.length > 0) {
@@ -85,25 +89,25 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 }
 
 /**
- * Whether a test file other than the helper's own unit test (`<helper>.test.ts` beside it) imports the helper: the
- * repository's test files read once, on the first question, each searched for the helper's written name before its
- * imports are resolved.
+ * Whether test files other than the helper's own unit test (`<helper>.test.ts` beside it) reach the helper: one imports
+ * it, or imports a test helper that reaches it (followed back through the helpers that import it, a cycle ending). The
+ * package's test files and helpers are read once, on the first question; each is searched for the helper's written
+ * name before its imports are resolved. `isTestSupport` tells the helpers.
  */
 function createSharedHelperTest(params: {
 	root: string
 	resolveModule: ModuleResolver
+	isTestSupport: (file: string) => boolean
 }): (helper: string) => boolean {
 	const { root, resolveModule } = params
-	let testFiles: Array<{ file: string; text: string }> | undefined
-	return function isShared(helper) {
-		testFiles ??= listRepositoryFiles({ root, folder: '.' })
-			.filter((file) => TEST_FILE_PATTERN.test(file))
-			.map((file) => ({ file, text: readFileSync(join(root, file), 'utf8') }))
+	let sources: { tests: SourceText[]; helpers: SourceText[] } | undefined
+	const answers = new Map<string, boolean>()
+	/** The sources among `candidates` that import `helper`, by the resolver. */
+	function importersOf(helper: string, candidates: readonly SourceText[]): SourceText[] {
 		const name = writtenNameOf(helper)
-		const ownTest = helper.replace(MODULE_EXTENSION_PATTERN, '')
-		return testFiles.some(
+		return candidates.filter(
 			({ file, text }) =>
-				file.replace(TEST_FILE_PATTERN, '') !== ownTest &&
+				file !== helper &&
 				text.includes(name) &&
 				moduleSpecifiers({ text, file }).some((specifier) => {
 					const resolution = resolveModule({ specifier, from: file })
@@ -112,6 +116,43 @@ function createSharedHelperTest(params: {
 					)
 				}),
 		)
+	}
+	return function isShared(helper: string): boolean {
+		sources ??= readSources({ root, isTestSupport: params.isTestSupport })
+		const known = answers.get(helper)
+		if (known !== undefined) return known
+		// asked again while answering (a cycle of helpers): no test reaches it that way
+		answers.set(helper, false)
+		const ownTest = helper.replace(MODULE_EXTENSION_PATTERN, '')
+		const shared: boolean =
+			importersOf(helper, sources.tests).some(
+				({ file }) => file.replace(TEST_FILE_PATTERN, '') !== ownTest,
+			) || importersOf(helper, sources.helpers).some(({ file }) => isShared(file))
+		answers.set(helper, shared)
+		return shared
+	}
+}
+
+/** The package's test files and its test helpers (JS/TS source), with their texts. */
+function readSources(params: { root: string; isTestSupport: (file: string) => boolean }): {
+	tests: SourceText[]
+	helpers: SourceText[]
+} {
+	const files = listPackageFiles(params.root)
+	/** The file with its text. */
+	function sourceOf(file: string): SourceText {
+		return { file, text: readFileSync(join(params.root, file), 'utf8') }
+	}
+	return {
+		tests: files.filter((file) => TEST_FILE_PATTERN.test(file)).map(sourceOf),
+		helpers: files
+			.filter(
+				(file) =>
+					!TEST_FILE_PATTERN.test(file) &&
+					MODULE_EXTENSION_PATTERN.test(file) &&
+					params.isTestSupport(file),
+			)
+			.map(sourceOf),
 	}
 }
 

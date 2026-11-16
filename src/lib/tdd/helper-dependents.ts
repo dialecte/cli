@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { listRepositoryFiles } from '../git.ts'
 import { frozenHashOf } from './case-status.ts'
+import { listPackageFiles } from './package-files.ts'
 import { modulesOf } from './select-cases.ts'
 import { isTestFile } from './tdd-files.ts'
 import {
@@ -58,7 +58,7 @@ export function listUnchangedDependents(params: {
 	changed: ReadonlySet<string>
 	dependenciesOf: (file: string) => readonly string[]
 }): Map<string, string[]> {
-	const testFiles = listRepositoryFiles({ root: params.root, folder: '.' })
+	const testFiles = listPackageFiles(params.root)
 		.filter((file) => !params.changed.has(file) && isTestFile({ root: params.root, file }))
 		.sort()
 	const texts = new Map<string, string>()
@@ -79,6 +79,29 @@ export function listUnchangedDependents(params: {
 			]
 		}),
 	)
+}
+
+/**
+ * The helpers whose unchanged dependents a red run runs, in order, while the files to run stay within `limit` (a
+ * helper with none always fits: nothing to run), and the helpers past it, each with its own dependents.
+ */
+export function budgetDependents(params: {
+	dependents: ReadonlyMap<string, readonly string[]>
+	limit: number
+}): { within: Map<string, readonly string[]>; over: Map<string, readonly string[]> } {
+	const within = new Map<string, readonly string[]>()
+	const over = new Map<string, readonly string[]>()
+	const files = new Set<string>()
+	for (const [helper, of] of params.dependents) {
+		const added = of.filter((file) => !files.has(file))
+		if (files.size + added.length > params.limit) {
+			over.set(helper, of)
+			continue
+		}
+		for (const file of added) files.add(file)
+		within.set(helper, of)
+	}
+	return { within, over }
 }
 
 /**

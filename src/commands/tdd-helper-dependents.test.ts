@@ -102,5 +102,32 @@ describe(
 				`unfrozen  ${ORPHAN_HELPER}  ${HELPER_DEPENDENTS_LIMIT + 2} unchanged test files import it, more than a red run runs for a helper (${HELPER_DEPENDENTS_LIMIT}): a \`revised\` entry naming it lets a red run freeze it`,
 			)
 		})
+
+		it('two changed helpers, one with its 1 dependent, the other with more than the limit → the first frozen, the second named with its own count', async () => {
+			const root = createOrphanHelperPackage()
+			const wide = Object.fromEntries(
+				Array.from({ length: HELPER_DEPENDENTS_LIMIT + 10 }, (_, index) => [
+					`src/wide-${index}.test.ts`,
+					"import { WIDE } from '../test/wide.ts'\nimport { expect, it } from 'vitest'\nit('wide', () => { expect(WIDE).toBe(1) })\n",
+				]),
+			)
+			writeFiles({ root, files: { ...wide, 'test/wide.ts': 'export const WIDE = 1\n' } })
+			git({ root, args: ['add', '-A', 'src', 'test/wide.ts'] })
+			git({
+				root,
+				args: ['commit', '-q', '-m', 'test: a wide helper', '--', 'src', 'test/wide.ts'],
+			})
+			writeFiles({ root, files: { 'test/wide.ts': 'export const WIDE = 2 - 1\n' } })
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+			const lines = red.output.split('\n')
+
+			expect({
+				narrow: lines.some((line) => line.startsWith(`frozen   ${ORPHAN_HELPER}  `)),
+				wide: lines.includes(
+					`unfrozen  test/wide.ts  ${HELPER_DEPENDENTS_LIMIT + 10} unchanged test files import it, more than a red run runs for a helper (${HELPER_DEPENDENTS_LIMIT}): a \`revised\` entry naming it lets a red run freeze it`,
+				),
+			}).toEqual({ narrow: true, wide: true })
+		})
 	},
 )

@@ -53,6 +53,7 @@ import {
 	isDuplicateMember,
 } from '../lib/tdd/duplicate-case-ids.ts'
 import {
+	budgetDependents,
 	judgeHelpers,
 	listOrphanHelpers,
 	listUnchangedDependents,
@@ -68,6 +69,7 @@ import {
 } from '../lib/tdd/lot-declaration.ts'
 import { createModuleResolver } from '../lib/tdd/module-resolver.ts'
 import { movedCaseLabels } from '../lib/tdd/moved-cases.ts'
+import { listOwnCode } from '../lib/tdd/own-code.ts'
 import {
 	filesMovedBack,
 	isRollbackGreen,
@@ -101,7 +103,6 @@ import {
 	HELPER_DEPENDENTS_LIMIT,
 	HELPER_DEPENDENTS_OVER_LIMIT,
 	HELPER_DEPENDENTS_STEP,
-	HELPER_IMPORTED_BY_NONE,
 	NO_RED_RECEIPT,
 	NOTHING_CHANGED_SINCE_RED,
 	ONLY_REFUSAL,
@@ -109,9 +110,12 @@ import {
 	MOVED_CALL_DIFFERS,
 	MOVED_DEPENDENCY_DIFFERS,
 	MOVED_FROM,
+	MOVED_NO_OWN_CODE,
 	MOVED_NO_RED,
+	MOVED_OWN_CODE_DIFFERS,
 	MOVED_PASSES_ON_BASE,
 	PROOF_KINDS,
+	PYTHON_FILE_PATTERN,
 	PROVES_NOTHING,
 	RED_KINDS,
 	RED_ON_BASE_FLAG,
@@ -136,6 +140,7 @@ import type {
 	LotMovedEntry,
 	MovedCarry,
 	MovedFrom,
+	OwnCodeVerdict,
 	ChangedTestFile,
 	DuplicateCaseId,
 	HelperVerdict,
@@ -454,6 +459,7 @@ async function runRed(params: {
 	const judgedFiles = runnable.filter((candidate) => !ranNoCase.has(candidate.file))
 	const movedCarries = readMovedCarries({
 		context,
+		texts: new Map(judgedFiles.map((file) => [file.file, file.text])),
 		cases: cases.filter((testCase) => judgedFiles.some((file) => file.file === testCase.file)),
 		moves: params.admission.moves,
 		acceptances,
@@ -603,11 +609,21 @@ async function runRed(params: {
 			}),
 		)
 	}
+	// what a moved case may keep of each frozen test file of the run: its own code by token hash
+	const ownCode = Object.fromEntries(
+		runnable
+			.filter((file) => file.file in frozen && !PYTHON_FILE_PATTERN.test(file.file))
+			.map((file) => [
+				file.file,
+				listOwnCode({ text: file.text, file: file.file }).map((statement) => statement.hash),
+			]),
+	)
 	if (Object.keys(frozen).length)
 		entries.push({
 			kind: 'freeze',
 			files: frozen,
 			...(revisedHelpers.length && { revised: revisedHelpers.map(({ file }) => file) }),
+			...(Object.keys(ownCode).length && { ownCode }),
 			at,
 		})
 	appendEntries({ root, entries, production })
@@ -692,20 +708,10 @@ async function judgeOrphanHelpers(params: {
 		changed: new Set(changed.map((file) => file.file)),
 		dependenciesOf: params.dependenciesOf,
 	})
-	const files = [...new Set([...dependents.values()].flat())].sort()
-	// a refactor of a widely shared helper never runs most of the suite here: the revised entry stands instead
-	if (files.length > HELPER_DEPENDENTS_LIMIT)
-		return [...dependents].map(([file, of]) => ({
-			file,
-			frozen: false,
-			detail:
-				of.length === 0
-					? HELPER_IMPORTED_BY_NONE
-					: HELPER_DEPENDENTS_OVER_LIMIT.replace('{count}', String(of.length)).replace(
-							'{limit}',
-							String(HELPER_DEPENDENTS_LIMIT),
-						),
-		}))
+	// a refactor of a widely shared helper never runs most of the suite here: the helpers run in order while their
+	// dependents fit the budget; each one past it is named with its own count, the revised entry standing instead
+	const { within, over } = budgetDependents({ dependents, limit: HELPER_DEPENDENTS_LIMIT })
+	const files = [...new Set([...within.values()].flat())].sort()
 	const modules = files.length
 		? await runTestCases({
 				root: context.root,
@@ -714,9 +720,20 @@ async function judgeOrphanHelpers(params: {
 				observer: runnerObserverOf({ context, name: HELPER_DEPENDENTS_STEP }),
 			})
 		: []
+	const overVerdicts: HelperVerdict[] = [...over].map(([file, of]) => ({
+		file,
+		frozen: false,
+		detail: HELPER_DEPENDENTS_OVER_LIMIT.replace('{count}', String(of.length)).replace(
+			'{limit}',
+			String(HELPER_DEPENDENTS_LIMIT),
+		),
+	}))
 	if ('failure' in modules)
-		return helpers.map((file) => ({ file, frozen: false, detail: modules.failure }))
-	return judgeHelpers({ root: context.root, dependents, modules })
+		return [
+			...[...within.keys()].map((file) => ({ file, frozen: false, detail: modules.failure })),
+			...overVerdicts,
+		]
+	return [...judgeHelpers({ root: context.root, dependents: within, modules }), ...overVerdicts]
 }
 
 /** What a red run makes of one case. */
@@ -807,6 +824,8 @@ async function judgeRed(params: {
  */
 function readMovedCarries(params: {
 	context: TddContext
+	/** The text of each test file of the run. */
+	texts: ReadonlyMap<string, string>
 	cases: readonly RunCase[]
 	moves: readonly LotMovedEntry[]
 	acceptances: readonly LotCaseEntry[]
@@ -841,6 +860,7 @@ function readMovedCarries(params: {
 /** The carry or the refusal of one case `froms` name (see `readMovedCarries`). */
 function movedCarryOf(params: {
 	context: TddContext
+	texts: ReadonlyMap<string, string>
 	testCase: RunCase
 	froms: readonly MovedFrom[]
 	testCode: ReadonlyMap<string, string>
@@ -864,18 +884,66 @@ function movedCarryOf(params: {
 					dependencies: params.dependenciesOf(testCase.file),
 				})
 			: []
-		if (red !== undefined && sameCall && differing.length === 0) return { kind: 'carry', from, red }
+		const ownCode =
+			red !== undefined && sameCall && differing.length === 0
+				? ownCodeUnlikeRed({ ...params, red, from })
+				: undefined
+		if (red !== undefined && ownCode?.kind === 'kept') return { kind: 'carry', from, red }
 		// a file entry speaks only where its earlier file held the case's red
 		if (refusal === undefined && (red !== undefined || namesOneCase(entry.to)))
-			refusal = (
-				red === undefined
-					? MOVED_NO_RED
-					: !sameCall
-						? MOVED_CALL_DIFFERS
-						: MOVED_DEPENDENCY_DIFFERS.replace('{files}', () => differing.join(', '))
-			).replace('{from}', () => fromLabel)
+			refusal = movedRefusalOf({ red, sameCall, differing, ownCode }).replace(
+				'{from}',
+				() => fromLabel,
+			)
 	}
 	return refusal === undefined ? undefined : { kind: 'refused', reason: refusal }
+}
+
+/** Why a moved case carries no red from one earlier case, its earlier label left as `{from}`. */
+function movedRefusalOf(params: {
+	red: TddReceipt | undefined
+	sameCall: boolean
+	differing: readonly string[]
+	ownCode: OwnCodeVerdict | undefined
+}): string {
+	const { ownCode } = params
+	if (params.red === undefined) return MOVED_NO_RED
+	if (!params.sameCall) return MOVED_CALL_DIFFERS
+	if (params.differing.length > 0)
+		return MOVED_DEPENDENCY_DIFFERS.replace('{files}', () => params.differing.join(', '))
+	if (ownCode?.kind === 'added')
+		return MOVED_OWN_CODE_DIFFERS.replace('{statement}', () => firstLine(ownCode.statement))
+	return MOVED_NO_OWN_CODE
+}
+
+/**
+ * Whether a moved case's file keeps only own code its earlier file held at the red it would carry (`own-code.ts`): the
+ * freeze of that red run recorded the earlier file's statements; one statement of the new file not among them is
+ * named; a red that recorded none (a pytest file, an older ledger) leaves nothing to compare.
+ */
+function ownCodeUnlikeRed(params: {
+	context: TddContext
+	testCase: RunCase
+	from: TestCaseId
+	red: TddReceipt
+	texts: ReadonlyMap<string, string>
+}): OwnCodeVerdict {
+	const freeze = params.context.ledger.entries.find(
+		(entry): entry is TddFreeze => entry.kind === 'freeze' && entry.at === params.red.at,
+	)
+	const recorded = freeze?.ownCode?.[params.from.file]
+	const text = params.texts.get(params.testCase.file)
+	if (
+		recorded === undefined ||
+		text === undefined ||
+		PYTHON_FILE_PATTERN.test(params.testCase.file)
+	)
+		return { kind: 'unrecorded' }
+	const held = new Set(recorded)
+	const added = listOwnCode({ text, file: params.testCase.file }).find(
+		(statement) => !held.has(statement.hash),
+	)
+	return added === undefined ? { kind: 'kept' } : { kind: 'added', statement: added.text }
 }
 
 /**

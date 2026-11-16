@@ -266,6 +266,8 @@ export type TddFreeze = {
 	files: Record<string, string>
 	/** The helpers (test code that is not a test file) this run froze because a `revised` entry of the lot file names them. */
 	revised?: string[]
+	/** The token hashes of each frozen JS/TS test file's own code (`own-code.ts`): what a moved case may keep of it. */
+	ownCode?: Record<string, string[]>
 	at: string
 }
 
@@ -336,6 +338,15 @@ export type LotMovedEntry = { from: string; to: string; reason: string }
 
 /** A case a `moved` entry carries receipts from, with that entry. */
 export type MovedFrom = { entry: LotMovedEntry; from: TestCaseId }
+
+/** One statement of a test file's own code: its text and the hash of its tokens. */
+export type OwnCodeStatement = { text: string; hash: string }
+
+/** A moved case's file against its earlier file's own code at a red: kept within it, one statement added, or nothing recorded. */
+export type OwnCodeVerdict =
+	| { kind: 'kept' }
+	| { kind: 'added'; statement: string }
+	| { kind: 'unrecorded' }
 
 /**
  * What a red run makes of a passing case `moved` entries name, before its run on the base: the red it may carry (from
@@ -739,3 +750,6 @@ export type ZeroCaseFiles = {
 
 /** What a red run makes of a changed helper no changed test file depends on (`helper-dependents.ts`). */
 export type HelperVerdict = { file: string; frozen: boolean; detail: string }
+
+/** A source file of the package and its text, as read once for a search. */
+export type SourceText = { file: string; text: string }

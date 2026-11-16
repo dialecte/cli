@@ -51,6 +51,14 @@ function readingTest(title: string): string {
 	)
 }
 
+/** A test file of one case reading its expected sum from a top-level const of value `value`. */
+function constTest(value: string): string {
+	return testText({ title: 'add', assertion: 'expect(add(1, 2)).toBe(EXPECTED)' }).replace(
+		"import { describe, expect, it } from 'vitest'",
+		`import { describe, expect, it } from 'vitest'\nconst EXPECTED = ${value}`,
+	)
+}
+
 function tdd(params: { cwd: string; argv: string[] }) {
 	return runTdd({ cwd: params.cwd, argv: params.argv, now: () => NOW })
 }
@@ -280,17 +288,25 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 		)
 	})
 
-	it('its test call unchanged, but its file defines add itself → refused: it passes on the base production, the move proves nothing', async () => {
-		const root = await movedPackage({
-			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+	it('its test call and own code unchanged, the base production already holding add → refused: it passes on the base production, the move proves nothing', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+			files: { 'src/add.ts': DONE },
 		})
-		writeFileSync(
-			join(root, 'src/b.test.ts'),
-			testText({ title: 'add' }).replace(
-				"import { add } from './add.ts'",
-				'function add(left: number, right: number): number {\n\treturn left + right\n}',
-			),
-		)
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': testText({ title: 'add' }) } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': testText({ title: 'add' }),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
 
 		const red = await tdd({ cwd: root, argv: ['red'] })
 
@@ -332,6 +348,90 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(/differs from what that red froze: test\/expected\.ts/),
+		)
+	})
+
+	it("its file keeps a side-effect import of the lot's new module but defines add itself → refused: its own code is not in the file that red froze", async () => {
+		const root = await movedPackage({
+			moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+		})
+		writeFileSync(
+			join(root, 'src/b.test.ts'),
+			testText({ title: 'add' }).replace(
+				"import { add } from './add.ts'",
+				"import './add.ts'\nfunction add(left: number, right: number): number {\n\treturn 3\n}",
+			),
+		)
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > one plus two → three, but its file holds code the file that red froze did not: function add\(left: number, right: number\): number \{/,
+			),
+		)
+	})
+
+	it('a top-level const of the earlier file changed in the move → refused naming it', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': constTest('3') } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': constTest('add(1, 2)'),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(
+				/holds code the file that red froze did not: const EXPECTED = add\(1, 2\)/,
+			),
+		)
+	})
+
+	it('an honest split that drops a helper and an import its cases no longer use → carried', async () => {
+		const root = createVitestPackage({
+			dialecte: { gate: { fast: [{ name: 'check', run: 'true' }] } },
+		})
+		const before = testText({ title: 'add' })
+			.replace(
+				"import { describe, expect, it } from 'vitest'",
+				"import { describe, expect, it } from 'vitest'\nimport { join } from 'node:path'\nfunction pathOf(name: string): string {\n\treturn join('src', name)\n}",
+			)
+			.replace(
+				"\tit('one plus two → three'",
+				"\tit('a path', () => { expect(pathOf('x')).toBe('src/x') })\n\tit('one plus two → three'",
+			)
+		writeFiles({ root, files: { 'src/add.ts': STUB, 'src/a.test.ts': before } })
+		await tdd({ cwd: root, argv: ['red'] })
+		writeFileSync(join(root, 'src/add.ts'), DONE)
+		await tdd({ cwd: root, argv: ['green'] })
+		rmSync(join(root, 'src/a.test.ts'))
+		writeFiles({
+			root,
+			files: {
+				'src/b.test.ts': testText({ title: 'add' }),
+				'.dialecte/lot.json': JSON.stringify({
+					moved: [{ from: 'src/a.test.ts', to: 'src/b.test.ts', reason: 'a split' }],
+				}),
+			},
+		})
+
+		const red = await tdd({ cwd: root, argv: ['red'] })
+
+		expect(red.output.split('\n')).toContainEqual(
+			expect.stringMatching(/^red {6}src\/b\.test\.ts::add > one plus two → three {2}moved from/),
 		)
 	})
 

@@ -617,6 +617,14 @@ export const MOVED_CALL_DIFFERS =
 export const MOVED_DEPENDENCY_DIFFERS =
 	'moved from {from}, but the test code it depends on differs from what that red froze: {files}'
 
+/** A moved case refused: its file holds own code its earlier file did not at that red, the first such statement `{statement}`. */
+export const MOVED_OWN_CODE_DIFFERS =
+	'moved from {from}, but its file holds code the file that red froze did not: {statement}'
+
+/** A moved case refused: the red it would carry recorded no own code of its file (a pytest file, an older ledger). */
+export const MOVED_NO_OWN_CODE =
+	'moved from {from}, but that red recorded no code of its file to compare with: prove it red again'
+
 /** A moved case refused: as written now it passes on the base's production. */
 export const MOVED_PASSES_ON_BASE =
 	'moved from {from}, but it passes on the base production: the move proves nothing'

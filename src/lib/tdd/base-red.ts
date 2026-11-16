@@ -14,10 +14,11 @@ import {
 	writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { copyBaseTree } from './base-tree.ts'
 import { notARed } from './classify-failure.ts'
+import { listTreeFiles } from './package-files.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
 import {
@@ -34,7 +35,6 @@ import {
 	DID_NOT_RUN_ON_BASE,
 	FAILED_ON_BASE_WITHOUT_ERROR,
 	MISSING_INPUT_KINDS,
-	NODE_MODULES_FOLDER,
 	RED_KINDS,
 } from './tdd.constants.ts'
 
@@ -218,13 +218,4 @@ function layOverlay(params: { root: string; folder: string; overlay: BaseOverlay
 		copyFileSync(join(params.root, file), target)
 	}
 	for (const file of params.overlay.remove) rmSync(join(params.folder, file), { force: true })
-}
-
-/** The files of the base copy, relative to it and sorted; the `node_modules` link is none of the base's. */
-function listTreeFiles(folder: string): string[] {
-	return readdirSync(folder, { recursive: true, withFileTypes: true })
-		.filter((entry) => !entry.isDirectory())
-		.map((entry) => relative(folder, join(entry.parentPath, entry.name)))
-		.filter((file) => file !== NODE_MODULES_FOLDER && !file.startsWith(`${NODE_MODULES_FOLDER}/`))
-		.sort()
 }

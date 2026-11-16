@@ -223,5 +223,29 @@ describe(
 
 			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/shared.ts'])
 		})
+
+		it('a helper the setup file imports that a test file reaches through another helper → still test code: frozen with that test file', async () => {
+			const root = createVitestPackage({
+				dialecte: GATE_CONFIG,
+				files: {
+					'vitest.config.ts': VITEST_CONFIG,
+					[SETUP_FILE]: "import { deep } from './deep.ts'\nglobalThis.setupMark = deep\n",
+					'test/deep.ts': 'export const deep = 1\n',
+					'test/middle.ts': "export { deep as other } from './deep.ts'\n",
+				},
+			})
+			writeFiles({
+				root,
+				files: {
+					'src/add.ts': ADD_STUB,
+					'src/add.test.ts': `import { other } from '../test/middle.ts'\n${ADD_TEST}`,
+					'test/deep.ts': 'export const deep = 2\n',
+				},
+			})
+
+			const red = await tdd({ cwd: root, argv: ['red'] })
+
+			expect(frozenFilesOf(red.output)).toEqual(['src/add.test.ts', 'test/deep.ts'])
+		})
 	},
 )
