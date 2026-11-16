@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { findWorkspace } from '../workspace.ts'
 import {
 	coversEntry,
@@ -26,11 +27,16 @@ import {
 	FEATURE_PATTERN,
 	GOAL_MAX_LENGTH,
 	HEADING_LINE_PATTERN,
+	ISSUE_DETAIL,
 	LINE_BREAK_PATTERN,
 	PARENT_SEGMENT,
 	PLAN_LINE_SEPARATOR,
 	REFUSED_BRANCH_NAMES,
 	SCOPE_SEPARATOR,
+	SUMMARY_MAX_LENGTH,
+	SUMMARY_PATH_DETAIL,
+	SUMMARY_REFERENCE_DETAIL,
+	SUMMARY_UNCHECKED_DETAIL,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
 import {
@@ -39,6 +45,13 @@ import {
 	overlappingOpenLots,
 	readLotStateInput,
 } from './lot-records.ts'
+import { PLAN_ENTRY_ID_LABEL } from './public-text.constants.ts'
+import {
+	holdsPathOrLink,
+	holdsPlanEntryId,
+	lotPlanEntryIds,
+	referenceLabelIn,
+} from './public-text.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
@@ -48,6 +61,8 @@ import type {
 	BriefLot,
 	BriefStep,
 	CheckBriefResult,
+	CheckedBrief,
+	ParsedBrief,
 } from './brief.types.ts'
 import type {
 	LotIdentity,
@@ -85,6 +100,8 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 		),
 		...textFaults({ field: 'goal', value: value.goal, oneLine: true, maxLength: GOAL_MAX_LENGTH }),
 		...effortFaults(value.effort),
+		...summaryFaults(value.summary),
+		...issueFaults(value.issue),
 		...stepFaults(value.steps),
 		...scope.refused,
 		...lots.refused,
@@ -105,6 +122,8 @@ export function checkBriefFields(params: { value: unknown }): BriefFieldsResult 
 			steps: value.steps as BriefStep[],
 			lots: lots.lots ?? [],
 			effort: value.effort as BriefEffort | undefined,
+			...(value.summary !== undefined && { summary: value.summary as string }),
+			...(value.issue !== undefined && { issue: value.issue as number }),
 		},
 	}
 }
@@ -152,6 +171,7 @@ export function checkBrief(params: {
 		...base.refused,
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
+		...summaryReferenceFaults({ fields, repository: repository.main, value, briefFolder }),
 		...overlapFaults({ brief: value, location, caseInsensitive, pause: params.pause }),
 	]
 	const findings = params.simulated
@@ -170,23 +190,47 @@ export function checkBrief(params: {
 		return { refused, checked: undefined }
 	return {
 		refused,
-		checked: {
+		checked: checkedOf({
+			brief,
 			repository: repository.main,
-			base: { ref: brief.base, commit: base.commit },
-			branch: brief.branch,
-			feature: brief.feature,
-			goal: brief.goal,
-			plan: { text: plan.text, bytes: plan.bytes, hash: hashOf(plan.bytes) },
-			briefText: text,
-			briefBytes: bytes,
-			briefHash: hashOf(bytes),
-			scope: brief.scope,
-			steps: brief.steps,
-			lots: brief.lots,
-			effort: brief.effort,
+			commit: base.commit,
+			plan: { text: plan.text, bytes: plan.bytes },
+			briefFile: { text, bytes },
 			caseInsensitive,
-			wouldRefuse: findings,
-		},
+			findings,
+		}),
+	}
+}
+
+/** The checked brief of a start no check refused: the parsed fields, the resolved repository, base and plan. */
+function checkedOf(params: {
+	brief: ParsedBrief
+	repository: string
+	commit: string
+	plan: { text: string; bytes: Buffer }
+	briefFile: { text: string; bytes: Buffer }
+	caseInsensitive: boolean
+	findings: Refusal[]
+}): CheckedBrief {
+	const { brief, plan, briefFile } = params
+	return {
+		repository: params.repository,
+		base: { ref: brief.base, commit: params.commit },
+		branch: brief.branch,
+		feature: brief.feature,
+		goal: brief.goal,
+		plan: { text: plan.text, bytes: plan.bytes, hash: hashOf(plan.bytes) },
+		briefText: briefFile.text,
+		briefBytes: briefFile.bytes,
+		briefHash: hashOf(briefFile.bytes),
+		scope: brief.scope,
+		steps: brief.steps,
+		lots: brief.lots,
+		effort: brief.effort,
+		...(brief.summary !== undefined && { summary: brief.summary }),
+		...(brief.issue !== undefined && { issue: brief.issue }),
+		caseInsensitive: params.caseInsensitive,
+		wouldRefuse: params.findings,
 	}
 }
 
@@ -218,7 +262,7 @@ function isNonEmptyArray(value: unknown): value is unknown[] {
 }
 
 function isOneLineText(value: unknown): value is string {
-	return typeof value === 'string' && value !== '' && !LINE_BREAK_PATTERN.test(value)
+	return typeof value === 'string' && value.trim() !== '' && !LINE_BREAK_PATTERN.test(value)
 }
 
 function unknownKeyFaults(value: Record<string, unknown>): Refusal[] {
@@ -271,6 +315,78 @@ function textFaults(params: {
 			}),
 		]
 	return []
+}
+
+/** The faults of an optional summary: one line of at most `SUMMARY_MAX_LENGTH` characters, no path or link. */
+function summaryFaults(value: unknown): Refusal[] {
+	if (value === undefined) return []
+	const shape = textFaults({
+		field: 'summary',
+		value,
+		oneLine: true,
+		maxLength: SUMMARY_MAX_LENGTH,
+	})
+	if (shape.length > 0) return shape
+	if (!holdsPathOrLink(value as string)) return []
+	return [refusalOf({ field: 'summary', rule: 'public-text', detail: SUMMARY_PATH_DETAIL })]
+}
+
+/** The fault of an optional issue that is not a positive integer. */
+function issueFaults(value: unknown): Refusal[] {
+	if (value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)) return []
+	return [refusalOf({ field: 'issue', rule: 'shape', detail: ISSUE_DETAIL })]
+}
+
+/**
+ * The fault of a summary holding a reference a public text never holds (`referenceLabelIn`: every generic pattern,
+ * those the package declares, a contributor's consumer names, the machine's forbidden words), else an entry id of the
+ * plans that hold the lot (`lotPlanEntryIds`). One refusal naming the label, never the text; none without a summary or
+ * a repository.
+ */
+function summaryReferenceFaults(params: {
+	fields: BriefFieldsResult
+	repository: string | undefined
+	value: Record<string, unknown>
+	briefFolder: string
+}): Refusal[] {
+	const { repository, value } = params
+	const summary = params.fields.brief?.summary
+	if (summary === undefined || repository === undefined) return []
+	let label: string | undefined
+	try {
+		label = referenceLabelIn({ text: summary, root: repository })
+	} catch (error) {
+		return [
+			refusalOf({
+				field: 'summary',
+				rule: 'public-text',
+				detail: fillMessage({
+					template: SUMMARY_UNCHECKED_DETAIL,
+					values: { reason: (error as Error).message },
+				}),
+			}),
+		]
+	}
+	if (
+		label === undefined &&
+		holdsPlanEntryId({
+			text: summary,
+			ids: lotPlanEntryIds({
+				planPath:
+					typeof value.plan === 'string' ? resolve(params.briefFolder, value.plan) : undefined,
+				branch: typeof value.branch === 'string' ? value.branch : undefined,
+			}),
+		})
+	)
+		label = PLAN_ENTRY_ID_LABEL
+	if (label === undefined) return []
+	return [
+		refusalOf({
+			field: 'summary',
+			rule: 'public-text',
+			detail: fillMessage({ template: SUMMARY_REFERENCE_DETAIL, values: { label } }),
+		}),
+	]
 }
 
 function effortFaults(value: unknown): Refusal[] {
@@ -354,8 +470,11 @@ function scopeEntriesOf(value: unknown): { refused: Refusal[]; entries: string[]
 	return { refused, entries }
 }
 
-/** The lots' shape; `lots` (paths normalised) only when it holds. */
-function lotsOf(value: unknown): { refused: Refusal[]; lots: BriefLot[] | undefined } {
+/**
+ * The commit lots of a brief's `lots` value: their shape checked, `lots` (paths normalised) only when it holds. The one
+ * reader of a brief's lots, for `lot start` and for the verbs that read a stored brief.
+ */
+export function lotsOf(value: unknown): { refused: Refusal[]; lots: BriefLot[] | undefined } {
 	if (!isNonEmptyArray(value))
 		return {
 			refused: [

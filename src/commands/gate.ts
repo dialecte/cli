@@ -103,6 +103,7 @@ import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { shellQuote, shellWord } from '../lib/shell-quote.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
+import { refreshGatePart } from '../lib/tdd/tests-record.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
@@ -553,11 +554,15 @@ function recordGateRun(params: {
 			]),
 		),
 	})
+	const testsWarning = refreshGatePart({ cwd })
 	return {
 		stored,
 		stateHash,
 		...(stored && { key: keyAfter }),
-		notStored: changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : [],
+		notStored: [
+			...(changedWhileRunning ? [GATE_STATE_CHANGED_LINE] : []),
+			...(testsWarning === undefined ? [] : [testsWarning]),
+		],
 	}
 }
 
@@ -590,6 +595,7 @@ function renderGateResult(params: {
 					...(reused && { reused: true }),
 					stored: params.stored,
 					steps: results,
+					...(params.notStored.length > 0 && { warnings: params.notStored }),
 				},
 				2,
 			),

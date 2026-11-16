@@ -11,6 +11,7 @@ import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
+import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import {
 	NOTHING_LATE_REFUSAL,
 	OTHER_WORKTREE_REFUSAL,
@@ -23,6 +24,11 @@ import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { snapshotRounds } from '../lib/review-rounds/round-names.ts'
 import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
 import { readIdentity } from '../lib/store/identity.ts'
+import {
+	PUBLIC_TEXT_REFUSAL,
+	PUBLIC_TEXT_UNCHECKED_REFUSAL,
+} from '../lib/store/public-text.constants.ts'
+import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -42,16 +48,9 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 			exitCode: 1,
 			line: `lot verify: ${params.cwd} is in no git work tree: run lot verify inside the lot's worktree`,
 		})
-	const wordRefusal = forbiddenWordRefusal({
-		root,
-		verb: 'verify',
-		options: [
-			{ option: '--by', text: by },
-			{ option: '--note', text: note },
-		],
-	})
-	if (wordRefusal) return answerOf({ exitCode: 2, line: wordRefusal })
 	const folder = resolve(params.cwd, read.words[0])
+	const textRefusal = optionTextRefusal({ root, folder, by, note })
+	if (textRefusal) return answerOf({ exitCode: 2, line: textRefusal })
 	const worktreeRefusal = otherWorktreeRefusal({ root, folder })
 	if (worktreeRefusal) return answerOf({ exitCode: 2, line: worktreeRefusal })
 	if (snapshotRounds(folder).length === 0)
@@ -74,9 +73,45 @@ export function runLotVerify(params: { cwd: string; argv: string[]; now?: Date }
 	} catch (error) {
 		return answerOf({ exitCode: 1, line: `lot verify: ${(error as Error).message}` })
 	}
-	return answerOf({
-		exitCode: 0,
-		line: `lot verify: ${state.slice(0, VERIFY_SHOWN_STATE_LENGTH)} by ${by} - ${file}`,
+	const warning = refreshReviewRecord({ folder })
+	const answer = `lot verify: ${state.slice(0, VERIFY_SHOWN_STATE_LENGTH)} by ${by} - ${file}`
+	return resultOf({ exitCode: 0, lines: warning === undefined ? [answer] : [answer, warning] })
+}
+
+/**
+ * The refusal of a `--by` or `--note` holding a forbidden word, or of a `--by` holding what a public record never
+ * holds, an entry id of the plans that hold the lot included (it is copied to `review.jsonl`; the note stays private),
+ * or whose lists cannot be read; undefined when none.
+ */
+function optionTextRefusal(params: {
+	root: string
+	folder: string
+	by: string
+	note: string
+}): string | undefined {
+	const { root, by } = params
+	const wordRefusal = forbiddenWordRefusal({
+		root,
+		verb: 'verify',
+		options: [
+			{ option: '--by', text: by },
+			{ option: '--note', text: params.note },
+		],
+	})
+	if (wordRefusal) return wordRefusal
+	let label: string | undefined
+	try {
+		label = publicTextLabel({ text: by, root, ids: folderPlanEntryIds({ folder: params.folder }) })
+	} catch (error) {
+		return fillMessage({
+			template: PUBLIC_TEXT_UNCHECKED_REFUSAL,
+			values: { verb: 'verify', option: '--by', reason: (error as Error).message },
+		})
+	}
+	if (label === undefined) return undefined
+	return fillMessage({
+		template: PUBLIC_TEXT_REFUSAL,
+		values: { verb: 'verify', option: '--by', label },
 	})
 }
 
