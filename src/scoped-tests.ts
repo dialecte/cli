@@ -1,6 +1,6 @@
 /**
- * The `tests` step of this package's fast gate (`dialecte.gate.fast` in package.json): `vitest related` over the
- * gate's changed paths, the selection written where the gate asked. Run without a gate it starts nothing (exit 2), nor
+ * The `tests` step of this package's fast gate (`dialecte.gate.fast` in package.json): the tests vitest's import graph has the
+ * gate's changed paths reach, run with `vitest run`, the selection written where the gate asked. Run without a gate it starts nothing (exit 2), nor
  * inside a scoped run nested twice (`DIALECTE_SCOPED_TESTS_DEPTH` 2 or more: a suite whose test runs this step would
  * start itself again without end); the vitest it starts gets its depth plus one.
  * The words after it (a serial rerun's failing files and flag) are handed to vitest.

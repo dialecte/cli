@@ -1,7 +1,7 @@
 /**
- * The scoped `tests` step of this package's fast gate: runs `vitest related` over the changed paths of the gate
- * (the NUL-separated file in `DIALECTE_GATE_CHANGED`), leaving a change no test imports to the full suite on CI, and
- * writes the selection file the gate reads. An empty selection exits 0 without starting vitest.
+ * The scoped `tests` step of this package's fast gate: runs the tests vitest's import graph has the changed paths of
+ * the gate reach (the NUL-separated file in `DIALECTE_GATE_CHANGED`), leaving a change no test imports, and a file most
+ * tests import, to the full suite on CI, and writes the selection file the gate reads. An empty selection exits 0 without starting vitest.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
@@ -14,7 +14,6 @@ import { textOf } from '../print/print.ts'
 import { withoutVariables } from '../progress/run-child.ts'
 import { createModuleResolver } from '../tdd/module-resolver.ts'
 import { resolvePackageVitest } from '../tdd/package-vitest.ts'
-import { VITEST_RUN_ARGUMENT } from '../tdd/tdd.constants.ts'
 import { SERIAL_FLAG } from './gate-config.constants.ts'
 import {
 	IMPORTABLE_FILE_PATTERN,
@@ -26,8 +25,15 @@ import {
 	SCOPED_TESTS_SELECTION_ID,
 	TEST_READ_FOLDER_PATTERN,
 	VITEST_JSON_OUTPUT_OPTION,
-	VITEST_RELATED_ARGUMENTS,
 	VITEST_REPORT_ARGUMENTS,
+	GRAPH_FAILED_LINE,
+	GRAPH_FILE_NAME,
+	NO_TEST_REACHED_LINE,
+	SHARED_FILE_FLOOR,
+	SHARED_FILE_SHARE,
+	SHARED_PATH_DIRECT_RAN_TEXT,
+	SHARED_PATH_TEXT,
+	TEST_GRAPH_SCRIPT,
 	LEFT_TO_CI_FILE_PATTERN,
 	LEFT_TO_CI_FILES,
 	LEFT_TO_CI_LINE_START,
@@ -36,14 +42,23 @@ import {
 import { GATE_SCOPE_VARIABLES, HANDOVER_VARIABLES } from './selection.constants.ts'
 import { readChangedPaths, writeSelectionFile } from './selection.ts'
 
-import type { ScopedTestsEnvironment, ScopedTestsRun } from './scoped-tests.types.ts'
+import type {
+	ScopedTestsEnvironment,
+	ScopedTestsRun,
+	SharedPath,
+	TestGraph,
+} from './scoped-tests.types.ts'
 import type { SpawnSyncReturns } from 'node:child_process'
 
 /**
- * Runs the tests the gate's change can reach and writes its selection: `vitest related` over the importable changed
- * paths; a changed path no related run can follow (`wholeSuitePaths`: the manifest, the entry, the vitest config, a
- * file a test reads) is left to the full suite CI runs, said in one line and named in the selection; nothing, exit 0,
- * when no test is related.
+ * Runs the tests the gate's change can reach and writes its selection. A changed path no related run can follow (the
+ * manifest, the entry, the vitest config, a file a test reads) is left to the full suite CI runs; so is the far reach
+ * of a shared file, one vitest's import graph has more than a quarter of the package's test files reach (and more
+ * than `SHARED_FILE_FLOOR`): its own tests, the test files importing it themselves, still run here, unless they too
+ * are past that share (a hub helper goes to CI whole). Both said in one line and skipped in the selection. The test
+ * files the other importable
+ * changed paths reach run with `vitest run`; nothing, exit 0, when none does. The gate's serial rerun (its flag and the
+ * failing files after the changed paths) runs those files alone.
  * @intent run on the machine only the tests a change reaches, the full suite being CI's
  */
 export function runScopedTests(params: {
@@ -56,97 +71,243 @@ export function runScopedTests(params: {
 	depth?: number
 }): ScopedTestsRun {
 	const { root, environment } = params
+	const depth = params.depth ?? 0
 	const changed = readChangedPaths(environment.changed)
 	const packagePaths = packagePathsOf({ root, changed })
 	const leftToCi = leftToCiPaths({ root, paths: packagePaths })
-	// a path left to CI is never related here: `vitest related` on the manifest or a setup file runs every test
+	// a path left to CI is never related here: every test depends on the manifest or a setup file
 	const importable = importablePaths({ root, paths: packagePaths }).filter(
 		(path) => !leftToCi.includes(path),
 	)
 	const extraArguments = params.extraArguments ?? []
-	const leftLine =
-		leftToCi.length > 0 ? `${textOf([`${LEFT_TO_CI_LINE_START}${leftToCi.join(', ')}`])}\n` : ''
-	// skipped, never selected: a step that selects nothing passes; what CI checks stays named for the card and the record
-	const skipped =
-		leftToCi.length > 0 ? [{ id: LEFT_TO_CI_SELECTION_ID, reason: leftToCi.join(', ') }] : []
-	if (importable.length === 0 && extraArguments.length === 0) {
-		writeSelectionFile({ scope: environment, changed: changed.length, selected: [], skipped })
-		return {
-			exitCode: 0,
-			output:
-				leftLine ||
-				NOTHING_TO_RELATE_LINE.replace('{paths}', counted({ count: changed.length, noun: 'path' })),
-		}
-	}
+	// the gate's serial rerun: its flag and the failing files (a step's own words never hold the flag)
+	const rerun =
+		extraArguments.includes(SERIAL_FLAG) &&
+		extraArguments.some((argument) => !argument.startsWith('-'))
+	if (!rerun && importable.length === 0 && extraArguments.length === 0)
+		return nothingRun({
+			environment,
+			changed: changed.length,
+			leftToCi,
+			shared: [],
+			// the left-to-CI line says it all when there is one
+			line:
+				leftToCi.length > 0
+					? undefined
+					: NOTHING_TO_RELATE_LINE.replace('{paths}', () =>
+							counted({ count: changed.length, noun: 'path' }),
+						),
+		})
 	const folder = mkdtempSync(join(tmpdir(), REPORT_FOLDER_PREFIX))
 	try {
+		const reached = rerun
+			? { testFiles: [], shared: [] }
+			: reachedTestFiles({ root, folder, depth, paths: importable })
+		if ('failure' in reached)
+			return graphFailed({
+				environment,
+				changed: changed.length,
+				leftToCi,
+				failure: reached.failure,
+			})
+		const { shared } = reached
+		if (!rerun && reached.testFiles.length === 0 && extraArguments.length === 0)
+			return nothingRun({
+				environment,
+				changed: changed.length,
+				leftToCi,
+				shared,
+				// every importable path shared: the left-to-CI line says it all
+				line:
+					importable.length === shared.length
+						? undefined
+						: NO_TEST_REACHED_LINE.replace('{paths}', () =>
+								counted({ count: importable.length - shared.length, noun: 'path' }),
+							),
+			})
 		const report = join(folder, REPORT_FILE_NAME)
-		const run = spawnRelated({
+		const run = spawnVitest({
 			root,
 			report,
-			related: importable,
+			files: reached.testFiles,
 			extraArguments,
-			depth: params.depth ?? 0,
+			depth,
 		})
 		const testFiles = readReportedFiles({ root, report })
 		writeSelectionFile({
 			scope: environment,
 			changed: changed.length,
 			selected: testFiles.length ? [{ id: SCOPED_TESTS_SELECTION_ID, reasons: testFiles }] : [],
-			skipped,
+			skipped: skippedOf({ leftToCi, shared }),
 		})
 		return {
 			exitCode: run.status ?? 1,
-			output: `${leftLine}${run.stdout ?? ''}${run.stderr ?? ''}${run.error ? `${run.error.message}\n` : ''}`,
+			output: `${leftLineOf({ leftToCi, shared })}${run.stdout ?? ''}${run.stderr ?? ''}${run.error ? `${run.error.message}\n` : ''}`,
 		}
 	} finally {
 		rmSync(folder, { recursive: true, force: true })
 	}
 }
 
+/** The graph could not be read: the step fails, what CI checks still named and the selection written. */
+function graphFailed(params: {
+	environment: ScopedTestsEnvironment
+	changed: number
+	leftToCi: readonly string[]
+	failure: string
+}): ScopedTestsRun {
+	const { leftToCi } = params
+	writeSelectionFile({
+		scope: params.environment,
+		changed: params.changed,
+		selected: [],
+		skipped: skippedOf({ leftToCi, shared: [] }),
+	})
+	return { exitCode: 1, output: `${leftLineOf({ leftToCi, shared: [] })}${params.failure}` }
+}
+
+/** No vitest started: the selection written with nothing selected; the left-to-CI line, then `line`, as the output. */
+function nothingRun(params: {
+	environment: ScopedTestsEnvironment
+	changed: number
+	leftToCi: readonly string[]
+	shared: readonly SharedPath[]
+	line: string | undefined
+}): ScopedTestsRun {
+	const { leftToCi, shared } = params
+	writeSelectionFile({
+		scope: params.environment,
+		changed: params.changed,
+		selected: [],
+		skipped: skippedOf({ leftToCi, shared }),
+	})
+	return {
+		exitCode: 0,
+		output: `${leftLineOf({ leftToCi, shared })}${params.line === undefined ? '' : `${params.line}\n`}`,
+	}
+}
+
+/** What the selection skips for CI: one `left-to-ci` entry naming the paths, none without. */
+function skippedOf(params: {
+	leftToCi: readonly string[]
+	shared: readonly SharedPath[]
+}): { id: string; reason: string }[] {
+	const paths = [...params.leftToCi, ...params.shared.map((shared) => shared.path)]
+	// skipped, never selected: a step that selects nothing passes; what CI checks stays named for the card and the record
+	return paths.length > 0 ? [{ id: LEFT_TO_CI_SELECTION_ID, reason: paths.join(', ') }] : []
+}
+
+/** The one line naming what is left to CI (a shared path with how many test files reach it), empty without. */
+function leftLineOf(params: {
+	leftToCi: readonly string[]
+	shared: readonly SharedPath[]
+}): string {
+	const named = [
+		...params.leftToCi,
+		...params.shared.map((shared) =>
+			(shared.directRan ? SHARED_PATH_DIRECT_RAN_TEXT : SHARED_PATH_TEXT)
+				.replace('{path}', () => shared.path)
+				.replace('{related}', String(shared.related))
+				.replace('{total}', String(shared.total))
+				.replace('{direct}', String(shared.direct)),
+		),
+	]
+	return named.length > 0 ? `${textOf([`${LEFT_TO_CI_LINE_START}${named.join(', ')}`])}\n` : ''
+}
+
 /**
- * `vitest related` over `related` (then `extraArguments`), its JSON report written to `report`; the gate's serial rerun
- * (`extraArguments` naming the failing test files) runs those files alone with `vitest run`, never every related one.
+ * The test files the changed `paths` reach in vitest's import graph (a test file reaches itself), and the shared
+ * paths among them, which reach none here: a path more than `SHARED_FILE_SHARE` of the test files and more than
+ * `SHARED_FILE_FLOOR` reach. The graph read by `test-graph.ts` with the package's vitest; its failure is the output.
  */
-function spawnRelated(params: {
+function reachedTestFiles(params: {
+	root: string
+	folder: string
+	depth: number
+	paths: readonly string[]
+}): { testFiles: string[]; shared: SharedPath[] } | { failure: string } {
+	const output = join(params.folder, GRAPH_FILE_NAME)
+	const child = spawnSync(process.execPath, [TEST_GRAPH_SCRIPT, output], {
+		cwd: params.root,
+		encoding: 'utf8',
+		maxBuffer: OUTPUT_MAX_BYTES,
+		env: childEnvironment({ depth: params.depth }),
+	})
+	if (child.status !== 0 || !existsSync(output))
+		return {
+			failure: `${GRAPH_FAILED_LINE}\n${child.stdout ?? ''}${child.stderr ?? ''}${child.error ? `${child.error.message}\n` : ''}`,
+		}
+	const graph = JSON.parse(readFileSync(output, 'utf8')) as TestGraph
+	const testFiles = Object.keys(graph.dependencies)
+	const total = testFiles.length
+	const shared: SharedPath[] = []
+	const reached = new Set<string>()
+	for (const path of params.paths) {
+		const related = testFiles.filter(function reaches(file) {
+			return file === path || graph.dependencies[file].includes(path)
+		})
+		if (!isPastShare({ count: related.length, total })) {
+			for (const file of related) reached.add(file)
+			continue
+		}
+		// its own tests (a test file importing it itself) run here, unless they are a hub's share themselves
+		const direct = testFiles.filter(function imports(file) {
+			return file === path || (graph.imports[file] ?? []).includes(path)
+		})
+		const directRan = direct.length > 0 && !isPastShare({ count: direct.length, total })
+		if (directRan) for (const file of direct) reached.add(file)
+		shared.push({ path, related: related.length, total, direct: direct.length, directRan })
+	}
+	return { testFiles: [...reached].sort(), shared }
+}
+
+/** Whether `count` test files of `total` are past the share and the floor: a run the machine leaves to CI. */
+function isPastShare(params: { count: number; total: number }): boolean {
+	return params.count > SHARED_FILE_FLOOR && params.count > SHARED_FILE_SHARE * params.total
+}
+
+/**
+ * `vitest run` over `files` (then `extraArguments`: the gate's serial rerun names its failing files there), its JSON
+ * report written to `report`.
+ */
+function spawnVitest(params: {
 	root: string
 	report: string
-	related: readonly string[]
+	files: readonly string[]
 	extraArguments: readonly string[]
 	depth: number
 }): SpawnSyncReturns<string> {
 	const vitest = resolvePackageVitest({ root: params.root })
-	// the gate's serial rerun: its flag and the failing files (a step's own words never hold the flag)
-	const rerun =
-		params.extraArguments.includes(SERIAL_FLAG) &&
-		params.extraArguments.some((argument) => !argument.startsWith('-'))
 	return spawnSync(
 		vitest.command,
 		[
-			...(rerun
-				? [...vitest.arguments, ...VITEST_REPORT_ARGUMENTS]
-				: [
-						...vitest.arguments.filter((argument) => argument !== VITEST_RUN_ARGUMENT),
-						...VITEST_RELATED_ARGUMENTS,
-					]),
+			...vitest.arguments,
+			...VITEST_REPORT_ARGUMENTS,
 			VITEST_JSON_OUTPUT_OPTION.replace('{file}', params.report),
-			...(rerun ? [] : params.related),
+			// absolute under the root's real path (vitest's own root): a relative filter matches as a substring
+			...params.files.map((file) => resolve(realpathSync(params.root), file)),
 			...params.extraArguments,
 		],
 		{
 			cwd: params.root,
 			encoding: 'utf8',
 			maxBuffer: OUTPUT_MAX_BYTES,
-			// the tests never see the gate's variables: a test reading them would read this run's
-			// and they carry the nesting depth one deeper: an entry they start again refuses at the second level
-			env: {
-				...withoutVariables({
-					names: [...Object.values(GATE_SCOPE_VARIABLES), ...HANDOVER_VARIABLES],
-				}),
-				[SCOPED_TESTS_DEPTH_VARIABLE]: String(params.depth + 1),
-			},
+			env: childEnvironment({ depth: params.depth }),
 		},
 	)
+}
+
+/**
+ * The environment of the vitest a scoped run starts: never the gate's variables (a test reading them would read this
+ * run's), and the nesting depth one deeper (an entry they start again refuses at the second level).
+ */
+function childEnvironment(params: { depth: number }): NodeJS.ProcessEnv {
+	return {
+		...withoutVariables({
+			names: [...Object.values(GATE_SCOPE_VARIABLES), ...HANDOVER_VARIABLES],
+		}),
+		[SCOPED_TESTS_DEPTH_VARIABLE]: String(params.depth + 1),
+	}
 }
 
 /** The changed paths of the package, as it names them (the list names paths from the repository's top). */
@@ -158,7 +319,7 @@ function packagePathsOf(params: { root: string; changed: readonly string[] }): s
 }
 
 /**
- * The paths whose change no `vitest related` can follow, left to the full suite on CI: the manifest, a lockfile, the vitest config, the cli's
+ * The paths whose change no import graph can follow, left to the full suite on CI: the manifest, a lockfile, the vitest config, the cli's
  * entry, a setup file (named by the config, or by its `*.setup.*` name: a global setup), and a file at the package
  * root or under `src/` or `test/` no test can import (a README, a CHANGELOG, a note a test reads). A deleted one
  * counts too. A file in another folder (`docs/`) asks for nothing.
