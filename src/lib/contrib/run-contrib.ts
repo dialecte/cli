@@ -1,3 +1,5 @@
+import { FRAGMENT_CHECK_LINES } from '../changelog/changelog.constants.ts'
+import { checkChangeFragment } from '../changelog/fragment-check.ts'
 /**
  * `dialecte contrib [--no-reuse] [--json]` - the contributor checks of a dialecte package, after `gate --full`
  * and before `dialecte handover`: rules, the package's steps, the release guard, the mutation line. The command
@@ -55,6 +57,7 @@ import {
 import { resolveRulesBase } from '../rules-base.ts'
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
+import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
 import { contribKeyHash } from './contrib-key.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
 import {
@@ -95,6 +98,11 @@ export async function runContrib(params: {
 	/** The repository whose store holds the record, when the run is a rehearsal's in a scratch clone of it. */
 	storeRoot?: string
 	/**
+	 * The absolute git common dir whose store holds the record instead (`DIALECTE_CHECK_STORE` in the cli's given
+	 * environment): read for a reuse, written with the record, marked as a rehearsal's.
+	 */
+	checkStore?: string
+	/**
 	 * The commit the rules row judges against: an error of a quality rule on a line it already holds is a warning
 	 * (`(not added by this change)`). A rehearsal passes the base its repository resolves; `null`: no base, every
 	 * error stays one. Without it, the row takes the lot's base (`resolveRulesBase`; none when it finds none).
@@ -109,6 +117,11 @@ export async function runContrib(params: {
 	const configuration = readConfiguration(cwd)
 	if ('refusal' in configuration) return { exitCode: 2, output: textOf([configuration.refusal]) }
 	const { packageJson, steps } = configuration
+	// a node_modules that does not install the lock being checked: no row runs, nothing is recorded
+	const stateTree = computeStateTree(cwd)
+	const installRefusal = checkInstallMatchesTree({ root: cwd, tree: stateTree })
+	if (installRefusal !== undefined)
+		return { exitCode: 1, output: textOf([`contrib: ${installRefusal}`]) }
 	// the run's events: its start before any row, its end after the record (D12); contrib is heavy as a whole
 	const recorder = startStep({ cwd, step: 'contrib', heavy: true, warn: params.warn })
 	const durations = new Map<StepResult, number>()
@@ -116,9 +129,14 @@ export async function runContrib(params: {
 
 	const head = readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim()
 	const commandHash = contribKeyHash({ root: cwd, steps, head })
-	const keyBefore = computeCheckKey({ root: cwd, commandHash })
+	const keyBefore = computeCheckKey({ root: cwd, commandHash, tree: stateTree })
 	const found = reusable
-		? findReusableRecord({ root: cwd, mode: CONTRIB_RECORD_MODE, key: keyBefore })
+		? findReusableRecord({
+				root: cwd,
+				mode: CONTRIB_RECORD_MODE,
+				key: keyBefore,
+				...(params.checkStore && { checkStore: params.checkStore }),
+			})
 		: undefined
 	const progress = live ? createStepProgress({ live, clock: createSystemClock() }) : undefined
 	const shownLive = new Set<StepResult>()
@@ -172,6 +190,7 @@ export async function runContrib(params: {
 		keyAfter: found ? keyBefore : computeCheckKey({ root: cwd, commandHash }),
 		...(found && { reused: found }),
 		...(params.storeRoot && { storeRoot: params.storeRoot }),
+		...(params.checkStore && { checkStore: params.checkStore }),
 	})
 
 	const mutation = mutationLine(cwd)
@@ -297,7 +316,12 @@ async function runRows(params: {
 			const running = progress?.start({ name: step.name, detail: `dialecte ${step.builtin}` })
 			const finishPart = recorder.startPart({ name: step.name, heavy: false })
 			const base = params.rulesBase
-			const result = step.builtin === 'rules' ? rulesResult({ root, base }) : releaseResult(root)
+			const result =
+				step.builtin === 'rules'
+					? rulesResult({ root, base })
+					: step.builtin === 'changelog'
+						? changelogResult({ root, base })
+						: releaseResult(root)
 			durations.set(result, finishPart())
 			results.push(result)
 			if (running) showLive({ result, finish: running.finish })
@@ -416,6 +440,22 @@ function rulesResult(params: { root: string; base: string | undefined }): StepRe
 	}
 }
 
+/** The changelog row: the change since `base` brings the fragment a README or help edit asks for (`checkChangeFragment`). */
+function changelogResult(params: { root: string; base: string | undefined }): StepResult {
+	const step = { name: CONTRIB_BUILTIN_STEPS.changelog.name, run: '' }
+	// no base: no change to read, said plainly rather than read as a pass
+	if (params.base === undefined)
+		return { step, status: 'passed', counts: {}, restored: [], note: FRAGMENT_CHECK_LINES.noBase }
+	const check = checkChangeFragment({ root: params.root, base: params.base })
+	return {
+		step,
+		status: check.status,
+		counts: {},
+		restored: [],
+		...(check.status === 'failed' ? { reason: check.reason } : { note: check.note }),
+	}
+}
+
 /** `first: <file>:<line>:<column> <rule>`, and how many more errors there are. */
 function firstErrorOf(errors: readonly RuleFinding[]): string {
 	const [first] = errors
@@ -459,7 +499,7 @@ function gateReusedResult(params: {
 
 /** The row is the built-in release row, the last of every run. */
 function isReleaseRow(step: { name: string }): boolean {
-	return step.name === CONTRIB_BUILTIN_STEPS.last.name
+	return step.name === CONTRIB_BUILTIN_STEPS.release.name
 }
 
 /** The package steps among the rows: those with a shell command. */

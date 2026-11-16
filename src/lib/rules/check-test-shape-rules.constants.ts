@@ -17,6 +17,7 @@ export const PLAN_TAG_PATTERNS: readonly RegExp[] = [
 	/\bround[ _-]?\d+\b/i,
 	/\bR\d+-\d+\b/,
 	/\bstep[ _-]?\d+\b/i,
+	/\bstation[ _-]?\d+\b/i,
 ]
 
 /** The label of the committed-text patterns that are plan tags: a title may not carry them either. */
@@ -43,6 +44,9 @@ export const EXPORT_QUERY_FIELDS: readonly string[] = ['expectedQueries', 'unexp
 
 /** Test support file names `fileKindOf` reads as implementation: `x-fixtures.ts`, `x.test-fixtures.ts`, `x-cases.ts`. */
 export const TEST_SUPPORT_NAME_PATTERN = /(-fixtures|-cases)\.[cm]?tsx?$/
+
+/** A fixtures module by name: `x.test-fixtures.ts`, `x-fixtures.ts`, `x.fixtures.ts` (the kind it names first). */
+export const FIXTURES_MODULE_NAME_PATTERN = /(\.test-fixtures|-fixtures|\.fixtures)\.[cm]?tsx?$/
 
 /** The top-level folder of a package's test support. */
 export const TEST_FOLDER = 'test'

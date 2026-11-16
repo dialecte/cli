@@ -2,11 +2,16 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { STORE_NOW, STORE_WRITER_CLI } from '../../test/handover-store-scenario.constants.ts'
+import {
+	HANDOVER_LOT_NAME,
+	STORE_NOW,
+	STORE_WRITER_CLI,
+} from '../../test/handover-store-scenario.constants.ts'
 import {
 	createBranchRepository,
 	entryNamesOf,
 	runIn,
+	storeLotFolder,
 	writeLotsFile,
 } from '../../test/handover-store-scenario.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
@@ -24,15 +29,20 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 
 const CHANGES = { 'src/read.ts': 'export function read() {\n\treturn 1\n}\n' }
 
-/** A hand-over of the one changed file written into a new folder with `extra` arguments; the result and the folder. */
-function writeWith(params: { root: string; extra: string[] }): {
+/**
+ * A hand-over of the one changed file written with `extra` arguments, into a new folder (a new store lot of the
+ * repository when `lot` is set, for a case that runs it); the result and the folder.
+ */
+function writeWith(params: { root: string; extra: string[]; lot?: boolean }): {
 	result: CommandResult
 	folder: string
 } {
 	const { root } = params
 	writeFiles({ root, files: CHANGES })
 	const lotsPath = writeLotsFile({ root, name: 'target' })
-	const folder = join(temporaryFolder('dialecte-target-out-'), 'handover')
+	const folder = params.lot
+		? storeLotFolder({ root, name: HANDOVER_LOT_NAME })
+		: join(temporaryFolder('dialecte-target-out-'), 'handover')
 	const result = runHandover({
 		argv: [lotsPath, '--out', folder, ...params.extra],
 		cliPath: STORE_WRITER_CLI,
@@ -163,7 +173,7 @@ describe('handover write --target', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('R3-8 a --target branch named a$&b, then moved → the run guard line holds the name verbatim, never a replacement pattern read', async () => {
 		const root = createBranchRepository()
 		git({ root, args: ['branch', 'a$&b'] })
-		const { folder } = writeWith({ root, extra: ['--target', 'a$&b'] })
+		const { folder } = writeWith({ root, extra: ['--target', 'a$&b'], lot: true })
 		moveBranchTip({ root, branch: 'a$&b' })
 
 		const run = await runIn({ cwd: root, argv: [folder] })

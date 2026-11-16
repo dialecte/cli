@@ -10,7 +10,12 @@ import {
 	makeDevelopOriginDefault,
 	pointOriginHeadAt,
 } from '../../test/rule-gaps-base-branch.ts'
-import { git, initializeRepository, temporaryFolder } from '../../test/scratch-repository.ts'
+import {
+	cloneRepository,
+	git,
+	initializeRepository,
+	temporaryFolder,
+} from '../../test/scratch-repository.ts'
 import { WORKSPACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NO_BASE_BRANCH_FOUND } from '../lib/gate/gate-base.constants.ts'
 import { readHygieneBaseline } from '../lib/worktree/hygiene.ts'
@@ -76,6 +81,24 @@ describe('worktree add: where a new branch starts', { timeout: WORKSPACE_CASE_TI
 
 		expect(result.exitCode).toBe(0)
 		expect(commitOf({ root: core, rev: 'feat/thing' })).toBe(develop)
+	})
+
+	it("no --from, origin a commit ahead that this checkout never fetched (a queue merged on the host) → fetched first, the new branch starts at origin's tip", () => {
+		const workspace = temporaryFolder('dialecte-workspace-')
+		const origin = join(workspace, 'origin.git')
+		const core = initializeRepository({ root: join(workspace, 'core') })
+		git({ root: workspace, args: ['init', '-q', '--bare', '-b', 'main', origin] })
+		git({ root: core, args: ['remote', 'add', 'origin', origin] })
+		git({ root: core, args: ['push', '-q', 'origin', 'main'] })
+		const other = join(workspace, 'other')
+		cloneRepository({ origin, into: other })
+		const landed = commitEmpty({ root: other, message: 'feat: landed by the queue' })
+		git({ root: other, args: ['push', '-q', 'origin', 'main'] })
+
+		const result = addThing({ workspace, core })
+
+		expect(result.exitCode).toBe(0)
+		expect(commitOf({ root: core, rev: 'feat/thing' })).toBe(landed)
 	})
 
 	it('no --from and no base branch found (no main, no master, no origin/HEAD) → refused with the resolver’s ask, no worktree, no branch and no index taken: the next add, once main exists, is 0001', () => {
@@ -173,7 +196,7 @@ describe(
 			expect(result.output).not.toContain('old-merged')
 		})
 
-		it('origin/HEAD names develop but only origin has it (no local develop) → the repository skipped, no local branch develop, nothing listed', async () => {
+		it('origin/HEAD names develop and only origin has it → merged work read against origin/develop: a branch merged there is listed', async () => {
 			const workspace = temporaryFolder('dialecte-workspace-')
 			const core = initializeRepository({ root: join(workspace, 'core') })
 			mergeBranchInto({ root: core, branch: 'main', name: 'old-merged' })
@@ -183,8 +206,21 @@ describe(
 			const result = await planPrune(workspace)
 
 			expect(result.exitCode).toBe(0)
-			expect(result.output).toContain('skipped, no local branch develop')
-			expect(result.output).not.toContain('old-merged')
+			expect(result.output).toMatch(/remove\s+branch\s+old-merged/)
+		})
+
+		it('a stale local main, the lot merged only on origin/main (a queue landed it) → listed: merged work is read against origin', async () => {
+			const workspace = temporaryFolder('dialecte-workspace-')
+			const core = initializeRepository({ root: join(workspace, 'core') })
+			const start = commitOf({ root: core, rev: 'main' })
+			mergeBranchInto({ root: core, branch: 'main', name: 'landed' })
+			addOriginBranch({ root: core, branch: 'main', at: 'main' })
+			git({ root: core, args: ['reset', '-q', '--hard', start] })
+
+			const result = await planPrune(workspace)
+
+			expect(result.exitCode).toBe(0)
+			expect(result.output).toMatch(/remove\s+branch\s+landed/)
 		})
 	},
 )

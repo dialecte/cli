@@ -7,10 +7,11 @@ export const DEFAULT_CONTRIB_STEPS: readonly GateStep[] = [
 	{ name: 'type-bench', run: 'npm run type-bench:check' },
 ]
 
-/** The rows `dialecte contrib` runs in process: first and last, around the package steps. */
-export const CONTRIB_BUILTIN_STEPS: Readonly<Record<'first' | 'last', BuiltinStep>> = {
-	first: { name: 'rules', builtin: 'rules' },
-	last: { name: 'release', builtin: 'release' },
+/** The rows `dialecte contrib` runs in process: rules and changelog before the package steps, release after them. */
+export const CONTRIB_BUILTIN_STEPS: Readonly<Record<BuiltinStep['builtin'], BuiltinStep>> = {
+	rules: { name: 'rules', builtin: 'rules' },
+	changelog: { name: 'changelog', builtin: 'changelog' },
+	release: { name: 'release', builtin: 'release' },
 }
 
 /** `dialecte contrib` in a consumer: the contributor checks are a dialecte package's. */

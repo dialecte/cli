@@ -56,7 +56,7 @@ export type GateRecordMode = GateMode | 'hook' | 'hook-gate' | 'contrib'
 export type CheckKey = {
 	/** The git tree id of the state it ran on. */
 	tree: string
-	/** sha256 (hex) of `node_modules/.package-lock.json`, `none` when absent. */
+	/** The lock key of the checked tree's `package-lock.json` (`computeLockKey`), `none` when it holds none. */
 	lockHash: string
 	/** sha256 (hex) of what ran: the gate's resolved steps and `--base`, or the commit hook's files. */
 	commandHash: string
@@ -160,6 +160,8 @@ export type CardGateConfig = {
 	invalid?: string
 	/** The refusal of the gate base: a set `dialecte.baseBranch` naming no branch. */
 	baseRefusal?: string
+	/** False when the package declares its hook list (`dialecte.gate.hook`): its hook's tests are no full suite. */
+	hookProvesFull?: boolean
 }
 
 /** How a record's gate base reads against the card's: the same, an ancestor of it, or neither. */

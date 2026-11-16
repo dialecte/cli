@@ -9,7 +9,7 @@
  */
 import { hasFlag } from '../config.ts'
 import { partsOf, reuseOf, startStep } from '../events/record-step.ts'
-import { hashGateCommand, readIndexTree, readInstalledKey } from '../gate-records/check-key.ts'
+import { hashHookGateCommand, readIndexTree, readTreeKey } from '../gate-records/check-key.ts'
 import { HOOK_GATE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { recordGate } from '../gate-records/gate-records.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
@@ -21,6 +21,7 @@ import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
+import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
 import { readEmptyTree, resolveGateBase } from './gate-base.ts'
 import {
 	GATE_FAILED_TAIL_LINE,
@@ -33,7 +34,12 @@ import {
 	GATE_HOOK_RUNNING_LINE,
 	GATE_HOOK_SELECTION_WORDS,
 } from './gate-config.constants.ts'
-import { GateConfigError, holdsScopedStep, listHookSteps, resolveGateSteps } from './gate-config.ts'
+import {
+	GateConfigError,
+	holdsScopedStep,
+	resolveGateSteps,
+	resolveHookSteps,
+} from './gate-config.ts'
 import { answerHookSteps } from './hook-step-answers.ts'
 import { runGateSteps } from './run-gate.ts'
 import { renderVitestTestsLine, sumStepCounts } from './step-counts.ts'
@@ -101,8 +107,8 @@ export async function runHookGate(params: {
 		hasHead: prepared.hasHead,
 		key: {
 			tree,
-			...prepared.installed,
-			commandHash: hashGateCommand({ steps: hookSteps, gateBase: prepared.gateBase }),
+			...prepared.treeKey,
+			commandHash: hashHookGateCommand(prepared),
 		},
 		steps: hookSteps,
 		stepHashes: prepared.stepHashes,
@@ -195,7 +201,7 @@ function findHookAnswers(params: {
 	return answerHookSteps({
 		cwd,
 		tree: prepared.tree,
-		installed: prepared.installed,
+		treeKey: prepared.treeKey,
 		checkStore: params.checkStore,
 		steps: prepared.hookSteps,
 		stepHashes: prepared.stepHashes,
@@ -206,12 +212,15 @@ function findHookAnswers(params: {
 
 /**
  * What a hook run starts from: the hook steps of the full list, the hook base (resolved once when a full step is
- * scoped; shown when a hook step is), whether there is a HEAD, the committed tree, the install and each step's
- * hash at the hook base. A result instead when the hook ends before any step: no hook step, or a refused base.
+ * scoped; shown when a hook step is), whether there is a HEAD, the committed tree, what it locks and each step's
+ * hash at the hook base. A result instead when the hook ends before any step: no hook step, a refused base, or a
+ * node_modules that does not install the committed tree's lock (`checkInstallMatchesTree`).
  */
 function prepareHookRun(params: {
 	cwd: string
 	indexFile: string | undefined
+	/** False when git names another repository's index: the install is not checked against it. */
+	reusable: boolean
 	handoverBase: HandoverBase | undefined
 	handoverIgnored: string | undefined
 }): PreparedHookRun | { result: CommandResult } {
@@ -221,11 +230,11 @@ function prepareHookRun(params: {
 	if ('refusal' in source) throw new GateConfigError(source.refusal)
 	const { packageJson } = source
 	const fullSteps = resolveGateSteps({ packageJson, mode: 'full' })
-	const hookSteps = listHookSteps(fullSteps)
+	const hookSteps = resolveHookSteps({ packageJson })
 	if (hookSteps.length === 0)
 		return { result: { exitCode: 0, output: textOf([GATE_HOOK_NO_STEP_LINE]) } }
-	// a scoped full step's hash holds the base; the hook says it only when it runs a scoped step
-	const hookBase = holdsScopedStep(fullSteps)
+	// a scoped full or hook step's hash holds the base; the hook says it only when it runs a scoped step
+	const hookBase = holdsScopedStep([...fullSteps, ...hookSteps])
 		? resolveHookBase({
 				cwd,
 				handoverBase: params.handoverBase,
@@ -236,6 +245,15 @@ function prepareHookRun(params: {
 	if (hookBase !== undefined && 'refusal' in hookBase)
 		return { result: { exitCode: 1, output: textOf([hookBase.refusal]) } }
 	const gateBase = hookBase?.base.commit
+	const tree = readIndexTree({
+		root: cwd,
+		...(params.indexFile && { indexFile: params.indexFile }),
+	})
+	// a node_modules that does not install the committed lock: no step runs, no record answers; an index of another
+	// repository is no commit of this one to check (its steps run, keyed on nothing they answer)
+	const installRefusal = params.reusable ? checkInstallMatchesTree({ root: cwd, tree }) : undefined
+	if (installRefusal !== undefined)
+		return { result: { exitCode: 1, output: textOf([`gate --hook: ${installRefusal}`]) } }
 	return {
 		packageJson,
 		hookSteps,
@@ -243,8 +261,8 @@ function prepareHookRun(params: {
 		gateBase,
 		// a record is keyed on HEAD: a repository with no commit yet has none to answer and keeps none
 		hasHead: readHeadOrNone(cwd) !== undefined,
-		tree: readIndexTree({ root: cwd, ...(params.indexFile && { indexFile: params.indexFile }) }),
-		installed: readInstalledKey(cwd),
+		tree,
+		treeKey: readTreeKey({ root: cwd, tree }),
 		stepHashes: new Map(
 			hookSteps.map((step) => [step.name, hashGateStep({ root: cwd, step, gateBase })]),
 		),

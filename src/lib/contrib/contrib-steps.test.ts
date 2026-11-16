@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import type { PackageJson } from '../package-json.types.ts'
 
 const RULES_ROW = { name: 'rules', builtin: 'rules' }
+const CHANGELOG_ROW = { name: 'changelog', builtin: 'changelog' }
 const RELEASE_ROW = { name: 'release', builtin: 'release' }
 const DOCS_STEP = { name: 'docs', run: 'npm run doc:build', restoresGeneratedDocs: true }
 const TYPE_BENCH_STEP = { name: 'type-bench', run: 'npm run type-bench:check' }
@@ -40,37 +41,38 @@ describe('resolveContribSteps scoped', () => {
 			resolveContribSteps({
 				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { contrib: { steps: [heavy] } } },
 			}),
-		).toEqual([RULES_ROW, heavy, RELEASE_ROW])
+		).toEqual([RULES_ROW, CHANGELOG_ROW, heavy, RELEASE_ROW])
 	})
 })
 
 describe('resolveContribSteps', () => {
-	it('without dialecte.contrib → rules, docs, type-bench, release', () => {
+	it('without dialecte.contrib → rules, changelog, docs, type-bench, release', () => {
 		expect(
 			resolveContribSteps({
 				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { profile: 'contributor' } },
 			}),
-		).toEqual([RULES_ROW, DOCS_DEFAULT, TYPE_BENCH_DEFAULT, RELEASE_ROW])
+		).toEqual([RULES_ROW, CHANGELOG_ROW, DOCS_DEFAULT, TYPE_BENCH_DEFAULT, RELEASE_ROW])
 	})
 
-	it('with steps: [] → rules, release', () => {
+	it('with steps: [] → rules, changelog, release', () => {
 		expect(resolveContribSteps({ packageJson: { dialecte: { contrib: { steps: [] } } } })).toEqual([
 			RULES_ROW,
+			CHANGELOG_ROW,
 			RELEASE_ROW,
 		])
 	})
 
-	it('with one declared step → rules, that step, release', () => {
+	it('with one declared step → rules, changelog, that step, release', () => {
 		const declared = { name: 'bench', run: 'npm run bench' }
 
 		expect(
 			resolveContribSteps({
 				packageJson: { scripts: WIRED_SCRIPTS, dialecte: { contrib: { steps: [declared] } } },
 			}),
-		).toEqual([RULES_ROW, declared, RELEASE_ROW])
+		).toEqual([RULES_ROW, CHANGELOG_ROW, declared, RELEASE_ROW])
 	})
 
-	it('a package with a type-narrowing script → rules, the declared or default steps, type-narrowing, release', () => {
+	it('a package with a type-narrowing script → rules, changelog, the declared or default steps, type-narrowing, release', () => {
 		const declared = { name: 'bench', run: 'npm run bench' }
 
 		const defaults = resolveContribSteps({
@@ -91,13 +93,14 @@ describe('resolveContribSteps', () => {
 
 		expect(defaults).toEqual([
 			RULES_ROW,
+			CHANGELOG_ROW,
 			DOCS_DEFAULT,
 			TYPE_BENCH_DEFAULT,
 			TYPE_NARROWING_STEP,
 			RELEASE_ROW,
 		])
-		expect(empty).toEqual([RULES_ROW, TYPE_NARROWING_STEP, RELEASE_ROW])
-		expect(one).toEqual([RULES_ROW, declared, TYPE_NARROWING_STEP, RELEASE_ROW])
+		expect(empty).toEqual([RULES_ROW, CHANGELOG_ROW, TYPE_NARROWING_STEP, RELEASE_ROW])
+		expect(one).toEqual([RULES_ROW, CHANGELOG_ROW, declared, TYPE_NARROWING_STEP, RELEASE_ROW])
 	})
 
 	it('a declared step already running npm run type-narrowing, a package with the script → that step once, none added after it; the same declared steps without it get one', () => {
@@ -121,8 +124,8 @@ describe('resolveContribSteps', () => {
 			},
 		})
 
-		expect(without).toEqual([RULES_ROW, DOCS_STEP, TYPE_NARROWING_STEP, RELEASE_ROW])
-		expect(alone).toEqual([RULES_ROW, declared, RELEASE_ROW])
-		expect(beside).toEqual([RULES_ROW, DOCS_STEP, declared, RELEASE_ROW])
+		expect(without).toEqual([RULES_ROW, CHANGELOG_ROW, DOCS_STEP, TYPE_NARROWING_STEP, RELEASE_ROW])
+		expect(alone).toEqual([RULES_ROW, CHANGELOG_ROW, declared, RELEASE_ROW])
+		expect(beside).toEqual([RULES_ROW, CHANGELOG_ROW, DOCS_STEP, declared, RELEASE_ROW])
 	})
 })

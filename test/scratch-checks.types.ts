@@ -4,6 +4,6 @@ export type RehearsedVariant =
 	| 'a gate of an earlier tree'
 	| 'the lot changes package-lock.json'
 	| 'the hook stages files'
-	| 'node_modules/.package-lock.json changed since the gate'
+	| 'the gate record keyed on another lock'
 	| 'a linked dependency changed since the gate'
 	| '--full'

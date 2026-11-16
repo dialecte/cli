@@ -13,7 +13,6 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSyn
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import { isAtOrInside, realPathOf } from '../file-system.ts'
-import { LOCAL_BRANCH_REF } from '../gate/gate-base.constants.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
@@ -177,9 +176,8 @@ function planRepository(params: {
 	const found = findBaseBranchRef({ root: repository, packageJson: readPackageJson(repository) })
 	if ('refusal' in found) return { repository, items: [], skipped: found.refusal }
 	const baseBranch = found.branch
-	// merged work is compared with the local branch: origin's alone is not enough
-	if (found.ref !== LOCAL_BRANCH_REF.replace('{branch}', () => baseBranch))
-		return { repository, baseBranch, items: [], skipped: `no local branch ${baseBranch}` }
+	// merged work is compared with the base where it is newest (`findBaseRef`): origin's once the queue lands there
+	const baseRef = found.ref
 	const cd = `cd ${shellQuote(repository)} &&`
 	const commonFolder = commonFolderOf(repository)
 	// each hand-over's state read once (it has one repository): three places of the plan ask it
@@ -252,6 +250,7 @@ function planRepository(params: {
 					worktree: name,
 					branch: worktree.branch,
 					baseBranch,
+					baseRef,
 					pending: pendingWorktrees.has(realpathSync(name)),
 					links: params.links,
 					ownedRuns,
@@ -284,7 +283,7 @@ function planRepository(params: {
 		.split('\n')
 		.filter(Boolean)) {
 		if (keptBranches.has(branch)) continue
-		const unmerged = unmergedCount({ root: repository, branch, baseBranch })
+		const unmerged = unmergedCount({ root: repository, branch, baseRef })
 		if (unmerged > 0) continue
 		if (pendingBranches.has(branch)) {
 			items.push({ kind: 'branch', name: branch, kept: 'a hand-over is pending on it' })
@@ -294,6 +293,7 @@ function planRepository(params: {
 			root: repository,
 			branch,
 			baseBranch,
+			baseRef,
 			baselineHead: undefined,
 		})
 		if (keptByReflog) {
@@ -470,6 +470,8 @@ function whyKeepWorktree(params: {
 	worktree: string
 	branch: string
 	baseBranch: string
+	/** The ref merged work is compared with (`findBaseRef`). */
+	baseRef: string
 	pending: boolean
 	links: readonly FolderLink[]
 	/** The repository's runs that still run or died before reporting: the worktree one was started from stays. */
@@ -482,7 +484,7 @@ function whyKeepWorktree(params: {
 	const unmerged = unmergedCount({
 		root: params.repository,
 		branch: params.branch,
-		baseBranch: params.baseBranch,
+		baseRef: params.baseRef,
 	})
 	if (unmerged > 0) return `${unmerged} commit(s) not in ${params.baseBranch}`
 	if (params.pending || existsSync(handoverLockPath(params.worktree)))
@@ -498,6 +500,7 @@ function whyKeepWorktree(params: {
 		root: params.repository,
 		branch: params.branch,
 		baseBranch: params.baseBranch,
+		baseRef: params.baseRef,
 		baselineHead: readHygieneBaseline(params.worktree)?.head,
 	})
 	if (keptByReflog) return keptByReflog
@@ -519,6 +522,8 @@ function whyKeepByReflog(params: {
 	root: string
 	branch: string
 	baseBranch: string
+	/** The ref merged work is compared with (`findBaseRef`). */
+	baseRef: string
 	baselineHead: string | undefined
 }): string | undefined {
 	const { root, branch } = params
@@ -533,7 +538,7 @@ function whyKeepByReflog(params: {
 	const unreached = Number(
 		readGit({
 			root,
-			args: ['rev-list', '--count', ...commits, '--not', `refs/heads/${params.baseBranch}`],
+			args: ['rev-list', '--count', ...commits, '--not', params.baseRef],
 		}).trim(),
 	)
 	if (unreached > 0)
@@ -570,11 +575,11 @@ function listRemovableIgnored(worktree: string): string[] {
 		.sort()
 }
 
-function unmergedCount(params: { root: string; branch: string; baseBranch: string }): number {
+function unmergedCount(params: { root: string; branch: string; baseRef: string }): number {
 	return Number(
 		readGit({
 			root: params.root,
-			args: ['rev-list', '--count', `${params.baseBranch}..refs/heads/${params.branch}`],
+			args: ['rev-list', '--count', `${params.baseRef}..refs/heads/${params.branch}`],
 		}).trim(),
 	)
 }

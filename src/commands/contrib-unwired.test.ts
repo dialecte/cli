@@ -36,6 +36,7 @@ describe(
 				exitCode: 1,
 				rows: [
 					{ name: 'rules', status: 'not-run', detail: NOT_RUN_DETAIL },
+					{ name: 'changelog', status: 'not-run', detail: NOT_RUN_DETAIL },
 					{
 						name: 'docs',
 						status: 'failed',
@@ -140,6 +141,7 @@ describe(
 				exitCode: 1,
 				rows: [
 					{ name: 'rules', status: 'not-run', detail: NOT_RUN_DETAIL },
+					{ name: 'changelog', status: 'not-run', detail: NOT_RUN_DETAIL },
 					{ name: 'bench', status: 'not-run', detail: NOT_RUN_DETAIL },
 					{
 						name: 'docs',

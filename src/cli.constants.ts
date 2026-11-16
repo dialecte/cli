@@ -3,6 +3,7 @@ import { run as api } from './commands/api.ts'
 import { run as ask } from './commands/ask.ts'
 import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
+import { run as changelog } from './commands/changelog.ts'
 import { run as contrib } from './commands/contrib.ts'
 import { run as coverage } from './commands/coverage.ts'
 import { run as doctor } from './commands/doctor.ts'
@@ -50,6 +51,7 @@ export const COMMANDS = {
 	rules,
 	gate,
 	contrib,
+	changelog,
 	tdd,
 	new: newVerb,
 	handover,

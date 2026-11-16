@@ -104,12 +104,14 @@ export function readChangedPaths(changedFile: string): string[] {
 
 /**
  * Writes a scoped step's selection where the gate asked (schema 1): the gate's base and tree, the number of changed
- * paths judged, the selected ids with their reasons, nothing skipped.
+ * paths judged, the selected ids with their reasons, and what it skipped (none unless given).
  */
 export function writeSelectionFile(params: {
 	scope: ScopedTestsEnvironment
 	changed: number
 	selected: readonly { id: string; reasons: readonly string[] }[]
+	/** What the step leaves to another run, with why (the paths left to the full suite on CI). */
+	skipped?: readonly { id: string; reason: string }[]
 }): void {
 	const { scope } = params
 	const selection = {
@@ -118,7 +120,7 @@ export function writeSelectionFile(params: {
 		tree: scope.tree,
 		changed: params.changed,
 		selected: params.selected,
-		skipped: [],
+		skipped: params.skipped ?? [],
 	}
 	writeFileSync(scope.selection, `${JSON.stringify(selection)}\n`)
 }

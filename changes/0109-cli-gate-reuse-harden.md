@@ -1,0 +1,10 @@
+### Changed
+
+- `DIALECTE_CHECK_STORE` is honoured only when it names a git common dir (an existing folder holding a `HEAD` file and an `objects` folder); any other value (relative, missing, empty, a partial folder) is ignored with one line `... DIALECTE_CHECK_STORE ignored: no git common dir at <value>` (a relative one: `not an absolute path`) and the repository's own store is used. The hook's steps never see the variable.
+
+### Fixed
+
+- A non-final lot of a multi-lot hand-over is answered in the real run too: `handover run --rehearse` commits lot n in its clone with the working tree of HEAD and lots 1..n only (a later lot's files as HEAD has them, new ones absent, put back after the commit), so the clone's hook runs lot n's steps on lot n's tree and records it in the repository's store; before, every lot but the last ran its suite again in the real run unless a `gate --full` of its own tree stood. A lot whose steps fail without a later lot's file now fails its rehearsal, as its real commit would. The real run never changes its working tree.
+- The shared record store no longer loses a record when two writers store records of one tree at once (a rehearsal clone's hook and a worktree's gate): each write takes a per-tree lock (the writer's pid and start time; a lock whose writer is gone, or alive with another start time, is taken over; a live holder is waited for a bounded time) and re-reads the records under it before merging; the lock is released when the write throws.
+- The landing line under each `handover run` commit (`hook: reused ... · ran ...`) names only the hook's own steps: nothing after a failed step's `--- last lines of <step> ---` marker counts, whatever its shape. When the hook's steps were answered from several runs, the card's `test:hook reused` names the oldest of them.
+- The hint under a written hand-over names the command that works while the repository is held: `dialecte handover write <lots> [--out <out>] --rehash` (`--out` as the write got it, shell-quoted when it needs quoting); it printed `dialecte handover <lots> --rehash`, which is refused then.

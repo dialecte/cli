@@ -1,9 +1,9 @@
 /**
  * Which of `gate --hook`'s steps a record answers: each step by the newest green record of the committed tree and
- * install that ran it as it is now (its step hash), any mode; a scoped step also by a run that checked everything
+ * its lock that ran it as it is now (its step hash), any mode; a scoped step also by a run that checked everything
  * (recorded at the empty tree). When no step hash answers a test step, a green `--full` record of the whole key - else
  * a covering `--release` one - written by an older cli (no step hashes) answers the test steps while its whole key
- * still matches (an older cli keyed the install on the lock's bytes: in practice only with no installed lock).
+ * still matches (in practice only with no lock: older clis keyed the installed lock, this one the tree's).
  */
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
 import { RELEASE_RECORD_MODE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
@@ -84,13 +84,13 @@ function findHookStepAnswer(
 function placeOf(params: HookAnswerPlace): {
 	root: string
 	tree: string
-	installed: HookAnswerPlace['installed']
+	treeKey: HookAnswerPlace['treeKey']
 	checkStore?: string
 } {
 	return {
 		root: params.cwd,
 		tree: params.tree,
-		installed: params.installed,
+		treeKey: params.treeKey,
 		...(params.checkStore && { checkStore: params.checkStore }),
 	}
 }
@@ -113,7 +113,7 @@ function findOlderCliAnswer(
 	params: HookAnswerPlace & { hashes: ModeCommandHashes },
 ): { line: string; record: GateRecord } | undefined {
 	const { hashes } = params
-	const key: CheckKey = { tree: params.tree, ...params.installed, commandHash: hashes.full }
+	const key: CheckKey = { tree: params.tree, ...params.treeKey, commandHash: hashes.full }
 	const full = findOlderCliRecord({ ...params, mode: 'full', key })
 	if (full)
 		return {

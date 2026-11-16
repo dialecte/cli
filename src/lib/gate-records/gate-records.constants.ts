@@ -301,11 +301,8 @@ export const CHECK_STORE_LOCK_WAIT_MS = 5000
 /** How long, in milliseconds, a writer pauses between two looks at a live holder's lock. */
 export const CHECK_STORE_LOCK_POLL_MS = 25
 
-/** What npm installed, as a check key hashes it: npm's own lock of `node_modules`, relative to the package. */
-export const INSTALLED_LOCK_FILE = 'node_modules/.package-lock.json'
-
-/** A check key's `lockHash` when nothing is installed. */
-export const NO_INSTALLED_LOCK = 'none'
+/** A check key's `lockHash` when the checked tree holds no package-lock.json. */
+export const NO_LOCK_KEY = 'none'
 
 /** A dependency installed from a folder of the machine: `"file:../core"`. */
 export const FILE_DEPENDENCY_PREFIX = 'file:'

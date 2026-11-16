@@ -74,17 +74,17 @@ function storeRecord(params: {
 	return record
 }
 
-/** What an asker of `stepHash` at `tree` and the `installed` state of the repository passes to `findStepAnswer`. */
+/** What an asker of `stepHash` at `tree` and the `treeKey` of that tree passes to `findStepAnswer`. */
 function askOf(params: {
 	root: string
 	stepHash: string
 	tree?: string
-	installed?: Partial<typeof INSTALLED>
+	treeKey?: Partial<typeof INSTALLED>
 }): Parameters<typeof findStepAnswer>[0] {
 	return {
 		root: params.root,
 		tree: params.tree ?? TREE,
-		installed: { ...INSTALLED, ...params.installed },
+		treeKey: { ...INSTALLED, ...params.treeKey },
 		stepHash: params.stepHash,
 	}
 }
@@ -243,7 +243,7 @@ describe('findStepAnswer', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		label: string
 		steps: RecordedStep[]
 		key?: Partial<CheckKey>
-		asked?: { tree?: string; installed?: Partial<typeof INSTALLED> }
+		asked?: { tree?: string; treeKey?: Partial<typeof INSTALLED> }
 	}
 	const NO_ANSWER: NoAnswerCase[] = [
 		{
@@ -290,12 +290,12 @@ describe('findStepAnswer', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		{
 			label: 'an asker of another lockHash',
 			steps: [stepOf({ name: 'tests', stepHash: STEP_HASH })],
-			asked: { installed: { lockHash: '9'.repeat(64) } },
+			asked: { treeKey: { lockHash: '9'.repeat(64) } },
 		},
 		{
 			label: 'an asker of another linked',
 			steps: [stepOf({ name: 'tests', stepHash: STEP_HASH })],
-			asked: { installed: { linked: '9'.repeat(64) } },
+			asked: { treeKey: { linked: '9'.repeat(64) } },
 		},
 	]
 
@@ -305,7 +305,7 @@ describe('findStepAnswer', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 
 		expect(
 			findStepAnswer(
-				askOf({ root, stepHash: STEP_HASH, tree: asked?.tree, installed: asked?.installed }),
+				askOf({ root, stepHash: STEP_HASH, tree: asked?.tree, treeKey: asked?.treeKey }),
 			),
 		).toBeUndefined()
 	})

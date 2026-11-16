@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest'
 import type { GateStep } from '../gate/gate-config.types.ts'
 
 /** The lines of the gates a consumer's card must not hold: the contributor checks. */
-const CONTRIBUTOR_ONLY_LINES = ['rules', 'docs', 'type-bench', 'release']
+const CONTRIBUTOR_ONLY_LINES = ['rules', 'changelog', 'docs', 'type-bench', 'release']
 
 /** The package steps the cards count: docs and type-bench, both passing. */
 function passingSteps(): GateStep[] {
@@ -106,12 +106,13 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const { data, text } = cardOf({ root })
 
 		expect(text).toMatch(/^├─ contrib /m)
-		expect(gateLinesOf(text)).toContain('✓ contrib rules · docs · type-bench · release')
+		expect(gateLinesOf(text)).toContain('✓ contrib rules · changelog · docs · type-bench · release')
 		expect(
 			gateLinesOf(text).filter((line) => /^[✓!✗] (rules|docs|type-bench|release)\b/.test(line)),
 		).toEqual([])
 		expect(data.contrib).toEqual([
 			{ name: 'rules', status: 'passed', detail: expect.any(String) },
+			{ name: 'changelog', status: 'passed', detail: expect.any(String) },
 			{ name: 'docs', status: 'passed', detail: expect.any(String) },
 			{ name: 'type-bench', status: 'passed', detail: expect.any(String) },
 			{ name: 'release', status: 'passed', detail: expect.any(String) },
@@ -129,10 +130,11 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		const { data, text } = cardOf({ root })
 
 		expect(gateLinesOf(text)).toContain(
-			'✓ contrib rules · docs · type-bench · type-narrowing · release',
+			'✓ contrib rules · changelog · docs · type-bench · type-narrowing · release',
 		)
 		expect(data.contrib?.map((row) => row.name)).toEqual([
 			'rules',
+			'changelog',
 			'docs',
 			'type-bench',
 			'type-narrowing',
@@ -200,6 +202,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		)
 		expect(data.contrib?.map((line) => line.name)).toEqual([
 			'rules',
+			'changelog',
 			'docs',
 			'type-bench',
 			'release',
@@ -207,7 +210,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(data.contrib?.every((line) => line.stale)).toBe(true)
 		expect(data.gates.filter((line) => line.name === 'rules')).toEqual([])
 		expect(data.verdict).toBe('BLOCKED')
-		expect(data.otherTreeGates).toEqual(['rules', 'docs', 'type-bench', 'release'])
+		expect(data.otherTreeGates).toEqual(['rules', 'changelog', 'docs', 'type-bench', 'release'])
 		expect(data.failedGates).toEqual([])
 	})
 
@@ -292,6 +295,7 @@ describe('the card of a contributor', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(data.profile).toBe('contributor')
 		expect(data.contrib).toEqual([
 			{ name: 'rules', status: 'passed', detail: expect.any(String) },
+			{ name: 'changelog', status: 'passed', detail: expect.any(String) },
 			{ name: 'docs', status: 'passed', detail: expect.any(String) },
 			{ name: 'type-bench', status: 'warning', detail: expect.any(String) },
 			{ name: 'release', status: 'passed', detail: expect.any(String) },

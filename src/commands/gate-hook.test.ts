@@ -26,7 +26,8 @@ import {
 	runningLineOf,
 	stageChange,
 } from '../../test/gate-hook.ts'
-import { readRecordFile } from '../../test/gate-records.ts'
+import { readRecordFile, rekeyStoredLocks } from '../../test/gate-records.ts'
+import { FOREIGN_LOCK_HASH } from '../../test/lock-key.constants.ts'
 import {
 	createScopedPackage,
 	createScopedStep,
@@ -213,10 +214,10 @@ const RUN_INSTEAD: RunInsteadCase[] = [
 		},
 	},
 	{
-		name: 'the install changed since the gate (another lockHash)',
+		name: 'the green gate record keyed on another lock (an older cli keyed the installed one)',
 		setup: async ({ root }) => {
 			await seedFullGate(root)
-			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } })
+			rekeyStoredLocks({ root, lockHash: FOREIGN_LOCK_HASH })
 		},
 	},
 	{

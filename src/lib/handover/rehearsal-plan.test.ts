@@ -1,5 +1,5 @@
 /** `planRehearsal`: per lot, reuse a green record of the tree the lot leaves, or rehearse it, and say why. */
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { ISO_TIME_PATTERN } from '../../../test/gate-records.constants.ts'
@@ -60,7 +60,7 @@ describe('planRehearsal: a plain lot', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 		'a gate of an earlier tree',
 		'the lot changes package-lock.json',
 		'the hook stages files',
-		'node_modules/.package-lock.json changed since the gate',
+		'the gate record keyed on another lock',
 		'a linked dependency changed since the gate',
 		'--full',
 	]
@@ -261,6 +261,28 @@ describe('planRehearsal: a merge lot', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 				reason: `green full record of the tip's tree ${short(tipTree)}`,
 				record: { mode: 'full', at: expect.stringMatching(ISO_TIME_PATTERN), head: tip },
 			},
+		])
+	})
+
+	it("the branch commit's hook record is in the store, the package declares a fast hook (dialecte.gate.hook) → rehearsed: a hook record proves the fast tier only", async () => {
+		const { root, tip } = await createBranchScenario({
+			recorded: true,
+			mainMoved: false,
+			hookCounter: createCounter(),
+			gateCounter: createCounter(),
+		})
+		const { out } = writeMergeHandover({ root, tip })
+		const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+		packageJson.dialecte.gate.hook = [{ name: 'check', run: 'true' }]
+		writeFileSync(join(root, 'package.json'), `${JSON.stringify(packageJson)}\n`)
+		const tipTree = git({ root, args: ['rev-parse', `${tip}^{tree}`] }).trim()
+
+		expect(planRehearsal({ handover: readFolder(out), full: false })).toEqual([
+			expect.objectContaining({
+				lot: 1,
+				decision: 'rehearsed',
+				reason: `no green record of the tip's tree ${short(tipTree)}`,
+			}),
 		])
 	})
 

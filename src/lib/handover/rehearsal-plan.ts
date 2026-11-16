@@ -1,20 +1,19 @@
 /**
  * What a rehearsal does for each lot, decided before any clone: reuse a green record of the tree the lot's
  * commit will hold, or rehearse the lot in the scratch clone, and why. A plain lot is reused when the
- * repository's store holds a green `gate --full` of its tree, run against what is installed now (the same
- * `node_modules`, the same `file:` dependencies, the same steps), the lot does not change
+ * repository's store holds a green `gate --full` of its tree, run against the lock that tree holds (the
+ * same `file:` dependencies, the same steps), the lot does not change
  * `package-lock.json` and the commit hook stages no files of its own. A merge lot is reused when the tree it
  * leaves is its tip's tree and a green record of that tree (the branch commit's hook, or a `gate --full`)
- * matches what is installed now, under the same conditions. A contributor's last lot also says when the tree the
+ * matches what the tree locks, under the same conditions; a package declaring its hook list (`dialecte.gate.hook`, the
+ * fast tier) needs the `gate --full` record. A contributor's last lot also says when the tree the
  * lots leave has no green contrib record: the rehearsal runs `dialecte contrib` on it in the clone. A green
  * `gate --release` record of a release list that covers `full` answers a plain or a merge lot as a full record would.
  * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
  * rehearsed saying the base moved.
  */
-import { readFileSync } from 'node:fs'
-
 import { findContribRecord } from '../contrib/contrib-key.ts'
-import { readInstalledKey } from '../gate-records/check-key.ts'
+import { readTreeKey } from '../gate-records/check-key.ts'
 import {
 	isGreenRecord,
 	isSameKey,
@@ -27,7 +26,7 @@ import {
 	SHORT_SHA_LENGTH,
 } from '../gate-records/gate-records.constants.ts'
 import { readModeCommandHashes } from '../gate-records/mode-command-hashes.ts'
-import { listCommitHookFiles } from '../git-hooks.ts'
+import { readCommitHookFiles } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -43,6 +42,7 @@ import type {
 	RehearsalDecision,
 	RehearsalPlanContext,
 	ResolvedLot,
+	SharedPlanContext,
 } from './handover.types.ts'
 
 /**
@@ -56,27 +56,14 @@ export function planRehearsal(params: {
 }): RehearsalDecision[] {
 	const root = params.handover.lotsFile.repository
 	const trees = listLotTrees({ root, lots: params.handover.lots })
-	const hookText = listCommitHookFiles(root)
-		.map((file) => readFileSync(file, 'utf8'))
-		.join('\n')
-	const hashes = readModeCommandHashes({
-		root,
-		packageJson: readPackageJson(root),
-		gateBase: params.base,
-	})
-	const context: RehearsalPlanContext = {
+	const shared: SharedPlanContext = {
 		root,
 		branch: params.handover.lotsFile.branch,
-		installed: readInstalledKey(root),
-		commands: {
-			full: hashes.full,
-			hook: hashes.hook,
-			// a release list that does not cover full answers no lot
-			...(hashes.releaseCoversFull && { release: hashes.release }),
-		},
+		packageJson: readPackageJson(root),
 		...(params.base !== undefined && { base: params.base }),
-		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
 	}
+	// a full rehearsal judges no record: no lot tree is read
+	const contexts = params.full ? [] : readPlanContexts({ shared, trees })
 	const contribRun = needsContribRun({
 		root,
 		tree: trees.at(-1)?.tree,
@@ -87,8 +74,8 @@ export function planRehearsal(params: {
 		const decision = params.full
 			? rehearsed(REHEARSAL_REASONS.full)
 			: lot.merge
-				? decideMerge({ context, merge: lot.merge, lotTree: trees[index] })
-				: decidePlain({ context, lot, tree })
+				? decideMerge({ context: contexts[index], merge: lot.merge, lotTree: trees[index] })
+				: decidePlain({ context: contexts[index], lot, tree })
 		return {
 			lot: index + 1,
 			tree,
@@ -99,8 +86,53 @@ export function planRehearsal(params: {
 }
 
 /**
+ * What each lot's records are judged with, in lot order, read once per lot tree: the command hashes at the hand-over
+ * base read as that tree holds the hook files and package.json, and what its hook stages - the commit of a lot runs
+ * the hook its tree holds, a merge lot the merged tree's, whatever the worktree's hook is now.
+ */
+function readPlanContexts(params: {
+	shared: SharedPlanContext
+	trees: readonly LotTree[]
+}): RehearsalPlanContext[] {
+	const byTree = new Map<string, RehearsalPlanContext>()
+	return params.trees.map(function contextOf({ tree }) {
+		const context = byTree.get(tree) ?? readPlanContext({ shared: params.shared, tree })
+		byTree.set(tree, context)
+		return context
+	})
+}
+
+/** The plan context of one lot tree (`readPlanContexts`). */
+function readPlanContext(params: {
+	shared: SharedPlanContext
+	tree: string
+}): RehearsalPlanContext {
+	const { shared, tree } = params
+	const { root, packageJson, ...rest } = shared
+	const hashes = readModeCommandHashes({ root, packageJson, gateBase: shared.base, tree })
+	const hookText = readCommitHookFiles({ root, tree })
+		.map((file) => file.bytes.toString('utf8'))
+		.join('\n')
+	return {
+		root,
+		...rest,
+		// what the lot's tree locks: a record of that tree ran on a node_modules that installed it
+		treeKey: readTreeKey({ root, tree }),
+		// a declared hook list is the fast tier: its record proves no full suite
+		hookProvesFull: packageJson.dialecte?.gate?.hook === undefined,
+		commands: {
+			full: hashes.full,
+			hook: hashes.hook,
+			// a release list that does not cover full answers no lot
+			...(hashes.releaseCoversFull && { release: hashes.release }),
+		},
+		stages: HOOK_STAGES_PATTERN.exec(hookText)?.[0],
+	}
+}
+
+/**
  * A contributor's hand-over whose last lot leaves `tree` (the tree the `contrib` guard checks) with no green contrib
- * record of it at the lots file's HEAD (the guard's), against what is installed now: the rehearsal runs
+ * record of it at the lots file's HEAD (the guard's), against what the tree locks: the rehearsal runs
  * `dialecte contrib` on it in the clone.
  */
 function needsContribRun(params: {
@@ -156,7 +188,10 @@ function decideMerge(params: {
 	const records = greenRecords({
 		context,
 		tree,
-		modes: answeringModes({ context, modes: [HOOK_RECORD_MODE, 'full'] }),
+		modes: answeringModes({
+			context,
+			modes: context.hookProvesFull ? [HOOK_RECORD_MODE, 'full'] : ['full'],
+		}),
 	})
 	if (records.length === 0)
 		return rehearsed(fillReason({ template: REHEARSAL_REASONS.noTipRecord, values: { tree } }))
@@ -173,7 +208,7 @@ function decideMerge(params: {
 }
 
 /**
- * Reused with the newest record that checked the tree against what is installed now with the command of its
+ * Reused with the newest record that checked the tree against what the tree locks with the command of its
  * mode; else rehearsed, saying what changed since the newest record.
  */
 function reuseOrMismatch(params: {
@@ -215,16 +250,16 @@ function reuseOrMismatch(params: {
 				},
 			}),
 		)
-	if (newest.key?.lockHash !== context.installed.lockHash)
+	if (newest.key?.lockHash !== context.treeKey.lockHash)
 		return rehearsed(REHEARSAL_REASONS.installChanged)
-	if (newest.key?.linked !== context.installed.linked)
+	if (newest.key?.linked !== context.treeKey.linked)
 		return rehearsed(REHEARSAL_REASONS.linkedChanged)
 	return rehearsed(
 		fillReason({ template: REHEARSAL_REASONS.commandChanged, values: { mode: newest.mode } }),
 	)
 }
 
-/** The key a record of `tree` must hold to be reused now: what is installed, the command of its mode. */
+/** The key a record of `tree` must hold to be reused now: what the tree locks, the command of its mode. */
 function expectedKey(params: {
 	context: RehearsalPlanContext
 	tree: string
@@ -233,7 +268,7 @@ function expectedKey(params: {
 	const { context, record } = params
 	return {
 		tree: params.tree,
-		...context.installed,
+		...context.treeKey,
 		commandHash:
 			record.mode === HOOK_RECORD_MODE
 				? context.commands.hook

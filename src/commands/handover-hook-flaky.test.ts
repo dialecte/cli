@@ -3,15 +3,12 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { HANDOVER_LOT_NAME } from '../../test/handover-store-scenario.constants.ts'
+import { storeLotFolder } from '../../test/handover-store-scenario.ts'
 import { FLAKY_HOOK_LINES, FLAKY_WORDS, TEST_HOOK_ROW } from '../../test/hook-flaky.constants.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import { gateLinesOf, runFolder } from '../../test/scratch-checks.ts'
-import {
-	createScratchRepository,
-	git,
-	temporaryFolder,
-	writeFiles,
-} from '../../test/scratch-repository.ts'
+import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runHandover } from './handover.ts'
 
@@ -41,7 +38,7 @@ function prepare(lines: readonly string[]): string {
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: root,

@@ -25,11 +25,11 @@ export type GateRunParams = {
 	/** `--hook`: why a hand-over variable given without the other was ignored; said when a test step is scoped. */
 	handoverIgnored?: string
 	/**
-	 * `--hook`: the absolute git common dir of the repository whose store holds the hook's records
+	 * The absolute git common dir of the repository whose store holds the gate's records, any mode
 	 * (`DIALECTE_CHECK_STORE` in the cli's given environment); its records are marked as a rehearsal's.
 	 */
 	checkStore?: string
-	/** `--hook`: the line saying why a given store was ignored (no absolute path to a folder); the hook starts with it. */
+	/** The line saying why a given store was ignored (no absolute path to a folder); the gate starts with it. */
 	checkStoreIgnored?: string
 	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
 	holdAwake?: AwakeHolder
@@ -47,8 +47,10 @@ export type GateSetup = {
 	steps: GateStep[]
 	/** The base the scoped steps select on; absent when the list holds no scoped step. */
 	gateBase?: UsedGateBase
+	/** The store the run reads and writes its records in (`GateRunParams.checkStore`); absent: the repository's own. */
+	checkStore?: string
 	commandHash: string
-	/** Said once before the steps: where the base came from, and a release list that answers no full gate. */
+	/** Said once before the steps: a given store ignored, where the base came from, a release list that answers no full gate. */
 	noticeLines: string[]
 }
 

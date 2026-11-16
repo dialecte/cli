@@ -90,6 +90,81 @@ describe('the ticket number pattern', () => {
 		})
 })
 
+describe('the acceptance criterion pattern', () => {
+	const AC = 'AC'
+	const CRITERION = GENERIC_REFERENCE_PATTERNS.filter(
+		(pattern) => pattern.label === 'acceptance criterion',
+	)
+
+	// built from parts, so this file never matches the pattern it tests
+	const ROWS: Record<
+		string,
+		{ text: string; finding: boolean; position?: { column: number; text: string } }
+	> = {
+		'a code point escape whose hex digits start with A and C → no finding': {
+			text: `const s = '\\u{${AC}00}'`,
+			finding: false,
+		},
+		'two code point escapes in a row → no finding': {
+			text: `"\\u{${AC}01}\\u{${AC}02}"`,
+			finding: false,
+		},
+		'a four-hex escape without braces → no finding': {
+			text: `const s = '\\u${AC}00'`,
+			finding: false,
+		},
+		'a Hangul syllable written as itself → no finding': {
+			text: `const s = '가'`,
+			finding: false,
+		},
+		'a criterion at the start of a line → a finding': {
+			text: `${AC}1 is met`,
+			finding: true,
+			position: { column: 1, text: `${AC}1` },
+		},
+		'a criterion after a space → a finding': {
+			text: `see ${AC}2.`,
+			finding: true,
+			position: { column: 5, text: `${AC}2` },
+		},
+		'a criterion in parentheses → a finding': {
+			text: `(${AC}3)`,
+			finding: true,
+			position: { column: 2, text: `${AC}3` },
+		},
+		'a non-ASCII letter glued before it → a finding': {
+			text: `é${AC}1`,
+			finding: true,
+			position: { column: 2, text: `${AC}1` },
+		},
+		'a digit before it, as in a code point escape past the first plane → no finding': {
+			text: `'\\u{1${AC}00}'`,
+			finding: false,
+		},
+		'letters glued before it (no word boundary) → no finding': {
+			text: `Z${AC}1`,
+			finding: false,
+		},
+	}
+
+	for (const [name, row] of Object.entries(ROWS))
+		it(`${name}, read the same by grep -E`, () => {
+			const sample = join(temporaryFolder('dialecte-references-'), 'sample.txt')
+			writeFileSync(sample, `${row.text}\n`)
+
+			const matches = findReferences({ text: row.text, patterns: CRITERION })
+			const found = matches.length > 0
+			const reported = matches[0] && { column: matches[0].column, text: matches[0].text }
+			const grep = spawnSync('grep', ['-E', CRITERION[0].source, sample], { encoding: 'utf8' })
+
+			expect({ found, grepFound: grep.status === 0, reported }).toEqual({
+				found: row.finding,
+				grepFound: row.finding,
+				reported: row.position,
+			})
+		})
+})
+
 describe('readReferencePatterns', () => {
 	const TAG_LABELS = GENERIC_REFERENCE_PATTERNS.filter((pattern) => pattern.allowable).map(
 		(pattern) => pattern.label,

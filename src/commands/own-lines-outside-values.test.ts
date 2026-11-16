@@ -3,7 +3,7 @@
  * escaped; the lines that relay a child's output keep the child's colour. One table per composing site.
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
@@ -20,19 +20,17 @@ import {
 import { HELPER_SCENARIO_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { LOCK_TEXT, POOL_REHEARSAL_CASE_MS } from '../../test/worktree-pool.constants.ts'
 import { createFakeNodeModules, createRecordingSpawner } from '../../test/worktree-pool.ts'
+import { LEFT_TO_CI_LINE_START } from '../lib/gate/scoped-tests.constants.ts'
 import { runMergeLot } from '../lib/handover/merge-lot.ts'
 import { linkRehearsalSiblings } from '../lib/handover/rehearsal-links.ts'
 import { runHandoverRun } from './handover.ts'
 import {
-	CHILD_COLOUR_LINE,
 	ENTRY_BOUND_MS,
 	FORGED_COLOUR,
 	FORGED_VALUES,
 	NOT_PARKED_START,
 	SCOPED_PACKAGE_FILES,
 	TRASH_LINE_START,
-	VITEST_WITH_COLOUR,
-	WHOLE_SUITE_LINE_START,
 } from './own-lines-outside-values.constants.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -47,19 +45,15 @@ function holdsRawEscape(text: string): boolean {
 }
 
 describe(
-	'the whole-suite line of the scoped tests entry',
+	'the left-to-CI line of the scoped tests entry',
 	{ timeout: HELPER_SCENARIO_TIMEOUT },
 	() => {
 		for (const value of FORGED_VALUES)
-			it(`a changed path holding ${value.title} -> the line prints it escaped; the child's colour line is kept`, () => {
+			it(`a changed path holding ${value.title} -> the line prints it escaped, no raw line of it`, () => {
 				const root = initializeRepository({
 					root: temporaryFolder('dialecte-own-lines-'),
 					files: { ...SCOPED_PACKAGE_FILES, [`src/${value.forged}.md`]: 'a note\n' },
 				})
-				const binary = join(root, 'node_modules', '.bin', 'vitest')
-				mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true })
-				writeFileSync(binary, VITEST_WITH_COLOUR)
-				chmodSync(binary, 0o755)
 				const scope = temporaryFolder('dialecte-own-lines-scope-')
 				writeFileSync(join(scope, 'changed'), `src/${value.forged}.md\0`)
 
@@ -77,10 +71,9 @@ describe(
 				})
 
 				const lines = run.stdout.split('\n')
-				const said = lines.filter((line) => line.startsWith(WHOLE_SUITE_LINE_START))
+				const said = lines.filter((line) => line.startsWith(LEFT_TO_CI_LINE_START))
 				expect(said).toHaveLength(1)
 				expect(said[0]).toContain(value.escaped)
-				expect(run.stdout.split(CHILD_COLOUR_LINE).length).toBeGreaterThan(1)
 				expect(lines.some((line) => line === value.forged.split('\n')[1])).toBe(false)
 			})
 	},

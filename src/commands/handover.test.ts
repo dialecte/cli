@@ -16,6 +16,8 @@ import { basename, dirname, join, relative, sep } from 'node:path'
 import { createFakeClock } from '../../test/fake-clock.ts'
 import { createFakeTerminal } from '../../test/fake-terminal.ts'
 import { DEFAULT_PROBE_TIMEOUT_MILLISECONDS } from '../../test/handover-card-probe.constants.ts'
+import { HANDOVER_LOT_NAME } from '../../test/handover-store-scenario.constants.ts'
+import { storeLotFolder } from '../../test/handover-store-scenario.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import {
 	PERSON_WHO_RUNS_THE_REPOSITORY,
@@ -115,6 +117,8 @@ function prepare(
 		files?: Record<string, string>
 		overrides?: Partial<LotsFile>
 		committed?: Record<string, string>
+		/** The hand-over folder is a new temporary folder instead of a store lot, for a case about the folder as written or the card of such a hand-over. */
+		plain?: boolean
 	} = {},
 ): {
 	root: string
@@ -132,7 +136,9 @@ function prepare(
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = params.plain
+		? temporaryFolder('dialecte-handover-')
+		: storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: root,
@@ -252,7 +258,7 @@ function prepareWithSiblings(params: { dependencies: Record<string, string>; hoo
 			'CHANGELOG.md': '# Changelog\n\n- read answers 1\n',
 		},
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: root,
@@ -445,7 +451,12 @@ const FULL_CARD_NOTES = 'Run it with the cli of this branch.'
  * receipts of the two cases, of a case proven red then green, of an unchanged case and of an unchanged case kept
  * at a later red run with the flag `test code changed around it`; notes. The hand-over is not written yet.
  */
-async function fullCardScenario(params: { failingBuild: boolean; tree?: string }): Promise<{
+async function fullCardScenario(params: {
+	failingBuild: boolean
+	tree?: string
+	/** The hand-over folder is a new temporary folder instead of a store lot. */
+	plain?: boolean
+}): Promise<{
 	root: string
 	out: string
 	lotsPath: string
@@ -501,7 +512,9 @@ async function fullCardScenario(params: { failingBuild: boolean; tree?: string }
 			{ kind: 'kept', name: 'read > stays too', flags: ['test code changed around it'] },
 		],
 	})
-	const out = temporaryFolder('dialecte-handover-')
+	const out = params.plain
+		? temporaryFolder('dialecte-handover-')
+		: storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	writeFiles({ root: out, files: { 'resolved/conflict.txt': 'resolved\n' } })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
@@ -695,7 +708,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	})
 
 	it('written → the folder holds lots.json, the snapshot and a commit.sh that only runs the cli; nothing per lot', () => {
-		const { lotsPath, out } = prepare()
+		const { lotsPath, out } = prepare({ plain: true })
 
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 
@@ -717,7 +730,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	})
 
 	it('written → the card: titled with the repository folder and the branch, the notes, a commit line per lot with files, +/− and subject, HEAD; no path in the box; the command under it', () => {
-		const { root, lotsPath, out } = prepare()
+		const { root, lotsPath, out } = prepare({ plain: true })
 
 		const result = writeHandover({ lotsPath })
 
@@ -738,7 +751,7 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	})
 
 	it('written → above the command: the repository held until every lot is committed, the gate still running under this hand-over, a late edit re-gated then handover write --rehash on the lots file written (its path quoted)', () => {
-		const { lotsPath } = prepare()
+		const { lotsPath } = prepare({ plain: true })
 
 		const lines = writeHandover({ lotsPath }).output.split('\n')
 
@@ -1099,7 +1112,11 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(JSON.parse(result.output).gates).toEqual([
 			{ name: 'gate', status: 'failed', detail: 'never run on this tree' },
 			{ name: 'review', status: 'warning', detail: 'no findings ledger' },
-			{ name: 'effort', status: 'passed', detail: 'no effort recorded' },
+			{
+				name: 'effort',
+				status: 'passed',
+				detail: 'medium · risk class unknown · 0 review rounds of 2',
+			},
 			{
 				name: 'standard',
 				status: 'warning',
@@ -1297,7 +1314,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		const result = await runFolder({ out })
 
 		expect(result.exitCode).toBe(0)
-		expect(result.lines.slice(1, 13)).toEqual([
+		expect(result.lines.slice(1, 14)).toEqual([
 			`✓ repository  ${root}  0.0 s`,
 			'✓ lots        2 lot(s) as reviewed  0.0 s',
 			'✓ hooks       git hooks folder  0.0 s',
@@ -1305,6 +1322,7 @@ describe('handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			expect.stringMatching(/^✓ head        [0-9a-f]{12}  0\.0 s$/),
 			'✓ processes   none running in the worktree  0.0 s',
 			'✓ verify      no late fixes  0.0 s',
+			`✓ lot         ${basename(out)}  0.0 s`,
 			'✓ index       empty  0.0 s',
 			'✓ snapshot    2 file(s)  0.0 s',
 			'✓ deleted     0 file(s) absent  0.0 s',
@@ -1959,7 +1977,10 @@ describe('handover list', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			mkdirSync(folder)
 			expect(writeHandover({ lotsPath, argv: ['--out', folder] }).exitCode).toBe(0)
 			if (name === 'committed') {
-				const ran = await runFolder({ out: folder })
+				const ran = await runFolder({
+					out: folder,
+					argv: ['--not-a-lot', '--by', 'reviewer', '--reason', 'a plain folder listed'],
+				})
 				expect(ran.exitCode).toBe(0)
 			}
 			if (name === 'partly') {
@@ -2151,8 +2172,8 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 	})
 
 	it('a repository whose own cli lacks handover run → the run line is node <this cli> handover run <dir>; one with it keeps bash commit.sh', () => {
-		const lacking = prepare()
-		const having = prepare()
+		const lacking = prepare({ plain: true })
+		const having = prepare({ plain: true })
 		const cli = join(having.root, 'node_modules/@dialecte/cli')
 		writeFiles({
 			root: having.root,
@@ -2196,7 +2217,7 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 	})
 
 	it('the probe given to runHandover is the one the card uses → a probe answering true: the run line is bash commit.sh, asked once, for the repository', () => {
-		const { root, lotsPath, out } = prepare()
+		const { root, lotsPath, out } = prepare({ plain: true })
 		const asked = recordingProbe({ answer: true })
 
 		const result = writeHandover({ lotsPath, probe: asked.probe })
@@ -2206,7 +2227,7 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 	})
 
 	it('the probe given to runHandover is the one the card uses → a probe answering false: the run line is the writer cli, asked once', () => {
-		const { root, lotsPath, out } = prepare()
+		const { root, lotsPath, out } = prepare({ plain: true })
 		const asked = recordingProbe({ answer: false })
 
 		const result = writeHandover({ lotsPath, probe: asked.probe })
@@ -2218,7 +2239,7 @@ describe('handover run: the card after a run', { timeout: SCRATCH_REPOSITORY_TIM
 	})
 
 	it('--rehash passes its probe to the card too → the rewritten card follows the probe, asked once', () => {
-		const { lotsPath, out } = prepare()
+		const { lotsPath, out } = prepare({ plain: true })
 		expect(writeHandover({ lotsPath }).exitCode).toBe(0)
 		const asked = recordingProbe({ answer: true })
 
@@ -3031,7 +3052,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ build',
 				'✓ skills',
 				'! review no findings ledger',
-				'✓ effort no effort recorded',
+				'✓ effort medium · risk class unknown · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3046,7 +3067,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 			[
 				'✗ gate never run on this tree',
 				'! review no findings ledger',
-				'✓ effort no effort recorded',
+				'✓ effort medium · risk class unknown · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3256,7 +3277,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 		},
 	])
 		it(`a findings ledger with ${row.name} → ${row.line}`, () => {
-			const { lotsPath, out } = prepare({ committed: gatedPackage({ fast: [] }) })
+			const { lotsPath, out } = prepare({ plain: true, committed: gatedPackage({ fast: [] }) })
 			writeFileSync(
 				join(out, 'findings-ledger.md'),
 				[
@@ -3360,7 +3381,9 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 	}
 
 	it('a full card at 80 columns → the verdict and the declarations to read, then the commit, gates, tdd and notes sections, the named footer (in the box, too long for its rule); every line 80 wide', async () => {
-		const { root, lotsPath, head, tip } = await fullCardScenario({ failingBuild: true })
+		const { root, lotsPath, head, tip } = await fullCardScenario({
+			failingBuild: true,
+		})
 
 		const result = writeHandover({ lotsPath, columns: 80 })
 
@@ -3382,7 +3405,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ ! check     4/4 (the tree changed since)                                     │',
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
 			'│ ! review    no findings ledger                                               │',
-			'│ ✓ effort    no effort recorded                                               │',
+			'│ ✓ effort    medium · risk class unknown · 0 review rounds of 2               │',
 			'│ ! standard  not consulted: none configured (DIALECTE_STANDARD)               │',
 			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
 			'│ 1 proven red → green · 2 unchanged                                           │',
@@ -3994,7 +4017,7 @@ describe('handover: the tdd section agrees with the gate', { timeout: 240_000 },
 			cwd: root,
 			argv: ['--declare', 'src/'],
 		})
-		const out = temporaryFolder('dialecte-handover-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		const lotsFile: LotsFile = {
 			repository: root,

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { deadPid } from '../../test/dead-pid.ts'
@@ -267,6 +275,55 @@ function writtenHandover(params: {
 	writeFileSync(join(params.root, '.git/dialecte-handover.lock'), `${join(folder, 'commit.sh')}\n`)
 	return folder
 }
+
+describe('runGate: node_modules against the lock being checked', { timeout: 30_000 }, () => {
+	const LOCK = `${JSON.stringify({ name: 'demo', lockfileVersion: 3, packages: { '': { name: 'demo' }, 'node_modules/a': { version: '1.0.1' } } })}\n`
+
+	it.each([['--fast'], ['--full'], ['--hook']])(
+		'%s with node_modules holding another version than package-lock.json → refused naming the package and the npm ci to run, no step run, no record',
+		async (flag) => {
+			const root = packageWith({
+				fast: [{ name: 'check', run: 'touch ran' }],
+				full: [{ name: 'check', run: 'touch ran' }],
+				files: { '.gitignore': 'node_modules\nran\n', 'package-lock.json': LOCK },
+			})
+			writeFiles({ root, files: { 'node_modules/a/package.json': '{"version":"1.0.0"}\n' } })
+
+			const result = await gate({ cwd: root, argv: [flag] })
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain('a: 1.0.0 installed, lock 1.0.1')
+			expect(result.output).toContain(`cd ${shellQuote(root)} && npm ci`)
+			expect(existsSync(join(root, 'ran'))).toBe(false)
+			expect(existsSync(join(root, '.git/dialecte-checks'))).toBe(false)
+		},
+	)
+})
+
+describe('runGate given a store', { timeout: 30_000 }, () => {
+	it.each([['--fast'], ['--full']])(
+		'%s given the git common dir of another repository → its record lands in that store marked as a rehearsal, none in its own; a second run reuses it from there',
+		async (flag) => {
+			const root = packageWith({
+				fast: [{ name: 'check', run: 'true' }],
+				full: [{ name: 'check', run: 'true' }],
+			})
+			const other = createScratchRepository()
+			const checkStore = join(other, '.git')
+
+			const first = await runGate({ cwd: root, argv: [flag], checkStore })
+			const second = await runGate({ cwd: root, argv: [flag], checkStore })
+
+			expect(first.exitCode).toBe(0)
+			expect(existsSync(join(root, '.git/dialecte-checks'))).toBe(false)
+			const [stored] = readdirSync(join(checkStore, 'dialecte-checks'))
+			expect(JSON.parse(readFileSync(join(checkStore, 'dialecte-checks', stored), 'utf8'))).toEqual(
+				[expect.objectContaining({ mode: flag.slice(2), origin: 'rehearsal' })],
+			)
+			expect(second.output).toContain(`gate ${flag}: green (reused)`)
+		},
+	)
+})
 
 describe('runGate under a written hand-over', { timeout: 30_000 }, () => {
 	it('the lock names a hand-over written for this repository (its lots file naming the real path) → the gate runs its steps and records them, one line naming the hand-over it runs under', async () => {

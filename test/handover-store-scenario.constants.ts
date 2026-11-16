@@ -19,6 +19,9 @@ export const STORE_DATE = '2026-11-04'
 export const STORE_BRANCH = 'feat/handover-show'
 export const STORE_SLUG = 'feat-handover-show'
 
+/** The name part of the lot the shared hand-over writers create (`<index>-handover`; the first one is `0001-handover`). */
+export const HANDOVER_LOT_NAME = 'handover'
+
 /** The name the first hand-over of `STORE_BRANCH` takes at `STORE_NOW`. */
 export const STORE_FIRST_NAME = `${STORE_DATE}-${STORE_SLUG}`
 

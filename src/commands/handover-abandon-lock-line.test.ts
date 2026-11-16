@@ -3,6 +3,7 @@ import { STORE_FIRST_NAME } from '../../test/handover-store-scenario.constants.t
 import {
 	abandon,
 	createBranchRepository,
+	plainHandoverFolder,
 	writeStoreHandover,
 } from '../../test/handover-store-scenario.ts'
 import { HANDOVER_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -18,7 +19,13 @@ import { describe, expect, it } from 'vitest'
 describe('handover abandon prints the lock line', { timeout: HANDOVER_CASE_TIMEOUT }, () => {
 	it('the lock names the abandoned script -> the released lock on its own line, no escaped line feed', () => {
 		const root = createBranchRepository()
-		writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: ABANDON_CHANGES, keepLock: true })
+		writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: ABANDON_CHANGES,
+			keepLock: true,
+		})
 
 		const result = abandon({ cwd: root })
 
@@ -31,8 +38,13 @@ describe('handover abandon prints the lock line', { timeout: HANDOVER_CASE_TIMEO
 
 	it('the lock names another script -> the kept lock on its own line, no escaped line feed', () => {
 		const root = createBranchRepository()
-		writeStoreHandover({ root, name: STORE_FIRST_NAME, changes: ABANDON_CHANGES })
-		writeStoreHandover({ root, name: SECOND_NAME, keepLock: true })
+		writeStoreHandover({
+			folder: plainHandoverFolder(),
+			root,
+			name: STORE_FIRST_NAME,
+			changes: ABANDON_CHANGES,
+		})
+		writeStoreHandover({ folder: plainHandoverFolder(), root, name: SECOND_NAME, keepLock: true })
 
 		const result = abandon({ cwd: root, argv: [STORE_FIRST_NAME] })
 

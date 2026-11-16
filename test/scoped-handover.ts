@@ -6,14 +6,12 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { runHandover } from '../src/commands/handover.ts'
-import {
-	foldHookBase,
-	hashHookCommand,
-	readInstalledKey,
-} from '../src/lib/gate-records/check-key.ts'
+import { foldHookBase, hashHookCommand, readTreeKey } from '../src/lib/gate-records/check-key.ts'
 import { storeCheckRecord } from '../src/lib/gate-records/check-store.ts'
 import { hashStateTree } from '../src/lib/gate-records/state-hash.ts'
 import { shellQuote } from '../src/lib/shell-quote.ts'
+import { HANDOVER_LOT_NAME } from './handover-store-scenario.constants.ts'
+import { storeLotFolder } from './handover-store-scenario.ts'
 import { noRepositoryCli } from './repository-cli-probe.ts'
 import { createScopedStep } from './scoped-gate-package.ts'
 import {
@@ -29,7 +27,7 @@ import {
 import { createScopedHookedPackage } from './scoped-hook-package.ts'
 import { BRANCH_NAME, READ_LOT, WRITER_CLI } from './scratch-checks.constants.ts'
 import { editReadLot, headOf, runFolder, runGateIn } from './scratch-checks.ts'
-import { git, temporaryFolder, writeFiles } from './scratch-repository.ts'
+import { git, writeFiles } from './scratch-repository.ts'
 
 import { expect } from 'vitest'
 
@@ -82,7 +80,7 @@ export function createScopedLotPackageOfOneStep(params: {
 }
 
 /**
- * The lots file written in a folder of the test's own and handed to `handover write` with `argv`; the result is
+ * The lots file written in a new store lot of the repository's store and handed to `handover write` with `argv`; the result is
  * not judged here. `branch` is the branch the lots are committed on (default: `feat/x`).
  */
 export function writeLotsHandover(params: {
@@ -91,7 +89,7 @@ export function writeLotsHandover(params: {
 	branch?: string
 	argv?: string[]
 }): { out: string; lotsPath: string; result: CommandResult } {
-	const out = temporaryFolder('dialecte-handover-')
+	const out = storeLotFolder({ root: params.root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	const lotsFile: LotsFile = {
 		repository: params.root,
@@ -154,7 +152,7 @@ export function storeHookRecordAt(params: { root: string; tree: string; gateBase
 			],
 			key: {
 				tree,
-				...readInstalledKey(root),
+				...readTreeKey({ root, tree }),
 				commandHash: foldHookBase({ hook: hashHookCommand(root), gateBase }),
 			},
 			base: { commit: gateBase, source: 'base-branch' },

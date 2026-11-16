@@ -1,4 +1,4 @@
-/** The cli entry, as the package names it: a test that spawns it imports nothing of what it runs. */
+/** The cli entry, as the package names it: every command loads from it, so a change of it reaches every test. */
 export const CLI_ENTRY = 'src/cli.ts'
 
 /** A changed path a test can import, so `vitest related` can relate it: a script or a JSON module. */
@@ -7,11 +7,11 @@ export const IMPORTABLE_FILE_PATTERN = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|json)$/
 /** The id the scoped tests step selects for related tests: its reasons are the test files vitest ran. */
 export const SCOPED_TESTS_SELECTION_ID = 'related-tests'
 
-/** The id it selects for the whole suite: its reasons are the changed paths that ask for it. */
-export const WHOLE_SUITE_SELECTION_ID = 'whole-suite'
+/** The id it skips for what it leaves to the full suite on CI: its reason names those changed paths. */
+export const LEFT_TO_CI_SELECTION_ID = 'left-to-ci'
 
-/** The changed paths, from the package root, no test imports and every test depends on. */
-export const WHOLE_SUITE_FILES: readonly string[] = [
+/** The changed paths, from the package root, no test imports and every test depends on: left to CI's full suite. */
+export const LEFT_TO_CI_FILES: readonly string[] = [
 	'package.json',
 	CLI_ENTRY,
 	'package-lock.json',
@@ -23,31 +23,14 @@ export const WHOLE_SUITE_FILES: readonly string[] = [
 ]
 
 /** The vite and vitest configs of the package root, and a setup file wherever it is (`*.setup.ts`). */
-export const WHOLE_SUITE_FILE_PATTERN =
+export const LEFT_TO_CI_FILE_PATTERN =
 	/^vite(st)?\.(config|workspace)\.[cm]?[jt]s$|(^|\/)[^/]+\.setup\.[cm]?[jt]s$/
 
 /** Where a file a test may read at run time sits: the package root itself, `src/` or `test/`. */
 export const TEST_READ_FOLDER_PATTERN = /^(src\/|test\/|[^/]+$)/
 
-/** The id it selects for the tests that spawn the cli entry: its reasons are those test files. */
-export const SPAWNING_TESTS_SELECTION_ID = 'spawns-cli-entry'
-
-/** A test or test helper text naming the cli entry: `src/cli.ts`, or `'src', 'cli.ts'` as path parts. */
-export const CLI_ENTRY_REFERENCE_PATTERN = /src(\/|['"],\s*['"])cli\.ts/
-
-/** A relative module a test file imports: its specifier. */
-export const RELATIVE_IMPORT_PATTERN = /from\s+['"](\.{1,2}\/[^'"]+)['"]/g
-
-/** The folders whose test files the scoped step reads. */
-export const TEST_FOLDERS: readonly string[] = ['src', 'test']
-/** The folder of installed packages, never read for tests. */
-export const NODE_MODULES_FOLDER = 'node_modules'
-
-/** A test file's name. */
-export const TEST_FILE_PATTERN = /\.test\.[cm]?[jt]sx?$/
-
-/** What the run prints first when the whole suite runs: `{paths}` the changed paths that ask for it. */
-export const WHOLE_SUITE_LINE = 'scoped tests: the whole suite runs, no test can import: {paths}'
+/** What the left-to-CI line starts with; then the changed paths no test can import, which the full suite on CI checks. */
+export const LEFT_TO_CI_LINE_START = 'scoped tests: left to the full suite on CI: '
 
 /** A path that is no test passing with no test, both reporters. */
 export const VITEST_REPORT_ARGUMENTS = [

@@ -29,7 +29,7 @@ Discover    api  members  schema  explain  standard  facts  ask
 Use         run  fixture  new
 Grow        lot
 Plan        plan
-Check       gate  tdd  rules  contrib  mutants
+Check       gate  tdd  rules  contrib  changelog  mutants
 Hand over   handover
 Workspace   worktree  doctor  models  skills
 Maintain    bench  coverage  narrowing  audit  text
@@ -680,8 +680,9 @@ the answer.
   worktree would commit (HEAD's tree with the changed and untracked files on top, the deleted ones
   removed, `.dialecte/` left out): committing the lots leaves it the same, any other edit changes it.
   The record also holds its `key`, what the run checked: `tree` (the git tree id the state hash is the
-  sha256 of), `lockHash` (sha256 of `node_modules/.package-lock.json`, what npm installed; `none` without
-  it), `commandHash` (sha256 of the steps' names and commands in order, and HEAD's commit when a step
+  sha256 of), `lockHash` (sha256 of the `packages` of the checked tree's `package-lock.json`, keys sorted and the
+  package's own entry left out; `none` when the tree holds none: `node_modules` installing that lock is checked
+  before any step, never part of the key), `commandHash` (sha256 of the steps' names and commands in order, and HEAD's commit when a step
   runs only the tests the change affects, which depend on the diff against HEAD; `--base` is no part of
   it: it reads the `tdd` step only) and `linked` (sha256 over the package's `file:` dependencies as node
   loads them - the folder `node_modules/<name>` links to, else the path package.json names - each file
@@ -712,7 +713,9 @@ the answer.
   measure their wall and monotonic time: a run whose wall time passed its monotonic time by over 60 s spanned
   a sleep of the machine all the same, its record keeps `sleptMs`, and the hand-over card's gates print
   `! slept <duration> during gate --full` for a record of the tree it checks.
-- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the steps of `--full` but the scoped ones that count
+- `dialecte gate --hook [--no-reuse]` runs in a commit hook: the `dialecte.gate.hook` steps when the package declares
+  them (a package whose full suite runs on CI commits on its fast tier: the cli declares `check` and its scoped
+  `tests`), else the steps of `--full` but the scoped ones that count
   no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays the gate's and contrib's).
   Each step is answered by any green record that ran it as it is now - a `gate --fast`, `--full`, `--release` or an
   earlier hook's - of the committed tree, what npm installed (the version-blind install key: the installed
@@ -1089,9 +1092,9 @@ the answer.
     the tree a rehearsal recorded, else says `size after rehearse`. Then `HEAD <sha>`, after a run
     `HEAD <base> → <tip> · nothing pushed`.
   - `gates`: one line per gate step from the gate records (the latest record of each step over `--fast`,
-    `--full` and the commit hook's record, a line of the hook's ending with `commit hook`:
-    `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its lines whole,
-    since the hook names its own scripts, not the gate's steps; the other way round, a hook record of the
+    `--full`, `gate --hook`'s record and the commit hook's record, a line of the hook's ending with
+    `commit hook`: `✓ test:run  1214/1214 · commit hook`; a gate record newer than the hook's replaces its
+    lines whole, since the hook names its own scripts, not the gate's steps; the other way round, a hook record of the
     tree the hand-over commits, not dropped by a newer gate record of that tree, replaces the lines of
     every gate record of another tree it answers - a step of the same name, or a step counting tests when
     the hook counts tests: a merge hand-over rehearsed or committed reads the hook's lines of the merged
@@ -1100,7 +1103,10 @@ the answer.
     failed one stays `✗ ... (the tree changed since)`, and `tdd` stays the worktree's: on the DONE card of a
     merge hand-over the tdd verdict is judged on the worktree's own lot tree (the tree its first merge lot
     merged onto), current while the hook record of the merged tree stands, so no `gates ran on another tree`
-    for it), then, in a consumer, `mutation` when the package declares a mutation scope (below), then
+    for it; a record counts when its key is the one of the tree the card checks, judged with the hook files and
+    gate lists that tree holds - a merge's tree holds its own, whatever the worktree's are now; a hook file git
+    does not track is read from disk), then, in a consumer, `mutation` when the package declares a mutation
+    scope (below), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `effort`
     (below; none on a release hand-over), then `late fixes` on a card still to run (below), then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no
@@ -1309,10 +1315,12 @@ the answer.
   something new, and prints one line per lot: `lot <n>/<N>  reused  <reason>` or
   `lot <n>/<N>  rehearse  <reason>`. A plain lot is reused when the store holds a green `gate --full` of
   the tree its commit will hold (HEAD with every lot up to it on top) with the key of now - the same
-  `node_modules`, `file:` dependencies and `--full` steps - the lot does not change `package-lock.json`,
-  and the commit hook stages no files of its own (its text names `git add`, `git stage`, `lint-staged` or
-  `git update-index`): `green gate --full on tree <tree>`. A merge lot is reused when the tree it leaves
-  (its trial merge with its resolutions) is its tip's tree and a green record of that tree - the branch
+  `node_modules`, `file:` dependencies and the `--full` steps that tree's package.json holds - the lot does
+  not change `package-lock.json`, and the commit hook that tree holds stages no files of its own (its text
+  names `git add`, `git stage`, `lint-staged` or `git update-index`): `green gate --full on tree <tree>`.
+  Each lot is judged with its own tree's hook files and gate lists, a merge lot with the merged tree's: the
+  commit runs the hook its tree holds, whatever the worktree's is now. A merge lot is reused when the tree it
+  leaves (its trial merge with its resolutions) is its tip's tree and a green record of that tree - the branch
   commit's hook record or a `gate --full`, with the key of now - is in the store, under the same
   conditions: `green hook record of the tip's tree <tree>`. Otherwise the line says the first reason that
   holds: `no green gate --full on tree <tree>`, `the lot changes package-lock.json`,
@@ -2185,21 +2193,64 @@ script. Adding or removing an opt-out changes the gate record's key, so the gate
 Every command that reads the base branch (the gate's base, `mutants`, `tdd`, `worktree add` and `worktree prune`,
 `lot close`, the hand-over's target) finds it the same way, the first rule that answers winning:
 
-1. `dialecte.baseBranch` when set (an optional override): the local branch, else origin's. Set to a branch that
+1. `dialecte.baseBranch` when set (an optional override). Set to a branch that
    exists nowhere, it is refused, never replaced by another (a package without a `dialecte.gate` config too: its
    default lists hold the scoped `rules` step): exit 2 for the gate's base, `mutants`, `handover write`
    and `handover run`, exit 1 for `worktree add` of a new branch without `--from`; the commit hook fails, and the
    tdd step of `gate --full` fails with the same text.
-2. The branch `origin/HEAD` names (recorded at clone), when that branch exists; the local one is preferred.
-3. `main`, local, else origin's.
-4. `master`, local, else origin's.
+2. The branch `origin/HEAD` names (recorded at clone), when that branch exists.
+3. `main`.
+4. `master`.
 5. Nothing found: refused with `no base branch found (no dialecte.baseBranch, no origin/HEAD, no main, no master):
    name it as dialecte.baseBranch in package.json`. The gate alone keeps selecting everything (with a note) in that
    case; `worktree add` without `--from` refuses, `worktree prune` skips the repository with the text, `lot close`
    holds nothing through the base, and `tdd` measures from HEAD.
 
+Each rule reads the branch where it is newest: the local branch or origin's, whichever is ahead of the other, and
+origin's when they diverged. The remote is the truth: a merge queue lands on the host, so a local base branch goes
+stale. `worktree add` (without `--from`) fetches origin before it cuts the branch, and `lot close` fetches it and
+fast-forwards the local base branch (merged in the main checkout when it is checked out there and clean, its ref
+moved otherwise; a line says when it does not move). A fetch that fails says so and the last known refs are read. A
+lot's own branch is always read locally.
+
 The repository field of `package.json` is a URL and is never read for this. `mutants` finds `origin/<b>` through
 the same rule and no longer takes a tag named like the base branch.
+
+### Landing through the merge queue
+
+`dialecte lot land <id>` lands a lot through its pull request: the worktree clean, rebased onto `origin/<base>` when
+behind it (a conflict undone, its files named, nothing pushed), pushed with a lease, its pull request opened (titled
+with its commit message) or reused, then queued with `gh pr merge --auto`. The merge queue runs the full suite on the
+lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches main another way. `--draft`
+opens a draft and never queues it: CI runs on every push while the lot goes on; land it again without `--draft` to
+queue it. The landing is recorded in `<lot folder>/landing.json` and as the lot's hand-over entry (`pending`); `lot close`
+first marks the lot committed once that pull request merged at the head it pushed (a squash commit holds none of the
+lot's own commits), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
+last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.
+
+### Changelog fragments
+
+A package that keeps a `changes/` folder never has two lots editing `CHANGELOG.md`: each lot writes its entry in
+`changes/<lot>.md`, under the changelog's own headings:
+
+```md
+### Added
+
+- `dialecte changelog release`.
+```
+
+`dialecte changelog check` reads every fragment (a known heading - Added, Changed, Deprecated, Removed, Fixed,
+Security - no text before the first heading, no empty or repeated section). The release runs
+`dialecte changelog release <x.y.z> [--date YYYY-MM-DD]`: the new version's section is written under an emptied
+`## [Unreleased]` (written above the first version when the changelog has none; `## UNRELEASED` is read too), the
+Unreleased summary and entries first (a section written twice there is merged), then each fragment in file name
+order, section by section, one entry per line, and the fragments are deleted (`changes/.gitkeep` keeps the folder).
+Code fences and a link block at the end of the changelog are kept as they are. In the commit hook the rule reads the
+version from the tree the commit records. `dialecte rules` refuses a change that edits
+`CHANGELOG.md` without bumping the package version (`changelog-edit`, an error); a package without `changes/` is not
+judged. `dialecte contrib`'s `changelog` row (after `rules`) fails a change that edits `README.md` or the command map
+with no fragment; a wording-only edit adds `changes/<lot>.none.md` holding why it has no entry instead (the release
+deletes those notes without folding them).
 
 ### GitHub text: lot recap and text check
 
@@ -2402,8 +2453,10 @@ its scratch repository only, and the cli clears git's repository variables at it
 
 The cli gates itself with its own `dialecte.gate` (package.json). `--fast`: `check`, a scoped `tests` step
 (`node src/scoped-tests.ts`: `vitest related` over the paths changed between the gate base and the tree that a
-test can import, and an empty selection exits 0 without starting vitest) and a scoped `rules` step on the same
-changed list. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
+test can import, and an empty selection exits 0 without starting vitest; a changed path no test can import - the
+manifest, the entry, the vitest config, a setup file, a file a test reads - is left to the full suite on CI, said in
+one line) and a scoped `rules` step on the same changed list. Its commit hook (`dialecte.gate.hook`) runs `check`
+and that scoped `tests` step; the full suite runs on CI for every pull request. `--full`: the default full steps (`check`, `skills`, `build`, the whole suite), then `rules` on the
 changes since the gate base. The suite's setup file also points `XDG_CONFIG_HOME` at a folder that does not exist
 (no person's forbidden words list is read) and sets `DIALECTE_KEEP_AWAKE=0` (no run of the suite holds the machine
 awake); a case that wants either sets it itself.

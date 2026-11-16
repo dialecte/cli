@@ -2,7 +2,8 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { gitPathOf, readRecordFile } from '../../test/gate-records.ts'
+import { gitPathOf, readRecordFile, rekeyStoredLocks } from '../../test/gate-records.ts'
+import { FOREIGN_LOCK_HASH } from '../../test/lock-key.constants.ts'
 import {
 	FAST_RECORD_FILE,
 	FULL_RECORD_FILE,
@@ -190,9 +191,8 @@ const NOT_REUSED: Record<string, NotReusedVariant> = {
 		change: (root) => writeFiles({ root, files: { 'src/a.ts': 'export const a = 2\n' } }),
 	},
 	'--no-reuse': { lastArgv: ['--no-reuse'] },
-	'node_modules/.package-lock.json changed': {
-		change: (root) =>
-			writeFiles({ root, files: { 'node_modules/.package-lock.json': '{"packages":{}}\n' } }),
+	'the stored record keyed on another lock (an older cli keyed the installed one)': {
+		change: (root) => rekeyStoredLocks({ root, lockHash: FOREIGN_LOCK_HASH }),
 	},
 	'a --full record answers a --fast run: never': { firstArgv: ['--full'], lastArgv: ['--fast'] },
 	'a --fast record answers a --full run: never': { firstArgv: ['--fast'], lastArgv: ['--full'] },

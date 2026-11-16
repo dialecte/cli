@@ -20,7 +20,12 @@ import {
 	SECOND_DEFAULT_BASE_BRANCH,
 } from './gate-base.constants.ts'
 import { GATE_LIST_NAMES } from './gate-config.constants.ts'
-import { holdsScopedStep, listHookTestSteps, resolveGateSteps } from './gate-config.ts'
+import {
+	holdsScopedStep,
+	listHookTestSteps,
+	resolveGateSteps,
+	resolveHookSteps,
+} from './gate-config.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { Refusal } from '../refusal.types.ts'
@@ -83,11 +88,13 @@ export function readEmptyTree(root: string): string {
 	return readGit({ root, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
 }
 
-/** True when any resolved gate list (fast, full, release) holds a scoped step. */
+/** True when any resolved gate list (fast, full, release, the hook list) holds a scoped step. */
 export function hasScopedStep(packageJson: PackageJson): boolean {
-	return GATE_LIST_NAMES.some(function listHasScopedStep(mode) {
-		return holdsScopedStep(resolveGateSteps({ packageJson, mode }))
-	})
+	return (
+		GATE_LIST_NAMES.some(function listHasScopedStep(mode) {
+			return holdsScopedStep(resolveGateSteps({ packageJson, mode }))
+		}) || holdsScopedStep(resolveHookSteps({ packageJson }))
+	)
 }
 
 /**
@@ -111,11 +118,11 @@ export function resolveConfiguredBase(params: {
 }
 
 /**
- * True when the test steps `gate --hook` runs (the resolved `full` steps counting tests) hold a scoped step: the
+ * True when the test steps `gate --hook` runs (`resolveHookSteps`, those counting tests) hold a scoped step: the
  * hook then resolves a base, and a hand-over hands one down and keys its hook records with it.
  */
 export function hasScopedHookStep(packageJson: PackageJson): boolean {
-	return holdsScopedStep(listHookTestSteps(resolveGateSteps({ packageJson, mode: 'full' })))
+	return holdsScopedStep(listHookTestSteps(resolveHookSteps({ packageJson })))
 }
 
 /**
@@ -146,8 +153,9 @@ function resolveFlagBase(params: { root: string; ref: string; head: string }): G
 
 /**
  * The base branch of the repository at `root`, first found wins: `dialecte.baseBranch`, origin's default branch
- * (`refs/remotes/origin/HEAD`), `main`, `master`; each the local branch, else origin's. A set `dialecte.baseBranch`
- * with neither ref, or nothing found, is a refusal.
+ * (`refs/remotes/origin/HEAD`), `main`, `master`; each read by `findBaseRef` (the newer of the local branch and
+ * origin's, origin when they diverged: the remote is the truth once a queue lands on the host). A set
+ * `dialecte.baseBranch` with neither ref, or nothing found, is a refusal.
  */
 export function findBaseBranchRef(params: {
 	root: string
@@ -156,7 +164,7 @@ export function findBaseBranchRef(params: {
 	const { root } = params
 	const configured = params.packageJson.dialecte?.baseBranch
 	if (configured !== undefined) {
-		const ref = findBranchRef({ root, branch: configured })
+		const ref = findBaseRef({ root, branch: configured })
 		// a branch name taken as it is (a `$` in it is no replacement pattern), here and below
 		return ref === undefined
 			? { refusal: NO_CONFIGURED_BASE_BRANCH.replace('{branch}', () => configured) }
@@ -164,12 +172,32 @@ export function findBaseBranchRef(params: {
 	}
 	const originDefault = findOriginDefaultBranchRef(root)
 	if (originDefault !== undefined) return originDefault
-	const main = findBranchRef({ root, branch: DEFAULT_BASE_BRANCH })
+	const main = findBaseRef({ root, branch: DEFAULT_BASE_BRANCH })
 	if (main !== undefined) return { ref: main, branch: DEFAULT_BASE_BRANCH, source: 'main' }
-	const master = findBranchRef({ root, branch: SECOND_DEFAULT_BASE_BRANCH })
+	const master = findBaseRef({ root, branch: SECOND_DEFAULT_BASE_BRANCH })
 	if (master !== undefined)
 		return { ref: master, branch: SECOND_DEFAULT_BASE_BRANCH, source: 'master' }
 	return { refusal: NO_BASE_BRANCH_FOUND }
+}
+
+/**
+ * The ref a base branch is read from: the local branch or origin's, whichever is newer (origin's when the local one is
+ * an ancestor of it, the local one when origin's is an ancestor of it or they are the same), origin's when they
+ * diverged - the queue lands on the host, so a local base branch goes stale; the one that exists when only one does;
+ * undefined when neither names a commit. A lot's own branch is never read this way (`findBranchRef`).
+ *
+ * @intent read the base branch from the remote whenever the local copy is behind it
+ * @internal
+ */
+export function findBaseRef(params: { root: string; branch: string }): string | undefined {
+	const { root } = params
+	const local = LOCAL_BRANCH_REF.replace('{branch}', () => params.branch)
+	const origin = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
+	const hasLocal = isCommitRef({ root, ref: local })
+	const hasOrigin = isCommitRef({ root, ref: origin })
+	if (!hasOrigin) return hasLocal ? local : undefined
+	if (!hasLocal) return origin
+	return isAncestorCommit({ root, ancestor: origin, descendant: local }) ? local : origin
 }
 
 /** The ref of `branch`: the local branch, else origin's; undefined when neither names a commit. */
@@ -182,7 +210,7 @@ export function findBranchRef(params: { root: string; branch: string }): string 
 }
 
 /**
- * Origin's default branch (`refs/remotes/origin/HEAD`), the local branch of that name preferred; undefined when
+ * Origin's default branch (`refs/remotes/origin/HEAD`), read by `findBaseRef`; undefined when
  * there is no `origin/HEAD` or it points to a ref that names no commit (a deleted branch).
  */
 function findOriginDefaultBranchRef(root: string): BaseBranchRef | undefined {
@@ -193,12 +221,7 @@ function findOriginDefaultBranchRef(root: string): BaseBranchRef | undefined {
 	if (target === undefined || !target.startsWith(ORIGIN_BRANCH_REF_PREFIX)) return undefined
 	if (!isCommitRef({ root, ref: target })) return undefined
 	const branch = target.slice(ORIGIN_BRANCH_REF_PREFIX.length)
-	const local = LOCAL_BRANCH_REF.replace('{branch}', () => branch)
-	return {
-		ref: isCommitRef({ root, ref: local }) ? local : target,
-		branch,
-		source: 'origin-head',
-	}
+	return { ref: findBaseRef({ root, branch }) ?? target, branch, source: 'origin-head' }
 }
 
 /** `ref` names a commit in the repository at `root`. */

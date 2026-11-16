@@ -40,7 +40,8 @@
 	},
 	"dependencies": {
 		"jsonc-parser": "3.3.1",
-		"oxfmt": "^0.75.0"
+		"oxfmt": "^0.75.0",
+		"yaml": "2.9.1"
 	},
 	"devDependencies": {
 		"@babel/parser": "8.0.7",
@@ -84,6 +85,18 @@
 				{
 					"name": "rules",
 					"run": "node src/cli.ts rules",
+					"scoped": true
+				}
+			],
+			"hook": [
+				{
+					"name": "check",
+					"run": "npm run check"
+				},
+				{
+					"name": "tests",
+					"run": "node src/scoped-tests.ts",
+					"counts": "tests",
 					"scoped": true
 				}
 			],

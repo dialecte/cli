@@ -274,7 +274,7 @@ function propertyTitleOf(name: ts.PropertyName): string | undefined {
  * The `const` or function declaration a name refers to from `from`: the nearest enclosing block or file that
  * declares it; undefined when a parameter on the way shadows it.
  */
-function declarationOf(params: {
+export function declarationOf(params: {
 	name: string
 	from: ts.Node
 }): ts.VariableDeclaration | ts.FunctionDeclaration | undefined {

@@ -1,4 +1,7 @@
 import { rmSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+import { copyShippedSchemas } from './src/lib/release/shipped-schemas.ts'
 
 import { defineConfig } from 'tsup'
 
@@ -6,6 +9,9 @@ import type { Options } from 'tsup'
 
 /** Where `npm run build` writes; `--out-dir` writes elsewhere. */
 const OUT_DIR = 'dist'
+
+/** The package root: the folder of this file, whatever folder the build runs from. */
+const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
 
 const SHARED: Options = {
 	format: ['esm'],
@@ -49,9 +55,12 @@ const CONFIGS: Options[] = [
 /**
  * tsup builds these configs at once: a config that cleaned the output folder as its own build started could delete
  * what another one had already written (the tdd reporter, under load). So none cleans; tsup calls this function
- * once, before any build, and it empties the folder they write into (`--out-dir`, else `dist`).
+ * once, before any build, and it empties the folder they write into (`--out-dir`, else `dist`), then copies the
+ * schemas the package ships into it (`<out>/schemas/`; no build cleans, so they stay).
  */
 export default defineConfig(function configs(options) {
-	rmSync(options.outDir ?? OUT_DIR, { recursive: true, force: true })
+	const outDir = options.outDir ?? OUT_DIR
+	rmSync(outDir, { recursive: true, force: true })
+	copyShippedSchemas({ root: PACKAGE_ROOT, outDir })
 	return CONFIGS
 })

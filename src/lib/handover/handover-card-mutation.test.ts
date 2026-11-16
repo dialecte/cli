@@ -2,6 +2,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { storeLotFolder } from '../../../test/handover-store-scenario.ts'
 import {
 	MERGED_BRANCH,
 	MUTATION_GATE_NAME,
@@ -20,7 +21,6 @@ import {
 import { survivorOf } from '../../../test/mutation-package.ts'
 import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
-import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { renderSectionCard } from '../card/render-section-card.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { buildHandoverCard, handoverCardSections } from './handover-card.ts'
@@ -31,7 +31,7 @@ import { describe, expect, it } from 'vitest'
 function cardOf(params: { declared: boolean; gate?: boolean; lotFile?: string }) {
 	const root = hooksRepository(params)
 	writeGreenRecords(root)
-	const folder = temporaryFolder('dialecte-card-folder-')
+	const folder = storeLotFolder({ root, name: 'mutation' })
 	if (params.gate)
 		writeFileSync(join(folder, 'lot.json'), `${JSON.stringify({ mutation: 'gate' })}\n`)
 	if (params.lotFile !== undefined) writeFileSync(join(folder, 'lot.json'), params.lotFile)

@@ -1,12 +1,10 @@
-import type { ScopeChangeOp } from '../lib/store/scope-changes.types.ts'
-
-/** What `lot scope` was asked, its usage checked: the op, the paths as given, and who and why for an add. */
+/** What `lot scope` was asked, its usage checked: the paths to drop and to add as given, who and why (both required). */
 export type ScopeRequest = {
 	id: string
-	op: ScopeChangeOp
-	paths: string[]
-	by?: string
-	reason?: string
+	drops: string[]
+	adds: string[]
+	by: string
+	reason: string
 }
 
 /** A lot `lot scope` may change: its folder, name, worktree and repository, and its scope changes so far. */

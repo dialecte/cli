@@ -62,6 +62,7 @@ import {
 	renderReuseLine,
 	reusedResults,
 } from '../lib/gate-records/record-reuse.ts'
+import { computeStateTree } from '../lib/gate-records/state-hash.ts'
 import { hashGateStep } from '../lib/gate-records/step-reuse.ts'
 import { readEmptyTree, readGivenHandoverBase, resolveGateBase } from '../lib/gate/gate-base.ts'
 import {
@@ -101,6 +102,7 @@ import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { checkTddReceipts } from '../lib/tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
+import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
@@ -124,8 +126,11 @@ export async function run(argv: string[]): Promise<void> {
 	const indexFile = ignoredGivenRepository ? undefined : GIVEN_ENVIRONMENT.GIT_INDEX_FILE
 	// the base a hand-over run hands its hooks: only `--hook` reads it
 	const given = hasFlag(argv, 'hook') ? readGivenHandoverBase(GIVEN_ENVIRONMENT) : {}
-	// a rehearsal clone's hook reads and writes the store of the repository it rehearses: an absolute folder only
-	const store = hasFlag(argv, 'hook') ? readGivenCheckStore(GIVEN_ENVIRONMENT) : {}
+	// a rehearsal clone's gate reads and writes the store of the repository it rehearses: an absolute folder only
+	const store = readGivenCheckStore({
+		environment: GIVEN_ENVIRONMENT,
+		command: `gate --${hasFlag(argv, 'hook') ? 'hook' : modeOf(argv)}`,
+	})
 	const result = await runGate({
 		cwd: process.cwd(),
 		argv,
@@ -205,7 +210,7 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 		mode === 'fast'
 			? undefined
 			: startLongRun({ holdAwake: params.holdAwake, runClocks: params.runClocks })
-	const setup = readGateSetup({ cwd, argv, mode })
+	const setup = readGateSetup(params)
 	if ('refused' in setup) return setup.refused
 	const view: GateView = params.live
 		? {
@@ -262,18 +267,26 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 }
 
 /**
- * What a run reads before any step: the hand-over hold, the step source, the steps of `mode` and - only for a list
- * holding a scoped step - the gate base, once per run; a refusal of any of them is the run's answer.
+ * What a run reads before any step: the hand-over hold, the install of the lock being checked, the step source, the
+ * steps of `mode` and - only for a list holding a scoped step - the gate base, once per run; a refusal of any of them
+ * is the run's answer.
  */
-function readGateSetup(params: {
-	cwd: string
-	argv: string[]
-	mode: GateMode
-}): GateSetup | { refused: CommandResult } {
+function readGateSetup(
+	params: Pick<GateRunParams, 'cwd' | 'argv' | 'checkStore' | 'checkStoreIgnored'> & {
+		mode: GateMode
+	},
+): GateSetup | { refused: CommandResult } {
 	const { cwd, mode } = params
 	const hold = readHandoverHold(cwd)
 	if ('refusal' in hold)
 		return { refused: resultOf({ exitCode: 1, lines: [`gate: ${hold.refusal}`] }) }
+	// a node_modules that does not install the lock being checked: no step runs, nothing is recorded
+	const installRefusal =
+		readHeadOrNone(cwd) === undefined
+			? undefined
+			: checkInstallMatchesTree({ root: cwd, tree: computeStateTree(cwd) })
+	if (installRefusal !== undefined)
+		return { refused: resultOf({ exitCode: 1, lines: [`gate: ${installRefusal}`] }) }
 	const source = readStepSource(cwd)
 	if ('refusal' in source) {
 		const line = GATE_CONFIG_REFUSAL.replace('{message}', () => source.refusal)
@@ -305,8 +318,10 @@ function readGateSetup(params: {
 		source,
 		steps,
 		...(gateBase && { gateBase }),
+		...(params.checkStore && { checkStore: params.checkStore }),
 		commandHash: gateCommandHash({ root: cwd, steps, gateBase: gateBase?.commit }),
 		noticeLines: [
+			...(params.checkStoreIgnored ? [params.checkStoreIgnored] : []),
 			...(scope?.lines ?? []),
 			...(mode === 'release' ? notCoveringLines(source.packageJson) : []),
 		],
@@ -386,7 +401,12 @@ function findReuse(params: {
 			: computeCheckKey({ root: cwd, commandHash: params.setup.commandHash })
 	const found =
 		keyBefore && !hasFlag(params.argv, 'no-reuse')
-			? findReusableRecord({ root: cwd, mode: params.mode, key: keyBefore })
+			? findReusableRecord({
+					root: cwd,
+					mode: params.mode,
+					key: keyBefore,
+					...(params.setup.checkStore && { checkStore: params.setup.checkStore }),
+				})
 			: undefined
 	return {
 		head,
@@ -495,6 +515,7 @@ function recordGateRun(params: {
 		keyBefore: reuse.keyBefore,
 		keyAfter: reuse.reused?.key ?? computeCheckKey({ root: cwd, commandHash: setup.commandHash }),
 		...(reuse.reused && { reused: reuse.reused.record }),
+		...(setup.checkStore && { checkStore: setup.checkStore }),
 		...(gateBase && { base: gateBase }),
 		...(sleptMs !== undefined && { sleptMs }),
 		stepHashes: new Map(

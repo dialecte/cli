@@ -12,7 +12,7 @@ import {
 } from '../../../test/rule-gaps-target-moved.ts'
 import { git } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { targetMoved } from './target-moved.ts'
+import { targetLineOf, targetMoved } from './target-moved.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -28,11 +28,13 @@ function movedVerdict(params: {
 	tip: string
 	behind: number
 	resuming?: boolean
+	/** The ref judged; default the local branch. */
+	ref?: string
 }): TargetVerdict {
 	return {
 		kind: 'moved',
 		branch: params.branch,
-		ref: `refs/heads/${params.branch}`,
+		ref: params.ref ?? `refs/heads/${params.branch}`,
 		tip: params.tip,
 		behind: params.behind,
 		resuming: params.resuming ?? false,
@@ -135,12 +137,16 @@ const ROWS: TargetRow[] = [
 		},
 	},
 	{
-		title: 'T9 local main held, origin/main ahead and not held → held, the local ref judged',
+		title:
+			"T9 local main held, origin/main ahead (a queue merged on the host) → moved: origin's ref judged, the remote is the truth",
 		arrange({ root, start, lotsFile }) {
-			moveBranchTip({ root, branch: 'main' })
+			const tip = moveBranchTip({ root, branch: 'main' })
 			addOriginBranch({ root, branch: 'main', at: 'refs/heads/main' })
 			git({ root, args: ['update-ref', 'refs/heads/main', start] })
-			return { lotsFile, expected: HELD_MAIN }
+			return {
+				lotsFile,
+				expected: movedVerdict({ branch: 'main', tip, behind: 1, ref: 'refs/remotes/origin/main' }),
+			}
 		},
 	},
 	{
@@ -280,4 +286,19 @@ describe('targetMoved', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			).toEqual(arranged.expected)
 		})
 	}
+})
+
+describe('targetLineOf', () => {
+	it("a verdict judged on origin's ref (the local branch behind it) → the line says to merge origin/main", () => {
+		const line = targetLineOf({
+			kind: 'moved',
+			branch: 'main',
+			ref: 'refs/remotes/origin/main',
+			tip: 'a'.repeat(40),
+			behind: 2,
+			resuming: false,
+		})
+
+		expect(line).toContain('merge origin/main first')
+	})
 })

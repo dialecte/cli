@@ -13,6 +13,8 @@ import {
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
+import { HANDOVER_LOT_NAME } from '../../test/handover-store-scenario.constants.ts'
+import { storeLotFolder } from '../../test/handover-store-scenario.ts'
 import { removeHookLogs } from '../../test/hook-logs.ts'
 import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
 import {
@@ -154,7 +156,7 @@ function mergeScenario(options: ScenarioOptions = {}): MergeScenario {
 	}
 	if (options.plainLot) writeFiles({ root, files: { 'notes.txt': 'notes, edited\n' } })
 	if (options.laterFile) writeFiles({ root, files: { [options.laterFile]: 'edited later\n' } })
-	const out = temporaryFolder('dialecte-merge-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	writeFiles({
 		root: out,
 		files: {
@@ -665,7 +667,7 @@ describe(
 			onTestFinished(function restorePath() {
 				process.env.PATH = previous
 			})
-			const out = temporaryFolder('dialecte-lock-handover-')
+			const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 			const lotsPath = join(out, 'lots.json')
 			writeFileSync(
 				lotsPath,
@@ -763,7 +765,7 @@ describe('the lock sync installs the staged state', { timeout: SCRATCH_REPOSITOR
 			...(npm === 'rewrites the lock' ? ['echo "{}" > package-lock.json'] : []),
 			INSTALL_DEP_TWO,
 		])
-		const out = temporaryFolder('dialecte-lock-handover-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -830,7 +832,7 @@ describe('the lock sync runs no install scripts', { timeout: SCRATCH_REPOSITORY_
 		})
 		const record = join(temporaryFolder('dialecte-npm-record-'), 'record.txt')
 		installFakeNpm([`echo "$*" >> '${record}'`, INSTALL_DEP_TWO])
-		const out = temporaryFolder('dialecte-lock-handover-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -899,7 +901,7 @@ describe('the lock sync runs no install scripts', { timeout: SCRATCH_REPOSITORY_
 			'mkdir -p node_modules/bare',
 			`echo '{ "name": "bare", "version": "2.0.0" }' > node_modules/bare/package.json`,
 		])
-		const out = temporaryFolder('dialecte-lock-handover-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -934,7 +936,7 @@ describe('the lock sync runs no install scripts', { timeout: SCRATCH_REPOSITORY_
 			},
 		})
 		installFakeNpm(['echo boom >&2', 'exit 1'])
-		const out = temporaryFolder('dialecte-failed-install-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -997,7 +999,7 @@ describe(
 			})
 			const calls = join(temporaryFolder('dialecte-npm-record-'), 'calls.txt')
 			installFakeNpm([`echo "$*" >> '${calls}'`, INSTALL_DEP_TWO])
-			const out = temporaryFolder('dialecte-lock-handover-')
+			const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 			const lotsPath = join(out, 'lots.json')
 			writeFileSync(
 				lotsPath,
@@ -1263,7 +1265,7 @@ function manifestScenario(): { root: string; out: string; backup: string; base: 
 			'package-lock.json': LOCK_V2,
 		},
 	})
-	const out = temporaryFolder('dialecte-manifest-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lotsPath = join(out, 'lots.json')
 	writeFileSync(
 		lotsPath,
@@ -1295,7 +1297,7 @@ describe('the install backup', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 		const started = join(temporaryFolder('dialecte-npm-started-'), 'started')
 		installFakeNpm([`echo started > '${started}'`, 'sleep 60'])
-		const out = temporaryFolder('dialecte-signal-handover-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -1379,7 +1381,7 @@ describe('the install backup', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			},
 		})
 		installFakeNpm(['echo boom >&2', 'exit 1'])
-		const out = temporaryFolder('dialecte-failed-install-')
+		const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 		const lotsPath = join(out, 'lots.json')
 		writeFileSync(
 			lotsPath,
@@ -1516,7 +1518,7 @@ function sequenceScenario(options: SequenceOptions): SequenceScenario {
 	git({ root, args: ['checkout', '-q', 'main'] })
 	writeFiles({ root, files: options.working ?? {} })
 	for (const file of options.deleted ?? []) rmSync(join(root, file))
-	const out = temporaryFolder('dialecte-sequence-handover-')
+	const out = storeLotFolder({ root, name: HANDOVER_LOT_NAME })
 	const lots = options.lots.map(function lotOf(lot, index): MergeLotPlan | LotPlan {
 		if (!('merge' in lot)) return lot
 		const resolved: Record<string, string | null> = {}
