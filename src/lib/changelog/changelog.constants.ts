@@ -12,9 +12,13 @@ export const FRAGMENT_EXTENSION = '.md'
 /** A no-entry note's extension: `changes/<name>.none.md` says why a visible change has no changelog entry. */
 export const NO_ENTRY_EXTENSION = '.none.md'
 
-/** The changed files that ask for a fragment: a visible change edits them (the help and the README). */
+/**
+ * The changed files that ask for a fragment: a visible change edits them (the help, the README and the command
+ * pages). An entry ending with `/` is a folder: every file under it asks.
+ */
 export const FRAGMENT_ASKING_FILES: readonly string[] = [
 	'README.md',
+	'doc/commands/',
 	'src/lib/command-map/command-map.constants.ts',
 ]
 
