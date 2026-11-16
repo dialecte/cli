@@ -11,14 +11,18 @@ export const LANDING_BODY = 'Lot {lot}. The full suite runs on CI; the merge que
 export const PUSH_REJECTED_PATTERN = /!\s*\[(rejected|remote rejected)\].*$/m
 
 export const LANDING_LINES = {
-	dirty: 'lot land: {worktree} holds uncommitted changes: commit them first, nothing pushed',
 	notOnBranch:
 		'lot land: {worktree} is not on {branch} (HEAD is {head}): switch to it first, nothing pushed',
 	fetchFailed:
 		"lot land: {reason}: nothing pushed (the lot is rebased only onto the host's base branch)",
 	conflict:
 		'lot land: rebasing onto origin/{base} conflicts in {files}: the rebase is undone; merge origin/{base} into the lot and resolve, then land again',
+	overwrite:
+		'lot land: rebasing onto origin/{base} would overwrite untracked files: {files}: the rebase is undone; move them aside, then land again, nothing pushed',
 	rebased: 'rebased onto origin/{base} {commit}',
+	notRebased:
+		'not rebased onto origin/{base}: the worktree holds uncommitted changes (CI tests the merge with {base}; land again once committed)',
+	workInProgress: 'uncommitted, not pushed: {files}',
 	pushed: 'pushed {branch} {commit}',
 	pushRefused: 'lot land: the push of {branch} was refused: {reason}',
 	pushedOutside:
@@ -41,3 +45,9 @@ export const LANDING_LINES = {
 
 /** What git says when a lease that expected no branch finds one on origin: it was pushed outside `lot land`. */
 export const PUSHED_OUTSIDE_PATTERN = /stale info|already exists|fetch first/
+
+/** How `git status --porcelain` starts the line of an untracked path. */
+export const UNTRACKED_STATUS_PREFIX = '??'
+
+/** git's error line when a checkout of the rebase would overwrite untracked files; the files follow, tab-indented. */
+export const OVERWRITE_PATTERN = /untracked working tree files would be overwritten/

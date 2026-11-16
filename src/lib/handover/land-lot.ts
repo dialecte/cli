@@ -1,10 +1,12 @@
 /**
- * A lot lands through its pull request (33CI CI3). The worktree is clean and on the lot's branch; origin is fetched
- * (a failure stops the landing). A pull request the lot's landing already merged makes the lot committed, nothing
+ * A lot lands through its pull request (33CI CI3). The worktree is on the lot's branch; origin is fetched (a failure
+ * stops the landing). A push carries only commits: the committed head lands, work in progress stays where it is and is
+ * named (with a tracked file changed, git cannot rebase: the lot is pushed as committed, the line saying so). A pull request the lot's landing already merged makes the lot committed, nothing
  * pushed. Otherwise the lot is rebased onto origin's base branch when behind (a conflict undone and named), pushed
  * with a lease pinned to the head its last landing pushed (a branch it never pushed must not exist on origin), its open
  * pull request reused or a new one opened (titled with its commit message), queued unless a draft - the merge queue
- * merges it once its checks pass on top of main - and the landing recorded: `landing.json` in the lot's folder, and
+ * merges it once its checks pass on top of main - and the landing recorded: `landing.json` in the lot's folder (with
+ * every head a rebase of the lot's landings replaced, so `lot close` knows those commits landed), and
  * the lot's hand-over entry (state pending; committed once its pull request merged) that `lot status`, `plan next` and
  * `lot close` read.
  */
@@ -12,6 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
@@ -24,8 +27,10 @@ import {
 	LANDING_SCHEMA,
 	PUSH_REJECTED_PATTERN,
 	PUSHED_OUTSIDE_PATTERN,
+	OVERWRITE_PATTERN,
+	UNTRACKED_STATUS_PREFIX,
 } from './land-lot.constants.ts'
-import { readLanding } from './land-record.ts'
+import { readLanding, readRawLanding, readReplacedHeads } from './land-record.ts'
 
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
@@ -49,11 +54,6 @@ export function landLot(params: {
 	now: Date
 }): LandingResult {
 	const { worktree, branch, base, host } = params
-	const status = readGit({
-		root: worktree,
-		args: ['status', '--porcelain', '--untracked-files=no'],
-	}).trim()
-	if (status !== '') return refused(LANDING_LINES.dirty.replace('{worktree}', () => worktree))
 	const current = tryReadGit({ root: worktree, args: ['symbolic-ref', '--quiet', 'HEAD'] })?.trim()
 	if (current !== `refs/heads/${branch}`)
 		return refused(
@@ -82,9 +82,19 @@ export function landLot(params: {
 		)
 	}
 	const lines: string[] = []
-	const rebased = rebaseOnOrigin({ worktree, base })
+	const progress = readWorkInProgress({ worktree })
+	const rebased = rebaseOnOrigin({ worktree, base, trackedChanges: progress.tracked })
 	if ('refusal' in rebased) return refused(rebased.refusal)
 	if (rebased.line) lines.push(rebased.line)
+	// kept at once: a push or a host refusal after the rebase must not lose it (the next landing rebases nothing)
+	if (rebased.replaced !== undefined)
+		recordReplacedHead({ lotFolder: params.lotFolder, branch, head: rebased.replaced })
+	if (progress.files > 0)
+		lines.push(
+			LANDING_LINES.workInProgress.replace('{files}', () =>
+				counted({ count: progress.files, noun: 'file' }),
+			),
+		)
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const expected = landing?.branch === branch ? landing.head : ''
 	const pushProblem = pushLot({ worktree, branch, expected })
@@ -116,7 +126,14 @@ export function landLot(params: {
 			.replace('{number}', String(pull.number))
 			.replace('{url}', () => pull.url),
 	)
-	writeLanding({ lotFolder: params.lotFolder, pullRequest: pull, branch, head, now: params.now })
+	writeLanding({
+		lotFolder: params.lotFolder,
+		pullRequest: pull,
+		branch,
+		head,
+		replaced: readReplacedHeads({ lotFolder: params.lotFolder, branch }),
+		now: params.now,
+	})
 	lines.push(
 		LANDING_LINES.closeWhenMerged
 			.replace('{entry}', () => entry)
@@ -192,11 +209,34 @@ function mergedLanding(params: {
 	}
 }
 
-/** The lot rebased onto `origin/<base>` when it does not hold it; a conflict aborts the rebase and is a refusal. */
+/**
+ * What the worktree holds that is not committed: the paths git status lists (untracked ones too, ignored ones not), and
+ * whether a tracked file is among them (git then refuses to rebase).
+ */
+function readWorkInProgress(params: { worktree: string }): { files: number; tracked: boolean } {
+	// every untracked file on its own line, whatever the person's status.showUntrackedFiles
+	const paths = readGit({
+		root: params.worktree,
+		args: ['status', '--porcelain', '--untracked-files=all'],
+	})
+		.split('\n')
+		.filter(Boolean)
+	return {
+		files: paths.length,
+		tracked: paths.some((path) => !path.startsWith(UNTRACKED_STATUS_PREFIX)),
+	}
+}
+
+/**
+ * The lot rebased onto `origin/<base>` when it does not hold it, `replaced` the head the rebase replaced; a conflict
+ * aborts the rebase and is a refusal. With a tracked file changed (`trackedChanges`) git refuses to rebase: the lot
+ * stays as committed, the line saying the rebase waits for a clean worktree.
+ */
 function rebaseOnOrigin(params: {
 	worktree: string
 	base: string
-}): { line?: string } | { refusal: string } {
+	trackedChanges: boolean
+}): { line?: string; replaced?: string } | { refusal: string } {
 	const { worktree, base } = params
 	const originTip = tryReadGit({
 		root: worktree,
@@ -204,6 +244,8 @@ function rebaseOnOrigin(params: {
 	})?.trim()
 	if (originTip === undefined) return {}
 	if (isAncestorCommit({ root: worktree, ancestor: originTip, descendant: 'HEAD' })) return {}
+	if (params.trackedChanges) return { line: LANDING_LINES.notRebased.replace('{base}', () => base) }
+	const replaced = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const rebase = spawnSync('git', ['rebase', '--quiet', originTip], {
 		cwd: worktree,
 		encoding: 'utf8',
@@ -213,16 +255,52 @@ function rebaseOnOrigin(params: {
 			line: LANDING_LINES.rebased
 				.replace('{base}', () => base)
 				.replace('{commit}', originTip.slice(0, SHORT_SHA_LENGTH)),
+			replaced,
 		}
 	const files = readGit({ root: worktree, args: ['diff', '--name-only', '--diff-filter=U'] })
 		.split('\n')
 		.filter(Boolean)
 	spawnSync('git', ['rebase', '--abort'], { cwd: worktree })
+	const overwritten = overwrittenFilesOf(rebase.stderr)
+	if (files.length === 0 && overwritten.length > 0)
+		return {
+			refusal: LANDING_LINES.overwrite
+				.replace('{base}', () => base)
+				.replace('{files}', () => overwritten.join(', ')),
+		}
 	return {
 		refusal: LANDING_LINES.conflict
 			.replaceAll('{base}', () => base)
 			.replace('{files}', () => (files.length > 0 ? files.join(', ') : 'the lot')),
 	}
+}
+
+/** The untracked files git names when a checkout would overwrite them (tab-indented after its error line). */
+function overwrittenFilesOf(stderr: string): string[] {
+	const lines = stderr.split('\n')
+	const start = lines.findIndex((line) => OVERWRITE_PATTERN.test(line))
+	if (start === -1) return []
+	const files: string[] = []
+	for (const line of lines.slice(start + 1)) {
+		if (!line.startsWith('\t')) break
+		files.push(line.trim())
+	}
+	return files
+}
+
+/**
+ * The landing record with `head` added to the heads the lot's rebases replaced (written at once, before the push):
+ * the record kept as it is otherwise; a lot with no landing yet gets a record holding only its branch and those heads.
+ */
+function recordReplacedHead(params: { lotFolder: string; branch: string; head: string }): void {
+	const raw = readRawLanding({ lotFolder: params.lotFolder }) ?? {}
+	const record = {
+		...raw,
+		schema: LANDING_SCHEMA,
+		branch: params.branch,
+		replaced: [...readReplacedHeads(params), params.head],
+	}
+	writeFileSync(join(params.lotFolder, LANDING_FILE), `${JSON.stringify(record, null, 2)}\n`)
 }
 
 /**
@@ -285,6 +363,7 @@ function writeLanding(params: {
 	pullRequest: PullRequest
 	branch: string
 	head: string
+	replaced: readonly string[]
 	now: Date
 }): void {
 	const record: LandingRecord = {
@@ -293,6 +372,7 @@ function writeLanding(params: {
 		url: params.pullRequest.url,
 		branch: params.branch,
 		head: params.head,
+		replaced: [...params.replaced],
 		at: params.now.toISOString(),
 	}
 	writeFileSync(join(params.lotFolder, LANDING_FILE), `${JSON.stringify(record, null, 2)}\n`)

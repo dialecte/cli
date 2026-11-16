@@ -15,3 +15,15 @@ export type ScopedTestsRun = {
 	exitCode: number
 	output: string
 }
+
+/** What `test-graph.ts` writes: each test file of the package with the package files it reaches, from the root. */
+export type TestGraph = {
+	dependencies: Record<string, string[]>
+}
+
+/** A changed file most test files reach: left to CI, with how many reach it of how many there are. */
+export type SharedPath = {
+	path: string
+	related: number
+	total: number
+}

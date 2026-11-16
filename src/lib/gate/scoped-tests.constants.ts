@@ -1,7 +1,9 @@
+import { fileURLToPath } from 'node:url'
+
 /** The cli entry, as the package names it: every command loads from it, so a change of it reaches every test. */
 export const CLI_ENTRY = 'src/cli.ts'
 
-/** A changed path a test can import, so `vitest related` can relate it: a script or a JSON module. */
+/** A changed path a test can import, so the import graph can reach it: a script or a JSON module. */
 export const IMPORTABLE_FILE_PATTERN = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|json)$/
 
 /** The id the scoped tests step selects for related tests: its reasons are the test files vitest ran. */
@@ -39,8 +41,28 @@ export const VITEST_REPORT_ARGUMENTS = [
 	'--reporter=json',
 ] as const
 
-/** `vitest related`, run once, with the report arguments. */
-export const VITEST_RELATED_ARGUMENTS = ['related', '--run', ...VITEST_REPORT_ARGUMENTS] as const
+/** A shared path as the left-to-CI line names it: how many of the package's test files reach it. */
+export const SHARED_PATH_TEXT = '{path} ({related} of {total} test files)'
+
+/** The script that reads the package's test import graph with its own vitest, run with node in the package root. */
+export const TEST_GRAPH_SCRIPT = fileURLToPath(new URL('./test-graph.ts', import.meta.url))
+
+/** How vite names a file outside its root in a module's imports: `/@fs/<absolute path>`. */
+export const FS_PREFIX = '/@fs/'
+
+/** A query or fragment after a module's path in vite's imports (`?raw`, `?url`, `#part`). */
+export const IMPORT_QUERY_PATTERN = /[?#].*$/
+
+/** The file it writes, in the run's temporary folder. */
+export const GRAPH_FILE_NAME = 'graph.json'
+
+/** The output of a run whose graph could not be read; the child's output follows. */
+export const GRAPH_FAILED_LINE =
+	"scoped tests: the package's vitest could not read its test import graph"
+
+/** The output of a run whose importable changed paths no test file reaches: `{paths}` those paths, counted. */
+export const NO_TEST_REACHED_LINE =
+	'scoped tests: no test file reaches the {paths} changed: vitest not started'
 
 /** The option naming the JSON reporter's file: `{file}`. */
 export const VITEST_JSON_OUTPUT_OPTION = '--outputFile.json={file}'
@@ -70,3 +92,13 @@ export const SCOPED_TESTS_MAXIMUM_DEPTH = 2
 /** The entry started that deep: it starts nothing. `{depth}` the depth it read. */
 export const NESTED_TWICE_LINE =
 	'scoped tests: cannot start inside a scoped run nested twice (DIALECTE_SCOPED_TESTS_DEPTH {depth}): nothing run'
+
+/**
+ * A changed file is shared, its related tests left to the full suite on CI, when vitest's import graph has more than
+ * this share of the package's test files reach it: running a quarter of the suite or more costs the machine what a CI
+ * shard costs.
+ */
+export const SHARED_FILE_SHARE = 0.25
+
+/** ... and more than this many test files: a small package's tests always run on the machine. */
+export const SHARED_FILE_FLOOR = 50
