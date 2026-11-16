@@ -47,6 +47,7 @@ import type {
 	CaseStatusLine,
 	ChangedTestFile,
 	LotGoneEntry,
+	ReportedModule,
 	TddFinding,
 	TddLedger,
 	TddMoves,
@@ -92,6 +93,8 @@ export async function readTddState(params: {
 		filter: 'collect',
 	})
 	if ('failure' in modules) return modules
+	// what the collect saw, for the listing of each file's dependencies below (a pytest file's come from its run)
+	const reported: readonly ReportedModule[] = modules
 	const { cases, unlisted } = readRunCases({
 		root,
 		packageJson: params.packageJson,
@@ -132,6 +135,7 @@ export async function readTddState(params: {
 			changedTestCode: [...testCode.keys()],
 			resolveModule,
 			packageJson: params.packageJson,
+			modules: reported,
 		}).dependencies
 		dependencies.set(file, found)
 		return found
@@ -142,6 +146,7 @@ export async function readTddState(params: {
 			if (movedFiles.has(testCase.file)) return { ...id, status: 'unchanged' as const, flags: [] }
 			const { skipped } = countingReceipts({ ledger, testCase: id, acceptances, revisions })
 			const status = caseStatusOf({
+				root,
 				ledger,
 				testCase: id,
 				testFileHash: testCode.get(testCase.file) ?? '',
@@ -161,11 +166,14 @@ export async function readTddState(params: {
 		}),
 		duplicates,
 		// a file no vitest config includes is no test code tdd measures
-		unfrozen: unfrozen.filter((file) => !zeroCases.notVitest.includes(file)),
+		unfrozen: unfrozen.filter(
+			(file) => !zeroCases.notVitest.includes(file) && !zeroCases.pytestIgnored.includes(file),
+		),
 		findings,
 		unlisted,
 		...(zeroCases.refused.length && { zeroCases: zeroCases.refused }),
 		...(zeroCases.notVitest.length && { notVitest: zeroCases.notVitest }),
+		...(zeroCases.pytestIgnored.length && { pytestIgnored: zeroCases.pytestIgnored }),
 		...(hasMoves(moves) && { moves }),
 	}
 }

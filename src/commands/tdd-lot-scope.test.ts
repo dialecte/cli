@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
+import { PASSES_ON_BASE_TOO } from '../lib/tdd/tdd.constants.ts'
 import { runGate } from './gate.ts'
 import { runTdd } from './tdd.ts'
 
@@ -1097,7 +1098,7 @@ describe(
 			])
 		})
 
-		it('a title the file computes (a template), not written as a string at the base → refused: not provably a case of the base', async () => {
+		it('a title the file computes (a template), not written as a string at the base → run on the base, refused: passes on the base too', async () => {
 			function computedTitleTest(call: string): string {
 				return [
 					"import { add } from './add.ts'",
@@ -1120,9 +1121,7 @@ describe(
 
 			expect(red.exitCode).toBe(1)
 			expect(caseLines(red.output)).toEqual([
-				expect.stringMatching(
-					/^refused {2}src\/add\.test\.ts::add > sums to 3 {2}.*not provably a case of the base: accept it or prove it red/,
-				),
+				`refused  src/add.test.ts::add > sums to 3  ${PASSES_ON_BASE_TOO}`,
 			])
 		})
 

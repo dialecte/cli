@@ -13,7 +13,8 @@
  * longer declares, or an acceptance after a red then a green of the same case, stands for no proof.
  */
 import { countingReceipts, receiptsOf } from './counting-receipts.ts'
-import { PROOF_KINDS, TEST_FILE_PATTERN } from './tdd.constants.ts'
+import { isTestFile } from './tdd-files.ts'
+import { PROOF_KINDS } from './tdd.constants.ts'
 
 import type {
 	CaseStatus,
@@ -28,6 +29,8 @@ import type {
 
 /** Where the case stands now, from its receipts that count (see the module's JSDoc). */
 export function caseStatusOf(params: {
+	/** The package root: which frozen file is a test file and which a helper (`isTestFile`). */
+	root: string
 	ledger: TddLedger
 	testCase: TestCaseId
 	/** sha256 of the case's test file now. */
@@ -58,6 +61,7 @@ export function caseStatusOf(params: {
 	if (proofReceipt.kind === 'accepted') return 'accepted'
 	if (proofReceipt.kind === 'revised') return 'revised'
 	const lastFreeze = lastInvalidatingFreeze({
+		root: params.root,
 		entries,
 		file: params.testCase.file,
 		dependencies: params.dependencies,
@@ -76,11 +80,12 @@ export function caseStatusOf(params: {
  * same file at the same hash, does not.
  */
 function lastInvalidatingFreeze(params: {
+	root: string
 	entries: readonly TddEntry[]
 	file: string
 	dependencies: readonly string[] | undefined
 }): number {
-	const { entries, dependencies } = params
+	const { root, entries, dependencies } = params
 	const frozen = new Map<string, string>()
 	let last = -1
 	for (const [index, entry] of entries.entries()) {
@@ -89,7 +94,7 @@ function lastInvalidatingFreeze(params: {
 		const invalidates = Object.entries(entry.files).some(
 			([file, hash]) =>
 				(file === params.file ||
-					(!TEST_FILE_PATTERN.test(file) &&
+					(!isTestFile({ root, file }) &&
 						(dependencies === undefined || dependencies.includes(file)))) &&
 				frozen.get(file) !== hash,
 		)

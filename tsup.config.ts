@@ -1,4 +1,5 @@
-import { rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { copyShippedSchemas } from './src/lib/release/shipped-schemas.ts'
@@ -12,6 +13,10 @@ const OUT_DIR = 'dist'
 
 /** The package root: the folder of this file, whatever folder the build runs from. */
 const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
+
+/** The pytest plugin in the sources, and its name next to the bin (where `dialecte tdd` finds it). */
+const PYTEST_PLUGIN_SOURCE = 'src/lib/tdd/dialecte_tdd_pytest.py'
+const PYTEST_PLUGIN_FILE = 'dialecte_tdd_pytest.py'
 
 const SHARED: Options = {
 	format: ['esm'],
@@ -43,10 +48,11 @@ const CONFIGS: Options[] = [
 	},
 	{
 		...SHARED,
-		// files another tool loads by path, next to the bin: the vitest reporter `dialecte tdd` hands the package's
-		// vitest, and the ignore rules Stryker loads as a plugin (`dialecte mutants run`)
+		// files another tool loads by path, next to the bin: the vitest and node --test reporters `dialecte tdd` hands
+		// the package's runners, and the ignore rules Stryker loads as a plugin (`dialecte mutants run`)
 		entry: {
 			'tdd-reporter': 'src/lib/tdd/tdd-reporter.ts',
+			'tdd-node-reporter': 'src/lib/tdd/tdd-node-reporter.ts',
 			ignorers: 'src/lib/mutation/ignorers.ts',
 		},
 	},
@@ -62,5 +68,15 @@ export default defineConfig(function configs(options) {
 	const outDir = options.outDir ?? OUT_DIR
 	rmSync(outDir, { recursive: true, force: true })
 	copyShippedSchemas({ root: PACKAGE_ROOT, outDir })
+	copyPytestPlugin({ outDir })
 	return CONFIGS
 })
+
+/**
+ * Copies the pytest plugin `dialecte tdd` loads into the package's python (`-p dialecte_tdd_pytest`) next to the
+ * bin: a Python file, shipped as it is.
+ */
+function copyPytestPlugin(params: { outDir: string }): void {
+	mkdirSync(params.outDir, { recursive: true })
+	copyFileSync(join(PACKAGE_ROOT, PYTEST_PLUGIN_SOURCE), join(params.outDir, PYTEST_PLUGIN_FILE))
+}

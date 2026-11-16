@@ -6,6 +6,8 @@ import {
 	CONDITION_MODIFIERS,
 	META_GLOB_NAME,
 	NEGATED_GLOB_PREFIX,
+	NODE_ASSERT_SEGMENT,
+	NODE_ASSERT_SPECIFIERS,
 	ONLY_MARKER,
 	SKIP_IF_MARKER,
 	SKIP_MARKERS,
@@ -28,7 +30,9 @@ import type {
 /**
  * The position is inside an argument of an `expect(...)` (or `expect.soft(...)`) call that asserts: the
  * object of a matcher call (`expect(x).toBe(1)`, `expect(x).not.toBe(1)`, `expect(p).resolves.toBe(1)`).
- * An `expect(x)` without a matcher asserts nothing.
+ * An `expect(x)` without a matcher asserts nothing. Or inside an argument of a `node:assert` call: through a binding
+ * the file imports from `node:assert` (`assert(x)`, `assert.equal(...)`, `deepStrictEqual(...)`,
+ * `assert.strict.equal(...)`), or through a member chain with an `assert` segment (`t.assert.equal(...)`).
  */
 export function isInsideAssertion(params: {
 	text: string
@@ -38,12 +42,13 @@ export function isInsideAssertion(params: {
 	const source = parseTestSource({ text: params.text, kind: scriptKindOf(params.file) })
 	const position = positionOf({ source, location: params.location })
 	if (position === undefined) return false
+	const assertBindings = importedNamesOf({ source, specifiers: NODE_ASSERT_SPECIFIERS })
 	let node: ts.Node | undefined = innermostNodeAt({ source, position })
 	for (; node; node = node.parent)
 		if (
 			ts.isCallExpression(node) &&
-			isAssertionCallee(node.expression) &&
-			hasMatcher(node) &&
+			((isAssertionCallee(node.expression) && hasMatcher(node)) ||
+				isNodeAssertCallee({ callee: node.expression, bindings: assertBindings })) &&
 			node.arguments.some(
 				(argument) => argument.getStart(source) <= position && position < argument.end,
 			)
@@ -55,9 +60,26 @@ export function isInsideAssertion(params: {
 /** The names the file imports (default, named and namespace bindings). */
 export function importedNames(params: { text: string; file: string }): Set<string> {
 	const { text } = params
+	return importedNamesOf({ source: parseTestSource({ text, kind: scriptKindOf(params.file) }) })
+}
+
+/** The names a parsed file imports, from the modules `specifiers` names only when given. */
+function importedNamesOf(params: {
+	source: ts.SourceFile
+	specifiers?: readonly string[]
+}): Set<string> {
+	const { specifiers } = params
 	const names = new Set<string>()
-	for (const statement of parseTestSource({ text, kind: scriptKindOf(params.file) }).statements) {
+	for (const statement of params.source.statements) {
 		if (!ts.isImportDeclaration(statement) || !statement.importClause) continue
+		if (
+			specifiers &&
+			!(
+				ts.isStringLiteralLike(statement.moduleSpecifier) &&
+				specifiers.includes(statement.moduleSpecifier.text)
+			)
+		)
+			continue
 		const clause = statement.importClause
 		if (clause.name) names.add(clause.name.text)
 		const bindings = clause.namedBindings
@@ -68,10 +90,27 @@ export function importedNames(params: { text: string; file: string }): Set<strin
 	return names
 }
 
+/** A call through a `node:assert` binding (`assert`, `assert.strict.equal`) or a chain through `.assert` (`t.assert.equal`). */
+function isNodeAssertCallee(params: {
+	callee: ts.Expression
+	bindings: ReadonlySet<string>
+}): boolean {
+	const root = rootIdentifierOf(params.callee)
+	if (root !== undefined && params.bindings.has(root)) return true
+	for (
+		let expression: ts.Expression = params.callee;
+		ts.isPropertyAccessExpression(expression);
+		expression = expression.expression
+	)
+		if (expression.name.text === NODE_ASSERT_SEGMENT) return true
+	return false
+}
+
 /**
  * The source of the test call at `location` (`it('name', ...)`, `it.each(table)('name', ...)`): the
- * outermost call starting there; else, as vitest locates an `it.each` case at the parenthesis of the call
- * taking its title, the innermost call whose arguments hold the location; undefined when there is none.
+ * outermost call starting there; else, as node locates an `it.skip(...)` case at its property (`skip`), the
+ * outermost call whose callee holds the location; else, as vitest locates an `it.each` case at the parenthesis of
+ * the call taking its title, the innermost call whose arguments hold the location; undefined when there is none.
  */
 export function testCallTextAt(params: {
 	text: string
@@ -93,16 +132,18 @@ function callTextAt(params: {
 	if (start === undefined) return undefined
 	const position: number = start
 	let starting: ts.CallExpression | undefined
+	let calleeHolding: ts.CallExpression | undefined
 	let holding: ts.CallExpression | undefined
 	function visit(node: ts.Node): void {
 		if (node.getStart(source) > position || node.end <= position) return
 		if (ts.isCallExpression(node) && node.getStart(source) === position) {
 			if (!starting || node.end > starting.end) starting = node
 		} else if (ts.isCallExpression(node) && node.expression.end <= position) holding = node
+		else if (ts.isCallExpression(node)) calleeHolding ??= node
 		ts.forEachChild(node, visit)
 	}
 	visit(source)
-	return (starting ?? holding)?.getText(source)
+	return (starting ?? calleeHolding ?? holding)?.getText(source)
 }
 
 /** The file's syntax tree, parsed as its extension says (`scriptKindOf`). */
@@ -596,16 +637,25 @@ function hasMatcher(expectCall: ts.CallExpression): boolean {
 	return false
 }
 
-/** The modules a file names: static imports and re-exports, `import('...')`, `require('...')`, `vi.mock('...')`. */
-export function moduleSpecifiers(params: { text: string; file: string }): string[] {
-	const { text } = params
+/**
+ * The modules a file names: static imports and re-exports, `import('...')`, `require('...')`, `vi.mock('...')`.
+ * With `valuesOnly`, only the modules the file loads when it runs: no `import type` / `export type`, no
+ * `vi.mock('...')` (a call that names a module, never loads it).
+ */
+export function moduleSpecifiers(params: {
+	text: string
+	file: string
+	valuesOnly?: boolean
+}): string[] {
+	const { text, valuesOnly = false } = params
 	const source = parseTestSource({ text, kind: scriptKindOf(params.file) })
 	const specifiers: string[] = []
 	function visit(node: ts.Node): void {
 		if (
 			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
 			node.moduleSpecifier &&
-			ts.isStringLiteralLike(node.moduleSpecifier)
+			ts.isStringLiteralLike(node.moduleSpecifier) &&
+			!(valuesOnly && isTypeOnlyDeclaration(node))
 		)
 			specifiers.push(node.moduleSpecifier.text)
 		if (
@@ -617,13 +667,19 @@ export function moduleSpecifiers(params: { text: string; file: string }): string
 			const named =
 				callee.kind === ts.SyntaxKind.ImportKeyword ||
 				(ts.isIdentifier(callee) && callee.text === 'require') ||
-				(ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
+				(!valuesOnly && ts.isPropertyAccessExpression(callee) && callee.name.text === 'mock')
 			if (named) specifiers.push(node.arguments[0].text)
 		}
 		ts.forEachChild(node, visit)
 	}
 	visit(source)
 	return specifiers
+}
+
+/** `import type ... from '...'` or `export type ... from '...'`: erased before the file runs. */
+function isTypeOnlyDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
+	if (ts.isExportDeclaration(node)) return node.isTypeOnly
+	return node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword
 }
 
 /**

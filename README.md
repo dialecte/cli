@@ -973,16 +973,45 @@ the answer.
 - `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json]` makes
   the order of the work visible: tests written from the spec before any code, red for a real reason, then
   made green by an implementation that did not touch them. The ledger lives in the worktree's git folder,
-  never in the tree. Runs use the package's own vitest (each project's run of a case is a case of its own),
-  with snapshots never written
-  (`--update=none`, CI): a snapshot test's snapshot is written by the test station before the red.
+  never in the tree. Each test file runs under its own runner, inferred from the file (no setting): a Python
+  file pytest's own discovery collects under pytest, a JS/TS test file importing `node:test` under `node --test`
+  (even inside a vitest package), a file a vitest config holds under the package's own vitest (each project's run
+  of a case is a case of its own), with snapshots never written
+  (`--update=none`, CI): a snapshot test's snapshot is written by the test station before the red. One progress
+  step per runner, in that order: vitest, `node --test`, pytest; a run that fails stops the later ones.
+  - node --test: the cli's own reporter reads node's events. A case's name joins its describe titles with `>`;
+    `tdd red <file>::<case>` runs it alone (`--test-name-pattern`). A failure inside a `node:assert` call
+    (`assert.equal(...)`, `t.assert.equal(...)`, a named import from `node:assert/strict`) is inside an
+    assertion; an import failure or a throwing `describe` refuses the file with its error; a node timeout is a
+    timeout. The run passes no node flags of its own (a package needing `--import <loader>` is not covered). Node
+    has no collect-only mode: the gate's tdd step runs a listed node test file in full.
+  - pytest: a Python file is a test file when pytest's discovery would collect it, read from its pytest folder
+    (the nearest `pytest.toml`, `pytest.ini`, `pyproject.toml` `[tool.pytest]` / `[tool.pytest.ini_options]`,
+    `tox.ini [pytest]` or `setup.cfg [tool:pytest]`, else the package root): its `python_files`, `testpaths` and
+    `norecursedirs` (pytest's defaults when not declared). It runs there with its interpreter (a `.venv` from that
+    folder up to the repository root, else `uv run --frozen python` beside a `uv.lock`, else `python3`; on
+    Windows `.venv\Scripts\python.exe`, else `python`), through a pytest plugin the cli ships; a file a conftest's
+    `collect_ignore`, `collect_ignore_glob` or `pytest_ignore_collect` leaves out prints `outside  <file>  not a
+    test file pytest collects (...)`, never refused nor frozen. A case's name joins its class and function with
+    `>`, parameter ids kept (`TestRows > test_row[2]`). `NotImplementedError` is the stub; an `assert`
+    statement or the body of `with pytest.raises(...)` / `pytest.warns(...)` is inside an assertion (a stub
+    result asserted later is refused, as in TS); a `pytest.raises` / `pytest.warns` miss is an assertion;
+    `ImportError: cannot import name ...` or a missing attribute of the package's own module is a missing
+    export. A row added to a parametrize table is a change of that row only; the case's other decorators must
+    stay as the base holds them, in order and count. The conftest files, the helpers a test or a conftest
+    imports and the files a case opens are frozen on red, production never (the gate's collect-only listing
+    sees no file a case opens only in its body; it judges by the receipts' frozen hashes). A run writes no
+    `__pycache__` or `.pytest_cache`, and xdist is off for it. A pytest case moved to another file is a new
+    case. No pytest in the interpreter: the run fails naming the folder.
+  - `red` given only `<file>::<case>` targets runs only those cases, whatever the runner.
   - `red` runs every case of the changed test files (or of the files named). A case that fails on an
     assertion (a snapshot mismatch included), on a stub's error (a message starting with
     `not implemented`) or on an error existing code throws, inside an `expect(...)` a matcher completes,
     gets a red. Refused, each with its reason: a passing case that is new or changed ("it ran green: this
     test proves nothing yet"); a passing case with a receipt whose own test call changed; a passing case
     still waiting for its green whose test file, or test code it imports, changed since its red ("test
-    code changed since its red and it passes"); a failure on a missing export, a type or syntax error, a
+    code changed since its red and it passes"; a `revised` entry naming such a case, or a passing new
+    case, runs it on the base instead, below); a failure on a missing export, a type or syntax error, a
     timeout, a stub thrown at import or before the assertion; a file holding `.only` or `only: true`; a
     file whose run reports no case, `red` and `green` alike, with why the package's vitest configs (every
     `vitest*.config.*` and their `projects`, read as files) give: `ran no case: the file belongs to
@@ -993,8 +1022,8 @@ the answer.
     `.todo` / `.skipIf(true)` cases; the gate, which only collects, maps each case the run reports to its
     test call, so a case a helper registers counts as run). A refused file is never frozen, and the gate's
     tdd step fails on it with the same reason. A file
-    no vitest config includes (a Playwright spec, a type test) is no vitest test file: it leaves the
-    selection with `outside  <file>  not a vitest test file (no vitest config includes it)`, is never
+    no runner holds (a Playwright spec, a type test) is no test file: it leaves the selection with
+    `outside  <file>  not a test file of a known runner (no vitest config includes it, no node:test import)`, is never
     refused nor frozen, and never fails the gate. A
     case the same as at the base is marked unchanged; a case the lot accepts is marked accepted, unless
     it is proven red then green at its current test call (an acceptance never overrides a proof: it goes
@@ -1035,7 +1064,9 @@ the answer.
     moved away stays reached: bringing it back later flags the reds and the first greens taken there.
     A state read at another
     base, a lot committed since, is not compared;
-    `red after green` when the case's own last receipt is a green at the same production state.
+    `red after green` when the case's own last receipt is a green at the same production state;
+    `red on base` when a revised case earned it on the base's production (below), its production hash the
+    base's. `tdd status`, the hand-over card and `tdd status --legend` show the flag.
   - The run freezes each test file without a refusal, and a changed helper, fixture or snapshot only when
     a case of a file depending on it went red, or was recorded revised, in that run: what it imports
     (relative, tsconfig `paths` or vite alias, barrels and re-exports followed through test code; a
@@ -1094,8 +1125,8 @@ the answer.
     `.dialecte/lot.json` names its file (a path or a glob), it prints
     `gone <file> a test call of the base is gone (<reason>)` instead, in the gate's details too. A titled
     test gone and a deleted test file stay `deleted`. A changed test file whose run reports no case prints
-    `refused  <file>  <reason>` (the reasons of `red` above), one no vitest config includes `outside  <file>
-    not a vitest test file (no vitest config includes it)`. A ledger that cannot be read is refused with its
+    `refused  <file>  <reason>` (the reasons of `red` above), one no runner holds `outside  <file>
+    not a test file of a known runner (no vitest config includes it, no node:test import)`. A ledger that cannot be read is refused with its
     path. `--json` answers the state: `cases`, `duplicates`, `unfrozen`, `findings`, `unlisted`, and, only
     when there are some, `zeroCases: [{ file, reason }]` (the refused files) and `notVitest: [<file>]` (the
     files out of the selection).
@@ -1140,8 +1171,30 @@ the answer.
     title) and the file now no more of them (a test moved to another describe, or a string of that title
     removed elsewhere, is no proof); otherwise (a table row, a computed title) its own title is written
     as a string there and no more times now. A new case (a new file, a new title, a row added to a table)
-    still needs a red; a case whose title the file computes and the base does not write is refused
-    ("not provably a case of the base: accept it or prove it red"). The `case` may also be a file path or
+    no `revised` entry names still needs a red. A passing case a `revised` entry names that is not
+    provably a case of the base (a new case, a title the file computes and the base does not write), or
+    one still waiting for its green whose own test call changed since its red, is run once more on the
+    base, the base as round 0: its file runs, filtered to the case, under the same runner, in a throwaway
+    copy of the base's tree in the temporary folder (`git archive`; a `node_modules` folder of its own
+    linking each entry of the package's but its caches, so Vite writes its cacheDir and bundled config in
+    the copy) with the lot's current test code laid over it (test files, helpers, fixtures, conftests,
+    snapshots at their current bytes, the deleted ones removed; production stays the base's). A pytest
+    file runs there with the lot's own interpreter (its `.venv`, `uv run --project <lot folder>`, or
+    `python3`, resolved from the lot's folder), through a bootstrap that puts the copy's pytest folder first
+    on `sys.path` and drops the current folder before pytest is imported, whatever the python's version (and
+    the copy's folder first on `PYTHONPATH` for the processes its tests start). Red there for a real reason: a red receipt flagged `red on base` at the base's
+    production hash, its file frozen as at any red; `tdd green` then proves it as any red. Otherwise
+    refused, nothing frozen: `passes on the base too: the revision proves nothing; prove it red or accept
+    it: lot accept <case> <reason>`; a thrown error (never an assertion or a stub's red, whatever its
+    message says) that is a missing file or path by its code or name (`ENOENT`, `FileNotFoundError`, a
+    module-not-found code for a relative or absolute path) `the base copy lacks a git-ignored input, not a
+    proof`; a pytest package its interpreter holds installed editable (`direct_url.json`
+    editable, an `__editable__` or `.pth` file of the project its `pyproject.toml` names) `the package is
+    installed editable: a base run would import the lot's code`; a failure that is no red, with its kind's
+    reason; a case that did not run there. The lot's tree is never touched: the throwaway folder (it holds
+    its owner's process id) is removed after the run, and the next `tdd red` or `tdd green` trashes those a
+    killed run left (older than the running process, their owner gone). A revised case that is a case of
+    the base is recorded revised at once, with no base run. The `case` may also be a file path or
     a glob over file paths (`scripts/**/*.test.ts`: `**` any folders, `*` and `?` within one), relative
     to the package root, without `::`: it applies to every case of the matching files, with one reason.
     A file or glob entry never covers a case whose last proof is a red still waiting for its green, and

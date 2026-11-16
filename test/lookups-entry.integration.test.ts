@@ -131,10 +131,12 @@ describe('@dialecte/cli/lookups', () => {
 	it('builds the bin, the library entry and the tdd reporter the bin hands to vitest', () => {
 		expect(readdirSync(join(BUILT, 'dist')).sort()).toEqual([
 			'cli.js',
+			'dialecte_tdd_pytest.py',
 			'ignorers.js',
 			'lookups.d.ts',
 			'lookups.js',
 			'schemas',
+			'tdd-node-reporter.js',
 			'tdd-reporter.js',
 		])
 	})

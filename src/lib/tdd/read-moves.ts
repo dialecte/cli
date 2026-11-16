@@ -6,16 +6,16 @@
  * it no longer runs) and such a case is new or changed. That run happens in a scratch copy of the base tree outside the
  * worktree (its `node_modules` linked), removed when it ends: nothing of it stays behind.
  */
-import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
+import { copyBaseTree } from './base-tree.ts'
 import { findMovedByName, findMovedCases, movedCaseLabels } from './moved-cases.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
 import { listDeletedTestFiles, readAtBase } from './tdd-files.ts'
-import { BASE_COLLECT_TIMEOUT_MS } from './tdd.constants.ts'
+import { BASE_COLLECT_TIMEOUT_MS, PYTHON_FILE_PATTERN } from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 import { indexTestCalls, listSurroundings, testCallAt } from './test-source.ts'
 
@@ -29,10 +29,27 @@ import type {
 	TddMoves,
 	TestCallIndex,
 } from './tdd.types.ts'
-import type { ChildProcess } from 'node:child_process'
 
-/** The moves of the cases of `files` (the new and changed test files of the run) from the base. */
-export async function readMoves(params: {
+/**
+ * The moves of the cases of `files` (the new and changed test files of the run) from the base. A pytest case never
+ * moves across files (moved, it is a new case: a red or an accept): its files and cases are left out.
+ */
+export function readMoves(params: {
+	root: string
+	base: string
+	packageJson: PackageJson
+	files: readonly ChangedTestFile[]
+	cases: readonly RunCase[]
+}): Promise<TddMoves> {
+	return readScriptMoves({
+		...params,
+		files: params.files.filter((file) => !PYTHON_FILE_PATTERN.test(file.file)),
+		cases: params.cases.filter((testCase) => !PYTHON_FILE_PATTERN.test(testCase.file)),
+	})
+}
+
+/** The moves of the cases of JS/TS test files, from the JS/TS test files the change deletes too. */
+async function readScriptMoves(params: {
 	root: string
 	base: string
 	packageJson: PackageJson
@@ -40,10 +57,12 @@ export async function readMoves(params: {
 	cases: readonly RunCase[]
 }): Promise<TddMoves> {
 	const { root, base } = params
-	const deleted = listDeletedTestFiles({ root, base }).flatMap((file): DeletedTestFile[] => {
-		const baseText = readAtBase({ root, base, file })
-		return baseText === undefined ? [] : [{ file, baseText }]
-	})
+	const deleted = listDeletedTestFiles({ root, base })
+		.filter((file) => !PYTHON_FILE_PATTERN.test(file))
+		.flatMap((file): DeletedTestFile[] => {
+			const baseText = readAtBase({ root, base, file })
+			return baseText === undefined ? [] : [{ file, baseText }]
+		})
 	const exact = findMovedCases({
 		files: params.files,
 		deleted,
@@ -218,64 +237,6 @@ async function collectAtBase(params: {
 		return { result, baseCollect: baseCollect() }
 	} finally {
 		rmSync(folder, { recursive: true, force: true })
-	}
-}
-
-/**
- * Writes the package's tree at the base into `folder` (`git archive`), and links the `node_modules` the
- * package resolves from, so the base files import what they imported; why it could not, or undefined.
- */
-async function copyBaseTree(params: {
-	root: string
-	base: string
-	folder: string
-}): Promise<string | undefined> {
-	// streamed from git into tar: nothing buffered, the event loop (and the running line) stays live
-	const archive = spawn('git', ['archive', '--format=tar', `${params.base}:./`], {
-		cwd: params.root,
-		stdio: ['ignore', 'pipe', 'pipe'],
-	})
-	const extract = spawn('tar', ['-x', '-C', params.folder], { stdio: ['pipe', 'ignore', 'pipe'] })
-	// a broken pipe (tar gone early, git failing to start) answers through the exit codes, never as a crash
-	let pipeError = ''
-	function notePipeError(error: Error): void {
-		pipeError ||= error.message
-	}
-	archive.stdout.on('error', notePipeError)
-	extract.stdin.on('error', notePipeError)
-	archive.stdout.pipe(extract.stdin)
-	const [archived, extracted] = await Promise.all([
-		endOf({ child: archive }),
-		endOf({ child: extract }),
-	])
-	if (archived.code !== 0) return `git archive failed: ${archived.errors.trim()}`
-	if (extracted.code !== 0 || pipeError)
-		return `tar failed: ${[extracted.errors.trim(), pipeError].filter(Boolean).join('; ')}`
-	const modules = nearestNodeModules(params.root)
-	if (modules) symlinkSync(modules, join(params.folder, 'node_modules'))
-	return undefined
-}
-
-/** How a child ended: its exit code (undefined when it could not start) and what it printed on stderr. */
-function endOf(params: {
-	child: ChildProcess
-}): Promise<{ code: number | null | undefined; errors: string }> {
-	return new Promise(function settle(resolve) {
-		let errors = ''
-		params.child.stderr?.on('data', (chunk: Buffer) => {
-			errors += chunk.toString()
-		})
-		params.child.on('error', (error) => resolve({ code: undefined, errors: error.message }))
-		params.child.on('close', (code) => resolve({ code, errors }))
-	})
-}
-
-/** The `node_modules` folder the package resolves its packages from: its own, else the nearest above it. */
-function nearestNodeModules(root: string): string | undefined {
-	for (let folder = root; ; folder = dirname(folder)) {
-		const candidate = join(folder, 'node_modules')
-		if (existsSync(candidate)) return candidate
-		if (dirname(folder) === folder) return undefined
 	}
 }
 

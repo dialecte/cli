@@ -8,6 +8,8 @@ import { modulesOf } from './select-cases.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { ReportedModule } from './tdd.types.ts'
+
 /** Whether the temporary volume treats a path and its case-swapped spelling as one (the macOS default). */
 const CASE_INSENSITIVE = probeCaseInsensitive({ path: tmpdir() })
 
@@ -18,7 +20,12 @@ describe('modulesOf', () => {
 			const base = realpathSync(temporaryFolder('dialecte-select-cases-'))
 			mkdirSync(join(base, 'Repo', 'src'), { recursive: true })
 			writeFileSync(join(base, 'Repo', 'src', 'a.test.ts'), '')
-			const reported = { file: join(base, 'Repo', 'src', 'a.test.ts'), errors: [], cases: [] }
+			const reported: ReportedModule = {
+				file: join(base, 'Repo', 'src', 'a.test.ts'),
+				runner: 'vitest',
+				errors: [],
+				cases: [],
+			}
 
 			expect(
 				modulesOf({ root: join(base, 'repo'), modules: [reported], file: 'src/a.test.ts' }),
@@ -30,7 +37,12 @@ describe('modulesOf', () => {
 		const base = realpathSync(temporaryFolder('dialecte-select-cases-'))
 		mkdirSync(join(base, 'repo', 'src'), { recursive: true })
 		writeFileSync(join(base, 'repo', 'src', 'a.test.ts'), '')
-		const reported = { file: join(base, 'repo', 'src', 'a.test.ts'), errors: [], cases: [] }
+		const reported: ReportedModule = {
+			file: join(base, 'repo', 'src', 'a.test.ts'),
+			runner: 'vitest',
+			errors: [],
+			cases: [],
+		}
 
 		expect(
 			modulesOf({ root: join(base, 'repo'), modules: [reported], file: 'src/a.test.ts' }),

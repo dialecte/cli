@@ -4261,6 +4261,12 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 			look: 'look: each one; the change may weaken what the case proved',
 		},
 		{
+			term: 'red on base',
+			meaning:
+				"a revised case whose red was taken by running it against the base's production with the lot's current test code (a test corrected before any review round)",
+			look: 'look: each one; the revision is the reason the red was taken on the base',
+		},
+		{
 			term: 'helper code changed near unchanged cases (noise)',
 			meaning:
 				'unchanged cases flagged because test code around them changed; nothing proven is weakened',

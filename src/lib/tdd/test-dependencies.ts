@@ -9,29 +9,40 @@
  * text names it with its folder (`fixtures/scan.ts`, a full path): a bare file name (`index.ts`) may be
  * another file, so it is a dependency but not followed. The setup files of the package's vitest config
  * (`setupFiles`, test code no test imports) are a dependency of every test file, followed as an import. A red run
- * freezes a helper only through a file that depends on it.
+ * freezes a helper only through a file that depends on it. A pytest test file is never parsed here: its
+ * dependencies are the test code its run used, as the cli's pytest plugin reported it.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join, posix } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path'
 
+import { realPathOf } from '../file-system.ts'
 import { matchesGlob } from './match-glob.ts'
+import { modulesOf } from './select-cases.ts'
 import { isPackageTestCode } from './tdd-files.ts'
-import { NEGATED_GLOB_PREFIX, SOURCE_FILE_PATTERN } from './tdd.constants.ts'
+import { NEGATED_GLOB_PREFIX, PYTHON_FILE_PATTERN, SOURCE_FILE_PATTERN } from './tdd.constants.ts'
 import { metaGlobs, moduleSpecifiers } from './test-source.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { MetaGlob, ModuleResolver } from './tdd.types.ts'
+import type {
+	MetaGlob,
+	ModuleResolver,
+	ReportedModule,
+	TestDependencies,
+	TestDependenciesParams,
+} from './tdd.types.ts'
 
-export function listTestDependencies(params: {
-	root: string
-	/** The test file, relative to the root. */
-	file: string
-	/** The test-code files of the change, relative to the root. */
-	changedTestCode: readonly string[]
-	resolveModule: ModuleResolver
-	/** Its declared production folders; none when not given. */
-	packageJson?: PackageJson
-}): { dependencies: string[]; unresolved: string[] } {
+export function listTestDependencies(params: TestDependenciesParams): TestDependencies {
+	// a test file here is one already: a Python one is a pytest file
+	if (PYTHON_FILE_PATTERN.test(params.file))
+		return {
+			dependencies: pythonDependencies({ ...params, modules: params.modules ?? [] }),
+			unresolved: [],
+		}
+	return typescriptDependencies(params)
+}
+
+/** The test code a JS/TS test file depends on, read from its source and the sources it reaches. */
+function typescriptDependencies(params: TestDependenciesParams): TestDependencies {
 	const { root } = params
 	const found = new Set<string>()
 	const texts: string[] = []
@@ -46,7 +57,7 @@ export function listTestDependencies(params: {
 	for (const setupFile of params.resolveModule.setupFiles)
 		if (
 			setupFile !== params.file &&
-			isPackageTestCode({ file: setupFile, packageJson: params.packageJson ?? {} })
+			isPackageTestCode({ root, file: setupFile, packageJson: params.packageJson ?? {} })
 		) {
 			found.add(setupFile)
 			followed.add(setupFile)
@@ -81,7 +92,7 @@ export function listTestDependencies(params: {
 				if (resolution.kind !== 'local') continue
 				const resolved = resolution.file
 				if (resolved === params.file || found.has(resolved)) continue
-				if (isPackageTestCode({ file: resolved, packageJson: params.packageJson ?? {} })) {
+				if (isPackageTestCode({ root, file: resolved, packageJson: params.packageJson ?? {} })) {
 					found.add(resolved)
 					followed.add(resolved)
 					queue.push(resolved)
@@ -110,6 +121,31 @@ export function listTestDependencies(params: {
 	const snapshot = join(dirname(params.file), '__snapshots__', `${basename(params.file)}.snap`)
 	if (existsSync(join(root, snapshot))) found.add(snapshot)
 	return { dependencies: [...found].sort(), unresolved: [...unresolved].sort() }
+}
+
+/**
+ * The test code a pytest test file used in its run, as the plugin reported it (conftests, helpers its imports
+ * resolve to, files it opened), relative to the root: the production files and the files outside the package left
+ * out, so production never freezes. A file the run did not report has none.
+ */
+function pythonDependencies(params: {
+	root: string
+	file: string
+	modules: readonly ReportedModule[]
+	packageJson?: PackageJson
+}): string[] {
+	const realRoot = realPathOf(params.root)
+	const used = modulesOf(params).flatMap((testModule) => testModule.dependencies ?? [])
+	const files = used
+		.map((path) => relative(realRoot, realPathOf(path)))
+		.filter(
+			(file) =>
+				file !== params.file &&
+				!file.startsWith('..') &&
+				!isAbsolute(file) &&
+				isPackageTestCode({ root: params.root, file, packageJson: params.packageJson ?? {} }),
+		)
+	return [...new Set(files)].sort()
 }
 
 /** The patterns of an `import.meta.glob` call written in `from`, as globs over the package (the others dropped). */

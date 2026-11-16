@@ -6,6 +6,9 @@ import type { CaseStatus, LotCaseEntry, ReceiptKind, TddEntry } from './tdd.type
 
 const FILE = 'src/add.test.ts'
 
+/** The package root: its files are all JS/TS, judged by their names alone (no file of it is read). */
+const ROOT = '/package'
+
 /** A receipt of case `name` in FILE at test file `hash` and case text `text`. */
 function receipt(params: {
 	kind: ReceiptKind
@@ -239,6 +242,7 @@ describe('caseStatusOf with the lot file declarations', () => {
 		it(name, () => {
 			expect(
 				caseStatusOf({
+					root: ROOT,
 					ledger: { version: 3, entries: testCase.entries },
 					testCase: { file: FILE, name: testCase.name, project: '' },
 					testFileHash: testCase.hash,
@@ -260,6 +264,7 @@ function statusWith(params: {
 	text?: string
 }): CaseStatus {
 	return caseStatusOf({
+		root: ROOT,
 		ledger: { version: 3, entries: params.entries },
 		testCase: { file: FILE, name: params.name, project: '' },
 		testFileHash: params.hash ?? 'h1',
@@ -326,6 +331,7 @@ describe('caseStatusOf', () => {
 		it(name, () => {
 			expect(
 				caseStatusOf({
+					root: ROOT,
 					ledger: { version: 3, entries: testCase.entries },
 					testCase: { file: FILE, name: testCase.name, project: '' },
 					testFileHash: testCase.hash,

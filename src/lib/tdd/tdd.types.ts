@@ -1,6 +1,8 @@
 import type { PackageJson } from '../package-json.types.ts'
+import type { Clock } from '../progress/clock.types.ts'
+import type { Watchdog } from '../progress/run-child.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
-import type { SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
+import type { RUNNER_ORDER, SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
 
 /**
  * A test case: its file, relative to the package root, its full name as vitest prints it
@@ -18,10 +20,126 @@ export type SourceLocation = { line: number; column: number }
 /** One frame of an error's stack, as the test runner parsed it. */
 export type ErrorFrame = SourceLocation & { file: string }
 
-/** An error as the test runner reported it. */
-export type ReportedError = { name?: string; message: string; frames: ErrorFrame[] }
+/**
+ * An error as the test runner reported it. `inAssertion` is the pytest plugin's own answer: the innermost frame in
+ * the test file lies inside an `assert` statement (undefined for the runners whose test source the cli reads).
+ */
+export type ReportedError = {
+	name?: string
+	/** The error's own code when it has one (node's `ENOENT`, `ERR_MODULE_NOT_FOUND`; Python's errno name). */
+	code?: string
+	message: string
+	frames: ErrorFrame[]
+	inAssertion?: boolean
+}
+
+/**
+ * What the pytest plugin reports of a case's source: the test function's own text without its parametrize
+ * decorators, and, for a parametrized case, the text of its parameter row (the rows of stacked decorators joined).
+ */
+export type PythonCaseSource = { call: string; row?: string }
+
+/**
+ * A pytest case's `call` split at its `def` line: the name it defines, each decorator above that line alone
+ * (whitespace normalised), and the function's text from `def` on.
+ */
+export type PythonCallParts = { functionName: string; decorators: string[]; body: string }
+
+/** The interpreter of a pytest folder: a command and the arguments before `-m pytest`. */
+export type PackagePython = {
+	command: string
+	arguments: readonly string[]
+}
+
+/** What a pytest configuration says of test discovery, pytest's defaults for what it does not declare. */
+export type PytestConfig = {
+	/** `python_files`: the patterns a test module matches (by its name, or by its path when a pattern holds `/`). */
+	pythonFiles: string[]
+	/** `testpaths`: where discovery starts, relative to the configuration's folder (globs); none: the folder itself. */
+	testpaths: string[]
+	/** `norecursedirs`: the patterns of the folders discovery never enters below where it starts. */
+	norecursedirs: string[]
+}
+
+/** A pytest folder (absolute) with the configuration it holds: pytest's defaults when it holds none. */
+export type PytestFolder = { folder: string; config: PytestConfig }
+
+/** A pytest setting as written: a string (split as a shell splits a line) or a list (a TOML array). */
+export type PytestSetting = string | string[]
+
+/** The sections of an ini file (`[name]`), each with its keys and their values as written. */
+export type IniSections = Map<string, Map<string, string>>
+
+/** The values of a TOML document by their dotted key paths (`tool.pytest.ini_options.testpaths`), and its tables. */
+export type TomlDocument = { values: Map<string, TomlValue>; tables: Set<string> }
+
+/** Where the TOML reader stands in a text. */
+export type TomlCursor = { text: string; index: number }
+
+/** A value the TOML reader read, with the index just after it. */
+export type TomlRead<T> = { value: T; end: number }
+
+/** A TOML value as the pytest reader keeps it: a string, a list, or another value it does not read. */
+export type TomlValue = string | TomlValue[] | { unread: string }
 
 export type ReportedCaseState = 'passed' | 'failed' | 'skipped' | 'pending'
+
+/** The runners a test file can run under, chosen per file. */
+export type TestRunner = (typeof RUNNER_ORDER)[number]
+
+/** The test files of one runner, in the order the change lists them. */
+export type RunnerGroup = { runner: TestRunner; files: string[] }
+
+/**
+ * What the dispatcher tells its caller about each runner's run: `start` before the runner runs its files, and the
+ * `finish` it answers once the runner has answered (`failed`: it answered a failure, the later runners are not started).
+ */
+export type RunnerObserver = {
+	start(params: { runner: TestRunner; fileCount: number }): {
+		finish(params: { failed: boolean }): void
+	}
+}
+
+/** The test files split by runner, and the files of no runner (they leave the selection). */
+export type RunnerGroups = { groups: RunnerGroup[]; outside: string[] }
+
+/** What a runner is asked: the test files, which cases of them to run, and the bounds of the run. */
+export type RunnerParams = {
+	root: string
+	/** Test files, relative to the root. */
+	files: readonly string[]
+	/** The full names of the cases to run, every case of the files, or none (collect them only). */
+	filter: { names: readonly string[] } | 'all' | 'collect'
+	/** Default: the system clock. */
+	clock?: Clock
+	/** Default: stalled after 10 min, sampled every 5 s, with the machine's tools. */
+	watchdog?: Watchdog
+	/** A hard bound in milliseconds: the run's process group is killed past it, the run answers a failure. */
+	timeoutMs?: number
+	/**
+	 * `root` is a copy of this package (a base run): pytest runs with this package's own interpreter, the copy's
+	 * folder first on the import path, and is refused when the package is installed editable there. Default: none.
+	 */
+	interpreterRoot?: string
+}
+
+/**
+ * One run of a runner's process through the cli's reporter: the command and its arguments, the environment it adds
+ * (the report's path is added to it) and the variables it removes, and the run asked.
+ */
+export type ReportingRun = {
+	runner: TestRunner
+	command: string
+	args: string[]
+	environment: Record<string, string>
+	unset?: string[]
+	/** The folder the process runs in. Default: the run's root. */
+	cwd?: string
+	run: RunnerParams
+}
+
+/** A runner: its files in, what its run saw (or why it could not run) out. */
+export type RunnerFunction = (params: RunnerParams) => Promise<ReportedModule[] | TestRunFailure>
 
 /** One test case as the run saw it. */
 export type ReportedCase = {
@@ -32,14 +150,22 @@ export type ReportedCase = {
 	project: string
 	location?: SourceLocation
 	errors: ReportedError[]
+	/** pytest: the case's source, as the plugin read it. */
+	source?: PythonCaseSource
+	/** pytest, in a collect: a skip or a skipif that is true marks the case. */
+	skipMarked?: boolean
 }
 
 /** One test file as the run saw it: an error at collection (a syntax error, a throw at import) and its cases. */
 export type ReportedModule = {
 	/** Absolute path. */
 	file: string
+	/** The runner that ran the file. */
+	runner: TestRunner
 	errors: ReportedError[]
 	cases: ReportedCase[]
+	/** pytest: the files of test code (absolute paths) the file used: conftests, helpers, data it opened. */
+	dependencies?: string[]
 }
 
 /**
@@ -59,7 +185,11 @@ export type FailureKind =
 	| 'timeout'
 	| 'error'
 
-export type CaseFailure = { kind: FailureKind; message: string }
+/**
+ * Why a case failed, and its message. `missingInput`: the error thrown is a missing file or path, told by its code
+ * or name (`isMissingInputError`), never by its message's words; present only when true.
+ */
+export type CaseFailure = { kind: FailureKind; message: string; missingInput?: true }
 
 /** What a red, green or refusal says about the evidence, for the reviewer. */
 export type ReceiptFlag =
@@ -72,6 +202,8 @@ export type ReceiptFlag =
 	| 'red after green'
 	/** A green case kept at a red run that froze test code it depends on at a new state. */
 	| 'test code changed around it'
+	/** A red a revised case earned on the base's production, with the lot's current test code over it. */
+	| 'red on base'
 
 /**
  * - `red`: the case failed for a real reason before the code;
@@ -299,6 +431,8 @@ export type TddRunAdmission = {
 /** An error as vitest hands it to a reporter: its message, name and parsed stack. */
 export type RunnerError = {
 	name?: string
+	/** The serialized error's own `code` property, whatever its type. */
+	code?: unknown
 	message?: string
 	stacks?: readonly { file: string; line: number; column: number }[]
 }
@@ -338,6 +472,8 @@ export type TddState = {
 	zeroCases?: ZeroCaseRefusal[]
 	/** The changed test files no vitest config includes: out of the selection; absent when none. */
 	notVitest?: string[]
+	/** The changed pytest files a conftest leaves out of discovery: out of the selection; absent when none. */
+	pytestIgnored?: string[]
 	/** What the cases of the change moved from; absent when nothing moved and no base collect ran. */
 	moves?: TddMoves
 }
@@ -372,6 +508,8 @@ export type RedJudgement = {
 	message?: string
 	reason?: string
 	flags: ReceiptFlag[]
+	/** The production state the receipt names when it is not the tree's now: a red on base, the base's. */
+	productionHash?: string
 }
 
 /** Where an import of a test file leads. */
@@ -397,6 +535,23 @@ export type ModuleResolver = {
 
 /** One `import.meta.glob(...)` call: its patterns as written, the negated ones without their `!`. */
 export type MetaGlob = { include: string[]; exclude: string[] }
+
+/** What the test code of a test file is listed from. */
+export type TestDependenciesParams = {
+	root: string
+	/** The test file, relative to the root. */
+	file: string
+	/** The test-code files of the change, relative to the root. */
+	changedTestCode: readonly string[]
+	resolveModule: ModuleResolver
+	/** Its declared production folders; none when not given. */
+	packageJson?: PackageJson
+	/** The modules the run reported: a pytest test file's dependencies are the ones its run used. */
+	modules?: readonly ReportedModule[]
+}
+
+/** The test code a test file depends on, and the local-looking specifiers that resolve nowhere. */
+export type TestDependencies = { dependencies: string[]; unresolved: string[] }
 
 /** A vite alias: the specifier prefix and the absolute folder it stands for. */
 export type ModuleAlias = { find: string; replacement: string }
@@ -538,4 +693,6 @@ export type ZeroCaseFiles = {
 	refused: ZeroCaseRefusal[]
 	/** No vitest config includes them: they leave the selection, never refused nor frozen. */
 	notVitest: string[]
+	/** pytest files a conftest leaves out of discovery (no module reported): out of the selection as well. */
+	pytestIgnored: string[]
 }

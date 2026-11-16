@@ -35,8 +35,280 @@ export const SYNTAX_FAILURE_PATTERN = /PARSE_ERROR|Transform failed|SyntaxError|
 /** Calls that assert: the stub's error counts as a red only when thrown from inside their arguments. */
 export const ASSERTION_CALLEE = 'expect'
 
+/** The modules whose bindings assert: a call through one (`assert.equal(...)`, `deepStrictEqual(...)`) asserts. */
+export const NODE_ASSERT_SPECIFIERS: readonly string[] = [
+	'node:assert',
+	'node:assert/strict',
+	'assert',
+	'assert/strict',
+]
+
+/** A member chain through this segment asserts without an import: the test context's `t.assert.equal(...)`. */
+export const NODE_ASSERT_SEGMENT = 'assert'
+
 /** Test files: what vitest includes by default. */
 export const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/
+
+/** A Python file: the only files pytest collects test modules from. */
+export const PYTHON_FILE_PATTERN = /\.py$/
+
+/** pytest's `python_files` when a configuration declares none. */
+export const DEFAULT_PYTHON_FILES = ['test_*.py', '*_test.py'] as const
+
+/** pytest's `norecursedirs` when a configuration declares none. */
+export const DEFAULT_NORECURSEDIRS = [
+	'*.egg',
+	'.*',
+	'_darcs',
+	'build',
+	'CVS',
+	'dist',
+	'node_modules',
+	'venv',
+	'{arch}',
+] as const
+
+/** The settings of a pytest configuration that decide which files its discovery collects. */
+export const PYTEST_DISCOVERY_KEYS = {
+	pythonFiles: 'python_files',
+	testpaths: 'testpaths',
+	norecursedirs: 'norecursedirs',
+} as const
+
+/** The folder pytest's discovery never enters, and the files that mark a folder as a virtual environment it skips. */
+export const PYTHON_CACHE_FOLDER = '__pycache__'
+export const VIRTUAL_ENVIRONMENT_MARKERS: ReadonlyArray<readonly string[]> = [
+	['pyvenv.cfg'],
+	['conda-meta', 'history'],
+]
+
+/** The characters that start a comment line of an ini file (pytest keeps a `#` after a value). */
+export const INI_COMMENT_CHARACTERS = '#;'
+
+/** The characters that make a `testpaths` entry a glob. */
+export const GLOB_MAGIC_PATTERN = /[*?[]/
+
+/** A pytest configuration file of tests, wherever it is: test code, never production. */
+export const CONFTEST_FILE_PATTERN = /(^|\/)conftest\.py$/
+
+/** The runners in the order their groups run and print. */
+export const RUNNER_ORDER = ['vitest', 'node', 'pytest'] as const
+
+/** How each runner is named on a progress line. */
+export const RUNNER_DISPLAY_NAMES = {
+	vitest: 'vitest',
+	node: 'node --test',
+	pytest: 'pytest',
+} as const satisfies Record<(typeof RUNNER_ORDER)[number], string>
+
+/** The module a test file imports to run under `node --test`. */
+export const NODE_TEST_SPECIFIER = 'node:test'
+
+/** The events of a `node --test` run the cli's node reporter reads; it ignores every other. */
+export const NODE_EVENT_TYPES = {
+	start: 'test:start',
+	pass: 'test:pass',
+	fail: 'test:fail',
+	stderr: 'test:stderr',
+} as const
+
+/** The events of the tests and suites of a file: a start opens a title, an end records a case or an error. */
+export const NODE_TEST_EVENT_TYPES: readonly string[] = [
+	NODE_EVENT_TYPES.start,
+	NODE_EVENT_TYPES.pass,
+	NODE_EVENT_TYPES.fail,
+]
+
+/** The `failureType` of a test or suite whose own code threw (not a failure of a test under it). */
+export const NODE_CODE_FAILURE = 'testCodeFailure'
+
+/** The `failureType` of a test that ran out of time. */
+export const NODE_TIMEOUT_FAILURE = 'testTimeoutFailure'
+
+/** The bound in node's timeout message (`test timed out after 10ms`). */
+export const NODE_TIMEOUT_BOUND_PATTERN = /(\d+)\s*ms/
+
+/** A node timeout as vitest words it, so `TIMEOUT_PATTERN` reads it: `{ms}` the bound. */
+export const NODE_TIMEOUT_MESSAGE = 'Test timed out in {ms}ms'
+
+/** A V8 stack frame: `at fn (file:///p:L:C)` or `at file:///p:L:C`. */
+export const V8_FRAME_PATTERN = /^\s*at (?:.*? \()?(.+?):(\d+):(\d+)\)?$/
+
+/** A frame of node's own code (`node:internal/...`): left out, as vitest leaves it out. */
+export const NODE_INTERNAL_FRAME_PREFIX = 'node:'
+
+/** The node reporter module, next to the cli's entry (built) or next to this file (sources). */
+export const NODE_REPORTER_FILE_NAMES = ['tdd-node-reporter.js', 'tdd-node-reporter.ts'] as const
+
+/** The environment of a nested `node --test` run: with it, a run reports to its parent instead of its reporters. */
+export const NODE_TEST_CONTEXT_VARIABLE = 'NODE_TEST_CONTEXT'
+
+/**
+ * The files that may make a folder a pytest folder, in the order pytest looks for them in one folder (the first that
+ * configures pytest wins, `readPytestConfig` says which does).
+ */
+export const PYTEST_CONFIG_FILES = [
+	'pytest.toml',
+	'.pytest.toml',
+	'pytest.ini',
+	'.pytest.ini',
+	'pyproject.toml',
+	'tox.ini',
+	'setup.cfg',
+] as const
+
+/** The configuration files that configure pytest even with no pytest section. */
+export const ALWAYS_PYTEST_CONFIG_FILES: readonly string[] = [
+	'pytest.toml',
+	'.pytest.toml',
+	'pytest.ini',
+	'.pytest.ini',
+]
+
+/** Where each kind of configuration file keeps pytest's settings. */
+export const PYTEST_INI_SECTION = 'pytest'
+export const PYTEST_CFG_SECTION = 'tool:pytest'
+export const PYTEST_TOML_TABLE = 'pytest'
+export const PYPROJECT_PYTEST_TABLE = 'tool.pytest'
+export const PYPROJECT_INI_OPTIONS_TABLE = 'tool.pytest.ini_options'
+export const PYPROJECT_FILE = 'pyproject.toml'
+
+/** A folder's own virtual environment interpreter, on POSIX and on Windows. */
+export const VENV_PYTHON_PATH = ['.venv', 'bin', 'python'] as const
+export const VENV_WINDOWS_PYTHON_PATH = ['.venv', 'Scripts', 'python.exe'] as const
+
+/** The lock file of a uv project, and the command that runs its python with the lock as it is. */
+export const UV_LOCK_FILE = 'uv.lock'
+export const UV_PYTHON_COMMAND = ['uv', 'run', '--frozen', 'python'] as const
+
+/** The python on the PATH when no folder has its own: `python3`, or `python` on Windows. */
+export const DEFAULT_PYTHON_COMMAND = 'python3'
+export const DEFAULT_WINDOWS_PYTHON_COMMAND = 'python'
+
+/** The cli's pytest plugin: the module name `-p` loads, and its file next to the cli's entry or this file. */
+export const PYTEST_PLUGIN_MODULE = 'dialecte_tdd_pytest'
+export const PYTEST_PLUGIN_FILE_NAMES = ['dialecte_tdd_pytest.py'] as const
+
+/** The interpreter's arguments that run pytest, in a package's own run. */
+export const PYTEST_MODULE_ARGUMENTS = ['-m', 'pytest'] as const
+
+/**
+ * The interpreter's arguments that run pytest in a base copy's run, the copy's pytest folder next: whatever the
+ * python's version, that folder goes first on `sys.path` and the entries of the current folder (`''`, the cwd)
+ * leave it before pytest is imported, so the copy's modules win over any other folder on the path (the lot's own,
+ * an interpreter or `PYTHONPATH` put first). A python without pytest says so as `-m pytest` does.
+ */
+export const BASE_COPY_PYTEST_ARGUMENTS = [
+	'-c',
+	[
+		'import os, sys',
+		'folder = sys.argv[1]',
+		'current = {"", os.getcwd(), folder}',
+		'sys.path[:] = [folder] + [entry for entry in sys.path if entry not in current]',
+		'sys.argv = ["pytest"] + sys.argv[2:]',
+		'try:',
+		'    import pytest',
+		'except ImportError:',
+		'    sys.exit("No module named pytest")',
+		'sys.exit(pytest.console_main())',
+	].join('\n'),
+] as const
+
+/**
+ * The pytest arguments of every run after the interpreter's own: the cli's plugin loaded, no cache folder written,
+ * the other files run when one fails to collect, the short output.
+ */
+export const PYTEST_ARGUMENTS = [
+	'-p',
+	PYTEST_PLUGIN_MODULE,
+	'-p',
+	'no:cacheprovider',
+	'--continue-on-collection-errors',
+	'-q',
+] as const
+
+/** The pytest argument that lists the cases and runs none. */
+export const PYTEST_COLLECT_ARGUMENT = '--collect-only'
+
+/** The environment the plugin reads: the case names to keep (JSON, every case without it), the package root. */
+export const PYTEST_NAMES_VARIABLE = 'DIALECTE_TDD_NAMES'
+export const PYTEST_ROOT_VARIABLE = 'DIALECTE_TDD_ROOT'
+
+/** The variables of a python run: no bytecode written beside the sources, the import path the plugin joins. */
+export const PYTHON_NO_BYTECODE_VARIABLE = 'PYTHONDONTWRITEBYTECODE'
+export const PYTHON_PATH_VARIABLE = 'PYTHONPATH'
+
+/** The uv option naming the project whose environment `uv run` uses: the lot's, for a base copy's run. */
+export const UV_PROJECT_OPTION = '--project'
+
+/** The key of a `pyproject.toml` naming its project. */
+export const PROJECT_NAME_KEY = 'project.name'
+
+/**
+ * Asks an interpreter how the project its first argument names is installed: prints `editable` when its
+ * distribution says so (`direct_url.json` `dir_info.editable`, or an `__editable__` / `.pth` file it installs),
+ * `installed` otherwise, nothing when it is not installed.
+ */
+export const EDITABLE_PROBE_SCRIPT = [
+	'import json, sys',
+	'from importlib import metadata',
+	'try:',
+	'    found = metadata.distribution(sys.argv[1])',
+	'except metadata.PackageNotFoundError:',
+	'    sys.exit(0)',
+	'direct = json.loads(found.read_text("direct_url.json") or "{}")',
+	'paths = [str(path) for path in (found.files or [])]',
+	'editable = direct.get("dir_info", {}).get("editable") or any(',
+	'    "__editable__" in path or path.endswith(".pth") for path in paths',
+	')',
+	'print("editable" if editable else "installed")',
+].join('\n')
+export const EDITABLE_PROBE_ANSWER = 'editable'
+
+/** The bound of the editable probe, in milliseconds: a guard against a hang, never a measure of speed. */
+export const EDITABLE_PROBE_TIMEOUT = 60_000
+
+/** What a python prints when pytest is not importable: the run is then no pytest run at all. */
+export const NO_PYTEST_PATTERN = /No module named pytest/
+
+/** The failure of a pytest folder whose python has no pytest (`{folder}` relative with a `/`, `{reason}` its line). */
+export const NO_PYTEST_FAILURE = 'pytest is not installed for {folder} ({reason})'
+
+/** The rows of stacked parametrize decorators, as the plugin joins them in a case's source. */
+export const PYTHON_ROW_SEPARATOR = '\0'
+
+/** A line that defines a Python function (`def <name>(`, `async def <name>(`, at any indentation): its name. */
+export const PYTHON_DEF_LINE_PATTERN = /^\s*(?:async\s+)?def\s+(\w+)\s*\(/
+
+/** A normalised decorator that is a `...parametrize(...)` call, as the plugin leaves it out of a case's text. */
+export const PYTHON_PARAMETRIZE_DECORATOR_PATTERN = /^@\s*[\w.\s]*\.\s*parametrize\s*\(/
+
+/** A Python name of a failed `pytest.raises` / `pytest.warns`: an assertion when its message says the miss. */
+export const PYTEST_FAILED_NAME = 'Failed'
+export const PYTEST_MISSED_PATTERN = /^DID NOT (RAISE|WARN)\b/
+
+/** pytest-timeout's `Failed: Timeout >1.0s`: a case that ran out of time. */
+export const PYTEST_TIMEOUT_PATTERN = /^Timeout\b/
+
+/** The Python stub: `raise NotImplementedError`, whatever its message. */
+export const PYTHON_STUB_NAME = 'NotImplementedError'
+
+/** The Python errors of a file that does not parse. */
+export const PYTHON_SYNTAX_ERROR_NAMES: readonly string[] = [
+	'SyntaxError',
+	'IndentationError',
+	'TabError',
+]
+
+/** A Python import of a name its module lacks. */
+export const PYTHON_MISSING_NAME_PATTERN = /cannot import name '[^']+'/
+
+/** A Python attribute read on a module that lacks it: `module 'pkg.gen' has no attribute 'x'` (the module dotted). */
+export const PYTHON_MISSING_ATTRIBUTE_PATTERN = /^module '([\w.]+)' has no attribute '[^']+'/
+
+/** The file of a Python module, from a folder: `<parts>.py` or `<parts>/__init__.py`. */
+export const PYTHON_MODULE_SUFFIX = '.py'
+export const PYTHON_PACKAGE_FILE = '__init__.py'
 
 /** Test code beyond the test files: helpers and fixtures in a test or fixture folder, snapshots. */
 export const TEST_FOLDER_PATTERN =
@@ -296,9 +568,6 @@ export const GLOB_SPECIAL_CHARACTER_PATTERN = /[.+^${}()|[\]\\]/g
 /** A test call of the base gone without a title: the finding a `gone` entry of the lot file covers. */
 export const UNTITLED_CALL_GONE = 'a test call of the base is gone'
 
-/** A passing case a `revised` entry names that the base cannot be shown to hold. */
-export const NOT_PROVABLY_OF_THE_BASE = 'not provably a case of the base: accept it or prove it red'
-
 /** What a production state records for a file of the base the change deletes. */
 export const DELETED_PRODUCTION_FILE = 'deleted'
 
@@ -397,14 +666,25 @@ export const ZERO_CASE_REASONS = {
 	allSkipped: 'every case is skipped',
 } as const
 
-/** The line of a selected file no vitest config includes: it leaves the selection, never refused nor frozen. */
-export const NOT_A_VITEST_FILE_LINE = 'not a vitest test file (no vitest config includes it)'
+/**
+ * The line of a selected file no runner takes (no vitest config includes it, it imports no `node:test`): it leaves
+ * the selection, never refused nor frozen.
+ */
+export const NOT_A_VITEST_FILE_LINE =
+	'not a test file of a known runner (no vitest config includes it, no node:test import)'
 
 /** The label of a refused file's or case's line (`refused  <file>  <reason>`). */
 export const REFUSED_LABEL = 'refused'
 
 /** The label of that line (`outside  <file>  <line>`): no case line, never counted as a refusal. */
 export const NOT_A_VITEST_FILE_LABEL = 'outside'
+
+/**
+ * The line of a pytest file a conftest leaves out of collection (`outside  <file>  <line>`): pytest collects a file
+ * named on its command line whatever a conftest says, so the cli's plugin asks pytest's own ignore hook.
+ */
+export const PYTEST_IGNORED_FILE_LINE =
+	"not a test file pytest collects (a conftest's collect_ignore, collect_ignore_glob or pytest_ignore_collect leaves it out)"
 
 /** The case states of a run that ran no case: skipped (`.skip`, `.todo`) or never started. */
 export const NOT_RUN_CASE_STATES: readonly string[] = ['skipped', 'pending']
@@ -444,3 +724,65 @@ export const VITEST_CONFIG_PROPERTIES = {
 	exclude: 'exclude',
 	projects: 'projects',
 } as const
+
+/** The flag of a red a revised case earned on the base's production (its file frozen as at any red). */
+export const RED_ON_BASE_FLAG = 'red on base'
+
+/** A revised case that passes on the base's production too: the revision proves nothing; accept it or prove it red. */
+export const PASSES_ON_BASE_TOO =
+	'passes on the base too: the revision proves nothing; prove it red or accept it: lot accept <case> <reason>'
+
+/** The name prefix of the throwaway folder a base run works in, in the temporary folder: removed when the run ends. */
+export const BASE_RED_FOLDER_PREFIX = 'dialecte-base-red-'
+
+/** The file of a base run's throwaway folder holding the id of the process that owns it. */
+export const BASE_RED_OWNER_FILE = 'owner.pid'
+
+/** The folder of a base run's throwaway folder the base's tree is written into, beside its owner file. */
+export const BASE_RED_TREE_FOLDER = 'tree'
+
+/**
+ * What a thrown error that is a missing file or path is, by its code or name: node's (and an OSError's) `ENOENT`,
+ * Python's `FileNotFoundError`, node's module-not-found codes when the module is a relative or absolute path (the
+ * path is only in the message). On a base copy, an input git ignores that the copy lacks.
+ */
+export const MISSING_FILE_CODE = 'ENOENT'
+export const MISSING_FILE_ERROR_NAME = 'FileNotFoundError'
+export const MODULE_NOT_FOUND_CODES: readonly string[] = [
+	'ERR_MODULE_NOT_FOUND',
+	'MODULE_NOT_FOUND',
+]
+export const MODULE_PATH_NOT_FOUND_PATTERN =
+	/Cannot find (?:module|package) ['"](?:\.{1,2}[\\/]|[\\/])/
+
+/**
+ * The failure kinds of a thrown error a base run may blame on a missing input: never an assertion or a stub's
+ * red, whatever their message says.
+ */
+export const MISSING_INPUT_KINDS: readonly FailureKind[] = [
+	'error',
+	'error-in-production',
+	'type-error',
+]
+
+/**
+ * The entries of a `node_modules` folder a tool writes its caches into (Vite's `.vite` and `.vite-temp`, `.cache`):
+ * never linked into a base copy, so a base run writes its own there.
+ */
+export const NODE_MODULES_CACHE_ENTRY_PATTERN = /^\.(?:vite|cache)/
+
+/** A revised case whose base run failed on a missing file or path: the base copy lacks what git ignores. */
+export const BASE_LACKS_IGNORED_INPUT = 'the base copy lacks a git-ignored input, not a proof'
+
+/** A pytest base run refused: the lot's interpreter imports the package from the lot's tree. */
+export const INSTALLED_EDITABLE =
+	"the package is installed editable: a base run would import the lot's code"
+
+/** A revised case the base run did not run (skipped there, or not found): the base proves nothing of it. */
+export const DID_NOT_RUN_ON_BASE = 'did not run on the base: the revision proves nothing'
+
+/** A revised case that failed on the base without an error to classify: no red. */
+export const FAILED_ON_BASE_WITHOUT_ERROR = 'failed on the base without an error'
+
+/** The tree entry a base run's copy links to the package's `node_modules`: never a file of the base. */
+export const NODE_MODULES_FOLDER = 'node_modules'
