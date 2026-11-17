@@ -9,7 +9,6 @@ import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { checkTddReceipts } from '../tdd/check-tdd-receipts.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
-import { resolveTddBase } from '../tdd/tdd-base.ts'
 import {
 	hashProduction,
 	isPackageTestCode,
@@ -30,7 +29,7 @@ import {
 import { tddStepResultOf } from './tdd-step.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
+import type { TddBase, TddLedger, TddReceipt } from '../tdd/tdd.types.ts'
 import type { StepResult } from './gate.types.ts'
 
 /**
@@ -42,6 +41,8 @@ export async function runHookTddStep(params: {
 	packageJson: PackageJson
 	/** The tree the commit records. */
 	tree: string
+	/** The lot base the hook run resolved once (`resolveTddBase`), shared with its design step. */
+	base: TddBase | { failure: string }
 }): Promise<StepResult> {
 	const { cwd, packageJson } = params
 	if (!hasHead(cwd)) return skipped(HOOK_TDD_FIRST_COMMIT_REASON)
@@ -55,7 +56,7 @@ export async function runHookTddStep(params: {
 			tail: HOOK_TDD_NOT_THE_COMMIT_HINT,
 		})
 	// the whole lot: a commit of production alone can make an earlier commit's green stale
-	const base = resolveTddBase({ root: cwd, packageJson })
+	const { base } = params
 	if ('failure' in base) return failed({ reason: base.failure })
 	const check = await checkTddReceipts({ root: cwd, packageJson, ref: base.commit })
 	const result = tddStepResultOf(check)
@@ -88,13 +89,23 @@ function failed(params: { reason: string; tail?: string }): StepResult {
 	return { step: TDD_STEP, status: 'failed', counts: {}, restored: [], ...params }
 }
 
-/** The repository has a commit: a first commit has no base to measure a lot from, and no receipt before it. */
-function hasHead(cwd: string): boolean {
+/**
+ * The repository has a commit: a first commit has no base to measure a lot from, and no receipt before it.
+ *
+ * @intent tell a hook step that the commit is the repository's first
+ * @internal
+ */
+export function hasHead(cwd: string): boolean {
 	return tryReadGit({ root: cwd, args: ['rev-parse', '-q', '--verify', 'HEAD'] }) !== undefined
 }
 
-/** A merge is being committed: git keeps MERGE_HEAD until it is. */
-function isMergeInProgress(cwd: string): boolean {
+/**
+ * A merge is being committed: git keeps MERGE_HEAD until it is.
+ *
+ * @intent tell a hook step that the commit is a merge
+ * @internal
+ */
+export function isMergeInProgress(cwd: string): boolean {
 	return (
 		tryReadGit({ root: cwd, args: ['rev-parse', '-q', '--verify', 'MERGE_HEAD'] }) !== undefined
 	)

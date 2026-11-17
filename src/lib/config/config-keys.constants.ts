@@ -73,7 +73,8 @@ const CONFIG_KEY_ENTRIES = [
 		key: 'risk',
 		layer: 'project',
 		repoOverride: false,
-		description: 'Lot risk settings (high: globs whose change makes a lot high risk).',
+		description:
+			'Lot risk settings (high: globs of the shared concepts: a change there makes a lot high risk and needs an approved design).',
 		problemOf: mappingProblem,
 	},
 	{

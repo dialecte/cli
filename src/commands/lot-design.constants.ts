@@ -15,8 +15,8 @@ export const LOT_DESIGN_LINES = {
 	unreadable: 'lot design: {file} cannot be read; nothing written',
 	empty: 'lot design: {file} is empty; nothing written',
 	notText: 'lot design: {file} is not UTF-8 text; nothing written',
-	outsideWorkTree:
-		'lot design: {file} is in no git work tree: keep the design in a repository, beside its plan; nothing written',
+	inScratch:
+		'lot design: {file} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written',
 	noPlanSpec:
 		'lot design: {lot} carries out no plan entry with a spec: dialecte lot design {lot} --from <file>; nothing written',
 	sharedSpec:

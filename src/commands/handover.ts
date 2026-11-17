@@ -40,6 +40,7 @@ import { renderSectionCard, resolveCardColumns } from '../lib/card/render-sectio
 import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
+import { designGateOf } from '../lib/design/design-gate.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf, realPathThroughAncestors } from '../lib/file-system.ts'
 import { currentBranchOf } from '../lib/git.ts'
@@ -125,8 +126,10 @@ import { workTreeTopOf } from '../lib/review-rounds/worktree-state.ts'
 import { appendLotRiskClass } from '../lib/risk/derive-lot-risk-class.ts'
 import { readReferencePatterns } from '../lib/rules/committed-text.ts'
 import { shellQuote, shellWord } from '../lib/shell-quote.ts'
+import { readIdentity } from '../lib/store/identity.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
 import { STORE_REFUSAL } from '../lib/store/store.constants.ts'
+import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import { COMMIT_PLAN_FOLDER } from '../lib/workspace.constants.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 import { runHandoverReview } from './handover-review.ts'
@@ -282,6 +285,9 @@ export function runHandover(params: {
 	const out = lotFolderOf({ folder: chosen.out }) ?? chosen.out
 	const outRefusal = handoverWriteRefusal({ out, lotsFile })
 	if (outRefusal) return usage(`handover: ${outRefusal}`)
+	// a store lot is held to its design before anything is written (DESIGN-GATE, the hand-over flow)
+	const designRefusal = handoverDesignRefusalOf({ lotFolder: out, lotsFile })
+	if (designRefusal !== undefined) return usage(designRefusal)
 	const scriptPath = join(out, COMMIT_SCRIPT_FILE)
 	if (existsSync(scriptPath) && !hasFlag(argv, 'rehash'))
 		return usage(
@@ -924,6 +930,29 @@ function renderColumns(rows: readonly string[][]): string[] {
 			.join('  ')
 			.trimEnd(),
 	)
+}
+
+/**
+ * The design gate's refusal of a hand-over written into a store lot's folder: read at the lot base its worktree
+ * resolves, over the lot's scope, the lots' paths and the change; a lot whose worktree is gone is refused. Undefined
+ * for a folder that is no store lot, or when the design lets the lot go on.
+ */
+function handoverDesignRefusalOf(params: {
+	lotFolder: string
+	lotsFile: LotsFile
+}): string | undefined {
+	const { lotFolder } = params
+	const identity = readIdentity({ lotFolder })
+	if (identity === undefined) return undefined
+	const root = identity.worktree ?? identity.repository
+	const base = existsSync(root)
+		? resolveTddBase({ root, packageJson: readPackageJson(root) })
+		: { commit: identity.base.commit }
+	if ('failure' in base) return `handover: ${base.failure}`
+	const paths = params.lotsFile.lots.flatMap(function pathsOf(lot) {
+		return 'paths' in lot ? lot.paths : Object.keys(lot.resolved)
+	})
+	return designGateOf({ lotFolder, root, base: base.commit, paths, verb: 'handoverWrite' }).refusal
 }
 
 function usage(message: string): CommandResult {

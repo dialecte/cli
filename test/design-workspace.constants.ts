@@ -20,3 +20,21 @@ export const APPROVER = 'person-a'
 
 /** The waiver's reason. */
 export const WAIVER_REASON = 'started before the design gate'
+
+/** The shared area of the gate's cases: the lot's `src/` scope is broader than it. */
+export const STORE_GLOB = 'src/lib/store/**'
+
+/** A shared area outside the lot's `src/` scope: only an edit there reaches it. */
+export const OUTSIDE_GLOB = 'lib/core/**'
+
+/** The need a design is approved for when the lot reaches `STORE_GLOB` through its scope. */
+export const STORE_NEED = [{ kind: 'shared' as const, glob: STORE_GLOB, path: 'src' }]
+
+/** A production file of the gate's packages. */
+export const PRODUCTION_FILE = 'src/add.ts'
+
+/** A test file of the gate's packages. */
+export const TEST_FILE = 'src/add.test.ts'
+
+/** The store lot of a landing repository. */
+export const LANDING_LOT = '0001-repo-x'

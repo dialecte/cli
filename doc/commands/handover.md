@@ -542,3 +542,7 @@ the merge queue runs and what its ruleset requires. Nothing is configured: a `ci
   `_commit-plan/` (or the folder given, or the current one): repository, worktree, branch, lots, age, and
   its state - pending, partly committed, committed, abandoned, or stale when something else moved the branch. A
   folder holding a hand-written `commit*.sh` and no lots file shows as "legacy script, state unknown".
+
+`handover write` into a store lot's folder first holds the lot to its design: while it needs a design that is missing,
+not approved or stale, the write is refused and nothing is written; the card's `design` line fails, so `handover run`
+refuses too.

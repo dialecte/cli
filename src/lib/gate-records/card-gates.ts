@@ -1404,8 +1404,8 @@ function riskClassPart(params: { derived: RiskDerivedLine | undefined }): string
 }
 
 /**
- * The card's `design` line (DESIGN-GATE section 4, DG1): `passed` for a design approved, waived or not needed, a
- * `warning` otherwise, never `failed`; none for a lot that needs no design and recorded none.
+ * The card's `design` line (DESIGN-GATE sections 3-4): `passed` for a design approved, waived or not needed,
+ * `failed` otherwise, so `handover run` refuses the card; none for a lot that needs no design and recorded none.
  *
  * @intent show on the card where a lot's design stands
  * @internal
@@ -1414,7 +1414,8 @@ export function buildDesignLine(params: { folder: string }): CardGateLine | unde
 	const { folder } = params
 	const standing = shownDesignStandingOf({ lotFolder: folder })
 	if (standing === undefined) return undefined
-	const status = DESIGN_PASSING_STATES.includes(standing.state) ? 'passed' : 'warning'
+	// DG2: a design that does not let the lot go on fails the card, so `handover run` refuses it
+	const status = DESIGN_PASSING_STATES.includes(standing.state) ? 'passed' : 'failed'
 	const words = designStateText(standing)
 	const reasons = designReasonsText(standing.need.reasons)
 	const next = designNextOf({ standing, lot: basename(folder) })

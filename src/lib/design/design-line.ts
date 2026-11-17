@@ -142,3 +142,15 @@ export function designNeedLine(need: DesignNeed): string {
 			})
 		: DESIGN_NEED_LINES.notRequired
 }
+
+/**
+ * `<state>[ by <kind>][ (<reasons>)]`: the state, who gave its go-ahead and why the lot needs a design, as a refusal
+ * names them.
+ *
+ * @intent say in a refusal where a lot's design stands and why it matters
+ * @internal
+ */
+export function designStateWithReasons(standing: DesignStanding): string {
+	const reasons = designReasonsText(standing.need.reasons)
+	return `${designStateText(standing)}${reasons === '' ? '' : ` (${reasons})`}`
+}

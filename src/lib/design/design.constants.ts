@@ -80,3 +80,29 @@ export const DESIGN_NEED_LINES = {
 	required: 'design required ({reasons}): write it, then dialecte lot design <id> --from <file>',
 	notRequired: 'design not required',
 } as const
+
+/** Each verb the design gate holds: its name in the refusal and what it leaves undone. */
+export const DESIGN_GATE_VERBS = {
+	tddRed: { name: 'tdd red', nothing: 'nothing run' },
+	commit: { name: 'commit', nothing: 'nothing committed' },
+	land: { name: 'lot land', nothing: 'nothing pushed' },
+	handoverWrite: { name: 'handover write', nothing: 'nothing written' },
+	approve: { name: 'lot approve', nothing: 'nothing recorded' },
+} as const
+
+/**
+ * The gate's refusal: `{verb}` the verb, `{lot}` the lot, `{state}` the state, its go-ahead and its reasons, `{next}`
+ * what to run, `{nothing}` what was left undone.
+ */
+export const DESIGN_GATE_REFUSAL = '{verb}: lot {lot} design {state}: {next}; {nothing}'
+
+/** The gate's refusal of a lot whose worktree is gone: every refusing path reads its base there. */
+export const DESIGN_GATE_NO_WORKTREE =
+	'{verb}: lot {lot} has no worktree at {root}: the design gate reads its base there; {nothing}'
+
+/** The note of a lot read at the base recorded at its start, its worktree gone: `{commit}` that base. */
+export const RECORDED_BASE_NOTE =
+	'! the worktree is gone: the shared areas are read at the base recorded at the start, {commit}'
+
+/** A reason `lot approve` names: `{state}` the design's state, its go-ahead and its reasons. */
+export const DESIGN_APPROVE_REASON = 'design {state}'

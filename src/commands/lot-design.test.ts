@@ -1,6 +1,7 @@
 /**
  * `dialecte lot design <id> --from <file> | --from-plan` (DESIGN-GATE section 2): a design recorded by the sha256 of its
- * bytes, a copy kept in the lot folder; a file outside every git work tree, missing or empty refused, nothing written;
+ * bytes, a copy kept in the lot folder; a file in a temporary or scratch folder, missing or empty refused, nothing
+ * written, a file outside every git work tree recorded (plans live there);
  * `--from-plan` records the plan entry's spec only when no other entry of its block names that spec; `lot design <id>`
  * prints the standing. Each case runs on a scratch store lot, from the main checkout.
  */
@@ -30,6 +31,10 @@ afterEach(function restoreEnvironment() {
 })
 
 const DESIGN_HASH = createHash('sha256').update(DESIGN_TEXT).digest('hex')
+
+/** The note of a lot whose worktree is gone: the cases' lots never make theirs (the records' fixed base). */
+const RECORDED_BASE_LINE =
+	'! the worktree is gone: the shared areas are read at the base recorded at the start, aaaaaaaaaaaa'
 
 /** A plan beside the lot's repository whose entries `E1` (the lot's) and `others` name the spec file `SPEC.md`. */
 function lotWithPlan(params: { lot: DesignLot; others: number }): string {
@@ -85,17 +90,40 @@ describe('lot design --from - recording', { timeout: STORE_CASE_TIMEOUT }, () =>
 		expect(designCopyText({ lot, name: `${DESIGN_HASH}.md` })).toBe(DESIGN_TEXT)
 	})
 
-	it('a file outside every git work tree -> exit 2, refused, nothing written', () => {
+	it('a file in the temporary folder -> exit 2, refused, nothing written', () => {
 		const lot = designLot()
-		const outside = join(temporaryFolder('design-outside-'), 'DESIGN.md')
-		writeFiles({ root: join(outside, '..'), files: { 'DESIGN.md': DESIGN_TEXT } })
+		const temporary = join(temporaryFolder('design-outside-'), 'DESIGN.md')
+		writeFiles({ root: join(temporary, '..'), files: { 'DESIGN.md': DESIGN_TEXT } })
 
-		expect(design({ lot, words: ['--from', outside] })).toEqual({
+		expect(design({ lot, words: ['--from', temporary] })).toEqual({
 			exitCode: 2,
-			output: `lot design: ${outside} is in no git work tree: keep the design in a repository, beside its plan; nothing written`,
+			output: `lot design: ${temporary} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written`,
 		})
 		expect(designLinesOf(lot)).toEqual([])
 		expect(designCopiesOf(lot)).toEqual([])
+	})
+
+	it("a file in the cli's scratch root -> exit 2, refused, nothing written", () => {
+		const lot = designLot()
+		const scratch = join(process.env.DIALECTE_SCRATCH ?? '', 'plans', 'DESIGN.md')
+		writeFiles({ root: join(scratch, '..'), files: { 'DESIGN.md': DESIGN_TEXT } })
+
+		expect(design({ lot, words: ['--from', scratch] })).toEqual({
+			exitCode: 2,
+			output: `lot design: ${scratch} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written`,
+		})
+		expect(designLinesOf(lot)).toEqual([])
+	})
+
+	it('a file outside every git work tree, beside its plan -> exit 0, recorded', () => {
+		const lot = designLot()
+		const outside = join(realpathSync(lot.workspace.workspace), 'plans', 'DESIGN.md')
+		writeFiles({ root: join(outside, '..'), files: { 'DESIGN.md': DESIGN_TEXT } })
+
+		expect(design({ lot, words: ['--from', outside] }).exitCode).toBe(0)
+		expect(designLinesOf(lot)).toEqual([
+			expect.objectContaining({ kind: 'recorded', file: outside, hash: DESIGN_HASH }),
+		])
 	})
 
 	it('a missing file -> exit 2, refused, nothing written', () => {
@@ -168,7 +196,10 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 	it('a light lot with nothing recorded -> exit 0, design not required', () => {
 		const lot = designLot()
 
-		expect(design({ lot, words: [] })).toEqual({ exitCode: 0, output: 'design not required' })
+		expect(design({ lot, words: [] })).toEqual({
+			exitCode: 0,
+			output: ['design not required', RECORDED_BASE_LINE].join('\n'),
+		})
 	})
 
 	it('a lot reaching a declared area with nothing recorded -> exit 0, missing, the area and the next command named', () => {
@@ -179,6 +210,7 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 			output: [
 				`design missing · shared ${DECLARED_GLOB}`,
 				`next: dialecte lot design ${lot.name} --from <DESIGN.md>, then approve it from the main checkout: dialecte lot design ${lot.name} --approve --by <who>`,
+				RECORDED_BASE_LINE,
 			].join('\n'),
 		})
 	})

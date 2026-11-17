@@ -2,6 +2,9 @@
  * The gate's last step in a lot's worktree (33CO 4.2, decision Q6): the lot's forecast against main and every open lot,
  * recorded with trigger `gate`, printed as a warning only - the gate's verdict and exit never change.
  */
+import { lotGitDeclaredHighOf } from '../design/base-declared.ts'
+import { designStatusLine } from '../design/design-line.ts'
+import { lotDesignStandingOf } from '../design/design-standing.ts'
 import { realPathOf } from '../file-system.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readIdentity } from '../store/identity.ts'
@@ -67,6 +70,13 @@ function gateForecastOf(params: { cwd: string; now?: () => Date }): GateForecast
 		text: [
 			fillMessage({ template: GATE_FORECAST_TEXTS.verdict, values: { verdict: run.verdict } }),
 			...held,
+			// where the lot's design stands, held to its base's shared areas (DESIGN-GATE)
+			designStatusLine(
+				lotDesignStandingOf({
+					lotFolder,
+					declaredHigh: lotGitDeclaredHighOf({ lotFolder }).globs,
+				}),
+			),
 			// the gate already warns when the lot's events cannot be written: its forecast event is not said twice
 			...(recorded.eventFailed ? [] : recorded.notes),
 		],
