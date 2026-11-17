@@ -1,11 +1,12 @@
-name: _lint
+# Written by `dialecte ci sync` from the @dialecte/cli template: change the template, not this file.
+name: _check
 
 on:
   workflow_dispatch:
   workflow_call:
 
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -24,8 +25,9 @@ jobs:
           path: node_modules
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
 
-      - name: Linting
-        run: npm run lint:check
+      - name: Check the package (its check script)
+        run: npm run check
 
-      - name: Format Check
-        run: npm run format:check
+      # the CI files in step with the template of the cli this package runs (dialecte ci sync writes them)
+      - name: CI files in step with the cli template
+        run: node src/cli.ts ci check

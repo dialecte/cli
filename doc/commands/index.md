@@ -45,6 +45,7 @@
 | [`dialecte rules`](rules.md)         | Code-rules self-check of the changed files (syntax tree, not greps)                                    |
 | [`dialecte contrib`](contrib.md)     | The contributor checks of a dialecte package (profile contributor)                                     |
 | [`dialecte changelog`](changelog.md) | Changelog fragments (changes/&lt;lot&gt;.md): check them, or fold them into CHANGELOG.md for a release |
+| [`dialecte ci`](ci.md)               | The CI files shipped as a template: write them into the package, report drift, run the publish guard   |
 | [`dialecte mutants`](mutants.md)     | Mutation testing of the declared scope; survivors tracked until handled                                |
 
 ## Hand over

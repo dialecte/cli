@@ -44,7 +44,7 @@ describe('the cli workflows', () => {
 		{
 			file: 'ci.yml',
 			triggers: ['merge_group', 'pull_request', 'workflow_dispatch'],
-			jobs: ['build', 'ci-ok', 'install', 'lint', 'test'],
+			jobs: ['build', 'check', 'ci-ok', 'install', 'test'],
 		},
 		{
 			file: 'publish.yml',
@@ -126,15 +126,35 @@ describe('the cli workflows', () => {
 		},
 	)
 
-	it('_check-npm-version.yml → runs the decision script, no 2>/dev/null', () => {
+	it('_check-npm-version.yml → runs the decision through the cli from its sources, no 2>/dev/null', () => {
 		const script = (readWorkflow('_check-npm-version.yml').jobs.check?.steps ?? [])
 			.map((step) => step.run ?? '')
 			.join('\n')
 
 		expect({
-			runsDecision: script.includes('node src/publish-decision.ts'),
+			runsDecision: script.includes('node src/cli.ts ci publish-decision'),
 			hidesErrors: script.includes('2>/dev/null'),
 		}).toEqual({ runsDecision: true, hidesErrors: false })
+	})
+
+	it('publish.yml → its header says npm trusted publishing names the file: never renamed, its trigger kept', () => {
+		const header = readFileSync(join(WORKFLOWS, 'publish.yml'), 'utf8')
+			.split('\n')
+			.filter((line) => line.startsWith('#'))
+			.join(' ')
+
+		expect({
+			namesTrustedPublishing: header.includes('npm trusted publishing names this file'),
+			neverRenamed: header.includes('never rename it'),
+		}).toEqual({ namesTrustedPublishing: true, neverRenamed: true })
+	})
+
+	it('_check.yml → runs the package check, then ci check through the cli from its sources', () => {
+		const runs = (readWorkflow('_check.yml').jobs.check?.steps ?? []).flatMap((step) =>
+			step.run === undefined ? [] : [step.run.trim()],
+		)
+
+		expect(runs).toEqual(['npm run check', 'node src/cli.ts ci check'])
 	})
 
 	it('every job of every workflow file → a pinned runner image, never *-latest', () => {

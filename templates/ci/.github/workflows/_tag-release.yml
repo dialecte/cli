@@ -1,0 +1,30 @@
+# Written by `dialecte ci sync` from the @dialecte/cli template: change the template, not this file.
+name: _tag-release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      github-token:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create Tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          TAG_PREFIX=$(echo "$PACKAGE_NAME" | sed 's/.*\///')
+          git tag "${TAG_PREFIX}@v${{ inputs.version }}"
+          git push origin "${TAG_PREFIX}@v${{ inputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}

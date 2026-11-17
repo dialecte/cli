@@ -1,0 +1,55 @@
+# Written by `dialecte ci sync` from the @dialecte/cli template: change the template, not this file.
+name: _publish
+
+on:
+  workflow_call:
+    inputs:
+      # the npm dist-tag to publish under: latest, or next for a pre-release
+      dist-tag:
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Extract Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Restore build output cache
+        id: restore-cache
+        uses: actions/cache@v5
+        with:
+          path: dist
+          key: ${{ runner.os }}-build-output-${{ hashFiles('**/package-lock.json', '**/src/**', '**/package.json') }}-${{ steps.version.outputs.version }}
+
+      - name: Install dependencies if cache miss
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Build if cache miss
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: npm run build
+
+      - name: Verify build output exists
+        run: ls -la dist
+
+      - name: Publish to npm
+        env:
+          DIST_TAG: ${{ inputs.dist-tag }}
+        run: npm publish --access public --tag "$DIST_TAG"
