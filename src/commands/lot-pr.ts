@@ -37,7 +37,13 @@ export function runLotPr(params: {
 	const place = lotPlaceOf(params)
 	if ('exitCode' in place) return place
 	const { lot, lotFolder, worktree, branch, baseRef } = place
-	const prepared = preparePullRequest({ lotFolder, worktree, baseRef })
+	// the lot's head, else the base's template: a lot cut before the template changed renders as it will land
+	const prepared = preparePullRequest({
+		lotFolder,
+		worktree,
+		baseRef,
+		templateRefs: ['HEAD', baseRef],
+	})
 	if ('refusal' in prepared) return refused({ line: `${LOT_PR_LINES.prefix}${prepared.refusal}` })
 	const json = hasFlag(params.argv, 'json')
 	// the template was checked by `preparePullRequest`: composing cannot refuse it

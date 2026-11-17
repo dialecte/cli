@@ -5,10 +5,10 @@
  */
 import {
 	REVIEW_STATIONS,
-	ROW_ID_PATTERN,
 	ROW_STATE_WORDS,
 	VERDICT_WORD_PATTERN,
 } from '../review-rounds/review-record.constants.ts'
+import { FINDING_ID_PATTERN } from '../review-rounds/review-rounds.constants.ts'
 import {
 	PIECE_RECORDS,
 	RECORD_CASE_STATUSES,
@@ -39,7 +39,7 @@ export function recordValueFault(
 }
 
 function findingFault(row: FindingRow): string | undefined {
-	if (!ROW_ID_PATTERN.test(row.id)) return 'id'
+	if (!FINDING_ID_PATTERN.test(row.id)) return 'id'
 	if (row.severity !== undefined && !ROW_SEVERITIES.includes(row.severity)) return 'severity'
 	if (row.state !== undefined && !ROW_STATE_WORDS.includes(row.state)) return 'state'
 	return undefined

@@ -66,9 +66,7 @@ export function briefDamageOf(params: {
 	// stopped midway: the old brief still in place, the recorded new one waiting beside it
 	if (latest !== undefined && params.briefHash === latest.from && params.nextHash === latest.to)
 		return undefined
-	const recorded =
-		[...params.transitions].reverse().find((transition) => transition.brief !== undefined)?.brief
-			?.to ?? params.identity.briefHash
+	const recorded = latest?.to ?? params.identity.briefHash
 	return params.briefHash === recorded ? undefined : RECORD_DAMAGE_REASONS.brief
 }
 

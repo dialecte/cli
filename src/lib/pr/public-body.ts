@@ -58,11 +58,12 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 		record: PIECE_RECORDS.overlap,
 		text: overlap.reason,
 	}))
-	// the review's free cells: a finding's file, a verdict's vendor and model (every other cell is a listed value)
+	// the review's free cells: a finding's id and file, a verdict's vendor and model (the others are listed values)
 	const review = [
-		...(sources.review?.findings ?? []).flatMap((row) =>
-			row.file === undefined ? [] : [row.file],
-		),
+		...(sources.review?.findings ?? []).flatMap((row) => [
+			row.id,
+			...(row.file === undefined ? [] : [row.file]),
+		]),
 		...(sources.review?.verdicts ?? []).flatMap((row) =>
 			[row.vendor, row.model].filter((word): word is string => word !== undefined),
 		),

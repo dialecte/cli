@@ -50,6 +50,12 @@ describe('recordValueFault', () => {
 			{ record: 'review.jsonl', field: 'id' },
 		],
 		[
+			'a finding id that is a word, not a round id',
+			{ id: 'CI2a' },
+			{},
+			{ record: 'review.jsonl', field: 'id' },
+		],
+		[
 			'a severity outside the list',
 			{ severity: 'urgent' },
 			{},

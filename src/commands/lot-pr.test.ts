@@ -14,10 +14,11 @@ import {
 	LOT_NAME,
 	LOT_SUMMARY,
 } from '../../test/lot-pr.constants.ts'
-import { pullRequestLot } from '../../test/lot-pr.ts'
-import { git } from '../../test/scratch-repository.ts'
+import { cliTemplate, pullRequestLot } from '../../test/lot-pr.ts'
+import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
+import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
 import { runLotPr } from './lot-pr.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -310,8 +311,11 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		)
 	})
 
-	it('a template the lot head does not hold → refused, the template named as missing, exit 1', () => {
+	it('a template neither the lot head nor the base holds → refused, the template named as missing, exit 1', () => {
 		const lot = pullRequestLot({ lotDeletes: ['.github/pull_request_template.md'] })
+		git({ root: lot.workspace.repository, args: ['rm', '-q', '.github/pull_request_template.md'] })
+		git({ root: lot.workspace.repository, args: ['commit', '-qm', 'chore: no template'] })
+		git({ root: lot.workspace.repository, args: ['push', '-q', 'origin', 'main'] })
 		const { host } = recordingHost()
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -389,5 +393,21 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			output: `lot pr: ${LOT_NAME} is damaged: dialecte lot status ${LOT_NAME} says how`,
 		})
 		expect(calls).toEqual([])
+	})
+
+	it("a lot cut before the template's markers → lot pr reads origin's template", () => {
+		const lot = pullRequestLot({ template: '### No markers here\n' })
+		writeFiles({ root: lot.workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+		git({
+			root: lot.workspace.repository,
+			args: ['commit', '-qam', 'chore: the template with its markers'],
+		})
+		git({ root: lot.workspace.repository, args: ['push', '-q', 'origin', 'main'] })
+		const { host } = recordingHost()
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+
+		expect(result.exitCode).toBe(0)
+		expect(result.output).toContain('### Summary')
 	})
 })

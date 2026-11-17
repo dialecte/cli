@@ -257,6 +257,7 @@ describe('publicPiecesOf lists the free cells of the review', () => {
 		const pieces = publicPiecesOf(sources)
 
 		expect(pieces.filter((piece) => piece.record === 'review.jsonl')).toEqual([
+			{ record: 'review.jsonl', text: 'R1-1' },
 			{ record: 'review.jsonl', text: 'notes/a/plan.md' },
 			{ record: 'review.jsonl', text: 'anthropic' },
 			{ record: 'review.jsonl', text: 'claude-opus-5-5' },
