@@ -12,6 +12,7 @@ import { readRecordFile } from './gate-records.ts'
 import { FULL_RECORD_FILE } from './scratch-checks.constants.ts'
 import { createCounter, countingStep } from './scratch-checks.ts'
 import {
+	cloneRepository as cloneWithIdentity,
 	initializeRepository,
 	temporaryFolder,
 	createScratchRepository,
@@ -209,11 +210,12 @@ export function stageChange(root: string): void {
 	git({ root, args: ['add', '--', 'src/a.ts'] })
 }
 
-/** A clone of the repository `root`, in a folder of its own. */
+/** A clone of the repository `root`, in a folder of its own, with the scratch identity a commit needs. */
 export function cloneRepository(root: string): string {
-	const destination = join(temporaryFolder('dialecte-clone-'), 'clone')
-	git({ root, args: ['clone', '-q', root, destination] })
-	return destination
+	return cloneWithIdentity({
+		origin: root,
+		into: join(temporaryFolder('dialecte-clone-'), 'clone'),
+	})
 }
 
 /** The absolute git common dir of the repository `root` is in. */

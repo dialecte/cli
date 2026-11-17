@@ -84,6 +84,8 @@ export type ScopeRun = GateScope & {
 	changedCount: number
 	/** A new selection path in the folder, absent until a step writes it. */
 	nextSelectionPath: () => string
+	/** Drops the removal of the folder registered for a signal exit (`removeScopeRun` calls it). */
+	dropSignalExitRemoval: () => void
 }
 
 /** One run of a step: its result, its output, whether it stalled, and why a scoped step's selection was refused. */

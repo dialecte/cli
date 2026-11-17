@@ -9,6 +9,7 @@ import { isAbsolute, join } from 'node:path'
 import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readGitBytes } from '../git.ts'
+import { onSignalExit } from '../progress/interrupt-forwarding.ts'
 import {
 	CHANGED_FILE_NAME,
 	GATE_SCOPE_FOLDER_PREFIX,
@@ -37,9 +38,16 @@ import type { ScopedTestsEnvironment } from './scoped-tests.types.ts'
 /**
  * Makes the run's temporary folder (outside the package) and writes its changed file: the paths of
  * `git diff --name-only -z --no-renames <base> <tree>` (a rename is its two paths), raw, byte-sorted,
- * each followed by a NUL. The caller removes the folder (`removeScopeRun`) once the run returns.
+ * each followed by a NUL. The caller removes the folder (`removeScopeRun`) once the run returns; a process ending by a
+ * forwarded signal (no `finally` runs then) removes it on its way out.
  */
-export function createScopeRun(params: { root: string; scope: GateScope }): ScopeRun {
+export function createScopeRun(params: {
+	root: string
+	scope: GateScope
+	/** Writes the changed file (default `writeFileSync`): a test makes it throw. */
+	writeChanged?: (path: string, data: Buffer) => void
+}): ScopeRun {
+	const writeChanged = params.writeChanged ?? writeFileSync
 	const { base, tree } = params.scope
 	// bytes, never decoded: a path that is no UTF-8 reaches the step as git wrote it
 	const paths = splitNulSeparated(
@@ -49,11 +57,22 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 		}),
 	).sort(Buffer.compare)
 	const folder = mkdtempSync(join(tmpdir(), GATE_SCOPE_FOLDER_PREFIX))
+	// registered before anything is written: a signal from here on never leaves the folder
+	const dropSignalExitRemoval = onSignalExit(function removeScopeFolder() {
+		rmSync(folder, { recursive: true, force: true })
+	})
 	const changedFile = join(folder, CHANGED_FILE_NAME)
-	writeFileSync(
-		changedFile,
-		Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
-	)
+	try {
+		writeChanged(
+			changedFile,
+			Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
+		)
+	} catch (error) {
+		// a run that cannot start leaves nothing behind either
+		dropSignalExitRemoval()
+		rmSync(folder, { recursive: true, force: true })
+		throw error
+	}
 	let selections = 0
 	return {
 		base,
@@ -65,6 +84,7 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 			selections += 1
 			return join(folder, SELECTION_FILE_NAME.replace('{index}', String(selections)))
 		},
+		dropSignalExitRemoval,
 	}
 }
 
@@ -125,8 +145,9 @@ export function writeSelectionFile(params: {
 	writeFileSync(scope.selection, `${JSON.stringify(selection)}\n`)
 }
 
-/** Removes the run's temporary folder: its changed file and every selection path. */
+/** Removes the run's temporary folder (its changed file and every selection path) and drops its signal-exit removal. */
 export function removeScopeRun(scopeRun: ScopeRun): void {
+	scopeRun.dropSignalExitRemoval()
 	rmSync(scopeRun.folder, { recursive: true, force: true })
 }
 
