@@ -12,6 +12,7 @@ import {
 	DONE_CASE_STATUSES,
 	FILLED_PARTS,
 	KEPT_PART,
+	LOT_INDEX_OF_NAME,
 	NOT_RECORDED,
 	PART_MARKER_PATTERN,
 	RENDERER_COMMENT_PATTERN,
@@ -124,17 +125,25 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 	}
 }
 
-/** One line per overlap the lot accepted (the same lot and reason once): the other lot and why; `none` without one. */
+/**
+ * One line per overlap the lot accepted (the same lot and reason once): the other lot by its index, never its branch's
+ * words, and why; `none` without one.
+ */
 function overlapLines(sources: PullRequestSources): string[] {
 	const overlaps = sources.overlaps ?? []
 	if (overlaps.length === 0) return [BODY_LINES.noOverlaps]
 	const lines = overlaps.map(function overlapLine(overlap) {
 		return BODY_LINES.overlap
-			.replace('{lot}', () => overlap.lot)
+			.replace('{index}', () => indexOfLot(overlap.lot))
 			.replace('{reason}', () => overlap.reason)
 	})
 	// a lot accepted again for the same reason (a start, then a scope add) is one line
 	return [...new Set(lines)]
+}
+
+/** A lot's index, the digits its name starts with (`0007-repo-x` → `0007`); the whole name when it holds none. */
+function indexOfLot(name: string): string {
+	return LOT_INDEX_OF_NAME.exec(name)?.[1] ?? name
 }
 
 /** The summary, then the brief's other commit messages: one squash commit holds them all. */

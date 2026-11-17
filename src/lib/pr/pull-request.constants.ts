@@ -31,6 +31,9 @@ export const FRAGMENT_PATTERN = /^changes\/[^/]+\.md$/
 /** git's status letter of a path the lot's commits add. */
 export const ADDED_STATUS = 'A'
 
+/** The index a lot's name starts with (`<index>-<repository>-<branch>`). */
+export const LOT_INDEX_OF_NAME = /^(\d+)-/
+
 /** The gate or contrib step that builds the documentation. */
 export const DOCS_STEP = 'docs'
 
@@ -61,7 +64,7 @@ export const BODY_LINES = {
 	verdictsHeader: 'Verdicts:',
 	risk: 'risk class {riskClass} · effort {effort}',
 	noOverlaps: 'none',
-	overlap: '- {lot}: {reason}',
+	overlap: '- {index}: {reason}',
 } as const
 
 /** The author's checklist, each box ticked from a record or left for the reviewer. */

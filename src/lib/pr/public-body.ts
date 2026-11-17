@@ -52,11 +52,11 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 						text: entry.text,
 						committed: true,
 					}))
-	// the other lot's name too: it carries its branch's words
-	const overlaps = (sources.overlaps ?? []).flatMap((overlap) => [
-		{ record: PIECE_RECORDS.overlap, text: overlap.lot },
-		{ record: PIECE_RECORDS.overlap, text: overlap.reason },
-	])
+	// the other lot shows by its index only (no words of its branch): its reason is the free text
+	const overlaps = (sources.overlaps ?? []).map((overlap) => ({
+		record: PIECE_RECORDS.overlap,
+		text: overlap.reason,
+	}))
 	return [...messages, ...summary, ...steps, ...changes, ...overlaps]
 }
 

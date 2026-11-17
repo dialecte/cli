@@ -216,7 +216,7 @@ risk class medium · effort medium
 
 ### Overlaps
 
-- 0007-repo-other: separate lines in one file
+- 0007: separate lines in one file
 
 ### Issue
 
@@ -366,9 +366,7 @@ describe('composePullRequest lists each overlap once', () => {
 
 		const body = bodyOf({ sources: { ...FULL, overlaps: [overlap, overlap] } })
 
-		expect(partOf({ body, heading: 'Overlaps' })).toBe(
-			'- 0007-repo-other: separate lines in one file',
-		)
+		expect(partOf({ body, heading: 'Overlaps' })).toBe('- 0007: separate lines in one file')
 	})
 })
 

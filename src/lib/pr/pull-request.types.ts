@@ -24,7 +24,7 @@ export type PullRequestSources = {
 	treeHash: string
 	review?: ReviewRecord
 	riskClass?: RiskClass
-	/** The overlaps the lot accepted, as the body shows them: the other lot and why, never the met paths or who. */
+	/** The overlaps the lot accepted: the other lot (shown by its index) and why, never the met paths or who. */
 	overlaps?: { lot: string; reason: string }[]
 	effort?: Effort
 	/** Whether the newest gate run of the lot's tree passed its docs step; undefined when none ran it. */
