@@ -1,4 +1,5 @@
 /** A scratch workspace for the brief checks: one real repository, a brief folder, a plan, the state folder of the test. */
+import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -107,6 +108,8 @@ export function writeStoreLot(params: {
 	feature?: string
 	/** The identity's base; the fixed one of the records when left out. */
 	base?: { ref: string; commit: string }
+	/** Brief fields over the valid brief's (its public text, its lots), as a start with them would publish. */
+	brief?: Record<string, unknown>
 }): string {
 	const { workspace, name } = params
 	const simulated = params.simulated ?? false
@@ -114,15 +117,19 @@ export function writeStoreLot(params: {
 	const brief = briefWith({
 		scope: params.scope,
 		lots: [{ paths: params.scope, message: 'feat: x' }],
+		...params.brief,
 	})
+	const briefText = `${JSON.stringify(brief, null, 2)}\n`
 	const published = publishLotFolder({
 		store: workspace.store,
 		name,
-		brief: `${JSON.stringify(brief, null, 2)}\n`,
+		brief: briefText,
 		plan: PLAN_TEXT,
 		firstTransition: { ...transitionOf({ seq: 1, kind: 'start' }), simulated },
 		identity: {
 			...identityOf({ name }),
+			// the hash `lot start` records: the sha256 of the brief bytes it published
+			briefHash: createHash('sha256').update(briefText).digest('hex'),
 			...(params.repository !== undefined && { repository: params.repository }),
 			...(params.feature !== undefined && { feature: params.feature }),
 			...(params.base !== undefined && { base: params.base }),

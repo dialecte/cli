@@ -1,5 +1,5 @@
 /** A store lot with a pushed origin, the cli's template and its records, for `lot pr` to render. */
-import { chmodSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { hashStateTree } from '../src/lib/gate-records/state-hash.ts'
@@ -78,24 +78,14 @@ export function pullRequestLot(
 		repository,
 		worktree,
 		base: { ref: 'main', commit: main },
-	})
-	const briefPath = join(lotFolder, 'brief.json')
-	const brief = JSON.parse(readFileSync(briefPath, 'utf8')) as Record<string, unknown>
-	// the store publishes its brief read-only: the public fields are written as a start with them would have
-	const mode = statSync(briefPath).mode
-	chmodSync(briefPath, 0o644)
-	writeFileSync(
-		briefPath,
-		JSON.stringify({
-			...brief,
+		brief: {
 			summary: LOT_SUMMARY,
 			issue: LOT_ISSUE,
 			steps: [{ ...LOT_STEP, spec: '## Step 1' }],
 			lots: [{ paths: ['src/', 'changes/'], message: LOT_MESSAGE }],
 			...params.brief,
-		}),
-	)
-	chmodSync(briefPath, mode)
+		},
+	})
 	const treeHash = hashStateTree(git({ root: worktree, args: ['rev-parse', 'HEAD^{tree}'] }).trim())
 	const testsTree = params.staleTests ? hashStateTree('another tree') : treeHash
 	writeFileSync(

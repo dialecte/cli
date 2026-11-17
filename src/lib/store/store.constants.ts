@@ -231,6 +231,7 @@ export const RECORD_DAMAGE_REASONS = {
 	identityUnreadable: 'identity.json is missing or does not read as a lot identity',
 	identityName: 'identity.json names another lot than its folder',
 	effortLevel: 'identity.json holds an effort level other than low, medium or high',
+	brief: 'brief.json is not the brief its start or its last lot brief recorded',
 } as const
 
 /**

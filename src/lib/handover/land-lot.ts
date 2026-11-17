@@ -58,22 +58,8 @@ export function landLot(params: {
 	now: Date
 }): LandingResult {
 	const { worktree, branch, base, host } = params
-	const current = tryReadGit({ root: worktree, args: ['symbolic-ref', '--quiet', 'HEAD'] })?.trim()
-	if (current !== `refs/heads/${branch}`)
-		return refused(
-			LANDING_LINES.notOnBranch
-				.replace('{worktree}', () => worktree)
-				.replace('{branch}', () => branch)
-				.replace('{head}', () => current ?? 'detached'),
-		)
-	// the records checked as public text before anything is asked of the host or pushed
-	const checked = preparePullRequest({
-		lotFolder: params.lotFolder,
-		worktree,
-		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${base}`,
-	})
-	if ('refusal' in checked)
-		return refused(LANDING_LINES.unrendered.replace('{reason}', () => checked.refusal))
+	const unready = unreadyRefusal({ worktree, branch, base, lotFolder: params.lotFolder })
+	if (unready !== undefined) return refused(unready)
 	const fetchProblem = fetchOrigin({ root: worktree })
 	if (fetchProblem !== undefined)
 		return refused(LANDING_LINES.fetchFailed.replace('{reason}', () => fetchProblem))
@@ -128,6 +114,33 @@ export function landLot(params: {
 			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
 	)
 	return publishLanding({ ...params, known: known.pullRequest, head, entry, lines })
+}
+
+/**
+ * Why the lot cannot land yet, before anything is fetched, asked of the host or pushed: its worktree is not on its
+ * branch, or its records do not render a public pull request text (`preparePullRequest`).
+ */
+function unreadyRefusal(params: {
+	worktree: string
+	branch: string
+	base: string
+	lotFolder: string
+}): string | undefined {
+	const { worktree, branch } = params
+	const current = tryReadGit({ root: worktree, args: ['symbolic-ref', '--quiet', 'HEAD'] })?.trim()
+	if (current !== `refs/heads/${branch}`)
+		return LANDING_LINES.notOnBranch
+			.replace('{worktree}', () => worktree)
+			.replace('{branch}', () => branch)
+			.replace('{head}', () => current ?? 'detached')
+	const checked = preparePullRequest({
+		lotFolder: params.lotFolder,
+		worktree,
+		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+	})
+	return 'refusal' in checked
+		? LANDING_LINES.unrendered.replace('{reason}', () => checked.refusal)
+		: undefined
 }
 
 /**

@@ -46,6 +46,23 @@ export function transitionDamageOf(transition: Transition): string | undefined {
 	return undefined
 }
 
+/**
+ * Why a lot's brief does not hold: its sha256 (`briefHash`, undefined for a lot without its brief file, which the
+ * readers take as a brief that gives no scope) is not the hash its latest `brief` transition published, else the one
+ * its start recorded: a brief edited outside `lot brief`.
+ */
+export function briefDamageOf(params: {
+	briefHash: string | undefined
+	identity: LotIdentity
+	transitions: readonly Transition[]
+}): string | undefined {
+	if (params.briefHash === undefined) return undefined
+	const recorded =
+		[...params.transitions].reverse().find((transition) => transition.brief !== undefined)?.brief
+			?.to ?? params.identity.briefHash
+	return params.briefHash === recorded ? undefined : RECORD_DAMAGE_REASONS.brief
+}
+
 /** Why an answer file does not hold: its name is no `q<k>.json`, or its record names another question. */
 export function answerDamageOf(file: AnswerFile): string | undefined {
 	if (!isQuestionId(file.question)) return RECORD_DAMAGE_REASONS.answerName

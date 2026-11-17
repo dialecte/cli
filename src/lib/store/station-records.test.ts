@@ -24,7 +24,6 @@ import {
 	checkMove,
 	clockOf,
 	makeWorktree,
-	rewriteRecord,
 	setIdentityEffort,
 	stationMove,
 	timeAtSecond,
@@ -34,7 +33,12 @@ import {
 	writeTddLedger,
 	writeWorktreePackage,
 } from '../../../test/station-records-workspace.ts'
-import { entryOf, questionTransitionOf, writeRecordFile } from '../../../test/store-records.ts'
+import {
+	entryOf,
+	questionTransitionOf,
+	recordBrief,
+	writeRecordFile,
+} from '../../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { appendDecision } from '../review-rounds/decisions-file.ts'
@@ -601,7 +605,7 @@ const BRIEF_CASES: Case[] = [
 	{
 		title: 'steps: a brief.json that does not parse -> 1 (D13)',
 		build: (lot) => {
-			rewriteRecord({ path: join(lot.lotFolder, 'brief.json'), text: '{ not json' })
+			recordBrief({ lotFolder: lot.lotFolder, text: '{ not json' })
 		},
 		expected: { steps: 1 },
 	},
@@ -643,7 +647,7 @@ const BRIEF_CASES: Case[] = [
 			'effort (D2): the identity holds none and the brief does not parse -> undefined, no throw',
 		build: (lot) => {
 			setIdentityEffort({ lot, level: undefined })
-			rewriteRecord({ path: join(lot.lotFolder, 'brief.json'), text: '{ not json' })
+			recordBrief({ lotFolder: lot.lotFolder, text: '{ not json' })
 		},
 		expected: { effort: undefined, steps: 1 },
 	},
