@@ -209,7 +209,7 @@ function fixedFieldChanged(params: {
 /** The public fields the new brief changes, as their refusals would name them. */
 function publicFieldsChanged(params: { old: unknown; next: Record<string, unknown> }): string[] {
 	const old = (params.old ?? {}) as Record<string, unknown>
-	const top = ['summary', 'issue'].filter(
+	const top = PUBLIC_BRIEF_FIELDS.filter((key) => key !== STEPS_FIELD).filter(
 		(key) => stableJson(old[key]) !== stableJson(params.next[key]),
 	)
 	const oldSteps = (Array.isArray(old.steps) ? old.steps : []) as Record<string, unknown>[]
