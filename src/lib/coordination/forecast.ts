@@ -18,20 +18,26 @@ import {
 	registryOfLotFolder,
 	settledLotStateInput,
 } from '../store/lot-records.ts'
+import { lotState } from '../store/lot-state.ts'
+import { noLotRefusal } from '../store/resolve-lot.ts'
 import { listLotFolderNames } from '../store/store-folder.ts'
 import { runBoundedGit } from './bounded-git.ts'
+import { isExclusivePath } from './exclusive-paths.ts'
 import { overTimeReason } from './forecast-reasons.ts'
 import { fitForecastLine } from './forecast-record.ts'
 import {
 	AGAINST_MAIN,
 	FORECAST_MIN_GIT,
 	FORECAST_REASONS,
+	FORECAST_REFUSALS,
+	FORECAST_SIMULATED_WORD,
 	FORECAST_SCHEMA,
 	FORECAST_STEP_LIMIT_MS,
 	FORECAST_VERDICT_ORDER,
 	GIT_VERSION_PATTERN,
 } from './forecast.constants.ts'
 import { compareCommits, mergeConflictsOf, verdictOf } from './merge-forecast.ts'
+import { openLotOf } from './open-lot.ts'
 import { snapshotLotWork } from './snapshot.ts'
 
 import type { StoreEntry } from '../handover/handover.types.ts'
@@ -42,7 +48,7 @@ import type {
 	CopyIndex,
 	ForecastLine,
 	ForecastLotParams,
-	ForecastRun,
+	ForecastOutcome,
 	ForecastSide,
 	ForecastVerdict,
 	OpenLot,
@@ -52,10 +58,11 @@ import type {
 
 /**
  * Runs the forecast of the lot: the comparison against main first, then one per other open real lot of its store
- * (only `against` when given), in store order. The lines are cut to the record's limits and not yet written; the
- * verdict is the worst of the lines (unknown > conflict > exclusive > clean). Throws when the lot itself does not read.
+ * (only `against` when given, none with `mainOnly`), in store order. The lines are cut to the record's limits and not
+ * yet written; the verdict is the worst of the lines (unknown > conflict > exclusive > clean). A lot that is gone,
+ * damaged, simulated or no longer open has no forecast: its refusal, never a throw. Writes no worktree, index or ref.
  */
-export function forecastLot(params: ForecastLotParams): ForecastRun {
+export function forecastLot(params: ForecastLotParams): ForecastOutcome {
 	const startedAt = performance.now()
 	const at = (params.now ?? currentTime)().toISOString()
 	const run = `${at}-${randomBytes(2).toString('hex')}`
@@ -63,14 +70,14 @@ export function forecastLot(params: ForecastLotParams): ForecastRun {
 	const { lotFolder } = params
 	const registry = registryOfLotFolder(lotFolder)
 	const entries = readStoreEntries(registry)
-	const selfLot = openLotOf({ lotFolder, registry, entries })
-	if (selfLot === undefined || 'damage' in selfLot)
-		throw new Error(
-			`${basename(lotFolder)}: ${selfLot && 'damage' in selfLot ? selfLot.damage : 'no lot'}`,
-		)
+	const selfLot = forecastableLotOf({ lotFolder, registry, entries })
+	if ('refusal' in selfLot) return selfLot
 	const others = listLotFolderNames({ store: dirname(lotFolder) })
 		.filter(
-			(name) => name !== selfLot.name && (params.against === undefined || name === params.against),
+			(name) =>
+				!params.mainOnly &&
+				name !== selfLot.name &&
+				(params.against === undefined || name === params.against),
 		)
 		.flatMap(function otherOf(name): OpenLot[] {
 			const other = openLotOf({ lotFolder: join(dirname(lotFolder), name), registry, entries })
@@ -244,7 +251,7 @@ function pairOf(params: { context: RunContext; other: OpenLot }): {
 		limitMs: context.limitMs,
 	})
 	if (outcome.verdict === 'unknown' || outcome.conflicts.length === 0)
-		return { other: side, outcome }
+		return { other: side, outcome: withSharedLockFile(outcome) }
 	const otherMainPaths =
 		'commit' in context.main
 			? pathsOfMerge(
@@ -261,6 +268,12 @@ function pairOf(params: { context: RunContext; other: OpenLot }): {
 		(conflict) => !context.selfMainPaths.has(conflict.path) && !otherMainPaths.has(conflict.path),
 	)
 	return { other: side, outcome: { ...outcome, verdict: verdictOf(conflicts), conflicts } }
+}
+
+/** A clean pair whose lots both change a lock file reads exclusive (decision Q2), even when git merges it clean. */
+function withSharedLockFile(outcome: ComparisonOutcome): ComparisonOutcome {
+	if (outcome.verdict !== 'clean' || !outcome.shared.some(isExclusivePath)) return outcome
+	return { ...outcome, verdict: 'exclusive' }
 }
 
 /** The paths a comparison conflicts on (none for a clean or unknown one). */
@@ -359,26 +372,39 @@ function commonFolderOf(params: { folder: string; limitMs: number }): string | u
 	return result.status === 0 ? resolve(params.folder, result.stdout.trim()) : undefined
 }
 
-/**
- * The lot of a folder as the forecast reads it: an open real lot with its identity, a damaged one (open until a person
- * moves it aside) with why, unless its identity reads simulated; undefined for no lot, a simulated or a closed one.
- */
-function openLotOf(params: {
+/** The lot whose forecast runs: an open real lot with its identity, or why it has none. */
+function forecastableLotOf(params: {
 	lotFolder: string
 	registry: string
 	entries: readonly StoreEntry[]
-}): OpenLot | undefined {
+}): { name: string; identity: LotIdentity } | { refusal: string } {
 	const { lotFolder, registry } = params
-	const name = basename(lotFolder)
+	const lot = basename(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry, entries: params.entries })
-	if (checked === undefined) return undefined
+	if (checked === undefined) return { refusal: noLotRefusal(lot) }
 	if ('damage' in checked)
-		return checked.identity?.simulated === true ? undefined : { name, damage: checked.damage }
-	const input = checked.input.identity.simulated
-		? checked.input
-		: settledLotStateInput({ input: checked.input, lotFolder, registry })
-	if (!input || !isOpenRealLot(input)) return undefined
-	return { name, identity: input.identity }
+		return {
+			refusal: fillMessage({
+				template: FORECAST_REFUSALS.damaged,
+				values: { lot, damage: checked.damage },
+			}),
+		}
+	// a simulated lot is never open; named so, never by the state its scenario plays
+	if (checked.input.identity.simulated)
+		return {
+			refusal: fillMessage({
+				template: FORECAST_REFUSALS.notOpen,
+				values: { lot, state: FORECAST_SIMULATED_WORD },
+			}),
+		}
+	const input = settledLotStateInput({ input: checked.input, lotFolder, registry })
+	if (input && isOpenRealLot(input)) return { name: lot, identity: input.identity }
+	return {
+		refusal: fillMessage({
+			template: FORECAST_REFUSALS.notOpen,
+			values: { lot, state: lotState(input ?? checked.input).state },
+		}),
+	}
 }
 
 /** The clock of a run when the caller gives none. */

@@ -58,13 +58,21 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           that is unknown, damaged, not working or ready, of another repository or without its
           branch is refused before anything is written, before any other fault of the brief; lot
           status and the hand-over card show a stack line, on <parent> (#<pull request>, <state>)
-  start - --overlap-ok accepts a scope meeting another open lot instead of refusing it, for an
-          overlap that names its paths (a lot whose scope cannot be read, or a damaged one, stays
-          refused); it takes --by <who> --reason <text>, the same go-ahead as an effort below the
-          class; each accepted overlap is a line of the lot folder's overlaps.jsonl (the other lot,
-          the met pairs, who and why), printed by the start and its dry run (! overlaps <lot>: ...)
-          and shown on the card's scope line as a warning; the re-check after the start refuses a
-          lot the go-ahead did not name
+  start - a scope meeting another open lot goes ahead when that lot's work reads (its forecast
+          against main, run and never written: a new lot has no work, so no conflict can exist),
+          printed shares <met> with <lot> (forecast clean); still refused: a damaged lot or one
+          whose scope cannot be read, a met lock file (exclusive: a lock file is never shared), a
+          forecast that cannot run (forecast unknown: <reason>); after the start the new lot's own
+          forecast is recorded (trigger start); the re-check after the start refuses only what still
+          refuses
+  start - --overlap-ok accepts an overlap the start refuses, for an overlap that names its paths (a
+          lot whose scope cannot be read, or a damaged one, stays refused); it takes --by <who>
+          --reason <text>, the same go-ahead as an effort below the class; each accepted overlap is
+          a line of the lot folder's overlaps.jsonl (the other lot, the met pairs, who and why),
+          printed by the start and its dry run (! overlaps <lot>: ...) and shown on the card's scope
+          line as a warning; on an overlap the forecast cleared it is recorded all the same, printed
+          --overlap-ok not needed: the forecast cleared <lot>; the re-check after the start refuses
+          a held lot the go-ahead did not name
   start - the effort: the risk class of the brief's scope (high when an entry reaches the package's
           dialecte.risk.high list) sets the default (high, medium or low); on a terminal, without
           --json or --dry-run, the effort is asked with that default; an effort below the class
@@ -151,9 +159,13 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          --draft opens a draft and never queues it, CI running on every push; the landing (number,
          url, branch, pushed tip, the heads its rebases replaced) recorded in <lot
          folder>/landing.json, read by lot close; a branch with no commit beyond origin's base is
-         refused before any push; the pushed head is kept in landing.json at once, so a pull request
-         the host refused to open does not make the next push one outside lot land; the host is
-         GitHub through gh, which never prompts
+         refused before any push; the committed HEAD is forecast against origin/<base> just fetched
+         (git merge-tree, before any entry, rebase or push): a conflict refuses naming its files and
+         ranges, a forecast that cannot run refuses (fails closed), a lot on an open parent is not
+         compared; the lot's forecast against every other open lot is recorded (trigger land) and
+         each pair it does not clear printed (! <lot>: <why>), for information only; the pushed head
+         is kept in landing.json at once, so a pull request the host refused to open does not make
+         the next push one outside lot land; the host is GitHub through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -162,9 +174,11 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            keeps the manual line; --json adds station and rounds (review, cap, beyondCap,
            independent) and effort { level, source, riskClass, below } (source risk-line for an
            effort recorded by lot risk; an effort below its risk class adds a ! effort <e> below
-           risk class <c> line, ending (by <who>: <reason>) or (no go-ahead recorded)); a lot whose
-           records do not hold reads damaged with its reason and next: lot stop (exit 6); reads
-           only; exit 2 for an unknown or ambiguous id
+           risk class <c> line, ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds
+           forecast { main, pairs }: the newest main line of forecast.jsonl and, per other open lot,
+           the newer of its own line against that lot and that lot's line against it (files only); a
+           lot whose records do not hold reads damaged with its reason and next: lot stop (exit 6);
+           reads only; exit 2 for an unknown or ambiguous id
   forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
              as one snapshot commit made on a copy of its index with a fixed identity and date; the
              worktree's index, refs and files never written, ignored files left out) against main
@@ -180,11 +194,18 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              worktree holds the current folder; --against <lot> compares with main and that lot
              only; appends the run to the lot folder's forecast.jsonl (one line per comparison, one
              write, each line at most 4,096 bytes: 10 shared paths, 10 conflict paths, 3 ranges per
-             path, the rest counted in moreShared and more) and a forecast event; --json { lot,
-             verdict, lines }; exit 0 clean, 1 a conflict or an exclusive path (or the run could not
-             be written), 3 unknown, 2 usage, an unknown id, a damaged, closed or simulated lot, or
-             --against the lot itself or a lot of another store; a clean forecast does not promise a
-             semantic merge, three lots landing together, or work not written yet
+             path, the rest counted in moreShared and more) and a forecast event (its trigger:
+             start, scope, gate, forecast or land, the verbs that record a run); a pair whose lots
+             both change a lock file reads exclusive even when it merges clean; a gate --fast or
+             --full run in a lot's worktree forecasts the lot as its last step and prints forecast:
+             <verdict> with one ! <against>: <why> line per comparison it does not clear (a warning
+             only: the gate's verdict and exit never change); the card shows a conflicts line on a
+             conflict or an unknown, a pair seen from either lot (the newer line wins), and its
+             scope line names each open lot it shares entries with (forecast <verdict>, <age>);
+             --json { lot, verdict, lines }; exit 0 clean, 1 a conflict or an exclusive path (or the
+             run could not be written), 3 unknown, 2 usage, an unknown id, a damaged, closed or
+             simulated lot, or --against the lot itself or a lot of another store; a clean forecast
+             does not promise a semantic merge, three lots landing together, or work not written yet
   risk - reads the lot folder's (or hand-over folder's) risk.jsonl and the worktree's diff against
          the lot's base, writing nothing: the risk class derived now with its reasons (high: a
          changed file in the package's dialecte.risk.high list, the base's and the worktree's
@@ -229,19 +250,23 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           worktree that cannot be read, a drop leaving the lot no scope, or a file the lot's
           worktree changed inside a dropped entry that no entry left covers (an equal entry, a
           literal folder holding it, or a glob matching it; the call's adds count); an add is
-          refused when a path is no valid scope entry or meets another open lot's scope, unless
-          --overlap-ok accepts an overlap that names its paths (recorded in overlaps.jsonl before
-          the add with the other lot, the met pairs, --by and --reason, undone with a taken-back
-          add; a lot whose scope cannot be read, or a damaged one, stays refused; --overlap-ok
-          without --add is refused); a call whose lines would pass the line limit is refused; an add
-          a lot started or widened meanwhile meets is taken back by an undo line, the entries a drop
-          of the same call removed put back (exit 2), a take-back that would pass the line limit
-          refusing the call first (exit 2), a take-back that cannot be written exiting 1 naming the
-          paths and that lot; each change is one line of scope-changes.jsonl ({ schema, at, op,
-          paths, by?, reason? }) and a scope.changed event; the effective scope (the brief's with
-          the changes) is what the overlap guard, lot status and the card read; a damaged,
-          simulated, committed, canceled or failed lot, a forbidden word and a change line that does
-          not read are refused (exit 2), nothing written; a line that cannot be written exits 1
+          refused when a path is no valid scope entry, or when it meets another open lot's scope and
+          that lot still holds it: the lot's work is forecast against it (trigger scope, recorded
+          only once the add stands) and a clean pair adds with no overlap record; a forecast
+          conflict (its files and ranges), a met lock file, a forecast that cannot run, or a damaged
+          or unreadable lot refuse, unless --overlap-ok accepts an overlap that names its paths
+          (recorded in overlaps.jsonl before the add with the other lot, the met pairs, --by and
+          --reason, undone with a taken-back add; a lot whose scope cannot be read, or a damaged
+          one, stays refused; --overlap-ok without --add is refused); a call whose lines would pass
+          the line limit is refused; an add a lot started or widened meanwhile meets is taken back
+          by an undo line, the entries a drop of the same call removed put back (exit 2), a
+          take-back that would pass the line limit refusing the call first (exit 2), a take-back
+          that cannot be written exiting 1 naming the paths and that lot; each change is one line of
+          scope-changes.jsonl ({ schema, at, op, paths, by?, reason? }) and a scope.changed event;
+          the effective scope (the brief's with the changes) is what the overlap guard, lot status
+          and the card read; a damaged, simulated, committed, canceled or failed lot, a forbidden
+          word and a change line that does not read are refused (exit 2), nothing written; a line
+          that cannot be written exits 1
   station - appends one station event (by: host) to the lot's events.jsonl, never rewriting a line:
             start answers its run and the end command; end pairs with --run, else with the one open
             start of its station, step, round and attempt (several: refused), else repeats the last
@@ -383,10 +408,13 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   `--json`, exit 2), before anything is created: the fields, the repository's main checkout, a new valid branch,
   a base that resolves to a commit, the plan and each step's heading in it, the scope and the lots covering it
   (a lot path is inside a scope entry by path segments: `lib/x` is inside `lib/`, `lib-other/x` and `libx` are
-  not; an entry whose glob cuts a name, `src/data*`, compares by string prefix), no
-  overlap with an open lot of the same store, unless `--overlap-ok --by <who> --reason <text>` accepts an
-  overlap that names its paths (each one a line of the lot folder's `overlaps.jsonl`, printed `! overlaps <lot>: ...`
-  and shown on the card; `lot scope --add --overlap-ok` accepts one the same way). Then it claims the next worktree index, publishes the lot folder
+  not; an entry whose glob cuts a name, `src/data*`, compares by string prefix), and the overlap with the open
+  lots of the same store, judged by the conflict forecast: a met lot whose work reads clears (a new lot has no work,
+  so no conflict can exist; printed `shares <met> with <lot> (forecast clean)`), while a damaged or unreadable lot,
+  a met lock file or a forecast that cannot run still refuse, unless `--overlap-ok --by <who> --reason <text>`
+  accepts an overlap that names its paths (each one a line of the lot folder's `overlaps.jsonl`, printed
+  `! overlaps <lot>: ...` and shown on the card; `lot scope --add --overlap-ok` accepts one the same way, where a
+  forecast conflict between the two lots' work refuses too). Then it claims the next worktree index, publishes the lot folder
   `<git common folder>/dialecte-lots/<index>-<repository>-<branch tail>/` (the brief, a copy of the plan, the
   first transition, `identity.json` last; every record written once, read-only), makes the numbered worktree at
   the recorded base commit and its `.dialecte/lot` link to the lot folder. The store is appended to the user's

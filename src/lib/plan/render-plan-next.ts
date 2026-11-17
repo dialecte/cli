@@ -190,12 +190,12 @@ function startLinesOf(params: { report: PlanNextReport }): string[] {
 	return proposals.map((proposal) => proposalLineOf({ proposal }))
 }
 
-/** `<id>  <kind>  unblocks u (chain c) · after · merge · unverified · stacks · wait · next`. */
+/** `<id>  <kind>  unblocks u (chain c) · shares · merge · unverified · stacks · wait · next`. */
 function proposalLineOf(params: { proposal: Proposal }): string {
 	const { proposal } = params
 	const parts = [
 		`unblocks ${proposal.unblocks} (chain ${proposal.chain})`,
-		...(proposal.after === null ? [] : [`after ${proposal.after}`]),
+		...listPartOf({ name: 'shares', items: proposal.shares }),
 		...listPartOf({ name: 'merge', items: proposal.merge }),
 		...listPartOf({ name: 'unverified', items: proposal.unverified }),
 		...listPartOf({ name: 'stacks', items: proposal.stacks }),

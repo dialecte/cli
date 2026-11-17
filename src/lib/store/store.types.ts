@@ -181,6 +181,8 @@ export type LotOverlap = {
 	damage?: string
 	/** A lot whose scope cannot be read: it holds every path. */
 	everyPath?: boolean
+	/** The met pairs with a lock-file side (decision Q2): never shared, whatever the forecast says. */
+	exclusive?: string[]
 }
 
 /** What `lot status` reports of the worktree and its `.dialecte/lot` link; null for a simulated lot. */

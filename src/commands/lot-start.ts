@@ -10,6 +10,8 @@ import { linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs
 import { basename, dirname, join, resolve } from 'node:path'
 
 import { resultOf } from '../lib/command-result.ts'
+import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
+import { forecastLot } from '../lib/coordination/forecast.ts'
 import { NODE_MODULES_WORDS, NPM_RUN_METHODS } from '../lib/events/record-step.constants.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../lib/file-system.ts'
@@ -30,7 +32,7 @@ import {
 	RISK_SCHEMA,
 } from '../lib/risk/risk.constants.ts'
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
-import { checkBrief } from '../lib/store/brief.ts'
+import { checkBrief, overlapHoldOf } from '../lib/store/brief.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import {
@@ -48,7 +50,12 @@ import {
 	overlapRecordsOf,
 	overlapsOverLimit,
 } from '../lib/store/lot-overlaps.ts'
-import { overlapLotLabelOf, overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
+import {
+	overlapLotLabelOf,
+	overlapMetText,
+	overlappingOpenLots,
+	readLotScope,
+} from '../lib/store/lot-records.ts'
 import { writePlanEntry } from '../lib/store/plan-entry.ts'
 import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
@@ -80,8 +87,10 @@ import {
 	START_EFFORT_LINE,
 	START_FLAGS,
 	START_OVERLAP_LINE,
+	START_OVERLAP_NOT_NEEDED_LINE,
 	START_OVERLAPS_OVER_LIMIT,
 	START_REASON,
+	START_SHARES_LINE,
 	START_USAGE_REASONS,
 	START_VALUE_OPTIONS,
 	START_VERB,
@@ -303,6 +312,22 @@ function startOverlapLinesOf(params: {
 	)
 }
 
+/**
+ * The lines of the overlaps the forecast cleared: `shares <met> with <lot> (forecast clean)`, or, for one the start's
+ * `--overlap-ok` accepted all the same, that it was not needed.
+ */
+function clearedOverlapLinesOf(params: { brief: CheckedBrief }): string[] {
+	const { brief } = params
+	return brief.clearedOverlaps.map((overlap) =>
+		brief.acceptedOverlaps.some((accepted) => accepted.name === overlap.name)
+			? fillMessage({ template: START_OVERLAP_NOT_NEEDED_LINE, values: { lot: overlap.name } })
+			: fillMessage({
+					template: START_SHARES_LINE,
+					values: { met: overlapMetText(overlap), lot: overlap.name },
+				}),
+	)
+}
+
 /** The brief's own plan file (its `plan`, beside the brief file); undefined when the brief names none. */
 function briefPlanPathOf(params: { brief: CheckedBrief; briefFile: string }): string | undefined {
 	const parsed: unknown = JSON.parse(params.brief.briefText)
@@ -366,6 +391,7 @@ export function finishStart(params: {
 	const riskLines = [
 		...riskLinesOf({ effort, derivation, goAhead: prepared.goAhead }),
 		...startOverlapLinesOf({ brief, goAhead: prepared.goAhead, now: prepared.now }),
+		...clearedOverlapLinesOf({ brief }),
 	]
 	if (prepared.dryRun)
 		return dryRunOutput({
@@ -433,6 +459,9 @@ function recheckedFailure(params: {
 	})
 		.filter((overlap) => overlap.name !== parent)
 		.filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
+		// what the forecast clears no longer refuses (33CO 4.7): only a damaged, unreadable or exclusive overlap, or a
+		// lot whose work does not read (one still starting has no worktree yet: unknown, fails closed)
+		.filter((overlap) => overlapHoldOf({ overlap, store }) !== undefined)
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })
@@ -642,10 +671,24 @@ function startPublished(params: {
 		name,
 		lotFolder,
 		worktree: made.worktree,
-		notes: 'linkRefused' in made ? [made.linkRefused] : [],
+		notes: [
+			...('linkRefused' in made ? [made.linkRefused] : []),
+			...recordStartForecast({ lotFolder, now }),
+		],
 		risk,
 		json,
 	})
+}
+
+/**
+ * The new lot's own forecast (trigger `start`), recorded in its folder so its card reads a pair with every open lot from
+ * the start; a run that cannot be had or written is a note, never a failure of the start.
+ */
+function recordStartForecast(params: { lotFolder: string; now: Date }): string[] {
+	const { now } = params
+	const run = forecastLot({ lotFolder: params.lotFolder, trigger: 'start', now: () => now })
+	if ('refusal' in run) return [run.refusal]
+	return recordForecastRun({ lotFolder: params.lotFolder, run, trigger: 'start' }).notes
 }
 
 /**

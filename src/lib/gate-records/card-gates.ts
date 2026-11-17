@@ -22,10 +22,11 @@
  * ledger and round snapshots, and a contributor's contrib rows from the contrib record of the checked tree.
  */
 import { existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
+import { forecastAgeText, forecastHoldText, forecastViewOf } from '../coordination/forecast-view.ts'
 import { counted } from '../counted.ts'
 import { pairRuns } from '../events/pair-runs.ts'
 import { readEvents } from '../events/read-events.ts'
@@ -48,9 +49,16 @@ import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledg
 import { snapshotRounds } from '../review-rounds/round-names.ts'
 import { goAheadText, riskReasonText } from '../risk/risk-reason.ts'
 import { riskCapOf, riskStandingOf } from '../risk/risk-records.ts'
+import { probeCaseInsensitive } from '../store/brief.ts'
 import { LOT_OVERLAP_SEPARATOR } from '../store/lot-overlaps.constants.ts'
 import { lotOverlapsText, readLotOverlaps } from '../store/lot-overlaps.ts'
-import { lotScopeOf } from '../store/lot-records.ts'
+import {
+	lotScopeOf,
+	overlapMetText,
+	overlappingOpenLots,
+	readLotScope,
+	registryOfLotFolder,
+} from '../store/lot-records.ts'
 import { isEnded } from '../store/next-station.ts'
 import { scopeChangesText } from '../store/scope-changes.ts'
 import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
@@ -73,6 +81,12 @@ import {
 	EFFORT_LINE_DETAIL,
 	EFFORT_LINE_NAME,
 	SCOPE_LINE_NAME,
+	SCOPE_SHARES_FORECAST,
+	SCOPE_SHARES_NO_FORECAST,
+	SCOPE_SHARES_PART,
+	FORECAST_LINE_NAME,
+	FORECAST_LINE_PART,
+	FORECAST_LINE_SEPARATOR,
 	EFFORT_NONE_DETAIL,
 	FAILING_DETAIL,
 	FAILING_MORE,
@@ -1231,12 +1245,14 @@ function roundCountOf(params: { count: number }): string {
  * it accepted (FIX-overlap-ok) with who and why; a warning when a change line does not read (the overlap guard then reads
  * every path) or the lot shares paths with another open lot; none when the lot changed nothing and shares nothing.
  */
-export function buildScopeLine(params: { folder: string }): CardGateLine | undefined {
+export function buildScopeLine(params: { folder: string; now?: Date }): CardGateLine | undefined {
 	const scope = lotScopeOf({ lotFolder: params.folder })
 	const overlaps = readLotOverlaps({ lotFolder: params.folder })
-	const parts = [scopeChangesText({ scope, withReason: true }), lotOverlapsText(overlaps)].filter(
-		(part): part is string => part !== undefined,
-	)
+	const parts = [
+		scopeChangesText({ scope, withReason: true }),
+		lotOverlapsText(overlaps),
+		...sharesPartsOf({ folder: params.folder, now: params.now ?? new Date() }),
+	].filter((part): part is string => part !== undefined)
 	if (parts.length === 0) return undefined
 	return {
 		name: SCOPE_LINE_NAME,
@@ -1246,6 +1262,72 @@ export function buildScopeLine(params: { folder: string }): CardGateLine | undef
 				: 'warning',
 		detail: parts.join(LOT_OVERLAP_SEPARATOR),
 	}
+}
+
+/**
+ * The card's `conflicts` line (33CO 4.6, decision Q6): each comparison of the lot's merged forecast view that does not
+ * clear - a pair seen from either side, the newer line winning - with what holds it and its age; a warning only, none
+ * when every comparison is clean or the lot has no forecast. Files only.
+ */
+export function buildForecastLine(params: {
+	folder: string
+	now?: Date
+}): CardGateLine | undefined {
+	const now = params.now ?? new Date()
+	const view = forecastViewOf({ lotFolder: params.folder })
+	const lines = [
+		...(view.main === undefined ? [] : [view.main]),
+		...view.pairs.map((pair) => ({ ...pair.line, against: pair.lot })),
+	]
+	const parts = lines.flatMap((line) => {
+		const hold = forecastHoldText(line)
+		return hold === undefined
+			? []
+			: [
+					fillMessage({
+						template: FORECAST_LINE_PART,
+						values: { against: line.against, hold, age: forecastAgeText({ at: line.at, now }) },
+					}),
+				]
+	})
+	if (parts.length === 0) return undefined
+	return {
+		name: FORECAST_LINE_NAME,
+		status: 'warning',
+		detail: parts.join(FORECAST_LINE_SEPARATOR),
+	}
+}
+
+/**
+ * One part per open lot whose scope meets the lot's, an accepted overlap's too (its record says who and why, this part
+ * what the forecast says of the pair): the met pairs and the pair's newest forecast with its age (files only, the
+ * pair seen from either side); none for a lot that meets no other.
+ */
+function sharesPartsOf(params: { folder: string; now: Date }): string[] {
+	const { folder, now } = params
+	const met = overlappingOpenLots({
+		store: dirname(folder),
+		registry: registryOfLotFolder(folder),
+		scope: readLotScope({ lotFolder: folder }),
+		caseInsensitive: probeCaseInsensitive({ path: folder }),
+		except: basename(folder),
+	}).filter((overlap) => overlap.met.length > 0)
+	if (met.length === 0) return []
+	const { pairs } = forecastViewOf({ lotFolder: folder })
+	return met.map((overlap) => {
+		const pair = pairs.find((each) => each.lot === overlap.name)
+		const forecast =
+			pair === undefined
+				? SCOPE_SHARES_NO_FORECAST
+				: fillMessage({
+						template: SCOPE_SHARES_FORECAST,
+						values: { verdict: pair.line.verdict, age: forecastAgeText({ at: pair.line.at, now }) },
+					})
+		return fillMessage({
+			template: SCOPE_SHARES_PART,
+			values: { met: overlapMetText(overlap), lot: overlap.name, forecast },
+		})
+	})
 }
 
 /**

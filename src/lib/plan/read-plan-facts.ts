@@ -1,11 +1,12 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+
 /**
  * The facts `plan next` reads from disk, once and from files only: each repository's store lots, hand-over registry
  * and linked worktrees, the status of each spec, the plan's marks. The only git processes: the landed probe's, run
  * only for a lot whose hand-over was committed outside its folder and not closed yet.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-
+import { forecastStandingOf } from '../coordination/forecast-view.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import {
 	LINKED_WORKTREE_GITDIR_FILE,
@@ -173,6 +174,7 @@ function readStoreLotFacts(params: {
 			open,
 			scope,
 			worktree: identity.worktree,
+			...forecastFactOf({ lotFolder, open }),
 			// named until `lot close` closes the hand-over the reading picked
 			...(landed !== undefined &&
 				landed.entry.closed === undefined && {
@@ -181,6 +183,16 @@ function readStoreLotFacts(params: {
 		}
 	})
 	return { facts, damaged }
+}
+
+/** An open lot's forecast as its records hold it (files only); nothing for a closed lot or one with none. */
+function forecastFactOf(params: {
+	lotFolder: string
+	open: boolean
+}): Pick<StoreLotFact, 'forecast'> {
+	if (!params.open) return {}
+	const forecast = forecastStandingOf({ lotFolder: params.lotFolder })
+	return forecast === undefined ? {} : { forecast }
 }
 
 /**

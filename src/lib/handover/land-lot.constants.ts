@@ -19,6 +19,11 @@ export const LANDING_LINES = {
 		'lot land: rebasing onto origin/{base} conflicts in {files}: the rebase is undone; merge origin/{base} into the lot and resolve, then land again',
 	overwrite:
 		'lot land: rebasing onto origin/{base} would overwrite untracked files: {files}: the rebase is undone; move them aside, then land again, nothing pushed',
+	baseConflict:
+		'lot land: the lot conflicts with origin/{base} in {conflicts}: merge origin/{base} into the lot and resolve, then land again: nothing pushed',
+	forecastUnknown:
+		'lot land: the forecast against origin/{base} cannot run: {reason}: nothing pushed',
+	pairHeld: '! {lot}: {hold}',
 	rebased: 'rebased onto origin/{base} {commit}',
 	notRebased:
 		'not rebased onto origin/{base}: the worktree holds uncommitted changes (CI tests the merge with {base}; land again once committed)',

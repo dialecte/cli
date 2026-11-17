@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
+import { FORECAST_HOLD_TEXTS } from '../coordination/forecast.constants.ts'
+import { forecastLot } from '../coordination/forecast.ts'
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
@@ -36,6 +38,7 @@ import {
 	SUMMARY_MAX_LENGTH,
 	SUMMARY_PATH_DETAIL,
 	PUBLIC_TEXT_DETAIL,
+	OVERLAP_HOLD_NOTE,
 	PUBLIC_TEXT_UNCHECKED_DETAIL,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
@@ -219,6 +222,7 @@ export function checkBrief(params: {
 			caseInsensitive,
 			findings,
 			acceptedOverlaps: overlaps.accepted,
+			clearedOverlaps: overlaps.cleared,
 			briefFolder,
 			stackParent: parent,
 		}),
@@ -235,6 +239,7 @@ function checkedOf(params: {
 	caseInsensitive: boolean
 	findings: Refusal[]
 	acceptedOverlaps: LotOverlap[]
+	clearedOverlaps: LotOverlap[]
 	/** The brief's folder: its plan is found from there. */
 	briefFolder: string
 	/** `--on <lot>`: the open lot the brief's lot starts on. */
@@ -264,6 +269,7 @@ function checkedOf(params: {
 		caseInsensitive: params.caseInsensitive,
 		wouldRefuse: params.findings,
 		acceptedOverlaps: params.acceptedOverlaps,
+		clearedOverlaps: params.clearedOverlaps,
 		...(planEntry !== undefined && { planEntry }),
 		...(params.stackParent !== undefined && { stackParent: params.stackParent }),
 	}
@@ -833,10 +839,12 @@ function realLotIdentities(location: StoreLocation | undefined): LotIdentity[] {
 }
 
 /**
- * One `overlap` refusal per open real lot of the store a scope entry of the brief overlaps (D12: not committed, not
- * canceled, not simulated, not failed by an overlap), a damaged lot named with its damage (P2.2); with `overlapOk`, an
- * overlap that names its paths is accepted instead (FIX-overlap-ok). Skipped when the scope's shape fails; refused
- * entries are left out.
+ * The brief's overlaps with the open real lots of the store (D12), a damaged lot named with its damage (P2.2), each
+ * judged by the forecast (33CO 4.2, decision Q5): a met lot whose work reads is cleared - a new lot has no work, so no
+ * conflict can exist - and the start goes ahead. One `overlap` refusal per other overlap: a damaged lot or one whose
+ * scope does not read (as today), a met lock file (exclusive, Q2), a forecast that cannot run (unknown, fails closed);
+ * with `overlapOk`, every overlap that names its paths is accepted instead (FIX-overlap-ok), a cleared one too. Skipped
+ * when the scope's shape fails; refused entries are left out.
  */
 function overlapFaults(params: {
 	brief: Record<string, unknown>
@@ -846,28 +854,56 @@ function overlapFaults(params: {
 	overlapOk?: boolean
 	/** The stack parent's name: its scope is the lot's base, left out of the overlaps. */
 	parent?: string
-}): { refused: Refusal[]; accepted: LotOverlap[] } {
+}): { refused: Refusal[]; accepted: LotOverlap[]; cleared: LotOverlap[] } {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
-	if (!location || !entries) return { refused: [], accepted: [] }
-	const overlaps = overlappingOpenLots({
+	if (!location || !entries) return { refused: [], accepted: [], cleared: [] }
+	const judged = overlappingOpenLots({
 		store: location.store,
 		registry: location.registry,
 		scope: entries,
 		caseInsensitive: params.caseInsensitive,
 		pause: params.pause,
-	}).filter((overlap) => overlap.name !== params.parent)
-	const accepted = params.overlapOk ? overlaps.filter(isAcceptableOverlap) : []
-	const refused = overlaps
-		.filter((overlap) => !accepted.includes(overlap))
-		.map((overlap) =>
+	})
+		.filter((overlap) => overlap.name !== params.parent)
+		.map((overlap) => ({ overlap, hold: overlapHoldOf({ overlap, store: location.store }) }))
+	const accepted = params.overlapOk
+		? judged.map(({ overlap }) => overlap).filter(isAcceptableOverlap)
+		: []
+	const refused = judged
+		.filter(({ overlap, hold }) => hold !== undefined && !accepted.includes(overlap))
+		.map(({ overlap, hold }) =>
 			refusalOf({
 				field: 'scope',
 				rule: 'overlap',
-				detail: `overlap with ${overlapLotLabelOf(overlap)}: ${overlapMetText(overlap)}`,
+				detail: `overlap with ${overlapLotLabelOf(overlap)}: ${overlapMetText(overlap)}${
+					hold ? fillMessage({ template: OVERLAP_HOLD_NOTE, values: { hold } }) : ''
+				}`,
 			}),
 		)
-	return { refused, accepted }
+	const cleared = judged.filter(({ hold }) => hold === undefined).map(({ overlap }) => overlap)
+	return { refused, accepted, cleared }
+}
+
+/**
+ * What still holds an overlap at a start or a scope re-check: `''` for a damaged lot or one whose scope does not read
+ * (today's text says why), the exclusive text for a met lock file (decision Q2), the unknown reason when the met lot's
+ * work cannot be read (its forecast against main, run and never written); undefined when the forecast clears it.
+ */
+export function overlapHoldOf(params: { overlap: LotOverlap; store: string }): string | undefined {
+	const { overlap } = params
+	if (!isAcceptableOverlap(overlap)) return ''
+	if (overlap.exclusive !== undefined) return FORECAST_HOLD_TEXTS.exclusive
+	const run = forecastLot({
+		lotFolder: join(params.store, overlap.name),
+		trigger: 'start',
+		mainOnly: true,
+	})
+	const reason =
+		'refusal' in run ? run.refusal : run.lines.find((line) => line.verdict === 'unknown')?.reason
+	return reason === undefined
+		? undefined
+		: fillMessage({ template: FORECAST_HOLD_TEXTS.unknown, values: { reason } })
 }
 
 /** The open lot `--on` names (`resolveStackParent`), or its refusal; undefined without `--on` or a repository. */

@@ -21,6 +21,7 @@ import {
 	buildMutationLines,
 	buildLateFixesLine,
 	buildEffortLine,
+	buildForecastLine,
 	buildScopeLine,
 	buildReviewLine,
 	sleptLineOf,
@@ -226,6 +227,8 @@ export function buildHandoverCard(params: {
 		: undefined
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
 	const scopeLine = params.release ? undefined : buildScopeLine({ folder: params.folder })
+	// a forecast conflict or unknown, warn only (33CO 4.6, Q6); a closed card has no open pair left
+	const forecastLine = pending ? buildForecastLine({ folder: params.folder }) : undefined
 	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
 	// the run's merges guard refuses a pending merge lot without its tree: the card says so in its words
 	const mergesLine = pending
@@ -258,6 +261,7 @@ export function buildHandoverCard(params: {
 		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
 		// a lot that changed its scope after the start: the changes, the adds with who and why; none: no line
 		...(scopeLine ? [scopeLine] : []),
+		...(forecastLine ? [forecastLine] : []),
 		...(stackLine ? [stackLine] : []),
 		...(mergesLine ? [mergesLine] : []),
 		// changes after the last snapshot, on a card still to run: nothing late, no line

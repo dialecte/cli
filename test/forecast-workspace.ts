@@ -35,18 +35,20 @@ export function createForecastWorkspace(): ForecastWorkspace {
 	}
 }
 
-/** Starts a lot of `feature` (scope `FORECAST_SCOPE`) from the workspace; throws when the start fails. */
+/** Starts a lot of `feature` (scope `FORECAST_SCOPE` unless given) from the workspace; throws when the start fails. */
 export function startForecastLot(params: {
 	workspace: ForecastWorkspace
 	feature: string
+	scope?: readonly string[]
 }): ForecastTestLot {
 	const { workspace, feature } = params
+	const scope = [...(params.scope ?? FORECAST_SCOPE)]
 	const briefPath = join(workspace.briefFolder, `${feature}.json`)
 	const brief = briefWith({
 		feature,
 		branch: `feat/${feature}`,
-		scope: [...FORECAST_SCOPE],
-		lots: [{ paths: [...FORECAST_SCOPE], message: `feat: ${feature}` }],
+		scope,
+		lots: [{ paths: scope, message: `feat: ${feature}` }],
 	})
 	writeFileSync(briefPath, `${JSON.stringify(brief, null, 2)}\n`)
 	const started = startLot({

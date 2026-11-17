@@ -1,5 +1,6 @@
 import type { PlanStates } from './entry-state.types.ts'
 import type { PlanBlock } from './plan-block.types.ts'
+import type { PlanLotForecast } from './plan.types.ts'
 import type { PlanFacts, SpecStatusName } from './plan.types.ts'
 
 /** A heavy step running now: its step, the folder of its worktree, when it started, the plan entry it belongs to. */
@@ -42,7 +43,8 @@ export type Proposal = {
 	kind: 'lot' | 'fix'
 	unblocks: number
 	chain: number
-	after: string | null
+	/** The open lots the proposal shares scope entries with, their forecast clearing it: `<entry> meets <entry> (<lot>, ...)`. */
+	shares: string[]
 	merge: string[]
 	unverified: string[]
 	heavy: string[]
@@ -71,7 +73,14 @@ export type PlanProposals = {
  * An open lot of a repository a candidate is checked against: an open entry (its held scope; `manual` when open by
  * its worktree alone) or an open store lot outside the plan (its brief scope).
  */
-export type PlanOpenLot = { repository: string; name: string; scope: string[]; manual: boolean }
+export type PlanOpenLot = {
+	repository: string
+	name: string
+	scope: string[]
+	manual: boolean
+	/** The forecast of the store lot that holds it (33CO 4.6); none for work without one, or without a record. */
+	forecast?: PlanLotForecast
+}
 
 /** Where an entry stands on the critical path: entries not done behind it, and the longest chain of them. */
 export type PlanRank = { unblocks: number; chain: number }

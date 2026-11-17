@@ -18,6 +18,13 @@ export const START_USAGE_REASONS = {
 /** The line a start prints per accepted overlap: `{overlap}` its text. */
 export const START_OVERLAP_LINE = '! {overlap}'
 
+/**
+ * The lines a start prints per overlap the forecast cleared (33CO 4.2): the shared entries, or that the person's
+ * `--overlap-ok` was not needed for it (it is recorded all the same).
+ */
+export const START_SHARES_LINE = 'shares {met} with {lot} (forecast clean)'
+export const START_OVERLAP_NOT_NEEDED_LINE = '--overlap-ok not needed: the forecast cleared {lot}'
+
 /** The refusal of accepted overlaps whose records do not fit one append: `{message}` names the file and the size. */
 export const START_OVERLAPS_OVER_LIMIT = 'lot start: {message}: nothing written'
 

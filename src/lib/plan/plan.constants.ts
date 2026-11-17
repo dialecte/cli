@@ -210,3 +210,8 @@ export const CHANGED_PATHS_ARGUMENTS = [
 	'--no-ext-diff',
 	'--no-textconv',
 ] as const
+
+/** A met pair the open lot's forecast cleared, and why a met pair still holds a candidate (33CO 4.6). */
+export const PLAN_SHARES_TEXT = '{pair} ({lot}, forecast clean)'
+export const PLAN_HOLD_WHY = ', {why}'
+export const PLAN_HOLD_CONFLICT = ', forecast conflict in {path}'

@@ -14,10 +14,16 @@
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 
+import { recordForecastRun } from '../coordination/forecast-record.ts'
+import { forecastConflictsText, forecastHoldText } from '../coordination/forecast-view.ts'
+import { AGAINST_MAIN, FORECAST_STEP_LIMIT_MS } from '../coordination/forecast.constants.ts'
+import { forecastLot } from '../coordination/forecast.ts'
+import { mergeConflictsOf } from '../coordination/merge-forecast.ts'
 import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { replaceWhole } from '../store/publish.ts'
@@ -81,10 +87,15 @@ export function landLot(params: {
 	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
 	const empty = nothingBeyondBase({ worktree, branch, base })
 	if (empty !== undefined) return refused(empty)
+	const forecast = landingForecast({
+		...params,
+		onOpenParent: stack !== undefined && !stack.parentMerged,
+	})
+	if ('refusal' in forecast) return refused(forecast.refusal)
 	const registered = registerLotEntry({ ...params })
 	if ('refusal' in registered) return refused(registered.refusal)
 	const { entry } = registered
-	const lines: string[] = [...(stack?.lines ?? [])]
+	const lines: string[] = [...(stack?.lines ?? []), ...forecast.lines]
 	const progress = readWorkInProgress({ worktree })
 	// a lot on an open parent carries the parent's commits: never rebased onto the base before the parent merged
 	const rebased =
@@ -139,6 +150,76 @@ export function landLot(params: {
 			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
 	)
 	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines, stack })
+}
+
+/**
+ * The forecast of a landing (33CO 4.2): the committed head against the base just fetched, before any entry, rebase or
+ * push (a lot on an open parent is not rebased onto the base, so not compared with it), then the pairs with the other
+ * open lots, recorded and printed for information.
+ */
+function landingForecast(params: {
+	worktree: string
+	base: string
+	lotFolder: string
+	now: Date
+	onOpenParent: boolean
+}): { lines: string[] } | { refusal: string } {
+	const refusal = params.onOpenParent ? undefined : baseConflictRefusal(params)
+	if (refusal !== undefined) return { refusal }
+	return { lines: landPairLines(params) }
+}
+
+/**
+ * Why the lot's committed head cannot land on `origin/<base>`: their merge conflicts (files and ranges) or cannot be
+ * forecast (fails closed); undefined when it merges clean. Writes no worktree, index or ref.
+ */
+function baseConflictRefusal(params: { worktree: string; base: string }): string | undefined {
+	const { worktree, base } = params
+	const originTip = tryReadGit({
+		root: worktree,
+		args: ['rev-parse', '--verify', '--quiet', `${ORIGIN_BRANCH_REF_PREFIX}${base}^{commit}`],
+	})?.trim()
+	const head = tryReadGit({ root: worktree, args: ['rev-parse', '--verify', 'HEAD'] })?.trim()
+	if (!originTip || !head)
+		return fillMessage({
+			template: LANDING_LINES.forecastUnknown,
+			values: { base, reason: `${ORIGIN_BRANCH_REF_PREFIX}${base} or HEAD does not resolve` },
+		})
+	const merged = mergeConflictsOf({
+		root: worktree,
+		ours: originTip,
+		theirs: head,
+		lot: base,
+		limitMs: FORECAST_STEP_LIMIT_MS,
+	})
+	if ('reason' in merged)
+		return fillMessage({
+			template: LANDING_LINES.forecastUnknown,
+			values: { base, reason: merged.reason },
+		})
+	if (merged.conflicts.length === 0) return undefined
+	return fillMessage({
+		template: LANDING_LINES.baseConflict,
+		values: { base, conflicts: forecastConflictsText({ conflicts: merged.conflicts }) },
+	})
+}
+
+/**
+ * The lot's forecast against every other open lot (trigger `land`), recorded, and one line per pair it does not clear,
+ * for information only: the first to land wins, the other lot's next forecast shows it against main.
+ */
+function landPairLines(params: { lotFolder: string; now: Date }): string[] {
+	const { now } = params
+	const run = forecastLot({ lotFolder: params.lotFolder, trigger: 'land', now: () => now })
+	if ('refusal' in run) return []
+	const recorded = recordForecastRun({ lotFolder: params.lotFolder, run, trigger: 'land' })
+	const held = run.lines.flatMap((line) => {
+		const hold = line.against === AGAINST_MAIN ? undefined : forecastHoldText(line)
+		return hold === undefined
+			? []
+			: [fillMessage({ template: LANDING_LINES.pairHeld, values: { lot: line.against, hold } })]
+	})
+	return [...held, ...recorded.notes]
 }
 
 /** Why origin cannot be landed on: its fetch failed, or it holds no base branch; undefined once fetched. */

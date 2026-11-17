@@ -3,11 +3,16 @@
  * sharing its `run` id and `of`, each within the store's atomic append. A reader trusts only the newest complete run.
  */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
-import { appendLine } from '../events/write-event.ts'
+import { EVENT_LINE_LIMIT } from '../events/events.constants.ts'
+import { appendLine, makeEnvelope, writeEvent } from '../events/write-event.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { readCliVersion } from '../read-cli-version.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import {
+	FORECAST_EVENT_KIND,
+	FORECAST_RECORD_TEXTS,
 	FORECAST_CONFLICT_CAP,
 	FORECAST_LINE_LIMIT,
 	FORECAST_OPTIONAL_KEYS,
@@ -19,7 +24,13 @@ import {
 	FORECAST_VERDICT_ORDER,
 } from './forecast.constants.ts'
 
-import type { ForecastLine, ForecastRecord } from './forecast.types.ts'
+import type {
+	ForecastLine,
+	ForecastRecord,
+	ForecastRun,
+	ForecastTrigger,
+	RecordedForecast,
+} from './forecast.types.ts'
 
 /**
  * The line cut to the caps (10 shared paths, 10 conflict paths, 3 ranges per path) and then to the line limit, the
@@ -54,6 +65,81 @@ export function appendForecastRun(params: {
 		line: Buffer.from(text, 'utf8'),
 		limit: FORECAST_LINE_LIMIT * Math.max(params.lines.length, 1),
 	})
+}
+
+/**
+ * Records a run in the lot's own folder: its lines in one append, then its `forecast` event (the verdict counts, the
+ * time spent, the run's trigger). Never throws: a write that fails is a note to print, the run's lines not written.
+ */
+export function recordForecastRun(params: {
+	lotFolder: string
+	run: ForecastRun
+	trigger: ForecastTrigger
+}): RecordedForecast {
+	const { lotFolder, run } = params
+	try {
+		appendForecastRun({ lotFolder, lines: run.lines })
+	} catch (error) {
+		return {
+			written: false,
+			notes: [
+				fillMessage({
+					template: FORECAST_RECORD_TEXTS.writeFailure,
+					values: {
+						file: join(lotFolder, STORE_FILES.forecast),
+						message: (error as Error).message,
+					},
+				}),
+			],
+		}
+	}
+	const eventNote = writeForecastEvent(params)
+	return eventNote === undefined
+		? { written: true, notes: [] }
+		: { written: true, notes: [eventNote], eventFailed: true }
+}
+
+/** Writes the run's `forecast` event (its trigger, verdict counts and time); the line to print when it could not be. */
+function writeForecastEvent(params: {
+	lotFolder: string
+	run: ForecastRun
+	trigger: ForecastTrigger
+}): string | undefined {
+	const { lotFolder, run } = params
+	const file = join(lotFolder, STORE_FILES.events)
+	const verdicts = Object.fromEntries(
+		FORECAST_VERDICT_ORDER.map((verdict) => [
+			verdict,
+			run.lines.filter((line) => line.verdict === verdict).length,
+		]),
+	)
+	try {
+		writeEvent({
+			file,
+			event: {
+				...makeEnvelope({
+					lot: basename(lotFolder),
+					kind: FORECAST_EVENT_KIND,
+					by: 'cli',
+					cli: readCliVersion(),
+					simulated: false,
+					hostEvent: null,
+				}),
+				run: run.run,
+				trigger: params.trigger,
+				verdict: run.verdict,
+				verdicts,
+				durationMs: run.durationMs,
+			},
+			limit: EVENT_LINE_LIMIT,
+		})
+		return undefined
+	} catch (error) {
+		return fillMessage({
+			template: FORECAST_RECORD_TEXTS.eventFailure,
+			values: { file, message: (error as Error).message },
+		})
+	}
 }
 
 /**

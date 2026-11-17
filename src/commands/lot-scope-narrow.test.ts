@@ -388,7 +388,7 @@ describe(
 					...WHO,
 				],
 				output: (lot) =>
-					`lot scope: ${lot.lotName}: the added paths meet the open lot ${DOCS_LOT}: docs/notes.md meets docs: nothing written`,
+					`lot scope: ${lot.lotName}: the added paths meet the open lot ${DOCS_LOT}: docs/notes.md meets docs: forecast unknown: worktree of ${DOCS_LOT} missing: nothing written`,
 			},
 			{
 				title:

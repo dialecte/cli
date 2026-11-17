@@ -88,3 +88,6 @@ export const WHOLE_BRIEF_FIELD = 'brief'
 
 /** The digest of the brief and plan hashes. */
 export const BRIEF_HASH_ALGORITHM = 'sha256'
+
+/** After the met pairs of an overlap a start still refuses: what holds it (a met lock file, a forecast that cannot run). */
+export const OVERLAP_HOLD_NOTE = ' ({hold})'

@@ -2,6 +2,9 @@
  * What `plan next` proposes from the entries' states: the ready lots that meet no open lot (in critical-path
  * order), the ready lots held by an overlap, the spec work, the counts. Pure.
  */
+import { isExclusivePath } from '../coordination/exclusive-paths.ts'
+import { FORECAST_HOLD_TEXTS } from '../coordination/forecast.constants.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { normaliseScopeEntry, overlaps } from '../store/brief-scope.ts'
 import { dependenciesOf, dependentsOf } from './plan-dependencies.ts'
 import { clockTimeOf, stepTextOf } from './plan-heavy.ts'
@@ -9,7 +12,10 @@ import {
 	HEAVY_PART_STEP_PREFIXES,
 	LOT_START_COMMAND,
 	MUTATION_STEP,
+	PLAN_HOLD_CONFLICT,
+	PLAN_HOLD_WHY,
 	PLAN_REPOSITORY_KINDS,
+	PLAN_SHARES_TEXT,
 	REASON_SEPARATOR,
 	SHORT_MACHINE_END,
 	SHORT_MACHINE_START,
@@ -42,21 +48,31 @@ export function proposePlan(params: ProposePlanParams): PlanProposals {
 	const statuses = new Map(states.entries.map((status) => [status.id, status]))
 	const ranks = ranksOf({ block, statuses })
 	const ordered = orderedEntriesOf({ block, ranks })
-	const openLots = openLotsOf({ block, states })
+	const openLots = openLotsOf({ block, states, facts })
 	const proposals: Proposal[] = []
 	const held: Held[] = []
 	for (const entry of ordered.filter((candidate) => isCandidate({ entry: candidate, statuses }))) {
 		const met = metOf({ entry, block, facts, openLots })
-		if (met.length > 0) {
+		const holding = met.filter((pair) => pair.hold !== undefined)
+		if (holding.length > 0) {
 			held.push({
 				id: entry.id,
-				open: [...new Set(met.map(({ open }) => open.name))],
-				met: met.map(({ text }) => text),
+				open: [...new Set(holding.map(({ open }) => open.name))],
+				met: holding.map(({ hold }) => hold ?? ''),
 			})
 			continue
 		}
 		proposals.push(
-			proposalOf({ entry, block, facts, states, openLots, ranks, proposals, heavy: params.heavy }),
+			proposalOf({
+				entry,
+				block,
+				facts,
+				states,
+				openLots,
+				ranks,
+				heavy: params.heavy,
+				shares: met.map(({ share }) => share),
+			}),
 		)
 	}
 	const proposed = new Set(proposals.map((proposal) => proposal.id))
@@ -84,21 +100,18 @@ function proposalOf(params: {
 	states: PlanStates
 	openLots: PlanOpenLot[]
 	ranks: Map<string, PlanRank>
-	proposals: Proposal[]
 	heavy: PlanHeavyReading
+	/** The met pairs the open lots' forecast cleared (33CO 4.6). */
+	shares: string[]
 }): Proposal {
 	const { entry, block, facts, states, openLots, ranks } = params
 	const repositories = Object.keys(entry.scope)
-	const earlier = params.proposals.find(function overlapsEarlier(proposal) {
-		const other = block.lots.find((candidate) => candidate.id === proposal.id)
-		return other !== undefined && scopesMeet({ first: entry, second: other, block, facts })
-	})
 	return {
 		id: entry.id,
 		kind: entry.kind === 'fix' ? 'fix' : 'lot',
 		unblocks: ranks.get(entry.id)?.unblocks ?? 0,
 		chain: ranks.get(entry.id)?.chain ?? 0,
-		after: earlier?.id ?? null,
+		shares: params.shares,
 		merge: [
 			...new Set(
 				openLots
@@ -160,47 +173,64 @@ function nextOf(params: { entry: PlanEntry; facts: PlanFacts }): string {
 
 /**
  * Every pair of scope entries where the candidate meets an open lot of the same repository, outside the shared
- * files, as `<candidate entry> meets <open entry> (<open lot>, open[, manual])`.
+ * files, with what it says (33CO 4.6): `hold` when the pair still holds the candidate - a met lock file, an open lot
+ * with no known forecast (the scope rule of today answers, fails closed), a forecast conflict inside both entries - as
+ * `<candidate entry> meets <open entry> (<open lot>, open[, manual][, why])`; else `share`, the pair the forecast
+ * cleared, as `<candidate entry> meets <open entry> (<open lot>, forecast clean)`.
  */
 function metOf(params: {
 	entry: PlanEntry
 	block: PlanBlock
 	facts: PlanFacts
 	openLots: PlanOpenLot[]
-}): { open: PlanOpenLot; text: string }[] {
+}): { open: PlanOpenLot; hold: string | undefined; share: string }[] {
 	const { entry, block, facts } = params
-	return params.openLots.flatMap((open) =>
-		pairsOf({
+	return params.openLots.flatMap((open) => {
+		const repositoryFacts = facts.repositories[open.repository]
+		const caseInsensitive = repositoryFacts?.readable === true && repositoryFacts.caseInsensitive
+		return pairsOf({
 			first: entry.scope[open.repository] ?? [],
 			second: open.scope,
 			repository: open.repository,
 			block,
 			facts,
-		}).map(([candidate, held]) => ({
-			open,
-			text: `${candidate} meets ${held} (${open.name}, open${open.manual ? ', manual' : ''})`,
-		})),
-	)
+		}).map(([candidate, held]) => {
+			const pair = `${candidate} meets ${held}`
+			const why = holdWhyOf({ candidate, held, open, caseInsensitive })
+			return {
+				open,
+				hold:
+					why === undefined
+						? undefined
+						: `${pair} (${open.name}, open${open.manual ? ', manual' : ''}${why})`,
+				share: fillMessage({ template: PLAN_SHARES_TEXT, values: { pair, lot: open.name } }),
+			}
+		})
+	})
 }
 
-/** Two entries' scopes meet in some repository they share, outside its shared files. */
-function scopesMeet(params: {
-	first: PlanEntry
-	second: PlanEntry
-	block: PlanBlock
-	facts: PlanFacts
-}): boolean {
-	const { first, second, block, facts } = params
-	return Object.keys(first.scope).some(
-		(repository) =>
-			pairsOf({
-				first: first.scope[repository] ?? [],
-				second: second.scope[repository] ?? [],
-				repository,
-				block,
-				facts,
-			}).length > 0,
+/**
+ * Why a met pair still holds the candidate, as the end of its text (`''` for the scope rule of today); undefined when
+ * the open lot's known forecast clears it.
+ */
+function holdWhyOf(params: {
+	candidate: string
+	held: string
+	open: PlanOpenLot
+	caseInsensitive: boolean
+}): string | undefined {
+	const { candidate, held, open, caseInsensitive } = params
+	if (isExclusivePath(candidate) || isExclusivePath(held))
+		return fillMessage({ template: PLAN_HOLD_WHY, values: { why: FORECAST_HOLD_TEXTS.exclusive } })
+	if (open.forecast === undefined || 'unknown' in open.forecast) return ''
+	const inside = open.forecast.conflicts.find(
+		(path) =>
+			entriesMeet({ first: path, second: candidate, caseInsensitive }) &&
+			entriesMeet({ first: path, second: held, caseInsensitive }),
 	)
+	return inside === undefined
+		? undefined
+		: fillMessage({ template: PLAN_HOLD_CONFLICT, values: { path: inside } })
 }
 
 /**
@@ -244,7 +274,11 @@ function entriesMeet(params: { first: string; second: string; caseInsensitive: b
  * store lot outside the plan by its brief scope. Outside work of unknown scope holds nothing (it marks proposals
  * unverified).
  */
-function openLotsOf(params: { block: PlanBlock; states: PlanStates }): PlanOpenLot[] {
+function openLotsOf(params: {
+	block: PlanBlock
+	states: PlanStates
+	facts: PlanFacts
+}): PlanOpenLot[] {
 	const entries = params.states.entries
 		.filter((status) => status.state === 'open')
 		.flatMap((status) =>
@@ -253,14 +287,43 @@ function openLotsOf(params: { block: PlanBlock; states: PlanStates }): PlanOpenL
 				name: status.id,
 				scope,
 				manual: status.realizedBy?.kind === 'worktree',
+				...forecastOfStoreLot({
+					facts: params.facts,
+					repository,
+					lot: status.realizedBy?.kind === 'store' ? status.realizedBy.name : undefined,
+				}),
 			})),
 		)
 	const outside = params.states.outside.flatMap((work) =>
 		work.scope === null
 			? []
-			: [{ repository: work.repository, name: work.name, scope: work.scope, manual: false }],
+			: [
+					{
+						repository: work.repository,
+						name: work.name,
+						scope: work.scope,
+						manual: false,
+						...forecastOfStoreLot({
+							facts: params.facts,
+							repository: work.repository,
+							lot: work.kind === 'store' ? work.name : undefined,
+						}),
+					},
+				],
 	)
 	return [...entries, ...outside]
+}
+
+/** The forecast of the store lot that holds an open entry, from the facts; nothing for work without a store lot. */
+function forecastOfStoreLot(params: {
+	facts: PlanFacts
+	repository: string
+	lot: string | undefined
+}): Pick<PlanOpenLot, 'forecast'> {
+	const repositoryFacts = params.facts.repositories[params.repository]
+	if (params.lot === undefined || repositoryFacts?.readable !== true) return {}
+	const forecast = repositoryFacts.storeLots.find((lot) => lot.name === params.lot)?.forecast
+	return forecast === undefined ? {} : { forecast }
 }
 
 /**

@@ -71,7 +71,29 @@ export type ForecastLotParams = {
 	/** The limit of each git step, in milliseconds (`FORECAST_STEP_LIMIT_MS` by default). */
 	stepLimitMs?: number
 	copyIndex?: CopyIndex
+	/** Only the comparison against main: no other lot is read (a start reads a met lot's work so). */
+	mainOnly?: boolean
 }
+
+/** Why a lot has no forecast: it is gone, damaged, simulated or no longer open. */
+export type ForecastRefusal = { refusal: string }
+
+/** What a forecast of a lot gives: its run, or why the lot has none. */
+export type ForecastOutcome = ForecastRun | ForecastRefusal
+
+/** What recording a run left: whether its lines were written, and the lines to print (a write that failed). */
+export type RecordedForecast = {
+	written: boolean
+	notes: string[]
+	/** The run's event could not be written (its note among `notes`): a caller that warns of its events already skips it. */
+	eventFailed?: true
+}
+
+/** One pair of a lot's merged view: the other lot, the newer line of the two sides, and whose line it is. */
+export type ForecastPairView = { lot: string; line: ForecastLine; from: 'self' | 'other' }
+
+/** A lot's forecast as its readers show it (files only): its newest main line, and per other open lot the newer side. */
+export type ForecastView = { main: ForecastLine | undefined; pairs: ForecastPairView[] }
 
 /** A forecast run: its id, its lines (one per comparison), the worst verdict and the time it took. */
 export type ForecastRun = {
@@ -118,3 +140,6 @@ export type MergeParams = {
 	lot: string
 	limitMs: number
 }
+
+/** The gate's forecast of its lot: the run's verdict and lines, and the text it prints. */
+export type GateForecast = { verdict: ForecastVerdict; lines: ForecastLine[]; text: string[] }

@@ -53,6 +53,7 @@ import { join } from 'node:path'
 import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag } from '../lib/config.ts'
+import { runGateForecast } from '../lib/coordination/gate-forecast.ts'
 import { GATE_STEP_KINDS, HEAVY_STEP_KINDS } from '../lib/events/record-step.constants.ts'
 import { partsOf, reuseOf, startStep } from '../lib/events/record-step.ts'
 import { computeCheckKey, gateCommandHash } from '../lib/gate-records/check-key.ts'
@@ -109,6 +110,7 @@ import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { GateForecast } from '../lib/coordination/forecast.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
 import type { CheckKey, GateRecord, RecordedRun } from '../lib/gate-records/gate-records.types.ts'
 import type { GateRunBase } from '../lib/gate/gate-base.types.ts'
@@ -252,7 +254,10 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 	const sleptMs = sleptSinceStart?.()
 	const recorded = recordGateRun({ cwd, mode, setup, results, reuse, sleptMs })
 	endGateEvents({ recorder, argv, worktree, checked, reuse, recorded })
+	// the last step in a lot's worktree: its forecast, a warning only (33CO 4.2, Q6); a release runs none
+	const forecast = mode === 'release' ? undefined : runGateForecast({ cwd })
 	return renderGateResult({
+		forecast,
 		mode,
 		json: hasFlag(argv, 'json'),
 		live: params.live,
@@ -584,8 +589,9 @@ function renderGateResult(params: {
 	notStored: string[]
 	stored: boolean
 	reused: GateRecord | undefined
+	forecast?: GateForecast
 }): CommandResult {
-	const { mode, results, reused } = params
+	const { mode, results, reused, forecast } = params
 	const failed = results.find((result) => result.status === 'failed')
 	const exitCode = failed ? 1 : 0
 	if (params.json)
@@ -599,6 +605,7 @@ function renderGateResult(params: {
 					stored: params.stored,
 					steps: results,
 					...(params.notStored.length > 0 && { warnings: params.notStored }),
+					...(forecast && { forecast: { verdict: forecast.verdict, lines: forecast.lines } }),
 				},
 				2,
 			),
@@ -617,6 +624,8 @@ function renderGateResult(params: {
 				...(reuseLine && result.step.name === TDD_STEP.name ? [reuseLine] : []),
 			]),
 		...(tty ? [] : params.absentLines),
+		// the forecast is the run's last step: said after the steps, before the notes and the verdict
+		...(forecast?.text ?? []),
 		...params.notStored,
 		failed
 			? `gate --${mode}: failed at ${failed.step.name}`

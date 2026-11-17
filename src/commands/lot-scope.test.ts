@@ -223,7 +223,7 @@ describe('lot scope - refusals: exit 2, nothing written', { timeout: STORE_CASE_
 				writeStoreLot({ workspace: lot.start.workspace, name: OTHER_LOT, scope: ['docs/'] }),
 			extra: addWords(['docs/notes.md']),
 			output: (lot) =>
-				`lot scope: ${lot.lotName}: the added paths meet the open lot ${OTHER_LOT}: docs/notes.md meets docs: nothing written`,
+				`lot scope: ${lot.lotName}: the added paths meet the open lot ${OTHER_LOT}: docs/notes.md meets docs: forecast unknown: worktree of ${OTHER_LOT} missing: nothing written`,
 		},
 		{
 			title: '--drop of a path that is no entry of the scope',

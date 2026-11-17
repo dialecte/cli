@@ -5,6 +5,7 @@
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { forecastViewOf } from '../lib/coordination/forecast-view.ts'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -142,6 +143,7 @@ export function lotStatusOfInput(params: {
 		checks: checksOf({ identity, lotFolder }),
 		notes: otherFolderNotes(params),
 		scope: lotScopeOf({ lotFolder }),
+		forecast: forecastViewOf({ lotFolder }),
 		next,
 		also,
 		station: station?.next ?? null,

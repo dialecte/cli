@@ -150,10 +150,11 @@ describe('lot start --overlap-ok', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const start = overlappedWorkspace()
 		startWith({ start, extra: ['--overlap-ok', '--by', BY, '--reason', REASON] })
 
-		expect(buildScopeLine({ folder: startedLotFolder(start) })).toEqual({
+		expect(buildScopeLine({ folder: startedLotFolder(start), now: NOW })).toEqual({
 			name: 'scope',
 			status: 'warning',
-			detail: `overlaps ${OTHER_LOT}: ${MET.join('; ')} (by ${BY}: ${REASON})`,
+			// the other lot has no worktree: its pair reads unknown (33CO 4.6)
+			detail: `overlaps ${OTHER_LOT}: ${MET.join('; ')} (by ${BY}: ${REASON}) · shares ${MET.join('; ')} with ${OTHER_LOT} (forecast unknown, 0 min ago)`,
 		})
 	})
 })
