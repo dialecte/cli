@@ -13,7 +13,9 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     full words, no standard citation (nor, in a contributor profile, a plan tag, acceptance
     criterion or ticket number); temporary-root-shared; raw-git-repository on test and test support
     files (a git clone / git init argument list in a git call, init --bare aside: make the
-    repository with the scratch helpers; allowable)
+    repository through a test helper that gives it an identity; allowable); bare-tmpdir on
+    production files (every temporary folder under one scratch root; allowable); their messages name
+    the cli helpers only in the cli
   a contributor: no consumer name nor forbidden word (git config dialecte.forbiddenWords and
     $XDG_CONFIG_HOME/dialecte/forbidden-words, else ~/.config/dialecte/forbidden-words; whole words,
     any case); no list: one line, and the check is not run
@@ -68,9 +70,11 @@ Flags: `--json`
   gives the test a folder of its own), and so is a test or test support file that runs `git clone` or `git init`
   itself (`raw-git-repository`: a `git clone` / `git init` argument list in a git call, a `'git'` program or a shell
   string starting with `git`, `init --bare` aside: such a repository has no identity, green where git falls back to
-  user@host and red on a CI machine; make it with the scratch helpers `cloneRepository` / `initializeRepository`);
-  so is a production file that calls `tmpdir()` outside `src/lib/scratch/` (`bare-tmpdir`: every temporary folder of
-  the cli is made with `makeScratchFolder`, under the one scratch root `worktree prune` and `health` read; allowable);
+  user@host and red on a CI machine; make it through a test helper that gives it an identity); so is a production
+  file that calls `tmpdir()` (`bare-tmpdir`: every temporary folder under one scratch root, the one the cleanup reads;
+  allowable). Both messages name the cli's own helpers only when the checked package is the cli
+  (`cloneRepository` / `initializeRepository` of `test/scratch-repository.ts`; `makeScratchFolder`, whose
+  `src/lib/scratch/` is exempt): in core or a dialecte those helpers are not there;
   positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings. A file it cannot read (a file given that is not
   there, no read permission) or a script that does not parse is an error of that file (`unreadable-file`),

@@ -1,5 +1,6 @@
 import type { RULE_NAMES } from './check-code-rules.constants.ts'
 import type { ReferencePattern } from './committed-text.types.ts'
+import type { PackageKind } from './dialecte-change.types.ts'
 import type { OwnImportKind } from './unit-context.types.ts'
 import type ts from 'typescript'
 
@@ -44,6 +45,8 @@ export type CheckCodeRulesParams = {
 	entryClasses?: ReadonlySet<string>
 	/** Given for a Dialecte change: the test rules of a Dialecte change run; absent, they do not. */
 	testRules?: TestRulesContext
+	/** The kind of the checked package: a message names the cli's own helpers only in the cli; absent, in none. */
+	packageKind?: PackageKind
 }
 
 /** What the unit-under-test rules know about the package: core's API groups and how its own imports are read. */

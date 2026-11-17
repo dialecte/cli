@@ -8,6 +8,7 @@ import { calleeName } from './callee-name.ts'
 import { checkActRules } from './check-act-rules.ts'
 import {
 	ABBREVIATIONS,
+	BARE_TMPDIR_CLI_MESSAGE,
 	BARE_TMPDIR_MESSAGE,
 	OS_MODULE_NAMES,
 	CONSTANT_NAME_PATTERN,
@@ -20,7 +21,10 @@ import {
 } from './check-code-rules.constants.ts'
 import { checkFixtureRules } from './check-fixture-rules.ts'
 import { checkQualityRules } from './check-quality-rules.ts'
-import { RAW_GIT_REPOSITORY_MESSAGE } from './check-raw-git.constants.ts'
+import {
+	RAW_GIT_REPOSITORY_CLI_MESSAGE,
+	RAW_GIT_REPOSITORY_MESSAGE,
+} from './check-raw-git.constants.ts'
 import { findRawGitRepositories } from './check-raw-git.ts'
 import { checkTestShapeRules, isTestShaped } from './check-test-shape-rules.ts'
 import { findReferences, isReferenceChecked } from './committed-text.ts'
@@ -37,6 +41,20 @@ import type {
 	TestRulesContext,
 } from './check-code-rules.types.ts'
 import type { QualityFinding } from './check-quality-rules.types.ts'
+import type { PackageKind } from './dialecte-change.types.ts'
+
+/**
+ * The messages of the rules whose advice names a helper: the cli's own helpers only in the cli, where they are; in
+ * any other package (or one of no known kind) the rule and why, naming none.
+ */
+function helperAdviceOf(packageKind: PackageKind | undefined): {
+	bareTmpdir: string
+	rawGitRepository: string
+} {
+	if (packageKind === 'cli')
+		return { bareTmpdir: BARE_TMPDIR_CLI_MESSAGE, rawGitRepository: RAW_GIT_REPOSITORY_CLI_MESSAGE }
+	return { bareTmpdir: BARE_TMPDIR_MESSAGE, rawGitRepository: RAW_GIT_REPOSITORY_MESSAGE }
+}
 
 export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 	const { file, text } = params
@@ -132,9 +150,10 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 					"the system's temporary folder itself as a root: other tests and processes share it - give the test a folder of its own (`mkdtempSync(join(tmpdir(), '<prefix>-'))`)",
 			})
 
+	const advice = helperAdviceOf(params.packageKind)
 	if (kind === 'implementation' && !isTestShaped(file) && !SCRATCH_MODULE_PATTERN.test(file))
 		for (const node of findTmpdirUses(sourceFile))
-			report({ node, rule: 'bare-tmpdir', severity: 'error', message: BARE_TMPDIR_MESSAGE })
+			report({ node, rule: 'bare-tmpdir', severity: 'error', message: advice.bareTmpdir })
 
 	if (isTestShaped(file))
 		for (const node of findRawGitRepositories(sourceFile))
@@ -142,7 +161,7 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 				node,
 				rule: 'raw-git-repository',
 				severity: 'error',
-				message: RAW_GIT_REPOSITORY_MESSAGE,
+				message: advice.rawGitRepository,
 			})
 
 	if (kind === 'implementation' && !isTestShaped(file))
