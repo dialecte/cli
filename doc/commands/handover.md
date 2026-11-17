@@ -60,6 +60,14 @@ Verbs: `write`, `show`, `review`, `run`, `abandon`, `list`
 Flags: `--release`, `--target`, `--out`, `--rehash`, `--json`, `--print`, `--rehearse`, `--keep`, `--full`, `--resume-merge`, `--not-a-lot`, `--by`, `--reason`, `--root`, `--legend`
 <!-- /dialecte-reference -->
 
+A CI-first repository never takes a hand-over: there `handover write` (and `handover <lots.json>`) and `handover run`,
+rehearsed or not, refuse with exit 2 before anything is written, and name the flow to use instead: commit on the lot
+branch through the hook, then `dialecte lot land <id> --draft`. A repository is CI-first when its
+`.github/workflows/ci.yml` (the file `dialecte ci sync` writes) runs on `merge_group` and holds the `ci-ok` job: what
+the merge queue runs and what its ruleset requires. Nothing is configured: a `ci.yml` without `merge_group`, or no
+`ci.yml`, keeps the hand-over flow below. The repository checked is the one the lots file names. `show`, `list`,
+`review`, `abandon` and `run --probe` answer as everywhere.
+
 - `dialecte handover write <lots.json> [--release] [--target <branch>] [--out <id|folder>] [--rehash] [--json]` (or `dialecte handover <lots.json>`) prepares the commit-by-lots
   hand-over a human runs. `--target <branch>` names the branch the hand-over must not be behind (default: the
   [base branch](../../README.md#the-base-branch)); it is written as `target` in the lots file. A branch with no ref, local or on

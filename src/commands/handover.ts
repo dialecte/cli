@@ -27,6 +27,9 @@
  *
  * `dialecte handover --legend` - every term the card can print: what it means, whether to look.
  *
+ * In a CI-first repository (`isCiFirstRepository`) `write` and `run` (rehearsed or not) refuse before anything is
+ * written: its lots commit on their branches through the hook and land with `lot land <id> --draft`.
+ *
  * The agent never commits; the run never pushes.
  */
 import { existsSync, realpathSync } from 'node:fs'
@@ -34,6 +37,8 @@ import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { CI_FIRST_HANDOVER_REFUSAL } from '../lib/ci/ci-first.constants.ts'
+import { isCiFirstRepository } from '../lib/ci/ci-first.ts'
 import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
@@ -259,6 +264,9 @@ export function runHandover(params: {
 	const absoluteLotsPath = resolve(cwd, lotsPath)
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)
+	// a CI-first repository lands its lots through their pull requests: no hand-over is written for it
+	if (isCiFirstRepository(lotsFile.repository))
+		return usage(ciFirstRefusal({ verb: 'write', root: lotsFile.repository }))
 	const outWord = getArg(argv, 'out')
 	// the default out, the lots file's folder, is taken by its real path as --out is
 	const chosen =
@@ -463,11 +471,6 @@ export async function runHandoverRun(params: {
 		write(textOf([notALot.usage]))
 		return 2
 	}
-	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
-	const sleptSinceStart = startLongRun({
-		holdAwake: params.holdAwake,
-		runClocks: params.runClocks,
-	})
 	const [argument] = positionalArguments({ argv, valueOptions: NOT_A_LOT_VALUE_OPTIONS })
 	const cwd = params.cwd ?? process.cwd()
 	const store = storeOfFolder(cwd)
@@ -490,6 +493,16 @@ export async function runHandoverRun(params: {
 		write(textOf([`handover run: ${handover}`]))
 		return 2
 	}
+	// a CI-first repository lands its lots through their pull requests: no hand-over runs, rehearsed or for real
+	if (isCiFirstRepository(handover.lotsFile.repository)) {
+		write(textOf([ciFirstRefusal({ verb: 'run', root: handover.lotsFile.repository })]))
+		return 2
+	}
+	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
+	const sleptSinceStart = startLongRun({
+		holdAwake: params.holdAwake,
+		runClocks: params.runClocks,
+	})
 	// a go-ahead holding a forbidden word: refused, nothing written (U3), the list of the repository committed into
 	const wordRefusal =
 		notALot.goAhead &&
@@ -902,6 +915,14 @@ function renderColumns(rows: readonly string[][]): string[] {
 			.map((cell, column) => cell.padEnd(widths[column]))
 			.join('  ')
 			.trimEnd(),
+	)
+}
+
+/** The refusal of a hand-over verb in a CI-first repository: the flow it names instead. */
+function ciFirstRefusal(params: { verb: string; root: string }): string {
+	return CI_FIRST_HANDOVER_REFUSAL.replace('{verb}', () => params.verb).replace(
+		'{root}',
+		() => params.root,
 	)
 }
 
