@@ -3,24 +3,27 @@ import { checkTddReceipts } from '../tdd/check-tdd-receipts.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
-import type { TddCheck } from '../tdd/tdd.types.ts'
+import type { TddBase, TddCheck } from '../tdd/tdd.types.ts'
 import type { StepResult } from './gate.types.ts'
 
 /**
  * The receipts of the change's test cases, measured from HEAD (the uncommitted lot), else from where HEAD left `ref`,
- * or from the whole branch's base (`wholeBranch`).
+ * or from the lot base (`wholeBranch`): `base` when the gate resolved it already.
  */
 export async function runTddStep(params: {
 	cwd: string
 	packageJson: PackageJson
 	ref: string | undefined
 	wholeBranch: boolean
+	/** The gate's own base when it is the lot base: the step measures from it, resolving none. */
+	base?: TddBase
 }): Promise<StepResult> {
 	const check = await checkTddReceipts({
 		root: params.cwd,
 		packageJson: params.packageJson,
 		ref: params.ref,
 		wholeBranch: params.wholeBranch,
+		...(params.base && { base: params.base }),
 	})
 	return tddStepResultOf(check)
 }

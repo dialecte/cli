@@ -101,10 +101,9 @@ describe(
 				await runGateIn({ cwd: root, argv })
 
 				expect(vi.mocked(resolveGateBase)).toHaveBeenCalledTimes(1)
-				// the gate's one merge-base, and the tdd step's own under --full
-				expect(spawned().filter((line) => /\bmerge-base\b/.test(line))).toHaveLength(
-					argv.includes('--full') ? 2 : 1,
-				)
+				// the gate's one merge-base: under --full the tdd step measures from that same base (one lot base), so it
+				// resolves none of its own; under --fast it checks the uncommitted work from HEAD
+				expect(spawned().filter((line) => /\bmerge-base\b/.test(line))).toHaveLength(1)
 			})
 
 			it('DIALECTE_HANDOVER_BASE and DIALECTE_HANDOVER_FOLDER in the environment → no hand-over base given to the resolver, no ignored line (rule 2 is for --hook)', async () => {

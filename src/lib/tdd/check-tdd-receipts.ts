@@ -76,11 +76,15 @@ export async function checkTddReceipts(params: {
 	 * Left out (`gate --fast`): the uncommitted work, measured from HEAD with no base to resolve (no git spawn).
 	 */
 	wholeBranch?: boolean
+	/** The lot base the caller already resolved (the gate's own): used as it is, nothing resolved again. */
+	base?: TddBase
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
 	const head = params.wholeBranch || params.ref !== undefined ? undefined : readHeadOrNone(root)
 	const resolved =
-		head === undefined ? resolveTddBase({ root, packageJson, ref: params.ref }) : { commit: head }
+		head !== undefined
+			? { commit: head }
+			: (params.base ?? resolveTddBase({ root, packageJson, ref: params.ref }))
 	if ('failure' in resolved) return { status: 'failed', reason: resolved.failure }
 	const check = await judgeTddReceipts({ root, packageJson, base: resolved.commit })
 	if (!params.wholeBranch || !('source' in resolved)) return check

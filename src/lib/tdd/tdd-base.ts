@@ -59,6 +59,18 @@ export function resolveTddBase(params: {
 }
 
 /**
+ * Whether the worktree at `root` holds a store lot started on another (`stack.json`): its base is then its parent's
+ * fork point, not the base branch's merge-base. Files only, no git.
+ *
+ * @intent tell when a lot's base differs from the base branch's merge-base
+ * @internal
+ */
+export function isStackedLotWorktree(params: { root: string }): boolean {
+	const lotFolder = lotOfWorktree({ cwd: params.root })
+	return lotFolder !== undefined && readStackRecord({ lotFolder }) !== undefined
+}
+
+/**
  * The open lot the worktree's lot was started on (`stack.json`), its branch and its landing state (git only); undefined
  * for a worktree of no store lot, a lot not stacked, or a parent whose identity cannot be read.
  */
