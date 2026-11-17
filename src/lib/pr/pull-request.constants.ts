@@ -27,6 +27,7 @@ export const FILLED_PARTS: readonly string[] = [
 	'review',
 	'risk',
 	'overlaps',
+	'depends',
 	'issue',
 	'checklist',
 ]
@@ -45,7 +46,7 @@ export const DOCS_STEP = 'docs'
 
 /** Why a template is not the renderer's: `{part}` the marker. */
 export const TEMPLATE_FAULTS = {
-	missing: 'missing marker {part}',
+	missing: 'missing marker <!-- dialecte:{part} -->',
 	twice: 'marker {part} twice',
 	afterKept: 'marker {part} after kept',
 } as const
@@ -61,6 +62,7 @@ export const BODY_LINES = {
 	otherMessages: 'Also in this commit:',
 	noEntry: 'No changelog entry: {reason}',
 	issue: 'Closes #{issue}',
+	dependsOn: '#{number}',
 	noIssue: 'none named',
 	tddCases: 'tdd: {count} ({statuses}) on {head}',
 	tddStale: 'tdd: stale, taken on {head}, not the tree this pull request lands',

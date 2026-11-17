@@ -18,7 +18,7 @@ import type {
 	PullRequestChecks,
 	ReviewComment,
 } from '../src/lib/host/host.types.ts'
-import type { LandingRepository, RecordingHost } from './land-lot.types.ts'
+import type { LandingRepository, RecordingHost, StackedRepository } from './land-lot.types.ts'
 
 /**
  * `main` (holding the cli's pull request template, or `template` when given; none for `null`) pushed to a bare origin,
@@ -56,6 +56,88 @@ export function landingRepository(
 	return { root, origin, worktree, lotFolder }
 }
 
+/** The url the fake host gives pull request `number`. */
+export function pullUrlOf(number: number): string {
+	return `https://host.test/pull/${number}`
+}
+
+/**
+ * A stack of two lots in one store: the parent lot `0001-repo-x` (the landing repository's `feat/x`) pushed to origin
+ * with pull request #5 recorded in its `landing.json` (none when `parentLanded` is false), and the child lot
+ * `0002-repo-y` on `feat/y`, one commit (`src/y.ts`) on the parent's tip, its `stack.json` naming the parent and that
+ * tip. The child's own files are `childFiles` when given.
+ */
+export function stackedRepository(
+	params: { parentLanded?: boolean; childFiles?: Record<string, string> } = {},
+): StackedRepository {
+	const parent = landingRepository()
+	const { root, origin } = parent
+	git({ root: parent.worktree, args: ['push', '-q', '-u', 'origin', 'feat/x'] })
+	const tip = git({ root: parent.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	const store = temporaryFolder('dialecte-stack-store-')
+	const parentFolder = join(store, '0001-repo-x')
+	writeFiles({
+		root: parentFolder,
+		files: {
+			'identity.json': JSON.stringify({ name: '0001-repo-x', branch: 'feat/x' }),
+			...(params.parentLanded !== false && {
+				'landing.json': JSON.stringify({
+					schema: 1,
+					number: 5,
+					url: pullUrlOf(5),
+					branch: 'feat/x',
+					head: tip,
+					replaced: [],
+					at: '',
+				}),
+			}),
+		},
+	})
+	const worktree = join(root, '..', 'child')
+	git({ root, args: ['worktree', 'add', '-q', '-b', 'feat/y', worktree, 'feat/x'] })
+	const childFiles = params.childFiles ?? { 'src/y.ts': 'export const y = 2\n' }
+	writeFiles({ root: worktree, files: childFiles })
+	git({ root: worktree, args: ['add', '-A'] })
+	git({ root: worktree, args: ['commit', '-qm', 'feat(y): y answers two'] })
+	const childFolder = join(store, '0002-repo-y')
+	writeFiles({
+		root: childFolder,
+		files: {
+			'brief.json': JSON.stringify({
+				lots: [{ paths: Object.keys(childFiles), message: 'feat(y): y answers two' }],
+			}),
+			'stack.json': JSON.stringify({
+				schema: 1,
+				parent: '0001-repo-x',
+				parentHead: tip,
+				at: '2026-11-17T21:00:00.000Z',
+			}),
+		},
+	})
+	return {
+		root,
+		origin,
+		store,
+		parent: { worktree: parent.worktree, lotFolder: parentFolder, tip },
+		child: { worktree, lotFolder: childFolder },
+	}
+}
+
+/** The open pull request #5 of the stack's parent `feat/x` (`state` when given). */
+export function parentPullRequest(params: { state?: PullRequest['state'] } = {}): PullRequest {
+	return {
+		number: 5,
+		url: pullUrlOf(5),
+		title: 'feat(x): x answers one',
+		body: '',
+		state: params.state ?? 'open',
+		draft: true,
+		queued: false,
+		head: '',
+		base: 'main',
+	}
+}
+
 /** A commit pushed to origin's main from another clone (what a queue landing leaves). */
 export function landOnOrigin(params: { origin: string; files?: Record<string, string> }): string {
 	const other = join(temporaryFolder('dialecte-land-other-'), 'other')
@@ -81,14 +163,23 @@ export function recordingHost(
 		comments?: ReviewComment[]
 		/** The host's refusal of a queue; queued when absent. */
 		queueRefusal?: string
+		/** Whether the host links stacks; when not, why (the default: no stacks). */
+		stacks?: true | string
+		/** A stack parent's pull request, answered when read by its number. */
+		parent?: PullRequest
+		/** How many stack links the host refuses before it takes one. */
+		linkRefusals?: number
 	} = {},
 ): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
 	let pullRequest = params.existing
+	let parent = params.parent
+	let linkRefusals = params.linkRefusals ?? 0
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
 			calls.push(`read ${call.ref}`)
+			if (parent !== undefined && call.ref === String(parent.number)) return parent
 			return pullRequest
 		},
 		openPullRequest: function openPullRequest(call) {
@@ -98,11 +189,12 @@ export function recordingHost(
 				title: call.title,
 				body: call.body,
 				number: 7,
-				url: 'https://host.test/pull/7',
+				url: pullUrlOf(7),
 				state: 'open',
 				draft: call.draft,
 				queued: false,
 				head: '',
+				base: call.base,
 			}
 			return pullRequest
 		},
@@ -137,6 +229,37 @@ export function recordingHost(
 			calls.push(`files ${call.url}`)
 			return undefined
 		},
+		probeStacks: function probeStacks() {
+			calls.push('probe')
+			return params.stacks === true
+				? { stacks: true }
+				: { stacks: false, why: params.stacks ?? 'no stacks on this host' }
+		},
+		linkStack: function linkStack(call) {
+			calls.push(`link ${call.parent} ${call.child}`)
+			if (linkRefusals === 0) return undefined
+			linkRefusals -= 1
+			return { refusal: 'gh stack link: the host refused the link' }
+		},
+		queueStack: function queueStack(call) {
+			calls.push(`stack-queue ${call.number}`)
+			return undefined
+		},
+		retargetPullRequest: function retargetPullRequest(call) {
+			calls.push(`retarget ${call.number} ${call.base}`)
+			if (pullRequest !== undefined) pullRequest = { ...pullRequest, base: call.base }
+			return undefined
+		},
 	}
-	return { host, calls, bodies }
+	return {
+		host,
+		calls,
+		bodies,
+		setParent: function setParent(next: PullRequest) {
+			parent = next
+		},
+		setPullRequest: function setPullRequest(next: PullRequest) {
+			pullRequest = next
+		},
+	}
 }

@@ -1,7 +1,7 @@
 import { TEMPORARY_INFIX } from '../lib/store/store.constants.ts'
 
 /** The options `lot start` takes followed by a value, and its flags, without the dashes. */
-export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate', 'by', 'reason']
+export const START_VALUE_OPTIONS: readonly string[] = ['effort', 'simulate', 'by', 'reason', 'on']
 export const START_FLAGS: readonly string[] = ['dry-run', 'json', 'overlap-ok']
 
 /** Why `lot start` is a usage error: `{extra}` the words beyond the brief, `{effort}` and `{efforts}` the flag's. */

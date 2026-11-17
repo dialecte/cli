@@ -7,14 +7,17 @@ import {
 	CHECKS_FIELDS,
 	FILES_TAB_SUFFIX,
 	GH_COMMAND,
+	GH_STACK,
 	HOST_ENVIRONMENT,
 	HOST_READ_TIMEOUT_MS,
 	HOST_WRITE_TIMEOUT_MS,
 	NO_PULL_REQUEST_PATTERN,
+	NO_STACKS_REASON,
 	OPEN_TIMEOUT_MS,
 	PULL_REQUEST_FIELDS,
 	REVIEW_COMMENTS_ENDPOINT,
 	REVIEW_COMMENTS_JQ,
+	STACK_MERGE_FLAGS,
 } from './host.constants.ts'
 
 import type {
@@ -23,6 +26,7 @@ import type {
 	PullRequest,
 	PullRequestChecks,
 	ReviewComment,
+	StackSupport,
 } from './host.types.ts'
 
 /**
@@ -73,6 +77,10 @@ export function createGithubHost(): HostAdapter {
 		readChecks: readChecksOnGithub,
 		readReviewComments: readCommentsOnGithub,
 		openFiles: openFilesTab,
+		probeStacks: probeStacksOnGithub,
+		linkStack: linkStackOnGithub,
+		queueStack: queueStackOnGithub,
+		retargetPullRequest: retargetOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -92,6 +100,54 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
+}
+
+/** Stacks when the gh-stack extension answers (`gh stack --help`, no network); its absence is why not. */
+function probeStacksOnGithub(params: { root: string }): StackSupport {
+	const run = runGh({
+		root: params.root,
+		args: [GH_STACK, '--help'],
+		timeout: HOST_READ_TIMEOUT_MS,
+	})
+	return 'refusal' in run ? { stacks: false, why: NO_STACKS_REASON } : { stacks: true }
+}
+
+/** `gh stack link <parent url> <child url>`: the child linked on top of the parent; undefined once linked. */
+function linkStackOnGithub(params: {
+	root: string
+	parent: string
+	child: string
+}): HostRefusal | undefined {
+	const linked = runGh({
+		root: params.root,
+		args: [GH_STACK, 'link', params.parent, params.child],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in linked ? linked : undefined
+}
+
+/** `gh stack merge <number> --yes --squash`: the layers up to it queued, all or nothing; undefined once queued. */
+function queueStackOnGithub(params: { root: string; number: number }): HostRefusal | undefined {
+	const queued = runGh({
+		root: params.root,
+		args: [GH_STACK, 'merge', String(params.number), ...STACK_MERGE_FLAGS],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in queued ? queued : undefined
+}
+
+/** `gh pr edit <number> --base <base>`: undefined once it merges into `base`. */
+function retargetOnGithub(params: {
+	root: string
+	number: number
+	base: string
+}): HostRefusal | undefined {
+	const edited = runGh({
+		root: params.root,
+		args: ['pr', 'edit', String(params.number), '--base', params.base],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in edited ? edited : undefined
 }
 
 /** `gh pr view <number> --json headRefOid,statusCheckRollup`: the checks on its head, or the refusal. */
@@ -203,6 +259,7 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			draft: parsed.isDraft === true,
 			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
 			head: String(parsed.headRefOid ?? ''),
+			...(typeof parsed.baseRefName === 'string' && { base: parsed.baseRefName }),
 		}
 	} catch {
 		return { refusal: `gh pr view: not the JSON it writes: ${params.text.slice(0, 80)}` }

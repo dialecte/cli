@@ -17,6 +17,7 @@ import { readIdentity } from '../lib/store/identity.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { lotState } from '../lib/store/lot-state.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
+import { readStack } from '../lib/store/stack.ts'
 import { LOT_LAND_LINES } from './lot-land.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -58,10 +59,13 @@ export function runLotLand(params: {
 	const main = mainCheckoutOf(identity.worktree)
 	const base = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
 	if ('refusal' in base) return { exitCode: 1, output: textOf([`lot land: ${base.refusal}`]) }
-	// a lot cut from another lot lands as a stack (33CI CI4): never rebased onto the base branch with its parent's
-	// commits. Cut from the base is a cut commit the base holds, however the brief named it (a branch, a sha): a child
-	// whose parent merged without a squash lands alone; after a squash merge it still carries the parent's commits
-	if (!isAncestorCommit({ root: main, ancestor: identity.base.commit, descendant: base.ref }))
+	// a lot cut from another lot lands only as a stack (33CI CI4): started with --on, its stack.json says on what;
+	// never rebased onto the base branch with its parent's commits. Cut from the base is a cut commit the base holds,
+	// however the brief named it (a branch, a sha)
+	if (
+		readStack({ lotFolder: required.lot }) === undefined &&
+		!isAncestorCommit({ root: main, ancestor: identity.base.commit, descendant: base.ref })
+	)
 		return {
 			exitCode: 1,
 			output: textOf([

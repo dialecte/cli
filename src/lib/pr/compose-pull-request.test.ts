@@ -37,6 +37,10 @@ const TEMPLATE = `<!-- dialecte: rendered from the lot's records -->
 
 <!-- dialecte:overlaps -->
 
+### Depends on
+
+<!-- dialecte:depends -->
+
 ### Issue
 
 <!-- dialecte:issue -->
@@ -218,6 +222,10 @@ risk class medium · effort medium
 
 - 0007: separate lines in one file
 
+### Depends on
+
+not recorded
+
 ### Issue
 
 Closes #12
@@ -359,7 +367,7 @@ Closes #12
 			kept: undefined,
 		})
 
-		expect(text).toEqual({ refusal: 'missing marker review' })
+		expect(text).toEqual({ refusal: 'missing marker <!-- dialecte:review -->' })
 	})
 })
 

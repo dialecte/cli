@@ -42,6 +42,8 @@ import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
 import { shellQuote, shellWord } from '../shell-quote.ts'
 import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
+import { STACK_CARD_LINE_NAME } from '../store/stack.constants.ts'
+import { readStack, stackTextOf } from '../store/stack.ts'
 import { countingReceipts, describeSkippedReceipts } from '../tdd/counting-receipts.ts'
 import { writtenLinesOf } from '../tdd/duplicate-case-ids.ts'
 import {
@@ -221,6 +223,7 @@ export function buildHandoverCard(params: {
 		: undefined
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
 	const scopeLine = params.release ? undefined : buildScopeLine({ folder: params.folder })
+	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
 	// a closed card (DONE or abandoned) shows the lot line only for the go-ahead row (D19, D22)
 	const storeLotLine = readStoreLotLine({
 		folder: params.folder,
@@ -244,6 +247,7 @@ export function buildHandoverCard(params: {
 		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
 		// a lot that changed its scope after the start: the changes, the adds with who and why; none: no line
 		...(scopeLine ? [scopeLine] : []),
+		...(stackLine ? [stackLine] : []),
 		// changes after the last snapshot, on a card still to run: nothing late, no line
 		...(lateFixesLine ? [lateFixesLine] : []),
 		// the install guard's last record, on every card; none recorded: no line
@@ -1032,4 +1036,19 @@ function optionalSection(params: { name: string; text: string | undefined }): Ca
 	return [
 		{ name: params.name, lines: params.text.split(/\r?\n/).map((text) => ({ text, hang: 0 })) },
 	]
+}
+
+/**
+ * The card's `stack` line of a lot started on another (33CI CI4): `on <parent lot> (#<pr>, <state>)`; none for a lot
+ * not stacked. Files only.
+ *
+ * @intent show which lot a stacked lot lands on
+ * @internal
+ */
+export function buildStackCardLine(params: { folder: string }): CardGateLine | undefined {
+	const detail = stackTextOf({ lotFolder: params.folder })
+	if (detail === undefined) return undefined
+	const read = readStack({ lotFolder: params.folder })
+	const damaged = read !== undefined && 'damage' in read
+	return { name: STACK_CARD_LINE_NAME, status: damaged ? 'warning' : 'passed', detail }
 }

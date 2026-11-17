@@ -27,6 +27,8 @@ export type PullRequestSources = {
 	/** The overlaps the lot accepted: the other lot (shown by its index) and why, never the met paths or who. */
 	overlaps?: { lot: string; reason: string }[]
 	effort?: Effort
+	/** The pull request of the lot's stack parent (33CI CI4); undefined for a lot not stacked or a parent not landed. */
+	dependsOn?: number
 	/** Whether the newest gate run of the lot's tree passed its docs step; undefined when none ran it. */
 	docsPassed?: boolean
 	/** Whether the lot changes the package's version. */

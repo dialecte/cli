@@ -137,6 +137,12 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 			]
 		case 'overlaps':
 			return overlapLines(sources)
+		case 'depends':
+			return [
+				sources.dependsOn === undefined
+					? NOT_RECORDED
+					: BODY_LINES.dependsOn.replace('{number}', String(sources.dependsOn)),
+			]
 		case 'issue':
 			return [
 				sources.issue === undefined

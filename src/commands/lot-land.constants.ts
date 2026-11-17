@@ -5,5 +5,5 @@ export const LOT_LAND_LINES = {
 	damaged: 'lot land: {lot} is damaged: dialecte lot status {lot} says how',
 	notLandable: 'lot land: {lot} is {state}: only a working or ready lot lands, nothing pushed',
 	stacked:
-		'lot land: {lot} was cut from {from} ({commit}), which {base} does not hold: a stacked lot lands as a stack (not built yet), nothing pushed',
+		'lot land: {lot} was cut from {from} ({commit}), which {base} does not hold: a lot on another lands as a stack, started with lot start --on <parent lot>, nothing pushed',
 } as const

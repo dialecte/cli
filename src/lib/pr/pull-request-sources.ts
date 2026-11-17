@@ -4,13 +4,14 @@
  * the pull request lands); a path it names passes only when a commit of the tree holds it. A record missing is undefined, never a guess.
  */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
 import { readSections } from '../changelog/sections.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
+import { readLanding } from '../handover/land-record.ts'
 import { readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
@@ -19,6 +20,7 @@ import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-wo
 import { lotsOf } from '../store/brief.ts'
 import { readLotOverlaps } from '../store/lot-overlaps.ts'
 import { folderPlanEntryIds } from '../store/public-text.ts'
+import { readStackRecord } from '../store/stack.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readTestsRecord } from '../tdd/tests-record.ts'
 import { linesOf, templateFaultOf } from './compose-pull-request.ts'
@@ -151,6 +153,7 @@ export function readPullRequestSources(params: {
 				})
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
+	const dependsOn = stackParentPullOf({ lotFolder: params.lotFolder })
 	const overlaps = readLotOverlaps({ lotFolder: params.lotFolder }).overlaps.map((record) => ({
 		lot: record.lot,
 		reason: record.reason,
@@ -167,6 +170,7 @@ export function readPullRequestSources(params: {
 		...(standing.comparedClass !== undefined && { riskClass: standing.comparedClass }),
 		...(standing.effort !== undefined && { effort: standing.effort }),
 		...(overlaps.length > 0 && { overlaps }),
+		...(dependsOn !== undefined && { dependsOn }),
 		...(docsPassed !== undefined && { docsPassed }),
 		versionBumped:
 			versionAt({ worktree: params.worktree, commit: base }) !==
@@ -175,6 +179,13 @@ export function readPullRequestSources(params: {
 			changes.some((change) => change.status === 'D' && FRAGMENT_PATTERN.test(change.path)) &&
 			changes.some((change) => change.path === CHANGELOG_FILE),
 	}
+}
+
+/** The pull request number the lot's stack parent landed through (its `landing.json`); undefined when none. */
+function stackParentPullOf(params: { lotFolder: string }): number | undefined {
+	const stack = readStackRecord(params)
+	if (stack === undefined) return undefined
+	return readLanding({ lotFolder: join(dirname(params.lotFolder), stack.parent) })?.number
 }
 
 function unreadBrief(params: { brief: string; reason: string }): string {

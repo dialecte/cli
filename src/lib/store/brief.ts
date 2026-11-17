@@ -55,6 +55,7 @@ import {
 	publicTextLabel,
 	referenceLabelIn,
 } from './public-text.ts'
+import { resolveStackParent } from './stack-parent.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 
@@ -67,6 +68,7 @@ import type {
 	CheckedBrief,
 	ParsedBrief,
 } from './brief.types.ts'
+import type { StackParent } from './stack.types.ts'
 import type {
 	LotIdentity,
 	LotOverlap,
@@ -147,6 +149,8 @@ export function checkBrief(params: {
 	simulated?: boolean
 	/** `--overlap-ok`: an overlap that names its paths is accepted (`acceptedOverlaps`), never a refusal. */
 	overlapOk?: boolean
+	/** `--on <lot>` (33CI CI4): the parent lot the brief's lot starts on; its scope is the lot's base, never an overlap. */
+	stackOn?: string
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
 }): CheckBriefResult {
@@ -170,7 +174,16 @@ export function checkBrief(params: {
 	const caseInsensitive =
 		params.caseInsensitive ??
 		(repository.main !== undefined && probeCaseInsensitive({ path: repository.main }))
-	const overlaps = overlapFaults({ ...params, brief: value, location, caseInsensitive })
+	const parent = stackParentOf({ argument: params.stackOn, repository: repository.main })
+	if (parent !== undefined && 'refusal' in parent)
+		return { refused: [], checked: undefined, stackRefusal: parent.refusal }
+	const overlaps = overlapFaults({
+		...params,
+		brief: value,
+		location,
+		caseInsensitive,
+		parent: parent?.name,
+	})
 	const faults = [
 		...fields.refused,
 		...repository.refused,
@@ -207,6 +220,7 @@ export function checkBrief(params: {
 			findings,
 			acceptedOverlaps: overlaps.accepted,
 			briefFolder,
+			stackParent: parent,
 		}),
 	}
 }
@@ -223,6 +237,8 @@ function checkedOf(params: {
 	acceptedOverlaps: LotOverlap[]
 	/** The brief's folder: its plan is found from there. */
 	briefFolder: string
+	/** `--on <lot>`: the open lot the brief's lot starts on. */
+	stackParent: StackParent | undefined
 }): CheckedBrief {
 	const { brief, plan, briefFile } = params
 	const planEntry = findPlanEntry({
@@ -249,6 +265,7 @@ function checkedOf(params: {
 		wouldRefuse: params.findings,
 		acceptedOverlaps: params.acceptedOverlaps,
 		...(planEntry !== undefined && { planEntry }),
+		...(params.stackParent !== undefined && { stackParent: params.stackParent }),
 	}
 }
 
@@ -827,6 +844,8 @@ function overlapFaults(params: {
 	caseInsensitive: boolean
 	pause?: SynchronousPause
 	overlapOk?: boolean
+	/** The stack parent's name: its scope is the lot's base, left out of the overlaps. */
+	parent?: string
 }): { refused: Refusal[]; accepted: LotOverlap[] } {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
@@ -837,7 +856,7 @@ function overlapFaults(params: {
 		scope: entries,
 		caseInsensitive: params.caseInsensitive,
 		pause: params.pause,
-	})
+	}).filter((overlap) => overlap.name !== params.parent)
 	const accepted = params.overlapOk ? overlaps.filter(isAcceptableOverlap) : []
 	const refused = overlaps
 		.filter((overlap) => !accepted.includes(overlap))
@@ -849,6 +868,15 @@ function overlapFaults(params: {
 			}),
 		)
 	return { refused, accepted }
+}
+
+/** The open lot `--on` names (`resolveStackParent`), or its refusal; undefined without `--on` or a repository. */
+function stackParentOf(params: {
+	argument: string | undefined
+	repository: string | undefined
+}): StackParent | { refusal: string } | undefined {
+	if (params.argument === undefined || params.repository === undefined) return undefined
+	return resolveStackParent({ argument: params.argument, repository: params.repository })
 }
 
 function hashOf(bytes: Buffer): string {

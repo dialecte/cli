@@ -76,7 +76,12 @@ export type PreparedStart = {
 	goAhead: StartGoAhead | undefined
 	/** The class of the brief's scope over the repository's declared list. */
 	derivation: RiskDerivation
+	/** `--on <lot>`: the open lot the start sits on, and its branch tip the lot's branch starts at. */
+	stack: StartStack | undefined
 }
+
+/** The parent of a stacked start (`--on`): its lot name and the tip of its branch. */
+export type StartStack = { parent: string; parentHead: string }
 
 /** A prepared start, or the exit that ended it before its effort was known. */
 export type PrepareStartResult = { prepared: PreparedStart } | { exit: CommandResult }

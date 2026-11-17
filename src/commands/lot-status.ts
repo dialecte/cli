@@ -28,6 +28,8 @@ import {
 import { lotState } from '../lib/store/lot-state.ts'
 import { noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { scopeChangesText } from '../lib/store/scope-changes.ts'
+import { STACK_STATUS_LINE } from '../lib/store/stack.constants.ts'
+import { stackTextOf } from '../lib/store/stack.ts'
 import { readBeyondCapRows, readStationNext } from '../lib/store/station-records.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS } from '../lib/store/store.constants.ts'
 import {
@@ -144,7 +146,14 @@ export function lotStatusOfInput(params: {
 		also,
 		station: station?.next ?? null,
 		rounds: roundsOf({ input, lotFolder }),
+		...stackStatusOf({ lotFolder }),
 	}
+}
+
+/** The stack field of a lot started on another; none for a lot not stacked. */
+function stackStatusOf(params: { lotFolder: string }): { stack?: string } {
+	const stack = stackTextOf(params)
+	return stack === undefined ? {} : { stack }
 }
 
 /**
@@ -279,7 +288,7 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 		: undefined
 	const [first] = status.questions
 	const missing = checksText(status.checks)
-	const rest = [
+	const allRest = [
 		belowLineOf(status),
 		first ? `questions: ${status.questions.length} open, ${first.id}: ${first.text}` : undefined,
 		missing ? `checks: ${missing}` : undefined,
@@ -288,7 +297,15 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 	].filter((line): line is string => line !== undefined)
 	const state = `${status.lot} ${status.state} since ${status.since}${status.limit ? ' (limit: run again)' : ''}`
 	const stationLine = stationLineOf(status)
-	const head = stationLine === undefined ? [state] : [state, stationLine]
+	// a stacked lot names its parent under the state lines: what it lands on outranks every later line, the also
+	// line given up first when the five are taken
+	const stackLine =
+		status.stack === undefined
+			? []
+			: [fillMessage({ template: STACK_STATUS_LINE, values: { stack: status.stack } })]
+	const head = [state, ...(stationLine === undefined ? [] : [stationLine]), ...stackLine]
+	const rest =
+		stackLine.length === 0 ? allRest : allRest.slice(0, Math.max(0, STATUS_MAX_LINES - head.length))
 	// the lines given up when every other one is needed: the position first, then the scope changes (a recorded
 	// decision outranks the step count the station line already gives)
 	const changes = scopeChangesText({ scope: status.scope, withReason: false })

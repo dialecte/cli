@@ -5,7 +5,8 @@ export const GH_COMMAND = 'gh'
 /** The fields the checks on a pull request's head are read with. */
 export const CHECKS_FIELDS = 'headRefOid,statusCheckRollup'
 
-export const PULL_REQUEST_FIELDS = 'number,url,title,body,state,isDraft,autoMergeRequest,headRefOid'
+export const PULL_REQUEST_FIELDS =
+	'number,url,title,body,state,isDraft,autoMergeRequest,headRefOid,baseRefName'
 
 /** How long a host call may take: a read is short (offline answers fast), a write may wait on the host. */
 export const HOST_READ_TIMEOUT_MS = 10_000
@@ -59,3 +60,10 @@ export const PENDING_STATUS_STATES: readonly string[] = ['PENDING', 'EXPECTED']
 
 /** The type a commit status has in the rollup; every other entry is a check run. */
 export const STATUS_CONTEXT_TYPE = 'StatusContext'
+
+/** The gh-stack extension's command (`gh stack`), and how its merge queues a stack: no prompt, squashed. */
+export const GH_STACK = 'stack'
+export const STACK_MERGE_FLAGS: readonly string[] = ['--yes', '--squash']
+
+/** Why the host links no stacks here: the gh-stack extension does not answer. */
+export const NO_STACKS_REASON = 'gh stack is not installed'

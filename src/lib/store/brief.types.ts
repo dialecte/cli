@@ -1,4 +1,5 @@
 import type { LotPlanEntry } from './plan-entry.types.ts'
+import type { StackParent } from './stack.types.ts'
 import type { LotOverlap, Refusal } from './store.types.ts'
 
 export type BriefEffort = 'low' | 'medium' | 'high'
@@ -62,7 +63,14 @@ export type CheckedBrief = {
 	wouldRefuse: Refusal[]
 	/** The overlaps `--overlap-ok` accepted instead of refusing (each names its paths); none without it. */
 	acceptedOverlaps: LotOverlap[]
+	/** `lot start --on <lot>` (33CI CI4): the open lot the lot starts on, its branch and that branch's tip. */
+	stackParent?: StackParent
 }
 
 /** `checked` is defined exactly when `refused` is empty. */
-export type CheckBriefResult = { refused: Refusal[]; checked: CheckedBrief | undefined }
+export type CheckBriefResult = {
+	refused: Refusal[]
+	checked: CheckedBrief | undefined
+	/** `--on <lot>` naming no lot a child may start on (33CI CI4): its line, checked before every other fault. */
+	stackRefusal?: string
+}
