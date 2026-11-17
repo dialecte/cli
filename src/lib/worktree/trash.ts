@@ -4,13 +4,13 @@
  * the person to look at.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { readGit } from '../git.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { POOL_FOLDER_PREFIX, TRASH_FOLDER } from './worktree.constants.ts'
+import { POOL_FOLDER_PREFIX, TRASH_FOLDER, TRASH_LINK_REFUSAL } from './worktree.constants.ts'
 
 import type { BackgroundSpawner, TrashedFolder } from './worktree.types.ts'
 
@@ -63,17 +63,23 @@ export function trashWorktree(params: {
 	return { trashed }
 }
 
-/** Renames a plain folder into `_trash/<folder name>-<time>`, then a background `rm -rf` of that path. */
+/**
+ * Renames a plain folder into `<trash name>/<folder name>-<time>` of `worktreesFolder` (`_trash` by default), then a
+ * background `rm -rf` of that path.
+ */
 export function trashFolder(params: {
 	folder: string
 	worktreesFolder: string
 	now: Date
 	spawner: BackgroundSpawner
+	/** The trash's folder name in `worktreesFolder`; default `_trash`. */
+	trashName?: string
 }): TrashedFolder {
 	const trashed = trashPathOf({
 		worktreesFolder: params.worktreesFolder,
 		name: basename(params.folder),
 		now: params.now,
+		trashName: params.trashName,
 	})
 	renameSync(params.folder, trashed)
 	params.spawner({ command: 'rm', args: ['-rf', trashed] })
@@ -92,14 +98,32 @@ export function spawnDetached(params: { command: string; args: string[]; cwd?: s
 	child.unref()
 }
 
-/** A free path `_trash/<name>-<yyyymmddThhmmss>` (`-2`, `-3`... after it within one second); the trash made. */
-function trashPathOf(params: { worktreesFolder: string; name: string; now: Date }): string {
-	const trash = join(params.worktreesFolder, TRASH_FOLDER)
+/**
+ * A free path `<trash>/<name>-<yyyymmddThhmmss>` (`-2`, `-3`... after it within one second); the trash made (its
+ * parents too). A trash that is a symbolic link is refused: nothing goes to a folder elsewhere.
+ */
+function trashPathOf(params: {
+	worktreesFolder: string
+	name: string
+	now: Date
+	trashName?: string
+}): string {
+	const trash = join(params.worktreesFolder, params.trashName ?? TRASH_FOLDER)
+	if (isSymbolicLink(trash)) throw new Error(TRASH_LINK_REFUSAL.replace('{trash}', () => trash))
 	mkdirSync(trash, { recursive: true })
 	const base = join(trash, `${params.name}-${timeStamp(params.now)}`)
 	let path = base
 	for (let counter = 2; existsSync(path); counter++) path = `${base}-${counter}`
 	return path
+}
+
+/** `path` is a symbolic link itself (not followed); false when nothing is there. */
+function isSymbolicLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink()
+	} catch {
+		return false
+	}
 }
 
 /** `20261106T100000`: the UTC time to the second. */

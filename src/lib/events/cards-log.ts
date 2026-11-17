@@ -13,7 +13,7 @@ import {
 	UNKNOWN_OUTCOME,
 } from './cards-log.constants.ts'
 import { NO_EVENTS_FILE_CODES } from './events.constants.ts'
-import { writeEvent } from './write-event.ts'
+import { cutValue, eventLineOf, writeEvent } from './write-event.ts'
 
 import type {
 	CardInput,
@@ -27,8 +27,10 @@ import type {
 import type { LotEvent } from './event.types.ts'
 
 /**
- * Appends a `card` line in one write (the limit is 64 KiB): only the card's `tdd` list is cut, after 40 entries,
- * with `cut: true` (`lots` and `merges` stay whole); a line still over the limit throws and writes nothing.
+ * Appends a `card` line in one write (the limit is 64 KiB): the card's `tdd` list is cut after 40 entries, with
+ * `cut: true` (`lots` and `merges` stay whole). A line still over the limit keeps the card's summary instead
+ * (`summaryOfCard`, `summary: true`): the full card stays in the lot's folder. A line over the limit even then throws and
+ * writes nothing.
  */
 export function writeCard(params: { file: string; line: CardInput }): void {
 	const tdd = params.line.card?.tdd
@@ -40,7 +42,29 @@ export function writeCard(params: { file: string; line: CardInput }): void {
 				cut: true,
 			}
 		: params.line
-	appendLine({ file: params.file, kind: CARD_KIND, fields: line })
+	const fits =
+		eventLineOf({ event: cardEventOf({ kind: CARD_KIND, fields: line }) }).length <=
+		CARDS_LOG_LINE_LIMIT
+	const written =
+		fits || line.card === null
+			? line
+			: { ...line, card: summaryOfCard(line.card), cut: true, summary: true }
+	appendLine({ file: params.file, kind: CARD_KIND, fields: written })
+}
+
+/**
+ * The summary of a card too big for its line: each list replaced by its entry count, each object by its key count,
+ * each string cut after `CUT_STRING_LIMIT` characters; numbers, booleans and null kept.
+ */
+function summaryOfCard(card: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(card).map(function summaryOf([key, value]): [string, unknown] {
+			if (Array.isArray(value)) return [key, value.length]
+			if (value !== null && typeof value === 'object') return [key, Object.keys(value).length]
+			if (typeof value === 'string') return [key, cutValue(value).value]
+			return [key, value]
+		}),
+	)
 }
 
 /** Appends a `removing` line (the intent, before the move). */
@@ -149,8 +173,12 @@ export function rawLinesOfLot(params: { file: string; lot: string }): string[] {
 
 /** Appends one line of the kind, the schema and the kind first, through the events' one-write appender. */
 function appendLine(params: { file: string; kind: string; fields: object }): void {
-	const event = { schema: CARDS_LOG_SCHEMA, kind: params.kind, ...params.fields } as LotEvent
-	writeEvent({ file: params.file, event, limit: CARDS_LOG_LINE_LIMIT })
+	writeEvent({ file: params.file, event: cardEventOf(params), limit: CARDS_LOG_LINE_LIMIT })
+}
+
+/** The line's record: the schema and the kind first, then the fields. */
+function cardEventOf(params: { kind: string; fields: object }): LotEvent {
+	return { schema: CARDS_LOG_SCHEMA, kind: params.kind, ...params.fields } as LotEvent
 }
 
 /** The log's text, or undefined when there is none. */

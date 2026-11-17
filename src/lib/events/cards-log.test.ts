@@ -209,11 +209,11 @@ describe('writeCard: cuts and the limit (case 35)', { timeout: STORE_CASE_TIMEOU
 		expect(parsedLines(file)[0]).not.toHaveProperty('cut')
 	})
 
-	it('a card whose line passes 64 KiB after the cuts → the write throws naming the limit, nothing written', () => {
+	it('a line that passes 64 KiB even with its card summarised → the write throws naming the limit, nothing written', () => {
 		const file = logFile()
 
 		expect(() =>
-			writeCard({ file, line: cardOf({ card: { note: 'n'.repeat(CARDS_LOG_LINE_LIMIT) } }) }),
+			writeCard({ file, line: cardOf({ usage: { note: 'n'.repeat(CARDS_LOG_LINE_LIMIT) } }) }),
 		).toThrow(/65,?536/)
 		expect(existsSync(file)).toBe(false)
 	})
@@ -225,7 +225,7 @@ describe('writeCard: cuts and the limit (case 35)', { timeout: STORE_CASE_TIMEOU
 		expect(() =>
 			writeCard({
 				file,
-				line: cardOf({ head: 'd'.repeat(40), card: { note: 'n'.repeat(CARDS_LOG_LINE_LIMIT) } }),
+				line: cardOf({ head: 'd'.repeat(40), usage: { note: 'n'.repeat(CARDS_LOG_LINE_LIMIT) } }),
 			}),
 		).toThrow(/limit/)
 		expect(readFileSync(file, 'utf8')).toBe(before)

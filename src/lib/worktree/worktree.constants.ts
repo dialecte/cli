@@ -190,6 +190,15 @@ export const DISCARDED_CACHES_PREFIX = '.dialecte-discarded-caches-'
 /** The folder of `.worktrees/` where worktrees and folders wait for their background removal. */
 export const TRASH_FOLDER = '_trash'
 
+/** The trash of a scratch root, where finished rehearsal clones wait for their background removal (named for the cli). */
+export const REHEARSAL_TRASH_FOLDER = 'dialecte-trash'
+
+/** What follows a move into a trash `prune` shows: the move is what `--yes` does, the removal comes after it. */
+export const TRASH_MOVE_NOTE = '  # then removed in the background'
+
+/** A trash that is a symbolic link: `{trash}`. Nothing is moved into a folder elsewhere. */
+export const TRASH_LINK_REFUSAL = '{trash} is a symbolic link: nothing moved into a trash elsewhere'
+
 /** The event the cli writes in the worktree's lot when it moves the hygiene baseline forward: `from` and `to`, full ids. */
 export const HYGIENE_BASELINE_MOVED_KIND = 'hygiene.baseline-moved'
 

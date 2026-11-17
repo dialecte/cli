@@ -1,0 +1,9 @@
+### Changed
+
+- `dialecte worktree prune`: a committed hand-over folder and a finished rehearsal clone go to a trash like every other item - a hand-over folder to the workspace's `.worktrees/_trash`, a rehearsal clone to its scratch root's `dialecte-trash` (a move never crosses file systems). The plan shows the move (`mkdir -p <trash> && mv <folder> <trash>/  # then removed in the background`) and `--yes` makes it; a move that cannot be made (another file system, a trash that is no folder or is a symbolic link) is a `✗` line naming why, nothing deleted. A scratch root's trash is counted on its own line (`rehearsal trash: N folders in <folder>`). A pool left-over's shown move names its paths the same way.
+
+### Fixed
+
+- The repository's `post-merge` hook (and `post-rewrite` after a rebase, as `git pull --rebase` makes) rebuilds `dist/` in the main checkout (`git pull`, `lot close`'s fast-forward) when the checkout has one: `node dist/cli.js` no longer reads the store with old code. The build goes to a folder of its own and replaces `dist/` only when it succeeds; the build it replaces is moved aside (`node_modules/.cache/dialecte-dist.old`), never deleted under a cli running from it. A failed build leaves `dist/` as it was and says so on one line; a linked worktree builds nothing; the merge never fails.
+- `handover run`: the `contrib` guard, finding no green contrib record of the tree under this run's key but one under another key, names what differs: the `file:` dependencies, the commit it ran at, or the lock and command hash (another cli - an installed one older than the one that ran `dialecte contrib` - or other contrib rows, with this cli's version).
+- `cards.log`: a card whose line passes 64 KiB after its tdd list is cut is kept as its summary (lists and objects as their counts, strings cut, `summary: true`) instead of failing the write; the full card stays in the lot's folder.

@@ -22,6 +22,8 @@ import {
 	writeFiles,
 } from '../../test/scratch-repository.ts'
 import { WORKSPACE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { createRecordingSpawner } from '../../test/worktree-pool.ts'
+import { shellQuote } from '../lib/shell-quote.ts'
 import { runHandover } from './handover.ts'
 import { runWorktreeAdd, runWorktreePrune } from './worktree.ts'
 
@@ -307,6 +309,14 @@ describe('worktree add', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 	})
 })
 
+/**
+ * The move into `trash` that prune shows for `folder` (what `--yes` does), never a removal: the workspace's
+ * `.worktrees/_trash` for a hand-over folder, the scratch root's `dialecte-trash` for a rehearsal clone.
+ */
+function trashMove(params: { trash: string; folder: string }): string {
+	return `mkdir -p ${shellQuote(params.trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${params.trash}/`)}  # then removed in the background`
+}
+
 /** A rehearsal clone left in `scratchRoot`, its marker naming the process that made it. */
 function makeRehearsalClone(params: { scratchRoot: string; name: string; pid?: number }): string {
 	const clone = join(params.scratchRoot, params.name)
@@ -416,7 +426,10 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`cd '${core}' && git worktree remove '${worktrees.merged}'`,
 				`cd '${core}' && git branch -d 'feat/merged'`,
 				`cd '${core}' && git branch -d 'old-merged'`,
-				`cd '${scratchRoot}' && rm -rf 'dialecte-rehearse-abc123'`,
+				trashMove({
+					trash: join(scratchRoot, 'dialecte-trash'),
+					folder: join(scratchRoot, 'dialecte-rehearse-abc123'),
+				}),
 			]),
 		)
 		expect(result.output).not.toContain('old-unmerged')
@@ -484,7 +497,131 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.output).toContain(
-			`cd '${join(workspace, '_commit-plan')}' && rm -rf 'pending-topic'`,
+			trashMove({
+				trash: join(workspace, '.worktrees', '_trash'),
+				folder: join(workspace, '_commit-plan', 'pending-topic'),
+			}),
+		)
+	})
+
+	it('--yes, a committed hand-over folder and a dead rehearsal clone → each moved into a trash on its own file system (a clone in its own scratch root), its background removal started there', async () => {
+		const { workspace, worktrees } = createPruneWorkspace()
+		git({ root: worktrees.pending, args: ['add', 'CHANGELOG.md'] })
+		git({ root: worktrees.pending, args: ['commit', '-q', '-m', 'docs(changelog): pending'] })
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		const clone = makeRehearsalClone({
+			scratchRoot,
+			name: 'dialecte-rehearse-dead',
+			pid: deadPid(),
+		})
+		const handover = join(workspace, '_commit-plan', 'pending-topic')
+		const recording = createRecordingSpawner()
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--yes'],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: true,
+			confirm: async () => true,
+			spawner: recording.spawner,
+		})
+
+		const trashes = [join(workspace, '.worktrees', '_trash'), join(scratchRoot, 'dialecte-trash')]
+		const trashed = result.output
+			.split('\n')
+			.filter((line) => line.includes(' sent to the trash: '))
+			.map((line) => line.slice(line.indexOf(': ', line.indexOf(' sent to the trash')) + 2))
+		expect({
+			handover: existsSync(handover),
+			clone: existsSync(clone),
+			trashed: trashed.map(
+				(path) =>
+					trashes.findIndex((trash) => path.startsWith(`${trash}/`)) !== -1 && existsSync(path),
+			),
+			clonesTrash: trashed.some((path) => path.startsWith(`${trashes[1]}/`)),
+			removals: recording.calls
+				.filter((call) => call.command === 'rm')
+				.map((call) => call.args.at(-1))
+				.sort(),
+		}).toEqual({
+			handover: false,
+			clone: false,
+			trashed: [true, true],
+			clonesTrash: true,
+			removals: [...trashed].sort(),
+		})
+	})
+
+	it('--yes, a hand-over folder the trash cannot take → a cross line naming why, the folder left where it is', async () => {
+		const { workspace, worktrees } = createPruneWorkspace()
+		git({ root: worktrees.pending, args: ['add', 'CHANGELOG.md'] })
+		git({ root: worktrees.pending, args: ['commit', '-q', '-m', 'docs(changelog): pending'] })
+		writeFileSync(join(workspace, '.worktrees', '_trash'), 'not a folder\n')
+		const handover = join(workspace, '_commit-plan', 'pending-topic')
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--yes'],
+			cwd: workspace,
+			scratchRoot: temporaryFolder('dialecte-scratch-root-'),
+			isTerminal: true,
+			confirm: async () => true,
+			spawner: createRecordingSpawner().spawner,
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			line: result.output.split('\n').some((line) => line.startsWith(`✗ ${handover}: `)),
+			handover: existsSync(handover),
+		}).toEqual({ exitCode: 1, line: true, handover: true })
+	})
+
+	it('--yes, a finished rehearsal clone whose scratch trash is a symbolic link → a cross line naming it, the clone left where it is', async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		const clone = makeRehearsalClone({
+			scratchRoot,
+			name: 'dialecte-rehearse-dead',
+			pid: deadPid(),
+		})
+		symlinkSync(temporaryFolder('dialecte-elsewhere-'), join(scratchRoot, 'dialecte-trash'))
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--yes'],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: true,
+			confirm: async () => true,
+			spawner: createRecordingSpawner().spawner,
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			line: result.output
+				.split('\n')
+				.some((line) => line.startsWith(`✗ ${clone}: `) && line.includes('symbolic link')),
+			clone: existsSync(clone),
+		}).toEqual({ exitCode: 1, line: true, clone: true })
+	})
+
+	it("a scratch root's trash holding two clones → counted on its own line, never listed nor touched", async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		for (const name of [
+			'dialecte-rehearse-a-20261117T100000',
+			'dialecte-rehearse-b-20261117T100000',
+		])
+			mkdirSync(join(scratchRoot, 'dialecte-trash', name), { recursive: true })
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: false,
+			confirm: async () => true,
+		})
+
+		expect(result.output.split('\n')).toContain(
+			`rehearsal trash: 2 folders in ${join(scratchRoot, 'dialecte-trash')}, being deleted or left over`,
 		)
 	})
 
@@ -574,11 +711,18 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-bare')}  (no rehearsal marker: not made by this cli, or still starting)`,
-				`cd '${scratchRoot}' && rm -rf 'dialecte-rehearse-dead'`,
+				trashMove({
+					trash: join(scratchRoot, 'dialecte-trash'),
+					folder: join(scratchRoot, 'dialecte-rehearse-dead'),
+				}),
 			]),
 		)
-		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-live'")
-		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-bare'")
+		expect(result.output).not.toContain(
+			`mv ${shellQuote(join(scratchRoot, 'dialecte-rehearse-live'))}`,
+		)
+		expect(result.output).not.toContain(
+			`mv ${shellQuote(join(scratchRoot, 'dialecte-rehearse-bare'))}`,
+		)
 	})
 
 	it('rehearsal folders (the clone inside, named as its repository) in the scratch root, and a clone of an earlier cli in the former temporary folder → each found by its marker: the dead ones removed from their own root, the live one kept', async () => {
@@ -607,11 +751,19 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  remove  ${join(formerScratchRoot, 'dialecte-rehearse-former')}`,
-				`cd '${scratchRoot}' && rm -rf 'dialecte-rehearse-dead'`,
-				`cd '${formerScratchRoot}' && rm -rf 'dialecte-rehearse-former'`,
+				trashMove({
+					trash: join(scratchRoot, 'dialecte-trash'),
+					folder: join(scratchRoot, 'dialecte-rehearse-dead'),
+				}),
+				trashMove({
+					trash: join(formerScratchRoot, 'dialecte-trash'),
+					folder: join(formerScratchRoot, 'dialecte-rehearse-former'),
+				}),
 			]),
 		)
-		expect(result.output).not.toContain("rm -rf 'dialecte-rehearse-live'")
+		expect(result.output).not.toContain(
+			`mv ${shellQuote(join(scratchRoot, 'dialecte-rehearse-live'))}`,
+		)
 	})
 
 	it('a workspace child whose .git is a file → no crash; the main checkout on a merged branch → that branch kept', async () => {

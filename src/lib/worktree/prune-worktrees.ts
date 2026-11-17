@@ -62,7 +62,9 @@ import {
 	RECLAIM_SIZE_UNITS,
 	RECLAIM_TRASH_REASONS,
 	RECLAIM_WORKTREE_GONE,
+	REHEARSAL_TRASH_FOLDER,
 	TRASH_FOLDER,
+	TRASH_MOVE_NOTE,
 	WORKTREE_LOCKED_FILE,
 	WORKTREE_STATUS_ARGUMENTS,
 } from './worktree.constants.ts'
@@ -112,8 +114,9 @@ export function planPrune(params: {
 	const links = linkRootsOf({ workspace: params.workspace, scratchRoots }).flatMap((folder) =>
 		findLinks(folder),
 	)
+	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
 	const repositories = listMainCheckouts(params.workspace).map((repository) =>
-		planRepository({ repository, handovers, links }),
+		planRepository({ repository, handovers, links, worktreesFolder }),
 	)
 	const scratch = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
 		if (!existsSync(scratchRoot)) return []
@@ -122,7 +125,6 @@ export function planPrune(params: {
 			.sort()
 			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
 	})
-	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
 	return {
 		repositories,
 		scratch,
@@ -133,6 +135,10 @@ export function planPrune(params: {
 			listProcesses: params.listProcesses ?? listProcessFolders,
 		}),
 		trash: countTrashed(worktreesFolder),
+		scratchTrash: scratchRoots.flatMap(function scratchTrashOf(scratchRoot) {
+			const folder = join(scratchRoot, REHEARSAL_TRASH_FOLDER)
+			return isDirectory(folder) ? [{ folder, folders: readdirSync(folder).length }] : []
+		}),
 	}
 }
 
@@ -292,8 +298,7 @@ function planPoolLeftOvers(params: {
 			if (working !== undefined) return { ...item, kept: working }
 			return {
 				...item,
-				// what `--yes` does (a move into the trash), never a removal a person could copy
-				command: `cd ${shellQuote(worktreesFolder)} && mkdir -p ${TRASH_FOLDER} && mv ${shellQuote(basename(folder))} ${TRASH_FOLDER}/`,
+				command: trashMoveCommand({ folder, trash: join(worktreesFolder, TRASH_FOLDER) }),
 			}
 		})
 }
@@ -337,17 +342,41 @@ export function trashPoolLeftOver(params: {
 		: (whyParkInProgress({ folder, now: params.now }) ??
 			whyKeepByProcess({ worktree: folder, processes: params.listProcesses() }))
 	if (kept !== undefined) return `✗ ${folder} kept: ${kept}`
+	return trashPrunedFolder(params)
+}
+
+/**
+ * A folder `prune --yes` removes (a committed hand-over, a finished rehearsal clone, a pool left-over) moved into the
+ * trash, its background removal started there: the line to print, where it went or why it stayed (a move that cannot
+ * be made - another file system, a trash that is no folder - leaves it in place, nothing deleted).
+ *
+ * @intent never delete in place what prune shows as a move into the trash
+ * @internal
+ */
+export function trashPrunedFolder(params: {
+	folder: string
+	worktreesFolder: string
+	now: Date
+	spawner: BackgroundSpawner
+	/** The trash's folder name in `worktreesFolder`; default `_trash`. */
+	trashName?: string
+}): string {
+	const { folder } = params
 	try {
-		const { trashed } = trashFolder({
-			folder,
-			worktreesFolder: params.worktreesFolder,
-			now: params.now,
-			spawner: params.spawner,
-		})
+		const { trashed } = trashFolder(params)
 		return `✓ ${folder} sent to the trash: ${trashed}`
 	} catch (error) {
 		return `✗ ${folder}: ${(error as Error).message}`
 	}
+}
+
+/**
+ * What `prune` shows for a folder `--yes` moves into `trash` (the workspace's `.worktrees/_trash`, or a scratch root's
+ * `dialecte-trash`): the move a person could run, never a removal, and a note that the removal follows.
+ */
+function trashMoveCommand(params: { folder: string; trash: string }): string {
+	const { trash } = params
+	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}${TRASH_MOVE_NOTE}`
 }
 
 /** The pool entries of each repository, in name order of the repositories. */
@@ -392,6 +421,8 @@ function planRepository(params: {
 	handovers: readonly PruneHandover[]
 	/** The links found around the workspace: what they reach is kept. */
 	links: readonly FolderLink[]
+	/** The workspace's worktrees folder, whose trash a removed hand-over folder goes to. */
+	worktreesFolder: string
 }): PrunePlan {
 	const { repository } = params
 	const found = findBaseBranchRef({ root: repository, packageJson: readPackageJson(repository) })
@@ -543,7 +574,10 @@ function planRepository(params: {
 				: {
 						kind: 'hand-over',
 						name: folder,
-						command: `cd ${shellQuote(dirname(folder))} && rm -rf ${shellQuote(basename(folder))}`,
+						command: trashMoveCommand({
+							folder,
+							trash: join(params.worktreesFolder, TRASH_FOLDER),
+						}),
 					},
 		)
 	}
@@ -653,7 +687,11 @@ function planRehearsalClone(params: {
 	return {
 		kind: 'rehearsal clone',
 		name: clone,
-		command: `cd ${shellQuote(params.scratchRoot)} && rm -rf ${shellQuote(params.name)}`,
+		// the scratch root's own trash: a move never crosses file systems (/tmp is often its own)
+		command: trashMoveCommand({
+			folder: clone,
+			trash: join(params.scratchRoot, REHEARSAL_TRASH_FOLDER),
+		}),
 	}
 }
 

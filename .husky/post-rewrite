@@ -1,0 +1,4 @@
+# After a rebase (git pull --rebase rewrites the main checkout and fires no post-merge): dist/ rebuilt as after a
+# merge; an amend builds nothing.
+[ "$1" = rebase ] || exit 0
+exec sh "$(dirname "$0")/post-merge"

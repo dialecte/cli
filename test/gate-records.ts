@@ -19,6 +19,27 @@ export function readRecordFile<Parsed>(params: { root: string; name: string }): 
 }
 
 /**
+ * Every record of the repository's store with the key fields of `key` replaced (`commandHash`, `linked`, `lockHash`), as
+ * another cli, another install or other `file:` dependencies would have keyed them.
+ */
+export function rekeyStoredRecords(params: {
+	root: string
+	key: Partial<Record<'commandHash' | 'linked' | 'lockHash', string>>
+}): void {
+	const common = git({
+		root: params.root,
+		args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+	}).trim()
+	const store = join(common, 'dialecte-checks')
+	for (const file of readdirSync(store)) {
+		const path = join(store, file)
+		const records = JSON.parse(readFileSync(path, 'utf8')) as { key?: Record<string, string> }[]
+		for (const record of records) if (record.key) Object.assign(record.key, params.key)
+		writeFileSync(path, `${JSON.stringify(records, null, 2)}\n`)
+	}
+}
+
+/**
  * Every record of the repository's store keyed on another lock (`lockHash`), as a cli that keyed the installed lock
  * left them: a record no run on today's trees answers from.
  */
