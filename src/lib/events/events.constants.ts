@@ -101,6 +101,8 @@ export const EVENT_FIELDS_BY_KIND: EventFieldsByKind = {
 	[HYGIENE_BASELINE_MOVED_KIND]: ['from', 'to'],
 	// `lot scope` writes one per change of a lot's scope (FIX-lot-scope D6)
 	'scope.changed': ['op', 'paths'],
+	// `lot forecast` writes one per forecast run: the verdict counts and the time spent (33CO CO2a)
+	forecast: ['run', 'trigger', 'verdict', 'verdicts', 'durationMs'],
 }
 
 /** Every field a reader knows: the envelope's and those of every known kind (a field is unknown when none holds it). */

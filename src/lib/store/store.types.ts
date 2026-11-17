@@ -164,7 +164,8 @@ export type StoreFileNames = Readonly<
 		| 'overlaps'
 		| 'planEntry'
 		| 'approvals'
-		| 'pulledComments',
+		| 'pulledComments'
+		| 'forecast',
 		string
 	>
 >
