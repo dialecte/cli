@@ -186,7 +186,7 @@ function printed(params: {
 		output: textOf([
 			LOT_PR_LINES.title.replace('{title}', () => params.text.title),
 			'',
-			params.text.body,
+			...linesOf(params.text.body),
 			...(params.lines.length === 0 ? [] : ['', ...params.lines]),
 		]),
 	}

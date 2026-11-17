@@ -336,4 +336,13 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			output: expect.stringMatching(/^lot pr: the worktree .* is gone: nothing rendered\n?$/),
 		})
 	})
+
+	it('--print of a body of several lines → printed line by line, no line break escaped', () => {
+		const lot = pullRequestLot()
+		const { host } = recordingHost()
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
+
+		expect(result.output).toContain(`### Summary\n\n${LOT_SUMMARY}\n\n### Behaviours`)
+	})
 })
