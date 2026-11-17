@@ -50,6 +50,7 @@ import {
 	RECLAIM_OLDER_THAN_DAYS,
 	RECLAIM_OLDER_THAN_PATTERN,
 	RECLAIM_USAGE,
+	REHEARSAL_TRASH_FOLDER,
 } from '../lib/worktree/worktree.constants.ts'
 
 import type { Card, CardRow } from '../lib/card/card.types.ts'
@@ -218,6 +219,7 @@ export async function runWorktreePrune(params: {
 				folder: item.name,
 				// a clone goes to its scratch root's own trash: a move never crosses file systems
 				worktreesFolder: item.kind === 'rehearsal clone' ? dirname(item.name) : worktreesFolder,
+				...(item.kind === 'rehearsal clone' && { trashName: REHEARSAL_TRASH_FOLDER }),
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 			})
@@ -328,6 +330,11 @@ function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem
 		lines.push(
 			`pool: ${item.name} left over (no pool.json: a park that never finished), ${item.kept ? `kept: ${item.kept}` : 'to the trash'}`,
 		)
+	for (const trash of params.plan.scratchTrash)
+		if (trash.folders > 0)
+			lines.push(
+				`rehearsal trash: ${trash.folders} folder${trash.folders === 1 ? '' : 's'} in ${trash.folder}, being deleted or left over`,
+			)
 	if (params.plan.trash > 0)
 		lines.push(
 			`trash: ${params.plan.trash} folder${params.plan.trash === 1 ? '' : 's'}, being deleted or left over`,

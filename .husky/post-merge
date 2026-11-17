@@ -1,9 +1,24 @@
 # After a merge (git pull, lot close's fast-forward): the main checkout's dist/ rebuilt, so `node dist/cli.js` and
-# the bin never read the store with old code. A linked worktree, or a checkout without dist/, builds nothing; a
-# failed build says so on one line and never fails the merge.
+# the bin never read the store with old code. A linked worktree, or a checkout without dist/, builds nothing.
+# The build goes to a folder of its own and replaces dist/ only when it succeeds (tsup empties its output first: a
+# failed build in place would leave dist/ empty); the build it replaces is moved aside, never deleted under a cli
+# running from it (the next rebuild removes it). A failed build says so on one line and never fails the merge.
 # the main checkout: its git folder is the common one (both read physically, a linked path never tells them apart)
 [ "$(cd "$(git rev-parse --git-dir)" && pwd -P)" = "$(cd "$(git rev-parse --git-common-dir)" && pwd -P)" ] || exit 0
 [ -d dist ] || exit 0
+cache=node_modules/.cache
+next="$cache/dialecte-dist.next"
+old="$cache/dialecte-dist.old"
+mkdir -p "$cache" && rm -rf "$next" "$old"
 echo "post-merge: rebuilding dist/ (npm run build)..." >&2
-npm run build --silent >/dev/null 2>&1 || echo "post-merge: dist/ not rebuilt (npm run build failed): run it yourself" >&2
+if ! npm run build --silent -- --out-dir "$next" >/dev/null 2>&1; then
+	rm -rf "$next"
+	echo "post-merge: dist/ not rebuilt (npm run build failed), kept as it was: run npm run build yourself" >&2
+elif mv dist "$old" && mv "$next" dist; then
+	echo "post-merge: dist/ rebuilt" >&2
+else
+	# a swap cut short: the build it replaces goes back where it was
+	[ -d dist ] || mv "$old" dist
+	echo "post-merge: dist/ not rebuilt (the new build could not replace it), kept as it was: run npm run build yourself" >&2
+fi
 exit 0

@@ -310,12 +310,11 @@ describe('worktree add', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 })
 
 /**
- * The move into a trash that prune shows for `folder` (what `--yes` does), never a removal: the trash of `root` - the
- * workspace's worktrees folder for a hand-over folder, the clone's own scratch root for a rehearsal clone.
+ * The move into `trash` that prune shows for `folder` (what `--yes` does), never a removal: the workspace's
+ * `.worktrees/_trash` for a hand-over folder, the scratch root's `dialecte-trash` for a rehearsal clone.
  */
-function trashMove(params: { trashRoot: string; folder: string }): string {
-	const trash = join(params.trashRoot, '_trash')
-	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}`
+function trashMove(params: { trash: string; folder: string }): string {
+	return `mkdir -p ${shellQuote(params.trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${params.trash}/`)}  # then removed in the background`
 }
 
 /** A rehearsal clone left in `scratchRoot`, its marker naming the process that made it. */
@@ -428,7 +427,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`cd '${core}' && git branch -d 'feat/merged'`,
 				`cd '${core}' && git branch -d 'old-merged'`,
 				trashMove({
-					trashRoot: scratchRoot,
+					trash: join(scratchRoot, 'dialecte-trash'),
 					folder: join(scratchRoot, 'dialecte-rehearse-abc123'),
 				}),
 			]),
@@ -499,7 +498,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 
 		expect(result.output).toContain(
 			trashMove({
-				trashRoot: join(workspace, '.worktrees'),
+				trash: join(workspace, '.worktrees', '_trash'),
 				folder: join(workspace, '_commit-plan', 'pending-topic'),
 			}),
 		)
@@ -527,7 +526,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 			spawner: recording.spawner,
 		})
 
-		const trashes = [join(workspace, '.worktrees', '_trash'), join(scratchRoot, '_trash')]
+		const trashes = [join(workspace, '.worktrees', '_trash'), join(scratchRoot, 'dialecte-trash')]
 		const trashed = result.output
 			.split('\n')
 			.filter((line) => line.includes(' sent to the trash: '))
@@ -574,6 +573,56 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 			line: result.output.split('\n').some((line) => line.startsWith(`✗ ${handover}: `)),
 			handover: existsSync(handover),
 		}).toEqual({ exitCode: 1, line: true, handover: true })
+	})
+
+	it('--yes, a finished rehearsal clone whose scratch trash is a symbolic link → a cross line naming it, the clone left where it is', async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		const clone = makeRehearsalClone({
+			scratchRoot,
+			name: 'dialecte-rehearse-dead',
+			pid: deadPid(),
+		})
+		symlinkSync(temporaryFolder('dialecte-elsewhere-'), join(scratchRoot, 'dialecte-trash'))
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--yes'],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: true,
+			confirm: async () => true,
+			spawner: createRecordingSpawner().spawner,
+		})
+
+		expect({
+			exitCode: result.exitCode,
+			line: result.output
+				.split('\n')
+				.some((line) => line.startsWith(`✗ ${clone}: `) && line.includes('symbolic link')),
+			clone: existsSync(clone),
+		}).toEqual({ exitCode: 1, line: true, clone: true })
+	})
+
+	it("a scratch root's trash holding two clones → counted on its own line, never listed nor touched", async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
+		for (const name of [
+			'dialecte-rehearse-a-20261117T100000',
+			'dialecte-rehearse-b-20261117T100000',
+		])
+			mkdirSync(join(scratchRoot, 'dialecte-trash', name), { recursive: true })
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: false,
+			confirm: async () => true,
+		})
+
+		expect(result.output.split('\n')).toContain(
+			`rehearsal trash: 2 folders in ${join(scratchRoot, 'dialecte-trash')}, being deleted or left over`,
+		)
 	})
 
 	it('a worktree just made and a branch never committed on → kept, saying they have no commit of their own', async () => {
@@ -662,7 +711,10 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-bare')}  (no rehearsal marker: not made by this cli, or still starting)`,
-				trashMove({ trashRoot: scratchRoot, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
+				trashMove({
+					trash: join(scratchRoot, 'dialecte-trash'),
+					folder: join(scratchRoot, 'dialecte-rehearse-dead'),
+				}),
 			]),
 		)
 		expect(result.output).not.toContain(
@@ -699,9 +751,12 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 				`  remove  ${join(scratchRoot, 'dialecte-rehearse-dead')}`,
 				`  keep    ${join(scratchRoot, 'dialecte-rehearse-live')}  (its rehearsal still runs: pid ${process.pid})`,
 				`  remove  ${join(formerScratchRoot, 'dialecte-rehearse-former')}`,
-				trashMove({ trashRoot: scratchRoot, folder: join(scratchRoot, 'dialecte-rehearse-dead') }),
 				trashMove({
-					trashRoot: formerScratchRoot,
+					trash: join(scratchRoot, 'dialecte-trash'),
+					folder: join(scratchRoot, 'dialecte-rehearse-dead'),
+				}),
+				trashMove({
+					trash: join(formerScratchRoot, 'dialecte-trash'),
 					folder: join(formerScratchRoot, 'dialecte-rehearse-former'),
 				}),
 			]),

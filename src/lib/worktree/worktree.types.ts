@@ -186,6 +186,8 @@ export type WorkspacePrunePlan = {
 	poolLeftOver: PruneItem[]
 	/** How many folders `.worktrees/_trash/` holds. */
 	trash: number
+	/** Each scratch root's trash (`dialecte-trash`) that exists, with how many folders it holds. */
+	scratchTrash: { folder: string; folders: number }[]
 }
 
 /** How a `cp` ended: its exit status, or the signal that stopped it. */

@@ -62,7 +62,9 @@ import {
 	RECLAIM_SIZE_UNITS,
 	RECLAIM_TRASH_REASONS,
 	RECLAIM_WORKTREE_GONE,
+	REHEARSAL_TRASH_FOLDER,
 	TRASH_FOLDER,
+	TRASH_MOVE_NOTE,
 	WORKTREE_LOCKED_FILE,
 	WORKTREE_STATUS_ARGUMENTS,
 } from './worktree.constants.ts'
@@ -133,6 +135,10 @@ export function planPrune(params: {
 			listProcesses: params.listProcesses ?? listProcessFolders,
 		}),
 		trash: countTrashed(worktreesFolder),
+		scratchTrash: scratchRoots.flatMap(function scratchTrashOf(scratchRoot) {
+			const folder = join(scratchRoot, REHEARSAL_TRASH_FOLDER)
+			return isDirectory(folder) ? [{ folder, folders: readdirSync(folder).length }] : []
+		}),
 	}
 }
 
@@ -292,7 +298,7 @@ function planPoolLeftOvers(params: {
 			if (working !== undefined) return { ...item, kept: working }
 			return {
 				...item,
-				command: trashMoveCommand({ folder, worktreesFolder }),
+				command: trashMoveCommand({ folder, trash: join(worktreesFolder, TRASH_FOLDER) }),
 			}
 		})
 }
@@ -352,6 +358,8 @@ export function trashPrunedFolder(params: {
 	worktreesFolder: string
 	now: Date
 	spawner: BackgroundSpawner
+	/** The trash's folder name in `worktreesFolder`; default `_trash`. */
+	trashName?: string
 }): string {
 	const { folder } = params
 	try {
@@ -363,12 +371,12 @@ export function trashPrunedFolder(params: {
 }
 
 /**
- * What `prune` shows for a folder `--yes` moves into the trash of `worktreesFolder` (the workspace's, or a rehearsal
- * clone's scratch root): the move a person could run, never a removal.
+ * What `prune` shows for a folder `--yes` moves into `trash` (the workspace's `.worktrees/_trash`, or a scratch root's
+ * `dialecte-trash`): the move a person could run, never a removal, and a note that the removal follows.
  */
-function trashMoveCommand(params: { folder: string; worktreesFolder: string }): string {
-	const trash = join(params.worktreesFolder, TRASH_FOLDER)
-	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}`
+function trashMoveCommand(params: { folder: string; trash: string }): string {
+	const { trash } = params
+	return `mkdir -p ${shellQuote(trash)} && mv ${shellQuote(params.folder)} ${shellQuote(`${trash}/`)}${TRASH_MOVE_NOTE}`
 }
 
 /** The pool entries of each repository, in name order of the repositories. */
@@ -566,7 +574,10 @@ function planRepository(params: {
 				: {
 						kind: 'hand-over',
 						name: folder,
-						command: trashMoveCommand({ folder, worktreesFolder: params.worktreesFolder }),
+						command: trashMoveCommand({
+							folder,
+							trash: join(params.worktreesFolder, TRASH_FOLDER),
+						}),
 					},
 		)
 	}
@@ -677,7 +688,10 @@ function planRehearsalClone(params: {
 		kind: 'rehearsal clone',
 		name: clone,
 		// the scratch root's own trash: a move never crosses file systems (/tmp is often its own)
-		command: trashMoveCommand({ folder: clone, worktreesFolder: params.scratchRoot }),
+		command: trashMoveCommand({
+			folder: clone,
+			trash: join(params.scratchRoot, REHEARSAL_TRASH_FOLDER),
+		}),
 	}
 }
 

@@ -12,12 +12,12 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { findContribRecord } from '../contrib/contrib-key.ts'
+import { contribKeyOf, findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_RECORD_MODE } from '../contrib/contrib.constants.ts'
 import { isPresent } from '../file-system.ts'
 import { lateFixesDetailOf } from '../gate-records/card-gates.ts'
 import { isGreenRecord, originOfRecord, readTreeRecords } from '../gate-records/check-store.ts'
-import { LATE_FIXES_LINE_NAME } from '../gate-records/gate-records.constants.ts'
+import { LATE_FIXES_LINE_NAME, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateHash, computeStateTree } from '../gate-records/state-hash.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
@@ -46,6 +46,7 @@ import {
 	HEAD_GUARD_NAME,
 	MERGE_NOTE_SHA_LENGTH,
 	NO_GREEN_CONTRIB_DETAIL,
+	OTHER_KEY_CONTRIB_CAUSES,
 	OTHER_KEY_CONTRIB_DETAIL,
 	REHEARSAL_CONTRIB_DETAIL,
 	TARGET_GUARD_NAME,
@@ -69,6 +70,7 @@ import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { findTargetRef, targetLineOf, targetMoved } from './target-moved.ts'
 import { hashFile } from './write-handover.ts'
 
+import type { GateRecord } from '../gate-records/gate-records.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
@@ -596,24 +598,42 @@ function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): Gu
 		ok: false,
 		detail: failed.length
 			? FAILED_CONTRIB_DETAIL.replace('{rows}', failed.join(', '))
-			: `${NO_GREEN_CONTRIB_DETAIL}${otherKeyContribDetail({ root, tree })}`,
+			: `${NO_GREEN_CONTRIB_DETAIL}${otherKeyContribDetail({ root, tree, head: params.run.head })}`,
 	}
 }
 
 /**
- * The note on a green contrib record of `tree` stored under another key than this cli computes (the newest), naming
- * when it ran and this cli's version; empty without one.
+ * The note on the newest green contrib record of `tree` stored under another key than a run at `head` computes:
+ * when it ran and what differs (`otherKeyCauseOf`); empty without one.
  */
-function otherKeyContribDetail(params: { root: string; tree: string }): string {
+function otherKeyContribDetail(params: { root: string; tree: string; head: string }): string {
 	const green = readTreeRecords(params)
 		.filter((record) => record.mode === CONTRIB_RECORD_MODE && isGreenRecord(record))
 		.sort((first, second) => originOfRecord(second).at.localeCompare(originOfRecord(first).at))[0]
 	return green === undefined
 		? ''
-		: OTHER_KEY_CONTRIB_DETAIL.replace('{at}', originOfRecord(green).at).replace(
-				'{version}',
-				readCliVersion(),
+		: OTHER_KEY_CONTRIB_DETAIL.replace('{at}', originOfRecord(green).at).replace('{cause}', () =>
+				otherKeyCauseOf({ ...params, green }),
 			)
+}
+
+/**
+ * What differs between a green record's key and the one a run at `head` computes, first found wins: the `file:`
+ * dependencies (`linked`), the commit it ran at, else the lock or command hash - another cli or other contrib rows.
+ */
+function otherKeyCauseOf(params: {
+	root: string
+	tree: string
+	head: string
+	green: GateRecord
+}): string {
+	const { green } = params
+	const key = contribKeyOf(params)
+	if (green.key !== undefined && green.key.linked !== key.linked)
+		return OTHER_KEY_CONTRIB_CAUSES.linked
+	if (green.head !== params.head)
+		return OTHER_KEY_CONTRIB_CAUSES.head.replace('{head}', green.head.slice(0, SHORT_SHA_LENGTH))
+	return OTHER_KEY_CONTRIB_CAUSES.cli.replace('{version}', readCliVersion())
 }
 
 /** The full sha of a revision, or undefined when the repository has no such commit. */

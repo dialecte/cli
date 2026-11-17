@@ -341,11 +341,22 @@ export const CONTRIB_GUARD_NAME = 'contrib'
 export const NO_GREEN_CONTRIB_DETAIL =
 	'no green dialecte contrib of this tree: run dialecte contrib'
 /**
- * Added to `NO_GREEN_CONTRIB_DETAIL` when a green contrib record of the same tree exists under another key (another
- * cli, as an installed cli older than the one that ran contrib, or other contrib rows): `{at}`, `{version}`.
+ * Added to `NO_GREEN_CONTRIB_DETAIL` when a green contrib record of the same tree exists under another key: `{at}`, and
+ * `{cause}` one of `OTHER_KEY_CONTRIB_CAUSES`.
  */
 export const OTHER_KEY_CONTRIB_DETAIL =
-	'; a green one of this tree at {at} was recorded under another key (another cli or other contrib rows): this cli is {version}, run the hand-over with the cli that ran contrib, or dialecte contrib with this one'
+	'; a green one of this tree at {at} was recorded under another key: {cause}'
+
+/**
+ * What differs between that record's key and the one this run computes, first found wins: the `file:` dependencies,
+ * the commit, else the lock or the command hash (another cli - an installed one older than the one that ran contrib -
+ * or other contrib rows; `{version}` this cli's).
+ */
+export const OTHER_KEY_CONTRIB_CAUSES = {
+	linked: 'file: dependencies changed since contrib, run dialecte contrib again',
+	head: 'at another commit ({head}), run dialecte contrib on this one',
+	cli: 'another cli or other contrib rows: this cli is {version}, run the hand-over with the cli that ran contrib, or dialecte contrib with this one',
+} as const
 export const FAILED_CONTRIB_DETAIL =
 	'dialecte contrib failed at {rows} on this tree: fix them, then run it again'
 export const GREEN_CONTRIB_DETAIL = 'green on this tree at {at}'
