@@ -38,6 +38,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot export <id> <dir> [--json]
   dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>
   dialecte lot pr <id> [--print] [--json]
+  dialecte lot review <id> [--no-open] | lot review <id> --pull --round <n>
+  dialecte lot approve <id> --by <who> [--reason <text>]
   dialecte lot land <id> [--draft]
   dialecte lot close <hand-over name|lot id|index>... [--json]
 
@@ -85,6 +87,39 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
        that heading holding a person's text refused, never dropped); a damaged lot refused; --print
        prints and sends nothing; no pull request yet prints the text and names lot land --draft;
        --json { title, body, pullRequest, head, sent }
+  review - the private half of the lot's review, read-only (nothing written): the lot's state and
+           branch, its pull request (landing.json's) with the head it is at, the head the lot landed
+           and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
+           behaviours), tests.json's tdd counts and gate run, decisions.md, every finding of the
+           ledger with its text and state, the standard line, and what lot approve would refuse (or
+           the approve command when it would approve); then opens the pull request's changed files
+           in the browser (--no-open names the page only; an opener that fails is named, never an
+           exit); a lot without a landing prints its private half and names lot land <id> --draft,
+           the host never asked
+  review --pull - the pull request's line comments come back as findings of round <n> in the lot's
+    findings ledger: a thread's first comment only (replies discuss it), each once
+    (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
+    severity from a leading blocking:, should-fix: or nit: (dropped from the text, kept when it is
+    all the comment says), else should-fix, at its path:line (the path alone for a comment on the
+    file), its lines joined into one; review.jsonl written again; private points stay off the pull
+    request: lot finding records them
+  approve - a person's approval of the lot's pull request: refused (exit 1, nothing recorded,
+            nothing queued) unless the lot is at work, the pull request landing.json names is open
+            at the head the lot landed and the worktree is at that head too (an unpushed commit
+            refuses), its checks ran on that head and are green (a check run again counts by its
+            newest run; a failing or pending check, or none yet, refuses) and no finding but a nit
+            is open (open, or a fix still to verify), and its text renders over the live body; then
+            appends { schema, at, by, reason?, number, head } to the lot folder's approvals.jsonl,
+            which review.jsonl shows as a person's approve verdict with that head (a pull request
+            text rendered on another head, after a later commit or a rebase, leaves it out; the body
+            names it by kind only, never the name; the orchestrator in any casing is recorded as
+            orchestrator), renders the pull request's text again from the records, makes a draft
+            ready and queues it (gh pr merge --auto); a queue the host refuses keeps the approval
+            (exit 1) and the same approval run again answers already approved, writing nothing, and
+            queues; --by orchestrator (in any case) approves the cli's own lots only (the package
+            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
+            in --by or --reason, or a --by holding what a public record never holds, refused (exit
+            2) before the host is asked; a lot without a landing names lot land <id> --draft
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
@@ -293,9 +328,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `land`, `close`
+Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -741,3 +776,23 @@ its landing pushed) and as the lot's hand-over entry (`pending`); `lot close`
 first marks the lot committed once that pull request merged at the head it pushed (a squash commit holds none of the
 lot's own commits), after bringing the local base branch up to origin's. The push's lease is pinned to the head the
 last landing pushed, a lot must be on its branch, and a lot cut from another lot is refused until stacks land.
+
+## Review on the pull request page
+
+The pull request page is the review tool: its Files tab holds the file tree, the full files and the line comments.
+`dialecte lot review <id>` adds the half that never goes on GitHub: it prints the lot's state, its pull request with the
+head it is at, the head the lot landed and the worktree's HEAD, the checks, the brief's goal and steps, the tests
+record, `decisions.md`, every finding with its text and state, the standard line, and what `lot approve` would refuse;
+then it opens the Files tab. It writes nothing.
+
+Points that can be public are line comments on the pull request, prefixed `blocking:`, `should-fix:` or `nit:`
+(should-fix when none). `dialecte lot review <id> --pull --round <n>` brings them back as findings of round n, each
+comment once; the lot fixes them as a review round. Private points (the plans, the standard) never go on GitHub: they
+are recorded with `lot finding`.
+
+`dialecte lot approve <id> --by <who> [--reason <text>]` is the approval: once the pull request is at the head the lot
+landed, its checks are green there and no finding but a nit is open, it records a person's `approve` verdict
+(`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
+approval), renders the body again and queues the pull
+request. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
+waits for a person.

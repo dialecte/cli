@@ -13,6 +13,28 @@ export type PullRequest = {
 	head: string
 }
 
+/** How the checks on a pull request's head stand: all passed, one failed, one still running, or none at all. */
+export type ChecksState = 'green' | 'failing' | 'pending' | 'none'
+
+/** The checks on a pull request's head: their state and the names of the failing and the pending ones. */
+export type PullRequestChecks = {
+	/** The commit the checks ran on (the pull request's head). */
+	head: string
+	state: ChecksState
+	failing: string[]
+	pending: string[]
+}
+
+/** A line comment of a pull request's review: on a file, at a line when it has one; a reply names what it answers. */
+export type ReviewComment = {
+	id: number
+	path: string
+	line?: number
+	body: string
+	/** The comment this one answers in its thread; absent for a thread's first comment. */
+	replyTo?: number
+}
+
 /** A host operation's refusal: git's or the host tool's first line. */
 export type HostRefusal = { refusal: string }
 
@@ -47,4 +69,10 @@ export type HostAdapter = {
 		number: number
 		draft: boolean
 	}): HostRefusal | undefined
+	/** The checks on the pull request's head. */
+	readChecks(params: { root: string; number: number }): PullRequestChecks | HostRefusal
+	/** The line comments of the pull request's reviews, oldest first. */
+	readReviewComments(params: { root: string; number: number }): ReviewComment[] | HostRefusal
+	/** The pull request's changed files opened in the browser (`url` is the pull request's page). */
+	openFiles(params: { root: string; url: string }): HostRefusal | undefined
 }

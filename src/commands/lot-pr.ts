@@ -21,12 +21,14 @@ import { PULL_REQUEST_LINES } from '../lib/pr/pull-request.constants.ts'
 import { textOf } from '../lib/print/print.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
+import { lotState } from '../lib/store/lot-state.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { LOT_PR_LINES, LOT_PR_OPTIONS } from './lot-pr.constants.ts'
+import { LOT_PLACE_LINES, LOT_PR_LINES, LOT_PR_OPTIONS } from './lot-pr.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HostAdapter, PullRequest } from '../lib/host/host.types.ts'
-import type { PullRequestText } from '../lib/pr/pull-request.types.ts'
+import type { PreparedPullRequest, PullRequestText } from '../lib/pr/pull-request.types.ts'
+import type { LotPlace } from './lot-pr.types.ts'
 
 export function runLotPr(params: {
 	cwd: string
@@ -71,12 +73,10 @@ export function runLotPr(params: {
 				.replace('{number}', String(read.number))
 				.replace('{state}', read.state),
 		})
-	const kept = keptPartOf({ template: prepared.template, body: read.body })
-	if ('refusal' in kept) return refused({ line: `${LOT_PR_LINES.prefix}${kept.refusal}` })
-	const text = composePullRequest({ ...prepared, kept: kept.kept })
-	if ('refusal' in text) return refused({ line: `${LOT_PR_LINES.prefix}${text.refusal}` })
+	const rendered = sendRenderedText({ host, worktree, prepared, pullRequest: read })
+	if ('refusal' in rendered) return refused({ line: `${LOT_PR_LINES.prefix}${rendered.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	const sent = sendText({ host, worktree, pullRequest: read, text, json, head })
+	const sent = sentAnswer({ pullRequest: read, ...rendered, json, head })
 	if (json || sent.exitCode !== 0 || read.head === '' || read.head === head) return sent
 	return {
 		...sent,
@@ -95,18 +95,31 @@ export function runLotPr(params: {
  * The lot the arguments name, where it lives and the base its pull request lands on; the usage or refusal otherwise
  * (an unknown option is a usage error: a mistyped `--print` must never send).
  */
-function lotPlaceOf(params: {
-	cwd: string
-	argv: string[]
-}):
-	| { lot: string; lotFolder: string; worktree: string; branch: string; baseRef: string }
-	| CommandResult {
+function lotPlaceOf(params: { cwd: string; argv: string[] }): LotPlace | CommandResult {
 	const ids = positionalArguments({ argv: params.argv, valueOptions: [] })
 	const unknown = params.argv.filter(
 		(word) => word.startsWith('-') && !LOT_PR_OPTIONS.includes(word),
 	)
 	if (ids.length !== 1 || unknown.length > 0) return { exitCode: 2, output: renderLotUsage() }
-	const required = requiredLotOf({ argument: ids[0], cwd: params.cwd, mode: 'read' })
+	return resolveLotPlace({ cwd: params.cwd, id: ids[0], verb: 'pr', mode: 'read' })
+}
+
+/**
+ * The store lot `id` names, where it lives and the base its pull request lands on; the refusal (`lot <verb>: ...`)
+ * of an id naming none, a damaged lot, one without a worktree, or a base the repository does not name.
+ *
+ * @intent find a lot's worktree, branch and base for its pull request
+ * @internal
+ */
+export function resolveLotPlace(params: {
+	cwd: string
+	id: string
+	verb: string
+	mode: 'read' | 'write'
+}): LotPlace | CommandResult {
+	const { id, verb } = params
+	const prefix = LOT_PLACE_LINES.prefix.replace('{verb}', verb)
+	const required = requiredLotOf({ argument: id, cwd: params.cwd, mode: params.mode })
 	if (!('lot' in required)) return { exitCode: 2, output: textOf(required.lines) }
 	const checked = readCheckedLotState({
 		lotFolder: required.lot,
@@ -114,49 +127,71 @@ function lotPlaceOf(params: {
 	})
 	if (checked === undefined || !('input' in checked))
 		return refused({
-			line: LOT_PR_LINES.damaged.replaceAll('{lot}', () => basename(required.lot)),
+			line: `${prefix}${LOT_PLACE_LINES.damaged.replaceAll('{lot}', () => basename(required.lot))}`,
 		})
 	const identity = readIdentity({ lotFolder: required.lot })
 	if (identity === undefined || identity.worktree === null)
-		return refused({ line: LOT_PR_LINES.noWorktree.replace('{lot}', () => ids[0]), exitCode: 2 })
+		return refused({
+			line: `${prefix}${LOT_PLACE_LINES.noWorktree.replace('{lot}', () => id)}`,
+			exitCode: 2,
+		})
 	const { worktree, branch } = identity
 	if (!existsSync(worktree))
 		return refused({
-			line: `${LOT_PR_LINES.prefix}${PULL_REQUEST_LINES.worktreeGone.replace('{worktree}', () => worktree)}`,
+			line: `${prefix}${PULL_REQUEST_LINES.worktreeGone.replace('{worktree}', () => worktree)}`,
 		})
 	const main = mainCheckoutOf(worktree)
 	const base = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
-	if ('refusal' in base) return refused({ line: `${LOT_PR_LINES.prefix}${base.refusal}` })
+	if ('refusal' in base) return refused({ line: `${prefix}${base.refusal}` })
 	return {
 		lot: basename(required.lot),
 		lotFolder: required.lot,
 		worktree,
 		branch,
 		baseRef: base.ref,
+		state: lotState(checked.input).state,
 	}
 }
 
-/** The text sent to the open pull request when it reads otherwise; its line (or JSON) either way. */
-function sendText(params: {
+/**
+ * The open pull request's title and body rendered again from `prepared` (a person's part after the kept marker kept)
+ * and sent when they read otherwise; the text and whether it was sent, or the refusal of the render or the host.
+ *
+ * @intent keep an open pull request's text the lot's records
+ * @internal
+ */
+export function sendRenderedText(params: {
 	host: HostAdapter
 	worktree: string
+	prepared: PreparedPullRequest
+	pullRequest: PullRequest
+}): { text: PullRequestText; sent: boolean } | { refusal: string } {
+	const { prepared, pullRequest } = params
+	const kept = keptPartOf({ template: prepared.template, body: pullRequest.body })
+	if ('refusal' in kept) return kept
+	const text = composePullRequest({ ...prepared, kept: kept.kept })
+	if ('refusal' in text) return text
+	const same =
+		pullRequest.title === text.title && linesOf(pullRequest.body).join('\n') === text.body
+	if (same) return { text, sent: false }
+	const edited = params.host.editPullRequest({
+		root: params.worktree,
+		number: pullRequest.number,
+		...text,
+	})
+	return edited ?? { text, sent: true }
+}
+
+/** The line (or JSON) of a text sent to the open pull request, or found the same there. */
+function sentAnswer(params: {
 	pullRequest: PullRequest
 	text: PullRequestText
+	sent: boolean
 	json: boolean
 	/** The lot's HEAD: the JSON gives it beside the pull request's head. */
 	head: string
 }): CommandResult {
-	const { pullRequest, text } = params
-	const same =
-		pullRequest.title === text.title && linesOf(pullRequest.body).join('\n') === text.body
-	if (!same) {
-		const edited = params.host.editPullRequest({
-			root: params.worktree,
-			number: pullRequest.number,
-			...text,
-		})
-		if (edited !== undefined) return refused({ line: `${LOT_PR_LINES.prefix}${edited.refusal}` })
-	}
+	const { pullRequest, text, sent } = params
 	if (params.json)
 		return {
 			exitCode: 0,
@@ -169,14 +204,14 @@ function sendText(params: {
 						head: pullRequest.head,
 					},
 					head: params.head,
-					sent: !same,
+					sent,
 				}),
 			]),
 		}
 	return {
 		exitCode: 0,
 		output: textOf([
-			(same ? LOT_PR_LINES.unchanged : LOT_PR_LINES.updated)
+			(sent ? LOT_PR_LINES.updated : LOT_PR_LINES.unchanged)
 				.replace('{number}', String(pullRequest.number))
 				.replace('{url}', () => pullRequest.url),
 		]),

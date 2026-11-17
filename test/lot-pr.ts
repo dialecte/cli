@@ -14,6 +14,8 @@ import {
 } from './lot-pr.constants.ts'
 import { git, writeFiles } from './scratch-repository.ts'
 
+import type { StoreEntry } from '../src/lib/handover/handover.types.ts'
+import type { Transition } from '../src/lib/store/store.types.ts'
 import type { PullRequestLot } from './lot-pr.types.ts'
 
 /** The cli's own committed template: the one every dialecte repository holds. */
@@ -40,6 +42,10 @@ export function pullRequestLot(
 		lotFiles?: Record<string, string>
 		/** Paths the lot's commit deletes. */
 		lotDeletes?: string[]
+		/** The transitions after the start (a lot no longer at work). */
+		later?: Transition[]
+		/** The lot's registry entry (a committed lot). */
+		registry?: StoreEntry['state']
 	} = {},
 ): PullRequestLot {
 	const workspace = createBriefWorkspace()
@@ -78,6 +84,8 @@ export function pullRequestLot(
 		repository,
 		worktree,
 		base: { ref: 'main', commit: main },
+		later: params.later,
+		registry: params.registry,
 		brief: {
 			summary: LOT_SUMMARY,
 			issue: LOT_ISSUE,

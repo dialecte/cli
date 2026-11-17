@@ -12,7 +12,12 @@ import {
 	writeFiles,
 } from './scratch-repository.ts'
 
-import type { HostAdapter, PullRequest } from '../src/lib/host/host.types.ts'
+import type {
+	HostAdapter,
+	PullRequest,
+	PullRequestChecks,
+	ReviewComment,
+} from '../src/lib/host/host.types.ts'
 import type { LandingRepository, RecordingHost } from './land-lot.types.ts'
 
 /**
@@ -70,6 +75,12 @@ export function recordingHost(
 		existing?: PullRequest
 		/** The host's refusal of an edit; edits are taken when absent. */
 		editRefusal?: string
+		/** The checks on the pull request's head; none when absent. */
+		checks?: PullRequestChecks
+		/** The pull request's line comments; none when absent. */
+		comments?: ReviewComment[]
+		/** The host's refusal of a queue; queued when absent. */
+		queueRefusal?: string
 	} = {},
 ): RecordingHost {
 	const calls: string[] = []
@@ -109,6 +120,21 @@ export function recordingHost(
 		},
 		queuePullRequest: function queuePullRequest(call) {
 			calls.push(`queue ${call.number}`)
+			if (params.queueRefusal !== undefined) return { refusal: params.queueRefusal }
+			return undefined
+		},
+		readChecks: function readChecks(call) {
+			calls.push(`checks ${call.number}`)
+			return (
+				params.checks ?? { head: pullRequest?.head ?? '', state: 'none', failing: [], pending: [] }
+			)
+		},
+		readReviewComments: function readReviewComments(call) {
+			calls.push(`comments ${call.number}`)
+			return params.comments ?? []
+		},
+		openFiles: function openFiles(call) {
+			calls.push(`files ${call.url}`)
 			return undefined
 		},
 	}

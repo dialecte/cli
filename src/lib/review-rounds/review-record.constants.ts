@@ -50,3 +50,12 @@ export const WORKTREE_FILES_ARGUMENTS: readonly string[] = [
 
 /** `git ls-tree` of a commit's files, NUL-separated: the base commit follows. */
 export const BASE_FILES_ARGUMENTS: readonly string[] = ['ls-tree', '-r', '--name-only', '-z']
+
+/** The verdict of a `lot approve` line: a person approved the pull request. */
+export const APPROVE_VERDICT = 'approve'
+
+/** The one severity that never blocks an approval; any other, or one the parser cannot read, blocks while open. */
+export const NON_BLOCKING_SEVERITY = 'nit'
+
+/** The finding states that leave a finding open (a fix not verified yet included); the others close it. */
+export const OPEN_STATE_WORDS: readonly string[] = ['open', 'fix-to-verify']

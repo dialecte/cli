@@ -11,7 +11,7 @@ import { readSections } from '../changelog/sections.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
-import { readReviewRecord } from '../review-rounds/review-record.ts'
+import { readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
 import { readListedPatterns } from '../rules/committed-text.ts'
@@ -35,6 +35,7 @@ import { recordValueFault } from './record-values.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	ChangedFile,
+	PreparedPullRequest,
 	PullRequestChangelog,
 	PullRequestSources,
 	PullRequestStep,
@@ -57,7 +58,7 @@ export function preparePullRequest(params: {
 	 * (the text it lands), or also the base (an early check of a lot cut before the template changed).
 	 */
 	templateRefs?: readonly string[]
-}): { template: string; sources: PullRequestSources } | { refusal: string } {
+}): PreparedPullRequest | { refusal: string } {
 	const template = templateOf({ worktree: params.worktree, refs: params.templateRefs ?? ['HEAD'] })
 	if ('refusal' in template) return template
 	const sources = readPullRequestSources(params)
@@ -140,7 +141,14 @@ export function readPullRequestSources(params: {
 	)
 	const standing = riskStandingOf({ folder: params.lotFolder })
 	const tests = readTestsRecord({ folder: params.lotFolder })
-	const review = readReviewRecord({ folder: params.lotFolder })
+	const record = readReviewRecord({ folder: params.lotFolder })
+	const review =
+		record === undefined
+			? undefined
+			: verdictsAt({
+					record,
+					head: readGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
+				})
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
 	const overlaps = readLotOverlaps({ lotFolder: params.lotFolder }).overlaps.map((record) => ({

@@ -51,3 +51,6 @@ export type PublicRefusal = { record: string; label: string; word?: string }
 
 /** A path the lot's commits change since the merge base, with git's status letter (`A`, `M`, `D`). */
 export type ChangedFile = { status: string; path: string }
+
+/** A pull request ready to compose: the template checked and the sources read and checked as public text. */
+export type PreparedPullRequest = { template: string; sources: PullRequestSources }

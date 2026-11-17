@@ -1,7 +1,8 @@
 /**
  * A lot's `review.jsonl` (33CI CI2a): the public rows of its review, what a pull request may render. Derived from its
  * sources and written whole by each verb that changes one - the findings ledger (`lot finding`, `lot decide`), the
- * review stations' ends in `events.jsonl` (`lot station`), `verify.jsonl` (`lot verify`) - so a ledger edited by hand
+ * review stations' ends in `events.jsonl` (`lot station`), `verify.jsonl` (`lot verify`), `approvals.jsonl`
+ * (`lot approve`) - so a ledger edited by hand
  * is read again at the next verb, and a write cut short heals then. Nothing private is copied: no finding text, note,
  * reason or where, no path git does not list in the lot's tree; a source missing or unreadable is left out, never
  * guessed.
@@ -19,7 +20,10 @@ import { replaceWhole } from '../store/publish.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { findLedgerTable, tableCells, unescapeCell } from './findings-ledger.ts'
 import {
+	APPROVE_VERDICT,
 	BASE_FILES_ARGUMENTS,
+	NON_BLOCKING_SEVERITY,
+	OPEN_STATE_WORDS,
 	CURRENT_FOLDER_PREFIX,
 	LEDGER_ROW_CELLS,
 	LINE_SUFFIX_PATTERN,
@@ -69,6 +73,7 @@ export function writeReviewRecord(params: { folder: string }): void {
 	const verdicts = [
 		...stationVerdictRowsOf({ folder, isPublicWord }),
 		...verifyVerdictRowsOf({ folder, isPublicWord }),
+		...approvalVerdictRowsOf({ folder, isPublicWord }),
 	].sort(function byTime(left, right) {
 		return left.at.localeCompare(right.at)
 	})
@@ -274,6 +279,71 @@ function verifyVerdictRowsOf(params: {
 		})
 	}
 	return rows
+}
+
+/**
+ * The verdict rows of the folder's `approvals.jsonl`: a person's approve with the head approved, once per approver and
+ * head. A line whose `--by` the public-text check refuses (one written by hand) gives none: a person's verdict names
+ * who. Which head a render shows is `verdictsAt`'s.
+ */
+function approvalVerdictRowsOf(params: {
+	folder: string
+	isPublicWord: PublicWordTest
+}): VerdictRow[] {
+	const file = join(params.folder, STORE_FILES.approvals)
+	if (!existsSync(file)) return []
+	const rows = new Map<string, VerdictRow>()
+	for (const line of readFileSync(file, 'utf8').split('\n')) {
+		const parsed = parsedLine(line)
+		if (typeof parsed?.at !== 'string' || typeof parsed.by !== 'string') continue
+		if (typeof parsed.head !== 'string' || !params.isPublicWord(parsed.by)) continue
+		const key = `${parsed.by}\n${parsed.head}`
+		if (rows.has(key)) continue
+		rows.set(key, {
+			schema: REVIEW_RECORD_SCHEMA,
+			kind: 'verdict',
+			at: parsed.at,
+			by: { kind: 'person', name: parsed.by },
+			verdict: APPROVE_VERDICT,
+			head: parsed.head,
+		})
+	}
+	return [...rows.values()]
+}
+
+/**
+ * The record as a render of `head` shows it: a verdict given on another head (an approval before a later commit or a
+ * rebase) left out, so no text claims an approval of a head nobody approved.
+ *
+ * @intent show only the approvals of the head a pull request carries
+ * @internal
+ */
+export function verdictsAt(params: { record: ReviewRecord; head: string }): ReviewRecord {
+	return {
+		...params.record,
+		verdicts: params.record.verdicts.filter(
+			(row) => row.head === undefined || row.head === params.head,
+		),
+	}
+}
+
+/**
+ * The folder's findings that block an approval: a row not closed yet (open, a fix still to verify, or a state the
+ * ledger parser cannot read) of any severity but a nit (one it cannot read blocks), in ledger order; none without a
+ * ledger.
+ *
+ * @intent tell what blocks a lot's approval
+ * @internal
+ */
+export function openBlockingFindings(params: { folder: string }): FindingRow[] {
+	return findingRowsOf({ folder: params.folder, inTree: undefined }).filter(
+		function isOpenBlocking(row) {
+			return (
+				row.severity !== NON_BLOCKING_SEVERITY &&
+				(row.state === undefined || OPEN_STATE_WORDS.includes(row.state))
+			)
+		},
+	)
 }
 
 /** A line read as a JSON object; undefined for a blank line, a torn one or one that holds no object. */

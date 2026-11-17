@@ -34,6 +34,8 @@ export type VerdictRow = {
 	vendor?: string
 	model?: string
 	verdict: string
+	/** For a person's approve: the head approved; a render of another head leaves the row out. */
+	head?: string
 }
 
 /** A row of `review.jsonl`. */
