@@ -8,12 +8,14 @@ import { calleeName } from './callee-name.ts'
 import { checkActRules } from './check-act-rules.ts'
 import {
 	ABBREVIATIONS,
+	BARE_TMPDIR_MESSAGE,
 	CONSTANT_NAME_PATTERN,
 	CODE_VISITED_KINDS,
 	LEADING_POSITIONAL_PARAMETERS,
 	ROOT_OPTION_PATTERN,
 	PATH_PASS_THROUGH_PATTERN,
 	SCANNING_CALL_PATTERN,
+	SCRATCH_MODULE_PATTERN,
 } from './check-code-rules.constants.ts'
 import { checkFixtureRules } from './check-fixture-rules.ts'
 import { checkQualityRules } from './check-quality-rules.ts'
@@ -128,6 +130,10 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 				message:
 					"the system's temporary folder itself as a root: other tests and processes share it - give the test a folder of its own (`mkdtempSync(join(tmpdir(), '<prefix>-'))`)",
 			})
+
+	if (kind === 'implementation' && !isTestShaped(file) && !SCRATCH_MODULE_PATTERN.test(file))
+		for (const node of findTmpdirCalls(sourceFile))
+			report({ node, rule: 'bare-tmpdir', severity: 'error', message: BARE_TMPDIR_MESSAGE })
 
 	if (isTestShaped(file))
 		for (const node of findRawGitRepositories(sourceFile))
@@ -257,6 +263,17 @@ function findSharedTemporaryRoots(sourceFile: ts.SourceFile): ts.Node[] {
 			isTemporaryRoot(node.name)
 		)
 			found.push(node)
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return found
+}
+
+/** Every `tmpdir()` or `os.tmpdir()` call of the file. */
+function findTmpdirCalls(sourceFile: ts.SourceFile): ts.Node[] {
+	const found: ts.Node[] = []
+	function visit(node: ts.Node): void {
+		if (isTmpdirCall(node)) found.push(node)
 		ts.forEachChild(node, visit)
 	}
 	visit(sourceFile)
