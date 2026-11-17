@@ -30,7 +30,7 @@ function readWorkflow(file: string): {
 			if?: string
 			with?: Record<string, string>
 			permissions?: Record<string, string>
-			steps?: { run?: string }[]
+			steps?: { run?: string; env?: Record<string, string> }[]
 		}
 	>
 	concurrency?: unknown
@@ -100,18 +100,22 @@ describe('the cli workflows', () => {
 		})
 	})
 
-	it('_publish.yml → id-token write, publishes under the dist-tag it is given', () => {
+	it('_publish.yml → id-token write, publishes under the dist-tag it is given, passed through env', () => {
 		const workflow = readWorkflow('_publish.yml')
-		const script = (workflow.jobs.publish?.steps ?? []).map((step) => step.run ?? '').join('\n')
+		const publishStep = (workflow.jobs.publish?.steps ?? []).find((step) =>
+			step.run?.startsWith('npm publish'),
+		)
 
 		expect({
 			idToken: workflow.jobs.publish?.permissions?.['id-token'],
 			distTagInput: workflow.on.workflow_call?.inputs?.['dist-tag'],
-			publishes: script.includes('npm publish --access public --tag "${{ inputs.dist-tag }}"'),
+			run: publishStep?.run?.trim(),
+			env: publishStep?.env,
 		}).toEqual({
 			idToken: 'write',
 			distTagInput: { required: true, type: 'string' },
-			publishes: true,
+			run: 'npm publish --access public --tag "$DIST_TAG"',
+			env: { DIST_TAG: '${{ inputs.dist-tag }}' },
 		})
 	})
 
