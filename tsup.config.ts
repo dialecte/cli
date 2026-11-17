@@ -1,5 +1,5 @@
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, cpSync, mkdirSync, rmSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { copyShippedSchemas } from './src/lib/release/shipped-schemas.ts'
@@ -17,6 +17,10 @@ const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
 /** The pytest plugin in the sources, and its name next to the bin (where `dialecte tdd` finds it). */
 const PYTEST_PLUGIN_SOURCE = 'src/lib/tdd/dialecte_tdd_pytest.py'
 const PYTEST_PLUGIN_FILE = 'dialecte_tdd_pytest.py'
+
+/** The corpus manifest and its override files in the sources, and their folder next to the bin (`dialecte corpus`). */
+const CORPUS_SOURCE_FILES = ['src/lib/corpus/manifest.json', 'src/lib/corpus/overrides']
+const CORPUS_FOLDER = 'corpus'
 
 const SHARED: Options = {
 	format: ['esm'],
@@ -69,6 +73,7 @@ export default defineConfig(function configs(options) {
 	rmSync(outDir, { recursive: true, force: true })
 	copyShippedSchemas({ root: PACKAGE_ROOT, outDir })
 	copyPytestPlugin({ outDir })
+	copyShippedCorpus({ outDir })
 	return CONFIGS
 })
 
@@ -79,4 +84,12 @@ export default defineConfig(function configs(options) {
 function copyPytestPlugin(params: { outDir: string }): void {
 	mkdirSync(params.outDir, { recursive: true })
 	copyFileSync(join(PACKAGE_ROOT, PYTEST_PLUGIN_SOURCE), join(params.outDir, PYTEST_PLUGIN_FILE))
+}
+
+/** Copies the corpus manifest and its override files to `<out>/corpus/`, where the bin reads them. */
+function copyShippedCorpus(params: { outDir: string }): void {
+	const target = join(params.outDir, CORPUS_FOLDER)
+	mkdirSync(target, { recursive: true })
+	for (const source of CORPUS_SOURCE_FILES)
+		cpSync(join(PACKAGE_ROOT, source), join(target, basename(source)), { recursive: true })
 }
