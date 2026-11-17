@@ -10,7 +10,14 @@ bench - Measure type-instantiation cost (tsc --extendedDiagnostics); --check to 
   dialecte bench [--check] [zero-config flags]
 
   writes benchmarks/types/baseline.json; --check fails on a >5% instantiation regression
+  tsgo (TypeScript 7+) runs with one checker (--checkers 1), so a file set always gives the same
+    count; the baseline records the compiler and its exact version
+  --check gives no verdict against a baseline from another compiler or version, or one that records
+    none: re-baseline in its own commit
 
+exit codes:
+  1  --check: an instantiation regression past 5%
+  3  --check: a baseline from another compiler or version, or one that records no compiler
 e.g. dialecte bench --check
 ```
 

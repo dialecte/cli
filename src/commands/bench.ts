@@ -5,6 +5,9 @@
  *   and any hand-written consumer *.ts (e.g. kitchen-sink.ts; excluding *.test-d.ts).
  * Library declaration files are never measured (`skipLibCheck`): only the dialecte's own types count.
  * Writes/【--check】compares benchmarks/types/<version>/baseline.json. RUNS env (default 3); MIN kept.
+ * tsgo (TypeScript 7+) runs with one checker (`--checkers 1`): with several, the count shifts with the
+ * file set. The baseline records the compiler and its version; `--check` refuses (exit 3) a baseline
+ * of another compiler or version, or one that records none, before measuring anything.
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, readdirSync, existsSync, rmSync, mkdirSync } from 'node:fs'
@@ -14,9 +17,18 @@ import { resolveBin } from '../lib/bin.ts'
 import { hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
 import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { printLines } from '../lib/print/print.ts'
-import { METRICS, STABLE_METRICS, THRESHOLD } from './bench.constants.ts'
+import {
+	EXIT_COMPILER_MISMATCH,
+	METRICS,
+	NATIVE_COMPILER_MAJOR,
+	RE_BASELINE,
+	SINGLE_CHECKER_ARGS,
+	STABLE_METRICS,
+	THRESHOLD,
+} from './bench.constants.ts'
 
-import type { Metrics } from './bench.types.ts'
+import type { Target } from '../lib/config.types.ts'
+import type { Compiler, CompilerComparison, Metrics, RunCompiler } from './bench.types.ts'
 
 /**
  * The configuration a single bench file is compiled with: the project's, for that file alone.
@@ -63,6 +75,51 @@ export function parseTscMetrics(output: string): Metrics {
 	return metrics
 }
 
+/** The compiler named by a `tsc --version` line (`Version 7.0.2`), or undefined when there is none. */
+export function parseCompilerVersion(params: { output: string }): Compiler | undefined {
+	const version = params.output.match(/Version\s+(\d+)\.(\S+)/)
+	if (!version) return undefined
+	const name = Number(version[1]) >= NATIVE_COMPILER_MAJOR ? 'tsgo' : 'tsc'
+	return { name, version: `${version[1]}.${version[2]}` }
+}
+
+/** The arguments that pin a compiler to one checker: `--checkers 1` for tsgo, none for tsc. */
+export function checkerArgs(params: { compiler: Compiler }): string[] {
+	return params.compiler.name === 'tsgo' ? SINGLE_CHECKER_ARGS : []
+}
+
+/** Run the compiler `runs` times on one checker and keep the minimum per metric. */
+export function measureRuns(params: {
+	runCompiler: RunCompiler
+	compiler: Compiler
+	args: string[]
+	runs: number
+}): Metrics {
+	const { runCompiler, compiler, args, runs } = params
+	const pinned = [...args, ...checkerArgs({ compiler })]
+	return aggregateRuns(Array.from({ length: runs }, () => runCompiler(pinned)))
+}
+
+/** Whether a baseline recorded with `baseline` can be compared with a run of `measured`. */
+export function compareCompiler(params: {
+	baseline: Compiler | undefined
+	measured: Compiler
+}): CompilerComparison {
+	const { baseline, measured } = params
+	const measuredWith = `measured with ${compilerLabel({ compiler: measured })}: ${RE_BASELINE}`
+	if (!baseline) return { kind: 'refused', line: `baseline records no compiler, ${measuredWith}` }
+	if (baseline.name === measured.name && baseline.version === measured.version)
+		return { kind: 'comparable' }
+	return {
+		kind: 'refused',
+		line: `baseline from ${compilerLabel({ compiler: baseline })}, ${measuredWith}`,
+	}
+}
+
+function compilerLabel(params: { compiler: Compiler }): string {
+	return `${params.compiler.name} ${params.compiler.version}`
+}
+
 /** Reduce repeated runs to the best (min) value per metric — drops timing noise. */
 export function aggregateRuns(runs: Metrics[]): Metrics {
 	const best: Metrics = {}
@@ -98,6 +155,36 @@ export function stableResults(results: Record<string, Metrics>): Record<string, 
 	)
 }
 
+/** The compiler a `--version` output names; a bench that cannot tell which compiler runs stops. */
+function readCompiler(params: { tsc: string; output: string }): Compiler {
+	const { tsc, output } = params
+	const compiler = parseCompilerVersion({ output })
+	if (!compiler)
+		throw new Error(`bench: cannot read the compiler version from ${tsc}: ${output.trim()}`)
+	return compiler
+}
+
+function baselinePathOf(params: { root: string; versionDir: string }): string {
+	return join(params.root, params.versionDir, 'baseline.json')
+}
+
+/**
+ * A baseline from another compiler or version holds counts of another measure: `--check` names every
+ * such baseline and exits before measuring anything.
+ */
+function refuseForeignBaselines(params: { root: string; targets: Target[]; compiler: Compiler }) {
+	const { root, targets, compiler } = params
+	const refusals = targets.flatMap((target) => {
+		const versionDir = dirname(target.outDir)
+		const prior = JSON.parse(readFileSync(baselinePathOf({ root, versionDir }), 'utf8'))
+		const comparison = compareCompiler({ baseline: prior.compiler, measured: compiler })
+		return comparison.kind === 'refused' ? [`✗ [${target.version}] ${comparison.line}`] : []
+	})
+	if (!refusals.length) return
+	printLines({ stream: 'stderr', lines: refusals })
+	process.exit(EXIT_COMPILER_MISMATCH)
+}
+
 export async function run(argv: string[]): Promise<void> {
 	const ROOT = process.cwd()
 	const tsc = resolveBin('tsc', 'typescript', ROOT)
@@ -119,12 +206,23 @@ export async function run(argv: string[]): Promise<void> {
 			'bench: no versions discovered. Run `dialecte coverage` first, or pass --constants-dir.',
 		)
 
-	function runTsc(args: string[]): Metrics {
+	function runTsc(args: string[]): string {
 		const result = spawnSync(TSC, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1e8 })
-		return parseTscMetrics(`${result.stdout || ''}${result.stderr || ''}`)
+		return `${result.stdout || ''}${result.stderr || ''}`
+	}
+	const compiler = readCompiler({ tsc: TSC, output: runTsc(['--version']) })
+	if (CHECK) refuseForeignBaselines({ root: ROOT, targets, compiler })
+
+	function runMetrics(args: string[]): Metrics {
+		return parseTscMetrics(runTsc(args))
 	}
 	function measure(args: string[]): Metrics {
-		return aggregateRuns(Array.from({ length: RUNS }, () => runTsc(args)))
+		return measureRuns({
+			runCompiler: runMetrics,
+			compiler,
+			args,
+			runs: RUNS,
+		})
 	}
 	function isolated(file: string): string {
 		const name = `.bench-${file.replace(/[/.]/g, '_')}.tsconfig.json`
@@ -146,7 +244,12 @@ export async function run(argv: string[]): Promise<void> {
 	}
 
 	// Whole-program is package-level → measure once, share across versions.
-	printLines({ stream: 'stdout', lines: [`bench — ${RUNS} runs (min) — whole program …`] })
+	printLines({
+		stream: 'stdout',
+		lines: [
+			`bench — ${compiler.name} ${compiler.version}, one checker, ${RUNS} runs (min) — whole program …`,
+		],
+	})
 	const wholeCheck = measure(wholeProgramArgs({ tsconfig, mode: 'check' }))
 	const wholeEmit = measure(wholeProgramArgs({ tsconfig, mode: 'emit' }))
 	rmSync(join(ROOT, '.bench-dts'), { recursive: true, force: true })
@@ -191,7 +294,7 @@ export async function run(argv: string[]): Promise<void> {
 					)
 		printLines({ stream: 'stdout', lines: table })
 
-		const baselinePath = join(ROOT, versionDir, 'baseline.json')
+		const baselinePath = baselinePathOf({ root: ROOT, versionDir })
 		if (CHECK) {
 			const prior = JSON.parse(readFileSync(baselinePath, 'utf8'))
 			for (const [key, metrics] of Object.entries(results)) {
@@ -212,7 +315,7 @@ export async function run(argv: string[]): Promise<void> {
 			// even when oxfmt is absent; formatFiles then normalises it (a no-op when already clean).
 			writeFileSync(
 				baselinePath,
-				`${JSON.stringify({ tool: 'dialecte bench', version: target.version, runs: RUNS, results: stableResults(results) }, null, '\t')}\n`,
+				`${JSON.stringify({ tool: 'dialecte bench', version: target.version, compiler, checkers: 1, runs: RUNS, results: stableResults(results) }, null, '\t')}\n`,
 			)
 			formatFiles({ root: ROOT, files: [baselinePath], options: formatOptsFromArgv(argv) })
 			printLines({ stream: 'stdout', lines: [`  wrote ${versionDir}/baseline.json`] })
