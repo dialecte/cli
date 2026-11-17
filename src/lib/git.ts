@@ -53,6 +53,16 @@ export function readHeadOrNone(root: string): string | undefined {
 	)
 }
 
+/** The commit `ref` names, as a full sha; undefined when it names none. */
+export function readCommitOrNone(params: { root: string; ref: string }): string | undefined {
+	return (
+		tryReadGit({
+			root: params.root,
+			args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
+		})?.trim() || undefined
+	)
+}
+
 /** `readGit`'s output as git wrote it, bytes never decoded (a path that is no UTF-8 kept byte for byte). */
 export function readGitBytes(params: { root: string; args: string[] }): Buffer {
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {

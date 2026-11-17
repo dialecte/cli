@@ -5,7 +5,8 @@
  * (`tree`, a squash read offline). Else unlanded, or closed when the host closed its pull request unmerged. A host
  * that refuses leaves the decision to git, its reason kept on an unlanded state.
  */
-import { isAncestorCommit, tryReadGit } from '../git.ts'
+import { isAncestorCommit, readCommitOrNone, tryReadGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from './contained.ts'
 import { LANDING_UNKNOWN } from './landing-state.constants.ts'
 
@@ -20,11 +21,17 @@ import type { LandingQuery, LandingState } from './landing-state.types.ts'
  */
 export function readLandingState(query: LandingQuery): LandingState {
 	const { root, branch, baseRef, cut } = query
-	const tip = commitOf({ root, ref: `refs/heads/${branch}` })
+	const tip = readCommitOrNone({ root, ref: `refs/heads/${branch}` })
 	if (tip === undefined)
-		return { kind: 'unknown', reason: LANDING_UNKNOWN.noBranch.replace('{branch}', () => branch) }
-	if (commitOf({ root, ref: baseRef }) === undefined)
-		return { kind: 'unknown', reason: LANDING_UNKNOWN.noBase.replace('{ref}', () => baseRef) }
+		return {
+			kind: 'unknown',
+			reason: fillMessage({ template: LANDING_UNKNOWN.noBranch, values: { branch } }),
+		}
+	if (readCommitOrNone({ root, ref: baseRef }) === undefined)
+		return {
+			kind: 'unknown',
+			reason: fillMessage({ template: LANDING_UNKNOWN.noBase, values: { ref: baseRef } }),
+		}
 	if (isAncestorCommit({ root, ancestor: tip, descendant: cut })) return { kind: 'empty' }
 	if (isAncestorCommit({ root, ancestor: tip, descendant: baseRef }))
 		return { kind: 'merged', how: 'ancestor', tip }
@@ -38,15 +45,6 @@ export function readLandingState(query: LandingQuery): LandingState {
 		...(asked.pull && { pull: asked.pull }),
 		...(asked.refusal !== undefined && { hostRefusal: asked.refusal }),
 	}
-}
-
-/** The commit `ref` names; undefined when it names none. */
-function commitOf(params: { root: string; ref: string }): string | undefined {
-	const commit = tryReadGit({
-		root: params.root,
-		args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
-	})?.trim()
-	return commit || undefined
 }
 
 /**

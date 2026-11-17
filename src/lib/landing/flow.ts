@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	CI_WORKFLOW_PATH,
 	FLOW_REFUSAL,
@@ -54,10 +55,10 @@ export function flowRefusalOf(params: {
 	const { root, command, verb } = params
 	const flow = landingFlowOf(root)
 	if (!landingFlow(flow).refused.includes(`${command} ${verb}`)) return undefined
-	return FLOW_REFUSAL.replace('{command}', () => command)
-		.replace('{verb}', () => verb)
-		.replace('{root}', () => root)
-		.replace('{why}', () => FLOW_REFUSAL_WHY[flow])
+	return fillMessage({
+		template: FLOW_REFUSAL,
+		values: { command, verb, root, why: FLOW_REFUSAL_WHY[flow] },
+	})
 }
 
 /** True when `root`'s ci.yml is readable YAML whose triggers hold the queue's and whose jobs hold the required one. */

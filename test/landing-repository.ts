@@ -164,3 +164,35 @@ export function stackedChildOf(repository: LandingRepository): { worktree: strin
 	})
 	return { worktree, tip }
 }
+
+/** Origin's last commit on main reverted from another clone, origin fetched; origin's new main. */
+export function revertOnOrigin(params: { repository: LandingRepository }): string {
+	const other = otherClone(params.repository)
+	git({ root: other, args: ['revert', '--no-edit', 'HEAD'] })
+	return pushMain({ repository: params.repository, other })
+}
+
+/** A commit beyond `parent` on no branch (another lot's work): its id. */
+export function strayCommitOf(params: { root: string; parent: string }): string {
+	return git({
+		root: params.root,
+		args: [
+			'commit-tree',
+			`${params.parent}^{tree}`,
+			'-p',
+			params.parent,
+			'-m',
+			'feat(z): another lot',
+		],
+	}).trim()
+}
+
+/** The lot's commit amended (another text of its file); the amended commit. Its branch reflog keeps the old one. */
+export function amendLot(params: { worktree: string }): string {
+	writeFiles({ root: params.worktree, files: { [LOT_FILE]: 'export const x = 10\n' } })
+	git({
+		root: params.worktree,
+		args: ['commit', '-q', '-a', '--amend', '-m', 'feat(x): x amended'],
+	})
+	return headOf(params.worktree)
+}

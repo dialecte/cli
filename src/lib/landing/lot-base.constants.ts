@@ -11,4 +11,5 @@ export const PARENT_REF_TEMPLATES: readonly string[] = [
 export const LOT_BASE_REFUSALS = {
 	noHead: "the lot's head {head} does not resolve",
 	noForkPoint: "the lot's head {head} shares no commit with {ref}",
+	noParentRef: 'the stack parent {branch} has no branch here nor on origin',
 } as const

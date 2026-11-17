@@ -7,23 +7,24 @@
 import {
 	CHILD_BRANCH,
 	LOT_BRANCH,
-	LOT_FILE,
 	ORIGIN_MAIN,
 } from '../../../test/landing-repository.constants.ts'
 import {
 	commitIn,
 	editOnOrigin,
+	amendLot,
 	headOf,
 	landingRepositoryOf,
 	mergeOnOrigin,
 	stackedChildOf,
 } from '../../../test/landing-repository.ts'
-import { git, writeFiles } from '../../../test/scratch-repository.ts'
+import { git } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { lotBaseOf } from './lot-base.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { LandingRepository } from '../../../test/landing-repository.types.ts'
 import type { LandingState } from './landing-state.types.ts'
 
 const OPEN: LandingState = { kind: 'unlanded' }
@@ -67,7 +68,7 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a stacked child rebased by hand onto its amended parent, the parent then squash-merged -> origin s main; the rebase moves only the child s commit', () => {
 		const repository = landingRepositoryOf()
 		const child = stackedChildOf(repository)
-		const amended = amendParent({ worktree: repository.worktree })
+		const amended = amendLot({ worktree: repository.worktree })
 		git({ root: child.worktree, args: ['rebase', '-q', '--onto', amended, repository.tip] })
 		mergeOnOrigin({ repository, how: 'squash' })
 
@@ -88,7 +89,7 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a stacked child never rebased, its parent amended then squash-merged -> origin s main, forking at the parent commit it holds; the rebase moves only the child s commit', () => {
 		const repository = landingRepositoryOf()
 		const child = stackedChildOf(repository)
-		const amended = amendParent({ worktree: repository.worktree })
+		const amended = amendLot({ worktree: repository.worktree })
 		mergeOnOrigin({ repository, how: 'squash' })
 
 		expect(
@@ -108,6 +109,100 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		])
 	})
 
+	it("a stacked child already on origin's main after its parent's squash, main moved on -> origin's main, forking at its merge-base with it", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		const squashed = mergeOnOrigin({ repository, how: 'squash' })
+		git({ root: child.worktree, args: ['rebase', '-q', '--onto', ORIGIN_MAIN, repository.tip] })
+		editOnOrigin({ repository, files: { 'src/other.ts': 'export const other = 1\n' } })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: {
+					branch: LOT_BRANCH,
+					landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+				},
+			}),
+		).toEqual({ ref: ORIGIN_MAIN, label: 'origin/main', forkPoint: squashed })
+	})
+
+	it("a stacked child on origin's main, its merged parent's branches deleted here and on origin -> origin's main, forking at its merge-base with it", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		const squashed = mergeOnOrigin({ repository, how: 'squash' })
+		git({ root: child.worktree, args: ['rebase', '-q', '--onto', ORIGIN_MAIN, repository.tip] })
+		dropParentBranches({ repository })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: {
+					branch: LOT_BRANCH,
+					landing: { kind: 'merged', how: 'tree', tip: repository.tip },
+				},
+			}),
+		).toEqual({ ref: ORIGIN_MAIN, label: 'origin/main', forkPoint: squashed })
+	})
+
+	it('a stacked lot whose open parent has no branch here nor on origin -> refused naming the parent', () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		dropParentBranches({ repository })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({ refusal: `the stack parent ${LOT_BRANCH} has no branch here nor on origin` })
+	})
+
+	it("a stacked lot whose open parent's local branch and origin's diverged -> the local branch", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		git({ root: repository.root, args: ['push', '-q', 'origin', `${LOT_BRANCH}:${LOT_BRANCH}`] })
+		git({ root: repository.root, args: ['fetch', '-q', 'origin'] })
+		amendLot({ worktree: repository.worktree })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({ ref: `refs/heads/${LOT_BRANCH}`, label: LOT_BRANCH, forkPoint: repository.tip })
+	})
+
+	it("a stacked lot whose open parent is only on origin -> origin's branch", () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		git({ root: repository.root, args: ['push', '-q', 'origin', `${LOT_BRANCH}:${LOT_BRANCH}`] })
+		git({ root: repository.root, args: ['fetch', '-q', 'origin'] })
+		git({ root: repository.worktree, args: ['checkout', '-q', '--detach'] })
+		git({ root: repository.root, args: ['branch', '-q', '-D', LOT_BRANCH] })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({
+			ref: `refs/remotes/origin/${LOT_BRANCH}`,
+			label: LOT_BRANCH,
+			forkPoint: repository.tip,
+		})
+	})
+
 	it('a head that does not resolve -> refused naming it', () => {
 		const repository = landingRepositoryOf()
 
@@ -121,12 +216,13 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	})
 })
 
-/** The parent's commit amended (another text of its file); the amended commit. Its branch reflog keeps the old one. */
-function amendParent(params: { worktree: string }): string {
-	writeFiles({ root: params.worktree, files: { [LOT_FILE]: 'export const x = 10\n' } })
+/** The parent's branch deleted here (its worktree detached) and its origin-tracking ref removed. */
+function dropParentBranches(params: { repository: LandingRepository }): void {
+	const { repository } = params
+	git({ root: repository.worktree, args: ['checkout', '-q', '--detach'] })
+	git({ root: repository.root, args: ['branch', '-q', '-D', LOT_BRANCH] })
 	git({
-		root: params.worktree,
-		args: ['commit', '-q', '-a', '--amend', '-m', 'feat(x): x amended'],
+		root: repository.root,
+		args: ['update-ref', '-d', `refs/remotes/origin/${LOT_BRANCH}`],
 	})
-	return headOf(params.worktree)
 }

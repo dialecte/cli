@@ -11,6 +11,9 @@ import {
 	landingRepositoryOf,
 	mergeOnOrigin,
 	pullRequestOf,
+	revertOnOrigin,
+	strayCommitOf,
+	amendLot,
 } from '../../../test/landing-repository.ts'
 import { git } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
@@ -23,7 +26,14 @@ import type { HostAdapter } from '../host/host.types.ts'
 import type { LandingQuery, LandingState } from './landing-state.types.ts'
 
 /** What a row arranges beyond the repository: the host, the pull request the landing recorded, the branch's tip. */
-type Arranged = { host?: HostAdapter; pullNumber?: number; tip?: string }
+type Arranged = {
+	host?: HostAdapter
+	pullNumber?: number
+	tip?: string
+	/** The branch and base ref the query names, when not the lot's and origin's main. */
+	branch?: string
+	baseRef?: string
+}
 
 type Row = {
 	title: string
@@ -93,6 +103,28 @@ const ROWS: Row[] = [
 			return {}
 		},
 		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title: 'a squash merge, then main reverts it, no host -> unlanded',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			revertOnOrigin({ repository })
+			return {}
+		},
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title: 'a branch that does not resolve -> unknown naming it',
+		arrange: () => ({ branch: 'feat/gone' }),
+		expected: () => ({ kind: 'unknown', reason: 'the branch feat/gone does not resolve' }),
+	},
+	{
+		title: 'a base ref that does not resolve -> unknown naming it',
+		arrange: () => ({ baseRef: 'refs/remotes/origin/none' }),
+		expected: () => ({
+			kind: 'unknown',
+			reason: 'the base refs/remotes/origin/none does not resolve: fetch origin',
+		}),
 	},
 ]
 
@@ -188,6 +220,66 @@ const HOST_ROWS: Row[] = [
 		},
 		expected: ({ tip }) => ({ kind: 'merged', how: 'tree', tip }),
 	},
+	{
+		title:
+			'a merged pull request found by branch whose head is another branch s commit beyond the cut -> not the lot s: unlanded',
+		arrange: (repository) => ({
+			host: landingHostOf({
+				byBranch: {
+					[repository.branch]: pullRequestOf({
+						number: 3,
+						state: 'merged',
+						head: strayCommitOf({ root: repository.root, parent: repository.cut }),
+					}),
+				},
+			}).host,
+		}),
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title:
+			'a merged pull request found by branch whose head the branch held before an amend -> merged by host at that head',
+		arrange: (repository) => {
+			amendLot({ worktree: repository.worktree })
+			return {
+				host: landingHostOf({
+					byBranch: {
+						[repository.branch]: pullRequestOf({
+							number: 9,
+							state: 'merged',
+							head: repository.tip,
+						}),
+					},
+				}).host,
+			}
+		},
+		expected: ({ repository }) => ({
+			kind: 'merged',
+			how: 'host',
+			tip: repository.tip,
+			pull: pullRequestOf({ number: 9, state: 'merged', head: repository.tip }),
+		}),
+	},
+	{
+		title: 'a queued pull request, its work not in the base -> unlanded with the pull request',
+		arrange: (repository) => ({
+			pullNumber: 7,
+			host: landingHostOf({
+				byNumber: {
+					7: pullRequestOf({ number: 7, state: 'open', head: repository.tip, queued: true }),
+				},
+			}).host,
+		}),
+		expected: ({ tip }) => ({
+			kind: 'unlanded',
+			pull: pullRequestOf({ number: 7, state: 'open', head: tip, queued: true }),
+		}),
+	},
+	{
+		title: 'a host refusal, the work not in the base -> unlanded naming the refusal',
+		arrange: () => ({ pullNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }),
+		expected: () => ({ kind: 'unlanded', hostRefusal: 'gh: offline' }),
+	},
 ]
 
 /** The row's repository arranged, the query of its lot, and the state the row expects. */
@@ -197,8 +289,8 @@ function arrangeRow(row: Row): { query: LandingQuery; expected: LandingState } {
 	return {
 		query: {
 			root: repository.root,
-			branch: repository.branch,
-			baseRef: ORIGIN_MAIN,
+			branch: arranged.branch ?? repository.branch,
+			baseRef: arranged.baseRef ?? ORIGIN_MAIN,
 			cut: repository.cut,
 			pullNumber: arranged.pullNumber,
 			host: arranged.host,

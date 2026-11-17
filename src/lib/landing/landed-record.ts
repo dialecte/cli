@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { replaceWhole } from '../store/publish.ts'
 import {
 	LANDED_COMMIT_PATTERN,
@@ -70,5 +71,5 @@ function isPull(value: unknown): boolean {
 
 /** The damage of a landed.json, naming why. */
 function damaged(reason: string): LandedDamage {
-	return { damage: LANDED_DAMAGE.replace('{reason}', () => reason) }
+	return { damage: fillMessage({ template: LANDED_DAMAGE, values: { reason } }) }
 }

@@ -3,9 +3,12 @@
  * tip. Cut from the base: the base and the merge-base. Stacked: the parent's landing state decides the ref (the base
  * once the parent merged, else the parent's newest branch tip), and the fork point is the newest commit of the
  * parent's line the lot holds (`git merge-base --fork-point`, reflog-aware, else the plain merge-base), over the
- * parent's local branch and origin's.
+ * parent's local branch and origin's (origin as last fetched: the parent pull request's head is the same commit once
+ * fetched, so it is not read). Once the parent merged, the base's own fork point counts too: a child already rebased
+ * onto the base forks there.
  */
-import { isAncestorCommit, tryReadGit } from '../git.ts'
+import { isAncestorCommit, readCommitOrNone, tryReadGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	LOT_BASE_REFUSALS,
 	PARENT_REF_TEMPLATES,
@@ -22,38 +25,38 @@ import type { LotBase, LotBaseQuery } from './lot-base.types.ts'
  */
 export function lotBaseOf(query: LotBaseQuery): LotBase | { refusal: string } {
 	const { root, baseRef, parent } = query
-	const head = commitOf({ root, ref: query.head })
+	const head = readCommitOrNone({ root, ref: query.head })
 	if (head === undefined)
-		return { refusal: LOT_BASE_REFUSALS.noHead.replace('{head}', () => query.head) }
-	const lines =
+		return refused({ template: LOT_BASE_REFUSALS.noHead, values: { head: query.head } })
+	const parentRefs =
 		parent === undefined
-			? [baseRef]
+			? []
 			: PARENT_REF_TEMPLATES.map((template) =>
-					template.replace('{branch}', () => parent.branch),
-				).filter((ref) => commitOf({ root, ref }) !== undefined)
+					fillMessage({ template, values: { branch: parent.branch } }),
+				).filter((ref) => readCommitOrNone({ root, ref }) !== undefined)
+	const open = parent !== undefined && parent.landing.kind !== 'merged'
+	if (open && parentRefs.length === 0)
+		return refused({ template: LOT_BASE_REFUSALS.noParentRef, values: { branch: parent.branch } })
+	// a merged parent's line and the base both count: a child already rebased onto the base forks there
+	const lines = open ? parentRefs : [...parentRefs, baseRef]
 	const forkPoint = newestOf({
 		root,
 		commits: lines.flatMap((ref) => forkPointsOf({ root, ref, head })),
 	})
 	if (forkPoint === undefined)
-		return {
-			refusal: LOT_BASE_REFUSALS.noForkPoint
-				.replace('{head}', () => query.head)
-				.replace('{ref}', () => lines.join(', ') || (parent?.branch ?? baseRef)),
-		}
-	if (parent === undefined || parent.landing.kind === 'merged')
-		return { ref: baseRef, label: labelOf(baseRef), forkPoint }
-	const ref = newestRefOf({ root, refs: lines })
-	return { ref, label: parent.branch, forkPoint }
+		return refused({
+			template: LOT_BASE_REFUSALS.noForkPoint,
+			values: { head: query.head, ref: lines.join(', ') },
+		})
+	if (!open) return { ref: baseRef, label: labelOf(baseRef), forkPoint }
+	return { ref: newestRefOf({ root, refs: parentRefs }), label: parent.branch, forkPoint }
 }
 
-/** The commit `ref` names; undefined when it names none. */
-function commitOf(params: { root: string; ref: string }): string | undefined {
-	const commit = tryReadGit({
-		root: params.root,
-		args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
-	})?.trim()
-	return commit || undefined
+/** A refusal of `lotBaseOf`, its template filled. */
+function refused(params: { template: string; values: Record<string, string> }): {
+	refusal: string
+} {
+	return { refusal: fillMessage(params) }
 }
 
 /** The commits of `ref`'s line that `head` holds: git's reflog-aware fork point, and the plain merge-base. */
@@ -81,7 +84,7 @@ function newestRefOf(params: { root: string; refs: readonly string[] }): string 
 	const { root } = params
 	return params.refs.reduce(function newer(newest, ref) {
 		return isAncestorCommit({ root, ancestor: newest, descendant: ref }) &&
-			commitOf({ root, ref: newest }) !== commitOf({ root, ref })
+			readCommitOrNone({ root, ref: newest }) !== readCommitOrNone({ root, ref })
 			? ref
 			: newest
 	})
