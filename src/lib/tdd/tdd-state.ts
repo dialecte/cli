@@ -26,6 +26,7 @@ import {
 	movedLines,
 	movedSources,
 } from './moved-cases.ts'
+import { pythonBaseTextsOf } from './python-case.ts'
 import { readMoves } from './read-moves.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
@@ -91,6 +92,7 @@ export async function readTddState(params: {
 		root,
 		files: listed.map((file) => file.file),
 		filter: 'collect',
+		baseTexts: pythonBaseTextsOf(listed),
 	})
 	if ('failure' in modules) return modules
 	// what the collect saw, for the listing of each file's dependencies below (a pytest file's come from its run)

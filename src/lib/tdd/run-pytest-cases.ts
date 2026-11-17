@@ -23,8 +23,10 @@ import {
 	NO_PYTEST_FAILURE,
 	NO_PYTEST_PATTERN,
 	PYTEST_ARGUMENTS,
+	PYTEST_BASE_TEXTS_VARIABLE,
 	PYTEST_COLLECT_ARGUMENT,
 	PYTEST_NAMES_VARIABLE,
+	PYTEST_OWN_CODE_VARIABLE,
 	PYTEST_PLUGIN_FILE_NAMES,
 	PYTEST_ROOT_VARIABLE,
 	PYTHON_NO_BYTECODE_VARIABLE,
@@ -108,8 +110,17 @@ async function runPytestFolder(params: {
 			[PYTHON_NO_BYTECODE_VARIABLE]: '1',
 			[PYTEST_ROOT_VARIABLE]: realpathSync.native(run.root),
 			...(typeof filter === 'object' && { [PYTEST_NAMES_VARIABLE]: JSON.stringify(filter.names) }),
+			...(run.ownCode && { [PYTEST_OWN_CODE_VARIABLE]: '1' }),
 		},
 		cwd: folder,
+		// the base texts of the folder's files: the plugin reads their own code too
+		...(run.baseTexts && {
+			inputs: {
+				[PYTEST_BASE_TEXTS_VARIABLE]: Object.fromEntries(
+					Object.entries(run.baseTexts).filter(([file]) => params.files.includes(file)),
+				),
+			},
+		}),
 		run,
 	})
 	if (!('failure' in reported)) return reported

@@ -1,13 +1,18 @@
 """The cli's pytest plugin: writes what a run saw to the file named by DIALECTE_TDD_REPORT.
 
 Loaded with `-p dialecte_tdd_pytest`. The report is one JSON list, one entry per test file collected: its
-collection errors, its cases (name, state, def line, errors, source, skip mark in a collect) and the files it
+collection errors, its cases (name, state, def line, errors, source, skip mark in a collect), the files it
 used (conftests, the modules its imports and its conftests' imports resolve to, the files opened while it was collected and while its
-cases ran). Imports the standard library and pytest only; Python 3.8 or later, pytest 7 or later.
+cases ran) and its own code (module-level and test-class statements, imports by what they resolve to, never the
+test functions), and the own code of its base text when DIALECTE_TDD_BASE_TEXTS names a JSON file of base texts. Imports the standard library and pytest only; Python 3.8 or later, pytest 7 or later.
 """
 
 import ast
+import copy
 import errno
+import fnmatch
+import hashlib
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -20,6 +25,12 @@ import pytest
 REPORT_VARIABLE = "DIALECTE_TDD_REPORT"
 NAMES_VARIABLE = "DIALECTE_TDD_NAMES"
 ROOT_VARIABLE = "DIALECTE_TDD_ROOT"
+BASE_TEXTS_VARIABLE = "DIALECTE_TDD_BASE_TEXTS"
+OWN_CODE_VARIABLE = "DIALECTE_TDD_OWN_CODE"
+# a parametrize call's literal values, which each case's row covers
+ROWS_PLACEHOLDER = "<rows>"
+# between the parts of an own-code identity: its scope, its kind, its target, its names
+OWN_CODE_SEPARATOR = "\0"
 NAME_SEPARATOR = " > "
 ROW_SEPARATOR = "\0"
 UNMAPPABLE_NAME_ERROR = "UnmappableCaseName"
@@ -42,6 +53,10 @@ RUN = {
     "audited": False,
     "collect_only": False,
     "root": None,
+    "config": None,
+    "base_texts": {},
+    "base_trees": {},
+    "collected_lines": {},
 }
 
 
@@ -53,6 +68,8 @@ def pytest_configure(config):
     if hasattr(config.option, "dist"):
         config.option.dist = "no"
     RUN["collect_only"] = bool(config.getoption("collectonly"))
+    RUN["config"] = config
+    RUN["base_texts"] = read_base_texts()
     RUN["root"] = os.path.realpath(os.environ.get(ROOT_VARIABLE) or str(config.rootpath))
     if not RUN["audited"]:
         sys.addaudithook(note_opened_file)
@@ -99,6 +116,16 @@ def pytest_collection_modifyitems(session, config, items):
     ignored = {path for path in RUN["modules"] if is_ignored(session=session, config=config, path=path)}
     for path in ignored:
         del RUN["modules"][path]
+    # every test function collected, deselected ones too: none of them is own code of its file
+    for item in items:
+        path = os.path.abspath(str(item.path))
+        node = function_node(
+            path=path,
+            classes=item.nodeid.split("::")[1:-1],
+            name=getattr(item, "originalname", None) or item.name,
+        )
+        if node is not None:
+            RUN["collected_lines"].setdefault(path, set()).add(node.lineno)
     listed = os.environ.get(NAMES_VARIABLE)
     names = set(json.loads(listed)) if listed else None
     kept = [
@@ -165,7 +192,7 @@ def pytest_sessionfinish(session, exitstatus):
     path = os.environ.get(REPORT_VARIABLE)
     if not path:
         return
-    modules = [module_report(file, module) for file, module in RUN["modules"].items()]
+    modules = [module_report(file, module, RUN["base_texts"]) for file, module in RUN["modules"].items()]
     with open(path, "w", encoding="utf-8") as report:
         json.dump(modules, report)
 
@@ -177,9 +204,11 @@ def module_record(path):
     return RUN["modules"][path]
 
 
-def module_report(path, module):
-    """A test file as the cli reads it."""
-    return {
+def module_report(path, module, base_texts):
+    """A test file as the cli reads it, with the own code of its base text when one was given."""
+    text, tree = parsed(path)
+    name = module["name"] or module_name_of(path)
+    report = {
         "file": path,
         "runner": "pytest",
         "errors": module["errors"],
@@ -188,6 +217,193 @@ def module_report(path, module):
         ],
         "dependencies": sorted(dependencies_of(path=path, module=module)),
     }
+    if os.environ.get(OWN_CODE_VARIABLE) != "1":
+        return report
+    collected = RUN["collected_lines"].get(path, set())
+    report["ownCode"] = own_code_of(
+        path=path, text=text, tree=tree, module_name=name, is_test=lambda node: node.lineno in collected
+    )
+    base_text = base_texts.get(os.path.relpath(os.path.realpath(path), RUN["root"] or ""))
+    if base_text is not None:
+        try:
+            base_tree = ast.parse(base_text)
+        except (SyntaxError, ValueError):
+            base_tree = None
+        report["baseOwnCode"] = own_code_of(
+            path=path, text=base_text, tree=base_tree, module_name=name, is_test=is_test_by_pattern
+        )
+    return report
+
+
+def read_base_texts():
+    """The base texts the cli gave, by path relative to the package root; none when it gave none."""
+    path = os.environ.get(BASE_TEXTS_VARIABLE)
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as texts:
+            return {os.path.normpath(key): value for key, value in json.load(texts).items()}
+    except (OSError, ValueError, AttributeError):
+        # an unreadable file loses the base own code only, never the report
+        return {}
+
+
+def is_test_by_pattern(node):
+    """A function of a base text is a test when pytest's `python_functions` names it and no fixture decorates it (the
+    base text did not run: its collection is not known)."""
+    return matches_option(name=node.name, option="python_functions") and not any(
+        is_fixture(decorator) for decorator in node.decorator_list
+    )
+
+
+def is_fixture(decorator):
+    """`@fixture`, `@pytest.fixture`, called or not."""
+    called = decorator.func if isinstance(decorator, ast.Call) else decorator
+    name = called.attr if isinstance(called, ast.Attribute) else getattr(called, "id", None)
+    return name == "fixture"
+
+
+def own_code_of(path, text, tree, module_name, is_test):
+    """The file's own code: each module-level statement and each statement of a test class body (scoped by its
+    class names), a test class's header (its decorators, bases and keywords) in the scope holding it, imports once
+    per binding by what they resolve to and their names (an import nested in a statement by its target too), never a
+    test function (`is_test`: the functions pytest collected, by their def line) nor a leading docstring; each with its text and the sha256 of its scope and identity (`ast.dump`: formatting and comments
+    left out, its output the running Python's: an interpreter changed between the red and the move refuses the move)."""
+    if tree is None:
+        return []
+    is_package = os.path.basename(path) == "__init__.py"
+    package = module_name if is_package else module_name.rpartition(".")[0]
+    statements = []
+
+    def add(scope, node, identity, shown=None):
+        statements.append(
+            {
+                "text": shown if shown is not None else ast.get_source_segment(text, node) or "",
+                "hash": hashlib.sha256(OWN_CODE_SEPARATOR.join([*scope, identity]).encode("utf-8")).hexdigest(),
+            }
+        )
+
+    def collect(body, scope):
+        for position, node in enumerate(body):
+            if position == 0 and is_docstring(node):
+                continue
+            imported = import_identities(node=node, package=package)
+            if imported is not None:
+                for identity in imported:
+                    add(scope, node, identity)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and is_test(node):
+                continue
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.decorator_list:
+                add(scope, node, ast.dump(resolved_imports(node=node, package=package)), shown=decorated_text(text, node))
+            elif isinstance(node, ast.ClassDef) and matches_option(name=node.name, option="python_classes"):
+                header = copy.copy(node)
+                header.body = []
+                add(scope, node, ast.dump(header), shown=class_header_text(text=text, node=node))
+                collect(node.body, [*scope, node.name])
+            else:
+                add(scope, node, ast.dump(resolved_imports(node=node, package=package)))
+
+    collect(tree.body, [])
+    return statements
+
+
+def is_docstring(node):
+    """A string standing alone as a statement: a module's or a class's docstring when it comes first."""
+    return (
+        isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    )
+
+
+def decorated_text(text, node):
+    """A decorated definition as written: its decorators, then its own text."""
+    decorators = ["@" + (ast.get_source_segment(text, decorator) or "") for decorator in node.decorator_list]
+    return "\n".join([*decorators, ast.get_source_segment(text, node) or ""])
+
+
+def class_header_text(text, node):
+    """A class's header as written: its decorators, then its `class` line."""
+    decorators = ["@" + (ast.get_source_segment(text, decorator) or "") for decorator in node.decorator_list]
+    first = (ast.get_source_segment(text, node) or "").split("\n")[0]
+    return "\n".join([*decorators, first])
+
+
+def resolved_imports(node, package):
+    """A copy of the statement whose nested imports name what they resolve to (a relative import in a `try` hashed by
+    its file, not its spelling); the statement itself when it holds none."""
+    if not any(isinstance(inner, (ast.Import, ast.ImportFrom)) for inner in ast.walk(node)):
+        return node
+    copied = copy.deepcopy(node)
+    for inner in ast.walk(copied):
+        if isinstance(inner, ast.ImportFrom):
+            inner.module = import_target(absolute_module(node=inner, package=package))
+            inner.level = 0
+        elif isinstance(inner, ast.Import):
+            for alias in inner.names:
+                alias.asname = alias.asname or alias.name.partition(".")[0]
+                alias.name = import_target(alias.name)
+    return copied
+
+
+def absolute_module(node, package):
+    """The module a `from ... import` names, a relative one resolved against the package; its dotted spelling when it
+    cannot be (such a module fails to import, so its cases never pass)."""
+    base = node.module or ""
+    if not node.level:
+        return base
+    try:
+        return importlib.util.resolve_name("." * node.level + base, package)
+    except (ImportError, ValueError):
+        return "." * node.level + base
+
+
+def import_identities(node, package):
+    """One identity per binding of an import: its kind, the file or module it resolves to, its imported and local
+    names; None for any other statement."""
+    if isinstance(node, ast.Import):
+        return [
+            OWN_CODE_SEPARATOR.join(
+                ["import", import_target(alias.name), "", alias.asname or alias.name.partition(".")[0]]
+            )
+            for alias in node.names
+        ]
+    if isinstance(node, ast.ImportFrom):
+        target = import_target(absolute_module(node=node, package=package))
+        return [
+            OWN_CODE_SEPARATOR.join(["import", target, alias.name, alias.asname or alias.name])
+            for alias in node.names
+        ]
+    return None
+
+
+def import_target(name):
+    """The package file a module name resolves to (relative to the package root), else the module name itself. Never
+    imports anything: a module the run did not import is found on its parent's path only when that parent is
+    imported (or on sys.path for a top-level one)."""
+    file = getattr(sys.modules.get(name), "__file__", None)
+    if not file:
+        parent, _, last = name.rpartition(".")
+        search = getattr(sys.modules.get(parent), "__path__", None) if parent else None
+        try:
+            spec = importlib.machinery.PathFinder.find_spec(last, search) if search or not parent else None
+        except Exception:  # noqa: BLE001 - a finder failing names the module by its name, never stops the report
+            spec = None
+        file = getattr(spec, "origin", None) if spec else None
+    if not file or not os.path.isfile(file):
+        return name
+    real = os.path.realpath(source_path(os.path.abspath(file)))
+    if not is_under_root(real):
+        return name
+    return pathlib.PurePath(os.path.relpath(real, RUN["root"])).as_posix()
+
+
+def matches_option(name, option):
+    """The name is a test function or class by pytest's `python_functions` / `python_classes`: a prefix, or a glob."""
+    config = RUN["config"]
+    patterns = config.getini(option) if config is not None else []
+    return any(
+        fnmatch.fnmatch(name, pattern) if any(mark in pattern for mark in "*?[") else name.startswith(pattern)
+        for pattern in patterns
+    )
 
 
 def case_name(item):
@@ -241,9 +457,10 @@ def parsed(path):
     return RUN["trees"][path]
 
 
-def function_node(path, classes, name):
-    """The definition of the case's function: the last `def <name>` in the classes of its node id."""
-    tree = parsed(path)[1]
+def function_node(path, classes, name, tree=None):
+    """The definition of the case's function: the last `def <name>` in the classes of its node id (in `tree`, else in
+    the file's own tree)."""
+    tree = tree if tree is not None else parsed(path)[1]
     if tree is None:
         return None
     body = tree.body
@@ -277,6 +494,15 @@ def case_source(path, node, item):
     ]
     call = "\n".join(decorators + [ast.get_source_segment(text, node) or ""])
     source = {"call": call}
+    # each parametrize call but its literal values (the case's row stands for those): its names, ids, indirect, scope
+    settings = [parametrize_settings(decorator) for decorator in node.decorator_list if is_parametrize(decorator)]
+    if settings:
+        source["parametrize"] = ROW_SEPARATOR.join(settings)
+    base = base_function_node(path=path, item=item)
+    if base is not None:
+        source["baseParametrize"] = ROW_SEPARATOR.join(
+            parametrize_settings(decorator) for decorator in base.decorator_list if is_parametrize(decorator)
+        )
     callspec = getattr(item, "callspec", None)
     if callspec is None:
         return source
@@ -292,6 +518,44 @@ def case_source(path, node, item):
     if rows:
         source["row"] = ROW_SEPARATOR.join(rows)
     return source
+
+
+def base_function_node(path, item):
+    """The case's function in the file's base text, when the cli gave it and it defines that function."""
+    key = os.path.relpath(os.path.realpath(path), RUN["root"] or "")
+    base_text = RUN["base_texts"].get(key)
+    if base_text is None:
+        return None
+    if key not in RUN["base_trees"]:
+        try:
+            RUN["base_trees"][key] = ast.parse(base_text)
+        except (SyntaxError, ValueError):
+            RUN["base_trees"][key] = None
+    tree = RUN["base_trees"][key]
+    if tree is None:
+        return None
+    return function_node(
+        path=path,
+        classes=item.nodeid.split("::")[1:-1],
+        name=getattr(item, "originalname", None) or item.name,
+        tree=tree,
+    )
+
+
+def parametrize_settings(decorator):
+    """A parametrize call as `ast.dump` reads it, its literal values replaced by one placeholder: a change of names,
+    ids, indirect, scope or of a values expression shows, a row added does not."""
+    copied = copy.deepcopy(decorator)
+    values = argument_of(copied, 1, "argvalues")
+    if isinstance(values, (ast.List, ast.Tuple)):
+        placeholder = ast.Constant(value=ROWS_PLACEHOLDER)
+        if len(copied.args) > 1:
+            copied.args[1] = placeholder
+        else:
+            for given in copied.keywords:
+                if given.arg == "argvalues":
+                    given.value = placeholder
+    return ast.dump(copied)
 
 
 def argument_of(decorator, position, keyword):

@@ -5,29 +5,31 @@
  */
 import { hashText } from './tdd-files.ts'
 import {
+	PYTHON_FILE_PATTERN,
 	CASE_NAME_SEPARATOR,
 	PYTHON_DEF_LINE_PATTERN,
 	PYTHON_PARAMETRIZE_DECORATOR_PATTERN,
 	PYTHON_ROW_SEPARATOR,
 } from './tdd.constants.ts'
 
-import type { PythonCallParts, PythonCaseSource } from './tdd.types.ts'
+import type { ChangedTestFile, PythonCallParts, PythonCaseSource } from './tdd.types.ts'
 
 /** sha256 of a pytest case's name and its source (the function's text and its row), whitespace normalised. */
 export function pythonCaseHash(params: { name: string; source: PythonCaseSource }): string {
 	return hashText(`${params.name}\0${pythonCaseBody(params.source)}`)
 }
 
-/** What a pytest case's hash covers besides its name: the function's text and its row, whitespace normalised. */
+/** What a pytest case's hash covers besides its name: the function's text, its row and its parametrize settings, whitespace normalised. */
 export function pythonCaseBody(source: PythonCaseSource): string {
-	return `${normalized(source.call)}\0${normalized(source.row ?? '')}`
+	return [source.call, source.row ?? '', source.parametrize ?? ''].map(normalized).join('\0')
 }
 
 /**
  * Whether a pytest case is new or changed since the base: its file is new (`baseText` undefined), or the base text
  * lacks the function's text from its `def` on, or its decorators in order and count above a `def` of that function
- * (the parametrize ones left out, so a table line between them changes nothing), or the row of the case. A text
- * defining no function is a change.
+ * (the parametrize ones left out, so a table line between them changes nothing), or the row of the case, or its
+ * parametrize settings differ from those of the same function in the base text (the plugin reads both when the run
+ * hands it the base text). A text defining no function is a change.
  */
 export function isPythonCaseOfChange(params: {
 	source: PythonCaseSource
@@ -39,6 +41,9 @@ export function isPythonCaseOfChange(params: {
 	if (parts === undefined) return true
 	if (!normalized(baseText).includes(normalized(parts.body))) return true
 	if (!holdsDecorators({ text: baseText, parts })) return true
+	// its parametrize settings (names, ids, indirect, scope, a values expression) other than the base's same function
+	if (source.baseParametrize !== undefined && (source.parametrize ?? '') !== source.baseParametrize)
+		return true
 	return (
 		source.row !== undefined &&
 		!holdsRow({ text: baseText, functionName: parts.functionName, row: source.row })
@@ -218,4 +223,18 @@ function bracketDepthsAtLineStarts(text: string): number[] {
 		index += 1
 	}
 	return depths
+}
+
+/**
+ * The base texts of the changed pytest files of a run, by path: the cli's pytest plugin reads their own code and their
+ * cases' parametrize settings too.
+ */
+export function pythonBaseTextsOf(files: readonly ChangedTestFile[]): Record<string, string> {
+	return Object.fromEntries(
+		files.flatMap((file) =>
+			PYTHON_FILE_PATTERN.test(file.file) && file.baseText !== undefined
+				? [[file.file, file.baseText]]
+				: [],
+		),
+	)
 }

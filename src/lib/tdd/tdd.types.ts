@@ -37,7 +37,17 @@ export type ReportedError = {
  * What the pytest plugin reports of a case's source: the test function's own text without its parametrize
  * decorators, and, for a parametrized case, the text of its parameter row (the rows of stacked decorators joined).
  */
-export type PythonCaseSource = { call: string; row?: string }
+/**
+ * A pytest case's source as the cli's plugin reads it: its function with its decorators but its parametrize ones
+ * (`call`), its row of each parametrize call (`row`), and each parametrize call but its literal values (`parametrize`).
+ */
+export type PythonCaseSource = {
+	call: string
+	row?: string
+	parametrize?: string
+	/** The same function's parametrize settings in the base text, when the run was given it and the base defines it. */
+	baseParametrize?: string
+}
 
 /**
  * A pytest case's `call` split at its `def` line: the name it defines, each decorator above that line alone
@@ -121,6 +131,10 @@ export type RunnerParams = {
 	 * folder first on the import path, and is refused when the package is installed editable there. Default: none.
 	 */
 	interpreterRoot?: string
+	/** The base texts of test files (relative to the root): pytest reports their own code too. Default: none. */
+	baseTexts?: Readonly<Record<string, string>>
+	/** pytest reports each test file's own code (a red run: what a moved case may keep). Default: not. */
+	ownCode?: boolean
 }
 
 /**
@@ -135,6 +149,8 @@ export type ReportingRun = {
 	unset?: string[]
 	/** The folder the process runs in. Default: the run's root. */
 	cwd?: string
+	/** JSON inputs written in the run's temporary folder, each file's path given to the process in its variable. */
+	inputs?: Readonly<Record<string, unknown>>
 	run: RunnerParams
 }
 
@@ -166,6 +182,10 @@ export type ReportedModule = {
 	cases: ReportedCase[]
 	/** pytest: the files of test code (absolute paths) the file used: conftests, helpers, data it opened. */
 	dependencies?: string[]
+	/** pytest: the file's own code (`own-code.ts` for JS/TS), read by the cli's plugin. */
+	ownCode?: OwnCodeStatement[]
+	/** pytest: the own code of the file's base text, when the run was given it (`RunnerParams.baseTexts`). */
+	baseOwnCode?: OwnCodeStatement[]
 }
 
 /**
@@ -266,6 +286,8 @@ export type TddFreeze = {
 	files: Record<string, string>
 	/** The helpers (test code that is not a test file) this run froze because a `revised` entry of the lot file names them. */
 	revised?: string[]
+	/** The conftests each frozen pytest file ran under (relative to the root, sorted): a moved case keeps them. */
+	conftests?: Record<string, string[]>
 	/** The token hashes of each frozen JS/TS test file's own code (`own-code.ts`): what a moved case may keep of it. */
 	ownCode?: Record<string, string[]>
 	at: string
@@ -346,6 +368,7 @@ export type OwnCodeStatement = { text: string; hash: string }
 export type OwnCodeVerdict =
 	| { kind: 'kept' }
 	| { kind: 'added'; statement: string }
+	| { kind: 'conftests'; files: string[] }
 	| { kind: 'unrecorded' }
 
 /**
