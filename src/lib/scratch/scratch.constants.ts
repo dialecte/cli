@@ -9,9 +9,3 @@ export const SYSTEM_SCRATCH_FOLDER = 'dialecte-scratch'
 
 /** The file of each scratch folder naming the process that made it: prune tells live from leaked by it. */
 export const SCRATCH_MARKER_FILE = 'scratch.json'
-
-/**
- * The short root of a POSIX system: a rehearsal hook's temporary folder is made there, so a tool's socket path under
- * it stays within the system's limit (104 bytes on macOS).
- */
-export const POSIX_SHORT_ROOT = '/tmp'

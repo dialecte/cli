@@ -53,7 +53,7 @@ import { runHandover, runHandoverList, runHandoverRun } from './handover.ts'
 import { runRules } from './rules.ts'
 import { runTdd } from './tdd.ts'
 
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { HandoverProbe, LotsFile } from '../lib/handover/handover.types.ts'
@@ -1885,7 +1885,11 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 		const { root, lotsPath, out } = prepare()
 		const signals = temporaryFolder('dialecte-signals-')
 		const childPidFile = join(signals, 'child.pid')
-		installHook({ root, script: `sleep 60 & echo $! > '${childPidFile}'; wait` })
+		const hookTemporaryFile = join(signals, 'tmpdir.txt')
+		installHook({
+			root,
+			script: `printf '%s' "$TMPDIR" > '${hookTemporaryFile}'; sleep 60 & echo $! > '${childPidFile}'; wait`,
+		})
 		writeFileSync(
 			lotsPath,
 			JSON.stringify({ ...JSON.parse(readFileSync(lotsPath, 'utf8')), head: headOf(root) }),
@@ -1911,6 +1915,7 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 		expect(exitCode).not.toBe(0)
 		expect([scratchRoot, realpathSync(scratchRoot)]).toContain(folder && dirname(folder))
 		expect(folder && existsSync(folder)).toBe(false)
+		expect(existsSync(readFileSync(hookTemporaryFile, 'utf8'))).toBe(false)
 		expect(
 			readdirSync(scratchRoot).filter((name) => name.startsWith('dialecte-rehearse-')),
 		).toEqual([])
@@ -1940,7 +1945,7 @@ describe(
 			const scratchRoot = temporaryFolder('dialecte-scratch-root-')
 
 			const run = spawn(process.execPath, [CLI_SOURCE, 'handover', 'run', out, '--rehearse'], {
-				env: { ...process.env, TMPDIR: scratchRoot },
+				env: { ...process.env, TMPDIR: scratchRoot, DIALECTE_SCRATCH: scratchRoot },
 				stdio: ['ignore', 'pipe', 'ignore'],
 			})
 			let output = ''
@@ -2656,6 +2661,31 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 
 		expect(exitCode).toBe(0)
 		expect(logsMidRun).toHaveLength(1)
+	})
+
+	it('a kept hook log → its folder in the scratch root holds a scratch.json, so prune can trash it once it is old', async () => {
+		const scratch = temporaryFolder('dialecte-hook-scratch-')
+		vi.stubEnv('DIALECTE_SCRATCH', scratch)
+		onTestFinished(function restoreScratch() {
+			vi.unstubAllEnvs()
+		})
+		const marker = `marker-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+		const { out } = prepareWithHook(`echo "> demo@1.0.0 ${marker}"`)
+
+		const exitCode = await runLive({
+			out,
+			write: () => undefined,
+			live: { tty: false, writeLine: () => undefined, rewriteLines: () => undefined },
+		})
+
+		const folders = logsHolding({ folder: scratch, marker }).map((log) => dirname(log))
+		expect({
+			exitCode,
+			marked: folders.map((folder) => existsSync(join(folder, 'scratch.json'))),
+		}).toEqual({
+			exitCode: 0,
+			marked: [true],
+		})
 	})
 
 	it('a multibyte character split across two chunks → intact on screen and in the log, no replacement character', async () => {
