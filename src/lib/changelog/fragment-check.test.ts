@@ -14,14 +14,21 @@ const COMMAND_MAP = 'src/lib/command-map/command-map.constants.ts'
 function changeOf(params: {
 	fragments?: boolean
 	asking?: unknown
+	/** The whole `dialecte.changelog` value, written as given (beats `asking`). */
+	changelog?: unknown
 	files: Record<string, string>
 }): {
 	root: string
 	base: string
 } {
 	const root = createScratchRepository({
-		...(params.asking !== undefined && {
-			'package.json': `${JSON.stringify({ name: 'demo', dialecte: { changelog: { asking: params.asking } } })}\n`,
+		...((params.asking !== undefined || 'changelog' in params) && {
+			'package.json': `${JSON.stringify({
+				name: 'demo',
+				dialecte: {
+					changelog: 'changelog' in params ? params.changelog : { asking: params.asking },
+				},
+			})}\n`,
 		}),
 		'README.md': '# demo\n',
 		[COMMAND_MAP]: 'export const COMMAND_MAP = {}\n',
@@ -60,53 +67,61 @@ describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			failed:
 				'src/api/x.ts changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
 		},
-		{
-			label: 'a list entry spelled ./src/api/ (git names no path so)',
-			asking: ['./src/api/'],
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
-		{
-			label: 'a list entry that is an absolute path',
-			asking: ['/abs/x'],
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
-		{
-			label: 'a list entry with a backslash',
-			asking: ['src\\\\api\\\\'],
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
-		{
-			label: 'a list entry that is empty',
-			asking: [''],
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
-		{
-			label: 'dialecte.changelog.asking that is a string',
-			asking: 'src/api/',
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
-		{
-			label: 'dialecte.changelog.asking that is no list of paths',
-			asking: ['README.md', 3],
-			files: { 'src/a.ts': 'export const a = 2\n' },
-			failed:
-				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
-		},
 	])('$label → failed, naming the file', ({ asking, files, failed }) => {
 		expect(checkChangeFragment(changeOf({ asking, files }))).toEqual({
 			status: 'failed',
 			reason: failed,
 		})
+	})
+
+	const ENTRY_RULE =
+		'git names a changed file by a path relative to the package with / separators - no leading ./ or /, no ../, ./ or // inside, no backslash, no spaces around, no glob'
+	it.each<{ label: string; config: { changelog: unknown }; fragments?: boolean; reason: string }>([
+		{
+			label: 'dialecte.changelog that is a string',
+			config: { changelog: 'x' },
+			reason: 'dialecte.changelog in package.json is not an object: write { "asking": [<paths>] }',
+		},
+		{
+			label: 'dialecte.changelog that is a list',
+			config: { changelog: [] },
+			reason: 'dialecte.changelog in package.json is not an object: write { "asking": [<paths>] }',
+		},
+		{
+			label: 'dialecte.changelog that is null',
+			config: { changelog: null },
+			reason: 'dialecte.changelog in package.json is not an object: write { "asking": [<paths>] }',
+		},
+		{
+			label: 'dialecte.changelog.asking that is a string',
+			config: { changelog: { asking: 'src/api/' } },
+			reason: 'dialecte.changelog.asking in package.json is not a list of paths',
+		},
+		{
+			label: 'a list holding a number',
+			config: { changelog: { asking: ['README.md', 3] } },
+			reason: `dialecte.changelog.asking in package.json holds 3: ${ENTRY_RULE}`,
+		},
+		{
+			label: 'a list holding ./, absolute, backslash and empty entries',
+			config: { changelog: { asking: ['./src/api/', '/abs/x', 'src\\api', ''] } },
+			reason: `dialecte.changelog.asking in package.json holds "./src/api/", "/abs/x", "src\\\\api", "": ${ENTRY_RULE}`,
+		},
+		{
+			label: 'a list holding ../, ./ and // inside, a padded entry and a glob',
+			config: { changelog: { asking: ['src/', '../x', 'src/./x', 'src//x', ' src/', 'src/*.ts'] } },
+			reason: `dialecte.changelog.asking in package.json holds "../x", "src/./x", "src//x", " src/", "src/*.ts": ${ENTRY_RULE}`,
+		},
+		{
+			label: 'a bad list in a package without changes/',
+			config: { changelog: { asking: ['../x'] } },
+			fragments: false,
+			reason: `dialecte.changelog.asking in package.json holds "../x": ${ENTRY_RULE}`,
+		},
+	])('$label → failed, naming the field and what it holds', ({ config, fragments, reason }) => {
+		const change = changeOf({ ...config, fragments, files: { 'src/a.ts': 'export const a = 2\n' } })
+
+		expect(checkChangeFragment(change)).toEqual({ status: 'failed', reason })
 	})
 
 	it('the command map edited in a package that does not list it → passed, no fragment asked', () => {

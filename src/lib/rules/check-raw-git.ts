@@ -17,6 +17,8 @@ import {
 
 import ts from 'typescript'
 
+import type { WrittenList } from './check-raw-git.types.ts'
+
 /**
  * The git calls of `sourceFile` that make a non-bare repository, a git argument list whose subcommand (after git's
  * options) is `'clone'` or `'init'`, without `'--bare'`:
@@ -114,7 +116,7 @@ function repositoryMakingArgumentOf(params: {
 	if (first !== undefined && ts.isStringLiteralLike(first) && first.text === GIT_PROGRAM) {
 		const second = secondWritten && resolved({ expression: secondWritten, constants })
 		return second !== undefined && isRepositoryMakingList(second)
-			? anchorOf({ written: secondWritten, list: second as ts.ArrayLiteralExpression })
+			? anchorOf({ written: secondWritten, list: second })
 			: undefined
 	}
 	if (first === undefined || !runsThroughShell({ call, callee, constants })) return undefined
@@ -128,7 +130,7 @@ function repositoryMakingArgumentOf(params: {
  * Where a list is written in the call: its subcommand element when the list is written there, else the expression
  * the call writes (a reference to a same-file const).
  */
-function anchorOf(params: { written: ts.Expression; list: ts.ArrayLiteralExpression }): ts.Node {
+function anchorOf(params: WrittenList): ts.Node {
 	const { list } = params
 	if (unwrapped(params.written) !== list) return params.written
 	const index = subcommandIndexOf(list.elements.map(textOfElement))
@@ -159,7 +161,7 @@ function textOfElement(element: ts.Expression): string | undefined {
 function listsOf(params: {
 	expressions: readonly ts.Expression[]
 	constants: ReadonlyMap<string, ts.Expression>
-}): { written: ts.Expression; list: ts.ArrayLiteralExpression }[] {
+}): WrittenList[] {
 	const { constants } = params
 	return params.expressions.flatMap((expression) =>
 		listsIn({ expression, written: expression, constants }),
@@ -175,7 +177,7 @@ function listsIn(params: {
 	expression: ts.Expression
 	written: ts.Expression
 	constants: ReadonlyMap<string, ts.Expression>
-}): { written: ts.Expression; list: ts.ArrayLiteralExpression }[] {
+}): WrittenList[] {
 	const { constants } = params
 	const value = resolved(params)
 	// written in the call while the value is: each nested value is written there too
@@ -235,7 +237,9 @@ function wordsOf(text: string): string[] {
 }
 
 /** The list's elements make a non-bare repository (`isRepositoryMakingWords`); a spread is an unknown element. */
-function isRepositoryMakingList(expression: ts.Expression): boolean {
+function isRepositoryMakingList(
+	expression: ts.Expression,
+): expression is ts.ArrayLiteralExpression {
 	if (!ts.isArrayLiteralExpression(expression)) return false
 	return isRepositoryMakingWords(expression.elements.map(textOfElement))
 }

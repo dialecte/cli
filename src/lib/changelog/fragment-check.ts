@@ -1,6 +1,7 @@
 /**
  * A visible change brings its changelog fragment: in a package keeping `changes/`, a change that edits the README, a
- * command page or the command map adds `changes/<name>.md`, or a no-entry note `changes/<name>.none.md` saying why it has none.
+ * page under `doc/` or a file the package lists in `dialecte.changelog.asking` adds `changes/<name>.md`, or a no-entry
+ * note `changes/<name>.none.md` saying why it has none.
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,10 +13,12 @@ import { readPackageJson } from '../package-json.ts'
 import {
 	CHANGELOG_FILE,
 	FRAGMENT_ASKING_FIELD,
+	FRAGMENT_CHANGELOG_FIELD,
 	FRAGMENT_ASKING_FILES,
 	FRAGMENT_CHECK_LINES,
 	FRAGMENT_EXTENSION,
 	FRAGMENTS_FOLDER,
+	NOT_A_GIT_PATH_PATTERN,
 } from './changelog.constants.ts'
 import { readFragments } from './fragments.ts'
 
@@ -23,7 +26,8 @@ import type { FragmentCheck } from './changelog.types.ts'
 
 /**
  * The change of the package at `root` since `base` (its commits, the working files and the new ones, renames read
- * as a deletion and an addition): failed when it edits a file asking for a fragment (`FRAGMENT_ASKING_FILES`) and adds
+ * as a deletion and an addition): failed when the package's `dialecte.changelog` cannot be read as a list of paths
+ * (in any package), or when it edits a file asking for a fragment (`askingEntriesOf`) and adds
  * or edits no readable `changes/*.md`, when such a file cannot be read, or when the change cannot be read; passed
  * otherwise, saying what answered. A release (CHANGELOG.md edited) is answered by its version section; a package
  * without `changes/` passes.
@@ -33,6 +37,9 @@ import type { FragmentCheck } from './changelog.types.ts'
  */
 export function checkChangeFragment(params: { root: string; base: string }): FragmentCheck {
 	const { root } = params
+	// a list no change can match is a fault of the package, kept fragments or not
+	const asking = askingEntriesOf({ root })
+	if ('problem' in asking) return { status: 'failed', reason: asking.problem }
 	if (!existsSync(join(root, FRAGMENTS_FOLDER)))
 		return { status: 'passed', note: FRAGMENT_CHECK_LINES.noFolder }
 	let changed: string[]
@@ -46,14 +53,8 @@ export function checkChangeFragment(params: { root: string; base: string }): Fra
 				.replace('{reason}', () => errorReasonOf(error).split('\n')[0]),
 		}
 	}
-	const entries = askingEntriesOf({ root })
-	if (entries === undefined)
-		return {
-			status: 'failed',
-			reason: FRAGMENT_CHECK_LINES.badAsking.replace('{field}', FRAGMENT_ASKING_FIELD),
-		}
-	const asking = changed.find((file) => asksForFragment({ file, entries }))
-	if (asking === undefined) return { status: 'passed', note: FRAGMENT_CHECK_LINES.nothingAsked }
+	const askingFile = changed.find((file) => asksForFragment({ file, entries: asking.entries }))
+	if (askingFile === undefined) return { status: 'passed', note: FRAGMENT_CHECK_LINES.nothingAsked }
 	if (changed.includes(CHANGELOG_FILE))
 		return { status: 'passed', note: FRAGMENT_CHECK_LINES.release }
 	const written = changed.filter(
@@ -63,7 +64,7 @@ export function checkChangeFragment(params: { root: string; base: string }): Fra
 			existsSync(join(root, file)),
 	)
 	if (written.length === 0)
-		return { status: 'failed', reason: FRAGMENT_CHECK_LINES.missing.replace('{file}', asking) }
+		return { status: 'failed', reason: FRAGMENT_CHECK_LINES.missing.replace('{file}', askingFile) }
 	const { notes, problems } = readFragments({ root })
 	const broken = problems.find((entry) => written.includes(entry.file))
 	if (broken)
@@ -95,31 +96,42 @@ function listChangeOf(params: { root: string; base: string }): string[] {
 
 /**
  * The fragment-asking entries of the package at `root`: `FRAGMENT_ASKING_FILES` and its package.json's
- * `dialecte.changelog.asking`; undefined when `dialecte.changelog` is there and is no object, or its list is no list
- * of paths as git names them (`isGitPath`).
+ * `dialecte.changelog.asking`; the problem, naming the field, when `dialecte.changelog` is there and is no object, its
+ * `asking` no list, or the list holds entries that are no path as git names a changed file (`isGitPath`, each named).
  */
-function askingEntriesOf(params: { root: string }): string[] | undefined {
+function askingEntriesOf(params: { root: string }): { entries: string[] } | { problem: string } {
 	const changelog: unknown = readPackageJson(params.root).dialecte?.changelog
-	if (changelog === undefined) return [...FRAGMENT_ASKING_FILES]
+	if (changelog === undefined) return { entries: [...FRAGMENT_ASKING_FILES] }
 	if (changelog === null || typeof changelog !== 'object' || Array.isArray(changelog))
-		return undefined
+		return {
+			problem: FRAGMENT_CHECK_LINES.badChangelog.replace('{field}', FRAGMENT_CHANGELOG_FIELD),
+		}
 	const listed = (changelog as { asking?: unknown }).asking
-	if (listed === undefined) return [...FRAGMENT_ASKING_FILES]
-	if (!Array.isArray(listed) || !listed.every(isGitPath)) return undefined
-	return [...FRAGMENT_ASKING_FILES, ...listed]
+	if (listed === undefined) return { entries: [...FRAGMENT_ASKING_FILES] }
+	if (!Array.isArray(listed))
+		return { problem: FRAGMENT_CHECK_LINES.badAskingList.replace('{field}', FRAGMENT_ASKING_FIELD) }
+	const bad = listed.filter((entry) => !isGitPath(entry))
+	if (bad.length > 0)
+		return {
+			problem: FRAGMENT_CHECK_LINES.badAskingEntries
+				.replace('{field}', FRAGMENT_ASKING_FIELD)
+				.replace('{entries}', () => bad.map((entry) => JSON.stringify(entry)).join(', ')),
+		}
+	return { entries: [...FRAGMENT_ASKING_FILES, ...(listed as string[])] }
 }
 
 /**
- * A path as git names a changed file: a non-empty string, relative to the package (no leading `/` or `./`), with `/`
- * separators (no `\`); anything else would never match a change.
+ * A path as git names a changed file: a non-empty string, relative to the package (no leading `/`), with `/`
+ * separators, no `.` or `..` segment, no `//`, no backslash, no glob, no white space around it; anything else would
+ * never match a change.
  */
 function isGitPath(entry: unknown): entry is string {
 	return (
 		typeof entry === 'string' &&
 		entry !== '' &&
+		entry === entry.trim() &&
 		!entry.startsWith('/') &&
-		!entry.startsWith('./') &&
-		!entry.includes('\\')
+		!NOT_A_GIT_PATH_PATTERN.test(entry)
 	)
 }
 

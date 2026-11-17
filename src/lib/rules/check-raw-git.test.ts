@@ -28,6 +28,24 @@ function rawGitFindingsOf(testCase: TestCase): { line: number; message: string }
 
 describe('raw-git-repository', () => {
 	const testCases: Record<string, TestCase> = {
+		'a shell string on its own line of a call spanning lines → reported on the line of the string':
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: 'execSync(\n\t`git clone ${origin}\n\t\tinto`,\n)\n',
+				expected: [{ line: 2, message: MESSAGE }],
+			},
+		'a same-file const list referenced on a later line of a call spanning lines → reported on the line of the reference':
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "const ARGS = ['clone', '-q', origin, into]\ngit({\n\troot,\n\targs: ARGS,\n})\n",
+				expected: [{ line: 4, message: MESSAGE }],
+			},
+		'a dialecte-allow comment inside a call spanning lines, on the line before the list → not reported':
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "git({\n\troot,\n\t// dialecte-allow raw-git-repository: a clone whose missing identity is the case itself\n\targs: ['clone', '-q', origin, into],\n})\n",
+				expected: [],
+			},
 		'a git call spanning lines, its clone list on a later line → reported on the line of the subcommand':
 			{
 				file: 'src/commands/lot-land.test.ts',
@@ -170,4 +188,18 @@ describe('raw-git-repository', () => {
 		it(title, () => {
 			expect(rawGitFindingsOf(testCase)).toEqual(testCase.expected)
 		})
+
+	it('a dialecte-allow comment above a call spanning lines, its list three lines lower → still reported, the comment unused', () => {
+		const file = 'src/commands/lot-land.test.ts'
+		const text =
+			"// dialecte-allow raw-git-repository: a clone whose missing identity is the case itself\ngit({\n\troot,\n\targs: ['clone', '-q', origin, into],\n})\n"
+		const findings = checkCodeRules({ file, text, referencePatterns: GENERIC_REFERENCE_PATTERNS })
+
+		const left = applyAllowComments({ file, text, findings }).findings
+
+		expect(left.map((finding) => ({ rule: finding.rule, line: finding.line }))).toEqual([
+			{ rule: 'unused-allow', line: 1 },
+			{ rule: 'raw-git-repository', line: 4 },
+		])
+	})
 })

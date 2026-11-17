@@ -22,6 +22,12 @@ export const FRAGMENT_ASKING_FILES: readonly string[] = ['README.md', 'doc/']
 /** The package.json field a package lists its own fragment-asking files in. */
 export const FRAGMENT_ASKING_FIELD = 'dialecte.changelog.asking'
 
+/** The package.json field that holds `asking`: an object when given. */
+export const FRAGMENT_CHANGELOG_FIELD = 'dialecte.changelog'
+
+/** A path git never names a changed file by: `./`, `../` or `.` segments, `//`, a backslash, a glob. */
+export const NOT_A_GIT_PATH_PATTERN = /(^|\/)\.{1,2}(\/|$)|\/\/|\\|[*?[\]{}]/
+
 /** The check of a change: `{file}` the first changed file asking for a fragment. */
 export const FRAGMENT_CHECK_LINES = {
 	missing:
@@ -30,7 +36,10 @@ export const FRAGMENT_CHECK_LINES = {
 	fragment: 'a changelog fragment: {files}',
 	note: 'no changelog entry: {reason}',
 	nothingAsked: 'no README, doc/ or listed file changed: no fragment asked',
-	badAsking: '{field} in package.json is not a list of paths: a list of file or folder/ paths',
+	badChangelog: '{field} in package.json is not an object: write { "asking": [<paths>] }',
+	badAskingList: '{field} in package.json is not a list of paths',
+	badAskingEntries:
+		'{field} in package.json holds {entries}: git names a changed file by a path relative to the package with / separators - no leading ./ or /, no ../, ./ or // inside, no backslash, no spaces around, no glob',
 	release: 'a release (CHANGELOG.md edited): its version section answers the change',
 	problem: '{file}: {problem}',
 	unreadable: 'the change since {base} cannot be read: {reason}',
