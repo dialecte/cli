@@ -1,3 +1,4 @@
+import { applyAllowComments } from './allow-comments.ts'
 import { checkCodeRules } from './check-code-rules.ts'
 import { RAW_GIT_REPOSITORY_MESSAGE } from './check-raw-git.constants.ts'
 import { GENERIC_REFERENCE_PATTERNS } from './committed-text.constants.ts'
@@ -13,13 +14,15 @@ type TestCase = {
 
 const MESSAGE = RAW_GIT_REPOSITORY_MESSAGE
 
+/** The rule's findings left once the file's `dialecte-allow` comments silenced what they cover. */
 function rawGitFindingsOf(testCase: TestCase): { line: number; message: string }[] {
-	return checkCodeRules({
+	const findings = checkCodeRules({
 		file: testCase.file,
 		text: testCase.text,
 		referencePatterns: GENERIC_REFERENCE_PATTERNS,
 	})
-		.filter((finding) => finding.rule === 'raw-git-repository')
+	return applyAllowComments({ file: testCase.file, text: testCase.text, findings })
+		.findings.filter((finding) => finding.rule === 'raw-git-repository')
 		.map((finding) => ({ line: finding.line, message: finding.message }))
 }
 
@@ -44,6 +47,93 @@ describe('raw-git-repository', () => {
 			file: 'src/commands/lot-land.test.ts',
 			text: "readGit({ root, args: ['clone', '-q', origin, into] })\n",
 			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"git({ root, args: ['-c', 'k=v', 'clone', ...] }) in a test → reported (-c takes its value)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "git({ root, args: ['-c', 'protocol.file.allow=always', 'clone', origin, into] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"tryReadGit({ root, args: ['init'] }) in a test → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "tryReadGit({ root, args: ['init', '-q'] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"readGitBytes({ root, args: ['clone', ...] }) in a test → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "readGitBytes({ root, args: ['clone', '-q', origin, into] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"execFileSync('git', ['clone', ...]) in a test → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "execFileSync('git', ['clone', '-q', origin, into])\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"spawn('git', ['init', ...]) in a test → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "spawn('git', ['init', '-q', root])\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		'git clone --bare in a test → not reported (nothing is committed in a bare repository)': {
+			file: 'src/commands/lot-land.test.ts',
+			text: "git({ root, args: ['clone', '-q', '--bare', origin, into] })\n",
+			expected: [],
+		},
+		'git clone --mirror in a test → reported (a mirror is no bare clone the rule exempts)': {
+			file: 'src/commands/lot-land.test.ts',
+			text: "git({ root, args: ['clone', '-q', '--mirror', origin, into] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		'a raw init in a test file deep under src → reported': {
+			file: 'src/lib/worktree/add-worktree.test.ts',
+			text: "git({ root, args: ['init', '-q'] })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"execSync('git init ...') in a test → reported (a shell string)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "execSync('git init -q -b main', { cwd: root })\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		'execSync(`git clone ${origin} into`) in a test → reported (a shell template)': {
+			file: 'src/commands/lot-land.test.ts',
+			text: 'execSync(`git clone -q ${origin} into`)\n',
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"spawnSync('git -C dir init', { shell: true }) in a test → reported (a shell string after options)":
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "spawnSync('git -C dir init -q', { shell: true })\n",
+				expected: [{ line: 1, message: MESSAGE }],
+			},
+		"execSync('git init --bare ...') in a test → not reported (a bare shell init)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "execSync('git init -q --bare origin')\n",
+			expected: [],
+		},
+		"spawnSync('git', ['--git-dir', dir, 'init']) in a test → reported (--git-dir takes its value)":
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "spawnSync('git', ['--git-dir', dir, '--work-tree', tree, 'init', '-q'])\n",
+				expected: [{ line: 1, message: MESSAGE }],
+			},
+		"spawnSync('git', ['--git-dir=x', 'init']) in a test → reported (the one-element form)": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "spawnSync('git', ['--git-dir=x', 'init', '-q'])\n",
+			expected: [{ line: 1, message: MESSAGE }],
+		},
+		"spawnSync(GIT, ['init']) with a same-file const GIT = 'git' → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "const GIT = 'git'\nspawnSync(GIT, ['init', '-q', root])\n",
+			expected: [{ line: 2, message: MESSAGE }],
+		},
+		"git({ root, args: ARGS }) with a same-file const ARGS = ['clone', ...] → reported": {
+			file: 'src/commands/lot-land.test.ts',
+			text: "const ARGS = ['clone', '-q', origin, into]\ngit({ root, args: ARGS })\n",
+			expected: [{ line: 2, message: MESSAGE }],
+		},
+		'a raw clone under a dialecte-allow raw-git-repository comment → not reported': {
+			file: 'src/commands/lot-land.test.ts',
+			text: "// dialecte-allow raw-git-repository: a clone whose missing identity is the case itself\ngit({ root, args: ['clone', '-q', origin, into] })\n",
+			expected: [],
 		},
 		'git init --bare in a test → not reported (nothing is committed in a bare repository)': {
 			file: 'src/commands/lot-land.test.ts',

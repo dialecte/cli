@@ -18,8 +18,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const CLI_SOURCE = join(import.meta.dirname, '..', 'cli.ts')
 
 /**
- * What the case keeps of its timeout for its cleanup: its waits share the rest, a guard against a hang only - a gate
- * that starts its step late on a loaded runner delays the case, never fails it.
+ * What the case keeps of its timeout for its cleanup. Its waits share the rest: a wider bound than the 60 s each wait
+ * had (the case's timeout less this margin), still a guard against a hang, never a measure of speed - a gate that
+ * starts its step late on a loaded runner gets far more time before the case fails.
  */
 const CLEANUP_MARGIN_MS = 30_000
 
@@ -27,10 +28,21 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-async function waitFor(params: { check: () => boolean; deadline: number }): Promise<void> {
+/**
+ * Waits until `check` holds; past `deadline`, fails with the time waited since `startedAt` and the kinds of the step
+ * events `seen` answers, so a repeat on a loaded runner says how far the gate got.
+ */
+async function waitFor(params: {
+	check: () => boolean
+	deadline: number
+	startedAt: number
+	seen: () => string[]
+}): Promise<void> {
 	while (!params.check()) {
 		if (Date.now() > params.deadline)
-			throw new Error(`still waiting at ${new Date(params.deadline).toISOString()}`)
+			throw new Error(
+				`still waiting after ${Date.now() - params.startedAt} ms; step events seen: ${JSON.stringify(params.seen())}`,
+			)
 		await new Promise((resolveWait) => setTimeout(resolveWait, 100))
 	}
 }
@@ -55,7 +67,8 @@ async function interruptedGate(params: {
 	ready?: () => boolean
 }) {
 	const { signal } = params
-	const deadline = Date.now() + SCRATCH_REPOSITORY_TIMEOUT - CLEANUP_MARGIN_MS
+	const startedAt = Date.now()
+	const deadline = startedAt + SCRATCH_REPOSITORY_TIMEOUT - CLEANUP_MARGIN_MS
 	const pidFile = seenFile()
 	const lot = createStepLot({
 		full: [
@@ -72,11 +85,16 @@ async function interruptedGate(params: {
 		stdio: 'ignore',
 	})
 	let childPid: number | undefined
+	function seen(): string[] {
+		return stepEventsOf(lot).map((event) => event.kind)
+	}
 	try {
 		const exited = new Promise<number | null>((resolveExit) => run.on('exit', resolveExit))
 		await waitFor({
 			check: () => pidIn(pidFile) !== undefined && (params.ready?.() ?? true),
 			deadline,
+			startedAt,
+			seen,
 		})
 		childPid = pidIn(pidFile)
 		run.kill(signal)
@@ -86,6 +104,8 @@ async function interruptedGate(params: {
 			await waitFor({
 				check: () => !isProcessAlive(pid) || signal === 'SIGKILL',
 				deadline,
+				startedAt,
+				seen,
 			})
 		}
 		return { exitCode, lot, events: stepEventsOf(lot), markers: markerFilesIn(lot.markerFolder) }

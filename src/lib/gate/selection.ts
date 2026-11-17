@@ -41,7 +41,13 @@ import type { ScopedTestsEnvironment } from './scoped-tests.types.ts'
  * each followed by a NUL. The caller removes the folder (`removeScopeRun`) once the run returns; a process ending by a
  * forwarded signal (no `finally` runs then) removes it on its way out.
  */
-export function createScopeRun(params: { root: string; scope: GateScope }): ScopeRun {
+export function createScopeRun(params: {
+	root: string
+	scope: GateScope
+	/** Writes the changed file (default `writeFileSync`): a test makes it throw. */
+	writeChanged?: (path: string, data: Buffer) => void
+}): ScopeRun {
+	const writeChanged = params.writeChanged ?? writeFileSync
 	const { base, tree } = params.scope
 	// bytes, never decoded: a path that is no UTF-8 reaches the step as git wrote it
 	const paths = splitNulSeparated(
@@ -57,7 +63,7 @@ export function createScopeRun(params: { root: string; scope: GateScope }): Scop
 	})
 	const changedFile = join(folder, CHANGED_FILE_NAME)
 	try {
-		writeFileSync(
+		writeChanged(
 			changedFile,
 			Buffer.concat(paths.flatMap((path) => [path, Buffer.from([NUL_BYTE])])),
 		)

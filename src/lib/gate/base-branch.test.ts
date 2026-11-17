@@ -263,7 +263,12 @@ const ROWS: BaseBranchRow[] = [
 			return root
 		},
 		packageJson: {},
-		expected: { ref: 'refs/remotes/origin/main', branch: 'main', source: 'main' },
+		expected: {
+			ref: 'refs/remotes/origin/main',
+			branch: 'main',
+			source: 'main',
+			diverged: { count: 1 },
+		},
 	},
 	{
 		title:

@@ -48,4 +48,12 @@ describe('the gate base of a diverged base branch', { timeout: SCRATCH_REPOSITOR
 
 		expect('note' in base ? base.note : undefined).toBeUndefined()
 	})
+
+	it('a local main only ahead of origin/main → no note (the local one is read)', () => {
+		const clone = cloneWith({ local: 2, remote: 0 })
+
+		const base = resolveGateBase({ root: clone })
+
+		expect('note' in base ? base.note : undefined).toBeUndefined()
+	})
 })

@@ -9,7 +9,15 @@ export type BaseBranchRef = {
 	ref: string
 	branch: string
 	source: BaseBranchSource
+	/** Set when the local branch and origin's diverged (origin's is read): the commits origin's lacks. */
+	diverged?: BaseRefDivergence
 }
+
+/** A local base branch holding `count` commits origin's lacks, while origin's holds commits it lacks too. */
+export type BaseRefDivergence = { count: number }
+
+/** The ref a base branch is read from (`readBaseRef`), and whether the local branch diverged from origin's. */
+export type BaseRef = { ref: string; diverged?: BaseRefDivergence }
 
 /** Where the base of a gate came from. */
 export type GateBaseSource = (typeof GATE_BASE_SOURCES)[number]

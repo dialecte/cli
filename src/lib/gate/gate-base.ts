@@ -32,6 +32,8 @@ import type { PackageJson } from '../package-json.types.ts'
 import type { Refusal } from '../refusal.types.ts'
 import type {
 	BaseBranchRef,
+	BaseRef,
+	BaseRefDivergence,
 	GateBase,
 	GivenHandoverBase,
 	HandoverBase,
@@ -74,9 +76,13 @@ export function resolveGateBase(params: {
 		branchRef === undefined
 			? undefined
 			: tryReadGit({ root, args: ['merge-base', head, branchRef] })?.trim()
-	const diverged = branchRef === undefined ? undefined : divergedNoteOf({ root, branch })
+	const diverged = 'refusal' in found ? undefined : found.diverged
 	const resolved: GateBase = mergeBase
-		? { commit: mergeBase, source: 'base-branch', ...(diverged && { note: diverged }) }
+		? {
+				commit: mergeBase,
+				source: 'base-branch',
+				...(diverged && { note: divergedNoteOf({ branch, diverged }) }),
+			}
 		: {
 				commit: readEmptyTree(root),
 				source: 'none',
@@ -85,20 +91,12 @@ export function resolveGateBase(params: {
 	return ignored === undefined ? resolved : { ...resolved, ignored }
 }
 
-/**
- * The note of a local `branch` diverged from origin's (`findBaseRef` then reads origin's, silently): the count of the
- * commits origin's lacks; undefined when either ref is missing, or one is an ancestor of the other.
- */
-function divergedNoteOf(params: { root: string; branch: string }): string | undefined {
-	const { root } = params
-	const local = LOCAL_BRANCH_REF.replace('{branch}', () => params.branch)
-	const origin = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
-	if (!isCommitRef({ root, ref: local }) || !isCommitRef({ root, ref: origin })) return undefined
-	// behind origin's (origin's read) or only ahead of it (the local one read): no base moved silently
-	if (isAncestorCommit({ root, ancestor: local, descendant: origin })) return undefined
-	if (isAncestorCommit({ root, ancestor: origin, descendant: local })) return undefined
-	const count = readGit({ root, args: ['rev-list', '--count', `${origin}..${local}`] }).trim()
-	return DIVERGED_BASE_NOTE.replaceAll('{branch}', () => params.branch).replace('{count}', count)
+/** The note of a local `branch` diverged from origin's (`readBaseRef` then reads origin's): the commits it lacks. */
+function divergedNoteOf(params: { branch: string; diverged: BaseRefDivergence }): string {
+	return DIVERGED_BASE_NOTE.replaceAll('{branch}', () => params.branch).replace(
+		'{count}',
+		String(params.diverged.count),
+	)
 }
 
 /** The id of the empty tree in the repository of `root`, as git computes it (`hash-object -t tree /dev/null`). */
@@ -182,19 +180,19 @@ export function findBaseBranchRef(params: {
 	const { root } = params
 	const configured = params.packageJson.dialecte?.baseBranch
 	if (configured !== undefined) {
-		const ref = findBaseRef({ root, branch: configured })
+		const read = readBaseRef({ root, branch: configured })
 		// a branch name taken as it is (a `$` in it is no replacement pattern), here and below
-		return ref === undefined
+		return read === undefined
 			? { refusal: NO_CONFIGURED_BASE_BRANCH.replace('{branch}', () => configured) }
-			: { ref, branch: configured, source: 'config' }
+			: { ...read, branch: configured, source: 'config' }
 	}
 	const originDefault = findOriginDefaultBranchRef(root)
 	if (originDefault !== undefined) return originDefault
-	const main = findBaseRef({ root, branch: DEFAULT_BASE_BRANCH })
-	if (main !== undefined) return { ref: main, branch: DEFAULT_BASE_BRANCH, source: 'main' }
-	const master = findBaseRef({ root, branch: SECOND_DEFAULT_BASE_BRANCH })
+	const main = readBaseRef({ root, branch: DEFAULT_BASE_BRANCH })
+	if (main !== undefined) return { ...main, branch: DEFAULT_BASE_BRANCH, source: 'main' }
+	const master = readBaseRef({ root, branch: SECOND_DEFAULT_BASE_BRANCH })
 	if (master !== undefined)
-		return { ref: master, branch: SECOND_DEFAULT_BASE_BRANCH, source: 'master' }
+		return { ...master, branch: SECOND_DEFAULT_BASE_BRANCH, source: 'master' }
 	return { refusal: NO_BASE_BRANCH_FOUND }
 }
 
@@ -208,14 +206,26 @@ export function findBaseBranchRef(params: {
  * @internal
  */
 export function findBaseRef(params: { root: string; branch: string }): string | undefined {
+	return readBaseRef(params)?.ref
+}
+
+/**
+ * `findBaseRef`'s ref, with the divergence when the local branch and origin's diverged: the count of the commits
+ * origin's lacks (`rev-list --count origin..local`), none when the local one is only behind origin's.
+ */
+function readBaseRef(params: { root: string; branch: string }): BaseRef | undefined {
 	const { root } = params
 	const local = LOCAL_BRANCH_REF.replace('{branch}', () => params.branch)
 	const origin = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
 	const hasLocal = isCommitRef({ root, ref: local })
 	const hasOrigin = isCommitRef({ root, ref: origin })
-	if (!hasOrigin) return hasLocal ? local : undefined
-	if (!hasLocal) return origin
-	return isAncestorCommit({ root, ancestor: origin, descendant: local }) ? local : origin
+	if (!hasOrigin) return hasLocal ? { ref: local } : undefined
+	if (!hasLocal) return { ref: origin }
+	// only ahead of origin's, or the same: the local one is read, nothing moved
+	if (isAncestorCommit({ root, ancestor: origin, descendant: local })) return { ref: local }
+	// behind origin's (none of its own) or diverged (some): origin's is read
+	const count = Number(readGit({ root, args: ['rev-list', '--count', `${origin}..${local}`] }))
+	return count > 0 ? { ref: origin, diverged: { count } } : { ref: origin }
 }
 
 /** The ref of `branch`: the local branch, else origin's; undefined when neither names a commit. */
@@ -239,7 +249,7 @@ function findOriginDefaultBranchRef(root: string): BaseBranchRef | undefined {
 	if (target === undefined || !target.startsWith(ORIGIN_BRANCH_REF_PREFIX)) return undefined
 	if (!isCommitRef({ root, ref: target })) return undefined
 	const branch = target.slice(ORIGIN_BRANCH_REF_PREFIX.length)
-	return { ref: findBaseRef({ root, branch }) ?? target, branch, source: 'origin-head' }
+	return { ...(readBaseRef({ root, branch }) ?? { ref: target }), branch, source: 'origin-head' }
 }
 
 /** `ref` names a commit in the repository at `root`. */
