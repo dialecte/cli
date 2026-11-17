@@ -97,4 +97,15 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(status.lines).toContain('stack: damaged (stack.json does not read as a stack record)')
 	})
+
+	it('the hand-over card of a lot whose stack.json is torn → a warning stack line naming the damage', () => {
+		const { child } = stackedLots({ landed: true })
+		writeFileSync(join(child, 'stack.json'), '{"schema":1,"parent":')
+
+		expect(buildStackCardLine({ folder: child })).toEqual({
+			name: 'stack',
+			status: 'warning',
+			detail: 'damaged (stack.json does not read as a stack record)',
+		})
+	})
 })
