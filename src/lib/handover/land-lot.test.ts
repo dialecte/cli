@@ -500,7 +500,25 @@ describe(
 			).toBeUndefined()
 		})
 
-		it("a committed lot whose branch main holds → the registry's committed answer, no entry written", () => {
+		it('an abandoned entry of the lot and a branch holding no commit beyond the base → refused, the entry left as it was (never rewritten pending)', () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			registerHandover({
+				root: repository.worktree,
+				folder: repository.lotFolder,
+				branch: 'feat/x',
+				now: NOW,
+			})
+			recordHandoverState({ store, folder: repository.lotFolder, state: 'abandoned' })
+			const before = registeredEntryOf({ store, folder: repository.lotFolder })
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
+
+			land({ repository, host: recordingHost().host, draft: true })
+
+			expect(registeredEntryOf({ store, folder: repository.lotFolder })).toEqual(before)
+		})
+
+		it("a committed lot whose branch main holds → the registry's committed answer, the same registering gives, no entry written", () => {
 			const repository = landingRepository()
 			const store = handoverStoreOf(repository.worktree)
 			registerHandover({
