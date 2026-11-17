@@ -36,10 +36,13 @@ import {
 } from './land-lot.constants.ts'
 import { LANDING_MERGED_AT_OTHER_HEAD, NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding, readReplacedHeads } from './land-record.ts'
+import { STACK_LANDING_LINES } from './land-stack.constants.ts'
+import { prepareStackLanding, settleStackedPull } from './land-stack.ts'
 
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
 import type { PullRequestText } from '../pr/pull-request.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
+import type { StackLanding } from './land-stack.types.ts'
 
 /**
  * Lands the lot on `branch` checked out in `worktree` into `base` through `host`; `draft` opens a draft and never
@@ -71,15 +74,23 @@ export function landLot(params: {
 	// read, never written, before any refusal: a lot committed by a local hand-over gets the registry's committed answer
 	const committed = committedEntryRefusal({ worktree, lotFolder: params.lotFolder })
 	if (committed !== undefined) return refused(committed)
+	// a lot started on another lands on it (33CI CI4): rebased onto its parent, or off it once the parent merged
+	const stack = prepareStackLanding({ ...params, landing })
+	if (stack !== undefined && 'refusal' in stack)
+		return { exitCode: stack.exitCode, lines: [stack.refusal] }
 	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
 	const empty = nothingBeyondBase({ worktree, branch, base })
 	if (empty !== undefined) return refused(empty)
 	const registered = registerLotEntry({ ...params })
 	if ('refusal' in registered) return refused(registered.refusal)
 	const { entry } = registered
-	const lines: string[] = []
+	const lines: string[] = [...(stack?.lines ?? [])]
 	const progress = readWorkInProgress({ worktree })
-	const rebased = rebaseOnOrigin({ worktree, base, trackedChanges: progress.tracked })
+	// a lot on an open parent carries the parent's commits: never rebased onto the base before the parent merged
+	const rebased =
+		stack !== undefined && !stack.parentMerged
+			? {}
+			: rebaseOnOrigin({ worktree, base, trackedChanges: progress.tracked })
 	if ('refusal' in rebased) return refused(rebased.refusal)
 	if (rebased.line) lines.push(rebased.line)
 	// kept at once: a push or a host refusal after the rebase must not lose it (the next landing rebases nothing)
@@ -92,13 +103,20 @@ export function landLot(params: {
 			),
 		)
 	// rendered on the rebased head, before the push: a text that no longer renders pushes nothing
-	const text = renderedText({ ...params, kept: known.pullRequest?.body })
+	const text = renderedText({
+		...params,
+		baseRef: stack?.textBase ?? `${ORIGIN_BRANCH_REF_PREFIX}${base}`,
+		kept: known.pullRequest?.body,
+	})
 	if ('refusal' in text)
 		return {
 			exitCode: 1,
 			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => text.refusal)],
 		}
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	// the host rewrote origin's branch (a native stack whose parent merged): that head is the lease
+	if (stack?.lease !== undefined)
+		recordPushedHead({ lotFolder: params.lotFolder, branch, head: stack.lease })
 	const expected = leaseOf({ worktree, branch, base, lotFolder: params.lotFolder })
 	const pushProblem = pushLot({ worktree, branch, expected })
 	if (pushProblem !== undefined)
@@ -120,7 +138,7 @@ export function landLot(params: {
 			.replace('{branch}', () => branch)
 			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
 	)
-	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines })
+	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines, stack })
 }
 
 /** Why origin cannot be landed on: its fetch failed, or it holds no base branch; undefined once fetched. */
@@ -191,10 +209,12 @@ function publishLanding(params: {
 	head: string
 	entry: string
 	lines: string[]
+	/** The stack step's answer: the base the pull request merges into, how it queues. */
+	stack: StackLanding | undefined
 }): LandingResult {
-	const { worktree, branch, host, known, text } = params
+	const { worktree, branch, host, known, text, stack } = params
 	const lines = [...params.lines]
-	const pull = known ?? openLot({ ...params, text })
+	const pull = known ?? openLot({ ...params, base: stack?.pullBase ?? params.base, text })
 	if ('refusal' in pull)
 		return {
 			exitCode: 1,
@@ -220,6 +240,21 @@ function publishLanding(params: {
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => edited.refusal)],
 		}
 	if (edited.line !== undefined) lines.push(edited.line)
+	if (stack !== undefined) {
+		const settled = settleStackedPull({
+			worktree,
+			host,
+			stack,
+			pullRequest: pull,
+			opened: known === undefined,
+		})
+		if ('refusal' in settled)
+			return {
+				exitCode: 1,
+				lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => settled.refusal)],
+			}
+		lines.push(...settled.lines)
+	}
 	lines.push(
 		LANDING_LINES.closeWhenMerged
 			.replace('{entry}', () => params.entry)
@@ -235,13 +270,25 @@ function publishLanding(params: {
 					: LANDING_LINES.notDraft.replace('{number}', String(pull.number)),
 			],
 		}
-	const queued = host.queuePullRequest({ root: worktree, number: pull.number, draft: pull.draft })
+	// a native stack queues its layers up to this one: auto-merge is refused for a stacked pull request
+	const asStack = stack?.route === 'native'
+	const queued = asStack
+		? host.queueStack({ root: worktree, number: pull.number })
+		: host.queuePullRequest({ root: worktree, number: pull.number, draft: pull.draft })
 	if (queued !== undefined)
 		return {
 			exitCode: 1,
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => queued.refusal)],
 		}
-	return { exitCode: 0, lines: [...lines, LANDING_LINES.queued] }
+	return {
+		exitCode: 0,
+		lines: [
+			...lines,
+			asStack
+				? STACK_LANDING_LINES.stackQueued.replace('{number}', String(pull.number))
+				: LANDING_LINES.queued,
+		],
+	}
 }
 
 /**
@@ -559,14 +606,15 @@ function openLot(params: {
  */
 function renderedText(params: {
 	worktree: string
-	base: string
+	/** The ref the lot's changes are read against: origin's base, or the stack parent's tip while it is open. */
+	baseRef: string
 	lotFolder: string
 	kept: string | undefined
 }): PullRequestText | { refusal: string } {
 	const prepared = preparePullRequest({
 		lotFolder: params.lotFolder,
 		worktree: params.worktree,
-		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+		baseRef: params.baseRef,
 	})
 	if ('refusal' in prepared) return prepared
 	const kept =

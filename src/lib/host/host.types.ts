@@ -11,7 +11,12 @@ export type PullRequest = {
 	queued: boolean
 	/** The commit its head branch pointed at (the last push). */
 	head: string
+	/** The branch it merges into; undefined when the host did not say. */
+	base?: string
 }
+
+/** Whether the host links pull requests into stacks here, and why not when it does not. */
+export type StackSupport = { stacks: true } | { stacks: false; why: string }
 
 /** How the checks on a pull request's head stand: all passed, one failed, one still running, or none at all. */
 export type ChecksState = 'green' | 'failing' | 'pending' | 'none'
@@ -75,4 +80,16 @@ export type HostAdapter = {
 	readReviewComments(params: { root: string; number: number }): ReviewComment[] | HostRefusal
 	/** The pull request's changed files opened in the browser (`url` is the pull request's page). */
 	openFiles(params: { root: string; url: string }): HostRefusal | undefined
+	/** Whether the host links pull requests into stacks here (33CI CI4); no network asked. */
+	probeStacks(params: { root: string }): StackSupport
+	/** The pull request at `child` (its url) linked on top of the one at `parent` as a stack. */
+	linkStack(params: { root: string; parent: string; child: string }): HostRefusal | undefined
+	/** The stack queued up to and including `number`, all or nothing (never auto-merge: refused for a stack). */
+	queueStack(params: { root: string; number: number }): HostRefusal | undefined
+	/** The pull request's base branch changed to `base`. */
+	retargetPullRequest(params: {
+		root: string
+		number: number
+		base: string
+	}): HostRefusal | undefined
 }

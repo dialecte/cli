@@ -8,6 +8,7 @@ A lot: started from a brief into the lot store, its declaration .dialecte/lot.js
 lot - A lot: started from a brief into the lot store, its declaration .dialecte/lot.json, and its review rounds in its lot or hand-over folder
 
   dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
+  dialecte lot start <brief.json> --on <lot> [the options above]
   dialecte lot status <id> [--json]
   dialecte lot risk <id|folder> [--json]
   dialecte lot risk <id|folder> --effort low|medium|high [--class high|medium|light] --by <who> [--reason <text>]
@@ -50,6 +51,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           (the lot failed, nothing removed, next: lot stop); a link that cannot be made leaves the
           lot working with a note; every --json exit is JSON, a usage error { error, usage, next:
           null } included
+  start - --on <lot> starts the lot on another open lot of the same repository (a stack): its branch
+          is cut at that lot's branch tip, its stack.json records the parent and that tip, and the
+          parent's scope is its base, never an overlap (every other open lot's still is); a parent
+          that is unknown, damaged, not working or ready, of another repository or without its
+          branch is refused before anything is written, before any other fault of the brief; lot
+          status and the hand-over card show a stack line, on <parent> (#<pull request>, <state>)
   start - --overlap-ok accepts a scope meeting another open lot instead of refusing it, for an
           overlap that names its paths (a lot whose scope cannot be read, or a damaged one, stays
           refused); it takes --by <who> --reason <text>, the same go-ahead as an effort below the
@@ -120,6 +127,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
             in --by or --reason, or a --by holding what a public record never holds, refused (exit
             2) before the host is asked; a lot without a landing names lot land <id> --draft
+  land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
+         its body's depends-on part names the parent's pull request (a parent without one is
+         refused: land it with --draft first); the host's stacks are probed once (gh stack): with
+         them, the pull request is linked on the parent's (gh stack link) and queued as a stack up
+         to it (gh stack merge --yes --squash, never auto-merge); without, a note says why and it is
+         queued only after the parent merged (waits for #<n> otherwise, nothing pushed); before each
+         landing it is rebased onto the parent branch's new tip when that moved; once the parent
+         merged, it is rebased off the parent's commits onto origin/<base> and its pull request
+         retargeted to the base when the host did not, or, as a native stack, it follows the host's
+         rewrite of its branch (local commits beyond its last push rebased onto it, that head the
+         lease); a conflict names its files, the rebase undone, nothing pushed, exit 2
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
@@ -330,7 +348,7 @@ e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "
 
 Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief

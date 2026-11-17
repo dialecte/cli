@@ -53,6 +53,8 @@ import { writePlanEntry } from '../lib/store/plan-entry.ts'
 import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
+import { STACK_SCHEMA } from '../lib/store/stack.constants.ts'
+import { readStack, writeStack } from '../lib/store/stack.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
 import { appendStoreList, storeListRefusal } from '../lib/store/store-list.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS, STORE_REFUSAL } from '../lib/store/store.constants.ts'
@@ -110,6 +112,7 @@ import type {
 	StartGoAhead,
 	StartRisk,
 	StartSeams,
+	StartStack,
 	SymlinkFunction,
 } from './lot-start.types.ts'
 
@@ -180,15 +183,19 @@ export function prepareStart(params: {
 	const simulation = scenarioName === undefined ? undefined : simulationOf({ scenarioName, seams })
 	if (typeof simulation === 'string')
 		return { exit: errorOutput({ exitCode: 2, message: simulation, json }) }
+	const stackOn = read.values.get('on')
 	const checked = checkBrief({
 		briefPath,
 		cwd: params.cwd,
 		simulated: simulation !== undefined,
 		pause: seams.pause,
 		overlapOk,
+		stackOn,
 	})
+	if (checked.stackRefusal !== undefined)
+		return { exit: lotRefusalExit({ lines: [checked.stackRefusal], json }) }
 	if (!checked.checked) return { exit: refusedOutput({ refused: checked.refused, json }) }
-	const brief = checked.checked
+	const { brief, stack } = stackedBriefOf(checked.checked)
 	const wordRefusal = goAheadRefusalOf({
 		brief,
 		goAhead,
@@ -222,7 +229,24 @@ export function prepareStart(params: {
 			effortFlag: effortFlag as BriefEffort | undefined,
 			goAhead,
 			derivation,
+			stack,
 		},
+	}
+}
+
+/**
+ * The brief of a start `--on <lot>` (33CI CI4): its base is the parent's branch at its tip, the stack naming the parent
+ * and that tip; the brief as checked without `--on`.
+ */
+function stackedBriefOf(brief: CheckedBrief): {
+	brief: CheckedBrief
+	stack: StartStack | undefined
+} {
+	const parent = brief.stackParent
+	if (parent === undefined) return { brief, stack: undefined }
+	return {
+		brief: { ...brief, base: { ref: parent.branch, commit: parent.head } },
+		stack: { parent: parent.name, parentHead: parent.head },
 	}
 }
 
@@ -361,6 +385,7 @@ export function finishStart(params: {
 			now: prepared.now,
 			seams: prepared.seams,
 			simulation: prepared.simulation,
+			stack: prepared.stack,
 		})
 	} catch (error) {
 		return thrownOutput({ error, json })
@@ -403,7 +428,10 @@ function recheckedFailure(params: {
 		caseInsensitive: params.caseInsensitive,
 		except: basename(params.lotFolder),
 		pause: params.pause,
-	}).filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
+	})
+		// a stacked lot's parent is its base, never an overlap (33CI CI4)
+		.filter((overlap) => overlap.name !== readStack({ lotFolder: params.lotFolder })?.parent)
+		.filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })
@@ -520,8 +548,9 @@ function startChecked(params: {
 	seams: StartSeams
 	/** A simulated start: the scenario copied into the lot; no re-check, worktree, branch nor link. */
 	simulation: Simulation | undefined
+	stack: StartStack | undefined
 }): CommandResult {
-	const { brief, now, seams, json, simulation, risk } = params
+	const { brief, now, seams, json, simulation, risk, stack } = params
 	const store = locateStore({ from: brief.repository })?.store
 	if (store === undefined)
 		return errorOutput({ exitCode: 2, message: `${brief.repository} holds no git folder`, json })
@@ -567,7 +596,7 @@ function startChecked(params: {
 		// a simulated start writes no risk.jsonl; a real one's lines ride the publish rename
 		...(simulation === undefined && {
 			beforeIdentity: function writeStartRecords(temporary: string) {
-				writeStartRecordsTo({ folder: temporary, brief, risk, now })
+				writeStartRecordsTo({ folder: temporary, brief, risk, now, stack })
 			},
 		}),
 	})
@@ -779,17 +808,23 @@ function riskLinesOf(params: {
 	]
 }
 
-/** The records a real start publishes with its folder: its risk lines, accepted overlaps and plan entry. */
+/** The records a real start publishes with its folder: its risk lines, accepted overlaps, plan entry and stack. */
 function writeStartRecordsTo(params: {
 	folder: string
 	brief: CheckedBrief
 	risk: StartRisk
 	now: Date
+	stack: StartStack | undefined
 }): void {
-	const { folder, brief, risk, now } = params
+	const { folder, brief, risk, now, stack } = params
 	writeStartRiskLines({ folder, risk, now })
 	writeStartOverlaps({ folder, brief, goAhead: risk.goAhead, now })
 	if (brief.planEntry !== undefined) writePlanEntry({ folder, entry: brief.planEntry })
+	if (stack !== undefined)
+		writeStack({
+			lotFolder: folder,
+			record: { schema: STACK_SCHEMA, ...stack, at: now.toISOString() },
+		})
 }
 
 /**

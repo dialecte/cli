@@ -81,4 +81,6 @@ export type LotStatusJson = {
 	/** The next station from the records; null for a simulated lot. */
 	station: StationStatus | null
 	rounds: RoundsStatus
+	/** A lot started on another (33CI CI4): `on <parent> (#<pr>, <state>)`; absent for a lot not stacked. */
+	stack?: string
 }

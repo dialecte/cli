@@ -27,6 +27,7 @@ export const FILLED_PARTS: readonly string[] = [
 	'review',
 	'risk',
 	'overlaps',
+	'depends',
 	'issue',
 	'checklist',
 ]
@@ -61,6 +62,7 @@ export const BODY_LINES = {
 	otherMessages: 'Also in this commit:',
 	noEntry: 'No changelog entry: {reason}',
 	issue: 'Closes #{issue}',
+	dependsOn: '#{number}',
 	noIssue: 'none named',
 	tddCases: 'tdd: {count} ({statuses}) on {head}',
 	tddStale: 'tdd: stale, taken on {head}, not the tree this pull request lands',
