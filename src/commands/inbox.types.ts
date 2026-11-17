@@ -89,6 +89,9 @@ export type InboxHealthReading = {
 	/** The repository name the findings must have; every repository and the scratch folders when left out. */
 	repository: string | undefined
 	now: Date
+	/** The scratch root, whose leaked folders are named. */
+	root: string
+	/** The system's temporary folder, where earlier versions made their scratch folders. */
 	tmp: string
 	isAlive: (pid: number) => boolean
 	seams: InboxSeams | undefined

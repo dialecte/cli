@@ -2,7 +2,6 @@
  * `dialecte health [--since <date|duration>] [--repository <name>] [--json]`: the findings of the health
  * rules across the stores the inbox reads. Reads files only, writes nothing, starts no process.
  */
-import { tmpdir } from 'node:os'
 import { basename, dirname } from 'node:path'
 
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
@@ -16,6 +15,7 @@ import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { scratchRoot, systemTemporaryFolder } from '../lib/scratch/scratch-root.ts'
 import {
 	DATE_PATTERN,
 	DATE_TIME_PATTERN,
@@ -40,7 +40,8 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 /**
- * The findings of every rule over every store's repository and the temporary folder's scratch, red first, then newest
+ * The findings of every rule over every store's repository and the cli's scratch (the scratch root, and the system's
+ * temporary folder for earlier versions' folders), red first, then newest
  * first. Exit 1 when a red finding exists, 0 otherwise, 2 for a usage error.
  */
 export function runHealth(params: HealthParams): CommandResult {
@@ -75,7 +76,13 @@ export function runHealth(params: HealthParams): CommandResult {
 		.filter((common) => wanted === undefined || basename(dirname(common)) === wanted)
 		.map((common) => readHealthRepository({ common }))
 	// the scratch folders belong to no repository: read only when no repository is asked for
-	const scratch = wanted === undefined ? readScratchFolders({ tmp: params.tmp ?? tmpdir() }) : []
+	const scratch =
+		wanted === undefined
+			? readScratchFolders({
+					root: scratchRoot({ cwd: params.cwd }),
+					tmp: params.tmp ?? systemTemporaryFolder(),
+				})
+			: []
 	const findings = collectFindings({
 		repositories,
 		scratch,

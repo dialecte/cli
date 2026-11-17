@@ -51,7 +51,8 @@ Flags: `--repository`, `--simulated`, `--json`
   more), an audience `caller` or `person`, a position's step, of and round non-negative integers, a transition's
   `at` a time, an answer file's question its file's `q<k>`. Every lot verb names such a lot damaged (exit 6 for
   `status`, `wait`, `result`; `answer` refuses, exit 2), so no forged field reaches a line or a `next`. It reads
-  files only (each registry once per store, the cli scratch folders of the temporary folder), runs no process,
+  files only (each registry once per store, the cli scratch folders of the scratch root and, from earlier versions,
+  of the system's temporary folder), runs no process,
   writes nothing. `--json`: `{ waiting: [<status of each waiting lot>], working, simulated, damaged, skipped,
   health: [<finding>] }`, `skipped` (the stores not read) only when one is, `health` empty when none. Exit 0 when
   a lot waits, a lot is damaged or a health finding is red, 1 otherwise, 2 for a usage error.

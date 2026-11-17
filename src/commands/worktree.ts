@@ -15,7 +15,7 @@
  * `-round-<n>` throwaway of a closed lot trashed whole; one line per worktree and the total; `--dry-run` moves nothing.
  */
 import { spawnSync } from 'node:child_process'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
 import { renderCard } from '../lib/card/render-card.ts'
@@ -41,6 +41,7 @@ import {
 	reclaimItemLine,
 	reclaimTotalLine,
 	trashPoolLeftOver,
+	scratchTrashOf,
 	trashPrunedFolder,
 } from '../lib/worktree/prune-worktrees.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
@@ -81,7 +82,7 @@ export async function run(argv: string[]): Promise<void> {
 				? await runWorktreePrune({
 						argv: rest,
 						cwd: process.cwd(),
-						...machineScratchRoots(),
+						...machineScratchRoots({ cwd: process.cwd() }),
 						isTerminal: Boolean(process.stdin.isTTY && process.stdout.isTTY),
 						confirm: askOnTerminal,
 					})
@@ -135,6 +136,8 @@ export async function runWorktreePrune(params: {
 	 * it is not `scratchRoot`.
 	 */
 	formerScratchRoot?: string
+	/** The cli's scratch root, whose leaked folders go to the trash; default: none read. */
+	scratchFolderRoot?: string
 	isTerminal: boolean
 	confirm: (question: string) => Promise<boolean>
 	/** The clock `--reclaim` measures idleness from, and a pool left-over's age; default: now. */
@@ -166,6 +169,7 @@ export async function runWorktreePrune(params: {
 		}),
 		scratchRoot: params.scratchRoot,
 		formerScratchRoot: params.formerScratchRoot,
+		scratchFolderRoot: params.scratchFolderRoot,
 		now: params.now,
 		listProcesses: params.listProcesses,
 	})
@@ -223,6 +227,17 @@ export async function runWorktreePrune(params: {
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 			})
+		// a scratch folder goes to the trash its line names: the workspace's, or its scratch root's own
+		if (item.kind === 'scratch folder') {
+			const trash = scratchTrashOf({ root: dirname(item.name), worktreesFolder })
+			return trashPrunedFolder({
+				folder: item.name,
+				worktreesFolder: dirname(trash),
+				trashName: basename(trash),
+				now: params.now ?? new Date(),
+				spawner: params.spawner ?? spawnDetached,
+			})
+		}
 		const result = spawnSync('sh', ['-c', item.command ?? ''], { encoding: 'utf8' })
 		return result.status === 0
 			? `✓ ${item.command}`
@@ -309,15 +324,26 @@ function readOlderThanDays(argv: string[]): number | undefined {
 
 /** Worktrees first (a branch checked out in one cannot be deleted), then branches, folders, clones. */
 function removalOrder(item: PruneItem): number {
-	return ['worktree', 'branch', 'hand-over', 'rehearsal clone', 'pool left-over'].indexOf(item.kind)
+	return [
+		'worktree',
+		'branch',
+		'hand-over',
+		'rehearsal clone',
+		'scratch folder',
+		'pool left-over',
+	].indexOf(item.kind)
 }
 
 function renderPrunePlan(params: { plan: WorkspacePrunePlan; removals: PruneItem[] }): string[] {
 	const lines: string[] = []
 	for (const repository of params.plan.repositories) lines.push(...renderRepository(repository))
-	if (params.plan.scratch.length) {
-		lines.push('rehearsal clones')
-		for (const item of params.plan.scratch)
+	for (const [heading, kind] of [
+		['rehearsal clones', 'rehearsal clone'],
+		['scratch folders', 'scratch folder'],
+	] as const) {
+		const items = params.plan.scratch.filter((item) => item.kind === kind)
+		if (items.length) lines.push(heading)
+		for (const item of items)
 			lines.push(item.kept ? `  keep    ${item.name}  (${item.kept})` : `  remove  ${item.name}`)
 	}
 	// what prune never touches: the pool is taken by the next worktree, the trash empties itself

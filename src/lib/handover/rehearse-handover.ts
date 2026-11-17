@@ -18,7 +18,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { constants, tmpdir } from 'node:os'
+import { constants } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { contribKeyOf } from '../contrib/contrib-key.ts'
@@ -35,6 +35,7 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
+import { scratchRoot, systemTemporaryFolder } from '../scratch/scratch-root.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
@@ -445,14 +446,18 @@ export function rehearsalScratchRoot(params: {
 }
 
 /**
- * Where rehearsal clones are looked for on this machine: the folder rehearsals are made in now, and the system's
- * temporary folder, where earlier cli versions made them.
+ * Where `worktree prune` looks on this machine: the folder rehearsals are made in now, the system's temporary folder,
+ * where earlier cli versions made them, and the cli's scratch root (read from `cwd`, the process's by default).
  */
-export function machineScratchRoots(): ScratchRoots {
-	const systemTemporaryFolder = tmpdir()
+export function machineScratchRoots(params: { cwd?: string } = {}): ScratchRoots {
+	const temporary = systemTemporaryFolder()
 	return {
-		scratchRoot: rehearsalScratchRoot({ platform: process.platform, systemTemporaryFolder }),
-		formerScratchRoot: systemTemporaryFolder,
+		scratchRoot: rehearsalScratchRoot({
+			platform: process.platform,
+			systemTemporaryFolder: temporary,
+		}),
+		formerScratchRoot: temporary,
+		scratchFolderRoot: scratchRoot({ cwd: params.cwd }),
 	}
 }
 

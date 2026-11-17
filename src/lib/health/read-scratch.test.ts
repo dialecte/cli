@@ -59,6 +59,25 @@ describe('readScratchFolders', () => {
 		expect(readScratchFolders({ tmp })).toEqual([])
 	})
 
+	it('a folder holding a scratch.json in the scratch root -> listed whatever its name', () => {
+		const root = temporaryFolder('dialecte-scratch-root-')
+		const folder = join(root, 'any-purpose-x')
+		mkdirSync(folder)
+		writeFileSync(join(folder, 'scratch.json'), '{}')
+		utimesSync(folder, FIRST_FILE_TIME, FIRST_FILE_TIME)
+		expect(readScratchFolders({ root, tmp: temporaryFolder('dialecte-scratch-reader-') })).toEqual([
+			{ path: folder, modifiedAt: FIRST_FILE_TIME.toISOString() },
+		])
+	})
+
+	it('a folder of the scratch root without scratch.json nor cli prefix -> left out', () => {
+		const root = temporaryFolder('dialecte-scratch-root-')
+		mkdirSync(join(root, 'other-folder'))
+		expect(readScratchFolders({ root, tmp: temporaryFolder('dialecte-scratch-reader-') })).toEqual(
+			[],
+		)
+	})
+
 	it('a missing tmp -> none', () => {
 		const tmp = join(temporaryFolder('dialecte-scratch-reader-'), 'missing')
 		expect(readScratchFolders({ tmp })).toEqual([])

@@ -3,7 +3,6 @@
  * every store of the store list and the store of the current folder. Reads files only, writes nothing, starts no
  * process (nothing this module reaches imports a child process).
  */
-import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
 import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
@@ -18,6 +17,7 @@ import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { scratchRoot, systemTemporaryFolder } from '../lib/scratch/scratch-root.ts'
 import { answerNextOf } from '../lib/store/lot-next.ts'
 import { readCheckedLotState } from '../lib/store/lot-records.ts'
 import { NEXT_COMMANDS } from '../lib/store/store.constants.ts'
@@ -106,7 +106,8 @@ export function runInbox(params: InboxParams): CommandResult {
 		stores,
 		repository: reading.repository,
 		now: params.now ?? new Date(),
-		tmp: params.tmp ?? tmpdir(),
+		root: scratchRoot({ cwd: params.cwd }),
+		tmp: params.tmp ?? systemTemporaryFolder(),
 		isAlive: params.isAlive ?? isProcessAlive,
 		seams: params.seams,
 	})
@@ -137,7 +138,8 @@ function inboxFindingsOf(params: InboxHealthReading): HealthFinding[] {
 			params.seams?.onHealthRead?.(store.common)
 			return readHealthRepository({ common: store.common, entries: store.entries })
 		})
-	const scratch = wanted === undefined ? readScratchFolders({ tmp: params.tmp }) : []
+	const scratch =
+		wanted === undefined ? readScratchFolders({ root: params.root, tmp: params.tmp }) : []
 	return collectFindings({
 		repositories,
 		scratch,
