@@ -2,14 +2,14 @@
  * The selection of a scoped gate step: the changed file the cli writes for it, the selection file it writes back,
  * read and checked (schema, ids, reasons, size), then held against the run's base, tree and count.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 
 import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readGitBytes } from '../git.ts'
 import { onSignalExit } from '../progress/interrupt-forwarding.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	CHANGED_FILE_NAME,
 	GATE_SCOPE_FOLDER_PREFIX,
@@ -56,7 +56,7 @@ export function createScopeRun(params: {
 			args: ['diff', '--name-only', '-z', '--no-renames', base, tree],
 		}),
 	).sort(Buffer.compare)
-	const folder = mkdtempSync(join(tmpdir(), GATE_SCOPE_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: GATE_SCOPE_FOLDER_PREFIX, cwd: params.root })
 	// registered before anything is written: a signal from here on never leaves the folder
 	const dropSignalExitRemoval = onSignalExit(function removeScopeFolder() {
 		rmSync(folder, { recursive: true, force: true })

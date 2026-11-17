@@ -4,13 +4,11 @@ import {
 	copyFileSync,
 	existsSync,
 	lstatSync,
-	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
 import { holdsScopedStep, resolveHookSteps } from '../gate/gate-config.ts'
@@ -19,6 +17,7 @@ import { readGit, readHeadOrNone } from '../git.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readMachineLists } from '../rules/committed-text.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import { computeTreeLockKey } from '../worktree/lock-key.ts'
 import {
 	FILE_DEPENDENCY_PREFIX,
@@ -204,7 +203,7 @@ export function readIndexTree(params: { root: string; indexFile?: string }): str
 	const index = indexFile
 		? resolve(workTreeTopOf(root) ?? root, indexFile)
 		: readGit({ root, args: ['rev-parse', '--path-format=absolute', '--git-path', 'index'] }).trim()
-	const folder = mkdtempSync(join(tmpdir(), COMMIT_INDEX_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: COMMIT_INDEX_FOLDER_PREFIX, cwd: root })
 	try {
 		const copy = join(folder, 'index')
 		// no index yet (nothing ever staged): write-tree of a missing index answers the empty tree, as git's own does

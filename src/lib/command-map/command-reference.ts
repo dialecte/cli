@@ -2,19 +2,11 @@
  * The command reference: one page per listed command under `doc/commands/`, its block generated from the command
  * map (the help the cli prints), the rest of the page written by hand; an index page of every command.
  */
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { formatFiles } from '../format.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import { COMMAND_FAMILIES, USAGE_PREFIX } from './command-map.constants.ts'
 import {
 	BLOCK_END,
@@ -188,7 +180,7 @@ function unformattedFaultOf(params: { formatted: boolean }): ReferenceFault[] {
 
 /** The texts as the package's oxfmt formats them, through a folder of their own that is removed after. */
 function formattedPages(params: { root: string; texts: string[] }): FormattedPages {
-	const folder = mkdtempSync(join(tmpdir(), TEMPORARY_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: TEMPORARY_FOLDER_PREFIX, cwd: params.root })
 	try {
 		const files = params.texts.map((text, index) => {
 			const file = join(folder, `${index}${PAGE_EXTENSION}`)
