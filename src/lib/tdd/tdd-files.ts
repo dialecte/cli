@@ -29,12 +29,12 @@ import {
 	TEST_FILE_PATTERN,
 	TEST_FOLDER_PATTERN,
 } from './tdd.constants.ts'
-import { changedTestCodeOf, presentTextOf } from './test-code-presence.ts'
+import { presentTextOf } from './test-code-presence.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { ChangedTestFile, ProductionState, TddEntry, TddLedger } from './tdd.types.ts'
-import type { ChangeQuery, TestCodePresence } from './test-code-presence.types.ts'
+import type { ChangeQuery } from './test-code-presence.types.ts'
 
 export function hashFile(path: string): string {
 	return createHash('sha256').update(readFileSync(path)).digest('hex')
@@ -229,14 +229,9 @@ export function resolveBase(params: {
 	return 'failure' in base ? base : base.commit
 }
 
-/** The presence map of the query: the one given, else one read now. */
-function presenceOf(params: ChangeQuery): TestCodePresence {
-	return params.presence ?? changedTestCodeOf(params)
-}
-
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */
 export function listChangedSince(params: ChangeQuery): string[] {
-	return [...presenceOf(params).paths]
+	return [...params.presence.paths]
 		.filter(([, path]) => path.state !== 'deleted')
 		.map(([file]) => file)
 }
@@ -248,18 +243,16 @@ export function listChangedSince(params: ChangeQuery): string[] {
 export function hashChangedTestCode(
 	params: ChangeQuery & { packageJson: PackageJson },
 ): Map<string, string> {
-	const { root, packageJson } = params
-	const presence = presenceOf(params)
+	const { root, packageJson, presence } = params
 	const moved = listMovedFiles({
 		...params,
-		presence,
 		kindOf: function testCodeKind(file) {
 			if (!isPackageTestCode({ root, file, packageJson })) return undefined
 			return isTestFile({ root, file }) ? TEST_FILE_KIND : TEST_CODE_KIND
 		},
 	})
 	return new Map(
-		listChangedSince({ ...params, presence })
+		listChangedSince(params)
 			.filter((file) => !moved.has(file) && isPackageTestCode({ root, file, packageJson }))
 			.map((file) => [
 				file,
@@ -280,10 +273,9 @@ function testFileKindIn(root: string): (file: string) => string | undefined {
  * file moved with its bytes as at the base is no change (`listMovedTestFiles`).
  */
 export function listChangedTestFiles(params: ChangeQuery): ChangedTestFile[] {
-	const { root, base } = params
-	const presence = presenceOf(params)
-	const moved = listMovedFiles({ ...params, presence, kindOf: testFileKindIn(root) })
-	return listChangedSince({ ...params, presence })
+	const { root, base, presence } = params
+	const moved = listMovedFiles({ ...params, kindOf: testFileKindIn(root) })
+	return listChangedSince(params)
 		.filter((file) => isTestFile({ root, file }) && !moved.has(file))
 		.map((file) => ({
 			file,
@@ -294,8 +286,8 @@ export function listChangedTestFiles(params: ChangeQuery): ChangedTestFile[] {
 
 /** The test files moved since the base with their bytes (R100): their text is the base text of the old path. */
 export function listMovedTestFiles(params: ChangeQuery): ChangedTestFile[] {
-	const presence = presenceOf(params)
-	return [...listMovedFiles({ ...params, presence, kindOf: testFileKindIn(params.root) }).keys()]
+	const { presence } = params
+	return [...listMovedFiles({ ...params, kindOf: testFileKindIn(params.root) }).keys()]
 		.sort()
 		.map(function movedTestFile(file) {
 			const text = presentTextOf({ root: params.root, presence, file }) ?? ''
@@ -309,13 +301,8 @@ export function listMovedTestFiles(params: ChangeQuery): ChangedTestFile[] {
  */
 export function listDeletedTestFiles(params: ChangeQuery): string[] {
 	const { root } = params
-	const presence = presenceOf(params)
-	const sources = new Set(
-		listMovedFiles({ ...params, presence, kindOf: testFileKindIn(root) }).values(),
-	)
-	return listDeletedSince({ ...params, presence }).filter(
-		(file) => isTestFile({ root, file }) && !sources.has(file),
-	)
+	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKindIn(root) }).values())
+	return listDeletedSince(params).filter((file) => isTestFile({ root, file }) && !sources.has(file))
 }
 
 /**
@@ -327,18 +314,15 @@ export function listDeletedTestFiles(params: ChangeQuery): string[] {
 export function listMovedFiles(
 	params: ChangeQuery & { kindOf: (file: string) => string | undefined },
 ): Map<string, string> {
-	const { root, base, kindOf } = params
-	const presence = presenceOf(params)
-	const deleted = listDeletedSince({ ...params, presence }).filter(
-		(file) => kindOf(file) !== undefined,
-	)
+	const { root, base, kindOf, presence } = params
+	const deleted = listDeletedSince(params).filter((file) => kindOf(file) !== undefined)
 	if (deleted.length === 0) return new Map()
 	// a new file, or a rename's new side (git pairs it; a move is judged by its bytes here)
 	const added = [...presence.paths]
 		.filter(
 			([file, path]) =>
 				(path.state === 'added' || path.state === 'renamed') &&
-				path.text !== '' &&
+				(path.text ?? '') !== '' &&
 				kindOf(file) !== undefined,
 		)
 		.map(([file]) => file)
@@ -363,7 +347,7 @@ export function listMovedFiles(
 
 /** The files of the base the change deletes (a rename's old side included), relative to the root, sorted. */
 export function listDeletedSince(params: ChangeQuery): string[] {
-	return [...presenceOf(params).paths]
+	return [...params.presence.paths]
 		.flatMap(([file, path]) => {
 			if (path.state === 'renamed') return [path.from]
 			return path.state === 'deleted' && path.atBase ? [file] : []

@@ -387,6 +387,17 @@ export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
 export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
 /**
+ * The paths whose text the presence map reads (`changedTestCodeOf`): a JS/TS test file, a Python file (pytest decides
+ * which are tests), a file of a test or fixture folder, a snapshot. Any other changed path keeps its presence alone.
+ */
+export const TEST_CODE_PATH_PATTERNS: readonly RegExp[] = [
+	TEST_FILE_PATTERN,
+	PYTHON_FILE_PATTERN,
+	TEST_FOLDER_PATTERN,
+	SNAPSHOT_FILE_PATTERN,
+]
+
+/**
  * A `gone` or `moved` entry of the lot file the presence map refuses (`declaredPathRefusalOf`): `{list}` its list,
  * `{path}` the path it names, `{remove}` the `UNUSED_ENTRY_REMOVE` ending that drops it.
  */

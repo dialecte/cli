@@ -7,14 +7,15 @@ import type { TddBase, TddCheck } from '../tdd/tdd.types.ts'
 import type { StepResult } from './gate.types.ts'
 
 /**
- * The receipts of the change's test cases, measured from HEAD (the uncommitted lot), else from where HEAD left `ref`,
- * or from the lot base (`wholeBranch`): `base` when the gate resolved it already.
+ * The receipts of the change's test cases: from the lot base when `measureLot` (`--full`, `--release`, the hook;
+ * `base` when the gate resolved it already), from where HEAD left `ref` with `--base`, else (`--fast`) the uncommitted
+ * work from HEAD.
  */
 export async function runTddStep(params: {
 	cwd: string
 	packageJson: PackageJson
 	ref: string | undefined
-	wholeBranch: boolean
+	measureLot: boolean
 	/** The gate's own base when it is the lot base: the step measures from it, resolving none. */
 	base?: TddBase
 }): Promise<StepResult> {
@@ -22,7 +23,7 @@ export async function runTddStep(params: {
 		root: params.cwd,
 		packageJson: params.packageJson,
 		ref: params.ref,
-		wholeBranch: params.wholeBranch,
+		measureLot: params.measureLot,
 		...(params.base && { base: params.base }),
 	})
 	return tddStepResultOf(check)

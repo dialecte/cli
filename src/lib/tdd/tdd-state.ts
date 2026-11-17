@@ -38,7 +38,6 @@ import {
 	readAtBase,
 } from './tdd-files.ts'
 import { SKIPPED_RECEIPTS_LABEL, UNTITLED_CALL_GONE } from './tdd.constants.ts'
-import { changedTestCodeOf } from './test-code-presence.ts'
 import { listTestDependencies } from './test-dependencies.ts'
 import { listTestCalls } from './test-source.ts'
 import { readVitestConfigs } from './vitest-configs.ts'
@@ -63,11 +62,10 @@ export async function readTddState(params: {
 	packageJson: PackageJson
 	ledger: TddLedger
 	base: string
-	/** The presence map of the change since the base: read once by the command, else here. */
-	presence?: TestCodePresence
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 }): Promise<TddState | TestRunFailure> {
-	const { root, ledger, base } = params
-	const presence = params.presence ?? changedTestCodeOf({ root, base })
+	const { root, ledger, base, presence } = params
 	const testCode = hashChangedTestCode({ root, base, presence, packageJson: params.packageJson })
 	const unfrozen = [...testCode]
 		.filter(([file, hash]) => frozenHashOf({ ledger, file }) !== hash)
@@ -124,6 +122,7 @@ export async function readTddState(params: {
 	const moves = await readMoves({
 		root,
 		base,
+		presence,
 		packageJson: params.packageJson,
 		files: changed,
 		cases: cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),

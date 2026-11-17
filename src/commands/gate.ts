@@ -386,7 +386,7 @@ async function runWorktreeSteps(params: {
 		cwd,
 		packageJson: params.packageJson,
 		ref: getArg(argv, 'base'),
-		wholeBranch: mode !== 'fast',
+		measureLot: mode !== 'fast',
 		...(params.tddBase && { base: params.tddBase }),
 	})
 	phase.durations.set(tdd, finishTdd())

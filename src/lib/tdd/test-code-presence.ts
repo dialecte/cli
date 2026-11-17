@@ -14,6 +14,7 @@ import {
 	CASE_ARGUMENT_SEPARATOR,
 	DECLARED_PATH_REFUSALS,
 	GLOB_MAGIC_PATTERN,
+	TEST_CODE_PATH_PATTERNS,
 	UNUSED_ENTRY_REMOVE,
 } from './tdd.constants.ts'
 
@@ -33,8 +34,7 @@ export function changedTestCodeOf(params: { root: string; base: string }): TestC
 	const prefix = tryReadGit({ root, args: ['rev-parse', '--show-prefix'] })?.trim() ?? ''
 	for (const entry of readStatusEntries({ root, prefix })) {
 		const known = paths.get(entry.file)
-		if (entry.kind === 'untracked' && known === undefined)
-			paths.set(entry.file, { state: 'added', text: '' })
+		if (entry.kind === 'untracked' && known === undefined) paths.set(entry.file, { state: 'added' })
 		if (entry.kind === 'missing' && known?.state !== 'deleted')
 			paths.set(entry.file, { state: 'deleted', atBase: known?.state === 'modified' })
 	}
@@ -54,8 +54,9 @@ export function presentTextOf(params: {
 	file: string
 }): string | undefined {
 	const known = params.presence.paths.get(params.file)
-	if (known !== undefined) return known.state === 'deleted' ? undefined : known.text
-	return readTextOrNone(join(params.root, params.file))
+	if (known?.state === 'deleted') return undefined
+	// a changed path read when the map was made, else present (unchanged, or changed but no test code by its path)
+	return known?.text ?? readTextOrNone(join(params.root, params.file))
 }
 
 /**
@@ -137,7 +138,7 @@ function readDiffChanges(params: {
 		if (letter === 'R') {
 			changes.push({
 				file: words[index + 2],
-				path: { state: 'renamed', from: words[index + 1], text: '' },
+				path: { state: 'renamed', from: words[index + 1] },
 			})
 			index += 3
 			continue
@@ -152,8 +153,8 @@ function readDiffChanges(params: {
 /** The state a diff letter gives a path (its text read after). */
 function diffPathOf(letter: string): TestCodePath {
 	if (letter === 'D') return { state: 'deleted', atBase: true }
-	if (letter === 'A' || letter === 'C') return { state: 'added', text: '' }
-	return { state: 'modified', text: '' }
+	if (letter === 'A' || letter === 'C') return { state: 'added' }
+	return { state: 'modified' }
 }
 
 /**
@@ -192,10 +193,14 @@ function pathOfRecord(params: { record: string; kind: string }): string {
 	return params.record.split(' ').slice(fields).join(' ')
 }
 
-/** Each present path with its text read; one that cannot be read is deleted. */
+/**
+ * Each present path that may hold test code with its text read (one that cannot be read is deleted); a production
+ * path keeps its presence alone.
+ */
 function withText(root: string): (entry: [string, TestCodePath]) => [string, TestCodePath] {
 	return function readEntry([file, path]) {
-		if (path.state === 'deleted') return [file, path]
+		if (path.state === 'deleted' || !TEST_CODE_PATH_PATTERNS.some((pattern) => pattern.test(file)))
+			return [file, path]
 		const text = readTextOrNone(join(root, file))
 		return [file, text === undefined ? { state: 'deleted', atBase: false } : { ...path, text }]
 	}

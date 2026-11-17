@@ -419,6 +419,7 @@ async function runRed(params: {
 	const moves = await readMoves({
 		root,
 		base: context.base,
+		presence: context.presence,
 		packageJson: context.packageJson,
 		files: runnable,
 		cases: run.cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
@@ -850,6 +851,7 @@ async function decideMovedCases(params: {
 	const onBase = await runCasesOnBase({
 		root: context.root,
 		base: context.base,
+		presence: context.presence,
 		packageJson: context.packageJson,
 		testCases: params.cases.filter(
 			(testCase) => carries.get(caseLabel(testCase))?.kind === 'carry',
@@ -1245,6 +1247,7 @@ async function judgeOnBase(params: {
 	const verdict = await runCaseOnBase({
 		root: context.root,
 		base: context.base,
+		presence: context.presence,
 		packageJson: context.packageJson,
 		testCase,
 		observer: runnerObserverOf({ context, name: 'tdd red on the base' }),
@@ -1429,6 +1432,7 @@ async function recordTddPart(params: {
 		root: context.root,
 		packageJson: context.packageJson,
 		base: context.base,
+		presence: context.presence,
 		at: params.at,
 	})
 	running?.finish(

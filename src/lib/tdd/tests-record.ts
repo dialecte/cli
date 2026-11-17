@@ -27,6 +27,7 @@ import {
 import type { GateRecord } from '../gate-records/gate-records.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { CaseStatusLine } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 import type {
 	TestsRecord,
 	TestsRecordCase,
@@ -105,6 +106,8 @@ export async function refreshTddPart(params: {
 	root: string
 	packageJson: PackageJson
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 	at: string
 }): Promise<string | undefined> {
 	const { folder, ...read } = params

@@ -41,6 +41,7 @@ import {
 import type { PackageJson } from '../package-json.types.ts'
 import type { BaseOverlay, BaseRedVerdict } from './base-red.types.ts'
 import type { RunCase, RunnerObserver } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /** Which files of the change go over the base's tree: every test-code file, as it is now or gone. */
 export function selectBaseOverlay(params: {
@@ -60,6 +61,8 @@ export function selectBaseOverlay(params: {
 export async function runCaseOnBase(params: {
 	root: string
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 	packageJson: PackageJson
 	testCase: RunCase
 	/** Told of the runner's start and end (a progress step). Default: nobody. */
@@ -78,6 +81,8 @@ export async function runCaseOnBase(params: {
 export async function runCasesOnBase(params: {
 	root: string
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 	packageJson: PackageJson
 	testCases: readonly RunCase[]
 	/** Told of the runner's start and end (a progress step). Default: nobody. */
@@ -111,8 +116,8 @@ export async function runCasesOnBase(params: {
 			overlay: selectBaseOverlay({
 				root,
 				packageJson,
-				changed: listChangedSince({ root, base }),
-				deleted: listDeletedSince({ root, base }),
+				changed: listChangedSince(params),
+				deleted: listDeletedSince(params),
 			}),
 		})
 		const files = [...new Set(testCases.map((testCase) => testCase.file))]

@@ -32,7 +32,7 @@ describe(
 			const check = await checkTddReceipts({
 				root,
 				packageJson: { dialecte: { baseBranch: 'release' } },
-				wholeBranch: true,
+				measureLot: true,
 			})
 
 			expect(check).toEqual({
@@ -45,7 +45,7 @@ describe(
 			const root = initializeRepository({ root: temporaryFolder('dialecte-base-branch-') })
 			git({ root, args: ['branch', '-m', 'trunk'] })
 
-			const check = await checkTddReceipts({ root, packageJson: {}, wholeBranch: true })
+			const check = await checkTddReceipts({ root, packageJson: {}, measureLot: true })
 
 			expect(check.status).not.toBe('failed')
 		})

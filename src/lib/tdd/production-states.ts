@@ -12,6 +12,7 @@ import { DELETED_PRODUCTION_FILE } from './tdd.constants.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { HashedTestCase, ProductionState, TddLedger } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /**
  * The production state of the package now: its `hashProduction`, the base, its production files changed
@@ -20,11 +21,13 @@ import type { HashedTestCase, ProductionState, TddLedger } from './tdd.types.ts'
 export function readProductionState(params: {
 	root: string
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 	packageJson: PackageJson
 }): ProductionState {
 	const { root, base, packageJson } = params
 	const files: Record<string, string> = {}
-	for (const file of listChangedSince({ root, base }))
+	for (const file of listChangedSince(params))
 		if (isProductionPath({ root, file, packageJson })) files[file] = hashFile(join(root, file))
 	const deleted = readGit({
 		root,

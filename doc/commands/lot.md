@@ -173,16 +173,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
            <level>), the next station walked from its station events and checks (step events, else
            the worktree's tdd ledger and gate records), its next is that station's command and also
-           keeps the manual line (lot start prints it as next: run the stations, then lot land
-           <name> --draft in a CI-first repository, then handover write elsewhere); --json adds
-           station and rounds (review, cap, beyondCap, independent) and effort { level, source,
-           riskClass, below } (source risk-line for an effort recorded by lot risk; an effort below
-           its risk class adds a ! effort <e> below risk class <c> line, ending (by <who>: <reason>)
-           or (no go-ahead recorded)); --json adds forecast { main, pairs }: the newest main line of
-           forecast.jsonl and, per other open lot, the newer of its own line against that lot and
-           that lot's line against it (files only); a lot whose records do not hold reads damaged
-           with its reason and next: lot stop (exit 6); reads only; exit 2 for an unknown or
-           ambiguous id
+           keeps the manual line, which lot start prints as its next too; the manual line depends on
+           the repository's landing flow: lot land <name> --draft in a CI-first repository, handover
+           write in any other; --json adds station and rounds (review, cap, beyondCap, independent)
+           and effort { level, source, riskClass, below } (source risk-line for an effort recorded
+           by lot risk; an effort below its risk class adds a ! effort <e> below risk class <c>
+           line, ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds forecast {
+           main, pairs }: the newest main line of forecast.jsonl and, per other open lot, the newer
+           of its own line against that lot and that lot's line against it (files only); a lot whose
+           records do not hold reads damaged with its reason and next: lot stop (exit 6); reads
+           only; exit 2 for an unknown or ambiguous id
   forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
              as one snapshot commit made on a copy of its index with a fixed identity and date; the
              worktree's index, refs and files never written, ignored files left out) against main

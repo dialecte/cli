@@ -66,6 +66,7 @@ import {
 	resolveBase,
 } from '../tdd/tdd-files.ts'
 import { DUPLICATE_CARD_LABEL, DUPLICATE_LINES_DETAIL } from '../tdd/tdd.constants.ts'
+import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
 import { mergeTreeLineOf } from './check-handover-guards.ts'
@@ -514,7 +515,12 @@ function tddSection(params: {
 		judged && typeof base === 'string'
 			? listRevisedHelpers({
 					ledger,
-					testCode: hashChangedTestCode({ root, base, packageJson }),
+					testCode: hashChangedTestCode({
+						root,
+						base,
+						presence: changedTestCodeOf({ root, base }),
+						packageJson,
+					}),
 					revisions: declaredRevisions,
 				})
 			: []

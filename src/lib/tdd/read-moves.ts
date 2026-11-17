@@ -32,6 +32,7 @@ import type {
 	TddMoves,
 	TestCallIndex,
 } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /**
  * The moves of the cases of `files` (the new and changed test files of the run) from the base. A pytest case never
@@ -40,6 +41,8 @@ import type {
 export function readMoves(params: {
 	root: string
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 	packageJson: PackageJson
 	files: readonly ChangedTestFile[]
 	cases: readonly RunCase[]
@@ -55,12 +58,13 @@ export function readMoves(params: {
 async function readScriptMoves(params: {
 	root: string
 	base: string
+	presence: TestCodePresence
 	packageJson: PackageJson
 	files: readonly ChangedTestFile[]
 	cases: readonly RunCase[]
 }): Promise<TddMoves> {
 	const { root, base } = params
-	const deleted = listDeletedTestFiles({ root, base })
+	const deleted = listDeletedTestFiles(params)
 		.filter((file) => !PYTHON_FILE_PATTERN.test(file))
 		.flatMap((file): DeletedTestFile[] => {
 			const baseText = readAtBase({ root, base, file })

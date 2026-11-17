@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
 import { filesMovedBack, isRollbackGreen, readProductionState } from './production-states.ts'
 import { hashProduction, hashText } from './tdd-files.ts'
+import { changedTestCodeOf } from './test-code-presence.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -506,7 +507,9 @@ describe('readProductionState', () => {
 		})
 		unlinkSync(join(root, 'src/gone.ts'))
 
-		expect(readProductionState({ root, base, packageJson })).toEqual({
+		expect(
+			readProductionState({ root, base, presence: changedTestCodeOf({ root, base }), packageJson }),
+		).toEqual({
 			hash: hashProduction({ root, packageJson }),
 			base,
 			files: {

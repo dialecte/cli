@@ -20,6 +20,7 @@ const MOVED = "it('moved', () => { expect(1).toBe(1) })\n"
 /** A repository whose base commit holds `src/kept.test.ts` and `src/moved.test.ts`. */
 function baseRepository(): string {
 	return createScratchRepository({
+		'src/add.ts': KEPT,
 		'src/kept.test.ts': KEPT,
 		'src/moved.test.ts': MOVED,
 	})
@@ -73,6 +74,11 @@ const ROWS: Row[] = [
 			'src/moved.test.ts': { state: 'deleted', atBase: true },
 			'src/other.test.ts': { state: 'added', text: MOVED },
 		},
+	},
+	{
+		name: 'a production file edited → modified, its text left unread',
+		change: (root) => writeFiles({ root, files: { 'src/add.ts': EDITED } }),
+		expected: { 'src/add.ts': { state: 'modified' } },
 	},
 	{
 		name: 'a new file staged then deleted from disk → deleted, not held by the base',
