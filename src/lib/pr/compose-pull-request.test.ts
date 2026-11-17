@@ -361,6 +361,17 @@ Closes #12
 })
 
 describe('composePullRequest lists each overlap once', () => {
+	it('a lot name with no leading index → shown as another lot, never its words', () => {
+		const body = bodyOf({
+			sources: {
+				...FULL,
+				overlaps: [{ lot: 'ci2b-export', reason: 'separate lines in one file' }],
+			},
+		})
+
+		expect(partOf({ body, heading: 'Overlaps' })).toBe('- another lot: separate lines in one file')
+	})
+
 	it('two records of one lot with one reason → one line', () => {
 		const overlap = { lot: '0007-repo-other', reason: 'separate lines in one file' }
 

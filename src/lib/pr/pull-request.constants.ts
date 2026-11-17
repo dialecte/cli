@@ -64,6 +64,7 @@ export const BODY_LINES = {
 	verdictsHeader: 'Verdicts:',
 	risk: 'risk class {riskClass} · effort {effort}',
 	noOverlaps: 'none',
+	unindexedLot: 'another lot',
 	overlap: '- {index}: {reason}',
 } as const
 

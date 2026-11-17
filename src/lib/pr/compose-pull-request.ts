@@ -141,9 +141,9 @@ function overlapLines(sources: PullRequestSources): string[] {
 	return [...new Set(lines)]
 }
 
-/** A lot's index, the digits its name starts with (`0007-repo-x` → `0007`); the whole name when it holds none. */
+/** A lot's index, the digits its name starts with (`0007-repo-x` → `0007`); `another lot` for a name holding none. */
 function indexOfLot(name: string): string {
-	return LOT_INDEX_OF_NAME.exec(name)?.[1] ?? name
+	return LOT_INDEX_OF_NAME.exec(name)?.[1] ?? BODY_LINES.unindexedLot
 }
 
 /** The summary, then the brief's other commit messages: one squash commit holds them all. */
