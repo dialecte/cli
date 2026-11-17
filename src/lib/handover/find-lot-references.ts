@@ -2,6 +2,7 @@
 import { join } from 'node:path'
 
 import { findReferences, isReferenceChecked } from '../rules/committed-text.ts'
+import { sqlKeywordReaderOf } from '../rules/sql-literals.ts'
 import { readCommittedBytes } from './committed-bytes.ts'
 import { BINARY_PROBE_LENGTH } from './handover.constants.ts'
 
@@ -24,11 +25,12 @@ export function findLotReferences(params: {
 		for (const file of lot.files) {
 			const content = readCommittedBytes(join(root, file))
 			if (isBinary(content) || !isReferenceChecked(file)) continue
-			for (const reference of findReferences({
-				text: content.toString('utf8'),
-				patterns: referencePatterns,
-			}))
-				found.push(`${file}:${reference.line}: ${reference.label} \`${reference.text}\``)
+			const text = content.toString('utf8')
+			// an SQL keyword inside an SQL string of code is the keyword, never a name of committed text
+			const isSqlKeywordAt = sqlKeywordReaderOf({ file, text })
+			for (const reference of findReferences({ text, patterns: referencePatterns }))
+				if (!isSqlKeywordAt(reference))
+					found.push(`${file}:${reference.line}: ${reference.label} \`${reference.text}\``)
 		}
 	}
 	return found

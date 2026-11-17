@@ -6,7 +6,7 @@ export type EntryStateName = 'done' | 'open' | 'ready' | 'waiting' | 'parked' | 
 
 /** The record that makes an entry done or open. */
 export type EntryRealization = {
-	kind: 'store' | 'registry' | 'worktree' | 'mark' | 'spec' | 'landed'
+	kind: 'store' | 'registry' | 'worktree' | 'mark' | 'spec' | 'landed' | 'superseded'
 	name: string
 	folder: string | null
 	worktree: string | null
@@ -23,7 +23,7 @@ export type EntryStatus = {
 	waitsFor: { id: string; state: EntryStateName }[]
 	/** Why the entry is `unknown`, or the line that parked it. */
 	reason: string | null
-	/** `pending since <date>`, `manual, no hand-over yet`. */
+	/** `pending since <date>`, `manual, no hand-over yet`, `superseded by <ids>`. */
 	note: string | null
 	/** An open entry's scope by repository (the union of the candidates' when the attribution is uncertain). */
 	heldScope: Record<string, string[]>

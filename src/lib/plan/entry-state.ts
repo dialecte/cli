@@ -15,6 +15,7 @@ import {
 	OPEN_LOT_STATES,
 	PENDING_NOTE_PREFIX,
 	PLAN_REPOSITORY_KINDS,
+	SUPERSEDED_NOTE,
 	THROWAWAY_BRANCH_PATTERN,
 	THROWAWAY_WORKTREE_PATTERN,
 	UNKNOWN_REGISTRY_STATE_PREFIX,
@@ -144,14 +145,40 @@ function recordOf(params: {
 	sharedBranches: Set<string>
 }): EntryRecord | undefined {
 	const { entry, facts } = params
+	const superseded = supersededRecordOf({ entry, facts })
+	if (superseded !== undefined) return superseded
 	if (entry.kind === 'person') return markRecordOf({ entry, facts })
 	if (entry.kind === 'spec') return specRecordOf({ entry, facts })
 	return repositoryRecordOf(params)
 }
 
-/** A person entry is done by a mark on its id. */
+/**
+ * An entry of any kind is closed by a superseded mark on its id: it reads done, so nothing waits on it; the entries
+ * that replaced it are named in its note, and do not take over its dependents.
+ */
+function supersededRecordOf(params: {
+	entry: PlanEntry
+	facts: PlanFacts
+}): EntryRecord | undefined {
+	const mark = params.facts.marks.find(
+		(candidate) => candidate.id === params.entry.id && candidate.state === 'superseded',
+	)
+	if (mark === undefined) return undefined
+	const replacedBy = mark.replacedBy ?? []
+	return {
+		...doneOf({ realizedBy: { kind: 'superseded', name: mark.by, folder: null, worktree: null } }),
+		note:
+			replacedBy.length === 0
+				? SUPERSEDED_NOTE
+				: `${SUPERSEDED_NOTE} by ${replacedBy.join(LIST_SEPARATOR)}`,
+	}
+}
+
+/** A person entry is done by a done mark on its id. */
 function markRecordOf(params: { entry: PlanEntry; facts: PlanFacts }): EntryRecord | undefined {
-	const mark = params.facts.marks.find((candidate) => candidate.id === params.entry.id)
+	const mark = params.facts.marks.find(
+		(candidate) => candidate.id === params.entry.id && candidate.state === 'done',
+	)
 	if (mark === undefined) return undefined
 	return doneOf({ realizedBy: { kind: 'mark', name: mark.by, folder: null, worktree: null } })
 }

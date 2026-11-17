@@ -31,14 +31,14 @@ import {
 	PLAN_COMMAND_NAME,
 	PLAN_EXIT,
 	PLAN_MARK_OPTIONS,
-	PLAN_MARK_STATE,
+	PLAN_MARK_STATES,
 	PLAN_NEXT_FLAGS,
 	PLAN_VERBS,
 } from './plan.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { PlanBlock, PlanEntry, PlanFault } from '../lib/plan/plan-block.types.ts'
-import type { LandedCommit } from '../lib/plan/plan.types.ts'
+import type { LandedCommit, PlanMarkState } from '../lib/plan/plan.types.ts'
 import type { RoundArguments } from '../lib/review-rounds/review-rounds.types.ts'
 import type { StateFolderLocation } from '../lib/store/store.types.ts'
 import type { PlanSeams, RunPlanParams } from './plan.types.ts'
@@ -54,8 +54,8 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 /**
- * `plan next <plan.md> [--json] [--all]`, `plan check <plan.md> [--json]`, `plan mark <plan.md> <id> done --by
- * <who> [--reason <text>]`: exit 0 answered (next: a lot or fix can start), 1 no lot can start, 2 usage, no block or
+ * `plan next <plan.md> [--json] [--all]`, `plan check <plan.md> [--json]`, `plan mark <plan.md> <id> done|superseded
+ * --by <who> [--reason <text>]`: exit 0 answered (next: a lot or fix can start), 1 no lot can start, 2 usage, no block or
  * an invalid one, a repository that is not a git checkout, a mark refused.
  */
 export function runPlan(params: RunPlanParams): CommandResult {
@@ -132,19 +132,22 @@ function runCheck(params: RunPlanParams): CommandResult {
 /**
  * `plan mark <plan.md> <id> done --by <who> [--reason <text>]` for a person entry, once; `--landed <sha> --reason
  * <text>` for a lot or fix entry landed outside the lot store (the commit held by origin's base branch of one of its
- * repositories; an entry its records already say done takes none).
+ * repositories; an entry its records already say done takes none); `superseded --reason <text> [--replaced-by
+ * <id>...]` for an entry of any kind other entries replaced (an entry its records already say done takes none).
  */
 function runMark(params: RunPlanParams): CommandResult {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: [PLAN_MARK_OPTIONS.by, PLAN_MARK_OPTIONS.reason],
-		repeatable: [PLAN_MARK_OPTIONS.landed],
+		repeatable: [PLAN_MARK_OPTIONS.landed, PLAN_MARK_OPTIONS.replacedBy],
 	})
 	if (typeof read === 'string') return usageOf({ problem: `mark: ${read}` })
 	const [plan, id, state] = read.words
-	if (read.words.length !== 3 || state !== PLAN_MARK_STATE)
-		return usageOf({ problem: `mark takes a plan file, an id and ${PLAN_MARK_STATE}` })
-	const optionFault = markOptionFaultOf({ read })
+	if (read.words.length !== 3 || !isMarkState(state))
+		return usageOf({
+			problem: `mark takes a plan file, an id and ${PLAN_MARK_STATES.done} or ${PLAN_MARK_STATES.superseded}`,
+		})
+	const optionFault = markOptionFaultOf({ read, state })
 	if (optionFault !== undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: ${optionFault}`] })
 	const loaded = loadBlock({ cwd: params.cwd, plan, verb: PLAN_VERBS.mark, json: false })
@@ -152,34 +155,75 @@ function runMark(params: RunPlanParams): CommandResult {
 	const entry = loaded.block.lots.find((candidate) => candidate.id === id)
 	if (entry === undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: no entry ${id} in ${plan}`] })
-	const landedGiven = read.lists.get(PLAN_MARK_OPTIONS.landed)
-	const kindFault = markKindFaultOf({ id, kind: entry.kind, landed: landedGiven, read })
+	const kindFault =
+		state === PLAN_MARK_STATES.superseded
+			? replacedByFaultOf({
+					id,
+					plan,
+					block: loaded.block,
+					replacedBy: read.lists.get(PLAN_MARK_OPTIONS.replacedBy) ?? [],
+				})
+			: markKindFaultOf({
+					id,
+					kind: entry.kind,
+					landed: read.lists.get(PLAN_MARK_OPTIONS.landed),
+					read,
+				})
 	if (kindFault !== undefined)
 		return refusalOf({ lines: [`${PLAN_COMMAND_NAME} mark: ${kindFault}`] })
+	return recordMarkOf({ ...loaded, entry, state, read, seams: params.seams })
+}
+
+/**
+ * Records a checked mark once: answered without writing when the entry is marked already or its records say it done
+ * (a `--landed` or `superseded` mark), refused when a landed commit is not found or the marks file cannot be written.
+ */
+function recordMarkOf(params: {
+	block: PlanBlock
+	planPath: string
+	entry: PlanEntry
+	state: PlanMarkState
+	read: RoundArguments
+	seams: PlanSeams | undefined
+}): CommandResult {
+	const { entry, state, read } = params
+	const { id } = entry
 	const location = params.seams?.state
 	const by = read.values.get(PLAN_MARK_OPTIONS.by) as string
-	if (readPlanMarks({ planPath: loaded.planPath, location }).some((mark) => mark.id === id))
+	const landedGiven = read.lists.get(PLAN_MARK_OPTIONS.landed)
+	const replacedBy = read.lists.get(PLAN_MARK_OPTIONS.replacedBy) ?? []
+	const loaded = { block: params.block, planPath: params.planPath }
+	const recorded = readPlanMarks({ planPath: loaded.planPath, location }).find(
+		(mark) => mark.id === id,
+	)
+	if (recorded !== undefined)
 		return resultOf({
 			exitCode: PLAN_EXIT.answered,
-			lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - already recorded`],
+			lines: [`${PLAN_COMMAND_NAME} mark: ${id} ${recorded.state} - already recorded`],
 		})
 	const landed =
 		landedGiven === undefined
 			? undefined
 			: landedOfEntry({ ...loaded, entry, given: landedGiven, location })
 	if (landed !== undefined && 'refusal' in landed) return landed.refusal
-	if (landed !== undefined && 'done' in landed)
+	const doneByRecords =
+		(landed !== undefined && 'done' in landed) ||
+		(state === PLAN_MARK_STATES.superseded && isDoneByRecords({ ...loaded, entry, location }))
+	if (doneByRecords)
 		return resultOf({
 			exitCode: PLAN_EXIT.answered,
 			lines: [`${PLAN_COMMAND_NAME} mark: ${id} is already done by its records - nothing recorded`],
 		})
+	const landedCommits = landed === undefined || 'done' in landed ? undefined : landed
 	try {
 		appendPlanMark({
 			planPath: loaded.planPath,
 			id,
+			state,
 			by,
 			reason: read.values.get(PLAN_MARK_OPTIONS.reason),
-			landed,
+			landed: landedCommits,
+			...(state === PLAN_MARK_STATES.superseded && { replacedBy: [...replacedBy] }),
 			location,
 			now: params.seams?.now,
 		})
@@ -193,9 +237,58 @@ function runMark(params: RunPlanParams): CommandResult {
 	return resultOf({
 		exitCode: PLAN_EXIT.answered,
 		lines: [
-			`${PLAN_COMMAND_NAME} mark: ${id} ${PLAN_MARK_STATE} - recorded (by ${by}${landed === undefined ? '' : `, landed as ${landed.map(landedText).join(', ')}`})`,
+			`${PLAN_COMMAND_NAME} mark: ${id} ${state} - recorded (${recordedDetailsOf({ by, landed: landedCommits, replacedBy })})`,
 		],
 	})
+}
+
+/** What a recorded mark names: `by <who>`, then the landed commits or the replacing entries. */
+function recordedDetailsOf(params: {
+	by: string
+	landed: readonly LandedCommit[] | undefined
+	replacedBy: readonly string[]
+}): string {
+	const { landed, replacedBy } = params
+	return [
+		`by ${params.by}`,
+		...(landed === undefined ? [] : [`landed as ${landed.map(landedText).join(', ')}`]),
+		...(replacedBy.length === 0 ? [] : [`replaced by ${replacedBy.join(', ')}`]),
+	].join(', ')
+}
+
+/** Whether the word is a state `plan mark` records. */
+function isMarkState(word: string | undefined): word is PlanMarkState {
+	return word === PLAN_MARK_STATES.done || word === PLAN_MARK_STATES.superseded
+}
+
+/** Why the replacing entries are refused: one the block does not hold, or the entry itself. */
+function replacedByFaultOf(params: {
+	id: string
+	plan: string
+	block: PlanBlock
+	replacedBy: readonly string[]
+}): string | undefined {
+	const { id, block } = params
+	for (const replacing of params.replacedBy) {
+		if (replacing === id) return `--replaced-by ${id}: an entry cannot replace itself`
+		if (!block.lots.some((candidate) => candidate.id === replacing))
+			return `--replaced-by ${replacing}: no entry ${replacing} in ${params.plan}`
+	}
+	return undefined
+}
+
+/** Whether the entry's own records already say it is done. */
+function isDoneByRecords(params: {
+	block: PlanBlock
+	planPath: string
+	entry: PlanEntry
+	location: StateFolderLocation | undefined
+}): boolean {
+	const { block, entry } = params
+	const facts = readPlanFacts({ block, planPath: params.planPath, stateLocation: params.location })
+	return entryStates({ block, facts }).entries.some(
+		(status) => status.id === entry.id && status.state === 'done',
+	)
 }
 
 /**
@@ -234,9 +327,7 @@ function landedOfEntry(params: {
 	location: StateFolderLocation | undefined
 }): LandedCommit[] | { done: true } | { refusal: CommandResult } {
 	const { block, entry } = params
-	const facts = readPlanFacts({ block, planPath: params.planPath, stateLocation: params.location })
-	const state = entryStates({ block, facts }).entries.find((status) => status.id === entry.id)
-	if (state?.state === 'done') return { done: true }
+	if (isDoneByRecords(params)) return { done: true }
 	const found = findLandedCommits({
 		given: params.given,
 		scope: entry.scope,
@@ -251,13 +342,28 @@ function landedOfEntry(params: {
 	return found
 }
 
-/** What is wrong with `--by` and `--reason`: `--by` given, not empty, one line; `--reason` one line. */
-function markOptionFaultOf(params: { read: RoundArguments }): string | undefined {
-	const by = params.read.values.get(PLAN_MARK_OPTIONS.by)
+/**
+ * What is wrong with the options: `--by` given, not empty, one line; `--reason` one line; `superseded` needs
+ * `--reason` and takes no `--landed`; `--replaced-by` only with `superseded`.
+ */
+function markOptionFaultOf(params: {
+	read: RoundArguments
+	state: PlanMarkState
+}): string | undefined {
+	const { read } = params
+	const by = read.values.get(PLAN_MARK_OPTIONS.by)
 	if (by === undefined || by.trim() === '') return '--by <who> is needed (not empty)'
 	if (LINE_BREAK_PATTERN.test(by)) return '--by must be one line'
-	const reason = params.read.values.get(PLAN_MARK_OPTIONS.reason)
+	const reason = read.values.get(PLAN_MARK_OPTIONS.reason)
 	if (reason !== undefined && LINE_BREAK_PATTERN.test(reason)) return '--reason must be one line'
+	if (params.state === PLAN_MARK_STATES.done)
+		return read.lists.has(PLAN_MARK_OPTIONS.replacedBy)
+			? '--replaced-by is for superseded (an entry other entries replaced)'
+			: undefined
+	if (read.lists.has(PLAN_MARK_OPTIONS.landed))
+		return '--landed is not for superseded (a superseded entry landed nowhere: mark it done --landed instead)'
+	if (reason === undefined || reason.trim() === '')
+		return 'superseded needs --reason <text> (why other entries replaced it)'
 	return undefined
 }
 
