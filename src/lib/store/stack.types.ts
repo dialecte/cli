@@ -20,3 +20,6 @@ export type StackParent = {
 	branch: string
 	head: string
 }
+
+/** A `stack.json` that does not read as a stack record: why. */
+export type StackDamage = { damage: string }

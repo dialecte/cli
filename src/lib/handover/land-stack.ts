@@ -13,7 +13,7 @@ import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readGit, tryReadGit } from '../git.ts'
 import { readIdentity } from '../store/identity.ts'
-import { readStack, writeStack } from '../store/stack.ts'
+import { readStack, readStackRecord, writeStack } from '../store/stack.ts'
 import { UNTRACKED_STATUS_PREFIX } from './land-lot.constants.ts'
 import { readLanding } from './land-record.ts'
 import { STACK_CONFLICT_EXIT, STACK_LANDING_LINES } from './land-stack.constants.ts'
@@ -43,19 +43,28 @@ export function prepareStackLanding(params: {
 }): StackLanding | StackRefusal | undefined {
 	const record = readStack({ lotFolder: params.lotFolder })
 	if (record === undefined) return undefined
+	if ('damage' in record)
+		return {
+			exitCode: 1,
+			refusal: STACK_LANDING_LINES.damaged
+				.replace('{lot}', () => params.lot)
+				.replace('{damage}', () => record.damage),
+		}
 	const parent = readParent({ ...params, record })
 	if ('refusal' in parent) return parent
-	const routed = routeOf({
-		...params,
-		record,
-		parentPull: parent.pullRequest,
-		parentBranch: parent.branch,
-	})
-	const lines = routed.line === undefined ? [] : [routed.line]
-	const state = { ...record, route: routed.route }
+	// linked once (route native, recorded only after the host took the link): the host keeps the stack
+	const linked = record.route === 'native'
 	if (parent.pullRequest.state === 'merged')
-		return offMergedParent({ ...params, record: state, parentPull: parent.pullRequest, lines })
-	if (!params.draft && routed.route === 'branch')
+		return offMergedParent({
+			...params,
+			record,
+			route: linked ? 'native' : 'branch',
+			parentPull: parent.pullRequest,
+		})
+	const support = linked
+		? { stacks: true as const }
+		: params.host.probeStacks({ root: params.worktree })
+	if (!params.draft && !support.stacks)
 		return {
 			exitCode: 1,
 			refusal: STACK_LANDING_LINES.waits
@@ -63,27 +72,38 @@ export function prepareStackLanding(params: {
 				.replace('{number}', String(parent.pullRequest.number))
 				.replace('{parent}', () => record.parent),
 		}
-	const restacked = onParentTip({ ...params, record: state, parentBranch: parent.branch })
+	const restacked = onParentTip({ ...params, record, parentBranch: parent.branch })
 	if ('refusal' in restacked) return restacked
+	const note = support.stacks
+		? []
+		: [
+				STACK_LANDING_LINES.basedOn
+					.replace('{number}', String(parent.pullRequest.number))
+					.replace('{branch}', () => parent.branch)
+					.replace('{why}', () => support.why),
+			]
 	return {
 		pullBase: parent.branch,
 		textBase: restacked.parentHead,
-		route: routed.route,
+		route: support.stacks ? 'native' : 'branch',
+		linked,
 		parentMerged: false,
 		parentPull: parent.pullRequest,
-		lines: [...lines, ...restacked.lines],
+		lines: [...note, ...restacked.lines],
 	}
 }
 
 /**
- * After the pull request is known: a stacked pull request just opened is linked to its parent's (native), and one
- * that merges into another branch than the landing's is retargeted; the lines saying so, or the host's refusal.
+ * After the pull request is known: a stacked pull request not linked yet is linked on its parent's (native, the parent
+ * open; `route: native` recorded only once the host took it, so a refused link is tried again at the next landing), and
+ * one that merges into another branch than the landing's is retargeted; the lines saying so, or the host's refusal.
  *
  * @intent keep a stacked pull request on the right base
  * @internal
  */
 export function settleStackedPull(params: {
 	worktree: string
+	lotFolder: string
 	host: HostAdapter
 	stack: StackLanding
 	pullRequest: PullRequest
@@ -91,13 +111,16 @@ export function settleStackedPull(params: {
 }): { lines: string[] } | { refusal: string } {
 	const { host, stack, pullRequest, worktree } = params
 	const lines: string[] = []
-	if (params.opened && stack.route === 'native' && !stack.parentMerged) {
+	if (stack.route === 'native' && !stack.linked && !stack.parentMerged) {
 		const linked = host.linkStack({
 			root: worktree,
 			parent: stack.parentPull.url,
 			child: pullRequest.url,
 		})
 		if (linked !== undefined) return linked
+		const record = readStackRecord({ lotFolder: params.lotFolder })
+		if (record !== undefined)
+			writeStack({ lotFolder: params.lotFolder, record: { ...record, route: 'native' } })
 		lines.push(STACK_LANDING_LINES.linked.replace('{number}', String(stack.parentPull.number)))
 	}
 	if (!params.opened && pullRequest.base !== stack.pullBase) {
@@ -138,33 +161,6 @@ function readParent(params: {
 	if (read === undefined) return { exitCode: 1, refusal: fill(STACK_LANDING_LINES.noParentPull) }
 	if ('refusal' in read) return { exitCode: 1, refusal: `lot land: ${read.refusal}` }
 	return { branch: identity.branch, pullRequest: read }
-}
-
-/**
- * The lot's route: the one its first landing recorded, else the host's answer now (recorded at once), with the note of
- * a pull request based on the parent's branch because the host has no stacks here.
- */
-function routeOf(params: {
-	worktree: string
-	lotFolder: string
-	host: HostAdapter
-	record: StackRecord
-	parentPull: PullRequest
-	parentBranch: string
-}): { route: StackRoute; line?: string } {
-	const { record } = params
-	if (record.route !== undefined) return { route: record.route }
-	const support = params.host.probeStacks({ root: params.worktree })
-	const route: StackRoute = support.stacks ? 'native' : 'branch'
-	writeStack({ lotFolder: params.lotFolder, record: { ...record, route } })
-	if (support.stacks) return { route }
-	return {
-		route,
-		line: STACK_LANDING_LINES.basedOn
-			.replace('{number}', String(params.parentPull.number))
-			.replace('{branch}', () => params.parentBranch)
-			.replace('{why}', () => support.why),
-	}
 }
 
 /**
@@ -215,26 +211,28 @@ function offMergedParent(params: {
 	branch: string
 	base: string
 	lotFolder: string
-	record: StackRecord & { route: StackRoute }
+	record: StackRecord
+	/** native: linked by the host, which rewrites the branch itself; branch: rebased here. */
+	route: StackRoute
 	parentPull: PullRequest
 	landing: LandingRecord | undefined
-	lines: string[]
 }): StackLanding | StackRefusal {
 	const { worktree, record, base } = params
 	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${base}`
 	const baseTip = readGit({ root: worktree, args: ['rev-parse', originBase] }).trim()
 	const moved: { lines: string[]; lease?: string } | StackRefusal =
-		record.route === 'native' ? followHost({ ...params }) : offParentCommits({ ...params, baseTip })
+		params.route === 'native' ? followHost({ ...params }) : offParentCommits({ ...params, baseTip })
 	if ('refusal' in moved) return moved
 	writeStack({ lotFolder: params.lotFolder, record: { ...record, parentHead: baseTip } })
 	return {
 		pullBase: base,
 		textBase: originBase,
-		route: record.route,
+		route: params.route,
+		linked: params.route === 'native',
 		parentMerged: true,
 		parentPull: params.parentPull,
 		...(moved.lease !== undefined && { lease: moved.lease }),
-		lines: [...params.lines, ...moved.lines],
+		lines: moved.lines,
 	}
 }
 
@@ -373,7 +371,16 @@ function rebaseOnto(params: {
 	const files = readGit({ root: worktree, args: ['diff', '--name-only', '--diff-filter=U'] })
 		.split('\n')
 		.filter(Boolean)
-	spawnSync('git', ['rebase', '--abort'], { cwd: worktree })
+	const abort = spawnSync('git', ['rebase', '--abort'], { cwd: worktree, encoding: 'utf8' })
+	if (abort.status !== 0)
+		return {
+			exitCode: STACK_CONFLICT_EXIT,
+			refusal: STACK_LANDING_LINES.notUndone
+				.replace('{lot}', () => params.lot)
+				.replace('{onto}', () => params.label)
+				.replace('{files}', () => (files.length > 0 ? files.join(', ') : 'the lot'))
+				.replace('{reason}', () => abort.stderr.trim().split('\n')[0] || `exit ${abort.status}`),
+		}
 	return {
 		exitCode: STACK_CONFLICT_EXIT,
 		refusal: STACK_LANDING_LINES.conflict

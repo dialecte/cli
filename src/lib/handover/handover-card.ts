@@ -43,7 +43,7 @@ import { readProfile } from '../profile/profile.ts'
 import { shellQuote, shellWord } from '../shell-quote.ts'
 import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
 import { STACK_CARD_LINE_NAME } from '../store/stack.constants.ts'
-import { stackTextOf } from '../store/stack.ts'
+import { readStack, stackTextOf } from '../store/stack.ts'
 import { countingReceipts, describeSkippedReceipts } from '../tdd/counting-receipts.ts'
 import { writtenLinesOf } from '../tdd/duplicate-case-ids.ts'
 import {
@@ -1047,5 +1047,8 @@ function optionalSection(params: { name: string; text: string | undefined }): Ca
  */
 export function buildStackCardLine(params: { folder: string }): CardGateLine | undefined {
 	const detail = stackTextOf({ lotFolder: params.folder })
-	return detail === undefined ? undefined : { name: STACK_CARD_LINE_NAME, status: 'passed', detail }
+	if (detail === undefined) return undefined
+	const read = readStack({ lotFolder: params.folder })
+	const damaged = read !== undefined && 'damage' in read
+	return { name: STACK_CARD_LINE_NAME, status: damaged ? 'warning' : 'passed', detail }
 }

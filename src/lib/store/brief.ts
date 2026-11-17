@@ -55,7 +55,7 @@ import {
 	publicTextLabel,
 	referenceLabelIn,
 } from './public-text.ts'
-import { resolveStackParent } from './stack.ts'
+import { resolveStackParent } from './stack-parent.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
 import { SIMULATED_FINDING_RULES } from './store.constants.ts'
 

@@ -25,7 +25,11 @@ export const STACK_TEXT = {
 	noPull: 'no pull request yet',
 	unknown: 'unknown',
 	damaged: 'damaged',
+	damagedRecord: 'damaged ({damage})',
 } as const
+
+/** The damage of a `stack.json` that does not read as a stack record. */
+export const STACK_DAMAGE = 'stack.json does not read as a stack record'
 
 /** The card's stack line name, and the `lot status` line. */
 export const STACK_CARD_LINE_NAME = 'stack'

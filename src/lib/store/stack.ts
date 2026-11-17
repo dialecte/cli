@@ -2,100 +2,68 @@
  * Stacks for dependent lots (33CI CI4): a lot started on another open lot (`lot start --on <parent>`) records the parent
  * and the parent's tip it sits on in `stack.json`; landing and closing read it.
  */
-import { readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
-import { realPathOf } from '../file-system.ts'
-import { tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
 import { lotState } from './lot-state.ts'
 import { replaceWhole } from './publish.ts'
-import { requiredLotOf } from './resolve-lot.ts'
 import {
+	STACK_DAMAGE,
 	STACK_FILE,
-	STACK_PARENT_REFUSALS,
 	STACK_ROUTES,
 	STACK_SCHEMA,
 	STACK_TEXT,
-	STACKABLE_STATES,
 } from './stack.constants.ts'
 
-import type { StackParent, StackRecord } from './stack.types.ts'
+import type { StackDamage, StackRecord } from './stack.types.ts'
 
 /**
- * The open lot `argument` names as the parent of a lot of `repository`: its folder, name, branch and branch tip; the
- * refusal line when it names no lot, a damaged one, one no longer at work, one of another repository, or one whose
- * branch the repository does not hold.
- *
- * @intent start a lot on another open lot's branch
- * @internal
- */
-export function resolveStackParent(params: {
-	argument: string
-	repository: string
-}): StackParent | { refusal: string } {
-	const { argument, repository } = params
-	function fill(template: string): string {
-		return template.replaceAll('{lot}', () => argument)
-	}
-	const required = requiredLotOf({ argument, cwd: repository, mode: 'read' })
-	if (!('lot' in required)) return { refusal: fill(STACK_PARENT_REFUSALS.unknown) }
-	const lotFolder = required.lot
-	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
-	if (checked === undefined || !('input' in checked))
-		return { refusal: fill(STACK_PARENT_REFUSALS.damaged) }
-	const { state } = lotState(checked.input)
-	if (!STACKABLE_STATES.includes(state))
-		return { refusal: fill(STACK_PARENT_REFUSALS.state).replace('{state}', state) }
-	const { identity } = checked.input
-	const own = realPathOf(repository)
-	if (realPathOf(identity.repository) !== own)
-		return {
-			refusal: fill(STACK_PARENT_REFUSALS.repository)
-				.replace('{parent}', () => identity.repository)
-				.replace('{repository}', () => own),
-		}
-	const head = tryReadGit({
-		root: repository,
-		args: ['rev-parse', '--verify', '--quiet', `refs/heads/${identity.branch}^{commit}`],
-	})?.trim()
-	if (head === undefined || head === '')
-		return {
-			refusal: fill(STACK_PARENT_REFUSALS.noBranch)
-				.replace('{branch}', () => identity.branch)
-				.replace('{repository}', () => own),
-		}
-	return { lotFolder, name: basename(lotFolder), branch: identity.branch, head }
-}
-
-/**
- * The lot's stack record; undefined when it has none (not stacked) or it does not read as one.
+ * The lot's stack record; undefined when it has none (not stacked); its damage when the file does not read as one (torn,
+ * or another shape): never read as not stacked.
  *
  * @intent read which lot a lot was started on
  * @internal
  */
-export function readStack(params: { lotFolder: string }): StackRecord | undefined {
+export function readStack(params: { lotFolder: string }): StackRecord | StackDamage | undefined {
+	const path = join(params.lotFolder, STACK_FILE)
+	if (!existsSync(path)) return undefined
 	let value: unknown
 	try {
-		value = JSON.parse(readFileSync(join(params.lotFolder, STACK_FILE), 'utf8'))
+		value = JSON.parse(readFileSync(path, 'utf8'))
 	} catch {
-		return undefined
+		return { damage: STACK_DAMAGE }
 	}
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+	if (typeof value !== 'object' || value === null || Array.isArray(value))
+		return { damage: STACK_DAMAGE }
 	const record = value as Record<string, unknown>
-	if (record.schema !== STACK_SCHEMA) return undefined
 	const { parent, parentHead, at, route } = record
-	if (![parent, parentHead, at].every((field) => typeof field === 'string' && field !== ''))
-		return undefined
-	const known = typeof route === 'string' && STACK_ROUTES.includes(route) ? route : undefined
+	if (
+		record.schema !== STACK_SCHEMA ||
+		![parent, parentHead, at].every((field) => typeof field === 'string' && field !== '') ||
+		(route !== undefined && (typeof route !== 'string' || !STACK_ROUTES.includes(route)))
+	)
+		return { damage: STACK_DAMAGE }
 	return {
 		schema: STACK_SCHEMA,
 		parent,
 		parentHead,
 		at,
-		...(known !== undefined && { route: known }),
+		...(route !== undefined && { route }),
 	} as StackRecord
+}
+
+/**
+ * The lot's stack record when it reads as one; undefined when it has none or it is damaged (a reader that only shows
+ * what a stack adds, such as the pull request's depends-on part).
+ *
+ * @intent read a stack record a reader may skip when damaged
+ * @internal
+ */
+export function readStackRecord(params: { lotFolder: string }): StackRecord | undefined {
+	const read = readStack(params)
+	return read === undefined || 'damage' in read ? undefined : read
 }
 
 /**
@@ -108,6 +76,7 @@ export function readStack(params: { lotFolder: string }): StackRecord | undefine
 export function stackTextOf(params: { lotFolder: string }): string | undefined {
 	const record = readStack(params)
 	if (record === undefined) return undefined
+	if ('damage' in record) return STACK_TEXT.damagedRecord.replace('{damage}', () => record.damage)
 	const parentFolder = join(dirname(params.lotFolder), record.parent)
 	const number = readLanding({ lotFolder: parentFolder })?.number
 	const checked = readCheckedLotState({

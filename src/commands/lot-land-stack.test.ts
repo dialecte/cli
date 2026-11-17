@@ -21,6 +21,7 @@ import { cliTemplate } from '../../test/lot-pr.ts'
 import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { landLot } from '../lib/handover/land-lot.ts'
+import { templateFaultOf } from '../lib/pr/compose-pull-request.ts'
 import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
 import { runLotLand } from './lot-land.ts'
 
@@ -509,3 +510,100 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 		})
 	})
 })
+
+describe(
+	'the native route once linked or merged, refusals that write nothing, a damaged stack record',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		it('host with stacks, the parent merged before the child ever landed → rebased off the parent onto origin/main, opened on main, queued with auto-merge', () => {
+			const stack = stackedRepository()
+			const merged = squashParent({ stack })
+			const host = recordingHost({ stacks: true, parent: parentPullRequest({ state: 'merged' }) })
+
+			const landed = landChild({ stack, host, draft: false })
+
+			expect({
+				exitCode: landed.exitCode,
+				onMain: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
+				writes: writesOf(host),
+			}).toEqual({
+				exitCode: 0,
+				onMain: merged,
+				writes: ['open feat/y -> main "feat(y): y answers two"', 'queue 7'],
+			})
+		})
+
+		it('a stack link the host refused → no native route recorded; the next landing links it again and records it', () => {
+			const stack = stackedRepository()
+			const host = recordingHost({ stacks: true, parent: parentPullRequest(), linkRefusals: 1 })
+
+			const first = landChild({ stack, host, draft: true })
+			const afterFirst = JSON.parse(
+				readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8'),
+			) as {
+				route?: string
+			}
+			host.calls.length = 0
+			const second = landChild({ stack, host, draft: true })
+
+			expect({
+				first: first.exitCode,
+				routeAfterFirst: afterFirst.route,
+				second: second.exitCode,
+				relinked: writesOf(host).includes(`link ${pullUrlOf(5)} ${pullUrlOf(7)}`),
+				routeAfterSecond: (
+					JSON.parse(readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8')) as {
+						route?: string
+					}
+				).route,
+			}).toEqual({
+				first: 1,
+				routeAfterFirst: undefined,
+				second: 0,
+				relinked: true,
+				routeAfterSecond: 'native',
+			})
+		})
+
+		it('a queue refused because the parent is open and the host has no stacks → stack.json left byte for byte', () => {
+			const stack = stackedRepository()
+			const before = readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8')
+			const host = recordingHost({ parent: parentPullRequest() })
+
+			const landed = landChild({ stack, host, draft: false })
+
+			expect({
+				exitCode: landed.exitCode,
+				stack: readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8'),
+			}).toEqual({ exitCode: 1, stack: before })
+		})
+
+		it('a torn stack.json → lot land refuses naming the damage, nothing pushed, nothing asked of the host', () => {
+			const stack = stackedRepository()
+			writeFileSync(join(stack.child.lotFolder, 'stack.json'), '{"schema":1,"parent":')
+			const host = recordingHost({ parent: parentPullRequest() })
+
+			const landed = landChild({ stack, host, draft: true })
+
+			expect({
+				exitCode: landed.exitCode,
+				lines: landed.lines,
+				writes: writesOf(host),
+				pushed: originHead({ stack, branch: 'feat/y' }),
+			}).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: ${CHILD} is damaged: its stack.json does not read as a stack record, nothing pushed`,
+				],
+				writes: [],
+				pushed: '',
+			})
+		})
+
+		it('a template without the depends marker → refused naming the whole marker', () => {
+			const template = cliTemplate().replace('<!-- dialecte:depends -->\n', '')
+
+			expect(templateFaultOf(template)).toBe('missing marker <!-- dialecte:depends -->')
+		})
+	},
+)

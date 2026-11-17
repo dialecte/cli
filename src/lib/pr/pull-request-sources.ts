@@ -20,7 +20,7 @@ import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-wo
 import { lotsOf } from '../store/brief.ts'
 import { readLotOverlaps } from '../store/lot-overlaps.ts'
 import { folderPlanEntryIds } from '../store/public-text.ts'
-import { readStack } from '../store/stack.ts'
+import { readStackRecord } from '../store/stack.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readTestsRecord } from '../tdd/tests-record.ts'
 import { linesOf, templateFaultOf } from './compose-pull-request.ts'
@@ -183,7 +183,7 @@ export function readPullRequestSources(params: {
 
 /** The pull request number the lot's stack parent landed through (its `landing.json`); undefined when none. */
 function stackParentPullOf(params: { lotFolder: string }): number | undefined {
-	const stack = readStack(params)
+	const stack = readStackRecord(params)
 	if (stack === undefined) return undefined
 	return readLanding({ lotFolder: join(dirname(params.lotFolder), stack.parent) })?.number
 }

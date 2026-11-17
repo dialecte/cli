@@ -158,7 +158,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(calls).toEqual([])
 		expect(result.output).toBe(
-			"lot pr: .github/pull_request_template.md is not the renderer's template (missing marker summary): copy the cli's template into the repository",
+			"lot pr: .github/pull_request_template.md is not the renderer's template (missing marker <!-- dialecte:summary -->): copy the cli's template into the repository",
 		)
 	})
 

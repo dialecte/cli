@@ -88,4 +88,13 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 			parent: undefined,
 		})
 	})
+
+	it('lot status of a lot whose stack.json is torn → the stack line says it is damaged', () => {
+		const { workspace, child } = stackedLots({ landed: true })
+		writeFileSync(join(child, 'stack.json'), '{"schema":1,"parent":')
+
+		const status = withLines(runLot({ cwd: workspace.repository, argv: ['status', CHILD] }))
+
+		expect(status.lines).toContain('stack: damaged (stack.json does not read as a stack record)')
+	})
 })

@@ -243,6 +243,7 @@ function publishLanding(params: {
 	if (stack !== undefined) {
 		const settled = settleStackedPull({
 			worktree,
+			lotFolder: params.lotFolder,
 			host,
 			stack,
 			pullRequest: pull,

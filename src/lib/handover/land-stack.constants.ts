@@ -1,5 +1,6 @@
 /** `lot land` of a stacked lot (33CI CI4): its lines; `{…}` placeholders filled. */
 export const STACK_LANDING_LINES = {
+	damaged: 'lot land: {lot} is damaged: its {damage}, nothing pushed',
 	noParent:
 		'lot land: {lot} stacks on {parent}, whose records do not read: dialecte lot status {parent} says how, nothing pushed',
 	noParentPull:
@@ -10,6 +11,8 @@ export const STACK_LANDING_LINES = {
 		'lot land: #{number} ({parent}) merged and the host has not rebased {branch} yet: land again once it has, nothing pushed',
 	conflict:
 		'lot land: rebasing {lot} onto {onto} conflicts in {files}: the rebase is undone, nothing pushed',
+	notUndone:
+		'lot land: rebasing {lot} onto {onto} conflicts in {files} and git rebase --abort failed ({reason}): the worktree is mid-rebase, run git rebase --abort there by hand; nothing pushed',
 	dirty:
 		'lot land: {lot} must be rebased onto {onto} and its worktree holds uncommitted changes to tracked files: commit or move them, nothing pushed',
 	restacked: 'rebased onto {parent} {commit} (its branch moved)',

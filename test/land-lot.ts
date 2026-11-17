@@ -167,12 +167,15 @@ export function recordingHost(
 		stacks?: true | string
 		/** A stack parent's pull request, answered when read by its number. */
 		parent?: PullRequest
+		/** How many stack links the host refuses before it takes one. */
+		linkRefusals?: number
 	} = {},
 ): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
 	let pullRequest = params.existing
 	let parent = params.parent
+	let linkRefusals = params.linkRefusals ?? 0
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
 			calls.push(`read ${call.ref}`)
@@ -234,7 +237,9 @@ export function recordingHost(
 		},
 		linkStack: function linkStack(call) {
 			calls.push(`link ${call.parent} ${call.child}`)
-			return undefined
+			if (linkRefusals === 0) return undefined
+			linkRefusals -= 1
+			return { refusal: 'gh stack link: the host refused the link' }
 		},
 		queueStack: function queueStack(call) {
 			calls.push(`stack-queue ${call.number}`)

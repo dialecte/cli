@@ -8,7 +8,10 @@ import type { StackRoute } from '../store/stack.types.ts'
 export type StackLanding = {
 	pullBase: string
 	textBase: string
+	/** native: the host has stacks here (linked, or to link); branch: based on the parent's branch only. */
 	route: StackRoute
+	/** Whether the host took the link already (`route: native` in stack.json). */
+	linked: boolean
 	parentMerged: boolean
 	parentPull: PullRequest
 	/** The head origin's branch holds after the host's own rewrite: the lease of the next push. */

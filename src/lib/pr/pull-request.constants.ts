@@ -46,7 +46,7 @@ export const DOCS_STEP = 'docs'
 
 /** Why a template is not the renderer's: `{part}` the marker. */
 export const TEMPLATE_FAULTS = {
-	missing: 'missing marker {part}',
+	missing: 'missing marker <!-- dialecte:{part} -->',
 	twice: 'marker {part} twice',
 	afterKept: 'marker {part} after kept',
 } as const

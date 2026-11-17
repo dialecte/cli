@@ -54,7 +54,7 @@ import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
 import { STACK_SCHEMA } from '../lib/store/stack.constants.ts'
-import { readStack, writeStack } from '../lib/store/stack.ts'
+import { readStackRecord, writeStack } from '../lib/store/stack.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
 import { appendStoreList, storeListRefusal } from '../lib/store/store-list.ts'
 import { LOT_LINK_SEGMENTS, RUNNERS, STORE_REFUSAL } from '../lib/store/store.constants.ts'
@@ -421,6 +421,8 @@ function recheckedFailure(params: {
 }): { name: string; reason: string } | undefined {
 	const store = dirname(params.lotFolder)
 	const accepted = params.accepted ?? []
+	// a stacked lot's parent is its base, never an overlap (33CI CI4)
+	const parent = readStackRecord({ lotFolder: params.lotFolder })?.parent
 	const [overlap] = overlappingOpenLots({
 		store,
 		registry: registryOfCommonFolder(dirname(store)),
@@ -429,8 +431,7 @@ function recheckedFailure(params: {
 		except: basename(params.lotFolder),
 		pause: params.pause,
 	})
-		// a stacked lot's parent is its base, never an overlap (33CI CI4)
-		.filter((overlap) => overlap.name !== readStack({ lotFolder: params.lotFolder })?.parent)
+		.filter((overlap) => overlap.name !== parent)
 		.filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
