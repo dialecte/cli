@@ -28,6 +28,9 @@ import { findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
 import { forecastAgeText, forecastHoldText, forecastViewOf } from '../coordination/forecast-view.ts'
 import { counted } from '../counted.ts'
+import { designNextOf, designReasonsText, designStateText } from '../design/design-line.ts'
+import { shownDesignStandingOf } from '../design/design-standing.ts'
+import { DESIGN_PASSING_STATES } from '../design/design.constants.ts'
 import { pairRuns } from '../events/pair-runs.ts'
 import { readEvents } from '../events/read-events.ts'
 import { STATION_VERDICTS } from '../events/station-event.constants.ts'
@@ -73,6 +76,8 @@ import {
 	CONTRIB_KEY_CHANGED_SUFFIX,
 	CONTRIB_LINE_NAME,
 	CONTRIB_NEVER_RUN_DETAIL,
+	DESIGN_LINE_DETAIL,
+	DESIGN_LINE_NAME,
 	DETAIL_SEPARATOR,
 	EFFORT_BELOW_DETAIL,
 	EFFORT_CLASS_DETAIL,
@@ -1396,4 +1401,30 @@ function riskClassPart(params: { derived: RiskDerivedLine | undefined }): string
 						}),
 		},
 	})
+}
+
+/**
+ * The card's `design` line (DESIGN-GATE section 4, DG1): `passed` for a design approved, waived or not needed, a
+ * `warning` otherwise, never `failed`; none for a lot that needs no design and recorded none.
+ *
+ * @intent show on the card where a lot's design stands
+ * @internal
+ */
+export function buildDesignLine(params: { folder: string }): CardGateLine | undefined {
+	const { folder } = params
+	const standing = shownDesignStandingOf({ lotFolder: folder })
+	if (standing === undefined) return undefined
+	const status = DESIGN_PASSING_STATES.includes(standing.state) ? 'passed' : 'warning'
+	const words = designStateText(standing)
+	const reasons = designReasonsText(standing.need.reasons)
+	const next = designNextOf({ standing, lot: basename(folder) })
+	if (next === undefined) return { name: DESIGN_LINE_NAME, status, detail: words }
+	return {
+		name: DESIGN_LINE_NAME,
+		status,
+		detail: fillMessage({
+			template: DESIGN_LINE_DETAIL,
+			values: { words, reasons: reasons === '' ? '' : ` (${reasons})`, next },
+		}),
+	}
 }

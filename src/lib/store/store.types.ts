@@ -165,7 +165,10 @@ export type StoreFileNames = Readonly<
 		| 'planEntry'
 		| 'approvals'
 		| 'pulledComments'
-		| 'forecast',
+		| 'forecast'
+		| 'design'
+		| 'designCopies'
+		| 'baseDeclared',
 		string
 	>
 >

@@ -10,6 +10,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { viewDeclaredHighOf } from '../design/declared-sources.ts'
+import { lotDesignStandingOf } from '../design/design-standing.ts'
+import { DESIGN_STATES } from '../design/design.constants.ts'
 import { readEvents } from '../events/read-events.ts'
 import { STATION_VERDICTS } from '../events/station-event.constants.ts'
 import { tryReadGit } from '../git.ts'
@@ -39,6 +42,7 @@ import { LEDGER_FILE, ROUND_PATTERN, SEVERITY_SPELLINGS } from './review-rounds.
 
 import type { LotEvent } from '../events/event.types.ts'
 import type {
+	DesignRow,
 	FindingRow,
 	ReviewRecord,
 	PublicWordTest,
@@ -52,12 +56,14 @@ export function readReviewRecord(params: { folder: string }): ReviewRecord | und
 	const file = join(params.folder, STORE_FILES.review)
 	if (!existsSync(file)) return undefined
 	const record: ReviewRecord = { findings: [], verdicts: [] }
+	let design: DesignRow | undefined
 	for (const line of readFileSync(file, 'utf8').split('\n')) {
 		const row = rowOfLine(line)
 		if (row?.kind === 'finding') record.findings.push(row)
 		else if (row?.kind === 'verdict') record.verdicts.push(row)
+		else if (row?.kind === 'design') design = row
 	}
-	return record
+	return design === undefined ? record : { ...record, design }
 }
 
 /**
@@ -80,6 +86,7 @@ export function writeReviewRecord(params: { folder: string }): void {
 	const rows: ReviewRow[] = [
 		...findingRowsOf({ folder, inTree: treeFileTestOf(folder) }),
 		...verdicts,
+		...designRowsOf({ folder }),
 	]
 	const path = join(folder, STORE_FILES.review)
 	if (rows.length === 0 && !existsSync(path)) return
@@ -311,6 +318,45 @@ function approvalVerdictRowsOf(params: {
 	return [...rows.values()]
 }
 
+/** The design row `review.jsonl` holds, as a view reads the lot's shared areas (files only); none without one. */
+function designRowsOf(params: { folder: string }): DesignRow[] {
+	const row = designRowOf({
+		folder: params.folder,
+		declaredHigh: viewDeclaredHighOf({ lotFolder: params.folder }),
+	})
+	return row === undefined ? [] : [row]
+}
+
+/**
+ * The design row of a folder whose `design.jsonl` exists, held to the shared areas `declaredHigh` (a view's, or a
+ * refusing verb's): the lot's design state now and who approved or waived it, named only when a public word; never
+ * its file, hash or reason. Undefined for a folder that recorded nothing of its design.
+ *
+ * @intent give the public record of where a lot's design stands
+ * @internal
+ */
+export function designRowOf(params: {
+	folder: string
+	declaredHigh: readonly string[]
+}): DesignRow | undefined {
+	const { folder } = params
+	if (!existsSync(join(folder, STORE_FILES.design))) return undefined
+	const isPublicWord = publicWordTestOf({
+		root: worktreeOf(folder),
+		ids: folderPlanEntryIds({ folder }),
+	})
+	const { state, by } = lotDesignStandingOf({
+		lotFolder: folder,
+		declaredHigh: params.declaredHigh,
+	})
+	return {
+		schema: REVIEW_RECORD_SCHEMA,
+		kind: 'design',
+		state,
+		...(by !== undefined && isPublicWord(by) && { by: { kind: 'person', name: by } }),
+	}
+}
+
 /**
  * The record as a render of `head` shows it: a verdict given on another head (an approval before a later commit or a
  * rebase) left out, so no text claims an approval of a head nobody approved.
@@ -364,6 +410,8 @@ function rowOfLine(line: string): ReviewRow | undefined {
 	const parsed = parsedLine(line)
 	if (parsed?.schema !== REVIEW_RECORD_SCHEMA) return undefined
 	if (parsed.kind === 'finding' && typeof parsed.id === 'string') return parsed as FindingRow
+	if (parsed.kind === 'design' && (DESIGN_STATES as readonly unknown[]).includes(parsed.state))
+		return parsed as DesignRow
 	const by = parsed.by as Record<string, unknown> | undefined
 	if (
 		parsed.kind === 'verdict' &&

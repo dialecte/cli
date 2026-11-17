@@ -1,4 +1,5 @@
 import type { ForecastView } from '../lib/coordination/forecast.types.ts'
+import type { DesignStatusJson } from '../lib/design/design.types.ts'
 import type { HandoverEntryState } from '../lib/handover/handover.types.ts'
 import type { Effort, RiskDerivedLine } from '../lib/risk/risk.types.ts'
 import type { NextStation } from '../lib/store/next-station.types.ts'
@@ -84,6 +85,8 @@ export type LotStatusJson = {
 	rounds: RoundsStatus
 	/** A lot started on another (33CI CI4): `on <parent> (#<pr>, <state>)`; absent for a lot not stacked. */
 	stack?: string
+	/** Where the lot's design stands (DESIGN-GATE): absent for a lot that needs none and recorded none. */
+	design?: DesignStatusJson
 }
 
 /**

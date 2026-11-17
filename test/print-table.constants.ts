@@ -130,6 +130,11 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		noJson: PLAIN_TEXT,
 	},
+	'lot design': {
+		argv: ['design', FORGED_WORD],
+		quotes: true,
+		json: ['design', FORGED_WORD, '--json'],
+	},
 	'lot brief': {
 		argv: [
 			'brief',

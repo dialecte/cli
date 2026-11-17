@@ -42,6 +42,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot pr <id> [--print] [--json]
   dialecte lot review <id> [--no-open] | lot review <id> --pull --round <n>
   dialecte lot approve <id> --by <who> [--reason <text>]
+  dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id> [--draft]
   dialecte lot close <hand-over name|lot id|index>... [--json]
 
@@ -138,6 +139,33 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
             in --by or --reason, or a --by holding what a public record never holds, refused (exit
             2) before the host is asked; a lot without a landing names lot land <id> --draft
+  design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
+           appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
+           design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
+           gone); a file missing, empty, not UTF-8 or in no git work tree (a scratch or temporary
+           folder) is refused (exit 2), nothing written; --from-plan records the spec of the plan
+           entry the lot carries out, refused when another lot or fix entry of its block names the
+           same spec (write this lot's own design) or the lot carries out no entry with a spec;
+           --approve --by <who> [--reason <text>] appends an approval of the last recorded hash with
+           the need it was given against, refused when nothing is recorded or the source exists with
+           other bytes (record it again); --waive --by <who> --reason <text> appends a waiver with
+           the current need, refused on a lot that needs no design; both refused from the lot's own
+           worktree or its review throwaway (approve from the main checkout), and on a --by or
+           --reason holding a forbidden word or a --by holding what a public record never holds
+           (exit 2); the orchestrator in any casing is recorded as orchestrator; a lot no longer at
+           work is refused (exit 1); without an option it prints design <state>[ by <kind>][ ·
+           <reasons>] and the next command, --json { required, reasons, state, by, uncovered } (by
+           the kind, never a name)
+  design - the need, computed by every reader and never stored: required when a scope entry (or a
+           path) lies in a dialecte.risk.high area or is broader than one, or the lot carries out a
+           plan entry of kind lot; an approval or a waiver holds only for the need it was given
+           against (a reason of a new kind or glob reads unapproved or missing again); a recorded
+           design gates the lot whatever its need; states approved, waived, unapproved (shown not
+           approved), stale (shown stale since its approval: the source edited after its approval),
+           missing, not-required (shown not required); lot start and its dry run print design
+           required (<reasons>) or design not required, lot forecast and lot status the state line,
+           the hand-over card a design line (passed or a warning, never failed), review.jsonl a
+           design row and the pull request body Design: <state> by <kind>; nothing refuses on it yet
   land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
          its body's depends-on part names the parent's pull request (a parent without one is
          refused: land it with --draft first); the host's stacks are probed once (gh stack): with
@@ -396,9 +424,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `land`, `close`
+Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -870,3 +898,12 @@ landed, its checks are green there and no finding but a nit is open, it records 
 approval), renders the body again and queues the pull
 request. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
 waits for a person.
+
+`dialecte lot design <id> --from <DESIGN.md>` records a lot's design before its tests, by the sha256 of its bytes, and
+keeps a copy in the lot folder. A person or the orchestrator approves it from the main checkout, never from the lot's
+own worktree: `dialecte lot design <id> --approve --by <who>`. The approval holds for that content and for the need it
+was given against: an edit of the file reads stale, and a scope that reaches a new shared area reads not approved until
+it is approved again. A lot needs a design when its scope lies in a `dialecte.risk.high` area (the repository's shared
+concepts) or is broader than one, or when it carries out a plan entry of kind `lot`; `--waive --by <who> --reason
+<text>` lets such a lot go on without one, recorded and shown. `lot start`, `lot status`, `lot forecast`, the card and
+the pull request body say where the design stands. Nothing refuses on it yet.

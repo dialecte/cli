@@ -6,6 +6,9 @@ export type Effort = 'low' | 'medium' | 'high'
 /** The risk class of a lot. */
 export type RiskClass = 'light' | 'medium' | 'high'
 
+/** A declared glob a scope entry or a file reaches: the glob that holds it, or one it is broader than. */
+export type DeclaredMatch = { kind: 'declared' | 'broad-scope'; glob: string }
+
 /** One reason of a derived class. */
 export type RiskReason = {
 	kind: (typeof RISK_REASON_KINDS)[number]

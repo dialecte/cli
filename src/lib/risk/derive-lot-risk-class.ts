@@ -9,9 +9,9 @@ import { compareApiIndexes } from '../api/api-index-diff.ts'
 import { isFolder } from '../file-system.ts'
 import { tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
+import { declaredHighOf, readDeclaredHigh } from './declared-high.ts'
 import { deriveRiskClass } from './derive-risk-class.ts'
 import { readRiskDiff } from './read-risk-diff.ts'
 import { appendRiskLine } from './risk-records.ts'
@@ -107,29 +107,29 @@ function notDerivedLineOf(params: { error: unknown }): string {
 	})
 }
 
-/** The globs `root`'s `package.json` declares high (`dialecte.risk.high`); none when it declares none. */
-export function readDeclaredHigh(params: { root: string }): string[] {
-	return declaredHighOf({ manifest: readPackageJson(params.root) })
-}
-
 /**
  * The globs declared high by `base`'s `package.json` (none when the base holds none) then those `root`'s adds, each
  * once: a change cannot lower its own class by editing the list.
  */
 function readDeclaredHighOfDiff(params: { root: string; base: string }): string[] {
+	return [...new Set([...readBaseDeclaredHigh(params), ...readDeclaredHigh({ root: params.root })])]
+}
+
+/**
+ * The globs `base`'s `package.json` declares high, read through git in the repository at `root`; none when the base
+ * holds no `package.json`.
+ *
+ * @intent read the shared areas a lot's base declares, which no file of its tree can narrow
+ * @internal
+ */
+export function readBaseDeclaredHigh(params: { root: string; base: string }): string[] {
 	const baseText = tryReadGit({
 		root: params.root,
 		args: ['show', `${params.base}:./${RISK_PACKAGE_FILE}`],
 	})
-	const baseDeclared =
-		baseText === undefined ? [] : declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
-	return [...new Set([...baseDeclared, ...readDeclaredHigh({ root: params.root })])]
-}
-
-/** The globs a manifest declares high (`dialecte.risk.high`), its strings only. */
-function declaredHighOf(params: { manifest: PackageJson }): string[] {
-	const declaredHigh = params.manifest.dialecte?.risk?.high ?? []
-	return Array.isArray(declaredHigh) ? declaredHigh.filter(isText) : []
+	return baseText === undefined
+		? []
+		: declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
 }
 
 /** The root and base a derivation reads: the identity's worktree and base commit, else the cwd's work tree and HEAD. */
@@ -146,9 +146,4 @@ function derivationSourceOf(params: {
 	}
 	const root = workTreeTopOf(params.cwd)
 	return root === undefined ? undefined : { root, base: RISK_HEAD_BASE }
-}
-
-/** Whether a declared entry is a string (a manifest edited by hand may hold anything). */
-function isText(value: unknown): value is string {
-	return typeof value === 'string'
 }

@@ -350,3 +350,9 @@ export const PACKAGE_FILES_EXCLUSION_PREFIX = '!'
 
 /** The fields of a check key, each a string: a stored record's key is checked against them. */
 export const CHECK_KEY_FIELDS = ['tree', 'lockHash', 'commandHash', 'linked'] as const
+
+/** The card's design line (DESIGN-GATE section 4). */
+export const DESIGN_LINE_NAME = 'design'
+
+/** A design line's detail when the design does not let the lot go on: `{words}` its state, `{reasons}`, `{next}`. */
+export const DESIGN_LINE_DETAIL = '{words}{reasons}: {next}'
