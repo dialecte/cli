@@ -76,30 +76,6 @@ describe('createGithubHost', () => {
 		})
 	})
 
-	it('a pull request retitled → gh pr edit <number> --title <title>, no refusal', () => {
-		const root = fakeGh({})
-
-		expect(
-			createGithubHost().retitlePullRequest({ root, number: 12, title: 'feat(x): x' }),
-		).toBeUndefined()
-		expect(readFileSync(join(root, 'gh.args'), 'utf8').split('\n')).toEqual([
-			'pr',
-			'edit',
-			'12',
-			'--title',
-			'feat(x): x',
-			'',
-		])
-	})
-
-	it('gh refusing the edit → a refusal naming the call and its reason', () => {
-		const root = fakeGh({ stderr: 'HTTP 403: Resource not accessible', code: 1 })
-
-		expect(createGithubHost().retitlePullRequest({ root, number: 12, title: 'x' })).toEqual({
-			refusal: 'gh pr edit: HTTP 403: Resource not accessible',
-		})
-	})
-
 	it('a pull request edited → gh pr edit <number> --title <title> --body-file -, the body on its input', () => {
 		const root = fakeGh({})
 

@@ -1,6 +1,8 @@
 /** A repository with a bare origin and a lot worktree on its own branch, and a host that records what it is asked. */
 import { join } from 'node:path'
 
+import { TEMPLATE_PATH } from '../src/lib/pr/pull-request.constants.ts'
+import { cliTemplate } from './lot-pr.ts'
 import { commitEmpty } from './rule-gaps-base-branch.ts'
 import {
 	cloneRepository,
@@ -14,13 +16,20 @@ import type { HostAdapter, PullRequest } from '../src/lib/host/host.types.ts'
 import type { LandingRepository, RecordingHost } from './land-lot.types.ts'
 
 /**
- * `main` pushed to a bare origin, a worktree on `feat/x` one commit ahead (`src/x.ts`), and the lot's store folder whose
- * brief names the lot's commit messages (`messages`; the commit's own subject when left out).
+ * `main` (holding the cli's pull request template, or `template` when given; none for `null`) pushed to a bare origin,
+ * a worktree on `feat/x` one commit ahead (`src/x.ts`), and the lot's store folder whose brief names the lot's commit
+ * messages (`messages`; the commit's own subject when left out).
  */
-export function landingRepository(params: { messages?: string[] } = {}): LandingRepository {
+export function landingRepository(
+	params: { messages?: string[]; template?: string | null } = {},
+): LandingRepository {
 	const folder = temporaryFolder('dialecte-land-')
 	const origin = join(folder, 'origin.git')
-	const root = initializeRepository({ root: join(folder, 'repo') })
+	const template = params.template === undefined ? cliTemplate() : params.template
+	const root = initializeRepository({
+		root: join(folder, 'repo'),
+		files: template === null ? {} : { [TEMPLATE_PATH]: template },
+	})
 	git({ root: folder, args: ['init', '-q', '--bare', '-b', 'main', origin] })
 	git({ root, args: ['remote', 'add', 'origin', origin] })
 	git({ root, args: ['push', '-q', '-u', 'origin', 'main'] })
@@ -58,15 +67,14 @@ export function landOnOrigin(params: { origin: string; files?: Record<string, st
 /** A host that answers from memory and records each call, and the body of each pull request it opens. */
 export function recordingHost(
 	params: {
-		existing?: Omit<PullRequest, 'body'> & { body?: string }
+		existing?: PullRequest
 		/** The host's refusal of an edit; edits are taken when absent. */
 		editRefusal?: string
 	} = {},
 ): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
-	let pullRequest: PullRequest | undefined =
-		params.existing === undefined ? undefined : { body: '', ...params.existing }
+	let pullRequest = params.existing
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
 			calls.push(`read ${call.ref}`)
@@ -86,10 +94,6 @@ export function recordingHost(
 				head: '',
 			}
 			return pullRequest
-		},
-		retitlePullRequest: function retitlePullRequest(call) {
-			calls.push(`retitle ${call.number} "${call.title}"`)
-			return undefined
 		},
 		editPullRequest: function editPullRequest(call) {
 			calls.push(`edit ${call.number} "${call.title}"`)

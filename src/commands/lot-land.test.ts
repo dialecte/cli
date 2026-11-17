@@ -4,11 +4,13 @@ import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
+import { cliTemplate } from '../../test/lot-pr.ts'
 import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { handoverStoreOf } from '../lib/handover/handover-store.ts'
+import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
 import { runLotClose } from './lot-close.ts'
 import { runLotLand } from './lot-land.ts'
 import { lotStop } from './lot-stop.ts'
@@ -26,6 +28,9 @@ afterEach(function restoreEnvironment() {
  */
 function landableLot(params: { baseRef?: (main: string) => string } = {}) {
 	const workspace = createBriefWorkspace()
+	writeFiles({ root: workspace.repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	git({ root: workspace.repository, args: ['add', '-A'] })
+	git({ root: workspace.repository, args: ['commit', '-qm', 'chore: the template'] })
 	const origin = join(workspace.workspace, 'origin.git')
 	git({ root: workspace.workspace, args: ['init', '-q', '--bare', '-b', 'main', origin] })
 	git({ root: workspace.repository, args: ['remote', 'add', 'origin', origin] })
@@ -143,6 +148,7 @@ describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, 
 				number: 7,
 				url: 'https://host.test/pull/7',
 				title: 'feat: x',
+				body: '',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -193,6 +199,7 @@ describe(
 					number: 7,
 					url: 'https://host.test/pull/7',
 					title: 'feat: x',
+					body: '',
 					state: 'merged',
 					draft: false,
 					queued: false,
@@ -279,6 +286,7 @@ describe(
 					number: 7,
 					url: 'https://host.test/pull/7',
 					title: 'feat: x',
+					body: '',
 					state: 'merged',
 					draft: false,
 					queued: false,
@@ -354,6 +362,7 @@ describe('dialecte lot close named by its lot id', { timeout: STORE_CASE_TIMEOUT
 				number: 7,
 				url: 'https://host.test/pull/7',
 				title: 'feat: x',
+				body: '',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -404,6 +413,7 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 				number: 7,
 				url: 'https://host.test/pull/7',
 				title: 'feat: x',
+				body: '',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -538,6 +548,7 @@ describe(
 					number: 7,
 					url: 'https://host.test/pull/7',
 					title: 'feat: x',
+					body: '',
 					state: 'merged',
 					draft: false,
 					queued: false,

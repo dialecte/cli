@@ -2,6 +2,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
+import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { landingRepository, landOnOrigin, recordingHost } from '../../../test/land-lot.ts'
 import {
 	cloneRepository,
@@ -14,7 +16,11 @@ import { registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf } from './handover-store.ts'
 import { confirmLanding, landLot } from './land-lot.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(function restoreEnvironment() {
+	vi.unstubAllEnvs()
+})
 
 import type { LandingRepository } from '../../../test/land-lot.types.ts'
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
@@ -60,6 +66,7 @@ function pullRequestOf(params: { state: PullRequest['state']; head: string }): P
 		number: 7,
 		url: 'https://host.test/pull/7',
 		title: 'feat(x): x answers one',
+		body: '',
 		state: params.state,
 		draft: false,
 		queued: false,
@@ -335,7 +342,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		land({ repository, host })
 
-		expect(calls).toEqual(['read feat/x', 'queue 7'])
+		expect(calls).toEqual(['read feat/x', 'edit 7 "feat(x): x answers one"', 'queue 7'])
 	})
 
 	it('a closed pull request of the branch → a new one opened', () => {
@@ -607,3 +614,71 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		}).toEqual({ line: undefined, state: 'pending' })
 	})
 })
+
+describe(
+	'landLot renders the pull request from the lot records',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		it('a lot with no pull request → opened with the body rendered through the template', () => {
+			const repository = landingRepository()
+			const { host, bodies } = recordingHost()
+
+			land({ repository, host, draft: true })
+
+			expect(bodies).toHaveLength(1)
+			expect(bodies[0]).toMatch(/^### Summary\n\nnot recorded\n\n### Behaviours\n/)
+			expect(bodies[0]).toContain('### Checklist for the reviewer when doing the PR review')
+		})
+
+		it('its pull request open with another text → edited to the rendered title and body, the line says so', () => {
+			const repository = landingRepository()
+			const { host, calls, bodies } = recordingHost({
+				existing: {
+					...pullRequestOf({ state: 'open', head: '' }),
+					title: 'merge: main',
+					body: 'old',
+				},
+			})
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(calls).toContain('edit 7 "feat(x): x answers one"')
+			expect(bodies[0]).toContain('### Summary')
+			expect(landed.lines).toContain('pull request #7 updated from the lot records')
+		})
+
+		it('a commit message holding a forbidden word → refused naming the record, nothing pushed', () => {
+			configureMachine({ userFileLines: [FIRST_WORD] })
+			const repository = landingRepository({ messages: [`feat(x): ${FIRST_WORD} answers`] })
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: the pull request text holds a forbidden word \`${FIRST_WORD}\` in brief.json lots[0].message: rewrite that record, nothing sent`,
+				],
+			})
+			expect(calls).toEqual([])
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+
+		it('a repository without the template → refused naming it, nothing pushed', () => {
+			const repository = landingRepository({ template: null })
+			const { host } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed.exitCode).toBe(1)
+			expect(landed.lines).toEqual([
+				"lot land: the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
+			])
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+	},
+)

@@ -66,7 +66,7 @@ export function runLotPr(params: {
 		})
 	const text = composePullRequest({
 		...prepared,
-		kept: keptTextOf({ template: prepared.template, body: read.body ?? '' }),
+		kept: keptTextOf({ template: prepared.template, body: read.body }),
 	})
 	if ('refusal' in text) return refused({ line: `${LOT_PR_LINES.prefix}${text.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
@@ -134,7 +134,7 @@ function sendText(params: {
 }): CommandResult {
 	const { pullRequest, text } = params
 	const same =
-		pullRequest.title === text.title && linesOf(pullRequest.body ?? '').join('\n') === text.body
+		pullRequest.title === text.title && linesOf(pullRequest.body).join('\n') === text.body
 	if (!same) {
 		const edited = params.host.editPullRequest({
 			root: params.worktree,

@@ -13,7 +13,7 @@ import {
 import type { HostAdapter, HostRefusal, PullRequest } from './host.types.ts'
 
 /**
- * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, retitled or edited, queued (`gh pr merge --auto`,
+ * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, edited (title and body), queued (`gh pr merge --auto`,
  * which joins the merge queue when the base branch has one; a draft made ready first). Reads are short, never a prompt.
  *
  * @intent land lots through GitHub's pull requests and merge queue
@@ -54,7 +54,6 @@ export function createGithubHost(): HostAdapter {
 				read ?? { refusal: `the pull request of ${params.branch} was opened but cannot be read` }
 			)
 		},
-		retitlePullRequest: retitleOnGithub,
 		editPullRequest: editOnGithub,
 		closePullRequest: closeOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
@@ -76,20 +75,6 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
-}
-
-/** `gh pr edit <number> --title <title>`: undefined once retitled, else its refusal. */
-function retitleOnGithub(params: {
-	root: string
-	number: number
-	title: string
-}): HostRefusal | undefined {
-	const edited = runGh({
-		root: params.root,
-		args: ['pr', 'edit', String(params.number), '--title', params.title],
-		timeout: HOST_WRITE_TIMEOUT_MS,
-	})
-	return 'refusal' in edited ? edited : undefined
 }
 
 /** `gh pr edit <number> --title <title> --body-file -`, the body on its input: undefined once edited, else its refusal. */

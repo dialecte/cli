@@ -4,19 +4,12 @@
 export const LANDING_FILE = 'landing.json'
 export const LANDING_SCHEMA = 1
 
-/** The pull request body until the lot's records render it (33CI CI2). */
-export const LANDING_BODY = 'Lot {lot}. The full suite runs on CI; the merge queue lands it.'
-
-/** Above the other commit messages of a brief with several commit lots, in the pull request body. */
-export const LANDING_OTHER_MESSAGES = 'Its other commit lots:'
-
 /** The line of git's push output that says why a ref was rejected. */
 export const PUSH_REJECTED_PATTERN = /!\s*\[(rejected|remote rejected)\].*$/m
 
 export const LANDING_LINES = {
-	noMessage: 'lot land: {brief} names no commit message (lots[0].message): nothing pushed',
-	unreadLots: 'lot land: {brief}: {reason}: nothing pushed',
-	retitled: 'pull request #{number} retitled: {title}',
+	updated: 'pull request #{number} updated from the lot records',
+	unrendered: 'lot land: {reason}',
 	notOnBranch:
 		'lot land: {worktree} is not on {branch} (HEAD is {head}): switch to it first, nothing pushed',
 	fetchFailed:

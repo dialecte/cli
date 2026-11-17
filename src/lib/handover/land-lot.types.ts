@@ -13,6 +13,3 @@ export type LandingRecord = {
 	replaced: string[]
 	at: string
 }
-
-/** What a lot's pull request says: its title (the lot's message) and its body. */
-export type PullRequestText = { title: string; body: string }

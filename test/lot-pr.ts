@@ -17,7 +17,7 @@ import { git, writeFiles } from './scratch-repository.ts'
 import type { PullRequestLot } from './lot-pr.types.ts'
 
 /** The cli's own committed template: the one every dialecte repository holds. */
-function cliTemplate(): string {
+export function cliTemplate(): string {
 	return readFileSync(
 		join(import.meta.dirname, '..', '.github', 'pull_request_template.md'),
 		'utf8',
