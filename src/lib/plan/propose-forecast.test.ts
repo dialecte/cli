@@ -4,6 +4,9 @@
  * with no known forecast (fails closed: the scope rule answers) still holds it. Two ready lots that meet are both
  * proposed. Files only: the facts carry each store lot's forecast as read from its records.
  */
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { SHARED_LINE2_A, SHARED_LINE2_B } from '../../../test/forecast-workspace.constants.ts'
 import {
 	createForecastWorkspace,
@@ -14,6 +17,7 @@ import { blockOf, branchOf, factsOf, lotOf, storeLotOf } from '../../../test/pla
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { recordForecastRun } from '../coordination/forecast-record.ts'
 import { forecastLot } from '../coordination/forecast.ts'
+import { STORE_FILES } from '../store/store.constants.ts'
 import { entryStates } from './entry-state.ts'
 import { proposePlan } from './propose.ts'
 import { readPlanFacts } from './read-plan-facts.ts'
@@ -142,5 +146,35 @@ describe('plan next reads each store lot forecast', { timeout: STORE_CASE_TIMEOU
 			{ name: first.name, forecast: { conflicts: ['src/shared.ts'] } },
 			{ name: second.name, forecast: { conflicts: ['src/shared.ts'] } },
 		])
+	})
+
+	it('an open store lot with no forecast.jsonl (started before the forecast) met by a ready lot -> its fact has no forecast, and the ready lot is held (fails closed)', () => {
+		const workspace = createForecastWorkspace()
+		const open = startForecastLot({ workspace, feature: 'open' })
+		rmSync(join(open.lotFolder, STORE_FILES.forecast), { force: true })
+		const block = {
+			...blockOf({
+				lots: [
+					lotOf('Open', { scope: { cli: ['src/'] } }),
+					lotOf('W', { scope: { cli: ['src/shared.ts'] } }),
+				],
+			}),
+			repositories: { cli: workspace.repository },
+		}
+		const facts = readPlanFacts({ block })
+		const proposals = proposePlan({
+			block,
+			facts,
+			states: entryStates({ block, facts }),
+			heavy: { markers: [] },
+		})
+
+		expect({
+			forecast:
+				facts.repositories.cli?.readable === true
+					? facts.repositories.cli.storeLots.map((lot) => lot.forecast)
+					: facts.repositories.cli,
+			held: proposals.held.map((held) => held.id),
+		}).toEqual({ forecast: [undefined], held: ['W'] })
 	})
 })

@@ -9,12 +9,18 @@ import { join } from 'node:path'
 import { PLAN_FILE, PLAN_TEXT } from '../../test/brief-workspace.constants.ts'
 import { holdWorkOf, writeHeldStoreLot, writeStoreLot } from '../../test/brief-workspace.ts'
 import { BRIEF_DAMAGES, DAMAGES } from '../../test/damaged-lot-workspace.constants.ts'
-import { briefDamagedLotIn, damagedLotIn, refusalsOf } from '../../test/damaged-lot-workspace.ts'
+import {
+	briefDamagedLotIn,
+	damagedLotIn,
+	refusalsOf,
+	replaceRecord,
+} from '../../test/damaged-lot-workspace.ts'
 import { createStartWorkspace, entriesOf, withJson } from '../../test/lot-start-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { buildScopeLine } from '../lib/gate-records/card-gates.ts'
 import { readLotOverlaps } from '../lib/store/lot-overlaps.ts'
 import { appendScopeChanges } from '../lib/store/scope-changes.ts'
+import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { startLot } from './lot-start.ts'
 import { runLot } from './lot.ts'
 
@@ -228,6 +234,31 @@ describe(
 
 			expect(started.exitCode).toBe(1)
 			expect(started.output).toContain(`overlap with ${OTHER_LOT}, started at the same time`)
+		})
+
+		it('the accepted lot turns damaged between the check and the re-check → the start fails naming it and its damage (33CO 4.7)', () => {
+			const start = overlappedWorkspace()
+
+			const started = startOverlapOkWith({
+				start,
+				seams: {
+					beforePublish: function damageAcceptedLot() {
+						replaceRecord({
+							folder: join(start.store, OTHER_LOT),
+							name: STORE_FILES.identity,
+							text: '{',
+						})
+					},
+				},
+			})
+
+			expect({
+				exitCode: started.exitCode,
+				damaged: started.output.includes(`${OTHER_LOT} (damaged: `),
+			}).toEqual({
+				exitCode: 1,
+				damaged: true,
+			})
 		})
 
 		it('a damaged lot whose brief scope reads and meets the brief → started with --overlap-ok, the go-ahead and the damage recorded (33CO behaviour 15)', () => {

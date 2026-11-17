@@ -5,6 +5,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { FORECAST_HOLD_TEXTS } from '../coordination/forecast.constants.ts'
 import { forecastLot } from '../coordination/forecast.ts'
+import { WORKTREE_ADD_STEP } from '../events/lot-report.constants.ts'
+import { readEvents } from '../events/read-events.ts'
 import { onDiskPathOf, realPathOf } from '../file-system.ts'
 import { branchExists, mainCheckoutOf, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
@@ -40,6 +42,8 @@ import {
 	PUBLIC_TEXT_DETAIL,
 	OVERLAP_HOLD_NOTE,
 	PUBLIC_TEXT_UNCHECKED_DETAIL,
+	START_WINDOW_MS,
+	STEP_END_KIND,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
 import { readIdentity } from './identity.ts'
@@ -61,7 +65,8 @@ import {
 } from './public-text.ts'
 import { resolveStackParent } from './stack-parent.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
-import { SIMULATED_FINDING_RULES } from './store.constants.ts'
+import { SIMULATED_FINDING_RULES, STORE_FILES } from './store.constants.ts'
+import { readTransitions } from './transitions.ts'
 
 import type {
 	BriefEffort,
@@ -157,6 +162,8 @@ export function checkBrief(params: {
 	stackOn?: string
 	/** What waits before the one re-read of a lot only `abandoned.json` marks canceled; blocks the thread by default. */
 	pause?: SynchronousPause
+	/** The start's clock: a met lot still starting is judged by it (`isStillStarting`); now by default. */
+	now?: Date
 }): CheckBriefResult {
 	const briefPath = resolve(params.cwd ?? process.cwd(), params.briefPath)
 	const briefFolder = dirname(briefPath)
@@ -855,6 +862,8 @@ function overlapFaults(params: {
 	overlapOk?: boolean
 	/** The stack parent's name: its scope is the lot's base, left out of the overlaps. */
 	parent?: string
+	/** The start's clock (`isStillStarting`). */
+	now?: Date
 }): { refused: Refusal[]; accepted: LotOverlap[]; cleared: LotOverlap[] } {
 	const { location } = params
 	const { entries } = scopeEntriesOf(params.brief.scope)
@@ -867,7 +876,10 @@ function overlapFaults(params: {
 		pause: params.pause,
 	})
 		.filter((overlap) => overlap.name !== params.parent)
-		.map((overlap) => ({ overlap, hold: overlapHoldOf({ overlap, store: location.store }) }))
+		.map((overlap) => ({
+			overlap,
+			hold: overlapHoldOf({ overlap, store: location.store, now: params.now ?? new Date() }),
+		}))
 	const accepted = params.overlapOk
 		? judged.map(({ overlap }) => overlap).filter(isAcceptableOverlap)
 		: []
@@ -894,16 +906,14 @@ function overlapFaults(params: {
 export function overlapHoldOf(params: {
 	overlap: LotOverlap
 	store: string
-	/**
-	 * A re-check after a publish: a met lot whose worktree is not on disk yet is still starting, so it has no work and
-	 * cannot conflict (33CO 4.7, decision Q5); never a hold.
-	 */
-	racing?: boolean
+	/** The clock a lot still starting is judged by (`isStillStarting`). */
+	now: Date
 }): string | undefined {
 	const { overlap } = params
 	if (!isAcceptableOverlap(overlap) || overlap.damage !== undefined) return ''
 	if (overlap.exclusive !== undefined) return FORECAST_HOLD_TEXTS.exclusive
-	if (params.racing && !hasWorktreeOnDisk({ lotFolder: join(params.store, overlap.name) }))
+	// a met lot still starting has no work, so it cannot conflict (33CO 4.7, decision Q5): never a hold
+	if (isStillStarting({ lotFolder: join(params.store, overlap.name), now: params.now }))
 		return undefined
 	const run = forecastLot({
 		lotFolder: join(params.store, overlap.name),
@@ -917,10 +927,22 @@ export function overlapHoldOf(params: {
 		: fillMessage({ template: FORECAST_HOLD_TEXTS.unknown, values: { reason } })
 }
 
-/** Whether the lot's identity names a worktree that is on disk (a lot still starting has none yet). */
-function hasWorktreeOnDisk(params: { lotFolder: string }): boolean {
-	const worktree = readIdentity(params)?.worktree
-	return worktree !== null && worktree !== undefined && existsSync(join(worktree, '.git'))
+/**
+ * Whether a lot is still starting: published under `START_WINDOW_MS` ago, its worktree not on disk and no worktree-add
+ * step ended in its events. A lot whose events could not be written reads started once the window passes, so a
+ * worktree gone missing reads unknown (fails closed) after at most that long.
+ */
+export function isStillStarting(params: { lotFolder: string; now: Date }): boolean {
+	const { lotFolder, now } = params
+	const worktree = readIdentity({ lotFolder })?.worktree
+	if (worktree === null || worktree === undefined || existsSync(join(worktree, '.git')))
+		return false
+	const [first] = readTransitions({ lotFolder })
+	const published = first === undefined ? Number.NaN : Date.parse(first.at)
+	if (!(now.getTime() - published < START_WINDOW_MS)) return false
+	return !readEvents({ file: join(lotFolder, STORE_FILES.events) }).events.some(
+		(event) => event.kind === STEP_END_KIND && event.step === WORKTREE_ADD_STEP,
+	)
 }
 
 /** The open lot `--on` names (`resolveStackParent`), or its refusal; undefined without `--on` or a repository. */

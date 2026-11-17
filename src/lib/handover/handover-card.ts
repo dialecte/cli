@@ -1,3 +1,5 @@
+import { basename, dirname, relative } from 'node:path'
+
 /**
  * The hand-over card: the verdict (READY, BLOCKED, DONE, ABANDONED) with the size and what to read, what is
  * committed (each lot, a merge with its tree, HEAD), the gates as their records say (with the review and the
@@ -5,8 +7,7 @@
  * editor), the test receipts, the notes (before a run only), the command,
  * before and after the run, and a closing rule naming the hand-over (its registered name, else its folder).
  */
-import { basename, dirname, relative } from 'node:path'
-
+import { forecastViewOf } from '../coordination/forecast-view.ts'
 import { counted } from '../counted.ts'
 import { DEFAULT_EDITOR, EDITOR_CONFIG_KEY } from '../editor/editor.constants.ts'
 import { findExecutable } from '../editor/find-executable.ts'
@@ -226,9 +227,16 @@ export function buildHandoverCard(params: {
 		? buildLateFixesLine({ folder: params.folder, root, stateHash })
 		: undefined
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
-	const scopeLine = params.release ? undefined : buildScopeLine({ folder: params.folder })
+	// the lot's forecast view read once for both lines of a card still to run (33CO 4.6); a closed card's scope line reads
+	// it only when the lot meets another
+	const forecastView = pending ? forecastViewOf({ lotFolder: params.folder }) : undefined
+	const scopeLine = params.release
+		? undefined
+		: buildScopeLine({ folder: params.folder, view: forecastView })
 	// a forecast conflict or unknown, warn only (33CO 4.6, Q6); a closed card has no open pair left
-	const forecastLine = pending ? buildForecastLine({ folder: params.folder }) : undefined
+	const forecastLine = pending
+		? buildForecastLine({ folder: params.folder, view: forecastView })
+		: undefined
 	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
 	// the run's merges guard refuses a pending merge lot without its tree: the card says so in its words
 	const mergesLine = pending

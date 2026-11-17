@@ -345,7 +345,7 @@ function overlapDecisionOf(params: {
 			return addOverlapsOf({ target, added }).find(
 				(overlap) =>
 					!isCoveredOverlap({ overlap, accepted }) &&
-					overlapHoldOf({ overlap, store, racing: true }) !== undefined,
+					overlapHoldOf({ overlap, store, now: params.now }) !== undefined,
 			)
 		},
 	}

@@ -9,10 +9,13 @@ import {
 	startForecastLot,
 	workInLot,
 } from '../../test/forecast-workspace.ts'
+import { noRepositoryCli } from '../../test/repository-cli-probe.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
 import { buildForecastLine, buildScopeLine } from '../lib/gate-records/card-gates.ts'
+import { buildHandoverCard } from '../lib/handover/handover-card.ts'
 import { lotStatus } from './lot-status.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -103,5 +106,30 @@ describe('the card and lot status read the forecast', { timeout: STORE_CASE_TIME
 			main: { against: 'main', trigger: 'start' },
 			pairs: [{ lot: first.name, from: 'other', line: { verdict: 'conflict', trigger: 'gate' } }],
 		})
+	})
+
+	it("the first lot's gate found the conflict -> the real hand-over card of the second lot shows the conflicts line", () => {
+		const { first, second } = collidingLots()
+
+		const card = buildHandoverCard({
+			root: second.worktree,
+			folder: second.lotFolder,
+			branch: 'feat/lot-b',
+			head: git({ root: second.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
+			notes: undefined,
+			lots: [],
+			commits: [],
+			probe: noRepositoryCli,
+		})
+
+		expect(card.gates.filter((gate) => gate.name === 'conflicts')).toEqual([
+			{
+				name: 'conflicts',
+				status: 'warning',
+				detail: expect.stringContaining(
+					`${first.name}: forecast conflict: src/shared.ts:2-6 (content)`,
+				),
+			},
+		])
 	})
 })

@@ -88,10 +88,11 @@ export function lotStatus(params: {
 	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
 	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
 	const status = lotStatusOfInput({ input: checked.input, lotFolder, entries })
-	// this command's own view (33CO 4.6): the forecast read once, with the registry entries read above; the readers of
-	// many lots (inbox, lot wait) share lotStatusOf and read no forecast
+	if (!json) return { exitCode: 0, output: textOf(lotStatusLines(status)) }
+	// this command's own JSON (33CO 4.6): the forecast read once, with the registry entries read above; the text shows
+	// none, and the readers of many lots (inbox, lot wait) share lotStatusOf and read no forecast
 	const shown: LotStatusShown = { ...status, forecast: forecastViewOf({ lotFolder, entries }) }
-	return { exitCode: 0, output: json ? jsonOf(shown, 2) : textOf(lotStatusLines(status)) }
+	return { exitCode: 0, output: jsonOf(shown, 2) }
 }
 
 /**

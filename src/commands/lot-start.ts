@@ -200,6 +200,7 @@ export function prepareStart(params: {
 		pause: seams.pause,
 		overlapOk,
 		stackOn,
+		now: params.now,
 	})
 	if (checked.stackRefusal !== undefined)
 		return { exit: lotRefusalExit({ lines: [checked.stackRefusal], json }) }
@@ -461,7 +462,7 @@ function recheckedFailure(params: {
 		.filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
 		// what the forecast clears no longer refuses (33CO 4.7): only a damaged, unreadable or exclusive overlap, or a
 		// lot whose work does not read; one still starting has no worktree yet, so no work: it goes on (Q5)
-		.filter((overlap) => overlapHoldOf({ overlap, store, racing: true }) !== undefined)
+		.filter((overlap) => overlapHoldOf({ overlap, store, now: params.now }) !== undefined)
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })

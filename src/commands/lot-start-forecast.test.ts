@@ -10,7 +10,7 @@ import { briefWith, writeStoreLot } from '../../test/brief-workspace.ts'
 import { FORECAST_NOW } from '../../test/forecast-workspace.constants.ts'
 import { createForecastWorkspace, startForecastLot } from '../../test/forecast-workspace.ts'
 import { createStartWorkspace } from '../../test/lot-start-workspace.ts'
-import { START_NOW } from '../../test/lot-start.constants.ts'
+import { RECORD_TIME } from '../../test/store-records.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { buildScopeLine } from '../lib/gate-records/card-gates.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
@@ -23,6 +23,9 @@ import type { ForecastWorkspace } from '../../test/forecast-workspace.types.ts'
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
+
+/** A minute after the store fixtures' lots were published: such a lot with no worktree yet is still starting. */
+const JUST_AFTER_RECORD = new Date(Date.parse(RECORD_TIME) + 60_000)
 
 /** A lot that publishes while the start runs, its worktree not made yet. */
 const RACER_LOT = '0099-repo-racer'
@@ -187,7 +190,7 @@ describe('lot start with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const started = startLot({
 			cwd: start.cwd,
 			argv: [start.workspace.briefPath],
-			now: START_NOW,
+			now: JUST_AFTER_RECORD,
 			seams: {
 				afterClaimPick: function racerPublishes() {
 					writeStoreLot({ workspace: start.workspace, name: RACER_LOT, scope: ['src/dataflow'] })
@@ -198,6 +201,25 @@ describe('lot start with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect({ exitCode: started.exitCode, failed: started.output.includes(RACER_LOT) }).toEqual({
 			exitCode: 0,
 			failed: false,
+		})
+	})
+
+	it('a met lot published a minute before the start, its worktree not made yet -> it has no work: the pre-check lets the start go on (decision Q5)', () => {
+		const start = createStartWorkspace()
+		writeStoreLot({ workspace: start.workspace, name: RACER_LOT, scope: ['src/dataflow'] })
+
+		const started = startLot({
+			cwd: start.cwd,
+			argv: [start.workspace.briefPath],
+			now: JUST_AFTER_RECORD,
+		})
+
+		expect({
+			exitCode: started.exitCode,
+			refused: started.output.includes(`overlap with ${RACER_LOT}`),
+		}).toEqual({
+			exitCode: 0,
+			refused: false,
 		})
 	})
 })

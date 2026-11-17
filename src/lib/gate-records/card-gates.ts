@@ -164,6 +164,7 @@ import {
 import { readModeCommandHashes } from './mode-command-hashes.ts'
 import { computeStateTree, hashStateTree } from './state-hash.ts'
 
+import type { ForecastView } from '../coordination/forecast.types.ts'
 import type { LotEvent } from '../events/event.types.ts'
 import type { StepCounts, StepSelection } from '../gate/gate.types.ts'
 import type { LateFixes, ReviewLedger } from '../review-rounds/review-rounds.types.ts'
@@ -1245,13 +1246,18 @@ function roundCountOf(params: { count: number }): string {
  * it accepted (FIX-overlap-ok) with who and why; a warning when a change line does not read (the overlap guard then reads
  * every path) or the lot shares paths with another open lot; none when the lot changed nothing and shares nothing.
  */
-export function buildScopeLine(params: { folder: string; now?: Date }): CardGateLine | undefined {
+export function buildScopeLine(params: {
+	folder: string
+	now?: Date
+	/** The lot's forecast view when the caller read it already (one read per card); read here when left out. */
+	view?: ForecastView
+}): CardGateLine | undefined {
 	const scope = lotScopeOf({ lotFolder: params.folder })
 	const overlaps = readLotOverlaps({ lotFolder: params.folder })
 	const parts = [
 		scopeChangesText({ scope, withReason: true }),
 		lotOverlapsText(overlaps),
-		...sharesPartsOf({ folder: params.folder, now: params.now ?? new Date() }),
+		...sharesPartsOf({ folder: params.folder, now: params.now ?? new Date(), view: params.view }),
 	].filter((part): part is string => part !== undefined)
 	if (parts.length === 0) return undefined
 	return {
@@ -1272,9 +1278,11 @@ export function buildScopeLine(params: { folder: string; now?: Date }): CardGate
 export function buildForecastLine(params: {
 	folder: string
 	now?: Date
+	/** The lot's forecast view when the caller read it already (one read per card); read here when left out. */
+	view?: ForecastView
 }): CardGateLine | undefined {
 	const now = params.now ?? new Date()
-	const view = forecastViewOf({ lotFolder: params.folder })
+	const view = params.view ?? forecastViewOf({ lotFolder: params.folder })
 	const lines = [
 		...(view.main === undefined ? [] : [view.main]),
 		...view.pairs.map((pair) => ({ ...pair.line, against: pair.lot })),
@@ -1303,7 +1311,11 @@ export function buildForecastLine(params: {
  * what the forecast says of the pair): the met pairs and the pair's newest forecast with its age (files only, the
  * pair seen from either side); none for a lot that meets no other.
  */
-function sharesPartsOf(params: { folder: string; now: Date }): string[] {
+function sharesPartsOf(params: {
+	folder: string
+	now: Date
+	view: ForecastView | undefined
+}): string[] {
 	const { folder, now } = params
 	const met = overlappingOpenLots({
 		store: dirname(folder),
@@ -1313,7 +1325,7 @@ function sharesPartsOf(params: { folder: string; now: Date }): string[] {
 		except: basename(folder),
 	}).filter((overlap) => overlap.met.length > 0)
 	if (met.length === 0) return []
-	const { pairs } = forecastViewOf({ lotFolder: folder })
+	const { pairs } = params.view ?? forecastViewOf({ lotFolder: folder })
 	return met.map((overlap) => {
 		const pair = pairs.find((each) => each.lot === overlap.name)
 		const forecast =

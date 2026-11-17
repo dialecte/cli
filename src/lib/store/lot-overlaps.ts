@@ -101,8 +101,9 @@ export function overlapRecordsOf(params: {
 }
 
 /**
- * Whether a re-check's overlap is one the go-ahead accepted: the same lot, still acceptable, and no met pair the check
- * did not show (a lot that widened meanwhile meets more than was accepted).
+ * Whether a re-check's overlap is one the go-ahead accepted: the same lot, still acceptable, no met pair the check did
+ * not show (a lot that widened meanwhile meets more than was accepted), and damaged only if it was damaged when accepted
+ * (a lot that turned damaged meanwhile is caught: 33CO 4.7).
  */
 export function isCoveredOverlap(params: {
 	overlap: LotOverlap
@@ -113,6 +114,7 @@ export function isCoveredOverlap(params: {
 	return (
 		accepted !== undefined &&
 		isAcceptableOverlap(overlap) &&
+		overlap.damage === accepted.damage &&
 		overlap.met.every((pair) => accepted.met.includes(pair))
 	)
 }
