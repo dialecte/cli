@@ -357,6 +357,83 @@ describe('a merge lot: the hand-over written', { timeout: SCRATCH_REPOSITORY_TIM
 		})
 })
 
+/** The refusal `handover run` answers for a pending merge lot `number` without its tree. */
+function treeRefusalOf(number: number): string {
+	return `lot ${number}: tree not recorded: rehearse first (\`--rehearse\` prints it), add it as "tree" to the lot, then \`dialecte handover --rehash\``
+}
+
+/** The card's `merges` line of a written hand-over (`--json`), with its verdict; no line: undefined. */
+function writtenMergesLine(lotsPath: string): {
+	verdict: unknown
+	merges: unknown
+} {
+	const written = runHandover({
+		argv: [lotsPath, '--json'],
+		cliPath: WRITER_CLI,
+		probe: noRepositoryCli,
+	})
+	const card = JSON.parse(written.output) as {
+		verdict: unknown
+		gates: Array<{ name: string; status: string; detail: string }>
+	}
+	const line = card.gates.find((gate) => gate.name === 'merges')
+	return {
+		verdict: card.verdict,
+		merges: line && { status: line.status, detail: line.detail },
+	}
+}
+
+describe('a merge lot without its tree: the card', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
+	const BLOCKED_CASES: Array<{ title: string; options: ScenarioOptions; number: number }> = [
+		{
+			title:
+				'the merge lot first, no tree → BLOCKED, a failed merges line holding the run refusal of the first lot',
+			options: { noTree: true },
+			number: 1,
+		},
+		{
+			title:
+				'a plain lot, then the merge lot without a tree → BLOCKED, the merges line numbers the second lot as the run does',
+			options: { noTree: true, plainLot: true },
+			number: 2,
+		},
+	]
+
+	for (const testCase of BLOCKED_CASES)
+		it(testCase.title, async () => {
+			const scenario = mergeScenario(testCase.options)
+
+			const card = writtenMergesLine(scenario.lotsPath)
+			const ran = await runFolder({ out: scenario.out })
+
+			expect({ card, refusedWithIt: ran.text.includes(treeRefusalOf(testCase.number)) }).toEqual({
+				card: {
+					verdict: 'BLOCKED',
+					merges: { status: 'failed', detail: treeRefusalOf(testCase.number) },
+				},
+				refusedWithIt: true,
+			})
+		})
+
+	it('the merge lot with its tree recorded → no merges line', () => {
+		const scenario = mergeScenario({ tree: NOT_A_TREE })
+
+		expect(writtenMergesLine(scenario.lotsPath).merges).toBeUndefined()
+	})
+
+	it('a rehearsal, which commits the merge in its clone → its card has no merges line', async () => {
+		const scenario = mergeScenario({ noTree: true })
+		expect(writeHandover(scenario.lotsPath).exitCode).toBe(0)
+
+		const rehearsal = await runFolder({ out: scenario.out, argv: ['--rehearse'] })
+
+		expect({
+			exitCode: rehearsal.exitCode,
+			mergesLine: rehearsal.lines.some((line) => line.includes(treeRefusalOf(1))),
+		}).toEqual({ exitCode: 0, mergesLine: false })
+	})
+})
+
 describe('a merge lot: handover run', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('conflicts as reviewed → the resolution is copied, the merge committed as a merge commit of the recorded tip, the tree holds the resolution', async () => {
 		const scenario = await recordedScenario()

@@ -227,6 +227,23 @@ describe('handover run --rehearse: a merge lot', { timeout: SCRATCH_REPOSITORY_T
 		])
 	})
 
+	it("the merge lot without its tree, every lot reused → the skipped rehearsal's card has no merges line: a rehearsal checks no tree", async () => {
+		const { root, tip } = await createBranchScenario({
+			recorded: true,
+			mainMoved: false,
+			hookCounter: createCounter(),
+			gateCounter: createCounter(),
+		})
+		const { out } = writeMergeHandover({ root, tip })
+
+		const result = await runFolder({ out, argv: ['--rehearse'] })
+
+		expect({
+			skipped: result.text.includes(SKIPPED_LINE),
+			mergesLines: gateStepLinesOf(result.text).filter((line) => /^✗ merges\b/.test(line)),
+		}).toEqual({ skipped: true, mergesLines: [] })
+	})
+
 	it("the reused merge's printed tree is the lot's tree: put it in the lots file, --rehash, then the real run exits 0, commits the merge of the tip and runs the hook once", async () => {
 		const hookCounter = createCounter()
 		const { root, tip } = await createBranchScenario({
@@ -430,7 +447,9 @@ describe(
 				hookCounter: createCounter(),
 				gateCounter: createCounter(),
 			})
-			const written = writeMergeHandover({ root, tip })
+			// main unchanged: the merge holds the tip's tree, recorded as a rehearsal reports it
+			const tree = git({ root, args: ['rev-parse', `${tip}^{tree}`] }).trim()
+			const written = writeMergeHandover({ root, tip, tree })
 
 			const rehearsal = await runFolder({ out: written.out, argv: ['--rehearse'] })
 

@@ -66,6 +66,7 @@ import {
 import { DUPLICATE_CARD_LABEL, DUPLICATE_LINES_DETAIL } from '../tdd/tdd.constants.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
+import { mergeTreeLineOf } from './check-handover-guards.ts'
 import { readHandoverRunRecord } from './handover-run-record.ts'
 import { registeredNameOf } from './handover-store.ts'
 import {
@@ -169,6 +170,8 @@ export function buildHandoverCard(params: {
 	probeTimeout?: number
 	/** Every lot is committed in the repository: the card says done, no command. */
 	done?: boolean
+	/** A rehearsal's card (a scratch clone's, or every lot reused): it checks no merge tree, as the rehearsal does not. */
+	rehearsal?: boolean
 	/** `handover abandon` marked the hand-over: the card says abandoned, no command. */
 	abandoned?: boolean
 	/** Asks whether the repository's own cli runs hand-overs. */
@@ -224,6 +227,14 @@ export function buildHandoverCard(params: {
 	const installLine = readInstallLine({ folder: params.folder, worktree: root })
 	const scopeLine = params.release ? undefined : buildScopeLine({ folder: params.folder })
 	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
+	// the run's merges guard refuses a pending merge lot without its tree: the card says so in its words
+	const mergesLine = pending
+		? mergeTreeLineOf({
+				lots: params.lots,
+				committed: params.commits.length,
+				rehearsal: params.rehearsal === true,
+			})
+		: undefined
 	// a closed card (DONE or abandoned) shows the lot line only for the go-ahead row (D19, D22)
 	const storeLotLine = readStoreLotLine({
 		folder: params.folder,
@@ -248,6 +259,7 @@ export function buildHandoverCard(params: {
 		// a lot that changed its scope after the start: the changes, the adds with who and why; none: no line
 		...(scopeLine ? [scopeLine] : []),
 		...(stackLine ? [stackLine] : []),
+		...(mergesLine ? [mergesLine] : []),
 		// changes after the last snapshot, on a card still to run: nothing late, no line
 		...(lateFixesLine ? [lateFixesLine] : []),
 		// the install guard's last record, on every card; none recorded: no line

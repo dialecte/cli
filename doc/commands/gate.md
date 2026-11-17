@@ -62,6 +62,8 @@ gate - The package's Definition of Done with the real counts
     the record keeps with the ones the output names; "heavy": true marks a heavy suite, outside the
     command hash
 
+exit codes:
+  2  an option the usage lines do not name, or --base / --declare given last without its value: the usage printed (--json: { error, usage, next: null }); no step run
 e.g. dialecte gate --full
 ```
 

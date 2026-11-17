@@ -425,7 +425,9 @@ export const COMMAND_MAP: CommandMap = {
 			'a step whose run is npm run <script> the package lacks is not wired: a default step fails a --full or --release run (a --fast one says it and goes on), a declared step fails in every mode; then no step runs, the others read not run: a step of the list is not wired; "dialecte": { "gate": { "skip": { "<default step>": "<reason>" } } } (dialecte.gate.skip) opts a default step out, a warning with its reason',
 			'a scoped step: an empty selection exits 0 without starting vitest (nothing selected since <base> (<n> paths changed)); a non-empty one on a counts: "tests" step that runs no test fails; a failed scoped step counting tests is rerun once serially on a test failure (a failed test, a FAIL line, vitest\'s error markers), whatever runs it: the failing files (after -- through npm run), then --no-file-parallelism, and it must select the same ids (one vitest invocation, or --passWithNoTests on each); the selection may declare "failing": [paths relative to the package] the record keeps with the ones the output names; "heavy": true marks a heavy suite, outside the command hash',
 		],
-		exitCodes: [],
+		exitCodes: [
+			'2  an option the usage lines do not name, or --base / --declare given last without its value: the usage printed (--json: { error, usage, next: null }); no step run',
+		],
 		example: 'dialecte gate --full',
 	},
 	tdd: {
@@ -530,7 +532,7 @@ export const COMMAND_MAP: CommandMap = {
 		notes: [
 			'write - the hand-over folder (lots.json, snapshot, one-line commit.sh) and its card, registered in <git common dir>/dialecte-handover/<name>.json under the real path of the folder; handover <lots.json> is the same; --out <id> writes into the lot folder, refused (exit 2, nothing written) for a simulated, canceled or failed lot, an open question, a lots file of another worktree or branch; any folder whose hand-over is committed is refused',
 			'write --target <branch> - the branch the lots land on, recorded as target in lots.json (default: the base branch resolved at write time); a branch with neither a local nor an origin ref is refused (exit 2, nothing written)',
-			'show - the card again, recomputed, nothing written; without an argument the newest of the branch; BLOCKED with a ! line when the target branch moved past the hand-over (merge it first); BLOCKED with a ✗ processes line naming the processes left running in the worktree (no terminal, not under an editor, not named in git config dialecte.personProcesses)',
+			'show - the card again, recomputed, nothing written; without an argument the newest of the branch; BLOCKED with a ! line when the target branch moved past the hand-over (merge it first); BLOCKED with a ✗ processes line naming the processes left running in the worktree (no terminal, not under an editor, not named in git config dialecte.personProcesses); BLOCKED with a ✗ merges line when a merge lot not committed yet has no recorded tree, worded as run refuses it',
 			"review - opens the hand-over's worktree in a new editor window, started detached (a hand-over holding a merge lot first writes review/lot.diff, the lot's change against head, and opens it too); the editor: git config dialecte.editor in the worktree (its words, no flag added), else the first known editor found on PATH, else code; never $EDITOR; --print prints the command line and starts nothing, --json answers { editor, command, opened }; refused (exit 2) for an unknown hand-over, a worktree that is gone, an editor not found",
 			'run - what commit.sh runs: each guard with its time, each lot announced, the hook live, the card; without a folder the one registered hand-over still to run; --rehearse commits in a scratch clone; refuses a canceled lot (exit 2); the lot guard refuses a hand-over folder that is not a lot of the store (exit 2) unless --not-a-lot --by <who> --reason <text> gives the go-ahead, recorded first as a not a store lot: row of its decisions.md (an existing row counts), and always a simulated or damaged lot; a rehearsal prints ! and goes on; holds the machine awake while it runs, and a run that spanned a sleep says so on the DONE card',
 			'abandon - marks a hand-over that will not run (abandoned.json) and releases its lock; refuses a lot folder (exit 2): rewrite it with write --rehash --out <full name>, end the lot with lot stop',
@@ -538,6 +540,7 @@ export const COMMAND_MAP: CommandMap = {
 			'--legend - every term of the card, what it means, whether to look',
 		],
 		exitCodes: [
+			'2  every verb: an option its usage lines do not name, or a value option given last without its value: the usage printed (--json: { error, usage, next: null } where the verb takes --json); nothing read or written',
 			'2  run: the target branch moved past the hand-over (merge it first) or has no ref, a process left running in the worktree or a process list not known, a gate config the cli cannot run, a canceled lot, a hand-over that is not a lot of the store (without --not-a-lot), a simulated or damaged lot, --not-a-lot without --by and --reason (or --by/--reason without it), a forbidden word in --by or --reason; nothing committed',
 			'2  write: a --target branch with neither a local nor an origin ref, no base branch found without --target, an --out the lot folder refuses; nothing written',
 		],

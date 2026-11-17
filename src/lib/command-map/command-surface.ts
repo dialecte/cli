@@ -26,7 +26,7 @@ export function commandSurfaceOf(params: { name: string; entry: CommandEntry }):
 }
 
 /** The bare word after `dialecte <name> ` of a usage line, when it has a verb's shape. */
-function verbOf(params: { name: string; line: string }): string | undefined {
+export function verbOf(params: { name: string; line: string }): string | undefined {
 	const prefix = `${USAGE_PREFIX}${params.name} `
 	if (!params.line.startsWith(prefix)) return undefined
 	const word = params.line.slice(prefix.length).split(' ')[0]
@@ -35,14 +35,15 @@ function verbOf(params: { name: string; line: string }): string | undefined {
 
 /** The flags of a usage line in order, the zero-config flags where it writes them. */
 function flagsOf(line: string): string[] {
-	return line
-		.split(ZERO_CONFIG_USAGE)
-		.flatMap((part, index) => [...(index > 0 ? zeroConfigFlags() : []), ...flagNamesIn(part)])
+	return flagNamesIn(expandedUsageLine(line))
 }
 
-/** The names of the zero-config flags, without their values. */
-function zeroConfigFlags(): string[] {
-	return [...ZERO_CONFIG_FLAGS.overrides, ...ZERO_CONFIG_FLAGS.formatting].flatMap(flagNamesIn)
+/** A usage line with the zero-config flags, their values included, written where it says `[zero-config flags]`. */
+export function expandedUsageLine(line: string): string {
+	return line.replaceAll(
+		ZERO_CONFIG_USAGE,
+		[...ZERO_CONFIG_FLAGS.overrides, ...ZERO_CONFIG_FLAGS.formatting].join(' '),
+	)
 }
 
 function flagNamesIn(text: string): string[] {

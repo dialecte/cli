@@ -328,7 +328,12 @@ export async function createBranchScenario(params: {
 }
 
 /** The hand-over of one merge lot bringing `feat/x` in, no conflict to resolve. */
-export function writeMergeHandover(params: { root: string; tip: string }): {
+export function writeMergeHandover(params: {
+	root: string
+	tip: string
+	/** The tree the merge must hold, as a rehearsal reports it; none: the run refuses the lot, the card is BLOCKED. */
+	tree?: string
+}): {
 	out: string
 	output: string
 } {
@@ -338,6 +343,7 @@ export function writeMergeHandover(params: { root: string; tip: string }): {
 		tip: params.tip,
 		resolved: {},
 		message: 'merge: bring feat/x in',
+		...(params.tree && { tree: params.tree }),
 	}
 	return writeHandoverFolder({ root: params.root, lots: [mergeLot] })
 }
