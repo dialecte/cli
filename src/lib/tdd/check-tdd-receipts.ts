@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { closestNames } from '../closest-names.ts'
-import { listRepositoryFiles } from '../git.ts'
+import { listRepositoryFiles, readHeadOrNone } from '../git.ts'
 import { shellWord } from '../shell-quote.ts'
 import { shortMessage } from './classify-failure.ts'
 import { writtenLinesOf } from './duplicate-case-ids.ts'
@@ -71,14 +71,19 @@ export async function checkTddReceipts(params: {
 	packageJson: PackageJson
 	/** `--base <ref>`: measured from where HEAD left it. */
 	ref?: string
-	/** `--full` / `--release` / the hook: the base line shown under the step. The base is the lot base either way. */
+	/**
+	 * `--full` / `--release` / the hook: the whole lot, measured from the lot base, its base line shown under the step.
+	 * Left out (`gate --fast`): the uncommitted work, measured from HEAD with no base to resolve (no git spawn).
+	 */
 	wholeBranch?: boolean
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
-	const resolved = resolveTddBase({ root, packageJson, ref: params.ref })
+	const head = params.wholeBranch || params.ref !== undefined ? undefined : readHeadOrNone(root)
+	const resolved =
+		head === undefined ? resolveTddBase({ root, packageJson, ref: params.ref }) : { commit: head }
 	if ('failure' in resolved) return { status: 'failed', reason: resolved.failure }
 	const check = await judgeTddReceipts({ root, packageJson, base: resolved.commit })
-	if (!params.wholeBranch) return check
+	if (!params.wholeBranch || !('source' in resolved)) return check
 	return { ...check, baseNote: baseNoteOf({ root, base: resolved }) }
 }
 
