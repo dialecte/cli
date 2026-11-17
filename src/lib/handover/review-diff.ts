@@ -2,11 +2,11 @@
  * A merge hand-over's `review/lot.diff`: the lot's own change against the lots file's `head`, read through a scratch
  * copy of the index so the repository's index, refs and working tree are never touched.
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readGit } from '../git.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	REVIEW_DIFF_CONFIG,
 	REVIEW_DIFF_FILE,
@@ -30,7 +30,7 @@ export function readLotDiff(params: { root: string; head: string }): string {
 		root,
 		args: ['rev-parse', '--path-format=absolute', '--git-path', 'index'],
 	}).trim()
-	const scratch = mkdtempSync(join(tmpdir(), REVIEW_INDEX_FOLDER_PREFIX))
+	const scratch = makeScratchFolder({ purpose: REVIEW_INDEX_FOLDER_PREFIX, cwd: root })
 	try {
 		const copy = join(scratch, 'index')
 		if (existsSync(index)) copyFileSync(index, copy)

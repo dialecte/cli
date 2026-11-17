@@ -19,8 +19,7 @@
  * recorded in the hand-over folder's `install.json` (its refusal's exit code, 2, given to `onInstallRefusal`, as for a staged lock the sync cannot read or parse). A commit whose hook prints nothing and gains no CPU for the stall time is stopped: its
  * process tree is printed, then killed, and the lot is not committed.
  */
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { appendFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { computeCommitKey, foldHookBase, hashHookCommand } from '../gate-records/check-key.ts'
@@ -36,6 +35,7 @@ import { HEARTBEAT_INTERVAL_MILLISECONDS } from '../progress/progress.constants.
 import { stallReason } from '../progress/stall-reason.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { streamCommand } from '../progress/stream-command.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	HOOK_HEARTBEAT_LABEL,
 	HOOK_LOG_FOLDER_PREFIX,
@@ -335,7 +335,7 @@ function recordedHookStep(step: HookSummaryStep): RecordedStep {
 
 /** An empty file, in a folder of its own, for the hook's whole output, its bytes as they came. */
 function createHookLog(params: { lot: number }): string {
-	const path = join(mkdtempSync(join(tmpdir(), HOOK_LOG_FOLDER_PREFIX)), `lot-${params.lot}.log`)
+	const path = join(makeScratchFolder({ purpose: HOOK_LOG_FOLDER_PREFIX }), `lot-${params.lot}.log`)
 	writeFileSync(path, '')
 	return path
 }
