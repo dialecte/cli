@@ -7,6 +7,7 @@ export const LOT_BRIEF_LINES = {
 	refused: 'lot brief: {detail}: nothing written',
 	unread: 'lot brief: {path} does not read as JSON: nothing written',
 	unreadable: 'lot brief: {path} cannot be read: nothing written',
+	transitionUnwritten: 'lot brief: its transition cannot be written: {reason}: nothing written',
 	simulated: 'lot brief: {lot} is simulated: it plays its scenario, nothing written',
 	damaged: 'lot brief: {lot} is damaged: dialecte lot status {lot} says how',
 	notWorking:

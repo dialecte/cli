@@ -6,8 +6,8 @@
  * and why, the lot's state and position kept.
  */
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { getArg, positionalArguments } from '../lib/config.ts'
@@ -20,7 +20,7 @@ import { lotState } from '../lib/store/lot-state.ts'
 import { folderPlanEntryIds } from '../lib/store/public-text.ts'
 import { replaceWhole } from '../lib/store/publish.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { STORE_FILES } from '../lib/store/store.constants.ts'
+import { NEXT_BRIEF_SUFFIX, STORE_FILES } from '../lib/store/store.constants.ts'
 import { appendTransition } from '../lib/store/transitions.ts'
 import {
 	LOT_BRIEF_LINES,
@@ -39,7 +39,7 @@ export function runLotBrief(params: { cwd: string; argv: string[]; now?: Date })
 	const required = requiredLotOf({ argument: ids[0], cwd: params.cwd, mode: 'write' })
 	if (!('lot' in required)) return { exitCode: 2, output: textOf(required.lines) }
 	const lotFolder = required.lot
-	const lot = lotFolder.split(/[\\/]/).at(-1) ?? ids[0]
+	const lot = basename(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
 	if (checked === undefined || !('input' in checked))
 		return refused(LOT_BRIEF_LINES.damaged.replaceAll('{lot}', () => lot))
@@ -65,7 +65,17 @@ export function runLotBrief(params: { cwd: string; argv: string[]; now?: Date })
 	const changed = publicFieldsChanged({ old: JSON.parse(oldText) as unknown, next: parsed })
 	if (changed.length === 0)
 		return { exitCode: 0, output: textOf([LOT_BRIEF_LINES.unchanged.replace('{lot}', () => lot)]) }
-	writeBrief({ lotFolder, briefPath, by, reason, oldText, newText, now: params.now ?? new Date() })
+	const unwritten = writeBrief({
+		lotFolder,
+		briefPath,
+		by,
+		reason,
+		oldText,
+		newText,
+		now: params.now ?? new Date(),
+	})
+	if (unwritten !== undefined)
+		return refused(LOT_BRIEF_LINES.transitionUnwritten.replace('{reason}', () => unwritten))
 	return {
 		exitCode: 0,
 		output: textOf([
@@ -105,7 +115,12 @@ function briefFaultLine(params: {
 	)
 }
 
-/** The new brief published over the stored one, then its transition; the old brief back when the record fails. */
+/**
+ * The new brief written beside the stored one (`brief.json.next`), its transition appended, then moved into place:
+ * a kill between the two leaves the old brief and a pending next one, which the damage check reads as consistent (the
+ * next verb's write replaces it). A transition that cannot be written takes the next brief back: nothing changed. The
+ * reason it could not be written; undefined once written.
+ */
 function writeBrief(params: {
 	lotFolder: string
 	briefPath: string
@@ -114,15 +129,18 @@ function writeBrief(params: {
 	oldText: string
 	newText: string
 	now: Date
-}): void {
-	replaceWhole({ path: params.briefPath, text: params.newText })
+}): string | undefined {
+	const nextPath = `${params.briefPath}${NEXT_BRIEF_SUFFIX}`
+	writeFileSync(nextPath, params.newText)
 	try {
 		recordBriefTransition(params)
 	} catch (error) {
-		// no rewrite without its record: the brief goes back to the one the transitions name
-		replaceWhole({ path: params.briefPath, text: params.oldText })
-		throw error
+		rmSync(nextPath, { force: true })
+		return (error as Error).message
 	}
+	replaceWhole({ path: params.briefPath, text: params.newText })
+	rmSync(nextPath, { force: true })
+	return undefined
 }
 
 /** The `brief` transition: the last one's state and position kept, the old and new hashes, who and why. */

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { landingRepository, landOnOrigin, recordingHost } from '../../../test/land-lot.ts'
+import { cliTemplate } from '../../../test/lot-pr.ts'
 import {
 	cloneRepository,
 	git,
@@ -637,7 +638,7 @@ describe(
 				existing: {
 					...pullRequestOf({ state: 'open', head: '' }),
 					title: 'merge: main',
-					body: 'old',
+					body: '',
 				},
 			})
 
@@ -755,7 +756,7 @@ describe(
 		it('the host refusing the edit of a reused pull request → exit 1, the landing still recorded', () => {
 			const repository = landingRepository()
 			const { host } = recordingHost({
-				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: 'old' },
+				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: '' },
 				editRefusal: 'gh pr edit: HTTP 403',
 			})
 
@@ -764,6 +765,17 @@ describe(
 			expect(landed.exitCode).toBe(1)
 			expect(landed.lines.at(-1)).toBe('lot land: gh pr edit: HTTP 403')
 			expect(existsSync(join(repository.lotFolder, 'landing.json'))).toBe(true)
+		})
+
+		it("a lot cut before main held the template's markers → its early check reads origin's template, it lands after its rebase", () => {
+			const repository = landingRepository({ template: null })
+			landOnOrigin({ origin: repository.origin, files: { [TEMPLATE_PATH]: cliTemplate() } })
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(landed.exitCode).toBe(0)
+			expect(calls).toContainEqual(expect.stringMatching(/^open feat\/x -> main /))
 		})
 	},
 )

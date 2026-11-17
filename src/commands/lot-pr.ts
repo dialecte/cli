@@ -15,11 +15,12 @@ import { mainCheckoutOf, readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { composePullRequest, keptTextOf, linesOf } from '../lib/pr/compose-pull-request.ts'
+import { composePullRequest, keptPartOf, linesOf } from '../lib/pr/compose-pull-request.ts'
 import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
 import { PULL_REQUEST_LINES } from '../lib/pr/pull-request.constants.ts'
 import { textOf } from '../lib/print/print.ts'
 import { readIdentity } from '../lib/store/identity.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 import { requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { LOT_PR_LINES, LOT_PR_OPTIONS } from './lot-pr.constants.ts'
 
@@ -64,10 +65,9 @@ export function runLotPr(params: {
 				.replace('{number}', String(read.number))
 				.replace('{state}', read.state),
 		})
-	const text = composePullRequest({
-		...prepared,
-		kept: keptTextOf({ template: prepared.template, body: read.body }),
-	})
+	const kept = keptPartOf({ template: prepared.template, body: read.body })
+	if ('refusal' in kept) return refused({ line: `${LOT_PR_LINES.prefix}${kept.refusal}` })
+	const text = composePullRequest({ ...prepared, kept: kept.kept })
 	if ('refusal' in text) return refused({ line: `${LOT_PR_LINES.prefix}${text.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const sent = sendText({ host, worktree, pullRequest: read, text, json, head })
@@ -102,6 +102,14 @@ function lotPlaceOf(params: {
 	if (ids.length !== 1 || unknown.length > 0) return { exitCode: 2, output: renderLotUsage() }
 	const required = requiredLotOf({ argument: ids[0], cwd: params.cwd, mode: 'read' })
 	if (!('lot' in required)) return { exitCode: 2, output: textOf(required.lines) }
+	const checked = readCheckedLotState({
+		lotFolder: required.lot,
+		registry: registryOfLotFolder(required.lot),
+	})
+	if (checked === undefined || !('input' in checked))
+		return refused({
+			line: LOT_PR_LINES.damaged.replaceAll('{lot}', () => basename(required.lot)),
+		})
 	const identity = readIdentity({ lotFolder: required.lot })
 	if (identity === undefined || identity.worktree === null)
 		return refused({ line: LOT_PR_LINES.noWorktree.replace('{lot}', () => ids[0]), exitCode: 2 })

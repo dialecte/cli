@@ -5,6 +5,7 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
 import {
 	FORBIDDEN_WORD,
@@ -77,7 +78,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('an open pull request that reads otherwise → its title and body replaced by the rendered ones', () => {
 		const lot = pullRequestLot()
 		const { host, calls, bodies } = recordingHost({
-			existing: openPullRequest({ title: 'merge: main into feat/x', body: 'old text' }),
+			existing: openPullRequest({ title: 'merge: main into feat/x', body: '' }),
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -93,7 +94,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a pull request that already reads the records → nothing asked of the host but its read', () => {
 		const lot = pullRequestLot()
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: 'old' }),
+			existing: openPullRequest({ title: 'old', body: '' }),
 		})
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
@@ -187,7 +188,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('--json → the title, the body, the pull request and whether it was sent', () => {
 		const lot = pullRequestLot()
-		const { host } = recordingHost({ existing: openPullRequest({ title: 'old', body: 'old' }) })
+		const { host } = recordingHost({ existing: openPullRequest({ title: 'old', body: '' }) })
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
 
@@ -204,7 +205,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it("--json for a pull request whose head is not the lot's → both heads given", () => {
 		const lot = pullRequestLot()
 		const { host } = recordingHost({
-			existing: { ...openPullRequest({ title: 'old', body: 'old' }), head: 'a'.repeat(40) },
+			existing: { ...openPullRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--json'], host })
@@ -220,7 +221,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const lot = pullRequestLot()
 		const { host } = recordingHost({
 			existing: {
-				...openPullRequest({ title: 'old', body: 'old' }),
+				...openPullRequest({ title: 'old', body: '' }),
 				head: 'a'.repeat(40),
 				draft: false,
 			},
@@ -259,7 +260,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 			}),
 		)
 		const { host, calls } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: 'old' }),
+			existing: openPullRequest({ title: 'old', body: '' }),
 		})
 
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -270,7 +271,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('the host refusing the edit → its reason, exit 1', () => {
 		const lot = pullRequestLot()
 		const { host } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: 'old' }),
+			existing: openPullRequest({ title: 'old', body: '' }),
 			editRefusal: 'gh pr edit: HTTP 403',
 		})
 
@@ -283,7 +284,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a body the host gives back with Windows line ends, the same text → nothing sent', () => {
 		const lot = pullRequestLot()
 		const { host, bodies } = recordingHost({
-			existing: openPullRequest({ title: 'old', body: 'old' }),
+			existing: openPullRequest({ title: 'old', body: '' }),
 		})
 		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 		const windows = recordingHost({
@@ -299,7 +300,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it("a pull request whose head is not the lot's HEAD → updated, and the line says lot land pushes the rest", () => {
 		const lot = pullRequestLot()
 		const { host } = recordingHost({
-			existing: { ...openPullRequest({ title: 'old', body: 'old' }), head: 'a'.repeat(40) },
+			existing: { ...openPullRequest({ title: 'old', body: '' }), head: 'a'.repeat(40) },
 		})
 
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
@@ -344,5 +345,49 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'], host })
 
 		expect(result.output).toContain(`### Summary\n\n${LOT_SUMMARY}\n\n### Behaviours`)
+	})
+
+	it("a body holding a person's text and no kept heading → refused, nothing sent, the text never dropped", () => {
+		const lot = pullRequestLot()
+		const { host, calls } = recordingHost({
+			existing: openPullRequest({ title: 'old', body: 'Notes a person wrote on the page.' }),
+		})
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result).toEqual({
+			exitCode: 1,
+			output:
+				"lot pr: the pull request body holds text the render would drop (no '### Checklist for the reviewer when doing the PR review' heading): move it under that heading or clear it, nothing sent",
+		})
+		expect(calls).toEqual(['read feat/x'])
+	})
+
+	it("an open pull request with lot land's old placeholder body → replaced: no person wrote it", () => {
+		const lot = pullRequestLot()
+		const { host, calls } = recordingHost({
+			existing: openPullRequest({
+				title: 'old',
+				body: `Lot ${LOT_NAME}. The full suite runs on CI; the merge queue lands it.`,
+			}),
+		})
+
+		runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(calls).toContain(`edit 7 "${LOT_MESSAGE}"`)
+	})
+
+	it('a damaged lot (its brief edited by hand) → refused, nothing read or sent', () => {
+		const lot = pullRequestLot()
+		replaceRecord({ folder: lot.lotFolder, name: 'brief.json', text: '{}' })
+		const { host, calls } = recordingHost()
+
+		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
+
+		expect(result).toEqual({
+			exitCode: 1,
+			output: `lot pr: ${LOT_NAME} is damaged: dialecte lot status ${LOT_NAME} says how`,
+		})
+		expect(calls).toEqual([])
 	})
 })

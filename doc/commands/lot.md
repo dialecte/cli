@@ -75,14 +75,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
        .github/pull_request_template.md: the title is the brief's first commit message, the body its
        summary and other commit messages, step titles and behaviours, the changelog fragments the
        lot adds, tests.json (a part of another tree reads stale), review.jsonl (findings and how
-       each closed, the verdicts), the risk class and effort, the overlaps it accepted (the other
-       lot by its index, and why), the issue it closes, and the author's checklist ticked from the
-       records; a missing record reads not recorded; the record text is checked first (a reference,
-       a forbidden word, a plan entry id, a link or a path outside the tree refused, naming the word
-       and the record); the open pull request (landing.json's, else the branch's newest) is edited
-       only when its title or body reads otherwise, a person's part after the kept marker kept;
-       --print prints and sends nothing; no pull request yet prints the text and names lot land
-       --draft; --json { title, body, pullRequest, head, sent }
+       each closed, the verdicts by reviewer kind, never a name; a row value its writer never writes
+       refused), the risk class and effort, the overlaps it accepted (the other lot by its index,
+       and why), the issue it closes, and the author's checklist ticked from the records; a missing
+       record reads not recorded; the record text is checked first (a reference, a forbidden word, a
+       plan entry id, a link or a path outside the tree refused, naming the word and the record);
+       the open pull request (landing.json's, else the branch's newest) is edited only when its
+       title or body reads otherwise, a person's part after the kept marker kept (a body without
+       that heading holding a person's text refused, never dropped); a damaged lot refused; --print
+       prints and sends nothing; no pull request yet prints the text and names lot land --draft;
+       --json { title, body, pullRequest, head, sent }
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left

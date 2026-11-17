@@ -4,7 +4,7 @@
  * transition with the old and new brief hashes, so its pull request renders from the corrected records.
  */
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
@@ -265,5 +265,28 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 			position: before?.position,
 			question: null,
 		})
+	})
+
+	it('its transition cannot be written → refused, the stored brief and the transitions as they were, no next brief left', () => {
+		const lot = pullRequestLot()
+		const before = storedBriefOf(lot).text
+		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
+		const folder = join(lot.lotFolder, 'transitions')
+		chmodSync(folder, 0o555)
+		try {
+			function rewriteNow() {
+				return rewrite({ lot, changes: { summary: 'X answers one, now.' } }).result
+			}
+
+			expect(rewriteNow).not.toThrow()
+			expect(rewriteNow().output).toMatch(
+				/^lot brief: its transition cannot be written: .+: nothing written$/,
+			)
+		} finally {
+			chmodSync(folder, 0o755)
+		}
+		expect(storedBriefOf(lot).text).toBe(before)
+		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)
+		expect(existsSync(join(lot.lotFolder, 'brief.json.next'))).toBe(false)
 	})
 })

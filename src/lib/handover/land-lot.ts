@@ -18,7 +18,7 @@ import { counted } from '../counted.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
-import { composePullRequest, keptTextOf, linesOf } from '../pr/compose-pull-request.ts'
+import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
@@ -60,8 +60,6 @@ export function landLot(params: {
 	const { worktree, branch, base, host } = params
 	const unready = unreadyRefusal({ worktree, branch, base, lotFolder: params.lotFolder })
 	if (unready !== undefined) return refused(unready)
-	const fetched = fetchRefusal({ worktree, base })
-	if (fetched !== undefined) return refused(fetched)
 	const landing = readLanding({ lotFolder: params.lotFolder })
 	const known = readKnownPullRequest({ worktree, branch, landing, host })
 	if ('refusal' in known)
@@ -137,8 +135,9 @@ function fetchRefusal(params: { worktree: string; base: string }): string | unde
 }
 
 /**
- * Why the lot cannot land yet, before anything is fetched, asked of the host or pushed: its worktree is not on its
- * branch, or its records do not render a public pull request text (`preparePullRequest`).
+ * Why the lot cannot land yet, before anything is asked of the host or pushed: its worktree is not on its branch,
+ * origin cannot be fetched or holds no base branch, or its records do not render a public pull request text
+ * (`preparePullRequest`, the template of its head or of the base).
  */
 function unreadyRefusal(params: {
 	worktree: string
@@ -153,10 +152,15 @@ function unreadyRefusal(params: {
 			.replace('{worktree}', () => worktree)
 			.replace('{branch}', () => branch)
 			.replace('{head}', () => current ?? 'detached')
+	const fetched = fetchRefusal({ worktree, base: params.base })
+	if (fetched !== undefined) return fetched
+	// the lot's head, else the base's: a lot cut before the template changed takes it at its rebase, checked then
+	const baseRef = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
 	const checked = preparePullRequest({
 		lotFolder: params.lotFolder,
 		worktree,
-		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+		baseRef,
+		templateRefs: ['HEAD', baseRef],
 	})
 	return 'refusal' in checked
 		? LANDING_LINES.unrendered.replace('{reason}', () => checked.refusal)
@@ -545,13 +549,12 @@ function renderedText(params: {
 		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
 	})
 	if ('refusal' in prepared) return prepared
-	return composePullRequest({
-		...prepared,
-		kept:
-			params.kept === undefined
-				? undefined
-				: keptTextOf({ template: prepared.template, body: params.kept }),
-	})
+	const kept =
+		params.kept === undefined
+			? { kept: undefined }
+			: keptPartOf({ template: prepared.template, body: params.kept })
+	if ('refusal' in kept) return kept
+	return composePullRequest({ ...prepared, kept: kept.kept })
 }
 
 /**

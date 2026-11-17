@@ -30,6 +30,7 @@ import {
 	PULL_REQUEST_LINES,
 	TEMPLATE_PATH,
 } from './pull-request.constants.ts'
+import { recordValueFault } from './record-values.ts'
 
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
@@ -51,22 +52,23 @@ export function preparePullRequest(params: {
 	worktree: string
 	/** The base branch the pull request lands on, as git names it (`origin/main`). */
 	baseRef: string
+	/**
+	 * Where the template is read, in order, the first that holds the renderer's markers taken: the lot's head alone
+	 * (the text it lands), or also the base (an early check of a lot cut before the template changed).
+	 */
+	templateRefs?: readonly string[]
 }): { template: string; sources: PullRequestSources } | { refusal: string } {
-	const template = tryReadGit({
-		root: params.worktree,
-		args: ['show', `HEAD:${TEMPLATE_PATH}`],
-	})
-	if (template === undefined)
-		return { refusal: PULL_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
-	const fault = templateFaultOf(template)
-	if (fault !== undefined)
-		return {
-			refusal: PULL_REQUEST_LINES.noTemplate
-				.replace('{template}', TEMPLATE_PATH)
-				.replace('{fault}', fault),
-		}
+	const template = templateOf({ worktree: params.worktree, refs: params.templateRefs ?? ['HEAD'] })
+	if ('refusal' in template) return template
 	const sources = readPullRequestSources(params)
 	if ('refusal' in sources) return sources
+	const forged = recordValueFault(sources)
+	if (forged !== undefined)
+		return {
+			refusal: PULL_REQUEST_LINES.recordValue
+				.replace('{record}', forged.record)
+				.replace('{field}', forged.field),
+		}
 	const lists = referencePatternsOf({ root: params.worktree })
 	if ('refusal' in lists) return lists
 	const base = mergeBaseOf(params)
@@ -83,7 +85,31 @@ export function preparePullRequest(params: {
 				.replace('{word}', () => (refused.word === undefined ? '' : ` \`${refused.word}\``))
 				.replace('{record}', () => refused.record),
 		}
-	return { template, sources }
+	return { template: template.text, sources }
+}
+
+/**
+ * The template of the first ref that holds one with every marker; else the refusal of the first ref: no template, or
+ * the template's fault.
+ */
+function templateOf(params: {
+	worktree: string
+	refs: readonly string[]
+}): { text: string } | { refusal: string } {
+	const reads = params.refs.map(function templateAt(ref) {
+		const text = tryReadGit({ root: params.worktree, args: ['show', `${ref}:${TEMPLATE_PATH}`] })
+		return { text, fault: text === undefined ? undefined : templateFaultOf(text) }
+	})
+	const usable = reads.find((read) => read.text !== undefined && read.fault === undefined)
+	if (usable?.text !== undefined) return { text: usable.text }
+	const [first] = reads
+	if (first?.text === undefined)
+		return { refusal: PULL_REQUEST_LINES.noTemplateFile.replace('{template}', TEMPLATE_PATH) }
+	return {
+		refusal: PULL_REQUEST_LINES.noTemplate
+			.replace('{template}', TEMPLATE_PATH)
+			.replace('{fault}', () => first.fault ?? ''),
+	}
 }
 
 /** The lot's sources for its pull request; the refusal when its brief does not read or names no commit message. */

@@ -208,7 +208,7 @@ Also in this commit:
 
 Verdicts:
 - reviewer round 2 (anthropic claude-opus-5-5): approve
-- verify by orchestrator: verified
+- verify: verified
 
 ### Risk and effort
 
@@ -297,7 +297,10 @@ Closes #12
 		})
 
 		expect(partOf({ body, heading: 'Tests' })).toBe(
-			['- tdd: 2 cases (1 green, 1 red) on 0123456789ab', '- gate: not recorded'].join('\n'),
+			[
+				'- tdd: 2 cases (1 green, 1 red) on 0123456789ab',
+				'- gate: not recorded, CI is the proof',
+			].join('\n'),
 		)
 		expect(partOf({ body, heading: 'Checklist' })).toContain('- [ ] Tests:')
 	})
@@ -357,6 +360,46 @@ Closes #12
 		})
 
 		expect(text).toEqual({ refusal: 'missing marker review' })
+	})
+})
+
+describe('composePullRequest ticks the tests box only on a gate record', () => {
+	it('every case green and no gate record → the box left, saying CI is the proof', () => {
+		const tdd = FULL.tests?.tdd
+		const body = bodyOf({ sources: { ...FULL, tests: { schema: 1, ...(tdd && { tdd }) } } })
+
+		expect(partOf({ body, heading: 'Checklist' }).split('\n')[0]).toBe(
+			'- [ ] Tests: every case of the change answered by tdd on this tree (green, accepted, revised or unchanged), no gate failure recorded on it (gate: not recorded, CI is the proof)',
+		)
+	})
+})
+
+describe('composePullRequest names no reviewer', () => {
+	it.each([
+		['a person', { kind: 'person' as const, name: 'Jane Doe' }, '- person: approve'],
+		[
+			'the orchestrator',
+			{ kind: 'person' as const, name: 'orchestrator' },
+			'- orchestrator: approve',
+		],
+		['a verify by name', { kind: 'verify' as const, name: 'Jane Doe' }, '- verify: approve'],
+	])('a verdict by %s → only its kind', (_name, by, line) => {
+		const review = {
+			findings: [],
+			verdicts: [
+				{
+					schema: 1 as const,
+					kind: 'verdict' as const,
+					at: '2026-11-17T00:00:00Z',
+					by,
+					verdict: 'approve',
+				},
+			],
+		}
+
+		const body = bodyOf({ sources: { ...FULL, review } })
+
+		expect(partOf({ body, heading: 'Review' }).split('\n').at(-1)).toBe(line)
 	})
 })
 

@@ -214,6 +214,9 @@ export const LOT_INDEX_PATTERN = /^\d+$/
  * Why a lot's records read as damaged (validated once, on read): fixed words, never a field of the record, so
  * nothing forged reaches a line.
  */
+/** Beside `brief.json`: the brief `lot brief` writes before its transition, moved into place after it. */
+export const NEXT_BRIEF_SUFFIX = '.next'
+
 export const RECORD_DAMAGE_REASONS = {
 	index: 'identity.json holds an index that is not digits',
 	created: 'identity.json holds a created time the store does not write',

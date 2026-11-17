@@ -15,7 +15,10 @@ import {
 	LOT_INDEX_OF_NAME,
 	NOT_RECORDED,
 	PART_MARKER_PATTERN,
+	PLACEHOLDER_BODY_PATTERN,
+	PULL_REQUEST_LINES,
 	RENDERER_COMMENT_PATTERN,
+	REVIEWER_KINDS,
 	TEMPLATE_FAULTS,
 } from './pull-request.constants.ts'
 
@@ -80,6 +83,26 @@ export function keptTextOf(params: { template: string; body: string }): string |
 	const body = linesOf(params.body)
 	const at = body.lastIndexOf(first)
 	return at === -1 ? undefined : body.slice(at).join('\n').trim()
+}
+
+/**
+ * What of the current `body` the render keeps (`keptTextOf`), or the refusal of a body whose person's text the render
+ * would drop: one without the kept part's heading that is neither empty nor the placeholder an earlier landing wrote.
+ * Never a person's text dropped silently.
+ */
+export function keptPartOf(params: {
+	template: string
+	body: string
+}): { kept: string | undefined } | { refusal: string } {
+	const kept = keptTextOf(params)
+	if (kept !== undefined) return { kept }
+	const body = linesOf(params.body).join('\n').trim()
+	if (body === '' || PLACEHOLDER_BODY_PATTERN.test(body)) return { kept: undefined }
+	const lines = linesOf(params.template)
+	const heading = lines
+		.slice(lines.map(markerOf).indexOf(KEPT_PART) + 1)
+		.find((line) => line.trim() !== '')
+	return { refusal: PULL_REQUEST_LINES.keptMissing.replace('{heading}', () => heading ?? '') }
 }
 
 /** The lines of a text, whatever line ends another system gave it. */
@@ -190,7 +213,7 @@ function testsLines(sources: PullRequestSources): string[] {
 	if (tests?.tdd === undefined && tests?.gate === undefined) return [NOT_RECORDED]
 	return [
 		`- ${tests.tdd === undefined ? `tdd: ${NOT_RECORDED}` : tddLine({ tdd: tests.tdd, treeHash })}`,
-		`- ${tests.gate === undefined ? `gate: ${NOT_RECORDED}` : gateLine({ gate: tests.gate, treeHash })}`,
+		`- ${tests.gate === undefined ? BODY_LINES.noGate : gateLine({ gate: tests.gate, treeHash })}`,
 	]
 }
 
@@ -257,17 +280,28 @@ function verdictLine(row: VerdictRow): string {
 	return `- ${reviewerName(row.by)}${model === '' ? '' : ` (${model})`}: ${row.verdict}`
 }
 
+/**
+ * Who gave a verdict, by kind only: a review station (with its round), a verify, the orchestrator or a person; never a
+ * person's or a verifier's name (the host shows who approves).
+ */
 function reviewerName(by: ReviewerOf): string {
 	if (by.kind === 'station')
 		return by.round === undefined ? by.station : `${by.station} round ${by.round}`
-	if (by.kind === 'verify') return by.name === undefined ? 'verify' : `verify by ${by.name}`
-	return by.name
+	if (by.kind === 'verify') return REVIEWER_KINDS.verify
+	return by.name === REVIEWER_KINDS.orchestrator
+		? REVIEWER_KINDS.orchestrator
+		: REVIEWER_KINDS.person
 }
 
 /** The author's boxes, each ticked from its record; none ticked on a guess. */
 function checklistLines(sources: PullRequestSources): string[] {
 	const boxes: [string, boolean][] = [
-		[CHECKLIST_LINES.tests, testsDone(sources)],
+		[
+			sources.tests?.gate === undefined
+				? `${CHECKLIST_LINES.tests} (${BODY_LINES.noGate})`
+				: CHECKLIST_LINES.tests,
+			testsDone(sources),
+		],
 		[CHECKLIST_LINES.changelog, sources.changelog !== undefined],
 		[CHECKLIST_LINES.docs, sources.docsPassed === true],
 		[CHECKLIST_LINES.version, sources.release ? sources.versionBumped : !sources.versionBumped],
@@ -276,15 +310,15 @@ function checklistLines(sources: PullRequestSources): string[] {
 }
 
 /**
- * Every case of the change done (green, or accepted / revised / unchanged) on the landed tree, and the gate part, when
- * it ran on that tree, without a failure (the full suite is CI's).
+ * Every case of the change done (green, or accepted / revised / unchanged) on the landed tree, and a gate record of
+ * that tree without a failure; with no gate record the box stays for CI, the proof.
  */
 function testsDone(sources: PullRequestSources): boolean {
 	const { tdd, gate } = sources.tests ?? {}
 	if (tdd === undefined || tdd.stateHash !== sources.treeHash || tdd.cases.length === 0)
 		return false
 	if (!tdd.cases.every((testCase) => DONE_CASE_STATUSES.includes(testCase.status))) return false
-	if (gate === undefined) return true
+	if (gate === undefined) return false
 	return (
 		gate.stateHash === sources.treeHash &&
 		(gate.tests?.failed ?? 0) === 0 &&

@@ -2,6 +2,7 @@
  * A lot's brief changes only through `lot brief`: `brief.json` is checked against the hash of the latest `brief`
  * transition, else the hash its start recorded, and a brief edited by hand reads as a damaged record, like any other.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -12,6 +13,7 @@ import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLot } from '../../commands/lot.ts'
 import { readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
+import { appendTransition } from './transitions.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -97,4 +99,30 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 			'brief.json is not the brief its start or its last lot brief recorded',
 		)
 	})
+
+	it('a lot brief killed after its transition, before its brief moved into place → the lot reads clean on its old brief', () => {
+		const lot = pullRequestLot()
+		const started = readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')
+		const next = briefWithSummary({ lot, summary: 'Rewritten, never moved.' })
+		writeFileSync(join(lot.lotFolder, 'brief.json.next'), next)
+		appendTransition({
+			lotFolder: lot.lotFolder,
+			next: ({ last }) => ({
+				at: '2026-11-17T00:00:00.000Z',
+				lot: LOT_NAME,
+				state: last?.state ?? 'working',
+				position: last?.position ?? { step: 0, of: 1, station: null, round: null },
+				cause: { kind: 'brief', by: 'person-a', reason: 'killed midway' },
+				question: null,
+				simulated: false,
+				brief: { from: sha256(started), to: sha256(next) },
+			}),
+		})
+
+		expect(damageOf(lot)).toBeUndefined()
+	})
 })
+
+function sha256(text: string): string {
+	return createHash('sha256').update(text).digest('hex')
+}

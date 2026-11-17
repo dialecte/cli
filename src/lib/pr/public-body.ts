@@ -13,6 +13,7 @@ import { PATH_OR_LINK_PATTERN, PLAN_ENTRY_ID_LABEL } from '../store/public-text.
 import { planEntryIdIn } from '../store/public-text.ts'
 import {
 	LINK_PATTERN,
+	OUTSIDE_TREE_PATTERN,
 	PIECE_RECORDS,
 	PRIVATE_PATH_LABEL,
 	TOKEN_SEPARATOR_PATTERN,
@@ -57,7 +58,16 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 		record: PIECE_RECORDS.overlap,
 		text: overlap.reason,
 	}))
-	return [...messages, ...summary, ...steps, ...changes, ...overlaps]
+	// the review's free cells: a finding's file, a verdict's vendor and model (every other cell is a listed value)
+	const review = [
+		...(sources.review?.findings ?? []).flatMap((row) =>
+			row.file === undefined ? [] : [row.file],
+		),
+		...(sources.review?.verdicts ?? []).flatMap((row) =>
+			[row.vendor, row.model].filter((word): word is string => word !== undefined),
+		),
+	].map((text) => ({ record: PIECE_RECORDS.review, text }))
+	return [...messages, ...summary, ...steps, ...changes, ...overlaps, ...review]
 }
 
 /** The first piece holding what a public body never holds, by record; undefined when every piece passes. */
@@ -69,11 +79,11 @@ export function publicRefusalOf(params: {
 	treeFiles: ReadonlySet<string>
 }): PublicRefusal | undefined {
 	for (const piece of params.pieces) {
-		// a committed fragment is public already: its paths name what the repository says, not a private place
-		const path =
-			piece.committed === true
-				? undefined
-				: privatePathIn({ text: piece.text, treeFiles: params.treeFiles })
+		const path = privatePathIn({
+			text: piece.text,
+			treeFiles: params.treeFiles,
+			committed: piece.committed === true,
+		})
 		if (path !== undefined) return { record: piece.record, label: PRIVATE_PATH_LABEL, word: path }
 		const reference = findReferences({ text: piece.text, patterns: params.patterns })[0]
 		if (reference !== undefined)
@@ -86,11 +96,14 @@ export function publicRefusalOf(params: {
 
 /**
  * The first token of the text that is a link, or a path (its `./` and line dropped) the lot's tree does not hold: a
- * file it does not list, or a folder (`a/b/`) none of its files sits in.
+ * file it does not list, or a folder (`a/b/`) none of its files sits in. In committed text (a changelog fragment,
+ * public already) a path relative to the tree passes whether or not the tree holds it (`.dialecte/lot.json`); a link,
+ * or an absolute, home, drive or parent path, never does.
  */
 function privatePathIn(params: {
 	text: string
 	treeFiles: ReadonlySet<string>
+	committed: boolean
 }): string | undefined {
 	const files = [...params.treeFiles]
 	return params.text
@@ -99,6 +112,7 @@ function privatePathIn(params: {
 		.find(function isPrivate(token) {
 			if (!PATH_OR_LINK_PATTERN.test(token)) return false
 			if (LINK_PATTERN.test(token)) return true
+			if (params.committed) return OUTSIDE_TREE_PATTERN.test(token)
 			const path = token.replace(CURRENT_FOLDER_PREFIX, '').replace(LINE_SUFFIX_PATTERN, '')
 			if (!path.endsWith('/')) return !params.treeFiles.has(path)
 			return !files.some((file) => file.startsWith(path))

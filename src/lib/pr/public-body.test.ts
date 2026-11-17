@@ -48,6 +48,16 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a' },
 		],
 		[
+			'a plan entry id joined by a dot',
+			'Folded from ci2a.notes.',
+			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a' },
+		],
+		[
+			'a plan entry id joined by an underscore',
+			'Folded from ci2a_notes.',
+			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a' },
+		],
+		[
 			'a plan entry id part of a word',
 			'Folded from ci2a-lot.',
 			{ record: 'brief.json summary', label: 'plan entry id', word: 'ci2a-lot' },
@@ -175,6 +185,23 @@ describe('publicPiecesOf lists the free text of the records', () => {
 })
 
 describe('publicRefusalOf leaves a committed fragment its paths', () => {
+	it.each([
+		['a link', 'See https://example.com/x.', 'https://example.com/x'],
+		['an absolute path', 'Read /Users/x/notes.md.', '/Users/x/notes.md'],
+		['a home path', 'Read ~/notes/x.md.', '~/notes/x.md'],
+		['a parent path', 'Read ../plans/x.md.', '../plans/x.md'],
+	])('a committed line holding %s → refused all the same', (_name, text, word) => {
+		const pieces: PublicPiece[] = [{ record: 'changes/x.md', text, committed: true }]
+
+		expect(
+			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), treeFiles: new Set() }),
+		).toEqual({
+			record: 'changes/x.md',
+			label: 'path outside the tree or a link',
+			word,
+		})
+	})
+
 	it('a changelog line naming an ignored file of the cli → passes: the fragment is committed, public already', () => {
 		const pieces: PublicPiece[] = [
 			{
@@ -200,6 +227,46 @@ describe('publicRefusalOf leaves a committed fragment its paths', () => {
 			record: 'brief.json summary',
 			label: 'path outside the tree or a link',
 			word: '.dialecte/lot.json',
+		})
+	})
+})
+
+describe('publicPiecesOf lists the free cells of the review', () => {
+	it("a finding's file, a verdict's vendor and model → pieces of review.jsonl, checked like any text", () => {
+		const sources: PullRequestSources = {
+			messages: ['feat(x): x'],
+			review: {
+				findings: [{ schema: 1, kind: 'finding', id: 'R1-1', file: 'notes/a/plan.md' }],
+				verdicts: [
+					{
+						schema: 1,
+						kind: 'verdict',
+						at: '2026-11-17T00:00:00Z',
+						by: { kind: 'station', station: 'reviewer' },
+						vendor: 'anthropic',
+						model: 'claude-opus-5-5',
+						verdict: 'approve',
+					},
+				],
+			},
+			treeHash: 'a',
+			versionBumped: false,
+			release: false,
+		}
+
+		const pieces = publicPiecesOf(sources)
+
+		expect(pieces.filter((piece) => piece.record === 'review.jsonl')).toEqual([
+			{ record: 'review.jsonl', text: 'notes/a/plan.md' },
+			{ record: 'review.jsonl', text: 'anthropic' },
+			{ record: 'review.jsonl', text: 'claude-opus-5-5' },
+		])
+		expect(
+			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), treeFiles: new Set() }),
+		).toEqual({
+			record: 'review.jsonl',
+			label: 'path outside the tree or a link',
+			word: 'notes/a/plan.md',
 		})
 	})
 })
