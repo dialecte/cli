@@ -6,7 +6,7 @@ export const DECLARED_FAMILIES: Array<[CommandFamily, string[]]> = [
 	['Use', ['run', 'fixture', 'new']],
 	['Grow', ['lot', 'inbox', 'health']],
 	['Plan', ['plan']],
-	['Check', ['gate', 'tdd', 'rules', 'contrib', 'changelog', 'mutants']],
+	['Check', ['gate', 'tdd', 'rules', 'contrib', 'changelog', 'ci', 'mutants']],
 	['Hand over', ['handover']],
 	['Workspace', ['worktree', 'doctor', 'models', 'skills', 'corpus']],
 	['Maintain', ['bench', 'coverage', 'narrowing', 'audit', 'text']],
