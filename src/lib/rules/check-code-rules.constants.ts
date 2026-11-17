@@ -110,8 +110,15 @@ export const PATH_PASS_THROUGH_PATTERN = /^(realpath|realpathSync|resolve|normal
 export const ROOT_OPTION_PATTERN =
 	/^(root|cwd|rootDir|rootFolder|projectRoot|workspace|folder|directory|dir|scratchRoot)$/
 
-/** The `bare-tmpdir` finding's message: a production folder made in the system's temporary folder itself. */
+/**
+ * The `bare-tmpdir` finding's message: a production folder made in the system's temporary folder itself. Outside the
+ * cli it names no helper: the package's own scratch helper, if it has one, is not the cli's.
+ */
 export const BARE_TMPDIR_MESSAGE =
+	"`tmpdir()` in production code: a folder made in the system's temporary folder itself is left behind - make every temporary folder under one scratch root the package cleans"
+
+/** The `bare-tmpdir` finding's message in the cli itself: its own scratch-folder helper named. */
+export const BARE_TMPDIR_CLI_MESSAGE =
 	'`tmpdir()` in production code: make the folder with `makeScratchFolder` (src/lib/scratch/), under the one scratch root prune and health read'
 
 /** The folder whose files may read the system's temporary folder: the scratch module. */

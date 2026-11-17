@@ -32,6 +32,13 @@ export const SHELL_OPTION_CALLEES: readonly string[] = [
 /** The option naming a shell in a spawning call's options object. */
 export const SHELL_OPTION = 'shell'
 
-/** The `raw-git-repository` finding's message. */
+/**
+ * The `raw-git-repository` finding's message. Outside the cli it names no helper: the package's own test helper, if
+ * it has one, is not the cli's.
+ */
 export const RAW_GIT_REPOSITORY_MESSAGE =
+	'a raw `git clone` or `git init` in a test: the repository has no identity (green on macOS, red on Linux CI) - make it through one test helper that gives it an identity'
+
+/** The `raw-git-repository` finding's message in the cli itself: its own scratch repository helpers named. */
+export const RAW_GIT_REPOSITORY_CLI_MESSAGE =
 	'a raw `git clone` or `git init` in a test: the repository has no identity (green on macOS, red on Linux CI) - make it with `cloneRepository` / `initializeRepository` of `test/scratch-repository.ts`'

@@ -27,7 +27,7 @@ function bareTmpdirFindingsOf(testCase: TestCase): { line: number; message: stri
 
 describe('bare-tmpdir', () => {
 	const testCases: Record<string, TestCase> = {
-		'tmpdir() in a production file → reported on its line, naming makeScratchFolder': {
+		'tmpdir() in a production file → reported on its line': {
 			file: 'src/lib/gate/selection.ts',
 			text: MAKE_IN_TEMPORARY,
 			expected: [{ line: 2, message: BARE_TMPDIR_MESSAGE }],

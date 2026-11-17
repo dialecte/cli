@@ -297,6 +297,7 @@ function checkFile(params: {
 			sourceFile,
 			...(entryClasses && { entryClasses }),
 			...(testRules && { testRules }),
+			...(scope && { packageKind: scope.reader.kind }),
 		}),
 		...(testLength.finding ? [testLength.finding] : []),
 	]
