@@ -12,6 +12,7 @@ import { CONFIG_PATH_SEPARATOR } from '../lib/config/set-config-value.constants.
 import { setConfigValue } from '../lib/config/set-config-value.ts'
 import { checkCorpora } from '../lib/corpus/check-corpora.ts'
 import { corporaFolderOf } from '../lib/corpus/corpora-folder-of.ts'
+import { LIST_JSON_VERSION } from '../lib/corpus/corpus.constants.ts'
 import { fetchCorpora } from '../lib/corpus/fetch-corpora.ts'
 import { listCorpora } from '../lib/corpus/list-corpora.ts'
 import { readShippedCorpus } from '../lib/corpus/shipped-corpus.ts'
@@ -140,7 +141,7 @@ function runList(context: {
 		licensed: context.licensed,
 	})
 	if (read.flags.has(CORPUS_JSON_FLAG))
-		return jsonAnswer({ exitCode: 0, value: { cache, corpora } })
+		return jsonAnswer({ exitCode: 0, value: { version: LIST_JSON_VERSION, cache, corpora } })
 	const lines = corpora.map((entry) =>
 		fillMessage({
 			template: CORPUS_LINES.listed,

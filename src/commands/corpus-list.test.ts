@@ -109,6 +109,7 @@ describe('corpus list', () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(JSON.parse(result.output)).toEqual({
+			version: 1,
 			cache: workspace.cache,
 			corpora: [
 				{

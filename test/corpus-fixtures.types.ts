@@ -8,6 +8,8 @@ export type ArchiveMember = {
 	prefix?: string
 	/** Tar: an old header, without the ustar magic. */
 	old?: boolean
+	/** Tar: the size written in GNU base-256 form instead of octal. */
+	base256Size?: boolean
 	/** Zip: stored, not deflated. */
 	stored?: boolean
 	/** Zip: sizes in a data descriptor after the data, zero in the local header. */

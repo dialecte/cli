@@ -1,9 +1,9 @@
 /** `manifest.lock.json`: what the cache holds, each source with the manifest entry it was built from and its files' sha256. */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { LOCK_FILE } from './corpus.constants.ts'
+import { LOCK_FILE, TEMPORARY_SUFFIX } from './corpus.constants.ts'
 
 import type { CorpusLockEntry, CorpusLockRead, ManifestSource } from './corpus.types.ts'
 
@@ -76,5 +76,9 @@ export function writeCorpusLock(params: {
 	const sorted = Object.fromEntries(
 		Object.entries(params.lock).sort(([left], [right]) => (left < right ? -1 : 1)),
 	)
-	writeFileSync(join(params.cache, LOCK_FILE), `${JSON.stringify(sorted, null, '\t')}\n`)
+	// written beside its name, then renamed onto it: a reader never sees half a lock
+	const file = join(params.cache, LOCK_FILE)
+	const temporary = `${file}.${process.pid}${TEMPORARY_SUFFIX}`
+	writeFileSync(temporary, `${JSON.stringify(sorted, null, '\t')}\n`)
+	renameSync(temporary, file)
 }

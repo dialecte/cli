@@ -81,4 +81,34 @@ describe('readArchive', () => {
 			kind: 'unknown',
 		})
 	})
+
+	it('reads a contiguous-file entry (type 7) as a file, as tar readers do', () => {
+		expect(
+			textsOf(readArchive({ bytes: tarOf([{ name: 'c.xsd', type: '7', text: 'contiguous\n' }]) })),
+		).toEqual({
+			'c.xsd': 'contiguous\n',
+		})
+	})
+
+	it('answers unsupported, naming it, for a size in GNU base-256 form', () => {
+		expect(
+			readArchive({ bytes: tarOf([{ name: 'big.xsd', base256Size: true, text: 'b\n' }]) }),
+		).toEqual({
+			kind: 'unsupported',
+			reason: 'big.xsd has its size in base-256 form',
+		})
+	})
+
+	it.each([
+		{ case: 'a gzip', bytes: gzipSync(tarOf([{ name: 'zeros.xsd', text: '0'.repeat(20_000) }])) },
+		{
+			case: 'a deflated zip entry',
+			bytes: zipOf([{ name: 'zeros.xsd', text: '0'.repeat(20_000) }]),
+		},
+	])('answers unsupported for $case that inflates past maxBytes', ({ bytes }) => {
+		expect(readArchive({ bytes, maxBytes: 5_000 })).toEqual({
+			kind: 'unsupported',
+			reason: 'it inflates past 5000 bytes',
+		})
+	})
 })

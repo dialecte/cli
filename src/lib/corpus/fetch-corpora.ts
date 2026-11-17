@@ -1,7 +1,9 @@
 /**
  * `dialecte corpus fetch`: each source checked (licence fields, pins), its downloads checked against their pins (kept
  * ones first), its tree built in memory, then written to a staging folder beside its own and swapped in. A refused
- * source changes nothing of its folder, its lock entry or its kept downloads. The lock is written once, at the end.
+ * source changes nothing of its folder, its lock entry or its kept downloads. The lock names a tree only once it is in
+ * place: the entry is dropped before the swap and written after it, so a run stopped in between leaves a folder the
+ * lock does not vouch for (stale). One fetch writes a cache at a time (`fetch.lock`).
  */
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -11,10 +13,15 @@ import { manifestEntryHashOf, readCorpusLock, sha256Of, writeCorpusLock } from '
 import {
 	DOWNLOAD_TIMEOUT_MILLISECONDS,
 	DOWNLOADS_FOLDER,
+	FETCH_LOCK_HELD,
 	LOCK_FILE,
+	MAX_DOWNLOAD_BYTES,
+	MAX_EXTRACTED_BYTES,
+	PREVIOUS_SUFFIX,
 	STAGING_SUFFIX,
 	UNBUILT_SOURCE,
 } from './corpus.constants.ts'
+import { acquireFetchLock, fetchLockFileOf, releaseFetchLock } from './fetch-lock.ts'
 import { keptDownloadOf, keptFileOf } from './kept-download.ts'
 import { pinnedDownloadsOf, sourceProblemOf } from './source-pins.ts'
 import { sourceTreeOf } from './source-tree.ts'
@@ -26,6 +33,7 @@ import type {
 	ManifestSource,
 	SourceOutcome,
 	SourceTree,
+	CorpusLimits,
 } from './corpus.types.ts'
 
 export async function fetchCorpora(params: {
@@ -36,6 +44,8 @@ export async function fetchCorpora(params: {
 	ids: readonly string[]
 	/** How long a download may go without receiving anything (default DOWNLOAD_TIMEOUT_MILLISECONDS). */
 	timeoutMilliseconds?: number
+	/** The most bytes one download, and one archive once decompressed, may hold (defaults: the constants). */
+	limits?: CorpusLimits
 }): Promise<SourceOutcome[]> {
 	const { cache } = params
 	mkdirSync(cache, { recursive: true })
@@ -43,24 +53,55 @@ export async function fetchCorpora(params: {
 		params.ids.length === 0
 			? params.manifest.sources
 			: params.manifest.sources.filter((source) => params.ids.includes(source.id))
-	const outcomes: SourceOutcome[] = []
-	const signal = {
-		timeoutMilliseconds: params.timeoutMilliseconds ?? DOWNLOAD_TIMEOUT_MILLISECONDS,
+	const lock = acquireFetchLock({ cache })
+	if (lock.kind === 'held') return heldBy({ selected, cache, pid: lock.pid })
+	try {
+		const outcomes: SourceOutcome[] = []
+		const options = {
+			cache,
+			overrides: params.overrides,
+			timeoutMilliseconds: params.timeoutMilliseconds ?? DOWNLOAD_TIMEOUT_MILLISECONDS,
+			limits: params.limits ?? {
+				downloadBytes: MAX_DOWNLOAD_BYTES,
+				extractedBytes: MAX_EXTRACTED_BYTES,
+			},
+		}
+		for (const source of selected) {
+			const fetched = await fetchSource({ source, ...options })
+			outcomes.push(fetched.outcome)
+			if (fetched.kind === 'fetched')
+				writeCorpusLock({
+					cache,
+					lock: { ...readCorpusLock({ cache }).raw, [source.id]: fetched.lock },
+				})
+		}
+		if (!existsSync(join(cache, LOCK_FILE)))
+			writeCorpusLock({ cache, lock: readCorpusLock({ cache }).raw })
+		if (params.ids.length === 0) pruneDownloads({ cache, manifest: params.manifest })
+		return outcomes
+	} finally {
+		releaseFetchLock({ cache })
 	}
-	for (const source of selected) {
-		const fetched = await fetchSource({ source, cache, overrides: params.overrides, ...signal })
-		outcomes.push(fetched.outcome)
-		// written after each source: a run stopped later leaves a lock that names every tree already swapped in
-		if (fetched.kind === 'fetched')
-			writeCorpusLock({
-				cache,
-				lock: { ...readCorpusLock({ cache }).raw, [source.id]: fetched.lock },
-			})
-	}
-	if (!existsSync(join(cache, LOCK_FILE)))
-		writeCorpusLock({ cache, lock: readCorpusLock({ cache }).raw })
-	if (params.ids.length === 0) pruneDownloads({ cache, manifest: params.manifest })
-	return outcomes
+}
+
+/** Every selected source refused: another running fetch holds the cache. */
+function heldBy(params: {
+	selected: readonly ManifestSource[]
+	cache: string
+	pid: number
+}): SourceOutcome[] {
+	return params.selected.map((source) => ({
+		id: source.id,
+		kind: 'refused',
+		reason: fillMessage({
+			template: FETCH_LOCK_HELD,
+			values: {
+				id: source.id,
+				lock: fetchLockFileOf({ cache: params.cache }),
+				pid: String(params.pid),
+			},
+		}),
+	}))
 }
 
 async function fetchSource(params: {
@@ -68,6 +109,7 @@ async function fetchSource(params: {
 	cache: string
 	overrides: string
 	timeoutMilliseconds: number
+	limits: CorpusLimits
 }): Promise<FetchedSource> {
 	const { source, cache } = params
 	const problem = sourceProblemOf(source)
@@ -80,11 +122,18 @@ async function fetchSource(params: {
 			url: download.url,
 			sha256: download.sha256 ?? '',
 			timeoutMilliseconds: params.timeoutMilliseconds,
+			maxBytes: params.limits.downloadBytes,
 		})
 		if (kept.kind === 'refused') return refusedSource({ id: source.id, reason: kept.reason })
 		downloads.set(download.url, kept.bytes)
 	}
-	const tree = writtenTreeOf({ source, downloads, cache, overrides: params.overrides })
+	const tree = writtenTreeOf({
+		source,
+		downloads,
+		cache,
+		overrides: params.overrides,
+		maxExtractedBytes: params.limits.extractedBytes,
+	})
 	if (tree.kind === 'refused') return refusedSource({ id: source.id, reason: tree.reason })
 	const bytes = tree.files.reduce((total, file) => total + file.bytes.byteLength, 0)
 	return {
@@ -115,11 +164,15 @@ function writtenTreeOf(params: {
 	downloads: ReadonlyMap<string, Uint8Array>
 	cache: string
 	overrides: string
+	maxExtractedBytes: number
 }): SourceTree {
 	const folder = join(params.cache, params.source.id)
 	try {
 		const tree = sourceTreeOf(params)
-		if (tree.kind === 'tree') writeTree({ folder, files: tree.files })
+		if (tree.kind === 'tree') {
+			dropLockEntry({ cache: params.cache, id: params.source.id })
+			writeTree({ folder, files: tree.files })
+		}
 		return tree
 	} catch (error) {
 		rmSync(stagingOf(folder), { recursive: true, force: true })
@@ -145,8 +198,22 @@ function writeTree(params: { folder: string; files: readonly CorpusFile[] }): vo
 		mkdirSync(dirname(target), { recursive: true })
 		writeFileSync(target, file.bytes)
 	}
-	rmSync(params.folder, { recursive: true, force: true })
+	// the old tree moves aside in one rename, the new one comes in, and only then is the old one removed
+	const previous = `${params.folder}${PREVIOUS_SUFFIX}`
+	rmSync(previous, { recursive: true, force: true })
+	if (existsSync(params.folder)) renameSync(params.folder, previous)
 	renameSync(staging, params.folder)
+	rmSync(previous, { recursive: true, force: true })
+}
+
+/** The lock without the source's entry: from here until its new entry, the lock vouches for no tree of it. */
+function dropLockEntry(params: { cache: string; id: string }): void {
+	const raw = readCorpusLock({ cache: params.cache }).raw
+	if (!Object.hasOwn(raw, params.id)) return
+	writeCorpusLock({
+		cache: params.cache,
+		lock: Object.fromEntries(Object.entries(raw).filter(([id]) => id !== params.id)),
+	})
 }
 
 /** Removes the kept downloads no source of the manifest names any more. */

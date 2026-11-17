@@ -23,6 +23,11 @@ export function tarOf(members: readonly ArchiveMember[]): Uint8Array {
 		header.write('0000000\0', 108, 'ascii')
 		header.write('0000000\0', 116, 'ascii')
 		header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii')
+		if (member.base256Size === true) {
+			header.fill(0, 124, 136)
+			header[124] = 0x80
+			header.writeUInt32BE(content.length, 132)
+		}
 		header.write('00000000000\0', 136, 'ascii')
 		header.write('        ', 148, 'ascii')
 		header.write(member.type ?? '0', 156, 'ascii')
@@ -134,6 +139,8 @@ export async function serveDribbled(params: {
 	bytes: Uint8Array
 	chunks: number
 	gapMilliseconds: number
+	/** Stops sending (the connection kept open) after this many chunks. */
+	stopAfter?: number
 }): Promise<FixtureServer> {
 	const requests: string[] = []
 	const size = Math.ceil(params.bytes.length / params.chunks)
@@ -142,6 +149,7 @@ export async function serveDribbled(params: {
 		response.writeHead(200, { 'content-length': params.bytes.length })
 		let index = 0
 		const timer = setInterval(function sendNext() {
+			if (index === params.stopAfter) return
 			response.write(params.bytes.subarray(index * size, (index + 1) * size))
 			index++
 			if (index * size >= params.bytes.length) {
@@ -150,6 +158,36 @@ export async function serveDribbled(params: {
 			}
 		}, params.gapMilliseconds)
 		response.on('close', () => clearInterval(timer))
+	})
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+	const { port } = server.address() as AddressInfo
+	return {
+		urlOf: (path) => `http://127.0.0.1:${port}${path}`,
+		requests,
+		close: () =>
+			new Promise<void>((resolve) => {
+				server.closeAllConnections()
+				server.close(() => resolve())
+			}),
+	}
+}
+
+/** A server on 127.0.0.1 answering `from` with a redirect to `to`, and `to` with `bytes`. */
+export async function serveRedirect(params: {
+	from: string
+	to: string
+	bytes: Uint8Array
+}): Promise<FixtureServer> {
+	const requests: string[] = []
+	const server = createServer(function redirectOrAnswer(request, response) {
+		requests.push(request.url ?? '')
+		if (request.url === params.from) {
+			response.writeHead(302, { location: params.to })
+			response.end()
+			return
+		}
+		response.writeHead(200, { 'content-length': params.bytes.length })
+		response.end(params.bytes)
 	})
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	const { port } = server.address() as AddressInfo

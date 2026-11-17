@@ -29,6 +29,8 @@ export function sourceTreeOf(params: {
 	/** URL -> its downloaded bytes, every pin already checked. */
 	downloads: ReadonlyMap<string, Uint8Array>
 	overrides: string
+	/** The most bytes the source's archive may inflate to (default MAX_EXTRACTED_BYTES). */
+	maxExtractedBytes?: number
 }): SourceTree {
 	try {
 		const fetched = fetchedFilesOf(params)
@@ -58,6 +60,7 @@ function refuse(params: { message: string; values: Record<string, string> }): ne
 function fetchedFilesOf(params: {
 	source: ManifestSource
 	downloads: ReadonlyMap<string, Uint8Array>
+	maxExtractedBytes?: number
 }): Map<string, CorpusFile> {
 	const { source } = params
 	const files = new Map<string, CorpusFile>()
@@ -81,7 +84,10 @@ function fetchedFilesOf(params: {
 				}),
 			)
 	else {
-		const read = readArchive({ bytes: downloadOf({ downloads: params.downloads, url: fetch.url }) })
+		const read = readArchive({
+			bytes: downloadOf({ downloads: params.downloads, url: fetch.url }),
+			maxBytes: params.maxExtractedBytes,
+		})
 		if (read.kind === 'unknown')
 			refuse({ message: CORPUS_MESSAGES.unknownArchive, values: { id: source.id, url: fetch.url } })
 		if (read.kind === 'unsupported')
@@ -106,10 +112,8 @@ function checkedFileOf(params: {
 	path: string
 	bytes: Uint8Array
 }): [string, CorpusFile] {
-	return [
-		checkedPath({ id: params.id, path: params.path }),
-		{ path: params.path, bytes: params.bytes },
-	]
+	const path = checkedPath({ id: params.id, path: params.path })
+	return [path, { path, bytes: params.bytes }]
 }
 
 /** The checked bytes of a URL of the source (every URL the fetch names was downloaded first). */
@@ -151,7 +155,8 @@ function checkedPath(params: { id: string; path: string }): string {
 			message: CORPUS_MESSAGES.refusedPath,
 			values: { id: params.id, path: JSON.stringify(path) },
 		})
-	return path
+	// one spelling per file: `./a` and `a//b` are written, locked and checked as `a` and `a/b`
+	return posix.normalize(path)
 }
 
 /** `exclude` and `marker`, file by file. */
@@ -193,10 +198,13 @@ function withSubstitutes(params: {
 				message: CORPUS_MESSAGES.unknownOverride,
 				values: { id: params.source.id, override },
 			})
-		files.set(checkedPath({ id: params.source.id, path }), {
-			path,
-			bytes: new Uint8Array(readFileSync(file)),
-		})
+		files.set(
+			...checkedFileOf({
+				id: params.source.id,
+				path,
+				bytes: new Uint8Array(readFileSync(file)),
+			}),
+		)
 	}
 	return files
 }

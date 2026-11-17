@@ -32,17 +32,23 @@ export function listCorpora(params: {
 }
 
 /**
- * `missing` without its folder; `fetched` when the lock holds it from this manifest entry; `stale` when from another,
- * or when the lock has no entry it can read for a folder that is there.
+ * `missing` without its folder; `fetched` when the lock holds it from this manifest entry and every locked file is
+ * there; `stale` otherwise (another entry, no entry the cli reads, a locked file gone).
  */
 export function openStateOf(params: {
 	source: ManifestSource
 	cache: string
 	lock: CorpusLock
 }): CorpusState {
-	if (!existsSync(join(params.cache, params.source.id))) return 'missing'
+	const folder = join(params.cache, params.source.id)
+	if (!existsSync(folder)) return 'missing'
 	const locked = params.lock[params.source.id]
-	return locked?.manifest === manifestEntryHashOf(params.source) ? 'fetched' : 'stale'
+	if (locked?.manifest !== manifestEntryHashOf(params.source)) return 'stale'
+	// a tree with a locked file gone (a swap stopped half-way, a hand removal) is not the fetched one
+	const whole = Object.keys(locked.sha256).every((path) =>
+		existsSync(join(folder, ...path.split('/'))),
+	)
+	return whole ? 'fetched' : 'stale'
 }
 
 function openEntryOf(params: {

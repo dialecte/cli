@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 	The global attributes, attribute groups, element and model groups XLink 1.1 names, declared for
-	@dialecte/create's corpus tests (MIT). The corpora import the W3C's own document, which the licence review
-	excluded: the fetch script places this one at its path or maps its location here.
+	the Dialecte corpora (MIT). The corpora import the W3C's own document, which the licence review
+	excluded: `dialecte corpus fetch` places this one at its path, and a reader maps the remote location here.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xlink="http://www.w3.org/1999/xlink"
 	targetNamespace="http://www.w3.org/1999/xlink" elementFormDefault="qualified" attributeFormDefault="qualified">

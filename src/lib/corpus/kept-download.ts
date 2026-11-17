@@ -10,6 +10,7 @@ import { sha256Of } from './corpus-lock.ts'
 import {
 	CORPUS_MESSAGES,
 	CORPUS_USER_AGENT,
+	DOWNLOAD_TOO_LARGE,
 	DOWNLOADS_FOLDER,
 	IDLE_DOWNLOAD,
 } from './corpus.constants.ts'
@@ -27,6 +28,7 @@ export async function keptDownloadOf(params: {
 	url: string
 	sha256: string
 	timeoutMilliseconds: number
+	maxBytes: number
 }): Promise<KeptDownload> {
 	const kept = keptFileOf(params)
 	if (existsSync(kept)) {
@@ -65,6 +67,7 @@ export async function keptDownloadOf(params: {
 async function downloadOf(params: {
 	url: string
 	timeoutMilliseconds: number
+	maxBytes: number
 }): Promise<Uint8Array | string> {
 	const controller = new AbortController()
 	let timer: NodeJS.Timeout | undefined
@@ -85,15 +88,26 @@ async function downloadOf(params: {
 		rearm()
 		const response = await fetch(params.url, {
 			headers: { 'user-agent': CORPUS_USER_AGENT },
+			// a pinned URL answers itself: a redirect is refused, never followed
+			redirect: 'error',
 			signal: controller.signal,
 		})
 		if (!response.ok) return `HTTP ${response.status}`
 		if (response.body === null) return new Uint8Array()
 		const chunks: Uint8Array[] = []
+		let received = 0
 		for await (const chunk of response.body) {
 			rearm()
+			received += chunk.length
+			// leaving the loop cancels the rest of the body
+			if (received > params.maxBytes) break
 			chunks.push(chunk)
 		}
+		if (received > params.maxBytes)
+			return fillMessage({
+				template: DOWNLOAD_TOO_LARGE,
+				values: { bytes: String(params.maxBytes) },
+			})
 		return new Uint8Array(Buffer.concat(chunks))
 	} catch (error) {
 		const reason = controller.signal.aborted ? controller.signal.reason : error

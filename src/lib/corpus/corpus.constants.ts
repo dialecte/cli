@@ -39,7 +39,10 @@ export const TAR_HEADER = {
 /** The byte a checksum field counts as while the header's sum is taken. */
 export const TAR_CHECKSUM_SPACE = 0x20
 /** Tar entry types: a regular file, a pax header (its `path=` names the next entry), a GNU long name. */
-export const TAR_TYPES = { file: ['0', '\0', ''], pax: 'x', longName: 'L' } as const
+/** `7` (a contiguous file) is read as a regular file, as tar readers do. */
+export const TAR_TYPES = { file: ['0', '\0', '', '7'], pax: 'x', longName: 'L' } as const
+/** The first byte of a size field written in GNU base-256 form. */
+export const TAR_BASE256_FLAG = 0x80
 export const PAX_PATH_KEY = 'path'
 
 /** The gzip magic bytes. */
@@ -105,3 +108,40 @@ export const UNBUILT_SOURCE = '{id}: could not be built ({reason})'
 
 /** Why an idle download was aborted. */
 export const IDLE_DOWNLOAD = 'no data for {milliseconds} ms'
+
+/** The most bytes one download may hold: the largest admitted archive is about 70 MB. */
+export const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
+
+/** The most bytes an archive may inflate to, its members together. */
+export const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024
+
+/** Why an archive or a download is refused for its size. */
+export const ARCHIVE_TOO_LARGE = 'it inflates past {bytes} bytes'
+export const DOWNLOAD_TOO_LARGE = 'more than {bytes} bytes'
+export const TAR_BASE256_SIZE = '{name} has its size in base-256 form'
+
+/** The verdicts a licence review gives. */
+export const VERDICTS = ['full', 'schemas-only'] as const
+export const BAD_VERDICT = '{id}: verdict {verdict} is neither full nor schemas-only'
+
+/** A sha256 pin: 64 lowercase hex digits. */
+export const SHA256_PATTERN = /^[0-9a-f]{64}$/u
+export const BAD_PIN = '{id}: {url} has the pin {pin}, no sha256'
+
+/** The fetch lock: the process id of the fetch writing the cache. */
+export const FETCH_LOCK_FILE = 'fetch.lock'
+export const FETCH_LOCK_HELD =
+	'{id}: {lock} is held by the running process {pid} - another fetch writes this cache'
+
+/** A file written beside its final name, then renamed onto it. */
+export const TEMPORARY_SUFFIX = '.tmp'
+
+/** A source's previous tree while the new one is swapped in. */
+export const PREVIOUS_SUFFIX = '.old'
+
+/** The cache's own entries, never a source id; nor any name ending in a suffix the fetch writes. */
+export const RESERVED_CACHE_NAMES = [LOCK_FILE, FETCH_LOCK_FILE] as const
+export const RESERVED_CACHE_SUFFIXES = [STAGING_SUFFIX, PREVIOUS_SUFFIX, TEMPORARY_SUFFIX] as const
+
+/** The version of `list --json`. */
+export const LIST_JSON_VERSION = 1

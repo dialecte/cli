@@ -157,3 +157,12 @@ export type FetchedSource =
 
 /** The personal licensed entries of config.yml `corpora:`, by name. */
 export type LicensedCorpora = Readonly<Record<string, { xsd: string; instances?: string }>>
+
+/** The most bytes one download may hold, and one archive once decompressed. */
+export type CorpusLimits = {
+	downloadBytes: number
+	extractedBytes: number
+}
+
+/** The cache's fetch lock: taken by this process, or held by another running one. */
+export type FetchLock = { kind: 'acquired' } | { kind: 'held'; pid: number }

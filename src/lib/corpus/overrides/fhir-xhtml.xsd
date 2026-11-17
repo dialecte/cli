@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-	The XHTML `div` a FHIR narrative holds, declared for @dialecte/create's corpus tests (MIT): any XHTML content,
+	The XHTML `div` a FHIR narrative holds, declared for the Dialecte corpora (MIT): any XHTML content,
 	attributes and text. FHIR's own `fhir-xhtml.xsd` carries no licence of its own (a modification of a W3C schema),
-	so the licence review excluded it and the fetch script places this one at its path.
+	so the licence review excluded it and `dialecte corpus fetch` places this one at its path.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.w3.org/1999/xhtml"
 	targetNamespace="http://www.w3.org/1999/xhtml" elementFormDefault="qualified">

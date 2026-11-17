@@ -5,9 +5,14 @@
  */
 import { gunzipSync, inflateRawSync } from 'node:zlib'
 
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	GZIP_MAGIC,
 	PAX_PATH_KEY,
+	ARCHIVE_TOO_LARGE,
+	MAX_EXTRACTED_BYTES,
+	TAR_BASE256_FLAG,
+	TAR_BASE256_SIZE,
 	TAR_BLOCK,
 	TAR_CHECKSUM_SPACE,
 	TAR_HEADER,
@@ -20,20 +25,35 @@ import {
 
 import type { ArchiveRead, CorpusFile } from './corpus.types.ts'
 
-export function readArchive(params: { bytes: Uint8Array }): ArchiveRead {
+export function readArchive(params: { bytes: Uint8Array; maxBytes?: number }): ArchiveRead {
+	const maxBytes = params.maxBytes ?? MAX_EXTRACTED_BYTES
 	const data = Buffer.from(params.bytes.buffer, params.bytes.byteOffset, params.bytes.byteLength)
-	if (data.length >= 4 && data.readUInt32LE(0) === ZIP_SIGNATURES.local) return readZip(data)
-	const tar =
-		data[0] === GZIP_MAGIC[0] && data[1] === GZIP_MAGIC[1] ? gunzipOrUndefined(data) : data
+	if (data.length >= 4 && data.readUInt32LE(0) === ZIP_SIGNATURES.local)
+		return readZip({ data, maxBytes })
+	const isGzip = data[0] === GZIP_MAGIC[0] && data[1] === GZIP_MAGIC[1]
+	const tar = isGzip ? inflated({ data, maxBytes, inflate: gunzipSync }) : data
+	if (tar === 'too large') return tooLarge(maxBytes)
 	if (tar === undefined || !isTar(tar)) return { kind: 'unknown' }
-	return { kind: 'files', files: tarFilesOf(tar) }
+	return tarFilesOf(tar)
 }
 
-function gunzipOrUndefined(data: Buffer): Buffer | undefined {
+function tooLarge(maxBytes: number): ArchiveRead {
+	return {
+		kind: 'unsupported',
+		reason: fillMessage({ template: ARCHIVE_TOO_LARGE, values: { bytes: String(maxBytes) } }),
+	}
+}
+
+/** The inflated bytes, `too large` past `maxBytes`, undefined when they do not inflate. */
+function inflated(params: {
+	data: Buffer
+	maxBytes: number
+	inflate: (data: Buffer, options: { maxOutputLength: number }) => Buffer
+}): Buffer | 'too large' | undefined {
 	try {
-		return gunzipSync(data)
-	} catch {
-		return undefined
+		return params.inflate(params.data, { maxOutputLength: params.maxBytes })
+	} catch (error) {
+		return error instanceof RangeError ? 'too large' : undefined
 	}
 }
 
@@ -63,13 +83,21 @@ function fieldOf(params: {
 	return raw.subarray(0, end === -1 ? raw.length : end).toString('utf8')
 }
 
-function tarFilesOf(data: Buffer): CorpusFile[] {
+function tarFilesOf(data: Buffer): ArchiveRead {
 	const files: CorpusFile[] = []
 	let offset = 0
 	let nextName: string | undefined
 	while (offset + TAR_BLOCK <= data.length) {
 		const header = data.subarray(offset, offset + TAR_BLOCK)
 		if (header.every((byte) => byte === 0)) break
+		if (data[offset + TAR_HEADER.size[0]] & TAR_BASE256_FLAG)
+			return {
+				kind: 'unsupported',
+				reason: fillMessage({
+					template: TAR_BASE256_SIZE,
+					values: { name: nextName ?? fieldOf({ data, offset, field: TAR_HEADER.name }) },
+				}),
+			}
 		const size = Number.parseInt(fieldOf({ data, offset, field: TAR_HEADER.size }).trim() || '0', 8)
 		const type = fieldOf({ data, offset, field: TAR_HEADER.type })
 		const contentStart = offset + TAR_BLOCK
@@ -91,7 +119,7 @@ function tarFilesOf(data: Buffer): CorpusFile[] {
 		if ((TAR_TYPES.file as readonly string[]).includes(type))
 			files.push({ path, bytes: new Uint8Array(content) })
 	}
-	return files
+	return { kind: 'files', files }
 }
 
 /** The `path` record of a pax extended header (`<length> path=<value>\n`). */
@@ -105,7 +133,9 @@ function paxPathOf(content: Buffer): string | undefined {
 	return undefined
 }
 
-function readZip(data: Buffer): ArchiveRead {
+function readZip(params: { data: Buffer; maxBytes: number }): ArchiveRead {
+	const { data, maxBytes } = params
+	let inflatedBytes = 0
 	const end = zipEndOf(data)
 	if (end === undefined) return { kind: 'unsupported', reason: 'no end of central directory' }
 	const count = data.readUInt16LE(end + 10)
@@ -131,10 +161,18 @@ function readZip(data: Buffer): ArchiveRead {
 		const start =
 			localOffset + 30 + data.readUInt16LE(localOffset + 26) + data.readUInt16LE(localOffset + 28)
 		const stored = data.subarray(start, start + compressedSize)
-		if (method === ZIP_METHODS.stored) files.push({ path, bytes: new Uint8Array(stored) })
-		else if (method === ZIP_METHODS.deflated)
-			files.push({ path, bytes: new Uint8Array(inflateRawSync(stored)) })
-		else return { kind: 'unsupported', reason: `${path} uses compression method ${method}` }
+		const bytes =
+			method === ZIP_METHODS.stored
+				? stored
+				: method === ZIP_METHODS.deflated
+					? inflated({ data: stored, maxBytes: maxBytes - inflatedBytes, inflate: inflateRawSync })
+					: undefined
+		if (bytes === 'too large') return tooLarge(maxBytes)
+		if (bytes !== undefined) {
+			inflatedBytes += bytes.length
+			if (inflatedBytes > maxBytes) return tooLarge(maxBytes)
+			files.push({ path, bytes: new Uint8Array(bytes) })
+		} else return { kind: 'unsupported', reason: `${path} uses compression method ${method}` }
 	}
 	return { kind: 'files', files }
 }
