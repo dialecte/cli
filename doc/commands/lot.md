@@ -363,7 +363,7 @@ exit codes:
   5  wait --timeout, result: still working
   6  status, wait, result: the lot is damaged: a person must look
   1  forecast: a conflict or an exclusive path; the run could not be written
-  2  forecast: usage; unknown id; a damaged lot; --against the lot itself or a lot of another store
+  2  forecast: usage; unknown id; a damaged, closed or simulated lot; --against the lot itself or a lot of another store
   3  forecast: unknown (the forecast could not run in full)
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```

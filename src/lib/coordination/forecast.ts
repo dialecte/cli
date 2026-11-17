@@ -12,6 +12,7 @@ import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import {
+	commonFolderOfLotFolder,
 	isOpenRealLot,
 	readCheckedLotState,
 	registryOfLotFolder,
@@ -75,7 +76,14 @@ export function forecastLot(params: ForecastLotParams): ForecastRun {
 			const other = openLotOf({ lotFolder: join(dirname(lotFolder), name), registry, entries })
 			return other === undefined ? [] : [other]
 		})
-	const outcomes = comparisonsOf({ self: selfLot, others, limitMs, copyIndex: params.copyIndex })
+	const outcomes = comparisonsOf({
+		self: selfLot,
+		others,
+		limitMs,
+		copyIndex: params.copyIndex,
+		// the main checkout: where main is read when the lot's own worktree is gone
+		repository: dirname(commonFolderOfLotFolder(lotFolder)),
+	})
 	const of = outcomes.length
 	const lines = outcomes.map((outcome) =>
 		fitForecastLine(
@@ -107,6 +115,7 @@ function comparisonsOf(params: {
 	others: readonly OpenLot[]
 	limitMs: number
 	copyIndex?: CopyIndex
+	repository: string
 }): Comparison[] {
 	const { self, others, limitMs } = params
 	const worktree = worktreeOf(self.identity)
@@ -128,11 +137,10 @@ function comparisonsOf(params: {
 			})),
 		]
 	}
-	if (worktree === undefined)
-		return unknownAll({ reason: missingSelf, main: { ref: AGAINST_MAIN, commit: null } })
-	const versionReason = gitVersionReason({ root: worktree, limitMs })
-	const main = mainOf({ root: worktree, limitMs })
+	const main = mainOf({ root: worktree ?? params.repository, limitMs })
 	const mainSide = { ref: main.ref, commit: 'commit' in main ? main.commit : null }
+	if (worktree === undefined) return unknownAll({ reason: missingSelf, main: mainSide })
+	const versionReason = gitVersionReason({ root: worktree, lot: self.name, limitMs })
 	if (versionReason !== undefined) return unknownAll({ reason: versionReason, main: mainSide })
 	const selfWork = snapshotLotWork({
 		worktree,
@@ -296,9 +304,14 @@ function lineOf(
 	}
 }
 
-/** Why this git cannot forecast (no merge-tree --write-tree, or no version at all); undefined when it can. */
-function gitVersionReason(params: { root: string; limitMs: number }): string | undefined {
+/** Why this git cannot forecast (no merge-tree --write-tree, no version at all, or over the limit); undefined when it can. */
+function gitVersionReason(params: {
+	root: string
+	lot: string
+	limitMs: number
+}): string | undefined {
 	const result = runBoundedGit({ root: params.root, args: ['--version'], limitMs: params.limitMs })
+	if (result.timedOut) return overTimeReason({ lot: params.lot, limitMs: params.limitMs })
 	const groups = GIT_VERSION_PATTERN.exec(result.stdout.trim())?.groups
 	const version = groups?.version ?? (result.stdout.trim() || 'unknown')
 	const [major, minor] = [Number(groups?.major), Number(groups?.minor)]

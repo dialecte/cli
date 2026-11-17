@@ -7,6 +7,7 @@ export const LOT_FORECAST_TEXTS = {
 	extra: 'lot forecast takes at most one id, not also {extra}',
 	noLot: 'lot forecast: no lot holds this folder: give its id',
 	damaged: 'lot forecast: {lot} damaged: {damage}',
+	notOpen: 'lot forecast: {lot} is {state}: only an open lot has a forecast',
 	againstSelf: 'lot forecast: --against names the lot itself',
 	againstClosed: 'lot forecast: --against {lot}: not an open lot of the same store',
 	header: 'forecast {lot} (run {run}, {seconds} s)',
@@ -29,3 +30,6 @@ export const FORECAST_CONFLICT_SEPARATOR = '; '
 
 /** How many characters of a main commit the text names. */
 export const FORECAST_SHORT_COMMIT = 8
+
+/** The state word of a simulated lot in the refusal: a simulated lot has no work to forecast. */
+export const SIMULATED_WORD = 'simulated'

@@ -21,8 +21,13 @@ import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
-import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
-import { lotOfWorktree, requiredLotOf } from '../lib/store/resolve-lot.ts'
+import {
+	isOpenRealLot,
+	readCheckedLotState,
+	registryOfLotFolder,
+} from '../lib/store/lot-records.ts'
+import { lotState } from '../lib/store/lot-state.ts'
+import { lotOfWorktree, noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import {
 	FORECAST_CONFLICT_SEPARATOR,
@@ -32,6 +37,7 @@ import {
 	FORECAST_SHORT_COMMIT,
 	FORECAST_VALUE_OPTIONS,
 	LOT_FORECAST_TEXTS,
+	SIMULATED_WORD,
 } from './lot-forecast.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -206,15 +212,30 @@ function lotFolderOf(params: {
 	return folder === undefined ? { lines: [LOT_FORECAST_TEXTS.noLot] } : { folder }
 }
 
-/** Why the lot cannot be forecast: it is damaged; undefined when its records hold. */
+/**
+ * Why the lot cannot be forecast: it does not read, it is damaged, simulated or no longer open (committed, canceled, or
+ * failed on an overlap); undefined for an open real lot.
+ */
 function refusalOf(params: { lotFolder: string }): string | undefined {
 	const { lotFolder } = params
+	const lot = basename(lotFolder)
 	const registry = registryOfLotFolder(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry, entries: readStoreEntries(registry) })
-	if (checked === undefined || !('damage' in checked)) return undefined
+	if (checked === undefined) return noLotRefusal(lot)
+	if ('damage' in checked)
+		return fillMessage({
+			template: LOT_FORECAST_TEXTS.damaged,
+			values: { lot, damage: checked.damage },
+		})
+	if (checked.input.identity.simulated)
+		return fillMessage({
+			template: LOT_FORECAST_TEXTS.notOpen,
+			values: { lot, state: SIMULATED_WORD },
+		})
+	if (isOpenRealLot(checked.input)) return undefined
 	return fillMessage({
-		template: LOT_FORECAST_TEXTS.damaged,
-		values: { lot: basename(lotFolder), damage: checked.damage },
+		template: LOT_FORECAST_TEXTS.notOpen,
+		values: { lot, state: lotState(checked.input).state },
 	})
 }
 
