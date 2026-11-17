@@ -38,6 +38,8 @@ export function lotBaseOf(query: LotBaseQuery): LotBase | { refusal: string } {
 	if (open && parentRefs.length === 0)
 		return refused({ template: LOT_BASE_REFUSALS.noParentRef, values: { branch: parent.branch } })
 	// a merged parent's line and the base both count: a child already rebased onto the base forks there
+	// a lot cut from the base: its merge-base with it, one git spawn
+	if (parent === undefined) return baseForkOf({ root, baseRef, head: query.head })
 	const lines = open ? parentRefs : [...parentRefs, baseRef]
 	const forkPoint = newestOf({
 		root,
@@ -69,6 +71,24 @@ function landedParentTipOf(params: {
 	return isAncestorCommit({ root: params.root, ancestor: landing.tip, descendant: params.head })
 		? [landing.tip]
 		: []
+}
+
+/** The base of a lot cut from the base: its plain merge-base with it, or the refusal when they share none. */
+function baseForkOf(params: {
+	root: string
+	baseRef: string
+	head: string
+}): LotBase | { refusal: string } {
+	const forkPoint = tryReadGit({
+		root: params.root,
+		args: ['merge-base', params.head, params.baseRef],
+	})?.trim()
+	if (!forkPoint)
+		return refused({
+			template: LOT_BASE_REFUSALS.noForkPoint,
+			values: { head: params.head, ref: params.baseRef },
+		})
+	return { ref: params.baseRef, label: labelOf(params.baseRef), forkPoint }
 }
 
 /** A refusal of `lotBaseOf`, its template filled. */

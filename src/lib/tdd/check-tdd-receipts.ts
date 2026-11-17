@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { closestNames } from '../closest-names.ts'
-import { listRepositoryFiles } from '../git.ts'
+import { listRepositoryFiles, readHeadOrNone } from '../git.ts'
 import { shellWord } from '../shell-quote.ts'
 import { shortMessage } from './classify-failure.ts'
 import { writtenLinesOf } from './duplicate-case-ids.ts'
@@ -59,41 +59,43 @@ import {
 	UNUSED_ENTRY_REMOVE,
 	VITEST_PACKAGE,
 } from './tdd.constants.ts'
+import { changedTestCodeOf } from './test-code-presence.ts'
 import { runnerOf } from './test-runner.ts'
 import { readVitestConfigs } from './vitest-configs.ts'
 import { zeroCaseLines } from './zero-case-verdict.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { TddBase, TddCheck, TddState, VitestConfigs } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 export async function checkTddReceipts(params: {
 	root: string
 	packageJson: PackageJson
 	/** `--base <ref>`: measured from where HEAD left it. */
 	ref?: string
-	/** `--full`: the whole branch, before a merge. Default: HEAD, the uncommitted lot. */
-	wholeBranch?: boolean
+	/**
+	 * `--full` / `--release` / the hook: the whole lot, measured from the lot base, its base line shown under the step.
+	 * Left out (`gate --fast`): the uncommitted work, measured from HEAD with no base to resolve (no git spawn).
+	 */
+	measureLot?: boolean
+	/** The lot base the caller already resolved (the gate's own): used as it is, nothing resolved again. */
+	base?: TddBase
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
-	const resolved = resolveTddBase({
-		root,
-		packageJson,
-		ref: params.ref,
-		wholeBranch: params.wholeBranch,
-	})
+	const head = params.measureLot || params.ref !== undefined ? undefined : readHeadOrNone(root)
+	const resolved =
+		head !== undefined
+			? { commit: head }
+			: (params.base ?? resolveTddBase({ root, packageJson, ref: params.ref }))
 	if ('failure' in resolved) return { status: 'failed', reason: resolved.failure }
 	const check = await judgeTddReceipts({ root, packageJson, base: resolved.commit })
-	if (!params.wholeBranch) return check
+	if (!params.measureLot || !('source' in resolved)) return check
 	return { ...check, baseNote: baseNoteOf({ root, base: resolved }) }
 }
 
-/**
- * The line the whole-branch step shows beside its base: a fallback note as it reads (it names the cut already), else
- * `tdd base: <short> (<source>)`.
- */
+/** The line the lot-measuring step shows beside its base: `tdd base: <short> (<source>)`. */
 function baseNoteOf(params: { root: string; base: TddBase }): string {
 	const { base } = params
-	if (base.note !== undefined) return base.note
 	const short = shortCommitOf({ root: params.root, commit: base.commit })
 	return TDD_BASE_LINE.replace('{commit}', () => short).replace('{source}', () => base.source)
 }
@@ -115,7 +117,12 @@ async function judgeTddReceipts(params: {
 			note: `exempt: ${exemption.reason} (${changed.production} production file(s), ${changed.test} test file(s) changed)`,
 		}
 	}
-	if (!testsWithVitest(packageJson) && !changesTestsOfOtherRunner({ root, base, packageJson }))
+	// the one presence map of the run: every reader below takes test code from it
+	const presence = changedTestCodeOf({ root, base })
+	if (
+		!testsWithVitest(packageJson) &&
+		!changesTestsOfOtherRunner({ root, base, presence, packageJson })
+	)
 		return { status: 'skipped', reason: 'the package does not test with vitest' }
 	const ledger = readLedger(root)
 	if ('failure' in ledger) return { status: 'failed', reason: ledger.failure }
@@ -127,11 +134,11 @@ async function judgeTddReceipts(params: {
 	if ('failure' in gone) return { status: 'failed', reason: gone.failure }
 	const moves = readMovedEntries(root)
 	if ('failure' in moves) return { status: 'failed', reason: moves.failure }
-	const testCode = hashChangedTestCode({ root, base, packageJson })
+	const testCode = hashChangedTestCode({ root, base, presence, packageJson })
 	// a change that only deletes test files still lists their cases, as deleted
-	if (testCode.size === 0 && listDeletedTestFiles({ root, base }).length === 0)
+	if (testCode.size === 0 && listDeletedTestFiles({ root, base, presence }).length === 0)
 		return { status: 'passed', cases: [], note: 'no test code new or changed since the base' }
-	const state = await readTddState({ root, packageJson, ledger, base })
+	const state = await readTddState({ root, packageJson, ledger, base, presence })
 	if ('failure' in state)
 		return {
 			status: 'failed',
@@ -344,25 +351,26 @@ function testsWithVitest(packageJson: PackageJson): boolean {
 function changesTestsOfOtherRunner(params: {
 	root: string
 	base: string
+	presence: TestCodePresence
 	packageJson: PackageJson
 }): boolean {
-	const { root, base, packageJson } = params
+	const { root, base, presence, packageJson } = params
 	const configs = readVitestConfigs({ root })
 	if (
-		listChangedTestFiles({ root, base }).some((changed) =>
+		listChangedTestFiles({ root, base, presence }).some((changed) =>
 			isOtherRunnerFile({ root, file: changed.file, text: changed.text, configs }),
 		)
 	)
 		return true
 	if (
-		listDeletedTestFiles({ root, base }).some((file) =>
+		listDeletedTestFiles({ root, base, presence }).some((file) =>
 			isOtherRunnerFile({ root, file, text: readAtBase({ root, base, file }) ?? '', configs }),
 		)
 	)
 		return true
 	const touchesOtherTestCode = [
-		...listChangedSince({ root, base }),
-		...listDeletedSince({ root, base }),
+		...listChangedSince({ root, base, presence }),
+		...listDeletedSince({ root, base, presence }),
 	].some((file) => !isTestFile({ root, file }) && isPackageTestCode({ root, file, packageJson }))
 	return touchesOtherTestCode && holdsOtherRunnerFile({ root, configs })
 }

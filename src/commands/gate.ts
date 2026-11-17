@@ -104,7 +104,8 @@ import { openProcessLiveOutput } from '../lib/progress/process-live-output.ts'
 import { createStepProgress } from '../lib/progress/step-progress.ts'
 import { createSystemClock } from '../lib/progress/system-clock.ts'
 import { shellQuote, shellWord } from '../lib/shell-quote.ts'
-import { TDD_STEP } from '../lib/tdd/tdd.constants.ts'
+import { isStackedLotWorktree } from '../lib/tdd/tdd-base.ts'
+import { TDD_BASE_SOURCES, TDD_STEP } from '../lib/tdd/tdd.constants.ts'
 import { refreshGatePart } from '../lib/tdd/tests-record.ts'
 import { checkHygiene } from '../lib/worktree/hygiene.ts'
 import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
@@ -113,12 +114,13 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { GateForecast } from '../lib/coordination/forecast.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
 import type { CheckKey, GateRecord, RecordedRun } from '../lib/gate-records/gate-records.types.ts'
-import type { GateRunBase } from '../lib/gate/gate-base.types.ts'
+import type { GateRunBase, UsedGateBase } from '../lib/gate/gate-base.types.ts'
 import type { GateStep } from '../lib/gate/gate-config.types.ts'
 import type { GateMode, StepResult } from '../lib/gate/gate.types.ts'
 import type { PackageJson } from '../lib/package-json.types.ts'
 import type { LiveOutput, RunningStep } from '../lib/progress/step-progress.types.ts'
 import type { Refusal } from '../lib/refusal.types.ts'
+import type { TddBase } from '../lib/tdd/tdd.types.ts'
 import type { GatePhase, GateReuse, GateRunParams, GateSetup, GateView } from './gate.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -236,7 +238,15 @@ async function runModeGate(params: GateRunParams & { mode: GateMode }): Promise<
 		warn: params.warn,
 	})
 	const { packageJson } = setup.source
-	const worktree = await runWorktreeSteps({ cwd, argv, mode, packageJson, recorder, view })
+	const worktree = await runWorktreeSteps({
+		cwd,
+		argv,
+		mode,
+		packageJson,
+		recorder,
+		view,
+		tddBase: sharedTddBaseOf({ cwd, gateBase: setup.gateBase }),
+	})
 	const worktreeFailed = worktree.results.some((result) => result.status === 'failed')
 	const reuse = findReuse({ cwd, argv, mode, setup, failed: worktreeFailed })
 	const checked = await runListSteps({
@@ -348,6 +358,8 @@ async function runWorktreeSteps(params: {
 	packageJson: PackageJson
 	recorder: StepHandle
 	view: GateView
+	/** The gate's base when it is the lot base: the tdd step measures from it (one resolution per run). */
+	tddBase: TddBase | undefined
 }): Promise<GatePhase> {
 	const { cwd, argv, mode, recorder, view } = params
 	const phase: GatePhase = { results: [], durations: new Map(), shown: new Set() }
@@ -374,7 +386,8 @@ async function runWorktreeSteps(params: {
 		cwd,
 		packageJson: params.packageJson,
 		ref: getArg(argv, 'base'),
-		wholeBranch: mode !== 'fast',
+		measureLot: mode !== 'fast',
+		...(params.tddBase && { base: params.tddBase }),
 	})
 	phase.durations.set(tdd, finishTdd())
 	phase.results.push(tdd)
@@ -676,6 +689,21 @@ function resolveScopeOf(params: {
 			...(resolved.source === 'flag' ? [GATE_BASE_FLAG_LINE] : []),
 		],
 	}
+}
+
+/**
+ * The gate's base handed to the tdd step: only one taken from the base branch (the merge-base of HEAD with it, the lot
+ * base of a lot cut from the base) in a worktree whose lot is not stacked (a stacked lot's base is its parent's fork
+ * point); undefined otherwise, and the tdd step resolves its own.
+ */
+function sharedTddBaseOf(params: {
+	cwd: string
+	gateBase: UsedGateBase | undefined
+}): TddBase | undefined {
+	const { gateBase } = params
+	if (gateBase?.source !== 'base-branch' || isStackedLotWorktree({ root: params.cwd }))
+		return undefined
+	return { commit: gateBase.commit, source: TDD_BASE_SOURCES.gateBase }
 }
 
 /** The line of a declared release list that does not cover `full`, naming the full steps it misses; none when it covers. */

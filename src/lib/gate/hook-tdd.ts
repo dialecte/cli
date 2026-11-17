@@ -9,7 +9,7 @@ import { computeStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { checkTddReceipts } from '../tdd/check-tdd-receipts.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
-import { resolveTddBase, shortCommitOf } from '../tdd/tdd-base.ts'
+import { resolveTddBase } from '../tdd/tdd-base.ts'
 import {
 	hashProduction,
 	isPackageTestCode,
@@ -55,7 +55,7 @@ export async function runHookTddStep(params: {
 			tail: HOOK_TDD_NOT_THE_COMMIT_HINT,
 		})
 	// the whole lot: a commit of production alone can make an earlier commit's green stale
-	const base = resolveTddBase({ root: cwd, packageJson, wholeBranch: true })
+	const base = resolveTddBase({ root: cwd, packageJson })
 	if ('failure' in base) return failed({ reason: base.failure })
 	const check = await checkTddReceipts({ root: cwd, packageJson, ref: base.commit })
 	const result = tddStepResultOf(check)
@@ -73,9 +73,7 @@ export async function runHookTddStep(params: {
 		reason: HOOK_TDD_STALE_REASON.replace('{count}', () => String(stale.length)),
 		tail: [
 			...stale.map((label) => HOOK_TDD_STALE_LINE.replace('{label}', () => label)),
-			HOOK_TDD_GREEN_AGAIN_LINE.replace('{base}', () =>
-				shortCommitOf({ root: cwd, commit: base.commit }),
-			),
+			HOOK_TDD_GREEN_AGAIN_LINE,
 		].join('\n'),
 	}
 }

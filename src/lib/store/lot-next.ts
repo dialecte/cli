@@ -1,5 +1,6 @@
 /** The exact next command of a lot (33S section 7, D18), with its full name: one rule for `start` and `status`. */
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { landingFlow, landingFlowOf } from '../landing/flow.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { CHECK_NEXT_COMMANDS, NEXT_COMMANDS, STATION_NEXT_COMMANDS } from './store.constants.ts'
 
@@ -11,9 +12,15 @@ import type {
 	StationNext,
 } from './store.types.ts'
 
-/** The manual line: what a real working lot asks for while no runner exists (S). */
-export function manualNextOf(name: string): string {
-	return NEXT_COMMANDS.manual.replace('{name}', name)
+/**
+ * The manual line: what a real working lot asks for while no runner exists (S), as the landing flow of the lot's
+ * checkout at `root` words it: `lot land <name> --draft` in a CI-first repository, `handover write` in a hand-over one.
+ */
+export function manualNextOf(params: { name: string; root: string }): string {
+	return fillMessage({
+		template: landingFlow(landingFlowOf(params.root)).manualNext,
+		values: { name: params.name },
+	})
 }
 
 /** The real start a dry run asks for: the brief path as it was given, shell-quoted. */
@@ -67,10 +74,12 @@ export function nextCommandsOf(params: {
 	if (report.state === 'working' && input.identity.simulated)
 		return { next: waitNextOf({ name, simulated: true }), also: [] }
 	if (report.state === 'working') {
+		const manual = manualNextOf({
+			name,
+			root: input.identity.worktree ?? input.identity.repository,
+		})
 		const stationCommand = params.station && stationCommandOf({ name, station: params.station })
-		return stationCommand
-			? { next: stationCommand, also: [manualNextOf(name)] }
-			: { next: manualNextOf(name), also: [] }
+		return stationCommand ? { next: stationCommand, also: [manual] } : { next: manual, also: [] }
 	}
 	const [firstOpen] = report.openQuestions
 	if (report.state === 'input-required' && firstOpen !== undefined)

@@ -5,7 +5,7 @@
  * a file moved with its bytes is no change) and the ledger in the worktree's git folder.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { gitFolderOf, listRepositoryFiles, readGit, tryReadGit } from '../git.ts'
@@ -29,10 +29,12 @@ import {
 	TEST_FILE_PATTERN,
 	TEST_FOLDER_PATTERN,
 } from './tdd.constants.ts'
+import { presentTextOf } from './test-code-presence.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { ChangedTestFile, ProductionState, TddEntry, TddLedger } from './tdd.types.ts'
+import type { ChangeQuery } from './test-code-presence.types.ts'
 
 export function hashFile(path: string): string {
 	return createHash('sha256').update(readFileSync(path)).digest('hex')
@@ -42,9 +44,17 @@ export function hashText(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
 }
 
-/** sha256 of a test-code file: of its tokens for a source file, of its bytes for any other. */
+/** sha256 of the test-code file `file` as it is on disk (`hashTestCodeText`): what a receipt of it records. */
 export function hashTestCode(params: { root: string; file: string }): string {
-	const text = readFileSync(join(params.root, params.file), 'utf8')
+	return hashTestCodeText({
+		file: params.file,
+		text: readFileSync(join(params.root, params.file), 'utf8'),
+	})
+}
+
+/** sha256 of a test-code file's text: of its tokens for a source file, of its bytes for any other. */
+export function hashTestCodeText(params: { file: string; text: string }): string {
+	const { text } = params
 	return hashText(
 		SOURCE_FILE_PATTERN.test(params.file) ? testCodeTokens({ text, file: params.file }) : text,
 	)
@@ -207,42 +217,33 @@ function ledgerPath(root: string): string {
 }
 
 /**
- * The commit the change is measured from, without where it came from: `resolveTddBase`'s commit (HEAD by default,
- * `--base`, or the whole-branch base), or why there is none.
+ * The commit the change is measured from, without where it came from: `resolveTddBase`'s commit (the lot base, or
+ * `--base`), or why there is none.
  */
 export function resolveBase(params: {
 	root: string
 	packageJson: PackageJson
 	ref?: string
-	wholeBranch?: boolean
 }): string | { failure: string } {
 	const base = resolveTddBase(params)
 	return 'failure' in base ? base : base.commit
 }
 
 /** Files changed since the base that still exist (new ones included), relative to the root, sorted. */
-export function listChangedSince(params: { root: string; base: string }): string[] {
-	const { root, base } = params
-	const changed = readGit({
-		root,
-		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=d', base],
-	})
-	const untracked = readGit({ root, args: ['ls-files', '--others', '--exclude-standard'] })
-	return [...new Set(`${changed}\n${untracked}`.split('\n').filter(Boolean))]
-		.filter((file) => existsSync(join(root, file)))
-		.sort()
+export function listChangedSince(params: ChangeQuery): string[] {
+	return [...params.presence.paths]
+		.filter(([, path]) => path.state !== 'deleted')
+		.map(([file]) => file)
 }
 
 /**
  * Every test-code file changed since the base (test files, helpers, fixtures, snapshots) with its hash
  * (a source file's by its tokens).
  */
-export function hashChangedTestCode(params: {
-	root: string
-	base: string
-	packageJson: PackageJson
-}): Map<string, string> {
-	const { root, packageJson } = params
+export function hashChangedTestCode(
+	params: ChangeQuery & { packageJson: PackageJson },
+): Map<string, string> {
+	const { root, packageJson, presence } = params
 	const moved = listMovedFiles({
 		...params,
 		kindOf: function testCodeKind(file) {
@@ -253,7 +254,10 @@ export function hashChangedTestCode(params: {
 	return new Map(
 		listChangedSince(params)
 			.filter((file) => !moved.has(file) && isPackageTestCode({ root, file, packageJson }))
-			.map((file) => [file, hashTestCode({ root, file })]),
+			.map((file) => [
+				file,
+				hashTestCodeText({ file, text: presentTextOf({ root, presence, file }) ?? '' }),
+			]),
 	)
 }
 
@@ -268,24 +272,25 @@ function testFileKindIn(root: string): (file: string) => string | undefined {
  * The test files changed since the base (new ones included, deleted ones left out), with both texts; a test
  * file moved with its bytes as at the base is no change (`listMovedTestFiles`).
  */
-export function listChangedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
-	const { root, base } = params
+export function listChangedTestFiles(params: ChangeQuery): ChangedTestFile[] {
+	const { root, base, presence } = params
 	const moved = listMovedFiles({ ...params, kindOf: testFileKindIn(root) })
 	return listChangedSince(params)
 		.filter((file) => isTestFile({ root, file }) && !moved.has(file))
 		.map((file) => ({
 			file,
-			text: readFileSync(join(root, file), 'utf8'),
+			text: presentTextOf({ root, presence, file }) ?? '',
 			baseText: readAtBase({ root, base, file }),
 		}))
 }
 
 /** The test files moved since the base with their bytes (R100): their text is the base text of the old path. */
-export function listMovedTestFiles(params: { root: string; base: string }): ChangedTestFile[] {
+export function listMovedTestFiles(params: ChangeQuery): ChangedTestFile[] {
+	const { presence } = params
 	return [...listMovedFiles({ ...params, kindOf: testFileKindIn(params.root) }).keys()]
 		.sort()
 		.map(function movedTestFile(file) {
-			const text = readFileSync(join(params.root, file), 'utf8')
+			const text = presentTextOf({ root: params.root, presence, file }) ?? ''
 			return { file, text, baseText: text }
 		})
 }
@@ -294,7 +299,7 @@ export function listMovedTestFiles(params: { root: string; base: string }): Chan
  * The test files of the base that the change deletes (a test file moved with its bytes is not deleted), each
  * judged by the package's pytest configuration as it is now.
  */
-export function listDeletedTestFiles(params: { root: string; base: string }): string[] {
+export function listDeletedTestFiles(params: ChangeQuery): string[] {
 	const { root } = params
 	const sources = new Set(listMovedFiles({ ...params, kindOf: testFileKindIn(root) }).values())
 	return listDeletedSince(params).filter((file) => isTestFile({ root, file }) && !sources.has(file))
@@ -306,32 +311,21 @@ export function listDeletedTestFiles(params: { root: string; base: string }): st
  * and only within one kind (`kindOf`: undefined leaves a file out), so a rename that turns a test file on or
  * off is no move. An empty file holds nothing to move: never paired.
  */
-export function listMovedFiles(params: {
-	root: string
-	base: string
-	kindOf: (file: string) => string | undefined
-}): Map<string, string> {
-	const { root, base, kindOf } = params
+export function listMovedFiles(
+	params: ChangeQuery & { kindOf: (file: string) => string | undefined },
+): Map<string, string> {
+	const { root, base, kindOf, presence } = params
 	const deleted = listDeletedSince(params).filter((file) => kindOf(file) !== undefined)
 	if (deleted.length === 0) return new Map()
-	const committed = readGit({
-		root,
-		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=A', base],
-	})
-	const untracked = readGit({ root, args: ['ls-files', '--others', '--exclude-standard'] })
-	const added = [
-		...new Set(
-			`${committed}\n${untracked}`
-				.split('\n')
-				.filter(
-					(file) =>
-						file &&
-						kindOf(file) !== undefined &&
-						existsSync(join(root, file)) &&
-						lstatSync(join(root, file)).size > 0,
-				),
-		),
-	].sort()
+	// a new file, or a rename's new side (git pairs it; a move is judged by its bytes here)
+	const added = [...presence.paths]
+		.filter(
+			([file, path]) =>
+				(path.state === 'added' || path.state === 'renamed') &&
+				(path.text ?? '') !== '' &&
+				kindOf(file) !== undefined,
+		)
+		.map(([file]) => file)
 	if (added.length === 0) return new Map()
 	const baseBlobs = readGit({
 		root,
@@ -351,14 +345,14 @@ export function listMovedFiles(params: {
 	return moves
 }
 
-/** The files of the base the change deletes, relative to the root. */
-export function listDeletedSince(params: { root: string; base: string }): string[] {
-	return readGit({
-		root: params.root,
-		args: ['diff', '--name-only', '--relative', '--no-renames', '--diff-filter=D', params.base],
-	})
-		.split('\n')
-		.filter(Boolean)
+/** The files of the base the change deletes (a rename's old side included), relative to the root, sorted. */
+export function listDeletedSince(params: ChangeQuery): string[] {
+	return [...params.presence.paths]
+		.flatMap(([file, path]) => {
+			if (path.state === 'renamed') return [path.from]
+			return path.state === 'deleted' && path.atBase ? [file] : []
+		})
+		.sort()
 }
 
 /** The file as the base holds it; undefined when the base has no such file. */

@@ -9,7 +9,6 @@ import { runHookIn } from '../../test/gate-hook.ts'
 import { countRuns, countingStep, createCounter } from '../../test/scratch-checks.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
-import { shortCommitOf } from '../lib/tdd/tdd-base.ts'
 import { runTdd } from './tdd.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -39,10 +38,8 @@ function headOf(root: string): string {
 	return git({ root, args: ['rev-parse', 'HEAD'] }).trim()
 }
 
-/** The line under a stale failure: the green to run again over the lot, from its base. */
-function greenAgainLine(params: { root: string; base: string }): string {
-	return `run \`dialecte tdd green --base ${shortCommitOf({ root: params.root, commit: params.base })}\` again`
-}
+/** The line under a stale failure: a plain green, measured from the lot base as the hook measures. */
+const GREEN_AGAIN_LINE = 'run `dialecte tdd green` again'
 
 /** A vitest package whose full gate and, when `declared`, hook list run one counting `check` step. */
 function hookPackage(params: { declared: boolean }): { root: string; counter: string } {
@@ -99,7 +96,7 @@ describe('gate --hook: the tdd receipts of the commit', { timeout: 240_000 }, ()
 			'gate --hook: failed at tdd',
 			'--- last lines of tdd ---',
 			`stale  ${CASE}`,
-			greenAgainLine({ root, base: headOf(root) }),
+			GREEN_AGAIN_LINE,
 		])
 		expect(countRuns(counter)).toBe(0)
 	})
@@ -163,7 +160,7 @@ describe('gate --hook: the cases of the whole lot', { timeout: 240_000 }, () => 
 	}
 
 	it('a production-only commit after a green commit (a refactor breaking add) → FAIL tdd naming the lot case, measured from the lot base', async () => {
-		const { root, counter, base } = await lotWithGreenCommit()
+		const { root, counter } = await lotWithGreenCommit()
 		writeFileSync(join(root, 'src/add.ts'), BROKEN)
 		git({ root, args: ['add', '-A'] })
 
@@ -175,7 +172,7 @@ describe('gate --hook: the cases of the whole lot', { timeout: 240_000 }, () => 
 			'gate --hook: failed at tdd',
 			'--- last lines of tdd ---',
 			`stale  ${CASE}`,
-			greenAgainLine({ root, base }),
+			GREEN_AGAIN_LINE,
 		])
 		expect(countRuns(counter)).toBe(0)
 	})

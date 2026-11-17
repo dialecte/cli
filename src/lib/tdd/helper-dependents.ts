@@ -4,9 +4,6 @@
  * proven by the tests that read it); one failing with it, or none importing it, leaves it unfrozen with the reason (a
  * `revised` entry naming it still lets a red run freeze it).
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { frozenHashOf } from './case-status.ts'
 import { listPackageFiles } from './package-files.ts'
 import { modulesOf } from './select-cases.ts'
@@ -17,9 +14,11 @@ import {
 	HELPER_FROZEN_THROUGH_DEPENDENTS,
 	HELPER_IMPORTED_BY_NONE,
 } from './tdd.constants.ts'
+import { isDeletedIn, presentTextOf } from './test-code-presence.ts'
 import { writtenNameOf } from './written-name.ts'
 
 import type { HelperVerdict, ReportedModule, TddLedger } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /**
  * The changed helpers a red run has not frozen and no changed test file depends on (`changedDependents`), each
@@ -56,15 +55,21 @@ export function listUnchangedDependents(params: {
 	helpers: readonly string[]
 	/** The test files changed since the base: never a dependent standing for a helper. */
 	changed: ReadonlySet<string>
+	/** The presence map of the change: a test file deleted on disk is no dependent, and texts are read through it. */
+	presence: TestCodePresence
 	dependenciesOf: (file: string) => readonly string[]
 }): Map<string, string[]> {
-	const testFiles = listPackageFiles(params.root)
-		.filter((file) => !params.changed.has(file) && isTestFile({ root: params.root, file }))
+	const { root, presence } = params
+	const testFiles = listPackageFiles(root)
+		.filter(
+			(file) =>
+				!params.changed.has(file) && !isDeletedIn({ presence, file }) && isTestFile({ root, file }),
+		)
 		.sort()
 	const texts = new Map<string, string>()
 	/** The test file's text, read once. */
 	function textOf(file: string): string {
-		const text = texts.get(file) ?? readFileSync(join(params.root, file), 'utf8')
+		const text = texts.get(file) ?? presentTextOf({ root, presence, file }) ?? ''
 		texts.set(file, text)
 		return text
 	}

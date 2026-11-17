@@ -55,19 +55,22 @@ import type {
 	TddState,
 	TestRunFailure,
 } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 export async function readTddState(params: {
 	root: string
 	packageJson: PackageJson
 	ledger: TddLedger
 	base: string
+	/** The run's presence map of the change since the base. */
+	presence: TestCodePresence
 }): Promise<TddState | TestRunFailure> {
-	const { root, ledger, base } = params
-	const testCode = hashChangedTestCode({ root, base, packageJson: params.packageJson })
+	const { root, ledger, base, presence } = params
+	const testCode = hashChangedTestCode({ root, base, presence, packageJson: params.packageJson })
 	const unfrozen = [...testCode]
 		.filter(([file, hash]) => frozenHashOf({ ledger, file }) !== hash)
 		.map(([file]) => file)
-	const changed = listChangedTestFiles({ root, base })
+	const changed = listChangedTestFiles({ root, base, presence })
 	const gone = readGoneEntries(root)
 	if ('failure' in gone) return gone
 	const acceptances = readAcceptances(root)
@@ -75,7 +78,7 @@ export async function readTddState(params: {
 	const revisions = readRevisions(root)
 	if ('failure' in revisions) return revisions
 	// a test file moved with its bytes: its cases listed, unchanged, with no receipt to hold
-	const moved = listMovedTestFiles({ root, base })
+	const moved = listMovedTestFiles({ root, base, presence })
 	// in path order, as the changed files are listed
 	const listed = [...changed, ...moved].sort((one, other) =>
 		one.file < other.file ? -1 : one.file > other.file ? 1 : 0,
@@ -85,7 +88,7 @@ export async function readTddState(params: {
 			cases: [],
 			duplicates: [],
 			unfrozen,
-			findings: findDeletedCases({ root, base, ledger, changed, gone }),
+			findings: findDeletedCases({ root, base, presence, ledger, changed, gone }),
 			unlisted: [],
 		}
 	const modules = await runTestCases({
@@ -119,12 +122,13 @@ export async function readTddState(params: {
 	const moves = await readMoves({
 		root,
 		base,
+		presence,
 		packageJson: params.packageJson,
 		files: changed,
 		cases: cases.filter((testCase) => !isDuplicateMember({ testCase, duplicates })),
 	})
 	const movedCases = movedCaseLabels(moves)
-	const findings = findDeletedCases({ root, base, ledger, changed, gone, moves })
+	const findings = findDeletedCases({ root, base, presence, ledger, changed, gone, moves })
 	const resolveModule = createModuleResolver({ root })
 	const dependencies = new Map<string, string[]>()
 	/** The test code a test file depends on, read once per file. */
@@ -209,6 +213,7 @@ export function movesLines(moves: TddMoves | undefined): string[] {
 function findDeletedCases(params: {
 	root: string
 	base: string
+	presence: TestCodePresence
 	ledger: TddLedger
 	changed: readonly ChangedTestFile[]
 	/** The lot file's `gone` entries. */

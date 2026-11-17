@@ -11,14 +11,14 @@ import { resolveBase } from './tdd-files.ts'
 
 import { describe, expect, it } from 'vitest'
 
-describe('resolveBase: the whole-branch base', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+describe('resolveBase: the lot base', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('origin/HEAD names develop, develop ahead of main, HEAD on a branch of develop, no hygiene baseline → the merge-base with develop', () => {
 		const { root, develop } = developAheadOfMain()
 		makeDevelopOriginDefault(root)
 		git({ root, args: ['switch', '-q', '-c', 'feature'] })
 		commitEmpty({ root, message: 'feat: feature' })
 
-		expect(resolveBase({ root, packageJson: {}, wholeBranch: true })).toBe(develop)
+		expect(resolveBase({ root, packageJson: {} })).toBe(develop)
 	})
 })
 
@@ -32,7 +32,7 @@ describe(
 			const check = await checkTddReceipts({
 				root,
 				packageJson: { dialecte: { baseBranch: 'release' } },
-				wholeBranch: true,
+				measureLot: true,
 			})
 
 			expect(check).toEqual({
@@ -45,7 +45,7 @@ describe(
 			const root = initializeRepository({ root: temporaryFolder('dialecte-base-branch-') })
 			git({ root, args: ['branch', '-m', 'trunk'] })
 
-			const check = await checkTddReceipts({ root, packageJson: {}, wholeBranch: true })
+			const check = await checkTddReceipts({ root, packageJson: {}, measureLot: true })
 
 			expect(check.status).not.toBe('failed')
 		})

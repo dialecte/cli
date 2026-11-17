@@ -34,11 +34,11 @@ gate - The package's Definition of Done with the real counts
   --hook - in a commit hook, no test suite (CI runs it on every push): with "dialecte.gate.hook"
            declared, the tdd receipts of the lot first (every new or changed case since the lot base
            proven red then green, unchanged, accepted or revised, its newest green at the production
-           as committed; a stale green names dialecte tdd green --base <lot base>; a first or merge
-           commit skips it), then the declared steps (the cli: check, then rules on the touched
-           files); without one, the steps of --full but the scoped ones that count no tests; each
-           step answered by a green record (any mode) of the committed tree and install that ran it
-           as it is now, else run; the running line names the steps it runs
+           as committed; a stale green names dialecte tdd green (measured from the lot base); a
+           first or merge commit skips it), then the declared steps (the cli: check, then rules on
+           the touched files); without one, the steps of --full but the scoped ones that count no
+           tests; each step answered by a green record (any mode) of the committed tree and install
+           that ran it as it is now, else run; the running line names the steps it runs
   --release - alone: "dialecte.gate.release" (default: the --full steps), every scoped step against
               the empty tree (--base feeds only the tdd step); records dialecte-gate-release.json;
               each of its steps answers a hook step of the same step hash (a scoped one at any base:
@@ -168,7 +168,7 @@ Flags: `--fast`, `--full`, `--base`, `--no-reuse`, `--declare`, `--json`, `--hoo
   whose full suite runs on CI on every push), the tdd receipts of the lot first - every new or changed case since the
   lot base proven red then green (or unchanged, accepted, revised), its newest green taken at the production as
   committed, the working files the commit for every test or production path - then the declared steps; no test suite.
-  A stale green fails naming the cases and `dialecte tdd green --base <lot base>`, files left out of the commit fail
+  A stale green fails naming the cases and `dialecte tdd green` (it measures from the lot base, as the hook does), files left out of the commit fail
   naming them, a first commit and a merge commit skip the tdd step with their reason, and a failed tdd step runs no
   declared step. The cli declares `check` and its scoped `rules`. Without a declared list: the steps of `--full` but
   the scoped ones that count no tests (for the default list: check, skills, build, tests; a scoped `rules` step stays

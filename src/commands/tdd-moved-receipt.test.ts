@@ -141,7 +141,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 		const root = await movedPackage({
 			moved: [
 				{
-					from: 'src/c.test.ts::add > one plus two → three',
+					from: 'src/a.test.ts::add > two plus two → four',
 					to: 'src/b.test.ts::add > one plus two → three',
 					reason: 'a split',
 				},
@@ -152,7 +152,7 @@ describe('a case of the lot moved after its red', { timeout: HELPER_SCENARIO_TIM
 
 		expect(red.output.split('\n')).toContainEqual(
 			expect.stringMatching(
-				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/c\.test\.ts::add > one plus two → three, which holds no red receipt/,
+				/^refused {2}src\/b\.test\.ts::add > one plus two → three {2}moved from src\/a\.test\.ts::add > two plus two → four, which holds no red receipt/,
 			),
 		)
 	})

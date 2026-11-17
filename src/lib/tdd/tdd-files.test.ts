@@ -17,6 +17,7 @@ import {
 	listDeletedTestFiles,
 	readLedger,
 } from './tdd-files.ts'
+import { changedTestCodeOf } from './test-code-presence.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -206,10 +207,13 @@ describe('listChangedTestFiles', () => {
 				},
 			})
 
-			expect(listChangedTestFiles({ root, base: 'HEAD' }).map((changed) => changed.file)).toEqual([
-				'python/tests/test_add.py',
-				'src/add.test.ts',
-			])
+			expect(
+				listChangedTestFiles({
+					root,
+					base: 'HEAD',
+					presence: changedTestCodeOf({ root, base: 'HEAD' }),
+				}).map((changed) => changed.file),
+			).toEqual(['python/tests/test_add.py', 'src/add.test.ts'])
 		},
 	)
 })
@@ -226,7 +230,13 @@ describe('listDeletedTestFiles', () => {
 			rmSync(join(root, 'python/tests/test_add.py'))
 			rmSync(join(root, 'python/tests/helpers.py'))
 
-			expect(listDeletedTestFiles({ root, base: 'HEAD' })).toEqual(['python/tests/test_add.py'])
+			expect(
+				listDeletedTestFiles({
+					root,
+					base: 'HEAD',
+					presence: changedTestCodeOf({ root, base: 'HEAD' }),
+				}),
+			).toEqual(['python/tests/test_add.py'])
 		},
 	)
 })

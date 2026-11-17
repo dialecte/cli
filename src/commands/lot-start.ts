@@ -1101,10 +1101,12 @@ function startedOutput(params: {
 	risk: StartRisk
 	json: boolean
 }): CommandResult {
-	const { risk } = params
-	const simulated = params.worktree === null
-	const runner = simulated ? RUNNERS.simulated : RUNNERS.manual
-	const next = simulated ? waitNextOf({ name: params.name, simulated }) : manualNextOf(params.name)
+	const { risk, worktree } = params
+	// a simulated lot has no worktree: it waits; a real one runs its stations, landing as its repository's flow says
+	const { runner, next } =
+		worktree === null
+			? { runner: RUNNERS.simulated, next: waitNextOf({ name: params.name, simulated: true }) }
+			: { runner: RUNNERS.manual, next: manualNextOf({ name: params.name, root: worktree }) }
 	if (params.json)
 		return {
 			exitCode: 0,
@@ -1112,7 +1114,7 @@ function startedOutput(params: {
 				{
 					lot: params.name,
 					folder: params.lotFolder,
-					worktree: params.worktree,
+					worktree,
 					runner,
 					effort: risk.effort,
 					riskClass: risk.derivation,
@@ -1127,7 +1129,7 @@ function startedOutput(params: {
 		lines: [
 			`${params.name} started`,
 			`folder: ${params.lotFolder}`,
-			`worktree: ${params.worktree ?? 'none (simulated)'}`,
+			`worktree: ${worktree ?? 'none (simulated)'}`,
 			`runner: ${runner}`,
 			...risk.lines,
 			...params.notes.map((note) => `note: ${note}`),

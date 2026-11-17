@@ -199,15 +199,8 @@ export const TRASH_MOVE_NOTE = '  # then removed in the background'
 /** A trash that is a symbolic link: `{trash}`. Nothing is moved into a folder elsewhere. */
 export const TRASH_LINK_REFUSAL = '{trash} is a symbolic link: nothing moved into a trash elsewhere'
 
-/** The event the cli writes in the worktree's lot when it moves the hygiene baseline forward: `from` and `to`, full ids. */
+/** The event older clis wrote in the worktree's lot when tdd moved the hygiene baseline forward (`from`, `to`, full ids): still read. */
 export const HYGIENE_BASELINE_MOVED_KIND = 'hygiene.baseline-moved'
-
-/**
- * The whole-branch base cannot follow `{ref}`: it was rewritten under the lot (it once held the cut, now neither
- * reaches the other). `{cut}` the recorded baseline, `{mergeBase}` HEAD's merge-base with the ref, both short.
- */
-export const HYGIENE_BASELINE_REWRITTEN =
-	"tdd base: {ref} was rewritten under the lot: the worktree's baseline {cut} is no ancestor of the merge-base {mergeBase}, so the baseline is not moved; once the lot's commits are checked against {ref}, measure the lot from it with `dialecte gate --full --base {ref}`"
 
 /** A check refused on a node_modules that does not install the checked tree's lock (`checkInstallMatchesTree`). */
 export const TREE_INSTALL_REFUSALS = {

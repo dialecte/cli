@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 /**
  * A changed test helper no changed test file depends on is frozen through the run of the unchanged test files that
  * import it: they pass with it, so the red run freezes it and green takes it; one failing with it, or none importing
@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import {
 	ORPHAN_DEPENDENT_TEST,
+	ORPHAN_DEPENDENT_TEST_TEXT,
 	ORPHAN_HELPER,
 } from '../../test/rule-gaps-orphan-helper.constants.ts'
 import { createOrphanHelperPackage } from '../../test/rule-gaps-orphan-helper.ts'
@@ -41,6 +42,18 @@ describe(
 			expect(green.output).not.toContain(
 				`test code changed since the last red run: ${ORPHAN_HELPER}`,
 			)
+		})
+
+		it('its unchanged dependent moved with plain mv, not staged → red freezes it through the moved file, the old path never read', async () => {
+			const root = createOrphanHelperPackage()
+			writeFiles({ root, files: { 'src/sum.test.ts': ORPHAN_DEPENDENT_TEST_TEXT } })
+			rmSync(join(root, ORPHAN_DEPENDENT_TEST))
+
+			await expect(tdd({ cwd: root, argv: ['red'] })).resolves.toMatchObject({
+				output: expect.stringContaining(
+					`frozen   ${ORPHAN_HELPER}  through the unchanged test files importing it, which pass with it: src/sum.test.ts`,
+				),
+			})
 		})
 
 		it('its unchanged dependent fails with it → not frozen, the line names the failing file', async () => {

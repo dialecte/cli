@@ -16,6 +16,7 @@ import {
 } from '../../../test/tdd-runners-node-workspace.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { runCaseOnBase, selectBaseOverlay } from './base-red.ts'
+import { changedTestCodeOf } from './test-code-presence.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -125,6 +126,7 @@ describe('runCaseOnBase', { timeout: BASE_RED_SCENARIO_TIMEOUT }, () => {
 		const verdict = await runCaseOnBase({
 			root,
 			base: 'HEAD',
+			presence: changedTestCodeOf({ root, base: 'HEAD' }),
 			packageJson: readPackageJson(root),
 			testCase: {
 				file: ADD_TEST_FILE,
