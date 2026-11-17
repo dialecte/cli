@@ -10,12 +10,16 @@ import { realPathOf } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
-import { readGit, tryReadGit } from '../git.ts'
+import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readIdentity } from '../store/identity.ts'
-import { commonFolderOfLotFolder, readCheckedLotState } from '../store/lot-records.ts'
+import {
+	commonFolderOfLotFolder,
+	readCheckedLotState,
+	registryOfLotFolder,
+} from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { listLotFolderNames, locateStore } from '../store/store-folder.ts'
 import { LANDED_SCHEMA } from './landed-record.constants.ts'
@@ -74,7 +78,25 @@ export function readLotLanding(params: {
 			recorded,
 			state: { kind: 'merged', how: recorded.how, tip: recorded.tip },
 		}
-	const pullNumber = readLanding({ lotFolder })?.number
+	const landing = readLanding({ lotFolder })
+	const pullNumber = landing?.number
+	// a lot its records read committed (a hand-over committed, a landing confirmed before landed.json existed) landed
+	const committedTip = isCommittedLot({ lotFolder })
+		? (landing?.head ?? readCommitOrNone({ root, ref: `refs/heads/${identity.branch}` }))
+		: undefined
+	if (committedTip !== undefined)
+		return {
+			lot,
+			lotFolder,
+			identity,
+			root,
+			base,
+			state: {
+				kind: 'merged',
+				how: landing === undefined ? 'ancestor' : 'host',
+				tip: committedTip,
+			},
+		}
 	const pushed = isPushed({ root, branch: identity.branch, pullNumber })
 	const state = readLandingState({
 		root,
@@ -166,8 +188,7 @@ export function notLandedTextOf(landing: LotLanding): string {
 export function workSinceLandingOf(landing: LotLanding): string[] | undefined {
 	const { root, identity, base } = landing
 	const branchRef = `refs/heads/${identity.branch}`
-	if (tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', branchRef] }) === undefined)
-		return undefined
+	if (readCommitOrNone({ root, ref: branchRef }) === undefined) return undefined
 	const beyond = readGit({ root, args: ['rev-list', branchRef, '--not', base.ref] })
 		.split('\n')
 		.filter(Boolean)
@@ -267,6 +288,17 @@ function pruneLandingOf(params: {
 		: { lot, landed: false }
 }
 
+/** The lot's records read committed (its registry entry or its transitions), files only. */
+function isCommittedLot(params: { lotFolder: string }): boolean {
+	const checked = readCheckedLotState({
+		lotFolder: params.lotFolder,
+		registry: registryOfLotFolder(params.lotFolder),
+	})
+	return (
+		checked !== undefined && 'input' in checked && lotState(checked.input).state === 'committed'
+	)
+}
+
 /** The lot was pushed: its landing recorded a pull request, or origin holds its branch. */
 function isPushed(params: {
 	root: string
@@ -275,10 +307,8 @@ function isPushed(params: {
 }): boolean {
 	return (
 		params.pullNumber !== undefined ||
-		tryReadGit({
-			root: params.root,
-			args: ['rev-parse', '--verify', '--quiet', `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`],
-		}) !== undefined
+		readCommitOrNone({ root: params.root, ref: `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}` }) !==
+			undefined
 	)
 }
 

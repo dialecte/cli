@@ -5,7 +5,7 @@
  * The "no commit of its own" rules of a merged branch live here too: a branch nobody committed on is still in use.
  */
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
-import { readGit, tryReadGit } from '../git.ts'
+import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from './contained.ts'
 import { NO_OWN_COMMIT_REASONS, UNLANDED_WORK_TEXT } from './unlanded-work.constants.ts'
@@ -44,7 +44,7 @@ export function unlandedWork(params: {
 		baseRef,
 		...(params.landedTip === undefined ? [] : [params.landedTip]),
 		...(params.keptElsewhere === true ? [`refs/heads/${params.branch}`] : []),
-	].filter((ref) => commitOf({ root, ref }) !== undefined)
+	].filter((ref) => readCommitOrNone({ root, ref }) !== undefined)
 	const remotes = params.keptElsewhere === true ? ['--remotes'] : []
 	// the reflog's commits on standard input: no argument-length limit, read as wanted whatever `--not` says
 	const beyond = readGit({
@@ -101,7 +101,7 @@ export function noOwnCommitReason(params: {
 		.filter(Boolean)
 	if (entries.length === 0) return NO_OWN_COMMIT_REASONS.emptyReflog
 	if (entries.length <= 1) return NO_OWN_COMMIT_REASONS.onlyCreation
-	const tip = commitOf({ root, ref: `refs/heads/${branch}` })
+	const tip = readCommitOrNone({ root, ref: `refs/heads/${branch}` })
 	return tip !== undefined && tip === params.baselineHead
 		? NO_OWN_COMMIT_REASONS.sinceWorktree
 		: undefined
@@ -115,14 +115,4 @@ function reflogOf(params: { root: string; ref: string }): string[] {
 	)
 		.split('\n')
 		.filter(Boolean)
-}
-
-/** The commit `ref` names; undefined when it names none. */
-function commitOf(params: { root: string; ref: string }): string | undefined {
-	return (
-		tryReadGit({
-			root: params.root,
-			args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
-		})?.trim() || undefined
-	)
 }

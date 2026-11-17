@@ -10,6 +10,12 @@ import { createStartWorkspace, entriesOf } from '../../../test/lot-start-workspa
 import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLot } from '../../commands/lot.ts'
+import {
+	findHandoverStore,
+	recordHandoverState,
+	registerHandover,
+} from '../handover/handover-store.ts'
+import { writeLanded } from '../landing/landed-record.ts'
 import { readIdentity } from '../store/identity.ts'
 import { checkTddReceipts } from './check-tdd-receipts.ts'
 
@@ -38,7 +44,12 @@ function commitFile(params: { root: string; file: string }): string {
  * The open parent lot on its own branch (one commit ahead of main), a child started on it, then main moves on: the
  * child's worktree and the parent's tip.
  */
-function stackedChild(): { worktree: string; parentTip: string } {
+function stackedChild(): {
+	worktree: string
+	parentTip: string
+	parentFolder: string
+	repository: string
+} {
 	const start: StartWorkspace = createStartWorkspace()
 	const { repository } = start
 	git({ root: repository, args: ['checkout', '-q', '-b', PARENT_BRANCH] })
@@ -59,7 +70,12 @@ function stackedChild(): { worktree: string; parentTip: string } {
 	commitFile({ root: repository, file: 'src/main-moves.ts' })
 	const [child] = entriesOf(start.store).filter((name) => name !== PARENT)
 	const worktree = readIdentity({ lotFolder: join(start.store, child ?? 'none') })?.worktree
-	return { worktree: worktree ?? 'no-child-worktree', parentTip }
+	return {
+		worktree: worktree ?? 'no-child-worktree',
+		parentTip,
+		parentFolder: join(start.store, PARENT),
+		repository,
+	}
 }
 
 describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () => {
@@ -70,5 +86,33 @@ describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 		await expect(
 			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
 		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base ${PARENT_BRANCH})` })
+	})
+
+	it('a child of a parent lot recorded landed (its landed.json), git unable to prove it → the tdd step measures from main, at the parent’s landed tip', async () => {
+		const { worktree, parentTip, parentFolder } = stackedChild()
+		writeLanded({
+			lotFolder: parentFolder,
+			fact: { schema: 1, how: 'host', tip: parentTip, base: 'main', at: NOW.toISOString() },
+		})
+		const short = git({ root: worktree, args: ['rev-parse', '--short', parentTip] }).trim()
+
+		await expect(
+			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
+		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base main)` })
+	})
+
+	it('a child of a parent lot the registry records committed, no landed.json, git unable to prove it → the tdd step measures from main, at the parent’s tip', async () => {
+		const { worktree, parentTip, parentFolder, repository } = stackedChild()
+		registerHandover({ root: repository, folder: parentFolder, branch: PARENT_BRANCH, now: NOW })
+		recordHandoverState({
+			store: findHandoverStore(repository),
+			folder: parentFolder,
+			state: 'committed',
+		})
+		const short = git({ root: worktree, args: ['rev-parse', '--short', parentTip] }).trim()
+
+		await expect(
+			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
+		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base main)` })
 	})
 })

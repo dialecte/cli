@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
-import { isAncestorCommit, readGit, tryReadGit } from '../git.ts'
+import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
 import { readLotLanding } from '../landing/lot-landing.ts'
@@ -213,7 +213,7 @@ function onParentTip(params: {
 	parentBranch: string
 }): { lines: string[] } | StackRefusal {
 	const { worktree, base } = params
-	const tip = commitOf({ root: worktree, ref: base.ref })
+	const tip = readCommitOrNone({ root: worktree, ref: base.ref })
 	if (tip === undefined || isAncestorCommit({ root: worktree, ancestor: tip, descendant: 'HEAD' }))
 		return { lines: [] }
 	const rebased = rebaseOnto({
@@ -277,7 +277,7 @@ function hostRewriteOf(params: {
 	branch: string
 	landing: LandingRecord | undefined
 }): { remote: string; pushed: string } | undefined {
-	const remote = commitOf({
+	const remote = readCommitOrNone({
 		root: params.worktree,
 		ref: `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`,
 	})
@@ -366,16 +366,6 @@ function followHost(params: {
 			}),
 		],
 	}
-}
-
-/** The commit `ref` names; undefined when it names none. */
-function commitOf(params: { root: string; ref: string }): string | undefined {
-	return (
-		tryReadGit({
-			root: params.root,
-			args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
-		})?.trim() || undefined
-	)
 }
 
 /** `git reset --keep <onto>`: the worktree moved, uncommitted changes kept; the refusal when git cannot keep them. */

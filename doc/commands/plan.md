@@ -18,11 +18,9 @@ plan - What can start now in a plan's lot block, whether the block is valid, a m
     person), dependsOn, scope per repository, heavy steps, brief and match (branch, handover,
     feature); unknown keys refused, every fault at once
   next - proposes only, starts and writes nothing: the state of each entry read from the stores, the
-         hand-over registries and the worktrees of its repositories (files only, no git process
-         except one probe per lot whose hand-over was committed outside its folder: once its branch
-         is past the base commit of the lot and on the base branch it reads committed; once lot
-         close closed that hand-over every reader reads it committed, files only; a live run or a
-         transition later than that hand-over reads from its own records), the open lots, the lots
+         hand-over registries and the worktrees of its repositories (files only, no git process: a
+         lot reads committed by its registry entry or its landed fact, landed.json, which lot land,
+         lot close and worktree prune write once its landing is merged), the open lots, the lots
          that can start in critical-path order (shares:, merge:, unverified, stacks, next command),
          the held ones with each scope pair met (a ready lot meeting an open lot is proposed with
          shares: <pair> (<lot>, forecast clean) when the last forecast that lot recorded is known
@@ -73,12 +71,9 @@ Flags: `--json`, `--all`, `--by`, `--reason`, `--landed`, `--replaced-by`
   records are found; the block's `shared` files (the changelog, the README, the command map) never hold a lot back.
   An entry's state is read, never declared: done by a committed hand-over or store lot, open by a store lot, a
   pending hand-over or a worktree on its branch, else ready, waiting, parked, or unknown with the reason when its
-  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process, except
-  one probe per lot whose hand-over was committed outside its folder and not closed yet: once its branch is past
-  the lot's base commit and on the base branch that lot reads `committed`, is no longer open nor holds anything,
-  and is listed under `landed` as `lot <full name> committed: hand-over committed in <folder>, branch on
-  <target>`; once `lot close` closes that hand-over every reader reads it `committed`, files only, with no
-  `landed` line; a lot with a live run or a transition later than that hand-over reads from its own records). The
+  repository cannot be read (files only: the stores, the registries, `worktrees/*/HEAD`; no git process: a lot reads
+  `committed` by its registry entry or its landed fact, `landed.json`, which `lot land`, `lot close` and `worktree
+  prune` write once its landing is merged). The
   text says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
   `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `shares: <pair> (<lot>,
   forecast clean)`, `merge: <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots

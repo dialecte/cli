@@ -99,9 +99,13 @@ describe('the command map', () => {
 	})
 
 	const MERGED_BEHAVIOUR_NOTES = [
-		{ command: 'lot', verb: 'close', text: 'a lot id (its store folder' },
-		{ command: 'lot', verb: 'close', text: "merged at the worktree's HEAD" },
-		{ command: 'lot', verb: 'close', text: "a reflog-only commit changing only the lot's paths" },
+		{
+			command: 'lot',
+			verb: 'close',
+			text: 'a lot (its id, name or index), with no registry entry needed',
+		},
+		{ command: 'lot', verb: 'close', text: 'a squash read offline' },
+		{ command: 'lot', verb: 'close', text: '<n> commit(s) of work not in <base>: <commits>' },
 		{
 			command: 'lot',
 			verb: 'land',
