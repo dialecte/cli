@@ -360,6 +360,18 @@ Closes #12
 	})
 })
 
+describe('composePullRequest lists each overlap once', () => {
+	it('two records of one lot with one reason → one line', () => {
+		const overlap = { lot: '0007-repo-other', reason: 'separate lines in one file' }
+
+		const body = bodyOf({ sources: { ...FULL, overlaps: [overlap, overlap] } })
+
+		expect(partOf({ body, heading: 'Overlaps' })).toBe(
+			'- 0007-repo-other: separate lines in one file',
+		)
+	})
+})
+
 describe("keptTextOf reads a person's part of the current body", () => {
 	it('a body holding the kept heading → from that heading on', () => {
 		const body = 'rendered\n\n### For the reviewer\n\n- [x] The code is reviewed\n'

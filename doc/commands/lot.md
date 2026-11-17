@@ -725,9 +725,12 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
 files stay in the worktree and are named, `uncommitted, not pushed: N files`), rebased onto `origin/<base>` when
 behind it (a conflict undone, its files named, nothing pushed; with a tracked file changed git cannot rebase: the lot
 is pushed as committed, a line saying the rebase waits for a clean worktree; CI tests the merge with the base), pushed
-with a lease, its pull request opened or reused, titled with the lot's own message (the first commit lot of its brief;
-the others listed in the body), never the branch's last commit: a merge of main never becomes the squash title; a pull
-request titled otherwise is retitled on the next landing; then queued with `gh pr merge --auto`. The merge queue runs the full suite on the
+with a lease, its pull request opened or reused with the title and body `lot pr` renders from the lot's records
+through `.github/pull_request_template.md`, on the rebased head before the push: the title is the lot's own message
+(the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
+and the body is the lot's final state, never its commit bodies. A reused pull request whose title or body reads
+otherwise is edited, a person's part after the template's kept marker kept; records that do not render push nothing.
+Then it is queued with `gh pr merge --auto`. The merge queue runs the full suite on the
 lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches main another way. `--draft`
 opens a draft and never queues it: CI runs on every push while the lot goes on; land it again without `--draft` to
 queue it. The landing is recorded in `<lot folder>/landing.json` (with `replaced`, the heads its rebases replaced: `lot close`

@@ -153,6 +153,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 			{ record: 'brief.json steps[0].behaviours[0]', text: 'a -> b' },
 			{ record: 'brief.json steps[0].behaviours[1]', text: 'c -> d' },
 			{ record: 'changes/x.md', text: '- E.', committed: true },
+			{ record: 'overlaps.jsonl', text: '0007-repo-other' },
 			{ record: 'overlaps.jsonl', text: 'separate lines' },
 		])
 	})
@@ -169,6 +170,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 		expect(publicPiecesOf(sources)).toContainEqual({
 			record: 'changes/x.none.md',
 			text: 'wording only',
+			committed: true,
 		})
 	})
 })

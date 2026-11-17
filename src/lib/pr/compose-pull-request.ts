@@ -124,15 +124,17 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 	}
 }
 
-/** One line per overlap the lot accepted: the other lot and why; `none` without one. */
+/** One line per overlap the lot accepted (the same lot and reason once): the other lot and why; `none` without one. */
 function overlapLines(sources: PullRequestSources): string[] {
 	const overlaps = sources.overlaps ?? []
 	if (overlaps.length === 0) return [BODY_LINES.noOverlaps]
-	return overlaps.map(function overlapLine(overlap) {
+	const lines = overlaps.map(function overlapLine(overlap) {
 		return BODY_LINES.overlap
 			.replace('{lot}', () => overlap.lot)
 			.replace('{reason}', () => overlap.reason)
 	})
+	// a lot accepted again for the same reason (a start, then a scope add) is one line
+	return [...new Set(lines)]
 }
 
 /** The summary, then the brief's other commit messages: one squash commit holds them all. */
