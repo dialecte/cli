@@ -17,7 +17,8 @@ export async function signalChildScript(params: {
 }): Promise<{ lines: string[]; code: number | null; signal: NodeJS.Signals | null }> {
 	const path = join(temporaryFolder('dialecte-signal-child-'), 'child.mjs')
 	writeFileSync(path, params.script)
-	const child = spawn('node', [path], { stdio: ['ignore', 'pipe', 'inherit'] })
+	// this process's own node: a PATH without node, or another node first on it, never runs the child
+	const child = spawn(process.execPath, [path], { stdio: ['ignore', 'pipe', 'inherit'] })
 	let output = ''
 	const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
 		function waitForExit(resolve) {

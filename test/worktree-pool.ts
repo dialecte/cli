@@ -178,9 +178,9 @@ export function readTree(folder: string): Record<string, string> {
  */
 export function createExecutingSpawner(): {
 	spawner: BackgroundSpawner
-	calls: { command: string; args: string[]; cwd?: string }[]
+	calls: Parameters<BackgroundSpawner>[0][]
 } {
-	const calls: { command: string; args: string[]; cwd?: string }[] = []
+	const calls: Parameters<BackgroundSpawner>[0][] = []
 	return {
 		calls,
 		spawner: function recordAndRun(params) {
@@ -193,9 +193,9 @@ export function createExecutingSpawner(): {
 /** A spawner that only records its calls: the background removals the tests never wait for. */
 export function createRecordingSpawner(): {
 	spawner: BackgroundSpawner
-	calls: { command: string; args: string[]; cwd?: string }[]
+	calls: Parameters<BackgroundSpawner>[0][]
 } {
-	const calls: { command: string; args: string[]; cwd?: string }[] = []
+	const calls: Parameters<BackgroundSpawner>[0][] = []
 	return {
 		calls,
 		spawner: function record(params) {

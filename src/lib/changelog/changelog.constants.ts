@@ -13,14 +13,20 @@ export const FRAGMENT_EXTENSION = '.md'
 export const NO_ENTRY_EXTENSION = '.none.md'
 
 /**
- * The changed files that ask for a fragment: a visible change edits them (the help, the README and the command
- * pages). An entry ending with `/` is a folder: every file under it asks.
+ * The changed files that ask for a fragment in every package: a visible change edits them (the README, the pages under
+ * `doc/`). A package adds its own (`dialecte.changelog.asking`). An entry ending with `/` is a folder: every file under
+ * it asks.
  */
-export const FRAGMENT_ASKING_FILES: readonly string[] = [
-	'README.md',
-	'doc/commands/',
-	'src/lib/command-map/command-map.constants.ts',
-]
+export const FRAGMENT_ASKING_FILES: readonly string[] = ['README.md', 'doc/']
+
+/** The package.json field a package lists its own fragment-asking files in. */
+export const FRAGMENT_ASKING_FIELD = 'dialecte.changelog.asking'
+
+/** The package.json field that holds `asking`: an object when given. */
+export const FRAGMENT_CHANGELOG_FIELD = 'dialecte.changelog'
+
+/** A path git never names a changed file by: `./`, `../` or `.` segments, `//`, a backslash, a glob. */
+export const NOT_A_GIT_PATH_PATTERN = /(^|\/)\.{1,2}(\/|$)|\/\/|\\|[*?[\]{}]/
 
 /** The check of a change: `{file}` the first changed file asking for a fragment. */
 export const FRAGMENT_CHECK_LINES = {
@@ -29,7 +35,11 @@ export const FRAGMENT_CHECK_LINES = {
 	noFolder: 'no changes/ folder: the package keeps no changelog fragments',
 	fragment: 'a changelog fragment: {files}',
 	note: 'no changelog entry: {reason}',
-	nothingAsked: 'no README or help change: no fragment asked',
+	nothingAsked: 'no README, doc/ or listed file changed: no fragment asked',
+	badChangelog: '{field} in package.json is not an object: write { "asking": [<paths>] }',
+	badAskingList: '{field} in package.json is not a list of paths',
+	badAskingEntries:
+		'{field} in package.json holds {entries}: git names a changed file by a path relative to the package with / separators - no leading ./ or /, no ../, ./ or // inside, no backslash, no spaces around, no glob',
 	release: 'a release (CHANGELOG.md edited): its version section answers the change',
 	problem: '{file}: {problem}',
 	unreadable: 'the change since {base} cannot be read: {reason}',

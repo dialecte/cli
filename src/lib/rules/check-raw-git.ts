@@ -17,6 +17,8 @@ import {
 
 import ts from 'typescript'
 
+import type { WrittenList } from './check-raw-git.types.ts'
+
 /**
  * The git calls of `sourceFile` that make a non-bare repository, a git argument list whose subcommand (after git's
  * options) is `'clone'` or `'init'`, without `'--bare'`:
@@ -28,15 +30,22 @@ import ts from 'typescript'
  * its initializer. Known limit: a list whose subcommand follows a spread (`[...base, 'clone']`) or a placeholder of
  * a template (`\`git ${verb} x\``) is not read, nor a list or program built in another file.
  *
+ * Each finding is the argument that makes the repository, where the call writes it: the `clone`/`init` element of a
+ * list written in the call, the reference to a same-file const, the shell string - so a new argument line under an
+ * unchanged call is a line the change added. A `dialecte-allow raw-git-repository` opt-out goes on that line or the one
+ * before it, which in a call spanning lines is inside the call.
+ *
  * @intent find the repositories a test makes without the scratch helpers
  * @internal
  */
-export function findRawGitRepositories(sourceFile: ts.SourceFile): ts.CallExpression[] {
+export function findRawGitRepositories(sourceFile: ts.SourceFile): ts.Node[] {
 	const constants = sameFileConstantsOf(sourceFile)
-	const found: ts.CallExpression[] = []
+	const found: ts.Node[] = []
 	function visit(node: ts.Node): void {
-		if (ts.isCallExpression(node) && isRepositoryMakingCall({ call: node, constants }))
-			found.push(node)
+		const argument = ts.isCallExpression(node)
+			? repositoryMakingArgumentOf({ call: node, constants })
+			: undefined
+		if (argument !== undefined) found.push(argument)
 		ts.forEachChild(node, visit)
 	}
 	visit(sourceFile)
@@ -88,46 +97,101 @@ function resolved(params: {
 	}
 }
 
-/** The call runs git with a repository-making argument list, in one of the forms `findRawGitRepositories` reads. */
-function isRepositoryMakingCall(params: {
+/**
+ * The argument that makes a repository in a git call of one of the forms `findRawGitRepositories` reads, where the
+ * call writes it (`anchorOf`); undefined when the call makes none.
+ */
+function repositoryMakingArgumentOf(params: {
 	call: ts.CallExpression
 	constants: ReadonlyMap<string, ts.Expression>
-}): boolean {
+}): ts.Node | undefined {
 	const { call, constants } = params
 	const callee = calleeName(call.expression)
-	const [first, second] = call.arguments.map((expression) => resolved({ expression, constants }))
 	if (GIT_CALLEES.includes(callee))
-		return listsOf({ expressions: call.arguments, constants }).some(isRepositoryMakingList)
-	if (first !== undefined && ts.isStringLiteralLike(first) && first.text === GIT_PROGRAM)
+		return listsOf({ expressions: call.arguments, constants })
+			.filter((written) => isRepositoryMakingList(written.list))
+			.map(anchorOf)[0]
+	const [firstWritten, secondWritten] = call.arguments
+	const first = firstWritten && resolved({ expression: firstWritten, constants })
+	if (first !== undefined && ts.isStringLiteralLike(first) && first.text === GIT_PROGRAM) {
+		const second = secondWritten && resolved({ expression: secondWritten, constants })
 		return second !== undefined && isRepositoryMakingList(second)
-	if (first === undefined || !runsThroughShell({ call, callee, constants })) return false
+			? anchorOf({ written: secondWritten, list: second })
+			: undefined
+	}
+	if (first === undefined || !runsThroughShell({ call, callee, constants })) return undefined
 	const words = shellWordsOf(first)
 	return words !== undefined && words[0] === GIT_PROGRAM && isRepositoryMakingWords(words.slice(1))
+		? firstWritten
+		: undefined
 }
 
-/** The array literals among `expressions` and the property values of their object literals, nested, resolved. */
+/**
+ * Where a list is written in the call: its subcommand element when the list is written there, else the expression
+ * the call writes (a reference to a same-file const).
+ */
+function anchorOf(params: WrittenList): ts.Node {
+	const { list } = params
+	if (unwrapped(params.written) !== list) return params.written
+	const index = subcommandIndexOf(list.elements.map(textOfElement))
+	return (index === undefined ? undefined : list.elements[index]) ?? list
+}
+
+/** `expression` without `(...)`, `as const` or `satisfies` around it. */
+function unwrapped(expression: ts.Expression): ts.Expression {
+	let current = expression
+	while (
+		ts.isParenthesizedExpression(current) ||
+		ts.isAsExpression(current) ||
+		ts.isSatisfiesExpression(current)
+	)
+		current = current.expression
+	return current
+}
+
+/** A list element's text when it is a string literal; undefined (an unknown word) otherwise. */
+function textOfElement(element: ts.Expression): string | undefined {
+	return ts.isStringLiteralLike(element) ? element.text : undefined
+}
+
+/**
+ * The array literals among `expressions` and the property values of their object literals, nested, resolved, each
+ * with the expression the call writes for it.
+ */
 function listsOf(params: {
 	expressions: readonly ts.Expression[]
 	constants: ReadonlyMap<string, ts.Expression>
-}): ts.ArrayLiteralExpression[] {
+}): WrittenList[] {
 	const { constants } = params
-	return params.expressions.flatMap((expression) => listsIn({ expression, constants }))
+	return params.expressions.flatMap((expression) =>
+		listsIn({ expression, written: expression, constants }),
+	)
 }
 
+/**
+ * The lists `expression` holds once resolved; `written` is the expression of the call they come from: the list itself
+ * when the call writes it, the reference when a same-file const holds it (a property of a const object keeps the
+ * reference to that const).
+ */
 function listsIn(params: {
 	expression: ts.Expression
+	written: ts.Expression
 	constants: ReadonlyMap<string, ts.Expression>
-}): ts.ArrayLiteralExpression[] {
+}): WrittenList[] {
 	const { constants } = params
 	const value = resolved(params)
-	if (ts.isArrayLiteralExpression(value)) return [value]
+	// written in the call while the value is: each nested value is written there too
+	const inCall = unwrapped(params.written) === value
+	if (ts.isArrayLiteralExpression(value)) return [{ written: params.written, list: value }]
 	if (!ts.isObjectLiteralExpression(value)) return []
 	return value.properties.flatMap(function propertyLists(property) {
-		if (ts.isPropertyAssignment(property))
-			return listsIn({ expression: property.initializer, constants })
-		if (ts.isShorthandPropertyAssignment(property))
-			return listsIn({ expression: property.name, constants })
-		return []
+		const expression = ts.isPropertyAssignment(property)
+			? property.initializer
+			: ts.isShorthandPropertyAssignment(property)
+				? property.name
+				: undefined
+		if (expression === undefined) return []
+		return listsIn({ expression, written: inCall ? expression : params.written, constants })
 	})
 }
 
@@ -173,13 +237,11 @@ function wordsOf(text: string): string[] {
 }
 
 /** The list's elements make a non-bare repository (`isRepositoryMakingWords`); a spread is an unknown element. */
-function isRepositoryMakingList(expression: ts.Expression): boolean {
+function isRepositoryMakingList(
+	expression: ts.Expression,
+): expression is ts.ArrayLiteralExpression {
 	if (!ts.isArrayLiteralExpression(expression)) return false
-	return isRepositoryMakingWords(
-		expression.elements.map((element) =>
-			ts.isStringLiteralLike(element) ? element.text : undefined,
-		),
-	)
+	return isRepositoryMakingWords(expression.elements.map(textOfElement))
 }
 
 /**
@@ -194,11 +256,17 @@ function isRepositoryMakingWords(words: readonly (string | undefined)[]): boolea
 }
 
 function subcommandOf(words: readonly (string | undefined)[]): string | undefined {
+	const index = subcommandIndexOf(words)
+	return index === undefined ? undefined : words[index]
+}
+
+/** The index of the subcommand among `words` (the first after git's options); undefined when unknown or none. */
+function subcommandIndexOf(words: readonly (string | undefined)[]): number | undefined {
 	for (let index = 0; index < words.length; index += 1) {
 		const word = words[index]
 		if (word === undefined) return undefined
 		if (OPTIONS_WITH_VALUE.includes(word)) index += 1
-		else if (!word.startsWith('-')) return word
+		else if (!word.startsWith('-')) return index
 	}
 	return undefined
 }

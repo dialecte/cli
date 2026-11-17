@@ -452,7 +452,10 @@ function rulesResult(params: { root: string; base: string | undefined }): StepRe
 	}
 }
 
-/** The changelog row: the change since `base` brings the fragment a README or help edit asks for (`checkChangeFragment`). */
+/**
+ * The changelog row: the change since `base` brings the fragment a README, `doc/` or listed-file edit asks for
+ * (`checkChangeFragment`, the package's `dialecte.changelog.asking`).
+ */
 function changelogResult(params: { root: string; base: string | undefined }): StepResult {
 	const step = { name: CONTRIB_BUILTIN_STEPS.changelog.name, run: '' }
 	// no base: no change to read, said plainly rather than read as a pass
