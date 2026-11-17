@@ -27,6 +27,8 @@ export const STORE_FILES: StoreFileNames = {
 	scopeChanges: 'scope-changes.jsonl',
 	// the review's public rows, written whole by `lot finding`, `lot decide`, `lot verify` and a review station's end
 	review: 'review.jsonl',
+	// the plan entry the lot carries out, found and published by `lot start`
+	planEntry: 'plan-entry.json',
 	// the tests' public record, its tdd part written by `tdd green`, its gate part by the gate
 	tests: 'tests.json',
 	// `lot start` / `lot scope --overlap-ok` append the overlaps the lot accepted, with who and why (FIX-overlap-ok)
@@ -212,6 +214,9 @@ export const LOT_INDEX_PATTERN = /^\d+$/
  * Why a lot's records read as damaged (validated once, on read): fixed words, never a field of the record, so
  * nothing forged reaches a line.
  */
+/** Beside `brief.json`: the brief `lot brief` writes before its transition, moved into place after it. */
+export const NEXT_BRIEF_SUFFIX = '.next'
+
 export const RECORD_DAMAGE_REASONS = {
 	index: 'identity.json holds an index that is not digits',
 	created: 'identity.json holds a created time the store does not write',
@@ -229,6 +234,7 @@ export const RECORD_DAMAGE_REASONS = {
 	identityUnreadable: 'identity.json is missing or does not read as a lot identity',
 	identityName: 'identity.json names another lot than its folder',
 	effortLevel: 'identity.json holds an effort level other than low, medium or high',
+	brief: 'brief.json is not the brief its start or its last lot brief recorded',
 } as const
 
 /**

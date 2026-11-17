@@ -17,7 +17,7 @@ function fakeGh(params: { stdout?: string; stderr?: string; code?: number }): st
 	const script = join(folder, 'gh')
 	writeFileSync(
 		script,
-		`#!/bin/sh\nprintf '%s\\n' "$@" > '${join(folder, 'gh.args')}'\nprintf '%s' '${params.stdout ?? ''}'\nprintf '%s' '${params.stderr ?? ''}' >&2\nexit ${params.code ?? 0}\n`,
+		`#!/bin/sh\nprintf '%s\\n' "$@" > '${join(folder, 'gh.args')}'\ncat > '${join(folder, 'gh.stdin')}'\nprintf '%s' '${params.stdout ?? ''}'\nprintf '%s' '${params.stderr ?? ''}' >&2\nexit ${params.code ?? 0}\n`,
 	)
 	chmodSync(script, 0o755)
 	vi.stubEnv('PATH', `${folder}${delimiter}${process.env.PATH ?? ''}`)
@@ -29,11 +29,12 @@ describe('createGithubHost', () => {
 		{
 			label: 'an open pull request in the queue',
 			stdout:
-				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","state":"OPEN","isDraft":false,"autoMergeRequest":{"enabledAt":"x"},"headRefOid":"abc"}',
+				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","body":"the body","state":"OPEN","isDraft":false,"autoMergeRequest":{"enabledAt":"x"},"headRefOid":"abc"}',
 			pullRequest: {
 				number: 12,
 				url: 'https://github.test/pull/12',
 				title: 'feat(x): x',
+				body: 'the body',
 				state: 'open',
 				draft: false,
 				queued: true,
@@ -43,11 +44,12 @@ describe('createGithubHost', () => {
 		{
 			label: 'a merged one',
 			stdout:
-				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","state":"MERGED","isDraft":false,"autoMergeRequest":null,"headRefOid":"abc"}',
+				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","body":"","state":"MERGED","isDraft":false,"autoMergeRequest":null,"headRefOid":"abc"}',
 			pullRequest: {
 				number: 12,
 				url: 'https://github.test/pull/12',
 				title: 'feat(x): x',
+				body: '',
 				state: 'merged',
 				draft: false,
 				queued: false,
@@ -74,11 +76,16 @@ describe('createGithubHost', () => {
 		})
 	})
 
-	it('a pull request retitled → gh pr edit <number> --title <title>, no refusal', () => {
+	it('a pull request edited → gh pr edit <number> --title <title> --body-file -, the body on its input', () => {
 		const root = fakeGh({})
 
 		expect(
-			createGithubHost().retitlePullRequest({ root, number: 12, title: 'feat(x): x' }),
+			createGithubHost().editPullRequest({
+				root,
+				number: 12,
+				title: 'feat(x): x',
+				body: '### Summary\n\nX.',
+			}),
 		).toBeUndefined()
 		expect(readFileSync(join(root, 'gh.args'), 'utf8').split('\n')).toEqual([
 			'pr',
@@ -86,15 +93,18 @@ describe('createGithubHost', () => {
 			'12',
 			'--title',
 			'feat(x): x',
+			'--body-file',
+			'-',
 			'',
 		])
+		expect(readFileSync(join(root, 'gh.stdin'), 'utf8')).toBe('### Summary\n\nX.')
 	})
 
-	it('gh refusing the edit → a refusal naming the call and its reason', () => {
+	it('gh refusing the body edit → a refusal naming the call and its reason', () => {
 		const root = fakeGh({ stderr: 'HTTP 403: Resource not accessible', code: 1 })
 
-		expect(createGithubHost().retitlePullRequest({ root, number: 12, title: 'x' })).toEqual({
-			refusal: 'gh pr edit: HTTP 403: Resource not accessible',
-		})
+		expect(createGithubHost().editPullRequest({ root, number: 12, title: 'x', body: 'y' })).toEqual(
+			{ refusal: 'gh pr edit: HTTP 403: Resource not accessible' },
+		)
 	})
 })

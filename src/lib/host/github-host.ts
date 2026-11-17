@@ -13,7 +13,7 @@ import {
 import type { HostAdapter, HostRefusal, PullRequest } from './host.types.ts'
 
 /**
- * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, retitled, queued (`gh pr merge --auto`,
+ * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, edited (title and body), queued (`gh pr merge --auto`,
  * which joins the merge queue when the base branch has one; a draft made ready first). Reads are short, never a prompt.
  *
  * @intent land lots through GitHub's pull requests and merge queue
@@ -54,7 +54,7 @@ export function createGithubHost(): HostAdapter {
 				read ?? { refusal: `the pull request of ${params.branch} was opened but cannot be read` }
 			)
 		},
-		retitlePullRequest: retitleOnGithub,
+		editPullRequest: editOnGithub,
 		closePullRequest: closeOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
@@ -77,16 +77,18 @@ export function createGithubHost(): HostAdapter {
 	return host
 }
 
-/** `gh pr edit <number> --title <title>`: undefined once retitled, else its refusal. */
-function retitleOnGithub(params: {
+/** `gh pr edit <number> --title <title> --body-file -`, the body on its input: undefined once edited, else its refusal. */
+function editOnGithub(params: {
 	root: string
 	number: number
 	title: string
+	body: string
 }): HostRefusal | undefined {
 	const edited = runGh({
 		root: params.root,
-		args: ['pr', 'edit', String(params.number), '--title', params.title],
+		args: ['pr', 'edit', String(params.number), '--title', params.title, '--body-file', '-'],
 		timeout: HOST_WRITE_TIMEOUT_MS,
+		input: params.body,
 	})
 	return 'refusal' in edited ? edited : undefined
 }
@@ -101,17 +103,20 @@ function closeOnGithub(params: { root: string; number: number }): HostRefusal | 
 	return 'refusal' in closed ? closed : undefined
 }
 
-/** One `gh` call: its standard output, or its first error line. */
+/** One `gh` call (`input` on its standard input, none when absent): its standard output, or its first error line. */
 function runGh(params: {
 	root: string
 	args: string[]
 	timeout: number
+	input?: string
 }): { output: string } | HostRefusal {
 	const run = spawnSync(GH_COMMAND, params.args, {
 		cwd: params.root,
 		encoding: 'utf8',
 		timeout: params.timeout,
-		stdio: ['ignore', 'pipe', 'pipe'],
+		...(params.input === undefined
+			? { stdio: ['ignore', 'pipe', 'pipe'] }
+			: { input: params.input }),
 		env: { ...process.env, ...HOST_ENVIRONMENT },
 	})
 	if (run.status === 0) return { output: run.stdout }
@@ -130,6 +135,7 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			number: parsed.number,
 			url: String(parsed.url ?? ''),
 			title: String(parsed.title ?? ''),
+			body: String(parsed.body ?? ''),
 			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
 			draft: parsed.isDraft === true,
 			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,

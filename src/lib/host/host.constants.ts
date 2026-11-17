@@ -2,7 +2,7 @@
 
 /** The `gh` command and the fields a pull request is read with. */
 export const GH_COMMAND = 'gh'
-export const PULL_REQUEST_FIELDS = 'number,url,title,state,isDraft,autoMergeRequest,headRefOid'
+export const PULL_REQUEST_FIELDS = 'number,url,title,body,state,isDraft,autoMergeRequest,headRefOid'
 
 /** How long a host call may take: a read is short (offline answers fast), a write may wait on the host. */
 export const HOST_READ_TIMEOUT_MS = 10_000

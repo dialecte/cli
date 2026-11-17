@@ -2,6 +2,7 @@
  * The records of a lot folder read from disk, as `lotState` takes them: file reads only, no git and no child
  * process, so every reader of a state (the overlap, `status`) builds its input the same way.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
@@ -22,6 +23,7 @@ import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
 	answerDamageOf,
 	entryDamageOf,
+	briefDamageOf,
 	identityDamageOf,
 	markerDamageOf,
 	scenarioDamageOf,
@@ -36,6 +38,7 @@ import {
 	RECORD_DAMAGE_REASONS,
 	REREAD_PAUSE_MS,
 	SCOPE_UNREADABLE,
+	NEXT_BRIEF_SUFFIX,
 	STORE_FILES,
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
@@ -103,7 +106,13 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 		(registryEntry && entryDamageOf(registryEntry)) ??
 		markerDamageOf(abandoned?.at) ??
 		markerDamageOf(runMarker?.startedAt) ??
-		(identity.simulated ? scenarioDamageOf(readScenario({ lotFolder })) : undefined)
+		(identity.simulated ? scenarioDamageOf(readScenario({ lotFolder })) : undefined) ??
+		briefDamageOf({
+			briefHash: fileHashOf(join(lotFolder, STORE_FILES.brief)),
+			nextHash: fileHashOf(join(lotFolder, `${STORE_FILES.brief}${NEXT_BRIEF_SUFFIX}`)),
+			identity,
+			transitions,
+		})
 	if (damage !== undefined) return { damage, identity }
 	return {
 		input: {
@@ -332,6 +341,15 @@ function briefValueOf(params: { lotFolder: string; field: string }): unknown {
 			readFileSync(join(params.lotFolder, STORE_FILES.brief), 'utf8'),
 		)
 		return (brief as Record<string, unknown> | null)?.[params.field]
+	} catch {
+		return undefined
+	}
+}
+
+/** The sha256 (hex) of the file at `path`; undefined when there is none. */
+function fileHashOf(path: string): string | undefined {
+	try {
+		return createHash('sha256').update(readFileSync(path)).digest('hex')
 	} catch {
 		return undefined
 	}

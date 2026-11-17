@@ -35,8 +35,8 @@ import {
 	SCOPE_SEPARATOR,
 	SUMMARY_MAX_LENGTH,
 	SUMMARY_PATH_DETAIL,
-	SUMMARY_REFERENCE_DETAIL,
-	SUMMARY_UNCHECKED_DETAIL,
+	PUBLIC_TEXT_DETAIL,
+	PUBLIC_TEXT_UNCHECKED_DETAIL,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
 import { isAcceptableOverlap } from './lot-overlaps.ts'
@@ -46,11 +46,13 @@ import {
 	overlappingOpenLots,
 	readLotStateInput,
 } from './lot-records.ts'
+import { findPlanEntry } from './plan-entry.ts'
 import { PLAN_ENTRY_ID_LABEL } from './public-text.constants.ts'
 import {
 	holdsPathOrLink,
 	holdsPlanEntryId,
 	lotPlanEntryIds,
+	publicTextLabel,
 	referenceLabelIn,
 } from './public-text.ts'
 import { listLotNames, locateStore } from './store-folder.ts'
@@ -176,7 +178,7 @@ export function checkBrief(params: {
 		...base.refused,
 		...plan.refused,
 		...specHeadingFaults({ steps: value.steps, planText: plan.text }),
-		...summaryReferenceFaults({ fields, repository: repository.main, value, briefFolder }),
+		...publicTextFaults({ fields, repository: repository.main, value, briefFolder }),
 		...overlaps.refused,
 	]
 	const findings = params.simulated
@@ -204,6 +206,7 @@ export function checkBrief(params: {
 			caseInsensitive,
 			findings,
 			acceptedOverlaps: overlaps.accepted,
+			briefFolder,
 		}),
 	}
 }
@@ -218,8 +221,14 @@ function checkedOf(params: {
 	caseInsensitive: boolean
 	findings: Refusal[]
 	acceptedOverlaps: LotOverlap[]
+	/** The brief's folder: its plan is found from there. */
+	briefFolder: string
 }): CheckedBrief {
 	const { brief, plan, briefFile } = params
+	const planEntry = findPlanEntry({
+		planPath: resolve(params.briefFolder, brief.plan),
+		branch: brief.branch,
+	})
 	return {
 		repository: params.repository,
 		base: { ref: brief.base, commit: params.commit },
@@ -239,6 +248,7 @@ function checkedOf(params: {
 		caseInsensitive: params.caseInsensitive,
 		wouldRefuse: params.findings,
 		acceptedOverlaps: params.acceptedOverlaps,
+		...(planEntry !== undefined && { planEntry }),
 	}
 }
 
@@ -346,55 +356,86 @@ function issueFaults(value: unknown): Refusal[] {
 }
 
 /**
- * The fault of a summary holding a reference a public text never holds (`referenceLabelIn`: every generic pattern,
- * those the package declares, a contributor's consumer names, the machine's forbidden words), else an entry id of the
- * plans that hold the lot (`lotPlanEntryIds`). One refusal naming the label, never the text; none without a summary or
- * a repository.
+ * The faults of the brief's public text at the start (`briefTextFaults`) over the plans that hold the lot
+ * (`lotPlanEntryIds`); none without a parsed brief or a repository.
  */
-function summaryReferenceFaults(params: {
+function publicTextFaults(params: {
 	fields: BriefFieldsResult
 	repository: string | undefined
 	value: Record<string, unknown>
 	briefFolder: string
 }): Refusal[] {
 	const { repository, value } = params
-	const summary = params.fields.brief?.summary
-	if (summary === undefined || repository === undefined) return []
-	let label: string | undefined
+	const brief = params.fields.brief
+	if (brief === undefined || repository === undefined) return []
+	return briefTextFaults({
+		brief,
+		root: repository,
+		ids: lotPlanEntryIds({
+			planPath:
+				typeof value.plan === 'string' ? resolve(params.briefFolder, value.plan) : undefined,
+			branch: typeof value.branch === 'string' ? value.branch : undefined,
+		}),
+	})
+}
+
+/**
+ * The faults of every public text of a brief - its summary, each step's title and behaviours, all of which a pull
+ * request shows: one refusal per field holding what a public text never holds (`publicTextLabel`; a summary's path
+ * is its own field check), naming the label, never the text. When the lists cannot be read, one refusal says so.
+ *
+ * @intent keep a brief's public text free of references, private words and paths
+ * @internal
+ */
+export function briefTextFaults(params: {
+	brief: Pick<ParsedBrief, 'summary' | 'steps'>
+	root: string
+	ids: ReadonlySet<string>
+}): Refusal[] {
+	const { brief } = params
+	const texts = [
+		...(brief.summary === undefined
+			? []
+			: [{ field: 'summary', text: brief.summary, path: false }]),
+		...brief.steps.flatMap(function stepTexts(step, index) {
+			return [
+				{ field: `steps[${index}].title`, text: step.title, path: true },
+				...step.behaviours.map((text, behaviour) => ({
+					field: `steps[${index}].behaviours[${behaviour}]`,
+					text,
+					path: true,
+				})),
+			]
+		}),
+	]
 	try {
-		label = referenceLabelIn({ text: summary, root: repository })
+		return texts.flatMap(function faultOf({ field, text, path }) {
+			const label = path
+				? publicTextLabel({ text, root: params.root, ids: params.ids })
+				: (referenceLabelIn({ text, root: params.root }) ??
+					(holdsPlanEntryId({ text, ids: params.ids }) ? PLAN_ENTRY_ID_LABEL : undefined))
+			return label === undefined
+				? []
+				: [
+						refusalOf({
+							field,
+							rule: 'public-text',
+							detail: fillMessage({ template: PUBLIC_TEXT_DETAIL, values: { field, label } }),
+						}),
+					]
+		})
 	} catch (error) {
 		return [
 			refusalOf({
-				field: 'summary',
+				field: texts[0]?.field ?? 'summary',
 				rule: 'public-text',
 				detail: fillMessage({
-					template: SUMMARY_UNCHECKED_DETAIL,
-					values: { reason: (error as Error).message },
+					template: PUBLIC_TEXT_UNCHECKED_DETAIL,
+					values: { field: texts[0]?.field ?? 'summary', reason: (error as Error).message },
 				}),
 			}),
 		]
 	}
-	if (
-		label === undefined &&
-		holdsPlanEntryId({
-			text: summary,
-			ids: lotPlanEntryIds({
-				planPath:
-					typeof value.plan === 'string' ? resolve(params.briefFolder, value.plan) : undefined,
-				branch: typeof value.branch === 'string' ? value.branch : undefined,
-			}),
-		})
-	)
-		label = PLAN_ENTRY_ID_LABEL
-	if (label === undefined) return []
-	return [
-		refusalOf({
-			field: 'summary',
-			rule: 'public-text',
-			detail: fillMessage({ template: SUMMARY_REFERENCE_DETAIL, values: { label } }),
-		}),
-	]
 }
 
 function effortFaults(value: unknown): Refusal[] {

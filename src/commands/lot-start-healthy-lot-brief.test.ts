@@ -12,8 +12,9 @@ import {
 	OVERLAPPING_SCOPE,
 	SCOPE_UNREADABLE,
 } from '../../test/damaged-lot-workspace.constants.ts'
-import { refusalsOf, replaceRecord, startDefaultBrief } from '../../test/damaged-lot-workspace.ts'
+import { refusalsOf, startDefaultBrief } from '../../test/damaged-lot-workspace.ts'
 import { createStartWorkspace, entriesOf } from '../../test/lot-start-workspace.ts'
+import { recordBrief } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,7 +25,10 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-/** A real lot whose records all read, its `brief.json` then spoilt as `brief` says. */
+/**
+ * A real lot whose records all read, its `brief.json` then spoilt as `brief` says: a spoilt brief is recorded as a
+ * `brief` transition would (`recordBrief`), else it reads as a damaged record, not a healthy lot.
+ */
 function healthyLotWithBrief(params: { brief: BriefDamage }): {
 	start: ReturnType<typeof createStartWorkspace>
 	lotFolder: string
@@ -37,14 +41,9 @@ function healthyLotWithBrief(params: { brief: BriefDamage }): {
 		repository: start.workspace.repository,
 	})
 	if (params.brief === 'missing') rmSync(join(lotFolder, 'brief.json'))
-	if (params.brief === 'unparsable')
-		replaceRecord({ folder: lotFolder, name: 'brief.json', text: '{ "scope": [' })
+	if (params.brief === 'unparsable') recordBrief({ lotFolder, text: '{ "scope": [' })
 	if (params.brief === 'scopeNotList')
-		replaceRecord({
-			folder: lotFolder,
-			name: 'brief.json',
-			text: JSON.stringify({ scope: OVERLAPPING_SCOPE[0] }),
-		})
+		recordBrief({ lotFolder, text: JSON.stringify({ scope: OVERLAPPING_SCOPE[0] }) })
 	return { start, lotFolder }
 }
 
@@ -60,6 +59,7 @@ describe('a healthy open lot whose brief cannot be read', { timeout: STORE_CASE_
 			expect(refusal).toMatchObject({ field: 'scope', rule: 'overlap' })
 			expect(refusal?.detail).toContain(`overlap with ${DAMAGED_NAME}`)
 			expect(refusal?.detail).toContain(SCOPE_UNREADABLE)
+			expect(refusal?.detail).not.toContain('(damaged:')
 			expect(entriesOf(start.store)).toEqual([DAMAGED_NAME])
 		})
 })

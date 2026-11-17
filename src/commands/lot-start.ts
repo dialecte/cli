@@ -49,6 +49,7 @@ import {
 	overlapsOverLimit,
 } from '../lib/store/lot-overlaps.ts'
 import { overlapLotLabelOf, overlappingOpenLots, readLotScope } from '../lib/store/lot-records.ts'
+import { writePlanEntry } from '../lib/store/plan-entry.ts'
 import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
@@ -565,9 +566,8 @@ function startChecked(params: {
 		}),
 		// a simulated start writes no risk.jsonl; a real one's lines ride the publish rename
 		...(simulation === undefined && {
-			beforeIdentity: function writeRiskLines(temporary: string) {
-				writeStartRiskLines({ folder: temporary, risk, now })
-				writeStartOverlaps({ folder: temporary, brief, goAhead: risk.goAhead, now })
+			beforeIdentity: function writeStartRecords(temporary: string) {
+				writeStartRecordsTo({ folder: temporary, brief, risk, now })
 			},
 		}),
 	})
@@ -777,6 +777,19 @@ function riskLinesOf(params: {
 			},
 		}),
 	]
+}
+
+/** The records a real start publishes with its folder: its risk lines, accepted overlaps and plan entry. */
+function writeStartRecordsTo(params: {
+	folder: string
+	brief: CheckedBrief
+	risk: StartRisk
+	now: Date
+}): void {
+	const { folder, brief, risk, now } = params
+	writeStartRiskLines({ folder, risk, now })
+	writeStartOverlaps({ folder, brief, goAhead: risk.goAhead, now })
+	if (brief.planEntry !== undefined) writePlanEntry({ folder, entry: brief.planEntry })
 }
 
 /**

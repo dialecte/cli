@@ -123,6 +123,21 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		noJson: PLAIN_TEXT,
 	},
 	'lot land': { argv: ['land', FORGED_WORD], quotes: true },
+	'lot pr': { argv: ['pr', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'lot brief': {
+		argv: [
+			'brief',
+			FORGED_WORD,
+			'--from',
+			FORGED_WORD,
+			'--by',
+			FORGED_WORD,
+			'--reason',
+			FORGED_WORD,
+		],
+		quotes: true,
+		noJson: PLAIN_TEXT,
+	},
 	'changelog check': { argv: ['check', FORGED_WORD], quotes: false, reason: RUNS_CHECKS },
 	'changelog release': { argv: ['release', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
 	contrib: {

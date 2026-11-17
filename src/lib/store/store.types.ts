@@ -20,6 +20,8 @@ export type TransitionCauseKind =
 	| 'overlap'
 	| 'stop'
 	| 'ready'
+	/** `lot brief`: the brief's public text rewritten; state and position kept. */
+	| 'brief'
 
 export type TransitionCause = { kind: TransitionCauseKind; by: string; reason: string }
 
@@ -55,6 +57,8 @@ export type Transition = {
 	cause: TransitionCause
 	question: QuestionRecord | null
 	simulated: boolean
+	/** A `brief` transition: the sha256 (hex) of the brief it replaced and of the brief it published. */
+	brief?: { from: string; to: string }
 }
 
 /** A transition before it has its number. */
@@ -157,7 +161,8 @@ export type StoreFileNames = Readonly<
 		| 'scopeChanges'
 		| 'review'
 		| 'tests'
-		| 'overlaps',
+		| 'overlaps'
+		| 'planEntry',
 		string
 	>
 >

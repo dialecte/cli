@@ -3,6 +3,8 @@ export type PullRequest = {
 	number: number
 	url: string
 	title: string
+	/** Its description as the host holds it (the squash commit's body). */
+	body: string
 	state: 'open' | 'merged' | 'closed'
 	draft: boolean
 	/** True while the host merges it once its checks pass (auto-merge on, or in the merge queue). */
@@ -30,11 +32,12 @@ export type HostAdapter = {
 		body: string
 		draft: boolean
 	}): PullRequest | HostRefusal
-	/** The pull request's title replaced by `title`. */
-	retitlePullRequest(params: {
+	/** The pull request's title and body replaced by `title` and `body`. */
+	editPullRequest(params: {
 		root: string
 		number: number
 		title: string
+		body: string
 	}): HostRefusal | undefined
 	/** The pull request closed: taken out of the merge queue, never merged. */
 	closePullRequest(params: { root: string; number: number }): HostRefusal | undefined

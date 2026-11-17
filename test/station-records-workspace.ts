@@ -1,7 +1,7 @@
 /**
  * What the station-records tests write by hand into a lot folder and its worktree: events at named seconds of the
  * test day, snapshots with their `.state`, gate records with their steps, the brief and the identity's effort.
- * Plain files: no code under test.
+ * Plain files, but for a brief recorded as `lot brief` records it (`recordBrief`).
  */
 import { chmodSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,6 +16,7 @@ import {
 	SNAPSHOT_STATE_HASH,
 	STEP_EVENTS_CLI,
 } from './station-records-workspace.constants.ts'
+import { recordBrief } from './store-records.ts'
 
 import type { LotEvent } from '../src/lib/events/event.types.ts'
 import type { StationLot } from './lot-station-workspace.types.ts'
@@ -173,10 +174,7 @@ export function writeLotBrief(params: {
 		steps,
 		effort: params.effort,
 	})
-	rewriteRecord({
-		path: join(params.lot.lotFolder, 'brief.json'),
-		text: `${JSON.stringify(brief, null, 2)}\n`,
-	})
+	recordBrief({ lotFolder: params.lot.lotFolder, text: `${JSON.stringify(brief, null, 2)}\n` })
 }
 
 /** The identity's effort level changed, or removed (`undefined`: the identity holds none). */

@@ -28,8 +28,11 @@ export const PUBLIC_TEXT_REFUSAL = 'lot {verb}: {option} holds a {label}: nothin
 /** A word of a text, as plan entry ids are matched against it: letters, digits, `_` and inner `-` or `.`. */
 export const WORD_PATTERN = /[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*/g
 
-/** Where a word splits into the parts a plan entry id is also matched against (`ci2a-lot`: `ci2a`, `lot`). */
-export const WORD_PART_SEPARATOR = '-'
+/**
+ * Where a word splits into the parts a plan entry id is also matched against: `-`, `.` and `_` (`ci2a-lot`,
+ * `ci2a.notes`, `ci2a_notes`: `ci2a`).
+ */
+export const WORD_PART_SEPARATOR = /[-._]/
 
 /** The label of a plan entry id, as a refusal names it (`holds a plan entry id`). */
 export const PLAN_ENTRY_ID_LABEL = 'plan entry id'
@@ -37,3 +40,6 @@ export const PLAN_ENTRY_ID_LABEL = 'plan entry id'
 /** A verb that could not read the lists its public-text check needs: `{reason}` why; nothing written. */
 export const PUBLIC_TEXT_UNCHECKED_REFUSAL =
 	'lot {verb}: {option} not checked: {reason}: nothing written'
+
+/** A plan entry id made of letters only: an ordinary word too, matched only as written (`CONFIG`, `T`). */
+export const WORD_LIKE_ID_PATTERN = /^[A-Za-z]+$/

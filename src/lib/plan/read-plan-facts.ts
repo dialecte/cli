@@ -18,7 +18,11 @@ import { createLandedProbe, readLandedLotState } from '../store/lot-entry.ts'
 import { isOpenRealLot, readLotScope, settledLotStateInput } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
-import { STORE_FILES, TEMPORARY_FOLDER_PATTERN } from '../store/store.constants.ts'
+import {
+	RECORD_DAMAGE_REASONS,
+	STORE_FILES,
+	TEMPORARY_FOLDER_PATTERN,
+} from '../store/store.constants.ts'
 import { mainCheckoutFaultOf } from './check-plan-block.ts'
 import { readPlanMarks } from './plan-marks.ts'
 import {
@@ -128,8 +132,8 @@ function readRepositoryFacts(params: { path: string }): RepositoryFacts {
 /**
  * The lots of the repository's store, by name. A lot whose records do not hold (damaged) reads `failed`, open
  * unless simulated: the conservative side, its scope stays held. Damaged, besides: a lot folder whose identity
- * does not read (the shared reader leaves it out), an open lot whose state does not read or whose brief gives no
- * scope.
+ * does not read (the shared reader leaves it out), an open lot whose state does not read, and an open lot named by
+ * its brief: one whose brief gives no scope or was edited by hand (the brief damage).
  */
 function readStoreLotFacts(params: {
 	location: StoreLocation
@@ -155,8 +159,11 @@ function readStoreLotFacts(params: {
 				: first
 		const open = input === undefined ? !identity.simulated : isOpenRealLot(input)
 		const scope = readLotScope({ lotFolder })
-		if (open && input === undefined) damaged.push({ kind: 'store', name, file: lotFolder })
-		else if (open && scope.length === 0)
+		const briefDamaged =
+			checked !== undefined && 'damage' in checked && checked.damage === RECORD_DAMAGE_REASONS.brief
+		if (open && input === undefined && !briefDamaged)
+			damaged.push({ kind: 'store', name, file: lotFolder })
+		else if (open && (briefDamaged || scope.length === 0))
 			damaged.push({ kind: 'store', name, file: join(lotFolder, STORE_FILES.brief) })
 		return {
 			name,

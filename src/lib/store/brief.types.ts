@@ -1,3 +1,4 @@
+import type { LotPlanEntry } from './plan-entry.types.ts'
 import type { LotOverlap, Refusal } from './store.types.ts'
 
 export type BriefEffort = 'low' | 'medium' | 'high'
@@ -53,6 +54,8 @@ export type CheckedBrief = {
 	summary?: string
 	/** The issue the lot's pull request closes; absent when the brief gives none. */
 	issue?: number
+	/** The plan entry the lot carries out, when exactly one entry of the plans the machine knows is on its branch. */
+	planEntry?: LotPlanEntry
 	/** Whether the repository sits on a case-insensitive volume (probed, or the injected value). */
 	caseInsensitive: boolean
 	/** A simulated start's overlap and branch findings, which refused nothing; none for a real start. */

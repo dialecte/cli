@@ -2,7 +2,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { FIRST_WORD } from '../../../test/forbidden-words-workspace.constants.ts'
+import { configureMachine } from '../../../test/forbidden-words-workspace.ts'
 import { landingRepository, landOnOrigin, recordingHost } from '../../../test/land-lot.ts'
+import { cliTemplate } from '../../../test/lot-pr.ts'
 import {
 	cloneRepository,
 	git,
@@ -10,11 +13,16 @@ import {
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { TEMPLATE_PATH } from '../pr/pull-request.constants.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf } from './handover-store.ts'
 import { confirmLanding, landLot } from './land-lot.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(function restoreEnvironment() {
+	vi.unstubAllEnvs()
+})
 
 import type { LandingRepository } from '../../../test/land-lot.types.ts'
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
@@ -60,6 +68,7 @@ function pullRequestOf(params: { state: PullRequest['state']; head: string }): P
 		number: 7,
 		url: 'https://host.test/pull/7',
 		title: 'feat(x): x answers one',
+		body: '',
 		state: params.state,
 		draft: false,
 		queued: false,
@@ -335,7 +344,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		land({ repository, host })
 
-		expect(calls).toEqual(['read feat/x', 'queue 7'])
+		expect(calls).toEqual(['read feat/x', 'edit 7 "feat(x): x answers one"', 'queue 7'])
 	})
 
 	it('a closed pull request of the branch → a new one opened', () => {
@@ -607,3 +616,166 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		}).toEqual({ line: undefined, state: 'pending' })
 	})
 })
+
+describe(
+	'landLot renders the pull request from the lot records',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		it('a lot with no pull request → opened with the body rendered through the template', () => {
+			const repository = landingRepository()
+			const { host, bodies } = recordingHost()
+
+			land({ repository, host, draft: true })
+
+			expect(bodies).toHaveLength(1)
+			expect(bodies[0]).toMatch(/^### Summary\n\nnot recorded\n\n### Behaviours\n/)
+			expect(bodies[0]).toContain('### Checklist for the reviewer when doing the PR review')
+		})
+
+		it('its pull request open with another text → edited to the rendered title and body, the line says so', () => {
+			const repository = landingRepository()
+			const { host, calls, bodies } = recordingHost({
+				existing: {
+					...pullRequestOf({ state: 'open', head: '' }),
+					title: 'merge: main',
+					body: '',
+				},
+			})
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(calls).toContain('edit 7 "feat(x): x answers one"')
+			expect(bodies[0]).toContain('### Summary')
+			expect(landed.lines).toContain('pull request #7 updated from the lot records')
+		})
+
+		it('a commit message holding a forbidden word → refused naming the record, nothing pushed', () => {
+			configureMachine({ userFileLines: [FIRST_WORD] })
+			const repository = landingRepository({ messages: [`feat(x): ${FIRST_WORD} answers`] })
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: the pull request text holds a forbidden word \`${FIRST_WORD}\` in brief.json lots[0].message: rewrite that record, nothing sent`,
+				],
+			})
+			expect(calls).toEqual([])
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+
+		it('a repository without the template → refused naming it, nothing pushed', () => {
+			const repository = landingRepository({ template: null })
+			const { host } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed.exitCode).toBe(1)
+			expect(landed.lines).toEqual([
+				"lot land: the lot's head holds no .github/pull_request_template.md: copy the cli's template into the repository",
+			])
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+
+		it("main's template changed after the cut so the rebased head no longer renders → refused before the push, nothing pushed", () => {
+			const repository = landingRepository()
+			landOnOrigin({
+				origin: repository.origin,
+				files: { [TEMPLATE_PATH]: '### No markers here\n' },
+			})
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed.exitCode).toBe(1)
+			expect(calls).not.toContainEqual(expect.stringMatching(/^open /))
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+
+		it('a base branch origin does not hold → a refusal line, never a throw', () => {
+			const repository = landingRepository()
+			const { host, calls } = recordingHost()
+
+			function landOnMissingBase() {
+				return landLot({
+					...repository,
+					lot: '0001-repo-x',
+					branch: 'feat/x',
+					base: 'release',
+					host,
+					draft: true,
+					now: NOW,
+				})
+			}
+
+			expect(landOnMissingBase).not.toThrow()
+			expect(landOnMissingBase()).toEqual({
+				exitCode: 1,
+				lines: ['lot land: origin holds no branch release to land on: nothing pushed'],
+			})
+			expect(calls).toEqual([])
+		})
+
+		it('a reused pull request that already reads the records → no edit asked', () => {
+			const repository = landingRepository()
+			const first = recordingHost()
+			land({ repository, host: first.host, draft: true })
+			const { host, calls } = recordingHost({
+				existing: {
+					...pullRequestOf({ state: 'open', head: '' }),
+					body: first.bodies[0].replaceAll('\n', '\r\n'),
+				},
+			})
+
+			land({ repository, host, draft: true })
+
+			expect(calls).not.toContainEqual(expect.stringMatching(/^edit /))
+		})
+
+		it("a person's ticks after the kept marker of the reused pull request → kept in the edited body", () => {
+			const repository = landingRepository()
+			const kept =
+				'### Checklist for the reviewer when doing the PR review\n\n- [x] Tests are complete'
+			const { host, bodies } = recordingHost({
+				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: `old\n\n${kept}\n` },
+			})
+
+			land({ repository, host, draft: true })
+
+			expect(bodies[0]?.endsWith(`\n\n${kept}`)).toBe(true)
+		})
+
+		it('the host refusing the edit of a reused pull request → exit 1, the landing still recorded', () => {
+			const repository = landingRepository()
+			const { host } = recordingHost({
+				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: '' },
+				editRefusal: 'gh pr edit: HTTP 403',
+			})
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(landed.exitCode).toBe(1)
+			expect(landed.lines.at(-1)).toBe('lot land: gh pr edit: HTTP 403')
+			expect(existsSync(join(repository.lotFolder, 'landing.json'))).toBe(true)
+		})
+
+		it("a lot cut before main held the template's markers → its early check reads origin's template, it lands after its rebase", () => {
+			const repository = landingRepository({ template: null })
+			landOnOrigin({ origin: repository.origin, files: { [TEMPLATE_PATH]: cliTemplate() } })
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(landed.exitCode).toBe(0)
+			expect(calls).toContainEqual(expect.stringMatching(/^open feat\/x -> main /))
+		})
+	},
+)

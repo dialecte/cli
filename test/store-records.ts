@@ -1,7 +1,12 @@
-/** Records of a lot store, as the tests write them (plain files: no code of the store under test). */
-import { mkdirSync, writeFileSync } from 'node:fs'
+/**
+ * Records of a lot store, as the tests write them: plain files, but for `recordBrief`, which appends its transition
+ * through the store.
+ */
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { appendTransition } from '../src/lib/store/transitions.ts'
 import { RECORD_TIME } from './store-records.constants.ts'
 
 import type { StoreEntry } from '../src/lib/handover/handover.types.ts'
@@ -103,4 +108,34 @@ export function writeRecordFile(params: { folder: string; name: string; text: st
 	mkdirSync(join(path, '..'), { recursive: true })
 	writeFileSync(path, params.text)
 	return path
+}
+
+/**
+ * The lot's `brief.json` replaced by `text` as `lot brief` records it: the file, then a `brief` transition with the
+ * hashes of the brief it replaced and of `text`, the last state and position kept.
+ */
+export function recordBrief(params: { lotFolder: string; text: string }): void {
+	const path = join(params.lotFolder, 'brief.json')
+	const before = existsSync(path) ? readFileSync(path) : Buffer.from('')
+	if (existsSync(path)) chmodSync(path, 0o644)
+	writeFileSync(path, params.text)
+	appendTransition({
+		lotFolder: params.lotFolder,
+		next: function briefTransition({ last }) {
+			return {
+				at: RECORD_TIME,
+				lot: last?.lot ?? '',
+				state: last?.state ?? 'working',
+				position: last?.position ?? { step: 0, of: 1, station: null, round: null },
+				cause: { kind: 'brief', by: 'a person', reason: 'the brief of the case' },
+				question: null,
+				simulated: last?.simulated ?? false,
+				brief: { from: sha256Of(before), to: sha256Of(params.text) },
+			}
+		},
+	})
+}
+
+function sha256Of(content: string | Buffer): string {
+	return createHash('sha256').update(content).digest('hex')
 }
