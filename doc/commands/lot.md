@@ -181,8 +181,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              only; appends the run to the lot folder's forecast.jsonl (one line per comparison, one
              write, each line at most 4,096 bytes: 10 shared paths, 10 conflict paths, 3 ranges per
              path, the rest counted in moreShared and more) and a forecast event; --json { lot,
-             verdict, lines }; a clean forecast does not promise a semantic merge, three lots
-             landing together, or work not written yet
+             verdict, lines }; exit 0 clean, 1 a conflict or an exclusive path (or the run could not
+             be written), 3 unknown, 2 usage, an unknown id, a damaged, closed or simulated lot, or
+             --against the lot itself or a lot of another store; a clean forecast does not promise a
+             semantic merge, three lots landing together, or work not written yet
   risk - reads the lot folder's (or hand-over folder's) risk.jsonl and the worktree's diff against
          the lot's base, writing nothing: the risk class derived now with its reasons (high: a
          changed file in the package's dialecte.risk.high list, the base's and the worktree's
@@ -362,9 +364,6 @@ exit codes:
   4  wait: an agent failed or hit a limit, run again
   5  wait --timeout, result: still working
   6  status, wait, result: the lot is damaged: a person must look
-  1  forecast: a conflict or an exclusive path; the run could not be written
-  2  forecast: usage; unknown id; a damaged, closed or simulated lot; --against the lot itself or a lot of another store
-  3  forecast: unknown (the forecast could not run in full)
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 

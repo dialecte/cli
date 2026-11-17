@@ -180,6 +180,11 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		quotes: true,
 		json: ['status', FORGED_WORD, '--json'],
 	},
+	'lot forecast': {
+		argv: ['forecast', FORGED_WORD],
+		quotes: true,
+		json: ['forecast', FORGED_WORD, '--json'],
+	},
 	'lot risk': { argv: ['risk', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	'lot scope': {
 		argv: ['scope', FORGED_WORD, '--drop', 'a.md', '--by', 'a-person', '--reason', 'a reason'],
