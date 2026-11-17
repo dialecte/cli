@@ -450,6 +450,71 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	})
 })
 
+describe(
+	'landLot: a branch with nothing beyond the base, and its own earlier push',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		/** The lot's branch on origin, or empty when origin has none. */
+		function originBranchOf(repository: LandingRepository): string {
+			return git({
+				root: repository.root,
+				args: ['ls-remote', 'origin', 'refs/heads/feat/x'],
+			}).trim()
+		}
+
+		it("a branch holding no commit beyond origin's base → refused before any push or pull request", () => {
+			const repository = landingRepository()
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
+			const { host, calls } = recordingHost()
+
+			const result = land({ repository, host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				refused: result.lines.some((line) => line.includes('holds no commit beyond origin/main')),
+				origin: originBranchOf(repository),
+				opened: calls.filter((call) => call.startsWith('open')),
+			}).toEqual({ exitCode: 1, refused: true, origin: '', opened: [] })
+		})
+
+		it("origin's branch at a commit the base holds (a push that opened no pull request) → pushed over it, the pull request opened", () => {
+			const repository = landingRepository()
+			git({ root: repository.root, args: ['push', '-q', 'origin', 'main:refs/heads/feat/x'] })
+
+			const result = land({ repository, host: recordingHost().host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				origin: originBranchOf(repository).split('\t')[0],
+			}).toEqual({
+				exitCode: 0,
+				origin: tipOf(repository),
+			})
+		})
+
+		it('a host refusing to open after the push, then the lot landed again with a new commit → its own earlier push recognised, pushed and opened', () => {
+			const repository = landingRepository()
+			const refusing: HostAdapter = {
+				...recordingHost().host,
+				openPullRequest: () => ({ refusal: 'gh pr create: offline' }),
+			}
+			land({ repository, host: refusing, draft: true })
+			writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 2\n' } })
+			git({ root: repository.worktree, args: ['commit', '-qam', 'fix(x): x answers two'] })
+
+			const result = land({ repository, host: recordingHost().host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				origin: originBranchOf(repository).split('\t')[0],
+			}).toEqual({
+				exitCode: 0,
+				origin: tipOf(repository),
+			})
+		})
+	},
+)
+
 describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it("the landing's pull request merged at the head it pushed → the lot's hand-over entry committed, one line naming it", () => {
 		const repository = landingRepository()
@@ -496,13 +561,12 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		).toBe('pending')
 	})
 
-	it.each([
-		{ label: 'merged at another head', state: 'merged' as const },
-		{ label: 'still open', state: 'open' as const },
-	])("the landing's pull request $label → nothing changes, no line", ({ state }) => {
+	it("the landing's pull request merged at another head → nothing marked, a line naming the heads", () => {
 		const repository = landingRepository()
 		land({ repository, host: recordingHost().host })
-		const { host } = recordingHost({ existing: pullRequestOf({ state, head: 'f'.repeat(40) }) })
+		const { host } = recordingHost({
+			existing: pullRequestOf({ state: 'merged', head: 'f'.repeat(40) }),
+		})
 
 		const line = confirmLanding({
 			root: repository.worktree,
@@ -510,12 +574,36 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			host,
 		})
 
-		expect(line).toBeUndefined()
-		expect(
-			registeredEntryOf({
+		expect({
+			line: line?.startsWith(
+				`pull request #7 merged at ${'f'.repeat(12)}, the lot holds commits since (`,
+			),
+			state: registeredEntryOf({
 				store: handoverStoreOf(repository.worktree),
 				folder: repository.lotFolder,
 			})?.state,
-		).toBe('pending')
+		}).toEqual({ line: true, state: 'pending' })
+	})
+
+	it("the landing's pull request still open → nothing marked, no line", () => {
+		const repository = landingRepository()
+		land({ repository, host: recordingHost().host })
+		const { host } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: 'f'.repeat(40) }),
+		})
+
+		const line = confirmLanding({
+			root: repository.worktree,
+			lotFolder: repository.lotFolder,
+			host,
+		})
+
+		expect({
+			line,
+			state: registeredEntryOf({
+				store: handoverStoreOf(repository.worktree),
+				folder: repository.lotFolder,
+			})?.state,
+		}).toEqual({ line: undefined, state: 'pending' })
 	})
 })

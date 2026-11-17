@@ -1,4 +1,4 @@
-/** `dialecte lot close <hand-over name|index>... [--json]`: see `closeHandovers`. */
+/** `dialecte lot close <hand-over name|lot id|index>... [--json]`: see `closeHandovers`. */
 import { dirname, join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
@@ -15,6 +15,7 @@ import { confirmLanding } from '../lib/handover/land-lot.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { jsonOf } from '../lib/print/print.ts'
+import { locateStore } from '../lib/store/store-folder.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
@@ -51,14 +52,16 @@ export function runLotClose(params: {
 	}
 	// the base branch is the host's first (a queue merges there): the landed reading and the main checkout follow it
 	const synced = syncBaseBranch({ root: main })
-	// a lot the merge queue landed is committed once its pull request merged at the head its landing pushed
+	// a lot the merge queue landed is committed once its pull request merged at the head its landing pushed or its tip
 	const store = findHandoverStore(main)
+	const lotStore = locateStore({ from: main })?.store
 	const confirmed = names.flatMap(function confirmed(name) {
-		const entry = entryOfArgument({ argument: name, store })
+		const entry = entryOfArgument({ argument: name, store, lotStore })
 		if (entry === undefined || entry.state !== 'pending') return []
 		const line = confirmLanding({
 			root: main,
 			lotFolder: entry.folder,
+			worktree: entry.worktree,
 			host: params.host ?? createGithubHost(),
 		})
 		return line === undefined ? [] : [line]
@@ -76,7 +79,7 @@ export function runLotClose(params: {
 		return resultOf({
 			exitCode: 2,
 			lines: [
-				`lot close: the registry holds no hand-over named or indexed ${results.unknown.join(', ')}: nothing closed`,
+				`lot close: the registry holds no hand-over named, lot named or indexed ${results.unknown.join(', ')}: nothing closed`,
 			],
 		})
 	const outcomes = results.map((result) => result.outcome)

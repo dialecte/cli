@@ -30,6 +30,7 @@ import {
 	OVERWRITE_PATTERN,
 	UNTRACKED_STATUS_PREFIX,
 } from './land-lot.constants.ts'
+import { LANDING_MERGED_AT_OTHER_HEAD, NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding, readReplacedHeads } from './land-record.ts'
 import { pullRequestTextOf } from './land-title.ts'
 
@@ -74,9 +75,13 @@ export function landLot(params: {
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
 	if (known.pullRequest?.state === 'merged')
 		return mergedLanding({ ...params, pullRequest: known.pullRequest })
-	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push
+	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push, so a lot
+	// main already holds gets the registry's committed answer before the one below
 	const registered = registerLotEntry({ ...params })
 	if ('refusal' in registered) return refused(registered.refusal)
+	// a branch the base already holds has nothing to land: refused before any push or pull request
+	const empty = nothingBeyondBase({ worktree, branch, base })
+	if (empty !== undefined) return refused(empty)
 	const { entry } = registered
 	const lines: string[] = []
 	const progress = readWorkInProgress({ worktree })
@@ -93,7 +98,7 @@ export function landLot(params: {
 			),
 		)
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	const expected = landing?.branch === branch ? landing.head : ''
+	const expected = leaseOf({ worktree, branch, base, lotFolder: params.lotFolder })
 	const pushProblem = pushLot({ worktree, branch, expected })
 	if (pushProblem !== undefined)
 		return {
@@ -107,6 +112,8 @@ export function landLot(params: {
 							.replace('{reason}', () => pushProblem),
 			],
 		}
+	// kept at once: a host that refuses to open the pull request must not make the next landing's push "outside"
+	recordPushedHead({ lotFolder: params.lotFolder, branch, head })
 	lines.push(
 		LANDING_LINES.pushed
 			.replace('{branch}', () => branch)
@@ -361,6 +368,71 @@ function recordReplacedHead(params: { lotFolder: string; branch: string; head: s
 }
 
 /**
+ * The refusal of a lot whose HEAD origin's base already holds (no commit of its own to land); undefined when it holds
+ * one, or origin has no such base.
+ */
+function nothingBeyondBase(params: {
+	worktree: string
+	branch: string
+	base: string
+}): string | undefined {
+	const { worktree } = params
+	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
+	if (
+		tryReadGit({ root: worktree, args: ['rev-parse', '--verify', '--quiet', originBase] }) ===
+		undefined
+	)
+		return undefined
+	if (!isAncestorCommit({ root: worktree, ancestor: 'HEAD', descendant: originBase }))
+		return undefined
+	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	return NOTHING_BEYOND_BASE_LINE.replace('{branch}', () => params.branch)
+		.replace('{base}', () => params.base)
+		.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))
+}
+
+/**
+ * The head the push's lease expects on origin: the one the lot's last push recorded (`landing.json`, written right
+ * after each push), else origin's branch when origin's base holds it (it carries no work: an earlier push of a
+ * landing that opened no pull request), else none (the branch must not exist on origin).
+ */
+function leaseOf(params: {
+	worktree: string
+	branch: string
+	base: string
+	lotFolder: string
+}): string {
+	const { worktree, branch } = params
+	const raw = readRawLanding({ lotFolder: params.lotFolder })
+	if (raw?.branch === branch && typeof raw.head === 'string') return raw.head
+	const remote = tryReadGit({
+		root: worktree,
+		args: ['rev-parse', '--verify', '--quiet', `${ORIGIN_BRANCH_REF_PREFIX}${branch}`],
+	})?.trim()
+	if (remote === undefined) return ''
+	return isAncestorCommit({
+		root: worktree,
+		ancestor: remote,
+		descendant: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+	})
+		? remote
+		: ''
+}
+
+/**
+ * The head just pushed kept in `landing.json`, whole or not at all: its other fields kept for the same branch, dropped
+ * for another (a pull request number, its url and the replaced heads of another branch are not this landing's).
+ */
+function recordPushedHead(params: { lotFolder: string; branch: string; head: string }): void {
+	const existing = readRawLanding({ lotFolder: params.lotFolder })
+	const raw = existing?.branch === params.branch ? existing : {}
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify({ ...raw, schema: LANDING_SCHEMA, branch: params.branch, head: params.head }, null, 2)}\n`,
+	})
+}
+
+/**
  * Pushes the lot's branch with a lease pinned to `expected` (the head its last landing pushed; empty: the branch must
  * not exist on origin), never a prompt; git's first line when it refuses.
  */
@@ -465,9 +537,11 @@ function writeLanding(params: {
 }
 
 /**
- * A lot whose landing's pull request merged at the head it recorded is committed: its hand-over entry says so, the
- * line naming the pull request. A host that cannot say (offline, `gh` missing) changes nothing, its line says why.
- * Undefined when there is no landing, or the pull request is not merged at that head.
+ * A lot whose landing's pull request merged is committed when it merged at the head the landing recorded, or at the
+ * worktree's HEAD (the lot's tip, pushed outside `lot land`: the record then takes that head, the one it named kept in
+ * `replaced`); its hand-over entry says so, the line naming the pull request. Merged at another head: a line naming
+ * the heads, nothing marked. A host that cannot say (offline, `gh` missing) changes nothing, its line says why.
+ * Undefined when there is no landing, or the pull request is not merged.
  *
  * @intent mark a lot committed once the merge queue landed it
  * @internal
@@ -475,6 +549,8 @@ function writeLanding(params: {
 export function confirmLanding(params: {
 	root: string
 	lotFolder: string
+	/** The lot's worktree, whose HEAD is the lot's tip; left out when it has none. */
+	worktree?: string
 	host: HostAdapter
 }): string | undefined {
 	const landing = readLanding({ lotFolder: params.lotFolder })
@@ -487,8 +563,19 @@ export function confirmLanding(params: {
 		return LANDING_LINES.hostSilent
 			.replace('{number}', String(landing.number))
 			.replace('{reason}', () => pullRequest.refusal)
-	if (pullRequest === undefined) return undefined
-	if (pullRequest.state !== 'merged' || pullRequest.head !== landing.head) return undefined
+	if (pullRequest === undefined || pullRequest.state !== 'merged') return undefined
+	if (pullRequest.head !== landing.head) {
+		const tip =
+			params.worktree === undefined
+				? undefined
+				: tryReadGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] })?.trim()
+		if (pullRequest.head !== tip)
+			return LANDING_MERGED_AT_OTHER_HEAD.replace('{number}', String(pullRequest.number))
+				.replace('{merged}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
+				.replace('{landed}', landing.head.slice(0, SHORT_SHA_LENGTH))
+				.replace('{head}', (tip ?? 'none').slice(0, SHORT_SHA_LENGTH))
+		refreshLandingHead({ lotFolder: params.lotFolder, landing, head: pullRequest.head })
+	}
 	recordHandoverState({
 		store: findHandoverStore(params.root),
 		folder: params.lotFolder,
@@ -496,8 +583,27 @@ export function confirmLanding(params: {
 	})
 	return LANDING_LINES.committed
 		.replace('{number}', String(pullRequest.number))
-		.replace('{commit}', landing.head.slice(0, SHORT_SHA_LENGTH))
+		.replace('{commit}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
 		.replace('{url}', () => pullRequest.url)
+}
+
+/** The landing record's head moved to `head` (what merged), the head it named kept last in `replaced`. */
+function refreshLandingHead(params: {
+	lotFolder: string
+	landing: LandingRecord
+	head: string
+}): void {
+	const raw = readRawLanding({ lotFolder: params.lotFolder }) ?? {}
+	const record = {
+		...raw,
+		head: params.head,
+		replaced: [...params.landing.replaced, params.landing.head],
+	}
+	// whole or not at all, as every landing record write
+	replaceWhole({
+		path: join(params.lotFolder, LANDING_FILE),
+		text: `${JSON.stringify(record, null, 2)}\n`,
+	})
 }
 
 function refused(line: string): LandingResult {

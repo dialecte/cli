@@ -6,7 +6,7 @@
  * (same real path) keeps its name. An argument may name an entry by its name, or by its worktree's index.
  */
 import { existsSync, mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { commonGitFolderOf } from '../git.ts'
 import {
@@ -88,16 +88,23 @@ export function resolveHandoverArgument(params: {
 }
 
 /**
- * The entry an argument names (a word without a path separator): the entry of that name, else, for a number,
- * the newest entry of the worktree of that index (`0171` or `171`); undefined when it names none.
+ * The entry an argument names (a word without a path separator): the entry of that name, else, given the lot store,
+ * the entry registering the lot folder of that name (`lot close 0124-cli-x` for a hand-over named otherwise), else,
+ * for a number, the newest entry of the worktree of that index (`0171` or `171`); undefined when it names none.
  */
 export function entryOfArgument(params: {
 	argument: string
 	store: string | undefined
+	/** The repository's lot store (`<git common folder>/dialecte-lots`); left out, lot names are not read. */
+	lotStore?: string
 }): StoreEntry | undefined {
 	const { argument, store } = params
 	if (!store || isPathArgument(argument)) return undefined
-	const named = readStoreEntry({ store, name: argument })
+	const named =
+		readStoreEntry({ store, name: argument }) ??
+		(params.lotStore === undefined
+			? undefined
+			: registeredEntryOf({ store, folder: join(params.lotStore, argument) }))
 	if (named || !STORE_INDEX_ARGUMENT_PATTERN.test(argument)) return named
 	return newestOfIndex({ entries: readStoreEntries(store), index: Number(argument) })
 }
