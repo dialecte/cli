@@ -1,6 +1,6 @@
 {
 	"name": "@dialecte/cli",
-	"version": "0.8.0",
+	"version": "0.8.1",
 	"description": "Dialecte CLI",
 	"license": "MIT",
 	"repository": {
@@ -8,7 +8,7 @@
 		"url": "git+https://github.com/dialecte/cli.git"
 	},
 	"bin": {
-		"dialecte": "./dist/cli.js"
+		"dialecte": "dist/cli.js"
 	},
 	"files": [
 		"dist",
