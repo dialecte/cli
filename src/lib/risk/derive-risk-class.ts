@@ -18,7 +18,13 @@ import {
 	RISK_TEST_FILE_PATTERN,
 } from './risk.constants.ts'
 
-import type { ApiChange, RiskDerivation, RiskDiffFile, RiskReason } from './risk.types.ts'
+import type {
+	ApiChange,
+	DeclaredMatch,
+	RiskDerivation,
+	RiskDiffFile,
+	RiskReason,
+} from './risk.types.ts'
 
 /** The risk class of a diff: high, medium or light, with every reason for high in file order. */
 export function deriveRiskClass(params: {
@@ -58,25 +64,46 @@ export function deriveStartRiskClass(params: {
 	scope: string[]
 }): RiskDerivation {
 	const reasons = params.scope.flatMap(function reasonsOfScope(entry): RiskReason[] {
-		// an entry that is a declared glob's own folder (`src/lib/store` for `src/lib/store/**`) is declared too
-		const declared = params.declaredHigh.find(function holdsEntry(glob) {
-			return (
-				entry === glob ||
-				matchesGlob({ path: entry, glob }) ||
-				matchesGlob({ path: `${entry}/`, glob })
-			)
-		})
-		if (declared !== undefined) return [{ kind: 'declared', file: entry, detail: declared }]
-		const entryLiteral = literalPartOf(entry)
-		return params.declaredHigh
-			.filter(function mayBeTouched(glob) {
-				return literalPartOf(glob).startsWith(entryLiteral)
-			})
-			.map(function broadReason(glob): RiskReason {
-				return { kind: 'broad-scope', detail: `broad scope: may touch ${glob}` }
-			})
+		return declaredMatchesOf({ declaredHigh: params.declaredHigh, entry }).map(
+			function reasonOfMatch(match): RiskReason {
+				return match.kind === 'declared'
+					? { kind: 'declared', file: entry, detail: match.glob }
+					: { kind: 'broad-scope', detail: `broad scope: may touch ${match.glob}` }
+			},
+		)
 	})
 	return reasons.length > 0 ? { class: 'high', reasons } : { class: 'medium', reasons: [] }
+}
+
+/**
+ * The declared globs a scope entry (or a file) reaches: the first glob that holds it (`declared`; an entry that is a
+ * declared glob's own folder, `src/lib/store` for `src/lib/store/**`, is held too), else every glob it is broader than
+ * (`broad-scope`). None for an entry outside every declared area.
+ *
+ * @intent tell which declared shared areas a path or a scope entry reaches
+ * @internal
+ */
+export function declaredMatchesOf(params: {
+	declaredHigh: readonly string[]
+	entry: string
+}): DeclaredMatch[] {
+	const { entry } = params
+	const declared = params.declaredHigh.find(function holdsEntry(glob) {
+		return (
+			entry === glob ||
+			matchesGlob({ path: entry, glob }) ||
+			matchesGlob({ path: `${entry}/`, glob })
+		)
+	})
+	if (declared !== undefined) return [{ kind: 'declared', glob: declared }]
+	const entryLiteral = literalPartOf(entry)
+	return params.declaredHigh
+		.filter(function mayBeTouched(glob) {
+			return literalPartOf(glob).startsWith(entryLiteral)
+		})
+		.map(function broadMatch(glob): DeclaredMatch {
+			return { kind: 'broad-scope', glob }
+		})
 }
 
 /**

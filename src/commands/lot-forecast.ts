@@ -9,6 +9,8 @@ import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
 import { forecastConflictsText } from '../lib/coordination/forecast-view.ts'
 import { FORECAST_EXIT_CODES } from '../lib/coordination/forecast.constants.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
+import { designStatusLine } from '../lib/design/design-line.ts'
+import { lotDesignStandingOf } from '../lib/design/design-standing.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
@@ -92,8 +94,25 @@ export function lotForecast(params: {
 	}
 	return {
 		exitCode,
-		output: textOf([...forecastTextLines({ lot, run }), ...(eventNote ? [eventNote] : [])]),
+		output: textOf(textLinesOf({ lot, run, lotFolder: lotFolder.folder, eventNote })),
 	}
+}
+
+/**
+ * The text of `lot forecast`: where the lot's design stands (before more code is written, DESIGN-GATE section 1), then
+ * the run's lines, its verdict last, then the event note when the event could not be written.
+ */
+function textLinesOf(params: {
+	lot: string
+	run: ForecastRun
+	lotFolder: string
+	eventNote: string | undefined
+}): string[] {
+	return [
+		designStatusLine(lotDesignStandingOf({ lotFolder: params.lotFolder })),
+		...forecastTextLines(params),
+		...(params.eventNote ? [params.eventNote] : []),
+	]
 }
 
 /** The text of a run: a header, one line per comparison, the verdict last. */

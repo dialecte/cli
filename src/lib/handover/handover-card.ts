@@ -20,6 +20,7 @@ import {
 	buildCardGateLines,
 	buildContribLines,
 	buildMutationLines,
+	buildDesignLine,
 	buildLateFixesLine,
 	buildEffortLine,
 	buildForecastLine,
@@ -239,6 +240,7 @@ export function buildHandoverCard(params: {
 		? buildForecastLine({ folder: params.folder, view: forecastView })
 		: undefined
 	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
+	const designLine = params.release ? undefined : buildDesignLine({ folder: params.folder })
 	// the run's merges guard refuses a pending merge lot without its tree: the card says so in its words
 	const mergesLine = pending
 		? mergeTreeLineOf({
@@ -270,6 +272,8 @@ export function buildHandoverCard(params: {
 		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
 		// a lot that changed its scope after the start: the changes, the adds with who and why; none: no line
 		...(scopeLine ? [scopeLine] : []),
+		// where the lot's design stands (DESIGN-GATE, DG1: a warning at most, never a refusal); none on a release
+		...(designLine ? [designLine] : []),
 		...(forecastLine ? [forecastLine] : []),
 		...(stackLine ? [stackLine] : []),
 		...(mergesLine ? [mergesLine] : []),

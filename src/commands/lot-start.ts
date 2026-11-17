@@ -12,6 +12,9 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { resultOf } from '../lib/command-result.ts'
 import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
+import { designNeedLine } from '../lib/design/design-line.ts'
+import { designNeedOf } from '../lib/design/design-need.ts'
+import { heldPlanEntryOf } from '../lib/design/design-standing.ts'
 import { NODE_MODULES_WORDS, NPM_RUN_METHODS } from '../lib/events/record-step.constants.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathThroughAncestors } from '../lib/file-system.ts'
@@ -23,7 +26,7 @@ import { jsonOf, textOf } from '../lib/print/print.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { readDeclaredHigh } from '../lib/risk/derive-lot-risk-class.ts'
+import { readDeclaredHigh } from '../lib/risk/declared-high.ts'
 import { deriveStartRiskClass } from '../lib/risk/derive-risk-class.ts'
 import { appendRiskLine, effortOfClass, isEffortBelow } from '../lib/risk/risk-records.ts'
 import {
@@ -97,6 +100,7 @@ import {
 } from './lot-start.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { DesignNeed } from '../lib/design/design.types.ts'
 import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
 import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
@@ -362,6 +366,20 @@ export function askedClassOf(prepared: PreparedStart): RiskClass | undefined {
 }
 
 /**
+ * The lot's design need at its start (DESIGN-GATE section 1), from the brief before any folder exists: its plan
+ * entry's kind, its scope, the shared areas its repository declares.
+ */
+function startDesignNeedOf(params: { brief: CheckedBrief }): DesignNeed {
+	const { brief } = params
+	return designNeedOf({
+		entryKind:
+			brief.planEntry === undefined ? undefined : heldPlanEntryOf(brief.planEntry)?.entry.kind,
+		declaredHigh: readDeclaredHigh({ root: brief.repository }),
+		paths: brief.scope,
+	})
+}
+
+/**
  * The start once its effort is known: refused below the class without `--by` and `--reason`, then the dry run or the
  * start itself.
  */
@@ -391,6 +409,7 @@ export function finishStart(params: {
 		})
 	const riskLines = [
 		...riskLinesOf({ effort, derivation, goAhead: prepared.goAhead }),
+		designNeedLine(startDesignNeedOf({ brief })),
 		...startOverlapLinesOf({ brief, goAhead: prepared.goAhead, now: prepared.now }),
 		...clearedOverlapLinesOf({ brief }),
 	]

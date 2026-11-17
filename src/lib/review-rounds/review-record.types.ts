@@ -1,3 +1,5 @@
+import type { DesignStateName } from '../design/design.types.ts'
+
 /** Who gave a review's verdict: a review station of the lot's loop, a `lot verify` by its name, or a person. */
 export type ReviewerOf =
 	| { kind: 'station'; station: string; round?: number }
@@ -38,11 +40,22 @@ export type VerdictRow = {
 	head?: string
 }
 
-/** A row of `review.jsonl`. */
-export type ReviewRow = FindingRow | VerdictRow
+/**
+ * Where the lot's design stands (DESIGN-GATE section 4), one row when the lot recorded anything about its design: its
+ * state and who approved or waived it, a name kept only when it is a public word; never the file, its hash or a reason.
+ */
+export type DesignRow = {
+	schema: 1
+	kind: 'design'
+	state: DesignStateName
+	by?: ReviewerOf
+}
 
-/** The rows of a folder's `review.jsonl`, by kind, each in file order. */
-export type ReviewRecord = { findings: FindingRow[]; verdicts: VerdictRow[] }
+/** A row of `review.jsonl`. */
+export type ReviewRow = FindingRow | VerdictRow | DesignRow
+
+/** The rows of a folder's `review.jsonl`, by kind, each in file order; the design row when there is one. */
+export type ReviewRecord = { findings: FindingRow[]; verdicts: VerdictRow[]; design?: DesignRow }
 
 /** Whether a path names a file of the lot's tree; undefined when the folder names no worktree. */
 export type TreeFileTest = ((path: string) => boolean) | undefined

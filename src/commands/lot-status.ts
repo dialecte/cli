@@ -6,6 +6,8 @@ import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { forecastViewOf } from '../lib/coordination/forecast-view.ts'
+import { designJsonLine, designStatusJson } from '../lib/design/design-line.ts'
+import { shownDesignStandingOf } from '../lib/design/design-standing.ts'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -157,7 +159,17 @@ export function lotStatusOfInput(params: {
 		station: station?.next ?? null,
 		rounds: roundsOf({ input, lotFolder }),
 		...stackStatusOf({ lotFolder }),
+		...designStatusOf({ lotFolder }),
 	}
+}
+
+/**
+ * The design block of a lot that needs a design or recorded anything about it (DESIGN-GATE section 4), the approver
+ * by kind, and its line; none for a lot that needs none and recorded none.
+ */
+function designStatusOf(params: { lotFolder: string }): Pick<LotStatusJson, 'design'> {
+	const standing = shownDesignStandingOf(params)
+	return standing === undefined ? {} : { design: designStatusJson(standing) }
 }
 
 /** The stack field of a lot started on another; none for a lot not stacked. */
@@ -299,6 +311,7 @@ export function lotStatusLines(status: LotStatusJson): string[] {
 	const [first] = status.questions
 	const missing = checksText(status.checks)
 	const allRest = [
+		status.design === undefined ? undefined : designJsonLine(status.design),
 		belowLineOf(status),
 		first ? `questions: ${status.questions.length} open, ${first.id}: ${first.text}` : undefined,
 		missing ? `checks: ${missing}` : undefined,

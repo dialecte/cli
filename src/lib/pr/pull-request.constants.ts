@@ -74,6 +74,8 @@ export const BODY_LINES = {
 	noFindings: 'No finding.',
 	fixedIn: 'fixed in round {round}',
 	verdictsHeader: 'Verdicts:',
+	design: 'Design: {state}{by}',
+	designBy: ' by {kind}',
 	risk: 'risk class {riskClass} · effort {effort}',
 	noOverlaps: 'none',
 	noGate: 'gate: not recorded, CI is the proof',

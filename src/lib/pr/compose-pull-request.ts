@@ -4,7 +4,9 @@
  * each part from the record as it stands, "not recorded" for a record missing, never a guess.
  */
 import { counted } from '../counted.ts'
+import { DESIGN_STATE_WORDS } from '../design/design.constants.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	BODY_LINES,
 	CHECKLIST_LINES,
@@ -22,7 +24,12 @@ import {
 	TEMPLATE_FAULTS,
 } from './pull-request.constants.ts'
 
-import type { FindingRow, ReviewerOf, VerdictRow } from '../review-rounds/review-record.types.ts'
+import type {
+	DesignRow,
+	FindingRow,
+	ReviewerOf,
+	VerdictRow,
+} from '../review-rounds/review-record.types.ts'
 import type { TestsRecordGate, TestsRecordTdd } from '../tdd/tests-record.types.ts'
 import type { PullRequestSources, PullRequestText } from './pull-request.types.ts'
 
@@ -263,7 +270,27 @@ function reviewLines(sources: PullRequestSources): string[] {
 		review.verdicts.length === 0
 			? []
 			: ['', BODY_LINES.verdictsHeader, ...review.verdicts.map(verdictLine)]
-	return [...findings, ...verdicts]
+	return [...designLines(review.design), ...findings, ...verdicts]
+}
+
+/** The design's line, first in the review part: its state and who approved or waived it, by kind; none without a row. */
+function designLines(row: DesignRow | undefined): string[] {
+	if (row === undefined) return []
+	return [
+		fillMessage({
+			template: BODY_LINES.design,
+			values: {
+				state: DESIGN_STATE_WORDS[row.state],
+				by:
+					row.by === undefined
+						? ''
+						: fillMessage({
+								template: BODY_LINES.designBy,
+								values: { kind: reviewerName(row.by) },
+							}),
+			},
+		}),
+	]
 }
 
 function findingLine(row: FindingRow): string {
@@ -289,8 +316,11 @@ function verdictLine(row: VerdictRow): string {
 /**
  * Who gave a verdict, by kind only: a review station (with its round), a verify, the orchestrator or a person; never a
  * person's or a verifier's name (the host shows who approves).
+ *
+ * @intent name who reviewed or approved by kind, never by name
+ * @internal
  */
-function reviewerName(by: ReviewerOf): string {
+export function reviewerName(by: ReviewerOf): string {
 	if (by.kind === 'station')
 		return by.round === undefined ? by.station : `${by.station} round ${by.round}`
 	if (by.kind === 'verify') return REVIEWER_KINDS.verify

@@ -39,6 +39,10 @@ export const STORE_FILES: StoreFileNames = {
 	pulledComments: 'pulled-comments.jsonl',
 	// `lot forecast` appends one line per comparison of a run, the run in one write (33CO CO2a)
 	forecast: 'forecast.jsonl',
+	// `lot design` appends each recorded design, approval and waiver here (DESIGN-GATE)
+	design: 'design.jsonl',
+	// `lot design --from` copies each recorded content here, as `<sha256>.md`: the text approved survives its source
+	designCopies: 'design',
 }
 
 /** The folder of the store in the repository's git common folder. */
