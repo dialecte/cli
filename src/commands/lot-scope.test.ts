@@ -37,7 +37,7 @@ afterEach(function restoreEnvironment() {
 const NOW = new Date('2026-11-14T10:00:00.000Z')
 const SCOPE_CHANGES_FILE = 'scope-changes.jsonl'
 const USAGE =
-	'lot scope: expected <id> [--drop <path>]... [--add <path>]... --by <who> --reason <text>'
+	'lot scope: expected <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>'
 /** Who and why, which every drop gives (FIX-scope-narrow D4). */
 const DROP_WHO = ['--by', 'person-a', '--reason', 'hand back']
 

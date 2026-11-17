@@ -34,9 +34,11 @@
 		"test:run": "vitest run",
 		"test:hook": "node src/cli.ts gate --hook",
 		"skills:check": "node src/cli.ts skills check",
-		"check": "npm run type-check && npm run lint:check && npm run format:check",
+		"check": "npm run type-check && npm run lint:check && npm run format:check && npm run doc:check",
 		"prepublishOnly": "node src/release-check.ts && npm run build",
-		"prepare": "husky"
+		"prepare": "husky",
+		"doc:generate": "node src/lib/command-map/command-reference-main.ts",
+		"doc:check": "node src/lib/command-map/command-reference-main.ts --check"
 	},
 	"dependencies": {
 		"jsonc-parser": "3.3.1",

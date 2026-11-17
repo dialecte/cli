@@ -40,8 +40,7 @@ export function answerRenamed(params: {
 	const newWords = newWordsOf(form)
 	const command = words.length
 		? [`${USAGE_PREFIX}${newWords}`, ...words.map(shellWord)].join(' ')
-		: (COMMAND_MAP.lot.usage.find((line) => line.startsWith(`${USAGE_PREFIX}${newWords}`)) ??
-			`${USAGE_PREFIX}${newWords}`)
+		: newFormUsageOf(newWords)
 	return textOf([
 		RENAMED_LINE.replace('{old}', oldWordsOf(form)).replace('{new}', newWords),
 		`${SECTION_INDENT}${command}`,
@@ -61,6 +60,15 @@ export function renamedJson(params: { command: RenamedCommandName; argv: string[
 /** Every old form with its new one, words after `dialecte`, in the table's order. */
 export function allRenamedWords(): RenamedWords[] {
 	return RENAMED_FORMS.map(renamedWordsOf)
+}
+
+/** The usage line of a new form (its words after `dialecte`) in the lot section; the bare form when none. */
+export function newFormUsageOf(newWords: string): string {
+	return (
+		COMMAND_MAP.lot.usage.find((line) => line.startsWith(`${USAGE_PREFIX}${newWords} `)) ??
+		COMMAND_MAP.lot.usage.find((line) => line === `${USAGE_PREFIX}${newWords}`) ??
+		`${USAGE_PREFIX}${newWords}`
+	)
 }
 
 /** One old form with its new one, words after `dialecte`. */

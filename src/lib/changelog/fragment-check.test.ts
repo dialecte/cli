@@ -1,4 +1,4 @@
-/** A visible change brings its changelog fragment: a README or command-map edit adds `changes/<name>.md` (or a note). */
+/** A visible change brings its changelog fragment: a README, command page or command-map edit adds `changes/<name>.md` (or a note). */
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../../test/scratch-checks.constants.ts'
 import { createScratchRepository, git, writeFiles } from '../../../test/scratch-repository.ts'
 import { checkChangeFragment } from './fragment-check.ts'
@@ -38,6 +38,16 @@ describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		},
 	])('$label → failed, naming the file', ({ files, failed }) => {
 		expect(checkChangeFragment(changeOf({ files }))).toEqual({ status: 'failed', reason: failed })
+	})
+
+	it('a command page edited, no fragment → failed, naming the page', () => {
+		const change = changeOf({ files: { 'doc/commands/gate.md': '# dialecte gate\n\nmore.\n' } })
+
+		expect(checkChangeFragment(change)).toEqual({
+			status: 'failed',
+			reason:
+				'doc/commands/gate.md changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
+		})
 	})
 
 	it.each<{ label: string; files: Record<string, string>; problem: string }>([

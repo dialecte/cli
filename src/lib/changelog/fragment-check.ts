@@ -1,6 +1,6 @@
 /**
- * A visible change brings its changelog fragment: in a package keeping `changes/`, a change that edits the README or
- * the command map adds `changes/<name>.md`, or a no-entry note `changes/<name>.none.md` saying why it has none.
+ * A visible change brings its changelog fragment: in a package keeping `changes/`, a change that edits the README, a
+ * command page or the command map adds `changes/<name>.md`, or a no-entry note `changes/<name>.none.md` saying why it has none.
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +44,7 @@ export function checkChangeFragment(params: { root: string; base: string }): Fra
 				.replace('{reason}', () => errorReasonOf(error).split('\n')[0]),
 		}
 	}
-	const asking = changed.find((file) => FRAGMENT_ASKING_FILES.includes(file))
+	const asking = changed.find((file) => asksForFragment(file))
 	if (asking === undefined) return { status: 'passed', note: FRAGMENT_CHECK_LINES.nothingAsked }
 	if (changed.includes(CHANGELOG_FILE))
 		return { status: 'passed', note: FRAGMENT_CHECK_LINES.release }
@@ -83,4 +83,11 @@ function listChangeOf(params: { root: string; base: string }): string[] {
 	})
 	const untracked = readGit({ root, args: ['ls-files', '--others', '--exclude-standard'] })
 	return [...new Set(`${tracked}\n${untracked}`.split('\n').filter(Boolean))]
+}
+
+/** Whether a changed file asks for a fragment: one of `FRAGMENT_ASKING_FILES`, or under one of its folders. */
+function asksForFragment(file: string): boolean {
+	return FRAGMENT_ASKING_FILES.some((entry) =>
+		entry.endsWith('/') ? file.startsWith(entry) : file === entry,
+	)
 }

@@ -34,6 +34,23 @@ const HEADER_FILES = [
 	'lib/standard/record-standard.ts',
 ]
 
+/** The command index page, from the package root: it holds the table of the renamed forms. */
+const COMMAND_INDEX = 'doc/commands/index.md'
+
+/** The README and every page under doc/, each with its path from the package root. */
+function documentationPages(): Array<{ path: string; text: string }> {
+	const root = join(import.meta.dirname, '..')
+	const pages = existsSync(join(root, 'doc'))
+		? readdirSync(join(root, 'doc'), { recursive: true, encoding: 'utf8' })
+				.filter((path) => path.endsWith('.md'))
+				.map((path) => join('doc', path).split('\\').join('/'))
+		: []
+	return ['README.md', ...pages].map((path) => ({
+		path,
+		text: readFileSync(join(root, path), 'utf8'),
+	}))
+}
+
 describe('the cli', { timeout: 30_000 }, () => {
 	it('lock → an unknown command, exit 1, nothing run; the help lists no lock', () => {
 		const marker = join(temporaryFolder('dialecte-cli-lock-'), 'ran')
@@ -61,13 +78,15 @@ describe('the cli', { timeout: 30_000 }, () => {
 			encoding: 'utf8',
 			cwd: temporaryFolder('dialecte-cli-tdd-'),
 		})
-		const readme = readFileSync(join(import.meta.dirname, '..', 'README.md'), 'utf8')
+		const docs = documentationPages()
+			.map((page) => page.text)
+			.join('\n')
 
 		expect(usage.status).toBe(2)
 		expect(`${usage.stdout}${usage.stderr}`).toContain('tdd: red | green | status')
 		expect(`${usage.stdout}${usage.stderr}`).not.toContain('--no-wait')
-		expect(readme).not.toContain('--no-wait')
-		expect(readme).not.toContain('lock run')
+		expect(docs).not.toContain('--no-wait')
+		expect(docs).not.toContain('lock run')
 	})
 
 	it('--help lists contrib in the Check family', () => {
@@ -132,19 +151,24 @@ describe('the cli', { timeout: 30_000 }, () => {
 		expect(citations).toEqual([])
 	})
 
-	it('the README has a "Renamed in 1.0" table and cites the old forms nowhere else', () => {
-		const readme = readFileSync(join(import.meta.dirname, '..', 'README.md'), 'utf8')
-		const lines = readme.split('\n')
+	it('the command index has a "Renamed in 1.0" table; the README and the command pages cite the old forms nowhere else', () => {
+		const pages = documentationPages()
+		const lines = (pages.find((page) => page.path === COMMAND_INDEX)?.text ?? '').split('\n')
 		const heading = lines.findIndex((line) => /^#{1,6} .*Renamed in 1\.0/.test(line))
 		const level = heading < 0 ? 0 : (lines[heading].match(/^#+/)?.[0].length ?? 0)
 		const next = lines.findIndex(
 			(line, index) => index > heading && new RegExp(`^#{1,${Math.max(level, 1)}} `).test(line),
 		)
 		const section = heading < 0 ? [] : lines.slice(heading, next < 0 ? lines.length : next)
-		const outside = lines.filter((line, index) => {
-			const inside = heading >= 0 && index >= heading && index < heading + section.length
-			return !inside && OLD_FORM_PATTERN.test(line)
-		})
+		const outside = [
+			...lines.filter((line, index) => {
+				const inside = heading >= 0 && index >= heading && index < heading + section.length
+				return !inside && OLD_FORM_PATTERN.test(line)
+			}),
+			...pages
+				.filter((page) => page.path !== COMMAND_INDEX)
+				.flatMap((page) => page.text.split('\n').filter((line) => OLD_FORM_PATTERN.test(line))),
+		]
 
 		expect(heading).toBeGreaterThanOrEqual(0)
 		expect(section.filter((line) => line.startsWith('|')).length).toBeGreaterThanOrEqual(2 + 7)
