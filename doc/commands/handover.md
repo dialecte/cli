@@ -169,7 +169,9 @@ Flags: `--release`, `--target`, `--out`, `--rehash`, `--json`, `--print`, `--reh
     verdict strictly after the snapshot's time (`round-<n>.state`'s `at`, else `round-<n>.base`'s mtime; a
     tie is not after), shown `independent review <verdict>`; or, for a folder without step events (no
     `events.jsonl`, or events saying the worktree's cli writes none), a ledger row of a round above it,
-    shown `independent review: round 3 in the ledger` (`rounds 3-4`). None: `✗ review  no independent
+    shown `independent review: round 3 in the ledger` (`rounds 3-4`); or, in a lot's folder or a hand-over folder
+    alike, a `lot verify` line strictly after that time (a clean last round leaves no ledger row), shown
+    `independent review: verified by <who>`. None: `✗ review  no independent
     review after round <n>`, the card BLOCKED. Beyond the cap each round names its first go-ahead row
     (`3 review rounds (cap 1, round 2 by <who>, round 3 by <who>)`), a round without one gives `! review
     3 review rounds, cap 2, no go-ahead recorded` (a warning); no effort recorded: `2 review rounds (no

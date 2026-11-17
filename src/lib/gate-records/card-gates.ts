@@ -43,6 +43,7 @@ import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
 import { formatDuration } from '../progress/format-duration.ts'
+import { independentVerifyPart } from '../review-rounds/independent-verify.ts'
 import { readLateFixes } from '../review-rounds/late-fixes.ts'
 import { independentLedgerRounds, readReviewLedger } from '../review-rounds/ledger-rounds.ts'
 import { snapshotRounds } from '../review-rounds/round-names.ts'
@@ -986,7 +987,7 @@ export function buildReviewLine(params: { folder: string; release?: boolean }): 
 			? independentVerdictPart({ verdict })
 			: ledgerPart
 				? { status: 'passed', detail: ledgerPart }
-				: undefined
+				: independentVerifyPart({ folder, lastRound })
 	if (independent === undefined)
 		return {
 			name: REVIEW_LINE_NAME,
