@@ -3,7 +3,7 @@
  * moved since never shows, what the lot deletes still names the tree, what no commit holds never passes.
  */
 import { writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { pullRequestLot } from '../../../test/lot-pr.ts'
 import { git, writeFiles } from '../../../test/scratch-repository.ts'
@@ -158,6 +158,34 @@ describe(
 			expect('refusal' in prepared ? prepared.refusal : 'rendered').toBe(
 				'the pull request text holds a path outside the tree or a link `notes/a/plan.md` in brief.json summary: rewrite that record, nothing sent',
 			)
+		})
+	},
+)
+
+describe(
+	'readPullRequestSources reads the accepted overlaps',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it('a lot with an accepted overlap → the other lot and the reason, never the met paths or who', () => {
+			const lot = pullRequestLot()
+			writeFileSync(
+				join(lot.lotFolder, 'overlaps.jsonl'),
+				`${JSON.stringify({
+					schema: 1,
+					at: '2026-11-17T00:00:00.000Z',
+					verb: 'start',
+					lot: '0007-repo-other',
+					met: ['src/a meets src/a/b.ts'],
+					by: 'person-a',
+					reason: 'separate lines in one file',
+				})}\n`,
+			)
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.overlaps).toEqual([
+				{ lot: '0007-repo-other', reason: 'separate lines in one file' },
+			])
 		})
 	},
 )

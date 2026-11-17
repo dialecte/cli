@@ -48,7 +48,11 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 			: changelog.kind === 'none'
 				? [{ record: changelog.file, text: changelog.reason }]
 				: changelog.entries.map((entry) => ({ record: entry.file, text: entry.text }))
-	return [...messages, ...summary, ...steps, ...changes]
+	const overlaps = (sources.overlaps ?? []).map((overlap) => ({
+		record: PIECE_RECORDS.overlap,
+		text: overlap.reason,
+	}))
+	return [...messages, ...summary, ...steps, ...changes, ...overlaps]
 }
 
 /** The first piece holding what a public body never holds, by record; undefined when every piece passes. */

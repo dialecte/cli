@@ -33,6 +33,10 @@ const TEMPLATE = `<!-- dialecte: rendered from the lot's records -->
 
 <!-- dialecte:risk -->
 
+### Overlaps
+
+<!-- dialecte:overlaps -->
+
 ### Issue
 
 <!-- dialecte:issue -->
@@ -127,6 +131,7 @@ const FULL: PullRequestSources = {
 		],
 	},
 	riskClass: 'medium',
+	overlaps: [{ lot: '0007-repo-other', reason: 'separate lines in one file' }],
 	effort: 'medium',
 	docsPassed: true,
 	versionBumped: false,
@@ -209,6 +214,10 @@ Verdicts:
 
 risk class medium · effort medium
 
+### Overlaps
+
+- 0007-repo-other: separate lines in one file
+
 ### Issue
 
 Closes #12
@@ -232,9 +241,16 @@ Closes #12
 		})
 
 		expect(
-			['Summary', 'Behaviours', 'Changelog', 'Tests', 'Review', 'Risk and effort', 'Issue'].map(
-				(heading) => partOf({ body, heading }),
-			),
+			[
+				'Summary',
+				'Behaviours',
+				'Changelog',
+				'Tests',
+				'Review',
+				'Risk and effort',
+				'Overlaps',
+				'Issue',
+			].map((heading) => partOf({ body, heading })),
 		).toEqual([
 			'not recorded',
 			'not recorded',
@@ -242,6 +258,7 @@ Closes #12
 			'not recorded',
 			'not recorded',
 			'risk class not recorded · effort not recorded',
+			'none',
 			'none named',
 		])
 		expect(partOf({ body, heading: 'Checklist' })).not.toContain('[x]')

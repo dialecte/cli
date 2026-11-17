@@ -139,6 +139,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 				kind: 'entries',
 				entries: [{ section: 'Added', text: '- E.', file: 'changes/x.md' }],
 			},
+			overlaps: [{ lot: '0007-repo-other', reason: 'separate lines' }],
 			treeHash: 'a',
 			versionBumped: false,
 			release: false,
@@ -152,6 +153,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 			{ record: 'brief.json steps[0].behaviours[0]', text: 'a -> b' },
 			{ record: 'brief.json steps[0].behaviours[1]', text: 'c -> d' },
 			{ record: 'changes/x.md', text: '- E.' },
+			{ record: 'overlaps.jsonl', text: 'separate lines' },
 		])
 	})
 

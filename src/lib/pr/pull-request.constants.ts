@@ -20,6 +20,7 @@ export const FILLED_PARTS: readonly string[] = [
 	'tests',
 	'review',
 	'risk',
+	'overlaps',
 	'issue',
 	'checklist',
 ]
@@ -56,6 +57,8 @@ export const BODY_LINES = {
 	fixedIn: 'fixed in round {round}',
 	verdictsHeader: 'Verdicts:',
 	risk: 'risk class {riskClass} · effort {effort}',
+	noOverlaps: 'none',
+	overlap: '- {lot}: {reason}',
 } as const
 
 /** The author's checklist, each box ticked from a record or left for the reviewer. */
@@ -77,6 +80,7 @@ export const PIECE_RECORDS = {
 	stepTitle: 'brief.json steps[{index}].title',
 	behaviour: 'brief.json steps[{index}].behaviours[{behaviour}]',
 	changelog: '{file}',
+	overlap: 'overlaps.jsonl',
 } as const
 
 /** The label of a path no public body holds (a link, or a path the lot's tree does not hold). */

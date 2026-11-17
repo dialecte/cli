@@ -17,6 +17,7 @@ import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts
 import { readListedPatterns } from '../rules/committed-text.ts'
 import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
 import { lotsOf } from '../store/brief.ts'
+import { readLotOverlaps } from '../store/lot-overlaps.ts'
 import { folderPlanEntryIds } from '../store/public-text.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { readTestsRecord } from '../tdd/tests-record.ts'
@@ -115,6 +116,10 @@ export function readPullRequestSources(params: {
 	const review = readReviewRecord({ folder: params.lotFolder })
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
+	const overlaps = readLotOverlaps({ lotFolder: params.lotFolder }).overlaps.map((record) => ({
+		lot: record.lot,
+		reason: record.reason,
+	}))
 	return {
 		messages: lots.lots.map((lot) => lot.message.trim()),
 		...(typeof brief.summary === 'string' && { summary: brief.summary }),
@@ -126,6 +131,7 @@ export function readPullRequestSources(params: {
 		...(review !== undefined && { review }),
 		...(standing.comparedClass !== undefined && { riskClass: standing.comparedClass }),
 		...(standing.effort !== undefined && { effort: standing.effort }),
+		...(overlaps.length > 0 && { overlaps }),
 		...(docsPassed !== undefined && { docsPassed }),
 		versionBumped:
 			versionAt({ worktree: params.worktree, commit: base }) !==

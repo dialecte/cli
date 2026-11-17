@@ -36,6 +36,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot report <id> [--json]
   dialecte lot report --feature <name> [--simulated] [--json]
   dialecte lot export <id> <dir> [--json]
+  dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>
+  dialecte lot pr <id> [--print] [--json]
   dialecte lot land <id> [--draft]
   dialecte lot close <hand-over name|lot id|index>... [--json]
 
@@ -62,18 +64,40 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   --simulate - start a simulated lot that plays one of the scenarios (ready, question, person,
                two-questions, limit, failure, slow) under wait: no worktree, no branch, no registry
                entry; it never blocks a real lot
+  brief - a working or ready real lot takes a new brief whose only changes are its public text (the
+          summary, the issue, step titles and behaviours); any other change is refused naming the
+          field, nothing written; the new brief passes the start's field and public-text checks; it
+          replaces the stored brief and a brief transition records the sha256 of the old and new
+          brief, --by and --reason, the state and position kept; the same brief again answers
+          already, nothing written; a simulated lot is refused; brief.json edited any other way
+          reads as damage
+  pr - renders the lot's pull request from its records through the repository's
+       .github/pull_request_template.md: the title is the brief's first commit message, the body its
+       summary and other commit messages, step titles and behaviours, the changelog fragments the
+       lot adds, tests.json (a part of another tree reads stale), review.jsonl (findings and how
+       each closed, the verdicts), the risk class and effort, the overlaps it accepted (the other
+       lot and why), the issue it closes, and the author's checklist ticked from the records; a
+       missing record reads not recorded; the record text is checked first (a reference, a forbidden
+       word, a plan entry id, a link or a path outside the tree refused, naming the word and the
+       record); the open pull request (landing.json's, else the branch's newest) is edited only when
+       its title or body reads otherwise, a person's part after the kept marker kept; --print prints
+       and sends nothing; no pull request yet prints the text and names lot land --draft; --json {
+       title, body, pullRequest, head, sent }
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
-         for a clean worktree), pushed with a lease, its pull request opened (titled with the first
-         commit message of its brief, never the last commit of the branch; the others listed in the
-         body) or reused (retitled when it reads otherwise), then queued (gh pr merge --auto: the
-         merge queue merges it once its checks pass on top of main); --draft opens a draft and never
-         queues it, CI running on every push; the landing (number, url, branch, pushed tip, the
-         heads its rebases replaced) recorded in <lot folder>/landing.json, read by lot close; a
-         branch with no commit beyond origin's base is refused before any push; the pushed head is
-         kept in landing.json at once, so a pull request the host refused to open does not make the
-         next push one outside lot land; the host is GitHub through gh, which never prompts
+         for a clean worktree), pushed with a lease, its title and body rendered from the lot's
+         records through the repository's .github/pull_request_template.md on the rebased head
+         before the push (as lot pr renders them; records that do not render, or a base branch
+         origin does not hold, push nothing), its pull request opened with them or reused (edited
+         when its title or body reads otherwise, a person's part after the kept marker kept), then
+         queued (gh pr merge --auto: the merge queue merges it once its checks pass on top of main);
+         --draft opens a draft and never queues it, CI running on every push; the landing (number,
+         url, branch, pushed tip, the heads its rebases replaced) recorded in <lot
+         folder>/landing.json, read by lot close; a branch with no commit beyond origin's base is
+         refused before any push; the pushed head is kept in landing.json at once, so a pull request
+         the host refused to open does not make the next push one outside lot land; the host is
+         GitHub through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -267,9 +291,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `land`, `close`
+Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief

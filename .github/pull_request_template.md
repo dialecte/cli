@@ -24,6 +24,10 @@
 
 <!-- dialecte:risk -->
 
+### Overlaps
+
+<!-- dialecte:overlaps -->
+
 ### Issue
 
 <!-- dialecte:issue -->

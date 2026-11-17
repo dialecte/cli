@@ -78,6 +78,9 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 		const rewritten = rewriteThroughVerb({ lot, from })
 
 		expect(rewritten.exitCode).toBe(0)
+		expect(readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')).toContain(
+			'Rewritten through the verb.',
+		)
 		expect(damageOf(lot)).toBeUndefined()
 	})
 

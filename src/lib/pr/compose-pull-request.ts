@@ -111,6 +111,8 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 					.replace('{riskClass}', sources.riskClass ?? NOT_RECORDED)
 					.replace('{effort}', sources.effort ?? NOT_RECORDED),
 			]
+		case 'overlaps':
+			return overlapLines(sources)
 		case 'issue':
 			return [
 				sources.issue === undefined
@@ -120,6 +122,17 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 		default:
 			return checklistLines(sources)
 	}
+}
+
+/** One line per overlap the lot accepted: the other lot and why; `none` without one. */
+function overlapLines(sources: PullRequestSources): string[] {
+	const overlaps = sources.overlaps ?? []
+	if (overlaps.length === 0) return [BODY_LINES.noOverlaps]
+	return overlaps.map(function overlapLine(overlap) {
+		return BODY_LINES.overlap
+			.replace('{lot}', () => overlap.lot)
+			.replace('{reason}', () => overlap.reason)
+	})
 }
 
 /** The summary, then the brief's other commit messages: one squash commit holds them all. */
