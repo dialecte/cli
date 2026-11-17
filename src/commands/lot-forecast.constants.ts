@@ -30,6 +30,3 @@ export const FORECAST_CONFLICT_SEPARATOR = '; '
 
 /** How many characters of a main commit the text names. */
 export const FORECAST_SHORT_COMMIT = 8
-
-/** The state word of a simulated lot in the refusal: a simulated lot has no work to forecast. */
-export const SIMULATED_WORD = 'simulated'

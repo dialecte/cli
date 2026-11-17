@@ -37,7 +37,6 @@ import {
 	FORECAST_SHORT_COMMIT,
 	FORECAST_VALUE_OPTIONS,
 	LOT_FORECAST_TEXTS,
-	SIMULATED_WORD,
 } from './lot-forecast.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -226,11 +225,6 @@ function refusalOf(params: { lotFolder: string }): string | undefined {
 		return fillMessage({
 			template: LOT_FORECAST_TEXTS.damaged,
 			values: { lot, damage: checked.damage },
-		})
-	if (checked.input.identity.simulated)
-		return fillMessage({
-			template: LOT_FORECAST_TEXTS.notOpen,
-			values: { lot, state: SIMULATED_WORD },
 		})
 	if (isOpenRealLot(checked.input)) return undefined
 	return fillMessage({
