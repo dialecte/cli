@@ -41,6 +41,7 @@ export const EXCLUSIVE_FILE_NAMES: ReadonlySet<string> = new Set([
 	'yarn.lock',
 	'bun.lock',
 	'bun.lockb',
+	'uv.lock',
 ])
 
 /** The `against` of the comparison with main. */
@@ -120,3 +121,54 @@ export const MERGE_TREE_UNPARSED = 'its output does not parse'
 
 /** A tree id as merge-tree writes it first. */
 export const TREE_ID_PATTERN = /^[0-9a-f]{40,64}$/
+
+/** Why a lot has no forecast (`forecastLot`'s refusal): damaged, or not open. */
+export const FORECAST_REFUSALS = {
+	damaged: '{lot} damaged: {damage}',
+	notOpen: '{lot} is {state}: only an open lot has a forecast',
+} as const
+
+/** The state word of a simulated lot in the refusal: a simulated lot has no work to forecast. */
+export const FORECAST_SIMULATED_WORD = 'simulated'
+
+/** The lines recording a run prints when a write fails. */
+export const FORECAST_RECORD_TEXTS = {
+	writeFailure: '{file} not written: {message}',
+	eventFailure: '! forecast event not written to {file}: {message}',
+} as const
+
+/** The slashes that end a folder entry, left out when an entry's file name is read. */
+export const TRAILING_SLASHES = /\/+$/u
+
+/** One conflict as text (`<path>:<ranges> (<kind>)`, `<path> (<kind>)` without lines), joined by `; `. */
+export const FORECAST_CONFLICT_TEXTS = {
+	withLines: '{path}:{ranges} ({kind})',
+	withoutLines: '{path} ({kind})',
+	more: '{count} more',
+} as const
+export const FORECAST_CONFLICT_SEPARATOR = '; '
+export const FORECAST_RANGE_SEPARATOR = ', '
+
+/** What holds a pair the forecast does not clear, as the verbs that wait on it say it. */
+export const FORECAST_HOLD_TEXTS = {
+	conflict: 'forecast conflict: {conflicts}',
+	exclusive: 'exclusive: a lock file is never shared',
+	unknown: 'forecast unknown: {reason}',
+} as const
+
+/** The lines the gate prints of its forecast: the verdict, then each comparison it does not clear. */
+export const GATE_FORECAST_TEXTS = {
+	verdict: 'forecast: {verdict}',
+	held: '! {against}: {hold}',
+	failed: '! the forecast could not run: {reason}',
+} as const
+
+/** The age of a stored forecast as a reader shows it (a stale result never counts as clean: its age is said). */
+export const FORECAST_AGE_TEXTS = {
+	minutes: '{count} min ago',
+	hours: '{count} h ago',
+	days: '{count} d ago',
+} as const
+export const MINUTE_MS = 60_000
+export const MINUTES_PER_HOUR = 60
+export const HOURS_PER_DAY = 24

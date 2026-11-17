@@ -163,7 +163,10 @@ the merge queue runs and what its ruleset requires. Nothing is configured: a `ci
     for it; a record counts when its key is the one of the tree the card checks, judged with the hook files and
     gate lists that tree holds - a merge's tree holds its own, whatever the worktree's are now; a hook file git
     does not track is read from disk), then, in a consumer, `mutation` when the package declares a mutation
-    scope (below), then
+    scope (below), then `scope` (the lot's scope changes, the overlaps it accepted, and each open lot it shares
+    scope entries with: `shares <met> with <lot> (forecast <verdict>, <age>)`), then `conflicts` only on a card
+    still to run whose forecast shows a conflict or an unknown (each comparison that does not clear, with what holds
+    it and its age, a pair seen from either lot: the newer line wins; a warning, never a block), then
     `review` from the hand-over folder's findings ledger and `round-<n>/` snapshots (below), then `effort`
     (below; none on a release hand-over), then `late fixes` on a card still to run (below), then `standard`. `✓`
     passed; `!` to look at (a step not run here, with its reason, or not run after a failure; no

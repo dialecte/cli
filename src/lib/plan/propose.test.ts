@@ -330,7 +330,7 @@ const SHARED_ROWS: ProposeRow[] = [
 
 const OVERLAP_BETWEEN_ROWS: ProposeRow[] = [
 	{
-		name: 'two ready candidates overlapping each other: the later is marked after the first (case 22)',
+		name: 'two ready candidates overlapping each other: all proposed, none after another, no open lot shared (case 22, 33CO 4.6)',
 		lots: [
 			lotOf('A', { scope: { cli: ['src/x/'] } }),
 			lotOf('B', { scope: { cli: ['src/x/y.ts'] } }),
@@ -340,9 +340,9 @@ const OVERLAP_BETWEEN_ROWS: ProposeRow[] = [
 			start: ['A', 'B', 'C'],
 			held: [],
 			proposals: [
-				{ id: 'A', after: null },
-				{ id: 'B', after: 'A' },
-				{ id: 'C', after: null },
+				{ id: 'A', shares: [] },
+				{ id: 'B', shares: [] },
+				{ id: 'C', shares: [] },
 			],
 		},
 	},
@@ -352,8 +352,8 @@ const OVERLAP_BETWEEN_ROWS: ProposeRow[] = [
 		repositories: { cli: {}, core: {} },
 		expected: {
 			proposals: [
-				{ id: 'A', after: null },
-				{ id: 'B', after: null },
+				{ id: 'A', shares: [] },
+				{ id: 'B', shares: [] },
 			],
 		},
 	},
@@ -373,7 +373,7 @@ const SPEC_WORK_ROWS: ProposeRow[] = [
 		},
 	},
 	{
-		name: 'an entry waiting on a ready dependency that is held has no spec work (D4e)',
+		name: 'a ready dependency held by an overlap leaves the entry waiting on it with no spec work (D4e)',
 		lots: [
 			lotOf('X', { scope: { cli: ['src/x/'] } }),
 			lotOf('A', { scope: { cli: ['src/x/a.ts'] } }),
@@ -593,7 +593,7 @@ const FIELD_ROWS: ProposeRow[] = [
 		expected: { proposals: [{ id: 'A', next: `write the brief for A (spec ${SPEC_FILE})` }] },
 	},
 	{
-		name: 'next is write the brief when the entry names none',
+		name: 'an entry naming no brief has next: write the brief',
 		lots: [lotOf('A', { spec: SPEC_FILE })],
 		specs: { [SPEC_FILE]: 'written' },
 		expected: { proposals: [{ id: 'A', next: `write the brief for A (spec ${SPEC_FILE})` }] },
@@ -775,8 +775,8 @@ describe('the 2026-11-08 morning proposals', () => {
 			held: [],
 			specWork: [{ ids: ['F'], file: planFile('33F-FIXTURE-BREAK.md'), status: 'DRAFT' }],
 			proposals: [
-				{ id: 'S1a', kind: 'lot', after: null, merge: [], unverified: [], stacks: [] },
-				{ id: 'T', kind: 'fix', after: null, heavy: ['mutation'], stacks: [] },
+				{ id: 'S1a', kind: 'lot', shares: [], merge: [], unverified: [], stacks: [] },
+				{ id: 'T', kind: 'fix', shares: [], heavy: ['mutation'], stacks: [] },
 			],
 		})
 	})
@@ -816,7 +816,7 @@ describe('the 2026-11-10 morning proposals', () => {
 				{
 					id: 'FIX-lookups-docs',
 					kind: 'fix',
-					after: null,
+					shares: [],
 					merge: ['L0a1', 'P0'],
 					unverified: [],
 					stacks: [],

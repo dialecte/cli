@@ -446,11 +446,11 @@ describe('plan next --json: the object of section 9', () => {
 					kind: 'fix',
 					unblocks: 1,
 					chain: 1,
-					after: null,
+					shares: [],
 					stacks: [],
 					next: `dialecte lot start ${briefPath}`,
 				},
-				{ id: 'Fix2', kind: 'fix', unblocks: 0, chain: 0, after: null, stacks: [] },
+				{ id: 'Fix2', kind: 'fix', unblocks: 0, chain: 0, shares: [], stacks: [] },
 			],
 			held: [{ id: 'Held1', open: ['Open1'] }],
 			specWork: [[['Wait1'], true, 'DRAFT']],
@@ -607,17 +607,15 @@ describe('plan next: outside work and candidates meeting each other', () => {
 		})
 	}
 
-	it('two proposals meeting each other: the later says after the first', () => {
+	it('two proposals meeting each other: both proposed, neither says after the other (33CO 4.6)', () => {
 		const workspace = createCommandWorkspace()
 		writeOutsideScenario(workspace)
+		const output = runPlan(nextCall({ workspace })).output
 
-		expect(
-			lineOf({
-				output: runPlan(nextCall({ workspace })).output,
-				label: '',
-				fragments: ['Bx', 'after Ax'],
-			}) !== undefined,
-		).toEqual(true)
+		expect({
+			proposed: lineOf({ output, label: '', fragments: ['Bx'] }) !== undefined,
+			after: output.includes('after Ax'),
+		}).toEqual({ proposed: true, after: false })
 	})
 
 	it('open work no entry accounts for: its own open line, and every proposal of its repository unverified', () => {

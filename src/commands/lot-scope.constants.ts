@@ -29,6 +29,8 @@ export const LOT_SCOPE_TEXTS = {
 	unreadable: 'lot scope: {name}: {file} holds {count} line(s) that do not read: nothing written',
 	fault: 'lot scope: {name}: {path}: {fault}: nothing written',
 	overlap: 'lot scope: {name}: the added paths meet the open lot {lot}: {met}: nothing written',
+	held: 'lot scope: {name}: the added paths meet the open lot {lot}: {met}: {hold}: nothing written',
+	noComparison: 'the forecast compared no work with it',
 	overlapAccepted: 'lot scope: {name} {overlaps}',
 	overlapNotAccepted:
 		'lot scope: {name}: the added paths meet the open lot {lot}: {met}: --overlap-ok accepts only an overlap that names its paths: nothing written',

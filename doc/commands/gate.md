@@ -16,6 +16,11 @@ gate - The package's Definition of Done with the real counts
     lacks it); refuses while a hand-over script holds the repository
   --fast - the default; starts with the worktree's hygiene (nothing staged, no stash on its branch,
            new files declared)
+  in a lot's own worktree, --fast and --full end with the lot's conflict forecast against main and
+    every open lot (as lot forecast, recorded with trigger gate): forecast: <verdict>, then one !
+    <against>: <why> line per comparison it does not clear, said before the notes and the verdict;
+    --json adds forecast { verdict, lines }; a warning only, the gate's verdict and exit never
+    change; none in a review throwaway, none for --release
   a failing vitest test step is rerun once, serially, on its failing files: passing there it is
     flagged flaky in parallel
   the default lists end with a scoped rules step (dialecte rules); a step whose run starts with the
@@ -375,3 +380,11 @@ that is no map is refused like any gate config (exit 2, naming the key and the n
 unseen, and adding the script makes its skip refused until it is removed. An opted-out step runs in no mode (`skip  skills
 opted out: <reason>`; the card warns, never blocks), and a step the package declares has no opt-out: remove it or add its
 script. Adding or removing an opt-out changes the gate record's key, so the gate runs again.
+
+In a lot's own worktree, `--fast` and `--full` end with the lot's conflict forecast (the step `lot forecast` runs,
+recorded in the lot folder's `forecast.jsonl` with trigger `gate`): `forecast: <verdict>`, then one
+`! <against>: <why>` line per comparison it does not clear (a conflict with its files and ranges, a shared lock file,
+or why it is unknown), said after the steps and before the notes and the verdict; `--json` carries `forecast`
+`{ verdict, lines }`. It warns only: two lots whose work collides both see it on their cards, the one landing second
+merges main and resolves, and the gate's verdict and exit stay what its steps made them. A review round's throwaway
+worktree and `--release` run none.

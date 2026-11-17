@@ -6,6 +6,10 @@
 import { basename, dirname, join } from 'node:path'
 
 import { resultOf } from '../lib/command-result.ts'
+import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
+import { forecastHoldText } from '../lib/coordination/forecast-view.ts'
+import { FORECAST_HOLD_TEXTS } from '../lib/coordination/forecast.constants.ts'
+import { forecastLot } from '../lib/coordination/forecast.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { makeEnvelope, overLimitMessage, writeEvent } from '../lib/events/write-event.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -19,7 +23,7 @@ import {
 	normaliseScopeEntry,
 	scopeFaultOf,
 } from '../lib/store/brief-scope.ts'
-import { probeCaseInsensitive } from '../lib/store/brief.ts'
+import { overlapHoldOf, probeCaseInsensitive } from '../lib/store/brief.ts'
 import {
 	appendLotOverlapUndos,
 	appendLotOverlaps,
@@ -70,6 +74,7 @@ import {
 } from './lot-scope.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { ForecastLine, ForecastRun } from '../lib/coordination/forecast.types.ts'
 import type { LotOverlapRecord } from '../lib/store/lot-overlaps.types.ts'
 import type { ScopeChange } from '../lib/store/scope-changes.types.ts'
 import type { LotOverlap } from '../lib/store/store.types.ts'
@@ -224,7 +229,7 @@ function changeScope(params: {
 		const coverage = coverageRefusal({ target, scope, dropped, changes })
 		if (coverage !== undefined) return coverage
 	}
-	const overlap = overlapDecisionOf({ request: params.request, target, added })
+	const overlap = overlapDecisionOf({ request: params.request, target, added, now: params.now })
 	if ('refusal' in overlap) return overlap.refusal
 	return recordChanges({
 		...params,
@@ -233,6 +238,7 @@ function changeScope(params: {
 		removed,
 		accepted: overlap.accepted,
 		recheck: overlap.recheck,
+		run: overlap.run,
 	})
 }
 
@@ -300,43 +306,114 @@ function coverageRefusal(params: {
 }
 
 /**
- * What the add's overlaps allow: with `--overlap-ok`, every overlap that names its paths is accepted, any other refuses
- * the call; without it, the first refuses. The re-check after the write takes the add back for a lot that started or
- * widened meanwhile and was never named by the go-ahead.
+ * What the add's overlaps allow (33CO 4.2): the lot's work is forecast against each open lot the added paths meet (one
+ * run, recorded with trigger `scope`), and a met lot whose pair merges clean is no overlap. What still holds: a damaged
+ * lot or one whose scope does not read, a met lock file, a forecast conflict, a forecast that cannot run. With
+ * `--overlap-ok`, every held overlap that names its paths is accepted, any other refuses the call; without it, the first
+ * refuses. The re-check after the write takes the add back for a lot that started or widened meanwhile and still holds.
  */
 function overlapDecisionOf(params: {
 	request: ScopeRequest
 	target: ScopeTarget
 	added: string[]
+	now: Date
 }):
 	| { refusal: CommandResult }
-	| { accepted: LotOverlap[]; recheck: (() => LotOverlap | undefined) | undefined } {
+	| {
+			accepted: LotOverlap[]
+			recheck: (() => LotOverlap | undefined) | undefined
+			run: ForecastRun | undefined
+	  } {
 	const { target, added } = params
-	if (added.length === 0) return { accepted: [], recheck: undefined }
+	if (added.length === 0) return { accepted: [], recheck: undefined, run: undefined }
 	const overlaps = addOverlapsOf({ target, added })
-	const accepted = params.request.overlapOk ? overlaps.filter(isAcceptableOverlap) : []
-	const [unaccepted] = overlaps.filter((overlap) => !accepted.includes(overlap))
-	if (unaccepted !== undefined)
-		return {
-			refusal: refused({
-				template: params.request.overlapOk
-					? LOT_SCOPE_TEXTS.overlapNotAccepted
-					: LOT_SCOPE_TEXTS.overlap,
-				values: {
-					name: target.name,
-					lot: overlapLotLabelOf(unaccepted),
-					met: overlapMetText(unaccepted),
-				},
-			}),
-		}
+	const forecast = scopeForecastOf({ target, overlaps, now: params.now })
+	const held = overlaps.flatMap((overlap) => {
+		const hold = scopeHoldOf({ overlap, forecast })
+		return hold === undefined ? [] : [{ overlap, hold }]
+	})
+	const accepted = params.request.overlapOk
+		? held.map(({ overlap }) => overlap).filter(isAcceptableOverlap)
+		: []
+	const [unaccepted] = held.filter(({ overlap }) => !accepted.includes(overlap))
+	if (unaccepted !== undefined) return { refusal: overlapRefusalOf({ ...params, ...unaccepted }) }
+	const store = dirname(target.lotFolder)
 	return {
 		accepted,
+		run: forecast.run,
 		recheck: function recheckAdd() {
 			return addOverlapsOf({ target, added }).find(
-				(overlap) => !isCoveredOverlap({ overlap, accepted }),
+				(overlap) =>
+					!isCoveredOverlap({ overlap, accepted }) &&
+					overlapHoldOf({ overlap, store, now: params.now }) !== undefined,
 			)
 		},
 	}
+}
+
+/**
+ * The lot's forecast against the open lots the add meets (trigger `scope`, recorded only once the add stands: a refusal
+ * writes nothing): only when one of them names its paths and no lock file (the others hold whatever the forecast says);
+ * its lines by the other lot, or why it has none.
+ */
+function scopeForecastOf(params: {
+	target: ScopeTarget
+	overlaps: readonly LotOverlap[]
+	now: Date
+}): { lines: Map<string, ForecastLine>; refusal?: string; run?: ForecastRun } {
+	const { target, now } = params
+	const asked = params.overlaps.some(
+		(overlap) =>
+			isAcceptableOverlap(overlap) &&
+			overlap.damage === undefined &&
+			overlap.exclusive === undefined,
+	)
+	if (!asked) return { lines: new Map() }
+	const run = forecastLot({ lotFolder: target.lotFolder, trigger: 'scope', now: () => now })
+	if ('refusal' in run) return { lines: new Map(), refusal: run.refusal }
+	return { lines: new Map(run.lines.map((line) => [line.against, line])), run }
+}
+
+/**
+ * What holds an overlap of the add: `''` for a damaged lot or one whose scope does not read (today's text), the
+ * exclusive text for a met lock file, the pair's conflict or unknown reason; undefined when its pair merges clean.
+ */
+function scopeHoldOf(params: {
+	overlap: LotOverlap
+	forecast: { lines: Map<string, ForecastLine>; refusal?: string }
+}): string | undefined {
+	const { overlap, forecast } = params
+	if (!isAcceptableOverlap(overlap) || overlap.damage !== undefined) return ''
+	if (overlap.exclusive !== undefined) return FORECAST_HOLD_TEXTS.exclusive
+	const line = forecast.lines.get(overlap.name)
+	if (line === undefined)
+		return fillMessage({
+			template: FORECAST_HOLD_TEXTS.unknown,
+			values: { reason: forecast.refusal ?? LOT_SCOPE_TEXTS.noComparison },
+		})
+	return forecastHoldText(line)
+}
+
+/** The refusal of a held overlap: today's texts for one `--overlap-ok` cannot accept, else what holds it. */
+function overlapRefusalOf(params: {
+	request: ScopeRequest
+	target: ScopeTarget
+	overlap: LotOverlap
+	hold: string
+}): CommandResult {
+	const { overlap, hold } = params
+	const values = {
+		name: params.target.name,
+		lot: overlapLotLabelOf(overlap),
+		met: overlapMetText(overlap),
+		hold,
+	}
+	if (params.request.overlapOk)
+		return refused({ template: LOT_SCOPE_TEXTS.overlapNotAccepted, values })
+	return refused({
+		template: hold === '' ? LOT_SCOPE_TEXTS.overlap : LOT_SCOPE_TEXTS.held,
+		values,
+	})
 }
 
 /** The open lots, other than the target, whose effective scope the added paths meet; none when they meet none. */
@@ -378,6 +455,8 @@ function recordChanges(params: {
 	/** The overlaps `--overlap-ok` accepted: recorded once the add stands. */
 	accepted: readonly LotOverlap[]
 	recheck?: () => LotOverlap | undefined
+	/** The add's forecast run: recorded once the add stands. */
+	run?: ForecastRun
 }): CommandResult {
 	const { target, changes } = params
 	const bytes = scopeChangesBufferOf({ changes }).length
@@ -438,8 +517,23 @@ function recordChanges(params: {
 		.filter((line): line is string => line !== undefined)
 	return answerOf({
 		exitCode: 0,
-		lines: [changedLine, ...acceptedLinesOf({ target, records: accepted.records }), ...failures],
+		lines: [
+			changedLine,
+			...acceptedLinesOf({ target, records: accepted.records }),
+			// the add stands: its forecast is recorded now, never on a refusal
+			...recordedScopeForecast({ lotFolder: target.lotFolder, run: params.run }),
+			...failures,
+		],
 	})
+}
+
+/** Records the forecast of an add that stands (trigger `scope`); the lines a failed write prints. */
+function recordedScopeForecast(params: {
+	lotFolder: string
+	run: ForecastRun | undefined
+}): string[] {
+	if (params.run === undefined) return []
+	return recordForecastRun({ lotFolder: params.lotFolder, run: params.run, trigger: 'scope' }).notes
 }
 
 /**

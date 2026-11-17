@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
+import { isExclusivePath } from '../coordination/exclusive-paths.ts'
 import { isPresent } from '../file-system.ts'
 import { readAbandonedMarker, readRunMarker } from '../handover/handover-marker-read.ts'
 import {
@@ -227,8 +228,8 @@ export function overlappingOpenLots(params: {
 		const theirs = readBriefScope({ lotFolder })
 		// a brief that gives no scope holds every path: the check never fails open
 		if (theirs === undefined) return [{ name, met: [], everyPath: true }]
-		const met = metPairsOf({ ...params, theirs })
-		return met.length === 0 ? [] : [{ name, met }]
+		const pairs = metPairsOf({ ...params, theirs })
+		return pairs.met.length === 0 ? [] : [{ name, ...pairs }]
 	})
 }
 
@@ -248,22 +249,33 @@ function damagedOverlapOf(params: {
 	if (params.checked.identity?.simulated === true) return []
 	const theirs = readBriefScope({ lotFolder: params.lotFolder })
 	if (theirs === undefined) return [{ name, met: [], damage, everyPath: true }]
-	const met = metPairsOf({ ...params, theirs })
-	return met.length === 0 ? [] : [{ name, met, damage }]
+	const pairs = metPairsOf({ ...params, theirs })
+	return pairs.met.length === 0 ? [] : [{ name, ...pairs, damage }]
 }
 
-/** Each pair of an entry of `scope` and an entry of `theirs` that overlap, as `<ours> meets <theirs>`. */
+/**
+ * Each pair of an entry of `scope` and an entry of `theirs` that overlap, as `<ours> meets <theirs>`, and among them
+ * (only when there are some) the pairs with a lock-file side: exclusive, never shared (decision Q2).
+ */
 function metPairsOf(params: {
 	scope: readonly string[]
 	theirs: readonly string[]
 	caseInsensitive: boolean
-}): string[] {
+}): { met: string[]; exclusive?: string[] } {
 	const { caseInsensitive } = params
-	return params.scope.flatMap((entry) =>
+	const pairs = params.scope.flatMap((entry) =>
 		params.theirs
 			.filter((other) => overlaps({ a: entry, b: other, caseInsensitive }))
-			.map((other) => `${entry} meets ${other}`),
+			.map((other) => ({
+				text: `${entry} meets ${other}`,
+				exclusive: isExclusivePath(entry) || isExclusivePath(other),
+			})),
 	)
+	const exclusive = pairs.filter((pair) => pair.exclusive).map((pair) => pair.text)
+	return {
+		met: pairs.map((pair) => pair.text),
+		...(exclusive.length > 0 ? { exclusive } : {}),
+	}
 }
 
 /**

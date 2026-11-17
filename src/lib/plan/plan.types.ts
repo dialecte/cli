@@ -39,11 +39,19 @@ export type StoreLotFact = {
 	scope: string[]
 	worktree: string | null
 	/**
+	 * The lot's newest forecast as its records hold it (33CO 4.6, files only): the paths it conflicts on (a shared lock
+	 * file counted), or why it is unknown; none when the lot has no forecast recorded.
+	 */
+	forecast?: PlanLotForecast
+	/**
 	 * Set when the lot reads `committed` because its hand-over was committed outside its folder and its branch is on
 	 * the target branch, while that hand-over is not closed yet: the folder of the hand-over and the target branch.
 	 */
 	landed?: { folder: string; target: string }
 }
+
+/** A store lot's forecast as `plan next` reads it: its conflict paths, or why it is unknown. */
+export type PlanLotForecast = { conflicts: string[] } | { unknown: string }
 
 /** A landed lot `plan next` names: its repository's name in the plan, the lot, its hand-over's folder, the target. */
 export type PlanLandedLot = { repository: string; lot: string; folder: string; target: string }

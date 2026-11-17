@@ -23,13 +23,17 @@ plan - What can start now in a plan's lot block, whether the block is valid, a m
          is past the base commit of the lot and on the base branch it reads committed; once lot
          close closed that hand-over every reader reads it committed, files only; a live run or a
          transition later than that hand-over reads from its own records), the open lots, the lots
-         that can start in critical-path order (merge:, after, unverified, stacks, next command),
-         the held ones with each scope pair met, the landed lots (lot <name> committed: hand-over
-         committed in <folder>, branch on <target>; until lot close closes that hand-over), person
-         entries without a mark, the spec work, what each entry waits for, the parked ones, the live
-         heavy steps with the load against twice the cores and the available memory against 2 GB
-         (advice only); --all lists the done entries; --json { plan, repositories, counts, entries,
-         proposals, held, landed, specWork, heavy, unknown }
+         that can start in critical-path order (shares:, merge:, unverified, stacks, next command),
+         the held ones with each scope pair met (a ready lot meeting an open lot is proposed with
+         shares: <pair> (<lot>, forecast clean) when the last forecast that lot recorded is known
+         and shows no conflict inside the met entries; it stays held on a met lock file, a conflict
+         inside the met entries, or an open lot with no known forecast; two ready lots that meet are
+         both proposed), the landed lots (lot <name> committed: hand-over committed in <folder>,
+         branch on <target>; until lot close closes that hand-over), person entries without a mark,
+         the spec work, what each entry waits for, the parked ones, the live heavy steps with the
+         load against twice the cores and the available memory against 2 GB (advice only); --all
+         lists the done entries; --json { plan, repositories, counts, entries, proposals, held,
+         landed, specWork, heavy, unknown }
   check - the block parses and every repository is a git main checkout (two names for one common
           folder refused); one line when valid; --json { plan, valid, faults }
   mark - a person entry only: appends { plan, id, state: done, by, reason, at } to
@@ -76,9 +80,10 @@ Flags: `--json`, `--all`, `--by`, `--reason`, `--landed`, `--replaced-by`
   <target>`; once `lot close` closes that hand-over every reader reads it `committed`, files only, with no
   `landed` line; a lot with a live run or a transition later than that hand-over reads from its own records). The
   text says the counts, the open lots (and open work no entry accounts for: its repository's proposals are
-  `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `after <id>`, `merge:
-  <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots held by an open one with
-  each scope pair met, person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
+  `unverified`), the lots that can start in critical-path order (`unblocks 7 (chain 4)`, `shares: <pair> (<lot>,
+  forecast clean)`, `merge: <open lots>`, `next: dialecte lot start <brief>` or the brief to write), the ready lots
+  held by an open one with each scope pair met (held only on a met lock file, a forecast conflict inside the met
+  entries, or an open lot with no known forecast: the last forecast its records hold, files only), person entries without a mark, the spec work (a spec missing or `DRAFT`), what each entry
   waits for, the parked ones, then the machine: the live heavy steps with their worktree and age, the load against
   twice the cores, the free and inactive memory against 2 GB (`vm_stat` on macOS, `/proc/meminfo` on Linux); a
   proposal whose heavy steps would run beside a live one says `stacks:`, and on a short machine its heavy steps

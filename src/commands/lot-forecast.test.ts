@@ -82,15 +82,18 @@ describe('lot forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 			verdict: 'clean',
 			lines: readForecastRecord({ lotFolder: lot.lotFolder }).lines,
 		})
-		expect(forecastEventsOf(lot.lotFolder)).toEqual([
-			{
-				kind: 'forecast',
-				trigger: 'forecast',
-				verdict: 'clean',
-				verdicts: { clean: 1, exclusive: 0, conflict: 0, unknown: 0 },
-				durationMs: expect.any(Number),
-			},
+		// the start's own forecast came first (33CO CO2b), then the verb's
+		expect(forecastEventsOf(lot.lotFolder).map((event) => event.trigger)).toEqual([
+			'start',
+			'forecast',
 		])
+		expect(forecastEventsOf(lot.lotFolder).at(-1)).toEqual({
+			kind: 'forecast',
+			trigger: 'forecast',
+			verdict: 'clean',
+			verdicts: { clean: 1, exclusive: 0, conflict: 0, unknown: 0 },
+			durationMs: expect.any(Number),
+		})
 	})
 })
 
@@ -125,7 +128,10 @@ describe('lot forecast, the lot and the other lot named', { timeout: STORE_CASE_
 		expect(calls.map((call) => lotForecast({ ...call, now: FORECAST_NOW }).exitCode)).toEqual([
 			2, 2, 2, 2,
 		])
-		expect(readForecastRecord({ lotFolder: first.lotFolder }).lines).toEqual([])
+		// only the start's own run: a refused call appends none
+		expect(
+			readForecastRecord({ lotFolder: first.lotFolder }).lines.map((line) => line.trigger),
+		).toEqual(['start'])
 	})
 })
 

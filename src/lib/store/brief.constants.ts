@@ -88,3 +88,12 @@ export const WHOLE_BRIEF_FIELD = 'brief'
 
 /** The digest of the brief and plan hashes. */
 export const BRIEF_HASH_ALGORITHM = 'sha256'
+
+/** After the met pairs of an overlap a start still refuses: what holds it (a met lock file, a forecast that cannot run). */
+export const OVERLAP_HOLD_NOTE = ' ({hold})'
+
+/** How long a published lot with no worktree yet reads as still starting (no work, never a hold; 33CO 4.7, Q5). */
+export const START_WINDOW_MS = 10 * 60_000
+
+/** The kind of the event that ends a recorded step. */
+export const STEP_END_KIND = 'step.end'

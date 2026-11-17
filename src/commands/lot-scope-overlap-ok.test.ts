@@ -5,7 +5,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { holdWorkOf, writeHeldStoreLot, writeStoreLot } from '../../test/brief-workspace.ts'
 import { BRIEF_DAMAGES, DAMAGES } from '../../test/damaged-lot-workspace.constants.ts'
 import { briefDamagedLotIn, damagedLotIn } from '../../test/damaged-lot-workspace.ts'
 import { startRealLot } from '../../test/lot-handover-workspace.ts'
@@ -122,7 +122,7 @@ describe(
 			const result = addOverlapOkWith({
 				lot,
 				afterAppend: function startUnnamedLot() {
-					writeStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
+					writeHeldStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
 				},
 			})
 
@@ -139,6 +139,7 @@ describe(
 			const result = addOverlapOkWith({
 				lot,
 				afterAppend: function widenAcceptedLot() {
+					holdWorkOf({ workspace: lot.start.workspace, name: OTHER_LOT })
 					appendScopeChanges({
 						lotFolder: join(lot.start.store, OTHER_LOT),
 						changes: [
@@ -176,12 +177,27 @@ describe(
 			expect(seen).toEqual([1])
 		})
 
+		it('a damaged lot whose scope reads meets the add → added with --overlap-ok, the go-ahead and the damage recorded (33CO behaviour 15)', () => {
+			const lot = startRealLot()
+			const name = damagedLotIn({ start: lot.start, kind: DAMAGES[0].kind, scope: ['docs/'] }).name
+
+			const result = addWith({ lot, extra: ['--overlap-ok'] })
+
+			expect({
+				exitCode: result.exitCode,
+				added: readLotScope({ lotFolder: lot.lotFolder }).includes(ADDED),
+				overlaps: readLotOverlaps({ lotFolder: lot.lotFolder }).overlaps.map((record) => ({
+					lot: record.lot,
+					damage: record.damage,
+				})),
+			}).toEqual({
+				exitCode: 0,
+				added: true,
+				overlaps: [{ lot: name, damage: DAMAGES[0].reason }],
+			})
+		})
+
 		it.each([
-			{
-				label: 'a damaged lot whose scope reads',
-				other: (lot: LotHandoverWorkspace) =>
-					damagedLotIn({ start: lot.start, kind: DAMAGES[0].kind, scope: ['docs/'] }).name,
-			},
 			{
 				label: 'a lot whose scope cannot be read',
 				other: (lot: LotHandoverWorkspace) =>
@@ -231,7 +247,7 @@ describe(
 			addOverlapOkWith({
 				lot,
 				afterAppend: function startUnnamedLot() {
-					writeStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
+					writeHeldStoreLot({ workspace: lot.start.workspace, name: UNNAMED_LOT, scope: [ADDED] })
 				},
 			})
 

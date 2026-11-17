@@ -12,6 +12,7 @@ import {
 	briefWith,
 	checkArgumentsOf,
 	refusalKeysOf,
+	writeHeldStoreLot,
 	writeStoreLot,
 } from '../../test/brief-workspace.ts'
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
@@ -388,7 +389,7 @@ describe(
 					...WHO,
 				],
 				output: (lot) =>
-					`lot scope: ${lot.lotName}: the added paths meet the open lot ${DOCS_LOT}: docs/notes.md meets docs: nothing written`,
+					`lot scope: ${lot.lotName}: the added paths meet the open lot ${DOCS_LOT}: docs/notes.md meets docs: forecast unknown: worktree of ${DOCS_LOT} missing: nothing written`,
 			},
 			{
 				title:
@@ -524,7 +525,7 @@ describe('lot scope - a late overlap on a narrowing call', { timeout: STORE_CASE
 			seams: {
 				afterAppend: () => {
 					if (params.failUndo) chmodSync(join(lot.lotFolder, 'scope-changes.jsonl'), 0o444)
-					writeStoreLot({
+					writeHeldStoreLot({
 						workspace: lot.start.workspace,
 						name: SUB_LOT,
 						scope: ['src/dataflow/subscribe.ts'],

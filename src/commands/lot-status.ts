@@ -5,6 +5,7 @@
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { forecastViewOf } from '../lib/coordination/forecast-view.ts'
 import { isFolder, realPathOf } from '../lib/file-system.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -51,7 +52,12 @@ import type {
 	LotStateReport,
 	WorktreeCheck,
 } from '../lib/store/store.types.ts'
-import type { LotStatusEffort, LotStatusJson, RoundsStatus } from './lot-status.types.ts'
+import type {
+	LotStatusEffort,
+	LotStatusJson,
+	LotStatusShown,
+	RoundsStatus,
+} from './lot-status.types.ts'
 
 /**
  * The status of the lot `<id>` names, as text or `--json`; a damaged lot answers `damaged` with its reason and the
@@ -82,7 +88,11 @@ export function lotStatus(params: {
 	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
 	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
 	const status = lotStatusOfInput({ input: checked.input, lotFolder, entries })
-	return { exitCode: 0, output: json ? jsonOf(status, 2) : textOf(lotStatusLines(status)) }
+	if (!json) return { exitCode: 0, output: textOf(lotStatusLines(status)) }
+	// this command's own JSON (33CO 4.6): the forecast read once, with the registry entries read above; the text shows
+	// none, and the readers of many lots (inbox, lot wait) share lotStatusOf and read no forecast
+	const shown: LotStatusShown = { ...status, forecast: forecastViewOf({ lotFolder, entries }) }
+	return { exitCode: 0, output: jsonOf(shown, 2) }
 }
 
 /**

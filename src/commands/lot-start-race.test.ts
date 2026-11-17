@@ -2,7 +2,11 @@
 import { linkSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import {
+	createBriefWorkspace,
+	writeHeldStoreLot,
+	writeStoreLot,
+} from '../../test/brief-workspace.ts'
 import { entriesOf, recordOf } from '../../test/lot-start-workspace.ts'
 import { INJECTED_LINK_MESSAGE, LINK_REFUSAL_CODES } from '../../test/lot-start.constants.ts'
 import { temporaryFolder } from '../../test/scratch-repository.ts'
@@ -75,7 +79,7 @@ describe(
 
 				for (const step of row.steps)
 					if (step.step === 'publish')
-						writeStoreLot({ workspace, name: RACER_NAMES[step.racer], scope: SHARED_SCOPE })
+						writeHeldStoreLot({ workspace, name: RACER_NAMES[step.racer], scope: SHARED_SCOPE })
 					else
 						expect(
 							recheckOverlap({
@@ -148,7 +152,7 @@ describe('recheckOverlap against the neighbours of D12', { timeout: STORE_CASE_T
 	for (const row of NEIGHBOUR_ROWS)
 		it(`${row.title} on the same scope -> ${row.overlaps ? 'named' : 'ignored'}`, () => {
 			const workspace = createBriefWorkspace()
-			writeStoreLot({ workspace, name: NEIGHBOUR_NAME, scope: SHARED_SCOPE, ...row.neighbour })
+			writeHeldStoreLot({ workspace, name: NEIGHBOUR_NAME, scope: SHARED_SCOPE, ...row.neighbour })
 			writeStoreLot({ workspace, name: RACER_NAMES.A, scope: SHARED_SCOPE })
 
 			expect(

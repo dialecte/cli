@@ -166,3 +166,27 @@ export function refusalKeysOf(refused: readonly Refusal[]): string[] {
 		.map((refusal) => `${refusal.rule}:${refusal.field.split(/[.[]/)[0]}`)
 		.sort((first, second) => first.localeCompare(second))
 }
+
+/**
+ * A store lot as `writeStoreLot` writes it, whose worktree (a scratch folder outside `.worktrees`, unless given) holds a
+ * `.git` file naming no git folder: git refuses it, so the lot's work does not read, its forecast reads unknown and an
+ * overlap with it still holds (fails closed). A lot still starting has no worktree on disk at all, and holds nothing
+ * (33CO 4.7).
+ */
+export function writeHeldStoreLot(params: Parameters<typeof writeStoreLot>[0]): string {
+	const worktree = params.worktree ?? temporaryFolder('dialecte-held-worktree-')
+	const lotFolder = writeStoreLot({ ...params, worktree })
+	holdWorkOf({ workspace: params.workspace, name: params.name, worktree })
+	return lotFolder
+}
+
+/** Makes a store lot's worktree hold a `.git` file naming no git folder (see `writeHeldStoreLot`). */
+export function holdWorkOf(params: {
+	workspace: BriefWorkspace
+	name: string
+	worktree?: string
+}): void {
+	const worktree = params.worktree ?? join(params.workspace.workspace, '.worktrees', params.name)
+	mkdirSync(worktree, { recursive: true })
+	writeFileSync(join(worktree, '.git'), `gitdir: ${join(worktree, 'no-git-folder')}\n`)
+}

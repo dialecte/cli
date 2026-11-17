@@ -1,3 +1,4 @@
+import type { ForecastView } from '../lib/coordination/forecast.types.ts'
 import type { HandoverEntryState } from '../lib/handover/handover.types.ts'
 import type { Effort, RiskDerivedLine } from '../lib/risk/risk.types.ts'
 import type { NextStation } from '../lib/store/next-station.types.ts'
@@ -84,3 +85,9 @@ export type LotStatusJson = {
 	/** A lot started on another (33CI CI4): `on <parent> (#<pr>, <state>)`; absent for a lot not stacked. */
 	stack?: string
 }
+
+/**
+ * What `lot status` prints of one lot: its status and its forecast as the records hold it, files only - its main line and
+ * each pair's newer side (33CO 4.6).
+ */
+export type LotStatusShown = LotStatusJson & { forecast: ForecastView }

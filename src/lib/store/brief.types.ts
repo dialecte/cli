@@ -63,6 +63,8 @@ export type CheckedBrief = {
 	wouldRefuse: Refusal[]
 	/** The overlaps `--overlap-ok` accepted instead of refusing (each names its paths); none without it. */
 	acceptedOverlaps: LotOverlap[]
+	/** The overlaps the forecast cleared (the met lot's work reads; 33CO 4.2): the start goes ahead and names them. */
+	clearedOverlaps: LotOverlap[]
 	/** `lot start --on <lot>` (33CI CI4): the open lot the lot starts on, its branch and that branch's tip. */
 	stackParent?: StackParent
 }

@@ -3,49 +3,29 @@
  * open lot of its store (33CO 4.8), appended to its `forecast.jsonl` as one run, a `forecast` event in its events, and
  * printed. Exit 0 clean, 1 conflict (or exclusive), 3 unknown, 2 usage or refusal.
  */
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname } from 'node:path'
 
-import { appendForecastRun } from '../lib/coordination/forecast-record.ts'
-import {
-	FORECAST_EVENT_KIND,
-	FORECAST_EXIT_CODES,
-	FORECAST_VERDICT_ORDER,
-} from '../lib/coordination/forecast.constants.ts'
+import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
+import { forecastConflictsText } from '../lib/coordination/forecast-view.ts'
+import { FORECAST_EXIT_CODES } from '../lib/coordination/forecast.constants.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
-import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
-import { makeEnvelope, writeEvent } from '../lib/events/write-event.ts'
-import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
-import { readCliVersion } from '../lib/read-cli-version.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { lotFailureExit, lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { lotOfWorktree, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import {
-	isOpenRealLot,
-	readCheckedLotState,
-	registryOfLotFolder,
-} from '../lib/store/lot-records.ts'
-import { lotState } from '../lib/store/lot-state.ts'
-import { lotOfWorktree, noLotRefusal, requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { STORE_FILES } from '../lib/store/store.constants.ts'
-import {
-	FORECAST_CONFLICT_SEPARATOR,
 	FORECAST_FLAGS,
 	FORECAST_LIST_SEPARATOR,
 	FORECAST_PART_SEPARATOR,
 	FORECAST_SHORT_COMMIT,
 	FORECAST_VALUE_OPTIONS,
 	LOT_FORECAST_TEXTS,
-	SIMULATED_WORD,
 } from './lot-forecast.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type {
-	ForecastConflict,
-	ForecastLine,
-	ForecastRun,
-} from '../lib/coordination/forecast.types.ts'
+import type { ForecastLine, ForecastRun } from '../lib/coordination/forecast.types.ts'
 import type { LotForecastJson } from './lot-forecast.types.ts'
 
 /** Runs the forecast of the lot `<id>` names, else of the lot of the current worktree. */
@@ -74,8 +54,6 @@ export function lotForecast(params: {
 		})
 	const lotFolder = lotFolderOf({ cwd: params.cwd, id })
 	if ('lines' in lotFolder) return lotRefusalExit({ lines: lotFolder.lines, json })
-	const refusal = refusalOf({ lotFolder: lotFolder.folder })
-	if (refusal !== undefined) return lotRefusalExit({ lines: [refusal], json })
 	const against = againstOf({
 		cwd: params.cwd,
 		lotFolder: lotFolder.folder,
@@ -90,22 +68,23 @@ export function lotForecast(params: {
 		now: now ? () => now : undefined,
 		stepLimitMs: params.stepLimitMs,
 	})
-	const file = join(lotFolder.folder, STORE_FILES.forecast)
-	try {
-		appendForecastRun({ lotFolder: lotFolder.folder, lines: run.lines })
-	} catch (error) {
-		return lotFailureExit({
+	if ('refusal' in run)
+		return lotRefusalExit({
 			lines: [
-				fillMessage({
-					template: LOT_FORECAST_TEXTS.writeFailure,
-					values: { file, message: (error as Error).message },
-				}),
+				fillMessage({ template: LOT_FORECAST_TEXTS.refused, values: { refusal: run.refusal } }),
 			],
 			json,
 		})
-	}
+	const recorded = recordForecastRun({ lotFolder: lotFolder.folder, run, trigger: 'forecast' })
+	if (!recorded.written)
+		return lotFailureExit({
+			lines: recorded.notes.map((note) =>
+				fillMessage({ template: LOT_FORECAST_TEXTS.refused, values: { refusal: note } }),
+			),
+			json,
+		})
 	const lot = basename(lotFolder.folder)
-	const eventNote = writeForecastEvent({ lotFolder: lotFolder.folder, lot, run })
+	const eventNote = recorded.notes[0]
 	const exitCode = FORECAST_EXIT_CODES[run.verdict]
 	if (json) {
 		const printed: LotForecastJson = { lot, verdict: run.verdict, lines: run.lines }
@@ -159,13 +138,10 @@ function lineTextOf(line: ForecastLine): string {
 
 /** The details of a known comparison: its conflicts (then how many more), its shared files (then how many more). */
 function detailPartsOf(line: ForecastLine): string[] {
-	const conflicts = [
-		...(line.conflicts ?? []).map(conflictTextOf),
-		...(line.more ? [moreTextOf(line.more)] : []),
-	]
+	const conflicts = forecastConflictsText(line)
 	const shared = [...(line.shared ?? []), ...(line.moreShared ? [moreTextOf(line.moreShared)] : [])]
 	return [
-		...(conflicts.length === 0 ? [] : [conflicts.join(FORECAST_CONFLICT_SEPARATOR)]),
+		...(conflicts === '' ? [] : [conflicts]),
 		...(shared.length === 0
 			? []
 			: [
@@ -175,23 +151,6 @@ function detailPartsOf(line: ForecastLine): string[] {
 					}),
 				]),
 	]
-}
-
-/** One conflict as text: its path, its line ranges when it has some, its kind. */
-function conflictTextOf(conflict: ForecastConflict): string {
-	if (conflict.lines.length === 0)
-		return fillMessage({
-			template: LOT_FORECAST_TEXTS.conflictWithoutLines,
-			values: { path: conflict.path, kind: conflict.kind },
-		})
-	return fillMessage({
-		template: LOT_FORECAST_TEXTS.conflictWithLines,
-		values: {
-			path: conflict.path,
-			kind: conflict.kind,
-			ranges: conflict.lines.map(([from, to]) => `${from}-${to}`).join(FORECAST_LIST_SEPARATOR),
-		},
-	})
 }
 
 /** `<count> more`: the paths a line left out. */
@@ -210,34 +169,6 @@ function lotFolderOf(params: {
 	}
 	const folder = lotOfWorktree({ cwd: params.cwd })
 	return folder === undefined ? { lines: [LOT_FORECAST_TEXTS.noLot] } : { folder }
-}
-
-/**
- * Why the lot cannot be forecast: it does not read, it is damaged, simulated or no longer open (committed, canceled, or
- * failed on an overlap); undefined for an open real lot.
- */
-function refusalOf(params: { lotFolder: string }): string | undefined {
-	const { lotFolder } = params
-	const lot = basename(lotFolder)
-	const registry = registryOfLotFolder(lotFolder)
-	const checked = readCheckedLotState({ lotFolder, registry, entries: readStoreEntries(registry) })
-	if (checked === undefined) return noLotRefusal(lot)
-	if ('damage' in checked)
-		return fillMessage({
-			template: LOT_FORECAST_TEXTS.damaged,
-			values: { lot, damage: checked.damage },
-		})
-	// a simulated lot is never open; named so, never by the state its scenario plays
-	if (checked.input.identity.simulated)
-		return fillMessage({
-			template: LOT_FORECAST_TEXTS.notOpen,
-			values: { lot, state: SIMULATED_WORD },
-		})
-	if (isOpenRealLot(checked.input)) return undefined
-	return fillMessage({
-		template: LOT_FORECAST_TEXTS.notOpen,
-		values: { lot, state: lotState(checked.input).state },
-	})
 }
 
 /** The lot `--against` names, of the same store and not the lot itself; none without the option. */
@@ -261,47 +192,4 @@ function againstOf(params: {
 			],
 		}
 	return { name: basename(required.lot) }
-}
-
-/** Writes the run's `forecast` event (its verdict counts and time); the line to print when it could not be. */
-function writeForecastEvent(params: {
-	lotFolder: string
-	lot: string
-	run: ForecastRun
-}): string | undefined {
-	const { lotFolder, lot, run } = params
-	const file = join(lotFolder, STORE_FILES.events)
-	const verdicts = Object.fromEntries(
-		FORECAST_VERDICT_ORDER.map((verdict) => [
-			verdict,
-			run.lines.filter((line) => line.verdict === verdict).length,
-		]),
-	)
-	try {
-		writeEvent({
-			file,
-			event: {
-				...makeEnvelope({
-					lot,
-					kind: FORECAST_EVENT_KIND,
-					by: 'cli',
-					cli: readCliVersion(),
-					simulated: false,
-					hostEvent: null,
-				}),
-				run: run.run,
-				trigger: 'forecast',
-				verdict: run.verdict,
-				verdicts,
-				durationMs: run.durationMs,
-			},
-			limit: EVENT_LINE_LIMIT,
-		})
-		return undefined
-	} catch (error) {
-		return fillMessage({
-			template: LOT_FORECAST_TEXTS.eventFailure,
-			values: { file, message: (error as Error).message },
-		})
-	}
 }

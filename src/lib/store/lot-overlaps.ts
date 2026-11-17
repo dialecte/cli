@@ -11,7 +11,9 @@ import { appendLine, overLimitMessage } from '../events/write-event.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { forbiddenWordRefusal } from '../review-rounds/option-checks.ts'
 import {
+	LOT_OVERLAP_DAMAGED_LOT,
 	LOT_OVERLAP_KEYS,
+	LOT_OVERLAP_OPTIONAL_KEYS,
 	LOT_OVERLAP_LINE_LIMIT,
 	LOT_OVERLAP_OVER_LIMIT,
 	LOT_OVERLAP_MET_SEPARATOR,
@@ -92,14 +94,16 @@ export function overlapRecordsOf(params: {
 		verb,
 		lot: overlap.name,
 		met: overlap.met,
+		...(overlap.damage !== undefined && { damage: overlap.damage }),
 		by,
 		reason,
 	}))
 }
 
 /**
- * Whether a re-check's overlap is one the go-ahead accepted: the same lot, still acceptable, and no met pair the check
- * did not show (a lot that widened meanwhile meets more than was accepted).
+ * Whether a re-check's overlap is one the go-ahead accepted: the same lot, still acceptable, no met pair the check did
+ * not show (a lot that widened meanwhile meets more than was accepted), and damaged only if it was damaged when accepted
+ * (a lot that turned damaged meanwhile is caught: 33CO 4.7).
  */
 export function isCoveredOverlap(params: {
 	overlap: LotOverlap
@@ -110,6 +114,7 @@ export function isCoveredOverlap(params: {
 	return (
 		accepted !== undefined &&
 		isAcceptableOverlap(overlap) &&
+		overlap.damage === accepted.damage &&
 		overlap.met.every((pair) => accepted.met.includes(pair))
 	)
 }
@@ -162,9 +167,12 @@ export function overlapGoAheadRefusal(params: {
 	return undefined
 }
 
-/** An overlap `--overlap-ok` may accept: it names its met paths (its lot's scope reads, and the lot is not damaged). */
+/**
+ * An overlap `--overlap-ok` may accept: it names its met paths, its lot's scope reads; a damaged other lot whose scope
+ * reads too (33CO behaviour 15), its damage recorded with the go-ahead.
+ */
 export function isAcceptableOverlap(overlap: LotOverlap): boolean {
-	return overlap.everyPath !== true && overlap.damage === undefined && overlap.met.length > 0
+	return overlap.everyPath !== true && overlap.met.length > 0
 }
 
 /** One line per recorded overlap (`overlaps <lot>: <met> (by <who>: <reason>)`). */
@@ -195,7 +203,13 @@ function overlapTextOf(record: LotOverlapRecord): string {
 	return fillMessage({
 		template: LOT_OVERLAP_TEXT,
 		values: {
-			lot: record.lot,
+			lot:
+				record.damage === undefined
+					? record.lot
+					: fillMessage({
+							template: LOT_OVERLAP_DAMAGED_LOT,
+							values: { lot: record.lot, damage: record.damage },
+						}),
 			met: record.met.join(LOT_OVERLAP_MET_SEPARATOR),
 			by: record.by,
 			reason: record.reason,
@@ -272,9 +286,13 @@ function parseOverlapUndo(line: Record<string, unknown>): LotOverlapUndo | undef
 /** The record a line holds: every key, no other, each of its type; undefined when it does not read as one. */
 function parseOverlapRecord(record: Record<string, unknown>): LotOverlapRecord | undefined {
 	const keys = Object.keys(record)
-	if (keys.length !== LOT_OVERLAP_KEYS.length || !LOT_OVERLAP_KEYS.every((key) => key in record))
+	if (
+		!LOT_OVERLAP_KEYS.every((key) => key in record) ||
+		keys.some((key) => !LOT_OVERLAP_KEYS.includes(key) && !LOT_OVERLAP_OPTIONAL_KEYS.includes(key))
+	)
 		return undefined
-	const { schema, at, verb, lot, met, by, reason } = record
+	const { schema, at, verb, lot, met, by, reason, damage } = record
+	if (damage !== undefined && (typeof damage !== 'string' || damage === '')) return undefined
 	if (
 		schema !== LOT_OVERLAP_SCHEMA ||
 		typeof verb !== 'string' ||

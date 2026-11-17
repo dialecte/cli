@@ -238,6 +238,16 @@ export const EFFORT_LINE_NAME = 'effort'
 /** The card line naming a lot's scope changes (FIX-lot-scope D8). */
 export const SCOPE_LINE_NAME = 'scope'
 
+/** The card's `conflicts` line (33CO 4.6): one part per comparison the forecast does not clear, joined. */
+export const FORECAST_LINE_NAME = 'conflicts'
+export const FORECAST_LINE_PART = '{against}: {hold} ({age})'
+export const FORECAST_LINE_SEPARATOR = '; '
+
+/** A part of the card's `scope` line per open lot whose scope meets the lot's, with the pair's forecast. */
+export const SCOPE_SHARES_PART = 'shares {met} with {lot} ({forecast})'
+export const SCOPE_SHARES_FORECAST = 'forecast {verdict}, {age}'
+export const SCOPE_SHARES_NO_FORECAST = 'no forecast yet'
+
 /** The effort line: the effort, the risk class part and the rounds against the cap. */
 export const EFFORT_LINE_DETAIL = '{effort} · {riskClass} · {rounds} of {cap}'
 
