@@ -566,9 +566,10 @@ function commitsOnlyInHeadReflog(params: {
 /**
  * The commits of `commits` the lot superseded: each changes at least one file and only files inside the lot's paths,
  * and every one of its reflog entries is older than the first where HEAD reached the landed head (the one the landing
- * pushed, else the branch's tip) - work in progress dropped before the lot's final commits were made (a reset to rebuild
- * them). A commit made after the landed head was reached, then dropped, is not superseded. Order is the reflog's (`entries`, newest first), never commit dates; none when the
- * reflog never reached the tip or the lot names no path.
+ * pushed, else the branch's tip) - work in progress dropped before the lot's final commits were made (a reset to
+ * rebuild them). A commit made after the landed head was reached, then dropped, is not superseded. Order is the
+ * reflog's (`entries`, newest first), never commit dates; none when the reflog never reached the tip or the lot names
+ * no path.
  */
 function supersededOf(params: {
 	root: string

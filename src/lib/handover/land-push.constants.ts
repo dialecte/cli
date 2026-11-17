@@ -9,4 +9,4 @@ export const NOTHING_BEYOND_BASE_LINE =
  * worktree's HEAD: `{number}`, `{merged}`, `{landed}`, `{head}` (short shas).
  */
 export const LANDING_MERGED_AT_OTHER_HEAD =
-	"pull request #{number} merged at {merged}, not at the landed head {landed} nor the worktree's HEAD {head}: the lot is not marked committed (look: what merged is not this lot's tip)"
+	'pull request #{number} merged at {merged}, the lot holds commits since ({head}, landed {landed}): they land in a new lot, the lot not marked committed'

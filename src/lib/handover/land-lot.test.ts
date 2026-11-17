@@ -462,7 +462,7 @@ describe(
 			}).trim()
 		}
 
-		it("a branch holding no commit beyond origin's base → refused before any push, nothing asked of the host", () => {
+		it("a branch holding no commit beyond origin's base → refused before any push or pull request", () => {
 			const repository = landingRepository()
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
 			const { host, calls } = recordingHost()
@@ -575,7 +575,9 @@ describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 
 		expect({
-			line: line?.startsWith(`pull request #7 merged at ${'f'.repeat(12)}, not at the landed head`),
+			line: line?.startsWith(
+				`pull request #7 merged at ${'f'.repeat(12)}, the lot holds commits since (`,
+			),
 			state: registeredEntryOf({
 				store: handoverStoreOf(repository.worktree),
 				folder: repository.lotFolder,

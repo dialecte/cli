@@ -75,12 +75,13 @@ export function landLot(params: {
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
 	if (known.pullRequest?.state === 'merged')
 		return mergedLanding({ ...params, pullRequest: known.pullRequest })
-	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
-	const empty = nothingBeyondBase({ worktree, branch, base })
-	if (empty !== undefined) return refused(empty)
-	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push
+	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push, so a lot
+	// main already holds gets the registry's committed answer before the one below
 	const registered = registerLotEntry({ ...params })
 	if ('refusal' in registered) return refused(registered.refusal)
+	// a branch the base already holds has nothing to land: refused before any push or pull request
+	const empty = nothingBeyondBase({ worktree, branch, base })
+	if (empty !== undefined) return refused(empty)
 	const { entry } = registered
 	const lines: string[] = []
 	const progress = readWorkInProgress({ worktree })
@@ -418,9 +419,13 @@ function leaseOf(params: {
 		: ''
 }
 
-/** The head just pushed kept in `landing.json` (its other fields as they were), whole or not at all. */
+/**
+ * The head just pushed kept in `landing.json`, whole or not at all: its other fields kept for the same branch, dropped
+ * for another (a pull request number, its url and the replaced heads of another branch are not this landing's).
+ */
 function recordPushedHead(params: { lotFolder: string; branch: string; head: string }): void {
-	const raw = readRawLanding({ lotFolder: params.lotFolder }) ?? {}
+	const existing = readRawLanding({ lotFolder: params.lotFolder })
+	const raw = existing?.branch === params.branch ? existing : {}
 	replaceWhole({
 		path: join(params.lotFolder, LANDING_FILE),
 		text: `${JSON.stringify({ ...raw, schema: LANDING_SCHEMA, branch: params.branch, head: params.head }, null, 2)}\n`,

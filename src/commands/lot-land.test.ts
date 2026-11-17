@@ -240,7 +240,7 @@ describe(
 			expect({ state, output: closed.output }).toEqual({
 				state: 'pending',
 				output: expect.stringContaining(
-					`pull request #7 merged at ${other.slice(0, 12)}, not at the landed head ${drafted.slice(0, 12)} nor the worktree's HEAD`,
+					`landed ${drafted.slice(0, 12)}): they land in a new lot, the lot not marked committed`,
 				),
 			})
 		})

@@ -5,12 +5,18 @@ import {
 	mkdirSync,
 	readFileSync,
 	realpathSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import {
+	commitLotByHand,
+	plainHandoverFolder,
+	writeStoreHandover,
+} from '../../test/handover-store-scenario.ts'
 import {
 	cardLinesOf,
 	registerCommittedHandover,
@@ -32,6 +38,7 @@ import {
 	readTree,
 	trashedNamesOf,
 } from '../../test/worktree-pool.ts'
+import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import {
 	handoverStoreOf,
 	recordHandoverState,
@@ -190,6 +197,41 @@ function expectClosed(params: { scenario: Scenario; worktree: string; tail: stri
 	expect(others.every((name) => /^\.(vite|cache)-\d/.test(name))).toBe(true)
 }
 
+/**
+ * A hand-over lot with no scope and no landing (a plain hand-over folder): a work-in-progress commit writing `wip` made
+ * then dropped (a reset to rebuild the lot), then the lot written and committed - it adds `src/close-x.ts` and deletes
+ * `src/a.ts`, so its hand-over files are both - and recorded committed.
+ */
+function createRebuiltHandoverLot(params: { scenario: Scenario; wip: Record<string, string> }) {
+	const { repository, worktreesFolder } = params.scenario
+	const branch = 'feat/x'
+	const worktree = join(worktreesFolder, '0001-repo-x')
+	git({ root: repository, args: ['worktree', 'add', '-q', '-b', branch, worktree] })
+	writeFiles({ root: worktree, files: params.wip })
+	git({ root: worktree, args: ['add', '-A'] })
+	git({ root: worktree, args: ['commit', '-q', '-m', 'wip: before the rebuild'] })
+	git({ root: worktree, args: ['reset', '-q', '--hard', 'HEAD~1'] })
+	rmSync(join(worktree, 'src/a.ts'))
+	const lots = [{ paths: ['src/close-x.ts', 'src/a.ts'], message: 'feat(read): change x' }]
+	const written = writeStoreHandover({
+		root: worktree,
+		name: 'x',
+		changes: { 'src/close-x.ts': 'export {}\n' },
+		lots,
+		folder: plainHandoverFolder(),
+	})
+	const folder = realpathSync(written.folder)
+	commitLotByHand({
+		root: worktree,
+		paths: ['src/close-x.ts', 'src/a.ts'],
+		message: lots[0].message,
+	})
+	const store = handoverStoreOf(repository)
+	recordHandoverState({ store, folder, state: 'committed' })
+	writeHookRecordAtHead(worktree)
+	return { name: registeredEntryOf({ store, folder })?.name ?? '', worktree, branch }
+}
+
 /** The link a sibling or another repository holds into the candidate, as `lot close` words it. */
 function linkReason(link: string): string {
 	return `the link ${link} points to it`
@@ -320,6 +362,40 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 			)
 			expectNothingMoved()
 		})
+
+	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit on its hand-over files (a deleted one included) before its tip → counted landed, closed', () => {
+		const scenario = createScenario()
+		const lot = createRebuiltHandoverLot({
+			scenario,
+			wip: { 'src/a.ts': 'wip\n', 'src/close-x.ts': 'export const wip = 1\n' },
+		})
+		const { close } = closing({ scenario, ...lot })
+
+		const outcome = close()
+
+		expect({ exitCode: outcome.exitCode, reflog: outcome.output.includes('HEAD reflog') }).toEqual({
+			exitCode: 0,
+			reflog: false,
+		})
+		expectClosed({ scenario, worktree: lot.worktree, tail: 'x' })
+	})
+
+	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit touching a file outside its hand-over files → kept, the HEAD reflog named', () => {
+		const scenario = createScenario()
+		const lot = createRebuiltHandoverLot({
+			scenario,
+			wip: { 'src/a.ts': 'wip\n', 'src/other.ts': 'export {}\n' },
+		})
+		const { close, expectNothingMoved } = closing({ scenario, ...lot })
+
+		const outcome = close()
+
+		expect({
+			exitCode: outcome.exitCode,
+			reflog: outcome.output.includes('HEAD reflog reaches 1 commit(s)'),
+		}).toEqual({ exitCode: 1, reflog: true })
+		expectNothingMoved()
+	})
 
 	it('a commit made on a detached HEAD, then the worktree switched back to its branch → kept, the HEAD reflog named', () => {
 		const scenario = createScenario()
