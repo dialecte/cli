@@ -7,4 +7,6 @@ export type ScratchContext = {
 	env?: NodeJS.ProcessEnv
 	/** The folder whose workspace holds the root; default `process.cwd()`. */
 	cwd?: string
+	/** The scratch root itself, read by the caller already (`machineScratchRoots`); default: read from `env` and `cwd`. */
+	root?: string
 }

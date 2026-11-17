@@ -35,6 +35,7 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import { scratchRoot, systemTemporaryFolder } from '../scratch/scratch-root.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
@@ -45,6 +46,7 @@ import { spawnDetached, trashFolder } from '../worktree/trash.ts'
 import { cloneLotTree, copyRepositoryFiles, removeEmptiedFolders } from './clone-lot-tree.ts'
 import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import {
+	HOOK_TEMPORARY_FOLDER_PREFIX,
 	POSIX_REHEARSAL_SCRATCH_ROOT,
 	CONTRIB_KEY_PARTS,
 	REHEARSAL_CONTRIB_LINE,
@@ -94,7 +96,7 @@ export async function rehearseHandover(params: {
 	colour: boolean
 	/** Asks whether the repository's own cli runs hand-overs, for the card's run line. */
 	probe: HandoverProbe
-	/** The folder the rehearsal folder is made in (`rehearsalScratchRoot`). */
+	/** The folder the rehearsal folder is made in: the scratch root (`machineScratchRoots`). */
 	scratchRoot: string
 	keep: boolean
 	/** Where the clone and each lot announce themselves; default: start and running lines through `write`. */
@@ -207,10 +209,12 @@ async function rehearseRecorded(
 	const pool = params.keep ? undefined : poolOf(repository)
 	// the hand-over folder's lot owns what the clone takes from the pool and parks back; none outside every store
 	const owner = params.stepPlace === null ? undefined : basename(params.stepPlace.lot)
-	const folder = mkdtempSync(join(params.scratchRoot, REHEARSAL_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: REHEARSAL_FOLDER_PREFIX, root: params.scratchRoot })
 	const clone = join(folder, basename(repository))
-	const hookTemporary = join(folder, REHEARSAL_TEMPORARY_FOLDER)
-	mkdirSync(hookTemporary)
+	const hookTemporary = makeHookTemporaryFolder({
+		platform: process.platform,
+		rehearsalFolder: folder,
+	})
 	write(textOf([`rehearsal in ${clone}`]))
 	const links: string[] = []
 	/** The hook's process group is stopped first (SIGKILL after its grace), then the rehearsal folder goes. */
@@ -219,6 +223,7 @@ async function rehearseRecorded(
 		recorder.end({ outcome: 'interrupted', parts: [], reuse: 'none', stateHash: null })
 		void stopLiveGroups(signal).then(function cleanUp() {
 			removeRehearsalFolder({ folder, links })
+			rmSync(hookTemporary, { recursive: true, force: true })
 			write(`interrupted (${signal}): the hook stopped, the rehearsal folder removed`)
 			process.exit(128 + constants.signals[signal])
 		})
@@ -308,6 +313,8 @@ async function rehearseRecorded(
 		return exit
 	} finally {
 		for (const signal of FORWARDED_SIGNALS) process.off(signal, interrupted)
+		// the hook's sockets and small files: never kept, wherever the rehearsal folder goes
+		rmSync(hookTemporary, { recursive: true, force: true })
 		if (params.keep) write(textOf([`kept the rehearsal folder: ${folder}`]))
 		else if (pool)
 			for (const line of trashRehearsalFolder({
@@ -433,31 +440,33 @@ function decideLots(params: {
 }
 
 /**
- * The folder rehearsals are made in: a short one, so the paths under it (a tool's socket in the hook's
- * temporary folder among them) stay within the system's limits.
+ * The rehearsal hook's temporary folder (`TMPDIR`), made now: on a POSIX system a short folder of its own under
+ * `/tmp`, whatever the rehearsal folder's path (a tool's socket under it stays within the system's limit); on
+ * Windows the rehearsal folder's `.tmp`. The caller removes it with the rehearsal.
  */
-export function rehearsalScratchRoot(params: {
+export function makeHookTemporaryFolder(params: {
 	platform: NodeJS.Platform
-	/** The system's temporary folder (`os.tmpdir()`). */
-	systemTemporaryFolder: string
+	rehearsalFolder: string
 }): string {
-	// a Windows temporary folder has no short fixed counterpart: it stays
-	return params.platform === 'win32' ? params.systemTemporaryFolder : POSIX_REHEARSAL_SCRATCH_ROOT
+	if (params.platform !== 'win32')
+		return mkdtempSync(join(POSIX_REHEARSAL_SCRATCH_ROOT, HOOK_TEMPORARY_FOLDER_PREFIX))
+	const folder = join(params.rehearsalFolder, REHEARSAL_TEMPORARY_FOLDER)
+	mkdirSync(folder, { recursive: true })
+	return folder
 }
 
 /**
- * Where `worktree prune` looks on this machine: the folder rehearsals are made in now, the system's temporary folder,
- * where earlier cli versions made them, and the cli's scratch root (read from `cwd`, the process's by default).
+ * Where `worktree prune` looks on this machine: the cli's scratch root (read from `cwd`, the process's by default),
+ * where rehearsals and every other scratch folder are made now, and the folder earlier versions made rehearsals in.
  */
 export function machineScratchRoots(params: { cwd?: string } = {}): ScratchRoots {
-	const temporary = systemTemporaryFolder()
+	const root = scratchRoot({ cwd: params.cwd })
 	return {
-		scratchRoot: rehearsalScratchRoot({
-			platform: process.platform,
-			systemTemporaryFolder: temporary,
-		}),
-		formerScratchRoot: temporary,
-		scratchFolderRoot: scratchRoot({ cwd: params.cwd }),
+		scratchRoot: root,
+		// where the rehearsals of earlier versions were made: the short root on POSIX, the temporary folder on Windows
+		formerScratchRoot:
+			process.platform === 'win32' ? systemTemporaryFolder() : POSIX_REHEARSAL_SCRATCH_ROOT,
+		scratchFolderRoot: root,
 	}
 }
 

@@ -290,7 +290,13 @@ export const REHEARSAL_FOLDER_PREFIX = 'dialecte-rehearse-'
  */
 export const POSIX_REHEARSAL_SCRATCH_ROOT = '/tmp'
 
-/** The hook's temporary folder (`TMPDIR`) in the rehearsal folder: short, removed with it. */
+/**
+ * The name prefix of a rehearsal hook's temporary folder (`TMPDIR`) under the short POSIX root: a short path, so a
+ * tool's socket under it stays within the system's limit of 104 bytes; holds sockets and small files only.
+ */
+export const HOOK_TEMPORARY_FOLDER_PREFIX = 'dlt-hook-'
+
+/** The hook's temporary folder (`TMPDIR`) in the rehearsal folder on Windows, where no socket limit applies. */
 export const REHEARSAL_TEMPORARY_FOLDER = '.tmp'
 
 /** How deep `handover list` looks for hand-over folders under its root. */

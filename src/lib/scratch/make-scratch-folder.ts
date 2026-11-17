@@ -11,7 +11,7 @@ import type { ScratchContext, ScratchMarker } from './scratch.types.ts'
  * this process's pid, the time it was made and the command line: what `worktree prune` and `health` read.
  */
 export function makeScratchFolder(params: { purpose: string } & ScratchContext): string {
-	const root = scratchRoot({ env: params.env, cwd: params.cwd })
+	const root = params.root ?? scratchRoot({ env: params.env, cwd: params.cwd })
 	mkdirSync(root, { recursive: true })
 	const folder = mkdtempSync(join(root, params.purpose))
 	const marker: ScratchMarker = {
