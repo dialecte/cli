@@ -34,8 +34,6 @@ export const LANDING_LINES = {
 		'lot land: {branch} exists on origin, pushed outside lot land: nothing overwritten; delete it there or land the lot on another branch',
 	registryRefused: 'lot land: {reason}: nothing pushed',
 	closeWhenMerged: 'once merged: dialecte lot close {entry} (or lot land {lot} again)',
-	hostSilent:
-		'pull request #{number}: the host could not say whether it merged ({reason}): the lot stays pending',
 	opened: 'pull request #{number} opened: {url}',
 	existing: 'pull request #{number}: {url}',
 	draft: 'a draft: CI runs on every push; land it again without --draft to queue it',
@@ -43,9 +41,9 @@ export const LANDING_LINES = {
 		'pull request #{number} is open and not a draft: --draft does not turn it back, it is not queued',
 	queued: 'queued: the merge queue lands it once its checks pass on top of main',
 	hostRefused: 'lot land: {reason}',
-	committed: 'pull request #{number} merged at {commit}: the lot is committed ({url})',
-	mergedThenMoved:
-		'lot land: pull request #{number} merged at {merged}, the lot holds commits since ({head}): they land in a new lot, nothing pushed',
+	committed: 'the lot is committed, nothing pushed: {landed}',
+	workSince: 'the lot holds {work}: they land in a new lot',
+	closeLanded: 'close it: dialecte lot close {lot}',
 } as const
 
 /** What git says when a lease that expected no branch finds one on origin: it was pushed outside `lot land`. */

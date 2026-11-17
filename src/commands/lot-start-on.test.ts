@@ -1,6 +1,6 @@
 /**
  * `lot start <brief> --on <parent lot>` (33CI CI4): a lot started on another open lot of the same repository. Its
- * branch starts at the parent's branch tip, `stack.json` records the parent and that tip, and the parent's scope is the
+ * branch starts at the parent's branch tip, `stack.json` records the parent only, and the parent's scope is the
  * child's base, never an overlap; every other open lot's still is. A parent that is not open, unknown, or of another
  * repository is refused before anything is written.
  */
@@ -20,7 +20,6 @@ import { OTHER_REPOSITORY } from '../../test/lot-start.constants.ts'
 import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { transitionOf } from '../../test/store-records.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { readStack } from '../lib/store/stack.ts'
 import { appendStoreList } from '../lib/store/store-list.ts'
 import { STORE_FOLDER } from '../lib/store/store.constants.ts'
 import { runLot } from './lot.ts'
@@ -100,7 +99,7 @@ function childFolderOf(params: { start: StartWorkspace; others: string[] }): str
 }
 
 describe('lot start --on', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('an open parent lot → the child starts at the parent branch tip, stack.json names the parent and that tip', () => {
+	it('an open parent lot → the child starts at the parent branch tip, stack.json holds the parent only, no parentHead', () => {
 		const { start, tip } = stackedWorkspace()
 
 		const started = startOn({ start, on: PARENT })
@@ -112,11 +111,11 @@ describe('lot start --on', { timeout: STORE_CASE_TIMEOUT }, () => {
 			base: { ref: string; commit: string }
 		}
 		expect({
-			stack: readStack({ lotFolder: child }),
+			stack: recordOf({ folder: child, name: 'stack.json' }),
 			base: identity.base,
 			head: git({ root: identity.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
 		}).toEqual({
-			stack: { schema: 1, parent: PARENT, parentHead: tip, at: NOW.toISOString() },
+			stack: { schema: 1, parent: PARENT },
 			base: { ref: PARENT_BRANCH, commit: tip },
 			head: tip,
 		})

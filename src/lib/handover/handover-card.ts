@@ -1073,8 +1073,8 @@ function optionalSection(params: { name: string; text: string | undefined }): Ca
 }
 
 /**
- * The card's `stack` line of a lot started on another (33CI CI4): `on <parent lot> (#<pr>, <state>)`; none for a lot
- * not stacked. Files only.
+ * The card's `stack` line of a lot started on another (33CI CI4): `on <parent lot> (#<pr>)`, or that the parent has no
+ * pull request yet; none for a lot not stacked. Files only: the parent's pull request state is `lot status`'s.
  *
  * @intent show which lot a stacked lot lands on
  * @internal

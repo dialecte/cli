@@ -110,6 +110,8 @@ export type LotStateInput = {
 	runMarker: HandoverRunMarker | undefined
 	/** The pull request the lot lands through when it holds a landing and no written hand-over (`lot land`). */
 	landing?: { number: number; url: string }
+	/** The lot merged (`landed.json`, or the landing state a reader read without writing it): committed. */
+	landed?: { tip: string }
 }
 
 /** What the lot readers take: the lot folder, its repository's registry, the registry's entries when read already. */

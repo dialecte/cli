@@ -1,10 +1,12 @@
 /**
- * The stack step of a landing (33CI CI4). A lot started on another (`stack.json`) lands on its parent: its pull request
- * is based on the parent's branch (and linked to the parent's as a native stack when the host has stacks), rebased
- * onto the parent's tip when the parent's branch moved. Once the parent merged, the lot drops the parent's commits:
- * based on the parent's branch, the cli rebases it off them onto origin's base; as a native stack, the host already
- * rebased origin's branch and the lot follows it (never forcing its own rebase over the host's). A conflict stops the
- * landing, the rebase undone: never a silent resolution.
+ * The stack step of a landing (33CI CI4, FIX-ci-loop section 1). A lot started on another (`stack.json`, the parent
+ * only) lands on its parent: its pull request is based on the parent's branch (and linked to the parent's as a native
+ * stack when the host has stacks), rebased onto the parent's newest tip when the parent moved. Once the parent merged
+ * (its landing state), the lot drops the parent's commits: rebased `--onto` origin's base from its fork point, the
+ * newest commit of the parent's line it holds (`lotBaseOf`, reflog-aware: an amended, rebased or squashed parent
+ * moves only the lot's own commits); when the host already rewrote origin's branch (a native stack), the lot follows
+ * it (never forcing its own rebase over the host's). A conflict stops the landing, the rebase undone: never a silent
+ * resolution.
  */
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -12,14 +14,18 @@ import { dirname, join } from 'node:path'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readGit, tryReadGit } from '../git.ts'
-import { readIdentity } from '../store/identity.ts'
-import { readStack, readStackRecord, writeStack } from '../store/stack.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { lotBaseOf } from '../landing/lot-base.ts'
+import { readLotLanding } from '../landing/lot-landing.ts'
+import { readStack } from '../store/stack.ts'
 import { UNTRACKED_STATUS_PREFIX } from './land-lot.constants.ts'
 import { readLanding } from './land-record.ts'
 import { STACK_CONFLICT_EXIT, STACK_LANDING_LINES } from './land-stack.constants.ts'
 
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
-import type { StackRecord, StackRoute } from '../store/stack.types.ts'
+import type { LandingState } from '../landing/landing-state.types.ts'
+import type { LotBase } from '../landing/lot-base.types.ts'
+import type { StackRecord } from '../store/stack.types.ts'
 import type { LandingRecord } from './land-lot.types.ts'
 import type { StackLanding, StackRefusal } from './land-stack.types.ts'
 
@@ -46,64 +52,74 @@ export function prepareStackLanding(params: {
 	if ('damage' in record)
 		return {
 			exitCode: 1,
-			refusal: STACK_LANDING_LINES.damaged
-				.replace('{lot}', () => params.lot)
-				.replace('{damage}', () => record.damage),
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.damaged,
+				values: { lot: params.lot, damage: record.damage },
+			}),
 		}
 	const parent = readParent({ ...params, record })
 	if ('refusal' in parent) return parent
-	// linked once (route native, recorded only after the host took the link): the host keeps the stack
-	const linked = record.route === 'native'
-	if (parent.pullRequest.state === 'merged')
-		return offMergedParent({
-			...params,
-			record,
-			route: linked ? 'native' : 'branch',
-			parentPull: parent.pullRequest,
-		})
-	const support = linked
-		? { stacks: true as const }
-		: params.host.probeStacks({ root: params.worktree })
+	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
+	const base = lotBaseOf({
+		root: params.worktree,
+		head: 'HEAD',
+		baseRef: originBase,
+		parent: { branch: parent.branch, landing: parent.landing },
+	})
+	if ('refusal' in base) return { exitCode: 1, refusal: `lot land: ${base.refusal}` }
+	if (parent.landing.kind === 'merged')
+		return offMergedParent({ ...params, record, lotBase: base, parentPull: parent.pullRequest })
+	// the parent is open: its pull request is what the child's stacks on
+	const parentPull = parent.pullRequest
+	if (parentPull === undefined)
+		return {
+			exitCode: 1,
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.noParentPull,
+				values: { lot: params.lot, parent: record.parent },
+			}),
+		}
+	const support = params.host.probeStacks({ root: params.worktree })
 	if (!params.draft && !support.stacks)
 		return {
 			exitCode: 1,
-			refusal: STACK_LANDING_LINES.waits
-				.replace('{lot}', () => params.lot)
-				.replace('{number}', String(parent.pullRequest.number))
-				.replace('{parent}', () => record.parent),
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.waits,
+				values: { lot: params.lot, number: String(parentPull.number), parent: record.parent },
+			}),
 		}
-	const restacked = onParentTip({ ...params, record, parentBranch: parent.branch })
+	const restacked = onParentTip({ ...params, base, parentBranch: parent.branch })
 	if ('refusal' in restacked) return restacked
 	const note = support.stacks
 		? []
 		: [
-				STACK_LANDING_LINES.basedOn
-					.replace('{number}', String(parent.pullRequest.number))
-					.replace('{branch}', () => parent.branch)
-					.replace('{why}', () => support.why),
+				fillMessage({
+					template: STACK_LANDING_LINES.basedOn,
+					values: { number: String(parentPull.number), branch: parent.branch, why: support.why },
+				}),
 			]
 	return {
 		pullBase: parent.branch,
-		textBase: restacked.parentHead,
+		textBase: base.ref,
 		route: support.stacks ? 'native' : 'branch',
-		linked,
+		// a pull request a landing opened on a host with stacks was linked then: the landing refuses otherwise
+		linked: support.stacks && params.landing?.branch === params.branch,
 		parentMerged: false,
-		parentPull: parent.pullRequest,
+		parentPull,
 		lines: [...note, ...restacked.lines],
 	}
 }
 
 /**
- * After the pull request is known: a stacked pull request not linked yet is linked on its parent's (native, the parent
- * open; `route: native` recorded only once the host took it, so a refused link is tried again at the next landing), and
- * one that merges into another branch than the landing's is retargeted; the lines saying so, or the host's refusal.
+ * After the pull request is known: a stacked pull request just opened on a host with stacks is linked on its parent's
+ * (the parent open), and one that merges into another branch than the landing's is retargeted; the lines saying so, or
+ * the host's refusal.
  *
  * @intent keep a stacked pull request on the right base
  * @internal
  */
 export function settleStackedPull(params: {
 	worktree: string
-	lotFolder: string
 	host: HostAdapter
 	stack: StackLanding
 	pullRequest: PullRequest
@@ -111,17 +127,25 @@ export function settleStackedPull(params: {
 }): { lines: string[] } | { refusal: string } {
 	const { host, stack, pullRequest, worktree } = params
 	const lines: string[] = []
-	if (stack.route === 'native' && !stack.linked && !stack.parentMerged) {
+	const parentPull = stack.parentPull
+	if (
+		stack.route === 'native' &&
+		!stack.linked &&
+		!stack.parentMerged &&
+		parentPull !== undefined
+	) {
 		const linked = host.linkStack({
 			root: worktree,
-			parent: stack.parentPull.url,
+			parent: parentPull.url,
 			child: pullRequest.url,
 		})
 		if (linked !== undefined) return linked
-		const record = readStackRecord({ lotFolder: params.lotFolder })
-		if (record !== undefined)
-			writeStack({ lotFolder: params.lotFolder, record: { ...record, route: 'native' } })
-		lines.push(STACK_LANDING_LINES.linked.replace('{number}', String(stack.parentPull.number)))
+		lines.push(
+			fillMessage({
+				template: STACK_LANDING_LINES.linked,
+				values: { number: String(parentPull.number) },
+			}),
+		)
 	}
 	if (!params.opened && pullRequest.base !== stack.pullBase) {
 		const moved = host.retargetPullRequest({
@@ -131,172 +155,192 @@ export function settleStackedPull(params: {
 		})
 		if (moved !== undefined) return moved
 		lines.push(
-			STACK_LANDING_LINES.retargeted
-				.replace('{number}', String(pullRequest.number))
-				.replace('{base}', () => stack.pullBase),
+			fillMessage({
+				template: STACK_LANDING_LINES.retargeted,
+				values: { number: String(pullRequest.number), base: stack.pullBase },
+			}),
 		)
 	}
 	return { lines }
 }
 
-/** The parent lot's branch and pull request (its `landing.json`'s, as the host holds it now), or the refusal. */
+/**
+ * The parent lot's branch, its landing state (its landed fact, else git and the host) and its pull request (the one its
+ * landing state names, else its `landing.json`'s as the host holds it), or the refusal.
+ */
 function readParent(params: {
 	lot: string
 	worktree: string
 	lotFolder: string
 	host: HostAdapter
 	record: StackRecord
-}): { branch: string; pullRequest: PullRequest } | StackRefusal {
+}): { branch: string; landing: LandingState; pullRequest?: PullRequest } | StackRefusal {
 	const { record, lot } = params
 	const parentFolder = join(dirname(params.lotFolder), record.parent)
-	function fill(template: string): string {
-		return template.replaceAll('{lot}', () => lot).replaceAll('{parent}', () => record.parent)
-	}
-	const identity = readIdentity({ lotFolder: parentFolder })
-	if (identity === undefined || typeof identity.branch !== 'string')
-		return { exitCode: 1, refusal: fill(STACK_LANDING_LINES.noParent) }
-	const landing = readLanding({ lotFolder: parentFolder })
-	if (landing === undefined) return { exitCode: 1, refusal: fill(STACK_LANDING_LINES.noParentPull) }
-	const read = params.host.readPullRequest({ root: params.worktree, ref: String(landing.number) })
-	if (read === undefined) return { exitCode: 1, refusal: fill(STACK_LANDING_LINES.noParentPull) }
-	if ('refusal' in read) return { exitCode: 1, refusal: `lot land: ${read.refusal}` }
-	return { branch: identity.branch, pullRequest: read }
+	const read = readLotLanding({ lotFolder: parentFolder, root: params.worktree, host: params.host })
+	if ('refusal' in read)
+		return {
+			exitCode: 1,
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.noParent,
+				values: { lot, parent: record.parent },
+			}),
+		}
+	const { state } = read
+	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
+		return { exitCode: 1, refusal: `lot land: ${state.hostRefusal}` }
+	const branch = read.identity.branch
+	const pull = 'pull' in state ? state.pull : undefined
+	if (pull !== undefined) return { branch, landing: state, pullRequest: pull }
+	const number = readLanding({ lotFolder: parentFolder })?.number
+	const asked =
+		number === undefined
+			? undefined
+			: params.host.readPullRequest({ root: params.worktree, ref: String(number) })
+	if (asked !== undefined && 'refusal' in asked)
+		return { exitCode: 1, refusal: `lot land: ${asked.refusal}` }
+	return { branch, landing: state, ...(asked !== undefined && { pullRequest: asked }) }
 }
 
 /**
- * The lot rebased onto its parent's branch tip when that moved since the lot's `parentHead` (the new tip recorded);
- * the parent head it now sits on, the line saying so; a conflict's refusal.
+ * The lot rebased onto its parent's newest branch tip when it does not hold it: from its fork point, so only its own
+ * commits move; the lines saying so, a conflict's refusal.
  */
 function onParentTip(params: {
 	lot: string
 	worktree: string
-	lotFolder: string
-	record: StackRecord
+	base: LotBase
 	parentBranch: string
-}): { parentHead: string; lines: string[] } | StackRefusal {
-	const { record, worktree } = params
-	const tip = tryReadGit({
-		root: worktree,
-		args: ['rev-parse', '--verify', '--quiet', `refs/heads/${params.parentBranch}^{commit}`],
-	})?.trim()
-	if (tip === undefined || tip === '' || tip === record.parentHead)
-		return { parentHead: record.parentHead, lines: [] }
+}): { lines: string[] } | StackRefusal {
+	const { worktree, base } = params
+	const tip = commitOf({ root: worktree, ref: base.ref })
+	if (tip === undefined || isAncestorCommit({ root: worktree, ancestor: tip, descendant: 'HEAD' }))
+		return { lines: [] }
 	const rebased = rebaseOnto({
 		lot: params.lot,
 		worktree,
 		onto: tip,
-		upstream: record.parentHead,
+		upstream: base.forkPoint,
 		label: params.parentBranch,
 	})
 	if (rebased !== undefined) return rebased
-	writeStack({ lotFolder: params.lotFolder, record: { ...record, parentHead: tip } })
 	return {
-		parentHead: tip,
 		lines: [
-			STACK_LANDING_LINES.restacked
-				.replace('{parent}', () => params.parentBranch)
-				.replace('{commit}', tip.slice(0, SHORT_SHA_LENGTH)),
+			fillMessage({
+				template: STACK_LANDING_LINES.restacked,
+				values: { parent: params.parentBranch, commit: tip.slice(0, SHORT_SHA_LENGTH) },
+			}),
 		],
 	}
 }
 
 /**
- * The lot off its merged parent: based on the parent's branch, rebased off the parent's commits onto origin's base;
- * native, moved to the host's rewrite of origin's branch (local commits beyond the last push rebased onto it, its head
- * the next push's lease). The parent head recorded is origin's base tip.
+ * The lot off its merged parent: when the host already rewrote origin's branch (a native stack's top once its bottom
+ * merged: origin's branch is no longer the head the lot's last landing pushed), the lot follows that rewrite; else it
+ * is rebased `--onto` origin's base from its fork point, unless origin's base holds the fork point already (the base's
+ * own rebase does the rest).
  */
 function offMergedParent(params: {
 	lot: string
 	worktree: string
 	branch: string
 	base: string
-	lotFolder: string
 	record: StackRecord
-	/** native: linked by the host, which rewrites the branch itself; branch: rebased here. */
-	route: StackRoute
-	parentPull: PullRequest
+	lotBase: LotBase
+	parentPull: PullRequest | undefined
 	landing: LandingRecord | undefined
 }): StackLanding | StackRefusal {
-	const { worktree, record, base } = params
-	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${base}`
-	const baseTip = readGit({ root: worktree, args: ['rev-parse', originBase] }).trim()
+	const originBase = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
+	const rewritten = hostRewriteOf(params)
 	const moved: { lines: string[]; lease?: string } | StackRefusal =
-		params.route === 'native' ? followHost({ ...params }) : offParentCommits({ ...params, baseTip })
+		rewritten === undefined
+			? offParentCommits({ ...params, originBase })
+			: followHost({ ...params, remote: rewritten.remote, pushed: rewritten.pushed })
 	if ('refusal' in moved) return moved
-	writeStack({ lotFolder: params.lotFolder, record: { ...record, parentHead: baseTip } })
 	return {
-		pullBase: base,
+		pullBase: params.base,
 		textBase: originBase,
-		route: params.route,
-		linked: params.route === 'native',
+		route: rewritten === undefined ? 'branch' : 'native',
+		linked: rewritten !== undefined,
 		parentMerged: true,
 		parentPull: params.parentPull,
 		...(moved.lease !== undefined && { lease: moved.lease }),
 		lines: moved.lines,
 	}
 }
+/**
+ * Origin's branch as the host rewrote it once the parent merged: it is not the head the lot's last landing pushed,
+ * and that head is known (a lot that never pushed was never rewritten); undefined otherwise.
+ */
+function hostRewriteOf(params: {
+	worktree: string
+	branch: string
+	landing: LandingRecord | undefined
+}): { remote: string; pushed: string } | undefined {
+	const remote = commitOf({
+		root: params.worktree,
+		ref: `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`,
+	})
+	const pushed = params.landing?.branch === params.branch ? params.landing.head : undefined
+	if (remote === undefined || pushed === undefined || remote === pushed) return undefined
+	return { remote, pushed }
+}
 
-/** The fallback route: `git rebase --onto origin/<base> <parentHead>` unless origin's base holds the parent head. */
+/**
+ * The lot rebased `--onto` origin's base from its fork point, unless origin's base holds the fork point (a parent
+ * merged with its own commits, or a lot already moved: the base's own rebase does the rest).
+ */
 function offParentCommits(params: {
 	lot: string
 	worktree: string
 	base: string
+	originBase: string
 	record: StackRecord
-	parentPull: PullRequest
-	baseTip: string
+	lotBase: LotBase
+	parentPull: PullRequest | undefined
 }): { lines: string[] } | StackRefusal {
-	const { worktree, record, baseTip } = params
-	// a parent merged with its own commits, or a rebase done by an earlier landing: the base's rebase does the rest
-	if (isAncestorCommit({ root: worktree, ancestor: record.parentHead, descendant: baseTip }))
+	const { worktree, lotBase } = params
+	const baseTip = readGit({ root: worktree, args: ['rev-parse', params.originBase] }).trim()
+	if (isAncestorCommit({ root: worktree, ancestor: lotBase.forkPoint, descendant: baseTip }))
 		return { lines: [] }
 	const rebased = rebaseOnto({
 		lot: params.lot,
 		worktree,
 		onto: baseTip,
-		upstream: record.parentHead,
+		upstream: lotBase.forkPoint,
 		label: `origin/${params.base}`,
 	})
 	if (rebased !== undefined) return rebased
 	return {
 		lines: [
-			STACK_LANDING_LINES.offParent
-				.replace('{parent}', () => record.parent)
-				.replace('{base}', () => params.base)
-				.replace('{commit}', baseTip.slice(0, SHORT_SHA_LENGTH))
-				.replace('{number}', String(params.parentPull.number)),
+			fillMessage({
+				template: STACK_LANDING_LINES.offParent,
+				values: {
+					parent: params.record.parent,
+					base: params.base,
+					commit: baseTip.slice(0, SHORT_SHA_LENGTH),
+					merged:
+						params.parentPull === undefined ? params.record.parent : `#${params.parentPull.number}`,
+				},
+			}),
 		],
 	}
 }
 
 /**
- * The native route: origin's branch as the host rewrote it once the parent merged. Nothing local beyond the last
- * pushed head: the worktree moves to it (`git reset --keep`, uncommitted changes kept). More: those commits rebased
- * onto it. Its head is the next push's lease. The host not done yet (origin's branch still the pushed head) is refused.
+ * The host's rewrite followed: nothing local beyond the last pushed head, the worktree moves to it (`git reset --keep`,
+ * uncommitted changes kept); more, those commits rebased onto it. Its head is the next push's lease.
  */
 function followHost(params: {
 	lot: string
 	worktree: string
 	branch: string
 	base: string
-	record: StackRecord
-	parentPull: PullRequest
-	landing: LandingRecord | undefined
+	remote: string
+	pushed: string
 }): { lines: string[]; lease: string } | StackRefusal {
-	const { worktree, branch } = params
-	const originBranch = `${ORIGIN_BRANCH_REF_PREFIX}${branch}`
-	const remote = tryReadGit({
-		root: worktree,
-		args: ['rev-parse', '--verify', '--quiet', originBranch],
-	})?.trim()
-	const pushed = params.landing?.branch === branch ? params.landing.head : undefined
-	if (remote === undefined || remote === '' || pushed === undefined || remote === pushed)
-		return {
-			exitCode: 1,
-			refusal: STACK_LANDING_LINES.notRewritten
-				.replace('{number}', String(params.parentPull.number))
-				.replace('{parent}', () => params.record.parent)
-				.replace('{branch}', () => branch),
-		}
+	const { worktree, remote, pushed } = params
+	const originBranch = `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}`
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const moved =
 		head === pushed
@@ -312,12 +356,26 @@ function followHost(params: {
 	return {
 		lease: remote,
 		lines: [
-			STACK_LANDING_LINES.followed
-				.replace('{branch}', () => branch)
-				.replace('{base}', () => params.base)
-				.replace('{commit}', remote.slice(0, SHORT_SHA_LENGTH)),
+			fillMessage({
+				template: STACK_LANDING_LINES.followed,
+				values: {
+					branch: params.branch,
+					base: params.base,
+					commit: remote.slice(0, SHORT_SHA_LENGTH),
+				},
+			}),
 		],
 	}
+}
+
+/** The commit `ref` names; undefined when it names none. */
+function commitOf(params: { root: string; ref: string }): string | undefined {
+	return (
+		tryReadGit({
+			root: params.root,
+			args: ['rev-parse', '--verify', '--quiet', `${params.ref}^{commit}`],
+		})?.trim() || undefined
+	)
 }
 
 /** `git reset --keep <onto>`: the worktree moved, uncommitted changes kept; the refusal when git cannot keep them. */
@@ -334,9 +392,10 @@ function resetKeep(params: {
 	if (reset.status === 0) return undefined
 	return {
 		exitCode: 1,
-		refusal: STACK_LANDING_LINES.dirty
-			.replace('{lot}', () => params.lot)
-			.replace('{onto}', () => params.label),
+		refusal: fillMessage({
+			template: STACK_LANDING_LINES.dirty,
+			values: { lot: params.lot, onto: params.label },
+		}),
 	}
 }
 
@@ -359,9 +418,10 @@ function rebaseOnto(params: {
 	if (tracked.length > 0)
 		return {
 			exitCode: 1,
-			refusal: STACK_LANDING_LINES.dirty
-				.replace('{lot}', () => params.lot)
-				.replace('{onto}', () => params.label),
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.dirty,
+				values: { lot: params.lot, onto: params.label },
+			}),
 		}
 	const rebase = spawnSync('git', ['rebase', '--quiet', '--onto', params.onto, params.upstream], {
 		cwd: worktree,
@@ -372,20 +432,24 @@ function rebaseOnto(params: {
 		.split('\n')
 		.filter(Boolean)
 	const abort = spawnSync('git', ['rebase', '--abort'], { cwd: worktree, encoding: 'utf8' })
+	const values = {
+		lot: params.lot,
+		onto: params.label,
+		files: files.length > 0 ? files.join(', ') : 'the lot',
+	}
 	if (abort.status !== 0)
 		return {
 			exitCode: STACK_CONFLICT_EXIT,
-			refusal: STACK_LANDING_LINES.notUndone
-				.replace('{lot}', () => params.lot)
-				.replace('{onto}', () => params.label)
-				.replace('{files}', () => (files.length > 0 ? files.join(', ') : 'the lot'))
-				.replace('{reason}', () => abort.stderr.trim().split('\n')[0] || `exit ${abort.status}`),
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.notUndone,
+				values: {
+					...values,
+					reason: abort.stderr.trim().split('\n')[0] || `exit ${abort.status}`,
+				},
+			}),
 		}
 	return {
 		exitCode: STACK_CONFLICT_EXIT,
-		refusal: STACK_LANDING_LINES.conflict
-			.replace('{lot}', () => params.lot)
-			.replace('{onto}', () => params.label)
-			.replace('{files}', () => (files.length > 0 ? files.join(', ') : 'the lot')),
+		refusal: fillMessage({ template: STACK_LANDING_LINES.conflict, values }),
 	}
 }

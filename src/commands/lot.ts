@@ -22,7 +22,9 @@ import { closestNames } from '../lib/closest-names.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { isFolder } from '../lib/file-system.ts'
+import { createGithubHost } from '../lib/host/github-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
+import { statusLandingOf } from '../lib/landing/lot-landing.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
 import { packageRootOf } from '../lib/package-root.ts'
 import { linesOf, printOut, textOf } from '../lib/print/print.ts'
@@ -78,6 +80,7 @@ import { runDelta } from './review.ts'
 import type { DeclaredRenamedForm } from '../lib/command-map/command-map.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HandoverProbe } from '../lib/handover/handover.types.ts'
+import type { HostAdapter } from '../lib/host/host.types.ts'
 import type { RiskClass } from '../lib/risk/risk.types.ts'
 import type { BriefEffort } from '../lib/store/brief.types.ts'
 import type { ResolveMode } from '../lib/store/store.types.ts'
@@ -185,17 +188,25 @@ export function runLot(params: {
 	probe?: HandoverProbe
 	/** The cli named in `lot result`'s card when the repository's own cannot run hand-overs. */
 	cliPath?: string
+	/** Where lots land, asked by `lot status` (the stack parent's pull request) and `lot close`; default: GitHub. */
+	host?: HostAdapter
 }): CommandResult {
 	const [verb, ...words] = params.argv
-	if (verb === 'close') return runLotClose({ cwd: params.cwd, argv: words, now: params.now })
-	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words })
+	if (verb === 'close')
+		return runLotClose({ cwd: params.cwd, argv: words, now: params.now, host: params.host })
+	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words, host: params.host })
 	if (verb === 'pr') return runLotPr({ cwd: params.cwd, argv: words })
 	if (verb === 'review') return runLotReview({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'approve') return runLotApprove({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'design') return runLotDesign({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'brief') return runLotBrief({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
-	if (verb === 'status') return lotStatus({ cwd: params.cwd, argv: words })
+	if (verb === 'status')
+		return lotStatus({
+			cwd: params.cwd,
+			argv: words,
+			landing: statusLandingOf(params.host ?? createGithubHost()),
+		})
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'stop') return lotStop({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'station') return lotStation({ cwd: params.cwd, argv: words, now: params.now })

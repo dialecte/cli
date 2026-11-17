@@ -5,9 +5,9 @@
  * committed nor abandoned, the main checkout, a worktree that is no
  * registered worktree (or one already in the trash or the pool), one on another branch than the hand-over's, a
  * locked one, a mutation run from it, a process working in it, processes that cannot be listed, another
- * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, commits only
- * its HEAD reflog reaches (a head a rebase of `lot land` replaced holds its commits: they landed rebased), ignored files its removal would delete that nothing else holds; nothing done for a
- * hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
+ * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, work its
+ * branch or HEAD reflog reaches that the base does not hold (`unlandedWork`: a squash, a rebase or a merge of it
+ * landed alike), ignored files its removal would delete that nothing else holds; nothing done for a hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
  * else a catch-up one read back) and the `removing` intent, any failure keeping the worktree; after it, the
  * `removed` outcome. Every decision is taken for every argument before anything
  * moves (one worktree, whichever arguments reach it, decided and closed once), `node_modules` checked against
@@ -28,13 +28,23 @@ import {
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
-import { mainCheckoutOf, readGit, tryReadGit } from '../git.ts'
+import { mainCheckoutOf, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { readLanded } from '../landing/landed-record.ts'
+import {
+	landedLineOf,
+	notLandedTextOf,
+	readLotLanding,
+	recordLanded,
+} from '../landing/lot-landing.ts'
+import { unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
 import { readPackageJson } from '../package-json.ts'
-import { createLandedProbe } from '../store/lot-entry.ts'
-import { readLotKeeps } from '../store/lot-keep.ts'
-import { readLotScope } from '../store/lot-records.ts'
-import { isCoveredBy } from '../store/scope-changes.ts'
+import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
+import { lotState } from '../store/lot-state.ts'
+import { requiredLotOf } from '../store/resolve-lot.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
+import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
@@ -49,18 +59,25 @@ import {
 	WORKTREE_STATUS_ARGUMENTS,
 } from '../worktree/worktree.constants.ts'
 import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
-import { PATCH_DIFF_OPTIONS } from './close-handovers.constants.ts'
-import { readStoreEntries } from './handover-store-read.ts'
-import { entryOfArgument, findHandoverStore, recordHandoverClosed } from './handover-store.ts'
 import {
-	ARCHIVED_LOT_FILE,
-	CLOSE_FROM_INSIDE,
-	HEAD_REFLOG_COMMITS_SHOWN,
-} from './handover.constants.ts'
-import { readLanding, readReplacedHeads } from './land-record.ts'
-import { readHandoverFolder } from './read-handover-folder.ts'
+	CLOSE_UNLANDED_WORK,
+	LOT_NOT_OPEN,
+	NO_LOT_WORKTREE,
+	NOT_A_LOT,
+} from './close-handovers.constants.ts'
+import { readStoreEntries } from './handover-store-read.ts'
+import {
+	entryOfArgument,
+	findHandoverStore,
+	recordHandoverClosed,
+	recordHandoverState,
+	registerHandover,
+} from './handover-store.ts'
+import { ARCHIVED_LOT_FILE, CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
+import type { HostAdapter } from '../host/host.types.ts'
+import type { CloseLandings } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
@@ -116,18 +133,12 @@ export function closeHandovers(params: {
 	})
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
-	// the lot keep rule: the repository's store read once for every argument, a lot whose hand-over was committed
-	// outside its folder probed once (its branch on the target branch: it reads committed and keeps nothing)
-	// the base branch resolved once, for the probe and the reflog rule: no base branch found, the reflog rule holds
-	// nothing through it and no lot reads landed, so a refusal never moves more than before
-	const packageJson = readPackageJson(main)
-	const found = findBaseBranchRef({ root: main, packageJson })
+	// the lot keep rule: the repository's store read once for every argument, after the landings were settled (a
+	// merged lot holds its landed fact: committed, it keeps nothing)
+	// the base branch resolved once for the unlanded-work rule: none found, every reflog commit is unlanded work
+	const found = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
 	const baseBranch = 'refusal' in found ? undefined : found
-	const lotReading = readLotKeeps({
-		repository: main,
-		probe: createLandedProbe({ root: main, packageJson, target: { found: baseBranch } }),
-	})
-	const lotKeeps = lotReading.kept
+	const lotKeeps = lotsKeepingWorktrees({ repository: main })
 	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
 	const lotOwners = readLotOwners(main)
 	// read once for every argument: the registry's entries, the links around the workspace
@@ -252,10 +263,183 @@ export function closeHandovers(params: {
 			if (target.entry && 'closed' in outcome && !outcome.already)
 				recordHandoverClosed({ store, name: target.entry.name, at: params.now })
 		})
-	return outcomes.map(function withLanded(result, index): CloseResult {
-		const landed = targets[index].entry && lotReading.landed.get(keys[index])
-		return landed === undefined ? result : { ...result, outcome: { ...result.outcome, landed } }
+	return outcomes
+}
+
+/**
+ * Before any close decision, the landings of the lots the arguments reach, read once with the host (FIX-ci-loop
+ * section 2): the store lot an argument names (a lot id or name with no hand-over entry, or an entry registering a lot
+ * folder), and the open lots naming an argument's worktree and branch. A merged lot gets its landed fact (so it reads
+ * committed and keeps nothing), its pending entry committed; a merged lot with no entry is registered committed, the
+ * argument then naming that entry. A lot argument that is not merged is kept with why, nothing written.
+ *
+ * @intent let lot close see a merge, a squash or a pull request opened by hand, whatever registry it has
+ * @internal
+ */
+export function settleCloseLandings(params: {
+	main: string
+	names: readonly string[]
+	host: HostAdapter
+	now: Date
+}): CloseLandings {
+	const { main, now } = params
+	const store = findHandoverStore(main)
+	const lotStore = locateStore({ from: main })?.store
+	const identities = lotStore === undefined ? [] : listLotIdentities({ store: lotStore })
+	// each lot's landing read once, whichever arguments reach it
+	const read = new Map<string, { landed?: string; kept?: string }>()
+	function settle(lotFolder: string): { landed?: string; kept?: string } {
+		const known = read.get(lotFolder)
+		if (known !== undefined) return known
+		const settled = settledLandingOf({ lotFolder, host: params.host, now })
+		// a merged lot's entry is committed, whichever verb wrote its landed fact
+		if (settled.landed !== undefined)
+			recordHandoverState({ store, folder: lotFolder, state: 'committed' })
+		read.set(lotFolder, settled)
+		return settled
+	}
+	const names: string[] = []
+	const landed = new Map<string, string>()
+	const kept = new Map<string, string>()
+	for (const argument of params.names) {
+		const entry = entryOfArgument({ argument, store, lotStore })
+		const own =
+			entry === undefined ? lotFolderOf({ argument, main }) : lotFolderIn({ entry, lotStore })
+		const reaching =
+			entry === undefined
+				? []
+				: identities
+						.filter(
+							(lot) =>
+								lot.identity.branch === entry.branch &&
+								typeof lot.identity.worktree === 'string' &&
+								realPathOf(lot.identity.worktree) === realPathOf(entry.worktree),
+						)
+						.map((lot) => realPathOf(join(lotStore ?? '', lot.name)))
+		const lines = [...new Set([...(own === undefined ? [] : [own]), ...reaching])]
+			.map(settle)
+			.flatMap((settled) => (settled.landed === undefined ? [] : [settled.landed]))
+		const name = closedNameOf({ argument, entry, own, settle, now })
+		if ('kept' in name) {
+			kept.set(argument, name.kept)
+			continue
+		}
+		names.push(name.name)
+		if (lines.length > 0) landed.set(name.name, lines.join('; '))
+	}
+	return { names, landed, kept }
+}
+
+/**
+ * The name the close decides for an argument: the argument itself when it names an entry or no lot (the close then
+ * answers unknown); for a lot with no entry, the entry a merged lot is registered under, or why it stays.
+ */
+function closedNameOf(params: {
+	argument: string
+	entry: StoreEntry | undefined
+	own: string | undefined
+	settle: (lotFolder: string) => { landed?: string; kept?: string }
+	now: Date
+}): { name: string } | { kept: string } {
+	const { argument, own } = params
+	if (params.entry !== undefined || own === undefined) return { name: argument }
+	const settled = params.settle(own)
+	if (settled.landed === undefined) return { kept: settled.kept ?? '' }
+	return registerLandedLot({ lotFolder: own, now: params.now })
+}
+
+/**
+ * An open lot whose records hold reads `{}`; a lot that landed already, its landed line (its fact holds it, nothing to
+ * read again); a damaged or closed one why it is not read.
+ */
+function openLotStateOf(params: { lotFolder: string }): { kept?: string; landed?: string } {
+	const checked = readCheckedLotState({
+		lotFolder: params.lotFolder,
+		registry: registryOfLotFolder(params.lotFolder),
 	})
+	if (checked === undefined) return { kept: NOT_A_LOT }
+	if ('damage' in checked) return { kept: checked.damage }
+	const fact = readLanded({ lotFolder: params.lotFolder })
+	if (fact !== undefined && 'tip' in fact) return { landed: landedLineOf(fact) }
+	const { state } = lotState(checked.input)
+	return LOTS_KEEPING_NOTHING.some((closed) => closed === state)
+		? { kept: fillMessage({ template: LOT_NOT_OPEN, values: { state } }) }
+		: {}
+}
+
+/**
+ * One lot's landing as close settles it: an open lot whose records hold is read (with the host) and its landed fact
+ * written once merged; a lot that landed already gives its line; a damaged or closed one stays as it is, with why.
+ */
+function settledLandingOf(params: { lotFolder: string; host: HostAdapter; now: Date }): {
+	landed?: string
+	kept?: string
+} {
+	const { lotFolder } = params
+	const open = openLotStateOf({ lotFolder })
+	if (open.kept !== undefined || open.landed !== undefined) return open
+	const landing = readLotLanding({ lotFolder, host: params.host })
+	if ('refusal' in landing) return { kept: landing.refusal }
+	try {
+		return settledOf({
+			landing: recordLanded({ landing, now: params.now }),
+			text: notLandedTextOf(landing),
+		})
+	} catch (error) {
+		// a landed fact that cannot be written keeps the lot: nothing is decided on a fact not kept
+		return { kept: (error as Error).message.trim() }
+	}
+}
+
+/** A lot's landing as close reads it: the line naming how it landed, or why it is kept. */
+function settledOf(params: { landing: ReturnType<typeof recordLanded>; text: string }): {
+	landed?: string
+	kept?: string
+} {
+	return params.landing === undefined
+		? { kept: params.text }
+		: { landed: landedLineOf(params.landing) }
+}
+
+/** The store lot an argument with no hand-over entry names (its id, name or index); undefined for none. */
+function lotFolderOf(params: { argument: string; main: string }): string | undefined {
+	const required = requiredLotOf({ argument: params.argument, cwd: params.main, mode: 'read' })
+	return 'lot' in required ? realPathOf(required.lot) : undefined
+}
+
+/** The store lot an entry registers (its folder is a lot folder of the store); undefined for a hand-over folder. */
+function lotFolderIn(params: {
+	entry: StoreEntry
+	lotStore: string | undefined
+}): string | undefined {
+	const { lotStore } = params
+	if (lotStore === undefined) return undefined
+	const folder = realPathOf(params.entry.folder)
+	return dirname(folder) === realPathOf(lotStore) ? folder : undefined
+}
+
+/** A merged lot with no hand-over entry registered committed for its worktree: the entry's name, or why it stays. */
+function registerLandedLot(params: {
+	lotFolder: string
+	now: Date
+}): { name: string } | { kept: string } {
+	const identity = readLotLanding({ lotFolder: params.lotFolder })
+	if ('refusal' in identity) return { kept: identity.refusal }
+	const { worktree, branch } = identity.identity
+	if (worktree === null || !existsSync(worktree))
+		return { kept: fillMessage({ template: NO_LOT_WORKTREE, values: { lot: identity.lot } }) }
+	const name = registerHandover({
+		root: worktree,
+		folder: params.lotFolder,
+		branch,
+		now: params.now,
+	})
+	recordHandoverState({
+		store: findHandoverStore(worktree),
+		folder: params.lotFolder,
+		state: 'committed',
+	})
+	return { name }
 }
 
 /**
@@ -410,18 +594,30 @@ export function whyKeep(params: {
 		.filter(Boolean)
 	if (status.length)
 		return { kept: `dirty: ${status.length} path(s) git status lists in ${worktree.path}` }
-	const unreached = commitsOnlyInHeadReflog({
-		worktree: worktree.path,
-		branch: entry.branch,
-		baseRef: params.baseBranch?.ref,
-		replaced: readReplacedHeads({ lotFolder: entry.folder, branch: entry.branch }),
-		lotPaths: lotPathsOf({ folder: entry.folder }),
-		landedHead: readLanding({ lotFolder: entry.folder })?.head,
-	})
-	const holders = [entry.branch, ...(params.baseBranch ? [params.baseBranch.branch] : [])]
-	if (unreached.length)
+	const landedFact = readLanded({ lotFolder: entry.folder })
+	const unlanded =
+		params.baseBranch === undefined
+			? []
+			: unlandedWork({
+					root: worktree.path,
+					branch: entry.branch,
+					baseRef: params.baseBranch.ref,
+					worktree: worktree.path,
+					// a landed lot: every commit beyond what landed is work after the landing; a hand-over no landing
+					// proves: its branch, never deleted, keeps its commits, only what the HEAD reflog alone reaches counts
+					...(landedFact !== undefined && 'tip' in landedFact
+						? { landedTip: landedFact.tip }
+						: { keptElsewhere: true }),
+				})
+	if (unlanded.length > 0 && params.baseBranch !== undefined)
 		return {
-			kept: `its HEAD reflog reaches ${unreached.length} commit(s) that neither ${holders.join(', ')} nor a remote-tracking ref holds: ${unreached.slice(0, HEAD_REFLOG_COMMITS_SHOWN).join(', ')} (look: git -C ${worktree.path} reflog HEAD)`,
+			kept: fillMessage({
+				template: CLOSE_UNLANDED_WORK,
+				values: {
+					work: unlandedWorkText({ commits: unlanded, base: params.baseBranch.branch }),
+					worktree: worktree.path,
+				},
+			}),
 		}
 	const { kept } = removableIgnored({
 		worktree: worktree.path,
@@ -467,183 +663,8 @@ function linkFromOutside(params: {
 }
 
 /**
- * The commits (short) the worktree's HEAD reflog reaches that neither the hand-over's branch, the base branch, a
- * remote-tracking ref nor a head its landings' rebases replaced holds, whose patch (stable patch id) no commit of
- * the branch since the base holds (a rebase no record names), and that the lot did not supersede (`supersededOf`):
- * deleted with the worktree, its reflog the only way back to them. A ref or head the repository does not hold is left
- * out of the comparison.
- */
-function commitsOnlyInHeadReflog(params: {
-	worktree: string
-	branch: string
-	/** The base branch's full ref; undefined when none was found (nothing held through it). */
-	baseRef: string | undefined
-	/** The heads `lot land` rebased away (`landing.json`): their commits landed as the rebased ones. */
-	replaced: readonly string[]
-	/** The lot's paths (its scope, else its hand-over lots' paths): what a superseded commit may change. */
-	lotPaths: readonly string[]
-	/** The head the lot's landing pushed (`landing.json`); left out, the branch's tip is the landed one. */
-	landedHead?: string
-}): string[] {
-	const root = params.worktree
-	// a reflog git cannot read throws: the worktree is kept with git's message
-	const reflog = readGit({ root, args: ['reflog', 'show', '--format=%H', 'HEAD', '--'] })
-	const entries = reflog.split('\n').filter(Boolean)
-	const commits = [...new Set(entries)]
-	if (commits.length === 0) return []
-	const held = [
-		`refs/heads/${params.branch}`,
-		...(params.baseRef === undefined ? [] : [params.baseRef]),
-		...params.replaced,
-	].filter(
-		(ref) =>
-			tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] }) !==
-			undefined,
-	)
-	// the reflog's commits on standard input (read as wanted, whatever `--not` says): no argument-length limit
-	const unreached = readGit({
-		root,
-		args: ['rev-list', '--stdin', '--not', ...held, '--remotes'],
-		input: `${commits.join('\n')}\n`,
-	})
-		.split('\n')
-		.filter(Boolean)
-	if (unreached.length === 0) return []
-	// a rebase no record names (a lot landed before `replaced` was kept): the same patch as a commit of the branch
-	const landed = patchIdsOf({
-		root,
-		patches: readGit({
-			root,
-			args: [
-				'log',
-				'-p',
-				...PATCH_DIFF_OPTIONS,
-				'--format=commit %H',
-				`refs/heads/${params.branch}`,
-				...(params.baseRef === undefined ? [] : ['--not', params.baseRef]),
-			],
-		}),
-	})
-	const unreachedPatches = readGit({
-		root,
-		args: ['show', '-p', ...PATCH_DIFF_OPTIONS, '--format=commit %H', '--stdin'],
-		input: `${unreached.join('\n')}\n`,
-	})
-	// full ids on both sides; git abbreviates the ones left only to name them
-	const samePatch = new Set(
-		[...patchIdsOf({ root, patches: unreachedPatches })]
-			.filter(function isLandedPatch([patchId]) {
-				return landed.has(patchId)
-			})
-			.map(function commitOf([, commit]) {
-				return commit
-			}),
-	)
-	const notLanded = unreached.filter(function notSamePatch(commit) {
-		return !samePatch.has(commit)
-	})
-	const superseded = supersededOf({
-		root,
-		entries,
-		branch: params.branch,
-		commits: notLanded,
-		lotPaths: params.lotPaths,
-		landedHead: params.landedHead,
-	})
-	const left = notLanded.filter(function notSuperseded(commit) {
-		return !superseded.has(commit)
-	})
-	if (left.length === 0) return []
-	return readGit({
-		root,
-		args: ['rev-list', '--no-walk', '--abbrev-commit', '--stdin'],
-		input: `${left.join('\n')}\n`,
-	})
-		.split('\n')
-		.filter(Boolean)
-}
-
-/**
- * The commits of `commits` the lot superseded: each changes at least one file and only files inside the lot's paths,
- * and every one of its reflog entries is older than the first where HEAD reached the landed head (the one the landing
- * pushed, else the branch's tip) - work in progress dropped before the lot's final commits were made (a reset to
- * rebuild them). A commit made after the landed head was reached, then dropped, is not superseded. Order is the
- * reflog's (`entries`, newest first), never commit dates; none when the reflog never reached the tip or the lot names
- * no path.
- */
-function supersededOf(params: {
-	root: string
-	entries: readonly string[]
-	branch: string
-	commits: readonly string[]
-	lotPaths: readonly string[]
-	landedHead: string | undefined
-}): Set<string> {
-	const { root, entries, lotPaths } = params
-	if (params.commits.length === 0 || lotPaths.length === 0) return new Set()
-	const tip =
-		params.landedHead ??
-		tryReadGit({
-			root,
-			args: ['rev-parse', '--verify', '--quiet', `refs/heads/${params.branch}^{commit}`],
-		})?.trim()
-	const reachedTip = tip === undefined ? -1 : entries.lastIndexOf(tip)
-	if (reachedTip === -1) return new Set()
-	return new Set(
-		params.commits.filter(function isSuperseded(commit) {
-			// newest first: an entry at or before the tip's first one is newer than it
-			if (entries.indexOf(commit) <= reachedTip) return false
-			const files = readGit({
-				root,
-				args: ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit],
-			})
-				.split('\n')
-				.filter(Boolean)
-			return (
-				files.length > 0 &&
-				files.every(function isLotPath(path) {
-					return lotPaths.some((entry) => isCoveredBy({ path, entry }))
-				})
-			)
-		}),
-	)
-}
-
-/** The lot's paths: the effective scope of its folder's brief, else the files of its hand-over's lots; none else. */
-function lotPathsOf(params: { folder: string }): string[] {
-	const scope = readLotScope({ lotFolder: params.folder })
-	if (scope.length > 0) return scope
-	const handover = readHandoverFolder(params.folder)
-	return typeof handover === 'string'
-		? []
-		: handover.lots.flatMap((lot) => [...lot.files, ...lot.deletedFiles])
-}
-
-/**
- * The patch id of each commit of `patches` (`git log -p` / `git show -p` with `commit <sha>` headers), as a map from
- * patch id to commit; a commit with no change (an empty or merge commit) has none. Verbatim: whitespace counts, so a
- * commit that differs only in its indentation is another patch (a YAML, Python or Markdown change is never lost).
- */
-function patchIdsOf(params: { root: string; patches: string }): Map<string, string> {
-	if (params.patches.trim() === '') return new Map()
-	const lines = readGit({
-		root: params.root,
-		args: ['patch-id', '--verbatim'],
-		input: params.patches,
-	})
-		.split('\n')
-		.filter(Boolean)
-	return new Map(
-		lines.map(function pairOf(line) {
-			const [patchId, commit] = line.split(' ')
-			return [patchId, commit] as const
-		}),
-	)
-}
-
-/**
- * A committed lot landed through its pull request (`landing.json` in its folder, the worktree's `.dialecte/lot` link
- * pointing there) with nothing archived there: the worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
+ * A committed lot that landed (`landed.json` in its folder, the worktree's `.dialecte/lot` link pointing there) with
+ * nothing archived there: the worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
  * worktree without one. A copy that cannot be written throws: the worktree stays.
  */
 function archiveLandedDeclaration(params: { entry: StoreEntry; worktree: string }): void {

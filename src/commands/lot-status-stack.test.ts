@@ -1,11 +1,13 @@
 /**
- * The stack line of a lot started on another (33CI CI4): `lot status` and the hand-over card name the parent lot, its
- * pull request and its state, read from files only; a lot not stacked has no such line.
+ * The stack line of a lot started on another (33CI CI4, FIX-ci-loop item 3): `lot status` names the parent lot, its
+ * pull request and that pull request's state as the host holds it (open, draft, queued, merged, or the host's silence);
+ * the hand-over card names the parent and its pull request from files only; a lot not stacked has no such line.
  */
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
+import { landingHostOf, pullRequestOf } from '../../test/landing-repository.ts'
 import { withLines } from '../../test/lot-start-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { buildStackCardLine } from '../lib/handover/handover-card.ts'
@@ -14,6 +16,7 @@ import { runLot } from './lot.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { BriefWorkspace } from '../../test/brief-workspace.types.ts'
+import type { LandingHostAnswers } from '../../test/landing-repository.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
@@ -40,51 +43,97 @@ function stackedLots(params: { landed: boolean }): { workspace: BriefWorkspace; 
 				url: 'https://host.test/pull/5',
 				branch: 'feat/parent',
 				head: 'a1',
-				replaced: [],
 				at: '',
 			}),
 		)
 	const child = writeStoreLot({ workspace, name: CHILD, scope: ['src/b/'], branch: 'feat/child' })
-	writeFileSync(
-		join(child, 'stack.json'),
-		JSON.stringify({ schema: 1, parent: PARENT, parentHead: 'a1', at: '2026-11-17T23:00:00.000Z' }),
-	)
+	writeFileSync(join(child, 'stack.json'), JSON.stringify({ schema: 1, parent: PARENT }))
 	return { workspace, child }
 }
 
+/** `lot status <lot>` with a host answering `answers`: its lines. */
+function statusArgumentsOf(params: {
+	workspace: BriefWorkspace
+	lot: string
+	answers: LandingHostAnswers
+}) {
+	return {
+		cwd: params.workspace.repository,
+		argv: ['status', params.lot],
+		host: landingHostOf(params.answers).host,
+	}
+}
+
+/** The parent's pull request #5 as the host holds it. */
+function parentPull(params: { state: 'open' | 'merged'; draft?: boolean; queued?: boolean }) {
+	return { byNumber: { 5: pullRequestOf({ number: 5, head: 'a1', ...params }) } }
+}
+
 describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('lot status of a stacked lot whose parent has a pull request → a stack line naming the parent, #5 and its state', () => {
-		const { workspace } = stackedLots({ landed: true })
+	const STATE_ROWS: { title: string; answers: LandingHostAnswers; line: string }[] = [
+		{
+			title: 'its pull request open',
+			answers: parentPull({ state: 'open' }),
+			line: `stack: on ${PARENT} (#5, open)`,
+		},
+		{
+			title: 'its pull request a draft',
+			answers: parentPull({ state: 'open', draft: true }),
+			line: `stack: on ${PARENT} (#5, draft)`,
+		},
+		{
+			title: 'its pull request queued',
+			answers: parentPull({ state: 'open', queued: true }),
+			line: `stack: on ${PARENT} (#5, queued)`,
+		},
+		{
+			title: 'its pull request merged',
+			answers: parentPull({ state: 'merged' }),
+			line: `stack: on ${PARENT} (#5, merged)`,
+		},
+		{
+			title: 'a host that cannot say',
+			answers: { refusal: 'gh: offline' },
+			line: `stack: on ${PARENT} (#5, the host cannot say: gh: offline)`,
+		},
+	]
+	for (const row of STATE_ROWS)
+		it(`lot status of a stacked lot, the parent's pull request: ${row.title} → the stack line names it`, () => {
+			const { workspace } = stackedLots({ landed: true })
 
-		const status = withLines(runLot({ cwd: workspace.repository, argv: ['status', CHILD] }))
-
-		expect(status.lines).toContain(`stack: on ${PARENT} (#5, working)`)
-	})
+			expect(
+				withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: row.answers }))).lines,
+			).toContain(row.line)
+		})
 
 	it('lot status of a stacked lot whose parent has no pull request yet → the line says so', () => {
 		const { workspace } = stackedLots({ landed: false })
 
-		const status = withLines(runLot({ cwd: workspace.repository, argv: ['status', CHILD] }))
-
-		expect(status.lines).toContain(`stack: on ${PARENT} (no pull request yet, working)`)
+		expect(
+			withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: {} }))).lines,
+		).toContain(`stack: on ${PARENT} (no pull request yet)`)
 	})
 
 	it('lot status of a lot not stacked → no stack line', () => {
 		const { workspace } = stackedLots({ landed: true })
 
-		const status = withLines(runLot({ cwd: workspace.repository, argv: ['status', PARENT] }))
-
-		expect(status.lines.some((line) => line.startsWith('stack:'))).toBe(false)
+		expect(
+			withLines(
+				runLot(
+					statusArgumentsOf({ workspace, lot: PARENT, answers: parentPull({ state: 'open' }) }),
+				),
+			).lines.some((line) => line.startsWith('stack:')),
+		).toBe(false)
 	})
 
-	it('the hand-over card of a stacked lot → a passed stack line with the same text; none for a lot not stacked', () => {
+	it('the hand-over card of a stacked lot → a passed stack line naming the parent and its pull request; none for a lot not stacked', () => {
 		const { workspace, child } = stackedLots({ landed: true })
 
 		expect({
 			child: buildStackCardLine({ folder: child }),
 			parent: buildStackCardLine({ folder: join(workspace.store, PARENT) }),
 		}).toEqual({
-			child: { name: 'stack', status: 'passed', detail: `on ${PARENT} (#5, working)` },
+			child: { name: 'stack', status: 'passed', detail: `on ${PARENT} (#5)` },
 			parent: undefined,
 		})
 	})
@@ -93,9 +142,9 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const { workspace, child } = stackedLots({ landed: true })
 		writeFileSync(join(child, 'stack.json'), '{"schema":1,"parent":')
 
-		const status = withLines(runLot({ cwd: workspace.repository, argv: ['status', CHILD] }))
-
-		expect(status.lines).toContain('stack: damaged (stack.json does not read as a stack record)')
+		expect(
+			withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: {} }))).lines,
+		).toContain('stack: damaged (stack.json does not read as a stack record)')
 	})
 
 	it('the hand-over card of a lot whose stack.json is torn → a warning stack line naming the damage', () => {

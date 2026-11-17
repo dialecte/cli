@@ -252,7 +252,7 @@ export function prepareStart(params: {
 
 /**
  * The brief of a start `--on <lot>` (33CI CI4): its base is the parent's branch at its tip, the stack naming the parent
- * and that tip; the brief as checked without `--on`.
+ * only; the brief as checked without `--on`.
  */
 function stackedBriefOf(brief: CheckedBrief): {
 	brief: CheckedBrief
@@ -262,7 +262,7 @@ function stackedBriefOf(brief: CheckedBrief): {
 	if (parent === undefined) return { brief, stack: undefined }
 	return {
 		brief: { ...brief, base: { ref: parent.branch, commit: parent.head } },
-		stack: { parent: parent.name, parentHead: parent.head },
+		stack: { parent: parent.name },
 	}
 }
 
@@ -897,7 +897,7 @@ function writeStartRecordsTo(params: {
 	if (stack !== undefined)
 		writeStack({
 			lotFolder: folder,
-			record: { schema: STACK_SCHEMA, ...stack, at: now.toISOString() },
+			record: { schema: STACK_SCHEMA, parent: stack.parent },
 		})
 }
 

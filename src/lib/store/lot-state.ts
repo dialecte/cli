@@ -46,6 +46,8 @@ function stateOf(params: { input: LotStateInput; hasOpenQuestion: boolean }): {
 	// abandoned.json alone is taken back while a live run crosses it (the run is about to remove it)
 	const abandonedByMarker = input.abandonedMarker !== undefined && input.runMarker === undefined
 	if (entryState === 'committed') return { state: 'committed', fromEntry: true }
+	// a merge is final: the lot's landed fact makes it committed whatever its entry or transitions say next
+	if (input.landed !== undefined) return { state: 'committed', fromEntry: false }
 	if (entryState === 'abandoned') return { state: 'canceled', fromEntry: true }
 	if (last?.state === 'canceled' || abandonedByMarker)
 		return { state: 'canceled', fromEntry: false }

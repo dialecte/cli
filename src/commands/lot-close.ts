@@ -5,17 +5,14 @@ import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { mainCheckoutOf } from '../lib/git.ts'
-import { closeHandovers } from '../lib/handover/close-handovers.ts'
-import { entryOfArgument, findHandoverStore } from '../lib/handover/handover-store.ts'
+import { closeHandovers, settleCloseLandings } from '../lib/handover/close-handovers.ts'
 import {
 	LOT_CLOSE_ALREADY_CLOSED,
 	LOT_CLOSE_LANDED_INDENT,
 } from '../lib/handover/handover.constants.ts'
-import { confirmLanding } from '../lib/handover/land-lot.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { jsonOf } from '../lib/print/print.ts'
-import { locateStore } from '../lib/store/store-folder.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
@@ -24,6 +21,7 @@ import { TRASH_FOLDER } from '../lib/worktree/worktree.constants.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { CloseResult } from '../lib/handover/handover.types.ts'
 import type { HostAdapter } from '../lib/host/host.types.ts'
+import type { CloseLandings } from '../lib/landing/lot-landing.types.ts'
 import type { BackgroundSpawner, ProcessFolder } from '../lib/worktree/worktree.types.ts'
 
 export function runLotClose(params: {
@@ -39,7 +37,7 @@ export function runLotClose(params: {
 	 * Default: this machine's (`machineScratchRoots`).
 	 */
 	scratchRoots?: readonly string[]
-	/** Where lots land through pull requests; default: GitHub through `gh`, asked only for a lot with a landing. */
+	/** Where lots land through pull requests; default: GitHub through `gh`, asked for each lot the close reaches. */
 	host?: HostAdapter
 }): CommandResult {
 	const names = positionalArguments({ argv: params.argv, valueOptions: [] })
@@ -52,36 +50,31 @@ export function runLotClose(params: {
 	}
 	// the base branch is the host's first (a queue merges there): the landed reading and the main checkout follow it
 	const synced = syncBaseBranch({ root: main })
-	// a lot the merge queue landed is committed once its pull request merged at the head its landing pushed or its tip
-	const store = findHandoverStore(main)
-	const lotStore = locateStore({ from: main })?.store
-	const confirmed = names.flatMap(function confirmed(name) {
-		const entry = entryOfArgument({ argument: name, store, lotStore })
-		if (entry === undefined || entry.state !== 'pending') return []
-		const line = confirmLanding({
-			root: main,
-			lotFolder: entry.folder,
-			worktree: entry.worktree,
-			host: params.host ?? createGithubHost(),
-		})
-		return line === undefined ? [] : [line]
+	// the landing of every lot the arguments reach, read with the host before any decision: a merged lot is committed
+	const now = params.now ?? new Date()
+	const settled = settleCloseLandings({
+		main,
+		names,
+		host: params.host ?? createGithubHost(),
+		now,
 	})
-	const results = closeHandovers({
+	const closed = closeHandovers({
 		cwd: main,
 		runFrom: params.cwd,
-		names,
-		now: params.now ?? new Date(),
+		names: settled.names,
+		now,
 		spawner: params.spawner ?? spawnDetached,
 		listProcesses: params.listProcesses,
 		scratchRoots: params.scratchRoots ?? Object.values(machineScratchRoots()),
 	})
-	if ('unknown' in results)
+	if ('unknown' in closed)
 		return resultOf({
 			exitCode: 2,
 			lines: [
-				`lot close: the registry holds no hand-over named, lot named or indexed ${results.unknown.join(', ')}: nothing closed`,
+				`lot close: the registry holds no hand-over named, no lot named or indexed ${closed.unknown.join(', ')}: nothing closed`,
 			],
 		})
+	const results = resultsInOrder({ names, settled, closed })
 	const outcomes = results.map((result) => result.outcome)
 	const exitCode = outcomes.every((outcome) => 'closed' in outcome) ? 0 : 1
 	if (hasFlag(params.argv, 'json')) return { exitCode, output: jsonOf(outcomes, 2) }
@@ -97,7 +90,42 @@ export function runLotClose(params: {
 			`the closed worktrees wait in ${trash}, removed in the background; their branches are kept`,
 			`the deletion is git's own git worktree remove, without --force: git may refuse a worktree written into since the check, and a refused one stays registered in ${trash} for you to look at`,
 		)
-	return resultOf({ exitCode, lines: [...synced, ...confirmed, ...lines] })
+	return resultOf({ exitCode, lines: [...synced, ...lines] })
+}
+
+/**
+ * One result per argument, in the order given: a lot kept before the close (not merged) with why, else the close's
+ * next result, with the line naming how its lot landed.
+ */
+function resultsInOrder(params: {
+	names: readonly string[]
+	settled: CloseLandings
+	closed: readonly CloseResult[]
+}): CloseResult[] {
+	const { settled, closed } = params
+	return params.names.reduce<{ results: CloseResult[]; next: number }>(
+		function inOrder(sofar, name) {
+			const kept = settled.kept.get(name)
+			if (kept !== undefined)
+				return {
+					results: [...sofar.results, { outcome: { handover: name, kept }, moved: [] }],
+					next: sofar.next,
+				}
+			const result = closed[sofar.next] ?? {
+				outcome: { handover: name, kept: 'not decided' },
+				moved: [],
+			}
+			const landed = settled.landed.get(settled.names[sofar.next])
+			return {
+				results: [
+					...sofar.results,
+					landed === undefined ? result : { ...result, outcome: { ...result.outcome, landed } },
+				],
+				next: sofar.next + 1,
+			}
+		},
+		{ results: [], next: 0 },
+	).results
 }
 
 /** The line of one outcome: what moved and where node_modules went, or why it was kept. */

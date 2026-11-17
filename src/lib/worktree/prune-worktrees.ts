@@ -1,8 +1,10 @@
 /**
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
- * commits are all in the base branch, the hand-over folders already committed, and the rehearsal clones
- * left behind - each with the command that removes it, with its absolute `cd`. Never a worktree an open lot names
- * (checked first, reason `lot <full name> <state>`), an unmerged branch,
+ * work is all in the base branch (`unlandedWork`: merged, squashed or rebased alike), the hand-over folders already
+ * committed, and the rehearsal clones left behind - each with the command that removes it, with its absolute `cd`.
+ * A store lot's landing is read from git alone first: a merged lot gets its landed fact and keeps nothing, a review
+ * throwaway goes with its landed lot. Never a worktree an open lot names (checked first, reason `lot <full name>
+ * <state>`, or why its landing is not proven), a branch holding work the base does not,
  * a dirty worktree, one a pending hand-over commits in, or one a mutation run that still runs (or died before
  * reporting) was started from; never a symbolic link (the sibling link
  * `.worktrees/core -> ../core` among them) nor a folder a link reaches. The pool entries (`_pool-*`) and the
@@ -15,7 +17,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { isAtOrInside, isPresent, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
-import { readGit } from '../git.ts'
+import { isAncestorCommit, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import {
@@ -25,15 +27,20 @@ import {
 } from '../handover/handover.constants.ts'
 import { handoverState } from '../handover/list-handovers.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { THROWAWAY_OF_UNLANDED } from '../landing/lot-landing.constants.ts'
+import { settlePruneLandings } from '../landing/lot-landing.ts'
+import { noOwnCommitReason, unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
 import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
 import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
+import { THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
 import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
-import { lotsKeepingWorktrees, readLotKeeps } from '../store/lot-keep.ts'
+import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { gitFolderAbove, listLotIdentities, locateStore } from '../store/store-folder.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
@@ -79,6 +86,7 @@ import {
 } from './worktree.constants.ts'
 
 import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
+import type { PruneLotLanding } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
@@ -520,17 +528,27 @@ function planRepository(params: {
 	const linkedWorktrees = worktrees
 		.map((worktree) => worktree.name)
 		.filter((name) => isLink(name) && !existsSync(join(name, '.git')))
-	// the lot keep rule first: the store read once for the repository
+	// the lots' landings read from git first (a merged lot gets its landed fact), then the lot keep rule: the store
+	// read once for the repository
+	const landings = settlePruneLandings({ repository, now: new Date() })
 	const lotKeeps = lotsKeepingWorktrees({ repository })
 	for (const worktree of worktrees) {
 		const { name } = worktree
-		const lotKeep = lotKeeps.get(realPathOf(name))
-		if (lotKeep) {
+		const real = existsSync(name) ? realPathOf(name) : name
+		const lotKeep = lotKeeps.get(real)
+		const throwaway = throwawayLotOf({ worktree: real, landings })
+		const unlandedThrowaway =
+			throwaway !== undefined && !throwaway.landed
+				? fillMessage({ template: THROWAWAY_OF_UNLANDED, values: { lot: throwaway.lot } })
+				: undefined
+		const keptFirst =
+			lotKeep === undefined ? unlandedThrowaway : (landings.get(real)?.reason ?? lotKeep)
+		if (keptFirst) {
 			if (worktree.branch) keptBranches.add(worktree.branch)
 			items.push({
 				kind: 'worktree',
 				name,
-				kept: worktree.branch ? `${worktree.branch}: ${lotKeep}` : lotKeep,
+				kept: worktree.branch ? `${worktree.branch}: ${keptFirst}` : keptFirst,
 			})
 			continue
 		}
@@ -553,6 +571,8 @@ function planRepository(params: {
 					pending: pendingWorktrees.has(realpathSync(name)),
 					links: params.links,
 					ownedRuns,
+					landedTip: landings.get(real)?.landedTip,
+					ofLandedLot: throwaway?.landed === true,
 				})
 			: undefined
 		if (kept) {
@@ -582,19 +602,21 @@ function planRepository(params: {
 		.split('\n')
 		.filter(Boolean)) {
 		if (keptBranches.has(branch)) continue
-		const unmerged = unmergedCount({ root: repository, branch, baseRef })
-		if (unmerged > 0) continue
+		// git branch -d deletes only a branch its base holds: any other is never offered
+		if (
+			!isAncestorCommit({ root: repository, ancestor: `refs/heads/${branch}`, descendant: baseRef })
+		)
+			continue
 		if (pendingBranches.has(branch)) {
 			items.push({ kind: 'branch', name: branch, kept: 'a hand-over is pending on it' })
 			continue
 		}
-		const keptByReflog = whyKeepByReflog({
-			root: repository,
-			branch,
-			baseBranch,
-			baseRef,
-			baselineHead: undefined,
-		})
+		// its reflog may still reach work the base does not hold (reset onto a newer base after commits of its own)
+		const unlanded = unlandedWork({ root: repository, branch, baseRef })
+		const keptByReflog =
+			unlanded.length > 0
+				? unlandedWorkText({ commits: unlanded, base: baseBranch })
+				: noOwnCommitReason({ root: repository, branch, baselineHead: undefined })
 		if (keptByReflog) {
 			items.push({ kind: 'branch', name: branch, kept: keptByReflog })
 			continue
@@ -851,17 +873,25 @@ function whyKeepWorktree(params: {
 	links: readonly FolderLink[]
 	/** The repository's runs that still run or died before reporting: the worktree one was started from stays. */
 	ownedRuns: readonly RunEntry[]
+	/** The tip the worktree's lot landed at (its landed fact): its ancestors landed. */
+	landedTip: string | undefined
+	/** A review throwaway of a landed lot: its commits are review snapshots of what landed. */
+	ofLandedLot: boolean
 }): string | undefined {
 	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
 	if (reachedBy) return `the link ${reachedBy} points to it`
 	const ownedRun = mutationRunKeeping({ runs: params.ownedRuns, folder: params.worktree })
 	if (ownedRun) return ownedRun
-	const unmerged = unmergedCount({
-		root: params.repository,
-		branch: params.branch,
-		baseRef: params.baseRef,
-	})
-	if (unmerged > 0) return `${unmerged} commit(s) not in ${params.baseBranch}`
+	const unlanded = params.ofLandedLot
+		? []
+		: unlandedWork({
+				root: params.repository,
+				branch: params.branch,
+				baseRef: params.baseRef,
+				worktree: params.worktree,
+				...(params.landedTip !== undefined && { landedTip: params.landedTip }),
+			})
+	if (unlanded.length > 0) return unlandedWorkText({ commits: unlanded, base: params.baseBranch })
 	if (params.pending || existsSync(handoverLockPath(params.worktree)))
 		return 'a hand-over is pending in it'
 	if (
@@ -871,64 +901,19 @@ function whyKeepWorktree(params: {
 		}).trim()
 	)
 		return 'uncommitted changes'
-	const keptByReflog = whyKeepByReflog({
-		root: params.repository,
-		branch: params.branch,
-		baseBranch: params.baseBranch,
-		baseRef: params.baseRef,
-		baselineHead: readHygieneBaseline(params.worktree)?.head,
-	})
+	const keptByReflog = params.ofLandedLot
+		? undefined
+		: noOwnCommitReason({
+				root: params.repository,
+				branch: params.branch,
+				baselineHead: readHygieneBaseline(params.worktree)?.head,
+			})
 	if (keptByReflog) return keptByReflog
 	const ignored = listRemovableIgnored(params.worktree)
 	if (ignored.length > IGNORED_FILES_SHOWN)
 		return `${ignored.length} ignored files git worktree remove would delete, first: ${ignored.slice(0, IGNORED_FILES_SHOWN).join(', ')}`
 	if (ignored.length) return `ignored files git worktree remove would delete: ${ignored.join(', ')}`
 	return undefined
-}
-
-/**
- * Why the reflog keeps a merged branch, or undefined. Its reflog may still reach commits the base does
- * not hold (the branch was reset onto a newer base after commits of its own): deleting the branch loses
- * the only way back to them. A branch nobody committed on yet (a worktree just made, a branch just cut)
- * is in use: its reflog holds nothing but its creation, or its tip is still the HEAD the worktree was
- * made at.
- */
-function whyKeepByReflog(params: {
-	root: string
-	branch: string
-	baseBranch: string
-	/** The ref merged work is compared with (`findBaseRef`). */
-	baseRef: string
-	baselineHead: string | undefined
-}): string | undefined {
-	const { root, branch } = params
-	const commits = [
-		...new Set(
-			readGit({ root, args: ['reflog', 'show', '--format=%H', `refs/heads/${branch}`, '--'] })
-				.split('\n')
-				.filter(Boolean),
-		),
-	]
-	if (commits.length === 0) return 'nothing in its reflog'
-	const unreached = Number(
-		readGit({
-			root,
-			args: ['rev-list', '--count', ...commits, '--not', params.baseRef],
-		}).trim(),
-	)
-	if (unreached > 0)
-		return `its reflog still reaches ${unreached} commit(s) not in ${params.baseBranch}`
-	const entries = readGit({
-		root,
-		args: ['reflog', 'show', '--format=%gs', `refs/heads/${branch}`, '--'],
-	})
-		.split('\n')
-		.filter(Boolean)
-	if (entries.length <= 1) return 'no commit of its own in its reflog'
-	const tip = readGit({ root, args: ['rev-parse', `refs/heads/${branch}`] }).trim()
-	return tip === params.baselineHead
-		? 'no commit of its own since the worktree was made'
-		: undefined
 }
 
 /**
@@ -950,13 +935,17 @@ function listRemovableIgnored(worktree: string): string[] {
 		.sort()
 }
 
-function unmergedCount(params: { root: string; branch: string; baseRef: string }): number {
-	return Number(
-		readGit({
-			root: params.root,
-			args: ['rev-list', '--count', `${params.baseRef}..refs/heads/${params.branch}`],
-		}).trim(),
-	)
+/**
+ * The lot a review or verify throwaway (`<lot worktree>-round-<n>`, `-verify`) belongs to, found by the worktree its
+ * name continues, with whether that lot landed; undefined for a worktree that is no throwaway of a store lot.
+ */
+function throwawayLotOf(params: {
+	worktree: string
+	landings: ReadonlyMap<string, PruneLotLanding>
+}): PruneLotLanding | undefined {
+	const lotWorktree = THROWAWAY_WORKTREE_PATTERN.exec(basename(params.worktree))?.[1]
+	if (lotWorktree === undefined) return undefined
+	return params.landings.get(realPathOf(join(dirname(params.worktree), lotWorktree)))
 }
 
 /** git answers real paths (`/private/var` for `/var` on macOS): a path under `folder` spelled as `folder` is. */
@@ -1036,7 +1025,7 @@ function readReclaimContext(params: {
 		mainLockKey: mainLock === undefined ? undefined : computeLockKey({ text: mainLock }),
 		listed: listWorktrees(repository),
 		// a failed lot keeps its worktree (the safer side), as prune's keep rule does
-		lotKeeps: readLotKeeps({ repository }).kept,
+		lotKeeps: lotsKeepingWorktrees({ repository }),
 		lotWorktrees: new Set(
 			location === undefined
 				? []

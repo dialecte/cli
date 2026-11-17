@@ -59,6 +59,7 @@ import {
 	scopeChangesBufferOf,
 	scopeChangesFileOf,
 } from '../lib/store/scope-changes.ts'
+import { readStackRecord } from '../lib/store/stack.ts'
 import { QUESTIONS_CLOSED_STATES, STORE_FILES } from '../lib/store/store.constants.ts'
 import {
 	LOT_SCOPE_LIST_SEPARATOR,
@@ -416,16 +417,20 @@ function overlapRefusalOf(params: {
 	})
 }
 
-/** The open lots, other than the target, whose effective scope the added paths meet; none when they meet none. */
+/**
+ * The open lots, other than the target and its stack parent, whose effective scope the added paths meet; none when
+ * they meet none. A stacked lot's parent is its base, never an overlap, as `lot start --on` reads it (33CI CI4).
+ */
 function addOverlapsOf(params: { target: ScopeTarget; added: string[] }): LotOverlap[] {
 	const { target } = params
+	const parent = readStackRecord({ lotFolder: target.lotFolder })?.parent
 	return overlappingOpenLots({
 		store: dirname(target.lotFolder),
 		registry: registryOfLotFolder(target.lotFolder),
 		scope: params.added,
 		caseInsensitive: probeCaseInsensitive({ path: target.repository }),
 		except: basename(target.lotFolder),
-	})
+	}).filter((overlap) => overlap.name !== parent)
 }
 
 /** The files the lot's worktree lists as changed (git status); undefined when it has none or it cannot be read. */
