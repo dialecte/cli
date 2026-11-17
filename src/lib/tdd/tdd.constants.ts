@@ -386,6 +386,17 @@ export const UNUSED_ENTRY_CLOSEST_LIMIT = 1
 /** Ending an unused entry's line: the verb that drops it, `{list}` its list, `{entry}` the entry (a move: its from and to) as shell words. */
 export const UNUSED_ENTRY_REMOVE = '; drop it: dialecte lot {list} --remove {entry}'
 
+/**
+ * A `gone` or `moved` entry of the lot file the presence map refuses (`declaredPathRefusalOf`): `{list}` its list,
+ * `{path}` the path it names, `{remove}` the `UNUSED_ENTRY_REMOVE` ending that drops it.
+ */
+export const DECLARED_PATH_REFUSALS = {
+	present:
+		'{list} entry {path}: the path is present and unchanged since the base, the lot file is stale{remove}',
+	unknown:
+		'{list} entry {path}: no such test file at the base, in the change or in the receipts{remove}',
+} as const
+
 /** A lot exempt from the test receipts: `"tdd": "exempt: <reason>"`. */
 export const TDD_EXEMPT_PATTERN = /^exempt:\s*(.+)$/
 
@@ -725,38 +736,12 @@ export const DUPLICATE_CARD_LABEL = 'duplicate id'
 /** The gate's tdd step reason when duplicate ids exist: `{count}` files, `{files}` their paths. */
 export const DUPLICATE_GATE_REASON = 'duplicate case ids in {count} file(s): {files}'
 
-/**
- * Where the whole-branch base came from (`TddBase.source`): `{ref}` the lot's base ref or the baseline's `from`,
- * `{branch}` the resolved base branch's name.
- */
+/** Where the tdd base came from: `--base`, the lot base (`{ref}` how lines name its ref), HEAD when no base branch is found. */
 export const TDD_BASE_SOURCES = {
 	flag: '--base',
 	lotBase: 'lot base {ref}',
-	worktreeFrom: 'worktree from {ref}',
-	baseBranchOfCommit: "base branch {branch} (the lot's base is a commit)",
-	worktreeCut: 'worktree cut',
-	baseBranch: 'base branch {branch}',
-	head: 'HEAD',
+	head: 'HEAD (no base branch found)',
 } as const
-
-/**
- * Why the whole-branch base fell back to the worktree's cut (`TddBase.note`): `{ref}` the lot's base ref, `{cut}`
- * and `{mergeBase}` short commit ids.
- */
-export const TDD_BASE_NOTES = {
-	noneRecorded: "tdd base: the worktree's cut (no base branch recorded or found)",
-	notFound: "tdd base: the worktree's cut ({ref} not found)",
-	holdsOwnCommits: "tdd base: the worktree's cut ({ref} holds the lot's own commits)",
-	behind: "tdd base: the worktree's cut ({ref} is behind the cut)",
-	notOnRef: "tdd base: the worktree's cut ({ref} does not hold the cut: a stacked lot)",
-} as const
-
-/** The ref folders a recorded base ref may name (a branch, origin's branch, a tag); in none of them, it is a commit id. */
-export const TDD_BASE_NAMED_REF_PREFIXES: readonly string[] = [
-	'refs/heads/',
-	'refs/remotes/',
-	'refs/tags/',
-]
 
 /** The line the gate's tdd step shows beside the base it measured from: `{commit}` a short id, `{source}` as above. */
 export const TDD_BASE_LINE = 'tdd base: {commit} ({source})'

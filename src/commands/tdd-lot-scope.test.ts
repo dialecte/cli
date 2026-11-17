@@ -99,21 +99,6 @@ function branchWithCommittedLot(params: { dialecte?: Record<string, unknown> } =
 }
 
 describe('tdd on a branch holding an earlier committed lot', { timeout: 240_000 }, () => {
-	it('status and red without --base → only the uncommitted work is the lot: the committed cases are neither changed nor missing a receipt', async () => {
-		const root = branchWithCommittedLot()
-
-		const before = await tdd({ cwd: root, argv: ['status'] })
-		const red = await tdd({ cwd: root, argv: ['red'] })
-		const after = await tdd({ cwd: root, argv: ['status'] })
-
-		expect(before.output).toBe('missing receipt  src/sub.test.ts::sub > three minus one → two')
-		expect(red.exitCode).toBe(0)
-		expect(caseLines(red.output)).toEqual([
-			'red      src/sub.test.ts::sub > three minus one → two  not-implemented: not implemented: sub',
-		])
-		expect(after.output).toBe('red  src/sub.test.ts::sub > three minus one → two')
-	})
-
 	it('status --base <ref> → the whole-branch view: the committed cases count again, missing their receipts', async () => {
 		const root = branchWithCommittedLot()
 
@@ -137,14 +122,13 @@ describe('tdd on a branch holding an earlier committed lot', { timeout: 240_000 
 		])
 	})
 
-	it('the gate tdd step measures from HEAD by default; --base main and --full give the whole-branch view and ask the committed lot for its receipts', async () => {
+	it('--base main and --full give the whole-branch view and ask the committed lot for its receipts', async () => {
 		const step = [{ name: 'check', run: 'true' }]
 		const root = branchWithCommittedLot({ dialecte: { gate: { fast: step, full: step } } })
 		await tdd({ cwd: root, argv: ['red'] })
 		writeFileSync(join(root, 'src/sub.ts'), SUB)
 		await tdd({ cwd: root, argv: ['green'] })
 
-		const result = await gate({ cwd: root, argv: ['--declare', 'src/'] })
 		const base = await gate({ cwd: root, argv: ['--base', 'main', '--declare', 'src/'] })
 		const full = await gate({ cwd: root, argv: ['--full', '--declare', 'src/'] })
 
@@ -152,7 +136,6 @@ describe('tdd on a branch holding an earlier committed lot', { timeout: 240_000 
 			return output.split('\n').find((line) => line.includes('  tdd  '))
 		}
 		const failure = 'FAIL  tdd  test code changed outside tdd red: src/add.test.ts'
-		expect(tddLine(result.output)).toBe('ok    tdd  1 case(s) of the change: 1 red then green')
 		expect(tddLine(base.output)).toBe(failure)
 		expect(tddLine(full.output)).toBe(failure)
 	})

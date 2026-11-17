@@ -173,14 +173,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
            <level>), the next station walked from its station events and checks (step events, else
            the worktree's tdd ledger and gate records), its next is that station's command and also
-           keeps the manual line; --json adds station and rounds (review, cap, beyondCap,
-           independent) and effort { level, source, riskClass, below } (source risk-line for an
-           effort recorded by lot risk; an effort below its risk class adds a ! effort <e> below
-           risk class <c> line, ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds
-           forecast { main, pairs }: the newest main line of forecast.jsonl and, per other open lot,
-           the newer of its own line against that lot and that lot's line against it (files only); a
-           lot whose records do not hold reads damaged with its reason and next: lot stop (exit 6);
-           reads only; exit 2 for an unknown or ambiguous id
+           keeps the manual line (lot start prints it as next: run the stations, then lot land
+           <name> --draft in a CI-first repository, then handover write elsewhere); --json adds
+           station and rounds (review, cap, beyondCap, independent) and effort { level, source,
+           riskClass, below } (source risk-line for an effort recorded by lot risk; an effort below
+           its risk class adds a ! effort <e> below risk class <c> line, ending (by <who>: <reason>)
+           or (no go-ahead recorded)); --json adds forecast { main, pairs }: the newest main line of
+           forecast.jsonl and, per other open lot, the newer of its own line against that lot and
+           that lot's line against it (files only); a lot whose records do not hold reads damaged
+           with its reason and next: lot stop (exit 6); reads only; exit 2 for an unknown or
+           ambiguous id
   forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
              as one snapshot commit made on a copy of its index with a fixed identity and date; the
              worktree's index, refs and files never written, ignored files left out) against main
@@ -476,7 +478,10 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   hand-over written)`, `unknown (<why>)`), the position line given up first, and `next` is that station's
   command (`dialecte lot station <name> start implementer --step 2`, `... end <station> --run <run>`, the
   check's command, `dialecte lot snapshot <name> --round <r>`, at the cap its `--beyond-cap` form), `also`
-  keeping the manual line; a hand-over to write and an unknown position keep the manual line. A station
+  keeping the manual line; a hand-over to write and an unknown position keep the manual line. The manual line
+  follows the repository's landing flow, as `lot start` prints it too: `run the stations, then dialecte lot land
+  <name> --draft` in a CI-first repository (its `.github/workflows/ci.yml` runs on `merge_group` and holds the
+  `ci-ok` job), `run the stations, then dialecte handover write <lots.json> --out <name>` elsewhere. A station
   is ended by an end with exit 0 or none and a verdict other than `failed` or `limit`; a start with no end
   is running until a later station start or end or a snapshot comes (a check never closes it: the
   station's own `tdd red`, `tdd green` and `gate --fast` run inside it), `no end` after; an end that names

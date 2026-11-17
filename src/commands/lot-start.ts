@@ -1104,7 +1104,10 @@ function startedOutput(params: {
 	const { risk } = params
 	const simulated = params.worktree === null
 	const runner = simulated ? RUNNERS.simulated : RUNNERS.manual
-	const next = simulated ? waitNextOf({ name: params.name, simulated }) : manualNextOf(params.name)
+	const next =
+		params.worktree === null
+			? waitNextOf({ name: params.name, simulated })
+			: manualNextOf({ name: params.name, root: params.worktree })
 	if (params.json)
 		return {
 			exitCode: 0,

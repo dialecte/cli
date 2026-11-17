@@ -16,7 +16,7 @@ export const HOOK_TDD_STALE_REASON =
 	'{count} case(s) of the lot green before the production changed'
 
 /** The last line under a stale failure: `{base}` the lot base's short commit, from which green runs again. */
-export const HOOK_TDD_GREEN_AGAIN_LINE = 'run `dialecte tdd green --base {base}` again'
+export const HOOK_TDD_GREEN_AGAIN_LINE = 'run `dialecte tdd green` again'
 
 /** Why the tdd step of a repository's first commit is skipped. */
 export const HOOK_TDD_FIRST_COMMIT_REASON =

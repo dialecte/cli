@@ -146,7 +146,6 @@ export const THROWAWAY_NAME_PATTERN = /-round-\d+$/
 export const NEXT_COMMANDS = {
 	start: 'dialecte lot start {brief}',
 	simulatedStart: 'dialecte lot start {brief} --simulate {scenario}',
-	manual: 'run the stations, then dialecte handover write <lots.json> --out {name}',
 	wait: 'dialecte lot wait {name}',
 	simulated: 'dialecte lot wait {name} --timeout 60',
 	answer: 'dialecte lot answer {name} {question} "<answer>"',

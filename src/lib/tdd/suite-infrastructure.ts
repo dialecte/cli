@@ -13,7 +13,7 @@
  * new root is read on its own. A test file added later that imports an infrastructure helper is not part of the
  * signature: within one command the tree does not change.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join, posix, sep } from 'node:path'
 
 import { createModuleResolver } from './module-resolver.ts'
@@ -25,10 +25,12 @@ import {
 	VITE_CONFIG_FILE_PATTERN,
 	VITEST_CONFIG_FILE_PATTERN,
 } from './tdd.constants.ts'
+import { changedTestCodeOf, isDeletedIn, presentTextOf } from './test-code-presence.ts'
 import { moduleSpecifiers } from './test-source.ts'
 import { writtenNameOf } from './written-name.ts'
 
 import type { ModuleResolver, SourceText, SuiteInfrastructureReading } from './tdd.types.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /** The last reading of each package root, kept while its configs and infrastructure files stay as read. */
 const readings = new Map<string, SuiteInfrastructureReading>()
@@ -63,10 +65,13 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 } {
 	const { root } = params
 	const resolveModule = createModuleResolver({ root })
+	// presence only: against HEAD, a path deleted on disk is deleted whatever the lot's base
+	const presence = changedTestCodeOf({ root, base: 'HEAD' })
 	const files = new Set([...resolveModule.setupFiles, ...resolveModule.globalSetupFiles])
 	const isShared = createSharedHelperTest({
 		entries: new Set(files),
 		root,
+		presence,
 		resolveModule,
 		isTestSupport: params.isTestSupport,
 	})
@@ -74,7 +79,9 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
 	let complete = true
 	while (queue.length > 0) {
 		const current = queue.shift() ?? ''
-		const text = readFileSync(join(root, current), 'utf8')
+		const text = presentTextOf({ root, presence, file: current })
+		// a setup file or helper gone from disk imports nothing
+		if (text === undefined) continue
 		for (const specifier of moduleSpecifiers({ text, file: current })) {
 			const resolution = resolveModule({ specifier, from: current })
 			if (resolution.kind === 'unresolved') complete = false
@@ -98,6 +105,7 @@ function readInfrastructure(params: { root: string; isTestSupport: (file: string
  */
 function createSharedHelperTest(params: {
 	root: string
+	presence: TestCodePresence
 	resolveModule: ModuleResolver
 	isTestSupport: (file: string) => boolean
 	/** The setup and global setup files: the walk back never goes through them (a guard's test imports its setup). */
@@ -143,7 +151,11 @@ function createSharedHelperTest(params: {
 		)
 	}
 	return function isShared(helper: string): boolean {
-		sources ??= readSources({ root, isTestSupport: params.isTestSupport })
+		sources ??= readSources({
+			root,
+			presence: params.presence,
+			isTestSupport: params.isTestSupport,
+		})
 		// only a whole answer is kept: a walk cut by a cycle answers its start alone
 		const shared = answers.get(helper) ?? reaches({ helper, visiting: new Set() })
 		answers.set(helper, shared)
@@ -151,15 +163,23 @@ function createSharedHelperTest(params: {
 	}
 }
 
-/** The package's test files and its test helpers (JS/TS source), with their texts. */
-function readSources(params: { root: string; isTestSupport: (file: string) => boolean }): {
+/**
+ * The package's test files and its test helpers (JS/TS source), with their texts from the presence map: a file git's
+ * index lists but the disk lacks is deleted, never read.
+ */
+function readSources(params: {
+	root: string
+	presence: TestCodePresence
+	isTestSupport: (file: string) => boolean
+}): {
 	tests: SourceText[]
 	helpers: SourceText[]
 } {
-	const files = listPackageFiles(params.root)
+	const { root, presence } = params
+	const files = listPackageFiles(root).filter((file) => !isDeletedIn({ presence, file }))
 	/** The file with its text. */
 	function sourceOf(file: string): SourceText {
-		return { file, text: readFileSync(join(params.root, file), 'utf8') }
+		return { file, text: presentTextOf({ root, presence, file }) ?? '' }
 	}
 	return {
 		tests: files.filter((file) => TEST_FILE_PATTERN.test(file)).map(sourceOf),

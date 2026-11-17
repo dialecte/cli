@@ -7,9 +7,9 @@ Receipts that each new test failed on an assertion before the code, then passed 
 ```text
 tdd - Receipts that each new test failed on an assertion before the code, then passed untouched
 
-  dialecte tdd red [<test file>]... [--json]
-  dialecte tdd green [<test file> | <test file>::<case name>]...
-  dialecte tdd status [--json] [--flags] | tdd status --legend
+  dialecte tdd red [<test file>]... [--base <ref>] [--json]
+  dialecte tdd green [<test file> | <test file>::<case name>]... [--base <ref>]
+  dialecte tdd status [--base <ref>] [--json] [--flags] | tdd status --legend
 
   red - every case of the changed test files must fail on an assertion (or a stub's 'not
         implemented' inside an asserting expect); a passing new case, a missing export, a type or
@@ -17,6 +17,14 @@ tdd - Receipts that each new test failed on an assertion before the code, then p
   green - each case with a red receipt, its test code as frozen, production changed since its red,
           passes; records a green receipt
   status - per case red, green, unchanged, missing receipt, test edited after red, flags
+  base - the change is measured from the lot base: HEAD's fork point from the base branch (the newer
+         of the local branch and origin's), or from an open stack parent's line; HEAD only when no
+         base branch is found; a green taken before a rebase still counts after it
+  --base - measure from where HEAD left the ref given instead of the lot base
+  declarations - a gone or moved entry of the lot file naming a path the change leaves unchanged, or
+                 one known nowhere (not at the base, not now, not in the receipts), is refused
+                 before any run, naming its lot gone --remove or lot moved --remove; a test file
+                 deleted on disk is a deleted file, never read
   --legend - the tdd terms of the hand-over card
 
 e.g. dialecte tdd green
@@ -24,7 +32,7 @@ e.g. dialecte tdd green
 
 Verbs: `red`, `green`, `status`
 
-Flags: `--json`, `--flags`, `--legend`
+Flags: `--base`, `--json`, `--flags`, `--legend`
 <!-- /dialecte-reference -->
 
 - `dialecte tdd red|green|status [<test file> | <test file>::<case name>]... [--base <ref>] [--json]` makes
@@ -197,24 +205,25 @@ Flags: `--json`, `--flags`, `--legend`
   - `status --flags` prints only the cases whose receipts carry a flag, with their flags.
   - `status --legend` prints the tdd terms of the hand-over card, each in two lines: what it means, and
     whether to look. It needs no package: it works from any folder.
-  - The lot is the uncommitted work: the change is measured from HEAD, so the cases of lots already
-    committed on the branch are not asked again. `--base <ref>` (`tdd` and `gate`) gives the
-    whole-branch view; `gate --full` (and `--release`) measures the tdd step from the lot's base: the
-    branch the lot was started on (the store lot's base, else the branch `worktree add` recorded it was cut
-    from; a base given as a commit id stands for the resolved base branch), from where HEAD now leaves it,
-    so a lot that merged or rebased onto its base's new commits is not asked for them; a worktree with no
-    recorded base follows the resolved base branch the same way. Once the lot took its base's new commits, the
-    worktree's hygiene baseline moves to that merge-base, never onto HEAD itself (no command to run) and a store lot gets one
-    `hygiene.baseline-moved` event (`from`, `to`). When that base is not found, is behind the cut, never held the
-    cut (a stacked lot) or has merged the lot's own commits, it measures from the worktree's cut and says why; a
-    base rewritten under the lot (it once held the cut, now neither reaches the other) fails the step naming the
-    baseline and the merge-base, the baseline left as it is. With no base branch found, a worktree measures from
-    its cut. A worktree not made by `worktree add` measures from where the branch left its base branch. The first details line of the gate's tdd step
-    (none when the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
-    `lot base <ref>`, `worktree from <ref>`, `base branch <b> (the lot's base is a commit)`, `worktree cut`,
-    `base branch <b>`, `HEAD`; a fallback reads `tdd base: the worktree's cut (<why>)`, the why one of `no
-    base branch recorded or found`, `<ref> not found`, `<ref> is behind the cut`, `<ref> does not hold the cut: a
-    stacked lot` (the ref's reflog never reached the cut), `<ref> holds the lot's own commits`.
+  - One base for `tdd red`, `green`, `status`, the gate and the commit hook: the lot base, HEAD's fork point
+    from the base branch (`dialecte.baseBranch`, origin's default branch, `main`, `master`; the newer of the
+    local branch and origin's), or, for a store lot started on another open lot (`lot start --on`), from that
+    parent's line (`lot land` takes the base once the parent merged). A rebase onto the base's new commits
+    moves the base with it, so a green taken before the rebase still counts after it, and a plain `tdd green`
+    proves the lot's committed cases again after a production change (the hook's stale-green refusal names the
+    base all the same). `--base <ref>` measures from where HEAD leaves `<ref>` instead. With no base branch
+    found and none configured, the change is measured from HEAD; a configured base branch that names no branch,
+    or a lot base git cannot read, fails the command. The first details line of the gate's tdd step (none when
+    the step is skipped) reads `tdd base: <short sha> (<source>)`, the source one of `--base`,
+    `lot base <ref>`, `HEAD (no base branch found)`.
+  - Test code is read through one presence map of the change since the base (`git status` and
+    `git diff --name-status` against the base, git's rename pairs included): each path is added, changed,
+    renamed or deleted, and a test file deleted on disk (plain `rm` or `mv`, staged or not) is a deleted file,
+    never opened. A `gone` or `moved` entry of the lot file naming a path the change leaves present and
+    unchanged, or one known nowhere (not at the base, not now, not in the receipts), refuses `red`, `green` and
+    `status` in one line ending `drop it: dialecte lot gone --remove <path>` (or `lot moved --remove <from>
+    <to>`), before any run; a glob is never refused this way (the gate names an entry that matches nothing as
+    unused).
   - Test code is compared by the leaves of the parser's syntax tree, each file parsed by its extension
     (a `.ts` file is no TSX): whitespace, comments (except the ones a tool reads:
     `@vitest-environment`, `@jest-environment`, `@vite-ignore`), quote style, statement semicolons,

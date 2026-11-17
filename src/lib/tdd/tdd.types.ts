@@ -3,6 +3,7 @@ import type { Clock } from '../progress/clock.types.ts'
 import type { Watchdog } from '../progress/run-child.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { RUNNER_ORDER, SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
+import type { TestCodePresence } from './test-code-presence.types.ts'
 
 /**
  * A test case: its file, relative to the package root, its full name as vitest prints it
@@ -409,24 +410,13 @@ export type TestRunFailure = {
 	tail?: readonly string[]
 }
 
-/** The commit the whole branch is measured from, where it came from, and why a fallback was taken. */
+/** The commit the change is measured from, and where it came from. */
 export type TddBase = {
 	/** A full sha. */
 	commit: string
-	/** One of the `TDD_BASE_SOURCES` texts, its `{ref}` / `{branch}` filled. */
+	/** One of the `TDD_BASE_SOURCES` texts, its `{ref}` filled. */
 	source: string
-	/** Said beside the base when a rule was passed over (`TDD_BASE_NOTES`, filled). */
-	note?: string
 }
-
-/** The lot's base ref as recorded (the store lot's `base.ref`, else the baseline's `from`), and its source text. */
-export type RecordedBaseRef = { ref: string; source: string }
-
-/**
- * The ref the whole-branch base follows (`ref`, as git reads it), the name the notes give it and its source text;
- * or the recorded ref, which names nothing.
- */
-export type FollowedBaseRef = { ref: string; name: string; source: string } | { notFound: string }
 
 export type TddCheck = {
 	status: 'passed' | 'failed' | 'skipped'
@@ -464,6 +454,8 @@ export type TddContext = {
 	targets: TddTargets
 	ledger: TddLedger
 	base: string
+	/** The presence map of the change since the base: every reader of the run takes test code from it. */
+	presence: TestCodePresence
 	/** Where a vitest run announces itself (a start line or a spinner); none when not given. */
 	progress?: StepProgress
 }

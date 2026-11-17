@@ -34,8 +34,8 @@ type Case = {
 	folder: 'hand-over' | 'lot'
 	/** The review round snapshots, each `.state` at its second. */
 	snapshots: { round: number; second: number }[]
-	/** The `lot verify` runs, each at its second. */
-	verifies?: number[]
+	/** The `lot verify` runs, each at its second, by `reviewer` unless it names its `--by`. */
+	verifies?: (number | { second: number; by: string })[]
 	/** The station runs of a lot folder (its events). */
 	moves?: Move[]
 	/** The findings ledger rows `[round, severity, state]`; no ledger file when left out. */
@@ -61,10 +61,11 @@ function folderOf(row: Case): string {
 	for (const snapshot of row.snapshots)
 		writeSnapshot({ lot: target, round: snapshot.round, state: snapshot.second })
 	if (row.ledger) writeLedger({ lot: target, findings: row.ledger })
-	for (const second of row.verifies ?? []) {
+	for (const verify of row.verifies ?? []) {
+		const { second, by } = typeof verify === 'number' ? { second: verify, by: 'reviewer' } : verify
 		const verified = runLotVerify({
 			cwd: lot.cwd,
-			argv: [target.lotFolder, '--by', 'reviewer', '--note', 'round 2 verified, no finding'],
+			argv: [target.lotFolder, '--by', by, '--note', 'round 2 verified, no finding'],
 			now: new Date(timeAtSecond(second)),
 		})
 		expect(verified.exitCode).toBe(0)
@@ -165,6 +166,53 @@ const CASES: Case[] = [
 		],
 		ledger: CLOSED_TO_2,
 		expected: NO_REVIEW_AFTER_2,
+	},
+	{
+		title:
+			'hand-over folder: two lot verifies after the last snapshot by different --by -> passed, verified by the latest',
+		folder: 'hand-over',
+		snapshots: [
+			{ round: 1, second: 2 },
+			{ round: 2, second: 4 },
+		],
+		ledger: CLOSED_TO_2,
+		verifies: [
+			{ second: 6, by: 'person-a' },
+			{ second: 8, by: 'person-b' },
+		],
+		expected: line({
+			status: 'passed',
+			detail:
+				'2 review rounds (no effort recorded) · independent review: verified by person-b · approved',
+		}),
+	},
+	{
+		title:
+			'hand-over folder: a findings round above the last snapshot and a later lot verify -> the ledger round is named',
+		folder: 'hand-over',
+		snapshots: [
+			{ round: 1, second: 2 },
+			{ round: 2, second: 4 },
+		],
+		ledger: [...CLOSED_TO_2, [3, 'nit', 'accepted']],
+		verifies: [6],
+		expected: line({
+			status: 'passed',
+			detail:
+				'2 review rounds (no effort recorded) · independent review: round 3 in the ledger · approved',
+		}),
+	},
+	{
+		title:
+			'lot folder: an independent-reviewer end back after the last snapshot and a later lot verify -> the station verdict is named, failed',
+		folder: 'lot',
+		snapshots: [],
+		moves: [{ snapshot: 1 }, { station: 'independent-reviewer', verdict: 'back' }],
+		verifies: [10],
+		expected: line({
+			status: 'failed',
+			detail: '1 review round of 1 · independent review back · approved',
+		}),
 	},
 ]
 

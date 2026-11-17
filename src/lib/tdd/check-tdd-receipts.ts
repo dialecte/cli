@@ -71,29 +71,20 @@ export async function checkTddReceipts(params: {
 	packageJson: PackageJson
 	/** `--base <ref>`: measured from where HEAD left it. */
 	ref?: string
-	/** `--full`: the whole branch, before a merge. Default: HEAD, the uncommitted lot. */
+	/** `--full` / `--release` / the hook: the base line shown under the step. The base is the lot base either way. */
 	wholeBranch?: boolean
 }): Promise<TddCheck> {
 	const { root, packageJson } = params
-	const resolved = resolveTddBase({
-		root,
-		packageJson,
-		ref: params.ref,
-		wholeBranch: params.wholeBranch,
-	})
+	const resolved = resolveTddBase({ root, packageJson, ref: params.ref })
 	if ('failure' in resolved) return { status: 'failed', reason: resolved.failure }
 	const check = await judgeTddReceipts({ root, packageJson, base: resolved.commit })
 	if (!params.wholeBranch) return check
 	return { ...check, baseNote: baseNoteOf({ root, base: resolved }) }
 }
 
-/**
- * The line the whole-branch step shows beside its base: a fallback note as it reads (it names the cut already), else
- * `tdd base: <short> (<source>)`.
- */
+/** The line the whole-branch step shows beside its base: `tdd base: <short> (<source>)`. */
 function baseNoteOf(params: { root: string; base: TddBase }): string {
 	const { base } = params
-	if (base.note !== undefined) return base.note
 	const short = shortCommitOf({ root: params.root, commit: base.commit })
 	return TDD_BASE_LINE.replace('{commit}', () => short).replace('{source}', () => base.source)
 }

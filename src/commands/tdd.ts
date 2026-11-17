@@ -16,8 +16,10 @@
  *   or, with no changed test file depending on them, that the unchanged test files importing them pass with
  *   (`helper-dependents.ts`). The suite infrastructure (vitest setup files and the helpers they import) is
  *   production, never frozen. A passing case a `moved` entry names carries the red of its earlier label
- *   when its test call is the one that red froze. The change is measured from HEAD (the
- *   uncommitted lot), or from where HEAD left `--base <ref>`. An acceptance never overrides a proof: a
+ *   when its test call is the one that red froze. The change is measured from the lot base
+ *   (`resolveTddBase`: HEAD's fork point from the base branch, or from an open stack parent's line), or from where
+ *   HEAD left `--base <ref>`; its test code is read through one presence map (`changedTestCodeOf`), and a `gone` or
+ *   `moved` entry naming a path the change leaves unchanged, or one known nowhere, is refused before any run. An acceptance never overrides a proof: a
  *   case proven red → green keeps its proof, the line says the acceptance is not needed.
  * - Every subcommand reads a case's receipts through `countingReceipts`: an acceptance or a revision the lot
  *   file no longer declares stands for no proof.
@@ -66,6 +68,7 @@ import {
 	namesOneCase,
 	readAcceptances,
 	readRevisions,
+	readGoneEntries,
 	readMovedEntries,
 	findMovedFroms,
 	revisionOfHelper,
@@ -135,6 +138,7 @@ import {
 	UNRESOLVED_IMPORT_HINT,
 	TDD_SUBCOMMANDS,
 } from '../lib/tdd/tdd.constants.ts'
+import { changedTestCodeOf, declaredPathRefusalOf } from '../lib/tdd/test-code-presence.ts'
 import { listTestDependencies } from '../lib/tdd/test-dependencies.ts'
 import { findOnlyMarkers, isTableTitledAt } from '../lib/tdd/test-source.ts'
 import { TESTS_RECORD_STEP } from '../lib/tdd/tests-record.constants.ts'
@@ -143,6 +147,7 @@ import { readVitestConfigs } from '../lib/tdd/vitest-configs.ts'
 import { judgeZeroCaseFiles, zeroCaseLines } from '../lib/tdd/zero-case-verdict.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { PackageJson } from '../lib/package-json.types.ts'
 import type { LiveOutput } from '../lib/progress/step-progress.types.ts'
 import type { BaseRedVerdict } from '../lib/tdd/base-red.types.ts'
 import type {
@@ -174,6 +179,7 @@ import type {
 	TestCaseId,
 	TestRunFailure,
 } from '../lib/tdd/tdd.types.ts'
+import type { TestCodePresence } from '../lib/tdd/test-code-presence.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
 	const result = await runTdd({
@@ -223,18 +229,18 @@ export async function runTdd(params: {
 	const ledger = readLedger(root)
 	if ('failure' in ledger)
 		return resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${ledger.failure}`] })
-	const base = resolveBase({ root, packageJson, ref: getArg(argv, 'base') })
-	if (typeof base !== 'string')
-		return resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${base.failure}`] })
+	const change = readChange({ root, packageJson, ledger, ref: getArg(argv, 'base') })
+	if ('failure' in change)
+		return resultOf({ exitCode: 1, lines: [`tdd ${subcommand}: ${change.failure}`] })
 	const context: TddContext = {
 		root,
 		packageJson,
+		...change,
 		json: hasFlag(argv, 'json'),
 		flagsOnly: hasFlag(argv, 'flags'),
 		now: params.now,
 		targets: parseTargets(words),
 		ledger,
-		base,
 		...(params.live && {
 			progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
 		}),
@@ -709,6 +715,7 @@ async function judgeOrphanHelpers(params: {
 		root: context.root,
 		helpers,
 		changed: new Set(changed.map((file) => file.file)),
+		presence: context.presence,
 		dependenciesOf: params.dependenciesOf,
 	})
 	// a refactor of a widely shared helper never runs most of the suite here: the helpers run in order while their
@@ -1698,4 +1705,27 @@ function idOf(testCase: TestCaseId): TestCaseId {
 
 function isSubcommand(word: string | undefined): word is TddSubcommand {
 	return TDD_SUBCOMMANDS.some((subcommand) => subcommand === word)
+}
+
+/**
+ * The change a run measures: its base (`resolveBase`: the lot base, or `--base <ref>`) and its presence map
+ * (`changedTestCodeOf`); or why there is none: no base, a lot file that cannot be read, or a `gone` or `moved` entry
+ * naming a path the presence map refuses (`declaredPathRefusalOf`), refused before anything is read.
+ */
+function readChange(params: {
+	root: string
+	packageJson: PackageJson
+	ledger: TddLedger
+	ref: string | undefined
+}): { base: string; presence: TestCodePresence } | { failure: string } {
+	const { root, ledger } = params
+	const base = resolveBase(params)
+	if (typeof base !== 'string') return base
+	const presence = changedTestCodeOf({ root, base })
+	const gone = readGoneEntries(root)
+	if ('failure' in gone) return gone
+	const moved = readMovedEntries(root)
+	if ('failure' in moved) return moved
+	const refusal = declaredPathRefusalOf({ root, presence, ledger, gone, moved })
+	return refusal === undefined ? { base, presence } : { failure: refusal }
 }
