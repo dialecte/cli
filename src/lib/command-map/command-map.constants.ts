@@ -499,6 +499,25 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		example: 'dialecte changelog release 0.8.0',
 	},
+	ci: {
+		family: 'Check',
+		summary:
+			'The CI files shipped as a template: write them into the package, report drift, run the publish guard',
+		usage: ['dialecte ci sync [--dry-run]', 'dialecte ci check', 'dialecte ci publish-decision'],
+		notes: [
+			'the template: the workflows (ci.yml, publish.yml and their reusables), .github/pull_request_template.md, .nvmrc and changes/.gitkeep; ci.yml selects its jobs from package.json: type-perf with a type-bench:check script, docs with a doc:build script, the Playwright install with a playwright dependency; a build script is required (publish.yml builds the package)',
+			'the repository owns .github/workflows/_test.yml (ci.yml calls it: a workflow_call trigger; a mode input of type string gets pr on a pull request, full in the merge queue) and every other workflow file the template does not name; they are listed, never written',
+			'sync - writes what differs from the template, deletes the retired files (pr.yml, _lint.yml) and the reusables no job of the package calls; an update prints its diff; a second run is in step; --dry-run writes nothing',
+			"check - the same comparison, read-only: each drifted file with its diff, then the fix; the template's _check.yml runs it on every pull request",
+			"publish-decision - the publish guard of the push to main (BEFORE, GITHUB_OUTPUT): publish above npm's latest, a pre-release under next, a missing release tag pushed alone, a failed npm query refused",
+			'publish.yml keeps its name and its push trigger: npm trusted publishing names the file',
+		],
+		exitCodes: [
+			'1  sync: the own _test.yml is missing or breaks the contract (the managed files are written); check: drift or a broken contract; publish-decision: refused, or BEFORE, GITHUB_OUTPUT, package.json or git failed',
+			'2  usage, no package.json, a package.json with no name or no build script',
+		],
+		example: 'dialecte ci sync --dry-run',
+	},
 	mutants: {
 		family: 'Check',
 		summary: 'Mutation testing of the declared scope; survivors tracked until handled',

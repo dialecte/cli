@@ -4,6 +4,7 @@ import { run as ask } from './commands/ask.ts'
 import { run as audit } from './commands/audit.ts'
 import { run as bench } from './commands/bench.ts'
 import { run as changelog } from './commands/changelog.ts'
+import { run as ci } from './commands/ci.ts'
 import { run as contrib } from './commands/contrib.ts'
 import { run as corpus } from './commands/corpus.ts'
 import { run as coverage } from './commands/coverage.ts'
@@ -54,6 +55,7 @@ export const COMMANDS = {
 	gate,
 	contrib,
 	changelog,
+	ci,
 	tdd,
 	new: newVerb,
 	handover,

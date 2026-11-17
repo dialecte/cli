@@ -147,7 +147,7 @@ Fourteen commands for whoever changes a Dialecte package, a person or an agent. 
 every time: exit 0 when green, 1 when a check fails, 2 on a usage error; `--json` where a program reads
 the answer.
 
-Each has its page: [`rules`](doc/commands/rules.md), [`gate`](doc/commands/gate.md), [`contrib`](doc/commands/contrib.md), [`tdd`](doc/commands/tdd.md), [`new`](doc/commands/new.md), [`handover`](doc/commands/handover.md), [`worktree`](doc/commands/worktree.md), [`lot`](doc/commands/lot.md), [`inbox`](doc/commands/inbox.md), [`health`](doc/commands/health.md), [`plan`](doc/commands/plan.md), [`mutants`](doc/commands/mutants.md), [`changelog`](doc/commands/changelog.md), [`text`](doc/commands/text.md).
+Each has its page: [`rules`](doc/commands/rules.md), [`gate`](doc/commands/gate.md), [`contrib`](doc/commands/contrib.md), [`tdd`](doc/commands/tdd.md), [`new`](doc/commands/new.md), [`handover`](doc/commands/handover.md), [`worktree`](doc/commands/worktree.md), [`lot`](doc/commands/lot.md), [`inbox`](doc/commands/inbox.md), [`health`](doc/commands/health.md), [`plan`](doc/commands/plan.md), [`mutants`](doc/commands/mutants.md), [`changelog`](doc/commands/changelog.md), [`ci`](doc/commands/ci.md), [`text`](doc/commands/text.md).
 
 ### The base branch
 

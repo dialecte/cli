@@ -1,6 +1,6 @@
 /**
- * The publish guard's decision for a push to main: `_check-npm-version.yml` runs `src/publish-decision.ts`, which gives
- * `runPublishDecision` the real process. Everything here reads and writes only through the io it is given.
+ * The publish guard's decision for a push to main: `_check-npm-version.yml` runs `dialecte ci publish-decision`, which
+ * gives `runPublishDecision` the real process. Everything here reads and writes only through the io it is given.
  */
 import {
 	LS_REMOTE_FOUND,

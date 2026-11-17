@@ -146,6 +146,13 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 	},
 	'changelog check': { argv: ['check', FORGED_WORD], quotes: false, reason: RUNS_CHECKS },
 	'changelog release': { argv: ['release', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
+	'ci sync': { argv: ['sync', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
+	'ci check': { argv: ['check', FORGED_WORD], quotes: false, reason: USAGE_ONLY },
+	'ci publish-decision': {
+		argv: ['publish-decision', FORGED_WORD],
+		quotes: false,
+		reason: USAGE_ONLY,
+	},
 	contrib: {
 		argv: ['--bogus', FORGED_WORD],
 		quotes: false,
