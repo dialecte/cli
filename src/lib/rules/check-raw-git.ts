@@ -30,7 +30,8 @@ import ts from 'typescript'
  *
  * Each finding is the argument that makes the repository, where the call writes it: the `clone`/`init` element of a
  * list written in the call, the reference to a same-file const, the shell string - so a new argument line under an
- * unchanged call is a line the change added.
+ * unchanged call is a line the change added. A `dialecte-allow raw-git-repository` opt-out goes on that line or the one
+ * before it, which in a call spanning lines is inside the call.
  *
  * @intent find the repositories a test makes without the scratch helpers
  * @internal

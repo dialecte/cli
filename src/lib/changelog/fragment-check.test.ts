@@ -61,6 +61,41 @@ describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				'src/api/x.ts changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
 		},
 		{
+			label: 'a list entry spelled ./src/api/ (git names no path so)',
+			asking: ['./src/api/'],
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+		{
+			label: 'a list entry that is an absolute path',
+			asking: ['/abs/x'],
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+		{
+			label: 'a list entry with a backslash',
+			asking: ['src\\\\api\\\\'],
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+		{
+			label: 'a list entry that is empty',
+			asking: [''],
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+		{
+			label: 'dialecte.changelog.asking that is a string',
+			asking: 'src/api/',
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+		{
 			label: 'dialecte.changelog.asking that is no list of paths',
 			asking: ['README.md', 3],
 			files: { 'src/a.ts': 'export const a = 2\n' },

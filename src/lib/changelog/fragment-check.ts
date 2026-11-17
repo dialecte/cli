@@ -95,14 +95,32 @@ function listChangeOf(params: { root: string; base: string }): string[] {
 
 /**
  * The fragment-asking entries of the package at `root`: `FRAGMENT_ASKING_FILES` and its package.json's
- * `dialecte.changelog.asking`; undefined when that field is there and is no list of non-empty strings.
+ * `dialecte.changelog.asking`; undefined when `dialecte.changelog` is there and is no object, or its list is no list
+ * of paths as git names them (`isGitPath`).
  */
 function askingEntriesOf(params: { root: string }): string[] | undefined {
-	const listed = readPackageJson(params.root).dialecte?.changelog?.asking
-	if (listed === undefined) return [...FRAGMENT_ASKING_FILES]
-	if (!Array.isArray(listed) || !listed.every((entry) => typeof entry === 'string' && entry !== ''))
+	const changelog: unknown = readPackageJson(params.root).dialecte?.changelog
+	if (changelog === undefined) return [...FRAGMENT_ASKING_FILES]
+	if (changelog === null || typeof changelog !== 'object' || Array.isArray(changelog))
 		return undefined
+	const listed = (changelog as { asking?: unknown }).asking
+	if (listed === undefined) return [...FRAGMENT_ASKING_FILES]
+	if (!Array.isArray(listed) || !listed.every(isGitPath)) return undefined
 	return [...FRAGMENT_ASKING_FILES, ...listed]
+}
+
+/**
+ * A path as git names a changed file: a non-empty string, relative to the package (no leading `/` or `./`), with `/`
+ * separators (no `\`); anything else would never match a change.
+ */
+function isGitPath(entry: unknown): entry is string {
+	return (
+		typeof entry === 'string' &&
+		entry !== '' &&
+		!entry.startsWith('/') &&
+		!entry.startsWith('./') &&
+		!entry.includes('\\')
+	)
 }
 
 /** Whether a changed file asks for a fragment: one of `entries`, or under one of its folders (an entry ending in `/`). */

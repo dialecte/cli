@@ -11,13 +11,15 @@ import { damagedLotHandover } from './store-lot-guard-workspace.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { BackgroundSpawner } from '../src/lib/worktree/worktree.types.ts'
+
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
 /** Each recorded removal's command, and whether the path it removes lies in the workspace trash of `worktree`. */
 function removalsOf(params: {
-	removals: readonly { command: string; args: string[] }[]
+	removals: readonly Parameters<BackgroundSpawner>[0][]
 	worktree: string
 }): { command: string; inTrash: boolean }[] {
 	const trash = join(dirname(params.worktree), '_trash')
