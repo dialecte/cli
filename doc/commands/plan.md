@@ -11,6 +11,7 @@ plan - What can start now in a plan's lot block, whether the block is valid, a m
   dialecte plan check <plan.md> [--json]
   dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]
   dialecte plan mark <plan.md> <id> done --landed <sha> --by <who> --reason <text>
+  dialecte plan mark <plan.md> <id> superseded --by <who> --reason <text> [--replaced-by <id>]...
 
   the block - one fenced ```json dialecte-lots block in the plan, or the file <plan without
     .md>.lots.json beside it (both or neither: refused); each entry's id, kind (lot, fix, spec,
@@ -41,16 +42,23 @@ plan - What can start now in a plan's lot block, whether the block is valid, a m
          the entry reads done by them (realizedBy kind landed); an entry its records already say
          done takes none (answered, nothing recorded); a lot or fix entry takes no plain mark, a
          person entry no --landed
+  mark superseded - an entry of any kind other entries replaced: appends { plan, id, state:
+    superseded, by, reason, at, replacedBy } (each --replaced-by an id of the block, never the entry
+    itself; replacedBy [] when none is given), once (again: already); --reason required, --landed
+    refused; the entry reads done (realizedBy kind superseded, name the --by), so nothing waits on
+    it; the replacing entries do not take over its dependents (a dependent that needs their work
+    names them in its dependsOn); --all lists it as <id> (superseded by <ids>); an entry its records
+    already say done takes none (answered, nothing recorded)
 
 exit codes:
   1  next: no lot or fix can start now (spec work may still be listed)
-  2  usage; no block or an invalid one (every fault listed); a repository that is not a git checkout; mark: a lot or fix entry without --landed (or without --reason), a person entry with it, a commit not on the base branch of origin, an unknown id
+  2  usage; no block or an invalid one (every fault listed); a repository that is not a git checkout; mark: a lot or fix entry without --landed (or without --reason), a person entry with it, a commit not on the base branch of origin, an unknown id; superseded without --reason, with --landed, or a --replaced-by not in the block or the entry itself; --replaced-by with done
 e.g. dialecte plan next 33-LOT-ENGINE.md
 ````
 
 Verbs: `next`, `check`, `mark`
 
-Flags: `--json`, `--all`, `--by`, `--reason`, `--landed`
+Flags: `--json`, `--all`, `--by`, `--reason`, `--landed`, `--replaced-by`
 <!-- /dialecte-reference -->
 
 - `dialecte plan next <plan.md> [--json] [--all]` reads a plan's lot block (one fenced block with the info string
@@ -81,7 +89,11 @@ Flags: `--json`, `--all`, `--by`, `--reason`, `--landed`
   `dialecte plan check <plan.md> [--json]` checks the block alone: one line when valid, else every fault (exit
   2). `dialecte plan mark <plan.md> <id> done --by <who> [--reason <text>]` records a person entry's mark once in
   the machine's state folder (`<state>/dialecte/plans/`); a `lot` entry's state comes from its records and is
-  refused.
+  refused. `dialecte plan mark <plan.md> <id> superseded --by <who> --reason <text> [--replaced-by <id>]...`
+  closes an entry other entries replaced, whatever its kind: `plan next` reads it done (realized by
+  `superseded`), so nothing waits on it any more, and `--all` lists it as `<id> (superseded by <ids>)`. The
+  replacing entries are recorded, not handed its dependents: a dependent that needs their work names them in its
+  own `dependsOn`.
 - `.dialecte/lot` reaches the lot folder, whose `round-<n>/` snapshots hold copies of the lot's files, tests
   included. Leave `.dialecte/` out of every tool that walks the worktree: a test runner whose globs include dot
   folders, a formatter, a linter. Git already leaves it out (`worktree add` excludes it).

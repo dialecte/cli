@@ -39,12 +39,13 @@ import {
 } from './forbidden-words.ts'
 import { createImportReading, packagePathOf } from './import-reading.ts'
 import { readQueryNamesWithNote } from './query-names.ts'
+import { sqlKeywordReaderOf } from './sql-literals.ts'
 import { createUnitContextReader } from './unit-context.ts'
 
 import ts from 'typescript'
 
 import type { AllowedCounts } from './allow-comments.types.ts'
-import type { RuleFinding, RuleName } from './check-code-rules.types.ts'
+import type { CheckCodeRulesParams, RuleFinding, RuleName } from './check-code-rules.types.ts'
 import type { DialecteScope, FileCheck, RulesCheck } from './check-rules.types.ts'
 import type { ReferencePattern } from './committed-text.types.ts'
 import type { DialecteChangeEntry } from './dialecte-change.types.ts'
@@ -288,7 +289,7 @@ function checkFile(params: {
 	const entryClasses =
 		scope && CLASS_KEYWORD_PATTERN.test(text) ? scope.entryClassesOf(packageFile) : undefined
 	const findings = [
-		...checkCodeRules({
+		...checkCodeRulesWithoutSql({
 			file,
 			text,
 			referencePatterns: params.referencePatterns,
@@ -309,6 +310,17 @@ function checkFile(params: {
 		fixtures,
 		...overLimit,
 	}
+}
+
+/**
+ * The code rules' findings of a file, without the committed-text references that are SQL keywords inside an SQL
+ * string of code: there the word is the keyword, never a name of committed text.
+ */
+function checkCodeRulesWithoutSql(params: CheckCodeRulesParams): RuleFinding[] {
+	const isSqlKeywordAt = sqlKeywordReaderOf(params)
+	return checkCodeRules(params).filter(
+		(finding) => finding.rule !== 'committed-text-reference' || !isSqlKeywordAt(finding),
+	)
 }
 
 /** The quality rules a run judges: all of them, `query-in-loop` only when the API indexes name query reads. */

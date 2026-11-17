@@ -79,6 +79,9 @@ export const THROWAWAY_BRANCH_PATTERN = THROWAWAY_WORKTREE_PATTERN
 /** The note of an entry open by its worktree alone, and the start of the note of a pending hand-over. */
 export const MANUAL_OPEN_NOTE = 'manual, no hand-over yet'
 
+/** The note of an entry closed by a superseded mark, followed by ` by <ids>` when it names the replacing entries. */
+export const SUPERSEDED_NOTE = 'superseded'
+
 /** The note of outside work read from a record that does not read: `damaged: <file>`. */
 export const DAMAGED_NOTE_PREFIX = 'damaged:'
 export const PENDING_NOTE_PREFIX = 'pending since'

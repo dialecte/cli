@@ -24,17 +24,21 @@ import {
 } from './plan.constants.ts'
 
 import type { StateFolderLocation } from '../store/store.types.ts'
-import type { LandedCommit, PlanMark } from './plan.types.ts'
+import type { LandedCommit, PlanMark, PlanMarkState } from './plan.types.ts'
 
 /**
- * Appends one line `{ plan, id, state: 'done', by, reason, at }` (and `landed` for a lot or fix entry) to the plan's marks file
+ * Appends one line `{ plan, id, state, by, reason, at }` (and `landed` for a lot or fix entry, `replacedBy` for a
+ * superseded one; `state` `done` unless given) to the plan's marks file
  * (`<state>/dialecte/plans/<sha256 of the plan's real path, 16 hex>.jsonl`), one `O_APPEND` write.
  */
 export function appendPlanMark(params: {
 	planPath: string
 	id: string
+	state?: PlanMarkState
 	by: string
 	reason?: string
+	/** A superseded entry's replacing entries. */
+	replacedBy?: string[]
 	/** A lot or fix entry's landed commits (`--landed`), one per repository. */
 	landed?: LandedCommit[]
 	location?: StateFolderLocation
@@ -44,11 +48,12 @@ export function appendPlanMark(params: {
 	const mark: PlanMark = {
 		plan,
 		id: params.id,
-		state: 'done',
+		state: params.state ?? 'done',
 		by: params.by,
 		reason: params.reason ?? null,
 		at: (params.now ?? new Date()).toISOString(),
 		...(params.landed === undefined ? {} : { landed: params.landed }),
+		...(params.replacedBy === undefined ? {} : { replacedBy: params.replacedBy }),
 	}
 	const file = marksFileOf({ plan, location: params.location })
 	mkdirSync(dirname(file), { recursive: true })
@@ -132,7 +137,7 @@ function markOfLine(params: { line: string }): PlanMark[] {
 		if (
 			typeof value?.plan !== 'string' ||
 			typeof value.id !== 'string' ||
-			value.state !== 'done' ||
+			(value.state !== 'done' && value.state !== 'superseded') ||
 			typeof value.by !== 'string' ||
 			typeof value.at !== 'string'
 		)
@@ -141,16 +146,24 @@ function markOfLine(params: { line: string }): PlanMark[] {
 			{
 				plan: value.plan,
 				id: value.id,
-				state: 'done',
+				state: value.state,
 				by: value.by,
 				reason: typeof value.reason === 'string' ? value.reason : null,
 				at: value.at,
 				...landedOf({ value: value.landed }),
+				...replacedByOf({ state: value.state, value: value.replacedBy }),
 			},
 		]
 	} catch {
 		return []
 	}
+}
+
+/** A superseded mark's `replacedBy`: its ids, empty when the line holds no list of strings. */
+function replacedByOf(params: { state: PlanMarkState; value: unknown }): { replacedBy?: string[] } {
+	if (params.state !== 'superseded') return {}
+	const list: unknown[] = Array.isArray(params.value) ? params.value : []
+	return { replacedBy: list.filter((item): item is string => typeof item === 'string') }
 }
 
 /** A mark's `landed` when it holds a list of commits with their repositories; nothing otherwise. */

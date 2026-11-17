@@ -271,11 +271,15 @@ function unknownLinesOf(params: { report: PlanNextReport }): string[] {
 		.map((status) => `${cellOf({ text: status.id })}${status.reason ?? ''}`)
 }
 
-/** The done entries' ids. */
+/** The done entries' ids; a superseded one with its note: `<id> (superseded by <ids>)`. */
 function doneIdsOf(params: { report: PlanNextReport }): string[] {
 	return params.report.states.entries
 		.filter((status) => status.state === 'done')
-		.map((status) => status.id)
+		.map((status) =>
+			status.realizedBy?.kind === 'superseded' && status.note !== null
+				? `${status.id} (${status.note})`
+				: status.id,
+		)
 }
 
 /** The heavy steps running (step, worktree, start, age), the load against its limit, the memory, the shortness. */
