@@ -64,8 +64,8 @@ export function pullUrlOf(number: number): string {
 /**
  * A stack of two lots in one store: the parent lot `0001-repo-x` (the landing repository's `feat/x`) pushed to origin
  * with pull request #5 recorded in its `landing.json` (none when `parentLanded` is false), and the child lot
- * `0002-repo-y` on `feat/y`, one commit (`src/y.ts`) on the parent's tip, its `stack.json` naming the parent and that
- * tip. The child's own files are `childFiles` when given.
+ * `0002-repo-y` on `feat/y`, one commit (`src/y.ts`) on the parent's tip, its `stack.json` naming the parent only. The
+ * child's own files are `childFiles` when given.
  */
 export function stackedRepository(
 	params: { parentLanded?: boolean; childFiles?: Record<string, string> } = {},
@@ -79,7 +79,11 @@ export function stackedRepository(
 	writeFiles({
 		root: parentFolder,
 		files: {
-			'identity.json': JSON.stringify({ name: '0001-repo-x', branch: 'feat/x' }),
+			'identity.json': JSON.stringify({
+				name: '0001-repo-x',
+				branch: 'feat/x',
+				base: { ref: 'main', commit: git({ root, args: ['rev-parse', 'main'] }).trim() },
+			}),
 			...(params.parentLanded !== false && {
 				'landing.json': JSON.stringify({
 					schema: 1,
@@ -87,7 +91,6 @@ export function stackedRepository(
 					url: pullUrlOf(5),
 					branch: 'feat/x',
 					head: tip,
-					replaced: [],
 					at: '',
 				}),
 			}),
@@ -106,12 +109,7 @@ export function stackedRepository(
 			'brief.json': JSON.stringify({
 				lots: [{ paths: Object.keys(childFiles), message: 'feat(y): y answers two' }],
 			}),
-			'stack.json': JSON.stringify({
-				schema: 1,
-				parent: '0001-repo-x',
-				parentHead: tip,
-				at: '2026-11-17T21:00:00.000Z',
-			}),
+			'stack.json': JSON.stringify({ schema: 1, parent: '0001-repo-x' }),
 		},
 	})
 	return {

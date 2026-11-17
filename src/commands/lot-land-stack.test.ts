@@ -5,7 +5,7 @@
  * (refused without native stacks), and rebased off the parent's commits once the parent merged: by the cli for a
  * based-on-branch stack, following the host's own rewrite for a native one. A conflict stops, nothing resolved.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
@@ -20,7 +20,13 @@ import {
 import { cliTemplate } from '../../test/lot-pr.ts'
 import { cloneRepository, git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import {
+	findHandoverStore,
+	recordHandoverState,
+	registerHandover,
+} from '../lib/handover/handover-store.ts'
 import { landLot } from '../lib/handover/land-lot.ts'
+import { readLanded } from '../lib/landing/landed-record.ts'
 import { templateFaultOf } from '../lib/pr/compose-pull-request.ts'
 import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
 import { runLotLand } from './lot-land.ts'
@@ -68,6 +74,14 @@ function commitIn(params: {
 	return git({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim()
 }
 
+/** The worktree's last commit amended with `files`: its new sha. */
+function amendIn(params: { worktree: string; files: Record<string, string> }): string {
+	writeFiles({ root: params.worktree, files: params.files })
+	git({ root: params.worktree, args: ['add', '-A'] })
+	git({ root: params.worktree, args: ['commit', '-q', '--amend', '--no-edit'] })
+	return git({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+}
+
 /** What origin holds for a branch; empty when it holds none. */
 function originHead(params: { stack: StackedRepository; branch: string }): string {
 	return git({
@@ -79,11 +93,12 @@ function originHead(params: { stack: StackedRepository; branch: string }): strin
 }
 
 /** The stack record of the child, as written. */
-function childStack(stack: StackedRepository): { parentHead: string } {
-	return JSON.parse(readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8')) as {
-		parentHead: string
-	}
+function childStack(stack: StackedRepository): unknown {
+	return JSON.parse(readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8'))
 }
+
+/** The stack record a start writes: the parent, nothing else. */
+const PARENT_ONLY = { schema: 1, parent: '0001-repo-x' }
 
 /** The child's HEAD. */
 function childHead(stack: StackedRepository): string {
@@ -182,7 +197,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		expect(host.bodies[0]).toContain('### Depends on\n\nnot recorded\n')
 	})
 
-	it("the parent's branch moved since the child started → lot land --draft rebases the child onto its new tip first, the new parentHead recorded", () => {
+	it("the parent moved on, the child not rebased → lot land --draft rebases onto the parent's tip, no replay, stack.json naming the parent only", () => {
 		const stack = stackedRepository()
 		const moved = commitIn({
 			worktree: stack.parent.worktree,
@@ -196,9 +211,13 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		expect({
 			exitCode: landed.exitCode,
 			onNewTip: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
-			parentHead: childStack(stack).parentHead,
+			ownCommits: git({
+				root: stack.child.worktree,
+				args: ['rev-list', '--count', `${moved}..HEAD`],
+			}).trim(),
+			stack: childStack(stack),
 			pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
-		}).toEqual({ exitCode: 0, onNewTip: moved, parentHead: moved, pushed: true })
+		}).toEqual({ exitCode: 0, onNewTip: moved, ownCommits: '1', stack: PARENT_ONLY, pushed: true })
 	})
 
 	it("that rebase onto the parent's new tip conflicts → stops naming the files, the rebase undone, nothing pushed, exit 2", () => {
@@ -218,14 +237,14 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 			named: landed.lines.some((line) => line.includes('conflicts in src/x.ts')),
 			head: childHead(stack),
 			status: git({ root: stack.child.worktree, args: ['status', '--porcelain'] }),
-			parentHead: childStack(stack).parentHead,
+			stack: childStack(stack),
 			pushed: originHead({ stack, branch: 'feat/y' }),
 		}).toEqual({
 			exitCode: 2,
 			named: true,
 			head: before,
 			status: '',
-			parentHead: stack.parent.tip,
+			stack: PARENT_ONLY,
 			pushed: '',
 		})
 	})
@@ -310,7 +329,7 @@ describe(
 					args: ['diff', '--name-only', merged, 'HEAD'],
 				}).trim(),
 				pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
-				parentHead: childStack(stack).parentHead,
+				stack: childStack(stack),
 				writes: writesOf(host),
 			}).toEqual({
 				exitCode: 0,
@@ -318,7 +337,7 @@ describe(
 				onMain: merged,
 				changed: 'src/y.ts',
 				pushed: true,
-				parentHead: merged,
+				stack: PARENT_ONLY,
 				writes: ['retarget 7 main', 'queue 7'],
 			})
 		})
@@ -364,7 +383,7 @@ describe(
 			const stack = stackedRepository()
 			const host = recordingHost({ stacks: true, parent: parentPullRequest() })
 			landChild({ stack, host, draft: true })
-			const merged = squashParent({ stack })
+			squashParent({ stack })
 			const rewritten = hostRewritesChild({ stack })
 			host.setParent(parentPullRequest({ state: 'merged' }))
 			host.calls.length = 0
@@ -375,13 +394,11 @@ describe(
 				exitCode: landed.exitCode,
 				head: childHead(stack),
 				pushed: originHead({ stack, branch: 'feat/y' }),
-				parentHead: childStack(stack).parentHead,
 				queued: writesOf(host).includes('stack-queue 7'),
 			}).toEqual({
 				exitCode: 0,
 				head: rewritten,
 				pushed: rewritten,
-				parentHead: merged,
 				queued: true,
 			})
 		})
@@ -435,71 +452,77 @@ describe(
 	},
 )
 
+/**
+ * A stack of two store lots of a brief workspace pushed to a bare origin: the parent `0001-repo-x` on `feat/x` (one
+ * commit, pushed, pull request #5 in its landing.json) and the child `0002-repo-y` on `feat/y`, cut at the parent's tip
+ * with one commit, its stack.json naming the parent.
+ */
+function storeStack() {
+	const workspace = createBriefWorkspace()
+	const { repository } = workspace
+	writeFiles({ root: repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
+	git({ root: repository, args: ['add', '-A'] })
+	git({ root: repository, args: ['commit', '-qm', 'chore: the template'] })
+	const origin = join(workspace.workspace, 'origin.git')
+	git({ root: workspace.workspace, args: ['init', '-q', '--bare', '-b', 'main', origin] })
+	git({ root: repository, args: ['remote', 'add', 'origin', origin] })
+	git({ root: repository, args: ['push', '-q', '-u', 'origin', 'main'] })
+	const parentWorktree = join(workspace.workspace, '.worktrees', PARENT)
+	git({
+		root: repository,
+		args: ['worktree', 'add', '-q', '-b', 'feat/x', parentWorktree, 'main'],
+	})
+	const tip = commitIn({
+		worktree: parentWorktree,
+		files: { 'src/x.ts': 'export const x = 1\n' },
+		message: 'feat(x): x answers one',
+	})
+	git({ root: parentWorktree, args: ['push', '-q', '-u', 'origin', 'feat/x'] })
+	const parentFolder = writeStoreLot({
+		workspace,
+		name: PARENT,
+		scope: ['src/x.ts'],
+		branch: 'feat/x',
+		repository,
+		worktree: parentWorktree,
+	})
+	writeFileSync(
+		join(parentFolder, 'landing.json'),
+		JSON.stringify({
+			schema: 1,
+			number: 5,
+			url: pullUrlOf(5),
+			branch: 'feat/x',
+			head: tip,
+			at: '',
+		}),
+	)
+	const childWorktree = join(workspace.workspace, '.worktrees', CHILD)
+	git({ root: repository, args: ['worktree', 'add', '-q', '-b', 'feat/y', childWorktree, tip] })
+	commitIn({
+		worktree: childWorktree,
+		files: { 'src/y.ts': 'export const y = 2\n' },
+		message: 'feat(y): y',
+	})
+	const childFolder = writeStoreLot({
+		workspace,
+		name: CHILD,
+		scope: ['src/y.ts'],
+		branch: 'feat/y',
+		repository,
+		worktree: childWorktree,
+		base: { ref: 'feat/x', commit: tip },
+	})
+	writeFileSync(join(childFolder, 'stack.json'), JSON.stringify({ schema: 1, parent: PARENT }))
+	return { repository, parentWorktree, parentFolder, childWorktree, tip }
+}
+
 describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a lot started on its parent (stack.json), cut from a commit main does not hold → landed on the parent branch, not refused', () => {
-		const workspace = createBriefWorkspace()
-		const { repository } = workspace
-		writeFiles({ root: repository, files: { [TEMPLATE_PATH]: cliTemplate() } })
-		git({ root: repository, args: ['add', '-A'] })
-		git({ root: repository, args: ['commit', '-qm', 'chore: the template'] })
-		const origin = join(workspace.workspace, 'origin.git')
-		git({ root: workspace.workspace, args: ['init', '-q', '--bare', '-b', 'main', origin] })
-		git({ root: repository, args: ['remote', 'add', 'origin', origin] })
-		git({ root: repository, args: ['push', '-q', '-u', 'origin', 'main'] })
-		const parentWorktree = join(workspace.workspace, '.worktrees', PARENT)
-		git({
-			root: repository,
-			args: ['worktree', 'add', '-q', '-b', 'feat/x', parentWorktree, 'main'],
-		})
-		const tip = commitIn({
-			worktree: parentWorktree,
-			files: { 'src/x.ts': 'export const x = 1\n' },
-			message: 'feat(x): x answers one',
-		})
-		git({ root: parentWorktree, args: ['push', '-q', '-u', 'origin', 'feat/x'] })
-		const parentFolder = writeStoreLot({
-			workspace,
-			name: PARENT,
-			scope: ['src/x.ts'],
-			branch: 'feat/x',
-			repository,
-			worktree: parentWorktree,
-		})
-		writeFileSync(
-			join(parentFolder, 'landing.json'),
-			JSON.stringify({
-				schema: 1,
-				number: 5,
-				url: pullUrlOf(5),
-				branch: 'feat/x',
-				head: tip,
-				replaced: [],
-				at: '',
-			}),
-		)
-		const childWorktree = join(workspace.workspace, '.worktrees', CHILD)
-		git({ root: repository, args: ['worktree', 'add', '-q', '-b', 'feat/y', childWorktree, tip] })
-		commitIn({
-			worktree: childWorktree,
-			files: { 'src/y.ts': 'export const y = 2\n' },
-			message: 'feat(y): y',
-		})
-		const childFolder = writeStoreLot({
-			workspace,
-			name: CHILD,
-			scope: ['src/y.ts'],
-			branch: 'feat/y',
-			repository,
-			worktree: childWorktree,
-			base: { ref: 'feat/x', commit: tip },
-		})
-		writeFileSync(
-			join(childFolder, 'stack.json'),
-			JSON.stringify({ schema: 1, parent: PARENT, parentHead: tip, at: NOW.toISOString() }),
-		)
+		const stack = storeStack()
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const result = runLotLand({ cwd: repository, argv: [CHILD, '--draft'], host: host.host })
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
 
 		expect({
 			exitCode: result.exitCode,
@@ -507,6 +530,47 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 		}).toEqual({
 			exitCode: 0,
 			opened: ['open feat/y -> feat/x "feat: x" draft'],
+		})
+	})
+
+	it("a parent the registry records committed (its hand-over run), pushed and not merged → the child keeps the parent's files, never rebased off it", () => {
+		const stack = storeStack()
+		registerHandover({
+			root: stack.parentWorktree,
+			folder: stack.parentFolder,
+			branch: 'feat/x',
+			now: NOW,
+		})
+		recordHandoverState({
+			store: findHandoverStore(stack.parentWorktree),
+			folder: stack.parentFolder,
+			state: 'committed',
+		})
+		const host = recordingHost({ parent: parentPullRequest() })
+
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
+
+		expect({
+			exitCode: result.exitCode,
+			parentFiles: existsSync(join(stack.childWorktree, 'src/x.ts')),
+			offParent: result.output.includes('merged)'),
+		}).toEqual({ exitCode: 0, parentFiles: true, offParent: false })
+	})
+
+	it("the parent's pull request merged as the host says → lot land of the child records the parent's landed fact", () => {
+		const stack = storeStack()
+		const host = recordingHost({
+			parent: { ...parentPullRequest({ state: 'merged' }), head: stack.tip },
+		})
+
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
+
+		expect({
+			exitCode: result.exitCode,
+			landed: readLanded({ lotFolder: stack.parentFolder }),
+		}).toMatchObject({
+			exitCode: 0,
+			landed: { how: 'host', tip: stack.tip, base: 'main', pull: { number: 5 } },
 		})
 	})
 })
@@ -533,36 +597,37 @@ describe(
 			})
 		})
 
-		it('a stack link the host refused → no native route recorded; the next landing links it again and records it', () => {
+		it("a stacked child rebased by hand onto its amended parent, the parent squash-merged → lot land --draft lands only the child's commit", () => {
 			const stack = stackedRepository()
-			const host = recordingHost({ stacks: true, parent: parentPullRequest(), linkRefusals: 1 })
+			const amended = amendIn({
+				worktree: stack.parent.worktree,
+				files: { 'src/x.ts': 'export const x = 11\n' },
+			})
+			git({
+				root: stack.child.worktree,
+				args: ['rebase', '-q', '--onto', amended, stack.parent.tip],
+			})
+			commitIn({
+				worktree: stack.parent.worktree,
+				files: { 'src/x.ts': 'export const x = 12\n' },
+				message: 'feat(x): x answers twelve',
+			})
+			const merged = landOnOrigin({
+				origin: stack.origin,
+				files: { 'src/x.ts': 'export const x = 12\n' },
+			})
+			const host = recordingHost({ parent: parentPullRequest({ state: 'merged' }) })
 
-			const first = landChild({ stack, host, draft: true })
-			const afterFirst = JSON.parse(
-				readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8'),
-			) as {
-				route?: string
-			}
-			host.calls.length = 0
-			const second = landChild({ stack, host, draft: true })
+			const landed = landChild({ stack, host, draft: true })
 
 			expect({
-				first: first.exitCode,
-				routeAfterFirst: afterFirst.route,
-				second: second.exitCode,
-				relinked: writesOf(host).includes(`link ${pullUrlOf(5)} ${pullUrlOf(7)}`),
-				routeAfterSecond: (
-					JSON.parse(readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8')) as {
-						route?: string
-					}
-				).route,
-			}).toEqual({
-				first: 1,
-				routeAfterFirst: undefined,
-				second: 0,
-				relinked: true,
-				routeAfterSecond: 'native',
-			})
+				exitCode: landed.exitCode,
+				onMain: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
+				changed: git({
+					root: stack.child.worktree,
+					args: ['diff', '--name-only', merged, 'HEAD'],
+				}).trim(),
+			}).toEqual({ exitCode: 0, onMain: merged, changed: 'src/y.ts' })
 		})
 
 		it('a queue refused because the parent is open and the host has no stacks → stack.json left byte for byte', () => {

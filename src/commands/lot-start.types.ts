@@ -80,8 +80,8 @@ export type PreparedStart = {
 	stack: StartStack | undefined
 }
 
-/** The parent of a stacked start (`--on`): its lot name and the tip of its branch. */
-export type StartStack = { parent: string; parentHead: string }
+/** The parent of a stacked start (`--on`): its lot name. Where the lot forks is read from git when it lands. */
+export type StartStack = { parent: string }
 
 /** A prepared start, or the exit that ended it before its effort was known. */
 export type PrepareStartResult = { prepared: PreparedStart } | { exit: CommandResult }

@@ -2,9 +2,9 @@
  * `dialecte worktree prune`: the keep rule of the lot store (33S section 11). A worktree that a lot of the
  * repository's store names (`identity.worktree`, by real path) while the lot is not `committed` nor `canceled` is
  * kept, with the reason `lot <full name> <state>`, checked before every other rule; the store is read once for the
- * repository, no git process per lot. Every case sets the other keep reasons up so that they would NOT keep: the
- * branch's commit is merged into the base, its reflog holds two entries, no hygiene baseline stands in for its tip, no
- * `.dialecte/` folder, no link, nothing uncommitted.
+ * repository. Every case sets the other keep reasons up so that they would NOT keep, but one: its reflog holds two
+ * entries, no hygiene baseline stands in for its tip, no `.dialecte/` folder, no link, nothing uncommitted; an open
+ * lot's branch is not merged into the base (a merged one has landed: prune reads it committed), a closed lot's is.
  */
 import { existsSync, readFileSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
@@ -69,9 +69,9 @@ async function tracedFates(workspace: BriefWorkspace) {
 describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, () => {
 	const KEPT_STATES: LotKeepState[] = ['input-required', 'working', 'ready', 'failed']
 	for (const state of KEPT_STATES)
-		it(`a merged clean worktree of a lot ${state}, no other keep reason → kept, reason "lot <name> ${state}" (case 22)`, async () => {
+		it(`a clean worktree of a lot ${state}, its branch not landed → kept, reason "lot <name> ${state}" (case 22)`, async () => {
 			const workspace = createBriefWorkspace()
-			const lot = addLotWorktree({ workspace, name: ASKING, state })
+			const lot = addLotWorktree({ workspace, name: ASKING, state, merged: false })
 
 			await expect(worktreeFatesOf(workspace)).resolves.toEqual({
 				[ASKING]: lotReason({ branch: lot.branch, name: ASKING, state }),
@@ -83,7 +83,12 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 		it(`the same worktree with the lot ${state}, beside a worktree of a lot input-required → listed for removal, the other kept (case 22)`, async () => {
 			const workspace = createBriefWorkspace()
 			addLotWorktree({ workspace, name: ASKING, state })
-			const asking = addLotWorktree({ workspace, name: OTHER, state: 'input-required' })
+			const asking = addLotWorktree({
+				workspace,
+				name: OTHER,
+				state: 'input-required',
+				merged: false,
+			})
 
 			await expect(worktreeFatesOf(workspace)).resolves.toEqual({
 				[ASKING]: REMOVABLE,
@@ -93,7 +98,7 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a merged clean worktree that no lot names, beside one a working lot names and a lot whose worktree is gone → only the named one is kept', async () => {
 		const workspace = createBriefWorkspace()
-		const named = addLotWorktree({ workspace, name: ASKING, state: 'working' })
+		const named = addLotWorktree({ workspace, name: ASKING, state: 'working', merged: false })
 		addLotWithoutWorktree({ workspace, name: '0003-repo-gone', state: 'working' })
 		addBareWorktree({ workspace, name: OTHER })
 
@@ -114,7 +119,7 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a worktree where a hand-over is pending, named by a ready lot → the reason shown is the lot, not "a hand-over is pending in it"', async () => {
 		const workspace = createBriefWorkspace()
-		const lot = addLotWorktree({ workspace, name: ASKING, state: 'ready' })
+		const lot = addLotWorktree({ workspace, name: ASKING, state: 'ready', merged: false })
 		markHandoverPending(lot)
 
 		await expect(worktreeFatesOf(workspace)).resolves.toEqual({
@@ -124,7 +129,13 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a worktree with an uncommitted file, named by a lot input-required → the reason shown is the lot', async () => {
 		const workspace = createBriefWorkspace()
-		const lot = addLotWorktree({ workspace, name: ASKING, state: 'input-required', dirty: true })
+		const lot = addLotWorktree({
+			workspace,
+			name: ASKING,
+			state: 'input-required',
+			dirty: true,
+			merged: false,
+		})
 
 		await expect(worktreeFatesOf(workspace)).resolves.toEqual({
 			[ASKING]: lotReason({ branch: lot.branch, name: ASKING, state: 'input-required' }),
@@ -133,7 +144,7 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a lot whose identity names its worktree through a symbolic link → kept all the same (compared by real path)', async () => {
 		const workspace = createBriefWorkspace()
-		const lot = addLotWorktree({ workspace, name: ASKING, state: 'input-required' })
+		const lot = addLotWorktree({ workspace, name: ASKING, state: 'input-required', merged: false })
 		const link = join(temporaryFolder('dialecte-worktree-link-'), 'link')
 		symlinkSync(lot.worktree, link)
 		pointIdentityAt({ lotFolder: lot.lotFolder, worktree: link })
@@ -145,11 +156,21 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	it('a store of several lots (a simulated one, ones whose worktree is gone, canceled and committed ones) → the same fates and the same git processes as a store of one lot', async () => {
 		const single = createBriefWorkspace()
-		const singleLot = addLotWorktree({ workspace: single, name: ASKING, state: 'input-required' })
+		const singleLot = addLotWorktree({
+			workspace: single,
+			name: ASKING,
+			state: 'input-required',
+			merged: false,
+		})
 		const singleRun = await tracedFates(single)
 
 		const several = createBriefWorkspace()
-		const open = addLotWorktree({ workspace: several, name: ASKING, state: 'input-required' })
+		const open = addLotWorktree({
+			workspace: several,
+			name: ASKING,
+			state: 'input-required',
+			merged: false,
+		})
 		addLotWithoutWorktree({
 			workspace: several,
 			name: '0002-repo-simulated',

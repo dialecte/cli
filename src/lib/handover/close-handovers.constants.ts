@@ -1,7 +1,13 @@
-/** `lot close`: the words of the commits it compares with what landed. */
+/** `lot close`: what keeps a worktree beyond the shared keep rules, and why a lot cannot be registered. */
 
-/**
- * The diff options of the patches `lot close` compares with the lot's landed ones: the repository's own diff, never an
- * external diff tool or a text conversion (they would make two patches look alike or apart).
- */
-export const PATCH_DIFF_OPTIONS = ['--no-ext-diff', '--no-textconv'] as const
+/** Work the worktree holds that its base does not: `{work}` (`unlandedWorkText`), `{worktree}` where to look. */
+export const CLOSE_UNLANDED_WORK = '{work} (look: git -C {worktree} reflog HEAD)'
+
+/** A merged lot with no worktree to close: `{lot}` its name. */
+export const NO_LOT_WORKTREE = 'the lot {lot} names no worktree on disk: nothing to close'
+
+/** A lot argument whose lot is canceled: `{state}`; the close goes on by its entry. */
+export const LOT_NOT_OPEN = 'its lot is {state}: nothing to settle'
+
+/** A lot folder with no lot in it. */
+export const NOT_A_LOT = 'no lot in that folder'

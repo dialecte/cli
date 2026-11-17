@@ -2,9 +2,6 @@
 export const STACK_FILE = 'stack.json'
 export const STACK_SCHEMA = 1
 
-/** The routes a stacked pull request takes (`StackRoute`). */
-export const STACK_ROUTES: readonly string[] = ['native', 'branch']
-
 /** The states of a lot that takes a child (`lot start --on`): it is still at work. */
 export const STACKABLE_STATES: readonly string[] = ['working', 'ready']
 
@@ -19,13 +16,25 @@ export const STACK_PARENT_REFUSALS = {
 	noBranch: 'lot start: --on {lot}: its branch {branch} is not in {repository}, nothing written',
 } as const
 
-/** How `lot status` and the card name a lot's stack parent: `{pull}` its pull request, `{state}` its lot state. */
+/**
+ * How `lot status` and the card name a lot's stack parent: `{pull}` its pull request; `{state}` that pull request's
+ * state as the host holds it (`lot status`), or `{reason}` the host's silence. The card reads files only: no state.
+ */
 export const STACK_TEXT = {
-	line: 'on {parent} ({pull}, {state})',
-	noPull: 'no pull request yet',
-	unknown: 'unknown',
-	damaged: 'damaged',
+	withState: 'on {parent} ({pull}, {state})',
+	filesOnly: 'on {parent} ({pull})',
+	noPull: 'on {parent} (no pull request yet)',
+	hostSilent: 'the host cannot say: {reason}',
 	damagedRecord: 'damaged ({damage})',
+} as const
+
+/** A pull request's state as the stack line names it. */
+export const STACK_PULL_STATES = {
+	merged: 'merged',
+	closed: 'closed',
+	queued: 'queued',
+	draft: 'draft',
+	open: 'open',
 } as const
 
 /** The damage of a `stack.json` that does not read as a stack record. */

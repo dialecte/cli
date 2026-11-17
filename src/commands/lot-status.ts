@@ -1,6 +1,8 @@
 /**
- * `dialecte lot status <id> [--json]`: the lot's state derived from the records; reads files only, writes nothing,
- * starts no process (nothing this module reaches imports a child process).
+ * `dialecte lot status <id> [--json]`: the lot's state derived from the records; writes nothing, starts no process
+ * (nothing this module reaches imports a child process). Its caller hands it what is read beyond the files
+ * (`StatusLanding`): the lot's landing as git alone reads it (a merged lot shows committed, nothing written) and the
+ * stack line, its parent read through the one lot reader with the host.
  */
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -47,6 +49,7 @@ import {
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
+import type { StatusLanding } from '../lib/landing/lot-landing.types.ts'
 import type {
 	LinkCheck,
 	LotIdentity,
@@ -69,6 +72,8 @@ export function lotStatus(params: {
 	cwd: string
 	/** The words after the verb: `<id>` and the options. */
 	argv: string[]
+	/** The landing reads beyond the files (git, the host), from the caller; files only when left out. */
+	landing?: StatusLanding
 }): CommandResult {
 	const read = readArguments({ argv: params.argv, valueOptions: [], flags: STATUS_FLAGS })
 	if (typeof read === 'string')
@@ -89,7 +94,12 @@ export function lotStatus(params: {
 	const checked = readCheckedLotState({ lotFolder, registry, entries })
 	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
 	if ('damage' in checked) return lotDamagedExit({ lotFolder, damage: checked.damage, json })
-	const status = lotStatusOfInput({ input: checked.input, lotFolder, entries })
+	const status = lotStatusOfInput({
+		input: withMergedTip({ input: checked.input, lotFolder, landing: params.landing }),
+		lotFolder,
+		entries,
+		landing: params.landing,
+	})
 	if (!json) return { exitCode: 0, output: textOf(lotStatusLines(status)) }
 	// this command's own JSON (33CO 4.6): the forecast read once, with the registry entries read above; the text shows
 	// none, and the readers of many lots (inbox, lot wait) share lotStatusOf and read no forecast
@@ -122,6 +132,8 @@ export function lotStatusOfInput(params: {
 	input: LotStateInput
 	lotFolder: string
 	entries: readonly StoreEntry[]
+	/** The landing reads beyond the files (the stack line through the one lot reader); files only when left out. */
+	landing?: StatusLanding
 }): LotStatusJson {
 	const { input, lotFolder } = params
 	const { identity } = input
@@ -158,7 +170,7 @@ export function lotStatusOfInput(params: {
 		also,
 		station: station?.next ?? null,
 		rounds: roundsOf({ input, lotFolder }),
-		...stackStatusOf({ lotFolder }),
+		...stackStatusOf({ lotFolder, landing: params.landing }),
 		...designStatusOf({ lotFolder }),
 	}
 }
@@ -172,10 +184,33 @@ function designStatusOf(params: { lotFolder: string }): Pick<LotStatusJson, 'des
 	return standing === undefined ? {} : { design: designStatusJson(standing) }
 }
 
-/** The stack field of a lot started on another; none for a lot not stacked. */
-function stackStatusOf(params: { lotFolder: string }): { stack?: string } {
-	const stack = stackTextOf(params)
+/**
+ * The stack field of a lot started on another: its parent read through the one lot reader when the caller hands it,
+ * else from files only; none when not stacked.
+ */
+function stackStatusOf(params: { lotFolder: string; landing: StatusLanding | undefined }): {
+	stack?: string
+} {
+	const stack =
+		params.landing === undefined
+			? stackTextOf({ lotFolder: params.lotFolder })
+			: params.landing.stackLineOf({ lotFolder: params.lotFolder })
 	return stack === undefined ? {} : { stack }
+}
+
+/**
+ * The lot's records with the tip git alone reads merged (a squash read offline, a merge), never written: reading
+ * shows the lot committed and changes nothing. As read when the lot is committed already or no reader is handed in.
+ */
+function withMergedTip(params: {
+	input: LotStateInput
+	lotFolder: string
+	landing: StatusLanding | undefined
+}): LotStateInput {
+	const { input, landing } = params
+	if (landing === undefined || lotState(input).state === 'committed') return input
+	const tip = landing.mergedTipOf({ lotFolder: params.lotFolder })
+	return tip === undefined ? input : { ...input, landed: { tip } }
 }
 
 /**

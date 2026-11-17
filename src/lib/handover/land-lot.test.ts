@@ -16,7 +16,7 @@ import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts
 import { TEMPLATE_PATH } from '../pr/pull-request.constants.ts'
 import { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf, recordHandoverState, registerHandover } from './handover-store.ts'
-import { confirmLanding, landLot } from './land-lot.ts'
+import { landLot } from './land-lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -213,63 +213,6 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(readFileSync(join(repository.worktree, 'src/x.ts'), 'utf8')).toBe('export const x = 3\n')
 	})
 
-	it('a land that rebases → landing.json records the head it replaced; a second rebasing land keeps both', () => {
-		const repository = landingRepository()
-		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
-		const first = tipOf(repository)
-		land({ repository, host: recordingHost().host, draft: true })
-		const pushed = tipOf(repository)
-		landOnOrigin({ origin: repository.origin, files: { 'src/two.ts': 'export {}\n' } })
-
-		land({
-			repository,
-			host: recordingHost({ existing: pullRequestOf({ state: 'open', head: pushed }) }).host,
-			draft: true,
-		})
-
-		const landing = JSON.parse(
-			readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8'),
-		) as {
-			head: string
-			replaced: string[]
-		}
-		expect(landing.replaced).toEqual([first, pushed])
-		expect(landing.head).toBe(tipOf(repository))
-	})
-
-	it('a land with nothing to rebase → no head replaced', () => {
-		const repository = landingRepository()
-
-		land({ repository, host: recordingHost().host, draft: true })
-
-		expect(
-			JSON.parse(readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8')),
-		).toMatchObject({ replaced: [] })
-	})
-
-	it('the host refuses to open after a rebase → the head the rebase replaced is kept: the next landing records it', () => {
-		const repository = landingRepository()
-		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
-		const first = tipOf(repository)
-		const { host } = recordingHost()
-		const refusing: HostAdapter = {
-			...host,
-			openPullRequest: function refuseOpen() {
-				return { refusal: 'the host is down' }
-			},
-		}
-		expect(land({ repository, host: refusing, draft: true }).exitCode).toBe(1)
-
-		land({ repository, host: recordingHost().host, draft: true })
-
-		const landing = JSON.parse(
-			readFileSync(join(repository.lotFolder, 'landing.json'), 'utf8'),
-		) as {
-			replaced: string[]
-		}
-		expect(landing.replaced).toEqual([first])
-	})
-
 	it('an untracked folder of two files → named as two files, whatever git status shows by default', () => {
 		const repository = landingRepository()
 		writeFiles({
@@ -316,28 +259,6 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(landed.lines).toContain('uncommitted, not pushed: 1 file')
 	})
 
-	it('a landing recorded before heads were kept (no replaced) → its next rebasing land records the head it replaced', () => {
-		const repository = landingRepository()
-		const { host } = recordingHost()
-		land({ repository, host, draft: true })
-		const pushed = tipOf(repository)
-		const path = join(repository.lotFolder, 'landing.json')
-		const old = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-		delete old.replaced
-		writeFileSync(path, JSON.stringify(old))
-		landOnOrigin({ origin: repository.origin, files: { 'src/one.ts': 'export {}\n' } })
-
-		land({
-			repository,
-			host: recordingHost({ existing: pullRequestOf({ state: 'open', head: pushed }) }).host,
-			draft: true,
-		})
-
-		expect((JSON.parse(readFileSync(path, 'utf8')) as { replaced: string[] }).replaced).toEqual([
-			pushed,
-		])
-	})
-
 	it('its pull request already open → pushed again and queued, not opened twice', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({ existing: pullRequestOf({ state: 'open', head: '' }) })
@@ -380,7 +301,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(calls.length).toBeGreaterThan(0)
 	})
 
-	it('the recorded pull request merged, the lot holding commits since → refused: they land in a new lot, nothing pushed', () => {
+	it('the recorded pull request merged, the lot holding commits since → committed, its landed fact written, the commits since named: they land in a new lot, nothing pushed', () => {
 		const repository = landingRepository()
 		const mergedHead = tipOf(repository)
 		recordLanding({ repository, head: mergedHead })
@@ -392,11 +313,20 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			existing: pullRequestOf({ state: 'merged', head: mergedHead }),
 		})
 
-		const landed = land({ repository, host })
-
-		expect(landed.exitCode).toBe(1)
-		expect(landed.lines.join('\n')).toContain('they land in a new lot')
-		expect(calls).toEqual(['read 7'])
+		expect({
+			landed: land({ repository, host }),
+			fact: JSON.parse(readFileSync(join(repository.lotFolder, 'landed.json'), 'utf8')) as unknown,
+			calls,
+		}).toMatchObject({
+			landed: {
+				exitCode: 0,
+				lines: expect.arrayContaining([
+					expect.stringMatching(/1 commit\(s\) of work not in main: .*they land in a new lot/),
+				]),
+			},
+			fact: { how: 'host', tip: mergedHead, pull: { number: 7 } },
+			calls: ['read 7'],
+		})
 	})
 
 	it("someone else pushed the lot's branch since its last landing → the push refused by the lease, nothing overwritten", () => {
@@ -616,99 +546,6 @@ describe(
 		})
 	},
 )
-
-describe('confirmLanding', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
-	it("the landing's pull request merged at the head it pushed → the lot's hand-over entry committed, one line naming it", () => {
-		const repository = landingRepository()
-		land({ repository, host: recordingHost().host })
-		const { host } = recordingHost({
-			existing: pullRequestOf({ state: 'merged', head: tipOf(repository) }),
-		})
-
-		const line = confirmLanding({
-			root: repository.worktree,
-			lotFolder: repository.lotFolder,
-			host,
-		})
-
-		expect(line).toContain('pull request #7 merged')
-		expect(
-			registeredEntryOf({
-				store: handoverStoreOf(repository.worktree),
-				folder: repository.lotFolder,
-			})?.state,
-		).toBe('committed')
-	})
-
-	it('a host that cannot say → nothing changes, one line saying the lot stays pending', () => {
-		const repository = landingRepository()
-		land({ repository, host: recordingHost().host })
-		const silent: HostAdapter = {
-			...recordingHost().host,
-			readPullRequest: () => ({ refusal: 'gh pr view: offline' }),
-		}
-
-		const line = confirmLanding({
-			root: repository.worktree,
-			lotFolder: repository.lotFolder,
-			host: silent,
-		})
-
-		expect(line).toContain('the host could not say whether it merged (gh pr view: offline)')
-		expect(
-			registeredEntryOf({
-				store: handoverStoreOf(repository.worktree),
-				folder: repository.lotFolder,
-			})?.state,
-		).toBe('pending')
-	})
-
-	it("the landing's pull request merged at another head → nothing marked, a line naming the heads", () => {
-		const repository = landingRepository()
-		land({ repository, host: recordingHost().host })
-		const { host } = recordingHost({
-			existing: pullRequestOf({ state: 'merged', head: 'f'.repeat(40) }),
-		})
-
-		const line = confirmLanding({
-			root: repository.worktree,
-			lotFolder: repository.lotFolder,
-			host,
-		})
-
-		expect({
-			line: line?.startsWith(
-				`pull request #7 merged at ${'f'.repeat(12)}, the lot holds commits since (`,
-			),
-			state: registeredEntryOf({
-				store: handoverStoreOf(repository.worktree),
-				folder: repository.lotFolder,
-			})?.state,
-		}).toEqual({ line: true, state: 'pending' })
-	})
-
-	it("the landing's pull request still open → nothing marked, no line", () => {
-		const repository = landingRepository()
-		land({ repository, host: recordingHost().host })
-		const { host } = recordingHost({
-			existing: pullRequestOf({ state: 'open', head: 'f'.repeat(40) }),
-		})
-
-		const line = confirmLanding({
-			root: repository.worktree,
-			lotFolder: repository.lotFolder,
-			host,
-		})
-
-		expect({
-			line,
-			state: registeredEntryOf({
-				store: handoverStoreOf(repository.worktree),
-				folder: repository.lotFolder,
-			})?.state,
-		}).toEqual({ line: undefined, state: 'pending' })
-	})
-})
 
 describe(
 	'landLot renders the pull request from the lot records',

@@ -3,12 +3,12 @@ export const STACK_LANDING_LINES = {
 	damaged: 'lot land: {lot} is damaged: its {damage}, nothing pushed',
 	noParent:
 		'lot land: {lot} stacks on {parent}, whose records do not read: dialecte lot status {parent} says how, nothing pushed',
+	parentNotRecorded:
+		'lot land: {lot} stacks on {parent}, merged, whose landed fact cannot be written ({reason}): nothing pushed',
 	noParentPull:
 		'lot land: {lot} stacks on {parent}, which has no pull request yet: lot land {parent} --draft first, nothing pushed',
 	waits:
 		'lot land: {lot} waits for #{number} ({parent}) to merge: without native stacks a stacked lot queues after its parent, nothing pushed',
-	notRewritten:
-		'lot land: #{number} ({parent}) merged and the host has not rebased {branch} yet: land again once it has, nothing pushed',
 	conflict:
 		'lot land: rebasing {lot} onto {onto} conflicts in {files}: the rebase is undone, nothing pushed',
 	notUndone:
@@ -16,7 +16,7 @@ export const STACK_LANDING_LINES = {
 	dirty:
 		'lot land: {lot} must be rebased onto {onto} and its worktree holds uncommitted changes to tracked files: commit or move them, nothing pushed',
 	restacked: 'rebased onto {parent} {commit} (its branch moved)',
-	offParent: 'rebased off {parent} onto origin/{base} {commit} (#{number} merged)',
+	offParent: 'rebased off {parent} onto origin/{base} {commit} ({merged} merged)',
 	followed: 'follows the host: {branch} rebased onto origin/{base} at {commit}',
 	linked: 'stacked on #{number}: linked as a stack',
 	basedOn: 'stacked on #{number} through its base branch {branch}: {why}',

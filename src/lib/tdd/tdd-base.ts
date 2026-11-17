@@ -8,9 +8,9 @@ import { dirname, join } from 'node:path'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { readLandingState } from '../landing/landing-state.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
-import { readIdentity } from '../store/identity.ts'
+import { STACK_PARENT_UNREADABLE } from '../landing/lot-landing.constants.ts'
+import { readLotLanding } from '../landing/lot-landing.ts'
 import { lotOfWorktree } from '../store/resolve-lot.ts'
 import { readStackRecord } from '../store/stack.ts'
 import { TDD_BASE_SOURCES } from './tdd.constants.ts'
@@ -44,7 +44,8 @@ export function resolveTddBase(params: {
 		return packageJson.dialecte?.baseBranch === undefined
 			? { commit: head, source: TDD_BASE_SOURCES.head }
 			: { failure: found.refusal }
-	const parent = stackParentOf({ root, baseRef: found.ref })
+	const parent = stackParentOf({ root })
+	if (parent !== undefined && 'refusal' in parent) return { failure: `tdd base: ${parent.refusal}` }
 	const base = lotBaseOf({
 		root,
 		head: 'HEAD',
@@ -71,26 +72,27 @@ export function isStackedLotWorktree(params: { root: string }): boolean {
 }
 
 /**
- * The open lot the worktree's lot was started on (`stack.json`), its branch and its landing state (git only); undefined
- * for a worktree of no store lot, a lot not stacked, or a parent whose identity cannot be read.
+ * The lot the worktree's lot was started on (`stack.json`), its branch and its landing state as the one lot reader
+ * gives it (its landed fact, else git; never the host): merged only when proven; undefined for a worktree of no store
+ * lot or a lot not stacked; refused when the parent's records or base branch cannot be read (a child is never measured
+ * as a lot not stacked, which would take in its parent's commits).
  */
-function stackParentOf(params: { root: string; baseRef: string }): StackParent | undefined {
+function stackParentOf(params: { root: string }): StackParent | { refusal: string } | undefined {
 	const { root } = params
 	const lotFolder = lotOfWorktree({ cwd: root })
 	if (lotFolder === undefined) return undefined
 	const stack = readStackRecord({ lotFolder })
 	if (stack === undefined) return undefined
-	const identity = readIdentity({ lotFolder: join(dirname(lotFolder), stack.parent) })
-	if (identity === undefined) return undefined
-	return {
-		branch: identity.branch,
-		landing: readLandingState({
-			root,
-			branch: identity.branch,
-			baseRef: params.baseRef,
-			cut: identity.base.commit,
-		}),
-	}
+	// the one lot reader: the parent's landed fact first (a squash main later edited is merged once recorded), else git
+	const parent = readLotLanding({ lotFolder: join(dirname(lotFolder), stack.parent), root })
+	if ('refusal' in parent)
+		return {
+			refusal: fillMessage({
+				template: STACK_PARENT_UNREADABLE,
+				values: { parent: stack.parent, reason: parent.refusal },
+			}),
+		}
+	return { branch: parent.identity.branch, landing: parent.state }
 }
 
 /** `--base <ref>`: the merge-base of HEAD and the ref, else the commit it names. */

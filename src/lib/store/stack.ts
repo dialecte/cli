@@ -1,27 +1,28 @@
 /**
- * Stacks for dependent lots (33CI CI4): a lot started on another open lot (`lot start --on <parent>`) records the parent
- * and the parent's tip it sits on in `stack.json`; landing and closing read it.
+ * Stacks for dependent lots (33CI CI4, FIX-ci-loop section 1): a lot started on another open lot (`lot start --on
+ * <parent>`) records the parent in `stack.json`, nothing else: where it forks and what it lands on are read from git
+ * (`lotBaseOf`), the parent's landing through the one lot reader (`readLotLanding`).
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { readLanding } from '../handover/land-record.ts'
-import { readCheckedLotState, registryOfLotFolder } from './lot-records.ts'
-import { lotState } from './lot-state.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { replaceWhole } from './publish.ts'
 import {
 	STACK_DAMAGE,
 	STACK_FILE,
-	STACK_ROUTES,
+	STACK_PULL_STATES,
 	STACK_SCHEMA,
 	STACK_TEXT,
 } from './stack.constants.ts'
 
+import type { PullRequest } from '../host/host.types.ts'
 import type { StackDamage, StackRecord } from './stack.types.ts'
 
 /**
  * The lot's stack record; undefined when it has none (not stacked); its damage when the file does not read as one (torn,
- * or another shape): never read as not stacked.
+ * or another shape): never read as not stacked. Fields beyond the parent are not read.
  *
  * @intent read which lot a lot was started on
  * @internal
@@ -37,21 +38,10 @@ export function readStack(params: { lotFolder: string }): StackRecord | StackDam
 	}
 	if (typeof value !== 'object' || value === null || Array.isArray(value))
 		return { damage: STACK_DAMAGE }
-	const record = value as Record<string, unknown>
-	const { parent, parentHead, at, route } = record
-	if (
-		record.schema !== STACK_SCHEMA ||
-		![parent, parentHead, at].every((field) => typeof field === 'string' && field !== '') ||
-		(route !== undefined && (typeof route !== 'string' || !STACK_ROUTES.includes(route)))
-	)
+	const { schema, parent } = value as Record<string, unknown>
+	if (schema !== STACK_SCHEMA || typeof parent !== 'string' || parent === '')
 		return { damage: STACK_DAMAGE }
-	return {
-		schema: STACK_SCHEMA,
-		parent,
-		parentHead,
-		at,
-		...(route !== undefined && { route }),
-	} as StackRecord
+	return { schema: STACK_SCHEMA, parent }
 }
 
 /**
@@ -67,38 +57,59 @@ export function readStackRecord(params: { lotFolder: string }): StackRecord | un
 }
 
 /**
- * How a lot names the lot it was started on: `on <parent> (#<pr>, <state>)` (the parent's pull request from its
- * `landing.json`, its state from its records); undefined for a lot not stacked. Files only.
+ * How the hand-over card names the lot a lot was started on, files only: `on <parent> (#<pr>)`, its pull request from
+ * the parent's `landing.json`, or `on <parent> (no pull request yet)`; the damage of a stack.json that does not read;
+ * undefined for a lot not stacked. `lot status` names the pull request's state too, through the one lot reader
+ * (`statusLandingOf`).
  *
- * @intent show which lot a stacked lot lands on
+ * @intent show which lot a stacked lot lands on, from files
  * @internal
  */
 export function stackTextOf(params: { lotFolder: string }): string | undefined {
 	const record = readStack(params)
 	if (record === undefined) return undefined
-	if ('damage' in record) return STACK_TEXT.damagedRecord.replace('{damage}', () => record.damage)
-	const parentFolder = join(dirname(params.lotFolder), record.parent)
-	const number = readLanding({ lotFolder: parentFolder })?.number
-	const checked = readCheckedLotState({
-		lotFolder: parentFolder,
-		registry: registryOfLotFolder(parentFolder),
-	})
-	const state =
-		checked === undefined
-			? STACK_TEXT.unknown
-			: 'input' in checked
-				? lotState(checked.input).state
-				: STACK_TEXT.damaged
-	return STACK_TEXT.line
-		.replace('{parent}', () => record.parent)
-		.replace('{pull}', number === undefined ? STACK_TEXT.noPull : `#${number}`)
-		.replace('{state}', state)
+	if ('damage' in record)
+		return fillMessage({ template: STACK_TEXT.damagedRecord, values: { damage: record.damage } })
+	const number = readLanding({ lotFolder: join(dirname(params.lotFolder), record.parent) })?.number
+	return stackLineText({ parent: record.parent, number, state: undefined })
+}
+
+/**
+ * The stack line's text: `on <parent> (#<pr>, <state>)`, `on <parent> (#<pr>)` without a state, `on <parent> (no pull
+ * request yet)` without a pull request.
+ *
+ * @intent write the stack line one way for the card and lot status
+ * @internal
+ */
+export function stackLineText(params: {
+	parent: string
+	number: number | undefined
+	state: string | undefined
+}): string {
+	const { parent, number, state } = params
+	if (number === undefined) return fillMessage({ template: STACK_TEXT.noPull, values: { parent } })
+	const pull = `#${number}`
+	return state === undefined
+		? fillMessage({ template: STACK_TEXT.filesOnly, values: { parent, pull } })
+		: fillMessage({ template: STACK_TEXT.withState, values: { parent, pull, state } })
+}
+
+/**
+ * A pull request's state as the stack line names it: merged, closed, queued, draft or open.
+ *
+ * @intent name where a parent's pull request stands
+ * @internal
+ */
+export function pullStateOf(pull: PullRequest): string {
+	if (pull.state !== 'open') return STACK_PULL_STATES[pull.state]
+	if (pull.queued) return STACK_PULL_STATES.queued
+	return pull.draft ? STACK_PULL_STATES.draft : STACK_PULL_STATES.open
 }
 
 /**
  * Writes the lot's stack record whole (a crash never leaves half of it).
  *
- * @intent record which lot a lot was started on, and the tip it sits on
+ * @intent record which lot a lot was started on
  * @internal
  */
 export function writeStack(params: { lotFolder: string; record: StackRecord }): void {

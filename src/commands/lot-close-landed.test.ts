@@ -8,13 +8,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createBriefWorkspace } from '../../test/brief-workspace.ts'
-import { LANDED_LOT, NEAR_MISS_LOT } from '../../test/landed-store-lot-workspace.constants.ts'
-import {
-	addLandedLot,
-	addLotSharingWorktree,
-	landedLineText,
-} from '../../test/landed-store-lot-workspace.ts'
+import { NEAR_MISS_LOT } from '../../test/landed-store-lot-workspace.constants.ts'
+import { addLandedLot, addLotSharingWorktree } from '../../test/landed-store-lot-workspace.ts'
 import { KEEP_NOW } from '../../test/lot-keep-workspace.constants.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { createRecordingSpawner } from '../../test/worktree-pool.ts'
 import { runLotClose } from './lot-close.ts'
@@ -40,6 +37,16 @@ function closing(params: { workspace: BriefWorkspace; names: string[]; json?: bo
 			return []
 		},
 	})
+}
+
+/** The line `lot close` gives a lot whose branch tip is on `target` (a fast-forward or a merge commit). */
+function landedLineText(params: {
+	workspace: BriefWorkspace
+	branch: string
+	target: string
+}): string {
+	const tip = git({ root: params.workspace.repository, args: ['rev-parse', params.branch] }).trim()
+	return `landed on ${params.target} at ${tip.slice(0, 12)}: its tip is on ${params.target}`
 }
 
 /** Whether the workspace's trash folder holds anything (a closed worktree waits there). */
@@ -79,7 +86,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 					{
 						handover: handover.name,
 						closed: true,
-						landed: landedLineText({ lot: LANDED_LOT, folder: handover.folder, target: 'main' }),
+						landed: landedLineText({ workspace, branch: lot.branch, target: 'main' }),
 					},
 				],
 				worktreeGone: true,
@@ -103,7 +110,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 		}).toEqual({
 			exitCode: 0,
 			closedLineFound: true,
-			below: landedLineText({ lot: LANDED_LOT, folder: handover.folder, target: 'main' }),
+			below: landedLineText({ workspace, branch: lot.branch, target: 'main' }),
 		})
 	})
 
@@ -111,17 +118,20 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 		title: string
 		merge: LandedMerge
 		handovers: LandedHandover[]
-		/** The reason the near miss shows: its lot's keep reason, or any reason (the hand-over names another worktree). */
+		/** The reason the near miss shows: its lot's keep reason, or the hand-over that keeps it. */
 		kept: unknown
+		/** The near miss's own lot landed: its outcome names how. */
+		nearMissLanded: boolean
 	}
 	const LOT_WORKING = `lot ${NEAR_MISS_LOT} working`
 	const NEAR_MISS_ROWS: NearMissRow[] = [
 		{
 			title:
-				'one committed and one pending hand-over elsewhere for the worktree, branch on main → kept "lot <name> working" (the lot rule answers before the pending hand-over)',
+				'one committed and one pending hand-over elsewhere for the worktree, branch on main → its lot landed, kept by the pending hand-over',
 			merge: 'fast-forward',
 			handovers: [{ state: 'committed' }, { state: 'pending' }],
-			kept: LOT_WORKING,
+			kept: expect.stringContaining('another hand-over of this worktree is pending'),
+			nearMissLanded: true,
 		},
 		{
 			title:
@@ -129,6 +139,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 			merge: 'fast-forward',
 			handovers: [{ state: 'committed', names: 'other-branch' }],
 			kept: LOT_WORKING,
+			nearMissLanded: false,
 		},
 		{
 			title:
@@ -136,6 +147,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 			merge: 'none',
 			handovers: [{ state: 'committed' }],
 			kept: LOT_WORKING,
+			nearMissLanded: false,
 		},
 	]
 	for (const row of NEAR_MISS_ROWS)
@@ -164,9 +176,15 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 					{
 						handover: closes.name,
 						closed: true,
-						landed: landedLineText({ lot: LANDED_LOT, folder: closes.folder, target: 'main' }),
+						landed: landedLineText({ workspace, branch: landed.branch, target: 'main' }),
 					},
-					{ handover: named.name, kept: row.kept },
+					{
+						handover: named.name,
+						kept: row.kept,
+						...(row.nearMissLanded && {
+							landed: landedLineText({ workspace, branch: nearMiss.branch, target: 'main' }),
+						}),
+					},
 				],
 				landedGone: true,
 				nearMissStays: true,
@@ -194,7 +212,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 				{
 					handover: handover.name,
 					closed: true,
-					landed: landedLineText({ lot: LANDED_LOT, folder: handover.folder, target: 'main' }),
+					landed: landedLineText({ workspace, branch: lot.branch, target: 'main' }),
 				},
 			],
 			worktreeGone: true,
@@ -219,7 +237,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 				{
 					handover: handover.name,
 					kept: `lot ${NEAR_MISS_LOT} working`,
-					landed: landedLineText({ lot: LANDED_LOT, folder: handover.folder, target: 'main' }),
+					landed: landedLineText({ workspace, branch: lot.branch, target: 'main' }),
 				},
 			],
 			worktreeStays: true,
@@ -244,7 +262,7 @@ describe('lot close: landed lots', { timeout: STORE_CASE_TIMEOUT }, () => {
 				{
 					handover: handover.name,
 					kept: expect.stringContaining('dirty:'),
-					landed: landedLineText({ lot: LANDED_LOT, folder: handover.folder, target: 'main' }),
+					landed: landedLineText({ workspace, branch: lot.branch, target: 'main' }),
 				},
 			],
 			worktreeStays: true,

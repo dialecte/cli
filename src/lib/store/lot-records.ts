@@ -16,9 +16,9 @@ import {
 } from '../handover/handover-store-read.ts'
 import { HANDOVER_FILES } from '../handover/handover.constants.ts'
 import { readLanding } from '../handover/land-record.ts'
+import { readLanded } from '../landing/landed-record.ts'
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
-import { committedElsewhereEntry, isResumedAfterEntry } from './committed-elsewhere.ts'
 import { readIdentity } from './identity.ts'
 import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
@@ -44,7 +44,6 @@ import {
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
-import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
 import type { LotScope } from './scope-changes.types.ts'
 import type {
 	CheckedLotState,
@@ -53,7 +52,6 @@ import type {
 	LotStateInput,
 	LotStateReadParams,
 	SynchronousPause,
-	Transition,
 } from './store.types.ts'
 
 /** The hand-over registry of the repository whose store holds `lotFolder`: beside the store in the git common folder. */
@@ -80,7 +78,7 @@ export function readLotStateInput(params: LotStateReadParams): LotStateInput | u
  * The lot of a folder read once, its records validated once (`record-checks.ts`): its `lotState` input, or why it is
  * damaged (P2.1) - an identity that does not read, one naming another folder, a record that does not hold - with
  * its identity when that reads. Undefined only when nothing is at the folder. The registry entry is the one naming the
- * lot folder, else a closed hand-over committed for its worktree and branch outside the folder (`closedElsewhereEntry`).
+ * lot folder; the lot's landed fact (`landed.json`, written by the verbs that act on a merge) makes it committed.
  */
 export function readCheckedLotState(params: LotStateReadParams): CheckedLotState | undefined {
 	const { lotFolder } = params
@@ -97,9 +95,8 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 	const abandoned = readAbandonedMarker(lotFolder)
 	// the reader leaves out a marker whose process is gone: row 2 counts only a live run
 	const runMarker = readRunMarker(lotFolder)
-	const registryEntry =
-		entryOfFolder({ entries, folder: lotFolder }) ??
-		closedElsewhereEntry({ entries, identity, lotFolder, transitions, runMarker })
+	const registryEntry = entryOfFolder({ entries, folder: lotFolder })
+	const landed = readLanded({ lotFolder })
 	const damage =
 		identityDamageOf(identity) ??
 		firstDamageOf(transitions.map(transitionDamageOf)) ??
@@ -107,6 +104,7 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 		(registryEntry && entryDamageOf(registryEntry)) ??
 		markerDamageOf(abandoned?.at) ??
 		markerDamageOf(runMarker?.startedAt) ??
+		(landed !== undefined && 'damage' in landed ? landed.damage : undefined) ??
 		(identity.simulated ? scenarioDamageOf(readScenario({ lotFolder })) : undefined) ??
 		briefDamageOf({
 			briefHash: fileHashOf(join(lotFolder, STORE_FILES.brief)),
@@ -124,6 +122,7 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			abandonedMarker: abandoned && { at: abandoned.at },
 			runMarker,
 			...landingOf({ lotFolder }),
+			...(landed !== undefined && 'tip' in landed && { landed: { tip: landed.tip } }),
 		},
 	}
 }
@@ -133,24 +132,6 @@ function landingOf(params: { lotFolder: string }): Pick<LotStateInput, 'landing'
 	const landing = readLanding({ lotFolder: params.lotFolder })
 	if (landing === undefined || isPresent(join(params.lotFolder, HANDOVER_FILES.lots))) return {}
 	return { landing: { number: landing.number, url: landing.url } }
-}
-
-/**
- * The entry a lot reads `committed` from, files only, when no entry registers its folder: the hand-over committed
- * for its worktree and branch outside its folder (every such entry committed), whose worktree `lot close` closed.
- * None when that entry does not hold, or the lot runs or was resumed after it (a live run marker, a later transition).
- */
-function closedElsewhereEntry(params: {
-	entries: readonly StoreEntry[]
-	identity: LotIdentity
-	lotFolder: string
-	transitions: readonly Transition[]
-	runMarker: HandoverRunMarker | undefined
-}): StoreEntry | undefined {
-	const entry = committedElsewhereEntry(params)
-	if (entry === undefined || entry.closed === undefined || entryDamageOf(entry) !== undefined)
-		return undefined
-	return isResumedAfterEntry({ ...params, entry }) ? undefined : entry
 }
 
 /** The first reason among the checks of a lot's records; undefined when every record holds. */

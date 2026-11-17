@@ -363,24 +363,7 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 			expectNothingMoved()
 		})
 
-	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit on its hand-over files (a deleted one included) before its tip → counted landed, closed', () => {
-		const scenario = createScenario()
-		const lot = createRebuiltHandoverLot({
-			scenario,
-			wip: { 'src/a.ts': 'wip\n', 'src/close-x.ts': 'export const wip = 1\n' },
-		})
-		const { close } = closing({ scenario, ...lot })
-
-		const outcome = close()
-
-		expect({ exitCode: outcome.exitCode, reflog: outcome.output.includes('HEAD reflog') }).toEqual({
-			exitCode: 0,
-			reflog: false,
-		})
-		expectClosed({ scenario, worktree: lot.worktree, tail: 'x' })
-	})
-
-	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit touching a file outside its hand-over files → kept, the HEAD reflog named', () => {
+	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit touching a file outside its hand-over files → kept, the work named', () => {
 		const scenario = createScenario()
 		const lot = createRebuiltHandoverLot({
 			scenario,
@@ -392,12 +375,12 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 
 		expect({
 			exitCode: outcome.exitCode,
-			reflog: outcome.output.includes('HEAD reflog reaches 1 commit(s)'),
+			reflog: outcome.output.includes('1 commit(s) of work not in main'),
 		}).toEqual({ exitCode: 1, reflog: true })
 		expectNothingMoved()
 	})
 
-	it('a commit made on a detached HEAD, then the worktree switched back to its branch → kept, the HEAD reflog named', () => {
+	it('a commit made on a detached HEAD, then the worktree switched back to its branch → kept, the work named', () => {
 		const scenario = createScenario()
 		const lot = createLot({ scenario, index: '0001', tail: 'x' })
 		git({ root: lot.worktree, args: ['switch', '-q', '--detach'] })
@@ -410,9 +393,7 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 		const outcome = close()
 
 		expect(outcome.exitCode).toBe(1)
-		expect(outcome.output).toContain(
-			`its HEAD reflog reaches 1 commit(s) that neither ${lot.branch}, main nor a remote-tracking ref holds`,
-		)
+		expect(outcome.output).toContain('1 commit(s) of work not in main: ')
 		expectNothingMoved()
 	})
 

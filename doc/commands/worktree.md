@@ -18,11 +18,21 @@ worktree - A worktree ready to work in; prune what a merge left
         (the reason on the card), read against package-lock.json (the npm ci to run when it
         differs), hygiene baseline
   prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with
-          their cd; a worktree an open lot names (working, input-required, ready, failed) is kept
-          first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal;
-          committed hand-over folders and finished rehearsal clones go to the trash like the other
-          items: the plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it;
-          a move that cannot be made is a ✗ line, nothing deleted; the pool
+          their cd; each store lot's landing is read from git alone first: a merged lot (its tip or
+          its work in the base, a squash included) gets its landed fact (<lot folder>/landed.json)
+          and reads committed, and its review throwaways (<lot worktree>-round-<n>, -verify) go with
+          it once their work passes the same unlanded-work check; a lot the registry records
+          committed is read from git like any other, its worktree and throwaways kept while their
+          work is not in the base; a worktree an open lot names (working, input-required, ready,
+          failed) is kept first, reason lot <name> <state>, or the commits it holds since part of it
+          landed (<n> commit(s) of work not in <base>: <commits>), or, pushed and not provably
+          landed, landing not provable offline: run lot close <lot>, which asks the host; a
+          throwaway of a lot not landed is kept (a review throwaway of lot <lot>, not landed); a
+          worktree or branch holding work its base does not hold (merged, squashed or rebased work
+          counts as held) is kept with its commits; --yes runs them after a confirmation on a
+          terminal; committed hand-over folders and finished rehearsal clones go to the trash like
+          the other items: the plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes
+          makes it; a move that cannot be made is a ✗ line, nothing deleted; the pool
           (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
           touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
@@ -133,13 +143,21 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
   commands (or the `--yes` command) to a person. Kept, each with why: first, a worktree a lot of the
   repository's store names (by real path) while the lot is not `committed` nor `canceled`
-  (`<branch>: lot <full name> <state>`; the store read once per repository, no git process per lot); an unmerged branch; the branch the
+  (`<branch>: lot <full name> <state>`), after each store lot's landing was read from git alone: a lot whose tip is
+  on the base or whose work the base contains (a squash merge read offline) gets its landed fact
+  (`<lot folder>/landed.json`), reads `committed` and keeps nothing; an open lot that holds commits since part of it
+  landed is kept naming them (`<n> commit(s) of work not in <base>: <commits>`); an open lot pushed (a pull request in
+  its `landing.json`, or its branch on origin) whose work git cannot prove landed (main edited its lines again after a
+  squash) is kept with `landing not provable offline: run lot close <lot>, which asks the host`; a review throwaway
+  (`<lot worktree>-round-<n>`, `-verify`) of a landed or committed lot goes once its work passes the unlanded-work
+  check below, of a lot still at work and not landed is kept (`a review throwaway of lot <lot>, not landed`); a lot
+  the registry records committed is read from git like any other (a hand-over run commits before anything reaches
+  the base); a worktree or branch holding work the base does not hold (merged, squashed or rebased
+  work counts as held: `<n> commit(s) of work not in <base>: <commits>`); the branch the
   main checkout is on; a worktree a mutation run was started from while that run still runs
   (`mutation run <id> still running (pid <pid>)`) or after it died before reporting
   (`mutation run <id> died before reporting: rerun or dialecte mutants abandon <id>`; a reported or
-  abandoned run keeps nothing); a worktree a hand-over is pending in, or with uncommitted changes; a branch whose
-  reflog still reaches commits the base does not hold (reset onto a newer base after commits of its own:
-  its reflog is the only way back to them); a worktree or branch with no commit of its own in its reflog
+  abandoned run keeps nothing); a worktree a hand-over is pending in, or with uncommitted changes; a worktree or branch with no commit of its own in its reflog
   (just made); a worktree holding ignored files that removing it would delete (anything but
   `node_modules`, `dist`, `.vitepress/cache`, `.vitepress/dist`, `.DS_Store` and the hooks folder; a long
   list is counted, the first three named); a rehearsal clone whose process still runs, or without a

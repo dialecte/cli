@@ -91,15 +91,13 @@ describe(
 			vi.unstubAllEnvs()
 		})
 
-		it('origin/HEAD names develop, a detached commit held by no branch → kept, the reason names develop, not main, nothing moved', () => {
+		it('origin/HEAD names develop, a detached commit held by no branch → kept, the work named against develop, not main, nothing moved', () => {
 			const scenario = createScenarioWithDetachedCommit()
 
 			const outcome = close(scenario)
 
 			expect(outcome.exitCode).toBe(1)
-			expect(outcome.output).toContain(
-				'its HEAD reflog reaches 1 commit(s) that neither feat/x, develop nor a remote-tracking ref holds',
-			)
+			expect(outcome.output).toContain('1 commit(s) of work not in develop: ')
 			expect(existsSync(scenario.worktree)).toBe(true)
 			expect(trashedNamesOf(scenario.worktreesFolder)).toEqual([])
 		})

@@ -10,6 +10,7 @@ import { warnOnStandardError } from '../events/record-step.ts'
 import { freezeRecordTimes, readHookHead } from '../events/record-times.ts'
 import { realPathOf } from '../file-system.ts'
 import { readGit } from '../git.ts'
+import { readLanded } from '../landing/landed-record.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { buildHandoverCard } from './handover-card.ts'
 import {
@@ -184,7 +185,7 @@ function hasCard(params: {
  * known, else `null` (the usage then read from the folder). A
  * committed lot's head is the last of its lot commits when every lot is found (they name the lot exactly; a hook
  * record naming another commit is no reason to keep). Else a lot landed through its pull request takes the head its
- * landing pushed (`landing.json`: the queue squashed that head onto the base branch). Else the `sole-owner` takes the hook record's (no other
+ * landing pushed (`landing.json`: the queue squashed that head onto the base branch), else the tip its landed fact records (`landed.json`). Else the `sole-owner` takes the hook record's (no other
  * committed or abandoned lot shares the worktree: its last hooked commit is this lot's), a `sibling` writes `head: null` (its
  * commit is not the closed lot's concern), and an owner with neither keeps the worktree. A canceled lot's head is the
  * worktree's HEAD.
@@ -207,6 +208,7 @@ function catchUpLine(params: {
 			? headOf({ worktree })
 			: (located ??
 				readLanding({ lotFolder: entry.folder })?.head ??
+				landedTipOf({ lotFolder: entry.folder }) ??
 				(role === 'sole-owner' ? readHookHead({ worktree }) : undefined))
 	if (head === undefined && role !== 'sibling')
 		return { kept: LOT_COMMIT_NOT_KNOWN.replaceAll('{worktree}', params.shown) }
@@ -270,4 +272,10 @@ function rebuiltCard(params: {
 /** The worktree's HEAD, full sha. */
 function headOf(params: { worktree: string }): string {
 	return readGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+}
+
+/** The tip a lot's landed fact records (`landed.json`); undefined without one, or a damaged one. */
+function landedTipOf(params: { lotFolder: string }): string | undefined {
+	const landed = readLanded(params)
+	return landed !== undefined && 'tip' in landed ? landed.tip : undefined
 }

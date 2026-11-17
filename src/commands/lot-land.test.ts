@@ -136,6 +136,16 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 })
 
+/** The lot's pushed head squash-merged into origin's main from another clone, as the merge queue lands it. */
+function squashOnOrigin(params: { workspace: { workspace: string }; head: string }): void {
+	const other = join(temporaryFolder('dialecte-land-queue-'), 'queue')
+	cloneRepository({ origin: join(params.workspace.workspace, 'origin.git'), into: other })
+	git({ root: other, args: ['fetch', '-q', 'origin', params.head] })
+	git({ root: other, args: ['merge', '-q', '--squash', 'FETCH_HEAD'] })
+	git({ root: other, args: ['commit', '-qm', 'feat(x): x (squashed)'] })
+	git({ root: other, args: ['push', '-q', 'origin', 'main'] })
+}
+
 describe('dialecte lot close of a landed lot', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it("its landing's pull request merged at the pushed head → the close says the lot is committed first", () => {
 		const { workspace, lotFolder } = landableLot()
@@ -189,7 +199,6 @@ describe(
 				argv: ['0001-repo-x', '--draft'],
 				host: recordingHost().host,
 			})
-			const drafted = git({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 			writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 2\n' } })
 			git({ root: worktree, args: ['commit', '-qam', 'fix(x): x answers two'] })
 			git({ root: worktree, args: ['push', '-q', 'origin', 'feat/x'] })
@@ -214,42 +223,26 @@ describe(
 				host: merged.host,
 				spawner: createRecordingSpawner().spawner,
 			})
-			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
-				head: string
-				replaced?: string[]
-			}
 			return {
 				closed,
-				drafted,
 				head,
-				landing,
+				landed: JSON.parse(readFileSync(join(lotFolder, 'landed.json'), 'utf8')) as unknown,
 				state: registeredEntryOf({ store, folder: lotFolder })?.state,
 			}
 		}
 
-		it("merged at the worktree's HEAD, landing.json naming the draft's head → committed, the record's head refreshed, the draft's head kept as replaced", () => {
-			const { closed, drafted, head, landing, state } = closeAfterHandPush({
+		it("merged at the worktree's HEAD, landing.json naming the draft's head → committed, its landed fact at the merged head", () => {
+			const { closed, head, landed, state } = closeAfterHandPush({
 				mergedAt: (worktreeHead) => worktreeHead,
 			})
 
 			expect({
-				line: closed.output.includes(`pull request #7 merged at ${head.slice(0, 12)}`),
-				state,
-				head: landing.head,
-				replaced: landing.replaced,
-			}).toEqual({ line: true, state: 'committed', head, replaced: [drafted] })
-		})
-
-		it("merged at a head neither recorded nor the worktree's → not committed, a line naming both heads", () => {
-			const other = 'f'.repeat(40)
-			const { closed, drafted, state } = closeAfterHandPush({ mergedAt: () => other })
-
-			expect({ state, output: closed.output }).toEqual({
-				state: 'pending',
-				output: expect.stringContaining(
-					`landed ${drafted.slice(0, 12)}): they land in a new lot, the lot not marked committed`,
+				line: closed.output.includes(
+					`landed on main at ${head.slice(0, 12)}: pull request #7 merged`,
 				),
-			})
+				state,
+				landed,
+			}).toMatchObject({ line: true, state: 'committed', landed: { how: 'host', tip: head } })
 		})
 	},
 )
@@ -281,6 +274,7 @@ describe(
 			const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
 				head: string
 			}
+			squashOnOrigin({ workspace, head: landing.head })
 			const merged = recordingHost({
 				existing: {
 					number: 7,
@@ -308,18 +302,6 @@ describe(
 			return { closed, worktree }
 		}
 
-		it('a dropped work-in-progress commit changing only lot paths, made before the landed tip → counted landed, the worktree closes', () => {
-			const { closed, worktree } = closeRebuiltLot({ wip: { 'src/x.ts': 'export const x = 0\n' } })
-
-			expect({
-				reflog: closed.output.includes('HEAD reflog'),
-				worktree: existsSync(worktree),
-			}).toEqual({
-				reflog: false,
-				worktree: false,
-			})
-		})
-
 		it('a work-in-progress commit on lot paths made after the landing and dropped, then one more commit → still kept, named', () => {
 			const { closed, worktree } = closeRebuiltLot({
 				wip: { 'src/x.ts': 'export const x = 0\n' },
@@ -334,18 +316,18 @@ describe(
 			})
 
 			expect({
-				reflog: closed.output.includes('HEAD reflog reaches 1 commit(s)'),
+				named: closed.output.includes('commit(s) of work not in main'),
 				worktree: existsSync(worktree),
-			}).toEqual({ reflog: true, worktree: true })
+			}).toEqual({ named: true, worktree: true })
 		})
 
 		it('a dropped work-in-progress commit touching a file outside the lot paths → still kept, named', () => {
 			const { closed, worktree } = closeRebuiltLot({ wip: { 'README.md': 'wip\n' } })
 
 			expect({
-				reflog: closed.output.includes('HEAD reflog reaches 1 commit(s)'),
+				named: closed.output.includes('1 commit(s) of work not in main'),
 				worktree: existsSync(worktree),
-			}).toEqual({ reflog: true, worktree: true })
+			}).toEqual({ named: true, worktree: true })
 		})
 	},
 )
@@ -408,6 +390,7 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 		const landing = JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8')) as {
 			head: string
 		}
+		squashOnOrigin({ workspace, head: landing.head })
 		const merged = recordingHost({
 			existing: {
 				number: 7,
@@ -435,25 +418,24 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 		return { closed, worktree }
 	}
 
-	it('its pre-rebase commits only in the HEAD reflog, held by the head the landing replaced → the worktree closes', () => {
+	it('its pre-rebase commits only in the HEAD reflog, their work squash-merged → the worktree closes', () => {
 		const { closed, worktree } = landRebasedThenClose()
 
-		expect(closed.output).not.toContain('HEAD reflog')
+		expect(closed.output).not.toContain('of work not in main')
 		expect(existsSync(worktree)).toBe(false)
 	})
 
-	it('a reflog commit no replaced head holds (made after the landing, then dropped) → still kept, named', () => {
+	it('a reflog commit with work of its own made after the landing, then dropped → still kept, named', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: function dropOne(landed) {
-				git({
-					root: landed.worktree,
-					args: ['commit', '-q', '--allow-empty', '-m', 'wip: dropped'],
-				})
+				writeFiles({ root: landed.worktree, files: { 'src/dropped.ts': 'export {}\n' } })
+				git({ root: landed.worktree, args: ['add', 'src/dropped.ts'] })
+				git({ root: landed.worktree, args: ['commit', '-qm', 'wip: dropped'] })
 				git({ root: landed.worktree, args: ['reset', '-q', '--hard', 'HEAD~1'] })
 			},
 		})
 
-		expect(closed.output).toContain('HEAD reflog reaches 1 commit(s)')
+		expect(closed.output).toContain('1 commit(s) of work not in main')
 		expect(existsSync(worktree)).toBe(true)
 	})
 
@@ -475,31 +457,17 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 			afterLanding: dropSibling('  export const x = 1\n'),
 		})
 
-		expect(closed.output).toContain('HEAD reflog reaches')
+		expect(closed.output).toContain('of work not in main')
 		expect(existsSync(worktree)).toBe(true)
 	})
 
-	it('a dropped commit with another patch, no replaced head reaching it -> still kept', () => {
+	it('a dropped commit with another patch -> still kept', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: dropSibling('export const x = 2\n'),
 		})
 
-		expect(closed.output).toContain('HEAD reflog reaches')
+		expect(closed.output).toContain('of work not in main')
 		expect(existsSync(worktree)).toBe(true)
-	})
-
-	it('a rebase no record names (landed before replaced was kept), its pre-rebase commit the same patch as one its branch holds → the worktree closes', () => {
-		const { closed, worktree } = landRebasedThenClose({
-			afterLanding: function forgetReplaced(landed) {
-				const path = join(landed.lotFolder, 'landing.json')
-				const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-				delete record.replaced
-				writeFileSync(path, JSON.stringify(record))
-			},
-		})
-
-		expect(closed.output).not.toContain('HEAD reflog')
-		expect(existsSync(worktree)).toBe(false)
 	})
 })
 
