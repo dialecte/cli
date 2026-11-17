@@ -168,10 +168,13 @@ function mergeBaseOf(params: { worktree: string; baseRef: string }): string {
 
 /** The paths the lot's commits change since `base`, each with its status letter (renames as delete and add). */
 function changedFilesOf(params: { worktree: string; base: string }): ChangedFile[] {
-	const fields = readGit({
-		root: params.worktree,
-		args: ['diff', '--name-status', '--no-renames', '-z', params.base, 'HEAD'],
-	})
+	// a base git cannot resolve (a branch not fetched yet) changes nothing: the caller's own checks name it
+	const fields = (
+		tryReadGit({
+			root: params.worktree,
+			args: ['diff', '--name-status', '--no-renames', '-z', params.base, 'HEAD'],
+		}) ?? ''
+	)
 		.split('\0')
 		.filter((field) => field !== '')
 	const changes: ChangedFile[] = []

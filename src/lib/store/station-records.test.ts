@@ -605,6 +605,7 @@ const BRIEF_CASES: Case[] = [
 	{
 		title: 'steps: a brief.json that does not parse -> 1 (D13)',
 		build: (lot) => {
+			// a state no verb writes (lot brief refuses it): the reader's robustness, not a flow
 			recordBrief({ lotFolder: lot.lotFolder, text: '{ not json' })
 		},
 		expected: { steps: 1 },
@@ -647,6 +648,7 @@ const BRIEF_CASES: Case[] = [
 			'effort (D2): the identity holds none and the brief does not parse -> undefined, no throw',
 		build: (lot) => {
 			setIdentityEffort({ lot, level: undefined })
+			// a state no verb writes (lot brief refuses it): the reader's robustness, not a flow
 			recordBrief({ lotFolder: lot.lotFolder, text: '{ not json' })
 		},
 		expected: { effort: undefined, steps: 1 },

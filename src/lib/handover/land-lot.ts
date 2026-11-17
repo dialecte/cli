@@ -60,9 +60,8 @@ export function landLot(params: {
 	const { worktree, branch, base, host } = params
 	const unready = unreadyRefusal({ worktree, branch, base, lotFolder: params.lotFolder })
 	if (unready !== undefined) return refused(unready)
-	const fetchProblem = fetchOrigin({ root: worktree })
-	if (fetchProblem !== undefined)
-		return refused(LANDING_LINES.fetchFailed.replace('{reason}', () => fetchProblem))
+	const fetched = fetchRefusal({ worktree, base })
+	if (fetched !== undefined) return refused(fetched)
 	const landing = readLanding({ lotFolder: params.lotFolder })
 	const known = readKnownPullRequest({ worktree, branch, landing, host })
 	if ('refusal' in known)
@@ -91,6 +90,13 @@ export function landLot(params: {
 				counted({ count: progress.files, noun: 'file' }),
 			),
 		)
+	// rendered on the rebased head, before the push: a text that no longer renders pushes nothing
+	const text = renderedText({ ...params, kept: known.pullRequest?.body })
+	if ('refusal' in text)
+		return {
+			exitCode: 1,
+			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => text.refusal)],
+		}
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const expected = leaseOf({ worktree, branch, base, lotFolder: params.lotFolder })
 	const pushProblem = pushLot({ worktree, branch, expected })
@@ -113,7 +119,21 @@ export function landLot(params: {
 			.replace('{branch}', () => branch)
 			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
 	)
-	return publishLanding({ ...params, known: known.pullRequest, head, entry, lines })
+	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines })
+}
+
+/** Why origin cannot be landed on: its fetch failed, or it holds no base branch; undefined once fetched. */
+function fetchRefusal(params: { worktree: string; base: string }): string | undefined {
+	const fetchProblem = fetchOrigin({ root: params.worktree })
+	if (fetchProblem !== undefined)
+		return LANDING_LINES.fetchFailed.replace('{reason}', () => fetchProblem)
+	const baseRef = tryReadGit({
+		root: params.worktree,
+		args: ['rev-parse', '--verify', '--quiet', `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`],
+	})
+	return baseRef === undefined
+		? LANDING_LINES.noBase.replace('{base}', () => params.base)
+		: undefined
 }
 
 /**
@@ -144,8 +164,8 @@ function unreadyRefusal(params: {
 }
 
 /**
- * After the push: the lot's text rendered from its records on the pushed tree (`lot pr`'s template), its pull request
- * reused or opened with it, the landing recorded at once (the next push's lease needs its head, whatever the host
+ * After the push: the lot's pull request, its text rendered on the pushed head (`lot pr`'s template), reused or opened
+ * with it, the landing recorded at once (the next push's lease needs its head, whatever the host
  * answers next), a reused one edited when its title or body reads otherwise, then queued unless a draft. `lines` holds
  * what the landing said so far.
  */
@@ -159,18 +179,14 @@ function publishLanding(params: {
 	draft: boolean
 	now: Date
 	known: PullRequest | undefined
+	/** The lot's text, rendered on the head just pushed. */
+	text: PullRequestText
 	head: string
 	entry: string
 	lines: string[]
 }): LandingResult {
-	const { worktree, branch, host, known } = params
+	const { worktree, branch, host, known, text } = params
 	const lines = [...params.lines]
-	const text = renderedText({ ...params, kept: known?.body })
-	if ('refusal' in text)
-		return {
-			exitCode: 1,
-			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => text.refusal)],
-		}
 	const pull = known ?? openLot({ ...params, text })
 	if ('refusal' in pull)
 		return {

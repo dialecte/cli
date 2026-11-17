@@ -10,6 +10,7 @@ export const PUSH_REJECTED_PATTERN = /!\s*\[(rejected|remote rejected)\].*$/m
 export const LANDING_LINES = {
 	updated: 'pull request #{number} updated from the lot records',
 	unrendered: 'lot land: {reason}',
+	noBase: 'lot land: origin holds no branch {base} to land on: nothing pushed',
 	notOnBranch:
 		'lot land: {worktree} is not on {branch} (HEAD is {head}): switch to it first, nothing pushed',
 	fetchFailed:

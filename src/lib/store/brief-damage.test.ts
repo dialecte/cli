@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync } from 'node:fs'
 /**
  * A lot's brief changes only through `lot brief`: `brief.json` is checked against the hash of the latest `brief`
  * transition, else the hash its start recorded, and a brief edited by hand reads as a damaged record, like any other.
  */
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'

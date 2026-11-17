@@ -1,4 +1,7 @@
-/** Records of a lot store, as the tests write them (plain files: no code of the store under test). */
+/**
+ * Records of a lot store, as the tests write them: plain files, but for `recordBrief`, which appends its transition
+ * through the store.
+ */
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

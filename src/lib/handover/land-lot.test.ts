@@ -12,6 +12,7 @@ import {
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { TEMPLATE_PATH } from '../pr/pull-request.constants.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { handoverStoreOf } from './handover-store.ts'
 import { confirmLanding, landLot } from './land-lot.ts'
@@ -679,6 +680,86 @@ describe(
 			expect(
 				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
 			).toBe('')
+		})
+
+		it("main's template changed after the cut so the rebased head no longer renders → refused before the push, nothing pushed", () => {
+			const repository = landingRepository()
+			landOnOrigin({
+				origin: repository.origin,
+				files: { [TEMPLATE_PATH]: '### No markers here\n' },
+			})
+			const { host, calls } = recordingHost()
+
+			const landed = land({ repository, host })
+
+			expect(landed.exitCode).toBe(1)
+			expect(calls).not.toContainEqual(expect.stringMatching(/^open /))
+			expect(
+				git({ root: repository.root, args: ['ls-remote', repository.origin, 'refs/heads/feat/x'] }),
+			).toBe('')
+		})
+
+		it('a base branch origin does not hold → a refusal line, never a throw', () => {
+			const repository = landingRepository()
+			const { host } = recordingHost()
+
+			function landOnMissingBase() {
+				return landLot({
+					...repository,
+					lot: '0001-repo-x',
+					branch: 'feat/x',
+					base: 'release',
+					host,
+					draft: true,
+					now: NOW,
+				})
+			}
+
+			expect(landOnMissingBase).not.toThrow()
+			expect(landOnMissingBase().exitCode).toBe(1)
+		})
+
+		it('a reused pull request that already reads the records → no edit asked', () => {
+			const repository = landingRepository()
+			const first = recordingHost()
+			land({ repository, host: first.host, draft: true })
+			const { host, calls } = recordingHost({
+				existing: {
+					...pullRequestOf({ state: 'open', head: '' }),
+					body: first.bodies[0].replaceAll('\n', '\r\n'),
+				},
+			})
+
+			land({ repository, host, draft: true })
+
+			expect(calls).not.toContainEqual(expect.stringMatching(/^edit /))
+		})
+
+		it("a person's ticks after the kept marker of the reused pull request → kept in the edited body", () => {
+			const repository = landingRepository()
+			const kept =
+				'### Checklist for the reviewer when doing the PR review\n\n- [x] Tests are complete'
+			const { host, bodies } = recordingHost({
+				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: `old\n\n${kept}\n` },
+			})
+
+			land({ repository, host, draft: true })
+
+			expect(bodies[0]?.endsWith(`\n\n${kept}`)).toBe(true)
+		})
+
+		it('the host refusing the edit of a reused pull request → exit 1, the landing still recorded', () => {
+			const repository = landingRepository()
+			const { host } = recordingHost({
+				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: 'old' },
+				editRefusal: 'gh pr edit: HTTP 403',
+			})
+
+			const landed = land({ repository, host, draft: true })
+
+			expect(landed.exitCode).toBe(1)
+			expect(landed.lines.at(-1)).toBe('lot land: gh pr edit: HTTP 403')
+			expect(existsSync(join(repository.lotFolder, 'landing.json'))).toBe(true)
 		})
 	},
 )
