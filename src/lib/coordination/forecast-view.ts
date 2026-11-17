@@ -24,6 +24,7 @@ import {
 } from './forecast.constants.ts'
 import { openLotOf } from './open-lot.ts'
 
+import type { StoreEntry } from '../handover/handover.types.ts'
 import type {
 	ForecastConflict,
 	ForecastLine,
@@ -32,12 +33,16 @@ import type {
 } from './forecast.types.ts'
 
 /** The merged view of the lot's forecast; no git is run. */
-export function forecastViewOf(params: { lotFolder: string }): ForecastView {
+export function forecastViewOf(params: {
+	lotFolder: string
+	/** The registry's entries when the caller read them already: read here when left out. */
+	entries?: readonly StoreEntry[]
+}): ForecastView {
 	const { lotFolder } = params
 	const self = basename(lotFolder)
 	const own = readForecastRecord({ lotFolder }).lines
 	const registry = registryOfLotFolder(lotFolder)
-	const entries = readStoreEntries(registry)
+	const entries = params.entries ?? readStoreEntries(registry)
 	const pairs = listLotFolderNames({ store: dirname(lotFolder) }).flatMap(
 		function pairOf(name): ForecastPairView[] {
 			if (name === self) return []
@@ -141,6 +146,8 @@ export function forecastAgeText(params: { at: string; now: Date }): string {
  */
 export function forecastStandingOf(params: {
 	lotFolder: string
+	/** The registry's entries when the caller read them already. */
+	entries?: readonly StoreEntry[]
 }): { conflicts: string[] } | { unknown: string } | undefined {
 	const view = forecastViewOf(params)
 	if (view.main === undefined) return undefined

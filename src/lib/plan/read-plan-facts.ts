@@ -34,6 +34,7 @@ import {
 	SPEC_STATUS_PREFIX,
 } from './plan.constants.ts'
 
+import type { StoreEntry } from '../handover/handover.types.ts'
 import type { LandedProbe } from '../store/lot-entry.types.ts'
 import type { StoreLocation } from '../store/store.types.ts'
 import type {
@@ -174,7 +175,7 @@ function readStoreLotFacts(params: {
 			open,
 			scope,
 			worktree: identity.worktree,
-			...forecastFactOf({ lotFolder, open }),
+			...forecastFactOf({ lotFolder, open, entries }),
 			// named until `lot close` closes the hand-over the reading picked
 			...(landed !== undefined &&
 				landed.entry.closed === undefined && {
@@ -189,9 +190,10 @@ function readStoreLotFacts(params: {
 function forecastFactOf(params: {
 	lotFolder: string
 	open: boolean
+	entries: readonly StoreEntry[]
 }): Pick<StoreLotFact, 'forecast'> {
 	if (!params.open) return {}
-	const forecast = forecastStandingOf({ lotFolder: params.lotFolder })
+	const forecast = forecastStandingOf({ lotFolder: params.lotFolder, entries: params.entries })
 	return forecast === undefined ? {} : { forecast }
 }
 
