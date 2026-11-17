@@ -37,6 +37,8 @@ export const STORE_FILES: StoreFileNames = {
 	approvals: 'approvals.jsonl',
 	// `lot review --pull` appends each pull request comment it made a finding of: the comment and the finding's id
 	pulledComments: 'pulled-comments.jsonl',
+	// `lot forecast` appends one line per comparison of a run, the run in one write (33CO CO2a)
+	forecast: 'forecast.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

@@ -15,6 +15,8 @@ export const HOST_VERB_ERROR_EXITS: Readonly<Record<string, readonly number[]>> 
 	report: [1, 2],
 	station: [1, 2],
 	export: [1, 2],
+	// `lot forecast`: 1 a conflict and 3 an unknown forecast are answers
+	forecast: [2],
 }
 
 /** `lot accept|revised|gone --remove <entry>`: the option that drops an entry of the list instead of writing one. */
