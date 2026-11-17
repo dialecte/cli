@@ -64,6 +64,24 @@ const ROWS: SqlRow[] = [
 		found: [],
 	},
 	{
+		name: 'SQL in a multi-line template literal starting on its own line',
+		file: 'src/query.ts',
+		text: `export function query(): string {\n\treturn \`\n\t\tSELECT id FROM t\n\t\t${KEYWORD_NAME} id = ?\`\n}\n`,
+		found: [],
+	},
+	{
+		name: 'SQL in a + chain whose later piece is in parentheses',
+		file: 'src/query.ts',
+		text: `export function query(): string {\n\treturn 'SELECT id FROM t ' + ('${KEYWORD_NAME} id = ?')\n}\n`,
+		found: [],
+	},
+	{
+		name: 'the name as a substitution right after the SQL text',
+		file: 'src/query.ts',
+		text: `export function query(${KEYWORD_NAME}: string): string {\n\treturn \`SELECT id FROM t \${${KEYWORD_NAME}}\`\n}\n`,
+		found: [1, 2],
+	},
+	{
 		name: 'the name in a comment',
 		file: 'src/query.ts',
 		text: `// built for ${KEYWORD_NAME}\nexport function query(): string {\n\treturn 'SELECT id FROM t'\n}\n`,

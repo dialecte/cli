@@ -186,16 +186,13 @@ function recordMarkOf(params: {
 	read: RoundArguments
 	seams: PlanSeams | undefined
 }): CommandResult {
-	const { entry, state, read } = params
+	const { block, planPath, entry, state, read } = params
 	const { id } = entry
 	const location = params.seams?.state
 	const by = read.values.get(PLAN_MARK_OPTIONS.by) as string
 	const landedGiven = read.lists.get(PLAN_MARK_OPTIONS.landed)
 	const replacedBy = read.lists.get(PLAN_MARK_OPTIONS.replacedBy) ?? []
-	const loaded = { block: params.block, planPath: params.planPath }
-	const recorded = readPlanMarks({ planPath: loaded.planPath, location }).find(
-		(mark) => mark.id === id,
-	)
+	const recorded = readPlanMarks({ planPath, location }).find((mark) => mark.id === id)
 	if (recorded !== undefined)
 		return resultOf({
 			exitCode: PLAN_EXIT.answered,
@@ -204,11 +201,11 @@ function recordMarkOf(params: {
 	const landed =
 		landedGiven === undefined
 			? undefined
-			: landedOfEntry({ ...loaded, entry, given: landedGiven, location })
+			: landedOfEntry({ block, planPath, entry, given: landedGiven, location })
 	if (landed !== undefined && 'refusal' in landed) return landed.refusal
 	const doneByRecords =
 		(landed !== undefined && 'done' in landed) ||
-		(state === PLAN_MARK_STATES.superseded && isDoneByRecords({ ...loaded, entry, location }))
+		(state === PLAN_MARK_STATES.superseded && isDoneByRecords({ block, planPath, entry, location }))
 	if (doneByRecords)
 		return resultOf({
 			exitCode: PLAN_EXIT.answered,
@@ -217,7 +214,7 @@ function recordMarkOf(params: {
 	const landedCommits = landed === undefined || 'done' in landed ? undefined : landed
 	try {
 		appendPlanMark({
-			planPath: loaded.planPath,
+			planPath,
 			id,
 			state,
 			by,

@@ -2,11 +2,15 @@
  * `dialecte plan mark <plan.md> <id> superseded --by <who> --reason <text> [--replaced-by <id>...]`: an entry
  * replaced by others is closed by a mark; `plan next` reads it done and nothing waits on it.
  */
+import { join } from 'node:path'
+
 import {
 	createCommandWorkspace,
 	lotJson,
+	personJson,
 	writePlanWithBlock,
 } from '../../test/plan-command-workspace.ts'
+import { writeRegistryEntry } from '../../test/plan-facts.ts'
 import { readPlanMarks } from '../lib/plan/plan-marks.ts'
 import { runPlan } from './plan.ts'
 
@@ -211,5 +215,68 @@ describe('plan mark superseded', () => {
 				marks: marksOf(workspace),
 			})),
 		).toEqual({ exitCode: 2, says: true, marks: [] })
+	})
+})
+
+describe('plan mark superseded: every kind of entry', () => {
+	/** A (a lot), K0 (a person entry), S (a spec entry whose file is not written). */
+	function writeKindsPlan(workspace: CommandWorkspace): void {
+		writePlanWithBlock({
+			workspace,
+			lots: [
+				lotJson('A'),
+				personJson('K0'),
+				{ id: 'S', title: 'title of S', kind: 'spec', spec: 's.md' },
+			],
+		})
+	}
+
+	type KindRow = { name: string; id: string }
+
+	const KIND_ROWS: KindRow[] = [
+		{ name: 'a person entry', id: 'K0' },
+		{ name: 'a spec entry', id: 'S' },
+	]
+
+	it.each(KIND_ROWS)(
+		'$name superseded -> recorded, plan next reads it done by superseded',
+		({ id }) => {
+			const workspace = createCommandWorkspace()
+			writeKindsPlan(workspace)
+			const mark = ['mark', 'plan.md', id, 'superseded', '--by', 'tester', '--reason', 'replaced']
+
+			expect(
+				viewOf(runPlan(callOf(workspace, ...mark)), (result) => ({
+					exitCode: result.exitCode,
+					entry: (
+						JSON.parse(runPlan(callOf(workspace, 'next', 'plan.md', '--json')).output) as NextJson
+					).entries.find((entry) => entry.id === id),
+				})),
+			).toMatchObject({
+				exitCode: 0,
+				entry: { state: 'done', realizedBy: { kind: 'superseded', name: 'tester' } },
+			})
+		},
+	)
+
+	it('a lot entry its records already say done -> answered, nothing recorded', () => {
+		const workspace = createCommandWorkspace()
+		writeKindsPlan(workspace)
+		writeRegistryEntry({
+			common: workspace.common,
+			name: '2026-11-04-feat-a',
+			folder: join(workspace.root, 'handover-a'),
+			branch: 'feat/a',
+			state: 'committed',
+		})
+		const mark = ['mark', 'plan.md', 'A', 'superseded', '--by', 'tester', '--reason', 'replaced']
+
+		expect(
+			viewOf(runPlan(callOf(workspace, ...mark)), (result) => ({
+				exitCode: result.exitCode,
+				already: result.output.includes('A is already done by its records - nothing recorded'),
+				marks: marksOf(workspace),
+			})),
+		).toEqual({ exitCode: 0, already: true, marks: [] })
 	})
 })

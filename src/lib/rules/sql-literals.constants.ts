@@ -1,5 +1,7 @@
 /**
  * The keywords that start an SQL statement: a string of code whose text starts with one (after white space) is SQL.
+ * Uppercase only, so prose rarely starts that way; a string that does (`'RELEASE notes: ...'`, `'WITH care'`) reads as
+ * SQL, and an SQL keyword in it is not reported: an accepted miss, narrow because both words must be uppercase.
  */
 export const SQL_STATEMENT_KEYWORDS: ReadonlySet<string> = new Set([
 	'ALTER',
