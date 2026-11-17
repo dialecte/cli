@@ -17,6 +17,7 @@ bench - Measure type-instantiation cost (tsc --extendedDiagnostics); --check to 
 
 exit codes:
   1  --check: an instantiation regression past 5%
+  2  --check: no baseline.json to compare with (run dialecte bench to write it)
   3  --check: a baseline from another compiler or version, or one that records no compiler
 e.g. dialecte bench --check
 ```

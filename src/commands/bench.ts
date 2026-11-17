@@ -7,7 +7,8 @@
  * Writes/【--check】compares benchmarks/types/<version>/baseline.json. RUNS env (default 3); MIN kept.
  * tsgo (TypeScript 7+) runs with one checker (`--checkers 1`): with several, the count shifts with the
  * file set. The baseline records the compiler and its version; `--check` refuses (exit 3) a baseline
- * of another compiler or version, or one that records none, before measuring anything.
+ * of another compiler or version, or one that records none, and exits 2 with no baseline at all,
+ * before measuring anything.
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, readdirSync, existsSync, rmSync, mkdirSync } from 'node:fs'
@@ -19,6 +20,7 @@ import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
 import { printLines } from '../lib/print/print.ts'
 import {
 	EXIT_COMPILER_MISMATCH,
+	EXIT_NO_BASELINE,
 	METRICS,
 	NATIVE_COMPILER_MAJOR,
 	RE_BASELINE,
@@ -169,20 +171,30 @@ function baselinePathOf(params: { root: string; versionDir: string }): string {
 }
 
 /**
- * A baseline from another compiler or version holds counts of another measure: `--check` names every
- * such baseline and exits before measuring anything.
+ * `--check` needs a baseline of the same compiler and version for every target: a missing baseline
+ * (exit 2) or one from another compiler or version, or that records none (exit 3), is named and the
+ * bench exits before measuring anything.
  */
 function refuseForeignBaselines(params: { root: string; targets: Target[]; compiler: Compiler }) {
 	const { root, targets, compiler } = params
-	const refusals = targets.flatMap((target) => {
+	const missing: string[] = []
+	const foreign: string[] = []
+	for (const target of targets) {
 		const versionDir = dirname(target.outDir)
-		const prior = JSON.parse(readFileSync(baselinePathOf({ root, versionDir }), 'utf8'))
+		const path = baselinePathOf({ root, versionDir })
+		if (!existsSync(path)) {
+			missing.push(
+				`✗ [${target.version}] no baseline at ${join(versionDir, 'baseline.json')}: run dialecte bench to write it, and commit it`,
+			)
+			continue
+		}
+		const prior = JSON.parse(readFileSync(path, 'utf8'))
 		const comparison = compareCompiler({ baseline: prior.compiler, measured: compiler })
-		return comparison.kind === 'refused' ? [`✗ [${target.version}] ${comparison.line}`] : []
-	})
-	if (!refusals.length) return
-	printLines({ stream: 'stderr', lines: refusals })
-	process.exit(EXIT_COMPILER_MISMATCH)
+		if (comparison.kind === 'refused') foreign.push(`✗ [${target.version}] ${comparison.line}`)
+	}
+	if (!missing.length && !foreign.length) return
+	printLines({ stream: 'stderr', lines: [...missing, ...foreign] })
+	process.exit(missing.length ? EXIT_NO_BASELINE : EXIT_COMPILER_MISMATCH)
 }
 
 export async function run(argv: string[]): Promise<void> {

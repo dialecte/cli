@@ -17,4 +17,6 @@ export const NATIVE_COMPILER_MAJOR = 7
 export const SINGLE_CHECKER_ARGS = ['--checkers', '1']
 // `bench --check` against a baseline from another compiler or version, or one that records none.
 export const EXIT_COMPILER_MISMATCH = 3
+// `bench --check` with no baseline.json to compare with.
+export const EXIT_NO_BASELINE = 2
 export const RE_BASELINE = 're-baseline in its own commit'

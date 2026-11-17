@@ -659,6 +659,7 @@ export const COMMAND_MAP: CommandMap = {
 		],
 		exitCodes: [
 			'1  --check: an instantiation regression past 5%',
+			'2  --check: no baseline.json to compare with (run dialecte bench to write it)',
 			'3  --check: a baseline from another compiler or version, or one that records no compiler',
 		],
 		example: 'dialecte bench --check',
