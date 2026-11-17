@@ -1,10 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { makeScratchFolder } from '../lib/scratch/make-scratch-folder.ts'
+import { temporaryFolder } from '../../test/scratch-repository.ts'
 import { run } from './bench.ts'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 // The compiler is faked by a script in the package's node_modules/.bin: it logs its arguments, answers
 // `--version` with tsgo 7.0.2, and any other run with a fixed --extendedDiagnostics dump.
@@ -16,9 +16,11 @@ case "$1" in
 esac
 `
 const BASELINE = 'benchmarks/types/baseline.json'
+const made: string[] = []
 
 function makeCorePackage(params: { baseline: string | undefined }): string {
-	const root = makeScratchFolder({ purpose: 'bench-run-' })
+	const root = temporaryFolder('bench-run-')
+	made.push(root)
 	writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@dialecte/core' }))
 	writeFileSync(join(root, 'tsconfig.json'), '{}')
 	mkdirSync(join(root, 'node_modules/.bin'), { recursive: true })
@@ -44,6 +46,11 @@ function compilerRuns(root: string): string[] {
 
 afterEach(() => {
 	vi.restoreAllMocks()
+})
+
+// Every package folder a test made is gone once its test ended.
+afterAll(() => {
+	expect(made.filter((root) => existsSync(root))).toEqual([])
 })
 
 describe('bench run: one checker, a compiler-stamped baseline', () => {
