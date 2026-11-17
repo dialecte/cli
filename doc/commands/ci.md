@@ -49,7 +49,8 @@ request, so a hand edit of a written file, or a bump without the sync, fails CI.
 What differs between packages is read, never configured: the jobs come from the scripts the package.json already
 has, the Playwright install from its dependencies, the `mode` passed to the tests from the package's own
 `_test.yml`. In the cli's own repository the workflows run the cli from its sources (`node src/cli.ts`); everywhere
-else they run the installed devDependency (`npx dialecte`).
+else they run the installed devDependency only (`npx --no-install dialecte`: never a registry fetch), and every
+node_modules restore fails on a cache miss instead of running without the locked dependencies.
 
 `sync` deletes only the files it knows: the retired `pr.yml` and `_lint.yml`, and the template's own reusables no job
 of the package calls. Any other file under `.github/workflows/` is listed as the repository's own and left as it is.

@@ -2,12 +2,12 @@
  * The CI template rendered for a package's facts: which files it gets, the ci.yml jobs, how the workflows run the
  * cli, and the repository's own `_test.yml` contract.
  */
+import { summaryOf } from '../../../test/ci-summary.ts'
 import { readCiTemplate, renderCiFiles, testContractOf } from './ci-template.ts'
 
 import { describe, expect, it } from 'vitest'
-import { parse } from 'yaml'
 
-import type { CiFacts, CiFiles } from './ci-template.types.ts'
+import type { CiFacts } from './ci-template.types.ts'
 
 /** The paths every package gets, whatever its facts. */
 const ALWAYS = [
@@ -24,41 +24,6 @@ const ALWAYS = [
 	'.nvmrc',
 	'changes/.gitkeep',
 ]
-
-/**
- * What a test reads of the rendered files; a slot left is the cli slot, or a `{{` not opening a GitHub `${{ }}`
- * expression.
- */
-function summaryOf(files: CiFiles): {
-	paths: string[]
-	ciJobs: string[]
-	ciOkNeeds: string[]
-	testWith: unknown
-	cliRuns: string[]
-	playwright: boolean
-	slotsLeft: string[]
-} {
-	const ci = parse(files.get('.github/workflows/ci.yml') ?? '') as {
-		jobs: Record<string, { needs?: string[]; with?: unknown }>
-	}
-	const runs = [...files.values()].flatMap((text) =>
-		text
-			.split('\n')
-			.map((line) => /^\s*(?:- )?run: (.*\bci [a-z-]+)$/.exec(line)?.[1])
-			.filter((run): run is string => run !== undefined),
-	)
-	return {
-		paths: [...files.keys()].sort(),
-		ciJobs: Object.keys(ci.jobs).sort(),
-		ciOkNeeds: [...(ci.jobs['ci-ok']?.needs ?? [])].sort(),
-		testWith: ci.jobs.test?.with,
-		cliRuns: runs.sort(),
-		playwright: (files.get('.github/workflows/_install.yml') ?? '').includes('playwright'),
-		slotsLeft: [...files]
-			.filter(([, text]) => /(?<!\$)\{\{|__dialecte_cli__/.test(text))
-			.map(([path]) => path),
-	}
-}
 
 const CLI: CiFacts = {
 	cli: 'source',
@@ -86,6 +51,7 @@ describe('renderCiFiles', () => {
 			cliRuns: ['node src/cli.ts ci check', 'node src/cli.ts ci publish-decision'],
 			playwright: false,
 			slotsLeft: [],
+			restoresFailOnMiss: true,
 		})
 	})
 
@@ -95,10 +61,34 @@ describe('renderCiFiles', () => {
 			ciJobs: ['build', 'check', 'ci-ok', 'docs', 'install', 'test', 'type-perf'],
 			ciOkNeeds: ['build', 'check', 'docs', 'install', 'test', 'type-perf'],
 			testWith: { mode: "${{ github.event_name == 'pull_request' && 'pr' || 'full' }}" },
-			cliRuns: ['npx dialecte ci check', 'npx dialecte ci publish-decision'],
+			cliRuns: [
+				'npx --no-install dialecte ci check',
+				'npx --no-install dialecte ci publish-decision',
+			],
 			playwright: true,
 			slotsLeft: [],
+			restoresFailOnMiss: true,
 		})
+	})
+})
+
+describe('the rendered publish.yml', () => {
+	it('→ its header says npm trusted publishing names the file and its trigger: never renamed, never retriggered', () => {
+		const header = (
+			renderCiFiles({ facts: CORE, template: readCiTemplate() }).get(
+				'.github/workflows/publish.yml',
+			) ?? ''
+		)
+			.split('\n')
+			.filter((line) => line.startsWith('#'))
+			.join(' ')
+
+		expect({
+			namesTrustedPublishing: header.includes(
+				'npm trusted publishing names this file (publish.yml) and its push trigger',
+			),
+			neverRenamed: header.includes('never rename it, never'),
+		}).toEqual({ namesTrustedPublishing: true, neverRenamed: true })
 	})
 })
 

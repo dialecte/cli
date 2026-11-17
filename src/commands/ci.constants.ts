@@ -1,7 +1,7 @@
 /** The words of `dialecte ci`. */
 
-/** The verbs. */
-export const CI_VERBS = ['sync', 'check', 'publish-decision'] as const
+/** The verb the publish workflow runs: its lines keep their own streams. */
+export const PUBLISH_DECISION_VERB = 'publish-decision'
 
 /** The one flag of sync. */
 export const DRY_RUN_FLAG = '--dry-run'

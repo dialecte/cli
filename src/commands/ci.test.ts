@@ -10,7 +10,7 @@ import {
 import { ciPackage, snapshotOf } from '../../test/ci-package.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
 import { createScratchRepository, git, temporaryFolder } from '../../test/scratch-repository.ts'
-import { runCi } from './ci.ts'
+import { runCi, runCiPublishDecision } from './ci.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -255,33 +255,37 @@ describe('dialecte ci refusals', () => {
 })
 
 describe('dialecte ci publish-decision', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
-	it('an unchanged version → skip printed, the outputs written, exit 0', () => {
+	it('an unchanged version → skip printed on stdout, the outputs written, exit 0', () => {
 		const root = createScratchRepository({ 'package.json': PLAIN_PACKAGE_JSON })
 		const outputs = join(temporaryFolder('dialecte-ci-outputs-'), 'outputs')
 		appendFileSync(outputs, '')
 		const before = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
 
-		const result = runCi({
+		const result = runCiPublishDecision({
 			cwd: root,
-			argv: ['publish-decision'],
 			environment: { BEFORE: before, GITHUB_OUTPUT: outputs },
 		})
 
 		expect({ result, outputs: readFileSync(outputs, 'utf8') }).toEqual({
 			result: {
 				exitCode: 0,
-				output: '@scratch/pkg 1.0.0 -> 1.0.0: skip (version unchanged (1.0.0))',
+				lines: [
+					{
+						stream: 'stdout',
+						line: '@scratch/pkg 1.0.0 -> 1.0.0: skip (version unchanged (1.0.0))',
+					},
+				],
 			},
 			outputs: 'publish=false\ntag=false\n',
 		})
 	})
 
-	it('no BEFORE → exit 1 with the reason', () => {
+	it('no BEFORE → exit 1 with the reason on stderr', () => {
 		const root = ciPackage()
 
-		expect(runCi({ cwd: root, argv: ['publish-decision'], environment: {} })).toEqual({
+		expect(runCiPublishDecision({ cwd: root, environment: {} })).toEqual({
 			exitCode: 1,
-			output: 'BEFORE and GITHUB_OUTPUT must be set',
+			lines: [{ stream: 'stderr', line: 'BEFORE and GITHUB_OUTPUT must be set' }],
 		})
 	})
 })

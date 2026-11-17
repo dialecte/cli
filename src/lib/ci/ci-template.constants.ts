@@ -7,10 +7,13 @@ export const CI_TEMPLATE_FOLDER = 'templates/ci'
 /** The slot a workflow runs the cli through: a plain YAML word, so the template stays YAML a formatter reads. */
 export const CLI_SLOT = '__dialecte_cli__'
 
-/** How a workflow runs the cli: the cli's own package from its sources, any other the installed devDependency. */
+/**
+ * How a workflow runs the cli: the cli's own package from its sources, any other the installed devDependency only
+ * (`--no-install`: npx never fetches a package of that name from the registry).
+ */
 export const CLI_INVOCATIONS: Readonly<Record<CliInvocation, string>> = {
 	source: 'node src/cli.ts',
-	installed: 'npx dialecte',
+	installed: 'npx --no-install dialecte',
 }
 
 /** A line opening a block kept only when the fact it names holds: `#{{if docs}}`, indented as the formatter puts it. */

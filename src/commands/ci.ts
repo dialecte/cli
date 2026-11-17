@@ -13,34 +13,34 @@ import { readCiFacts } from '../lib/ci/ci-facts.ts'
 import { OWN_TEST_PATH, RETIRED_PATHS } from '../lib/ci/ci-template.constants.ts'
 import { planCiSync, readCiTemplate, renderCiFiles } from '../lib/ci/ci-template.ts'
 import { unifiedDiff } from '../lib/ci/text-diff.ts'
-import { printOut, textOf } from '../lib/print/print.ts'
+import { printLines, printOut, textOf } from '../lib/print/print.ts'
 import { runPublishDecision } from '../lib/release/publish-decision.ts'
-import { CI_LINES, CI_USAGE, CI_VERBS, DRY_RUN_FLAG } from './ci.constants.ts'
+import { CI_LINES, CI_USAGE, DRY_RUN_FLAG, PUBLISH_DECISION_VERB } from './ci.constants.ts'
 
 import type { CiChange, CiPlan, TestContract } from '../lib/ci/ci-template.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { CommandResult as ProcessResult } from '../lib/release/publish-decision.types.ts'
+import type { DecisionResult, PrintedLine } from './ci.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const result = runCi({ cwd: process.cwd(), argv, environment: process.env })
+	if (argv.length === 1 && argv[0] === PUBLISH_DECISION_VERB) {
+		const decision = runCiPublishDecision({ cwd: process.cwd(), environment: process.env })
+		for (const printed of decision.lines)
+			printLines({ stream: printed.stream, lines: [printed.line] })
+		if (decision.exitCode !== 0) process.exit(decision.exitCode)
+		return
+	}
+	const result = runCi({ cwd: process.cwd(), argv })
 	printOut({ stream: result.exitCode === 0 ? 'stdout' : 'stderr', text: result.output })
 	if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-export function runCi(params: {
-	cwd: string
-	argv: string[]
-	environment?: Readonly<Record<string, string | undefined>>
-}): CommandResult {
+/** sync and check (publish-decision runs through `runCiPublishDecision`); any other word is a usage error. */
+export function runCi(params: { cwd: string; argv: string[] }): CommandResult {
 	const [verb, ...flags] = params.argv
 	const dryRun = verb === 'sync' && flags.length === 1 && flags[0] === DRY_RUN_FLAG
-	if (
-		!(CI_VERBS as readonly (string | undefined)[]).includes(verb) ||
-		(flags.length > 0 && !dryRun)
-	)
+	if ((verb !== 'sync' && verb !== 'check') || (flags.length > 0 && !dryRun))
 		return { exitCode: 2, output: textOf([CI_USAGE]) }
-	if (verb === 'publish-decision')
-		return runDecision({ cwd: params.cwd, environment: params.environment ?? {} })
 	const read = readCiFacts(params.cwd)
 	if ('refusal' in read)
 		return { exitCode: 2, output: textOf([CI_LINES.refused.replace('{reason}', read.refusal)]) }
@@ -121,26 +121,42 @@ function applyChanges(params: { root: string; changes: readonly CiChange[] }): v
 
 /**
  * The publish guard on the push to main, the commit the push started from fetched (BEFORE): the decision gets the
- * package's files, git and npm run in the package, GITHUB_OUTPUT; anything that throws exits 1 with its reason.
+ * package's files, git and npm run in the package, GITHUB_OUTPUT; each printed line keeps its stream; anything that
+ * throws exits 1 with its reason on stderr.
  */
-function runDecision(params: {
+export function runCiPublishDecision(params: {
 	cwd: string
 	environment: Readonly<Record<string, string | undefined>>
-}): CommandResult {
-	const lines: string[] = []
+}): DecisionResult {
+	const lines: PrintedLine[] = []
+	function readFile(path: string): string {
+		return readFileSync(join(params.cwd, path), 'utf8')
+	}
+	function run(command: { command: string; args: readonly string[] }): ProcessResult {
+		return runIn({ cwd: params.cwd, ...command })
+	}
+	function appendOutput(output: { file: string; text: string }): void {
+		appendFileSync(output.file, output.text)
+	}
+	function print(printed: PrintedLine): void {
+		lines.push(printed)
+	}
 	try {
 		const exitCode = runPublishDecision({
 			environment: params.environment,
-			readFile: (path) => readFileSync(join(params.cwd, path), 'utf8'),
-			run: (command) => runIn({ cwd: params.cwd, ...command }),
-			appendOutput: (output) => appendFileSync(output.file, output.text),
-			print: (printed) => lines.push(printed.line),
+			readFile,
+			run,
+			appendOutput,
+			print,
 		})
-		return { exitCode, output: textOf(lines) }
+		return { exitCode, lines }
 	} catch (error) {
 		return {
 			exitCode: 1,
-			output: textOf([...lines, error instanceof Error ? error.message : String(error)]),
+			lines: [
+				...lines,
+				{ stream: 'stderr', line: error instanceof Error ? error.message : String(error) },
+			],
 		}
 	}
 }
