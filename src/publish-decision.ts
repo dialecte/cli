@@ -7,6 +7,7 @@
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, readFileSync } from 'node:fs'
 
+import { printLines } from './lib/print/print.ts'
 import { LS_REMOTE_FOUND, LS_REMOTE_MISSING } from './lib/release/publish-decision.constants.ts'
 import { decidePublish, readNpmView } from './lib/release/publish-decision.ts'
 
@@ -81,9 +82,12 @@ function main(): void {
 			registry.versions.includes(current.version) &&
 			tagOnOrigin(tag),
 	})
-	process.stdout.write(
-		`${current.name} ${previous.version} -> ${current.version}: ${decision.action} (${decision.reason})\n`,
-	)
+	printLines({
+		stream: 'stdout',
+		lines: [
+			`${current.name} ${previous.version} -> ${current.version}: ${decision.action} (${decision.reason})`,
+		],
+	})
 	if (decision.action === 'refuse') {
 		process.exitCode = 1
 		return
@@ -94,6 +98,9 @@ function main(): void {
 try {
 	main()
 } catch (error) {
-	process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+	printLines({
+		stream: 'stderr',
+		lines: [error instanceof Error ? error.message : String(error)],
+	})
 	process.exitCode = 1
 }
