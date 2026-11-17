@@ -45,7 +45,8 @@ gate - The package's Definition of Done with the real counts
     schema: 1, base, tree, changed, selected: [{ id, reasons }], skipped: [{ id, reason }] } (both
     lists required, reasons non-empty); the base is --base <ref>, else the merge-base with the base
     branch (the first found: "dialecte.baseBranch", origin/HEAD, main, master; each local, else on
-    origin), else the empty tree; select from the working files; without the gate (no
+    origin), else the empty tree; a local base branch holding commits origin's lacks: a note naming
+    the count, the base read from origin's; select from the working files; without the gate (no
     DIALECTE_GATE_SELECTION): select everything
   a step whose run is npm run <script> the package lacks is not wired: a default step fails a --full
     or --release run (a --fast one says it and goes on), a declared step fails in every mode; then

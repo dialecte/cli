@@ -11,7 +11,9 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
 
   types / constants in their files, named functions, no await in an argument, object parameters,
     full words, no standard citation (nor, in a contributor profile, a plan tag, acceptance
-    criterion or ticket number)
+    criterion or ticket number); temporary-root-shared; raw-git-repository on test and test support
+    files (a git clone / git init argument list in a git call, init --bare aside: make the
+    repository with the scratch helpers; allowable)
   a contributor: no consumer name nor forbidden word (git config dialecte.forbiddenWords and
     $XDG_CONFIG_HOME/dialecte/forbidden-words, else ~/.config/dialecte/forbidden-words; whole words,
     any case); no list: one line, and the check is not run
@@ -63,7 +65,11 @@ Flags: `--json`
   and ticket numbers: see [Profiles](../../README.md#profiles)) are errors, and so is a test that takes the system's temporary folder itself as
   its root (`tmpdir()` handed to a call that lists or scans a folder, or given as `root` / `cwd` /
   `scratchRoot`...: other tests and processes share it; `mkdtempSync(join(tmpdir(), '<prefix>-'))`
-  gives the test a folder of its own); positional parameters (beyond a leading `query` / `tx`, a
+  gives the test a folder of its own), and so is a test or test support file that runs `git clone` or `git init`
+  itself (`raw-git-repository`: a `git clone` / `git init` argument list in a git call, a `'git'` program or a shell
+  string starting with `git`, `init --bare` aside: such a repository has no identity, green where git falls back to
+  user@host and red on a CI machine; make it with the scratch helpers `cloneRepository` / `initializeRepository`);
+  positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings. A file it cannot read (a file given that is not
   there, no read permission) or a script that does not parse is an error of that file (`unreadable-file`),
   never a silent skip. Without file arguments it reads the changed list a scoped gate step hands
@@ -102,7 +108,7 @@ Flags: `--json`
   - `plan-tag` (error): a title, a table key or the file name carries a plan or round tag; say what the case
     checks.
 
-  An opt-out silences one of these nine rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
+  An opt-out silences `raw-git-repository` or one of these nine rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
   least 15 characters, on the finding's line or the line before it (for `argument-mutation`, `class`
   and `long-function`, also anywhere in the comments right before the function or class, its doc comment included). A
   malformed opt-out, a rule it cannot silence or a reason too short is an `invalid-allow` error; an opt-out

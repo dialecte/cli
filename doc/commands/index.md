@@ -61,6 +61,7 @@
 | [`dialecte doctor`](doctor.md)     | Installed versions, core API generation, skills in sync, local checkouts                |
 | [`dialecte models`](models.md)     | Which model each tier (fast, standard, strong, frontier) means for the project's vendor |
 | [`dialecte skills`](skills.md)     | Agent skills shipped in skills/&lt;name&gt;/: sync \| generate \| check \| changed      |
+| [`dialecte corpus`](corpus.md)     | The open-licence corpora fetched into a cache, and the licensed ones of config.yml      |
 
 ## Maintain
 

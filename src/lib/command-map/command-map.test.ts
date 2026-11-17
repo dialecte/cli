@@ -94,8 +94,40 @@ describe('the command map', () => {
 		const lot = COMMAND_MAP.lot
 		const notes = lot.notes ?? []
 
-		expect(lot.usage).toContain('dialecte lot close <hand-over name|index>... [--json]')
+		expect(lot.usage).toContain('dialecte lot close <hand-over name|lot id|index>... [--json]')
 		expect(notes.some((note) => note.startsWith('close - '))).toBe(true)
+	})
+
+	const MERGED_BEHAVIOUR_NOTES = [
+		{ command: 'lot', verb: 'close', text: 'a lot id (its store folder' },
+		{ command: 'lot', verb: 'close', text: "merged at the worktree's HEAD" },
+		{ command: 'lot', verb: 'close', text: "a reflog-only commit changing only the lot's paths" },
+		{
+			command: 'lot',
+			verb: 'land',
+			text: "a branch with no commit beyond origin's base is refused before any push",
+		},
+		{ command: 'worktree', verb: 'prune', text: 'mkdir -p <trash> && mv <folder> <trash>/' },
+	] as const
+	it.each(MERGED_BEHAVIOUR_NOTES)(
+		'the $command $verb note says $text',
+		({ command, verb, text }) => {
+			const notes: readonly string[] = COMMAND_MAP[command].notes ?? []
+
+			expect(notes.filter((note) => note.startsWith(`${verb} - `)).join('\n')).toContain(text)
+		},
+	)
+
+	it('the rules note names raw-git-repository on test and test support files', () => {
+		expect((COMMAND_MAP.rules.notes ?? []).join('\n')).toContain(
+			'raw-git-repository on test and test support files',
+		)
+	})
+
+	it("the gate note names a local base branch holding commits origin's lacks", () => {
+		expect((COMMAND_MAP.gate.notes ?? []).join('\n')).toContain(
+			"a local base branch holding commits origin's lacks: a note naming the count, the base read from origin's",
+		)
 	})
 
 	const LOT_NEW_LINES = [

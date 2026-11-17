@@ -203,6 +203,11 @@ runs with git's `GIT_DIR`, `GIT_INDEX_FILE` and the commit's identity set: the s
 (`test/git-environment.setup.ts`, vitest `setupFiles`) clears them before any test, so a test's git acts on
 its scratch repository only, and the cli clears git's repository variables at its start.
 
+The main checkout's `dist/` is rebuilt by the `post-merge` hook (and `post-rewrite` after a rebase) after
+`git pull` or `lot close`'s fast-forward, when the checkout has one: the build goes to a folder of its own and
+replaces `dist/` only when it succeeds; a failed build leaves `dist/` as it was, and a linked worktree builds
+nothing. Run main's cli as `node src/cli.ts` in briefs.
+
 The cli gates itself with its own `dialecte.gate` (package.json). `--fast`: `check`, a scoped `tests` step
 (`node src/scoped-tests.ts`: the test files vitest's import graph has the changed paths a test can import reach, run
 with `vitest run <files>` (the graph read once with the package's vitest, `src/lib/gate/test-graph.ts`), and an empty selection exits 0 without starting vitest; a changed path no test can import - the

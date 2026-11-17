@@ -19,9 +19,12 @@ worktree - A worktree ready to work in; prune what a merge left
         differs), hygiene baseline
   prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with
           their cd; a worktree an open lot names (working, input-required, ready, failed) is kept
-          first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal; the
-          pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted,
-          never touched
+          first, reason lot <name> <state>; --yes runs them after a confirmation on a terminal;
+          committed hand-over folders and finished rehearsal clones go to the trash like the other
+          items: the plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it;
+          a move that cannot be made is a ✗ line, nothing deleted; the pool
+          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
+          touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
     keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked

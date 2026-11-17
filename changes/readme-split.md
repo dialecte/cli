@@ -14,3 +14,7 @@
   the heads its rebases replaced kept in `landing.json`.
 - `lot --help` and the `lot scope` usage line name `--overlap-ok` on `lot start` and `lot scope`; the `lot scope`
   note no longer says an add meeting another open lot is always refused.
+- The help and the command pages say what recent fixes changed: `lot close` takes a lot id and confirms a merge at
+  the worktree's HEAD, `lot land` refuses a branch with no commit beyond origin's base, `worktree prune` moves
+  hand-over folders and rehearsal clones to the trash, `rules` names `raw-git-repository`, the gate notes a local
+  base branch ahead of origin's; the README says the main checkout's `dist/` is rebuilt after a merge.

@@ -37,7 +37,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot report --feature <name> [--simulated] [--json]
   dialecte lot export <id> <dir> [--json]
   dialecte lot land <id> [--draft]
-  dialecte lot close <hand-over name|index>... [--json]
+  dialecte lot close <hand-over name|lot id|index>... [--json]
 
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
           folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base
@@ -70,8 +70,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          body) or reused (retitled when it reads otherwise), then queued (gh pr merge --auto: the
          merge queue merges it once its checks pass on top of main); --draft opens a draft and never
          queues it, CI running on every push; the landing (number, url, branch, pushed tip, the
-         heads its rebases replaced) recorded in <lot folder>/landing.json, read by lot close; the
-         host is GitHub through gh, which never prompts
+         heads its rebases replaced) recorded in <lot folder>/landing.json, read by lot close; a
+         branch with no commit beyond origin's base is refused before any push; the pushed head is
+         kept in landing.json at once, so a pull request the host refused to open does not make the
+         next push one outside lot land; the host is GitHub through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -219,7 +221,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied
            file compared by size and sha256 (events.jsonl as a prefix) before the rename, one more
            copy on a difference; the source is never written
-  close - for a committed or abandoned hand-over of the registry (by name or index): its final
+  close - for a committed or abandoned hand-over of the registry (by name or index; a lot id (its
+          store folder, 0124-cli-x) closes the hand-over entry registering that folder): its final
           record first, the card line in the repository's cards.log (a catch-up one when none
           exists, for every hand-over of the worktree, read back), then a removing line, then its
           worktree moved to .worktrees/_trash/ and removed in the background by git worktree remove
@@ -240,9 +243,12 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           empty or archived .dialecte/lot.json and copies byte-equal to the main checkout's go), a
           process or a mutation run works there, lot close itself runs from inside it, or the
           processes are not known, or the final record cannot be kept or the lot's commit is not
-          known; the branch never touched; a hand-over already closed answers already closed, exit
-          0, nothing moved; exit 1 when one is kept, 2 for a name or index the registry does not
-          hold
+          known; a pull request merged at the worktree's HEAD (a push outside lot land) is
+          confirmed, the landing record's head moved; merged at another head: a line naming the
+          heads; a reflog-only commit changing only the lot's paths, dropped before the lot's final
+          commits, counts as landed; the branch never touched; a hand-over already closed answers
+          already closed, exit 0, nothing moved; exit 1 when one is kept, 2 for a name or index the
+          registry does not hold
 
 exit codes:
   1  risk --effort: the line could not be written
