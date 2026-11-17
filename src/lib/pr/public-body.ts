@@ -46,8 +46,12 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 		changelog === undefined
 			? []
 			: changelog.kind === 'none'
-				? [{ record: changelog.file, text: changelog.reason }]
-				: changelog.entries.map((entry) => ({ record: entry.file, text: entry.text }))
+				? [{ record: changelog.file, text: changelog.reason, committed: true }]
+				: changelog.entries.map((entry) => ({
+						record: entry.file,
+						text: entry.text,
+						committed: true,
+					}))
 	const overlaps = (sources.overlaps ?? []).map((overlap) => ({
 		record: PIECE_RECORDS.overlap,
 		text: overlap.reason,
@@ -64,7 +68,11 @@ export function publicRefusalOf(params: {
 	treeFiles: ReadonlySet<string>
 }): PublicRefusal | undefined {
 	for (const piece of params.pieces) {
-		const path = privatePathIn({ text: piece.text, treeFiles: params.treeFiles })
+		// a committed fragment is public already: its paths name what the repository says, not a private place
+		const path =
+			piece.committed === true
+				? undefined
+				: privatePathIn({ text: piece.text, treeFiles: params.treeFiles })
 		if (path !== undefined) return { record: piece.record, label: PRIVATE_PATH_LABEL, word: path }
 		const reference = findReferences({ text: piece.text, patterns: params.patterns })[0]
 		if (reference !== undefined)

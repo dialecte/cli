@@ -28,6 +28,9 @@ export const FILLED_PARTS: readonly string[] = [
 /** A changelog fragment of the package (`changes/<name>.md`, a no-entry note included). */
 export const FRAGMENT_PATTERN = /^changes\/[^/]+\.md$/
 
+/** git's status letter of a path the lot's commits add. */
+export const ADDED_STATUS = 'A'
+
 /** The gate or contrib step that builds the documentation. */
 export const DOCS_STEP = 'docs'
 

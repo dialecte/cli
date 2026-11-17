@@ -189,3 +189,26 @@ describe(
 		})
 	},
 )
+
+describe(
+	'readPullRequestSources reads the fragments the lot adds',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		it("a lot that edits another lot's fragment → only its own added fragment shows", () => {
+			const lot = pullRequestLot({
+				mainFiles: { 'changes/other.md': '### Fixed\n\n- Other.\n' },
+				lotFiles: {
+					'changes/x.md': '### Added\n\n- `x` answers one.\n',
+					'changes/other.md': '### Fixed\n\n- Other, reworded.\n',
+				},
+			})
+
+			const sources = sourcesOf(lot)
+
+			expect('refusal' in sources ? sources : sources.changelog).toEqual({
+				kind: 'entries',
+				entries: [{ section: 'Added', text: '- `x` answers one.', file: 'changes/x.md' }],
+			})
+		})
+	},
+)

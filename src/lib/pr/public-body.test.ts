@@ -152,7 +152,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 			{ record: 'brief.json steps[0].title', text: 'T' },
 			{ record: 'brief.json steps[0].behaviours[0]', text: 'a -> b' },
 			{ record: 'brief.json steps[0].behaviours[1]', text: 'c -> d' },
-			{ record: 'changes/x.md', text: '- E.' },
+			{ record: 'changes/x.md', text: '- E.', committed: true },
 			{ record: 'overlaps.jsonl', text: 'separate lines' },
 		])
 	})
@@ -169,6 +169,36 @@ describe('publicPiecesOf lists the free text of the records', () => {
 		expect(publicPiecesOf(sources)).toContainEqual({
 			record: 'changes/x.none.md',
 			text: 'wording only',
+		})
+	})
+})
+
+describe('publicRefusalOf leaves a committed fragment its paths', () => {
+	it('a changelog line naming an ignored file of the cli → passes: the fragment is committed, public already', () => {
+		const pieces: PublicPiece[] = [
+			{
+				record: 'changes/x.md',
+				text: '- `lot close` archives `.dialecte/lot.json`.',
+				committed: true,
+			},
+		]
+
+		expect(
+			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), treeFiles: new Set() }),
+		).toBeUndefined()
+	})
+
+	it('the same words in a summary → refused: a brief is no committed text', () => {
+		const pieces: PublicPiece[] = [
+			{ record: 'brief.json summary', text: 'Archives `.dialecte/lot.json`.' },
+		]
+
+		expect(
+			publicRefusalOf({ pieces, patterns: PATTERNS, ids: new Set(), treeFiles: new Set() }),
+		).toEqual({
+			record: 'brief.json summary',
+			label: 'path outside the tree or a link',
+			word: '.dialecte/lot.json',
 		})
 	})
 })

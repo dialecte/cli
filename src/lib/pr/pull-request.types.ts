@@ -39,7 +39,12 @@ export type PullRequestSources = {
 export type PullRequestText = { title: string; body: string }
 
 /** A piece of record-sourced free text the body shows, and the record it comes from (named by a refusal). */
-export type PublicPiece = { record: string; text: string }
+export type PublicPiece = {
+	record: string
+	text: string
+	/** Text committed to the repository (a changelog fragment): public already, its paths are not checked. */
+	committed?: boolean
+}
 
 /** Why a body is not sent: what a piece holds (the rule's label, the word when it is no private reference). */
 export type PublicRefusal = { record: string; label: string; word?: string }

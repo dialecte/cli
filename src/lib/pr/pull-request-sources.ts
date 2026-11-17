@@ -24,6 +24,7 @@ import { readTestsRecord } from '../tdd/tests-record.ts'
 import { linesOf, templateFaultOf } from './compose-pull-request.ts'
 import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 import {
+	ADDED_STATUS,
 	DOCS_STEP,
 	FRAGMENT_PATTERN,
 	PULL_REQUEST_LINES,
@@ -190,7 +191,7 @@ function changedFilesOf(params: { worktree: string; base: string }): ChangedFile
 }
 
 /**
- * The changelog of the fragments the lot adds or changes, as its head holds them: their sections, in file order; with
+ * The changelog of the fragments the lot adds (an edit of another lot's fragment is that lot's), as its head holds them: their sections, in file order; with
  * none, the reason of its no-entry note; undefined when the lot writes neither. A fragment that does not read is left
  * out (the commit's own check names it).
  */
@@ -199,7 +200,7 @@ function changelogOf(params: {
 	changes: ChangedFile[]
 }): PullRequestChangelog | undefined {
 	const written = params.changes
-		.filter((change) => change.status !== 'D' && FRAGMENT_PATTERN.test(change.path))
+		.filter((change) => change.status === ADDED_STATUS && FRAGMENT_PATTERN.test(change.path))
 		.map((change) => change.path)
 		.sort()
 	const entries = written
