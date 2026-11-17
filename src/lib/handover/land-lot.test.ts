@@ -14,8 +14,8 @@ import {
 } from '../../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { TEMPLATE_PATH } from '../pr/pull-request.constants.ts'
-import { registeredEntryOf } from './handover-store-read.ts'
-import { handoverStoreOf } from './handover-store.ts'
+import { readStoreEntries, registeredEntryOf } from './handover-store-read.ts'
+import { handoverStoreOf, recordHandoverState, registerHandover } from './handover-store.ts'
 import { confirmLanding, landLot } from './land-lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -484,6 +484,99 @@ describe(
 				origin: originBranchOf(repository),
 				opened: calls.filter((call) => call.startsWith('open')),
 			}).toEqual({ exitCode: 1, refused: true, origin: '', opened: [] })
+		})
+
+		it("a branch holding no commit beyond origin's base → no hand-over entry written for the refused landing", () => {
+			const repository = landingRepository()
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
+
+			land({ repository, host: recordingHost().host, draft: true })
+
+			expect(
+				registeredEntryOf({
+					store: handoverStoreOf(repository.worktree),
+					folder: repository.lotFolder,
+				}),
+			).toBeUndefined()
+		})
+
+		it('an abandoned entry of the lot and a branch holding no commit beyond the base → refused, the entry left as it was (never rewritten pending)', () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			registerHandover({
+				root: repository.worktree,
+				folder: repository.lotFolder,
+				branch: 'feat/x',
+				now: NOW,
+			})
+			recordHandoverState({ store, folder: repository.lotFolder, state: 'abandoned' })
+			const before = registeredEntryOf({ store, folder: repository.lotFolder })
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
+
+			land({ repository, host: recordingHost().host, draft: true })
+
+			expect(registeredEntryOf({ store, folder: repository.lotFolder })).toEqual(before)
+		})
+
+		/** The lot's hand-over entry registered and recorded committed; its registered name. */
+		function committedLot(repository: LandingRepository): string {
+			const store = handoverStoreOf(repository.worktree)
+			const name = registerHandover({
+				root: repository.worktree,
+				folder: repository.lotFolder,
+				branch: 'feat/x',
+				now: NOW,
+			})
+			recordHandoverState({ store, folder: repository.lotFolder, state: 'committed' })
+			return name
+		}
+
+		it("a committed lot whose branch main holds → the registry's committed answer, the same registering gives, no entry written", () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			const name = committedLot(repository)
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
+			const before = readStoreEntries(store)
+
+			const result = land({ repository, host: recordingHost().host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				lines: result.lines,
+				entries: readStoreEntries(store),
+			}).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: ${name} is committed: a committed hand-over is never rewritten: nothing pushed`,
+				],
+				entries: before,
+			})
+		})
+
+		it('a committed lot whose branch holds a commit beyond the base → the same committed answer, nothing pushed, the entry left as it was', () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			const name = committedLot(repository)
+			const before = readStoreEntries(store)
+
+			const result = land({ repository, host: recordingHost().host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				lines: result.lines,
+				entries: readStoreEntries(store),
+				origin: git({
+					root: repository.root,
+					args: ['ls-remote', 'origin', 'refs/heads/feat/x'],
+				}).trim(),
+			}).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: ${name} is committed: a committed hand-over is never rewritten: nothing pushed`,
+				],
+				entries: before,
+				origin: '',
+			})
 		})
 
 		it("origin's branch at a commit the base holds (a push that opened no pull request) → pushed over it, the pull request opened", () => {
