@@ -6,16 +6,19 @@
  * it no longer runs) and such a case is new or changed. That run happens in a scratch copy of the base tree outside the
  * worktree (its `node_modules` linked), removed when it ends: nothing of it stays behind.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rmSync } from 'node:fs'
 
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import { copyBaseTree } from './base-tree.ts'
 import { findMovedByName, findMovedCases, movedCaseLabels } from './moved-cases.ts'
 import { runTestCases } from './run-test-cases.ts'
 import { caseLabel, readRunCases } from './select-cases.ts'
 import { listDeletedTestFiles, readAtBase } from './tdd-files.ts'
-import { BASE_COLLECT_TIMEOUT_MS, PYTHON_FILE_PATTERN } from './tdd.constants.ts'
+import {
+	BASE_COLLECT_FOLDER_PREFIX,
+	BASE_COLLECT_TIMEOUT_MS,
+	PYTHON_FILE_PATTERN,
+} from './tdd.constants.ts'
 import { testCodeTokens } from './test-code-tokens.ts'
 import { indexTestCalls, listSurroundings, testCallAt } from './test-source.ts'
 
@@ -194,7 +197,7 @@ async function collectAtBase(params: {
 	sources: readonly DeletedTestFile[]
 }): Promise<{ result: NamedRegistration[] | { failure: string }; baseCollect: BaseCollect }> {
 	const started = Date.now()
-	const folder = mkdtempSync(join(tmpdir(), 'dialecte-base-collect-'))
+	const folder = makeScratchFolder({ purpose: BASE_COLLECT_FOLDER_PREFIX, cwd: params.root })
 	function baseCollect(): BaseCollect {
 		return { files: params.sources.length, milliseconds: Date.now() - started }
 	}

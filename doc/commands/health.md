@@ -36,7 +36,9 @@ Flags: `--since`, `--repository`, `--json`
   stalled runs (an open lot whose last step started under a process that is gone, ran over 2 hours (heavy:
   3 hours), was interrupted, or a station open over 4 hours; with the command that resumes it), idle worktrees
   (registered worktrees no open lot holds, untouched for 24 hours; amber), slow worktree adds (over 60 s)
-  and leaked scratch folders (over 6 hours; amber). Idle worktrees and leaked scratch folders sort after the
+  and leaked scratch folders (over 6 hours; amber: the folders of the cli's scratch root - `DIALECTE_SCRATCH`, else
+  the workspace's `.worktrees/_scratch`, else `dialecte-scratch` in the system's temporary folder - and, for one
+  release, the `dialecte-*` folders earlier versions left in the system's temporary folder). Idle worktrees and leaked scratch folders sort after the
   findings of runs of the same severity. `--since` takes `<n>h`, `<n>d`, a date (UTC midnight) or a zoned
   time; 7 days by default; it bounds the windowed rules, the others read now. `--repository` keeps that
   repository's findings (the scratch finding is no repository's). Reads files only, writes nothing. The step

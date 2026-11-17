@@ -4,14 +4,14 @@
  * tests import, to the full suite on CI, and writes the selection file the gate reads. An empty selection exits 0 without starting vitest.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import { counted } from '../counted.ts'
 import { readGit } from '../git.ts'
 import { textOf } from '../print/print.ts'
 import { withoutVariables } from '../progress/run-child.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import { createModuleResolver } from '../tdd/module-resolver.ts'
 import { resolvePackageVitest } from '../tdd/package-vitest.ts'
 import { SERIAL_FLAG } from './gate-config.constants.ts'
@@ -98,7 +98,7 @@ export function runScopedTests(params: {
 							counted({ count: changed.length, noun: 'path' }),
 						),
 		})
-	const folder = mkdtempSync(join(tmpdir(), REPORT_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: REPORT_FOLDER_PREFIX, cwd: root })
 	try {
 		const reached = rerun
 			? { testFiles: [], shared: [] }

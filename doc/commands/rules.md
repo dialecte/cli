@@ -69,6 +69,8 @@ Flags: `--json`
   itself (`raw-git-repository`: a `git clone` / `git init` argument list in a git call, a `'git'` program or a shell
   string starting with `git`, `init --bare` aside: such a repository has no identity, green where git falls back to
   user@host and red on a CI machine; make it with the scratch helpers `cloneRepository` / `initializeRepository`);
+  so is a production file that calls `tmpdir()` outside `src/lib/scratch/` (`bare-tmpdir`: every temporary folder of
+  the cli is made with `makeScratchFolder`, under the one scratch root `worktree prune` and `health` read; allowable);
   positional parameters (beyond a leading `query` / `tx`, a
   symmetric pair aside) and abbreviated names are warnings. A file it cannot read (a file given that is not
   there, no read permission) or a script that does not parse is an error of that file (`unreadable-file`),
@@ -108,7 +110,7 @@ Flags: `--json`
   - `plan-tag` (error): a title, a table key or the file name carries a plan or round tag; say what the case
     checks.
 
-  An opt-out silences `raw-git-repository` or one of these nine rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
+  An opt-out silences `raw-git-repository`, `bare-tmpdir` or one of these nine rules: `// dialecte-allow <rule>[, <rule>]: <reason>`, the reason at
   least 15 characters, on the finding's line or the line before it (for `argument-mutation`, `class`
   and `long-function`, also anywhere in the comments right before the function or class, its doc comment included). A
   malformed opt-out, a rule it cannot silence or a reason too short is an `invalid-allow` error; an opt-out

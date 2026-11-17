@@ -1,3 +1,4 @@
+import { TEMPORARY_FOLDER_PREFIX as REFERENCE_CHECK_FOLDER_PREFIX } from '../command-map/command-reference.constants.ts'
 import {
 	COMMIT_INDEX_FOLDER_PREFIX,
 	STATE_INDEX_FOLDER_PREFIX,
@@ -5,12 +6,18 @@ import {
 import { REPORT_FOLDER_PREFIX } from '../gate/scoped-tests.constants.ts'
 import { GATE_SCOPE_FOLDER_PREFIX } from '../gate/selection.constants.ts'
 import {
+	HOOK_TEMPORARY_FOLDER_PREFIX,
 	HANDOVER_PROBE_FOLDER_PREFIX,
 	HOOK_LOG_FOLDER_PREFIX,
 	REHEARSAL_FOLDER_PREFIX,
 	REVIEW_INDEX_FOLDER_PREFIX,
 	TRIAL_INDEX_FOLDER_PREFIX,
 } from '../handover/handover.constants.ts'
+import {
+	BASE_COLLECT_FOLDER_PREFIX,
+	BASE_RED_FOLDER_PREFIX,
+	REPORTING_RUN_FOLDER_PREFIX,
+} from '../tdd/tdd.constants.ts'
 
 import type { GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { HealthRule, HealthSeverity } from './health.types.ts'
@@ -186,7 +193,10 @@ export const WORKTREE_INDEX_PATTERN = /^\d+/
 /** The steps that create a worktree. */
 export const WORKTREE_ADD_STEPS: ReadonlySet<string> = new Set(['worktree-add', 'throwaway-add'])
 
-/** The name prefixes of the scratch folders the cli makes in the temporary folder. */
+/**
+ * The name prefixes of the scratch folders the cli makes: read in the scratch root, and in the system's temporary
+ * folder where earlier versions made them.
+ */
 export const SCRATCH_PREFIXES: readonly string[] = [
 	REHEARSAL_FOLDER_PREFIX,
 	HOOK_LOG_FOLDER_PREFIX,
@@ -197,6 +207,11 @@ export const SCRATCH_PREFIXES: readonly string[] = [
 	REPORT_FOLDER_PREFIX,
 	COMMIT_INDEX_FOLDER_PREFIX,
 	STATE_INDEX_FOLDER_PREFIX,
+	REPORTING_RUN_FOLDER_PREFIX,
+	BASE_COLLECT_FOLDER_PREFIX,
+	BASE_RED_FOLDER_PREFIX,
+	REFERENCE_CHECK_FOLDER_PREFIX,
+	HOOK_TEMPORARY_FOLDER_PREFIX,
 ]
 
 /** The texts of the worktree findings; `{name}` is filled with its value, a `One` text words a count of one. */

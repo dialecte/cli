@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { SCRATCH_VARIABLE } from '../../src/lib/scratch/scratch.constants.ts'
 import { DATA_HOME_VARIABLE, STATE_HOME_VARIABLE } from '../../src/lib/store/store.constants.ts'
 import {
 	ORIGINS_VARIABLE,
@@ -21,7 +22,8 @@ import {
 import { describeLeftovers, leftoverOf, listLeftovers, readOrigins } from './temp-leftovers.ts'
 
 /**
- * Makes the suite's temporary folder and points TMPDIR at it, and XDG_STATE_HOME and XDG_DATA_HOME at folders
+ * Makes the suite's temporary folder and points TMPDIR and DIALECTE_SCRATCH at it (the cli's scratch folders stay in
+ * the guarded folder, never in the workspace's scratch root), and XDG_STATE_HOME and XDG_DATA_HOME at folders
  * inside it (no test writes into a person's state or data folder), and the origins variable at its origins folder;
  * returns the teardown that removes the state, data and origins folders, then checks the rest.
  */
@@ -30,6 +32,7 @@ export default function setupTemporaryFolderGuard(): () => void {
 	const systemState = process.env[STATE_HOME_VARIABLE]
 	const systemData = process.env[DATA_HOME_VARIABLE]
 	const systemOrigins = process.env[ORIGINS_VARIABLE]
+	const systemScratch = process.env[SCRATCH_VARIABLE]
 	const folder = mkdtempSync(join(tmpdir(), SUITE_FOLDER_PREFIX))
 	const state = join(folder, SUITE_STATE_FOLDER)
 	mkdirSync(state)
@@ -38,6 +41,7 @@ export default function setupTemporaryFolderGuard(): () => void {
 	const origins = join(folder, SUITE_ORIGINS_FOLDER)
 	mkdirSync(origins)
 	process.env.TMPDIR = folder
+	process.env[SCRATCH_VARIABLE] = folder
 	process.env[STATE_HOME_VARIABLE] = state
 	process.env[DATA_HOME_VARIABLE] = data
 	process.env[ORIGINS_VARIABLE] = origins
@@ -72,6 +76,8 @@ export default function setupTemporaryFolderGuard(): () => void {
 			else process.env[DATA_HOME_VARIABLE] = systemData
 			if (systemOrigins === undefined) delete process.env[ORIGINS_VARIABLE]
 			else process.env[ORIGINS_VARIABLE] = systemOrigins
+			if (systemScratch === undefined) delete process.env[SCRATCH_VARIABLE]
+			else process.env[SCRATCH_VARIABLE] = systemScratch
 		}
 	}
 }

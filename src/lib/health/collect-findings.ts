@@ -22,7 +22,11 @@ export function collectFindings(params: CollectFindingsParams): HealthFinding[] 
 		...params.repositories.flatMap(function idleOfRepository(repository) {
 			return findIdleWorktrees({ repository, now: params.window.now })
 		}),
-		...findLeakedScratch({ folders: params.scratch, now: params.window.now }),
+		...findLeakedScratch({
+			folders: params.scratch,
+			now: params.window.now,
+			isAlive: params.isAlive,
+		}),
 	]
 	// a stable sort by severity keeps each severity's run findings before its state findings
 	return [...runFindings.sort(compareNewestFirst), ...stateFindings.sort(compareNewestFirst)].sort(

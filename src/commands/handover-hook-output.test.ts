@@ -540,11 +540,15 @@ describe('handover run: the hook output as steps', { timeout: SCRATCH_REPOSITORY
 		)
 		const hookTemporary = temporaryFolder('dialecte-hook-tmp-')
 		const previousTemporary = process.env.TMPDIR
+		const previousScratch = process.env.DIALECTE_SCRATCH
 		onTestFinished(function restoreTemporary() {
 			if (previousTemporary === undefined) delete process.env.TMPDIR
 			else process.env.TMPDIR = previousTemporary
+			if (previousScratch === undefined) delete process.env.DIALECTE_SCRATCH
+			else process.env.DIALECTE_SCRATCH = previousScratch
 		})
 		process.env.TMPDIR = hookTemporary
+		process.env.DIALECTE_SCRATCH = hookTemporary
 		/** The hook's log holds `text`: its output reached the run. */
 		function logHolds(text: string): boolean {
 			return readdirSync(hookTemporary).some((name) => {

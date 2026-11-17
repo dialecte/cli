@@ -64,7 +64,7 @@ describe(
 					[HANDOVER_CLI_SOURCE, 'handover', 'run', lot.folder, '--rehearse'],
 					{
 						cwd: lot.bystander.worktree,
-						env: { ...process.env, TMPDIR: childTemporary },
+						env: { ...process.env, TMPDIR: childTemporary, DIALECTE_SCRATCH: childTemporary },
 						stdio: 'ignore',
 					},
 				)

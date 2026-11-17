@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { closeSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	HANDOVER_PROBE_ANSWER,
 	HANDOVER_PROBE_COMMAND,
@@ -15,7 +15,7 @@ import type { HandoverProbe } from './handover.types.ts'
 export function probeRepositoryCli(params: Parameters<HandoverProbe>[0]): boolean {
 	const [command, ...args] = HANDOVER_PROBE_COMMAND
 	// the answer goes to a file, not a pipe: a process the probe left behind cannot hold the wait open
-	const folder = mkdtempSync(join(tmpdir(), HANDOVER_PROBE_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: HANDOVER_PROBE_FOLDER_PREFIX, cwd: params.root })
 	const answerPath = join(folder, 'answer.txt')
 	const answer = openSync(answerPath, 'w')
 	try {

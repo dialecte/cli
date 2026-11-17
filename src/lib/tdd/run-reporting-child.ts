@@ -5,8 +5,7 @@
  * `timeoutMs`, its process group is killed. A run that wrote no report answers a failure naming its runner, with
  * the last lines it printed.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,10 +13,12 @@ import { childLinesOf } from '../print/relayed.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { runChild } from '../progress/run-child.ts'
 import { stallReason } from '../progress/stall-reason.ts'
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	CASE_NAME_SEPARATOR,
 	REPORT_ENVIRONMENT_VARIABLE,
 	REPORT_LINE_SEPARATOR,
+	REPORTING_RUN_FOLDER_PREFIX,
 	RUN_OUTPUT_TAIL_LINES,
 } from './tdd.constants.ts'
 
@@ -28,7 +29,7 @@ export async function runReportingChild(
 	params: ReportingRun,
 ): Promise<ReportedModule[] | TestRunFailure> {
 	const { runner, run } = params
-	const folder = mkdtempSync(join(tmpdir(), 'dialecte-tdd-'))
+	const folder = makeScratchFolder({ purpose: REPORTING_RUN_FOLDER_PREFIX, cwd: run.root })
 	const reportPath = join(folder, 'report.json')
 	// each input as a JSON file beside the report, its path in its variable
 	const inputs = Object.fromEntries(

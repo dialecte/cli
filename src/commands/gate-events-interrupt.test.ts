@@ -81,7 +81,10 @@ async function interruptedGate(params: {
 	})
 	const run = spawn(process.execPath, [CLI_SOURCE, 'gate', '--full'], {
 		cwd: lot.worktree,
-		env: params.tmp === undefined ? process.env : { ...process.env, TMPDIR: params.tmp },
+		env:
+			params.tmp === undefined
+				? process.env
+				: { ...process.env, TMPDIR: params.tmp, DIALECTE_SCRATCH: params.tmp },
 		stdio: 'ignore',
 	})
 	let childPid: number | undefined

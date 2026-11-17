@@ -122,7 +122,13 @@ export type NodeModulesCheck = {
 
 /** One thing `worktree prune` removes, or keeps with why. */
 export type PruneItem = {
-	kind: 'worktree' | 'branch' | 'hand-over' | 'rehearsal clone' | 'pool left-over'
+	kind:
+		| 'worktree'
+		| 'branch'
+		| 'hand-over'
+		| 'rehearsal clone'
+		| 'scratch folder'
+		| 'pool left-over'
 	/** The worktree or hand-over path, the branch name. */
 	name: string
 	/** Absent: removed by `command`. */

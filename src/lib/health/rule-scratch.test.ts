@@ -89,3 +89,21 @@ describe('findLeakedScratch', () => {
 		)
 	})
 })
+
+describe('findLeakedScratch: a folder whose scratch.json names a live process', () => {
+	it('a 7 h old folder whose process still runs → nothing (a long rehearsal is no leak)', () => {
+		expect(
+			findLeakedScratch({
+				folders: [
+					{
+						path: '/scratch/dialecte-rehearse-x',
+						modifiedAt: new Date(WORKTREES_NOW.getTime() - 7 * HOUR_MS).toISOString(),
+						pid: 4242,
+					},
+				],
+				now: WORKTREES_NOW,
+				isAlive: (pid) => pid === 4242,
+			}),
+		).toEqual([])
+	})
+})

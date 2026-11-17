@@ -405,11 +405,13 @@ Flags: `--release`, `--target`, `--out`, `--rehash`, `--json`, `--print`, `--reh
   The rehearsal clone (`▶ rehearsal clone`) warns naming the untracked files outside
   `.gitignore` and `.git/info/exclude` a hook could read (they are not in the clone), and runs the lots in a scratch clone that looks like your tree - the repository at
   HEAD, your working tree on top, the hooks folder, its `node_modules` got as `worktree add` gets it - so the hooks
-  run as they will for real. The clone sits in a rehearsal folder under a short root, `/tmp` on macOS
-  and Linux (the system's temporary folder on Windows):
-  `/tmp/dialecte-rehearse-<random>/<repository folder name>`, so a tool's socket under the hook's
-  temporary folder stays within the system's path limit; the hook runs with `TMPDIR` set to a folder
-  inside the rehearsal folder. Beside the clone, a link per relative `file:` / `link:` dependency of the
+  run as they will for real. The clone sits in a rehearsal folder under the cli's scratch root
+  (`DIALECTE_SCRATCH`, else the workspace's `.worktrees/_scratch`, else `dialecte-scratch` in the system's
+  temporary folder): `<scratch root>/dialecte-rehearse-<random>/<repository folder name>`, on the volume of the
+  worktrees, so its trash and its `node_modules` move by rename. The hook runs with `TMPDIR` set to a short folder of
+  its own, `/tmp/dlt-hook-<random>` on macOS and Linux (the rehearsal folder's `.tmp` on Windows), so a tool's socket
+  under it stays within the system's path limit; it holds sockets and small files only and goes when the rehearsal
+  ends. Beside the clone, a link per relative `file:` / `link:` dependency of the
   repository's package.json that leaves the repository, to the folder the same path reaches from the
   repository (`file:../core`: `<rehearsal folder>/core` -> the repository's `../core`), so the clone
   resolves it as the checkout does; one line names the links, and a path that leaves the rehearsal

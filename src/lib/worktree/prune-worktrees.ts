@@ -18,13 +18,20 @@ import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
-import { REHEARSAL_FOLDER_PREFIX, REHEARSAL_MARKER_FILE } from '../handover/handover.constants.ts'
+import {
+	HOOK_TEMPORARY_FOLDER_PREFIX,
+	REHEARSAL_FOLDER_PREFIX,
+	REHEARSAL_MARKER_FILE,
+} from '../handover/handover.constants.ts'
 import { handoverState } from '../handover/list-handovers.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
 import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
 import { isProcessAlive } from '../process-alive.ts'
+import { formatDuration } from '../progress/format-duration.ts'
+import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
+import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { lotsKeepingWorktrees, readLotKeeps } from '../store/lot-keep.ts'
 import { gitFolderAbove, listLotIdentities, locateStore } from '../store/store-folder.ts'
@@ -63,6 +70,8 @@ import {
 	RECLAIM_TRASH_REASONS,
 	RECLAIM_WORKTREE_GONE,
 	REHEARSAL_TRASH_FOLDER,
+	SCRATCH_KEEP_REASONS,
+	SCRATCH_PRUNE_AGE_MS,
 	TRASH_FOLDER,
 	TRASH_MOVE_NOTE,
 	WORKTREE_LOCKED_FILE,
@@ -97,6 +106,8 @@ export function planPrune(params: {
 	scratchRoot: string
 	/** Where earlier cli versions made rehearsal clones, looked in too when it is not `scratchRoot`. */
 	formerScratchRoot?: string
+	/** The cli's scratch root, whose leaked folders go to the trash (`scratchRoot` of the scratch module); default: none read. */
+	scratchFolderRoot?: string
 	/** The clock a pool left-over's age is read against; default: now. */
 	now?: Date
 	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. */
@@ -118,24 +129,60 @@ export function planPrune(params: {
 	const repositories = listMainCheckouts(params.workspace).map((repository) =>
 		planRepository({ repository, handovers, links, worktreesFolder }),
 	)
-	const scratch = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
+	const now = params.now ?? new Date()
+	const rehearsals = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
 		if (!existsSync(scratchRoot)) return []
 		return readdirSync(scratchRoot)
 			.filter((name) => name.startsWith(REHEARSAL_FOLDER_PREFIX))
 			.sort()
 			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
 	})
+	// a rehearsal hook's temporary folder left in a rehearsal root (a killed rehearsal), judged by its scratch.json
+	const hookFolders = scratchRoots
+		.filter((scratchRoot) => scratchRoot !== params.scratchFolderRoot)
+		.flatMap((scratchRoot) =>
+			planScratchFolders({
+				root: scratchRoot,
+				trash: join(scratchRoot, REHEARSAL_TRASH_FOLDER),
+				skipRehearsals: true,
+				only: HOOK_TEMPORARY_FOLDER_PREFIX,
+				links,
+				now,
+			}),
+		)
+	const scratchFolderRoot = params.scratchFolderRoot
+	const scratchFolders =
+		scratchFolderRoot === undefined
+			? []
+			: planScratchFolders({
+					root: scratchFolderRoot,
+					trash: scratchTrashOf({ root: scratchFolderRoot, worktreesFolder }),
+					// a rehearsal folder in a rehearsal root is judged as a rehearsal, never twice
+					skipRehearsals: scratchRoots.includes(scratchFolderRoot),
+					links,
+					now,
+				})
+	const scratch = [...rehearsals, ...hookFolders, ...scratchFolders]
 	return {
 		repositories,
 		scratch,
 		pool: countPoolEntries(worktreesFolder),
 		poolLeftOver: planPoolLeftOvers({
 			worktreesFolder,
-			now: params.now ?? new Date(),
+			now,
 			listProcesses: params.listProcesses ?? listProcessFolders,
 		}),
 		trash: countTrashed(worktreesFolder),
-		scratchTrash: scratchRoots.flatMap(function scratchTrashOf(scratchRoot) {
+		scratchTrash: [
+			...new Set([
+				...scratchRoots,
+				...(scratchFolderRoot === undefined ||
+				scratchTrashOf({ root: scratchFolderRoot, worktreesFolder }) ===
+					join(worktreesFolder, TRASH_FOLDER)
+					? []
+					: [scratchFolderRoot]),
+			]),
+		].flatMap(function scratchTrashCount(scratchRoot) {
 			const folder = join(scratchRoot, REHEARSAL_TRASH_FOLDER)
 			return isDirectory(folder) ? [{ folder, folders: readdirSync(folder).length }] : []
 		}),
@@ -693,6 +740,75 @@ function planRehearsalClone(params: {
 			trash: join(params.scratchRoot, REHEARSAL_TRASH_FOLDER),
 		}),
 	}
+}
+
+/**
+ * The trash a folder of the scratch root `root` goes to: the workspace's `.worktrees/_trash` when the root is the
+ * workspace's `.worktrees/_scratch` (the same volume), else the root's own `dialecte-trash` (a move never crosses file
+ * systems).
+ */
+export function scratchTrashOf(params: { root: string; worktreesFolder: string }): string {
+	return params.root === join(params.worktreesFolder, WORKSPACE_SCRATCH_FOLDER)
+		? join(params.worktreesFolder, TRASH_FOLDER)
+		: join(params.root, REHEARSAL_TRASH_FOLDER)
+}
+
+/**
+ * The folders of the scratch root, each judged by its `scratch.json`: one whose process is gone and that is older
+ * than a day goes to `trash`; one whose process runs, a younger one, one with no marker or that a link reaches is kept
+ * with why. The root's own trash and, when `skipRehearsals`, the rehearsal folders (judged as rehearsals) are left
+ * out.
+ *
+ * @intent never trash a scratch folder a live process may still use
+ */
+function planScratchFolders(params: {
+	root: string
+	trash: string
+	skipRehearsals: boolean
+	/** Only the folders named with this prefix; default every folder. */
+	only?: string
+	links: readonly FolderLink[]
+	now: Date
+}): PruneItem[] {
+	const { root } = params
+	if (!isDirectory(root)) return []
+	return readdirSync(root, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+		.map((entry) => entry.name)
+		.filter((name) => join(root, name) !== params.trash && name !== REHEARSAL_TRASH_FOLDER)
+		.filter((name) => !(params.skipRehearsals && name.startsWith(REHEARSAL_FOLDER_PREFIX)))
+		.filter((name) => params.only === undefined || name.startsWith(params.only))
+		.sort()
+		.map(function planScratchFolder(name): PruneItem {
+			const folder = join(root, name)
+			const kept = whyKeepScratchFolder({ folder, links: params.links, now: params.now })
+			return kept === undefined
+				? {
+						kind: 'scratch folder',
+						name: folder,
+						command: trashMoveCommand({ folder, trash: params.trash }),
+					}
+				: { kind: 'scratch folder', name: folder, kept }
+		})
+}
+
+/** Why a folder of the scratch root stays; undefined when it goes. */
+function whyKeepScratchFolder(params: {
+	folder: string
+	links: readonly FolderLink[]
+	now: Date
+}): string | undefined {
+	const { folder } = params
+	if (isLink(folder)) return PRUNE_LINK_REASON
+	const marker = readScratchMarker(folder)
+	if (marker === undefined) return SCRATCH_KEEP_REASONS.noMarker
+	if (isProcessAlive(marker.pid))
+		return SCRATCH_KEEP_REASONS.live.replace('{pid}', String(marker.pid))
+	const age = params.now.getTime() - Date.parse(marker.startedAt)
+	if (!(age >= SCRATCH_PRUNE_AGE_MS))
+		return SCRATCH_KEEP_REASONS.young.replace('{age}', () => formatDuration(Math.max(age, 0)))
+	const reachedBy = linkReaching({ folder, links: params.links })
+	return reachedBy ? `the link ${reachedBy} points to it` : undefined
 }
 
 /** The marker of the rehearsal in `entry`: in its own git folder, else in that of a clone inside it. */

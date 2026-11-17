@@ -123,7 +123,12 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   the worktrees and local branches whose commits are all in the base branch, the hand-over folders whose
   lots are all committed (never `_commit-plan` itself, nor a folder holding other folders) and the
   rehearsals whose process is gone - the rehearsal folders under `/tmp` (each goes whole) and the clones
-  earlier cli versions made in the system's temporary folder, each judged by its marker - with the
+  earlier cli versions made in the system's temporary folder, each judged by its marker - and the scratch
+  folders of the cli's scratch root (`DIALECTE_SCRATCH`, else the workspace's `.worktrees/_scratch`, else
+  `dialecte-scratch` in the system's temporary folder), each judged by its `scratch.json`: one whose process is gone
+  and that was made over a day ago goes to the workspace's trash (`.worktrees/_trash`; a root elsewhere, its own
+  `dialecte-trash`), one whose process runs, a younger one or one without `scratch.json` is kept with why; a rehearsal
+  hook's temporary folder (`dlt-hook-<random>`) left in the short root is judged the same way - with the
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
   commands (or the `--yes` command) to a person. Kept, each with why: first, a worktree a lot of the

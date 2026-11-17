@@ -103,4 +103,8 @@ export type HealthWorktree = {
 }
 
 /** A scratch folder of the cli in the temporary folder, with its modification time (ISO). */
-export type ScratchFolder = { path: string; modifiedAt: string }
+/**
+ * A scratch folder of the cli: its path, when it was made (its scratch.json's start, else its modification time) and
+ * the process its scratch.json names, when it has one.
+ */
+export type ScratchFolder = { path: string; modifiedAt: string; pid?: number }

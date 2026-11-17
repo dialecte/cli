@@ -30,7 +30,6 @@
  * The agent never commits; the run never pushes.
  */
 import { existsSync, realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
@@ -100,7 +99,7 @@ import {
 import { planHandover } from '../lib/handover/plan-handover.ts'
 import { readHandoverFolder } from '../lib/handover/read-handover-folder.ts'
 import { readLotsFile } from '../lib/handover/read-lots-file.ts'
-import { rehearsalScratchRoot, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
+import { machineScratchRoots, rehearseHandover } from '../lib/handover/rehearse-handover.ts'
 import { markHandoverTarget, markReleaseHandover } from '../lib/handover/release-handover.ts'
 import { probeRepositoryCli } from '../lib/handover/repository-cli-probe.ts'
 import { runHandoverFolder } from '../lib/handover/run-handover-folder.ts'
@@ -175,10 +174,7 @@ export async function run(argv: string[]): Promise<void> {
 			colour,
 			columns,
 			probe: probeRepositoryCli,
-			scratchRoot: rehearsalScratchRoot({
-				platform: process.platform,
-				systemTemporaryFolder: tmpdir(),
-			}),
+			scratchRoot: machineScratchRoots().scratchRoot,
 		})
 		if (exitCode !== 0) process.exit(exitCode)
 		return

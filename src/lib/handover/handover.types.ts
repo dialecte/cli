@@ -471,7 +471,11 @@ export type InterleavingSeam = () => void
 export type RehearsalPool = { main: string; worktreesFolder: string }
 
 /** Where rehearsal clones are made now, and where earlier cli versions made them (the system's temporary folder). */
-export type ScratchRoots = { scratchRoot: string; formerScratchRoot: string }
+export type ScratchRoots = {
+	scratchRoot: string
+	formerScratchRoot: string
+	scratchFolderRoot: string
+}
 
 /**
  * What `lot close` closes for one argument: the hand-over's registry entry, and the registered worktree at the

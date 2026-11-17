@@ -6,10 +6,10 @@
  * has the merged tip as its second parent, so the next trial merge finds the merge base the run will.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
 import {
 	TRIAL_BASE_IDENTITY,
 	TRIAL_BASE_MESSAGE,
@@ -88,7 +88,7 @@ export function addMerge(params: {
 /** The tree of `tree` changed by one `git update-index` call, in an index of its own. */
 function buildTree(params: { root: string; tree: string; args: string[]; input: string }): string {
 	const { root } = params
-	const folder = mkdtempSync(join(tmpdir(), TRIAL_INDEX_FOLDER_PREFIX))
+	const folder = makeScratchFolder({ purpose: TRIAL_INDEX_FOLDER_PREFIX, cwd: root })
 	try {
 		const indexFile = join(folder, 'index')
 		runGit({ root, indexFile, args: ['read-tree', params.tree] })

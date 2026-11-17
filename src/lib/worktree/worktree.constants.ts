@@ -304,3 +304,13 @@ export const RECLAIM_OLDER_THAN_PATTERN = /^[1-9]\d*$/
 
 /** What a reclaim says of a worktree whose node_modules went between its plan and its move (another reclaim). */
 export const RECLAIM_GONE = 'node_modules gone already (moved by another reclaim): nothing done'
+
+/** A scratch folder whose process is gone goes to the trash once it is older than this (a day). */
+export const SCRATCH_PRUNE_AGE_MS = 86_400_000
+
+/** Why `worktree prune` keeps a folder of the scratch root; `{pid}` and `{age}` are filled. */
+export const SCRATCH_KEEP_REASONS = {
+	noMarker: 'no scratch.json: not made by this cli, or still starting',
+	live: 'its process still runs: pid {pid}',
+	young: 'made {age} ago: kept for a day',
+} as const
