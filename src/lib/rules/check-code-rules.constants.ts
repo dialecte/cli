@@ -115,7 +115,7 @@ export const ROOT_OPTION_PATTERN =
  * cli it names no helper: the package's own scratch helper, if it has one, is not the cli's.
  */
 export const BARE_TMPDIR_MESSAGE =
-	"`tmpdir()` in production code: a folder made in the system's temporary folder itself is left behind - make every temporary folder under one scratch root, the one the cleanup reads"
+	"`tmpdir()` in production code: a folder made in the system's temporary folder itself is left behind - make every temporary folder under one scratch root the package cleans"
 
 /** The `bare-tmpdir` finding's message in the cli itself: its own scratch-folder helper named. */
 export const BARE_TMPDIR_CLI_MESSAGE =

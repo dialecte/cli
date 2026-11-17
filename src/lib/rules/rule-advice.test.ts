@@ -26,11 +26,17 @@ const RAW_GIT_FILE = 'src/store/hub.test.ts'
 const RAW_GIT_TEXT =
 	"import { execFileSync } from 'node:child_process'\n\nexecFileSync('git', ['init', '-q', root])\n"
 
-/** The package.json of each package kind: the cli, core, and a dialecte (a contributor's, so every file is judged). */
+/**
+ * The files that make each package kind: the cli and core by their name, a dialecte by the generated definition its
+ * `src` holds (a contributor's package each, so every file is judged).
+ */
 const PACKAGES = {
-	cli: { name: '@dialecte/cli', dialecte: { profile: 'contributor' } },
-	core: { name: '@dialecte/core', dialecte: { profile: 'contributor' } },
-	dialecte: { name: '@dialecte/demo', dialecte: { profile: 'contributor' } },
+	cli: { 'package.json': packageJsonOf('@dialecte/cli') },
+	core: { 'package.json': packageJsonOf('@dialecte/core') },
+	dialecte: {
+		'package.json': packageJsonOf('@dialecte/demo'),
+		'src/definition.generated.ts': 'export const DEFINITION = {}\n',
+	},
 }
 
 type TestCase = {
@@ -44,11 +50,16 @@ type TestCase = {
 
 afterEach(() => vi.unstubAllEnvs())
 
+/** A contributor package's package.json named `name`. */
+function packageJsonOf(name: string): string {
+	return `${JSON.stringify({ name, dialecte: { profile: 'contributor' } })}\n`
+}
+
 /** The messages of the case's rule, the file checked in a package of the case's kind. */
 function messagesOf(testCase: TestCase): { message: string; namesCliHelper: boolean }[] {
 	isolateGitConfig()
 	const root = createScratchRepository({
-		'package.json': `${JSON.stringify(PACKAGES[testCase.package])}\n`,
+		...PACKAGES[testCase.package],
 		[testCase.file]: testCase.text,
 	})
 	return checkRules({ root, givenFiles: [testCase.file] })

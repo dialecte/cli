@@ -71,7 +71,7 @@ Flags: `--json`
   itself (`raw-git-repository`: a `git clone` / `git init` argument list in a git call, a `'git'` program or a shell
   string starting with `git`, `init --bare` aside: such a repository has no identity, green where git falls back to
   user@host and red on a CI machine; make it through a test helper that gives it an identity); so is a production
-  file that calls `tmpdir()` (`bare-tmpdir`: every temporary folder under one scratch root, the one the cleanup reads;
+  file that calls `tmpdir()` (`bare-tmpdir`: every temporary folder under one scratch root the package cleans;
   allowable). Both messages name the cli's own helpers only when the checked package is the cli
   (`cloneRepository` / `initializeRepository` of `test/scratch-repository.ts`; `makeScratchFolder`, whose
   `src/lib/scratch/` is exempt): in core or a dialecte those helpers are not there;
