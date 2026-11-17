@@ -1,0 +1,226 @@
+/**
+ * `readLandingState` on scratch repositories whose origin's main moves by real git merges, the host faked: one row per
+ * evidence (empty, ancestor, host, tree), the pull requests that are not the lot's, closed ones, and the squashes git
+ * alone cannot prove (later local work, main editing the same lines). Each row builds its own repository.
+ */
+import { LOT_FILE, ORIGIN_MAIN } from '../../../test/landing-repository.constants.ts'
+import {
+	commitIn,
+	editOnOrigin,
+	landingHostOf,
+	landingRepositoryOf,
+	mergeOnOrigin,
+	pullRequestOf,
+} from '../../../test/landing-repository.ts'
+import { git } from '../../../test/scratch-repository.ts'
+import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { readLandingState } from './landing-state.ts'
+
+import { describe, expect, it } from 'vitest'
+
+import type { LandingRepository } from '../../../test/landing-repository.types.ts'
+import type { HostAdapter } from '../host/host.types.ts'
+import type { LandingQuery, LandingState } from './landing-state.types.ts'
+
+/** What a row arranges beyond the repository: the host, the pull request the landing recorded, the branch's tip. */
+type Arranged = { host?: HostAdapter; pullNumber?: number; tip?: string }
+
+type Row = {
+	title: string
+	arrange: (repository: LandingRepository) => Arranged
+	expected: (params: { repository: LandingRepository; tip: string }) => LandingState
+}
+
+/** The lot's branch tip in the repository. */
+function tipOf(repository: LandingRepository): string {
+	return git({
+		root: repository.root,
+		args: ['rev-parse', `refs/heads/${repository.branch}`],
+	}).trim()
+}
+
+const ROWS: Row[] = [
+	{
+		title: 'a branch with no commit beyond its cut -> empty',
+		arrange: (repository) => {
+			git({ root: repository.worktree, args: ['reset', '-q', '--hard', repository.cut] })
+			return {}
+		},
+		expected: () => ({ kind: 'empty' }),
+	},
+	{
+		title: "a branch fast-forwarded into origin's main -> merged by ancestor",
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'fast-forward' })
+			return {}
+		},
+		expected: ({ tip }) => ({ kind: 'merged', how: 'ancestor', tip }),
+	},
+	{
+		title: "a branch merged into origin's main by a merge commit -> merged by ancestor",
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'merge-commit' })
+			return {}
+		},
+		expected: ({ tip }) => ({ kind: 'merged', how: 'ancestor', tip }),
+	},
+	{
+		title: 'a branch squash-merged on origin, no host -> merged by tree',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			return {}
+		},
+		expected: ({ tip }) => ({ kind: 'merged', how: 'tree', tip }),
+	},
+	{
+		title: 'a squash merge, then a later local commit -> unlanded',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			const tip = commitIn({
+				root: repository.worktree,
+				files: { 'src/later.ts': 'export const later = 1\n' },
+				message: 'feat(x): later work',
+			})
+			return { tip }
+		},
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title: 'a squash merge, then main edits the same lines, no host -> unlanded',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			editOnOrigin({ repository, files: { [LOT_FILE]: 'export const x = 2\n' } })
+			return {}
+		},
+		expected: () => ({ kind: 'unlanded' }),
+	},
+]
+
+const HOST_ROWS: Row[] = [
+	{
+		title:
+			'a squash merge the host reports merged, by the recorded number -> merged by host, its pull request kept',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			return {
+				pullNumber: 7,
+				host: landingHostOf({
+					byNumber: { 7: pullRequestOf({ number: 7, state: 'merged', head: repository.tip }) },
+				}).host,
+			}
+		},
+		expected: ({ tip }) => ({
+			kind: 'merged',
+			how: 'host',
+			tip,
+			pull: pullRequestOf({ number: 7, state: 'merged', head: tip }),
+		}),
+	},
+	{
+		title: 'a pull request found by branch, opened outside lot land, merged -> merged by host',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			editOnOrigin({ repository, files: { [LOT_FILE]: 'export const x = 2\n' } })
+			return {
+				host: landingHostOf({
+					byBranch: {
+						[repository.branch]: pullRequestOf({
+							number: 9,
+							state: 'merged',
+							head: repository.tip,
+						}),
+					},
+				}).host,
+			}
+		},
+		expected: ({ tip }) => ({
+			kind: 'merged',
+			how: 'host',
+			tip,
+			pull: pullRequestOf({ number: 9, state: 'merged', head: tip }),
+		}),
+	},
+	{
+		title:
+			'a merged pull request of the same branch name whose head the branch never reached -> not the lot s: unlanded',
+		arrange: (repository) => ({
+			host: landingHostOf({
+				byBranch: {
+					[repository.branch]: pullRequestOf({ number: 3, state: 'merged', head: repository.cut }),
+				},
+			}).host,
+		}),
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title: 'work not in the base and an open draft pull request -> unlanded with the pull request',
+		arrange: (repository) => ({
+			pullNumber: 7,
+			host: landingHostOf({
+				byNumber: {
+					7: pullRequestOf({ number: 7, state: 'open', head: repository.tip, draft: true }),
+				},
+			}).host,
+		}),
+		expected: ({ tip }) => ({
+			kind: 'unlanded',
+			pull: pullRequestOf({ number: 7, state: 'open', head: tip, draft: true }),
+		}),
+	},
+	{
+		title: 'a pull request closed unmerged, its work not in the base -> closed',
+		arrange: (repository) => ({
+			pullNumber: 7,
+			host: landingHostOf({
+				byNumber: { 7: pullRequestOf({ number: 7, state: 'closed', head: repository.tip }) },
+			}).host,
+		}),
+		expected: ({ tip }) => ({
+			kind: 'closed',
+			pull: pullRequestOf({ number: 7, state: 'closed', head: tip }),
+		}),
+	},
+	{
+		title: 'a host refusal on a squash merge -> the git evidence decides: merged by tree',
+		arrange: (repository) => {
+			mergeOnOrigin({ repository, how: 'squash' })
+			return { pullNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }
+		},
+		expected: ({ tip }) => ({ kind: 'merged', how: 'tree', tip }),
+	},
+]
+
+/** The row's repository arranged, the query of its lot, and the state the row expects. */
+function arrangeRow(row: Row): { query: LandingQuery; expected: LandingState } {
+	const repository = landingRepositoryOf()
+	const arranged = row.arrange(repository)
+	return {
+		query: {
+			root: repository.root,
+			branch: repository.branch,
+			baseRef: ORIGIN_MAIN,
+			cut: repository.cut,
+			pullNumber: arranged.pullNumber,
+			host: arranged.host,
+		},
+		expected: row.expected({ repository, tip: arranged.tip ?? tipOf(repository) }),
+	}
+}
+
+describe('readLandingState: git evidence', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+	for (const row of ROWS)
+		it(row.title, () => {
+			const { query, expected } = arrangeRow(row)
+
+			expect(readLandingState(query)).toEqual(expected)
+		})
+})
+
+describe('readLandingState: host evidence', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+	for (const row of HOST_ROWS)
+		it(row.title, () => {
+			const { query, expected } = arrangeRow(row)
+
+			expect(readLandingState(query)).toEqual(expected)
+		})
+})
