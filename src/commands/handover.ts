@@ -27,7 +27,7 @@
  *
  * `dialecte handover --legend` - every term the card can print: what it means, whether to look.
  *
- * In a CI-first repository (`isCiFirstRepository`) `write` and `run` (rehearsed or not) refuse before anything is
+ * In a CI-first repository (`landingFlowOf`, refused through `flowRefusalOf`) `write` and `run` (rehearsed or not) refuse before anything is
  * written: its lots commit on their branches through the hook and land with `lot land <id> --draft`.
  *
  * The agent never commits; the run never pushes.
@@ -37,8 +37,6 @@ import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
-import { CI_FIRST_HANDOVER_REFUSAL } from '../lib/ci/ci-first.constants.ts'
-import { isCiFirstRepository } from '../lib/ci/ci-first.ts'
 import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
@@ -114,6 +112,7 @@ import { notALotWordRefusal, readNotALotOptions } from '../lib/handover/store-lo
 import { findTargetRef } from '../lib/handover/target-moved.ts'
 import { writeHandover } from '../lib/handover/write-handover.ts'
 import { startLongRun } from '../lib/keep-awake/long-run.ts'
+import { flowRefusalOf } from '../lib/landing/flow.ts'
 import { HANDOVER_LEGEND } from '../lib/legend/legend.constants.ts'
 import { renderLegend } from '../lib/legend/render-legend.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -265,8 +264,12 @@ export function runHandover(params: {
 	const lotsFile = readLotsFile(absoluteLotsPath)
 	if (typeof lotsFile === 'string') return usage(`handover: ${lotsFile}`)
 	// a CI-first repository lands its lots through their pull requests: no hand-over is written for it
-	if (isCiFirstRepository(lotsFile.repository))
-		return usage(ciFirstRefusal({ verb: 'write', root: lotsFile.repository }))
+	const writeRefusal = flowRefusalOf({
+		root: lotsFile.repository,
+		command: 'handover',
+		verb: 'write',
+	})
+	if (writeRefusal !== undefined) return usage(writeRefusal)
 	const outWord = getArg(argv, 'out')
 	// the default out, the lots file's folder, is taken by its real path as --out is
 	const chosen =
@@ -494,8 +497,13 @@ export async function runHandoverRun(params: {
 		return 2
 	}
 	// a CI-first repository lands its lots through their pull requests: no hand-over runs, rehearsed or for real
-	if (isCiFirstRepository(handover.lotsFile.repository)) {
-		write(textOf([ciFirstRefusal({ verb: 'run', root: handover.lotsFile.repository })]))
+	const runRefusal = flowRefusalOf({
+		root: handover.lotsFile.repository,
+		command: 'handover',
+		verb: 'run',
+	})
+	if (runRefusal !== undefined) {
+		write(textOf([runRefusal]))
 		return 2
 	}
 	// a long run: the machine stays awake while it lasts, and its folder's record says when it slept all the same
@@ -915,14 +923,6 @@ function renderColumns(rows: readonly string[][]): string[] {
 			.map((cell, column) => cell.padEnd(widths[column]))
 			.join('  ')
 			.trimEnd(),
-	)
-}
-
-/** The refusal of a hand-over verb in a CI-first repository: the flow it names instead. */
-function ciFirstRefusal(params: { verb: string; root: string }): string {
-	return CI_FIRST_HANDOVER_REFUSAL.replace('{verb}', () => params.verb).replace(
-		'{root}',
-		() => params.root,
 	)
 }
 
