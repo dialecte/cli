@@ -16,6 +16,7 @@ import { basename, join } from 'node:path'
 
 import {
 	handoverStoreOf,
+	recordHandoverClosed,
 	recordHandoverState,
 	registerHandover,
 } from '../src/lib/handover/handover-store.ts'
@@ -107,6 +108,45 @@ export function registerCommittedHandover(lot: LandingLot): string {
 	return name
 }
 
+/** The lot's landing record: pull request `number` pushed at the lot's first tip, as `lot land` writes it. */
+export function writeLandingRecord(params: { lot: LandingLot; number: number }): void {
+	const { lot } = params
+	writeFileSync(
+		join(lot.lotFolder, 'landing.json'),
+		`${JSON.stringify({
+			schema: 1,
+			number: params.number,
+			url: `https://host.test/pull/${params.number}`,
+			branch: lot.branch,
+			head: lot.tip,
+			at: LANDING_NOW.toISOString(),
+		})}\n`,
+	)
+}
+
+/**
+ * The lot's folder registered as its own hand-over entry, `state` (`committed` when left out), closed by an earlier
+ * close when `closed` (as an older cli closed a landed lot without writing its landed fact): the entry's name.
+ */
+export function registerLotEntry(params: {
+	lot: LandingLot
+	state?: 'committed' | 'pending'
+	closed?: boolean
+}): string {
+	const { lot } = params
+	const name = registerHandover({
+		root: lot.worktree,
+		folder: lot.lotFolder,
+		branch: lot.branch,
+		now: LANDING_NOW,
+	})
+	const store = handoverStoreOf(lot.workspace.repository)
+	if (params.state !== 'pending')
+		recordHandoverState({ store, folder: lot.lotFolder, state: 'committed' })
+	if (params.closed === true) recordHandoverClosed({ store, name, at: LANDING_NOW })
+	return name
+}
+
 /** The lot's own declaration in its worktree: `.dialecte/lot.json` and the `.dialecte/lot` link to its folder. */
 export function addOwnDeclaration(lot: LandingLot): void {
 	const folder = join(lot.worktree, '.dialecte')
@@ -161,15 +201,17 @@ export function closeArgumentsOf(params: {
  */
 export function closeOutcomesOf(
 	result: CommandResult,
-): { closed: boolean; kept?: string; landed?: string }[] {
+): { closed: boolean; already?: true; kept?: string; landed?: string }[] {
 	if (!result.output.trimStart().startsWith('[')) return [{ closed: false, kept: result.output }]
 	const outcomes = JSON.parse(result.output) as {
 		closed?: true
+		already?: true
 		kept?: string
 		landed?: string
 	}[]
 	return outcomes.map((outcome) => ({
 		closed: outcome.closed === true,
+		...(outcome.already === true && { already: true as const }),
 		...(outcome.kept !== undefined && { kept: outcome.kept }),
 		...(outcome.landed !== undefined && { landed: outcome.landed }),
 	}))

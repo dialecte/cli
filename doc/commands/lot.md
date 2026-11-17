@@ -59,8 +59,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           start and at lot scope --add (every other open lot's still is); a parent that is unknown,
           damaged, not working or ready, of another repository or without its branch is refused
           before anything is written, before any other fault of the brief; lot status shows a stack
-          line, on <parent> (#<pull request>, <state>), the state of the parent's pull request as
-          the host holds it (open, draft, queued, merged, closed, or the host cannot say: <why>),
+          line, on <parent> (#<pull request>, <state>), the parent read through the one lot reader:
+          merged once its landing is proven (its landed fact, git or the host), else its pull
+          request as the host holds it (open, draft, queued, closed, or the host cannot say: <why>),
           the hand-over card on <parent> (#<pull request>) from files only; on <parent> (no pull
           request yet) without one
   start - a scope meeting another open lot goes ahead when that lot's work reads (its forecast
@@ -179,12 +180,13 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          landing it is rebased onto the parent branch's newest tip (the local branch or origin's)
          when it does not hold it, from its fork point (git merge-base --fork-point: only its own
          commits move, whatever the parent's amend or rebase); once the parent merged (its landing
-         state: a merge, a squash read offline, or its pull request merged), it is rebased with git
-         rebase --onto origin/<base> <fork point>, only its own commits moved, and its pull request
-         retargeted to the base when the host did not; when the host already rewrote its branch on
-         origin (a native stack), it follows that rewrite (local commits beyond its last push
-         rebased onto it, that head the lease); a conflict names its files, the rebase undone,
-         nothing pushed, exit 2
+         state: a merge, a squash read offline, or its pull request merged; never the registry's
+         committed alone, which a hand-over run writes before anything reaches the base), the
+         parent's landed fact is recorded and the child is rebased with git rebase --onto
+         origin/<base> <fork point>, only its own commits moved, and its pull request retargeted to
+         the base when the host did not; when the host already rewrote its branch on origin (a
+         native stack), it follows that rewrite (local commits beyond its last push rebased onto it,
+         that head the lease); a conflict names its files, the rebase undone, nothing pushed, exit 2
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
@@ -419,8 +421,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a
           mutation run works there, lot close itself runs from inside it, or the processes are not
           known, or the final record cannot be kept or the lot's commit is not known; the branch
-          never touched; a hand-over already closed answers already closed, exit 0, nothing moved;
-          exit 1 when one is kept, 2 for a name or index that is neither a hand-over nor a lot
+          never touched; a hand-over already closed answers already closed, exit 0, nothing moved,
+          its lot's landed fact still recorded when the host proves the merge (its landed line
+          beside already closed); exit 1 when one is kept, 2 for a name or index that is neither a
+          hand-over nor a lot
 
 exit codes:
   1  risk --effort: the line could not be written
@@ -769,7 +773,10 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     node_modules pooled in _pool-cli-1`, or `trashed: <why it was not parked>`); a failure part-way keeps
     that hand-over with the error and what was already moved, the others go on. A hand-over it closes gets
     `closed` (the time) on its registry entry; closing it again prints `<name> already closed`, nothing
-    decided nor moved (an entry without it, a worktree removed by hand, is still kept: `nothing to close`).
+    decided nor moved (an entry without it, a worktree removed by hand, is still kept: `nothing to close`), but the
+    landing of its lot is still read: a lot closed without a landed fact (an older cli, or a squash main edited
+    again) gets it when the host proves the merge, its `landed on ...` line under `already closed`. A registry
+    `committed` alone never proves a merge: `handover run` writes it before anything reaches the base.
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
     `[{ handover, closed: true, already?: true, landed? } | { handover, kept, landed? }]`.

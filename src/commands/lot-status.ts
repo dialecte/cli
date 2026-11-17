@@ -1,8 +1,8 @@
 /**
  * `dialecte lot status <id> [--json]`: the lot's state derived from the records; writes nothing, starts no process
  * (nothing this module reaches imports a child process). Its caller hands it what is read beyond the files
- * (`StatusLanding`): the lot's landing as git alone reads it (a merged lot shows committed, nothing written) and the host
- * the stack line asks for the parent's pull request.
+ * (`StatusLanding`): the lot's landing as git alone reads it (a merged lot shows committed, nothing written) and the
+ * stack line, its parent read through the one lot reader with the host.
  */
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -49,7 +49,6 @@ import {
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
-import type { HostAdapter } from '../lib/host/host.types.ts'
 import type { StatusLanding } from '../lib/landing/lot-landing.types.ts'
 import type {
 	LinkCheck,
@@ -99,7 +98,7 @@ export function lotStatus(params: {
 		input: withMergedTip({ input: checked.input, lotFolder, landing: params.landing }),
 		lotFolder,
 		entries,
-		host: params.landing?.host,
+		landing: params.landing,
 	})
 	if (!json) return { exitCode: 0, output: textOf(lotStatusLines(status)) }
 	// this command's own JSON (33CO 4.6): the forecast read once, with the registry entries read above; the text shows
@@ -133,8 +132,8 @@ export function lotStatusOfInput(params: {
 	input: LotStateInput
 	lotFolder: string
 	entries: readonly StoreEntry[]
-	/** The host the stack line asks for the parent's pull request state; files only when left out. */
-	host?: HostAdapter
+	/** The landing reads beyond the files (the stack line through the one lot reader); files only when left out. */
+	landing?: StatusLanding
 }): LotStatusJson {
 	const { input, lotFolder } = params
 	const { identity } = input
@@ -171,7 +170,7 @@ export function lotStatusOfInput(params: {
 		also,
 		station: station?.next ?? null,
 		rounds: roundsOf({ input, lotFolder }),
-		...stackStatusOf({ lotFolder, host: params.host }),
+		...stackStatusOf({ lotFolder, landing: params.landing }),
 		...designStatusOf({ lotFolder }),
 	}
 }
@@ -185,11 +184,17 @@ function designStatusOf(params: { lotFolder: string }): Pick<LotStatusJson, 'des
 	return standing === undefined ? {} : { design: designStatusJson(standing) }
 }
 
-/** The stack field of a lot started on another (its parent's pull request asked of `host`); none when not stacked. */
-function stackStatusOf(params: { lotFolder: string; host: HostAdapter | undefined }): {
+/**
+ * The stack field of a lot started on another: its parent read through the one lot reader when the caller hands it,
+ * else from files only; none when not stacked.
+ */
+function stackStatusOf(params: { lotFolder: string; landing: StatusLanding | undefined }): {
 	stack?: string
 } {
-	const stack = stackTextOf(params)
+	const stack =
+		params.landing === undefined
+			? stackTextOf({ lotFolder: params.lotFolder })
+			: params.landing.stackLineOf({ lotFolder: params.lotFolder })
 	return stack === undefined ? {} : { stack }
 }
 

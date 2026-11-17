@@ -9,8 +9,10 @@ import { join } from 'node:path'
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { landingHostOf, pullRequestOf } from '../../test/landing-repository.ts'
 import { withLines } from '../../test/lot-start-workspace.ts'
+import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { buildStackCardLine } from '../lib/handover/handover-card.ts'
+import { writeLanded } from '../lib/landing/landed-record.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -25,9 +27,24 @@ afterEach(function restoreEnvironment() {
 const PARENT = '0005-repo-parent'
 const CHILD = '0006-repo-child'
 
-/** A parent lot (its pull request #5 recorded when `landed`) and a child lot whose stack.json names it. */
-function stackedLots(params: { landed: boolean }): { workspace: BriefWorkspace; child: string } {
+/**
+ * A parent lot on its own branch `feat/parent` (one commit main does not hold; its pull request #5 recorded when
+ * `landed`) and a child lot whose stack.json names it.
+ */
+function stackedLots(params: { landed: boolean }): {
+	workspace: BriefWorkspace
+	child: string
+	parent: string
+	parentTip: string
+} {
 	const workspace = createBriefWorkspace()
+	const root = workspace.repository
+	git({ root, args: ['checkout', '-q', '-b', 'feat/parent'] })
+	writeFiles({ root, files: { 'src/a/parent.ts': 'export const parent = 1\n' } })
+	git({ root, args: ['add', '-A'] })
+	git({ root, args: ['commit', '-qm', 'feat(parent): the parent'] })
+	const parentTip = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+	git({ root, args: ['checkout', '-q', 'main'] })
 	const parent = writeStoreLot({
 		workspace,
 		name: PARENT,
@@ -42,13 +59,13 @@ function stackedLots(params: { landed: boolean }): { workspace: BriefWorkspace; 
 				number: 5,
 				url: 'https://host.test/pull/5',
 				branch: 'feat/parent',
-				head: 'a1',
+				head: parentTip,
 				at: '',
 			}),
 		)
 	const child = writeStoreLot({ workspace, name: CHILD, scope: ['src/b/'], branch: 'feat/child' })
 	writeFileSync(join(child, 'stack.json'), JSON.stringify({ schema: 1, parent: PARENT }))
-	return { workspace, child }
+	return { workspace, child, parent, parentTip }
 }
 
 /** `lot status <lot>` with a host answering `answers`: its lines. */
@@ -105,6 +122,28 @@ describe('the stack line', { timeout: STORE_CASE_TIMEOUT }, () => {
 				withLines(runLot(statusArgumentsOf({ workspace, lot: CHILD, answers: row.answers }))).lines,
 			).toContain(row.line)
 		})
+
+	it('lot status of a stacked lot whose parent holds its landed fact, the host still saying open → the line names it merged (the one landing reader)', () => {
+		const { workspace, parent, parentTip } = stackedLots({ landed: true })
+		writeLanded({
+			lotFolder: parent,
+			fact: {
+				schema: 1,
+				how: 'tree',
+				tip: parentTip,
+				base: 'main',
+				at: '2026-11-17T23:00:00.000Z',
+			},
+		})
+
+		expect(
+			withLines(
+				runLot(
+					statusArgumentsOf({ workspace, lot: CHILD, answers: parentPull({ state: 'open' }) }),
+				),
+			).lines,
+		).toContain(`stack: on ${PARENT} (#5, merged)`)
+	})
 
 	it('lot status of a stacked lot whose parent has no pull request yet → the line says so', () => {
 		const { workspace } = stackedLots({ landed: false })

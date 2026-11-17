@@ -6,7 +6,7 @@ export const CLOSE_UNLANDED_WORK = '{work} (look: git -C {worktree} reflog HEAD)
 /** A merged lot with no worktree to close: `{lot}` its name. */
 export const NO_LOT_WORKTREE = 'the lot {lot} names no worktree on disk: nothing to close'
 
-/** A lot argument whose lot is closed already: `{state}` (committed or canceled); the close goes on by its entry. */
+/** A lot argument whose lot is canceled: `{state}`; the close goes on by its entry. */
 export const LOT_NOT_OPEN = 'its lot is {state}: nothing to settle'
 
 /** A lot folder with no lot in it. */

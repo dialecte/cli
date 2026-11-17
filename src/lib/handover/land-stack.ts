@@ -16,7 +16,7 @@ import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
-import { readLotLanding } from '../landing/lot-landing.ts'
+import { readLotLanding, recordLanded } from '../landing/lot-landing.ts'
 import { readStack } from '../store/stack.ts'
 import { UNTRACKED_STATUS_PREFIX } from './land-lot.constants.ts'
 import { readLanding } from './land-record.ts'
@@ -25,6 +25,7 @@ import { STACK_CONFLICT_EXIT, STACK_LANDING_LINES } from './land-stack.constants
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
 import type { LandingState } from '../landing/landing-state.types.ts'
 import type { LotBase } from '../landing/lot-base.types.ts'
+import type { LotLanding } from '../landing/lot-landing.types.ts'
 import type { StackRecord } from '../store/stack.types.ts'
 import type { LandingRecord } from './land-lot.types.ts'
 import type { StackLanding, StackRefusal } from './land-stack.types.ts'
@@ -46,6 +47,8 @@ export function prepareStackLanding(params: {
 	host: HostAdapter
 	draft: boolean
 	landing: LandingRecord | undefined
+	/** When the landing runs: the time of the parent's landed fact it records. */
+	now: Date
 }): StackLanding | StackRefusal | undefined {
 	const record = readStack({ lotFolder: params.lotFolder })
 	if (record === undefined) return undefined
@@ -174,6 +177,7 @@ function readParent(params: {
 	lotFolder: string
 	host: HostAdapter
 	record: StackRecord
+	now: Date
 }): { branch: string; landing: LandingState; pullRequest?: PullRequest } | StackRefusal {
 	const { record, lot } = params
 	const parentFolder = join(dirname(params.lotFolder), record.parent)
@@ -187,6 +191,9 @@ function readParent(params: {
 			}),
 		}
 	const { state } = read
+	// a landing acts: a parent proven merged (git or the host) gets its landed fact, as lot close records it
+	const recorded = recordedParentOf({ lot, parent: record.parent, landing: read, now: params.now })
+	if (recorded !== undefined) return recorded
 	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
 		return { exitCode: 1, refusal: `lot land: ${state.hostRefusal}` }
 	const branch = read.identity.branch
@@ -200,6 +207,31 @@ function readParent(params: {
 	if (asked !== undefined && 'refusal' in asked)
 		return { exitCode: 1, refusal: `lot land: ${asked.refusal}` }
 	return { branch, landing: state, ...(asked !== undefined && { pullRequest: asked }) }
+}
+
+/** The parent's landed fact written when its landing is proven merged; the refusal when it cannot be written. */
+function recordedParentOf(params: {
+	lot: string
+	parent: string
+	landing: LotLanding
+	now: Date
+}): StackRefusal | undefined {
+	try {
+		recordLanded({ landing: params.landing, now: params.now })
+		return undefined
+	} catch (error) {
+		return {
+			exitCode: 1,
+			refusal: fillMessage({
+				template: STACK_LANDING_LINES.parentNotRecorded,
+				values: {
+					lot: params.lot,
+					parent: params.parent,
+					reason: (error as Error).message.trim(),
+				},
+			}),
+		}
+	}
 }
 
 /**

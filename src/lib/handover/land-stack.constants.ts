@@ -3,6 +3,8 @@ export const STACK_LANDING_LINES = {
 	damaged: 'lot land: {lot} is damaged: its {damage}, nothing pushed',
 	noParent:
 		'lot land: {lot} stacks on {parent}, whose records do not read: dialecte lot status {parent} says how, nothing pushed',
+	parentNotRecorded:
+		'lot land: {lot} stacks on {parent}, merged, whose landed fact cannot be written ({reason}): nothing pushed',
 	noParentPull:
 		'lot land: {lot} stacks on {parent}, which has no pull request yet: lot land {parent} --draft first, nothing pushed',
 	waits:

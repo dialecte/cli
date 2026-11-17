@@ -28,3 +28,10 @@ export const NOT_PROVABLE_OFFLINE =
 
 /** Prune's reason for a review throwaway of a lot that has not landed: `{lot}` its name. */
 export const THROWAWAY_OF_UNLANDED = 'a review throwaway of lot {lot}, not landed'
+
+/** The stack line's state when the parent's landing cannot be read: `{reason}`. */
+export const STACK_UNREADABLE = 'its landing cannot be read: {reason}'
+
+/** tdd's failure when a stacked lot's parent cannot be read: `{parent}` its name, `{reason}` why. */
+export const STACK_PARENT_UNREADABLE =
+	'the stack parent {parent} cannot be read: {reason}; the lot is never measured as one not stacked'

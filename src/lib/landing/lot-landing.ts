@@ -15,13 +15,12 @@ import { readLanding } from '../handover/land-record.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readIdentity } from '../store/identity.ts'
-import {
-	commonFolderOfLotFolder,
-	readCheckedLotState,
-	registryOfLotFolder,
-} from '../store/lot-records.ts'
+import { commonFolderOfLotFolder, readCheckedLotState } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
+import { STACK_PULL_STATES, STACK_TEXT } from '../store/stack.constants.ts'
+import { pullStateOf, readStack, stackLineText, stackTextOf } from '../store/stack.ts'
 import { listLotFolderNames, locateStore } from '../store/store-folder.ts'
+import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
 import { LANDED_SCHEMA } from './landed-record.constants.ts'
 import { readLanded, writeLanded } from './landed-record.ts'
 import { readLandingState } from './landing-state.ts'
@@ -31,10 +30,12 @@ import {
 	LOT_LANDING_REFUSALS,
 	NOT_LANDED_TEXTS,
 	NOT_PROVABLE_OFFLINE,
+	STACK_UNREADABLE,
 } from './lot-landing.constants.ts'
 import { unlandedWork, unlandedWorkText } from './unlanded-work.ts'
 
 import type { HostAdapter } from '../host/host.types.ts'
+import type { LotStateInput } from '../store/store.types.ts'
 import type { LandedFact } from './landed-record.types.ts'
 import type { LotLanding, PruneLotLanding, StatusLanding } from './lot-landing.types.ts'
 
@@ -78,25 +79,9 @@ export function readLotLanding(params: {
 			recorded,
 			state: { kind: 'merged', how: recorded.how, tip: recorded.tip },
 		}
-	const landing = readLanding({ lotFolder })
-	const pullNumber = landing?.number
-	// a lot its records read committed (a hand-over committed, a landing confirmed before landed.json existed) landed
-	const committedTip = isCommittedLot({ lotFolder })
-		? (landing?.head ?? readCommitOrNone({ root, ref: `refs/heads/${identity.branch}` }))
-		: undefined
-	if (committedTip !== undefined)
-		return {
-			lot,
-			lotFolder,
-			identity,
-			root,
-			base,
-			state: {
-				kind: 'merged',
-				how: landing === undefined ? 'ancestor' : 'host',
-				tip: committedTip,
-			},
-		}
+	// only a proof says merged: the landed fact above, else git (ancestor, tree) or the host. A registry `committed`
+	// is no proof: a hand-over run commits on the lot's own branch, nothing pushed nor on the base
+	const pullNumber = readLanding({ lotFolder })?.number
 	const pushed = isPushed({ root, branch: identity.branch, pullNumber })
 	const state = readLandingState({
 		root,
@@ -181,11 +166,8 @@ export function notLandedTextOf(landing: LotLanding): string {
  * The work a lot holds since part of it landed: its unlanded commits (`unlandedWork`) when at least one commit of its
  * branch beyond the base is contained in the base (a squash, then commits after it); undefined when none of its work
  * is proven landed, or nothing is left.
- *
- * @intent name the commits made after a lot's landing
- * @internal
  */
-export function workSinceLandingOf(landing: LotLanding): string[] | undefined {
+function workSinceLandingOf(landing: LotLanding): string[] | undefined {
 	const { root, identity, base } = landing
 	const branchRef = `refs/heads/${identity.branch}`
 	if (readCommitOrNone({ root, ref: branchRef }) === undefined) return undefined
@@ -203,20 +185,60 @@ export function workSinceLandingOf(landing: LotLanding): string[] | undefined {
 }
 
 /**
- * What `lot status` reads beyond files, built by its caller: `host` for the stack line, and the merged tip git alone
- * reads for a lot (never written, never the host).
+ * What `lot status` reads beyond files, built by its caller: the merged tip git alone reads for a lot (never written,
+ * never the host), and the stack line of a stacked lot, its parent read through the one lot reader with `host`.
  *
  * @intent hand lot status its landing reads without making it start a process
  * @internal
  */
 export function statusLandingOf(host: HostAdapter): StatusLanding {
 	return {
-		host,
 		mergedTipOf: function mergedTipOf(params: { lotFolder: string }): string | undefined {
 			const landing = readLotLanding({ lotFolder: params.lotFolder })
 			return 'state' in landing && landing.state.kind === 'merged' ? landing.state.tip : undefined
 		},
+		stackLineOf: function stackLineOf(params: { lotFolder: string }): string | undefined {
+			return stackLineFor({ lotFolder: params.lotFolder, host })
+		},
 	}
+}
+
+/**
+ * The stack line of the lot in `lotFolder`: its parent (`stack.json`) read through `readLotLanding` with the host, its
+ * pull request (the one its landing state names, else its landing.json's) and that pull request's state: merged once
+ * the parent's landing is proven merged, else closed, queued, draft or open, or why the host cannot say. Undefined for
+ * a lot not stacked.
+ */
+function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string | undefined {
+	const record = readStack({ lotFolder: params.lotFolder })
+	if (record === undefined) return undefined
+	if ('damage' in record) return stackTextOf({ lotFolder: params.lotFolder })
+	const { parent } = record
+	const parentFolder = join(dirname(params.lotFolder), parent)
+	const number = readLanding({ lotFolder: parentFolder })?.number
+	const landing = readLotLanding({ lotFolder: parentFolder, host: params.host })
+	if ('refusal' in landing)
+		return stackLineText({
+			parent,
+			number,
+			state: fillMessage({ template: STACK_UNREADABLE, values: { reason: landing.refusal } }),
+		})
+	const { state } = landing
+	const pull = 'pull' in state ? state.pull : undefined
+	const shown = pull?.number ?? number
+	if (state.kind === 'merged')
+		return stackLineText({ parent, number: shown, state: STACK_PULL_STATES.merged })
+	if (pull !== undefined) return stackLineText({ parent, number: shown, state: pullStateOf(pull) })
+	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
+		return stackLineText({
+			parent,
+			number: shown,
+			state: fillMessage({
+				template: STACK_TEXT.hostSilent,
+				values: { reason: state.hostRefusal },
+			}),
+		})
+	return stackLineText({ parent, number: shown, state: undefined })
 }
 
 /**
@@ -236,16 +258,27 @@ export function settlePruneLandings(params: {
 	const location = locateStore({ from: params.repository })
 	if (location === undefined) return landings
 	const { store, registry } = location
-	for (const lot of listLotFolderNames({ store })) {
+	const lots = listLotFolderNames({ store }).flatMap(function readable(lot) {
 		const lotFolder = join(store, lot)
 		const checked = readCheckedLotState({ lotFolder, registry })
-		if (checked === undefined || 'damage' in checked) continue
-		const { input } = checked
-		const { worktree } = input.identity
+		if (checked === undefined || 'damage' in checked) return []
+		const { worktree } = checked.input.identity
 		// a lot whose worktree is gone has nothing for prune to remove: its landing is not read
-		if (typeof worktree !== 'string' || !existsSync(worktree)) continue
-		const read = pruneLandingOf({ lot, lotFolder, root: params.repository, input, now: params.now })
-		if (read !== undefined) landings.set(realPathOf(worktree), read)
+		if (typeof worktree !== 'string' || !existsSync(worktree)) return []
+		const { state } = lotState(checked.input)
+		return [{ lot, lotFolder, input: checked.input, worktree: realPathOf(worktree), state }]
+	})
+	// a worktree an open lot names stays whatever a closed lot naming it says: the closed one is not read
+	const openWorktrees = new Set(
+		lots
+			.filter((read) => !LOTS_KEEPING_NOTHING.some((closed) => closed === read.state))
+			.map((read) => read.worktree),
+	)
+	for (const read of lots) {
+		const open = !LOTS_KEEPING_NOTHING.some((closed) => closed === read.state)
+		if (!open && openWorktrees.has(read.worktree)) continue
+		const landing = pruneLandingOf({ ...read, root: params.repository, now: params.now })
+		if (landing !== undefined) landings.set(read.worktree, landing)
 	}
 	return landings
 }
@@ -255,17 +288,19 @@ function pruneLandingOf(params: {
 	lot: string
 	lotFolder: string
 	root: string
-	input: Parameters<typeof lotState>[0]
+	input: LotStateInput
 	now: Date
 }): PruneLotLanding | undefined {
 	const { lot, input } = params
+	if (input.landed !== undefined) return { lot, landed: true, landedTip: input.landed.tip }
 	const { state } = lotState(input)
-	if (state === 'committed') return { lot, landed: true, landedTip: input.landed?.tip }
-	if (state === 'canceled') return { lot, landed: false }
+	if (state === 'canceled') return { lot, landed: false, closed: true }
+	// a lot the registry records committed is read like any other: only git proves it merged
 	const landing = readLotLanding({ lotFolder: params.lotFolder, root: params.root })
 	if ('refusal' in landing) return undefined
 	const fact = recordLanded({ landing, now: params.now })
 	if (fact !== undefined) return { lot, landed: true, landedTip: fact.tip }
+	if (state === 'committed') return { lot, landed: false, closed: true }
 	if (landing.state.kind !== 'unlanded') return { lot, landed: false }
 	const since = workSinceLandingOf(landing)
 	if (since !== undefined)
@@ -286,17 +321,6 @@ function pruneLandingOf(params: {
 				reason: fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot } }),
 			}
 		: { lot, landed: false }
-}
-
-/** The lot's records read committed (its registry entry or its transitions), files only. */
-function isCommittedLot(params: { lotFolder: string }): boolean {
-	const checked = readCheckedLotState({
-		lotFolder: params.lotFolder,
-		registry: registryOfLotFolder(params.lotFolder),
-	})
-	return (
-		checked !== undefined && 'input' in checked && lotState(checked.input).state === 'committed'
-	)
 }
 
 /** The lot was pushed: its landing recorded a pull request, or origin holds its branch. */

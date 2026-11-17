@@ -3,12 +3,16 @@
  * measures from the parent's line, its fork point there, not from the base branch's merge-base, in the tdd step the
  * gate and the hook run.
  */
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { writeStoreLot } from '../../../test/brief-workspace.ts'
+import { landingHostOf, pullRequestOf } from '../../../test/landing-repository.ts'
 import { createStartWorkspace, entriesOf } from '../../../test/lot-start-workspace.ts'
 import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { createRecordingSpawner } from '../../../test/worktree-pool.ts'
+import { runLotClose } from '../../commands/lot-close.ts'
 import { runLot } from '../../commands/lot.ts'
 import {
 	findHandoverStore,
@@ -30,6 +34,18 @@ afterEach(function restoreEnvironment() {
 const NOW = new Date('2026-11-17T21:00:00.000Z')
 const PARENT = '0005-repo-parent'
 const PARENT_BRANCH = 'feat/parent'
+
+/** The parent's landing record: pull request #5 pushed at `head`. */
+function parentLandingText(params: { head: string }): string {
+	return JSON.stringify({
+		schema: 1,
+		number: 5,
+		url: 'https://host.test/pull/5',
+		branch: PARENT_BRANCH,
+		head: params.head,
+		at: NOW.toISOString(),
+	})
+}
 
 /** A commit of `file` on the checked out branch of `root`; its id. */
 function commitFile(params: { root: string; file: string }): string {
@@ -101,7 +117,7 @@ describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base main)` })
 	})
 
-	it('a child of a parent lot the registry records committed, no landed.json, git unable to prove it → the tdd step measures from main, at the parent’s tip', async () => {
+	it('a child of a parent lot the registry records committed, no landed.json, not on main → the tdd step still measures from the parent’s line', async () => {
 		const { worktree, parentTip, parentFolder, repository } = stackedChild()
 		registerHandover({ root: repository, folder: parentFolder, branch: PARENT_BRANCH, now: NOW })
 		recordHandoverState({
@@ -113,6 +129,43 @@ describe('the lot base of a stacked lot', { timeout: STORE_CASE_TIMEOUT }, () =>
 
 		await expect(
 			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
+		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base ${PARENT_BRANCH})` })
+	})
+
+	it('a child of a parent lot whose pull request the host says merged, recorded by lot close of the parent → the tdd step measures from main, at the parent’s tip', async () => {
+		const { worktree, parentTip, parentFolder, repository } = stackedChild()
+		writeFiles({
+			root: parentFolder,
+			files: { 'landing.json': parentLandingText({ head: parentTip }) },
+		})
+		const host = landingHostOf({
+			byNumber: { 5: pullRequestOf({ number: 5, state: 'merged', head: parentTip }) },
+		}).host
+		runLotClose({
+			cwd: repository,
+			argv: [PARENT, '--json'],
+			now: NOW,
+			host,
+			spawner: createRecordingSpawner().spawner,
+			listProcesses: () => [],
+			scratchRoots: [],
+		})
+		const short = git({ root: worktree, args: ['rev-parse', '--short', parentTip] }).trim()
+
+		await expect(
+			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
 		).resolves.toMatchObject({ baseNote: `tdd base: ${short} (lot base main)` })
+	})
+
+	it('a child whose stack parent’s records do not read → the tdd step fails naming the parent, never measured as a lot not stacked', async () => {
+		const { worktree, parentFolder } = stackedChild()
+		rmSync(join(parentFolder, 'identity.json'), { force: true })
+
+		await expect(
+			checkTddReceipts({ root: worktree, packageJson: {}, measureLot: true }),
+		).resolves.toMatchObject({
+			status: 'failed',
+			reason: expect.stringContaining(`the stack parent ${PARENT} cannot be read`),
+		})
 	})
 })

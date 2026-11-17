@@ -21,17 +21,20 @@ worktree - A worktree ready to work in; prune what a merge left
           their cd; each store lot's landing is read from git alone first: a merged lot (its tip or
           its work in the base, a squash included) gets its landed fact (<lot folder>/landed.json)
           and reads committed, and its review throwaways (<lot worktree>-round-<n>, -verify) go with
-          it; a worktree an open lot names (working, input-required, ready, failed) is kept first,
-          reason lot <name> <state>, or the commits it holds since part of it landed (<n> commit(s)
-          of work not in <base>: <commits>), or, pushed and not provably landed, landing not
-          provable offline: run lot close <lot>, which asks the host; a throwaway of a lot not
-          landed is kept (a review throwaway of lot <lot>, not landed); a worktree or branch holding
-          work its base does not hold (merged, squashed or rebased work counts as held) is kept with
-          its commits; --yes runs them after a confirmation on a terminal; committed hand-over
-          folders and finished rehearsal clones go to the trash like the other items: the plan shows
-          the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move that cannot be
-          made is a ✗ line, nothing deleted; the pool (.worktrees/_pool-<repository>-<n>) and the
-          trash (.worktrees/_trash/) are counted, never touched
+          it once their work passes the same unlanded-work check; a lot the registry records
+          committed is read from git like any other, its worktree and throwaways kept while their
+          work is not in the base; a worktree an open lot names (working, input-required, ready,
+          failed) is kept first, reason lot <name> <state>, or the commits it holds since part of it
+          landed (<n> commit(s) of work not in <base>: <commits>), or, pushed and not provably
+          landed, landing not provable offline: run lot close <lot>, which asks the host; a
+          throwaway of a lot not landed is kept (a review throwaway of lot <lot>, not landed); a
+          worktree or branch holding work its base does not hold (merged, squashed or rebased work
+          counts as held) is kept with its commits; --yes runs them after a confirmation on a
+          terminal; committed hand-over folders and finished rehearsal clones go to the trash like
+          the other items: the plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes
+          makes it; a move that cannot be made is a ✗ line, nothing deleted; the pool
+          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
+          touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
     keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked
@@ -146,8 +149,10 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   landed is kept naming them (`<n> commit(s) of work not in <base>: <commits>`); an open lot pushed (a pull request in
   its `landing.json`, or its branch on origin) whose work git cannot prove landed (main edited its lines again after a
   squash) is kept with `landing not provable offline: run lot close <lot>, which asks the host`; a review throwaway
-  (`<lot worktree>-round-<n>`, `-verify`) of a landed lot goes, of a lot not landed is kept (`a review throwaway of
-  lot <lot>, not landed`); a worktree or branch holding work the base does not hold (merged, squashed or rebased
+  (`<lot worktree>-round-<n>`, `-verify`) of a landed or committed lot goes once its work passes the unlanded-work
+  check below, of a lot still at work and not landed is kept (`a review throwaway of lot <lot>, not landed`); a lot
+  the registry records committed is read from git like any other (a hand-over run commits before anything reaches
+  the base); a worktree or branch holding work the base does not hold (merged, squashed or rebased
   work counts as held: `<n> commit(s) of work not in <base>: <commits>`); the branch the
   main checkout is on; a worktree a mutation run was started from while that run still runs
   (`mutation run <id> still running (pid <pid>)`) or after it died before reporting

@@ -44,7 +44,6 @@ import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.t
 import { lotState } from '../store/lot-state.ts'
 import { requiredLotOf } from '../store/resolve-lot.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
-import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
@@ -86,6 +85,7 @@ import type {
 	NodeModulesCheck,
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
+import type { SettledLanding } from './close-handovers.types.ts'
 import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
 
 /** Each named hand-over closed or kept with why; the names the registry does not hold (nothing done then). */
@@ -287,8 +287,8 @@ export function settleCloseLandings(params: {
 	const lotStore = locateStore({ from: main })?.store
 	const identities = lotStore === undefined ? [] : listLotIdentities({ store: lotStore })
 	// each lot's landing read once, whichever arguments reach it
-	const read = new Map<string, { landed?: string; kept?: string }>()
-	function settle(lotFolder: string): { landed?: string; kept?: string } {
+	const read = new Map<string, SettledLanding>()
+	function settle(lotFolder: string): SettledLanding {
 		const known = read.get(lotFolder)
 		if (known !== undefined) return known
 		const settled = settledLandingOf({ lotFolder, host: params.host, now })
@@ -338,7 +338,7 @@ function closedNameOf(params: {
 	argument: string
 	entry: StoreEntry | undefined
 	own: string | undefined
-	settle: (lotFolder: string) => { landed?: string; kept?: string }
+	settle: (lotFolder: string) => SettledLanding
 	now: Date
 }): { name: string } | { kept: string } {
 	const { argument, own } = params
@@ -349,10 +349,11 @@ function closedNameOf(params: {
 }
 
 /**
- * An open lot whose records hold reads `{}`; a lot that landed already, its landed line (its fact holds it, nothing to
- * read again); a damaged or closed one why it is not read.
+ * A lot whose records hold and that is not canceled reads `{}` (to be read: open, or committed by its registry with
+ * no landed fact); a lot that landed already, its landed line (its fact holds it, nothing to read again); a damaged
+ * or canceled one why it is not read.
  */
-function openLotStateOf(params: { lotFolder: string }): { kept?: string; landed?: string } {
+function openLotStateOf(params: { lotFolder: string }): SettledLanding {
 	const checked = readCheckedLotState({
 		lotFolder: params.lotFolder,
 		registry: registryOfLotFolder(params.lotFolder),
@@ -361,8 +362,9 @@ function openLotStateOf(params: { lotFolder: string }): { kept?: string; landed?
 	if ('damage' in checked) return { kept: checked.damage }
 	const fact = readLanded({ lotFolder: params.lotFolder })
 	if (fact !== undefined && 'tip' in fact) return { landed: landedLineOf(fact) }
+	// a canceled lot has nothing to settle; a committed one (a hand-over run) is read: only git or the host prove it
 	const { state } = lotState(checked.input)
-	return LOTS_KEEPING_NOTHING.some((closed) => closed === state)
+	return state === 'canceled'
 		? { kept: fillMessage({ template: LOT_NOT_OPEN, values: { state } }) }
 		: {}
 }
@@ -371,10 +373,11 @@ function openLotStateOf(params: { lotFolder: string }): { kept?: string; landed?
  * One lot's landing as close settles it: an open lot whose records hold is read (with the host) and its landed fact
  * written once merged; a lot that landed already gives its line; a damaged or closed one stays as it is, with why.
  */
-function settledLandingOf(params: { lotFolder: string; host: HostAdapter; now: Date }): {
-	landed?: string
-	kept?: string
-} {
+function settledLandingOf(params: {
+	lotFolder: string
+	host: HostAdapter
+	now: Date
+}): SettledLanding {
 	const { lotFolder } = params
 	const open = openLotStateOf({ lotFolder })
 	if (open.kept !== undefined || open.landed !== undefined) return open

@@ -538,7 +538,7 @@ function planRepository(params: {
 		const lotKeep = lotKeeps.get(real)
 		const throwaway = throwawayLotOf({ worktree: real, landings })
 		const unlandedThrowaway =
-			throwaway !== undefined && !throwaway.landed
+			throwaway !== undefined && !throwaway.landed && throwaway.closed !== true
 				? fillMessage({ template: THROWAWAY_OF_UNLANDED, values: { lot: throwaway.lot } })
 				: undefined
 		const keptFirst =
@@ -571,8 +571,9 @@ function planRepository(params: {
 					pending: pendingWorktrees.has(realpathSync(name)),
 					links: params.links,
 					ownedRuns,
-					landedTip: landings.get(real)?.landedTip,
-					ofLandedLot: throwaway?.landed === true,
+					// a throwaway's own commits are its lot's: the lot's landed tip holds them
+					landedTip: (throwaway ?? landings.get(real))?.landedTip,
+					ofClosedLot: throwaway !== undefined,
 				})
 			: undefined
 		if (kept) {
@@ -875,22 +876,23 @@ function whyKeepWorktree(params: {
 	ownedRuns: readonly RunEntry[]
 	/** The tip the worktree's lot landed at (its landed fact): its ancestors landed. */
 	landedTip: string | undefined
-	/** A review throwaway of a landed lot: its commits are review snapshots of what landed. */
-	ofLandedLot: boolean
+	/**
+	 * A review throwaway of a lot that landed or is closed: it goes through the unlanded-work check like any worktree,
+	 * but its branch, made at a review, never holds a commit of its own.
+	 */
+	ofClosedLot: boolean
 }): string | undefined {
 	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
 	if (reachedBy) return `the link ${reachedBy} points to it`
 	const ownedRun = mutationRunKeeping({ runs: params.ownedRuns, folder: params.worktree })
 	if (ownedRun) return ownedRun
-	const unlanded = params.ofLandedLot
-		? []
-		: unlandedWork({
-				root: params.repository,
-				branch: params.branch,
-				baseRef: params.baseRef,
-				worktree: params.worktree,
-				...(params.landedTip !== undefined && { landedTip: params.landedTip }),
-			})
+	const unlanded = unlandedWork({
+		root: params.repository,
+		branch: params.branch,
+		baseRef: params.baseRef,
+		worktree: params.worktree,
+		...(params.landedTip !== undefined && { landedTip: params.landedTip }),
+	})
 	if (unlanded.length > 0) return unlandedWorkText({ commits: unlanded, base: params.baseBranch })
 	if (params.pending || existsSync(handoverLockPath(params.worktree)))
 		return 'a hand-over is pending in it'
@@ -901,7 +903,7 @@ function whyKeepWorktree(params: {
 		}).trim()
 	)
 		return 'uncommitted changes'
-	const keptByReflog = params.ofLandedLot
+	const keptByReflog = params.ofClosedLot
 		? undefined
 		: noOwnCommitReason({
 				root: params.repository,
