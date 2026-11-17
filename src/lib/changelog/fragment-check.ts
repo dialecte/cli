@@ -8,8 +8,10 @@ import { join } from 'node:path'
 import { errorReasonOf } from '../error-reason.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { readGit } from '../git.ts'
+import { readPackageJson } from '../package-json.ts'
 import {
 	CHANGELOG_FILE,
+	FRAGMENT_ASKING_FIELD,
 	FRAGMENT_ASKING_FILES,
 	FRAGMENT_CHECK_LINES,
 	FRAGMENT_EXTENSION,
@@ -44,7 +46,13 @@ export function checkChangeFragment(params: { root: string; base: string }): Fra
 				.replace('{reason}', () => errorReasonOf(error).split('\n')[0]),
 		}
 	}
-	const asking = changed.find((file) => asksForFragment(file))
+	const entries = askingEntriesOf({ root })
+	if (entries === undefined)
+		return {
+			status: 'failed',
+			reason: FRAGMENT_CHECK_LINES.badAsking.replace('{field}', FRAGMENT_ASKING_FIELD),
+		}
+	const asking = changed.find((file) => asksForFragment({ file, entries }))
 	if (asking === undefined) return { status: 'passed', note: FRAGMENT_CHECK_LINES.nothingAsked }
 	if (changed.includes(CHANGELOG_FILE))
 		return { status: 'passed', note: FRAGMENT_CHECK_LINES.release }
@@ -85,9 +93,21 @@ function listChangeOf(params: { root: string; base: string }): string[] {
 	return [...new Set(`${tracked}\n${untracked}`.split('\n').filter(Boolean))]
 }
 
-/** Whether a changed file asks for a fragment: one of `FRAGMENT_ASKING_FILES`, or under one of its folders. */
-function asksForFragment(file: string): boolean {
-	return FRAGMENT_ASKING_FILES.some((entry) =>
-		entry.endsWith('/') ? file.startsWith(entry) : file === entry,
+/**
+ * The fragment-asking entries of the package at `root`: `FRAGMENT_ASKING_FILES` and its package.json's
+ * `dialecte.changelog.asking`; undefined when that field is there and is no list of non-empty strings.
+ */
+function askingEntriesOf(params: { root: string }): string[] | undefined {
+	const listed = readPackageJson(params.root).dialecte?.changelog?.asking
+	if (listed === undefined) return [...FRAGMENT_ASKING_FILES]
+	if (!Array.isArray(listed) || !listed.every((entry) => typeof entry === 'string' && entry !== ''))
+		return undefined
+	return [...FRAGMENT_ASKING_FILES, ...listed]
+}
+
+/** Whether a changed file asks for a fragment: one of `entries`, or under one of its folders (an entry ending in `/`). */
+function asksForFragment(params: { file: string; entries: readonly string[] }): boolean {
+	return params.entries.some((entry) =>
+		entry.endsWith('/') ? params.file.startsWith(entry) : params.file === entry,
 	)
 }

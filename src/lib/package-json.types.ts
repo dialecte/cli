@@ -52,6 +52,12 @@ export type DialecteField = {
 	 */
 	tdd?: { production?: string[] }
 	/**
+	 * `dialecte changelog` / contrib's changelog row: `asking` lists the package's own files (a folder ends in `/`)
+	 * that ask for a changelog fragment, beside `README.md` and `doc/`. Read as given: a value that is no list of
+	 * paths fails the row.
+	 */
+	changelog?: { asking?: unknown }
+	/**
 	 * Ignored folders, relative to this package root and ending with `/` (`coverage/`), that a build or a run
 	 * rebuilds: a worktree removal may delete them. Read from the main checkout's package.json only; an entry of
 	 * another shape (absolute, climbing with `..`, without its trailing `/`, not a string) counts for nothing.

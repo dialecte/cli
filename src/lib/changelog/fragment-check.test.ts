@@ -7,12 +7,22 @@ import { describe, expect, it } from 'vitest'
 
 const COMMAND_MAP = 'src/lib/command-map/command-map.constants.ts'
 
-/** A committed package keeping fragments (or not), its base the commit; then `files` written as the change. */
-function changeOf(params: { fragments?: boolean; files: Record<string, string> }): {
+/**
+ * A committed package keeping fragments (or not), its package.json declaring `asking` as `dialecte.changelog.asking`
+ * when given, its base the commit; then `files` written as the change.
+ */
+function changeOf(params: {
+	fragments?: boolean
+	asking?: unknown
+	files: Record<string, string>
+}): {
 	root: string
 	base: string
 } {
 	const root = createScratchRepository({
+		...(params.asking !== undefined && {
+			'package.json': `${JSON.stringify({ name: 'demo', dialecte: { changelog: { asking: params.asking } } })}\n`,
+		}),
 		'README.md': '# demo\n',
 		[COMMAND_MAP]: 'export const COMMAND_MAP = {}\n',
 		'src/a.ts': 'export const a = 1\n',
@@ -24,7 +34,7 @@ function changeOf(params: { fragments?: boolean; files: Record<string, string> }
 }
 
 describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
-	it.each<{ label: string; files: Record<string, string>; failed: string }>([
+	it.each<{ label: string; asking?: unknown; files: Record<string, string>; failed: string }>([
 		{
 			label: 'the README edited, no fragment',
 			files: { 'README.md': '# demo\n\nmore.\n' },
@@ -32,12 +42,45 @@ describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 				'README.md changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
 		},
 		{
-			label: 'the command map edited, no fragment',
+			label: 'the command map the package lists in dialecte.changelog.asking edited, no fragment',
+			asking: [COMMAND_MAP],
 			files: { [COMMAND_MAP]: 'export const COMMAND_MAP = { a: 1 }\n' },
 			failed: `${COMMAND_MAP} changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry`,
 		},
-	])('$label → failed, naming the file', ({ files, failed }) => {
-		expect(checkChangeFragment(changeOf({ files }))).toEqual({ status: 'failed', reason: failed })
+		{
+			label: 'a guide under doc/ edited, no fragment',
+			files: { 'doc/guide.md': '# guide\n' },
+			failed:
+				'doc/guide.md changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
+		},
+		{
+			label: 'a file under a folder the package lists edited, no fragment',
+			asking: ['src/api/'],
+			files: { 'src/api/x.ts': 'export const x = 1\n' },
+			failed:
+				'src/api/x.ts changed with no changelog fragment: write changes/<lot>.md, or changes/<lot>.none.md saying why no entry',
+		},
+		{
+			label: 'dialecte.changelog.asking that is no list of paths',
+			asking: ['README.md', 3],
+			files: { 'src/a.ts': 'export const a = 2\n' },
+			failed:
+				'dialecte.changelog.asking in package.json is not a list of paths: a list of file or folder/ paths',
+		},
+	])('$label → failed, naming the file', ({ asking, files, failed }) => {
+		expect(checkChangeFragment(changeOf({ asking, files }))).toEqual({
+			status: 'failed',
+			reason: failed,
+		})
+	})
+
+	it('the command map edited in a package that does not list it → passed, no fragment asked', () => {
+		const change = changeOf({ files: { [COMMAND_MAP]: 'export const COMMAND_MAP = { a: 1 }\n' } })
+
+		expect(checkChangeFragment(change)).toEqual({
+			status: 'passed',
+			note: 'no README, doc/ or listed file changed: no fragment asked',
+		})
 	})
 
 	it('a command page edited, no fragment → failed, naming the page', () => {
@@ -114,7 +157,7 @@ describe('checkChangeFragment', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			checkChangeFragment(changeOf({ files: { 'src/a.ts': 'export const a = 2\n' } })),
 		).toEqual({
 			status: 'passed',
-			note: 'no README or help change: no fragment asked',
+			note: 'no README, doc/ or listed file changed: no fragment asked',
 		})
 	})
 

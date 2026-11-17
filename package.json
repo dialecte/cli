@@ -153,6 +153,11 @@
 				"src/lib/handover/sync-node-modules.ts"
 			]
 		},
-		"stepEvents": 1
+		"stepEvents": 1,
+		"changelog": {
+			"asking": [
+				"src/lib/command-map/command-map.constants.ts"
+			]
+		}
 	}
 }

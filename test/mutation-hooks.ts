@@ -47,6 +47,7 @@ import type {
 	RunEntry,
 	Survivor,
 } from '../src/lib/mutation/mutation.types.ts'
+import type { BackgroundSpawner } from '../src/lib/worktree/worktree.types.ts'
 import type { ChildProcess } from 'node:child_process'
 
 /** The scratch package: the root declares the mutation scope; `packages/other` is a second package of the repository. */
@@ -279,9 +280,11 @@ export function writeHandover(lotsPath: string): { exitCode: number; output: str
 export async function runFolder(params: {
 	out: string
 	argv?: string[]
-}): Promise<{ exitCode: number; lines: string[] }> {
+}): Promise<{ exitCode: number; lines: string[]; removals: Parameters<BackgroundSpawner>[0][] }> {
 	const lines: string[] = []
 	removeHookLogs({ lines })
+	// a rehearsal's background removal recorded, never started: a detached rm would race the test's own cleanup
+	const removals = createRecordingSpawner()
 	const exitCode = await runHandoverRun({
 		probe: noRepositoryCli,
 		argv: [params.out, ...(params.argv ?? [])],
@@ -289,10 +292,9 @@ export async function runFolder(params: {
 		clock: createFakeClock(),
 		colour: false,
 		scratchRoot: temporaryFolder('dialecte-scratch-root-'),
-		// a rehearsal's background removal recorded, never started: a detached rm would race the test's own cleanup
-		spawner: createRecordingSpawner().spawner,
+		spawner: removals.spawner,
 	})
-	return { exitCode, lines }
+	return { exitCode, lines, removals: removals.calls }
 }
 
 /**

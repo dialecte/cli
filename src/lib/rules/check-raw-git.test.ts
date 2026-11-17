@@ -28,6 +28,18 @@ function rawGitFindingsOf(testCase: TestCase): { line: number; message: string }
 
 describe('raw-git-repository', () => {
 	const testCases: Record<string, TestCase> = {
+		'a git call spanning lines, its clone list on a later line → reported on the line of the subcommand':
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "git({\n\troot,\n\targs: [\n\t\t'clone',\n\t\torigin,\n\t],\n})\n",
+				expected: [{ line: 4, message: MESSAGE }],
+			},
+		"spawnSync('git', ...) spanning lines, its init list on the second line → reported on that line":
+			{
+				file: 'src/commands/lot-land.test.ts',
+				text: "spawnSync(\n\t'git',\n\t['init', '-q', root],\n)\n",
+				expected: [{ line: 3, message: MESSAGE }],
+			},
 		"git({ root, args: ['clone', ...] }) in a test file → reported": {
 			file: 'src/commands/lot-land.test.ts',
 			text: "git({ root, args: ['clone', '-q', origin, into] })\n",
