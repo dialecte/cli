@@ -1,0 +1,3 @@
+### Fixed
+
+- `handover show` / `handover run`: the card's `review` line takes a `lot verify` recorded after the last review round snapshot as the independent review, in a lot's folder and in a hand-over folder that is no lot alike: `✓ review  ... · independent review: verified by <who> · approved`. A hand-over folder whose last round was clean (no ledger row) and verified read `✗ review  no independent review after round <n>` and BLOCKED the card. A verify at or before the last snapshot still reads `no independent review`; a station end's verdict and ledger rows above the snapshot come first, as before.

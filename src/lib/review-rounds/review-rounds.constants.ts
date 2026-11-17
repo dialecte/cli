@@ -156,3 +156,6 @@ export const DELTA_FILE_MARK = '──'
 
 /** The mode `git ls-tree` gives a submodule's gitlink. */
 export const GITLINK_MODE = '160000 '
+
+/** The review line's independent part from a `lot verify` line after the last snapshot (FIX-review-verify). */
+export const INDEPENDENT_VERIFY_DETAIL = 'independent review: verified by {by}'

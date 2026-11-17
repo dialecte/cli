@@ -53,7 +53,7 @@ function readRoundStateHash(params: { folder: string; round: number }): string |
  * The lines of the folder's `verify.jsonl`, in file order: the text after the last `\n` (a torn line), an empty line
  * and a line that is no verify line are skipped, as the events reader skips them; none when there is no file.
  */
-function readVerifyLines(params: { folder: string }): VerifyLine[] {
+export function readVerifyLines(params: { folder: string }): VerifyLine[] {
 	let content: string
 	try {
 		content = readFileSync(join(params.folder, STORE_FILES.verify), 'utf8')
