@@ -117,7 +117,7 @@ function askingEntriesOf(params: { root: string }): { entries: string[] } | { pr
 				.replace('{field}', FRAGMENT_ASKING_FIELD)
 				.replace('{entries}', () => bad.map((entry) => JSON.stringify(entry)).join(', ')),
 		}
-	return { entries: [...FRAGMENT_ASKING_FILES, ...(listed as string[])] }
+	return { entries: [...FRAGMENT_ASKING_FILES, ...listed.filter(isGitPath)] }
 }
 
 /**

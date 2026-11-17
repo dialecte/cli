@@ -22,7 +22,9 @@ import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-requ
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
+import { registeredEntryOf } from './handover-store-read.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
+import { HANDOVER_LOT_REFUSALS } from './handover.constants.ts'
 import {
 	LANDING_FILE,
 	LANDING_LINES,
@@ -66,13 +68,14 @@ export function landLot(params: {
 		return refused(LANDING_LINES.hostRefused.replace('{reason}', () => known.refusal))
 	if (known.pullRequest?.state === 'merged')
 		return mergedLanding({ ...params, pullRequest: known.pullRequest })
-	// the lot's hand-over entry first: a refusal (a lot committed by a local hand-over) stops before any push, so a lot
-	// main already holds gets the registry's committed answer before the one below
-	const registered = registerLotEntry({ ...params })
-	if ('refusal' in registered) return refused(registered.refusal)
-	// a branch the base already holds has nothing to land: refused before any push or pull request
+	// read, never written, before any refusal: a lot committed by a local hand-over gets the registry's committed answer
+	const committed = committedEntryRefusal({ worktree, lotFolder: params.lotFolder })
+	if (committed !== undefined) return refused(committed)
+	// a branch the base already holds has nothing to land: refused before any entry, push or pull request
 	const empty = nothingBeyondBase({ worktree, branch, base })
 	if (empty !== undefined) return refused(empty)
+	const registered = registerLotEntry({ ...params })
+	if ('refusal' in registered) return refused(registered.refusal)
 	const { entry } = registered
 	const lines: string[] = []
 	const progress = readWorkInProgress({ worktree })
@@ -239,6 +242,23 @@ function publishLanding(params: {
 			lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => queued.refusal)],
 		}
 	return { exitCode: 0, lines: [...lines, LANDING_LINES.queued] }
+}
+
+/**
+ * The registry's committed answer for the lot's folder, read without writing (`registerHandover` refuses a committed
+ * entry the same way, after a write would be decided); undefined when the folder has no committed entry.
+ */
+function committedEntryRefusal(params: {
+	worktree: string
+	lotFolder: string
+}): string | undefined {
+	const store = findHandoverStore(params.worktree)
+	const registered =
+		store === undefined ? undefined : registeredEntryOf({ store, folder: params.lotFolder })
+	if (registered?.state !== 'committed') return undefined
+	return LANDING_LINES.registryRefused.replace('{reason}', () =>
+		HANDOVER_LOT_REFUSALS.committed.replace('{entry}', () => registered.name),
+	)
 }
 
 /** The lot's hand-over entry registered (its name), or the store's refusal as the landing's line. */
