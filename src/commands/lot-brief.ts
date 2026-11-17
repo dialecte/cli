@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { getArg, positionalArguments } from '../lib/config.ts'
@@ -27,6 +27,7 @@ import {
 	LOT_BRIEF_VALUE_OPTIONS,
 	PUBLIC_BRIEF_FIELDS,
 	PUBLIC_STEP_FIELDS,
+	STEPS_FIELD,
 } from './lot-brief.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
@@ -42,38 +43,29 @@ export function runLotBrief(params: { cwd: string; argv: string[]; now?: Date })
 	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
 	if (checked === undefined || !('input' in checked))
 		return refused(LOT_BRIEF_LINES.damaged.replaceAll('{lot}', () => lot))
+	if (checked.input.identity.simulated)
+		return refused(LOT_BRIEF_LINES.simulated.replace('{lot}', () => lot))
 	const { state } = lotState(checked.input)
 	if (state !== 'working' && state !== 'ready')
 		return refused(LOT_BRIEF_LINES.notWorking.replace('{lot}', () => lot).replace('{state}', state))
 	const briefPath = join(lotFolder, STORE_FILES.brief)
 	const oldText = readFileSync(briefPath, 'utf8')
-	const newText = readFileSync(from, 'utf8')
+	const newText = readTextOf(resolve(params.cwd, from))
+	if (newText === undefined)
+		return refused(LOT_BRIEF_LINES.unreadable.replace('{path}', () => from))
 	const parsed = parsedOf(newText)
 	if (parsed === undefined) return refused(LOT_BRIEF_LINES.unread.replace('{path}', () => from))
-	const fixed = fixedFieldChanged({ old: JSON.parse(oldText) as unknown, next: parsed })
-	if (fixed !== undefined) return refused(LOT_BRIEF_LINES.fixedField.replace('{field}', fixed))
-	const fields = checkBriefFields({ value: parsed })
-	const faults =
-		fields.brief === undefined
-			? fields.refused
-			: briefTextFaults({
-					brief: fields.brief,
-					root: checked.input.identity.repository,
-					ids: folderPlanEntryIds({ folder: lotFolder }),
-				})
-	if (faults.length > 0)
-		return refused(
-			LOT_BRIEF_LINES.refused.replace('{detail}', () =>
-				faults[0].detail.startsWith(faults[0].field)
-					? faults[0].detail
-					: `${faults[0].field}: ${faults[0].detail}`,
-			),
-		)
-	if (newText === oldText)
-		return { exitCode: 0, output: textOf([LOT_BRIEF_LINES.unchanged.replace('{lot}', () => lot)]) }
-	replaceWhole({ path: briefPath, text: newText })
-	recordBriefTransition({ lotFolder, by, reason, oldText, newText, now: params.now ?? new Date() })
+	const fault = briefFaultLine({
+		old: JSON.parse(oldText) as unknown,
+		next: parsed,
+		root: checked.input.identity.repository,
+		lotFolder,
+	})
+	if (fault !== undefined) return refused(fault)
 	const changed = publicFieldsChanged({ old: JSON.parse(oldText) as unknown, next: parsed })
+	if (changed.length === 0)
+		return { exitCode: 0, output: textOf([LOT_BRIEF_LINES.unchanged.replace('{lot}', () => lot)]) }
+	writeBrief({ lotFolder, briefPath, by, reason, oldText, newText, now: params.now ?? new Date() })
 	return {
 		exitCode: 0,
 		output: textOf([
@@ -82,6 +74,54 @@ export function runLotBrief(params: { cwd: string; argv: string[]; now?: Date })
 				.replace('{fields}', () => changed.join(', '))
 				.replace('{by}', () => by),
 		]),
+	}
+}
+
+/**
+ * Why the new brief is refused: a field only the start sets changed, a field check, or a public-text check of the
+ * start (`briefTextFaults`); undefined when it passes.
+ */
+function briefFaultLine(params: {
+	old: unknown
+	next: Record<string, unknown>
+	root: string
+	lotFolder: string
+}): string | undefined {
+	const fixed = fixedFieldChanged({ old: params.old, next: params.next })
+	if (fixed !== undefined) return LOT_BRIEF_LINES.fixedField.replace('{field}', () => fixed)
+	const fields = checkBriefFields({ value: params.next })
+	const faults =
+		fields.brief === undefined
+			? fields.refused
+			: briefTextFaults({
+					brief: fields.brief,
+					root: params.root,
+					ids: folderPlanEntryIds({ folder: params.lotFolder }),
+				})
+	const [first] = faults
+	if (first === undefined) return undefined
+	return LOT_BRIEF_LINES.refused.replace('{detail}', () =>
+		first.detail.startsWith(first.field) ? first.detail : `${first.field}: ${first.detail}`,
+	)
+}
+
+/** The new brief published over the stored one, then its transition; the old brief back when the record fails. */
+function writeBrief(params: {
+	lotFolder: string
+	briefPath: string
+	by: string
+	reason: string
+	oldText: string
+	newText: string
+	now: Date
+}): void {
+	replaceWhole({ path: params.briefPath, text: params.newText })
+	try {
+		recordBriefTransition(params)
+	} catch (error) {
+		// no rewrite without its record: the brief goes back to the one the transitions name
+		replaceWhole({ path: params.briefPath, text: params.oldText })
+		throw error
 	}
 }
 
@@ -114,6 +154,15 @@ function recordBriefTransition(params: {
 
 function sha256(text: string): string {
 	return createHash('sha256').update(text).digest('hex')
+}
+
+/** The text of the file at `path`; undefined when it cannot be read. */
+function readTextOf(path: string): string | undefined {
+	try {
+		return readFileSync(path, 'utf8')
+	} catch {
+		return undefined
+	}
 }
 
 function parsedOf(text: string): Record<string, unknown> | undefined {

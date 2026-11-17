@@ -566,11 +566,8 @@ function startChecked(params: {
 		}),
 		// a simulated start writes no risk.jsonl; a real one's lines ride the publish rename
 		...(simulation === undefined && {
-			beforeIdentity: function writeRiskLines(temporary: string) {
-				writeStartRiskLines({ folder: temporary, risk, now })
-				writeStartOverlaps({ folder: temporary, brief, goAhead: risk.goAhead, now })
-				if (brief.planEntry !== undefined)
-					writePlanEntry({ folder: temporary, entry: brief.planEntry })
+			beforeIdentity: function writeStartRecords(temporary: string) {
+				writeStartRecordsTo({ folder: temporary, brief, risk, now })
 			},
 		}),
 	})

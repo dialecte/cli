@@ -4,9 +4,10 @@
  * transition with the old and new brief hashes, so its pull request renders from the corrected records.
  */
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { LOT_NAME, LOT_STEP } from '../../test/lot-pr.constants.ts'
@@ -154,5 +155,115 @@ describe('dialecte lot brief', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect('refusal' in rendered ? rendered.refusal : rendered.sources.steps).toEqual([
 			{ title: LOT_STEP.title, behaviours: ['x asked once -> one'] },
 		])
+	})
+
+	it('a simulated lot → refused: it plays its scenario, nothing written', () => {
+		const workspace = createBriefWorkspace()
+		writeStoreLot({ workspace, name: LOT_NAME, scope: ['src/'], simulated: true })
+		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
+		writeFileSync(from, '{}')
+
+		const result = runLot({
+			cwd: workspace.repository,
+			argv: ['brief', LOT_NAME, '--from', from, '--by', BY, '--reason', REASON],
+		})
+
+		expect(result).toEqual({
+			exitCode: 1,
+			output: `lot brief: ${LOT_NAME} is simulated: it plays its scenario, nothing written`,
+		})
+	})
+
+	it('a --from path relative to the command folder → read from there', () => {
+		const lot = pullRequestLot()
+		const text = `${JSON.stringify({ ...storedBriefOf(lot).value, summary: 'X answers one, again.' })}\n`
+		writeFileSync(join(lot.workspace.repository, 'new-brief.json'), text)
+
+		function run() {
+			return runLot({
+				cwd: lot.workspace.repository,
+				argv: ['brief', LOT_NAME, '--from', 'new-brief.json', '--by', BY, '--reason', REASON],
+			})
+		}
+
+		expect(run).not.toThrow()
+		expect(storedBriefOf(lot).text).toBe(text)
+	})
+
+	it('a --from file that cannot be read → refused, exit 1, nothing written', () => {
+		const lot = pullRequestLot()
+
+		function run() {
+			return runLot({
+				cwd: lot.workspace.repository,
+				argv: ['brief', LOT_NAME, '--from', 'missing.json', '--by', BY, '--reason', REASON],
+			})
+		}
+
+		expect(run).not.toThrow()
+		expect(run()).toEqual({
+			exitCode: 1,
+			output: 'lot brief: missing.json cannot be read: nothing written',
+		})
+	})
+
+	it('a canceled lot → refused, its state named', () => {
+		const lot = pullRequestLot()
+		runLot({ cwd: lot.workspace.repository, argv: ['stop', LOT_NAME, '--reason', 'done'] })
+
+		const { result } = rewrite({ lot, changes: { summary: 'X answers one, now.' } })
+
+		expect(result.output).toBe(
+			`lot brief: ${LOT_NAME} is canceled: only a working or ready lot takes a new brief, nothing written`,
+		)
+	})
+
+	it('the same brief with its keys in another order → already held, no transition', () => {
+		const lot = pullRequestLot()
+		const transitions = readTransitions({ lotFolder: lot.lotFolder }).length
+		const reordered = Object.fromEntries(Object.entries(storedBriefOf(lot).value).reverse())
+		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
+		writeFileSync(from, JSON.stringify(reordered))
+
+		const result = runLot({
+			cwd: lot.workspace.repository,
+			argv: ['brief', LOT_NAME, '--from', from, '--by', BY, '--reason', REASON],
+		})
+
+		expect(result.output).toBe(`lot brief: ${LOT_NAME} already holds this brief: nothing written`)
+		expect(readTransitions({ lotFolder: lot.lotFolder })).toHaveLength(transitions)
+	})
+
+	it.each([
+		['an issue number', 7, 0, `lot brief: ${LOT_NAME} rewritten (issue) by ${BY}`],
+		[
+			'an issue that is no positive integer',
+			0,
+			1,
+			'lot brief: issue must be a positive integer: nothing written',
+		],
+	])('%s → %s', (_name, issue, exitCode, line) => {
+		const lot = pullRequestLot()
+
+		const { result } = rewrite({ lot, changes: { issue } })
+
+		expect({ exitCode: result.exitCode, output: result.output }).toEqual({
+			exitCode,
+			output: line,
+		})
+	})
+
+	it('a rewrite → the stored brief stays read-only, the state and position kept', () => {
+		const lot = pullRequestLot()
+		const before = readTransitions({ lotFolder: lot.lotFolder }).at(-1)
+
+		rewrite({ lot, changes: { summary: 'X answers one, now.' } })
+
+		expect(statSync(join(lot.lotFolder, 'brief.json')).mode & 0o222).toBe(0)
+		expect(readTransitions({ lotFolder: lot.lotFolder }).at(-1)).toMatchObject({
+			state: before?.state,
+			position: before?.position,
+			question: null,
+		})
 	})
 })

@@ -26,9 +26,9 @@ export const STORE_FILES: StoreFileNames = {
 	// `lot scope` appends a started lot's scope changes here; the brief stays as published (FIX-lot-scope)
 	scopeChanges: 'scope-changes.jsonl',
 	// the review's public rows, written whole by `lot finding`, `lot decide`, `lot verify` and a review station's end
+	review: 'review.jsonl',
 	// the plan entry the lot carries out, found and published by `lot start`
 	planEntry: 'plan-entry.json',
-	review: 'review.jsonl',
 	// the tests' public record, its tdd part written by `tdd green`, its gate part by the gate
 	tests: 'tests.json',
 	// `lot start` / `lot scope --overlap-ok` append the overlaps the lot accepted, with who and why (FIX-overlap-ok)
