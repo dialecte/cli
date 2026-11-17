@@ -6,10 +6,13 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { briefWith } from '../../test/brief-workspace.ts'
+import { briefWith, writeStoreLot } from '../../test/brief-workspace.ts'
 import { FORECAST_NOW } from '../../test/forecast-workspace.constants.ts'
 import { createForecastWorkspace, startForecastLot } from '../../test/forecast-workspace.ts'
+import { createStartWorkspace } from '../../test/lot-start-workspace.ts'
+import { START_NOW } from '../../test/lot-start.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { buildScopeLine } from '../lib/gate-records/card-gates.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { startLot } from './lot-start.ts'
 
@@ -20,6 +23,9 @@ import type { ForecastWorkspace } from '../../test/forecast-workspace.types.ts'
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
+
+/** A lot that publishes while the start runs, its worktree not made yet. */
+const RACER_LOT = '0099-repo-racer'
 
 const GO_AHEAD = ['--overlap-ok', '--by', 'reviewer', '--reason', 'lines apart in one file']
 
@@ -137,6 +143,61 @@ describe('lot start with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 			output: expect.stringContaining(
 				`overlap with ${open.name}: src/shared.ts meets src (forecast unknown: worktree of ${open.name} missing)`,
 			),
+		})
+	})
+
+	it('lot start meeting an open lot on a lock file, with --overlap-ok -> started, the overlap recorded', () => {
+		const workspace = createForecastWorkspace()
+		const open = startForecastLot({ workspace, feature: 'lot-a', scope: ['package-lock.json'] })
+
+		const started = startBrief({
+			workspace,
+			feature: 'lot-b',
+			scope: ['package-lock.json'],
+			extra: GO_AHEAD,
+		})
+
+		expect({
+			exitCode: started.exitCode,
+			overlaps: readFileSync(join(started.lotFolder ?? '', STORE_FILES.overlaps), 'utf8'),
+			notNeeded: started.output.includes('--overlap-ok not needed'),
+		}).toEqual({
+			exitCode: 0,
+			overlaps: expect.stringContaining(`"lot":"${open.name}"`),
+			notNeeded: false,
+		})
+	})
+
+	it("right after a start the forecast cleared -> the new lot's card scope line shares the entry with forecast clean", () => {
+		const workspace = createForecastWorkspace()
+		const open = startForecastLot({ workspace, feature: 'lot-a' })
+
+		const started = startBrief({ workspace, feature: 'lot-b', scope: ['src/shared.ts'] })
+
+		expect(buildScopeLine({ folder: started.lotFolder ?? '', now: FORECAST_NOW })).toEqual({
+			name: 'scope',
+			status: 'passed',
+			detail: `shares src/shared.ts meets src with ${open.name} (forecast clean, 0 min ago)`,
+		})
+	})
+
+	it('a lot meeting the brief starts between the check and the re-check, no worktree made yet -> it has no work: the start goes on (decision Q5)', () => {
+		const start = createStartWorkspace()
+
+		const started = startLot({
+			cwd: start.cwd,
+			argv: [start.workspace.briefPath],
+			now: START_NOW,
+			seams: {
+				afterClaimPick: function racerPublishes() {
+					writeStoreLot({ workspace: start.workspace, name: RACER_LOT, scope: ['src/dataflow'] })
+				},
+			},
+		})
+
+		expect({ exitCode: started.exitCode, failed: started.output.includes(RACER_LOT) }).toEqual({
+			exitCode: 0,
+			failed: false,
 		})
 	})
 })

@@ -64,15 +64,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           whose scope cannot be read, a met lock file (exclusive: a lock file is never shared), a
           forecast that cannot run (forecast unknown: <reason>); after the start the new lot's own
           forecast is recorded (trigger start); the re-check after the start refuses only what still
-          refuses
+          refuses (a lot that published meanwhile but has no worktree on disk yet has no work: the
+          start goes on)
   start - --overlap-ok accepts an overlap the start refuses, for an overlap that names its paths (a
-          lot whose scope cannot be read, or a damaged one, stays refused); it takes --by <who>
-          --reason <text>, the same go-ahead as an effort below the class; each accepted overlap is
-          a line of the lot folder's overlaps.jsonl (the other lot, the met pairs, who and why),
-          printed by the start and its dry run (! overlaps <lot>: ...) and shown on the card's scope
-          line as a warning; on an overlap the forecast cleared it is recorded all the same, printed
-          --overlap-ok not needed: the forecast cleared <lot>; the re-check after the start refuses
-          a held lot the go-ahead did not name
+          lot whose scope cannot be read stays refused; a damaged other lot whose scope reads is
+          accepted, its damage recorded beside the go-ahead); it takes --by <who> --reason <text>,
+          the same go-ahead as an effort below the class; each accepted overlap is a line of the lot
+          folder's overlaps.jsonl (the other lot, the met pairs, who and why), printed by the start
+          and its dry run (! overlaps <lot>: ...) and shown on the card's scope line as a warning;
+          on an overlap the forecast cleared it is recorded all the same, printed --overlap-ok not
+          needed: the forecast cleared <lot>; the re-check after the start refuses a held lot the
+          go-ahead did not name
   start - the effort: the risk class of the brief's scope (high when an entry reaches the package's
           dialecte.risk.high list) sets the default (high, medium or low); on a terminal, without
           --json or --dry-run, the effort is asked with that default; an effort below the class
@@ -254,19 +256,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           that lot still holds it: the lot's work is forecast against it (trigger scope, recorded
           only once the add stands) and a clean pair adds with no overlap record; a forecast
           conflict (its files and ranges), a met lock file, a forecast that cannot run, or a damaged
-          or unreadable lot refuse, unless --overlap-ok accepts an overlap that names its paths
-          (recorded in overlaps.jsonl before the add with the other lot, the met pairs, --by and
-          --reason, undone with a taken-back add; a lot whose scope cannot be read, or a damaged
-          one, stays refused; --overlap-ok without --add is refused); a call whose lines would pass
-          the line limit is refused; an add a lot started or widened meanwhile meets is taken back
-          by an undo line, the entries a drop of the same call removed put back (exit 2), a
-          take-back that would pass the line limit refusing the call first (exit 2), a take-back
-          that cannot be written exiting 1 naming the paths and that lot; each change is one line of
-          scope-changes.jsonl ({ schema, at, op, paths, by?, reason? }) and a scope.changed event;
-          the effective scope (the brief's with the changes) is what the overlap guard, lot status
-          and the card read; a damaged, simulated, committed, canceled or failed lot, a forbidden
-          word and a change line that does not read are refused (exit 2), nothing written; a line
-          that cannot be written exits 1
+          or unreadable lot refuse, unless --overlap-ok accepts an overlap that names its paths (a
+          damaged lot whose scope reads too, its damage recorded) (recorded in overlaps.jsonl before
+          the add with the other lot, the met pairs, --by and --reason, undone with a taken-back
+          add; a lot whose scope cannot be read stays refused; --overlap-ok without --add is
+          refused); a call whose lines would pass the line limit is refused; an add a lot started or
+          widened meanwhile meets is taken back by an undo line, the entries a drop of the same call
+          removed put back (exit 2), a take-back that would pass the line limit refusing the call
+          first (exit 2), a take-back that cannot be written exiting 1 naming the paths and that
+          lot; each change is one line of scope-changes.jsonl ({ schema, at, op, paths, by?, reason?
+          }) and a scope.changed event; the effective scope (the brief's with the changes) is what
+          the overlap guard, lot status and the card read; a damaged, simulated, committed, canceled
+          or failed lot, a forbidden word and a change line that does not read are refused (exit 2),
+          nothing written; a line that cannot be written exits 1
   station - appends one station event (by: host) to the lot's events.jsonl, never rewriting a line:
             start answers its run and the end command; end pairs with --run, else with the one open
             start of its station, step, round and attempt (several: refused), else repeats the last

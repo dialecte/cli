@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { HANDOVER_RUN_MARKER_FILE } from '../src/lib/handover/handover.constants.ts'
-import { writeStoreLot } from './brief-workspace.ts'
+import { writeHeldStoreLot, writeStoreLot } from './brief-workspace.ts'
 import { markAbandoned } from './handover-store-scenario.ts'
 import { ENDED_LOT, MARKER_LOT } from './lot-start-simulate-cases.constants.ts'
 import { transitionOf } from './store-records.ts'
@@ -54,7 +54,7 @@ export function markerBesideLiveRunLot(start: StartWorkspace): string {
 
 /** An open real lot on the brief's scope that `abandoned.json` alone marks canceled; its folder. */
 export function markerOnlyLot(start: StartWorkspace): string {
-	const folder = writeStoreLot({
+	const folder = writeHeldStoreLot({
 		workspace: start.workspace,
 		name: MARKER_LOT,
 		scope: ['src/dataflow/'],

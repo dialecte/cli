@@ -7,7 +7,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { writeHeldStoreLot, writeStoreLot } from '../../test/brief-workspace.ts'
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { setEntryState } from '../../test/handover-store-scenario.ts'
@@ -402,7 +402,11 @@ describe(
 				now: NOW,
 				seams: {
 					afterAppend: () =>
-						writeStoreLot({ workspace: lot.start.workspace, name: OTHER_LOT, scope: ['docs/'] }),
+						writeHeldStoreLot({
+							workspace: lot.start.workspace,
+							name: OTHER_LOT,
+							scope: ['docs/'],
+						}),
 				},
 			})
 
@@ -435,7 +439,7 @@ describe(
 				now: NOW,
 				seams: {
 					afterAppend: () =>
-						writeStoreLot({
+						writeHeldStoreLot({
 							workspace: lot.start.workspace,
 							name: OTHER_LOT,
 							scope: ['src/other'],
@@ -462,7 +466,7 @@ describe(
 				seams: {
 					afterAppend: () => {
 						chmodSync(join(lot.lotFolder, SCOPE_CHANGES_FILE), 0o444)
-						writeStoreLot({ workspace: lot.start.workspace, name: OTHER_LOT, scope: ['docs/'] })
+						writeHeldStoreLot({ workspace: lot.start.workspace, name: OTHER_LOT, scope: ['docs/'] })
 					},
 				},
 			})

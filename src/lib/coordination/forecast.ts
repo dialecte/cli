@@ -267,7 +267,10 @@ function pairOf(params: { context: RunContext; other: OpenLot }): {
 	const conflicts = outcome.conflicts.filter(
 		(conflict) => !context.selfMainPaths.has(conflict.path) && !otherMainPaths.has(conflict.path),
 	)
-	return { other: side, outcome: { ...outcome, verdict: verdictOf(conflicts), conflicts } }
+	return {
+		other: side,
+		outcome: withSharedLockFile({ ...outcome, verdict: verdictOf(conflicts), conflicts }),
+	}
 }
 
 /** A clean pair whose lots both change a lock file reads exclusive (decision Q2), even when git merges it clean. */

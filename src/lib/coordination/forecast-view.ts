@@ -136,16 +136,18 @@ export function forecastAgeText(params: { at: string; now: Date }): string {
 
 /**
  * A lot's forecast in short, for a reader that holds work by it (`plan next`): the paths its newest lines conflict on (a
- * shared lock file counted), or why one is unknown; undefined when the lot has no forecast recorded. Files only.
+ * shared lock file counted), or why its own main line is unknown; undefined when the lot has no forecast recorded.
+ * Files only.
  */
 export function forecastStandingOf(params: {
 	lotFolder: string
 }): { conflicts: string[] } | { unknown: string } | undefined {
 	const view = forecastViewOf(params)
 	if (view.main === undefined) return undefined
+	// only the lot's own main line says whether its work reads: an unknown pair with another lot is that pair's, not the
+	// lot's (a ready lot meeting it has no work, so no pair with it to know)
+	if (view.main.verdict === 'unknown') return { unknown: view.main.reason ?? '' }
 	const lines = [view.main, ...view.pairs.map((pair) => pair.line)]
-	const unknown = lines.find((line) => line.verdict === 'unknown')
-	if (unknown !== undefined) return { unknown: unknown.reason ?? '' }
 	const paths = lines.flatMap((line) => [
 		...(line.conflicts ?? []).map((conflict) => conflict.path),
 		...(line.verdict === 'exclusive' ? (line.shared ?? []).filter(isExclusivePath) : []),

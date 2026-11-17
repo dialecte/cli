@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { PLAN_TEXT } from '../../test/brief-workspace.constants.ts'
-import { briefWith, writeStoreLot } from '../../test/brief-workspace.ts'
+import { briefWith, writeHeldStoreLot, writeStoreLot } from '../../test/brief-workspace.ts'
 import {
 	createdBy,
 	createStartWorkspace,
@@ -77,7 +77,7 @@ const JSON_ROWS: JsonRow[] = [
 		exitCode: 1,
 		seams: (start) => ({
 			afterClaimPick: function otherLotAppears() {
-				writeStoreLot({
+				writeHeldStoreLot({
 					workspace: start.workspace,
 					name: OVERLAPPING_LOT,
 					scope: ['src/dataflow'],

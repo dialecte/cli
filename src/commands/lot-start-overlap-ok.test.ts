@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { PLAN_FILE, PLAN_TEXT } from '../../test/brief-workspace.constants.ts'
-import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { holdWorkOf, writeHeldStoreLot, writeStoreLot } from '../../test/brief-workspace.ts'
 import { BRIEF_DAMAGES, DAMAGES } from '../../test/damaged-lot-workspace.constants.ts'
 import { briefDamagedLotIn, damagedLotIn, refusalsOf } from '../../test/damaged-lot-workspace.ts'
 import { createStartWorkspace, entriesOf, withJson } from '../../test/lot-start-workspace.ts'
@@ -192,7 +192,7 @@ describe(
 				start,
 				seams: {
 					beforePublish: function startUnnamedLot() {
-						writeStoreLot({ workspace: start.workspace, name: UNNAMED_LOT, scope: OTHER_SCOPE })
+						writeHeldStoreLot({ workspace: start.workspace, name: UNNAMED_LOT, scope: OTHER_SCOPE })
 					},
 				},
 			})
@@ -208,6 +208,7 @@ describe(
 				start,
 				seams: {
 					beforePublish: function widenAcceptedLot() {
+						holdWorkOf({ workspace: start.workspace, name: OTHER_LOT })
 						appendScopeChanges({
 							lotFolder: join(start.store, OTHER_LOT),
 							changes: [
@@ -229,7 +230,7 @@ describe(
 			expect(started.output).toContain(`overlap with ${OTHER_LOT}, started at the same time`)
 		})
 
-		it('a damaged lot whose brief scope reads and meets the brief → still refused with --overlap-ok', () => {
+		it('a damaged lot whose brief scope reads and meets the brief → started with --overlap-ok, the go-ahead and the damage recorded (33CO behaviour 15)', () => {
 			const start = createStartWorkspace()
 			const [damage] = DAMAGES
 			const damaged = damagedLotIn({ start, kind: damage.kind })
@@ -239,9 +240,22 @@ describe(
 				extra: ['--overlap-ok', '--by', BY, '--reason', REASON],
 			})
 
-			expect(started.exitCode).toBe(2)
-			expect(refusalsOf({ json: started.json }).map((refusal) => refusal.rule)).toEqual(['overlap'])
-			expect(entriesOf(start.store)).toEqual([damaged.name])
+			expect({
+				exitCode: started.exitCode,
+				overlaps: entriesOf(start.store)
+					.filter((entry) => entry !== damaged.name)
+					.flatMap((entry) => readLotOverlaps({ lotFolder: join(start.store, entry) }).overlaps),
+			}).toEqual({
+				exitCode: 0,
+				overlaps: [
+					expect.objectContaining({
+						lot: damaged.name,
+						damage: damage.reason,
+						by: BY,
+						reason: REASON,
+					}),
+				],
+			})
 		})
 
 		it('a reason too long for its overlap record → refused before anything is written', () => {

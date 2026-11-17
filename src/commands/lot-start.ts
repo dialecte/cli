@@ -460,8 +460,8 @@ function recheckedFailure(params: {
 		.filter((overlap) => overlap.name !== parent)
 		.filter((overlap) => !isCoveredOverlap({ overlap, accepted }))
 		// what the forecast clears no longer refuses (33CO 4.7): only a damaged, unreadable or exclusive overlap, or a
-		// lot whose work does not read (one still starting has no worktree yet: unknown, fails closed)
-		.filter((overlap) => overlapHoldOf({ overlap, store }) !== undefined)
+		// lot whose work does not read; one still starting has no worktree yet, so no work: it goes on (Q5)
+		.filter((overlap) => overlapHoldOf({ overlap, store, racing: true }) !== undefined)
 	if (overlap === undefined) return undefined
 	const reason = OVERLAP_REASON.replace('{lot}', overlapLotLabelOf(overlap))
 	publishFailure({ lotFolder: params.lotFolder, kind: 'overlap', reason, now: params.now })

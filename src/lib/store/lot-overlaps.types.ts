@@ -11,6 +11,8 @@ export type LotOverlapRecord = {
 	verb: OverlapVerb
 	lot: string
 	met: string[]
+	/** The damage of a damaged other lot the go-ahead accepted (33CO behaviour 15). */
+	damage?: string
 	by: string
 	reason: string
 }

@@ -345,7 +345,7 @@ function overlapDecisionOf(params: {
 			return addOverlapsOf({ target, added }).find(
 				(overlap) =>
 					!isCoveredOverlap({ overlap, accepted }) &&
-					overlapHoldOf({ overlap, store }) !== undefined,
+					overlapHoldOf({ overlap, store, racing: true }) !== undefined,
 			)
 		},
 	}
@@ -363,7 +363,10 @@ function scopeForecastOf(params: {
 }): { lines: Map<string, ForecastLine>; refusal?: string; run?: ForecastRun } {
 	const { target, now } = params
 	const asked = params.overlaps.some(
-		(overlap) => isAcceptableOverlap(overlap) && overlap.exclusive === undefined,
+		(overlap) =>
+			isAcceptableOverlap(overlap) &&
+			overlap.damage === undefined &&
+			overlap.exclusive === undefined,
 	)
 	if (!asked) return { lines: new Map() }
 	const run = forecastLot({ lotFolder: target.lotFolder, trigger: 'scope', now: () => now })
@@ -380,7 +383,7 @@ function scopeHoldOf(params: {
 	forecast: { lines: Map<string, ForecastLine>; refusal?: string }
 }): string | undefined {
 	const { overlap, forecast } = params
-	if (!isAcceptableOverlap(overlap)) return ''
+	if (!isAcceptableOverlap(overlap) || overlap.damage !== undefined) return ''
 	if (overlap.exclusive !== undefined) return FORECAST_HOLD_TEXTS.exclusive
 	const line = forecast.lines.get(overlap.name)
 	if (line === undefined)

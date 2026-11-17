@@ -6,8 +6,16 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
-import { FORECAST_NOW, LOCK_A, OTHER_B } from '../../../test/forecast-workspace.constants.ts'
 import {
+	FORECAST_NOW,
+	LOCK_A,
+	OTHER_B,
+	SHARED_LINE2_A,
+	SHARED_LINE2_B,
+	SHARED_LINE2_MAIN,
+} from '../../../test/forecast-workspace.constants.ts'
+import {
+	commitOnMain,
 	createForecastWorkspace,
 	startForecastLot,
 	workInLot,
@@ -112,5 +120,31 @@ describe('the library the wiring reads', { timeout: STORE_CASE_TIMEOUT }, () => 
 			notes: [],
 		})
 		expect(lastEventOf(lot)).toMatchObject({ kind: 'forecast', trigger: 'gate', verdict: 'clean' })
+	})
+
+	it('two lots both changing a lock file, their one pair conflict also a main conflict of each -> the pair still reads exclusive', () => {
+		const workspace = createForecastWorkspace()
+		const first = startForecastLot({ workspace, feature: 'lot-a' })
+		const second = startForecastLot({ workspace, feature: 'lot-b' })
+		workInLot({
+			lot: first,
+			files: { 'package-lock.json': LOCK_A, 'src/shared.ts': SHARED_LINE2_A },
+		})
+		workInLot({
+			lot: second,
+			files: {
+				'package-lock.json': LOCK_A,
+				'src/shared.ts': SHARED_LINE2_B,
+				'src/other.ts': OTHER_B,
+			},
+		})
+		commitOnMain({ workspace, files: { 'src/shared.ts': SHARED_LINE2_MAIN } })
+
+		expect(forecastOf(first)).toMatchObject({
+			lines: [
+				{ against: 'main', verdict: 'conflict' },
+				{ against: second.name, verdict: 'exclusive', conflicts: [] },
+			],
+		})
 	})
 })

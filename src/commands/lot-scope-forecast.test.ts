@@ -97,4 +97,20 @@ describe('lot scope --add with the forecast', { timeout: STORE_CASE_TIMEOUT }, (
 			last: readForecastRecord({ lotFolder: second.lotFolder }).lines.map((line) => line.trigger),
 		}).toEqual({ exitCode: 0, added: true, overlaps: false, last: ['scope', 'scope'] })
 	})
+
+	it('the conflicting add with --overlap-ok -> added and recorded in overlaps.jsonl', () => {
+		const { first, second } = twoLots({ first: SHARED_LINE2_A, second: SHARED_LINE2_B })
+
+		const result = addShared({ second, extra: ['--overlap-ok'] })
+
+		expect({
+			exitCode: result.exitCode,
+			added: scopeChangesOf(second).includes('"op":"add"'),
+			overlaps: readFileSync(join(second.lotFolder, STORE_FILES.overlaps), 'utf8'),
+		}).toEqual({
+			exitCode: 0,
+			added: true,
+			overlaps: expect.stringContaining(`"lot":"${first.name}"`),
+		})
+	})
 })

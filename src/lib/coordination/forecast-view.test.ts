@@ -1,4 +1,6 @@
 /** A lot's merged forecast view (33CO 4.6): a pair seen from both sides, the newer line winning; files only. */
+import { rmSync } from 'node:fs'
+
 import { SHARED_LINE2_A, SHARED_LINE2_B } from '../../../test/forecast-workspace.constants.ts'
 import {
 	createForecastWorkspace,
@@ -7,7 +9,7 @@ import {
 } from '../../../test/forecast-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { appendForecastRun } from './forecast-record.ts'
-import { forecastViewOf } from './forecast-view.ts'
+import { forecastStandingOf, forecastViewOf } from './forecast-view.ts'
 import { forecastLot } from './forecast.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -91,5 +93,15 @@ describe('the merged forecast view', { timeout: STORE_CASE_TIMEOUT }, () => {
 				],
 			},
 		])
+	})
+
+	it("an open lot whose main line is clean and whose pair with an unrelated lot reads unknown -> its standing is known, not unknown (that pair says nothing of the lot's own work)", () => {
+		const workspace = createForecastWorkspace()
+		const first = startForecastLot({ workspace, feature: 'lot-a' })
+		const second = startForecastLot({ workspace, feature: 'lot-b' })
+		rmSync(second.worktree, { recursive: true, force: true })
+		recordAt({ lot: first, at: '2026-11-17T13:00:00.000Z' })
+
+		expect(forecastStandingOf({ lotFolder: first.lotFolder })).toEqual({ conflicts: [] })
 	})
 })

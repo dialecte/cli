@@ -18,6 +18,12 @@ export const LOT_OVERLAP_KEYS: readonly string[] = [
 	'reason',
 ]
 
+/** The key a record may hold beside them: the damage of a damaged other lot the go-ahead accepted (33CO behaviour 15). */
+export const LOT_OVERLAP_OPTIONAL_KEYS: readonly string[] = ['damage']
+
+/** How a record names a damaged other lot. */
+export const LOT_OVERLAP_DAMAGED_LOT = '{lot} (damaged: {damage})'
+
 /** The verb of an undo line: the add an overlap was recorded with was taken back. */
 export const LOT_OVERLAP_UNDO_VERB = 'undo'
 

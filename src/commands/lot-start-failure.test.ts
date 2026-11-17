@@ -2,7 +2,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { writeStoreLot } from '../../test/brief-workspace.ts'
+import { writeHeldStoreLot } from '../../test/brief-workspace.ts'
 import {
 	addOtherRepository,
 	createdBy,
@@ -206,7 +206,7 @@ describe('lot start, two starts and a moving ref', { timeout: STORE_CASE_TIMEOUT
 				now: START_NOW,
 				seams: {
 					afterClaimPick: function otherLotAppears() {
-						writeStoreLot({
+						writeHeldStoreLot({
 							workspace: start.workspace,
 							name: OVERLAPPING_LOT,
 							scope: ['src/dataflow'],

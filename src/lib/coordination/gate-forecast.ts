@@ -22,6 +22,24 @@ export function runGateForecast(params: {
 	cwd: string
 	now?: () => Date
 }): GateForecast | undefined {
+	// the gate's verdict and exit never change (Q6): a forecast that throws is an unknown note, never a crash
+	try {
+		return gateForecastOf(params)
+	} catch (error) {
+		const reason = (error as Error).message
+		return {
+			verdict: 'unknown',
+			lines: [],
+			text: [
+				fillMessage({ template: GATE_FORECAST_TEXTS.verdict, values: { verdict: 'unknown' } }),
+				fillMessage({ template: GATE_FORECAST_TEXTS.failed, values: { reason } }),
+			],
+		}
+	}
+}
+
+/** `runGateForecast` without its guard. */
+function gateForecastOf(params: { cwd: string; now?: () => Date }): GateForecast | undefined {
 	const lotFolder = lotOfWorktree({ cwd: params.cwd })
 	if (lotFolder === undefined) return undefined
 	// the lot's own worktree only: a review round's throwaway of the same index holds no work of the lot

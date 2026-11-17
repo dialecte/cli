@@ -1,6 +1,6 @@
 /** The brief of a lot: the field checks (pure), and the whole check against the repository, the plan and the store. */
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { FORECAST_HOLD_TEXTS } from '../coordination/forecast.constants.ts'
@@ -42,6 +42,7 @@ import {
 	PUBLIC_TEXT_UNCHECKED_DETAIL,
 	WHOLE_BRIEF_FIELD,
 } from './brief.constants.ts'
+import { readIdentity } from './identity.ts'
 import { isAcceptableOverlap } from './lot-overlaps.ts'
 import {
 	overlapLotLabelOf,
@@ -890,10 +891,20 @@ function overlapFaults(params: {
  * (today's text says why), the exclusive text for a met lock file (decision Q2), the unknown reason when the met lot's
  * work cannot be read (its forecast against main, run and never written); undefined when the forecast clears it.
  */
-export function overlapHoldOf(params: { overlap: LotOverlap; store: string }): string | undefined {
+export function overlapHoldOf(params: {
+	overlap: LotOverlap
+	store: string
+	/**
+	 * A re-check after a publish: a met lot whose worktree is not on disk yet is still starting, so it has no work and
+	 * cannot conflict (33CO 4.7, decision Q5); never a hold.
+	 */
+	racing?: boolean
+}): string | undefined {
 	const { overlap } = params
-	if (!isAcceptableOverlap(overlap)) return ''
+	if (!isAcceptableOverlap(overlap) || overlap.damage !== undefined) return ''
 	if (overlap.exclusive !== undefined) return FORECAST_HOLD_TEXTS.exclusive
+	if (params.racing && !hasWorktreeOnDisk({ lotFolder: join(params.store, overlap.name) }))
+		return undefined
 	const run = forecastLot({
 		lotFolder: join(params.store, overlap.name),
 		trigger: 'start',
@@ -904,6 +915,12 @@ export function overlapHoldOf(params: { overlap: LotOverlap; store: string }): s
 	return reason === undefined
 		? undefined
 		: fillMessage({ template: FORECAST_HOLD_TEXTS.unknown, values: { reason } })
+}
+
+/** Whether the lot's identity names a worktree that is on disk (a lot still starting has none yet). */
+function hasWorktreeOnDisk(params: { lotFolder: string }): boolean {
+	const worktree = readIdentity(params)?.worktree
+	return worktree !== null && worktree !== undefined && existsSync(join(worktree, '.git'))
 }
 
 /** The open lot `--on` names (`resolveStackParent`), or its refusal; undefined without `--on` or a repository. */

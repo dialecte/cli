@@ -41,6 +41,7 @@ export const EXCLUSIVE_FILE_NAMES: ReadonlySet<string> = new Set([
 	'yarn.lock',
 	'bun.lock',
 	'bun.lockb',
+	'uv.lock',
 ])
 
 /** The `against` of the comparison with main. */
@@ -159,6 +160,7 @@ export const FORECAST_HOLD_TEXTS = {
 export const GATE_FORECAST_TEXTS = {
 	verdict: 'forecast: {verdict}',
 	held: '! {against}: {hold}',
+	failed: '! the forecast could not run: {reason}',
 } as const
 
 /** The age of a stored forecast as a reader shows it (a stale result never counts as clean: its age is said). */
