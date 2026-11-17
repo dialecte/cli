@@ -26,7 +26,9 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
   show - the card again, recomputed, nothing written; without an argument the newest of the branch;
          BLOCKED with a ! line when the target branch moved past the hand-over (merge it first);
          BLOCKED with a ✗ processes line naming the processes left running in the worktree (no
-         terminal, not under an editor, not named in git config dialecte.personProcesses)
+         terminal, not under an editor, not named in git config dialecte.personProcesses); BLOCKED
+         with a ✗ merges line when a merge lot not committed yet has no recorded tree, worded as run
+         refuses it
   review - opens the hand-over's worktree in a new editor window, started detached (a hand-over
            holding a merge lot first writes review/lot.diff, the lot's change against head, and
            opens it too); the editor: git config dialecte.editor in the worktree (its words, no flag
@@ -47,6 +49,7 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
   --legend - every term of the card, what it means, whether to look
 
 exit codes:
+  2  every verb: an option its usage lines do not name, or a value option given last without its value: the usage printed (--json: { error, usage, next: null } where the verb takes --json); nothing read or written
   2  run: the target branch moved past the hand-over (merge it first) or has no ref, a process left running in the worktree or a process list not known, a gate config the cli cannot run, a canceled lot, a hand-over that is not a lot of the store (without --not-a-lot), a simulated or damaged lot, --not-a-lot without --by and --reason (or --by/--reason without it), a forbidden word in --by or --reason; nothing committed
   2  write: a --target branch with neither a local nor an origin ref, no base branch found without --target, an --out the lot folder refuses; nothing written
 e.g. dialecte handover write ../handover/lots.json

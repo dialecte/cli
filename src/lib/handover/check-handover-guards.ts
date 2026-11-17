@@ -45,6 +45,8 @@ import {
 	HANDOVER_FILES,
 	HEAD_GUARD_NAME,
 	MERGE_NOTE_SHA_LENGTH,
+	MERGE_TREE_NOT_RECORDED_REFUSAL,
+	MERGES_GUARD_NAME,
 	NO_GREEN_CONTRIB_DETAIL,
 	OTHER_KEY_CONTRIB_CAUSES,
 	OTHER_KEY_CONTRIB_DETAIL,
@@ -70,7 +72,7 @@ import { restoreLeftoverBackup } from './sync-node-modules.ts'
 import { findTargetRef, targetLineOf, targetMoved } from './target-moved.ts'
 import { hashFile } from './write-handover.ts'
 
-import type { GateRecord } from '../gate-records/gate-records.types.ts'
+import type { CardGateLine, GateRecord } from '../gate-records/gate-records.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
@@ -213,7 +215,7 @@ export function checkHandoverGuards(params: {
 		...(lots.some((lot) => lot.merge)
 			? [
 					{
-						name: 'merges',
+						name: MERGES_GUARD_NAME,
 						check: function mergesAsReviewed(): GuardVerdict {
 							const target = findTargetRef({ root, lotsFile, packageJson })
 							return checkMerges({
@@ -436,7 +438,7 @@ function checkMerges(params: {
 		if (!merge.tree && !params.rehearsal)
 			return {
 				ok: false,
-				detail: `lot ${number}: tree not recorded: rehearse first (\`--rehearse\` prints it), add it as "tree" to the lot, then \`dialecte handover --rehash\``,
+				detail: MERGE_TREE_NOT_RECORDED_REFUSAL.replace('{number}', String(number)),
 			}
 		const changed = merge.resolutions.filter(
 			(resolution) =>
@@ -644,4 +646,27 @@ function resolveCommit(params: { root: string; revision: string }): string | und
 		{ cwd: params.root, encoding: 'utf8' },
 	)
 	return result.status === 0 ? result.stdout.trim() : undefined
+}
+
+/**
+ * The card's failed `merges` line for the first lot not committed yet that is a merge without its recorded tree,
+ * worded as the run's `merges` guard refuses it; none when every pending merge lot holds its tree, nor on a
+ * rehearsal's card (a rehearsal checks no tree: it is what records one).
+ */
+export function mergeTreeLineOf(params: {
+	lots: readonly ResolvedLot[]
+	committed: number
+	/** The card of a rehearsal, whose commits are the scratch clone's. */
+	rehearsal: boolean
+}): CardGateLine | undefined {
+	if (params.rehearsal) return undefined
+	const index = params.lots.findIndex(
+		(lot, position) => position >= params.committed && lot.merge !== undefined && !lot.merge.tree,
+	)
+	if (index < 0) return undefined
+	return {
+		name: MERGES_GUARD_NAME,
+		status: 'failed',
+		detail: MERGE_TREE_NOT_RECORDED_REFUSAL.replace('{number}', String(index + 1)),
+	}
 }

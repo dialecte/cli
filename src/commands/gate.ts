@@ -50,6 +50,7 @@
  */
 import { join } from 'node:path'
 
+import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag } from '../lib/config.ts'
 import { GATE_STEP_KINDS, HEAVY_STEP_KINDS } from '../lib/events/record-step.constants.ts'
@@ -150,6 +151,8 @@ export async function run(argv: string[]): Promise<void> {
 }
 
 export async function runGate(params: GateRunParams): Promise<CommandResult> {
+	const unknown = unknownOptionRefusal({ name: 'gate', argv: params.argv })
+	if (unknown) return unknown
 	const refused = refuseModeFlags(params.argv)
 	if (refused) return refused
 	if (hasFlag(params.argv, 'hook')) return runHookMode(params)

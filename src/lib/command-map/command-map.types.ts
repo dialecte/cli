@@ -79,3 +79,19 @@ export type RecordVerb = Extract<DeclaredRenamedForm, { command: 'record' }>['lo
 
 /** What `dialecte <renamed command> --help --json` prints: each old form with its new one, words after `dialecte`. */
 export type RenamedJson = { renamed: RenamedWords[] }
+
+/**
+ * The options a verb's usage lines name: those taking a value and the bare flags, without their dashes, and whether
+ * a line writes `--`, the end of the options.
+ */
+export type VerbOptions = {
+	valueOptions: string[]
+	flags: string[]
+	endsOptions: boolean
+}
+
+/** One `--name` of a usage line, without its dashes, and whether a value follows it. */
+export type UsageOption = {
+	name: string
+	takesValue: boolean
+}

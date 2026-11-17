@@ -35,6 +35,7 @@ import { dirname, join, resolve } from 'node:path'
 
 import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { renderSectionCard, resolveCardColumns } from '../lib/card/render-section-card.ts'
+import { unknownOptionRefusal } from '../lib/command-map/verb-options.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { startStep } from '../lib/events/record-step.ts'
@@ -73,6 +74,7 @@ import {
 	COMMIT_SCRIPT_FILE,
 	HANDOVER_ABANDON_TEXTS,
 	HANDOVER_FILES,
+	HANDOVER_HIDDEN_OPTIONS,
 	HANDOVER_INTERLEAVING_REFUSALS,
 	HANDOVER_REHASH_ABANDONED_REFUSAL,
 	HANDOVER_RUN_TEXTS,
@@ -152,6 +154,17 @@ export async function run(argv: string[]): Promise<void> {
 		terminalColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
 		environmentColumns: process.env.COLUMNS,
 	})
+	// an option no usage line of the verb names stops every verb before it reads or writes anything
+	const refused = unknownOptionRefusal({
+		name: 'handover',
+		argv,
+		defaultVerb: 'write',
+		hidden: HANDOVER_HIDDEN_OPTIONS,
+	})
+	if (refused) {
+		printOut({ stream: 'stderr', text: refused.output })
+		process.exit(refused.exitCode)
+	}
 	if (argv[0] === 'run') {
 		const live = openProcessLiveOutput()
 		const exitCode = await runHandoverRun({

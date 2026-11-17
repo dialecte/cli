@@ -435,7 +435,7 @@ describe('runGate: hygiene, no machine lock', { timeout: 30_000 }, () => {
 		)
 	})
 
-	it('--full --no-wait, the old machine lock file of the cache folder held by a live process → the steps run: no gate takes a lock', async () => {
+	it('--full, the old machine lock file of the cache folder held by a live process → the steps run: no gate takes a lock', async () => {
 		const cache = temporaryFolder('dialecte-gate-cache-')
 		writeFileSync(
 			join(cache, 'heavy-run.lock'),
@@ -452,7 +452,7 @@ describe('runGate: hygiene, no machine lock', { timeout: 30_000 }, () => {
 			full: [{ name: 'build', run: 'printf %s "$DIALECTE_MACHINE_LOCK_HOLDER" > ran' }],
 		})
 
-		const result = await gate({ cwd: root, argv: ['--full', '--no-wait'] })
+		const result = await gate({ cwd: root, argv: ['--full'] })
 
 		expect(result.exitCode).toBe(0)
 		// no step runs as the holder of a lock
@@ -474,7 +474,7 @@ describe('runGate: hygiene, no machine lock', { timeout: 30_000 }, () => {
 })
 
 describe('runGate: a package whose tests run in a browser', { timeout: 30_000 }, () => {
-	it('its test step, declared heavy, the old machine lock file held by a live process, --no-wait → the step runs', async () => {
+	it('its test step, declared heavy, the old machine lock file held by a live process → the step runs', async () => {
 		const cache = temporaryFolder('dialecte-gate-cache-')
 		writeFileSync(
 			join(cache, 'heavy-run.lock'),
@@ -508,7 +508,7 @@ describe('runGate: a package whose tests run in a browser', { timeout: 30_000 },
 				"export default { test: { projects: [{ test: { name: 'unit', browser: createBrowser() } }] } }\n",
 		})
 
-		const result = await gate({ cwd: root, argv: ['--no-wait'] })
+		const result = await gate({ cwd: root, argv: [] })
 
 		expect(result.exitCode).toBe(0)
 		expect(existsSync(join(root, 'ran'))).toBe(true)

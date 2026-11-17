@@ -383,6 +383,14 @@ npx --no-install @dialecte/cli handover run --probe >/dev/null 2>&1 || { echo ">
 exec npx --no-install @dialecte/cli handover run "$HERE" "$@"
 `
 
+/**
+ * The options a `handover` verb accepts that no usage line names: `run --probe`, which `commit.sh` asks the
+ * repository's own cli (`HANDOVER_PROBE_COMMAND`), never a person.
+ */
+export const HANDOVER_HIDDEN_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+	run: ['probe'],
+}
+
 /** What `commit.sh` asks the repository's own cli: does it run hand-overs? */
 export const HANDOVER_PROBE_COMMAND = [
 	'npx',
@@ -633,6 +641,16 @@ export const TARGET_NOT_FOUND_TAIL = 'target: not found (below)'
 
 /** The verdict's tail for the lines recorded on another tree: `{names}` in card order. */
 export const OTHER_TREE_GATES = 'gates ran on another tree: {names}'
+
+/** The guard that checks the merge lots before a run, and the card's line that says what it would refuse. */
+export const MERGES_GUARD_NAME = 'merges'
+
+/**
+ * What the `merges` guard refuses for a pending merge lot (`{number}`, from 1) without its recorded tree, and the
+ * detail of the card's failed `merges` line for it: the same text, so the card says what the run would.
+ */
+export const MERGE_TREE_NOT_RECORDED_REFUSAL =
+	'lot {number}: tree not recorded: rehearse first (`--rehearse` prints it), add it as "tree" to the lot, then `dialecte handover --rehash`'
 
 /** A merge lot's size before a rehearsal recorded its tree. */
 export const MERGE_NOT_SIZED = 'size after rehearse'
