@@ -24,12 +24,15 @@ export const HOST_ENVIRONMENT = {
 /** What `gh` answers when the branch has no pull request: no pull request, not a refusal. */
 export const NO_PULL_REQUEST_PATTERN = /no (open )?pull requests? found/i
 
-/** The command (and its first words) that opens a page in the browser, by platform; `default` for the others. */
+/**
+ * The command (and its first words) that opens a page in the browser, by platform; `default` for the others. Windows
+ * opens through `url.dll`, never `cmd /c start`: cmd reads a link's `&` and `^` as its own syntax.
+ */
 export const BROWSER_OPENERS: Readonly<Record<string, readonly string[]>> & {
 	default: readonly string[]
 } = {
 	darwin: ['open'],
-	win32: ['cmd', '/c', 'start', ''],
+	win32: ['rundll32', 'url.dll,FileProtocolHandler'],
 	default: ['xdg-open'],
 }
 
