@@ -162,7 +162,9 @@ export type StoreFileNames = Readonly<
 		| 'review'
 		| 'tests'
 		| 'overlaps'
-		| 'planEntry',
+		| 'planEntry'
+		| 'approvals'
+		| 'pulledComments',
 		string
 	>
 >

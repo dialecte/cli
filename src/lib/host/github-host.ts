@@ -1,20 +1,34 @@
 /** The GitHub host adapter: pull requests and the merge queue through the `gh` cli. */
 import { spawnSync } from 'node:child_process'
 
+import { checksOf, reviewCommentsOf } from './github-reads.ts'
 import {
+	BROWSER_OPENERS,
+	CHECKS_FIELDS,
+	FILES_TAB_SUFFIX,
 	GH_COMMAND,
 	HOST_ENVIRONMENT,
 	HOST_READ_TIMEOUT_MS,
 	HOST_WRITE_TIMEOUT_MS,
 	NO_PULL_REQUEST_PATTERN,
+	OPEN_TIMEOUT_MS,
 	PULL_REQUEST_FIELDS,
+	REVIEW_COMMENTS_ENDPOINT,
+	REVIEW_COMMENTS_JQ,
 } from './host.constants.ts'
 
-import type { HostAdapter, HostRefusal, PullRequest } from './host.types.ts'
+import type {
+	HostAdapter,
+	HostRefusal,
+	PullRequest,
+	PullRequestChecks,
+	ReviewComment,
+} from './host.types.ts'
 
 /**
  * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, edited (title and body), queued (`gh pr merge --auto`,
- * which joins the merge queue when the base branch has one; a draft made ready first). Reads are short, never a prompt.
+ * which joins the merge queue when the base branch has one; a draft made ready first); its checks and line comments read,
+ * its changed files opened in the browser. Reads are short, never a prompt.
  *
  * @intent land lots through GitHub's pull requests and merge queue
  * @internal
@@ -56,6 +70,9 @@ export function createGithubHost(): HostAdapter {
 		},
 		editPullRequest: editOnGithub,
 		closePullRequest: closeOnGithub,
+		readChecks: readChecksOnGithub,
+		readReviewComments: readCommentsOnGithub,
+		openFiles: openFilesTab,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -75,6 +92,52 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
+}
+
+/** `gh pr view <number> --json headRefOid,statusCheckRollup`: the checks on its head, or the refusal. */
+function readChecksOnGithub(params: {
+	root: string
+	number: number
+}): PullRequestChecks | HostRefusal {
+	const run = runGh({
+		root: params.root,
+		args: ['pr', 'view', String(params.number), '--json', CHECKS_FIELDS],
+		timeout: HOST_READ_TIMEOUT_MS,
+	})
+	return 'refusal' in run ? run : checksOf({ text: run.output })
+}
+
+/** `gh api` of the pull request's review comments, every page, one object per line: the comments, or the refusal. */
+function readCommentsOnGithub(params: {
+	root: string
+	number: number
+}): ReviewComment[] | HostRefusal {
+	const run = runGh({
+		root: params.root,
+		args: [
+			'api',
+			REVIEW_COMMENTS_ENDPOINT.replace('{number}', String(params.number)),
+			'--paginate',
+			'--jq',
+			REVIEW_COMMENTS_JQ,
+		],
+		timeout: HOST_READ_TIMEOUT_MS,
+	})
+	return 'refusal' in run ? run : reviewCommentsOf({ text: run.output })
+}
+
+/** The page of the pull request's changed files opened by the platform's browser opener: undefined once handed over. */
+function openFilesTab(params: { root: string; url: string }): HostRefusal | undefined {
+	const [command, ...words] = BROWSER_OPENERS[process.platform] ?? BROWSER_OPENERS.default
+	const run = spawnSync(command, [...words, `${params.url}${FILES_TAB_SUFFIX}`], {
+		cwd: params.root,
+		encoding: 'utf8',
+		timeout: OPEN_TIMEOUT_MS,
+		stdio: ['ignore', 'ignore', 'pipe'],
+	})
+	if (run.status === 0) return undefined
+	const reason = run.error?.message ?? (run.stderr.trim().split('\n')[0] || `exit ${run.status}`)
+	return { refusal: `${command}: ${reason}` }
 }
 
 /** `gh pr edit <number> --title <title> --body-file -`, the body on its input: undefined once edited, else its refusal. */

@@ -1,8 +1,6 @@
 /** `dialecte lot pr`: its lines; `{lot}` the id given. */
 export const LOT_PR_LINES = {
 	prefix: 'lot pr: ',
-	damaged: 'lot pr: {lot} is damaged: dialecte lot status {lot} says how',
-	noWorktree: 'lot pr: {lot} has no worktree (a simulated lot, or its identity unreadable)',
 	title: 'title: {title}',
 	updated: 'pull request #{number} updated from the lot records: {url}',
 	unchanged: 'pull request #{number} already reads the lot records: {url}',
@@ -16,3 +14,10 @@ export const LOT_PR_LINES = {
 
 /** The options `lot pr` takes: any other is a usage error (a mistyped `--print` must never send). */
 export const LOT_PR_OPTIONS: readonly string[] = ['--print', '--json']
+
+/** Where a lot's pull request verb finds the lot: its refusals, after `lot <verb>: `; `{lot}` the id given. */
+export const LOT_PLACE_LINES = {
+	prefix: 'lot {verb}: ',
+	damaged: '{lot} is damaged: dialecte lot status {lot} says how',
+	noWorktree: '{lot} has no worktree (a simulated lot, or its identity unreadable)',
+} as const

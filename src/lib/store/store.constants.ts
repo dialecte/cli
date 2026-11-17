@@ -33,6 +33,10 @@ export const STORE_FILES: StoreFileNames = {
 	tests: 'tests.json',
 	// `lot start` / `lot scope --overlap-ok` append the overlaps the lot accepted, with who and why (FIX-overlap-ok)
 	overlaps: 'overlaps.jsonl',
+	// `lot approve` appends each approval here: who, why, the head and pull request approved
+	approvals: 'approvals.jsonl',
+	// `lot review --pull` appends each pull request comment it made a finding of: the comment and the finding's id
+	pulledComments: 'pulled-comments.jsonl',
 }
 
 /** The folder of the store in the repository's git common folder. */

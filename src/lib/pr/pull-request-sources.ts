@@ -35,6 +35,7 @@ import { recordValueFault } from './record-values.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	ChangedFile,
+	PreparedPullRequest,
 	PullRequestChangelog,
 	PullRequestSources,
 	PullRequestStep,
@@ -57,7 +58,7 @@ export function preparePullRequest(params: {
 	 * (the text it lands), or also the base (an early check of a lot cut before the template changed).
 	 */
 	templateRefs?: readonly string[]
-}): { template: string; sources: PullRequestSources } | { refusal: string } {
+}): PreparedPullRequest | { refusal: string } {
 	const template = templateOf({ worktree: params.worktree, refs: params.templateRefs ?? ['HEAD'] })
 	if ('refusal' in template) return template
 	const sources = readPullRequestSources(params)
