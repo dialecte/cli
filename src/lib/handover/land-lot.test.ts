@@ -518,27 +518,65 @@ describe(
 			expect(registeredEntryOf({ store, folder: repository.lotFolder })).toEqual(before)
 		})
 
-		it("a committed lot whose branch main holds → the registry's committed answer, the same registering gives, no entry written", () => {
-			const repository = landingRepository()
+		/** The lot's hand-over entry registered and recorded committed; its registered name. */
+		function committedLot(repository: LandingRepository): string {
 			const store = handoverStoreOf(repository.worktree)
-			registerHandover({
+			const name = registerHandover({
 				root: repository.worktree,
 				folder: repository.lotFolder,
 				branch: 'feat/x',
 				now: NOW,
 			})
 			recordHandoverState({ store, folder: repository.lotFolder, state: 'committed' })
+			return name
+		}
+
+		it("a committed lot whose branch main holds → the registry's committed answer, the same registering gives, no entry written", () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			const name = committedLot(repository)
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
-			const before = readStoreEntries(store).length
+			const before = readStoreEntries(store)
 
 			const result = land({ repository, host: recordingHost().host, draft: true })
 
 			expect({
-				committed: result.lines.some((line) =>
-					line.includes('is committed: a committed hand-over is never rewritten'),
-				),
-				entries: readStoreEntries(store).length,
-			}).toEqual({ committed: true, entries: before })
+				exitCode: result.exitCode,
+				lines: result.lines,
+				entries: readStoreEntries(store),
+			}).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: ${name} is committed: a committed hand-over is never rewritten: nothing pushed`,
+				],
+				entries: before,
+			})
+		})
+
+		it('a committed lot whose branch holds a commit beyond the base → the same committed answer, nothing pushed, the entry left as it was', () => {
+			const repository = landingRepository()
+			const store = handoverStoreOf(repository.worktree)
+			const name = committedLot(repository)
+			const before = readStoreEntries(store)
+
+			const result = land({ repository, host: recordingHost().host, draft: true })
+
+			expect({
+				exitCode: result.exitCode,
+				lines: result.lines,
+				entries: readStoreEntries(store),
+				origin: git({
+					root: repository.root,
+					args: ['ls-remote', 'origin', 'refs/heads/feat/x'],
+				}).trim(),
+			}).toEqual({
+				exitCode: 1,
+				lines: [
+					`lot land: ${name} is committed: a committed hand-over is never rewritten: nothing pushed`,
+				],
+				entries: before,
+				origin: '',
+			})
 		})
 
 		it("origin's branch at a commit the base holds (a push that opened no pull request) → pushed over it, the pull request opened", () => {
