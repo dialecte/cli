@@ -54,8 +54,8 @@ export const BASE_FILES_ARGUMENTS: readonly string[] = ['ls-tree', '-r', '--name
 /** The verdict of a `lot approve` line: a person approved the pull request. */
 export const APPROVE_VERDICT = 'approve'
 
-/** The severity that blocks an approval while its finding is not closed. */
-export const BLOCKING_SEVERITY = 'blocking'
+/** The one severity that never blocks an approval; any other, or one the parser cannot read, blocks while open. */
+export const NON_BLOCKING_SEVERITY = 'nit'
 
-/** The finding states that close a finding: every other one (open, a fix to verify) is still open. */
-export const CLOSED_STATES: readonly string[] = ['fixed', 'accepted', 'logged']
+/** The finding states that leave a finding open (a fix not verified yet included); the others close it. */
+export const OPEN_STATE_WORDS: readonly string[] = ['open', 'fix-to-verify']

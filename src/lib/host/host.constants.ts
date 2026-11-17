@@ -11,8 +11,15 @@ export const PULL_REQUEST_FIELDS = 'number,url,title,body,state,isDraft,autoMerg
 export const HOST_READ_TIMEOUT_MS = 10_000
 export const HOST_WRITE_TIMEOUT_MS = 60_000
 
-/** A host call never prompts. */
-export const HOST_ENVIRONMENT = { GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' } as const
+/** A host call never prompts, and writes plain text. */
+export const HOST_ENVIRONMENT = {
+	GH_PROMPT_DISABLED: '1',
+	GIT_TERMINAL_PROMPT: '0',
+	// what gh writes is parsed: never coloured, whatever the caller's terminal asks
+	NO_COLOR: '1',
+	CLICOLOR_FORCE: '0',
+	GH_FORCE_TTY: '',
+} as const
 
 /** What `gh` answers when the branch has no pull request: no pull request, not a refusal. */
 export const NO_PULL_REQUEST_PATTERN = /no (open )?pull requests? found/i
@@ -46,3 +53,6 @@ export const COMPLETED_STATUS = 'COMPLETED'
 /** A commit status's states: the one that passes, and those still pending; any other fails. */
 export const PASSING_STATUS_STATE = 'SUCCESS'
 export const PENDING_STATUS_STATES: readonly string[] = ['PENDING', 'EXPECTED']
+
+/** The type a commit status has in the rollup; every other entry is a check run. */
+export const STATUS_CONTEXT_TYPE = 'StatusContext'

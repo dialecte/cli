@@ -99,21 +99,26 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   review --pull - the pull request's line comments come back as findings of round <n> in the lot's
     findings ledger: a thread's first comment only (replies discuss it), each once
     (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
-    severity from a leading blocking:, should-fix: or nit: (dropped from the text), else should-fix,
-    at its path:line (the path alone for a comment on the file), its lines joined into one;
-    review.jsonl written again; private points stay off the pull request: lot finding records them
+    severity from a leading blocking:, should-fix: or nit: (dropped from the text, kept when it is
+    all the comment says), else should-fix, at its path:line (the path alone for a comment on the
+    file), its lines joined into one; review.jsonl written again; private points stay off the pull
+    request: lot finding records them
   approve - a person's approval of the lot's pull request: refused (exit 1, nothing recorded,
-            nothing queued) unless the pull request landing.json names is open at the head the lot
-            landed, its checks are green on that head (a failing or pending check, or none yet,
-            refuses) and no blocking finding is open (open, or a fix still to verify); then appends
-            { schema, at, by, reason?, number, head } to the lot folder's approvals.jsonl, which
-            review.jsonl shows as a person's approve verdict (the pull request body names it by kind
-            only, never the name), renders the pull request's text again from the records, makes a
-            draft ready and queues it (gh pr merge --auto); --by orchestrator approves the cli's own
-            lots only (the package named @dialecte/cli), every other package waits for a person
-            (exit 2); a forbidden word in --by or --reason, or a --by holding what a public record
-            never holds, refused (exit 2) before the host is asked; a lot without a landing names
-            lot land <id> --draft
+            nothing queued) unless the lot is at work, the pull request landing.json names is open
+            at the head the lot landed, its checks ran on that head and are green (a check run again
+            counts by its newest run; a failing or pending check, or none yet, refuses) and no
+            finding but a nit is open (open, or a fix still to verify), and its text renders over
+            the live body; then appends { schema, at, by, reason?, number, head } to the lot
+            folder's approvals.jsonl, which review.jsonl shows as a person's approve verdict while
+            the worktree is at that head (a later commit leaves the lot unapproved; the pull request
+            body names it by kind only, never the name), renders the pull request's text again from
+            the records, makes a draft ready and queues it (gh pr merge --auto); a queue the host
+            refuses keeps the approval (exit 1) and the same approval run again answers already
+            approved, writing nothing, and queues; --by orchestrator (in any case) approves the
+            cli's own lots only (the package named @dialecte/cli), every other package waits for a
+            person (exit 2); a forbidden word in --by or --reason, or a --by holding what a public
+            record never holds, refused (exit 2) before the host is asked; a lot without a landing
+            names lot land <id> --draft
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
@@ -785,7 +790,8 @@ comment once; the lot fixes them as a review round. Private points (the plans, t
 are recorded with `lot finding`.
 
 `dialecte lot approve <id> --by <who> [--reason <text>]` is the approval: once the pull request is at the head the lot
-landed, its checks are green there and no blocking finding is open, it records a person's `approve` verdict
-(`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only), renders the body again and queues the pull
+landed, its checks are green there and no finding but a nit is open, it records a person's `approve` verdict
+(`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
+approval), renders the body again and queues the pull
 request. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
 waits for a person.

@@ -87,6 +87,23 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(readFileSync(join(lot.lotFolder, LEDGER_FILE), 'utf8')).toBe(before)
 	})
 
+	it('a comment holding only its severity → a finding of the comment as written, never an empty one', () => {
+		const lot = landedLot()
+		const { host } = recordingHost({
+			existing: lot.pullRequest,
+			comments: [{ id: 201, path: 'src/x.ts', line: 1, body: 'nit:' }],
+		})
+
+		const result = runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--pull', '--round', '2'],
+			host,
+		})
+
+		expect(result.exitCode).toBe(0)
+		expect(ledgerRows(lot.lotFolder)).toEqual(['| R2-1 | 2 | nit | src/x.ts:1 | nit: | open |'])
+	})
+
 	it('--pull without --round → usage, exit 2, nothing asked or written', () => {
 		const lot = landedLot()
 		const { host, calls } = recordingHost({ existing: lot.pullRequest, comments: COMMENTS })

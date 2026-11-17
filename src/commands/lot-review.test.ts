@@ -94,7 +94,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 			lines.some((line) => line.startsWith('standard: ') && line.includes('the rule read')),
 		).toBe(true)
 		expect(lines).toContain(
-			'approve: would refuse: checks pending on the head: ci-ok; blocking finding open: R1-1',
+			'approve: would refuse: checks pending on the head: ci-ok; findings open: R1-1 blocking',
 		)
 		expect(lines.filter((line) => line !== '').at(-1)).toBe(
 			`files: ${REVIEW_PULL_URL}/files opened`,

@@ -1,20 +1,23 @@
 /**
  * `dialecte lot approve <id> --by <who> [--reason <text>]`: a person's approval of the lot's pull request (33CI CI7).
  * Refused, nothing recorded and nothing queued, unless the pull request is open at the lot's landed head, its checks
- * are green there and no blocking finding is open. Then the approval is appended to the lot folder's `approvals.jsonl`
+ * are green there and no blocking or should-fix finding is open. Then the approval is appended to the lot folder's `approvals.jsonl`
  * (a person's verdict row of `review.jsonl`), the pull request's text rendered again from the records and the pull
  * request queued (made ready when a draft). `--by orchestrator` approves the cli's own lots only.
  */
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { appendLine } from '../lib/events/write-event.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
+import { keptPartOf } from '../lib/pr/compose-pull-request.ts'
 import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
@@ -29,7 +32,6 @@ import {
 	CLI_PACKAGE_NAME,
 	LOT_APPROVE_LINES,
 	ORCHESTRATOR_APPROVER,
-	SHOWN_HEAD_LENGTH,
 } from './lot-approve.constants.ts'
 import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
 
@@ -87,10 +89,12 @@ export function runLotApprove(params: {
 				.replace('{lot}', () => place.lot)
 				.replace('{reasons}', () => reasons.join('; ')),
 		})
-	// the text must render with the approval before it is recorded: a refusal leaves nothing behind
+	// the text must render over the live body before the approval is recorded: a refusal leaves nothing behind
 	const early = preparePullRequest({ ...place, templateRefs: ['HEAD'] })
-	if ('refusal' in early)
-		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${early.refusal}` })
+	const kept =
+		'refusal' in early ? early : keptPartOf({ template: early.template, body: pullRequest.body })
+	if ('refusal' in kept)
+		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${kept.refusal}` })
 	return recordAndQueue({
 		host,
 		place,
@@ -107,8 +111,9 @@ export function runLotApprove(params: {
 }
 
 /**
- * Why `lot approve` would refuse the lot now: the pull request is not at the head the lot landed, its checks are not
- * green there, or a blocking finding is open; none when it would approve.
+ * Why `lot approve` would refuse the lot now: the lot is no longer at work, its pull request is not open or not at the
+ * head the lot landed, its checks are not green on that head, or a finding other than a nit is open; none when it
+ * would approve.
  *
  * @intent tell what stands between a lot and its approval
  * @internal
@@ -119,10 +124,27 @@ export function approvalRefusals(params: {
 	checks: PullRequestChecks
 	landed: string
 }): string[] {
+	const { place, pullRequest } = params
 	return [
+		...(APPROVABLE_STATES.includes(place.state)
+			? []
+			: [
+					fillMessage({
+						template: LOT_APPROVE_LINES.lotNotApprovable,
+						values: { state: place.state },
+					}),
+				]),
+		...(pullRequest.state === 'open'
+			? []
+			: [
+					fillMessage({
+						template: LOT_APPROVE_LINES.notOpen,
+						values: { number: String(pullRequest.number), state: pullRequest.state },
+					}),
+				]),
 		...headReasons(params),
-		...checksReasons(params.checks),
-		...blockingReasons({ folder: params.place.lotFolder }),
+		...checksReasons(params),
+		...blockingReasons({ folder: place.lotFolder }),
 	]
 }
 
@@ -137,7 +159,7 @@ function approverRefusal(params: {
 }): string | undefined {
 	const { place, by } = params
 	const packageName = readPackageJson(place.worktree).name ?? place.worktree
-	if (by === ORCHESTRATOR_APPROVER && packageName !== CLI_PACKAGE_NAME)
+	if (by.toLowerCase() === ORCHESTRATOR_APPROVER && packageName !== CLI_PACKAGE_NAME)
 		return LOT_APPROVE_LINES.orchestratorElsewhere.replace('{package}', () => packageName)
 	const wordRefusal = forbiddenWordRefusal({
 		root: place.worktree,
@@ -161,7 +183,7 @@ function approverRefusal(params: {
 			})
 }
 
-/** The lot's open pull request `number`; the line of one the host refuses, cannot find or holds closed or merged. */
+/** The lot's pull request `number`; the line of one the host refuses or cannot find. */
 function openPullRequestOf(params: {
 	host: HostAdapter
 	place: LotPlace
@@ -178,13 +200,6 @@ function openPullRequestOf(params: {
 				.replace('{number}', String(number))
 				.replace('{lot}', () => place.lot),
 		})
-	if (read.state !== 'open')
-		return lineOf({
-			exitCode: 1,
-			line: LOT_APPROVE_LINES.notOpen
-				.replace('{number}', String(number))
-				.replace('{state}', read.state),
-		})
 	return read
 }
 
@@ -199,31 +214,66 @@ function headReasons(params: {
 	return [
 		LOT_APPROVE_LINES.headElsewhere
 			.replace('{number}', String(pullRequest.number))
-			.replace('{pushed}', pullRequest.head.slice(0, SHOWN_HEAD_LENGTH))
-			.replace('{landed}', landed.slice(0, SHOWN_HEAD_LENGTH))
+			.replace('{pushed}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
+			.replace('{landed}', landed.slice(0, SHORT_SHA_LENGTH))
 			.replace('{lot}', () => params.place.lot),
 	]
 }
 
-/** Why the checks do not let the approval through: one failed, one still runs, or the head has none. */
-function checksReasons(checks: PullRequestChecks): string[] {
+/**
+ * Why the checks do not let the approval through: they ran on another head than the landed one (a push between the
+ * two reads), one failed, one still runs, or the head has none.
+ */
+function checksReasons(params: {
+	pullRequest: PullRequest
+	checks: PullRequestChecks
+	landed: string
+}): string[] {
+	const { checks, landed } = params
+	// a pull request at another head is named once, by headReasons
+	if (params.pullRequest.head === landed && checks.head !== landed)
+		return [
+			fillMessage({
+				template: LOT_APPROVE_LINES.checksElsewhere,
+				values: {
+					checked: checks.head.slice(0, SHORT_SHA_LENGTH),
+					landed: landed.slice(0, SHORT_SHA_LENGTH),
+				},
+			}),
+		]
 	if (checks.state === 'green') return []
 	if (checks.state === 'none') return [LOT_APPROVE_LINES.checksNone]
 	const failing =
 		checks.failing.length === 0
 			? []
-			: [LOT_APPROVE_LINES.checksFailing.replace('{names}', () => checks.failing.join(', '))]
+			: [
+					fillMessage({
+						template: LOT_APPROVE_LINES.checksFailing,
+						values: { names: checks.failing.join(', ') },
+					}),
+				]
 	const pending =
 		checks.state === 'pending'
-			? [LOT_APPROVE_LINES.checksPending.replace('{names}', () => checks.pending.join(', '))]
+			? [
+					fillMessage({
+						template: LOT_APPROVE_LINES.checksPending,
+						values: { names: checks.pending.join(', ') },
+					}),
+				]
 			: []
 	return [...failing, ...pending]
 }
 
-/** The blocking findings still open, as one reason. */
+/** The findings other than nits still open, each with its severity, as one reason. */
 function blockingReasons(params: { folder: string }): string[] {
-	const ids = openBlockingFindings(params)
-	return ids.length === 0 ? [] : [LOT_APPROVE_LINES.blocking.replace('{ids}', () => ids.join(', '))]
+	const rows = openBlockingFindings(params)
+	if (rows.length === 0) return []
+	return [
+		fillMessage({
+			template: LOT_APPROVE_LINES.blocking,
+			values: { rows: rows.map((row) => `${row.id} ${row.severity}`).join(', ') },
+		}),
+	]
 }
 
 /** The approval appended and the review record written, the text rendered again and sent, then the queue asked. */
@@ -234,12 +284,14 @@ function recordAndQueue(params: {
 	approval: ApprovalLine
 }): CommandResult {
 	const { host, place, pullRequest, approval } = params
+	const already = isApproved({ folder: place.lotFolder, approval })
 	try {
-		appendLine({
-			file: join(place.lotFolder, STORE_FILES.approvals),
-			line: Buffer.from(`${JSON.stringify(approval)}\n`, 'utf8'),
-			limit: EVENT_LINE_LIMIT,
-		})
+		if (!already)
+			appendLine({
+				file: join(place.lotFolder, STORE_FILES.approvals),
+				line: Buffer.from(`${JSON.stringify(approval)}\n`, 'utf8'),
+				limit: EVENT_LINE_LIMIT,
+			})
 	} catch (error) {
 		return lineOf({ exitCode: 1, line: `${LOT_APPROVE_LINES.prefix}${(error as Error).message}` })
 	}
@@ -247,7 +299,7 @@ function recordAndQueue(params: {
 	const values = {
 		lot: place.lot,
 		by: approval.by,
-		head: approval.head.slice(0, SHOWN_HEAD_LENGTH),
+		head: approval.head.slice(0, SHORT_SHA_LENGTH),
 		number: String(pullRequest.number),
 	}
 	const prepared = preparePullRequest({ ...place, templateRefs: ['HEAD'] })
@@ -265,7 +317,10 @@ function recordAndQueue(params: {
 				})
 	const line =
 		queued === undefined
-			? fillMessage({ template: LOT_APPROVE_LINES.approved, values })
+			? fillMessage({
+					template: already ? LOT_APPROVE_LINES.alreadyApproved : LOT_APPROVE_LINES.approved,
+					values,
+				})
 			: fillMessage({
 					template: LOT_APPROVE_LINES.notQueued,
 					values: { ...values, refusal: queued.refusal },
@@ -274,6 +329,27 @@ function recordAndQueue(params: {
 		exitCode: queued === undefined ? 0 : 1,
 		lines: warning === undefined ? [line] : [line, warning],
 	})
+}
+
+/** Whether the folder holds this approver's approval of this head of this pull request already. */
+function isApproved(params: { folder: string; approval: ApprovalLine }): boolean {
+	const { approval } = params
+	const file = join(params.folder, STORE_FILES.approvals)
+	if (!existsSync(file)) return false
+	return readFileSync(file, 'utf8')
+		.split('\n')
+		.some(function sameApproval(line) {
+			try {
+				const parsed = JSON.parse(line) as Partial<ApprovalLine>
+				return (
+					parsed.by === approval.by &&
+					parsed.head === approval.head &&
+					parsed.number === approval.number
+				)
+			} catch {
+				return false
+			}
+		})
 }
 
 function lineOf(params: { exitCode: number; line: string }): CommandResult {

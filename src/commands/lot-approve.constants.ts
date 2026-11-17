@@ -15,9 +15,6 @@ export const APPROVAL_LINE_SCHEMA = 1
 /** The states a lot is approved in: still at work. */
 export const APPROVABLE_STATES: readonly string[] = ['working', 'ready']
 
-/** How many characters of a head the lines show. */
-export const SHOWN_HEAD_LENGTH = 12
-
 export const LOT_APPROVE_LINES = {
 	prefix: 'lot approve: ',
 	orchestratorElsewhere:
@@ -25,15 +22,19 @@ export const LOT_APPROVE_LINES = {
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
 	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} --draft opens it',
 	noPullRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
-	notOpen: 'lot approve: pull request #{number} is {state}: nothing recorded, nothing queued',
+	notOpen: 'pull request #{number} is {state}',
+	lotNotApprovable: 'the lot is {state}',
+	checksElsewhere: 'checks ran on {checked}, not the landed {landed}',
 	refused: 'lot approve: {lot} not approved: {reasons}; nothing recorded, nothing queued',
 	headElsewhere:
 		'pull request #{number} is at {pushed}, the lot landed {landed} (lot land {lot} --draft pushes it)',
 	checksFailing: 'checks failing on the head: {names}',
 	checksPending: 'checks pending on the head: {names}',
 	checksNone: 'no check on the head yet',
-	blocking: 'blocking finding open: {ids}',
+	blocking: 'findings open: {rows}',
 	approved: 'lot approve: {lot} approved by {by} on {head}, pull request #{number} queued',
+	alreadyApproved:
+		'lot approve: {lot} already approved by {by} on {head}, pull request #{number} queued',
 	notQueued:
 		'lot approve: {lot} approved by {by} on {head}, pull request #{number} not queued: {refusal}',
 } as const

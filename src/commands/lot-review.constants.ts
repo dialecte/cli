@@ -6,9 +6,6 @@ export const LOT_REVIEW_FLAGS = ['no-open', 'pull'] as const
 /** The options `lot review` takes followed by a value, without the dashes: `--pull`'s round. */
 export const LOT_REVIEW_OPTIONS = ['round'] as const
 
-/** How many characters of a head the lines show. */
-export const REVIEW_HEAD_LENGTH = 12
-
 export const LOT_REVIEW_LINES = {
 	prefix: 'lot review: ',
 	header: 'lot review {lot} · {state} · {branch}',
@@ -42,6 +39,7 @@ export const LOT_REVIEW_LINES = {
 	files: 'files: {files}',
 	filesOpened: 'files: {files} opened',
 	pulled: 'lot review: {id} {severity} {at} from comment {comment}',
+	pullCut: 'lot review: the pull stopped after {done}: {reason}',
 	pulledNone: 'lot review: already: every comment of pull request #{number} is a finding',
 	filesNotOpened: 'files: {files} (not opened: {refusal})',
 } as const

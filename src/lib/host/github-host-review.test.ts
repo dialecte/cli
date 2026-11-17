@@ -86,6 +86,37 @@ describe('createGithubHost: checks', () => {
 		])
 	})
 
+	it('a check failed then run again and passed → green: only the newest run of a check counts', () => {
+		const root = fakeCommands({
+			names: ['gh'],
+			stdout: rollupOf([
+				{
+					__typename: 'CheckRun',
+					name: 'shard 2',
+					workflowName: 'ci',
+					status: 'COMPLETED',
+					conclusion: 'FAILURE',
+					startedAt: '2026-11-17T10:00:00Z',
+				},
+				{
+					__typename: 'CheckRun',
+					name: 'shard 2',
+					workflowName: 'ci',
+					status: 'COMPLETED',
+					conclusion: 'SUCCESS',
+					startedAt: '2026-11-17T10:30:00Z',
+				},
+			]),
+		})
+
+		expect(createGithubHost().readChecks({ root, number: 12 })).toEqual({
+			head: 'abc',
+			state: 'green',
+			failing: [],
+			pending: [],
+		})
+	})
+
 	it('gh failing → a refusal naming the call', () => {
 		const root = fakeCommands({ names: ['gh'], code: 1 })
 

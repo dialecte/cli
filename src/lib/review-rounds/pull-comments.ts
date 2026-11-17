@@ -22,7 +22,8 @@ import type { CommentFinding, PulledLine } from './pull-comments.types.ts'
 /**
  * The comments of `number` not pulled into the folder yet, threads' first comments only, each as a finding: the
  * severity from a leading `blocking:` / `should-fix:` / `nit:` (dropped from the text), else should-fix; at its
- * `path:line` (the path alone for a comment on the file); its lines joined into one.
+ * `path:line` (the path alone for a comment on the file); its lines joined into one (a comment of its severity word
+ * alone keeps it as its text).
  *
  * @intent turn a pull request's review comments into a lot's findings
  * @internal
@@ -37,6 +38,7 @@ export function newCommentFindings(params: {
 		.filter((comment) => comment.replyTo === undefined && !pulled.has(comment.id))
 		.map(function findingOf(comment) {
 			const severity = COMMENT_SEVERITY_PATTERN.exec(comment.body)
+			const text = oneLine(comment.body.replace(COMMENT_SEVERITY_PATTERN, ''))
 			return {
 				comment: comment.id,
 				severity:
@@ -44,18 +46,16 @@ export function newCommentFindings(params: {
 						? DEFAULT_COMMENT_SEVERITY
 						: severity[1].toLowerCase().replace(' ', '-'),
 				at: comment.line === undefined ? comment.path : `${comment.path}:${comment.line}`,
-				finding: comment.body
-					.replace(COMMENT_SEVERITY_PATTERN, '')
-					.split(/\s*\n\s*/)
-					.join(' ')
-					.trim(),
+				// a comment of its severity alone keeps its words: a finding is never empty
+				finding: text === '' ? oneLine(comment.body) : text,
 			}
 		})
 }
 
 /**
- * Each finding appended to the folder's ledger in `round` and its comment to `pulled-comments.jsonl`, one after the
- * other (a pull cut short leaves no comment pulled twice); the ids given, in order.
+ * Each finding appended to the folder's ledger in `round`, then its comment to `pulled-comments.jsonl`, one after the
+ * other: the ids given, in order, and the reason a write failed (the findings after it not written). A pull stopped
+ * between the two writes of one finding leaves that comment to be pulled again.
  *
  * @intent record a pull request's comments as a lot's findings
  * @internal
@@ -66,31 +66,45 @@ export function recordCommentFindings(params: {
 	round: number
 	findings: readonly CommentFinding[]
 	now: Date
-}): string[] {
+}): { ids: string[]; refusal?: string } {
 	const { folder } = params
-	return params.findings.map(function recordFinding(finding) {
-		const id = appendFinding({
-			path: join(folder, LEDGER_FILE),
-			title: basename(folder),
-			round: params.round,
-			severity: SEVERITY_SPELLINGS[finding.severity],
-			at: finding.at,
-			finding: finding.finding,
-		})
-		const line: PulledLine = {
-			schema: PULLED_LINE_SCHEMA,
-			at: params.now.toISOString(),
-			number: params.number,
-			comment: finding.comment,
-			finding: id,
+	const ids: string[] = []
+	for (const finding of params.findings) {
+		try {
+			const id = appendFinding({
+				path: join(folder, LEDGER_FILE),
+				title: basename(folder),
+				round: params.round,
+				severity: SEVERITY_SPELLINGS[finding.severity],
+				at: finding.at,
+				finding: finding.finding,
+			})
+			const line: PulledLine = {
+				schema: PULLED_LINE_SCHEMA,
+				at: params.now.toISOString(),
+				number: params.number,
+				comment: finding.comment,
+				finding: id,
+			}
+			appendLine({
+				file: join(folder, STORE_FILES.pulledComments),
+				line: Buffer.from(`${JSON.stringify(line)}\n`, 'utf8'),
+				limit: EVENT_LINE_LIMIT,
+			})
+			ids.push(id)
+		} catch (error) {
+			return { ids, refusal: (error as Error).message }
 		}
-		appendLine({
-			file: join(folder, STORE_FILES.pulledComments),
-			line: Buffer.from(`${JSON.stringify(line)}\n`, 'utf8'),
-			limit: EVENT_LINE_LIMIT,
-		})
-		return id
-	})
+	}
+	return { ids }
+}
+
+/** The text on one line: its lines joined by a space, trimmed. */
+function oneLine(text: string): string {
+	return text
+		.split(/\s*\n\s*/)
+		.join(' ')
+		.trim()
 }
 
 /** The comment ids of `number` the folder pulled already; a line that does not read is skipped. */

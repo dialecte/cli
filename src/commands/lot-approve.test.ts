@@ -154,7 +154,36 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} not approved: blocking finding open: R1-1; nothing recorded, nothing queued`,
+			`lot approve: ${LOT_NAME} not approved: findings open: R1-1 blocking; nothing recorded, nothing queued`,
+		)
+		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+	})
+
+	it('an open should-fix finding beside a nit → refused naming the should-fix only, a nit never blocks', () => {
+		const lot = landedLot()
+		for (const severity of ['nit', 'should-fix'])
+			appendFinding({
+				path: join(lot.lotFolder, LEDGER_FILE),
+				title: LOT_NAME,
+				round: 1,
+				severity,
+				at: 'src/x.ts:1',
+				finding: 'a point',
+			})
+		const { host, calls } = recordingHost({
+			existing: lot.pullRequest,
+			checks: checksOn({ head: lot.head, state: 'green' }),
+		})
+
+		const result = runLotApprove({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--by', REVIEWER],
+			host,
+		})
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toBe(
+			`lot approve: ${LOT_NAME} not approved: findings open: R1-2 should-fix; nothing recorded, nothing queued`,
 		)
 		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
 	})

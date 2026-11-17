@@ -22,8 +22,8 @@ import { findLedgerTable, tableCells, unescapeCell } from './findings-ledger.ts'
 import {
 	APPROVE_VERDICT,
 	BASE_FILES_ARGUMENTS,
-	BLOCKING_SEVERITY,
-	CLOSED_STATES,
+	NON_BLOCKING_SEVERITY,
+	OPEN_STATE_WORDS,
 	CURRENT_FOLDER_PREFIX,
 	LEDGER_ROW_CELLS,
 	LINE_SUFFIX_PATTERN,
@@ -282,8 +282,9 @@ function verifyVerdictRowsOf(params: {
 }
 
 /**
- * The verdict rows of the folder's `approvals.jsonl`, one per line read: a person's approve. A line whose `--by` the
- * public-text check refuses (one written by hand) gives none: a person's verdict always names who.
+ * The verdict rows of the folder's `approvals.jsonl`: a person's approve, once per approver, for the head the lot's
+ * worktree is at only (a commit after the approval leaves it unapproved; a folder without a worktree keeps them all).
+ * A line whose `--by` the public-text check refuses (one written by hand) gives none: a person's verdict names who.
  */
 function approvalVerdictRowsOf(params: {
 	folder: string
@@ -291,12 +292,19 @@ function approvalVerdictRowsOf(params: {
 }): VerdictRow[] {
 	const file = join(params.folder, STORE_FILES.approvals)
 	if (!existsSync(file)) return []
-	const rows: VerdictRow[] = []
+	const worktree = worktreeOf(params.folder)
+	const head =
+		worktree === undefined
+			? undefined
+			: tryReadGit({ root: worktree, args: ['rev-parse', 'HEAD'] })?.trim()
+	const rows = new Map<string, VerdictRow>()
 	for (const line of readFileSync(file, 'utf8').split('\n')) {
 		const parsed = parsedLine(line)
 		if (typeof parsed?.at !== 'string' || typeof parsed.by !== 'string') continue
 		if (!params.isPublicWord(parsed.by)) continue
-		rows.push({
+		if (head !== undefined && parsed.head !== head) continue
+		if (rows.has(parsed.by)) continue
+		rows.set(parsed.by, {
 			schema: REVIEW_RECORD_SCHEMA,
 			kind: 'verdict',
 			at: parsed.at,
@@ -304,25 +312,26 @@ function approvalVerdictRowsOf(params: {
 			verdict: APPROVE_VERDICT,
 		})
 	}
-	return rows
+	return [...rows.values()]
 }
 
 /**
- * The ids of the folder's blocking findings not closed yet (open, a fix still to verify, or a state the ledger parser
- * cannot read), in ledger order; none without a ledger.
+ * The folder's findings that block an approval: a row not closed yet (open, a fix still to verify, or a state the
+ * ledger parser cannot read) of any severity but a nit (one it cannot read blocks), in ledger order; none without a
+ * ledger.
  *
  * @intent tell what blocks a lot's approval
  * @internal
  */
-export function openBlockingFindings(params: { folder: string }): string[] {
-	return findingRowsOf({ folder: params.folder, inTree: undefined })
-		.filter(function isOpenBlocking(row) {
+export function openBlockingFindings(params: { folder: string }): FindingRow[] {
+	return findingRowsOf({ folder: params.folder, inTree: undefined }).filter(
+		function isOpenBlocking(row) {
 			return (
-				row.severity === BLOCKING_SEVERITY &&
-				(row.state === undefined || !CLOSED_STATES.includes(row.state))
+				row.severity !== NON_BLOCKING_SEVERITY &&
+				(row.state === undefined || OPEN_STATE_WORDS.includes(row.state))
 			)
-		})
-		.map((row) => row.id)
+		},
+	)
 }
 
 /** A line read as a JSON object; undefined for a blank line, a torn one or one that holds no object. */

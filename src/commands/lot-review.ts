@@ -10,6 +10,7 @@ import { join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
@@ -26,12 +27,7 @@ import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { readTestsRecord } from '../lib/tdd/tests-record.ts'
 import { approvalRefusals } from './lot-approve.ts'
 import { resolveLotPlace } from './lot-pr.ts'
-import {
-	LOT_REVIEW_FLAGS,
-	LOT_REVIEW_LINES,
-	LOT_REVIEW_OPTIONS,
-	REVIEW_HEAD_LENGTH,
-} from './lot-review.constants.ts'
+import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { HostAdapter, PullRequest, PullRequestChecks } from '../lib/host/host.types.ts'
@@ -144,18 +140,19 @@ function pullComments(params: {
 				fillMessage({ template: LOT_REVIEW_LINES.pulledNone, values: { number: String(number) } }),
 			],
 		})
-	const ids = recordCommentFindings({
+	const recorded = recordCommentFindings({
 		folder: place.lotFolder,
 		number,
 		round: params.round,
 		findings,
 		now: params.now,
 	})
+	const { ids } = recorded
 	const warning = refreshReviewRecord({ folder: place.lotFolder })
 	return resultOf({
-		exitCode: 0,
+		exitCode: recorded.refusal === undefined ? 0 : 1,
 		lines: [
-			...findings.map((finding, index) =>
+			...findings.slice(0, ids.length).map((finding, index) =>
 				fillMessage({
 					template: LOT_REVIEW_LINES.pulled,
 					values: {
@@ -166,6 +163,14 @@ function pullComments(params: {
 					},
 				}),
 			),
+			...(recorded.refusal === undefined
+				? []
+				: [
+						fillMessage({
+							template: LOT_REVIEW_LINES.pullCut,
+							values: { done: ids.join(', ') || 'none', reason: recorded.refusal },
+						}),
+					]),
 			...(warning === undefined ? [] : [warning]),
 		],
 	})
@@ -194,9 +199,9 @@ function pullRequestLines(params: {
 		fillMessage({
 			template: LOT_REVIEW_LINES.heads,
 			values: {
-				pushed: pullRequest.head.slice(0, REVIEW_HEAD_LENGTH),
-				landed: params.landed.slice(0, REVIEW_HEAD_LENGTH),
-				head: head.slice(0, REVIEW_HEAD_LENGTH),
+				pushed: pullRequest.head.slice(0, SHORT_SHA_LENGTH),
+				landed: params.landed.slice(0, SHORT_SHA_LENGTH),
+				head: head.slice(0, SHORT_SHA_LENGTH),
 			},
 		}),
 		checksLine(checks),
@@ -302,7 +307,7 @@ function testsLine(folder: string): string {
 			? LOT_REVIEW_LINES.noGate
 			: fillMessage({
 					template: LOT_REVIEW_LINES.gate,
-					values: { mode: record.gate.mode, head: record.gate.head.slice(0, REVIEW_HEAD_LENGTH) },
+					values: { mode: record.gate.mode, head: record.gate.head.slice(0, SHORT_SHA_LENGTH) },
 				})
 	return fillMessage({ template: LOT_REVIEW_LINES.tests, values: { tdd, gate } })
 }
