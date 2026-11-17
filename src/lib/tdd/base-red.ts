@@ -6,16 +6,16 @@ import {
 	copyFileSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
-	writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
+import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
+import { scratchReadRoots } from '../scratch/scratch-roots.ts'
 import { copyBaseTree } from './base-tree.ts'
 import { notARed } from './classify-failure.ts'
 import { listTreeFiles } from './package-files.ts'
@@ -91,10 +91,9 @@ export async function runCasesOnBase(params: {
 		for (const testCase of testCases) verdicts.set(caseLabel(testCase), { kind: 'refused', reason })
 		return verdicts
 	}
-	// in the temporary folder, never inside the lot's tree; owned by this process (a later run trashes it only once
-	// that process is gone), removed whatever the run did
-	const throwaway = mkdtempSync(join(tmpdir(), BASE_RED_FOLDER_PREFIX))
-	writeFileSync(join(throwaway, BASE_RED_OWNER_FILE), String(process.pid))
+	// in the scratch root, never inside the lot's tree; owned by this process through its scratch.json (a later run
+	// trashes it only once that process is gone), removed whatever the run did
+	const throwaway = makeScratchFolder({ purpose: BASE_RED_FOLDER_PREFIX, cwd: root })
 	const folder = join(throwaway, BASE_RED_TREE_FOLDER)
 	mkdirSync(folder)
 	try {
@@ -158,31 +157,39 @@ export async function runCasesOnBase(params: {
 }
 
 /**
- * Trashes the base-run folders a killed run left in the temporary folder: those of the prefix older than the
- * running process whose owner (the process id in their owner file) is gone, or that name none. A folder a live
- * process owns is kept, as is every other folder.
+ * Trashes the base-run folders a killed run left in the scratch root (and in the system's temporary folder, where
+ * earlier versions made them): those of the prefix older than the running process whose owner (the process id of
+ * their scratch.json, or of an earlier version's owner file) is gone, or that name none. A folder a live process owns
+ * is kept, as is every other folder.
  */
 export function trashBaseRunLeftovers(): void {
-	const temporary = tmpdir()
 	const startedAt = Date.now() - process.uptime() * 1000
-	for (const name of readdirSync(temporary)) {
-		if (!name.startsWith(BASE_RED_FOLDER_PREFIX)) continue
-		const folder = join(temporary, name)
-		try {
-			if (statSync(folder).mtimeMs >= startedAt || isOwnerAlive(folder)) continue
-			rmSync(folder, { recursive: true, force: true })
-		} catch {
-			// gone meanwhile, or not ours to read: left as it is
+	for (const root of scratchReadRoots())
+		for (const name of listFolder(root)) {
+			if (!name.startsWith(BASE_RED_FOLDER_PREFIX)) continue
+			const folder = join(root, name)
+			try {
+				if (statSync(folder).mtimeMs >= startedAt || isOwnerAlive(folder)) continue
+				rmSync(folder, { recursive: true, force: true })
+			} catch {
+				// gone meanwhile, or not ours to read: left as it is
+			}
 		}
+}
+
+/** The names in a folder; none when it does not read (a scratch root not made yet). */
+function listFolder(folder: string): string[] {
+	try {
+		return readdirSync(folder)
+	} catch {
+		return []
 	}
 }
 
-/** The process id the folder's owner file names is a live process. */
+/** The process id the folder's scratch.json (or an earlier version's owner file) names is a live process. */
 function isOwnerAlive(folder: string): boolean {
-	const owner = join(folder, BASE_RED_OWNER_FILE)
-	if (!existsSync(owner)) return false
-	const pid = Number(readFileSync(owner, 'utf8').trim())
-	if (!Number.isInteger(pid) || pid <= 0) return false
+	const pid = readScratchMarker(folder)?.pid ?? readOwnerFile(folder)
+	if (pid === undefined) return false
 	try {
 		process.kill(pid, 0)
 		return true
@@ -190,6 +197,14 @@ function isOwnerAlive(folder: string): boolean {
 		// EPERM: the process lives, under another user
 		return error instanceof Error && 'code' in error && error.code === 'EPERM'
 	}
+}
+
+/** The process id an earlier version's owner file names; undefined without one. */
+function readOwnerFile(folder: string): number | undefined {
+	const owner = join(folder, BASE_RED_OWNER_FILE)
+	if (!existsSync(owner)) return undefined
+	const pid = Number(readFileSync(owner, 'utf8').trim())
+	return Number.isInteger(pid) && pid > 0 ? pid : undefined
 }
 
 /** What the case did on the base: red for a real reason, passing, or a run that proves nothing. */

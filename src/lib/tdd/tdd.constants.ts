@@ -838,10 +838,16 @@ export const RED_ON_BASE_FLAG = 'red on base'
 export const PASSES_ON_BASE_TOO =
 	'passes on the base too: the revision proves nothing; prove it red or accept it: lot accept <case> <reason>'
 
-/** The name prefix of the throwaway folder a base run works in, in the temporary folder: removed when the run ends. */
+/** The name prefix of the folder a reporting run writes its report and inputs in: removed when the run ends. */
+export const REPORTING_RUN_FOLDER_PREFIX = 'dialecte-tdd-'
+
+/** The name prefix of the folder a collect-only run of the base's tree works in: removed when the run ends. */
+export const BASE_COLLECT_FOLDER_PREFIX = 'dialecte-base-collect-'
+
+/** The name prefix of the throwaway folder a base run works in, in the scratch root: removed when the run ends. */
 export const BASE_RED_FOLDER_PREFIX = 'dialecte-base-red-'
 
-/** The file of a base run's throwaway folder holding the id of the process that owns it. */
+/** The file in which cli versions before the scratch root named a base run's owner (its scratch.json does now). */
 export const BASE_RED_OWNER_FILE = 'owner.pid'
 
 /** The folder of a base run's throwaway folder the base's tree is written into, beside its owner file. */
