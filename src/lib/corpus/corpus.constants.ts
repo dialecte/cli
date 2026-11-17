@@ -136,6 +136,10 @@ export const FETCH_LOCK_HELD =
 /** A file written beside its final name, then renamed onto it. */
 export const TEMPORARY_SUFFIX = '.tmp'
 
+/** A fetch lock without a process id: never taken over. */
+export const FETCH_LOCK_UNREADABLE =
+	'{id}: {lock} holds no process id - remove it once no fetch runs'
+
 /** A source's previous tree while the new one is swapped in. */
 export const PREVIOUS_SUFFIX = '.old'
 
@@ -145,3 +149,6 @@ export const RESERVED_CACHE_SUFFIXES = [STAGING_SUFFIX, PREVIOUS_SUFFIX, TEMPORA
 
 /** The version of `list --json`. */
 export const LIST_JSON_VERSION = 1
+
+/** A zip entry whose compressed data does not inflate, with zlib's reason. */
+export const ZIP_UNREADABLE_ENTRY = '{path} could not be read ({reason})'

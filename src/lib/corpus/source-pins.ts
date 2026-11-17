@@ -63,7 +63,8 @@ function isSourceId(id: string): boolean {
 	return (
 		SOURCE_ID_PATTERN.test(id) &&
 		!id.includes('..') &&
-		!(RESERVED_CACHE_NAMES as readonly string[]).includes(id) &&
-		!RESERVED_CACHE_SUFFIXES.some((suffix) => id.endsWith(suffix))
+		// a case-insensitive file system holds `Fetch.lock` and `fetch.lock` as one file
+		!(RESERVED_CACHE_NAMES as readonly string[]).includes(id.toLowerCase()) &&
+		!RESERVED_CACHE_SUFFIXES.some((suffix) => id.toLowerCase().endsWith(suffix))
 	)
 }

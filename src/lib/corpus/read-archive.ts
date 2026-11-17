@@ -12,6 +12,7 @@ import {
 	ARCHIVE_TOO_LARGE,
 	MAX_EXTRACTED_BYTES,
 	TAR_BASE256_FLAG,
+	ZIP_UNREADABLE_ENTRY,
 	TAR_BASE256_SIZE,
 	TAR_BLOCK,
 	TAR_CHECKSUM_SPACE,
@@ -33,7 +34,7 @@ export function readArchive(params: { bytes: Uint8Array; maxBytes?: number }): A
 	const isGzip = data[0] === GZIP_MAGIC[0] && data[1] === GZIP_MAGIC[1]
 	const tar = isGzip ? inflated({ data, maxBytes, inflate: gunzipSync }) : data
 	if (tar === 'too large') return tooLarge(maxBytes)
-	if (tar === undefined || !isTar(tar)) return { kind: 'unknown' }
+	if (!Buffer.isBuffer(tar) || !isTar(tar)) return { kind: 'unknown' }
 	return tarFilesOf(tar)
 }
 
@@ -44,16 +45,18 @@ function tooLarge(maxBytes: number): ArchiveRead {
 	}
 }
 
-/** The inflated bytes, `too large` past `maxBytes`, undefined when they do not inflate. */
+/** The inflated bytes, `too large` past `maxBytes`, or the reason zlib gives when they do not inflate. */
 function inflated(params: {
 	data: Buffer
 	maxBytes: number
 	inflate: (data: Buffer, options: { maxOutputLength: number }) => Buffer
-}): Buffer | 'too large' | undefined {
+}): Buffer | 'too large' | { failed: string } {
 	try {
-		return params.inflate(params.data, { maxOutputLength: params.maxBytes })
+		// zlib takes no limit below one byte: an empty entry at the limit still inflates, a byte more is over it
+		return params.inflate(params.data, { maxOutputLength: Math.max(params.maxBytes, 1) })
 	} catch (error) {
-		return error instanceof RangeError ? 'too large' : undefined
+		if (error instanceof RangeError) return 'too large'
+		return { failed: error instanceof Error ? error.message : String(error) }
 	}
 }
 
@@ -168,6 +171,14 @@ function readZip(params: { data: Buffer; maxBytes: number }): ArchiveRead {
 					? inflated({ data: stored, maxBytes: maxBytes - inflatedBytes, inflate: inflateRawSync })
 					: undefined
 		if (bytes === 'too large') return tooLarge(maxBytes)
+		if (bytes !== undefined && !Buffer.isBuffer(bytes))
+			return {
+				kind: 'unsupported',
+				reason: fillMessage({
+					template: ZIP_UNREADABLE_ENTRY,
+					values: { path, reason: bytes.failed },
+				}),
+			}
 		if (bytes !== undefined) {
 			inflatedBytes += bytes.length
 			if (inflatedBytes > maxBytes) return tooLarge(maxBytes)

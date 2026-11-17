@@ -14,6 +14,7 @@ import {
 	DOWNLOAD_TIMEOUT_MILLISECONDS,
 	DOWNLOADS_FOLDER,
 	FETCH_LOCK_HELD,
+	FETCH_LOCK_UNREADABLE,
 	LOCK_FILE,
 	MAX_DOWNLOAD_BYTES,
 	MAX_EXTRACTED_BYTES,
@@ -30,6 +31,7 @@ import type {
 	CorpusFile,
 	CorpusManifest,
 	FetchedSource,
+	FetchLock,
 	ManifestSource,
 	SourceOutcome,
 	SourceTree,
@@ -54,7 +56,7 @@ export async function fetchCorpora(params: {
 			? params.manifest.sources
 			: params.manifest.sources.filter((source) => params.ids.includes(source.id))
 	const lock = acquireFetchLock({ cache })
-	if (lock.kind === 'held') return heldBy({ selected, cache, pid: lock.pid })
+	if (lock.kind !== 'acquired') return heldBy({ selected, cache, lock })
 	try {
 		const outcomes: SourceOutcome[] = []
 		const options = {
@@ -88,17 +90,18 @@ export async function fetchCorpora(params: {
 function heldBy(params: {
 	selected: readonly ManifestSource[]
 	cache: string
-	pid: number
+	lock: Exclude<FetchLock, { kind: 'acquired' }>
 }): SourceOutcome[] {
+	const { lock } = params
 	return params.selected.map((source) => ({
 		id: source.id,
 		kind: 'refused',
 		reason: fillMessage({
-			template: FETCH_LOCK_HELD,
+			template: lock.kind === 'held' ? FETCH_LOCK_HELD : FETCH_LOCK_UNREADABLE,
 			values: {
 				id: source.id,
 				lock: fetchLockFileOf({ cache: params.cache }),
-				pid: String(params.pid),
+				pid: lock.kind === 'held' ? String(lock.pid) : '',
 			},
 		}),
 	}))

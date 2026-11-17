@@ -165,4 +165,7 @@ export type CorpusLimits = {
 }
 
 /** The cache's fetch lock: taken by this process, or held by another running one. */
-export type FetchLock = { kind: 'acquired' } | { kind: 'held'; pid: number }
+export type FetchLock =
+	| { kind: 'acquired' }
+	| { kind: 'held'; pid: number }
+	| { kind: 'unreadable' }

@@ -111,4 +111,26 @@ describe('readArchive', () => {
 			reason: 'it inflates past 5000 bytes',
 		})
 	})
+
+	it('answers unsupported naming the reason zlib gives for a deflated entry that does not inflate', () => {
+		const zip = Buffer.from(zipOf([{ name: 'a.xsd', text: 'a'.repeat(200) }]))
+		zip.fill(0xff, 35, 36)
+
+		expect(readArchive({ bytes: zip })).toEqual({
+			kind: 'unsupported',
+			reason: expect.stringMatching(/^a\.xsd could not be read \(.+\)$/u),
+		})
+	})
+
+	it('reads an empty deflated entry once the limit is reached by the others', () => {
+		const bytes = zipOf([
+			{ name: 'full.xsd', stored: true, text: '12345' },
+			{ name: 'empty.xsd', text: '' },
+		])
+
+		expect(textsOf(readArchive({ bytes, maxBytes: 5 }))).toEqual({
+			'full.xsd': '12345',
+			'empty.xsd': '',
+		})
+	})
 })

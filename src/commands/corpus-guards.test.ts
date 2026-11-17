@@ -103,6 +103,37 @@ describe('corpus guards', () => {
 		},
 	)
 
+	it.each(['Fetch.lock', 'MANIFEST.LOCK.JSON', 'alpha.Staging'])(
+		'refuses the source id %j, a cache entry in another case',
+		async (id) => {
+			const workspace = createCorpusWorkspace()
+			const server = await serverOf({ '/schema.xsd': Buffer.from(SCHEMA) })
+			const manifest: CorpusManifest = { sources: [oneFileSource({ id, server })] }
+
+			const result = corpus({ workspace, manifest, argv: ['fetch'] })
+
+			await expect(result).resolves.toMatchObject({ exitCode: 1 })
+			const answer = await result
+			expect(answer.output).toContain(`${JSON.stringify(id)}: a source id`)
+			expect(server.requests).toEqual([])
+		},
+	)
+
+	it('refuses to fetch while the fetch lock holds no process id, naming it', async () => {
+		const workspace = createCorpusWorkspace()
+		const server = await serverOf({ '/schema.xsd': Buffer.from(SCHEMA) })
+		const manifest: CorpusManifest = { sources: [oneFileSource({ id: 'alpha', server })] }
+		const prepared = await corpus({ workspace, manifest: { sources: [] }, argv: ['fetch'] })
+		expect(prepared.exitCode).toBe(0)
+		writeFileSync(join(workspace.cache, 'fetch.lock'), '')
+
+		const result = await corpus({ workspace, manifest, argv: ['fetch'] })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('fetch.lock holds no process id')
+		expect(server.requests).toEqual([])
+	})
+
 	it.each(['C:/x.xsd', 'a\u0000b.xsd', '.'])(
 		'refuses an archive member named %j, writing nothing for its source',
 		async (member) => {
