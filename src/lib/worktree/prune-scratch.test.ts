@@ -122,3 +122,43 @@ describe('worktree prune over the scratch root', () => {
 		}).toEqual({ left: false, trashed: 1, line: true })
 	})
 })
+
+describe('worktree prune over the scratch root, the folders it cannot judge or did not make there', () => {
+	it('a folder of the scratch root without scratch.json → kept, saying so', () => {
+		const workspace = temporaryFolder('dialecte-prune-scratch-')
+		const root = join(workspace, '.worktrees', '_scratch')
+		const folder = join(root, 'dialecte-gate-scope-unmarked')
+		mkdirSync(folder, { recursive: true })
+		const plan = planPrune({
+			workspace,
+			handoverFolders: [],
+			scratchRoot: temporaryFolder('dialecte-rehearsal-root-'),
+			scratchFolderRoot: root,
+			now: NOW,
+			listProcesses: () => [],
+		})
+		expect(plan.scratch.find((item) => item.name === folder)?.kept).toMatch(/no scratch\.json/)
+	})
+
+	it("a rehearsal hook's temporary folder in the former short root, its process gone two days ago → to that root's trash", () => {
+		const workspace = temporaryFolder('dialecte-prune-scratch-')
+		const former = temporaryFolder('dialecte-short-root-')
+		const folder = join(former, 'dlt-hook-abc')
+		mkdirSync(folder)
+		writeFileSync(
+			join(folder, 'scratch.json'),
+			JSON.stringify({ pid: deadPid(), startedAt: TWO_DAYS_AGO, command: 'dialecte handover run' }),
+		)
+		const plan = planPrune({
+			workspace,
+			handoverFolders: [],
+			scratchRoot: join(workspace, '.worktrees', '_scratch'),
+			formerScratchRoot: former,
+			now: NOW,
+			listProcesses: () => [],
+		})
+		expect(plan.scratch.find((item) => item.name === folder)?.command).toContain(
+			join(former, 'dialecte-trash'),
+		)
+	})
+})

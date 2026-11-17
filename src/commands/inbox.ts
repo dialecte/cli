@@ -11,13 +11,12 @@ import { readStoreEntries, registryOfCommonFolder } from '../lib/handover/handov
 import { collectFindings } from '../lib/health/collect-findings.ts'
 import { RULE_LABELS, SCRATCH_REPOSITORY, SEVERITY_MARKS } from '../lib/health/health.constants.ts'
 import { readHealthRepository } from '../lib/health/read-health-context.ts'
-import { readScratchFolders } from '../lib/health/read-scratch.ts'
+import { readMachineScratch } from '../lib/health/read-scratch.ts'
 import { walkStores } from '../lib/health/walk-stores.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { scratchRoot, systemTemporaryFolder } from '../lib/scratch/scratch-root.ts'
 import { answerNextOf } from '../lib/store/lot-next.ts'
 import { readCheckedLotState } from '../lib/store/lot-records.ts'
 import { NEXT_COMMANDS } from '../lib/store/store.constants.ts'
@@ -106,8 +105,8 @@ export function runInbox(params: InboxParams): CommandResult {
 		stores,
 		repository: reading.repository,
 		now: params.now ?? new Date(),
-		root: scratchRoot({ cwd: params.cwd }),
-		tmp: params.tmp ?? systemTemporaryFolder(),
+		cwd: params.cwd,
+		tmp: params.tmp,
 		isAlive: params.isAlive ?? isProcessAlive,
 		seams: params.seams,
 	})
@@ -139,7 +138,7 @@ function inboxFindingsOf(params: InboxHealthReading): HealthFinding[] {
 			return readHealthRepository({ common: store.common, entries: store.entries })
 		})
 	const scratch =
-		wanted === undefined ? readScratchFolders({ root: params.root, tmp: params.tmp }) : []
+		wanted === undefined ? readMachineScratch({ cwd: params.cwd, tmp: params.tmp }) : []
 	return collectFindings({
 		repositories,
 		scratch,

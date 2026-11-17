@@ -12,10 +12,14 @@ import type { HealthFinding, ScratchFolder } from './health.types.ts'
 export function findLeakedScratch(params: {
 	folders: readonly ScratchFolder[]
 	now: Date
+	/** Whether a process is alive: a folder whose process runs is no leak. Default: none read. */
+	isAlive?: (pid: number) => boolean
 }): HealthFinding[] {
 	const now = params.now.getTime()
 	const leaked = params.folders
 		.filter((folder) => now - timeOf(folder.modifiedAt) > SCRATCH_LEAK_MS)
+		// a folder whose process still runs (a long rehearsal) is no leak
+		.filter((folder) => !(folder.pid !== undefined && params.isAlive?.(folder.pid)))
 		.sort((first, second) => timeOf(first.modifiedAt) - timeOf(second.modifiedAt))
 	if (leaked.length === 0) return []
 	const [oldest] = leaked

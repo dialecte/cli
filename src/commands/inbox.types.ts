@@ -89,10 +89,10 @@ export type InboxHealthReading = {
 	/** The repository name the findings must have; every repository and the scratch folders when left out. */
 	repository: string | undefined
 	now: Date
-	/** The scratch root, whose leaked folders are named. */
-	root: string
-	/** The system's temporary folder, where earlier versions made their scratch folders. */
-	tmp: string
+	/** The folder the scratch root is read from. */
+	cwd: string
+	/** The one folder earlier versions' scratch is read in (a test's own); every former root on the machine without. */
+	tmp: string | undefined
 	isAlive: (pid: number) => boolean
 	seams: InboxSeams | undefined
 }

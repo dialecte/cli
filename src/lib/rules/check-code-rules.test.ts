@@ -265,11 +265,12 @@ describe('checkCodeRules', () => {
 			].join('\n'),
 			expected: [],
 		},
-		'os.tmpdir() as a root in an implementation file → not a test matter, nothing': {
-			file: 'src/commands/run.ts',
-			text: "import { tmpdir } from 'node:os'\nexport function scratch() {\n\treturn readdirSync(tmpdir())\n}\n",
-			expected: [],
-		},
+		'os.tmpdir() as a root in an implementation file → no shared-root finding (not a test matter), only bare-tmpdir':
+			{
+				file: 'src/commands/run.ts',
+				text: "import { tmpdir } from 'node:os'\nexport function scratch() {\n\treturn readdirSync(tmpdir())\n}\n",
+				expected: [{ rule: 'bare-tmpdir', line: 3 }],
+			},
 	}
 
 	for (const [title, testCase] of Object.entries(testCases))

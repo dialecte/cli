@@ -52,6 +52,16 @@ describe('bare-tmpdir', () => {
 			text: MAKE_IN_TEMPORARY,
 			expected: [],
 		},
+		'tmpdir imported under another name and called → reported on the call': {
+			file: 'src/lib/gate/selection.ts',
+			text: "import { tmpdir as temporary } from 'node:os'\nconst folder = temporary()\n",
+			expected: [{ line: 2, message: BARE_TMPDIR_MESSAGE }],
+		},
+		'tmpdir passed by reference → reported where it is passed': {
+			file: 'src/lib/gate/selection.ts',
+			text: "import { tmpdir } from 'node:os'\nconst folders = [tmpdir].map((read) => read())\n",
+			expected: [{ line: 2, message: BARE_TMPDIR_MESSAGE }],
+		},
 		'a tmpdir() call with an argument (not the os one) → not reported': {
 			file: 'src/lib/gate/selection.ts',
 			text: 'const folder = tmpdir(base)\n',

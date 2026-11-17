@@ -18,7 +18,11 @@ import { readHooksFolder } from '../git-hooks.ts'
 import { readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
-import { REHEARSAL_FOLDER_PREFIX, REHEARSAL_MARKER_FILE } from '../handover/handover.constants.ts'
+import {
+	HOOK_TEMPORARY_FOLDER_PREFIX,
+	REHEARSAL_FOLDER_PREFIX,
+	REHEARSAL_MARKER_FILE,
+} from '../handover/handover.constants.ts'
 import { handoverState } from '../handover/list-handovers.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
@@ -133,6 +137,19 @@ export function planPrune(params: {
 			.sort()
 			.map((name) => planRehearsalClone({ scratchRoot, name, links }))
 	})
+	// a rehearsal hook's temporary folder left in a rehearsal root (a killed rehearsal), judged by its scratch.json
+	const hookFolders = scratchRoots
+		.filter((scratchRoot) => scratchRoot !== params.scratchFolderRoot)
+		.flatMap((scratchRoot) =>
+			planScratchFolders({
+				root: scratchRoot,
+				trash: join(scratchRoot, REHEARSAL_TRASH_FOLDER),
+				skipRehearsals: true,
+				only: HOOK_TEMPORARY_FOLDER_PREFIX,
+				links,
+				now,
+			}),
+		)
 	const scratchFolderRoot = params.scratchFolderRoot
 	const scratchFolders =
 		scratchFolderRoot === undefined
@@ -145,7 +162,7 @@ export function planPrune(params: {
 					links,
 					now,
 				})
-	const scratch = [...rehearsals, ...scratchFolders]
+	const scratch = [...rehearsals, ...hookFolders, ...scratchFolders]
 	return {
 		repositories,
 		scratch,
@@ -748,6 +765,8 @@ function planScratchFolders(params: {
 	root: string
 	trash: string
 	skipRehearsals: boolean
+	/** Only the folders named with this prefix; default every folder. */
+	only?: string
 	links: readonly FolderLink[]
 	now: Date
 }): PruneItem[] {
@@ -758,6 +777,7 @@ function planScratchFolders(params: {
 		.map((entry) => entry.name)
 		.filter((name) => join(root, name) !== params.trash && name !== REHEARSAL_TRASH_FOLDER)
 		.filter((name) => !(params.skipRehearsals && name.startsWith(REHEARSAL_FOLDER_PREFIX)))
+		.filter((name) => params.only === undefined || name.startsWith(params.only))
 		.sort()
 		.map(function planScratchFolder(name): PruneItem {
 			const folder = join(root, name)

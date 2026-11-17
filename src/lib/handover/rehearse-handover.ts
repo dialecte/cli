@@ -35,7 +35,7 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
-import { makeScratchFolder } from '../scratch/make-scratch-folder.ts'
+import { makeScratchFolder, writeScratchMarker } from '../scratch/make-scratch-folder.ts'
 import { scratchRoot, systemTemporaryFolder } from '../scratch/scratch-root.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { nodeModulesDetailOf, provideNodeModules } from '../worktree/add-worktree.ts'
@@ -211,10 +211,7 @@ async function rehearseRecorded(
 	const owner = params.stepPlace === null ? undefined : basename(params.stepPlace.lot)
 	const folder = makeScratchFolder({ purpose: REHEARSAL_FOLDER_PREFIX, root: params.scratchRoot })
 	const clone = join(folder, basename(repository))
-	const hookTemporary = makeHookTemporaryFolder({
-		platform: process.platform,
-		rehearsalFolder: folder,
-	})
+	const hookTemporary = makeHookTemporaryFolderOrClean({ rehearsalFolder: folder })
 	write(textOf([`rehearsal in ${clone}`]))
 	const links: string[] = []
 	/** The hook's process group is stopped first (SIGKILL after its grace), then the rehearsal folder goes. */
@@ -222,8 +219,9 @@ async function rehearseRecorded(
 		// this handler owns the exit: the interrupted end is written here, before the process ends (D10)
 		recorder.end({ outcome: 'interrupted', parts: [], reuse: 'none', stateHash: null })
 		void stopLiveGroups(signal).then(function cleanUp() {
-			removeRehearsalFolder({ folder, links })
+			// the small hook folder first: a removal of the rehearsal folder that throws never leaves it
 			rmSync(hookTemporary, { recursive: true, force: true })
+			removeRehearsalFolder({ folder, links })
 			write(`interrupted (${signal}): the hook stopped, the rehearsal folder removed`)
 			process.exit(128 + constants.signals[signal])
 		})
@@ -448,11 +446,28 @@ export function makeHookTemporaryFolder(params: {
 	platform: NodeJS.Platform
 	rehearsalFolder: string
 }): string {
-	if (params.platform !== 'win32')
-		return mkdtempSync(join(POSIX_REHEARSAL_SCRATCH_ROOT, HOOK_TEMPORARY_FOLDER_PREFIX))
+	if (params.platform !== 'win32') {
+		const folder = mkdtempSync(join(POSIX_REHEARSAL_SCRATCH_ROOT, HOOK_TEMPORARY_FOLDER_PREFIX))
+		// its process and start: prune and health tell a leaked hook folder from a running one
+		writeScratchMarker(folder)
+		return folder
+	}
 	const folder = join(params.rehearsalFolder, REHEARSAL_TEMPORARY_FOLDER)
 	mkdirSync(folder, { recursive: true })
 	return folder
+}
+
+/** The hook's temporary folder of a rehearsal; when it cannot be made, the rehearsal folder just made goes first. */
+function makeHookTemporaryFolderOrClean(params: { rehearsalFolder: string }): string {
+	try {
+		return makeHookTemporaryFolder({
+			platform: process.platform,
+			rehearsalFolder: params.rehearsalFolder,
+		})
+	} catch (error) {
+		rmSync(params.rehearsalFolder, { recursive: true, force: true })
+		throw error
+	}
 }
 
 /**

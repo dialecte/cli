@@ -127,7 +127,8 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   folders of the cli's scratch root (`DIALECTE_SCRATCH`, else the workspace's `.worktrees/_scratch`, else
   `dialecte-scratch` in the system's temporary folder), each judged by its `scratch.json`: one whose process is gone
   and that was made over a day ago goes to the workspace's trash (`.worktrees/_trash`; a root elsewhere, its own
-  `dialecte-trash`), one whose process runs, a younger one or one without `scratch.json` is kept with why - with the
+  `dialecte-trash`), one whose process runs, a younger one or one without `scratch.json` is kept with why; a rehearsal
+  hook's temporary folder (`dlt-hook-<random>`) left in the short root is judged the same way - with the
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
   commands (or the `--yes` command) to a person. Kept, each with why: first, a worktree a lot of the

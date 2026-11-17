@@ -9,6 +9,7 @@ import { checkActRules } from './check-act-rules.ts'
 import {
 	ABBREVIATIONS,
 	BARE_TMPDIR_MESSAGE,
+	OS_MODULE_NAMES,
 	CONSTANT_NAME_PATTERN,
 	CODE_VISITED_KINDS,
 	LEADING_POSITIONAL_PARAMETERS,
@@ -132,7 +133,7 @@ export function checkCodeRules(params: CheckCodeRulesParams): RuleFinding[] {
 			})
 
 	if (kind === 'implementation' && !isTestShaped(file) && !SCRATCH_MODULE_PATTERN.test(file))
-		for (const node of findTmpdirCalls(sourceFile))
+		for (const node of findTmpdirUses(sourceFile))
 			report({ node, rule: 'bare-tmpdir', severity: 'error', message: BARE_TMPDIR_MESSAGE })
 
 	if (isTestShaped(file))
@@ -269,15 +270,55 @@ function findSharedTemporaryRoots(sourceFile: ts.SourceFile): ts.Node[] {
 	return found
 }
 
-/** Every `tmpdir()` or `os.tmpdir()` call of the file. */
-function findTmpdirCalls(sourceFile: ts.SourceFile): ts.Node[] {
+/**
+ * Every use of the os module's `tmpdir` in the file: a call or a reference (passed on, stored), under its own name or
+ * the name an import gives it (`import { tmpdir as t }`), or through the module (`os.tmpdir`, `os['tmpdir']` aside).
+ */
+function findTmpdirUses(sourceFile: ts.SourceFile): ts.Node[] {
+	const { names, modules } = osImportsOf(sourceFile)
 	const found: ts.Node[] = []
 	function visit(node: ts.Node): void {
-		if (isTmpdirCall(node)) found.push(node)
-		ts.forEachChild(node, visit)
+		if (ts.isImportDeclaration(node)) return
+		if (ts.isIdentifier(node) && names.has(node.text) && !isPropertyName(node)) found.push(node)
+		else if (
+			ts.isPropertyAccessExpression(node) &&
+			node.name.text === 'tmpdir' &&
+			ts.isIdentifier(node.expression) &&
+			modules.has(node.expression.text)
+		)
+			found.push(node)
+		else ts.forEachChild(node, visit)
 	}
 	visit(sourceFile)
 	return found
+}
+
+/** The local names of the os module's `tmpdir`, and of the os module itself, the file imports. */
+function osImportsOf(sourceFile: ts.SourceFile): { names: Set<string>; modules: Set<string> } {
+	const names = new Set<string>()
+	const modules = new Set<string>()
+	for (const statement of sourceFile.statements) {
+		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+			continue
+		if (!OS_MODULE_NAMES.includes(statement.moduleSpecifier.text)) continue
+		const clause = statement.importClause
+		if (clause?.name) modules.add(clause.name.text)
+		const bindings = clause?.namedBindings
+		if (bindings && ts.isNamespaceImport(bindings)) modules.add(bindings.name.text)
+		if (bindings && ts.isNamedImports(bindings))
+			for (const element of bindings.elements)
+				if ((element.propertyName ?? element.name).text === 'tmpdir') names.add(element.name.text)
+	}
+	return { names, modules }
+}
+
+/** The identifier names a property (`x.tmpdir`, `{ tmpdir: ... }`), not a binding. */
+function isPropertyName(node: ts.Identifier): boolean {
+	const parent = node.parent
+	return (
+		(ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+		(ts.isPropertyAssignment(parent) && parent.name === node)
+	)
 }
 
 /** `tmpdir()` or `os.tmpdir()`, without arguments. */

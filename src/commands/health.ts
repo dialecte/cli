@@ -8,14 +8,13 @@ import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { renderCommandSection } from '../lib/command-map/render-help.ts'
 import { collectFindings } from '../lib/health/collect-findings.ts'
 import { readHealthRepository } from '../lib/health/read-health-context.ts'
-import { readScratchFolders } from '../lib/health/read-scratch.ts'
+import { readMachineScratch } from '../lib/health/read-scratch.ts'
 import { renderFindings } from '../lib/health/render-findings.ts'
 import { walkStores } from '../lib/health/walk-stores.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, linesOf, printOut, textOf } from '../lib/print/print.ts'
 import { isProcessAlive } from '../lib/process-alive.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
-import { scratchRoot, systemTemporaryFolder } from '../lib/scratch/scratch-root.ts'
 import {
 	DATE_PATTERN,
 	DATE_TIME_PATTERN,
@@ -77,12 +76,7 @@ export function runHealth(params: HealthParams): CommandResult {
 		.map((common) => readHealthRepository({ common }))
 	// the scratch folders belong to no repository: read only when no repository is asked for
 	const scratch =
-		wanted === undefined
-			? readScratchFolders({
-					root: scratchRoot({ cwd: params.cwd }),
-					tmp: params.tmp ?? systemTemporaryFolder(),
-				})
-			: []
+		wanted === undefined ? readMachineScratch({ cwd: params.cwd, tmp: params.tmp }) : []
 	const findings = collectFindings({
 		repositories,
 		scratch,

@@ -1788,7 +1788,7 @@ describe(
 	'handover run --rehearse: the rehearsal folder',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('the clone at <scratch root>/dialecte-rehearse-<random>/<repository folder name>; the hook runs with TMPDIR a short folder of the rehearsal folder beside the clone; everything removed after', async () => {
+		it('the clone at <scratch root>/dialecte-rehearse-<random>/<repository folder name>; the hook runs with TMPDIR a short folder of its own under /tmp; everything removed after', async () => {
 			const { root, lotsPath, out } = prepare()
 			const seen = temporaryFolder('dialecte-seen-')
 			installHook({
@@ -1807,18 +1807,17 @@ describe(
 
 			const clone = relative(realScratchRoot, readFileSync(join(seen, 'pwd.txt'), 'utf8').trim())
 			const hookTemporary = readFileSync(join(seen, 'tmpdir.txt'), 'utf8')
-			const inRehearsal = relative(
-				hookTemporary.startsWith(realScratchRoot) ? realScratchRoot : scratchRoot,
-				hookTemporary,
-			)
-			const [rehearsal] = clone.split(sep)
 			expect(result.exitCode).toBe(0)
 			expect(clone.split(sep)).toEqual([
 				expect.stringMatching(/^dialecte-rehearse-/),
 				basename(root),
 			])
-			expect(inRehearsal.split(sep)).toEqual([rehearsal, expect.not.stringMatching(basename(root))])
-			expect(inRehearsal.length).toBeLessThanOrEqual(40)
+			expect({
+				parent: dirname(hookTemporary),
+				name: basename(hookTemporary).startsWith('dlt-hook-'),
+				short: hookTemporary.length <= 40,
+				left: existsSync(hookTemporary),
+			}).toEqual({ parent: '/tmp', name: true, short: true, left: false })
 			expect(readdirSync(scratchRoot)).toEqual([])
 		})
 
@@ -1895,7 +1894,7 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 		const scratchRoot = temporaryFolder('dialecte-scratch-root-')
 
 		const run = spawn(process.execPath, [CLI_SOURCE, 'handover', 'run', out, '--rehearse'], {
-			env: { ...process.env, TMPDIR: scratchRoot },
+			env: { ...process.env, TMPDIR: scratchRoot, DIALECTE_SCRATCH: scratchRoot },
 			stdio: ['ignore', 'pipe', 'ignore'],
 		})
 		let output = ''
@@ -1910,7 +1909,7 @@ describe('handover run --rehearse, interrupted', { timeout: SCRATCH_REPOSITORY_T
 		const folder = announcedRehearsalFolder(output)
 
 		expect(exitCode).not.toBe(0)
-		expect(['/tmp', realpathSync('/tmp')]).toContain(folder && dirname(folder))
+		expect([scratchRoot, realpathSync(scratchRoot)]).toContain(folder && dirname(folder))
 		expect(folder && existsSync(folder)).toBe(false)
 		expect(
 			readdirSync(scratchRoot).filter((name) => name.startsWith('dialecte-rehearse-')),
@@ -2627,9 +2626,12 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 	it('the log grows while the hook runs: readable when its first line has been shown, so a killed run still leaves it', async () => {
 		const hookTemporary = temporaryFolder('dialecte-hook-tmp-')
 		const previousTemporary = process.env.TMPDIR
+		const previousScratch = process.env.DIALECTE_SCRATCH
 		onTestFinished(function restoreTemporary() {
 			if (previousTemporary === undefined) delete process.env.TMPDIR
 			else process.env.TMPDIR = previousTemporary
+			if (previousScratch === undefined) delete process.env.DIALECTE_SCRATCH
+			else process.env.DIALECTE_SCRATCH = previousScratch
 		})
 		const flag = join(temporaryFolder('dialecte-flag-'), 'seen')
 		const marker = `marker-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
@@ -2637,6 +2639,7 @@ describe('handover run: the hook log', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, 
 			`echo ""; echo "> demo@1.0.0 ${marker}"; echo "> true"; i=0; while [ ! -f '${flag}' ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; [ -f '${flag}' ] || exit 1`,
 		)
 		process.env.TMPDIR = hookTemporary
+		process.env.DIALECTE_SCRATCH = hookTemporary
 		let logsMidRun: string[] = []
 		function record(line: string): void {
 			if (line === `  │ ▶ ${marker}`) {

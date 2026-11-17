@@ -116,3 +116,6 @@ export const BARE_TMPDIR_MESSAGE =
 
 /** The folder whose files may read the system's temporary folder: the scratch module. */
 export const SCRATCH_MODULE_PATTERN = /(^|[\\/])src[\\/]lib[\\/]scratch[\\/]/
+
+/** The names the os module is imported by. */
+export const OS_MODULE_NAMES: readonly string[] = ['node:os', 'os']

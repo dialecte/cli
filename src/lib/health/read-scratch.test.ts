@@ -70,6 +70,33 @@ describe('readScratchFolders', () => {
 		])
 	})
 
+	it('a folder of the scratch root with a scratch.json naming a process → its start time and pid read from it', () => {
+		const root = temporaryFolder('dialecte-scratch-root-')
+		const folder = join(root, 'dialecte-rehearse-x')
+		mkdirSync(folder)
+		writeFileSync(
+			join(folder, 'scratch.json'),
+			JSON.stringify({
+				pid: 4242,
+				startedAt: '2026-11-01T00:00:00.000Z',
+				command: 'dialecte handover run',
+			}),
+		)
+		expect(readScratchFolders({ root, tmp: temporaryFolder('dialecte-scratch-reader-') })).toEqual([
+			{ path: folder, modifiedAt: '2026-11-01T00:00:00.000Z', pid: 4242 },
+		])
+	})
+
+	it("a rehearsal hook's temporary folder left in the short root → listed", () => {
+		const tmp = temporaryFolder('dialecte-scratch-reader-')
+		const folder = join(tmp, 'dlt-hook-abc')
+		mkdirSync(folder)
+		utimesSync(folder, FIRST_FILE_TIME, FIRST_FILE_TIME)
+		expect(readScratchFolders({ tmp })).toEqual([
+			{ path: folder, modifiedAt: FIRST_FILE_TIME.toISOString() },
+		])
+	})
+
 	it('a folder of the scratch root without scratch.json nor cli prefix -> left out', () => {
 		const root = temporaryFolder('dialecte-scratch-root-')
 		mkdirSync(join(root, 'other-folder'))

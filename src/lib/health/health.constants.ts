@@ -6,6 +6,7 @@ import {
 import { REPORT_FOLDER_PREFIX } from '../gate/scoped-tests.constants.ts'
 import { GATE_SCOPE_FOLDER_PREFIX } from '../gate/selection.constants.ts'
 import {
+	HOOK_TEMPORARY_FOLDER_PREFIX,
 	HANDOVER_PROBE_FOLDER_PREFIX,
 	HOOK_LOG_FOLDER_PREFIX,
 	REHEARSAL_FOLDER_PREFIX,
@@ -210,6 +211,7 @@ export const SCRATCH_PREFIXES: readonly string[] = [
 	BASE_COLLECT_FOLDER_PREFIX,
 	BASE_RED_FOLDER_PREFIX,
 	REFERENCE_CHECK_FOLDER_PREFIX,
+	HOOK_TEMPORARY_FOLDER_PREFIX,
 ]
 
 /** The texts of the worktree findings; `{name}` is filled with its value, a `One` text words a count of one. */
