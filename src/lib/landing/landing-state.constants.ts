@@ -6,3 +6,6 @@ export const LANDING_UNKNOWN = {
 	noBranch: 'the branch {branch} does not resolve',
 	noBase: 'the base {ref} does not resolve: fetch origin',
 } as const
+
+/** The doubts an unlanded reading can carry: a landing git alone cannot prove. */
+export const LANDING_PROOFS = ['offline-unproven'] as const

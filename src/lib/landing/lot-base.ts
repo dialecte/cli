@@ -41,7 +41,10 @@ export function lotBaseOf(query: LotBaseQuery): LotBase | { refusal: string } {
 	const lines = open ? parentRefs : [...parentRefs, baseRef]
 	const forkPoint = newestOf({
 		root,
-		commits: lines.flatMap((ref) => forkPointsOf({ root, ref, head })),
+		commits: [
+			...lines.flatMap((ref) => forkPointsOf({ root, ref, head })),
+			...landedParentTipOf({ root, head, parent }),
+		],
 	})
 	if (forkPoint === undefined)
 		return refused({
@@ -50,6 +53,22 @@ export function lotBaseOf(query: LotBaseQuery): LotBase | { refusal: string } {
 		})
 	if (!open) return { ref: baseRef, label: labelOf(baseRef), forkPoint }
 	return { ref: newestRefOf({ root, refs: parentRefs }), label: parent.branch, forkPoint }
+}
+
+/**
+ * The merged parent's landed tip when the lot holds it: the one fork point left once the parent's branches are gone
+ * (deleted here and on origin after a squash), else the base's merge-base would be the cut and replay the parent.
+ */
+function landedParentTipOf(params: {
+	root: string
+	head: string
+	parent: LotBaseQuery['parent']
+}): string[] {
+	const landing = params.parent?.landing
+	if (landing?.kind !== 'merged') return []
+	return isAncestorCommit({ root: params.root, ancestor: landing.tip, descendant: params.head })
+		? [landing.tip]
+		: []
 }
 
 /** A refusal of `lotBaseOf`, its template filled. */

@@ -83,7 +83,8 @@ const ROWS: Row[] = [
 		expected: ({ tip }) => ({ kind: 'merged', how: 'tree', tip }),
 	},
 	{
-		title: 'a squash merge, then a later local commit -> unlanded',
+		title:
+			'a squash merge, then a later local commit, its branch on origin -> unlanded, not provable offline',
 		arrange: (repository) => {
 			mergeOnOrigin({ repository, how: 'squash' })
 			const tip = commitIn({
@@ -93,25 +94,41 @@ const ROWS: Row[] = [
 			})
 			return { tip }
 		},
-		expected: () => ({ kind: 'unlanded' }),
+		expected: () => ({ kind: 'unlanded', proof: 'offline-unproven' }),
 	},
 	{
-		title: 'a squash merge, then main edits the same lines, no host -> unlanded',
+		title:
+			'a squash merge, then main edits the same lines, no host -> unlanded, not provable offline',
 		arrange: (repository) => {
 			mergeOnOrigin({ repository, how: 'squash' })
 			editOnOrigin({ repository, files: { [LOT_FILE]: 'export const x = 2\n' } })
 			return {}
 		},
-		expected: () => ({ kind: 'unlanded' }),
+		expected: () => ({ kind: 'unlanded', proof: 'offline-unproven' }),
 	},
 	{
-		title: 'a squash merge, then main reverts it, no host -> unlanded',
+		title: 'a squash merge, then main reverts it, no host -> unlanded, not provable offline',
 		arrange: (repository) => {
 			mergeOnOrigin({ repository, how: 'squash' })
 			revertOnOrigin({ repository })
 			return {}
 		},
+		expected: () => ({ kind: 'unlanded', proof: 'offline-unproven' }),
+	},
+	{
+		title:
+			'work never pushed, no pull request recorded, no host -> unlanded, nothing suggests a landing',
+		arrange: () => ({}),
 		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title:
+			'a pull request recorded, its branch not on origin, main edited the same lines, no host -> unlanded, not provable offline',
+		arrange: (repository) => {
+			editOnOrigin({ repository, files: { [LOT_FILE]: 'export const x = 2\n' } })
+			return { pullNumber: 7 }
+		},
+		expected: () => ({ kind: 'unlanded', proof: 'offline-unproven' }),
 	},
 	{
 		title: 'a branch that does not resolve -> unknown naming it',
@@ -276,9 +293,10 @@ const HOST_ROWS: Row[] = [
 		}),
 	},
 	{
-		title: 'a host refusal, the work not in the base -> unlanded naming the refusal',
+		title:
+			'a host refusal, the work not in the base, a pull request recorded -> unlanded naming the refusal, not provable offline',
 		arrange: () => ({ pullNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }),
-		expected: () => ({ kind: 'unlanded', hostRefusal: 'gh: offline' }),
+		expected: () => ({ kind: 'unlanded', hostRefusal: 'gh: offline', proof: 'offline-unproven' }),
 	},
 ]
 

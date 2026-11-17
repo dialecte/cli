@@ -5,6 +5,7 @@
  * (`tree`, a squash read offline). Else unlanded, or closed when the host closed its pull request unmerged. A host
  * that refuses leaves the decision to git, its reason kept on an unlanded state.
  */
+import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readCommitOrNone, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from './contained.ts'
@@ -44,7 +45,24 @@ export function readLandingState(query: LandingQuery): LandingState {
 		kind: 'unlanded',
 		...(asked.pull && { pull: asked.pull }),
 		...(asked.refusal !== undefined && { hostRefusal: asked.refusal }),
+		...(isUnprovenOffline({ query, answered: asked.pull !== undefined }) && {
+			proof: 'offline-unproven' as const,
+		}),
 	}
+}
+
+/**
+ * The lot may have landed though git alone cannot prove it: no host answered, and it has a recorded pull request or a
+ * branch on origin (a squash main later edited the same lines of reads unlanded to git).
+ */
+function isUnprovenOffline(params: { query: LandingQuery; answered: boolean }): boolean {
+	const { query } = params
+	if (params.answered) return false
+	if (query.pullNumber !== undefined) return true
+	return (
+		readCommitOrNone({ root: query.root, ref: `${ORIGIN_BRANCH_REF_PREFIX}${query.branch}` }) !==
+		undefined
+	)
 }
 
 /**

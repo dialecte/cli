@@ -203,6 +203,47 @@ describe('lotBaseOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 	})
 
+	it("a stacked child never rebased, its two-commit parent squash-merged and its branches deleted here and on origin -> origin's main, forking at the parent's landed tip; the rebase moves only the child's commit", () => {
+		const repository = landingRepositoryOf()
+		const second = commitIn({
+			root: repository.worktree,
+			files: { 'src/w.ts': 'export const w = 1\n' },
+			message: 'feat(x): w',
+		})
+		const child = stackedChildOf(repository)
+		mergeOnOrigin({ repository, how: 'squash' })
+		dropParentBranches({ repository })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: { kind: 'merged', how: 'tree', tip: second } },
+			}),
+		).toEqual({ ref: ORIGIN_MAIN, label: 'origin/main', forkPoint: second })
+		git({ root: child.worktree, args: ['rebase', '-q', '--onto', ORIGIN_MAIN, second] })
+		expect(subjectsBeyond({ root: child.worktree, base: ORIGIN_MAIN, ref: 'HEAD' })).toEqual([
+			'feat(y): y',
+		])
+	})
+
+	it('a stacked child whose open parent was amended, the reflog expired -> the plain merge-base, as git answers', () => {
+		const repository = landingRepositoryOf()
+		const child = stackedChildOf(repository)
+		amendLot({ worktree: repository.worktree })
+		git({ root: repository.root, args: ['reflog', 'expire', '--expire=now', '--all'] })
+
+		expect(
+			lotBaseOf({
+				root: repository.root,
+				head: headOf(child.worktree),
+				baseRef: ORIGIN_MAIN,
+				parent: { branch: LOT_BRANCH, landing: OPEN },
+			}),
+		).toEqual({ ref: `refs/heads/${LOT_BRANCH}`, label: LOT_BRANCH, forkPoint: repository.cut })
+	})
+
 	it('a head that does not resolve -> refused naming it', () => {
 		const repository = landingRepositoryOf()
 

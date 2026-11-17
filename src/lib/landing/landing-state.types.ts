@@ -1,5 +1,8 @@
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
-import type { LANDING_EVIDENCES } from './landing-state.constants.ts'
+import type { LANDING_EVIDENCES, LANDING_PROOFS } from './landing-state.constants.ts'
+
+/** Why an unlanded reading cannot be trusted offline: the lot may have landed, only the host can say. */
+export type LandingProof = (typeof LANDING_PROOFS)[number]
 
 /** What proved a lot merged: its tip on the base, the host's merged pull request, or its work contained in the base. */
 export type LandingEvidence = (typeof LANDING_EVIDENCES)[number]
@@ -12,7 +15,17 @@ export type LandingEvidence = (typeof LANDING_EVIDENCES)[number]
  */
 export type LandingState =
 	| { kind: 'empty' }
-	| { kind: 'unlanded'; pull?: PullRequest; hostRefusal?: string }
+	| {
+			kind: 'unlanded'
+			pull?: PullRequest
+			hostRefusal?: string
+			/**
+			 * `offline-unproven`: git alone found the work not in the base, yet the lot was pushed (its branch on origin)
+			 * or has a recorded pull request, and no host answered: a squash merge main later edited reads so. Only the
+			 * host can tell (`lot close`).
+			 */
+			proof?: LandingProof
+	  }
 	| { kind: 'merged'; how: LandingEvidence; tip: string; pull?: PullRequest }
 	| { kind: 'closed'; pull: PullRequest }
 	| { kind: 'unknown'; reason: string }
