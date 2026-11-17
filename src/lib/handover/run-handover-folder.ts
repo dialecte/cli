@@ -169,6 +169,7 @@ export async function runHandoverFolder(params: {
 		probe: params.probe,
 		// the repository's hand-over is done only by a real run that committed every lot
 		done: !rehearsal && commits.length === lots.length,
+		rehearsal,
 		release: lotsFile.release === true,
 	})
 	const box = renderSectionCard({

@@ -170,6 +170,8 @@ export function buildHandoverCard(params: {
 	probeTimeout?: number
 	/** Every lot is committed in the repository: the card says done, no command. */
 	done?: boolean
+	/** A rehearsal's card (a scratch clone's, or every lot reused): it checks no merge tree, as the rehearsal does not. */
+	rehearsal?: boolean
 	/** `handover abandon` marked the hand-over: the card says abandoned, no command. */
 	abandoned?: boolean
 	/** Asks whether the repository's own cli runs hand-overs. */
@@ -230,7 +232,7 @@ export function buildHandoverCard(params: {
 		? mergeTreeLineOf({
 				lots: params.lots,
 				committed: params.commits.length,
-				rehearsal: commitRoot !== root,
+				rehearsal: params.rehearsal === true,
 			})
 		: undefined
 	// a closed card (DONE or abandoned) shows the lot line only for the go-ahead row (D19, D22)

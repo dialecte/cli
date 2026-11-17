@@ -433,6 +433,9 @@ async function runGateIn(params: { root: string; argv: string[] }): Promise<numb
 	return result.exitCode
 }
 
+/** The position of the merge lot of `fullCardScenario`, after its plain lot. */
+const FULL_CARD_MERGE_LOT = 2
+
 /** The subject of the merge lot of `fullCardScenario`. */
 const MERGE_SUBJECT = 'merge: bring feat/x in'
 
@@ -3390,8 +3393,8 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 		expect(result.exitCode).toBe(0)
 		expect(maskVolatile({ lines: boxLines(result.output), root, head, tip })).toEqual([
 			'┌─ hand-over: dialecte-scratch-XXXXXX main ────────────────────────────────────┐',
-			'│ BLOCKED  2 lots · 1 file · +3 −1 · 1 merge not sized · 1 gate failed: build  │',
-			'│          · gates ran on another tree: check                                  │',
+			'│ BLOCKED  2 lots · 1 file · +3 −1 · 1 merge not sized · 2 gates failed:       │',
+			'│          build, merges · gates ran on another tree: check                    │',
 			'│          4 declarations to read (below)                                      │',
 			'├─ commit ─────────────────────────────────────────────────────────────────────┤',
 			'│ pending  1 file  +3 −1  feat(read): read answers one                         │',
@@ -3406,6 +3409,9 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
 			'│ ! review    no findings ledger                                               │',
 			'│ ✓ effort    medium · risk class unknown · 0 review rounds of 2               │',
+			`│ ✗ merges    lot ${FULL_CARD_MERGE_LOT}: tree not recorded: rehearse first (\`--rehearse\` prints    │`,
+			'│             it), add it as "tree" to the lot, then `dialecte handover        │',
+			'│             --rehash`                                                        │',
 			'│ ! standard  not consulted: none configured (DIALECTE_STANDARD)               │',
 			'├─ tdd ────────────────────────────────────────────────────────────────────────┤',
 			'│ 1 proven red → green · 2 unchanged                                           │',
@@ -3571,7 +3577,7 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 
 		expect(data).toMatchObject({
 			verdict: 'BLOCKED',
-			failedGates: ['build'],
+			failedGates: ['build', 'merges'],
 			otherTreeGates: ['check'],
 			declarations: 4,
 			head,

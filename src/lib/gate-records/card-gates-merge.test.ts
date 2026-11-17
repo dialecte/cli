@@ -419,7 +419,7 @@ describe('buildCardGateLines: a core-like gate record the hook of the merged tre
 					},
 				]),
 			)
-			const card = writeMergeHandover({ root, tip }).output
+			const card = writeMergeHandover({ root, tip, tree: mergedTree }).output
 			expect(card).not.toContain('gates ran on another tree')
 			expect(card).toMatch(/^│ READY /m)
 		},
