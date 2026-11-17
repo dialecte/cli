@@ -69,6 +69,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 			at: '2026-11-17T10:00:00.000Z',
 			by: { kind: 'person', name: REVIEWER },
 			verdict: 'approve',
+			head: lot.head,
 		})
 		expect(bodies.at(-1)).toContain('- person: approve')
 		expect(bodies.at(-1)).not.toContain(REVIEWER)

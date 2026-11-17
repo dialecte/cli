@@ -16,9 +16,10 @@ import {
 import { landedLot } from '../../test/lot-review.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { readReviewRecord, writeReviewRecord } from '../lib/review-rounds/review-record.ts'
+import { readReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runLotApprove } from './lot-approve.ts'
+import { runLotPr } from './lot-pr.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -109,7 +110,7 @@ describe(
 			expect(readReviewRecord({ folder: lot.lotFolder })?.verdicts).toHaveLength(1)
 		})
 
-		it("a commit after the approval → the approval no longer in the lot's review", () => {
+		it('a commit after the approval → lot pr renders the body without it', () => {
 			const lot = landedLot()
 			const { host } = recordingHost({
 				existing: lot.pullRequest,
@@ -124,9 +125,51 @@ describe(
 			writeFileSync(join(lot.worktree, 'src', 'x.ts'), 'export const x = 2\n')
 			git({ root: lot.worktree, args: ['commit', '-qam', 'fix(x): two'] })
 
-			writeReviewRecord({ folder: lot.lotFolder })
+			const rendered = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME, '--print'] })
 
-			expect(readReviewRecord({ folder: lot.lotFolder })?.verdicts).toEqual([])
+			expect(rendered.exitCode).toBe(0)
+			expect(rendered.output).not.toContain('person: approve')
+		})
+
+		it('the worktree a commit ahead of the landed head → refused naming both, nothing recorded', () => {
+			const lot = landedLot()
+			writeFileSync(join(lot.worktree, 'src', 'x.ts'), 'export const x = 2\n')
+			git({ root: lot.worktree, args: ['commit', '-qam', 'fix(x): two'] })
+			const local = git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+			const { host, calls } = recordingHost({
+				existing: lot.pullRequest,
+				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
+			})
+
+			const result = runLotApprove({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--by', REVIEWER],
+				host,
+			})
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toBe(
+				`lot approve: ${LOT_NAME} not approved: the worktree is at ${local.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} --draft pushes it); nothing recorded, nothing queued`,
+			)
+			expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+			expect(approvalLines(lot.lotFolder)).toEqual([])
+		})
+
+		it('--by Orchestrator on the cli → the body names the orchestrator', () => {
+			const lot = landedLot()
+			const { host, bodies } = recordingHost({
+				existing: lot.pullRequest,
+				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
+			})
+
+			const result = runLotApprove({
+				cwd: lot.workspace.repository,
+				argv: [LOT_NAME, '--by', 'Orchestrator'],
+				host,
+			})
+
+			expect(result.exitCode).toBe(0)
+			expect(bodies.at(-1)).toContain('- orchestrator: approve')
 		})
 
 		it('--by in another casing of orchestrator on a package other than the cli → refused, a person approves', () => {

@@ -2,7 +2,7 @@
  * `dialecte lot review <id> --pull --round <n>`: the pull request's line comments come back as findings of the lot's
  * ledger, each once, so the lot fixes them as a review round.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
@@ -12,6 +12,7 @@ import { landedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { LEDGER_FILE } from '../lib/review-rounds/review-rounds.constants.ts'
+import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { runLotReview } from './lot-review.ts'
 
 import { describe, expect, it } from 'vitest'
@@ -102,6 +103,27 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(ledgerRows(lot.lotFolder)).toEqual(['| R2-1 | 2 | nit | src/x.ts:1 | nit: | open |'])
+	})
+
+	it('the pulled record that cannot be written → exit 1, the finding written and its comment named, so a next pull is seen to add it again', () => {
+		const lot = landedLot()
+		const pulled = join(lot.lotFolder, STORE_FILES.pulledComments)
+		writeFileSync(pulled, '')
+		chmodSync(pulled, 0o444)
+		const { host } = recordingHost({
+			existing: lot.pullRequest,
+			comments: [{ id: 301, path: 'src/x.ts', line: 1, body: 'nit: a word' }],
+		})
+
+		const result = runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME, '--pull', '--round', '2'],
+			host,
+		})
+
+		expect(result.exitCode).toBe(1)
+		expect(ledgerRows(lot.lotFolder)).toEqual(['| R2-1 | 2 | nit | src/x.ts:1 | a word | open |'])
+		expect(result.output).toContain('R2-1 written, comment 301 not marked pulled')
 	})
 
 	it('--pull without --round → usage, exit 2, nothing asked or written', () => {

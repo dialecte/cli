@@ -105,20 +105,21 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
     request: lot finding records them
   approve - a person's approval of the lot's pull request: refused (exit 1, nothing recorded,
             nothing queued) unless the lot is at work, the pull request landing.json names is open
-            at the head the lot landed, its checks ran on that head and are green (a check run again
-            counts by its newest run; a failing or pending check, or none yet, refuses) and no
-            finding but a nit is open (open, or a fix still to verify), and its text renders over
-            the live body; then appends { schema, at, by, reason?, number, head } to the lot
-            folder's approvals.jsonl, which review.jsonl shows as a person's approve verdict while
-            the worktree is at that head (a later commit leaves the lot unapproved; the pull request
-            body names it by kind only, never the name), renders the pull request's text again from
-            the records, makes a draft ready and queues it (gh pr merge --auto); a queue the host
-            refuses keeps the approval (exit 1) and the same approval run again answers already
-            approved, writing nothing, and queues; --by orchestrator (in any case) approves the
-            cli's own lots only (the package named @dialecte/cli), every other package waits for a
-            person (exit 2); a forbidden word in --by or --reason, or a --by holding what a public
-            record never holds, refused (exit 2) before the host is asked; a lot without a landing
-            names lot land <id> --draft
+            at the head the lot landed and the worktree is at that head too (an unpushed commit
+            refuses), its checks ran on that head and are green (a check run again counts by its
+            newest run; a failing or pending check, or none yet, refuses) and no finding but a nit
+            is open (open, or a fix still to verify), and its text renders over the live body; then
+            appends { schema, at, by, reason?, number, head } to the lot folder's approvals.jsonl,
+            which review.jsonl shows as a person's approve verdict with that head (a pull request
+            text rendered on another head, after a later commit or a rebase, leaves it out; the body
+            names it by kind only, never the name; the orchestrator in any casing is recorded as
+            orchestrator), renders the pull request's text again from the records, makes a draft
+            ready and queues it (gh pr merge --auto); a queue the host refuses keeps the approval
+            (exit 1) and the same approval run again answers already approved, writing nothing, and
+            queues; --by orchestrator (in any case) approves the cli's own lots only (the package
+            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
+            in --by or --reason, or a --by holding what a public record never holds, refused (exit
+            2) before the host is asked; a lot without a landing names lot land <id> --draft
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left

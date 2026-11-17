@@ -282,9 +282,9 @@ function verifyVerdictRowsOf(params: {
 }
 
 /**
- * The verdict rows of the folder's `approvals.jsonl`: a person's approve, once per approver, for the head the lot's
- * worktree is at only (a commit after the approval leaves it unapproved; a folder without a worktree keeps them all).
- * A line whose `--by` the public-text check refuses (one written by hand) gives none: a person's verdict names who.
+ * The verdict rows of the folder's `approvals.jsonl`: a person's approve with the head approved, once per approver and
+ * head. A line whose `--by` the public-text check refuses (one written by hand) gives none: a person's verdict names
+ * who. Which head a render shows is `verdictsAt`'s.
  */
 function approvalVerdictRowsOf(params: {
 	folder: string
@@ -292,27 +292,39 @@ function approvalVerdictRowsOf(params: {
 }): VerdictRow[] {
 	const file = join(params.folder, STORE_FILES.approvals)
 	if (!existsSync(file)) return []
-	const worktree = worktreeOf(params.folder)
-	const head =
-		worktree === undefined
-			? undefined
-			: tryReadGit({ root: worktree, args: ['rev-parse', 'HEAD'] })?.trim()
 	const rows = new Map<string, VerdictRow>()
 	for (const line of readFileSync(file, 'utf8').split('\n')) {
 		const parsed = parsedLine(line)
 		if (typeof parsed?.at !== 'string' || typeof parsed.by !== 'string') continue
-		if (!params.isPublicWord(parsed.by)) continue
-		if (head !== undefined && parsed.head !== head) continue
-		if (rows.has(parsed.by)) continue
-		rows.set(parsed.by, {
+		if (typeof parsed.head !== 'string' || !params.isPublicWord(parsed.by)) continue
+		const key = `${parsed.by}\n${parsed.head}`
+		if (rows.has(key)) continue
+		rows.set(key, {
 			schema: REVIEW_RECORD_SCHEMA,
 			kind: 'verdict',
 			at: parsed.at,
 			by: { kind: 'person', name: parsed.by },
 			verdict: APPROVE_VERDICT,
+			head: parsed.head,
 		})
 	}
 	return [...rows.values()]
+}
+
+/**
+ * The record as a render of `head` shows it: a verdict given on another head (an approval before a later commit or a
+ * rebase) left out, so no text claims an approval of a head nobody approved.
+ *
+ * @intent show only the approvals of the head a pull request carries
+ * @internal
+ */
+export function verdictsAt(params: { record: ReviewRecord; head: string }): ReviewRecord {
+	return {
+		...params.record,
+		verdicts: params.record.verdicts.filter(
+			(row) => row.head === undefined || row.head === params.head,
+		),
+	}
 }
 
 /**

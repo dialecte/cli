@@ -73,7 +73,7 @@ export function reviewCommentsOf(params: { text: string }): ReviewComment[] | Ho
 
 /**
  * The rollup's entries as objects, one per check: a check run by its workflow and name, a commit status by its
- * context; of several runs of one check the one started last (else completed last) kept, in the order first met.
+ * context; of several runs of one check the newest kept (`isNewer`), in the order first met.
  */
 function newestRuns(rollup: unknown[]): Record<string, unknown>[] {
 	const newest = new Map<string, Record<string, unknown>>()
@@ -85,9 +85,27 @@ function newestRuns(rollup: unknown[]): Record<string, unknown>[] {
 				? `${STATUS_CONTEXT_TYPE}:${String(check.context ?? '')}`
 				: `${String(check.workflowName ?? '')}:${String(check.name ?? '')}`
 		const kept = newest.get(key)
-		if (kept === undefined || timeOf(check) >= timeOf(kept)) newest.set(key, check)
+		if (kept === undefined || isNewer({ check, than: kept })) newest.set(key, check)
 	}
 	return [...newest.values()]
+}
+
+/**
+ * Whether `check` is a newer run than `than`: a run not completed yet (queued again, maybe without a start time) is
+ * newer than a completed one; else the one started (else completed) later, the later in the rollup on a tie.
+ */
+function isNewer(params: {
+	check: Record<string, unknown>
+	than: Record<string, unknown>
+}): boolean {
+	const running = isRunning(params.check)
+	if (running !== isRunning(params.than)) return running
+	return timeOf(params.check) >= timeOf(params.than)
+}
+
+/** Whether a rollup entry is a check run not completed yet. */
+function isRunning(check: Record<string, unknown>): boolean {
+	return check.__typename !== STATUS_CONTEXT_TYPE && check.status !== COMPLETED_STATUS
 }
 
 /** When a run started, else completed (ISO time, compared as text); empty when neither is given. */

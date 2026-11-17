@@ -8,3 +8,7 @@ export const DEFAULT_COMMENT_SEVERITY = 'should-fix'
 
 /** The schema of a `pulled-comments.jsonl` line. */
 export const PULLED_LINE_SCHEMA = 1
+
+/** Why a pull stopped after a finding was written but its comment could not be marked pulled. */
+export const ORPHAN_FINDING_REFUSAL =
+	'{id} written, comment {comment} not marked pulled (a next pull adds it again): {reason}'

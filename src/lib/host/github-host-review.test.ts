@@ -117,6 +117,37 @@ describe('createGithubHost: checks', () => {
 		})
 	})
 
+	it('a failed check run again and still queued without a start time → pending, never the failed run', () => {
+		const root = fakeCommands({
+			names: ['gh'],
+			stdout: rollupOf([
+				{
+					__typename: 'CheckRun',
+					name: 'shard 2',
+					workflowName: 'ci',
+					status: 'COMPLETED',
+					conclusion: 'FAILURE',
+					startedAt: '2026-11-17T10:00:00Z',
+				},
+				{
+					__typename: 'CheckRun',
+					name: 'shard 2',
+					workflowName: 'ci',
+					status: 'QUEUED',
+					conclusion: '',
+					startedAt: '0001-01-01T00:00:00Z',
+				},
+			]),
+		})
+
+		expect(createGithubHost().readChecks({ root, number: 12 })).toEqual({
+			head: 'abc',
+			state: 'pending',
+			failing: [],
+			pending: ['shard 2'],
+		})
+	})
+
 	it('gh failing → a refusal naming the call', () => {
 		const root = fakeCommands({ names: ['gh'], code: 1 })
 

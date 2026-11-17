@@ -13,6 +13,7 @@ import { resultOf } from '../lib/command-result.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { appendLine } from '../lib/events/write-event.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
+import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -62,6 +63,7 @@ export function runLotApprove(params: {
 	if ('exitCode' in place) return place
 	const optionRefusal = approverRefusal({ place, by, reason })
 	if (optionRefusal !== undefined) return lineOf({ exitCode: 2, line: optionRefusal })
+	// a lot no longer at work is refused before the host is asked (approvalRefusals names it too, for lot review)
 	if (!APPROVABLE_STATES.includes(place.state))
 		return lineOf({
 			exitCode: 1,
@@ -102,7 +104,8 @@ export function runLotApprove(params: {
 		approval: {
 			schema: APPROVAL_LINE_SCHEMA,
 			at: (params.now ?? new Date()).toISOString(),
-			by,
+			// the orchestrator in any casing is recorded as the one word the body names
+			by: by.toLowerCase() === ORCHESTRATOR_APPROVER ? ORCHESTRATOR_APPROVER : by,
 			...(reason !== undefined && { reason }),
 			number: pullRequest.number,
 			head: landing.head,
@@ -143,6 +146,7 @@ export function approvalRefusals(params: {
 					}),
 				]),
 		...headReasons(params),
+		...worktreeReasons(params),
 		...checksReasons(params),
 		...blockingReasons({ folder: place.lotFolder }),
 	]
@@ -217,6 +221,23 @@ function headReasons(params: {
 			.replace('{pushed}', pullRequest.head.slice(0, SHORT_SHA_LENGTH))
 			.replace('{landed}', landed.slice(0, SHORT_SHA_LENGTH))
 			.replace('{lot}', () => params.place.lot),
+	]
+}
+
+/** Why the worktree's head is not the one approved: it holds commits the lot has not landed (pushed) yet. */
+function worktreeReasons(params: { place: LotPlace; landed: string }): string[] {
+	const { place, landed } = params
+	const head = readGit({ root: place.worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	if (head === landed) return []
+	return [
+		fillMessage({
+			template: LOT_APPROVE_LINES.worktreeElsewhere,
+			values: {
+				head: head.slice(0, SHORT_SHA_LENGTH),
+				landed: landed.slice(0, SHORT_SHA_LENGTH),
+				lot: place.lot,
+			},
+		}),
 	]
 }
 

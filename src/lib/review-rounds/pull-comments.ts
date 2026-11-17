@@ -7,11 +7,13 @@ import { basename, join } from 'node:path'
 
 import { EVENT_LINE_LIMIT } from '../events/events.constants.ts'
 import { appendLine } from '../events/write-event.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { appendFinding } from './findings-ledger.ts'
 import {
 	COMMENT_SEVERITY_PATTERN,
 	DEFAULT_COMMENT_SEVERITY,
+	ORPHAN_FINDING_REFUSAL,
 	PULLED_LINE_SCHEMA,
 } from './pull-comments.constants.ts'
 import { LEDGER_FILE, SEVERITY_SPELLINGS } from './review-rounds.constants.ts'
@@ -54,8 +56,8 @@ export function newCommentFindings(params: {
 
 /**
  * Each finding appended to the folder's ledger in `round`, then its comment to `pulled-comments.jsonl`, one after the
- * other: the ids given, in order, and the reason a write failed (the findings after it not written). A pull stopped
- * between the two writes of one finding leaves that comment to be pulled again.
+ * other: the ids given, in order, and the reason a write failed (the findings after it not written). A finding written
+ * whose comment could not be marked is named in that reason: a next pull adds it again.
  *
  * @intent record a pull request's comments as a lot's findings
  * @internal
@@ -70,8 +72,9 @@ export function recordCommentFindings(params: {
 	const { folder } = params
 	const ids: string[] = []
 	for (const finding of params.findings) {
+		let id: string | undefined
 		try {
-			const id = appendFinding({
+			id = appendFinding({
 				path: join(folder, LEDGER_FILE),
 				title: basename(folder),
 				round: params.round,
@@ -93,7 +96,18 @@ export function recordCommentFindings(params: {
 			})
 			ids.push(id)
 		} catch (error) {
-			return { ids, refusal: (error as Error).message }
+			const reason = (error as Error).message
+			// a finding written whose comment is not marked: named, as a next pull adds it again
+			return {
+				ids,
+				refusal:
+					id === undefined
+						? reason
+						: fillMessage({
+								template: ORPHAN_FINDING_REFUSAL,
+								values: { id, comment: String(finding.comment), reason },
+							}),
+			}
 		}
 	}
 	return { ids }

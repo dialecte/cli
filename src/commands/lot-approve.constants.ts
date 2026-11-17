@@ -24,6 +24,8 @@ export const LOT_APPROVE_LINES = {
 	noPullRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
 	notOpen: 'pull request #{number} is {state}',
 	lotNotApprovable: 'the lot is {state}',
+	worktreeElsewhere:
+		'the worktree is at {head}, the lot landed {landed} (lot land {lot} --draft pushes it)',
 	checksElsewhere: 'checks ran on {checked}, not the landed {landed}',
 	refused: 'lot approve: {lot} not approved: {reasons}; nothing recorded, nothing queued',
 	headElsewhere:
