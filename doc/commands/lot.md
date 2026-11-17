@@ -10,6 +10,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
   dialecte lot start <brief.json> --on <lot> [the options above]
   dialecte lot status <id> [--json]
+  dialecte lot forecast [<id>] [--json] [--against <lot>]
   dialecte lot risk <id|folder> [--json]
   dialecte lot risk <id|folder> --effort low|medium|high [--class high|medium|light] --by <who> [--reason <text>]
   dialecte lot wait <id> [--timeout <seconds>] [--json]
@@ -164,6 +165,24 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            risk class <c> line, ending (by <who>: <reason>) or (no go-ahead recorded)); a lot whose
            records do not hold reads damaged with its reason and next: lot stop (exit 6); reads
            only; exit 2 for an unknown or ambiguous id
+  forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
+             as one snapshot commit made on a copy of its index with a fixed identity and date; the
+             worktree's index, refs and files never written, ignored files left out) against main
+             (origin/<base> as last fetched, never fetched here) and against every other open lot of
+             its store, each by git merge-tree --write-tree, without a checkout: clean, conflict
+             (each path with its kind, content with the line ranges between the markers), exclusive
+             (every conflicted path a lock file) or unknown with its reason (git older than 2.38, a
+             damaged lot, worktree of <lot> missing, <ref> does not resolve, snapshot of <lot>
+             failed, merge-tree failed, forecast of <lot> over 20 s: each git step is limited to 20
+             seconds); each line also lists the files both sides changed (shares); a path that
+             conflicts against main for either lot is shown once, on the main line; the verdict is
+             the worst line (unknown > conflict > exclusive > clean); default lot: the one whose
+             worktree holds the current folder; --against <lot> compares with main and that lot
+             only; appends the run to the lot folder's forecast.jsonl (one line per comparison, one
+             write, each line at most 4,096 bytes: 10 shared paths, 10 conflict paths, 3 ranges per
+             path, the rest counted in moreShared and more) and a forecast event; --json { lot,
+             verdict, lines }; a clean forecast does not promise a semantic merge, three lots
+             landing together, or work not written yet
   risk - reads the lot folder's (or hand-over folder's) risk.jsonl and the worktree's diff against
          the lot's base, writing nothing: the risk class derived now with its reasons (high: a
          changed file in the package's dialecte.risk.high list, the base's and the worktree's
@@ -343,12 +362,15 @@ exit codes:
   4  wait: an agent failed or hit a limit, run again
   5  wait --timeout, result: still working
   6  status, wait, result: the lot is damaged: a person must look
+  1  forecast: a conflict or an exclusive path; the run could not be written
+  2  forecast: usage; unknown id; a damaged lot; --against the lot itself or a lot of another store
+  3  forecast: unknown (the forecast could not run in full)
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `land`, `close`
+Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--draft`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
