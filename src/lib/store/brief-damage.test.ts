@@ -36,6 +36,23 @@ function briefWithSummary(params: { lot: PullRequestLot; summary: string }): str
 	return `${JSON.stringify({ ...value, summary: params.summary }, null, 2)}\n`
 }
 
+/** `lot brief <lot> --from <from>` by a person, with a reason. */
+function rewriteThroughVerb(params: { lot: PullRequestLot; from: string }) {
+	return runLot({
+		cwd: params.lot.workspace.repository,
+		argv: [
+			'brief',
+			LOT_NAME,
+			'--from',
+			params.from,
+			'--by',
+			'person-a',
+			'--reason',
+			'a clearer summary',
+		],
+	})
+}
+
 describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot as started → its records hold', () => {
 		expect(damageOf(pullRequestLot())).toBeUndefined()
@@ -58,20 +75,23 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 		const lot = pullRequestLot()
 		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
 		writeFileSync(from, briefWithSummary({ lot, summary: 'Rewritten through the verb.' }))
-		runLot({
-			cwd: lot.workspace.repository,
-			argv: [
-				'brief',
-				LOT_NAME,
-				'--from',
-				from,
-				'--by',
-				'person-a',
-				'--reason',
-				'a clearer summary',
-			],
-		})
+		const rewritten = rewriteThroughVerb({ lot, from })
 
+		expect(rewritten.exitCode).toBe(0)
 		expect(damageOf(lot)).toBeUndefined()
+	})
+
+	it("a brief rewritten through lot brief, then its start's bytes put back by hand → damaged: only the latest counts", () => {
+		const lot = pullRequestLot()
+		const started = readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')
+		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
+		writeFileSync(from, briefWithSummary({ lot, summary: 'Rewritten through the verb.' }))
+		rewriteThroughVerb({ lot, from })
+
+		replaceRecord({ folder: lot.lotFolder, name: 'brief.json', text: started })
+
+		expect(damageOf(lot)).toBe(
+			'brief.json is not the brief its start or its last lot brief recorded',
+		)
 	})
 })

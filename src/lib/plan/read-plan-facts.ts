@@ -132,8 +132,8 @@ function readRepositoryFacts(params: { path: string }): RepositoryFacts {
 /**
  * The lots of the repository's store, by name. A lot whose records do not hold (damaged) reads `failed`, open
  * unless simulated: the conservative side, its scope stays held. Damaged, besides: a lot folder whose identity
- * does not read (the shared reader leaves it out), an open lot whose state does not read or whose brief gives no
- * scope.
+ * does not read (the shared reader leaves it out), an open lot whose state does not read, and an open lot named by
+ * its brief: one whose brief gives no scope or was edited by hand (the brief damage).
  */
 function readStoreLotFacts(params: {
 	location: StoreLocation

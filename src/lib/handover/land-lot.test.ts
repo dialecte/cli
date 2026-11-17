@@ -701,7 +701,7 @@ describe(
 
 		it('a base branch origin does not hold → a refusal line, never a throw', () => {
 			const repository = landingRepository()
-			const { host } = recordingHost()
+			const { host, calls } = recordingHost()
 
 			function landOnMissingBase() {
 				return landLot({
@@ -716,7 +716,11 @@ describe(
 			}
 
 			expect(landOnMissingBase).not.toThrow()
-			expect(landOnMissingBase().exitCode).toBe(1)
+			expect(landOnMissingBase()).toEqual({
+				exitCode: 1,
+				lines: ['lot land: origin holds no branch release to land on: nothing pushed'],
+			})
+			expect(calls).toEqual([])
 		})
 
 		it('a reused pull request that already reads the records → no edit asked', () => {
