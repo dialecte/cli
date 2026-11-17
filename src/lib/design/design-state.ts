@@ -47,12 +47,16 @@ export function designStateOf(params: {
 		return { need, state: 'missing', uncovered: waiverGap ?? [] }
 	}
 	const recorded = { file: last.file, hash: last.hash }
-	const approvals = lines.filter(isApproved).filter((line) => line.hash === last.hash)
+	const approvals = lines.filter(isApproved).filter(function ofTheContent(line) {
+		return line.hash === last.hash
+	})
 	const newest = approvals.at(-1)
 	if (newest !== undefined && params.source !== undefined && params.source !== last.hash)
 		return { need, state: 'stale', by: newest.by, uncovered: [], ...recorded }
 	const covering = approvals
-		.filter((line) => uncoveredReasonsOf({ current: need.reasons, given: line.need }).length === 0)
+		.filter(function coversTheNeed(line) {
+			return uncoveredReasonsOf({ current: need.reasons, given: line.need }).length === 0
+		})
 		.at(-1)
 	if (covering !== undefined)
 		return { need, state: 'approved', by: covering.by, uncovered: [], ...recorded }

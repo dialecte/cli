@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { resultOf } from '../lib/command-result.ts'
 import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
+import { recordBaseDeclared } from '../lib/design/base-declared.ts'
 import { designNeedLine } from '../lib/design/design-line.ts'
 import { designNeedOf } from '../lib/design/design-need.ts'
 import { heldPlanEntryOf } from '../lib/design/design-standing.ts'
@@ -27,6 +28,7 @@ import { readCliVersion } from '../lib/read-cli-version.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { readDeclaredHigh } from '../lib/risk/declared-high.ts'
+import { readBaseDeclaredHigh } from '../lib/risk/derive-lot-risk-class.ts'
 import { deriveStartRiskClass } from '../lib/risk/derive-risk-class.ts'
 import { appendRiskLine, effortOfClass, isEffortBelow } from '../lib/risk/risk-records.ts'
 import {
@@ -374,7 +376,13 @@ function startDesignNeedOf(params: { brief: CheckedBrief }): DesignNeed {
 	return designNeedOf({
 		entryKind:
 			brief.planEntry === undefined ? undefined : heldPlanEntryOf(brief.planEntry)?.entry.kind,
-		declaredHigh: readDeclaredHigh({ root: brief.repository }),
+		// the base's areas through git, as the risk class reads them, and the main checkout's: no file narrows them
+		declaredHigh: [
+			...new Set([
+				...readBaseDeclaredHigh({ root: brief.repository, base: brief.base.commit }),
+				...readDeclaredHigh({ root: brief.repository }),
+			]),
+		],
 		paths: brief.scope,
 	})
 }
@@ -884,6 +892,8 @@ function writeStartRecordsTo(params: {
 	writeStartRiskLines({ folder, risk, now })
 	writeStartOverlaps({ folder, brief, goAhead: risk.goAhead, now })
 	if (brief.planEntry !== undefined) writePlanEntry({ folder, entry: brief.planEntry })
+	// the base's shared areas, where the views read them without git (DESIGN-GATE)
+	recordBaseDeclared({ lotFolder: folder, root: brief.repository, ref: brief.base.commit })
 	if (stack !== undefined)
 		writeStack({
 			lotFolder: folder,

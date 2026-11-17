@@ -9,6 +9,7 @@ import { recordForecastRun } from '../lib/coordination/forecast-record.ts'
 import { forecastConflictsText } from '../lib/coordination/forecast-view.ts'
 import { FORECAST_EXIT_CODES } from '../lib/coordination/forecast.constants.ts'
 import { forecastLot } from '../lib/coordination/forecast.ts'
+import { gitDeclaredHighOf } from '../lib/design/base-declared.ts'
 import { designStatusLine } from '../lib/design/design-line.ts'
 import { lotDesignStandingOf } from '../lib/design/design-standing.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
@@ -109,7 +110,12 @@ function textLinesOf(params: {
 	eventNote: string | undefined
 }): string[] {
 	return [
-		designStatusLine(lotDesignStandingOf({ lotFolder: params.lotFolder })),
+		designStatusLine(
+			lotDesignStandingOf({
+				lotFolder: params.lotFolder,
+				declaredHigh: gitDeclaredHighOf({ lotFolder: params.lotFolder }),
+			}),
+		),
 		...forecastTextLines(params),
 		...(params.eventNote ? [params.eventNote] : []),
 	]

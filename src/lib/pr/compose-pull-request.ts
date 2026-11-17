@@ -270,7 +270,7 @@ function reviewLines(sources: PullRequestSources): string[] {
 		review.verdicts.length === 0
 			? []
 			: ['', BODY_LINES.verdictsHeader, ...review.verdicts.map(verdictLine)]
-	return [...designLines(review.design), ...findings, ...verdicts]
+	return [...designLines(sources.design ?? review.design), ...findings, ...verdicts]
 }
 
 /** The design's line, first in the review part: its state and who approved or waived it, by kind; none without a row. */

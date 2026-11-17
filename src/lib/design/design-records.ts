@@ -54,6 +54,18 @@ export function writeDesignCopy(params: { lotFolder: string; hash: string; text:
 }
 
 /**
+ * Whether the lot folder holds the copy of the content `hash` names.
+ *
+ * @intent tell whether the text a design approval would cover is still kept
+ * @internal
+ */
+export function hasDesignCopy(params: { lotFolder: string; hash: string }): boolean {
+	return existsSync(
+		join(params.lotFolder, STORE_FILES.designCopies, `${params.hash}${DESIGN_COPY_EXTENSION}`),
+	)
+}
+
+/**
  * The sha256 hex of bytes.
  *
  * @intent key a design's approval by its content

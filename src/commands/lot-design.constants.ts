@@ -26,6 +26,8 @@ export const LOT_DESIGN_LINES = {
 		'lot design: {lot} has no design recorded: dialecte lot design {lot} --from <file> records it; nothing written',
 	changedSinceRecorded:
 		'lot design: {file} changed since recorded: dialecte lot design {lot} --from {file} records it again; nothing written',
+	goneWithCopy:
+		'lot design: {file} is gone and so is its copy in the lot folder: dialecte lot design {lot} --from <file> records it again; nothing written',
 	notRequired: 'lot design: {lot} needs no design: nothing to waive; nothing written',
 	recorded: 'lot design: {lot} recorded {file} ({hash})',
 	approved: 'lot design: {lot} approved by {by} ({hash})',

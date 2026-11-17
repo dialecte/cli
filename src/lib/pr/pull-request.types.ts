@@ -1,5 +1,5 @@
 import type { ChangelogSection } from '../changelog/changelog.types.ts'
-import type { ReviewRecord } from '../review-rounds/review-record.types.ts'
+import type { DesignRow, ReviewRecord } from '../review-rounds/review-record.types.ts'
 import type { Effort, RiskClass } from '../risk/risk.types.ts'
 import type { TestsRecord } from '../tdd/tests-record.types.ts'
 
@@ -23,6 +23,8 @@ export type PullRequestSources = {
 	/** The state hash of the tree the pull request lands (its committed head): a tests part of another tree is stale. */
 	treeHash: string
 	review?: ReviewRecord
+	/** The lot's design row from its live standing; the review record's row when absent. */
+	design?: DesignRow
 	riskClass?: RiskClass
 	/** The overlaps the lot accepted: the other lot (shown by its index) and why, never the met paths or who. */
 	overlaps?: { lot: string; reason: string }[]

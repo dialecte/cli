@@ -5,7 +5,8 @@
  * it is gone (the copy rules); a waiver refused on a lot that needs no design; `--by` checked as every lot verb's.
  */
 import { createHash } from 'node:crypto'
-import { rmSync, writeFileSync } from 'node:fs'
+import { realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import {
 	APPROVER,
@@ -19,7 +20,9 @@ import { design, designLinesOf, designLot } from '../../test/design-workspace.ts
 import { FIRST_WORD } from '../../test/forbidden-words-workspace.constants.ts'
 import { configureMachine } from '../../test/forbidden-words-workspace.ts'
 import { linkLot } from '../../test/lot-stores.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { STORE_FILES } from '../lib/store/store.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -97,6 +100,34 @@ describe('lot design --approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(designLinesOf(lot).at(-1)).toEqual(
 			expect.objectContaining({ kind: 'approved', hash: DESIGN_HASH }),
 		)
+	})
+
+	it('the source gone and its copy too -> exit 2, refused, nothing written', () => {
+		const lot = recordedLot()
+		rmSync(lot.designFile)
+		rmSync(join(lot.lotFolder, STORE_FILES.designCopies), { recursive: true })
+
+		expect(design({ lot, words: ['--approve', '--by', APPROVER] })).toEqual({
+			exitCode: 2,
+			output: `lot design: ${lot.designFile} is gone and so is its copy in the lot folder: dialecte lot design ${lot.name} --from <file> records it again; nothing written`,
+		})
+		expect(designLinesOf(lot)).toHaveLength(1)
+	})
+
+	it('from a review throwaway of the lot -> exit 2, refused, nothing written', () => {
+		const lot = recordedLot()
+		const throwaway = join(
+			realpathSync(lot.workspace.workspace),
+			'.worktrees',
+			`${lot.name}-round-1`,
+		)
+		git({ root: lot.cwd, args: ['worktree', 'add', '-q', '-b', 'review-round-1', throwaway] })
+
+		expect(design({ lot, words: ['--approve', '--by', APPROVER], cwd: throwaway })).toEqual({
+			exitCode: 2,
+			output: "lot design: approve from the main checkout, not the lot's worktree; nothing written",
+		})
+		expect(designLinesOf(lot)).toHaveLength(1)
 	})
 
 	it('nothing recorded -> exit 2, refused, the recording named', () => {

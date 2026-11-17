@@ -112,13 +112,24 @@ function notDerivedLineOf(params: { error: unknown }): string {
  * once: a change cannot lower its own class by editing the list.
  */
 function readDeclaredHighOfDiff(params: { root: string; base: string }): string[] {
+	return [...new Set([...readBaseDeclaredHigh(params), ...readDeclaredHigh({ root: params.root })])]
+}
+
+/**
+ * The globs `base`'s `package.json` declares high, read through git in the repository at `root`; none when the base
+ * holds no `package.json`.
+ *
+ * @intent read the shared areas a lot's base declares, which no file of its tree can narrow
+ * @internal
+ */
+export function readBaseDeclaredHigh(params: { root: string; base: string }): string[] {
 	const baseText = tryReadGit({
 		root: params.root,
 		args: ['show', `${params.base}:./${RISK_PACKAGE_FILE}`],
 	})
-	const baseDeclared =
-		baseText === undefined ? [] : declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
-	return [...new Set([...baseDeclared, ...readDeclaredHigh({ root: params.root })])]
+	return baseText === undefined
+		? []
+		: declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
 }
 
 /** The root and base a derivation reads: the identity's worktree and base commit, else the cwd's work tree and HEAD. */

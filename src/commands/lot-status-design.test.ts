@@ -1,6 +1,6 @@
 /** `lot status` names the lot's design standing (DESIGN-GATE section 4): one line, and a `design` block with `--json`. */
 import { APPROVER, DECLARED_GLOB } from '../../test/design-workspace.constants.ts'
-import { design, designLot } from '../../test/design-workspace.ts'
+import { baseDeclaringLot, design, designLot } from '../../test/design-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runLot } from './lot.ts'
 
@@ -33,6 +33,21 @@ describe('lot status - the design', { timeout: STORE_CASE_TIMEOUT }, () => {
 				state: 'missing',
 				by: null,
 				uncovered: [],
+			},
+		})
+	})
+
+	it("a main checkout whose package.json dropped an area its base declares -> lot status still names it, from the lot's base snapshot", () => {
+		const lot = designLot()
+		baseDeclaringLot(lot)
+
+		expect(
+			JSON.parse(runLot({ cwd: lot.cwd, argv: ['status', lot.name, '--json'] }).output),
+		).toMatchObject({
+			design: {
+				required: true,
+				reasons: [{ kind: 'shared', glob: DECLARED_GLOB, path: 'src' }],
+				state: 'missing',
 			},
 		})
 	})

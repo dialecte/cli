@@ -167,7 +167,8 @@ export type StoreFileNames = Readonly<
 		| 'pulledComments'
 		| 'forecast'
 		| 'design'
-		| 'designCopies',
+		| 'designCopies'
+		| 'baseDeclared',
 		string
 	>
 >

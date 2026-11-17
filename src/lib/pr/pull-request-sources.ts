@@ -8,11 +8,12 @@ import { dirname, join } from 'node:path'
 
 import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
 import { readSections } from '../changelog/sections.ts'
+import { gitDeclaredHighOf } from '../design/base-declared.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
-import { readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
+import { designRowOf, readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
 import { readListedPatterns } from '../rules/committed-text.ts'
@@ -151,6 +152,11 @@ export function readPullRequestSources(params: {
 					record,
 					head: readGit({ root: params.worktree, args: ['rev-parse', 'HEAD'] }).trim(),
 				})
+	// the design line reads the lot's live standing: an edit or a scope change since review.jsonl was written counts
+	const design = designRowOf({
+		folder: params.lotFolder,
+		declaredHigh: gitDeclaredHighOf({ lotFolder: params.lotFolder }),
+	})
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })
 	const dependsOn = stackParentPullOf({ lotFolder: params.lotFolder })
@@ -167,6 +173,7 @@ export function readPullRequestSources(params: {
 		...(tests !== undefined && { tests }),
 		treeHash,
 		...(review !== undefined && { review }),
+		...(design !== undefined && { design }),
 		...(standing.comparedClass !== undefined && { riskClass: standing.comparedClass }),
 		...(standing.effort !== undefined && { effort: standing.effort }),
 		...(overlaps.length > 0 && { overlaps }),

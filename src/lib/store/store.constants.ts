@@ -43,6 +43,8 @@ export const STORE_FILES: StoreFileNames = {
 	design: 'design.jsonl',
 	// `lot design --from` copies each recorded content here, as `<sha256>.md`: the text approved survives its source
 	designCopies: 'design',
+	// `lot start` records the shared areas its base declares here (DESIGN-GATE)
+	baseDeclared: 'base-declared.json',
 }
 
 /** The folder of the store in the repository's git common folder. */

@@ -3,10 +3,15 @@
  * its state and who approved or waived it, the name kept only when it is a public word; never the file, its hash or a
  * reason. `lot design` writes it with each line it records.
  */
+import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { APPROVER, WAIVER_REASON } from '../../../test/design-workspace.constants.ts'
-import { design, designLot } from '../../../test/design-workspace.ts'
+import { design, designLinesOf, designLot } from '../../../test/design-workspace.ts'
 import { reviewRowsOf, reviewTextOf } from '../../../test/review-record-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
+import { STORE_FILES } from '../store/store.constants.ts'
+import { refreshReviewRecord } from './review-record.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -47,5 +52,19 @@ describe('review.jsonl - the design row', { timeout: STORE_CASE_TIMEOUT }, () =>
 		expect(reviewRowsOf(lot.lotFolder)).toEqual([
 			{ schema: 1, kind: 'design', state: 'unapproved' },
 		])
+	})
+
+	it('an approval whose --by fails the public-word check (a line written by hand) -> the design row names nobody', () => {
+		const lot = designLot()
+		design({ lot, words: ['--from', lot.designFile] })
+		const [recorded] = designLinesOf(lot) as { hash: string }[]
+		appendFileSync(
+			join(lot.lotFolder, STORE_FILES.design),
+			`${JSON.stringify({ schema: 1, kind: 'approved', at: '2026-11-17T13:00:00.000Z', by: '/home/someone', hash: recorded.hash, need: [] })}\n`,
+		)
+
+		expect(design({ lot, words: [] }).exitCode).toBe(0)
+		expect(refreshReviewRecord({ folder: lot.lotFolder })).toBeUndefined()
+		expect(reviewRowsOf(lot.lotFolder)).toEqual([{ schema: 1, kind: 'design', state: 'approved' }])
 	})
 })

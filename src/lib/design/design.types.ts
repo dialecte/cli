@@ -1,4 +1,4 @@
-import type { PlanEntryKind } from '../plan/plan-block.types.ts'
+import type { PlanEntry, PlanEntryKind } from '../plan/plan-block.types.ts'
 import type { DESIGN_STATES } from './design.constants.ts'
 
 /**
@@ -78,3 +78,6 @@ export type DesignStatusJson = {
 	by: string | null
 	uncovered: DesignNeedReason[]
 }
+
+/** A plan entry as its block holds it, and how many `lot` or `fix` entries of the block name its spec. */
+export type HeldPlanEntry = { entry: PlanEntry; sharing: number }

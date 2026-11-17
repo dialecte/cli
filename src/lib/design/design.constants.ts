@@ -1,5 +1,8 @@
 /** A lot's design (DESIGN-GATE): its records, its states and their words. */
 
+/** The version of a lot folder's `base-declared.json`. */
+export const BASE_DECLARED_SCHEMA = 1
+
 /** The version of a `design.jsonl` line. */
 export const DESIGN_LINE_SCHEMA = 1
 

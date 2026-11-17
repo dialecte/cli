@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { viewDeclaredHighOf } from '../design/declared-sources.ts'
 import { lotDesignStandingOf } from '../design/design-standing.ts'
 import { DESIGN_STATES } from '../design/design.constants.ts'
 import { readEvents } from '../events/read-events.ts'
@@ -85,7 +86,7 @@ export function writeReviewRecord(params: { folder: string }): void {
 	const rows: ReviewRow[] = [
 		...findingRowsOf({ folder, inTree: treeFileTestOf(folder) }),
 		...verdicts,
-		...designRowsOf({ folder, isPublicWord }),
+		...designRowsOf({ folder }),
 	]
 	const path = join(folder, STORE_FILES.review)
 	if (rows.length === 0 && !existsSync(path)) return
@@ -317,21 +318,43 @@ function approvalVerdictRowsOf(params: {
 	return [...rows.values()]
 }
 
+/** The design row `review.jsonl` holds, as a view reads the lot's shared areas (files only); none without one. */
+function designRowsOf(params: { folder: string }): DesignRow[] {
+	const row = designRowOf({
+		folder: params.folder,
+		declaredHigh: viewDeclaredHighOf({ lotFolder: params.folder }),
+	})
+	return row === undefined ? [] : [row]
+}
+
 /**
- * The design row of a folder whose `design.jsonl` exists: the lot's design state now and who approved or waived it,
- * named only when a public word; never its file, hash or reason. None for a folder that recorded nothing of its design.
+ * The design row of a folder whose `design.jsonl` exists, held to the shared areas `declaredHigh` (a view's, or a
+ * refusing verb's): the lot's design state now and who approved or waived it, named only when a public word; never
+ * its file, hash or reason. Undefined for a folder that recorded nothing of its design.
+ *
+ * @intent give the public record of where a lot's design stands
+ * @internal
  */
-function designRowsOf(params: { folder: string; isPublicWord: PublicWordTest }): DesignRow[] {
-	if (!existsSync(join(params.folder, STORE_FILES.design))) return []
-	const { state, by } = lotDesignStandingOf({ lotFolder: params.folder })
-	return [
-		{
-			schema: REVIEW_RECORD_SCHEMA,
-			kind: 'design',
-			state,
-			...(by !== undefined && params.isPublicWord(by) && { by: { kind: 'person', name: by } }),
-		},
-	]
+export function designRowOf(params: {
+	folder: string
+	declaredHigh: readonly string[]
+}): DesignRow | undefined {
+	const { folder } = params
+	if (!existsSync(join(folder, STORE_FILES.design))) return undefined
+	const isPublicWord = publicWordTestOf({
+		root: worktreeOf(folder),
+		ids: folderPlanEntryIds({ folder }),
+	})
+	const { state, by } = lotDesignStandingOf({
+		lotFolder: folder,
+		declaredHigh: params.declaredHigh,
+	})
+	return {
+		schema: REVIEW_RECORD_SCHEMA,
+		kind: 'design',
+		state,
+		...(by !== undefined && isPublicWord(by) && { by: { kind: 'person', name: by } }),
+	}
 }
 
 /**
@@ -387,7 +410,7 @@ function rowOfLine(line: string): ReviewRow | undefined {
 	const parsed = parsedLine(line)
 	if (parsed?.schema !== REVIEW_RECORD_SCHEMA) return undefined
 	if (parsed.kind === 'finding' && typeof parsed.id === 'string') return parsed as FindingRow
-	if (parsed.kind === 'design' && DESIGN_STATES.some((state) => state === parsed.state))
+	if (parsed.kind === 'design' && (DESIGN_STATES as readonly unknown[]).includes(parsed.state))
 		return parsed as DesignRow
 	const by = parsed.by as Record<string, unknown> | undefined
 	if (

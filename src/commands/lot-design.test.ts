@@ -10,6 +10,7 @@ import { join } from 'node:path'
 
 import { DECLARED_GLOB, DESIGN_TEXT, DESIGN_TIME } from '../../test/design-workspace.constants.ts'
 import {
+	baseDeclaringLot,
 	design,
 	designCopiesOf,
 	designCopyText,
@@ -191,6 +192,16 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 			state: 'missing',
 			by: null,
 			uncovered: [],
+		})
+	})
+
+	it('a worktree whose package.json dropped an area its base declares -> the need still names it', () => {
+		const lot = designLot()
+		baseDeclaringLot(lot)
+
+		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			required: true,
+			reasons: [{ kind: 'shared', glob: DECLARED_GLOB, path: 'src' }],
 		})
 	})
 })

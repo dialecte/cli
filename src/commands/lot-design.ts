@@ -9,10 +9,12 @@ import { basename, dirname, resolve } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { gitDeclaredHighOf } from '../lib/design/base-declared.ts'
 import { designNextOf, designStatusJson, designStatusLine } from '../lib/design/design-line.ts'
 import {
 	appendDesignLine,
 	designHashOf,
+	hasDesignCopy,
 	readDesignLines,
 	sourceHashOf,
 	writeDesignCopy,
@@ -54,7 +56,12 @@ import {
 } from './lot-design.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { DesignStanding } from '../lib/design/design.types.ts'
+import type {
+	DesignLine,
+	DesignNeed,
+	DesignRecordedLine,
+	DesignStanding,
+} from '../lib/design/design.types.ts'
 import type { DesignLotPlace, DesignRequest } from './lot-design.types.ts'
 
 export function runLotDesign(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
@@ -146,7 +153,7 @@ function placeOf(params: {
 
 /** The standing's lines: the status line, then what to run next when the lot cannot go on; or its JSON. */
 function showStanding(params: { place: DesignLotPlace; json: boolean }): CommandResult {
-	const standing = lotDesignStandingOf({ lotFolder: params.place.lotFolder })
+	const standing = gitStandingOf(params.place)
 	if (params.json) return { exitCode: 0, output: jsonOf(designStatusJson(standing)) }
 	return resultOf({ exitCode: 0, lines: standingLines({ standing, lot: params.place.lot }) })
 }
@@ -247,16 +254,22 @@ function approveDesign(params: {
 	at: string
 }): CommandResult {
 	const { place } = params
-	const last = readDesignLines({ lotFolder: place.lotFolder })
-		.filter((line) => line.kind === 'recorded')
-		.at(-1)
-	if (last?.kind !== 'recorded')
+	const last = readDesignLines({ lotFolder: place.lotFolder }).filter(isRecorded).at(-1)
+	if (last === undefined)
 		return lineOf({
 			exitCode: 2,
 			line: fillMessage({ template: LOT_DESIGN_LINES.nothingRecorded, values: { lot: place.lot } }),
 		})
 	const now = sourceHashOf(last.file)
-	// a source gone is no refusal: the stored copy is what is approved
+	// a source gone is no refusal while the stored copy holds the text approved; with the copy gone too, nothing does
+	if (now === undefined && !hasDesignCopy({ lotFolder: place.lotFolder, hash: last.hash }))
+		return lineOf({
+			exitCode: 2,
+			line: fillMessage({
+				template: LOT_DESIGN_LINES.goneWithCopy,
+				values: { file: last.file, lot: place.lot },
+			}),
+		})
 	if (now !== undefined && now !== last.hash)
 		return lineOf({
 			exitCode: 2,
@@ -276,7 +289,7 @@ function approveDesign(params: {
 				by,
 				...(params.reason !== undefined && { reason: params.reason }),
 				hash: last.hash,
-				need: lotDesignNeedOf({ lotFolder: place.lotFolder }).reasons,
+				need: gitNeedOf(place).reasons,
 			},
 		})
 	} catch (error) {
@@ -299,7 +312,7 @@ function waiveDesign(params: {
 	at: string
 }): CommandResult {
 	const { place } = params
-	const need = lotDesignNeedOf({ lotFolder: place.lotFolder })
+	const need = gitNeedOf(place)
 	if (!need.required)
 		return lineOf({
 			exitCode: 2,
@@ -371,6 +384,26 @@ function ownWorktreeRefusal(params: {
 	return fillMessage({ template: LOT_DESIGN_LINES.ownWorktree, values: { verb: params.verb } })
 }
 
+/** The lot's design standing, held to the shared areas a refusing verb reads: its base's through git. */
+function gitStandingOf(place: DesignLotPlace): DesignStanding {
+	return lotDesignStandingOf({
+		lotFolder: place.lotFolder,
+		declaredHigh: gitDeclaredHighOf({ lotFolder: place.lotFolder }),
+	})
+}
+
+/** The lot's need, held to the shared areas a refusing verb reads: its base's through git. */
+function gitNeedOf(place: DesignLotPlace): DesignNeed {
+	return lotDesignNeedOf({
+		lotFolder: place.lotFolder,
+		declaredHigh: gitDeclaredHighOf({ lotFolder: place.lotFolder }),
+	})
+}
+
+function isRecorded(line: DesignLine): line is DesignRecordedLine {
+	return line.kind === 'recorded'
+}
+
 /** The orchestrator in any casing is recorded as the one word every view names. */
 function recordedByOf(by: string): string {
 	return by.toLowerCase() === ORCHESTRATOR_APPROVER ? ORCHESTRATOR_APPROVER : by
@@ -380,7 +413,7 @@ function recordedByOf(by: string): string {
 function written(params: { place: DesignLotPlace; line: string }): CommandResult {
 	const { place } = params
 	const warning = refreshReviewRecord({ folder: place.lotFolder })
-	const standing = lotDesignStandingOf({ lotFolder: place.lotFolder })
+	const standing = gitStandingOf(place)
 	return resultOf({
 		exitCode: 0,
 		lines: [
