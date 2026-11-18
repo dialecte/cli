@@ -5,4 +5,6 @@ export const BASE_LINE = {
 	/** The base branch's name not found again: never an empty name. */
 	baseBranchUnnamed: 'rules: base {sha} (the merge-base with the base branch)',
 	releaseTag: 'rules: base {sha} (the release tag {tag})',
+	/** The lot base of the worktree's lot cannot be read: no base, the reason named. */
+	failure: 'rules: no base ({reason})',
 } as const

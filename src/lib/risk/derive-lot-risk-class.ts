@@ -1,5 +1,5 @@
 /**
- * The risk class of a lot derived now from its work tree (D5): the identity's worktree against its `base.commit` for a
+ * The risk class of a lot derived now from its work tree (D5): the identity's worktree against its lot base for a
  * store lot, else the work tree of `cwd` against `HEAD`. The declared list is the union of the base's and the root's
  * `package.json` `dialecte.risk.high` (33L1 D30): a diff that drops a glob still counts it.
  */
@@ -7,16 +7,22 @@ import { mkdirSync } from 'node:fs'
 
 import { compareApiIndexes } from '../api/api-index-diff.ts'
 import { isFolder } from '../file-system.ts'
+import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
+import { fallbackLotBaseOf } from '../tdd/lot-fallback-base.ts'
+import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { declaredHighOf, readDeclaredHigh } from './declared-high.ts'
 import { deriveRiskClass } from './derive-risk-class.ts'
 import { readRiskDiff } from './read-risk-diff.ts'
 import { appendRiskLine } from './risk-records.ts'
 import {
 	RISK_HEAD_BASE,
+	RISK_NO_BASE_BRANCH,
+	RISK_NO_BASE_REASON,
 	RISK_NOT_DERIVED_LINE,
 	RISK_PACKAGE_FILE,
 	RISK_SCHEMA,
@@ -132,7 +138,10 @@ export function readBaseDeclaredHigh(params: { root: string; base: string }): st
 		: declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
 }
 
-/** The root and base a derivation reads: the identity's worktree and base commit, else the cwd's work tree and HEAD. */
+/**
+ * The root and base a derivation reads: the identity's worktree and its lot base (else its fallback), else the cwd's
+ * work tree and HEAD; undefined when there is no work tree; throws when no base reads for a store lot.
+ */
 function derivationSourceOf(params: {
 	folder: string
 	cwd: string
@@ -142,8 +151,33 @@ function derivationSourceOf(params: {
 		const { worktree } = identity
 		if (worktree === null || !isFolder(worktree)) return undefined
 		const root = workTreeTopOf(worktree)
-		return root === undefined ? undefined : { root, base: identity.base.commit }
+		return root === undefined
+			? undefined
+			: { root, base: riskBaseOf({ root, recorded: identity.base.commit }) }
 	}
 	const root = workTreeTopOf(params.cwd)
 	return root === undefined ? undefined : { root, base: RISK_HEAD_BASE }
+}
+
+/**
+ * The base a store lot's class is derived against: its lot base read from git (`resolveTddBase`), so a rebase never
+ * counts what main brought since the cut; else (no base branch, an unreadable stack parent) the shared fallback
+ * (`fallbackLotBaseOf`), never HEAD, so the lot's own committed files always count; neither: an error naming why,
+ * which the derivation reports as its not-derived warning (D26).
+ */
+function riskBaseOf(params: { root: string; recorded: string }): string {
+	const lotBase = resolveTddBase({ root: params.root, packageJson: readPackageJson(params.root) })
+	if ('kind' in lotBase && lotBase.kind === 'lot') return lotBase.commit
+	const fallback = fallbackLotBaseOf({ root: params.root, recorded: params.recorded })
+	if (fallback !== undefined) return fallback.commit
+	// a derivation that cannot run says so (D26): `tryDeriveLotRiskClass` turns this into its warning line
+	throw new Error(
+		fillMessage({
+			template: RISK_NO_BASE_REASON,
+			values: {
+				why: 'failure' in lotBase ? lotBase.failure : RISK_NO_BASE_BRANCH,
+				commit: params.recorded.slice(0, SHORT_SHA_LENGTH),
+			},
+		}),
+	)
 }

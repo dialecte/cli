@@ -1,4 +1,4 @@
-/** `resolveRulesBase`: the lot's recorded base in a lot worktree, else the base branch's merge-base (not HEAD itself), else the last release tag reachable from head, else no base. */
+/** `resolveRulesBase`: the lot base read from git in a lot worktree, else the base branch's merge-base (not HEAD itself), else the last release tag reachable from head, else no base. */
 import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.ts'
 import { addWorktreeFolder, linkLot } from '../../test/lot-stores.ts'
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
@@ -46,24 +46,44 @@ type Fixture = {
 type TestCase = { setup: () => Fixture }
 
 const CASES: Record<string, TestCase> = {
-	"a store lot's worktree → the lot's recorded base commit, even when the base branch moved on": {
-		setup() {
-			const workspace = createBriefWorkspace()
-			const recorded = workspace.commit
-			commitFile({ root: workspace.repository, file: 'a.txt', text: 'a\n' })
-			const worktree = addWorktreeFolder({ workspace, folderName: LOT_NAME })
-			const lotFolder = writeStoreLot({
-				workspace,
-				name: LOT_NAME,
-				scope: ['src/'],
-				worktree,
-				base: { ref: 'main', commit: recorded },
-			})
-			linkLot({ worktree, lotFolder })
-			commitFile({ root: workspace.repository, file: 'b.txt', text: 'b\n' })
-			return { root: worktree, expected: recorded }
+	"a store lot's worktree whose recorded base is older than its cut → the lot base read from git (its fork point from main), even when the base branch moved on":
+		{
+			setup() {
+				const workspace = createBriefWorkspace()
+				const recorded = workspace.commit
+				const forkPoint = commitFile({ root: workspace.repository, file: 'a.txt', text: 'a\n' })
+				const worktree = addWorktreeFolder({ workspace, folderName: LOT_NAME })
+				const lotFolder = writeStoreLot({
+					workspace,
+					name: LOT_NAME,
+					scope: ['src/'],
+					worktree,
+					base: { ref: 'main', commit: recorded },
+				})
+				linkLot({ worktree, lotFolder })
+				commitFile({ root: workspace.repository, file: 'b.txt', text: 'b\n' })
+				return { root: worktree, expected: forkPoint }
+			},
 		},
-	},
+	"a store lot's worktree, head given as contrib passes it → the lot base read from git, never the recorded commit":
+		{
+			setup() {
+				const workspace = createBriefWorkspace()
+				const recorded = workspace.commit
+				const forkPoint = commitFile({ root: workspace.repository, file: 'a.txt', text: 'a\n' })
+				const worktree = addWorktreeFolder({ workspace, folderName: LOT_NAME })
+				const lotFolder = writeStoreLot({
+					workspace,
+					name: LOT_NAME,
+					scope: ['src/'],
+					worktree,
+					base: { ref: 'main', commit: recorded },
+				})
+				linkLot({ worktree, lotFolder })
+				const head = commitFile({ root: worktree, file: 'c.txt', text: 'c\n' })
+				return { root: worktree, head, expected: forkPoint }
+			},
+		},
 	'no store lot, a branch from main → the merge-base with main': {
 		setup() {
 			const root = createScratchRepository({ 'a.txt': 'a\n' })

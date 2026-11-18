@@ -128,7 +128,7 @@ describe('readAddedLines', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		)
 	})
 
-	it("the empty tree as the base, in a store lot's worktree → the lot's recorded base answers: every line since it counts, also the one the branch was cut with", () => {
+	it("the empty tree as the base, in a store lot's worktree recorded at an older commit → the lot base read from git answers: the line main brought before the cut is not added, the line the lot committed is", () => {
 		const workspace = createBriefWorkspace()
 		const { repository } = workspace
 		writeFiles({ root: repository, files: { 'src/a.ts': FIVE_LINES } })
@@ -153,12 +153,17 @@ describe('readAddedLines', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		linkLot({ worktree, lotFolder })
 		writeFiles({
 			root: worktree,
+			files: { 'src/a.ts': ['one', 'two', 'held', 'four', 'five', 'six', ''].join('\n') },
+		})
+		git({ root: worktree, args: ['commit', '-q', '-am', 'feat: the lot adds a line'] })
+		writeFiles({
+			root: worktree,
 			files: { 'src/a.ts': ['one', 'changed', 'held', 'four', 'five', 'six', ''].join('\n') },
 		})
 		const base = git({ root: worktree, args: ['hash-object', '-t', 'tree', '/dev/null'] }).trim()
 
 		expect(readAddedLines({ root: worktree, base, files: ['src/a.ts'] })).toEqual(
-			new Map([['src/a.ts', new Set([2, 3, 6])]]),
+			new Map([['src/a.ts', new Set([2, 6])]]),
 		)
 	})
 })

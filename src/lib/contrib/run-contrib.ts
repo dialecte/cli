@@ -7,7 +7,7 @@ import { checkChangeFragment } from '../changelog/fragment-check.ts'
  * rehearsal's).
  *
  * The rows, in order: `rules` on the files changed against HEAD (recorded as `dialecte rules` records it), judged
- * against the lot's base for every package whatever its gate config (`resolveRulesBase`: the store lot's recorded
+ * against the lot's base for every package whatever its gate config (`readBaseWithLine`: the store lot's lot
  * base, else the base branch's merge-base as the gate's scoped rules step takes it, else the last release tag; a
  * rehearsal's against the last merge lot's tip, else the base its repository resolves): an error of a quality rule
  * on a line the base already holds is a warning, `(not added by this change)`. Then the package's
@@ -54,9 +54,9 @@ import {
 	findLocalDependencies,
 	renderLocalDependency,
 } from '../release/local-dependencies.ts'
-import { resolveRulesBase } from '../rules-base.ts'
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
+import { readBaseWithLine } from '../rules/lot-base.ts'
 import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
 import { contribKeyHash } from './contrib-key.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
@@ -163,7 +163,7 @@ export async function runContrib(params: {
 				steps,
 				packageJson,
 				// resolved once per run, for the rules row only
-				rulesBase: rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase }),
+				...rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase }),
 				gate: reusable ? fullGateRecordsOf({ root: cwd, packageJson }) : undefined,
 				progress,
 				showLive,
@@ -288,7 +288,9 @@ async function runRows(params: {
 	steps: readonly ContribStep[]
 	packageJson: PackageJson
 	/** The commit the rules row judges against; undefined: no base, every error stays one. */
-	rulesBase: string | undefined
+	rulesBase?: string
+	/** Why there is no base, when the worktree's lot base cannot be read: the rules row's note. */
+	rulesNoBase?: string
 	/** The current `gate --full` records; undefined with `--no-reuse`. */
 	gate: FullGateRecords | undefined
 	progress: StepProgress | undefined
@@ -319,7 +321,7 @@ async function runRows(params: {
 			const base = params.rulesBase
 			const result =
 				step.builtin === 'rules'
-					? rulesResult({ root, base })
+					? rulesResult({ root, base, noBase: params.rulesNoBase })
 					: step.builtin === 'changelog'
 						? changelogResult({ root, base })
 						: releaseResult(root)
@@ -407,15 +409,19 @@ function unwiredRows(params: {
 
 /**
  * The commit the rules row judges against: `rulesBase` when given, none when it is `null`, else the lot's base at
- * `head` (`resolveRulesBase`, whatever the gate config).
+ * `head` (`readBaseWithLine`, the one order and its line, whatever the gate config), or the line saying why there is
+ * none when the worktree's lot base cannot be read.
  */
 function rulesBaseOf(params: {
 	root: string
 	head: string
 	rulesBase: string | null | undefined
-}): string | undefined {
-	if (params.rulesBase === null) return undefined
-	return params.rulesBase ?? resolveRulesBase({ root: params.root, head: params.head })
+}): { rulesBase?: string; rulesNoBase?: string } {
+	if (params.rulesBase === null) return {}
+	if (params.rulesBase !== undefined) return { rulesBase: params.rulesBase }
+	const read = readBaseWithLine({ root: params.root, head: params.head, emptyTreeRequest: false })
+	if (read === undefined) return {}
+	return 'base' in read ? { rulesBase: read.base } : { rulesNoBase: read.line }
 }
 
 /** The `gate --full` records the package steps may reuse, read with the gate base (`resolveConfiguredBase`, once). */
@@ -432,7 +438,11 @@ function fullGateRecordsOf(params: { root: string; packageJson: PackageJson }): 
  * The rules row: the code rules on the files changed against HEAD, recorded as `dialecte rules` records them; with
  * `base`, an error of a quality rule on a line the base already holds is a warning.
  */
-function rulesResult(params: { root: string; base: string | undefined }): StepResult {
+function rulesResult(params: {
+	root: string
+	base: string | undefined
+	noBase: string | undefined
+}): StepResult {
 	const check = checkRules({
 		root: params.root,
 		givenFiles: [],
@@ -446,10 +456,22 @@ function rulesResult(params: { root: string; base: string | undefined }): StepRe
 		counts: { errors: check.errors, warnings: check.warnings },
 		restored: [],
 		...(errors.length && { reason: firstErrorOf(errors) }),
-		...(check.files.length === 0 && { note: NO_CHANGED_FILE_NOTE }),
+		...(noteOf({ noBase: params.noBase, noFile: check.files.length === 0 }) ?? {}),
 		// every finding under the row, errors first: the row's line stays one line
 		...(check.findings.length && { details: [...errors, ...warnings].map(renderRuleFinding) }),
 	}
+}
+
+/** The rules row's note: why there is no base, then that no changed file was checked; none when neither holds. */
+function noteOf(params: {
+	noBase: string | undefined
+	noFile: boolean
+}): { note: string } | undefined {
+	const parts = [
+		...(params.noBase === undefined ? [] : [params.noBase]),
+		...(params.noFile ? [NO_CHANGED_FILE_NOTE] : []),
+	]
+	return parts.length ? { note: parts.join('; ') } : undefined
 }
 
 /**

@@ -10,7 +10,7 @@
  * verdict (`dialecteChanges`). The test rules (spliced or replaced XML, spies on a transaction, acts that repeat the
  * call or compare a captured state, long documents, test and fixture files) judge test-shaped Dialecte changes only.
  * The gate's base (`DIALECTE_GATE_BASE`) makes an error on a line the change did not add a warning; without it, the
- * run takes the order every caller shares (the store lot's recorded base, else the base branch's merge-base with HEAD,
+ * run takes the order every caller shares (the store lot's base read from git, else the base branch's merge-base with HEAD,
  * skipped when it is HEAD's commit, else the last release tag `<name>@v<version>` reachable from HEAD, else no base and
  * every error kept: a run on the base branch itself takes that tag, else keeps every error) and names it in one line
  * (`baseLine`).
@@ -24,6 +24,7 @@ import { existsSync } from 'node:fs'
 
 import { resultOf } from '../lib/command-result.ts'
 import { hasFlag } from '../lib/config.ts'
+import { readEmptyTree } from '../lib/gate/gate-base.ts'
 import { GATE_SCOPE_VARIABLES } from '../lib/gate/selection.constants.ts'
 import {
 	readChangedPaths,
@@ -65,7 +66,13 @@ export function runRules(params: {
 	// the gate's base always wins; without it, the base of the order every caller shares, with its line
 	const gateBase = environment[GATE_SCOPE_VARIABLES.base] || undefined
 	const ownBase = gateBase === undefined ? readBaseWithLine({ root: cwd }) : undefined
-	const base = gateBase ?? ownBase?.base
+	const base = gateBase ?? (ownBase !== undefined && 'base' in ownBase ? ownBase.base : undefined)
+	// an empty-tree gate base (gate --release) goes through the order too: a lot base it cannot read is said, never silent
+	const noBaseLine =
+		gateBase !== undefined && gateBase === readEmptyTree(cwd)
+			? noBaseLineOf({ root: cwd })
+			: undefined
+	const runBaseLine = ownBase?.line ?? noBaseLine
 	const checked = checkRules({
 		root: cwd,
 		givenFiles,
@@ -74,7 +81,8 @@ export function runRules(params: {
 		...(base !== undefined && { base }),
 		...(environment[GATE_SCOPE_VARIABLES.tree] && { tree: environment[GATE_SCOPE_VARIABLES.tree] }),
 	})
-	const check: RulesCheck = ownBase === undefined ? checked : { ...checked, baseLine: ownBase.line }
+	const check: RulesCheck =
+		runBaseLine === undefined ? checked : { ...checked, baseLine: runBaseLine }
 	if (changedList !== undefined) writeScopedSelection({ environment, check })
 	const { files, errors, warnings, findings } = check
 	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
@@ -103,6 +111,12 @@ export function runRules(params: {
 				.replace('{warnings}', String(warnings)),
 		],
 	})
+}
+
+/** The line saying why there is no base, when the order finds the worktree's lot base unreadable; else none. */
+function noBaseLineOf(params: { root: string }): string | undefined {
+	const read = readBaseWithLine(params)
+	return read === undefined || 'base' in read ? undefined : read.line
 }
 
 /** The run as `--json` prints it: each finding without the line of its function, kept for the opt-outs only. */

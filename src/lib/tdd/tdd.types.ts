@@ -414,6 +414,11 @@ export type TestRunFailure = {
 export type TddBase = {
 	/** A full sha. */
 	commit: string
+	/**
+	 * Which base it is: the lot base read from git (`lot`), HEAD when no base branch is found and none is configured
+	 * (`head`), the merge-base of a `--base <ref>` (`flag`), the gate's own lot base (`gate`).
+	 */
+	kind: 'lot' | 'head' | 'flag' | 'gate'
 	/** One of the `TDD_BASE_SOURCES` texts, its `{ref}` filled. */
 	source: string
 }
@@ -768,3 +773,11 @@ export type HelperVerdict = { file: string; frozen: boolean; detail: string }
 
 /** A source file of the package and its text, as read once for a search. */
 export type SourceText = { file: string; text: string }
+
+/**
+ * The base a lot falls back to when no lot base reads (`fallbackLotBaseOf`): the commit it recorded at its start, or a
+ * newer release tag of the package descending from it, the tag named.
+ */
+export type FallbackLotBase =
+	| { commit: string; source: 'recorded' }
+	| { commit: string; source: 'release-tag'; tag: string }
