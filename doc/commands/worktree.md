@@ -35,21 +35,25 @@ worktree - A worktree ready to work in; prune what a merge left
           would lose a commit is kept with its commits (<n> commit(s) its removal would lose:
           <commits>; a surviving branch, branch reflog, tag, landed tip or remote-tracking ref holds
           a commit, or the same change at the same place (a commit with the same diff, its hunk line
-          numbers included); deleting a branch takes its reflog); --yes runs them after a
-          confirmation on a terminal; committed hand-over folders and finished rehearsal clones go
-          to the trash like the other items: the plan shows the move (mkdir -p <trash> && mv
-          <folder> <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing
-          deleted; the pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/)
-          are counted, never touched
+          numbers included); deleting a branch takes its reflog); a worktree a process works in is
+          kept (a process works in it: pid <pid>; processes not known: kept with why); ignored
+          entries are read as lot close reads them: rebuilt folders, .dialecte/ views and copies of
+          the main checkout's files go, anything else keeps the worktree (ignored files git worktree
+          remove would delete: <paths>); a rehearsal clone is kept while its marker is missing or
+          unparsable, or its pid runs; --yes runs them after a confirmation on a terminal; committed
+          hand-over folders and finished rehearsal clones go to the trash like the other items: the
+          plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move
+          that cannot be made is a ✗ line, nothing deleted; the pool
+          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
+          touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
     keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked
     in the pool when its lock key is the main checkout's and it installs that lock, else sent to
-    .worktrees/_trash/, its code never touched; a node_modules that is a link is never moved; a
-    -round-<n> throwaway of a closed lot trashed whole and forgotten by git; every rule checked
-    again just before each move; one line per worktree, the total (worktrees, files, size) last;
-    --dry-run moves nothing; --dry-run or --older-than without --reclaim, or an --older-than that is
-    no positive whole number, exit 2
+    .worktrees/_trash/, its code never touched, a -round-<n> review throwaway's too; a node_modules
+    that is a link is never moved; every rule checked again just before each move; one line per
+    worktree, the total (worktrees, files, size) last; --dry-run moves nothing; --dry-run or
+    --older-than without --reclaim, or an --older-than that is no positive whole number, exit 2
 
 exit codes:
   0  add: the worktree exists, whatever the links and the lockfile say
@@ -173,9 +177,12 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   (`mutation run <id> still running (pid <pid>)`) or after it died before reporting
   (`mutation run <id> died before reporting: rerun or dialecte mutants abandon <id>`; a reported or
   abandoned run keeps nothing); a worktree a hand-over is pending in, or with uncommitted changes; a worktree or branch with no commit of its own in its reflog
-  (just made); a worktree holding ignored files that removing it would delete (anything but
-  `node_modules`, `dist`, `.vitepress/cache`, `.vitepress/dist`, `.DS_Store` and the hooks folder; a long
-  list is counted, the first three named); a rehearsal clone whose process still runs, or without a
+  (just made); a worktree holding ignored files that removing it would delete, read as `lot close` reads
+  them (rebuilt folders such as `node_modules` and `dist`, the hooks folder, folders the package declares in
+  `dialecte.rebuiltIgnored`, `.dialecte/` views, empty or archived declarations and byte-equal copies of the
+  main checkout's files go; anything else keeps it; a long list is counted, the first three named); a
+  worktree a process works in (`a process works in it: pid <pid>`; when the processes cannot be listed, every
+  worktree it would remove is kept with why); a rehearsal clone whose process still runs, or without a
   marker. It never removes, nor offers to remove, a symbolic link or what a link reaches. A worktree
   path, a hand-over folder or a rehearsal clone that is a link, or a hand-over folder reached through a
   linked folder under the workspace at any depth, is kept with
@@ -199,7 +206,7 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   folder's index, HEAD and reflog are older than `<days>` (default 2, a positive whole number). An idle worktree
   whose lock key is the main checkout's has its `node_modules` parked in the pool; any other, or one that fails
   its check, has it sent to `.worktrees/_trash/`. A `node_modules` that is a link is never moved nor followed. A
-  `-round-<n>` throwaway of a closed lot goes to the trash whole (git forgets it). Every rule is read again just
+  `-round-<n>` review throwaway is reclaimed the same way: its code, a reviewer's uncommitted edit included, stays. Every rule is read again just
   before each move; a worktree gone, locked or active since the plan keeps its line and moves nothing. One line
   per worktree (`park`, `trash`, `keep` with why); `--dry-run` prints them with a total (worktrees, files, size)
   and moves nothing. No `--yes`: `--dry-run` is the preview.

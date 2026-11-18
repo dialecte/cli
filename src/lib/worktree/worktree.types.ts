@@ -343,9 +343,9 @@ export type TrashedFolder = { trashed: string }
 
 /**
  * What `worktree prune --reclaim` does with one worktree: its `node_modules` parked in the pool or sent to the trash
- * (the code stays), the whole worktree trashed (a `-round-<n>` throwaway whose lot is closed), or nothing.
+ * (the code stays), or nothing.
  */
-export type ReclaimAction = 'park' | 'trash' | 'trash whole' | 'keep'
+export type ReclaimAction = 'park' | 'trash' | 'keep'
 
 /** One worktree of a reclaim plan. */
 export type ReclaimItem = {
@@ -356,7 +356,7 @@ export type ReclaimItem = {
 	action: ReclaimAction
 	/** Why it is kept (`keep`), or why its node_modules goes to the trash (`trash`). */
 	reason?: string
-	/** What would move: the files (and links) of its node_modules, or of the whole worktree for `trash whole`; 0 when kept. */
+	/** What would move: the files (and links) of its node_modules; 0 when kept. */
 	files: number
 	/** Their size in bytes; 0 when kept. */
 	bytes: number
@@ -388,8 +388,6 @@ export type ReclaimContext = {
 	listed: readonly ListedWorktree[]
 	/** The worktrees open lots name, by real path, with their reason `lot <name> <state>`. */
 	lotKeeps: ReadonlyMap<string, string>
-	/** The worktrees any lot of the store names (open or closed), by real path. */
-	lotWorktrees: ReadonlySet<string>
 	/** The hand-over registry of the repository. */
 	handovers: readonly StoreEntry[]
 	/** The processes and their working folders, or why they are not known. */
@@ -402,6 +400,3 @@ export type ReclaimContext = {
 
 /** What one reclaim execution knows of a repository: its context as the moves left it, its pool cap once a park read it. */
 export type ReclaimRepositoryRun = { context: ReclaimContext; cap: number | undefined }
-
-/** A `-round-<n>` throwaway's lot: open (kept, with why) or closed (trashed whole). */
-export type ReclaimRound = { open: string } | 'closed'

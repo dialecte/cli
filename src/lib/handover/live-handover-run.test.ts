@@ -1,4 +1,4 @@
-import { realpathSync, rmSync } from 'node:fs'
+import { realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { deadPid } from '../../../test/dead-pid.ts'
@@ -15,9 +15,11 @@ import {
 	HANDOVER_RUN_MARKER_FILE,
 	REHEARSAL_MARKER_FILE,
 } from './handover.constants.ts'
-import { readLiveHandoverRun } from './live-handover-run.ts'
+import { readLiveHandoverRun, readRehearsalRun } from './live-handover-run.ts'
 
 import { describe, expect, it } from 'vitest'
+
+import type { RehearsalRunState } from './live-handover-run.types.ts'
 
 const OTHER_START_TIME = 'Thu Jan  1 00:00:00 1970'
 
@@ -168,3 +170,128 @@ describe(
 		})
 	},
 )
+
+/** A rehearsal marker file holding `text` as written, in a folder of its own: its path. */
+function markerHolding(text: string): string {
+	const path = join(temporaryFolder('dialecte-rehearsal-marker-'), REHEARSAL_MARKER_FILE)
+	writeFileSync(path, text)
+	return path
+}
+
+/** A rehearsal marker holding `fields` over a live pid and a start time; a field set to undefined is left out. */
+function markerOf(fields: Record<string, unknown>): string {
+	return markerHolding(
+		`${JSON.stringify({ pid: process.pid, startedAt: '2026-11-18T10:00:00.000Z', handover: '/h', ...fields })}\n`,
+	)
+}
+
+/** The start time the case says `ps` reads for any pid: its own text, or none (`ps` cannot tell). */
+function startTimeReadAs(started: string | undefined): (pid: number) => string | undefined {
+	return function readStartTime() {
+		return started
+	}
+}
+
+const LIVE_START_TIME = 'Wed Nov 18 10:00:00 2026'
+
+/** A case's marker and the whole answer expected for it. */
+type MarkerAnswer = { markerPath: string; expected: unknown }
+
+const MARKER_ANSWERS: {
+	title: string
+	arrange: () => MarkerAnswer
+	readStartTime?: (pid: number) => string | undefined
+	state: RehearsalRunState
+}[] = [
+	{
+		title: 'no marker',
+		arrange: () => ({
+			markerPath: join(temporaryFolder('dialecte-rehearsal-marker-'), REHEARSAL_MARKER_FILE),
+			expected: { state: 'unknown', why: expect.any(String), pid: undefined },
+		}),
+		state: 'unknown',
+	},
+	{
+		title: 'an unparsable marker (being written)',
+		arrange: () => ({
+			markerPath: markerHolding('{"pid": 12'),
+			expected: { state: 'unknown', why: expect.any(String), pid: undefined },
+		}),
+		state: 'unknown',
+	},
+	{
+		title: 'a marker without a pid',
+		arrange: () => ({
+			markerPath: markerOf({ pid: undefined }),
+			expected: { state: 'unknown', why: expect.any(String), pid: undefined },
+		}),
+		state: 'unknown',
+	},
+	{
+		title: 'a pid not running',
+		arrange: function dead() {
+			const pid = deadPid()
+			return {
+				markerPath: markerOf({ pid, startTime: LIVE_START_TIME }),
+				expected: { state: 'dead', pid },
+			}
+		},
+		state: 'dead',
+	},
+	{
+		title: 'a pid running, no startTime in the marker',
+		arrange: () => ({
+			markerPath: markerOf({ startTime: undefined }),
+			expected: { state: 'unknown', why: expect.any(String), pid: process.pid },
+		}),
+		readStartTime: startTimeReadAs(LIVE_START_TIME),
+		state: 'unknown',
+	},
+	{
+		title: 'a pid running whose start time ps cannot read',
+		arrange: () => ({
+			markerPath: markerOf({ startTime: LIVE_START_TIME }),
+			expected: { state: 'unknown', why: expect.any(String), pid: process.pid },
+		}),
+		readStartTime: startTimeReadAs(undefined),
+		state: 'unknown',
+	},
+	{
+		title: 'a pid running at another start time (a reused pid)',
+		arrange: () => ({
+			markerPath: markerOf({ startTime: OTHER_START_TIME }),
+			expected: { state: 'dead', pid: process.pid },
+		}),
+		readStartTime: startTimeReadAs(LIVE_START_TIME),
+		state: 'dead',
+	},
+	{
+		title: 'a pid running at the start time the marker holds',
+		arrange: () => ({
+			markerPath: markerOf({ startTime: LIVE_START_TIME }),
+			expected: { state: 'alive', pid: process.pid, handover: '/h' },
+		}),
+		readStartTime: startTimeReadAs(LIVE_START_TIME),
+		state: 'alive',
+	},
+	{
+		title: 'a pid running at its start time, the marker naming no hand-over',
+		arrange: () => ({
+			markerPath: markerOf({ startTime: LIVE_START_TIME, handover: undefined }),
+			expected: { state: 'alive', pid: process.pid, handover: undefined },
+		}),
+		readStartTime: startTimeReadAs(LIVE_START_TIME),
+		state: 'alive',
+	},
+]
+
+describe('readRehearsalRun: a rehearsal marker read three ways', () => {
+	for (const answer of MARKER_ANSWERS)
+		it(`${answer.title} → ${answer.state}`, () => {
+			const { markerPath, expected } = answer.arrange()
+
+			expect(readRehearsalRun({ markerPath, readStartTime: answer.readStartTime })).toEqual(
+				expected,
+			)
+		})
+})
