@@ -299,7 +299,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 			changed: 'src/y.ts',
 			pushed: true,
 			stack: PARENT_ONLY,
-			writes: ['retarget 7 main', 'draft-back 7 draft'],
+			writes: ['retarget 7 main'],
 		})
 	})
 
@@ -316,7 +316,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 		expect({ exitCode: landed.exitCode, writes: writesOf(host) }).toEqual({
 			exitCode: 0,
-			writes: ['draft-back 7 draft'],
+			writes: [],
 		})
 	})
 

@@ -301,7 +301,10 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			body: String(parsed.body ?? ''),
 			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
 			draft: parsed.isDraft === true,
-			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
+			// queued: auto-merge on, or already in the merge queue (a stack merge queues without auto-merge)
+			queued:
+				(parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined) ||
+				parsed.isInMergeQueue === true,
 			head: String(parsed.headRefOid ?? ''),
 			...(typeof parsed.baseRefName === 'string' && { base: parsed.baseRefName }),
 		}

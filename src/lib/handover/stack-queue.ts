@@ -3,13 +3,14 @@
  * (its stack.json) whose pull request still merges into the parent's branch queues as a stack only on a host with
  * stacks and only once the parent's pull request is queued, so nothing a person has not approved joins the queue; a
  * parent merged, not queued, or a host without stacks is refused. A pull request retargeted to the base queues alone.
+ * The parent's pull request is read by its branch (the host's newest of it), so a parent that never recorded a
+ * landing still answers.
  */
 import { dirname, join } from 'node:path'
 
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readIdentity } from '../store/identity.ts'
 import { readStack } from '../store/stack.ts'
-import { readLanding } from './land-record.ts'
 import { STACK_QUEUE_LINES } from './stack-queue.constants.ts'
 
 import type { HostAdapter, PullRequest } from '../host/host.types.ts'
@@ -49,13 +50,14 @@ export function stackQueueOf(params: {
 		})
 	// retargeted to the base once the parent merged: it queues alone
 	if (pullRequest.base !== identity.branch) return { route: 'single' }
-	const number = readLanding({ lotFolder: parentFolder })?.number
-	if (number === undefined)
-		return refusalOf({ template: STACK_QUEUE_LINES.noParentPull, values: { lot, parent } })
-	const values = { lot, parent, number: String(number) }
-	const parentPull = host.readPullRequest({ root: params.worktree, ref: String(number) })
+	const parentPull = host.readPullRequest({ root: params.worktree, ref: identity.branch })
 	if (parentPull !== undefined && 'refusal' in parentPull) return parentPull
-	if (parentPull === undefined) return refusalOf({ template: STACK_QUEUE_LINES.parentGone, values })
+	if (parentPull === undefined || parentPull.state === 'closed')
+		return refusalOf({
+			template: STACK_QUEUE_LINES.noParentPull,
+			values: { lot, parent, branch: identity.branch },
+		})
+	const values = { lot, parent, number: String(parentPull.number) }
 	if (parentPull.state === 'merged')
 		return refusalOf({ template: STACK_QUEUE_LINES.parentMerged, values })
 	if (!host.probeStacks({ root: params.worktree }).stacks)

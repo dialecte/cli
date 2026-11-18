@@ -140,14 +140,15 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             orchestrator), renders the pull request's text again from the records, makes a draft
             ready and queues it (gh pr merge --auto; a lot started with --on whose pull request
             still merges into its parent's branch queues as a stack up to it, gh stack merge, and
-            only on a host with stacks once the parent's pull request is queued, refused otherwise
-            before anything is recorded: approve the parent first, or land it again once the parent
-            merged); the only verb that queues, lot land never does; a queue the host refuses keeps
-            the approval (exit 1) and the same approval run again answers already approved, writing
-            nothing, and queues; --by orchestrator (in any case) approves the cli's own lots only
-            (the package named @dialecte/cli), every other package waits for a person (exit 2); a
-            forbidden word in --by or --reason, or a --by holding what a public record never holds,
-            refused (exit 2) before the host is asked; a lot without a landing names lot land <id>
+            only on a host with stacks once the parent's pull request, read by the parent's branch,
+            is queued (auto-merge on or in the merge queue), refused otherwise before anything is
+            recorded: approve the parent first, or land it again once the parent merged); the only
+            verb that queues, lot land never does; a queue the host refuses keeps the approval (exit
+            1) and the same approval run again answers already approved, writing nothing, and
+            queues; --by orchestrator (in any case) approves the cli's own lots only (the package
+            named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
+            in --by or --reason, or a --by holding what a public record never holds, refused (exit
+            2) before the host is asked; a lot without a landing names lot land <id>
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -213,21 +214,24 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          origin does not hold, push nothing), its pull request opened with them as a draft or reused
          (edited when its title or body reads otherwise, a person's part after the kept marker
          kept), never queued: CI runs on every push and lot approve, a person's step, queues it; a
-         push that moves a reused pull request's head takes it back out of the queue (auto-merge
-         off, gh pr merge --disable-auto) as a draft (gh pr ready --undo), since an approval is for
-         one head; --draft, from when lot land queued, is refused (exit 2) naming the change; the
-         landing (number, url, branch, pushed tip) recorded in <lot folder>/landing.json; a lot
-         already merged (its pull request merged, or its tip or its work in origin/<base>: a squash
-         read offline) is committed: its landed fact written in <lot folder>/landed.json, its
-         hand-over entry committed, the commits made since named (they land in a new lot), the close
-         line printed, nothing pushed; a branch with no commit beyond origin's base is refused
-         before any push; the committed HEAD is forecast against origin/<base> just fetched (git
-         merge-tree, before any entry, rebase or push): a conflict refuses naming its files and
-         ranges, a forecast that cannot run refuses (fails closed), a lot on an open parent is not
-         compared; the lot's forecast against every other open lot is recorded (trigger land) and
-         each pair it does not clear printed (! <lot>: <why>), for information only; the pushed head
-         is kept in landing.json at once, so a pull request the host refused to open does not make
-         the next push one outside lot land; the host is GitHub through gh, which never prompts
+         reused pull request queued or ready whose head to push no person approved (approvals.jsonl)
+         is taken back out of the queue before the push (auto-merge off, gh pr merge --disable-auto;
+         a draft again, gh pr ready --undo), since an approval is for one head: a rebase that only
+         moves the sha takes it out too, and every landing checks, so one stopped after its push
+         heals on the next (a refusal there pushes nothing); --draft, from when lot land queued, is
+         refused (exit 2) naming the change; the landing (number, url, branch, pushed tip) recorded
+         in <lot folder>/landing.json; a lot already merged (its pull request merged, or its tip or
+         its work in origin/<base>: a squash read offline) is committed: its landed fact written in
+         <lot folder>/landed.json, its hand-over entry committed, the commits made since named (they
+         land in a new lot), the close line printed, nothing pushed; a branch with no commit beyond
+         origin's base is refused before any push; the committed HEAD is forecast against
+         origin/<base> just fetched (git merge-tree, before any entry, rebase or push): a conflict
+         refuses naming its files and ranges, a forecast that cannot run refuses (fails closed), a
+         lot on an open parent is not compared; the lot's forecast against every other open lot is
+         recorded (trigger land) and each pair it does not clear printed (! <lot>: <why>), for
+         information only; the pushed head is kept in landing.json at once, so a pull request the
+         host refused to open does not make the next push one outside lot land; the host is GitHub
+         through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -930,9 +934,11 @@ through `.github/pull_request_template.md`, on the rebased head before the push:
 and the body is the lot's final state, never its commit bodies. A reused pull request whose title or body reads
 otherwise is edited, a person's part after the template's kept marker kept; records that do not render push nothing.
 The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
-`lot approve`, a person's step, queues it (below). An approval is for one head: a push that moves a reused pull
-request's head takes it back out of the queue (auto-merge off, then a draft again); a landing that pushes nothing new
-leaves it as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The merge queue
+`lot approve`, a person's step, queues it (below). An approval is for one head: a reused pull request queued or ready
+whose head to push no person approved (`approvals.jsonl`) is taken back out of the queue before the push (auto-merge
+off, then a draft again), so no refusal after the push leaves an unapproved head queued, and every landing checks,
+so a landing stopped after its push heals on the next one. A rebase that keeps the tree but moves the sha takes it out
+too: the person approves the new head. A pull request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The merge queue
 runs the full suite on the lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches
 main another way. The landing is recorded in `<lot folder>/landing.json` (its pull request and the head it pushed: the next
 push's lease, and the head a landed lot's final record takes) and as the lot's hand-over entry (`pending`). A lot
@@ -959,7 +965,8 @@ landed, its checks are green there and no finding but a nit is open, it records 
 (`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
 approval), renders the body again and queues the pull
 request: the only verb that queues. A lot started with `--on` whose pull request still merges into its parent's
-branch queues as a native stack up to it (`gh stack merge`), and only once the parent's pull request is queued, so
+branch queues as a native stack up to it (`gh stack merge`), and only once the parent's pull request (read by the
+parent's branch) is queued, auto-merge on or in the merge queue, so
 nothing unapproved joins the queue; without native stacks it waits for the parent to merge (then `lot land` it again,
 which moves it onto the base). Either refusal records nothing. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
 waits for a person.

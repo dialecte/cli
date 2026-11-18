@@ -7,7 +7,7 @@ export type PullRequest = {
 	body: string
 	state: 'open' | 'merged' | 'closed'
 	draft: boolean
-	/** True while the host merges it once its checks pass (auto-merge on, or in the merge queue). */
+	/** True while the host merges it once its checks pass: auto-merge on, or in the merge queue. */
 	queued: boolean
 	/** The commit its head branch pointed at (the last push). */
 	head: string

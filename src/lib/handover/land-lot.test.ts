@@ -64,6 +64,14 @@ function recordLanding(params: { repository: LandingRepository; head: string }):
 	)
 }
 
+/** A person's approval of pull request #7 at `head`, as `lot approve` appends it to the lot folder. */
+function approveHead(params: { repository: LandingRepository; head: string }): void {
+	writeFileSync(
+		join(params.repository.lotFolder, 'approvals.jsonl'),
+		`${JSON.stringify({ schema: 1, at: '', by: 'person-a', number: 7, head: params.head })}\n`,
+	)
+}
+
 /** Pull request #7 of the lot in `state`, its head at `head`, ready and not queued unless said. */
 function pullRequestOf(params: {
 	state: PullRequest['state']
@@ -273,9 +281,9 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			taken: ['draft-back 7 queued ready'],
 		},
 		{ label: 'ready, not queued', draft: false, queued: false, taken: ['draft-back 7 ready'] },
-		{ label: 'a draft, not queued', draft: true, queued: false, taken: ['draft-back 7 draft'] },
+		{ label: 'a draft, not queued', draft: true, queued: false, taken: [] },
 	])(
-		'its pull request already open, $label, a new head pushed → taken back out of the queue as a draft, not opened twice, never queued',
+		'its pull request already open, $label, a new head to push → taken back out of the queue as a draft before the push, not opened twice, never queued',
 		({ draft, queued, taken }) => {
 			const repository = landingRepository()
 			const { host, calls } = recordingHost({
@@ -284,12 +292,13 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 			land({ repository, host })
 
-			expect(calls).toEqual(['read feat/x', 'edit 7 "feat(x): x answers one"', ...taken])
+			expect(calls).toEqual(['read feat/x', ...taken, 'edit 7 "feat(x): x answers one"'])
 		},
 	)
 
-	it('its pull request already open and queued at the head pushed again → left as it is: the approval of that head stands', () => {
+	it('its pull request queued at the head pushed again, a person approved that head → left as it is: the approval stands', () => {
 		const repository = landingRepository()
+		approveHead({ repository, head: tipOf(repository) })
 		const { host, calls } = recordingHost({
 			existing: pullRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
 		})
@@ -300,6 +309,55 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			exitCode: 0,
 			calls: ['read feat/x', 'edit 7 "feat(x): x answers one"'],
 		})
+	})
+
+	it('its pull request queued at the head pushed again, never approved (an earlier landing stopped after its push) → taken out of the queue: a re-land heals', () => {
+		const repository = landingRepository()
+		approveHead({ repository, head: 'a'.repeat(40) })
+		const { host, calls } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
+		})
+
+		const landed = land({ repository, host })
+
+		expect({ exitCode: landed.exitCode, calls }).toEqual({
+			exitCode: 0,
+			calls: ['read feat/x', 'draft-back 7 queued ready', 'edit 7 "feat(x): x answers one"'],
+		})
+	})
+
+	it('a queued pull request and the edit refused after the push → exit 1, the pull request already out of the queue', () => {
+		const repository = landingRepository()
+		const { host, calls } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: '', queued: true }),
+			refusals: { editPullRequest: 'HTTP 502' },
+		})
+
+		const landed = land({ repository, host })
+
+		expect({ exitCode: landed.exitCode, calls }).toEqual({
+			exitCode: 1,
+			calls: ['read feat/x', 'draft-back 7 queued ready', 'editPullRequest refused'],
+		})
+	})
+
+	it('a queued pull request the host refuses to take out of the queue → exit 1, nothing pushed, the refusal named', () => {
+		const repository = landingRepository()
+		const { host } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: '', queued: true }),
+			refusals: { draftPullRequest: 'HTTP 502' },
+		})
+
+		const landed = land({ repository, host })
+
+		expect({
+			exitCode: landed.exitCode,
+			last: landed.lines.at(-1),
+			pushed: git({
+				root: repository.root,
+				args: ['ls-remote', repository.origin, 'refs/heads/feat/x'],
+			}),
+		}).toEqual({ exitCode: 1, last: 'lot land: HTTP 502', pushed: '' })
 	})
 
 	it('a closed pull request of the branch → never reused: a new draft opened, the closed one never taken back', () => {

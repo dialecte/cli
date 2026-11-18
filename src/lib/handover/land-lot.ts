@@ -12,6 +12,7 @@
  * `lot close` read.
  */
 import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { recordForecastRun } from '../coordination/forecast-record.ts'
@@ -36,7 +37,7 @@ import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-requ
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { readIdentity } from '../store/identity.ts'
 import { replaceWhole } from '../store/publish.ts'
-import { STORE_REFUSAL } from '../store/store.constants.ts'
+import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
@@ -54,7 +55,7 @@ import { NOTHING_BEYOND_BASE_LINE } from './land-push.constants.ts'
 import { readLanding, readRawLanding } from './land-record.ts'
 import { prepareStackLanding, settleStackedPull } from './land-stack.ts'
 
-import type { HostAdapter, PullRequest } from '../host/host.types.ts'
+import type { HostAdapter, HostRefusal, PullRequest } from '../host/host.types.ts'
 import type { LandedFact } from '../landing/landed-record.types.ts'
 import type { PullRequestText } from '../pr/pull-request.types.ts'
 import type { LandingRecord, LandingResult } from './land-lot.types.ts'
@@ -135,10 +136,62 @@ export function landLot(params: {
 			exitCode: 1,
 			lines: [...lines, LANDING_LINES.unrendered.replace('{reason}', () => text.refusal)],
 		}
+	const pushed = dequeueAndPush({
+		...params,
+		pullRequest: known.pullRequest,
+		lease: stack?.lease,
+		lines,
+	})
+	if ('exitCode' in pushed) return pushed
+	return publishLanding({
+		...params,
+		known: known.pullRequest,
+		text,
+		head: pushed.head,
+		entry,
+		lines: pushed.lines,
+		stack,
+	})
+}
+
+/**
+ * The push of a landing: a reused pull request whose head to push no person approved taken out of the queue first (an
+ * approval is for one head: no refusal after the push leaves an unapproved head queued), then the committed head
+ * pushed with its lease and recorded; the head pushed and the lines so far with what it said, or the refusal.
+ */
+function dequeueAndPush(params: {
+	worktree: string
+	branch: string
+	base: string
+	lotFolder: string
+	host: HostAdapter
+	pullRequest: PullRequest | undefined
+	/** The head the host rewrote origin's branch to (a native stack whose parent merged): the push's lease. */
+	lease: string | undefined
+	lines: readonly string[]
+}): { head: string; lines: string[] } | LandingResult {
+	const { worktree, branch, base, host } = params
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
+	// an approval is for one head: out of the queue before the push, so no refusal after it leaves a head unapproved
+	const dequeued = dequeueUnapproved({
+		host,
+		worktree,
+		lotFolder: params.lotFolder,
+		pullRequest: params.pullRequest,
+		head,
+	})
+	if (dequeued !== undefined && 'refusal' in dequeued)
+		return {
+			exitCode: 1,
+			lines: [
+				...params.lines,
+				LANDING_LINES.hostRefused.replace('{reason}', () => dequeued.refusal),
+			],
+		}
+	const lines = dequeued === undefined ? [...params.lines] : [...params.lines, dequeued.line]
 	// the host rewrote origin's branch (a native stack whose parent merged): that head is the lease
-	if (stack?.lease !== undefined)
-		recordPushedHead({ lotFolder: params.lotFolder, branch, head: stack.lease })
+	if (params.lease !== undefined)
+		recordPushedHead({ lotFolder: params.lotFolder, branch, head: params.lease })
 	const expected = leaseOf({ worktree, branch, base, lotFolder: params.lotFolder })
 	const pushProblem = pushLot({ worktree, branch, expected })
 	if (pushProblem !== undefined)
@@ -155,12 +208,60 @@ export function landLot(params: {
 		}
 	// kept at once: a host that refuses to open the pull request must not make the next landing's push "outside"
 	recordPushedHead({ lotFolder: params.lotFolder, branch, head })
-	lines.push(
-		LANDING_LINES.pushed
-			.replace('{branch}', () => branch)
-			.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
-	)
-	return publishLanding({ ...params, known: known.pullRequest, text, head, entry, lines, stack })
+	return {
+		head,
+		lines: [
+			...lines,
+			LANDING_LINES.pushed
+				.replace('{branch}', () => branch)
+				.replace('{commit}', head.slice(0, SHORT_SHA_LENGTH)),
+		],
+	}
+}
+
+/**
+ * A reused pull request queued or ready whose head to push no person approved (`approvals.jsonl`): taken back out of
+ * the queue as a draft, before the push, its line; the host's refusal; undefined when nothing is to take back (no
+ * pull request, a draft not queued, or the head a person approved: that approval stands). Every landing checks, so a
+ * landing stopped after its push heals on the next one.
+ */
+function dequeueUnapproved(params: {
+	host: HostAdapter
+	worktree: string
+	lotFolder: string
+	pullRequest: PullRequest | undefined
+	head: string
+}): { line: string } | HostRefusal | undefined {
+	const { pullRequest } = params
+	if (pullRequest === undefined || (pullRequest.draft && !pullRequest.queued)) return undefined
+	if (approvedHeadsOf({ lotFolder: params.lotFolder, number: pullRequest.number }).has(params.head))
+		return undefined
+	const drafted = params.host.draftPullRequest({
+		root: params.worktree,
+		number: pullRequest.number,
+		queued: pullRequest.queued,
+		draft: pullRequest.draft,
+	})
+	return drafted ?? { line: LANDING_LINES.drafted.replace('{number}', String(pullRequest.number)) }
+}
+
+/** The heads a person approved for pull request `number`, from the lot folder's `approvals.jsonl`; none when absent. */
+function approvedHeadsOf(params: { lotFolder: string; number: number }): Set<string> {
+	const file = join(params.lotFolder, STORE_FILES.approvals)
+	if (!existsSync(file)) return new Set()
+	const heads = readFileSync(file, 'utf8')
+		.split('\n')
+		.flatMap(function approvedHead(line) {
+			try {
+				const parsed = JSON.parse(line) as { head?: unknown; number?: unknown }
+				return parsed.number === params.number && typeof parsed.head === 'string'
+					? [parsed.head]
+					: []
+			} catch {
+				return []
+			}
+		})
+	return new Set(heads)
 }
 
 /**
@@ -283,8 +384,7 @@ function unreadyRefusal(params: {
 /**
  * After the push: the lot's pull request, its text rendered on the pushed head (`lot pr`'s template), reused or opened
  * with it, the landing recorded at once (the next push's lease needs its head, whatever the host
- * answers next), a reused one edited when its title or body reads otherwise, then taken back out of the queue as a
- * draft when the push moved its head (an approval is for one head); never queued. `lines` holds
+ * answers next), a reused one edited when its title or body reads otherwise; never queued. `lines` holds
  * what the landing said so far.
  */
 function publishLanding(params: {
@@ -345,22 +445,6 @@ function publishLanding(params: {
 				lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => settled.refusal)],
 			}
 		lines.push(...settled.lines)
-	}
-	// an approval is for one head: a reused pull request the push moved goes back out of the queue, as a draft
-	if (known !== undefined && known.head !== params.head) {
-		const drafted = host.draftPullRequest({
-			root: worktree,
-			number: pull.number,
-			queued: known.queued,
-			draft: known.draft,
-		})
-		if (drafted !== undefined)
-			return {
-				exitCode: 1,
-				lines: [...lines, LANDING_LINES.hostRefused.replace('{reason}', () => drafted.refusal)],
-			}
-		if (known.queued || !known.draft)
-			lines.push(LANDING_LINES.drafted.replace('{number}', String(pull.number)))
 	}
 	lines.push(
 		LANDING_LINES.closeWhenMerged

@@ -94,7 +94,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		},
 	])('$label', ({ stacks, parent, route }) => {
 		const stack = stackedRepository()
-		const { host } = recordingHost({ ...(stacks && { stacks }), parent })
+		const { host } = recordingHost({ ...(stacks && { stacks }), parent, parentBranch: 'feat/x' })
 
 		const answered = stackQueueOf({
 			lot: '0002-repo-y',
@@ -107,9 +107,50 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(answered).toEqual(route)
 	})
 
+	it("the parent's pull request read by its branch, the parent never recorded a landing → the stack queued up to it", () => {
+		const stack = stackedRepository({ parentLanded: false })
+		const { host } = recordingHost({
+			stacks: true,
+			parent: { ...parentPullRequest(), queued: true },
+			parentBranch: 'feat/x',
+		})
+
+		const route = stackQueueOf({
+			lot: '0002-repo-y',
+			lotFolder: stack.child.lotFolder,
+			worktree: stack.child.worktree,
+			host,
+			pullRequest: childPullRequest('feat/x'),
+		})
+
+		expect(route).toEqual({ route: 'stack' })
+	})
+
+	it("the parent's branch has no pull request on the host → refused naming the parent", () => {
+		const stack = stackedRepository({ parentLanded: false })
+		const { host } = recordingHost({ stacks: true })
+
+		const route = stackQueueOf({
+			lot: '0002-repo-y',
+			lotFolder: stack.child.lotFolder,
+			worktree: stack.child.worktree,
+			host,
+			pullRequest: childPullRequest('feat/x'),
+		})
+
+		expect(route).toEqual({
+			refusal:
+				'0002-repo-y stacks on 0001-repo-x, whose branch feat/x has no open pull request: lot land 0001-repo-x first',
+		})
+	})
+
 	it('a stacked lot whose pull request does not say what it merges into → refused', () => {
 		const stack = stackedRepository()
-		const { host } = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const { host } = recordingHost({
+			stacks: true,
+			parent: parentPullRequest(),
+			parentBranch: 'feat/x',
+		})
 
 		const route = stackQueueOf({
 			lot: '0002-repo-y',

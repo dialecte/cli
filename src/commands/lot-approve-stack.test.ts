@@ -61,6 +61,7 @@ function approveOnParent(params: { parent: PullRequest }) {
 		checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 		stacks: true,
 		parent: params.parent,
+		parentBranch: 'feat/p',
 	})
 	const result = runLotApprove({
 		cwd: lot.workspace.repository,
