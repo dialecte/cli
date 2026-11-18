@@ -6,9 +6,11 @@
  */
 import { existsSync } from 'node:fs'
 
+import { AFTER_LANDING_FILE } from '../../test/landing-lot.constants.ts'
 import {
 	addLandingLot,
 	cardsLogOf,
+	commitAfterLanding,
 	closeArgumentsOf,
 	closeOutcomesOf,
 	landingLotOf,
@@ -275,6 +277,19 @@ describe(
 			writeHandoverCard({ lot, handover, head: GONE_COMMIT, offset: 1000 })
 			mergeOnOrigin({ repository: lot.repository, how: 'fast-forward' })
 			removeBranchAndWorktree(lot)
+
+			closeHandover({ lot, handover })
+
+			expect(readLanded({ lotFolder: lot.lotFolder })).toBeUndefined()
+		})
+
+		it('the worktree gone but the branch still there with commits beyond an older card head that is in the base → the branch is read, no landed fact at the old head', () => {
+			const lot = landingLotOf()
+			const handover = staleLotOf(lot)
+			writeHandoverCard({ lot, handover, head: lot.tip, offset: 1000 })
+			mergeOnOrigin({ repository: lot.repository, how: 'fast-forward' })
+			commitAfterLanding({ lot, file: AFTER_LANDING_FILE })
+			git({ root: lot.workspace.repository, args: ['worktree', 'remove', '--force', lot.worktree] })
 
 			closeHandover({ lot, handover })
 

@@ -28,7 +28,7 @@ import {
 } from './handover-store.ts'
 
 import type { HostAdapter } from '../host/host.types.ts'
-import type { SettledLot } from '../landing/lot-landing.types.ts'
+import type { RecordedTips, SettledLot } from '../landing/lot-landing.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseTarget, StoreEntry } from './handover.types.ts'
@@ -87,7 +87,14 @@ export function settleCloseTargets(params: {
 	const { main, now } = params
 	const store = findHandoverStore(main)
 	const lotStore = locateStore({ from: main })?.store
-	const identities = lotStore === undefined ? [] : listLotIdentities({ store: lotStore })
+	// each store lot with its folder's real path: the lots an entry's worktree and branch reach
+	const storeLots =
+		lotStore === undefined
+			? []
+			: listLotIdentities({ store: lotStore }).map((lot) => ({
+					...lot,
+					folder: realPathOf(join(lotStore, lot.name)),
+				}))
 	const recorded = readRecordedTips({ main, store })
 	const settled = new Map<string, SettledLot>()
 	function settle(lotFolder: string): SettledLot {
@@ -107,14 +114,14 @@ export function settleCloseTargets(params: {
 	return params.targets.map(function settleTarget(target) {
 		const reaching =
 			target.kind === 'entry'
-				? identities
+				? storeLots
 						.filter(
 							(lot) =>
 								lot.identity.branch === target.entry.branch &&
 								typeof lot.identity.worktree === 'string' &&
 								realPathOf(lot.identity.worktree) === realPathOf(target.entry.worktree),
 						)
-						.map((lot) => realPathOf(join(lotStore ?? '', lot.name)))
+						.map((lot) => lot.folder)
 				: []
 		const own = target.kind === 'unknown' ? undefined : target.lotFolder
 		const lots = [...new Set([...(own === undefined ? [] : [own]), ...reaching])].map(settle)
@@ -208,7 +215,7 @@ function listedAt(params: {
 }
 
 /** The repository's `cards.log` cards and registry entries, read once: where a stale lot's recorded tip is read. */
-function readRecordedTips(params: { main: string; store: string | undefined }) {
+function readRecordedTips(params: { main: string; store: string | undefined }): RecordedTips {
 	const store = params.store ?? handoverStoreOf(params.main)
 	const file = join(store, CARDS_LOG_FILE)
 	return {

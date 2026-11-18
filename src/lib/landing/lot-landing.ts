@@ -318,16 +318,26 @@ export function settleLotLanding(params: {
 		...(params.recorded !== undefined && { recorded: params.recorded }),
 	})
 	if ('refusal' in landing) return { notRead: landing.refusal }
-	let landed: LandedFact | undefined
-	try {
-		landed = recordLanded({ landing, now: params.now })
-	} catch (error) {
-		// a landed fact that cannot be written decides nothing: no verb acts on a fact not kept
-		return { notRead: (error as Error).message.trim() }
-	}
+	const landed = recordLandedOrWhy({ landing, now: params.now })
+	if (typeof landed === 'string') return { notRead: landed }
 	if (landed !== undefined) return { landed }
 	const why = notLandedOf({ landing, asked: params.host !== undefined })
 	return state === 'committed' ? { notLanded: why } : { open: state, why }
+}
+
+/**
+ * The lot's landed fact recorded once merged (`recordLanded`); undefined while not merged; why, when the fact cannot be
+ * written (a fact not kept decides nothing: no verb acts on it).
+ */
+function recordLandedOrWhy(params: {
+	landing: LotLanding
+	now: Date
+}): LandedFact | string | undefined {
+	try {
+		return recordLanded(params)
+	} catch (error) {
+		return (error as Error).message.trim()
+	}
 }
 
 /**

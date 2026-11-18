@@ -2,6 +2,8 @@
 export const CLOSE_TARGET_TEXTS = {
 	/** A lot target whose lot is open: its name, its state and why it is not landed. */
 	open: 'lot {lot} {state}: {why}',
+	/** A lot target whose identity names no branch: nothing to compare its worktree with. */
+	noBranch: 'its identity names no branch: nothing to compare its worktree with',
 	/** An argument naming no hand-over and no lot. */
 	unknown: 'no hand-over nor lot named or indexed {argument}: nothing closed for it',
 	/** A lot target whose worktree is gone with no removal recorded that moved it. */

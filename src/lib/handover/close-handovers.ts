@@ -184,7 +184,7 @@ export function closeHandovers(params: {
 								lot: target.lot,
 								state: target.lotState,
 								worktree: decision.worktree.path,
-								branch: decision.worktree.branch ?? target.branch ?? '',
+								branch: decision.branch,
 								landedTip: params.settled[targets.indexOf(target)].landedTip,
 								feature: readIdentity({ lotFolder: target.lotFolder })?.feature ?? null,
 								repository: main,
@@ -334,18 +334,21 @@ function decideTarget(params: {
 		(target.kind === 'entry' || target.worktree === undefined)
 	)
 		return { alreadyClosed: true }
-	if (target.kind === 'lot' && target.worktreePath === undefined)
-		return { kept: fillMessage({ template: NO_LOT_WORKTREE, values: { lot: target.lot } }) }
-	// a lot's worktree gone: closed when a recorded removal moved it, else nothing to close
-	if (target.kind === 'lot' && target.worktree === undefined)
-		return movedByRemoval({ file: params.cardsLog, lot: target.lot, worktree: target.worktreePath })
-			? { alreadyClosed: true }
-			: {
-					kept: fillMessage({
-						template: CLOSE_TARGET_TEXTS.nothingToClose,
-						values: { worktree: target.worktreePath ?? '' },
-					}),
-				}
+	if (target.kind === 'lot') {
+		const { worktreePath } = target
+		if (worktreePath === undefined)
+			return { kept: fillMessage({ template: NO_LOT_WORKTREE, values: { lot: target.lot } }) }
+		// a lot's worktree gone: closed when a recorded removal moved it, else nothing to close
+		if (target.worktree === undefined)
+			return movedByRemoval({ file: params.cardsLog, lot: target.lot, worktree: worktreePath })
+				? { alreadyClosed: true }
+				: {
+						kept: fillMessage({
+							template: CLOSE_TARGET_TEXTS.nothingToClose,
+							values: { worktree: worktreePath },
+						}),
+					}
+	}
 	try {
 		const why = whyKeep(params)
 		if ('kept' in why) return why
@@ -353,14 +356,12 @@ function decideTarget(params: {
 			return {
 				kept: `no ${WORKTREES_FOLDER}/ beside ${params.main}: the pool and the trash live there`,
 			}
-		const { worktree, dropped, archive } = why
+		const { worktree } = why
 		if (!existsSync(join(worktree.path, 'node_modules')))
-			return { worktree, dropped, archive, check: undefined, checkedLockText: undefined }
+			return { ...why, check: undefined, checkedLockText: undefined }
 		// the lock text read with the check: the pool entry is stamped with the key of what the check read
 		return {
-			worktree,
-			dropped,
-			archive,
+			...why,
 			checkedLockText: readPackageLockText({ worktree: worktree.path }),
 			check: checkNodeModules({ worktree: worktree.path }),
 		}
@@ -374,20 +375,14 @@ function decideTarget(params: {
  * `removed` outcome `trashed` or `deleted`, by the lot's name, else (a hand-over outside the store wrote `lot: null`)
  * by the worktree's real path.
  */
-function movedByRemoval(params: {
-	file: string
-	lot: string
-	worktree: string | undefined
-}): boolean {
+function movedByRemoval(params: { file: string; lot: string; worktree: string }): boolean {
 	if (!existsSync(params.file)) return false
-	const worktree =
-		params.worktree === undefined ? undefined : realPathThroughAncestors(params.worktree)
+	const worktree = realPathThroughAncestors(params.worktree)
 	return readCardsLog({ file: params.file }).removals.some(
 		(removal) =>
 			removal.item === 'worktree' &&
 			(removal.outcome === 'trashed' || removal.outcome === 'deleted') &&
-			(removal.lot === params.lot ||
-				(worktree !== undefined && realPathThroughAncestors(removal.path) === worktree)),
+			(removal.lot === params.lot || realPathThroughAncestors(removal.path) === worktree),
 	)
 }
 
@@ -424,7 +419,9 @@ export function whyKeep(params: {
 	if (target.kind === 'unknown' || target.worktreePath === undefined)
 		return { kept: 'no hand-over of that name or index' }
 	const { entry, worktreePath } = target
-	const branch = target.branch ?? ''
+	// a target whose identity names no branch has nothing to compare its worktree with: kept
+	if (target.branch === undefined) return { kept: CLOSE_TARGET_TEXTS.noBranch }
+	const { branch } = target
 	const lotKeep = params.lotKeeps.get(worktreePath)
 	if (lotKeep) return { kept: lotKeep }
 	// a lot target closes on its own settled state; one an entry registers, by that entry's state too
@@ -522,6 +519,7 @@ export function whyKeep(params: {
 		return { kept: `ignored files git worktree remove would delete: ${kept.join(', ')}` }
 	return {
 		worktree,
+		branch,
 		dropped: droppedFromBranch({
 			root: worktree.path,
 			worktree: worktree.path,

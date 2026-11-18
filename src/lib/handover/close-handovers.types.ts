@@ -6,6 +6,8 @@ export type DeclarationArchive = { path: string; bytes: string }
 /** What `whyKeep` lets go: the worktree, the commits only its branch's reflog holds once it goes, the archive to write. */
 export type Kept = {
 	worktree: ListedWorktree
+	/** The branch the worktree is on: the target's, compared before it is let go. */
+	branch: string
 	dropped: string | undefined
 	archive: DeclarationArchive | undefined
 }

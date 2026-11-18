@@ -18,7 +18,7 @@ import {
 	lotEntryStateOf,
 	registerLotEntry,
 } from '../../test/landing-lot.ts'
-import { landingHostOf, mergeOnOrigin } from '../../test/landing-repository.ts'
+import { commitDetached, landingHostOf, mergeOnOrigin } from '../../test/landing-repository.ts'
 import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
@@ -252,6 +252,31 @@ describe('lot close: lot-shaped targets', { timeout: STORE_CASE_TIMEOUT }, () =>
 		expect({ exitCode: result.exitCode, outcomes: closeOutcomesOf(result) }).toEqual({
 			exitCode: 0,
 			outcomes: [{ closed: true, already: true }],
+		})
+	})
+
+	it('a canceled lot whose worktree made a commit on a detached HEAD, then went back to its branch → kept, the commit named and still in the repository', () => {
+		const lot = landingLotOf()
+		const detached = commitDetached({
+			worktree: lot.worktree,
+			files: { 'src/detached.ts': 'export const detached = 1\n' },
+			reattach: true,
+		})
+		cancelLot(lot)
+
+		const result = close({ lot, names: [lot.name] })
+
+		expect({
+			outcomes: closeOutcomesOf(result),
+			worktreeLeft: existsSync(lot.worktree),
+			commitHeld: git({
+				root: lot.workspace.repository,
+				args: ['cat-file', '-t', detached],
+			}).trim(),
+		}).toEqual({
+			outcomes: [{ closed: false, kept: expect.stringContaining(detached.slice(0, 12)) }],
+			worktreeLeft: true,
+			commitHeld: 'commit',
 		})
 	})
 })
