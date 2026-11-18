@@ -389,7 +389,8 @@ or why it is unknown), said after the steps and before the notes and the verdict
 merges main and resolves, and the gate's verdict and exit stay what its steps made them. A review round's throwaway
 worktree and `--release` run none.
 
-`gate --hook` runs a `design` step first in a lot's own worktree, whatever `dialecte.gate.hook` declares: a commit
-holding a production path fails while the lot's required design is missing, not approved or stale, and no declared
-step runs; a commit of tests or docs only passes; a first commit, a merge commit and a folder outside a lot skip it.
+`gate --hook` runs a `design` step first when the commit is on a lot's branch, from any worktree, whatever
+`dialecte.gate.hook` declares: a commit holding a production path fails while the lot's required design is missing, not
+approved or stale, no declared step runs, and the lot's events record the refusal; a commit of tests or docs only
+passes; a first commit, a merge commit and a review throwaway (`<lot branch>-round-<n>`) skip it.
 The step and the tdd step read the same lot base, resolved once for the run.
