@@ -66,8 +66,8 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     removed whose doc page (doc/ Markdown or README naming its last two route segments, or its whole
     route in a code span) the change did not touch; one line names where they stand: quality: since
     <short> (lot | base-branch | flag), quality: not run (no lot) in a scoped gate step outside any
-    lot, quality: no base (rules --base <ref>, or in a lot); a run that judged the whole change
-    writes dialecte-quality.json in the worktree git folder; contrib never runs them
+    lot, no line when there is no base; a run that judged the whole change writes
+    dialecte-quality.json in the worktree git folder; contrib never runs them
   --json: dialecteChanges (the verdict of each file), notJudged, baseLine, qualityLine, quality (the
     base, the examined files, duplicates, sharedExports, publicApi, docs); described by
     rules.schema.json (schema 1)

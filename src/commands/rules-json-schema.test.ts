@@ -83,7 +83,6 @@ describe('dialecte rules --json: the schema', { timeout: SCRATCH_GIT_CASE_TIMEOU
 				'files',
 				'findings',
 				'noForbiddenWordsList',
-				'qualityLine',
 				'warnings',
 			],
 		},
@@ -100,7 +99,6 @@ describe('dialecte rules --json: the schema', { timeout: SCRATCH_GIT_CASE_TIMEOU
 				'files',
 				'findings',
 				'noForbiddenWordsList',
-				'qualityLine',
 				'queryInLoopNotRun',
 				'warnings',
 			],
@@ -111,15 +109,7 @@ describe('dialecte rules --json: the schema', { timeout: SCRATCH_GIT_CASE_TIMEOU
 				'src/view/panel.ts': 'export const panel = 1\n',
 			},
 			argv: ['src/view/panel.ts'],
-			expectedKeys: [
-				'dialecteChanges',
-				'errors',
-				'files',
-				'findings',
-				'notJudged',
-				'qualityLine',
-				'warnings',
-			],
+			expectedKeys: ['dialecteChanges', 'errors', 'files', 'findings', 'notJudged', 'warnings'],
 		},
 	}
 

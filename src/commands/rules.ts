@@ -122,7 +122,7 @@ function checkOfRun(params: {
 		check: {
 			...checked,
 			...(runBaseLine !== undefined && { baseLine: runBaseLine }),
-			qualityLine: quality.line,
+			...(quality.line !== undefined && { qualityLine: quality.line }),
 		},
 		scoped: changedList !== undefined,
 	}
@@ -166,13 +166,14 @@ function textOf(check: RulesCheck): CommandResult {
 /**
  * The base the base-aware rules judge the change against, with the line naming it: `--base`, else the order's lot base,
  * else (a bare run only) its base-branch merge-base; a scoped gate step outside any lot (a hand-over or rehearsal clone)
- * runs none, nor a run the order gives no lot base (a release tag, nothing, a lot base it cannot read).
+ * runs none and says so; a run the order gives no lot base (a release tag, nothing, a lot base it cannot read) runs
+ * none and adds no line, as the base line says nothing when there is no base.
  */
 function qualityBaseOf(params: {
 	root: string
 	flag: string | undefined
 	scoped: boolean
-}): { base: QualityBase; line: string } | { line: string } {
+}): { base: QualityBase; line: string } | { line?: string } {
 	const { root } = params
 	if (params.flag !== undefined)
 		return withLine({ root, base: { commit: params.flag, source: 'flag' } })
@@ -183,9 +184,9 @@ function qualityBaseOf(params: {
 		if (order.source === 'base-branch' && !params.scoped)
 			return withLine({ root, base: { commit: order.commit, source: 'base-branch' } })
 	}
-	// a lot whose base cannot be read is no clone: its run says no base, as its base line says why
+	// a lot whose base cannot be read is no clone: its base line says why, nothing more is added
 	const unreadable = order !== undefined && 'failure' in order
-	return { line: params.scoped && !unreadable ? QUALITY_LINES.noLot : QUALITY_LINES.noBase }
+	return params.scoped && !unreadable ? { line: QUALITY_LINES.noLot } : {}
 }
 
 /** `base` with its line: `quality: since <short> (<source>)`. */

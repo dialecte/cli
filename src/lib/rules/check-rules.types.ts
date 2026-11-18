@@ -28,7 +28,7 @@ export type RulesCheck = {
 	baseLine?: string
 	/** What the base-aware rules found, against which base; absent when they did not run. */
 	quality?: QualityResult
-	/** Where the base-aware rules stand: run since a base, not run in a clone outside any lot, no base. */
+	/** Where the base-aware rules stand: run since a base, or not run in a clone outside any lot; absent with no base. */
 	qualityLine?: string
 }
 

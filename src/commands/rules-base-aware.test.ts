@@ -254,7 +254,7 @@ describe(
 			}).toEqual({ qualityLines: ['quality: not run (no lot)'], record: undefined })
 		})
 
-		it('a bare run outside any lot, no base branch, no release tag → the no-base line, no quality part, nothing recorded, a base-aware opt-out never judged unused', () => {
+		it('a bare run outside any lot, no base branch, no release tag → no quality line (as no base line), no quality part, nothing recorded, a base-aware opt-out never judged unused', () => {
 			const lot = createQualityLot({
 				base: BASE,
 				uncommitted: { [SIZE_FILE]: SIZE_RESIGNED, [TOTAL_FILE]: TOTAL_WITH_OPT_OUT },
@@ -272,7 +272,7 @@ describe(
 				unused: json.findings.filter((finding) => finding.rule === 'unused-allow'),
 				record: readQualityRecord(lot.root),
 			}).toEqual({
-				qualityLines: ['quality: no base (rules --base <ref>, or in a lot)'],
+				qualityLines: [],
 				quality: undefined,
 				unused: [],
 				record: undefined,

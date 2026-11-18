@@ -45,9 +45,8 @@ export const QUALITY_MESSAGES = {
 	noPage: 'no page names it yet',
 } as const
 
-/** The line saying where the base-aware rules stand: run since a base, not run in a clone, or no base. */
+/** The line saying where the base-aware rules stand: run since a base, or not run in a clone outside any lot. */
 export const QUALITY_LINES = {
 	since: 'quality: since {short} ({source})',
 	noLot: 'quality: not run (no lot)',
-	noBase: 'quality: no base (rules --base <ref>, or in a lot)',
 } as const
