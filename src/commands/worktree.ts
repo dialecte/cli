@@ -11,8 +11,8 @@
  * its absolute `cd`; runs them only with `--yes`, after a confirmation on a terminal.
  *
  * `dialecte worktree prune [--root <workspace>] --reclaim [--dry-run] [--older-than <days>]` - the node_modules of
- * worktrees idle for `--older-than` days (default 2) parked in the pool or sent to the trash, the code left; a
- * `-round-<n>` throwaway of a closed lot trashed whole; one line per worktree and the total; `--dry-run` moves nothing.
+ * worktrees idle for `--older-than` days (default 2) parked in the pool or sent to the trash, the code left (a review
+ * throwaway's too); one line per worktree and the total; `--dry-run` moves nothing.
  */
 import { spawnSync } from 'node:child_process'
 import { basename, dirname, join, relative, resolve } from 'node:path'

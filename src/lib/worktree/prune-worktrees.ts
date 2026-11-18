@@ -11,12 +11,12 @@
  * trash (`_trash/`, a worktree in it included) are counted, never listed nor touched.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
+import { removableIgnored } from '../cleanup/removable-ignored.ts'
 import { isAtOrInside, isPresent, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
-import { readHooksFolder } from '../git-hooks.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
@@ -26,6 +26,7 @@ import {
 	REHEARSAL_MARKER_FILE,
 } from '../handover/handover.constants.ts'
 import { handoverState } from '../handover/list-handovers.ts'
+import { readRehearsalRun } from '../handover/live-handover-run.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from '../landing/contained.ts'
@@ -48,7 +49,7 @@ import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
 import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
-import { gitFolderAbove, listLotIdentities, locateStore } from '../store/store-folder.ts'
+import { gitFolderAbove, locateStore } from '../store/store-folder.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { checkNodeModules } from './check-node-modules.ts'
@@ -69,8 +70,6 @@ import {
 	GONE_WORKTREE_HELD,
 	PRUNE_LINK_REASON,
 	PRUNE_RUN_PREFIX,
-	REBUILT_IGNORED_FOLDERS,
-	REBUILT_IGNORED_NAMES,
 	MINUTE_MS,
 	POOL_ENTRY_PATTERN,
 	POOL_FILE,
@@ -80,10 +79,9 @@ import {
 	RECLAIM_DAY_MS,
 	RECLAIM_GONE,
 	RECLAIM_KEEP_REASONS,
-	RECLAIM_ROUND_PATTERN,
+	REHEARSAL_CLONE_KEEP_REASONS,
 	RECLAIM_SIZE_UNITS,
 	RECLAIM_TRASH_REASONS,
-	RECLAIM_WORKTREE_GONE,
 	REHEARSAL_TRASH_FOLDER,
 	SCRATCH_KEEP_REASONS,
 	SCRATCH_PRUNE_AGE_MS,
@@ -109,7 +107,6 @@ import type {
 	ReclaimOutcome,
 	ReclaimPlan,
 	ReclaimRepositoryRun,
-	ReclaimRound,
 	WorkspacePrunePlan,
 } from './worktree.types.ts'
 import type { Dirent } from 'node:fs'
@@ -142,8 +139,15 @@ export function planPrune(params: {
 		findLinks(folder),
 	)
 	const worktreesFolder = join(params.workspace, WORKTREES_FOLDER)
+	const listProcesses = params.listProcesses ?? listProcessFolders
+	let processes: readonly ProcessFolder[] | string | undefined
+	/** The processes, listed once for the whole plan and only when a worktree's other rules let it go. */
+	function processesOnce(): readonly ProcessFolder[] | string {
+		processes ??= listProcesses()
+		return processes
+	}
 	const repositories = listMainCheckouts(params.workspace).map((repository) =>
-		planRepository({ repository, handovers, links, worktreesFolder }),
+		planRepository({ repository, handovers, links, worktreesFolder, processes: processesOnce }),
 	)
 	const now = params.now ?? new Date()
 	const rehearsals = scratchRoots.flatMap(function rehearsalsIn(scratchRoot) {
@@ -186,7 +190,7 @@ export function planPrune(params: {
 		poolLeftOver: planPoolLeftOvers({
 			worktreesFolder,
 			now,
-			listProcesses: params.listProcesses ?? listProcessFolders,
+			listProcesses: processesOnce,
 		}),
 		trash: countTrashed(worktreesFolder),
 		scratchTrash: [
@@ -209,8 +213,8 @@ export function planPrune(params: {
  * `worktree prune --reclaim`: every worktree of every repository of the workspace, decided and nothing moved. An idle
  * worktree (the invariant holds: not the main checkout, not locked, no open lot nor open hand-over names it, no process
  * works in it, no link reaches it, no git activity in its index, HEAD or reflog after `now` minus `olderThanDays`) has
- * its `node_modules` parked when its lock key is the main checkout's and it passes its check, else trashed; a
- * `-round-<n>` throwaway whose lot is closed is trashed whole; every other worktree is kept with why.
+ * its `node_modules` parked when its lock key is the main checkout's and it passes its check, else trashed, its code
+ * never touched (a review throwaway too); every other worktree is kept with why.
  *
  * @intent free the node_modules of idle worktrees without ever touching one in use
  * @internal
@@ -250,8 +254,8 @@ export function planReclaim(params: {
 
 /**
  * Carries out a reclaim plan: every keep rule checked again just before each move (a worktree locked, active, named
- * or worked in since the plan is kept, its line says why), then each `park` through the pool cache, each `trash` and
- * `trash whole` through the trash (git forgets a worktree trashed whole); what is gone since the plan (another
+ * or worked in since the plan is kept, its line says why), then each `park` through the pool cache, each `trash`
+ * through the trash; what is gone since the plan (another
  * reclaim) is a line, and a move that throws (a folder moved under it by another park or take) a refused line, never
  * a throw: the next items still run. The workspace-wide facts (the processes, the links, each repository's worktree
  * list, store, hand-over registry, runs and pool cap) are read once per execution, at its first move, and kept up to
@@ -341,7 +345,7 @@ export function linkRootsOf(params: {
 function planPoolLeftOvers(params: {
 	worktreesFolder: string
 	now: Date
-	listProcesses: () => ProcessFolder[] | string
+	listProcesses: () => readonly ProcessFolder[] | string
 }): PruneItem[] {
 	const { worktreesFolder } = params
 	if (!isDirectory(worktreesFolder)) return []
@@ -486,6 +490,8 @@ function planRepository(params: {
 	links: readonly FolderLink[]
 	/** The workspace's worktrees folder, whose trash a removed hand-over folder goes to. */
 	worktreesFolder: string
+	/** The processes and their working folders, or why they are not known; listed when first asked. */
+	processes: () => readonly ProcessFolder[] | string
 }): PrunePlan {
 	const { repository } = params
 	const found = findBaseBranchRef({ root: repository, packageJson: readPackageJson(repository) })
@@ -584,6 +590,7 @@ function planRepository(params: {
 					// a throwaway's own commits are its lot's: the lot's landed tip holds them
 					lot: throwaway ?? landings.get(real),
 					ofClosedLot: throwaway !== undefined,
+					processes: params.processes,
 				})
 		if (kept) {
 			keptBranches.add(worktree.branch)
@@ -754,18 +761,18 @@ function planRehearsalClone(params: {
 }): PruneItem {
 	const clone = join(params.scratchRoot, params.name)
 	if (isLink(clone)) return { kind: 'rehearsal clone', name: clone, kept: PRUNE_LINK_REASON }
-	const marker = readRehearsalMarker(rehearsalMarkerPath(clone))
-	if (!marker)
+	const run = readRehearsalRun({ markerPath: rehearsalMarkerPath(clone) })
+	if (run.pid === undefined)
+		return { kind: 'rehearsal clone', name: clone, kept: REHEARSAL_CLONE_KEEP_REASONS.noMarker }
+	// a running pid keeps it whatever the start time says: prune's rule; only lot close --feature moves a reused pid's
+	if (isProcessAlive(run.pid))
 		return {
 			kind: 'rehearsal clone',
 			name: clone,
-			kept: 'no rehearsal marker: not made by this cli, or still starting',
-		}
-	if (isProcessAlive(marker.pid))
-		return {
-			kind: 'rehearsal clone',
-			name: clone,
-			kept: `its rehearsal still runs: pid ${marker.pid}`,
+			kept: fillMessage({
+				template: REHEARSAL_CLONE_KEEP_REASONS.running,
+				values: { pid: String(run.pid) },
+			}),
 		}
 	const reachedBy = linkReaching({ folder: clone, links: params.links })
 	if (reachedBy)
@@ -868,16 +875,6 @@ function isDirectory(path: string): boolean {
 	}
 }
 
-function readRehearsalMarker(path: string): { pid: number } | undefined {
-	if (!existsSync(path)) return undefined
-	try {
-		const marker = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown }
-		return typeof marker.pid === 'number' ? { pid: marker.pid } : undefined
-	} catch {
-		return undefined
-	}
-}
-
 /** Why a worktree stays, or undefined when it may go. */
 function whyKeepWorktree(params: {
 	repository: string
@@ -897,6 +894,8 @@ function whyKeepWorktree(params: {
 	 * worktree, but its branch, made at a review, never holds a commit of its own.
 	 */
 	ofClosedLot: boolean
+	/** The processes and their working folders, or why they are not known; listed once per plan, when first asked. */
+	processes: () => readonly ProcessFolder[] | string
 }): string | undefined {
 	const reachedBy = linkReaching({ folder: params.worktree, links: params.links })
 	if (reachedBy) return `the link ${reachedBy} points to it`
@@ -921,11 +920,12 @@ function whyKeepWorktree(params: {
 				baselineHead: readHygieneBaseline(params.worktree)?.head,
 			})
 	if (keptByReflog) return keptByReflog
-	const ignored = listRemovableIgnored(params.worktree)
+	const ignored = removableIgnored({ worktree: params.worktree, main: params.repository }).kept
 	if (ignored.length > IGNORED_FILES_SHOWN)
 		return `${ignored.length} ignored files git worktree remove would delete, first: ${ignored.slice(0, IGNORED_FILES_SHOWN).join(', ')}`
 	if (ignored.length) return `ignored files git worktree remove would delete: ${ignored.join(', ')}`
-	return undefined
+	// last: the processes are listed only for a worktree every other rule lets go
+	return whyKeepByProcess({ worktree: params.worktree, processes: params.processes() })
 }
 
 /**
@@ -1001,25 +1001,6 @@ function workKeeping(params: {
 		landedTips: landedTip === undefined ? [] : [landedTip],
 	})
 	return lost.length > 0 ? lostWorkText(lost) : undefined
-}
-
-/**
- * Ignored files `git worktree remove` deletes with the worktree, beyond what is rebuilt or copied
- * (`node_modules`, `dist`, the hooks folder): local notes, logs, an `.env` someone keeps there.
- */
-function listRemovableIgnored(worktree: string): string[] {
-	const hooks = readHooksFolder(worktree).configured
-	const rebuilt = [...REBUILT_IGNORED_FOLDERS, ...(hooks ? [`${hooks.replace(/\/$/, '')}/`] : [])]
-	return readGit({
-		root: worktree,
-		args: [...WORKTREE_STATUS_ARGUMENTS, '--ignored=matching'],
-	})
-		.split('\n')
-		.filter((line) => line.startsWith('!! '))
-		.map((line) => line.slice(3))
-		.filter((path) => !rebuilt.some((folder) => path === folder || path.startsWith(folder)))
-		.filter((path) => !REBUILT_IGNORED_NAMES.some((name) => basename(path) === name))
-		.sort()
 }
 
 /**
@@ -1113,15 +1094,6 @@ function readReclaimContext(params: {
 		listed: listWorktrees(repository),
 		// a failed lot keeps its worktree (the safer side), as prune's keep rule does
 		lotKeeps: lotsKeepingWorktrees({ repository }),
-		lotWorktrees: new Set(
-			location === undefined
-				? []
-				: listLotIdentities({ store: location.store }).flatMap((entry) =>
-						typeof entry.identity.worktree === 'string'
-							? [realPathOf(entry.identity.worktree)]
-							: [],
-					),
-		),
 		handovers: location === undefined ? [] : readStoreEntries(location.registry),
 		runs: readOwnedRuns(repository),
 	}
@@ -1140,8 +1112,8 @@ function mainCheckoutItem(repository: string): ReclaimItem {
 }
 
 /**
- * The fate of one linked worktree: kept by the first keep rule that holds; else a `-round-<n>` throwaway of a closed
- * lot trashed whole (of an open one kept); else its node_modules parked or trashed.
+ * The fate of one linked worktree: kept by the first keep rule that holds; else its node_modules parked or trashed.
+ * A review throwaway is reclaimed like any idle worktree: its code is never touched.
  */
 function decideReclaim(params: { listed: ListedWorktree; context: ReclaimContext }): ReclaimItem {
 	const { context } = params
@@ -1149,9 +1121,6 @@ function decideReclaim(params: { listed: ListedWorktree; context: ReclaimContext
 	const base = { repository: context.repository, worktree }
 	const kept = whyKeepReclaimed({ listed: params.listed, worktree, context })
 	if (kept !== undefined) return keepItemOf({ ...base, reason: kept })
-	const round = roundOf({ worktree, context })
-	if (round === 'closed') return { ...base, action: 'trash whole', ...countTree(worktree) }
-	if (round !== undefined) return keepItemOf({ ...base, reason: round.open })
 	return decideNodeModules({ ...base, mainLockKey: context.mainLockKey })
 }
 
@@ -1237,20 +1206,6 @@ function whyKeepByActivity(params: {
 	return RECLAIM_KEEP_REASONS.activity
 		.replace('{file}', relative(params.workspace, latest.path))
 		.replace('{at}', latest.at.toISOString())
-}
-
-/**
- * A `-round-<n>` throwaway's lot, found by the worktree its name continues (`<lot worktree>-round-<n>` beside it): open
- * (its keep reason), closed (a lot names it, none open), or undefined (no round, or no lot names that worktree).
- */
-function roundOf(params: { worktree: string; context: ReclaimContext }): ReclaimRound | undefined {
-	const lotFolderName = RECLAIM_ROUND_PATTERN.exec(basename(params.worktree))?.[1]
-	if (lotFolderName === undefined) return undefined
-	const lotWorktree = realPathOf(join(dirname(realPathOf(params.worktree)), lotFolderName))
-	const open = params.context.lotKeeps.get(lotWorktree)
-	if (open !== undefined)
-		return { open: RECLAIM_KEEP_REASONS.roundOfOpenLot.replace('{lot}', open) }
-	return params.context.lotWorktrees.has(lotWorktree) ? 'closed' : undefined
 }
 
 /**
@@ -1344,8 +1299,8 @@ function sizeOf(path: string): number {
 
 /**
  * One planned move carried out: nothing when what it moves is gone (another reclaim) or a keep rule now holds (its
- * line says why), else the park, the trash or the whole worktree's trash; a move that throws is refused with its line.
- * The repository's context as the move left it: a worktree git forgot leaves its list.
+ * line says why), else the park or the trash of its node_modules; a move that throws is refused with its line. The
+ * repository's context as the move left it.
  */
 function moveReclaimItem(params: {
 	item: ReclaimItem
@@ -1363,15 +1318,11 @@ function moveReclaimItem(params: {
 			context,
 		}
 	}
-	const whole = item.action === 'trash whole'
-	if (!isPresent(whole ? item.worktree : join(item.worktree, 'node_modules')))
-		return notMoved(whole ? RECLAIM_WORKTREE_GONE : RECLAIM_GONE)
-	// read while the worktree is there: a folder gone has no real path to compare
-	const real = realPathOf(item.worktree)
+	if (!isPresent(join(item.worktree, 'node_modules'))) return notMoved(RECLAIM_GONE)
 	const fresh = recheckReclaim({ item, context })
 	if (fresh.action !== item.action)
 		return notMoved(fresh.reason ?? `now ${fresh.action}, not ${item.action}: nothing done`)
-	let moved: { done: string; to: string; forgotten?: boolean } | { refused: string }
+	let moved: { done: string; to: string } | { refused: string }
 	try {
 		moved =
 			item.action === 'park'
@@ -1397,19 +1348,13 @@ function moveReclaimItem(params: {
 	if ('refused' in moved) return notMoved(moved.refused)
 	return {
 		outcome: { worktree: item.worktree, line: `${moved.done}  ${name}  ${moved.to}`, moved: true },
-		context: moved.forgotten
-			? { ...context, listed: context.listed.filter((entry) => realPathOf(entry.path) !== real) }
-			: context,
+		context,
 	}
 }
 
 /** Where what a move that threw was moving is now, as far as the worktree tells: still there, or gone from it. */
 function whereNowOf(item: ReclaimItem): string {
 	const unknown = 'where it went is unknown (see .worktrees/_pool-* and _trash/)'
-	if (item.action === 'trash whole')
-		return isPresent(item.worktree)
-			? 'the worktree still in place'
-			: `the worktree folder gone, ${unknown}`
 	return isPresent(join(item.worktree, 'node_modules'))
 		? 'node_modules still in place'
 		: `node_modules no longer in the worktree, ${unknown}`
@@ -1437,11 +1382,6 @@ function recheckReclaim(params: { item: ReclaimItem; context: ReclaimContext }):
 		context,
 	})
 	if (kept !== undefined) return keepItemOf({ ...base, reason: kept })
-	const round = roundOf({ worktree: item.worktree, context })
-	if (round === 'closed') return { ...item, action: 'trash whole' }
-	if (round !== undefined) return keepItemOf({ ...base, reason: round.open })
-	// no longer a closed lot's round: nothing planned for it now
-	if (item.action === 'trash whole') return { ...base, action: 'keep', files: 0, bytes: 0 }
 	if (isLink(join(item.worktree, 'node_modules')))
 		return keepItemOf({ ...base, reason: RECLAIM_KEEP_REASONS.nodeModulesLink })
 	return item
@@ -1479,30 +1419,19 @@ function parkReclaimed(params: {
 	return { done: 'parked', to: saved.note === undefined ? to : `${to}; ${saved.note}` }
 }
 
-/**
- * The worktree's node_modules (`trash`), or the whole worktree then forgotten by git (`trash whole`), renamed into the
- * trash: where it went, or why not (gone meanwhile, or another worktree git would forget with it).
- */
+/** The worktree's node_modules renamed into the trash: where it went, or why not. */
 function trashReclaimed(params: {
 	item: ReclaimItem
 	context: ReclaimContext
 	now: Date
 	spawner: BackgroundSpawner
-}): { done: string; to: string; forgotten?: boolean } | { refused: string } {
+}): { done: string; to: string } | { refused: string } {
 	const { item, context } = params
-	const whole = item.action === 'trash whole'
-	if (whole) {
-		const prunable = otherPrunableOf({ item, context })
-		if (prunable.length)
-			return {
-				refused: RECLAIM_KEEP_REASONS.otherPrunable.replace('{worktrees}', prunable.join(', ')),
-			}
-	}
 	const worktreesFolder = join(context.workspace, WORKTREES_FOLDER)
 	let trashed: string
 	try {
 		trashed = trashFolder({
-			folder: whole ? item.worktree : join(item.worktree, 'node_modules'),
+			folder: join(item.worktree, 'node_modules'),
 			worktreesFolder,
 			now: params.now,
 			spawner: params.spawner,
@@ -1510,31 +1439,5 @@ function trashReclaimed(params: {
 	} catch (error) {
 		return { refused: `${(error as Error).message}: nothing done` }
 	}
-	const to = relative(context.workspace, trashed)
-	if (!whole) return { done: 'trashed', to: `node_modules -> ${to}` }
-	// its folder is gone: git forgets it as prune does for a worktree deleted from disk
-	try {
-		readGit({ root: item.repository, args: ['worktree', 'prune'] })
-	} catch (error) {
-		return {
-			done: 'trashed',
-			to: `the worktree -> ${to}, still listed by git: ${(error as Error).message}`,
-		}
-	}
-	return { done: 'trashed', to: `the worktree -> ${to}, forgotten by git`, forgotten: true }
-}
-
-/**
- * The other worktrees of the repository whose folder holds no checkout and that no lock protects: `git worktree
- * prune` would forget them too.
- */
-function otherPrunableOf(params: { item: ReclaimItem; context: ReclaimContext }): string[] {
-	const real = realPathOf(params.item.worktree)
-	return params.context.listed
-		.slice(1)
-		.filter(
-			(entry) =>
-				!entry.locked && realPathOf(entry.path) !== real && !isPresent(join(entry.path, '.git')),
-		)
-		.map((entry) => entry.path)
+	return { done: 'trashed', to: `node_modules -> ${relative(context.workspace, trashed)}` }
 }

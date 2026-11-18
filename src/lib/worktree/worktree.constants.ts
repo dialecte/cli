@@ -244,9 +244,7 @@ export const RECLAIM_KEEP_REASONS = {
 	missing: 'not on disk',
 	noGitFolder: 'its git folder cannot be found: its activity is not known',
 	handoverRunning: 'a hand-over runs in it',
-	roundOfOpenLot: 'a review round of {lot}',
 	unlisted: 'no longer a worktree of {repository}',
-	otherPrunable: 'git worktree prune would also forget {worktrees}',
 } as const
 
 /** Why `worktree prune --reclaim` sends an idle worktree's node_modules to the trash instead of the pool; `{...}` filled. */
@@ -273,12 +271,11 @@ export const POOL_LEFT_OVER_KEEP_REASONS = {
 	finished: 'its pool.json is written now: a pool entry',
 } as const
 
-/** What a reclaim says of a `-round-<n>` throwaway gone between its plan and its move. */
-export const RECLAIM_WORKTREE_GONE =
-	'worktree gone already (moved by another reclaim): nothing done'
-
-/** A review round's throwaway worktree, `<lot worktree>-round-<n>`: the lot worktree's folder name first. */
-export const RECLAIM_ROUND_PATTERN = /^(.+)-round-[1-9]\d*$/
+/** Why `worktree prune` keeps a rehearsal clone; `{...}` filled. */
+export const REHEARSAL_CLONE_KEEP_REASONS = {
+	noMarker: 'no rehearsal marker: not made by this cli, or still starting',
+	running: 'its rehearsal still runs: pid {pid}',
+} as const
 
 /** The git files whose last write is a worktree's activity, in its own git folder: the index, HEAD, its reflog. */
 export const RECLAIM_ACTIVITY_FILES = ['index', 'HEAD', 'logs/HEAD'] as const

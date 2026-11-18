@@ -14,3 +14,16 @@ export type RehearsalMarker = {
 	/** The owner's start time as `processStartTime` reads it. */
 	startTime?: string
 }
+
+/**
+ * A rehearsal marker read three ways: `alive` with the owner's pid and the hand-over folder it names (when it names
+ * one); `dead` with the pid it named; `unknown` with why (no marker, an unparsable one, no pid, no start time to
+ * compare). An unknown answer is never read as no run by a verb that deletes.
+ */
+export type RehearsalRun =
+	| { state: 'alive'; pid: number; handover: string | undefined }
+	| { state: 'dead'; pid: number }
+	| { state: 'unknown'; why: string; pid: number | undefined }
+
+/** What a rehearsal marker says of its owner: `alive` (running with the start time the marker holds), `dead` (gone, or its pid reused), `unknown` (it cannot tell). */
+export type RehearsalRunState = RehearsalRun['state']

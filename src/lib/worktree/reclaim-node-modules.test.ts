@@ -1,6 +1,6 @@
 /**
  * `worktree prune --reclaim`, the decision per worktree (`planReclaim`) and the moves (`executeReclaim`). The invariant
- * (STATIONS.md): never move a worktree's `node_modules` (nor a whole worktree) unless it is proven not the main
+ * (STATIONS.md): never move a worktree's `node_modules` (and never its code) unless it is proven not the main
  * checkout, not locked, named by no open lot and no open hand-over, worked in by no live process, reached by no link,
  * and without git activity (index, HEAD, reflog) after the cutoff; `executeReclaim` checks the keep rules again just
  * before each move. Every worktree of a case is idle for weeks (its git files aged) unless the case says otherwise, so
@@ -92,6 +92,18 @@ const PARKABLE = '0002-repo-parkable'
 const TRASHABLE = '0003-repo-trashable'
 const ASKING = '0001-repo-asking'
 const ROUND = `${ASKING}-round-1`
+
+/** A reviewer's uncommitted edit in a review-round throwaway: the only copy of it. */
+const REVIEWER_EDIT = 'review-edit.txt'
+const REVIEWER_EDIT_TEXT = 'a reviewer wrote this and committed nothing\n'
+
+/** The real paths of the worktrees git lists for the workspace's repository. */
+function registeredWorktrees(workspace: BriefWorkspace): string[] {
+	return git({ root: workspace.repository, args: ['worktree', 'list', '--porcelain'] })
+		.split('\n')
+		.filter((line) => line.startsWith('worktree '))
+		.map((line) => line.slice('worktree '.length))
+}
 
 /** The activity reason of a keep line, whatever the file and the time it names. */
 const ACTIVITY_REASON = /^git activity after the cutoff: /
@@ -435,32 +447,30 @@ describe(
 	() => {
 		const CLOSED_STATES: LotKeepState[] = ['committed', 'canceled']
 		for (const state of CLOSED_STATES)
-			it(`an idle review-round throwaway of a lot ${state} → trash whole: moved into _trash/, git forgets it`, () => {
+			it(`an idle review-round throwaway of a lot ${state} holding a reviewer's edit → its node_modules parked; the worktree, the edit and its registration untouched`, () => {
 				const workspace = createReclaimWorkspace()
 				addReclaimWorktree({ workspace, name: ASKING, lot: state })
 				const round = addReclaimWorktree({ workspace, name: ROUND, merged: false })
+				writeFileSync(join(round, REVIEWER_EDIT), REVIEWER_EDIT_TEXT)
 				ageEverything({ workspace })
-				const worktreesFolder = join(workspace.workspace, '.worktrees')
 
 				expect(
 					itemOf({ plan: planReclaim(planArguments({ workspace })), name: ROUND })?.action,
-				).toBe('trash whole')
+				).toBe('park')
 				executeReclaim(
 					executeArguments({ workspace, plan: planReclaim(planArguments({ workspace })) }),
 				)
 				expect({
-					left: existsSync(round),
-					trashed: trashedNamesOf(worktreesFolder).some((name) => name.startsWith(`${ROUND}-`)),
-					listed: git({
-						root: workspace.repository,
-						args: ['worktree', 'list', '--porcelain'],
-					}).includes('round-1'),
-				}).toEqual({ left: false, trashed: true, listed: false })
+					edit: readFileSync(join(round, REVIEWER_EDIT), 'utf8'),
+					code: existsSync(join(round, 'src/asking-round-1.ts')),
+					registered: registeredWorktrees(workspace).includes(round),
+					nodeModules: existsSync(join(round, 'node_modules')),
+				}).toEqual({ edit: REVIEWER_EDIT_TEXT, code: true, registered: true, nodeModules: false })
 			})
 
 		const OPEN_ROUND_STATES: LotKeepState[] = ['working', 'failed']
 		for (const state of OPEN_ROUND_STATES)
-			it(`an idle review-round throwaway of a lot ${state} → never trashed whole`, () => {
+			it(`an idle review-round throwaway of a lot ${state} → reclaimed like any idle worktree: its node_modules parked, never kept for the round alone`, () => {
 				const workspace = createReclaimWorkspace()
 				addReclaimWorktree({ workspace, name: ASKING, lot: state })
 				addReclaimWorktree({ workspace, name: ROUND, merged: false })
@@ -468,7 +478,7 @@ describe(
 
 				expect(
 					itemOf({ plan: planReclaim(planArguments({ workspace })), name: ROUND })?.action,
-				).not.toBe('trash whole')
+				).toBe('park')
 			})
 
 		const GUARDED_ROUNDS = [
@@ -731,25 +741,6 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		})
 	})
 
-	it('a review-round throwaway to trash whole, removed between the plan and the move → not moved, its line says gone, no throw', () => {
-		const workspace = createReclaimWorkspace()
-		addReclaimWorktree({ workspace, name: ASKING, lot: 'committed' })
-		const round = addReclaimWorktree({ workspace, name: ROUND, merged: false })
-		ageEverything({ workspace })
-		let outcomes: ReclaimOutcome[] = []
-
-		expect(function reclaim() {
-			const plan = planReclaim(planArguments({ workspace }))
-			rmSync(round, { recursive: true, force: true })
-			outcomes = executeReclaim(executeArguments({ workspace, plan }))
-		}).not.toThrow()
-		expect(outcomeOf({ outcomes, name: ROUND })).toEqual({
-			worktree: expect.any(String),
-			moved: false,
-			line: expect.stringMatching(/gone/),
-		})
-	})
-
 	it('a park whose eviction finds its entry removed by another park (ENOENT) → no throw: already evicted, the park says parked, the trash item after it still moved', () => {
 		const workspace = createReclaimWorkspace()
 		addReclaimWorktree({ workspace, name: PARKABLE })
@@ -851,7 +842,7 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		})
 	})
 
-	it('a park, a trash and a trash whole in one execution → the processes listed once for the whole execution, not once per item', () => {
+	it("a park, a trash and a review throwaway's park in one execution → the processes listed once for the whole execution, not once per item", () => {
 		const workspace = createReclaimWorkspace()
 		addReclaimWorktree({ workspace, name: PARKABLE })
 		addReclaimWorktree({ workspace, name: TRASHABLE, lock: OTHER_LOCK })
@@ -859,6 +850,7 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		addReclaimWorktree({ workspace, name: ROUND, merged: false })
 		ageEverything({ workspace })
 		const plan = planReclaim(planArguments({ workspace }))
+		expect(itemOf({ plan, name: ROUND })?.action).toBe('park')
 		let listings = 0
 		function countingLister(): ProcessFolder[] {
 			listings++
@@ -878,7 +870,7 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		}).toEqual({ moved: [true, true, true], listings: 1 })
 	})
 
-	it('two review-round throwaways of committed lots in one execution → both trashed whole: the first one git forgot is no other prunable worktree for the second', () => {
+	it('two review-round throwaways of committed lots in one execution → both keep their code and stay registered, only their node_modules moved', () => {
 		const workspace = createReclaimWorkspace()
 		const otherLot = '0005-repo-other'
 		const otherRound = `${otherLot}-round-1`
@@ -887,6 +879,9 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 		addReclaimWorktree({ workspace, name: otherLot, lot: 'committed' })
 		addReclaimWorktree({ workspace, name: otherRound, merged: false })
 		ageEverything({ workspace })
+		const rounds = [ROUND, otherRound].map((name) =>
+			realpathSync(join(workspace.workspace, '.worktrees', name)),
+		)
 		let outcomes: ReclaimOutcome[] = []
 
 		expect(function reclaim() {
@@ -894,10 +889,11 @@ describe('worktree prune --reclaim: the execution', { timeout: POOL_COMMAND_CASE
 				executeArguments({ workspace, plan: planReclaim(planArguments({ workspace })) }),
 			)
 		}).not.toThrow()
-		expect([ROUND, otherRound].map((name) => outcomeOf({ outcomes, name })?.line)).toEqual([
-			expect.stringMatching(/^trashed {2}.*forgotten by git$/),
-			expect.stringMatching(/^trashed {2}.*forgotten by git$/),
-		])
+		expect({
+			moved: [ROUND, otherRound].map((name) => outcomeOf({ outcomes, name })?.moved),
+			code: rounds.map((round) => existsSync(join(round, 'src'))),
+			registered: rounds.map((round) => registeredWorktrees(workspace).includes(round)),
+		}).toEqual({ moved: [true, true], code: [true, true], registered: [true, true] })
 	})
 
 	const CHANGED_AFTER_PLAN = [
