@@ -12,7 +12,7 @@ import {
 	LOT_CLOSE_LANDED_INDENT,
 } from '../lib/handover/handover.constants.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { jsonOf } from '../lib/print/print.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { listWorktrees } from '../lib/worktree/add-worktree.ts'
@@ -38,7 +38,7 @@ export function runLotClose(params: {
 	 * Default: this machine's (`machineScratchRoots`).
 	 */
 	scratchRoots?: readonly string[]
-	/** Where lots land through pull requests; default: GitHub through `gh`, asked for each lot the close reaches. */
+	/** Where lots land through pull requests; default: the repository's host, asked for each lot the close reaches. */
 	host?: HostAdapter
 }): CommandResult {
 	const names = positionalArguments({ argv: params.argv, valueOptions: [] })
@@ -61,7 +61,7 @@ export function runLotClose(params: {
 	const settled = settleCloseTargets({
 		main,
 		targets,
-		host: params.host ?? createGithubHost(),
+		host: params.host ?? createHost(),
 		now,
 	})
 	const closed = closeHandovers({

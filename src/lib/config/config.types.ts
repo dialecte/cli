@@ -1,3 +1,4 @@
+import type { HOST_VENDOR_NAMES } from '../host/host.constants.ts'
 import type { DialecteField } from '../package-json.types.ts'
 
 export type ConfigLayer = 'project' | 'personal'
@@ -15,6 +16,15 @@ export type ConfigKeySpec = {
 	/** What is wrong with a value, undefined when it holds. */
 	problemOf: (value: unknown) => string | undefined
 }
+
+/** How a remote origin is written: an `https://` URL, the scp form `user@host:path`, or an `ssh://` URL. */
+export type RemoteForm = 'https' | 'scp' | 'ssh'
+
+/** The host a remote origin names (lower-case) and how the origin is written. */
+export type RepoRemote = { host: string; form: RemoteForm }
+
+/** A repository's key, where it comes from, and its remote's host when the origin is a real remote. */
+export type RepoKey = { key: string; from: 'remote' | 'path'; remote?: RepoRemote }
 
 export type ConfigSource =
 	| { kind: 'environment'; variable: string }
@@ -92,6 +102,8 @@ export type ProjectSettings = {
 /** The personal keys' values as their checks and `config-yml.schema.json` describe them (`readPersonalSettings`): the keys of the registry's personal layer. */
 export type PersonalSettings = {
 	editor?: string
+	/** The host vendor of a repository whose origin names none (a self-hosted host). */
+	host?: (typeof HOST_VENDOR_NAMES)[number]
 	load?: { budget?: number }
 	personProcesses?: string[]
 	forbiddenWords?: string[]

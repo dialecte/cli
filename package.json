@@ -39,7 +39,9 @@
 		"prepublishOnly": "node src/release-check.ts && npm run build",
 		"prepare": "husky",
 		"doc:generate": "node src/lib/command-map/command-reference-main.ts",
-		"doc:check": "node src/lib/command-map/command-reference-main.ts --check"
+		"doc:check": "node src/lib/command-map/command-reference-main.ts --check",
+		"host:refresh": "node src/lib/host/refresh-host-contract-main.ts",
+		"host:drift": "node src/lib/host/refresh-host-contract-main.ts --drift"
 	},
 	"dependencies": {
 		"jsonc-parser": "3.3.1",
@@ -138,6 +140,7 @@
 		"risk": {
 			"high": [
 				"src/lib/store/**",
+				"src/lib/host/**",
 				"src/lib/events/**",
 				"src/lib/cleanup/**",
 				"src/lib/review-rounds/**",

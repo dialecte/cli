@@ -36,6 +36,16 @@ export const FILE_URL_DRIVE = /^\/([a-zA-Z]:)/
 /** The scp form of a remote, `user@host:path`: the host and the path. */
 export const REMOTE_SCP_FORM = /^(?:[^@/]+@)?([^:/]+):(.*)$/
 
+/** The form of a remote by its scheme (lower-cased, without `://`); a scheme absent here gives no form. */
+export const REMOTE_FORMS_BY_SCHEME: Readonly<Record<string, 'https' | 'ssh'>> = {
+	https: 'https',
+	http: 'https',
+	'git+https': 'https',
+	ssh: 'ssh',
+	'git+ssh': 'ssh',
+	'ssh+git': 'ssh',
+}
+
 /** The platforms whose file systems compare paths whatever the case. */
 export const CASE_FOLDING_PLATFORMS: readonly NodeJS.Platform[] = ['win32', 'darwin']
 

@@ -5,9 +5,9 @@ import {
 	PASSING_STATUS_STATE,
 	PENDING_STATUS_STATES,
 	STATUS_CONTEXT_TYPE,
-} from './host.constants.ts'
+} from './github.constants.ts'
 
-import type { HostRefusal, PullRequestChecks, ReviewComment } from './host.types.ts'
+import type { HostRefusal, PullRequestChecks, ReviewComment } from '../host.types.ts'
 
 /**
  * The checks of `gh pr view --json headRefOid,statusCheckRollup`: failing when one failed, else pending when one runs,

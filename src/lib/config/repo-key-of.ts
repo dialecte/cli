@@ -4,7 +4,9 @@ import { dirname, join, posix, win32 } from 'node:path'
 import { tryReadGit } from '../git.ts'
 import { GIT_ENTRY } from '../store/store.constants.ts'
 import { CASE_FOLDING_PLATFORMS, FILE_URL_DRIVE, FILE_URL_SCHEME } from './config.constants.ts'
-import { normalizeRemote } from './normalize-remote.ts'
+import { hostAndPathOf, normalizeRemote } from './normalize-remote.ts'
+
+import type { RepoKey, RepoRemote } from './config.types.ts'
 
 /** A path as the platform compares it: lower-cased where the file system ignores case (win32, darwin). */
 export function comparablePathOf(params: { path: string; platform: NodeJS.Platform }): string {
@@ -52,23 +54,38 @@ export function normalizeRepoKey(params: { key: string; platform: NodeJS.Platfor
 	const { key, platform } = params
 	if (FILE_URL_SCHEME.test(key))
 		return comparableWrittenPathOf({ path: pathOfFileUrl({ url: key, platform }), platform })
-	const isPath = posix.isAbsolute(key) || win32.isAbsolute(key)
-	return isPath ? comparableWrittenPathOf({ path: key, platform }) : normalizeRemote(key)
+	return isPathKey(key) ? comparableWrittenPathOf({ path: key, platform }) : normalizeRemote(key)
+}
+
+/** True for a key written as a local path (absolute, posix or win32). */
+function isPathKey(key: string): boolean {
+	return posix.isAbsolute(key) || win32.isAbsolute(key)
+}
+
+/**
+ * The host of an origin `normalizeRepoKey` reads as a remote (lower-cased) and its form; undefined for a path, a
+ * `file://` URL, or a remote written in no known form.
+ */
+function remoteOf(origin: string): RepoRemote | undefined {
+	if (FILE_URL_SCHEME.test(origin) || isPathKey(origin)) return undefined
+	const { host, form } = hostAndPathOf(origin)
+	return form === undefined || host === '' ? undefined : { host: host.toLowerCase(), form }
 }
 
 /**
  * The key of the repository at `root` (D7): its `origin` remote normalized as a `repos:` key is (a local-path origin
  * compared as a path on that platform), shared by every clone and worktree; without one, the real path of its top
  * level, the nearest folder up holding `.git` (lower-cased on win32 and darwin; no process spawned for it). A real
- * path is already in the normal form of the machine, so only its case is folded.
+ * path is already in the normal form of the machine, so only its case is folded. `remote` is the origin's host and
+ * form when the origin is a real remote (never for a path or `file://` origin).
  */
-export function repoKeyOf(params: { root: string; platform: NodeJS.Platform }): {
-	key: string
-	from: 'remote' | 'path'
-} {
+export function repoKeyOf(params: { root: string; platform: NodeJS.Platform }): RepoKey {
 	const origin = tryReadGit({ root: params.root, args: ['remote', 'get-url', 'origin'] })?.trim()
-	if (origin)
-		return { key: normalizeRepoKey({ key: origin, platform: params.platform }), from: 'remote' }
+	if (origin) {
+		const key = normalizeRepoKey({ key: origin, platform: params.platform })
+		const remote = remoteOf(origin)
+		return { key, from: 'remote', ...(remote !== undefined && { remote }) }
+	}
 	const path = repositoryTopOf(realpathSync(params.root))
 	return { key: comparablePathOf({ path, platform: params.platform }), from: 'path' }
 }

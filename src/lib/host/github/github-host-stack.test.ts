@@ -6,7 +6,7 @@
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { temporaryFolder } from '../../../../test/scratch-repository.ts'
 import { createGithubHost } from './github-host.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -114,4 +114,17 @@ describe('createGithubHost: stacks', () => {
 
 		expect(read).toMatchObject({ number: 7, base: 'feat/x' })
 	})
+})
+
+describe('createGithubHost: the stack probe argv', () => {
+	it.each([{ label: 'probeStacks → gh stack --help', args: ['stack', '--help'] }])(
+		'$label',
+		({ args }) => {
+			const folder = fakeGh()
+
+			createGithubHost().probeStacks({ root: process.cwd() })
+
+			expect(argumentsOf(folder)).toEqual(args)
+		},
+	)
 })

@@ -1,0 +1,1 @@
+gh stack version 0.3.0
