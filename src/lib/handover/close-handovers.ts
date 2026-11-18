@@ -5,9 +5,10 @@
  * committed nor abandoned, the main checkout, a worktree that is no
  * registered worktree (or one already in the trash or the pool), one on another branch than the hand-over's, a
  * locked one, a mutation run from it, a process working in it, processes that cannot be listed, another
- * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, work its
- * branch or HEAD reflog reaches that the base does not hold (`unlandedWork`: a squash, a rebase or a merge of it
- * landed alike), ignored files its removal would delete that nothing else holds; nothing done for a hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
+ * hand-over of the same worktree still open, a link from outside reaching into it, a dirty worktree, a landed lot's
+ * commits made since its landing (`workSinceLanding`), commits its removal would lose (`lostWork`: only its HEAD and
+ * HEAD reflog reach them, no surviving branch, branch reflog, tag, landed tip or remote-tracking ref holds them nor
+ * their change), ignored files its removal would delete that nothing else holds; nothing done for a hand-over kept. Before each move, the lot's final record kept in `cards.log` (the hand-over's own `card` line,
  * else a catch-up one read back) and the `removing` intent, any failure keeping the worktree; after it, the
  * `removed` outcome. Every decision is taken for every argument before anything
  * moves (one worktree, whichever arguments reach it, decided and closed once), `node_modules` checked against
@@ -27,18 +28,23 @@ import {
 } from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
 import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
-import { findBaseBranchRef } from '../gate/gate-base.ts'
-import { mainCheckoutOf, readGit } from '../git.ts'
+import { isAncestorCommit, mainCheckoutOf, readCommitOrNone, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readLanded } from '../landing/landed-record.ts'
+import {
+	droppedHeldText,
+	lostWork,
+	lostWorkText,
+	workSinceLanding,
+	workSinceLandingText,
+} from '../landing/lost-work.ts'
 import {
 	landedLineOf,
 	notLandedTextOf,
 	readLotLanding,
 	recordLanded,
 } from '../landing/lot-landing.ts'
-import { unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
-import { readPackageJson } from '../package-json.ts'
+import { readIdentity } from '../store/identity.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
@@ -59,7 +65,7 @@ import {
 } from '../worktree/worktree.constants.ts'
 import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
 import {
-	CLOSE_UNLANDED_WORK,
+	CLOSE_KEPT_WORK,
 	LOT_NOT_OPEN,
 	NO_LOT_WORKTREE,
 	NOT_A_LOT,
@@ -74,7 +80,6 @@ import {
 } from './handover-store.ts'
 import { ARCHIVED_LOT_FILE, CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
-import type { BaseBranchRef } from '../gate/gate-base.types.ts'
 import type { HostAdapter } from '../host/host.types.ts'
 import type { CloseLandings } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
@@ -135,9 +140,6 @@ export function closeHandovers(params: {
 	// branch), and the check of its worktree's node_modules
 	// the lot keep rule: the repository's store read once for every argument, after the landings were settled (a
 	// merged lot holds its landed fact: committed, it keeps nothing)
-	// the base branch resolved once for the unlanded-work rule: none found, every reflog commit is unlanded work
-	const found = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
-	const baseBranch = 'refusal' in found ? undefined : found
 	const lotKeeps = lotsKeepingWorktrees({ repository: main })
 	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
 	const lotOwners = readLotOwners(main)
@@ -160,7 +162,6 @@ export function closeHandovers(params: {
 			lotKeeps,
 			registered,
 			links,
-			baseBranch,
 		})
 	})
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order;
@@ -213,7 +214,18 @@ export function closeHandovers(params: {
 					owner: lotOwners.get(key),
 				})
 				recordRemoved({ file: record.file, id: record.id, outcome: { trashed } })
-				return [key, { outcome: { handover, closed: true }, moved, nodeModules }]
+				return [
+					key,
+					{
+						outcome: {
+							handover,
+							closed: true,
+							...(decision.dropped !== undefined && { dropped: decision.dropped }),
+						},
+						moved,
+						nodeModules,
+					},
+				]
 			} catch (error) {
 				// moved already: the worktree is in the trash whatever failed after; else the move failed and it stays
 				recordRemoved({
@@ -490,13 +502,12 @@ function decideTarget(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace (`readLinkScanSet`). */
 	links: readonly FolderLink[]
-	/** The branch the repository's work is merged into (`findBaseBranchRef`); undefined when none was found. */
-	baseBranch: BaseBranchRef | undefined
 }):
 	| { kept: string }
 	| { alreadyClosed: true }
 	| {
 			worktree: ListedWorktree
+			dropped: string | undefined
 			check: NodeModulesCheck | undefined
 			checkedLockText: string | undefined
 	  } {
@@ -509,12 +520,13 @@ function decideTarget(params: {
 			return {
 				kept: `no ${WORKTREES_FOLDER}/ beside ${params.main}: the pool and the trash live there`,
 			}
-		const { worktree } = why
+		const { worktree, dropped } = why
 		if (!existsSync(join(worktree.path, 'node_modules')))
-			return { worktree, check: undefined, checkedLockText: undefined }
+			return { worktree, dropped, check: undefined, checkedLockText: undefined }
 		// the lock text read with the check: the pool entry is stamped with the key of what the check read
 		return {
 			worktree,
+			dropped,
 			checkedLockText: readPackageLockText({ worktree: worktree.path }),
 			check: checkNodeModules({ worktree: worktree.path }),
 		}
@@ -551,9 +563,7 @@ export function whyKeep(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace: one from outside the worktree reaching into it keeps it. */
 	links: readonly FolderLink[]
-	/** The branch the repository's work is merged into (`findBaseBranchRef`); undefined when none was found. */
-	baseBranch: BaseBranchRef | undefined
-}): { kept: string } | { worktree: ListedWorktree } {
+}): { kept: string } | { worktree: ListedWorktree; dropped: string | undefined } {
 	const { target } = params
 	const entry = target.entry
 	if (!entry) return { kept: 'no hand-over of that name or index' }
@@ -598,28 +608,30 @@ export function whyKeep(params: {
 	if (status.length)
 		return { kept: `dirty: ${status.length} path(s) git status lists in ${worktree.path}` }
 	const landedFact = readLanded({ lotFolder: entry.folder })
-	const unlanded =
-		params.baseBranch === undefined
-			? []
-			: unlandedWork({
-					root: worktree.path,
-					branch: entry.branch,
-					baseRef: params.baseBranch.ref,
-					worktree: worktree.path,
-					// a landed lot: every commit beyond what landed is work after the landing; a hand-over no landing
-					// proves: its branch, never deleted, keeps its commits, only what the HEAD reflog alone reaches counts
-					...(landedFact !== undefined && 'tip' in landedFact
-						? { landedTip: landedFact.tip }
-						: { keptElsewhere: true }),
-				})
-	if (unlanded.length > 0 && params.baseBranch !== undefined)
+	const landedTips = landedFact !== undefined && 'tip' in landedFact ? [landedFact.tip] : []
+	// a landed lot: is its current work landed (Q1); then, landed or not, would the removal lose a commit (Q2)
+	const since = landedTips.flatMap((landedTip) =>
+		workSinceLanding({
+			root: worktree.path,
+			branch: entry.branch,
+			cut: readIdentity({ lotFolder: entry.folder })?.base.commit ?? landedTip,
+			landedTip,
+		}),
+	)
+	if (since.length > 0)
 		return {
 			kept: fillMessage({
-				template: CLOSE_UNLANDED_WORK,
-				values: {
-					work: unlandedWorkText({ commits: unlanded, base: params.baseBranch.branch }),
-					worktree: worktree.path,
-				},
+				template: CLOSE_KEPT_WORK,
+				values: { work: workSinceLandingText(since), worktree: worktree.path },
+			}),
+		}
+	const removes = { worktrees: [worktree.path], branches: [] }
+	const lost = lostWork({ root: worktree.path, removes, landedTips })
+	if (lost.length > 0)
+		return {
+			kept: fillMessage({
+				template: CLOSE_KEPT_WORK,
+				values: { work: lostWorkText(lost), worktree: worktree.path },
 			}),
 		}
 	const { kept } = removableIgnored({
@@ -636,7 +648,41 @@ export function whyKeep(params: {
 		}
 	if (kept.length)
 		return { kept: `ignored files git worktree remove would delete: ${kept.join(', ')}` }
-	return { worktree }
+	return {
+		worktree,
+		dropped: droppedFromBranch({
+			root: worktree.path,
+			worktree: worktree.path,
+			branch: entry.branch,
+			landedTips,
+		}),
+	}
+}
+
+/**
+ * The commits the branch's reflog alone holds once its worktree goes (reset or rebased away from the branch, none of
+ * them on its tip), said as information: their line, or undefined when there is none. Git expires them with the
+ * reflog, as it would have with the worktree's HEAD reflog.
+ */
+function droppedFromBranch(params: {
+	root: string
+	worktree: string
+	branch: string
+	landedTips: string[]
+}): string | undefined {
+	const { root, branch } = params
+	const tip = readCommitOrNone({ root, ref: `refs/heads/${branch}` })
+	const dropped = lostWork({
+		root,
+		removes: { worktrees: [params.worktree], branches: [branch] },
+		landedTips: params.landedTips,
+	})
+		.map((lost) => lost.commit)
+		.filter(
+			(commit) =>
+				tip === undefined || !isAncestorCommit({ root, ancestor: commit, descendant: tip }),
+		)
+	return dropped.length === 0 ? undefined : droppedHeldText(dropped)
 }
 
 /** Another hand-over registered for the same worktree (by real path) that is neither committed nor abandoned. */

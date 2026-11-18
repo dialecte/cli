@@ -3,6 +3,7 @@
  * status): the lot's records written by the store's own writer, its worktree, branch and commits real, origin's main
  * moved by real merges from another clone (`mergeOnOrigin`), the host faked (`landingHostOf`).
  */
+import { spawnSync } from 'node:child_process'
 import {
 	appendFileSync,
 	existsSync,
@@ -14,12 +15,15 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 
+import { registeredEntryOf } from '../src/lib/handover/handover-store-read.ts'
 import {
 	handoverStoreOf,
 	recordHandoverClosed,
 	recordHandoverState,
 	registerHandover,
 } from '../src/lib/handover/handover-store.ts'
+import { LANDED_SCHEMA } from '../src/lib/landing/landed-record.constants.ts'
+import { writeLanded } from '../src/lib/landing/landed-record.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
 import {
 	LANDING_LOT,
@@ -27,6 +31,7 @@ import {
 	LANDING_LOT_FILE,
 	LANDING_LOT_TEXT,
 	LANDING_NOW,
+	MISSING_BASE_BRANCH,
 	OWN_DECLARATION,
 } from './landing-lot.constants.ts'
 import { commitIn, headOf } from './landing-repository.ts'
@@ -255,4 +260,43 @@ export function lotHeadOf(lot: LandingLot): string {
 export function archivedDeclarationOf(lot: LandingLot): string | undefined {
 	const path = join(lot.lotFolder, 'lot.json')
 	return existsSync(path) ? readFileSync(path, 'utf8') : undefined
+}
+
+/** The lot's landed fact written as a verb that acts writes it: landed on main at `tip`, by ancestry. */
+export function writeLandedFact(params: { lot: LandingLot; tip: string }): void {
+	writeLanded({
+		lotFolder: params.lot.lotFolder,
+		fact: {
+			schema: LANDED_SCHEMA,
+			how: 'ancestor',
+			tip: params.tip,
+			base: 'main',
+			at: LANDING_NOW.toISOString(),
+		},
+	})
+}
+
+/** The main checkout's package.json naming a base branch that exists nowhere: no base branch resolves. */
+export function configureMissingBase(lot: LandingLot): void {
+	writeFileSync(
+		join(lot.workspace.repository, 'package.json'),
+		`${JSON.stringify({ name: 'scratch', dialecte: { baseBranch: MISSING_BASE_BRANCH } })}\n`,
+	)
+}
+
+/** The state of the registry entry registering the lot's folder; undefined when none does. */
+export function lotEntryStateOf(lot: LandingLot): string | undefined {
+	return registeredEntryOf({
+		store: handoverStoreOf(lot.workspace.repository),
+		folder: lot.lotFolder,
+	})?.state
+}
+
+/** The commit the lot's branch names; undefined once the branch is gone. */
+export function lotBranchTipOf(lot: LandingLot): string | undefined {
+	const read = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${lot.branch}`], {
+		cwd: lot.workspace.repository,
+		encoding: 'utf8',
+	})
+	return read.status === 0 ? read.stdout.trim() : undefined
 }

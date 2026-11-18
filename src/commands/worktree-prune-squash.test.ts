@@ -2,9 +2,9 @@
  * `worktree prune` reads the landing state from git alone (FIX-ci-loop design, sections 1, 2 and 5): a squash-merged
  * lot is removable, a squash main edited again is named as not provable offline, work after the landing keeps the
  * worktree, a lot the registry records committed goes only once its work is in main, and a review throwaway goes with
- * its landed lot, through the same unlanded-work check, and stays with an unlanded one.
+ * its landed lot, through the same landing and loss checks, and stays with an unlanded one.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import {
@@ -20,8 +20,9 @@ import {
 	pruneArgumentsOf,
 	pruneFatesOf,
 	registerLotEntry,
+	writeLandedFact,
 } from '../../test/landing-lot.ts'
-import { editOnOrigin, mergeOnOrigin } from '../../test/landing-repository.ts'
+import { commitDetached, editOnOrigin, mergeOnOrigin } from '../../test/landing-repository.ts'
 import { REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
@@ -45,9 +46,14 @@ type PruneRow = {
 	landed: boolean
 }
 
-/** The work line of a branch holding `commit` that main does not. */
-function workLine(params: { branch: string; commit: string }): string {
-	return `${params.branch}: 1 commit(s) of work not in main: ${params.commit.slice(0, SHORT_SHA_LENGTH)}`
+/** The line of a lot's branch holding `commit` made since its landing. */
+function sinceLine(params: { branch: string; commit: string }): string {
+	return `${params.branch}: 1 commit(s) made since its landing: ${params.commit.slice(0, SHORT_SHA_LENGTH)}`
+}
+
+/** The line of a branch whose work main does not hold: not landed. */
+function notLandedLine(branch: string): string {
+	return `${branch}: not landed: its work is not in main`
 }
 
 const PRUNE_ROWS: PruneRow[] = [
@@ -80,7 +86,7 @@ const PRUNE_ROWS: PruneRow[] = [
 			commitAfterLanding({ lot, file: AFTER_LANDING_FILE })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => workLine({ branch: lot.branch, commit: lotHeadOf(lot) }),
+		fate: (lot) => sinceLine({ branch: lot.branch, commit: lotHeadOf(lot) }),
 		landed: false,
 	},
 	{
@@ -100,23 +106,22 @@ const PRUNE_ROWS: PruneRow[] = [
 		landed: false,
 	},
 	{
-		title:
-			'a lot the registry records committed, its work not on main → kept, its work named (the unlanded-work check)',
+		title: 'a lot the registry records committed, its work not on main → kept, not landed',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => workLine({ branch: lot.branch, commit: lot.tip }),
+		fate: (lot) => notLandedLine(lot.branch),
 		landed: false,
 	},
 	{
 		title:
-			'a -round-<n> throwaway of a lot the registry records committed, its work not on main → kept, its work named, never removed without the check',
+			'a -round-<n> throwaway of a lot the registry records committed, its work not on main → kept, not landed, never removed without the check',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: addRoundOf({ lot, round: 2 }) }
 		},
-		fate: (lot) => workLine({ branch: `${lot.branch}-round-2`, commit: lot.tip }),
+		fate: (lot) => notLandedLine(`${lot.branch}-round-2`),
 		landed: false,
 	},
 	{
@@ -146,4 +151,28 @@ describe('worktree prune: the landing state', { timeout: STORE_CASE_TIMEOUT }, (
 				})),
 			).resolves.toEqual({ fate: row.fate(lot), landed: row.landed })
 		})
+})
+
+describe('worktree prune: a worktree whose folder is gone', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('18. a landed lot whose worktree folder is gone, its HEAD reflog holding a detached commit → kept, the commit named, git worktree prune not run', async () => {
+		const lot = landingLotOf()
+		writeLandedFact({ lot, tip: lot.tip })
+		const detached = commitDetached({
+			worktree: lot.worktree,
+			files: { 'src/detached.ts': 'export const detached = 1\n' },
+			reattach: true,
+		})
+		rmSync(lot.worktree, { recursive: true, force: true })
+		const planned = runWorktreePrune(pruneArgumentsOf(lot))
+
+		await expect(
+			pruneFatesOf(planned).then(async (fates) => ({
+				fate: fates[basename(lot.worktree)],
+				pruned: (await planned).output.includes('git worktree prune'),
+			})),
+		).resolves.toEqual({
+			fate: `${lot.branch}: 1 commit(s) its removal would lose: ${detached.slice(0, SHORT_SHA_LENGTH)}`,
+			pruned: false,
+		})
+	})
 })

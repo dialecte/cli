@@ -12,6 +12,8 @@ import {
 	mergeOnOrigin,
 	pullRequestOf,
 	revertOnOrigin,
+	reuseBranchName,
+	commitEarlierLot,
 	strayCommitOf,
 	amendLot,
 } from '../../../test/landing-repository.ts'
@@ -33,6 +35,8 @@ type Arranged = {
 	/** The branch and base ref the query names, when not the lot's and origin's main. */
 	branch?: string
 	baseRef?: string
+	/** When the lot was created (its identity's `created`), when the row gives it. */
+	since?: string
 }
 
 type Row = {
@@ -278,6 +282,55 @@ const HOST_ROWS: Row[] = [
 		}),
 	},
 	{
+		title:
+			'a branch name reused by a new lot, an older merged pull request of that name whose head the branch held before the lot was created -> not this lot s: unlanded',
+		arrange: (repository) => {
+			const earlier = reuseBranchName({
+				worktree: repository.worktree,
+				cut: repository.cut,
+				at: '2026-01-01T00:00:00Z',
+			})
+			commitIn({
+				root: repository.worktree,
+				files: { 'src/new.ts': 'export const fresh = 1\n' },
+				message: 'feat(x): the new lot',
+			})
+			return {
+				since: '2026-06-01T00:00:00.000Z',
+				host: landingHostOf({
+					byBranch: {
+						[repository.branch]: pullRequestOf({ number: 4, state: 'merged', head: earlier }),
+					},
+				}).host,
+			}
+		},
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
+		title:
+			'a branch name reused by a new lot that keeps the old tip and builds on it, an older merged pull request of that name whose head the branch held before the lot was created and its new tip holds -> not this lot s: unlanded',
+		arrange: (repository) => {
+			const earlier = commitEarlierLot({
+				worktree: repository.worktree,
+				at: '2026-01-01T00:00:00Z',
+			})
+			commitIn({
+				root: repository.worktree,
+				files: { 'src/new.ts': 'export const fresh = 1\n' },
+				message: 'feat(x): the new lot',
+			})
+			return {
+				since: '2026-06-01T00:00:00.000Z',
+				host: landingHostOf({
+					byBranch: {
+						[repository.branch]: pullRequestOf({ number: 4, state: 'merged', head: earlier }),
+					},
+				}).host,
+			}
+		},
+		expected: () => ({ kind: 'unlanded' }),
+	},
+	{
 		title: 'a queued pull request, its work not in the base -> unlanded with the pull request',
 		arrange: (repository) => ({
 			pullNumber: 7,
@@ -312,6 +365,7 @@ function arrangeRow(row: Row): { query: LandingQuery; expected: LandingState } {
 			cut: repository.cut,
 			pullNumber: arranged.pullNumber,
 			host: arranged.host,
+			...(arranged.since !== undefined && { since: arranged.since }),
 		},
 		expected: row.expected({ repository, tip: arranged.tip ?? tipOf(repository) }),
 	}

@@ -1,7 +1,8 @@
-/** `lot close` holds a worktree's HEAD reflog against the shared resolver's base branch (origin/HEAD, main, master, config). */
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
+/** `lot close` holds a worktree's HEAD reflog against the shared resolver's base branch (origin/HEAD, main, master, config). */
+import { recordingHost } from '../../test/land-lot.ts'
 import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { makeDevelopOriginDefault } from '../../test/rule-gaps-base-branch.ts'
 import {
@@ -74,6 +75,7 @@ function createScenarioWithDetachedCommit(): Scenario & { detached: string } {
 function close(scenario: Scenario) {
 	const { spawner } = createRecordingSpawner()
 	return runLotClose({
+		host: recordingHost().host,
 		cwd: scenario.repository,
 		argv: [scenario.name],
 		now: NOW,
@@ -91,13 +93,15 @@ describe(
 			vi.unstubAllEnvs()
 		})
 
-		it('origin/HEAD names develop, a detached commit held by no branch → kept, the work named against develop, not main, nothing moved', () => {
+		it('origin/HEAD names develop, a detached commit held by no branch → kept, the commit its removal would lose named, nothing moved', () => {
 			const scenario = createScenarioWithDetachedCommit()
 
 			const outcome = close(scenario)
 
 			expect(outcome.exitCode).toBe(1)
-			expect(outcome.output).toContain('1 commit(s) of work not in develop: ')
+			expect(outcome.output).toContain(
+				`1 commit(s) its removal would lose: ${scenario.detached.slice(0, 12)}`,
+			)
 			expect(existsSync(scenario.worktree)).toBe(true)
 			expect(trashedNamesOf(scenario.worktreesFolder)).toEqual([])
 		})

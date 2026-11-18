@@ -1,13 +1,14 @@
+import { existsSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { createBriefWorkspace } from '../../test/brief-workspace.ts'
 /**
  * `dialecte lot close`: the keep rule of the lot store (33S section 11). A worktree that a lot of the repository's
  * store names while the lot is not `committed` nor `canceled` is kept, with the reason `lot <full name> <state>`,
  * checked before the other keep rules, though the hand-over registered for that worktree is committed; nothing moves.
  * A lot `canceled` keeps nothing: a keep rule only ever keeps.
  */
-import { existsSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
-
-import { createBriefWorkspace } from '../../test/brief-workspace.ts'
+import { recordingHost } from '../../test/land-lot.ts'
 import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import { KEEP_NOW } from '../../test/lot-keep-workspace.constants.ts'
 import { addLotWorktree } from '../../test/lot-keep-workspace.ts'
@@ -56,6 +57,7 @@ function registerCommitted(params: { workspace: BriefWorkspace; lot: LotWorktree
 function closing(params: { workspace: BriefWorkspace; names: string[] }) {
 	const { spawner, calls } = createRecordingSpawner()
 	const result = runLotClose({
+		host: recordingHost().host,
 		cwd: params.workspace.repository,
 		argv: [...params.names, '--json'],
 		now: KEEP_NOW,

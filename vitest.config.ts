@@ -20,7 +20,8 @@ export default defineConfig({
 		hookTimeout: 60_000,
 		include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
 		// the suite may run inside a commit hook: its git commands must never reach the committed repository
-		setupFiles: ['./test/git-environment.setup.ts'],
+		// and no test runs the real gh: a refusing one is first on the PATH (a test that needs one puts its fake in front)
+		setupFiles: ['./test/git-environment.setup.ts', './test/suite-guard/refusing-gh.setup.ts'],
 		// one temporary folder for the whole run (TMPDIR of the workers and their children): any entry left fails it
 		globalSetup: ['./test/suite-guard/temp-folder-guard.setup.ts'],
 	},

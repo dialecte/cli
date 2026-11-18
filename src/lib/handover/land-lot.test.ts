@@ -321,7 +321,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			landed: {
 				exitCode: 0,
 				lines: expect.arrayContaining([
-					expect.stringMatching(/1 commit\(s\) of work not in main: .*they land in a new lot/),
+					expect.stringMatching(/1 commit\(s\) made since its landing: .*they land in a new lot/),
 				]),
 			},
 			fact: { how: 'host', tip: mergedHead, pull: { number: 7 } },

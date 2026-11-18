@@ -78,11 +78,17 @@ export function runLotClose(params: {
 	const outcomes = results.map((result) => result.outcome)
 	const exitCode = outcomes.every((outcome) => 'closed' in outcome) ? 0 : 1
 	if (hasFlag(params.argv, 'json')) return { exitCode, output: jsonOf(outcomes, 2) }
-	// each line names what moved and where node_modules went; a landed lot's line under it, indented
+	// each line names what moved and where node_modules went; a landed lot's line under it, indented, then the
+	// commits only its branch's reflog holds now
 	const lines = results.flatMap(function closeLines(result) {
-		const { landed } = result.outcome
-		const line = closeLineOf({ result })
-		return landed === undefined ? [line] : [line, `${LOT_CLOSE_LANDED_INDENT}${landed}`]
+		const { outcome } = result
+		const dropped = 'closed' in outcome ? outcome.dropped : undefined
+		return [
+			closeLineOf({ result }),
+			...[outcome.landed, dropped].flatMap((line) =>
+				line === undefined ? [] : [`${LOT_CLOSE_LANDED_INDENT}${line}`],
+			),
+		]
 	})
 	const trash = join(dirname(main), WORKTREES_FOLDER, TRASH_FOLDER)
 	if (outcomes.some((outcome) => 'closed' in outcome && !outcome.already))

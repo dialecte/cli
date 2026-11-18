@@ -105,7 +105,7 @@ describe('the command map', () => {
 			text: 'a lot (its id, name or index), with no registry entry needed',
 		},
 		{ command: 'lot', verb: 'close', text: 'a squash read offline' },
-		{ command: 'lot', verb: 'close', text: '<n> commit(s) of work not in <base>: <commits>' },
+		{ command: 'lot', verb: 'close', text: '<n> commit(s) its removal would lose: <commits>' },
 		{
 			command: 'lot',
 			verb: 'land',

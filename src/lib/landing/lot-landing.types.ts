@@ -41,10 +41,13 @@ export type CloseLandings = {
 
 /**
  * A store lot's worktree as `worktree prune` reads its landing, git alone: whether the lot landed (and the tip that
- * landed), or why it stays beyond its lot keep reason (work after a landing, a landing git cannot prove).
+ * landed), or why it stays beyond its lot keep reason (work after a landing, a landing git cannot prove); its branch
+ * and the commit it was cut from, for the keep rules of a removal.
  */
 export type PruneLotLanding = {
 	lot: string
+	branch: string
+	cut: string
 	landed: boolean
 	/** A lot no longer at work (committed in the registry, or canceled): its throwaways go through the work check. */
 	closed?: boolean
