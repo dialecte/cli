@@ -116,7 +116,7 @@ function answerWithoutCache(files: Record<string, string>) {
 
 describe('indexSourceFiles', () => {
 	it(
-		'a first run in a git work tree → every file parsed, the cache written with schema 1 and the hash of each file',
+		'a first run in a git work tree → every file parsed, the cache written with schema 2 and the hash of each file',
 		() => {
 			const root = createScratchRepository(THREE_FILES)
 			const files = Object.keys(THREE_FILES)
@@ -127,7 +127,7 @@ describe('indexSourceFiles', () => {
 			expect(sorted(parsed)).toEqual(files)
 			expect(pathsOf(answer)).toEqual([['src/a.ts#alpha'], ['src/b.ts#beta'], ['src/c.ts#gamma']])
 			const cache = readCache(root)
-			expect(cache.schema).toBe(1)
+			expect(cache.schema).toBe(2)
 			expect(Object.keys(cache.files).sort()).toEqual(files)
 			expect(cache.files['src/a.ts']?.hash).toBe(sha256Of(root, 'src/a.ts'))
 			expect(cache.files['src/b.ts']?.hash).toBe(sha256Of(root, 'src/b.ts'))
@@ -137,7 +137,7 @@ describe('indexSourceFiles', () => {
 	)
 
 	it(
-		'a second run on the same tree → no file parsed, the cache neither rewritten nor replaced, the same answer',
+		'a second run on the same tree → no file parsed, the cache neither rewritten nor replaced, the same answer, its facts included',
 		() => {
 			const root = createScratchRepository(THREE_FILES)
 			const files = Object.keys(THREE_FILES)
@@ -152,6 +152,11 @@ describe('indexSourceFiles', () => {
 
 			expect(parsed).toEqual([])
 			expect(second).toEqual(first)
+			expect(second.map((file) => file.facts?.functions.map((found) => found.name))).toEqual([
+				['alpha'],
+				['beta'],
+				['gamma'],
+			])
 			expect(readFileSync(cacheFile, 'utf8')).toBe(contentBefore)
 			expect(statSync(cacheFile).mtimeMs).toBe(statBefore.mtimeMs)
 			expect(statSync(cacheFile).ino).toBe(statBefore.ino)
@@ -313,7 +318,7 @@ describe('indexSourceFiles', () => {
 		{ name: 'another schema', prepare: prepareOtherSchema },
 		{ name: 'not JSON', prepare: prepareNotJson },
 	])(
-		'a cache with $name → rebuilt: every file parsed, the answer of a run without a cache, schema 1 written',
+		'a cache with $name → rebuilt: every file parsed, the answer of a run without a cache, schema 2 written',
 		({ prepare }) => {
 			const root = createScratchRepository(THREE_FILES)
 			const files = Object.keys(THREE_FILES)
@@ -324,7 +329,7 @@ describe('indexSourceFiles', () => {
 
 			expect(sorted(parsed)).toEqual(files)
 			expect(answer).toEqual(answerWithoutCache(THREE_FILES))
-			expect(readCache(root).schema).toBe(1)
+			expect(readCache(root).schema).toBe(2)
 			expect(Object.keys(readCache(root).files).sort()).toEqual(files)
 		},
 		SCRATCH_GIT_CASE_TIMEOUT,
@@ -348,7 +353,7 @@ describe('indexSourceFiles', () => {
 	)
 
 	it(
-		'a cache of the current cli version but the next schema, every hash right → rebuilt: every file parsed, schema 1 written',
+		'a cache of the current cli version but the next schema, every hash right → rebuilt: every file parsed, schema 2 written',
 		() => {
 			const root = createScratchRepository(THREE_FILES)
 			const files = Object.keys(THREE_FILES)
@@ -431,7 +436,7 @@ describe('indexSourceFiles', () => {
 
 			expect(sorted(parsed)).toEqual(files)
 			expect(existsSync(cacheFileOf(second))).toBe(true)
-			expect(readCache(second).schema).toBe(1)
+			expect(readCache(second).schema).toBe(2)
 		},
 		SCRATCH_GIT_CASE_TIMEOUT,
 	)

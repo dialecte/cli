@@ -6,6 +6,15 @@
 import { SIGNATURE_PRINTER } from '../discover.constants.ts'
 import { parseIntentText } from '../discover.ts'
 import { firstSyntaxErrorOf } from '../first-syntax-error.ts'
+import {
+	callsOf,
+	importedNamesOf,
+	importsOf,
+	readKeysOf,
+	stringListsOf,
+	tokenHashOf,
+	typesOf,
+} from './read-keys.ts'
 import { firstSentence } from './short-summary.ts'
 import { INTENT_TAG, NOT_PARSED_NOTE } from './source-functions.constants.ts'
 
@@ -14,6 +23,8 @@ import ts from 'typescript'
 import type { ApiSourceFunction } from './api-json.types.ts'
 import type {
 	ExportedSourceFunction,
+	FileFacts,
+	FunctionFacts,
 	ParsedSourceFile,
 	PrintedToken,
 	SourceFunctionNode,
@@ -34,6 +45,49 @@ export function parseSourceFile(params: { file: string; text: string }): ParsedS
 		entries: exportedFunctionsOf(source).map(function entryOfFunction(found) {
 			return sourceEntry({ file, source, found })
 		}),
+		facts: factsOf(source),
+	}
+}
+
+/**
+ * What the base-aware rules read of `source`, free of its path: every named top-level function (exported or not)
+ * with its read keys, calls and hashed tokens; the imports; the declared types.
+ */
+function factsOf(source: ts.SourceFile): FileFacts {
+	const imports = importsOf(source)
+	const imported = importedNamesOf(imports)
+	const lists = stringListsOf(source)
+	const listed = locallyExportedNames(source)
+	return {
+		functions: topLevelFunctionsOf(source).map(function functionFactsOf(found): FunctionFacts {
+			const { node } = found
+			const signature = tokenHashOf({
+				texts: [
+					...(node.typeParameters ?? []).map((part) => part.getText(source)),
+					...node.parameters.map((part) => part.getText(source)),
+					...(node.type ? [node.type.getText(source)] : []),
+				],
+			})
+			const body = tokenHashOf({ texts: node.body ? [node.body.getText(source)] : [] })
+			const summary = summaryOf(
+				ts.getJSDocCommentsAndTags(found.documented).filter(ts.isJSDoc).at(-1),
+			)
+			return {
+				name: found.name,
+				line: source.getLineAndCharacterOfPosition(found.declaration.getStart(source)).line + 1,
+				exportedAs: [
+					...new Set([...(found.exported ? [found.name] : []), ...(listed.get(found.name) ?? [])]),
+				],
+				...(summary !== undefined && { summary }),
+				signatureHash: signature.hash,
+				bodyHash: body.hash,
+				bodyTokenCount: body.count,
+				readKeys: readKeysOf({ node, lists }),
+				calls: callsOf({ node, imported }),
+			}
+		}),
+		imports,
+		types: typesOf(source),
 	}
 }
 
