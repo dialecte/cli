@@ -17,6 +17,7 @@ import {
 	REFUSING_GH_TEXT,
 	REFUSING_GH_VARIABLE,
 	SUITE_TEST_VARIABLE,
+	VITEST_WORKER_STATE,
 } from './refusing-gh.constants.ts'
 import { takeRefusingGhCalls } from './refusing-gh.ts'
 
@@ -29,17 +30,21 @@ process.env[REFUSING_GH_CALLS_VARIABLE] = join(
 	`${REFUSING_GH_CALLS_PREFIX}${randomUUID()}`,
 )
 
-beforeEach(function nameTheTest() {
-	process.env[SUITE_TEST_VARIABLE] = expect.getState().currentTestName ?? ''
-})
+// the hooks need vitest's runner: a script that imports the setup files to check their side effects (the git
+// environment test does) runs outside any worker, where there is no test to fail, and must not throw at import
+if (VITEST_WORKER_STATE in globalThis) {
+	beforeEach(function nameTheTest() {
+		process.env[SUITE_TEST_VARIABLE] = expect.getState().currentTestName ?? ''
+	})
 
-afterEach(function failOnGh() {
-	const calls = takeRefusingGhCalls()
-	if (calls.length > 0)
-		throw new Error(
-			fillMessage({
-				template: REFUSING_GH_FAILURE,
-				values: { test: calls[0] ?? '', count: String(calls.length) },
-			}),
-		)
-})
+	afterEach(function failOnGh() {
+		const calls = takeRefusingGhCalls()
+		if (calls.length > 0)
+			throw new Error(
+				fillMessage({
+					template: REFUSING_GH_FAILURE,
+					values: { test: calls[0] ?? '', count: String(calls.length) },
+				}),
+			)
+	})
+}

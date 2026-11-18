@@ -22,3 +22,6 @@ export const REFUSING_GH_CALLS_PREFIX = 'refusing-gh-calls-'
 /** The failure of a test that ran the refusing `gh`: `{test}` its name, `{count}` the calls. */
 export const REFUSING_GH_FAILURE =
 	'{test} ran gh {count} time(s): the suite never runs the real gh, put a fake gh first on the PATH, or pass a fake host'
+
+/** The global vitest sets in its workers only (its worker state): present, the suite's per-test hooks can register. */
+export const VITEST_WORKER_STATE = '__vitest_worker__'
