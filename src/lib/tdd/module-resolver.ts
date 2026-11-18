@@ -87,33 +87,57 @@ export function createModuleResolver(params: {
 				path: resolve(dirname(absoluteFrom), specifier),
 				isFile: isFileOf,
 			})
-		for (const options of compilerOptions) {
-			const resolved = ts.resolveModuleName(
-				specifier,
-				absoluteFrom,
-				options,
-				moduleHost,
-			).resolvedModule
-			if (resolved && !resolved.isExternalLibraryImport) {
-				const local = localOrUnresolved({ root, path: resolved.resolvedFileName, isFile: isFileOf })
-				if (local.kind === 'local') return local
-			}
-		}
 		const matching = aliasesOfSpecifier(specifier)
-		for (const alias of matching) {
-			const local = localOrUnresolved({
-				root,
-				path: join(alias.replacement, specifier.slice(alias.find.length)),
-				isFile: isFileOf,
-			})
-			if (local.kind === 'local') return local
-		}
+		const mapped = resolveMapped({
+			root,
+			specifier,
+			absoluteFrom,
+			compilerOptions,
+			aliases: matching,
+			isFile: isFileOf,
+			moduleHost,
+		})
+		if (mapped !== undefined) return mapped
 		const looksLocal =
 			LOCAL_SPECIFIER_PATTERN.test(specifier) ||
 			pathPrefixes.some((prefix) => prefix && specifier.startsWith(prefix)) ||
 			matching.length > 0
 		return looksLocal ? { kind: 'unresolved' } : { kind: 'package' }
 	}
+}
+
+/**
+ * The local file a mapped specifier names: through the tsconfig `paths` of `compilerOptions`, then through the Vite
+ * `aliases` it starts with, each checked against the files `isFile` sees; undefined when none names one.
+ */
+function resolveMapped(params: {
+	root: string
+	specifier: string
+	absoluteFrom: string
+	compilerOptions: readonly ts.CompilerOptions[]
+	aliases: readonly ModuleAlias[]
+	isFile: (path: string) => boolean
+	moduleHost: ts.ModuleResolutionHost
+}): ModuleResolution | undefined {
+	const { root, specifier, isFile } = params
+	for (const options of params.compilerOptions) {
+		const resolved = ts.resolveModuleName(
+			specifier,
+			params.absoluteFrom,
+			options,
+			params.moduleHost,
+		).resolvedModule
+		if (resolved && !resolved.isExternalLibraryImport) {
+			const local = localOrUnresolved({ root, path: resolved.resolvedFileName, isFile })
+			if (local.kind === 'local') return local
+		}
+	}
+	for (const alias of params.aliases) {
+		const path = join(alias.replacement, specifier.slice(alias.find.length))
+		const local = localOrUnresolved({ root, path, isFile })
+		if (local.kind === 'local') return local
+	}
+	return undefined
 }
 
 /** The compiler options of every tsconfig of the root that maps `paths`. */

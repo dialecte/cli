@@ -27,3 +27,27 @@ export const ROUTE_SEPARATOR = '.'
 
 /** How many last segments of a route a page names it by: one alone (`of`) names too much. */
 export const ROUTE_NAMING_SEGMENTS = 2
+
+/** A doc page of a package: a Markdown file under `doc/`, or the README. */
+export const DOC_PAGE_PATTERN = /^(?:doc\/.+\.md|README\.md)$/
+
+/** The record of the last base-aware run on the change, in the worktree's git folder. */
+export const QUALITY_RECORD_FILE = 'dialecte-quality.json'
+
+/** The schema of `dialecte-quality.json`. */
+export const QUALITY_RECORD_SCHEMA = 1
+
+/** The findings of the base-aware rules, as `rules` prints them. */
+export const QUALITY_MESSAGES = {
+	duplicateRead: '`{name}` reads like `{existing}` ({at}): reuse it or say why',
+	sharedExport: '`{name}` ({folder}) is used by {importers}: {changes}',
+	docs: 'public `{route}` {change}: touch the doc page naming it ({pages}) or say why',
+	noPage: 'no page names it yet',
+} as const
+
+/** The line saying where the base-aware rules stand: run since a base, not run in a clone, or no base. */
+export const QUALITY_LINES = {
+	since: 'quality: since {short} ({source})',
+	noLot: 'quality: not run (no lot)',
+	noBase: 'quality: no base (rules --base <ref>, or in a lot)',
+} as const

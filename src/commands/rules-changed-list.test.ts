@@ -80,6 +80,7 @@ describe(
 
 			expect(result.exitCode).toBe(1)
 			expect(result.output.split('\n')).toEqual([
+				'quality: not run (no lot)',
 				'src/broken.ts:1:14  error  function-as-const  `read` is a function: declare it with `function read`',
 				'rules: 2 file(s), 1 error(s), 0 warning(s)',
 			])
@@ -107,7 +108,7 @@ describe(
 
 			expect(runRules({ cwd: root, argv: [], environment })).toEqual({
 				exitCode: 0,
-				output: 'rules: no changed file to check',
+				output: 'quality: not run (no lot)\nrules: no changed file to check',
 			})
 		})
 
@@ -117,7 +118,7 @@ describe(
 
 			expect(runRules({ cwd: root, argv: [], environment })).toEqual({
 				exitCode: 0,
-				output: 'rules: no changed file to check',
+				output: 'quality: not run (no lot)\nrules: no changed file to check',
 			})
 		})
 

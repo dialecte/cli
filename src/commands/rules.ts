@@ -23,8 +23,8 @@
 import { existsSync } from 'node:fs'
 
 import { resultOf } from '../lib/command-result.ts'
-import { hasFlag } from '../lib/config.ts'
-import { readEmptyTree } from '../lib/gate/gate-base.ts'
+import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
+import { readEmptyTree, resolveFlagBase } from '../lib/gate/gate-base.ts'
 import { GATE_SCOPE_VARIABLES } from '../lib/gate/selection.constants.ts'
 import {
 	readChangedPaths,
@@ -32,6 +32,8 @@ import {
 	writeSelectionFile,
 } from '../lib/gate/selection.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
+import { QUALITY_LINES } from '../lib/quality/quality.constants.ts'
+import { resolveRulesBaseSource } from '../lib/rules-base.ts'
 import {
 	RULES_NOTHING_LINE,
 	RULES_SELECTION_ID,
@@ -41,8 +43,11 @@ import { checkRules, renderRuleFinding } from '../lib/rules/check-rules.ts'
 import { NOT_JUDGED_LINE } from '../lib/rules/dialecte-change.constants.ts'
 import { NO_FORBIDDEN_WORDS_LINE } from '../lib/rules/forbidden-words.constants.ts'
 import { readBaseWithLine } from '../lib/rules/lot-base.ts'
+import { shortCommitOf } from '../lib/tdd/tdd-base.ts'
+import { BASE_OPTION, RULES_BASE_WITH_FILES } from './rules.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
+import type { QualityBase } from '../lib/quality/quality.types.ts'
 import type { RulesCheck } from '../lib/rules/check-rules.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -58,15 +63,45 @@ export function runRules(params: {
 	/** `DIALECTE_GATE_CHANGED` and the user's config folders are read from it. Default: the process's environment. */
 	environment?: Readonly<NodeJS.ProcessEnv>
 }): CommandResult {
-	const { cwd, argv } = params
 	const environment = params.environment ?? process.env
-	const json = hasFlag(argv, 'json')
-	const givenFiles = argv.filter((argument) => !argument.startsWith('--'))
-	const changedList = givenFiles.length ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
-	// the gate's base always wins; without it, the base of the order every caller shares, with its line
-	const gateBase = environment[GATE_SCOPE_VARIABLES.base] || undefined
+	const run = checkOfRun({ cwd: params.cwd, argv: params.argv, environment })
+	if ('refusal' in run) return resultOf({ exitCode: 2, lines: [run.refusal] })
+	const { check } = run
+	if (run.scoped) writeScopedSelection({ environment, check })
+	if (hasFlag(params.argv, 'json'))
+		return { exitCode: check.errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
+	return textOf(check)
+}
+
+/**
+ * The rules run `argv` asks for in `cwd`, or why it refuses: `--base <ref>` (its merge-base, else the commit it names)
+ * judges the change since it, never files given with it; else the gate's base, else the order every caller shares,
+ * each with its line, and the base the base-aware rules judge against with theirs.
+ */
+function checkOfRun(params: {
+	cwd: string
+	argv: string[]
+	environment: Readonly<NodeJS.ProcessEnv>
+}): { check: RulesCheck; scoped: boolean } | { refusal: string } {
+	const { cwd, argv, environment } = params
+	const givenFiles = positionalArguments({ argv, valueOptions: [BASE_OPTION] })
+	const flagRef = getArg([...argv], BASE_OPTION)
+	// `--base <ref>` judges the change since the merge-base of ref and HEAD: never a list of files given with it
+	if (flagRef !== undefined && givenFiles.length) return { refusal: RULES_BASE_WITH_FILES }
+	const flag =
+		flagRef === undefined ? undefined : resolveFlagBase({ root: cwd, ref: flagRef, head: 'HEAD' })
+	if (flag !== undefined && 'refusal' in flag) return { refusal: flag.refusal }
+	const changedList =
+		givenFiles.length || flag !== undefined ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
+	// the flag, else the gate's base, wins; without either, the base of the order every caller shares, with its line
+	const gateBase = flag?.commit ?? (environment[GATE_SCOPE_VARIABLES.base] || undefined)
 	const ownBase = gateBase === undefined ? readBaseWithLine({ root: cwd }) : undefined
 	const base = gateBase ?? (ownBase !== undefined && 'base' in ownBase ? ownBase.base : undefined)
+	const quality = qualityBaseOf({
+		root: cwd,
+		flag: flag?.commit,
+		scoped: changedList !== undefined,
+	})
 	// an empty-tree gate base (gate --release) goes through the order too: a lot base it cannot read is said, never silent
 	const noBaseLine =
 		gateBase !== undefined && gateBase === readEmptyTree(cwd)
@@ -79,13 +114,23 @@ export function runRules(params: {
 		...(changedList !== undefined && { changedList }),
 		environment,
 		...(base !== undefined && { base }),
+		...(flag !== undefined && { since: flag.commit }),
+		...('base' in quality && { quality: quality.base }),
 		...(environment[GATE_SCOPE_VARIABLES.tree] && { tree: environment[GATE_SCOPE_VARIABLES.tree] }),
 	})
-	const check: RulesCheck =
-		runBaseLine === undefined ? checked : { ...checked, baseLine: runBaseLine }
-	if (changedList !== undefined) writeScopedSelection({ environment, check })
+	return {
+		check: {
+			...checked,
+			...(runBaseLine !== undefined && { baseLine: runBaseLine }),
+			qualityLine: quality.line,
+		},
+		scoped: changedList !== undefined,
+	}
+}
+
+/** The run as text: its base and quality lines, the notes, each finding, the summary (or the nothing line). */
+function textOf(check: RulesCheck): CommandResult {
 	const { files, errors, warnings, findings } = check
-	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
 	const noList =
 		check.noForbiddenWordsList === undefined
 			? []
@@ -93,7 +138,10 @@ export function runRules(params: {
 	const notRun = [check.queryInLoopNotRun, check.releasedChangelogNotJudged].filter(
 		(line) => line !== undefined,
 	)
-	const baseLine = check.baseLine === undefined ? [] : [check.baseLine]
+	const baseLine = [
+		...(check.baseLine === undefined ? [] : [check.baseLine]),
+		...(check.qualityLine === undefined ? [] : [check.qualityLine]),
+	]
 	const notJudged =
 		check.notJudged === undefined
 			? []
@@ -113,6 +161,45 @@ export function runRules(params: {
 				.replace('{warnings}', String(warnings)),
 		],
 	})
+}
+
+/**
+ * The base the base-aware rules judge the change against, with the line naming it: `--base`, else the order's lot base,
+ * else (a bare run only) its base-branch merge-base; a scoped gate step outside any lot (a hand-over or rehearsal clone)
+ * runs none, nor a run the order gives no lot base (a release tag, nothing, a lot base it cannot read).
+ */
+function qualityBaseOf(params: {
+	root: string
+	flag: string | undefined
+	scoped: boolean
+}): { base: QualityBase; line: string } | { line: string } {
+	const { root } = params
+	if (params.flag !== undefined)
+		return withLine({ root, base: { commit: params.flag, source: 'flag' } })
+	const order = resolveRulesBaseSource({ root, emptyTreeRequest: true })
+	if (order !== undefined && !('failure' in order)) {
+		if (order.source === 'lot')
+			return withLine({ root, base: { commit: order.commit, source: 'lot' } })
+		if (order.source === 'base-branch' && !params.scoped)
+			return withLine({ root, base: { commit: order.commit, source: 'base-branch' } })
+	}
+	// a lot whose base cannot be read is no clone: its run says no base, as its base line says why
+	const unreadable = order !== undefined && 'failure' in order
+	return { line: params.scoped && !unreadable ? QUALITY_LINES.noLot : QUALITY_LINES.noBase }
+}
+
+/** `base` with its line: `quality: since <short> (<source>)`. */
+function withLine(params: { root: string; base: QualityBase }): {
+	base: QualityBase
+	line: string
+} {
+	const short = shortCommitOf({ root: params.root, commit: params.base.commit })
+	return {
+		base: params.base,
+		line: QUALITY_LINES.since
+			.replace('{short}', () => short)
+			.replace('{source}', () => params.base.source),
+	}
 }
 
 /** The line saying why there is no base, when the order finds the worktree's lot base unreadable; else none. */

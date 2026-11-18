@@ -47,6 +47,9 @@ export const RULE_NAMES = [
 	'unused-allow',
 	'changelog-edit',
 	'released-changelog',
+	'duplicate-read',
+	'shared-export-changed',
+	'docs-not-updated',
 ] as const
 
 /** The quality rules a `dialecte-allow` comment may silence. */
@@ -74,6 +77,9 @@ export const ALLOWABLE_RULES = [
 	'fixture-case-comment',
 	'test-file-long',
 	'fixture-file-long',
+	'duplicate-read',
+	'shared-export-changed',
+	'docs-not-updated',
 ] as const
 
 /** A module constant by its name: `MAX_DEPTH`, `ROOTS`. */
@@ -127,3 +133,13 @@ export const SCRATCH_MODULE_PATTERN = /(^|[\\/])src[\\/]lib[\\/]scratch[\\/]/
 
 /** The names the os module is imported by. */
 export const OS_MODULE_NAMES: readonly string[] = ['node:os', 'os']
+
+/**
+ * The rules judged against the lot base over the whole change (`checkBaseAware`): opted out like the quality rules,
+ * but judged unused only in a file the base-aware pass examined, and never softened (they are warnings).
+ */
+export const BASE_AWARE_RULES = [
+	'duplicate-read',
+	'shared-export-changed',
+	'docs-not-updated',
+] as const

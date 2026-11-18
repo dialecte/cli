@@ -1,7 +1,12 @@
 /** The base-aware rules' inputs built from whole source texts: both sides of a change, and a resolver over its files. */
-import { posix } from 'node:path'
+import { rmSync } from 'node:fs'
+import { join, posix } from 'node:path'
 
 import { parseSourceFile } from '../src/lib/api/source-file-functions.ts'
+import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
+import { addWorktreeFolder, linkLot } from './lot-stores.ts'
+import { QUALITY_LOT_NAME, QUALITY_PACKAGE_JSON } from './quality-workspace.constants.ts'
+import { git, writeFiles } from './scratch-repository.ts'
 
 import type { FileFacts } from '../src/lib/api/source-functions.types.ts'
 import type {
@@ -64,4 +69,55 @@ export function resolverOver(files: Iterable<string>): ResolveSpecifier {
 		const joined = posix.normalize(posix.join(posix.dirname(request.from), request.specifier))
 		return [joined, `${joined}.ts`, `${joined}/index.ts`].find((candidate) => known.has(candidate))
 	}
+}
+
+/**
+ * A store lot of a package whose main holds `base`: the lot's worktree cut from it (its identity records that cut),
+ * linked to its lot folder unless `link` is false (a clone outside any lot); each of `commits` committed in the
+ * worktree in order; then `uncommitted` written, and `deleted` removed and left unstaged. `baseBranch: 'absent'`
+ * renames main away (no base branch found).
+ */
+export function createQualityLot(params: {
+	base: Readonly<Record<string, string>>
+	commits?: readonly Readonly<Record<string, string>>[]
+	/** Files removed in one more commit, after `commits`. */
+	committedDeletions?: readonly string[]
+	uncommitted?: Readonly<Record<string, string>>
+	deleted?: readonly string[]
+	link?: boolean
+	baseBranch?: 'present' | 'absent'
+}): { root: string; cut: string; shortCut: string } {
+	const workspace = createBriefWorkspace()
+	const { repository } = workspace
+	writeFiles({ root: repository, files: { 'package.json': QUALITY_PACKAGE_JSON, ...params.base } })
+	git({ root: repository, args: ['add', '-A'] })
+	git({ root: repository, args: ['commit', '-q', '-m', 'chore: package'] })
+	const cut = git({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()
+	const shortCut = git({ root: repository, args: ['rev-parse', '--short', 'HEAD'] }).trim()
+	const root = addWorktreeFolder({ workspace, folderName: QUALITY_LOT_NAME })
+	for (const [index, files] of (params.commits ?? []).entries()) {
+		writeFiles({ root, files })
+		git({ root, args: ['add', '-A'] })
+		git({ root, args: ['commit', '-q', '-m', `feat: change ${index + 1}`] })
+	}
+	if (params.committedDeletions?.length) {
+		git({ root, args: ['rm', '-q', '--', ...params.committedDeletions] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: deletions'] })
+	}
+	writeFiles({ root, files: params.uncommitted ?? {} })
+	for (const file of params.deleted ?? []) rmSync(join(root, file))
+	if (params.link !== false) {
+		const lotFolder = writeStoreLot({
+			workspace,
+			name: QUALITY_LOT_NAME,
+			scope: ['src/'],
+			worktree: root,
+			repository,
+			base: { ref: 'main', commit: cut },
+		})
+		linkLot({ worktree: root, lotFolder })
+	}
+	if (params.baseBranch === 'absent')
+		git({ root: repository, args: ['branch', '-m', 'main', 'trunk'] })
+	return { root, cut, shortCut }
 }

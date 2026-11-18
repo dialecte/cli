@@ -30,6 +30,7 @@ describe('runRules', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
 			[
+				'quality: no base (rules --base <ref>, or in a lot)',
 				'src/kept.ts:2:8  error  function-as-const  `write` is a function: declare it with `function write`',
 				'src/new.ts:1:13  error  type-outside-types-file  type `Name` belongs in a `*.types.ts` file next to this one',
 				'rules: 2 file(s), 2 error(s), 0 warning(s)',
@@ -49,6 +50,7 @@ describe('runRules', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			files: ['src/join.ts'],
 			errors: 0,
 			warnings: 1,
+			qualityLine: 'quality: no base (rules --base <ref>, or in a lot)',
 			findings: [
 				{
 					file: 'src/join.ts',
@@ -68,7 +70,7 @@ describe('runRules', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		expect(runRules({ cwd: root, argv: [] })).toEqual({
 			exitCode: 0,
-			output: 'rules: no changed file to check',
+			output: 'quality: no base (rules --base <ref>, or in a lot)\nrules: no changed file to check',
 		})
 	})
 

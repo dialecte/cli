@@ -1,4 +1,5 @@
 import type { FileFacts, FunctionFacts } from '../api/source-functions.types.ts'
+import type { ApiIndexDiff } from '../risk/risk.types.ts'
 
 /** A path the change touches since the base, relative to the package root, as the presence map holds it. */
 export type ChangedPath =
@@ -77,4 +78,31 @@ export type SharedExportSides = {
 	baseImporters: Importers
 	/** The type names a changed `*.types.ts` re-declares, by its folder. */
 	changedTypes: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+/** The base the base-aware rules judged against, and where the run took it. */
+export type QualityBase = { commit: string; source: 'lot' | 'base-branch' | 'flag' }
+
+/** What the base-aware rules found on a change: each rule's findings and the public API diff, against `base`. */
+export type QualityResult = {
+	base: QualityBase
+	/** The source files the change touches on the tree's side: where a base-aware opt-out is judged unused. */
+	examined: string[]
+	duplicates: DuplicateRead[]
+	sharedExports: SharedExportChange[]
+	publicApi: ApiIndexDiff
+	docs: DocsNotUpdated[]
+}
+
+/** `dialecte-quality.json`: the last base-aware run on the change, its tree, its base and what it found. */
+export type QualityRecord = QualityResult & {
+	schema: number
+	/** When it ran, ISO 8601. */
+	at: string
+	/** HEAD as a full sha. */
+	head: string
+	/** The tree it judged, as the gate records name a tree. */
+	stateHash: string
+	/** The findings each opt-out silenced, per rule. */
+	allowed: Record<string, number>
 }

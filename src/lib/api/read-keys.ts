@@ -172,7 +172,7 @@ export function stringListsOf(source: ts.SourceFile): Map<string, string[]> {
  * @intent tell which called names come from another module
  * @internal
  */
-export function importedNamesOf(imports: readonly ImportFacts[]): Map<string, string> {
+export function localSpecifiersOf(imports: readonly ImportFacts[]): Map<string, string> {
 	return new Map(
 		imports
 			.filter((found) => !found.reexport)

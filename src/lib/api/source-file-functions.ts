@@ -8,7 +8,7 @@ import { parseIntentText } from '../discover.ts'
 import { firstSyntaxErrorOf } from '../first-syntax-error.ts'
 import {
 	callsOf,
-	importedNamesOf,
+	localSpecifiersOf,
 	importsOf,
 	readKeysOf,
 	stringListsOf,
@@ -56,7 +56,7 @@ export function parseSourceFile(params: { file: string; text: string }): ParsedS
  */
 function factsOf(source: ts.SourceFile): FileFacts {
 	const imports = importsOf(source)
-	const imported = importedNamesOf(imports)
+	const imported = localSpecifiersOf(imports)
 	const lists = stringListsOf(source)
 	const listed = locallyExportedNames(source)
 	return {

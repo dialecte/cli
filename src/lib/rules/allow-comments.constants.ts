@@ -28,6 +28,8 @@ export const FUNCTION_WIDE_RULES: readonly RuleName[] = [
 	'act-repeats-call',
 	'act-snapshot',
 	'act-format-check',
+	'duplicate-read',
+	'shared-export-changed',
 ]
 
 /** What is wrong with an opt-out: `{names}` the rules it names that no opt-out may silence. */

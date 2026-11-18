@@ -5,7 +5,7 @@
  */
 import { dirname, join } from 'node:path'
 
-import { findBaseBranchRef } from '../gate/gate-base.ts'
+import { findBaseBranchRef, resolveFlagBase } from '../gate/gate-base.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lotBaseOf } from '../landing/lot-base.ts'
@@ -38,7 +38,12 @@ export function resolveTddBase(params: {
 		return {
 			failure: `the repository at ${root} has no commit yet: the lot is measured from its base, commit a base first`,
 		}
-	if (params.ref !== undefined) return resolveFlagBase({ root, ref: params.ref })
+	if (params.ref !== undefined) {
+		const flag = resolveFlagBase({ root, ref: params.ref, head: 'HEAD' })
+		return 'refusal' in flag
+			? { failure: flag.refusal }
+			: { commit: flag.commit, kind: 'flag', source: TDD_BASE_SOURCES.flag }
+	}
 	const found = findBaseBranchRef({ root, packageJson })
 	if ('refusal' in found)
 		return packageJson.dialecte?.baseBranch === undefined
@@ -94,17 +99,6 @@ function stackParentOf(params: { root: string }): StackParent | { refusal: strin
 			}),
 		}
 	return { branch: parent.identity.branch, landing: parent.state }
-}
-
-/** `--base <ref>`: the merge-base of HEAD and the ref, else the commit it names. */
-function resolveFlagBase(params: { root: string; ref: string }): TddBase | { failure: string } {
-	const { root, ref } = params
-	const base =
-		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] }) ??
-		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', ref] })
-	return base
-		? { commit: base.trim(), kind: 'flag', source: TDD_BASE_SOURCES.flag }
-		: { failure: `--base ${ref}: no such commit` }
 }
 
 /** The short id of `commit`, as git abbreviates it in the repository at `root`. */

@@ -35,6 +35,7 @@ export function findDuplicateReads(params: {
 }): DuplicateRead[] {
 	const { sides, resolve } = params
 	const byKey = new Map(sides.existing.map((side) => [keyOf(side), side]))
+	const byNameWord = nameWordIndexOf(sides.existing)
 	return sides.added.flatMap(function duplicatesOfAdded(added) {
 		const called = calledOf({ side: added, existing: byKey, resolve })
 		const keys = keysThroughCalls({ side: added, called, existing: byKey })
@@ -48,7 +49,7 @@ export function findDuplicateReads(params: {
 		const named = new Set(reads.map((read) => `${read.existing.file}#${read.existing.name}`))
 		const found = [
 			...new Map(
-				foundByWords({ added, existing: sides.existing, indexes: params.indexes }).map((side) => [
+				foundByWords({ added, byNameWord, indexes: params.indexes }).map((side) => [
 					keyOf(side),
 					side,
 				]),
@@ -153,22 +154,31 @@ function sharedReadOf(params: {
 }
 
 /**
- * The existing functions `api find` names for `added`'s name and summary, keeping those holding at least
- * `DUPLICATE_FIND_MIN_WORDS` of its distinct words in their own name and summary.
+ * The existing functions `api find` names for `added`'s name and summary, keeping those whose own name holds at least
+ * `DUPLICATE_FIND_MIN_WORDS` distinct words of `added`'s name (Q27, measured: summaries share common words too often
+ * to tell a need apart).
  */
 function foundByWords(params: {
 	added: SidedFunction
-	existing: readonly SidedFunction[]
+	byNameWord: ReadonlyMap<string, readonly SidedFunction[]>
 	indexes: readonly ApiJson[]
 }): SidedFunction[] {
 	const { added } = params
 	const need = `${added.facts.name} ${added.facts.summary ?? ''}`
-	const needWords = new Set(wordsOf(need))
-	const byPath = new Map(params.existing.map((side) => [keyOf(side), side]))
-	const byPlace = new Map(params.existing.map((side) => [`${side.file}:${side.facts.line}`, side]))
+	const nameWords = new Set(wordsOf(added.facts.name))
+	// only the existing functions sharing a word of the name can share two: `api find` ranks those alone
+	const candidates = [
+		...new Map(
+			[...nameWords].flatMap((word) =>
+				(params.byNameWord.get(word) ?? []).map((side) => [keyOf(side), side]),
+			),
+		).values(),
+	]
+	const byPath = new Map(candidates.map((side) => [keyOf(side), side]))
+	const byPlace = new Map(candidates.map((side) => [`${side.file}:${side.facts.line}`, side]))
 	const existingIndex: ApiJson = {
 		package: EXISTING_SOURCE_PACKAGE,
-		methods: params.existing.map(methodOf),
+		methods: candidates.map(methodOf),
 	}
 	const indexes = [...params.indexes, existingIndex]
 	return findMethods({ indexes, need, limit: DUPLICATE_FIND_LIMIT }).flatMap(
@@ -178,11 +188,19 @@ function foundByWords(params: {
 				byPath.get(found.method.path) ??
 				(found.method.declaredAt === undefined ? undefined : byPlace.get(found.method.declaredAt))
 			if (side === undefined) return []
-			const words = new Set(wordsOf(`${side.facts.name} ${side.facts.summary ?? ''}`))
-			const shared = [...needWords].filter((word) => words.has(word)).length
-			return shared >= DUPLICATE_FIND_MIN_WORDS ? [side] : []
+			const shared = wordsOf(side.facts.name).filter((word) => nameWords.has(word))
+			return new Set(shared).size >= DUPLICATE_FIND_MIN_WORDS ? [side] : []
 		},
 	)
+}
+
+/** The existing functions by each word of their name, built once per run. */
+function nameWordIndexOf(existing: readonly SidedFunction[]): Map<string, SidedFunction[]> {
+	const index = new Map<string, SidedFunction[]>()
+	for (const side of existing)
+		for (const word of new Set(wordsOf(side.facts.name)))
+			index.set(word, [...(index.get(word) ?? []), side])
+	return index
 }
 
 /** An existing function as a method `api find` ranks: its path is its key. */

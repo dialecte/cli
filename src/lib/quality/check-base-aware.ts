@@ -1,0 +1,158 @@
+/**
+ * The base-aware rules on a change, read from git: the changed paths from the presence map against the base, the
+ * tree's facts from the source index, the base side of the changed paths from one batch read, each side's imports
+ * resolved over its own file set; then `duplicate-read`, `shared-export-changed` and, in a contributor library,
+ * `docs-not-updated` against the public API entries the change touches.
+ */
+import { existsSync, readFileSync } from 'node:fs'
+import { join, posix } from 'node:path'
+
+import { diffApiIndexes } from '../api/api-index-diff.ts'
+import { readOwnApiIndexes } from '../api/read-api-indexes.ts'
+import { parseSourceFile } from '../api/source-file-functions.ts'
+import { isSourceFilePath, listSourceFiles } from '../api/source-functions.ts'
+import { indexSourceFiles } from '../api/source-index.ts'
+import { readFilesAtRevision, tryReadGit } from '../git.ts'
+import { readPackageJson } from '../package-json.ts'
+import { readProfile } from '../profile/profile.ts'
+import { createImportReading } from '../rules/import-reading.ts'
+import { createModuleResolver, fileSetHost } from '../tdd/module-resolver.ts'
+import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
+import { functionSidesOf } from './change-sides.ts'
+import { docsGateApplies, findDocsNotUpdated } from './docs-gate.ts'
+import { findDuplicateReads } from './duplicate-reads.ts'
+import { DOC_PAGE_PATTERN } from './quality.constants.ts'
+import { findSharedExportChanges } from './shared-exports.ts'
+
+import type { ApiJson } from '../api/api-json.types.ts'
+import type { FileFacts } from '../api/source-functions.types.ts'
+import type {
+	ChangeFacts,
+	ChangedPath,
+	DocPage,
+	QualityBase,
+	QualityResult,
+	ResolveSpecifier,
+} from './quality.types.ts'
+
+/**
+ * The base-aware findings of the package at `root` against `base`, on its worktree.
+ *
+ * @intent compare a change with its lot base: duplicate reads, shared exports changed, docs left behind
+ * @internal
+ */
+export function checkBaseAware(params: { root: string; base: QualityBase }): QualityResult {
+	const { root, base } = params
+	const presence = changedTestCodeOf({ root, base: base.commit })
+	const allChanged = [...presence.paths].map(([path, state]): ChangedPath => {
+		if (state.state === 'renamed') return { path, state: 'renamed', from: state.from }
+		return { path, state: state.state }
+	})
+	const changed = allChanged.filter(
+		(path) =>
+			isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
+	)
+	const change: ChangeFacts = {
+		changed,
+		tree: treeFactsOf(root),
+		base: baseFactsOf({ root, base: base.commit, changed }),
+	}
+	const resolveTree = treeResolverOf(root)
+	const resolveBase = baseResolverOf({ root, base: base.commit })
+	const sides = functionSidesOf(change)
+	const publicApi = diffApiIndexes({ root, base: base.commit })
+	const packageJson = readPackageJson(root)
+	const docsJudged =
+		publicApi.kind === 'compared' &&
+		docsGateApplies({ profile: readProfile(root), tool: packageJson.bin !== undefined })
+	return {
+		base,
+		examined: changed.filter((path) => path.state !== 'deleted').map((path) => path.path),
+		duplicates: findDuplicateReads({ sides, indexes: ownIndexesOf(root), resolve: resolveTree }),
+		sharedExports: findSharedExportChanges({ change, resolveTree, resolveBase }),
+		publicApi,
+		docs:
+			docsJudged && publicApi.kind === 'compared'
+				? findDocsNotUpdated({
+						entries: publicApi.entries,
+						pages: docPagesOf({ root, touched: new Set(allChanged.map((path) => path.path)) }),
+					})
+				: [],
+	}
+}
+
+/** The facts of every implementation file of the tree, through the source index (a file that does not parse has none). */
+function treeFactsOf(root: string): Map<string, FileFacts> {
+	const files = listSourceFiles(root)
+	const parsed = indexSourceFiles({ root, files, parse: parseSourceFile })
+	return new Map(
+		files.flatMap((file, index) => {
+			const facts = parsed[index]?.facts
+			return facts === undefined ? [] : [[file, facts] as const]
+		}),
+	)
+}
+
+/** The facts of the base side of each changed, renamed-from or deleted source path the base holds, read in one batch. */
+function baseFactsOf(params: {
+	root: string
+	base: string
+	changed: readonly ChangedPath[]
+}): Map<string, FileFacts> {
+	const paths = params.changed
+		.map((path) => (path.state === 'renamed' ? path.from : path.path))
+		.filter((path) => isSourceFilePath(path))
+	const texts = readFilesAtRevision({ root: params.root, revision: params.base, files: paths })
+	return new Map(
+		[...texts].flatMap(([file, text]) => {
+			const facts = parseSourceFile({ file, text }).facts
+			return facts === undefined ? [] : [[file, facts] as const]
+		}),
+	)
+}
+
+/** The tree's resolver: the run's import reading over the disk. */
+function treeResolverOf(root: string): ResolveSpecifier {
+	const reading = createImportReading({ root })
+	return function resolveInTree(request) {
+		return reading.localFileOf(request)
+	}
+}
+
+/** The base's resolver: the module resolver over the base's file set (`git ls-tree`), never the disk. */
+function baseResolverOf(params: { root: string; base: string }): ResolveSpecifier {
+	const listing =
+		tryReadGit({
+			root: params.root,
+			args: ['ls-tree', '-r', '--name-only', params.base, '--', '.'],
+		}) ?? ''
+	const files = listing.split('\n').filter((file) => file !== '')
+	const resolver = createModuleResolver({
+		root: params.root,
+		host: fileSetHost({ root: params.root, files }),
+	})
+	return function resolveAtBase(request) {
+		const resolution = resolver(request)
+		return resolution.kind === 'local' ? resolution.file.split('\\').join(posix.sep) : undefined
+	}
+}
+
+/** The package's own api indexes; none when one cannot be read (the public API diff says why). */
+function ownIndexesOf(root: string): ApiJson[] {
+	try {
+		return readOwnApiIndexes({ cwd: root })
+	} catch {
+		return []
+	}
+}
+
+/** The doc pages of the tree (Markdown under `doc/`, and `README.md`), each with whether the change touched it. */
+function docPagesOf(params: { root: string; touched: ReadonlySet<string> }): DocPage[] {
+	const listing = tryReadGit({ root: params.root, args: ['ls-files', '--', '.'] }) ?? ''
+	const pages = listing.split('\n').filter((file) => DOC_PAGE_PATTERN.test(file))
+	return pages.flatMap((path) => {
+		const full = join(params.root, path)
+		if (!existsSync(full)) return []
+		return [{ path, text: readFileSync(full, 'utf8'), touched: params.touched.has(path) }]
+	})
+}
