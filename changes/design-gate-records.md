@@ -1,4 +1,0 @@
-### Added
-
-- `dialecte lot design <id>`: a lot's design recorded by the sha256 of its content (`--from <file>`, or `--from-plan` for the spec of the plan entry it carries out when no other entry names that spec), approved (`--approve --by <who> [--reason <text>]`) or waived (`--waive --by <who> --reason <text>`) from the main checkout, never from the lot's own worktree, each for the need it was given against. A lot needs a design when its scope reaches a `dialecte.risk.high` area or is broader than one, or when it carries out a plan entry of kind `lot`. The records are `design.jsonl` and a copy of each content in the lot folder.
-- `lot start` and its dry run say whether the lot needs a design; `lot status`, `lot forecast` and the hand-over card say where its design stands; `review.jsonl` holds a design row and the pull request body a `Design: <state> by <kind>` line, never a name. Nothing refuses on the design yet.
