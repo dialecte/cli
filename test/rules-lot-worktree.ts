@@ -28,7 +28,7 @@ import type {
 } from './rules-lot-worktree.types.ts'
 
 /** Writes `files`, commits them (only those paths) in the repository at `root`. */
-function commitFiles(params: {
+export function commitFiles(params: {
 	root: string
 	files: Record<string, string>
 	message: string

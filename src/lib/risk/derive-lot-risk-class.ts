@@ -12,6 +12,7 @@ import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
+import { fallbackLotBaseOf } from '../tdd/lot-fallback-base.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { declaredHighOf, readDeclaredHigh } from './declared-high.ts'
 import { deriveRiskClass } from './derive-risk-class.ts'
@@ -134,7 +135,10 @@ export function readBaseDeclaredHigh(params: { root: string; base: string }): st
 		: declaredHighOf({ manifest: JSON.parse(baseText) as PackageJson })
 }
 
-/** The root and base a derivation reads: the identity's worktree and its lot base, else the cwd's work tree and HEAD. */
+/**
+ * The root and base a derivation reads: the identity's worktree and its lot base (else its fallback), else the cwd's
+ * work tree and HEAD; undefined when there is no work tree, or no base reads for a store lot.
+ */
 function derivationSourceOf(params: {
 	folder: string
 	cwd: string
@@ -144,9 +148,9 @@ function derivationSourceOf(params: {
 		const { worktree } = identity
 		if (worktree === null || !isFolder(worktree)) return undefined
 		const root = workTreeTopOf(worktree)
-		return root === undefined
-			? undefined
-			: { root, base: riskBaseOf({ root, recorded: identity.base.commit }) }
+		if (root === undefined) return undefined
+		const base = riskBaseOf({ root, recorded: identity.base.commit })
+		return base === undefined ? undefined : { root, base }
 	}
 	const root = workTreeTopOf(params.cwd)
 	return root === undefined ? undefined : { root, base: RISK_HEAD_BASE }
@@ -154,10 +158,11 @@ function derivationSourceOf(params: {
 
 /**
  * The base a store lot's class is derived against: its lot base read from git (`resolveTddBase`), so a rebase never
- * counts what main brought since the cut; the commit recorded at its start when no lot base reads (no base branch, an
- * unreadable stack parent): a wider diff, so the class is never derived below what the lot touches.
+ * counts what main brought since the cut; else (no base branch, an unreadable stack parent) the shared fallback
+ * (`fallbackLotBaseOf`), never HEAD, so the lot's own committed files always count; undefined when neither reads.
  */
-function riskBaseOf(params: { root: string; recorded: string }): string {
+function riskBaseOf(params: { root: string; recorded: string }): string | undefined {
 	const lotBase = resolveTddBase({ root: params.root, packageJson: readPackageJson(params.root) })
-	return 'kind' in lotBase && lotBase.kind === 'lot' ? lotBase.commit : params.recorded
+	if ('kind' in lotBase && lotBase.kind === 'lot') return lotBase.commit
+	return fallbackLotBaseOf({ root: params.root, recorded: params.recorded })?.commit
 }

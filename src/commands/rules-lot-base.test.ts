@@ -11,7 +11,7 @@ import {
 	createMovedLotWorktree,
 	createStackedLotWorktree,
 } from '../../test/rules-lot-worktree.ts'
-import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NOT_ADDED_SUFFIX } from '../lib/rules/added-lines.constants.ts'
 import { runRules } from './rules.ts'
@@ -136,13 +136,13 @@ describe(
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 					expectedLine: 'lot',
 				},
-			'a link whose base commit git cannot read, no base branch, a release tag → no lot base: the split, the line names the tag':
+			'a link whose base commit git cannot read, no base branch, a release tag → no base: no tag descends from a commit git cannot read, both splices are errors, no line':
 				{
 					source: 'unreadable-link',
 					baseBranch: 'absent',
 					releaseTag: true,
-					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
-					expectedLine: 'releaseTag',
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'none',
 				},
 			'a lot link, no base branch, a release tag on the commit the lot was cut at → no lot base: the split, the line names the tag, not the lot':
 				{
@@ -152,12 +152,13 @@ describe(
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 					expectedLine: 'releaseTag',
 				},
-			'a lot link, no base branch, no release tag → no base: both splices are errors, no line': {
-				source: 'lot-link',
-				baseBranch: 'absent',
-				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-				expectedLine: 'none',
-			},
+			'a lot link, no base branch, no release tag → the recorded commit HEAD holds: the split, the line names the lot':
+				{
+					source: 'lot-link',
+					baseBranch: 'absent',
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'lot',
+				},
 			'a link whose base commit git cannot read, no base branch, no release tag → no base: both splices are errors, no line':
 				{
 					source: 'unreadable-link',
@@ -238,17 +239,10 @@ describe(
 )
 
 const NO_BASE_LINE_PREFIX = 'rules: no base '
-
-/** A no-base line cut to the expected prefix (its failure reason runs on with git's words); a lot line kept whole. */
-function cutToExpected(params: {
-	line: string
-	expectedLine: string
-	kind: 'lot' | 'stackFailure'
-}): string {
-	return params.kind === 'stackFailure'
-		? params.line.slice(0, params.expectedLine.length)
-		: params.line
-}
+/** The no-base line of a lot whose stack parent the store does not hold: the failure, then git's words. */
+const STACK_FAILURE_LINE = new RegExp(
+	`^rules: no base \\(tdd base: the stack parent ${PARENT_LOT_NAME} cannot be read: .+\\)$`,
+)
 
 describe(
 	'dialecte rules: the lot base read from git, never the base recorded at the start',
@@ -294,7 +288,7 @@ describe(
 				const environment = machineOf()
 				const expectedLines = {
 					lot: `rules: base ${worktree.shortSha} (the lot ${LOT_NAME})`,
-					stackFailure: `rules: no base (tdd base: the stack parent ${PARENT_LOT_NAME} cannot be read`,
+					stackFailure: expect.stringMatching(STACK_FAILURE_LINE),
 				}
 
 				const text = runRules({ cwd: worktree.root, argv: [TEST_FILE], environment })
@@ -308,17 +302,43 @@ describe(
 						.split('\n')
 						.filter(
 							(line) => line.startsWith(BASE_LINE_PREFIX) || line.startsWith(NO_BASE_LINE_PREFIX),
-						)
-						.map((line) => cutToExpected({ line, expectedLine, kind: testCase.expectedLine })),
-					jsonBaseLine:
-						parsed.baseLine &&
-						cutToExpected({ line: parsed.baseLine, expectedLine, kind: testCase.expectedLine }),
+						),
+					jsonBaseLine: parsed.baseLine,
 				}).toEqual({
 					verdicts: testCase.expectedVerdicts,
 					textLines: [expectedLine],
 					jsonBaseLine: expectedLine,
 				})
 			})
+	},
+)
+
+describe(
+	'dialecte rules: an empty-tree gate base in a lot whose lot base cannot be read',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		it('the empty tree as the gate base (gate --release), a stack parent the store does not hold → the no-base line names the failure, both splices errors', () => {
+			const worktree = createStackedLotWorktree({ parent: 'unreadable' })
+			const emptyTree = git({
+				root: worktree.root,
+				args: ['hash-object', '-t', 'tree', '/dev/null'],
+			}).trim()
+			const environment = { ...machineOf(), [GATE_BASE_VARIABLE]: emptyTree }
+
+			const text = runRules({ cwd: worktree.root, argv: [TEST_FILE], environment })
+			const json = runRules({ cwd: worktree.root, argv: [TEST_FILE, '--json'], environment })
+
+			const parsed = JSON.parse(json.output) as { findings: RuleFinding[]; baseLine?: string }
+			expect({
+				verdicts: spliceVerdictsOf(parsed.findings),
+				textLines: text.output.split('\n').filter((line) => line.startsWith(NO_BASE_LINE_PREFIX)),
+				jsonBaseLine: parsed.baseLine,
+			}).toEqual({
+				verdicts: [OLD_ERROR, NEW_ERROR],
+				textLines: [expect.stringMatching(STACK_FAILURE_LINE)],
+				jsonBaseLine: expect.stringMatching(STACK_FAILURE_LINE),
+			})
+		})
 	},
 )
 

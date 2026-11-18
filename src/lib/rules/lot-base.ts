@@ -14,11 +14,21 @@ import type { BaseWithLine } from './lot-base.types.ts'
  * base, or when git cannot read the commit it found (no base then, as for every caller: `readAddedLines` cannot read
  * it either); no base with the line naming why when the worktree's lot base cannot be read.
  */
-export function readBaseWithLine(params: { root: string }): BaseWithLine | undefined {
+export function readBaseWithLine(params: {
+	root: string
+	/** The commit the base is read for (contrib passes its own); HEAD when left out. */
+	head?: string
+	/** Asked as an empty-tree request (the default: no base handed); contrib asks it as the gate's scoped step does. */
+	emptyTreeRequest?: boolean
+}): BaseWithLine | undefined {
 	const { root } = params
 	if (!isInWorkTree(root)) return undefined
 	// no base handed, as for an empty-tree request: a merge-base at HEAD's own commit knows no change, the order goes on
-	const resolved = resolveRulesBaseSource({ root, emptyTreeRequest: true })
+	const resolved = resolveRulesBaseSource({
+		root,
+		emptyTreeRequest: params.emptyTreeRequest ?? true,
+		...(params.head !== undefined && { head: params.head }),
+	})
 	if (resolved === undefined) return undefined
 	if ('failure' in resolved)
 		return { line: BASE_LINE.failure.replace('{reason}', () => resolved.failure) }

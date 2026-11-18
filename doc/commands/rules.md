@@ -32,13 +32,16 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     gate --release hands), the order every caller shares: in the worktree of a store lot its lot
     base read from git (its fork point from the base branch, or from the line of the lot it was
     started on while that lot is open; never the base recorded at its start, which a rebase leaves
-    behind), else the merge-base with the base branch (skipped, for an empty-tree base and for a run
-    without a gate base, when it is the commit of HEAD), else the last release tag
-    <name>@v<version>, else no base and every error kept; a lot base that cannot be read (its stack
-    parent unreadable) is no base, never the merge-base; a run without a gate base prints one line
-    naming it (rules: base <sha> (the lot <name> | the merge-base with <branch> | the merge-base
-    with the base branch | the release tag <tag>), or rules: no base (<why>) when the lot base
-    cannot be read)
+    behind; with no base branch found, the newest of the commit it recorded at its start, when HEAD
+    holds it, and a release tag descending from that commit, else no base), else the merge-base with
+    the base branch (skipped, for an empty-tree base and for a run without a gate base, when it is
+    the commit of HEAD), else the last release tag <name>@v<version>, else no base and every error
+    kept; a lot base that cannot be read (its stack parent unreadable) is no base, never the
+    merge-base, said in a rules: no base (<why>) line by every run that reads the order: without a
+    gate base, with an empty-tree one, and on the contrib rules row; a run without a gate base
+    prints one line naming it (rules: base <sha> (the lot <name> | the merge-base with <branch> |
+    the merge-base with the base branch | the release tag <tag>), or rules: no base (<why>) when the
+    lot base cannot be read)
   changelog-edit (an error), in a package keeping a changes/ folder: CHANGELOG.md edited without the
     package version bumped; write the entry in changes/<lot>.md (dialecte changelog)
   --json: dialecteChanges (the verdict of each file), notJudged, baseLine; described by
@@ -129,7 +132,9 @@ Flags: `--json`
   change, so it takes the one order every caller shares: the lot base of the store lot whose worktree holds the
   package, read from git (its fork point from the base branch, or from its parent's line while the lot it was
   started on is open; never the base recorded at its start, which a rebase leaves behind; a lot base that cannot be
-  read, such as an unreadable stack parent, is no base, with a `rules: no base (<why>)` line), else the base branch's merge-base with HEAD (for this empty-tree request, a merge-base equal to
+  read, such as an unreadable stack parent, is no base, with a `rules: no base (<why>)` line; with no base branch
+  found, the newest of the commit the lot recorded at its start, when HEAD holds it, and a release tag descending
+  from that commit, else no base), else the base branch's merge-base with HEAD (for this empty-tree request, a merge-base equal to
   HEAD's commit knows no change and is skipped, on a branch or detached), else the package's last release tag `<name>@v<version>` reachable from HEAD (only the lines added
   since that release count), else every error is kept: no empty-tree softening. A plain `rules` run (no gate
   base) keeps them errors. An API index that cannot be read (not JSON, a skill shipped twice) fails

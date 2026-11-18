@@ -24,6 +24,7 @@ import { existsSync } from 'node:fs'
 
 import { resultOf } from '../lib/command-result.ts'
 import { hasFlag } from '../lib/config.ts'
+import { readEmptyTree } from '../lib/gate/gate-base.ts'
 import { GATE_SCOPE_VARIABLES } from '../lib/gate/selection.constants.ts'
 import {
 	readChangedPaths,
@@ -65,7 +66,13 @@ export function runRules(params: {
 	// the gate's base always wins; without it, the base of the order every caller shares, with its line
 	const gateBase = environment[GATE_SCOPE_VARIABLES.base] || undefined
 	const ownBase = gateBase === undefined ? readBaseWithLine({ root: cwd }) : undefined
-	const base = gateBase ?? ownBase?.base
+	const base = gateBase ?? (ownBase !== undefined && 'base' in ownBase ? ownBase.base : undefined)
+	// an empty-tree gate base (gate --release) goes through the order too: a lot base it cannot read is said, never silent
+	const noBaseLine =
+		gateBase !== undefined && gateBase === readEmptyTree(cwd)
+			? noBaseLineOf({ root: cwd })
+			: undefined
+	const runBaseLine = ownBase?.line ?? noBaseLine
 	const checked = checkRules({
 		root: cwd,
 		givenFiles,
@@ -74,7 +81,8 @@ export function runRules(params: {
 		...(base !== undefined && { base }),
 		...(environment[GATE_SCOPE_VARIABLES.tree] && { tree: environment[GATE_SCOPE_VARIABLES.tree] }),
 	})
-	const check: RulesCheck = ownBase === undefined ? checked : { ...checked, baseLine: ownBase.line }
+	const check: RulesCheck =
+		runBaseLine === undefined ? checked : { ...checked, baseLine: runBaseLine }
 	if (changedList !== undefined) writeScopedSelection({ environment, check })
 	const { files, errors, warnings, findings } = check
 	if (json) return { exitCode: errors ? 1 : 0, output: jsonOf(outputOf(check), 2) }
@@ -103,6 +111,12 @@ export function runRules(params: {
 				.replace('{warnings}', String(warnings)),
 		],
 	})
+}
+
+/** The line saying why there is no base, when the order finds the worktree's lot base unreadable; else none. */
+function noBaseLineOf(params: { root: string }): string | undefined {
+	const read = readBaseWithLine(params)
+	return read === undefined || 'base' in read ? undefined : read.line
 }
 
 /** The run as `--json` prints it: each finding without the line of its function, kept for the opt-outs only. */

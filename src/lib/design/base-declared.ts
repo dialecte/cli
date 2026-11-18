@@ -15,6 +15,7 @@ import { readBaseDeclaredHigh } from '../risk/derive-lot-risk-class.ts'
 import { readIdentity } from '../store/identity.ts'
 import { recordText, replaceWhole } from '../store/publish.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
+import { fallbackLotBaseOf } from '../tdd/lot-fallback-base.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { viewDeclaredHighOf } from './declared-sources.ts'
 import { BASE_DECLARED_SCHEMA, RECORDED_BASE_NOTE } from './design.constants.ts'
@@ -63,8 +64,8 @@ export function gitDeclaredHighOf(params: {
 
 /**
  * The areas `lot design`, `lot forecast` and the pull request hold a lot to: through git at its lot base when its
- * worktree is there; else at the base recorded at its start, with a note saying so (a pruned worktree is no reason
- * to stop reading the lot).
+ * worktree is there, else at its fallback base (`fallbackLotBaseOf`; never HEAD); else at the base recorded at its
+ * start, with a note saying so (a pruned worktree is no reason to stop reading the lot).
  *
  * @intent read the shared areas of a lot for a verb that runs outside its worktree
  * @internal
@@ -77,9 +78,13 @@ export function lotGitDeclaredHighOf(params: { lotFolder: string }): {
 	if (identity === undefined) return { globs: viewDeclaredHighOf(params) }
 	const { worktree } = identity
 	if (worktree !== null && existsSync(worktree)) {
-		const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
-		if (!('failure' in base))
-			return { globs: gitDeclaredHighOf({ ...params, root: worktree, base: base.commit }) }
+		const lotBase = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
+		// never HEAD: a glob the lot dropped would stop holding it; no lot base: the shared fallback
+		const base =
+			'kind' in lotBase && lotBase.kind === 'lot'
+				? lotBase.commit
+				: fallbackLotBaseOf({ root: worktree, recorded: identity.base.commit })?.commit
+		if (base !== undefined) return { globs: gitDeclaredHighOf({ ...params, root: worktree, base }) }
 	}
 	return {
 		globs: gitDeclaredHighOf({
