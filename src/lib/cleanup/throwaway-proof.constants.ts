@@ -1,3 +1,5 @@
+import { IGNORED_STATUS_ARGUMENTS } from './removable-ignored.constants.ts'
+
 /** Why the throwaway proof keeps a review-round throwaway; `{...}` filled. */
 export const THROWAWAY_KEEP_REASONS = {
 	headMoved: 'HEAD is not on {branch}: {head}',
@@ -10,17 +12,17 @@ export const THROWAWAY_KEEP_REASONS = {
 	ignoredMany: '{count} ignored files git worktree remove would delete, first: {paths}',
 } as const
 
+/** The argument that adds the ignored entries to git status. */
+export const IGNORED_MATCHING_ARGUMENT = '--ignored=matching'
+
 /**
- * `git status` as the proof reads a throwaway: never rewriting its index, NUL-separated entries (a path as it is),
- * every untracked file one by one (a folder only when git does not descend it: an embedded repository).
+ * `git status` as the proof reads a throwaway: `removableIgnored`'s reading without the ignored entries (never
+ * rewriting its index, NUL-separated entries, every untracked file one by one, a folder only when git does not descend
+ * it: an embedded repository).
  */
-export const STATUS_ARGUMENTS = [
-	'--no-optional-locks',
-	'status',
-	'-z',
-	'--porcelain=v1',
-	'--untracked-files=all',
-] as const
+export const STATUS_ARGUMENTS = IGNORED_STATUS_ARGUMENTS.filter(function notIgnored(argument) {
+	return argument !== IGNORED_MATCHING_ARGUMENT
+})
 
 /** The status code of an untracked entry. */
 export const UNTRACKED_STATUS = '??'

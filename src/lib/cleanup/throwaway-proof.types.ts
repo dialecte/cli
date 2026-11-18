@@ -27,3 +27,16 @@ export type BlobVersion = { mode: string; sha: string } | 'absent'
 
 /** One path of the throwaway's status: untracked, or with its index differing from HEAD (staged). */
 export type StatusEntry = { path: string; untracked: boolean; staged: boolean }
+
+/** What `statusEntriesOf` has read so far: the entries, and whether the next field is a rename's original path. */
+export type StatusRead = { entries: StatusEntry[]; originalNext: boolean }
+
+/** One path of the throwaway. */
+export type ThrowawayPath = { throwaway: string; path: string }
+
+/** Where the versions of one path kept elsewhere are read: the snapshot, its deletions, the held commits. */
+export type KeptVersionsParameters = ThrowawayPath & {
+	snapshot: string
+	deleted: ReadonlySet<string>
+	holders: readonly string[]
+}

@@ -40,6 +40,9 @@ const GLOB_PATH = 'src/[AB].ts'
 const GLOB_TWIN = 'src/A.ts'
 const GLOB_TEXT = 'export const twin = 1\n'
 
+/** A path git would read as pathspec magic naming `src/index.ts` from the top, unless told to read it literally. */
+const MAGIC_PATH = ':(top)src/index.ts'
+
 /** A path git would quote: a space, a quote and a non-ASCII character. */
 const QUOTED_PATH = "docs/it's é.md"
 
@@ -159,6 +162,16 @@ const TREE_CASES: ProofCase[] = [
 			return undefined
 		},
 		proof: { goes: false, kept: `round-1 differs: 1 path(s), first: ${GLOB_PATH}` },
+	},
+	{
+		title:
+			'a path named like pathspec magic, holding the bytes of the file the magic would name at the base',
+		changed: { ...CHANGED, [MAGIC_PATH]: 'a round note\n' },
+		arrange: function magic(workspace) {
+			writeFiles({ root: workspace.throwaway, files: { [MAGIC_PATH]: COMMITTED['src/index.ts'] } })
+			return undefined
+		},
+		proof: { goes: false, kept: `round-1 differs: 1 path(s), first: ${MAGIC_PATH}` },
 	},
 ]
 

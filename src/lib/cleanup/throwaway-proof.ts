@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lostWork, lostWorkText } from '../landing/lost-work.ts'
+import { readDeletedPaths } from '../review-rounds/review-delta.ts'
 import { roundNames } from '../review-rounds/round-names.ts'
 import { IGNORED_FILES_SHOWN } from '../worktree/worktree.constants.ts'
 import { STATUS_WITH_ORIGINAL_PATH } from './removable-ignored.constants.ts'
@@ -27,7 +28,10 @@ import {
 
 import type {
 	BlobVersion,
+	KeptVersionsParameters,
 	StatusEntry,
+	StatusRead,
+	ThrowawayPath,
 	ThrowawayProof,
 	ThrowawayProofParameters,
 } from './throwaway-proof.types.ts'
@@ -107,7 +111,12 @@ function changedNotKept(params: ThrowawayProofParameters): string | undefined {
 			template: THROWAWAY_KEEP_REASONS.noSnapshot,
 			values: { round: String(round) },
 		})
-	const deleted = new Set(nulEntries(readOrEmpty(join(lotFolder, names.deleted))))
+	// a snapshot of no deletion may have no `.deleted` file: nothing listed
+	const deleted = new Set(
+		existsSync(join(lotFolder, names.deleted))
+			? readDeletedPaths({ folder: lotFolder, previous: round })
+			: [],
+	)
 	const holders = params.holders.flatMap(function resolved(ref) {
 		const commit = readCommitOrNone({ root: throwaway, ref })
 		return commit === undefined ? [] : [commit]
@@ -119,7 +128,7 @@ function changedNotKept(params: ThrowawayProofParameters): string | undefined {
 		return ![
 			workingVersionOf({ throwaway, path }),
 			...(staged ? [indexVersionOf({ throwaway, path })] : []),
-		].every((version) => kept.some((one) => sameVersion(one, version)))
+		].every((version) => kept.some((one) => sameVersion({ left: one, right: version })))
 	})
 	if (differ.length === 0) return undefined
 	return fillMessage({
@@ -129,13 +138,7 @@ function changedNotKept(params: ThrowawayProofParameters): string | undefined {
 }
 
 /** The versions of `path` kept elsewhere: the snapshot's file (or its deletion), each held commit's blob. */
-function keptVersionsOf(params: {
-	throwaway: string
-	snapshot: string
-	deleted: ReadonlySet<string>
-	holders: readonly string[]
-	path: string
-}): BlobVersion[] {
+function keptVersionsOf(params: KeptVersionsParameters): BlobVersion[] {
 	const { path } = params
 	const fromSnapshot = fileVersionOf(join(params.snapshot, path))
 	return [
@@ -155,12 +158,12 @@ function keptVersionsOf(params: {
 }
 
 /** The working file's version: absent when gone from disk. */
-function workingVersionOf(params: { throwaway: string; path: string }): BlobVersion {
+function workingVersionOf(params: ThrowawayPath): BlobVersion {
 	return fileVersionOf(join(params.throwaway, params.path)) ?? 'absent'
 }
 
 /** The staged blob's version: absent when the index no longer holds the path (a staged deletion). */
-function indexVersionOf(params: { throwaway: string; path: string }): BlobVersion {
+function indexVersionOf(params: ThrowawayPath): BlobVersion {
 	const entry = nulEntries(
 		readGit({
 			root: params.throwaway,
@@ -181,20 +184,24 @@ function fileVersionOf(path: string): BlobVersion | undefined {
 		return undefined
 	}
 	if (status.isSymbolicLink())
-		return { mode: LINK_MODE, sha: blobIdOf(readlinkSync(path, { encoding: 'buffer' })) }
+		return { mode: LINK_MODE, sha: blobIdOf({ bytes: readlinkSync(path, { encoding: 'buffer' }) }) }
 	if (!status.isFile()) return undefined
 	// git keeps one executable bit: the owner's
 	return {
 		mode: (status.mode & 0o100) !== 0 ? EXECUTABLE_MODE : BLOB_MODE,
-		sha: blobIdOf(readFileSync(path)),
+		sha: blobIdOf({ bytes: readFileSync(path) }),
 	}
 }
 
-function blobIdOf(bytes: Buffer): string {
+/** The blob id git gives these bytes (`git hash-object`, no filter). */
+function blobIdOf(params: { bytes: Buffer }): string {
+	const { bytes } = params
 	return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
 }
 
-function sameVersion(left: BlobVersion, right: BlobVersion): boolean {
+/** Whether two versions are the same content at the same mode, or both absent. */
+function sameVersion(params: { left: BlobVersion; right: BlobVersion }): boolean {
+	const { left, right } = params
 	if (left === 'absent' || right === 'absent') return left === right
 	return left.mode === right.mode && left.sha === right.sha
 }
@@ -228,27 +235,30 @@ function lostCommits(params: ThrowawayProofParameters): string | undefined {
  */
 function statusEntriesOf(throwaway: string): StatusEntry[] {
 	const tokens = nulEntries(readGit({ root: throwaway, args: [...STATUS_ARGUMENTS] }))
-	const entries: StatusEntry[] = []
-	for (let index = 0; index < tokens.length; index++) {
-		const token = tokens[index]
-		const code = token.slice(0, 2)
-		const untracked = code === UNTRACKED_STATUS
-		const staged = !untracked && code[0] !== ' '
-		entries.push({ path: token.slice(3), untracked, staged })
-		if (STATUS_WITH_ORIGINAL_PATH.some((letter) => code.includes(letter))) {
-			index++
-			entries.push({ path: tokens[index], untracked: false, staged: true })
-		}
-	}
-	return entries
+	return tokens.reduce<StatusRead>(
+		function readToken(read, token): StatusRead {
+			// the field after a rename or copy record is its original path, staged away
+			if (read.originalNext)
+				return {
+					entries: [...read.entries, { path: token, untracked: false, staged: true }],
+					originalNext: false,
+				}
+			const code = token.slice(0, 2)
+			const untracked = code === UNTRACKED_STATUS
+			return {
+				entries: [
+					...read.entries,
+					{ path: token.slice(3), untracked, staged: !untracked && code[0] !== ' ' },
+				],
+				originalNext: STATUS_WITH_ORIGINAL_PATH.some((letter) => code.includes(letter)),
+			}
+		},
+		{ entries: [], originalNext: false },
+	).entries
 }
 
 function nulEntries(text: string): string[] {
 	return text.split('\0').filter(Boolean)
-}
-
-function readOrEmpty(path: string): string {
-	return existsSync(path) ? readFileSync(path, 'utf8') : ''
 }
 
 function isDirectory(path: string): boolean {
