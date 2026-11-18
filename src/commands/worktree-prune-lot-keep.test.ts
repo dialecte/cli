@@ -80,7 +80,7 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 
 	const LISTED_STATES: LotKeepState[] = ['canceled', 'committed']
 	for (const state of LISTED_STATES)
-		it(`the same worktree with the lot ${state}, beside a worktree of a lot input-required → kept as the lot's own, naming lot close, no removal; the other kept (case 22)`, async () => {
+		it(`the same worktree with the lot ${state}, beside a worktree of a lot input-required → kept as the lot's own, naming lot prune, no removal; the other kept (case 22)`, async () => {
 			const workspace = createBriefWorkspace()
 			const closed = addLotWorktree({ workspace, name: ASKING, state })
 			const asking = addLotWorktree({
@@ -91,7 +91,7 @@ describe('worktree prune: the lot keep rule', { timeout: STORE_CASE_TIMEOUT }, (
 			})
 
 			await expect(worktreeFatesOf(workspace)).resolves.toEqual({
-				[ASKING]: `${closed.branch}: lot ${ASKING} ${state}: its own item, closed by dialecte lot close ${ASKING}`,
+				[ASKING]: `${closed.branch}: lot ${ASKING} ${state}: its own item, removed by dialecte lot prune ${ASKING}`,
 				[OTHER]: lotReason({ branch: asking.branch, name: OTHER, state: 'input-required' }),
 			})
 		})

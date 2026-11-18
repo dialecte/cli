@@ -27,7 +27,7 @@ import { readLanding } from './land-record.ts'
 import { readHandoverFolder } from './read-handover-folder.ts'
 import { buildCardLine, lotOfHandoverFolder } from './record-card-line.ts'
 
-import type { CardInput } from '../events/cards-log.types.ts'
+import type { CardInput, RemovalBy } from '../events/cards-log.types.ts'
 import type { CatchUpRole, HandoverCard, HandoverFolder, StoreEntry } from './handover.types.ts'
 
 /**
@@ -38,6 +38,8 @@ import type { CatchUpRole, HandoverCard, HandoverFolder, StoreEntry } from './ha
  * `by: lot-close`) is written and read back.
  */
 export function keepFinalRecord(params: {
+	/** Who writes the removal (`lot-close`, `lot-prune`). */
+	by: RemovalBy
 	entries: readonly StoreEntry[]
 	/** The worktree about to move. */
 	worktree: string
@@ -56,6 +58,7 @@ export function keepFinalRecord(params: {
 	for (const entry of params.entries) {
 		const sibling = entry !== owner
 		const record = keptCardOf({
+			by: params.by,
 			entry,
 			worktree,
 			shown: params.worktree,
@@ -82,7 +85,7 @@ export function keepFinalRecord(params: {
 				branch: owner.branch,
 				tip: headOf({ worktree }),
 				records: freezeRecordTimes({ worktree }),
-				by: 'lot-close',
+				by: params.by,
 			},
 		})
 		return { id, file }
@@ -98,6 +101,8 @@ export function keepFinalRecord(params: {
  * stays (nothing moved).
  */
 export function keepLotFinalRecord(params: {
+	/** Who writes the removal (`lot-close`, `lot-prune`). */
+	by: RemovalBy
 	lot: string
 	state: CardInput['state']
 	/** The worktree about to move. */
@@ -137,7 +142,7 @@ export function keepLotFinalRecord(params: {
 					card: null,
 					usage: null,
 					records: freezeRecordTimes({ worktree }),
-					by: 'lot-close',
+					by: params.by,
 					...(state === 'committed' && { recomputed: true }),
 				},
 			})
@@ -155,7 +160,7 @@ export function keepLotFinalRecord(params: {
 				branch: params.branch,
 				tip: headOf({ worktree }),
 				records: freezeRecordTimes({ worktree }),
-				by: 'lot-close',
+				by: params.by,
 			},
 		})
 		return { id, file }
@@ -171,6 +176,7 @@ function keptCardOf(params: {
 	shown: string
 	file: string
 	role: CatchUpRole
+	by: RemovalBy
 }): { kept: string } | undefined {
 	try {
 		return keepCard(params)
@@ -192,6 +198,7 @@ function keepCard(params: {
 	shown: string
 	file: string
 	role: CatchUpRole
+	by: RemovalBy
 }): { kept: string } | undefined {
 	const { entry, worktree, file } = params
 	const state: CardInput['state'] = entry.state === 'committed' ? 'committed' : 'canceled'
@@ -199,7 +206,14 @@ function keepCard(params: {
 	// one final record per committed lot; a canceled lot gets a line at each HEAD it is closed at
 	const head = state === 'canceled' ? headOf({ worktree }) : undefined
 	if (hasCard({ file, name: entry.name, lot, state, head })) return undefined
-	const line = catchUpLine({ entry, worktree, shown: params.shown, state, role: params.role })
+	const line = catchUpLine({
+		entry,
+		worktree,
+		shown: params.shown,
+		state,
+		role: params.role,
+		by: params.by,
+	})
 	if ('kept' in line) return line
 	writeCard({ file, line })
 	if (!hasCard({ file, name: entry.name, lot, state, head: line.head }))
@@ -271,6 +285,7 @@ function catchUpLine(params: {
 	shown: string
 	state: CardInput['state']
 	role: CatchUpRole
+	by: RemovalBy
 }): CardInput | { kept: string } {
 	const { entry, worktree, state, role } = params
 	const read = readHandoverFolder(entry.folder)
@@ -301,7 +316,7 @@ function catchUpLine(params: {
 		head: head ?? null,
 		base: handover?.lotsFile.head ?? null,
 		recordsRoot: worktree,
-		by: 'lot-close',
+		by: params.by,
 		recomputed: true,
 	})
 }

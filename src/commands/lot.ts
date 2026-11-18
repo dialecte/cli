@@ -46,6 +46,7 @@ import { lotExport } from './lot-export.ts'
 import { lotForecast } from './lot-forecast.ts'
 import { runLotLand } from './lot-land.ts'
 import { runLotPr } from './lot-pr.ts'
+import { runLotPrune } from './lot-prune.ts'
 import { lotReport } from './lot-report.ts'
 import { lotResult } from './lot-result.ts'
 import { runLotReview } from './lot-review.ts'
@@ -197,6 +198,8 @@ export function runLot(params: {
 	if (verb === 'close')
 		return runLotClose({ cwd: params.cwd, argv: words, now: params.now, host: params.host })
 	if (verb === 'land') return runLotLand({ cwd: params.cwd, argv: words, host: params.host })
+	if (verb === 'prune')
+		return runLotPrune({ cwd: params.cwd, argv: words, now: params.now, host: params.host })
 	if (verb === 'pr') return runLotPr({ cwd: params.cwd, argv: words })
 	if (verb === 'review') return runLotReview({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'approve') return runLotApprove({ cwd: params.cwd, argv: words, now: params.now })

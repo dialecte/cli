@@ -17,6 +17,7 @@ import {
 	LOST_WHY,
 	LOST_WORK_TEXTS,
 	NO_OWN_COMMIT_REASONS,
+	PER_WORKTREE_REF_PREFIXES,
 	REMOTE_REF_PREFIX,
 	TAG_REF_PREFIX,
 	WORKTREES_ADMIN_FOLDER,
@@ -188,7 +189,14 @@ function headRecordsOf(params: { root: string; worktree: string }): string[] {
 	const reflog = linesOf(
 		tryReadGit({ root, args: [...gitDir, 'reflog', 'show', '--format=%H', 'HEAD', '--'] }) ?? '',
 	)
-	return [...(head ? [head] : []), ...reflog]
+	// the worktree's own refs (`refs/worktree/*`, `refs/bisect/*`) go with it too
+	const own = linesOf(
+		tryReadGit({
+			root,
+			args: [...gitDir, 'for-each-ref', '--format=%(objectname)', ...PER_WORKTREE_REF_PREFIXES],
+		}) ?? '',
+	)
+	return [...(head ? [head] : []), ...reflog, ...own]
 }
 
 /** The git folder of the linked worktree registered at `worktree` (its `gitdir` names `<worktree>/.git`), if any. */

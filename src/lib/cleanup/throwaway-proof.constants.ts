@@ -5,6 +5,7 @@ export const THROWAWAY_KEEP_REASONS = {
 	headMoved: 'HEAD is not on {branch}: {head}',
 	differs: 'round-{round} differs: {count} path(s), first: {path}',
 	noSnapshot: 'no round-{round}/ snapshot: the throwaway holds the only copy',
+	heldNowhere: 'hand-made throwaway of {lot}: {count} path(s) held nowhere, first: {path}',
 	embedded: 'an untracked folder git status does not look into: {path}',
 	gitlink: 'a submodule entry git status does not compare: {path}',
 	hidden: '{count} path(s) hidden from git status, first: {path}',

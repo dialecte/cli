@@ -11,6 +11,11 @@ export type ThrowawayProofParameters = {
 	/** The round the throwaway holds. */
 	round: number
 	/**
+	 * A hand-made throwaway of this lot (no round snapshot): its changed paths are kept only by the held commits, and
+	 * its reason names the lot. Left out for a recorded round throwaway.
+	 */
+	handMadeOf?: string
+	/**
 	 * The refs or commits whose files count as kept elsewhere, in order: the lot's branch (when it exists), its landed
 	 * tip, the base. One that does not resolve is skipped.
 	 */
@@ -36,7 +41,8 @@ export type ThrowawayPath = { throwaway: string; path: string }
 
 /** Where the versions of one path kept elsewhere are read: the snapshot, its deletions, the held commits. */
 export type KeptVersionsParameters = ThrowawayPath & {
-	snapshot: string
+	/** The round's snapshot folder; none for a hand-made throwaway. */
+	snapshot: string | undefined
 	deleted: ReadonlySet<string>
 	holders: readonly string[]
 }

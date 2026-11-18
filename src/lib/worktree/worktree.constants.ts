@@ -314,4 +314,7 @@ export const SCRATCH_KEEP_REASONS = {
  * own, `{lot}` its name and `{state}`; an open lot's item takes the lot keep reason (`LOT_KEEP_REASON`).
  */
 export const CLOSED_LOT_ITEM_REASON =
-	'lot {lot} {state}: its own item, closed by dialecte lot close {lot}'
+	'lot {lot} {state}: its own item, removed by dialecte lot prune {lot}'
+
+/** The time a trashed folder's name ends with (`<name>-yyyymmddThhmmss`, maybe `-<n>` after it). */
+export const TRASH_TIME_PATTERN = /-(\d{8}T\d{6})(?:-\d+)?$/

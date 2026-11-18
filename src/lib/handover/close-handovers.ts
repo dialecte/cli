@@ -60,6 +60,7 @@ import { readStoreEntries } from './handover-store-read.ts'
 import { findHandoverStore, handoverStoreOf, recordHandoverClosed } from './handover-store.ts'
 import { ARCHIVED_LOT_FILE, CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
+import type { RemovalBy } from '../events/cards-log.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
@@ -67,7 +68,13 @@ import type {
 	NodeModulesCheck,
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
-import type { DeclarationArchive, Decision, Kept } from './close-handovers.types.ts'
+import type {
+	CloseContext,
+	CloseDecisionParams,
+	DeclarationArchive,
+	Decision,
+	Kept,
+} from './close-handovers.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
 
@@ -81,67 +88,15 @@ export function closeHandovers(params: {
 	settled: CloseSettle
 	now: Date
 	spawner: BackgroundSpawner
+	/** Who writes the final records and removals (`lot-close` by default, `lot-prune`). */
+	by?: RemovalBy
 	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. A throw is "not known". */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
 }): CloseResult[] {
-	const main = mainCheckoutOf(params.cwd)
-	const store = findHandoverStore(params.cwd)
-	const worktreesFolder = join(dirname(main), WORKTREES_FOLDER)
-	const runs = readOwnedRuns(main)
-	const processes = readProcesses(params.listProcesses ?? listProcessFolders)
-	const registered = store ? readStoreEntries(store) : []
-	// each target's entry as the registry holds it now: the settle commits a landed lot's pending entry
-	const targets = params.settled.map(function refreshed({ target }): CloseTarget {
-		if (target.entry === undefined) return target
-		const name = target.entry.name
-		return { ...target, entry: registered.find((entry) => entry.name === name) ?? target.entry }
-	})
-	// one worktree is closed once, whichever names and indexes reach it: keyed by its real path, read before
-	// anything moves (a moved worktree has no real path left: its registered spelling would be another key)
-	const keys = targets.map(function keyOf(target): string {
-		return target.kind === 'unknown' || target.worktreePath === undefined
-			? `argument:${target.argument}`
-			: target.worktreePath
-	})
-	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
-	// branch), and the check of its worktree's node_modules
-	// the lot keep rule: the repository's store read once for every argument, after the landings were settled (a
-	// merged lot holds its landed fact: committed, it keeps nothing)
-	const lotKeeps = lotsKeepingWorktrees({ repository: main })
-	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
-	const lotOwners = readLotOwners(main)
-	// read once for every argument: the registry's entries, the links around the workspace
-	const links = readLinkScanSet({
-		workspace: dirname(main),
-		scratchRoots: params.scratchRoots ?? [],
-	})
-	// the final records and the removals of the repository, beside its registry (made with the first line it holds)
-	const cardsLog = join(store ?? handoverStoreOf(main), CARDS_LOG_FILE)
-	const decisions = params.settled.map(function decide({ kept }, index): Decision {
-		const target = targets[index]
-		if (kept !== undefined) return { kept }
-		if (target.kind === 'unknown')
-			return {
-				kept: fillMessage({
-					template: CLOSE_TARGET_TEXTS.unknown,
-					values: { argument: target.argument },
-				}),
-			}
-		return decideTarget({
-			target,
-			cardsLog,
-			main,
-			runFrom: params.runFrom,
-			worktreesFolder,
-			runs,
-			processes,
-			lotKeeps,
-			registered,
-			links,
-		})
-	})
+	const { context, decisions } = closeDecisionsOf(params)
+	const { main, store, worktreesFolder, registered, targets, keys, lotOwners, cardsLog } = context
 	// a worktree closes only when every argument reaching it may close: the first that keeps it, in any order;
 	// a hand-over already closed never owns the worktree (the others reaching it are decided on their own)
 	const owners = new Map<string, CloseTarget>()
@@ -175,12 +130,14 @@ export function closeHandovers(params: {
 			const record =
 				reaching.length > 0
 					? keepFinalRecord({
+							by: params.by ?? 'lot-close',
 							entries: reaching,
 							worktree: decision.worktree.path,
 							file: cardsLog,
 						})
 					: target.kind === 'lot' && target.lotState !== undefined
 						? keepLotFinalRecord({
+								by: params.by ?? 'lot-close',
 								lot: target.lot,
 								state: target.lotState,
 								worktree: decision.worktree.path,
@@ -218,6 +175,7 @@ export function closeHandovers(params: {
 						},
 						moved,
 						nodeModules,
+						trashed,
 					},
 				]
 			} catch (error) {
@@ -277,6 +235,87 @@ export function closeHandovers(params: {
 		for (const name of closedNames) recordHandoverClosed({ store, name, at: params.now })
 	}
 	return outcomes
+}
+
+/**
+ * Each target of a close decided before anything moves, with what the decisions read (once): the targets as the
+ * registry holds their entries now, their keys (a worktree's real path), the lot owners, the cards log.
+ */
+function closeDecisionsOf(params: CloseDecisionParams): {
+	context: CloseContext
+	decisions: Decision[]
+} {
+	const main = mainCheckoutOf(params.cwd)
+	const store = findHandoverStore(params.cwd)
+	const worktreesFolder = join(dirname(main), WORKTREES_FOLDER)
+	const runs = readOwnedRuns(main)
+	const processes = readProcesses(params.listProcesses ?? listProcessFolders)
+	const registered = params.registered ?? (store ? readStoreEntries(store) : [])
+	// each target's entry as the registry holds it now: the settle commits a landed lot's pending entry
+	const targets = params.settled.map(function refreshed({ target }): CloseTarget {
+		if (target.entry === undefined) return target
+		const name = target.entry.name
+		return { ...target, entry: registered.find((entry) => entry.name === name) ?? target.entry }
+	})
+	// one worktree is closed once, whichever names and indexes reach it: keyed by its real path, read before
+	// anything moves (a moved worktree has no real path left: its registered spelling would be another key)
+	const keys = targets.map(function keyOf(target): string {
+		return target.kind === 'unknown' || target.worktreePath === undefined
+			? `argument:${target.argument}`
+			: target.worktreePath
+	})
+	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
+	// branch), and the check of its worktree's node_modules
+	// the lot keep rule: the repository's store read once for every argument, after the landings were settled (a
+	// merged lot holds its landed fact: committed, it keeps nothing)
+	const lotKeeps = lotsKeepingWorktrees({ repository: main })
+	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
+	const lotOwners = readLotOwners(main)
+	// read once for every argument: the registry's entries, the links around the workspace
+	const links = readLinkScanSet({
+		workspace: dirname(main),
+		scratchRoots: params.scratchRoots ?? [],
+	})
+	// the final records and the removals of the repository, beside its registry (made with the first line it holds)
+	const cardsLog = join(store ?? handoverStoreOf(main), CARDS_LOG_FILE)
+	const decisions = params.settled.map(function decide({ kept }, index): Decision {
+		const target = targets[index]
+		if (kept !== undefined) return { kept }
+		if (target.kind === 'unknown')
+			return {
+				kept: fillMessage({
+					template: CLOSE_TARGET_TEXTS.unknown,
+					values: { argument: target.argument },
+				}),
+			}
+		return decideTarget({
+			target,
+			cardsLog,
+			main,
+			runFrom: params.runFrom,
+			worktreesFolder,
+			runs,
+			processes,
+			lotKeeps,
+			registered,
+			links,
+		})
+	})
+	return {
+		context: { main, store, worktreesFolder, registered, targets, keys, lotOwners, cardsLog },
+		decisions,
+	}
+}
+
+/**
+ * What `lot close`'s own rules decide for each target, nothing moved: kept with why, closed already, or let go (with
+ * its `node_modules` check). `lot prune` reads its plan's worktree items from it.
+ *
+ * @intent decide lot close targets without acting, one rule set for lot close and lot prune
+ * @internal
+ */
+export function decideCloseTargets(params: CloseDecisionParams): Decision[] {
+	return closeDecisionsOf(params).decisions
 }
 
 /**
@@ -386,8 +425,15 @@ function movedByRemoval(params: { file: string; lot: string; worktree: string })
 	)
 }
 
-/** The processes, or "not known" when the lister throws or cannot tell: then everything is kept. */
-function readProcesses(listProcesses: () => ProcessFolder[] | string): ProcessFolder[] | string {
+/**
+ * The processes, or "not known" when the lister throws or cannot tell: then everything is kept.
+ *
+ * @intent read the processes once, a lister failure reading as "not known"
+ * @internal
+ */
+export function readProcesses(
+	listProcesses: () => ProcessFolder[] | string,
+): ProcessFolder[] | string {
 	try {
 		return listProcesses()
 	} catch (error) {

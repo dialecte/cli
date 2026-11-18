@@ -23,7 +23,7 @@ worktree - A worktree ready to work in; prune what a merge left
           while one is kept; a store lot's items (its worktree, its review throwaways <lot
           worktree>-round-<n> and -verify, its branch and theirs) are never removed here and no
           landing is read: an open lot's are kept, reason lot <name> <state>, a committed or
-          canceled lot's are listed lot <name> <state>: its own item, closed by dialecte lot close
+          canceled lot's are listed lot <name> <state>: its own item, removed by dialecte lot prune
           <name>; a worktree whose branch's work is not in the base is kept (not landed: its work is
           not in <base>); a worktree or a branch whose removal would lose a commit is kept with its
           commits (<n> commit(s) its removal would lose: <commits>; a surviving branch, branch
@@ -148,7 +148,7 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   here and no landing read: a worktree a lot of the repository's store names (by real path) while the lot is not
   `committed` nor `canceled` (`<branch>: lot <full name> <state>`), and a committed or canceled lot's worktree, its
   review throwaways (`<lot worktree>-round-<n>`, `-verify`, or on `<lot branch>-round-<n>`) and its branch, listed as
-  its own (`lot <full name> <state>: its own item, closed by dialecte lot close <full name>`); a worktree whose
+  its own (`lot <full name> <state>: its own item, removed by dialecte lot prune <full name>`); a worktree whose
   branch's work is not in the base (`not landed: its work is not in <base>`); a worktree or branch whose removal
   would lose a commit (`<n> commit(s) its removal would lose: <commits>`): a worktree removal takes its HEAD and HEAD
   reflog, a branch deletion its tip and reflog, and a commit only they reach is lost unless a surviving branch tip or
