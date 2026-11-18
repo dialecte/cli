@@ -56,6 +56,51 @@ const TOTAL_WITH_OPT_OUT = [
 
 const BASE = { [SIZE_FILE]: SIZE, [TOTAL_FILE]: TOTAL }
 
+/** The folder of the escaping case: a bidi override in its name. */
+const ODD_FOLDER = 'co\u202ere'
+const ODD_SIZE_FILE = `src/${ODD_FOLDER}/size.ts`
+
+/** An app installing a dialecte that ships a built definition: a file importing it is a Dialecte change. */
+const APP_PACKAGE_JSON = `${JSON.stringify({ name: 'demo-app' })}\n`
+const APP_DIALECTE_FILES = {
+	'node_modules/@dialecte/demo/package.json': `${JSON.stringify({ name: '@dialecte/demo' })}\n`,
+	'node_modules/@dialecte/demo/dist/v1/generated/definition.generated.js': 'export {}\n',
+}
+const APP_SIZE_FILE = 'src/model/size.ts'
+const APP_PLAIN_FILE = 'src/plain/count.ts'
+const APP_GONE_FILE = 'src/model/gone.ts'
+const APP_USER_FILE = 'src/view/panel.ts'
+
+/** A file importing the dialecte, exporting `name` that counts its items, `plus` added. */
+function dialecteModule(params: { name: string; plus?: string }): string {
+	return [
+		"import { definition } from '@dialecte/demo/dist/v1/generated/definition.generated.js'",
+		'',
+		`export function ${params.name}(items: readonly string[]${params.plus === undefined ? '' : ', extra = 0'}): number {`,
+		`\treturn items.length + Object.keys(definition).length${params.plus ?? ''}`,
+		'}',
+		'',
+	].join('\n')
+}
+
+const APP_SIZE = dialecteModule({ name: 'sizeOf' })
+const APP_SIZE_RESIGNED = dialecteModule({ name: 'sizeOf', plus: ' + extra' })
+const APP_GONE = dialecteModule({ name: 'goneOf' })
+const APP_PLAIN =
+	'export function countOf(items: readonly string[]): number {\n\treturn items.length\n}\n'
+const APP_PLAIN_RESIGNED =
+	'export function countOf(items: readonly string[], extra = 0): number {\n\treturn items.length + extra\n}\n'
+const APP_USER = [
+	"import { countOf } from '../plain/count.ts'",
+	"import { goneOf } from '../model/gone.ts'",
+	"import { sizeOf } from '../model/size.ts'",
+	'',
+	'export function panel(items: readonly string[]): number {',
+	'\treturn sizeOf(items) + countOf(items) + goneOf(items)',
+	'}',
+	'',
+].join('\n')
+
 const MUTATING_FILE = 'src/lib/fill.ts'
 const GONE_FILE = 'src/lib/gone.ts'
 
@@ -331,6 +376,51 @@ describe(
 			expect(check.findings.filter((finding) => finding.rule === 'shared-export-changed')).toEqual(
 				[],
 			)
+		})
+
+		it('an app: base-aware findings on its Dialecte-change files only, a deleted one among them; a plain file of the app left out', () => {
+			const lot = createQualityLot({
+				packageJson: APP_PACKAGE_JSON,
+				base: {
+					...APP_DIALECTE_FILES,
+					[APP_SIZE_FILE]: APP_SIZE,
+					[APP_PLAIN_FILE]: APP_PLAIN,
+					[APP_GONE_FILE]: APP_GONE,
+					[APP_USER_FILE]: APP_USER,
+				},
+				commits: [{ [APP_SIZE_FILE]: APP_SIZE_RESIGNED, [APP_PLAIN_FILE]: APP_PLAIN_RESIGNED }],
+				deleted: [APP_GONE_FILE],
+			})
+
+			const json = jsonRunOf({ root: lot.root, argv: [], environment: machineOf() })
+
+			expect(
+				(json.quality?.sharedExports ?? []).map((shared) => ({
+					name: shared.name,
+					changes: shared.changes,
+				})),
+			).toEqual([
+				{ name: 'sizeOf', changes: ['signature', 'behaviour'] },
+				{ name: 'goneOf', changes: ['removed'] },
+			])
+		})
+
+		it('a finding naming a folder that holds a bidi override → printed escaped, never the raw character', () => {
+			const lot = createQualityLot({
+				base: {
+					[ODD_SIZE_FILE]: SIZE,
+					[TOTAL_FILE]: TOTAL.replace('../core/size.ts', `../${ODD_FOLDER}/size.ts`),
+				},
+				commits: [{ [ODD_SIZE_FILE]: SIZE_RESIGNED }],
+			})
+
+			const text = runRules({ cwd: lot.root, argv: [], environment: machineOf() })
+			const line = text.output.split('\n').find((found) => found.includes('shared-export-changed'))
+
+			expect({ escaped: line?.includes('\\u{202e}'), raw: line?.includes('\u202e') }).toEqual({
+				escaped: true,
+				raw: false,
+			})
 		})
 	},
 )

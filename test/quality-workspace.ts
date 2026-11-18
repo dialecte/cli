@@ -86,10 +86,15 @@ export function createQualityLot(params: {
 	deleted?: readonly string[]
 	link?: boolean
 	baseBranch?: 'present' | 'absent'
+	/** The package's manifest; a contributor's library when left out. */
+	packageJson?: string
 }): { root: string; cut: string; shortCut: string } {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
-	writeFiles({ root: repository, files: { 'package.json': QUALITY_PACKAGE_JSON, ...params.base } })
+	writeFiles({
+		root: repository,
+		files: { 'package.json': params.packageJson ?? QUALITY_PACKAGE_JSON, ...params.base },
+	})
 	git({ root: repository, args: ['add', '-A'] })
 	git({ root: repository, args: ['commit', '-q', '-m', 'chore: package'] })
 	const cut = git({ root: repository, args: ['rev-parse', 'HEAD'] }).trim()

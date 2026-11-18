@@ -13,16 +13,20 @@ import { parseSourceFile } from '../api/source-file-functions.ts'
 import { isSourceFilePath, listSourceFiles } from '../api/source-functions.ts'
 import { indexSourceFiles } from '../api/source-index.ts'
 import { readFilesAtRevision, tryReadGit } from '../git.ts'
+import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
+import { createDialecteChangeReader } from '../rules/dialecte-change.ts'
 import { createImportReading } from '../rules/import-reading.ts'
 import { createModuleResolver, fileSetHost } from '../tdd/module-resolver.ts'
 import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
 import { functionSidesOf } from './change-sides.ts'
 import { docsGateApplies, findDocsNotUpdated } from './docs-gate.ts'
 import { findDuplicateReads } from './duplicate-reads.ts'
-import { DOC_PAGE_PATTERN } from './quality.constants.ts'
+import { CONTRIBUTOR_PROFILE, DOC_PAGE_PATTERN } from './quality.constants.ts'
 import { findSharedExportChanges } from './shared-exports.ts'
+
+import ts from 'typescript'
 
 import type { ApiJson } from '../api/api-json.types.ts'
 import type { FileFacts } from '../api/source-functions.types.ts'
@@ -48,10 +52,14 @@ export function checkBaseAware(params: { root: string; base: QualityBase }): Qua
 		if (state.state === 'renamed') return { path, state: 'renamed', from: state.from }
 		return { path, state: state.state }
 	})
-	const changed = allChanged.filter(
-		(path) =>
-			isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
-	)
+	const judged = appChangeFilterOf({ root, base: base.commit })
+	// in an app only the Dialecte changes count: any other file reads as untouched, so no rule reports it
+	const changed = allChanged
+		.filter(
+			(path) =>
+				isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
+		)
+		.filter(judged)
 	const change: ChangeFacts = {
 		changed,
 		tree: treeFactsOf(root),
@@ -155,4 +163,26 @@ function docPagesOf(params: { root: string; touched: ReadonlySet<string> }): Doc
 		if (!existsSync(full)) return []
 		return [{ path, text: readFileSync(full, 'utf8'), touched: params.touched.has(path) }]
 	})
+}
+
+/**
+ * The changed paths an app judges: a path whose tree text or base text (a deleted or renamed-from one) is a Dialecte
+ * change; every path for any other package (a dialecte package, core, the cli, a contributor's).
+ */
+function appChangeFilterOf(params: { root: string; base: string }): (path: ChangedPath) => boolean {
+	const { root } = params
+	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return () => true
+	const reader = createDialecteChangeReader({ root, reading: createImportReading({ root }) })
+	if (reader.kind !== 'app' || readProfile(root) === CONTRIBUTOR_PROFILE) return () => true
+	return function isDialecteChange(path) {
+		const basePath = path.state === 'renamed' ? path.from : path.path
+		if (path.state !== 'deleted' && reader.verdictOf({ file: path.path }).dialecteChange)
+			return true
+		const text = readFilesAtRevision({ root, revision: params.base, files: [basePath] }).get(
+			basePath,
+		)
+		if (text === undefined) return false
+		const sourceFile = ts.createSourceFile(basePath, text, ts.ScriptTarget.Latest, true)
+		return reader.verdictOf({ file: basePath, sourceFile }).dialecteChange
+	}
 }
