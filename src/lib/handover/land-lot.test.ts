@@ -302,7 +302,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 	})
 
-	it('a closed pull request of the branch → a new one opened', () => {
+	it('a closed pull request of the branch → never reused: a new draft opened, the closed one never taken back', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({
 			existing: pullRequestOf({ state: 'closed', head: '' }),
@@ -310,7 +310,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 		land({ repository, host })
 
-		expect(calls).toContain('open feat/x -> main "feat(x): x answers one"')
+		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat(x): x answers one" draft'])
 	})
 
 	it("the recorded pull request merged at the lot's tip → the lot committed (its hand-over entry), nothing pushed", () => {
