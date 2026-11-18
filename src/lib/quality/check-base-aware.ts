@@ -12,7 +12,7 @@ import { readOwnApiIndexes } from '../api/read-api-indexes.ts'
 import { parseSourceFile } from '../api/source-file-functions.ts'
 import { isSourceFilePath, listSourceFiles } from '../api/source-functions.ts'
 import { indexSourceFiles } from '../api/source-index.ts'
-import { readFilesAtRevision, tryReadGit } from '../git.ts'
+import { listRepositoryFiles, readFilesAtRevision, tryReadGit } from '../git.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
@@ -23,7 +23,7 @@ import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
 import { functionSidesOf } from './change-sides.ts'
 import { docsGateApplies, findDocsNotUpdated } from './docs-gate.ts'
 import { findDuplicateReads } from './duplicate-reads.ts'
-import { CONTRIBUTOR_PROFILE, DOC_PAGE_PATTERN } from './quality.constants.ts'
+import { ALIAS_CONFIG_PATTERN, CONTRIBUTOR_PROFILE, DOC_PAGE_PATTERN } from './quality.constants.ts'
 import { findSharedExportChanges } from './shared-exports.ts'
 
 import ts from 'typescript'
@@ -52,14 +52,12 @@ export function checkBaseAware(params: { root: string; base: QualityBase }): Qua
 		if (state.state === 'renamed') return { path, state: 'renamed', from: state.from }
 		return { path, state: state.state }
 	})
-	const judged = appChangeFilterOf({ root, base: base.commit })
+	const sourceChanged = allChanged.filter(
+		(path) =>
+			isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
+	)
 	// in an app only the Dialecte changes count: any other file reads as untouched, so no rule reports it
-	const changed = allChanged
-		.filter(
-			(path) =>
-				isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
-		)
-		.filter(judged)
+	const changed = appChangesOf({ root, base: base.commit, changed: sourceChanged })
 	const change: ChangeFacts = {
 		changed,
 		tree: treeFactsOf(root),
@@ -86,6 +84,11 @@ export function checkBaseAware(params: { root: string; base: QualityBase }): Qua
 						pages: docPagesOf({ root, touched: new Set(allChanged.map((path) => path.path)) }),
 					})
 				: [],
+		aliasesChanged: allChanged.some(
+			(path) =>
+				ALIAS_CONFIG_PATTERN.test(path.path) ||
+				(path.state === 'renamed' && ALIAS_CONFIG_PATTERN.test(path.from)),
+		),
 	}
 }
 
@@ -107,9 +110,7 @@ function baseFactsOf(params: {
 	base: string
 	changed: readonly ChangedPath[]
 }): Map<string, FileFacts> {
-	const paths = params.changed
-		.map((path) => (path.state === 'renamed' ? path.from : path.path))
-		.filter((path) => isSourceFilePath(path))
+	const paths = params.changed.map(basePathOf).filter((path) => isSourceFilePath(path))
 	const texts = readFilesAtRevision({ root: params.root, revision: params.base, files: paths })
 	return new Map(
 		[...texts].flatMap(([file, text]) => {
@@ -156,8 +157,10 @@ function ownIndexesOf(root: string): ApiJson[] {
 
 /** The doc pages of the tree (Markdown under `doc/`, and `README.md`), each with whether the change touched it. */
 function docPagesOf(params: { root: string; touched: ReadonlySet<string> }): DocPage[] {
-	const listing = tryReadGit({ root: params.root, args: ['ls-files', '--', '.'] }) ?? ''
-	const pages = listing.split('\n').filter((file) => DOC_PAGE_PATTERN.test(file))
+	// a new page git does not hold yet counts too: the change wrote it
+	const pages = listRepositoryFiles({ root: params.root, folder: '.' }).filter((file) =>
+		DOC_PAGE_PATTERN.test(file),
+	)
 	return pages.flatMap((path) => {
 		const full = join(params.root, path)
 		if (!existsSync(full)) return []
@@ -167,22 +170,42 @@ function docPagesOf(params: { root: string; touched: ReadonlySet<string> }): Doc
 
 /**
  * The changed paths an app judges: a path whose tree text or base text (a deleted or renamed-from one) is a Dialecte
- * change; every path for any other package (a dialecte package, core, the cli, a contributor's).
+ * change, the base texts read in one batch; every path for any other package (a dialecte package, core, the cli, a
+ * contributor's).
  */
-function appChangeFilterOf(params: { root: string; base: string }): (path: ChangedPath) => boolean {
-	const { root } = params
-	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return () => true
+function appChangesOf(params: {
+	root: string
+	base: string
+	changed: readonly ChangedPath[]
+}): ChangedPath[] {
+	const { root, changed } = params
+	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return [...changed]
 	const reader = createDialecteChangeReader({ root, reading: createImportReading({ root }) })
-	if (reader.kind !== 'app' || readProfile(root) === CONTRIBUTOR_PROFILE) return () => true
-	return function isDialecteChange(path) {
-		const basePath = path.state === 'renamed' ? path.from : path.path
-		if (path.state !== 'deleted' && reader.verdictOf({ file: path.path }).dialecteChange)
-			return true
-		const text = readFilesAtRevision({ root, revision: params.base, files: [basePath] }).get(
-			basePath,
-		)
+	if (reader.kind !== 'app' || readProfile(root) === CONTRIBUTOR_PROFILE) return [...changed]
+	const fromTree = new Set(
+		changed
+			.filter(
+				(path) => path.state !== 'deleted' && reader.verdictOf({ file: path.path }).dialecteChange,
+			)
+			.map((path) => path.path),
+	)
+	const rest = changed.filter((path) => !fromTree.has(path.path))
+	const baseTexts = readFilesAtRevision({
+		root,
+		revision: params.base,
+		files: rest.map(basePathOf),
+	})
+	return changed.filter(function isDialecteChange(path) {
+		if (fromTree.has(path.path)) return true
+		const basePath = basePathOf(path)
+		const text = baseTexts.get(basePath)
 		if (text === undefined) return false
 		const sourceFile = ts.createSourceFile(basePath, text, ts.ScriptTarget.Latest, true)
 		return reader.verdictOf({ file: basePath, sourceFile }).dialecteChange
-	}
+	})
+}
+
+/** Where a changed path was at the base: its old path when renamed, else its own. */
+function basePathOf(path: ChangedPath): string {
+	return path.state === 'renamed' ? path.from : path.path
 }

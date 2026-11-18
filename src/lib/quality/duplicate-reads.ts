@@ -7,6 +7,7 @@ import { findMethods, wordsOf } from '../api/find-methods.ts'
 import {
 	DUPLICATE_FIND_LIMIT,
 	DUPLICATE_FIND_MIN_WORDS,
+	DUPLICATE_FIND_STOP_WORDS,
 	DUPLICATE_READ_MIN_ATTRIBUTES,
 	EXISTING_SOURCE_PACKAGE,
 	NAMED_SET_KEY,
@@ -35,7 +36,9 @@ export function findDuplicateReads(params: {
 }): DuplicateRead[] {
 	const { sides, resolve } = params
 	const byKey = new Map(sides.existing.map((side) => [keyOf(side), side]))
-	const byNameWord = nameWordIndexOf(sides.existing)
+	// the generic words, stemmed as the names are
+	const stop = new Set(DUPLICATE_FIND_STOP_WORDS.flatMap(wordsOf))
+	const byNameWord = nameWordIndexOf({ existing: sides.existing, stop })
 	return sides.added.flatMap(function duplicatesOfAdded(added) {
 		const called = calledOf({ side: added, existing: byKey, resolve })
 		const keys = keysThroughCalls({ side: added, called, existing: byKey })
@@ -49,7 +52,7 @@ export function findDuplicateReads(params: {
 		const named = new Set(reads.map((read) => `${read.existing.file}#${read.existing.name}`))
 		const found = [
 			...new Map(
-				foundByWords({ added, byNameWord, indexes: params.indexes }).map((side) => [
+				foundByWords({ added, byNameWord, stop, indexes: params.indexes }).map((side) => [
 					keyOf(side),
 					side,
 				]),
@@ -161,11 +164,12 @@ function sharedReadOf(params: {
 function foundByWords(params: {
 	added: SidedFunction
 	byNameWord: ReadonlyMap<string, readonly SidedFunction[]>
+	stop: ReadonlySet<string>
 	indexes: readonly ApiJson[]
 }): SidedFunction[] {
 	const { added } = params
 	const need = `${added.facts.name} ${added.facts.summary ?? ''}`
-	const nameWords = new Set(wordsOf(added.facts.name))
+	const nameWords = new Set(nameWordsOf({ name: added.facts.name, stop: params.stop }))
 	// only the existing functions sharing a word of the name can share two: `api find` ranks those alone
 	const candidates = [
 		...new Map(
@@ -194,13 +198,21 @@ function foundByWords(params: {
 	)
 }
 
-/** The existing functions by each word of their name, built once per run. */
-function nameWordIndexOf(existing: readonly SidedFunction[]): Map<string, SidedFunction[]> {
+/** The existing functions by each word of their name (the generic words left out), built once per run. */
+function nameWordIndexOf(params: {
+	existing: readonly SidedFunction[]
+	stop: ReadonlySet<string>
+}): Map<string, SidedFunction[]> {
 	const index = new Map<string, SidedFunction[]>()
-	for (const side of existing)
-		for (const word of new Set(wordsOf(side.facts.name)))
+	for (const side of params.existing)
+		for (const word of new Set(nameWordsOf({ name: side.facts.name, stop: params.stop })))
 			index.set(word, [...(index.get(word) ?? []), side])
 	return index
+}
+
+/** The words of a function's name that tell what it does: `DUPLICATE_FIND_STOP_WORDS` left out. */
+function nameWordsOf(params: { name: string; stop: ReadonlySet<string> }): string[] {
+	return wordsOf(params.name).filter((word) => !params.stop.has(word))
 }
 
 /** An existing function as a method `api find` ranks: its path is its key. */

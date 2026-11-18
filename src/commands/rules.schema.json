@@ -38,7 +38,8 @@
 				"duplicates": { "type": "array", "items": { "type": "object" } },
 				"sharedExports": { "type": "array", "items": { "type": "object" } },
 				"publicApi": { "type": "object", "required": ["kind"] },
-				"docs": { "type": "array", "items": { "type": "object" } }
+				"docs": { "type": "array", "items": { "type": "object" } },
+				"aliasesChanged": { "type": "boolean" }
 			}
 		}
 	},

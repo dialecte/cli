@@ -10,7 +10,7 @@ import { applyAllowComments } from '../rules/allow-comments.ts'
 import { BASE_AWARE_RULES } from '../rules/check-code-rules.constants.ts'
 import { checkBaseAware } from './check-base-aware.ts'
 import { recordQuality } from './quality-record.ts'
-import { QUALITY_MESSAGES } from './quality.constants.ts'
+import { QUALITY_MESSAGES, QUALITY_NOTES } from './quality.constants.ts'
 
 import type { AllowedCounts } from '../rules/allow-comments.types.ts'
 import type { RuleFinding, RuleName } from '../rules/check-code-rules.types.ts'
@@ -28,7 +28,7 @@ export function runQualityPass(params: {
 	base: QualityBase
 	givenFiles: readonly string[]
 	record: boolean
-}): { findings: RuleFinding[]; allowed: AllowedCounts; result: QualityResult } {
+}): { findings: RuleFinding[]; allowed: AllowedCounts; result: QualityResult; notes: string[] } {
 	const { root } = params
 	const result = checkBaseAware({ root, base: params.base })
 	const all = findingsOf(result)
@@ -57,7 +57,28 @@ export function runQualityPass(params: {
 	const findings = applied.flatMap((pass) => pass.findings)
 	const allowed = sumOf(applied.map((pass) => pass.allowed))
 	if (params.record && !given.size) recordQuality({ root, result, allowed, now: new Date() })
-	return { findings, allowed, result }
+	return { findings, allowed, result, notes: notesOf(result) }
+}
+
+/**
+ * The notes under the quality line: each removed public entry a page still names (no source line to sit on, the fix
+ * is the page), an unknown public API (the docs rule did not run), aliases read in the tree for the base edges.
+ */
+function notesOf(result: QualityResult): string[] {
+	const { publicApi } = result
+	return [
+		...result.docs
+			.filter((docs) => docs.change === 'removed')
+			.map((docs) =>
+				QUALITY_NOTES.removed
+					.replace('{route}', () => docs.route)
+					.replace('{pages}', () => docs.pages.join(', ')),
+			),
+		...(publicApi.kind === 'unknown'
+			? [QUALITY_NOTES.unknown.replace('{why}', () => publicApi.why)]
+			: []),
+		...(result.aliasesChanged ? [QUALITY_NOTES.aliases] : []),
+	]
 }
 
 /** The findings of `result` as rule findings: each at its place, a warning. */
@@ -88,7 +109,9 @@ function findingsOf(result: QualityResult): RuleFinding[] {
 				.replace('{importers}', () => shared.importers.join(', '))
 				.replace('{changes}', () => shared.changes.join(', ')),
 		})),
+		// a removed entry is a note: its declaration is gone from the tree
 		...result.docs.flatMap((docs): RuleFinding[] => {
+			if (docs.change === 'removed') return []
 			const place = placeOf(docs.declaredAt)
 			if (place === undefined) return []
 			return [

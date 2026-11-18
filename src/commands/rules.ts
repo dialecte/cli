@@ -21,6 +21,7 @@
  * it checked.
  */
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
@@ -31,6 +32,7 @@ import {
 	readGateScopeEnvironment,
 	writeSelectionFile,
 } from '../lib/gate/selection.ts'
+import { PACKAGE_MANIFEST_FILE } from '../lib/package-json.constants.ts'
 import { jsonOf, printOut } from '../lib/print/print.ts'
 import { QUALITY_LINES } from '../lib/quality/quality.constants.ts'
 import { resolveRulesBaseSource } from '../lib/rules-base.ts'
@@ -141,6 +143,7 @@ function textOf(check: RulesCheck): CommandResult {
 	const baseLine = [
 		...(check.baseLine === undefined ? [] : [check.baseLine]),
 		...(check.qualityLine === undefined ? [] : [check.qualityLine]),
+		...(check.qualityNotes ?? []),
 	]
 	const notJudged =
 		check.notJudged === undefined
@@ -175,6 +178,8 @@ function qualityBaseOf(params: {
 	scoped: boolean
 }): { base: QualityBase; line: string } | { line?: string } {
 	const { root } = params
+	// no package to judge: no base-aware part, so no line and no record, the flag included
+	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return {}
 	if (params.flag !== undefined)
 		return withLine({ root, base: { commit: params.flag, source: 'flag' } })
 	const order = resolveRulesBaseSource({ root, emptyTreeRequest: true })

@@ -13,6 +13,28 @@ export const DUPLICATE_FIND_LIMIT = 5
 /** How many distinct words of an added function's name and summary an existing one must hold to read as the same need. */
 export const DUPLICATE_FIND_MIN_WORDS = 2
 
+/**
+ * Words a function name holds whatever it does, never counted toward `DUPLICATE_FIND_MIN_WORDS`: the generic verbs
+ * and the nouns every reader of files names (measured on this repository: `isSourceFilePath` and `listSourceFiles`,
+ * `namesRoute` and `routeName`, `readQualityRecord` and `readRecord` shared only these besides one word).
+ */
+export const DUPLICATE_FIND_STOP_WORDS: readonly string[] = [
+	'build',
+	'check',
+	'create',
+	'file',
+	'find',
+	'has',
+	'list',
+	'make',
+	'name',
+	'parse',
+	'path',
+	'read',
+	'run',
+	'write',
+]
+
 /** The package an index of the existing source functions is named for in `api find`. */
 export const EXISTING_SOURCE_PACKAGE = 'existing source'
 
@@ -31,6 +53,9 @@ export const ROUTE_NAMING_SEGMENTS = 2
 /** A doc page of a package: a Markdown file under `doc/`, or the README. */
 export const DOC_PAGE_PATTERN = /^(?:doc\/.+\.md|README\.md)$/
 
+/** A file whose aliases the resolvers read in the tree: a tsconfig, a Vite config. */
+export const ALIAS_CONFIG_PATTERN = /(?:^|\/)(?:tsconfig[^/]*\.json|vite\.config\.[cm]?[jt]s)$/
+
 /** The record of the last base-aware run on the change, in the worktree's git folder. */
 export const QUALITY_RECORD_FILE = 'dialecte-quality.json'
 
@@ -46,6 +71,13 @@ export const QUALITY_MESSAGES = {
 } as const
 
 /** The line saying where the base-aware rules stand: run since a base, or not run in a clone outside any lot. */
+/** The notes a run adds under its quality line: a removed entry a page still names, an unknown public API, aliases changed. */
+export const QUALITY_NOTES = {
+	removed: 'public API: {route} removed: still named by {pages}',
+	unknown: '! public API unknown ({why})',
+	aliases: "aliases changed: base edges read with the tree's",
+} as const
+
 export const QUALITY_LINES = {
 	since: 'quality: since {short} ({source})',
 	noLot: 'quality: not run (no lot)',

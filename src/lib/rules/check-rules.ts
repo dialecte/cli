@@ -92,7 +92,13 @@ export function checkRules(params: {
 	const quality =
 		params.quality === undefined
 			? undefined
-			: runQualityPass({ root, base: params.quality, givenFiles, record: givenFiles.length === 0 })
+			: runQualityPass({
+					root,
+					base: params.quality,
+					// a given folder judged as the files it holds, as the per-file rules judge it
+					givenFiles: givenFiles.length === 0 ? [] : files,
+					record: givenFiles.length === 0,
+				})
 	const judged = files.length === 0 ? undefined : judgeFiles({ ...params, files, words })
 	const findings = [
 		...picked.findings,
@@ -117,6 +123,7 @@ export function checkRules(params: {
 		...noList,
 		...judged?.fields,
 		...(quality !== undefined && { quality: quality.result }),
+		...(quality !== undefined && quality.notes.length > 0 && { qualityNotes: quality.notes }),
 	}
 }
 

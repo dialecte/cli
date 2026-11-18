@@ -92,6 +92,8 @@ export type QualityResult = {
 	sharedExports: SharedExportChange[]
 	publicApi: ApiIndexDiff
 	docs: DocsNotUpdated[]
+	/** A tsconfig or Vite config changed: the base edges were resolved with the tree's aliases. */
+	aliasesChanged: boolean
 }
 
 /** `dialecte-quality.json`: the last base-aware run on the change, its tree, its base and what it found. */

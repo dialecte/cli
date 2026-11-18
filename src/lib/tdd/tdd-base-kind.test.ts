@@ -26,7 +26,11 @@ function noBaseBranch(): string {
 describe('resolveTddBase: the kind of base', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	const testCases: Record<
 		string,
-		{ make: () => string; ref?: string; expectedKind: TddBase['kind'] }
+		{
+			make: () => string
+			ref?: (root: string) => string
+			expectedKind: TddBase['kind'] | 'refused'
+		}
 	> = {
 		'a branch from main, no --base → the lot base': {
 			make: branchFromMain,
@@ -38,8 +42,13 @@ describe('resolveTddBase: the kind of base', { timeout: SCRATCH_GIT_CASE_TIMEOUT
 		},
 		'--base main → the flag base': {
 			make: branchFromMain,
-			ref: 'main',
+			ref: () => 'main',
 			expectedKind: 'flag',
+		},
+		'--base naming a tree, no commit → refused (the one flag resolver)': {
+			make: branchFromMain,
+			ref: (root) => git({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim(),
+			expectedKind: 'refused',
 		},
 	}
 
@@ -50,10 +59,10 @@ describe('resolveTddBase: the kind of base', { timeout: SCRATCH_GIT_CASE_TIMEOUT
 			const base = resolveTddBase({
 				root,
 				packageJson: {},
-				...(testCase.ref !== undefined && { ref: testCase.ref }),
+				...(testCase.ref !== undefined && { ref: testCase.ref(root) }),
 			})
 
-			expect('kind' in base ? base.kind : base).toBe(testCase.expectedKind)
+			expect('kind' in base ? base.kind : 'refused').toBe(testCase.expectedKind)
 		})
 })
 

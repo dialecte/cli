@@ -40,6 +40,17 @@ const PAIRED_KEYS_FILE = [
 	'',
 ].join('\n')
 
+/** A module exporting one function `name` that reads nothing, its summary `summary`. */
+function plainFunction(params: { name: string; summary: string }): string {
+	return [
+		`/** ${params.summary} */`,
+		`export function ${params.name}(value: string): string {`,
+		'\treturn value.trim()',
+		'}',
+		'',
+	].join('\n')
+}
+
 const RESOLVE_WIDGET_FILE = [
 	'/** Resolves a widget. */',
 	'export function resolveWidget(name: string): string {',
@@ -129,6 +140,46 @@ describe('findDuplicateReads', () => {
 						existing: { file: 'src/find/resolve.ts', line: 2, name: 'resolveWidget' },
 					},
 				],
+			},
+		'an added function whose name shares one word with an existing one (`widget`) → none': {
+			base: { 'src/find/resolve.ts': RESOLVE_WIDGET_FILE },
+			tree: {
+				'src/find/resolve.ts': RESOLVE_WIDGET_FILE,
+				'src/find/total.ts': plainFunction({ name: 'widgetTotal', summary: 'Counts the widgets.' }),
+			},
+			expected: [],
+		},
+		'added functions sharing with existing ones only generic words besides one (`read`, `list`, `is`, `file`, `name`) → none':
+			{
+				base: {
+					'src/source/list.ts': plainFunction({
+						name: 'listSourceFiles',
+						summary: 'Lists the sources.',
+					}),
+					'src/route/name.ts': plainFunction({ name: 'routeName', summary: 'Names a route.' }),
+					'src/record/read.ts': plainFunction({ name: 'readRecord', summary: 'Reads a record.' }),
+				},
+				tree: {
+					'src/source/list.ts': plainFunction({
+						name: 'listSourceFiles',
+						summary: 'Lists the sources.',
+					}),
+					'src/route/name.ts': plainFunction({ name: 'routeName', summary: 'Names a route.' }),
+					'src/record/read.ts': plainFunction({ name: 'readRecord', summary: 'Reads a record.' }),
+					'src/source/path.ts': plainFunction({
+						name: 'isSourceFilePath',
+						summary: 'Tells a source path.',
+					}),
+					'src/route/test.ts': plainFunction({
+						name: 'namesRoute',
+						summary: 'Tells a route apart.',
+					}),
+					'src/quality/read.ts': plainFunction({
+						name: 'readQualityRecord',
+						summary: 'Reads the quality record.',
+					}),
+				},
+				expected: [],
 			},
 		'the same added function calling the existing one → none': {
 			base: { 'src/find/resolve.ts': RESOLVE_WIDGET_FILE },

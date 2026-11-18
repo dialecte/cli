@@ -30,6 +30,8 @@ export type RulesCheck = {
 	quality?: QualityResult
 	/** Where the base-aware rules stand: run since a base, or not run in a clone outside any lot; absent with no base. */
 	qualityLine?: string
+	/** The notes under the quality line: a removed public entry a page still names, an unknown public API, aliases changed. */
+	qualityNotes?: string[]
 }
 
 /**

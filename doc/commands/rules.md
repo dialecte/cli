@@ -59,15 +59,18 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     base, else, in a run that is no scoped gate step, the base branch merge-base; never a release
     tag, an empty tree nor the gate base): duplicate-read, an added function reading the same
     element and three or more attributes as an existing one (a named set counts three), or whose
-    name shares two words with an existing function it does not call; shared-export-changed, an
-    export imported by a file of another folder (a sub-folder included) newly shared, re-signed (its
-    parameters, return type, or a sibling .types.ts type they name), its body changed, or removed;
-    docs-not-updated, in a contributor library (no bin), a public api.json entry added, re-signed or
-    removed whose doc page (doc/ Markdown or README naming its last two route segments, or its whole
-    route in a code span) the change did not touch; one line names where they stand: quality: since
-    <short> (lot | base-branch | flag), quality: not run (no lot) in a scoped gate step outside any
-    lot, no line when there is no base; a run that judged the whole change writes
-    dialecte-quality.json in the worktree git folder; contrib never runs them
+    name shares two words with an existing function it does not call (generic words such as read,
+    list, file, path or name left out); shared-export-changed, an export imported by a file of
+    another folder (a sub-folder included) newly shared, re-signed (its parameters, return type, or
+    a sibling .types.ts type they name), its body changed, or removed; docs-not-updated, in a
+    contributor library (no bin), a public api.json entry added, re-signed or removed whose doc page
+    (doc/ Markdown or README naming its last two route segments, or its whole route in a code span)
+    the change did not touch; one line names where they stand: quality: since <short> (lot |
+    base-branch | flag), quality: not run (no lot) in a scoped gate step outside any lot, no line
+    when there is no base or no package.json; notes under it: public API: <route> removed: still
+    named by <pages>, ! public API unknown (<why>), aliases changed, when a tsconfig or Vite config
+    changed (the base edges read with the aliases of the tree); a run that judged the whole change
+    writes dialecte-quality.json in the worktree git folder; contrib never runs them
   --json: dialecteChanges (the verdict of each file), notJudged, baseLine, qualityLine, quality (the
     base, the examined files, duplicates, sharedExports, publicApi, docs); described by
     rules.schema.json (schema 1)
