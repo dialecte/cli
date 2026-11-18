@@ -36,6 +36,7 @@ const CLI: CiFacts = {
 	docs: false,
 	playwright: false,
 	testMode: false,
+	skillsCheck: true,
 }
 
 const CORE: CiFacts = {
@@ -44,6 +45,7 @@ const CORE: CiFacts = {
 	docs: true,
 	playwright: true,
 	testMode: true,
+	skillsCheck: true,
 }
 
 describe('renderCiFiles', () => {

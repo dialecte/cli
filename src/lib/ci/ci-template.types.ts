@@ -6,7 +6,7 @@ export type CliInvocation = 'source' | 'installed'
 /**
  * What the package already says about its CI: the cli's invocation, and which optional jobs and steps it has
  * (a `type-bench:check` script, a `doc:build` script, a Playwright devDependency, a `mode` input in its own
- * `_test.yml`).
+ * `_test.yml`, a `skills:check` script).
  */
 export type CiFacts = {
 	cli: CliInvocation
@@ -14,6 +14,7 @@ export type CiFacts = {
 	docs: boolean
 	playwright: boolean
 	testMode: boolean
+	skillsCheck: boolean
 }
 
 /** Template files by path relative to the package root, with their text. */

@@ -48,6 +48,7 @@ export const PACKAGE_FACTS = {
 	buildScript: 'build',
 	typePerfScript: 'type-bench:check',
 	docsScript: 'doc:build',
+	skillsCheckScript: 'skills:check',
 	playwrightDependency: 'playwright',
 } as const
 

@@ -28,6 +28,7 @@ export function readCiFacts(root: string): CiFactsRead {
 			docs: typeof scripts[PACKAGE_FACTS.docsScript] === 'string',
 			playwright: PACKAGE_FACTS.playwrightDependency in dependencies,
 			testMode: contract.mode,
+			skillsCheck: typeof scripts[PACKAGE_FACTS.skillsCheckScript] === 'string',
 		},
 		contract,
 	}
