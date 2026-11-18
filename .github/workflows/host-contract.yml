@@ -1,0 +1,52 @@
+name: host-contract
+
+# weekly, and on demand: every host read run once on the runner's gh, then the record checked against what gh
+# describes of itself; catches a runner gh upgrade or a host schema change with no change to the cli
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  statuses: read
+
+jobs:
+  host-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # gh reads it, and `gh extension install` needs it too
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+
+      # the github host: its stack extension at the version the record was taken from
+      - name: Setup the github host
+        run: gh extension install github/gh-stack --pin v0.3.0
+
+      - name: Probe the github host
+        run: node src/cli.ts doctor --host --vendor github
+
+      - name: Check the record against gh
+        run: npm run host:drift

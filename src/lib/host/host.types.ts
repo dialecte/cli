@@ -155,7 +155,7 @@ export type HostOptions<Calls extends HostCallTable, K extends keyof Calls> = [
 export type HostVendorName = (typeof HOST_VENDOR_NAMES)[number]
 
 /** A host vendor's runtime record: how a repository is recognised as its, and the adapter that serves it. */
-export type HostVendor<Calls extends HostCallTable> = {
+export type HostVendor<Calls extends HostCallTable, Subject extends keyof Calls> = {
 	name: HostVendorName
 	/** The cli the vendor's adapter runs (`gh`). */
 	tool: string
@@ -163,11 +163,30 @@ export type HostVendor<Calls extends HostCallTable> = {
 	remoteHosts: readonly string[]
 	/** The calls the adapter makes, by name. */
 	calls: Calls
+	/** The versions of the tool the record was taken from, by part (the keys `describe.versionOf` takes). */
+	recordedVersions: Readonly<Record<string, string>>
+	/** The read that finds the pull request the other probes read, and its probe. */
+	subject: {
+		call: Calls[Subject]['kind'] extends 'write' ? never : Subject
+		find: HostSubjectProbe
+	}
+	/** One live probe per other read call; a read without one does not compile. */
+	probes: Record<Exclude<ReadCallOf<Calls>, Subject>, HostProbe>
 	createAdapter(): HostAdapter
 }
 
-/** A vendor with its call table erased: the element of the one list of vendors. */
-export type HostVendorRecord = HostVendor<HostCallTable>
+/** What a vendor's live probes are run with: its tool's runner and the reads of what the tool describes of itself. */
+export type HostVendorSeams = {
+	/** The runner of the vendor's tool, for the probe-only reads. */
+	run: HostToolRun
+	describe: HostDescribe
+}
+
+/** A vendor with its call table erased, and what its probes run with: the element of the one list of vendors. */
+export type HostVendorRecord = Omit<HostVendor<HostCallTable, string>, 'subject' | 'probes'> & {
+	subject: { call: string; find: HostSubjectProbe }
+	probes: Readonly<Record<string, HostProbe>>
+} & HostVendorSeams
 
 /** A flag's short and long forms, as a tool's help prints them together (`-q, --jq`). */
 export type HostFlagAlias = { short: string; long: string }
@@ -222,6 +241,55 @@ export type HostDescribe = {
 		root: string
 		selector: string
 	}): HostAnswer<{ version: string }> | HostAbsentPart | HostRefusal
+}
+
+/**
+ * One line of the host check: what was probed, what was found, and the command that fixes it (only on a warning or an
+ * error). `doctor` re-exports it as `DoctorLine`.
+ */
+export type HostLine = {
+	status: 'ok' | 'warning' | 'error'
+	subject: string
+	detail: string
+	fix?: string
+}
+
+/** The seam a vendor's tool is called through for a probe-only read: one call of its table, by name. */
+export type HostToolRun = {
+	bivarianceHack(params: {
+		root: string
+		call: string
+		positional?: readonly string[]
+		options?: Readonly<Record<string, string | true | readonly string[] | undefined>>
+		values?: Readonly<Record<string, string>>
+		input?: string
+	}): { output: string } | HostRefusal
+}['bivarianceHack']
+
+/**
+ * One live probe of a read call: its line, whose subject is `subject` (the probe's key in the vendor's table);
+ * `pullRequest` is the one the vendor's subject probe found, when it did.
+ */
+export type HostProbe = (params: {
+	root: string
+	host: HostAdapter
+	run: HostToolRun
+	subject: string
+	pullRequest?: number
+}) => HostLine
+
+/**
+ * The probe of the read that finds the pull request the other probes read: its line (its subject `subject`, the
+ * read's name), and the pull request found.
+ */
+export type HostSubjectProbe = (params: {
+	root: string
+	host: HostAdapter
+	run: HostToolRun
+	subject: string
+}) => {
+	line: HostLine
+	pullRequest?: number
 }
 
 /** A vendor's dev-only record: its table, what it recorded, how its implied flags read, and how it is asked again. */

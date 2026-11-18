@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 
 import { findBaseBranchRef } from '../gate/gate-base.ts'
+import { belowGitFloor, gitVersionOf } from '../git.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -27,14 +28,12 @@ import { overTimeReason } from './forecast-reasons.ts'
 import { fitForecastLine } from './forecast-record.ts'
 import {
 	AGAINST_MAIN,
-	FORECAST_MIN_GIT,
 	FORECAST_REASONS,
 	FORECAST_REFUSALS,
 	FORECAST_SIMULATED_WORD,
 	FORECAST_SCHEMA,
 	FORECAST_STEP_LIMIT_MS,
 	FORECAST_VERDICT_ORDER,
-	GIT_VERSION_PATTERN,
 } from './forecast.constants.ts'
 import { compareCommits, mergeConflictsOf, verdictOf } from './merge-forecast.ts'
 import { openLotOf } from './open-lot.ts'
@@ -328,11 +327,9 @@ function gitVersionReason(params: {
 }): string | undefined {
 	const result = runBoundedGit({ root: params.root, args: ['--version'], limitMs: params.limitMs })
 	if (result.timedOut) return overTimeReason({ lot: params.lot, limitMs: params.limitMs })
-	const groups = GIT_VERSION_PATTERN.exec(result.stdout.trim())?.groups
-	const version = groups?.version ?? (result.stdout.trim() || 'unknown')
-	const [major, minor] = [Number(groups?.major), Number(groups?.minor)]
-	const [needMajor, needMinor] = FORECAST_MIN_GIT
-	if (groups && (major > needMajor || (major === needMajor && minor >= needMinor))) return undefined
+	const parsed = gitVersionOf({ text: result.stdout })
+	if (parsed !== undefined && !belowGitFloor({ version: parsed })) return undefined
+	const version = parsed?.version ?? (result.stdout.trim() || 'unknown')
 	return fillMessage({ template: FORECAST_REASONS.gitVersion, values: { version } })
 }
 

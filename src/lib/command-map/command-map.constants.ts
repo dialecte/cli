@@ -606,12 +606,22 @@ export const COMMAND_MAP: CommandMap = {
 	doctor: {
 		family: 'Workspace',
 		summary: 'Installed versions, core API generation, skills in sync, local checkouts',
-		usage: ['dialecte doctor [--json]', 'dialecte doctor --brief'],
+		usage: [
+			'dialecte doctor [--json]',
+			'dialecte doctor --brief',
+			'dialecte doctor --host [--vendor <name>]',
+		],
 		notes: [
 			'what to fix before trusting what you read',
 			'--brief - the session-start form, nothing when in sync, one line per problem',
+			"--host - runs every read of the repository's host once, for real, through the cli's own code (the newest merged pull request, its checks and queued state, a reference pull request's line comments, the stack extension), then the tool versions against the recorded ones and git against its floor; only those lines; network by name; --vendor <name> probes that vendor whatever the origin",
 		],
-		exitCodes: ['1  a warning', '0  --brief, always'],
+		exitCodes: [
+			'1  a warning',
+			'0  --brief, always',
+			'1  --host: an error (a read refused, a changed answer, git below its floor, no vendor); a warning (nothing to probe, a part not installed, an older tool) never fails',
+			'2  --host: usage (--vendor given without a vendor name)',
+		],
 		example: 'dialecte doctor --brief',
 	},
 	models: {

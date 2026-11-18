@@ -13,6 +13,7 @@ import {
 	HOST_CONFIG_KEY,
 	NO_REMOTE_ORIGIN,
 	NO_VENDOR_REFUSAL,
+	UNKNOWN_VENDOR_REFUSAL,
 	SSH_COMMAND,
 	SSH_CONFIG_FLAG,
 	SSH_END_OF_OPTIONS,
@@ -82,11 +83,28 @@ function selectionOf(params: { root: string } & HostSelectionSeams): HostSelecti
 	}
 	const readHostKey = params.readHostKey ?? hostKeyOf
 	const name = readHostKey({ root: params.root })
+	const named = name === undefined ? undefined : vendorNamed({ name })
+	return { vendor: named !== undefined && 'vendor' in named ? named.vendor : undefined, host }
+}
+
+/** The names of the known vendors, joined for a message. */
+function knownVendorNames(): string {
+	return HOST_VENDORS.map(function nameOf(vendor) {
+		return vendor.name
+	}).join(', ')
+}
+
+/** The known vendor called `name`, or the refusal naming the known vendors. */
+export function vendorNamed(params: { name: string }): { vendor: HostVendorRecord } | HostRefusal {
+	const vendor = HOST_VENDORS.find(function isNamed(each) {
+		return each.name === params.name
+	})
+	if (vendor !== undefined) return { vendor }
 	return {
-		vendor: HOST_VENDORS.find(function isNamed(vendor) {
-			return vendor.name === name
+		refusal: fillMessage({
+			template: UNKNOWN_VENDOR_REFUSAL,
+			values: { name: params.name, vendors: knownVendorNames() },
 		}),
-		host,
 	}
 }
 
@@ -100,15 +118,24 @@ export function vendorOf(
 	return selectionOf(params).vendor
 }
 
+/**
+ * The vendor of the repository at `root`, or why none serves it: its origin's host (or that it has none), the known
+ * vendors and the key `host`.
+ */
+export function vendorOrRefusalOf(
+	params: { root: string } & HostSelectionSeams,
+): { vendor: HostVendorRecord } | HostRefusal {
+	const { vendor, host } = selectionOf(params)
+	return vendor === undefined ? { refusal: noVendorReason({ host }) } : { vendor }
+}
+
 /** Why a repository whose origin is `host` reaches no vendor. */
 function noVendorReason(params: { host: string | undefined }): string {
 	return fillMessage({
 		template: NO_VENDOR_REFUSAL,
 		values: {
 			origin: params.host ?? NO_REMOTE_ORIGIN,
-			vendors: HOST_VENDORS.map(function nameOf(vendor) {
-				return vendor.name
-			}).join(', '),
+			vendors: knownVendorNames(),
 		},
 	})
 }

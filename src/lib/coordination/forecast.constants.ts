@@ -6,9 +6,6 @@ export const FORECAST_SCHEMA = 1
 /** How long one git step of the forecast may run before the comparison reads unknown (decision Q7: 20 s). */
 export const FORECAST_STEP_LIMIT_MS = 20_000
 
-/** The lowest git whose merge-tree has `--write-tree`. */
-export const FORECAST_MIN_GIT: readonly [number, number] = [2, 38]
-
 /** The most bytes one line of `forecast.jsonl` may hold (the store's atomic append). */
 export const FORECAST_LINE_LIMIT = 4_096
 
@@ -97,9 +94,6 @@ export const CONTENT_CONFLICT_KIND = 'content'
 
 /** A merge-tree message type that names a conflict: `CONFLICT (<kind>)`. */
 export const CONFLICT_TYPE_PATTERN = /^CONFLICT \((?<kind>[^)]+)\)$/
-
-/** The version line of `git --version`. */
-export const GIT_VERSION_PATTERN = /^git version (?<version>(?<major>\d+)\.(?<minor>\d+)\S*)/
 
 /** The reasons of an unknown comparison (spec 4.5). */
 export const FORECAST_REASONS = {

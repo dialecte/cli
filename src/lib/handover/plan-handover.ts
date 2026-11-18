@@ -10,7 +10,7 @@ import { join } from 'node:path'
 
 import { isPresent } from '../file-system.ts'
 import { describeMissingHooksFolder } from '../git-hooks.ts'
-import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
+import { listChangedFiles, listStagedFiles, readGit, readGitVersion } from '../git.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import { planMergeLot, refuseOldGit } from './merge-lot.ts'
 import { isMergeLotPlan, lotPathCovers } from './read-lots-file.ts'
@@ -46,7 +46,7 @@ export function planHandover(params: {
 	const changedFiles = listChangedFiles({ root, withDeleted: true })
 	const lotIndexByFile = new Map<string, number>()
 	const tooOld = lotsFile.lots.some(isMergeLotPlan)
-		? refuseOldGit((params.gitVersion ?? readGitVersion)())
+		? refuseOldGit(params.gitVersion?.() ?? readGitVersion({ root }))
 		: undefined
 	if (tooOld) refusals.push(tooOld)
 	// what the lots walked so far leave: plain lots' files folded in only when a merge lot comes next
@@ -97,9 +97,4 @@ export function planHandover(params: {
 		plan: { repository: root, branch: lotsFile.branch, head, gates: lotsFile.gates, lots },
 		refusals,
 	}
-}
-
-/** `git version 2.43.0`, as the git on PATH says it. */
-function readGitVersion(): string {
-	return readGit({ root: '.', args: ['--version'] })
 }

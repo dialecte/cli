@@ -52,6 +52,20 @@ describe('an unknown forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 	})
 
+	it('git printing a line that is no version (a stub) -> every comparison unknown, the raw text kept in the reason', () => {
+		const workspace = createForecastWorkspace()
+		const first = startForecastLot({ workspace, feature: 'lot-a' })
+		stubGit({ script: `case " $* " in *" --version "*) echo "not git at all"; exit 0;; esac` })
+
+		const reason = 'git not git at all has no merge-tree --write-tree (2.38 or later)'
+		expect(
+			forecastLot({ lotFolder: first.lotFolder, trigger: 'forecast', now: () => FORECAST_NOW }),
+		).toMatchObject({
+			verdict: 'unknown',
+			lines: [{ against: 'main', verdict: 'unknown', reason }],
+		})
+	})
+
 	it("the other lot's worktree folder removed -> that pair unknown, worktree of <lot> missing", () => {
 		const workspace = createForecastWorkspace()
 		const first = startForecastLot({ workspace, feature: 'lot-a' })

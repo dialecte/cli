@@ -31,6 +31,12 @@ export const GITHUB_CALLS = {
 		kind: 'read',
 		fields: ['headRefOid', 'statusCheckRollup'],
 	},
+	listMergedPullRequests: {
+		words: ['pr', 'list'],
+		flags: ['--state', '--limit'],
+		kind: 'read',
+		fields: ['number'],
+	},
 	createPullRequest: {
 		words: ['pr', 'create'],
 		flags: ['--base', '--head', '--title', '--body', '--draft'],

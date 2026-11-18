@@ -193,18 +193,34 @@ function readChecksOnGithub(params: {
 	return 'refusal' in run ? run : checksOf({ text: run.output })
 }
 
+/**
+ * `gh api` of a pull request's review comments, every page, one object per line, `values` filling the endpoint
+ * (`owner`, `repo`, `number`): the comments, or the refusal. The adapter and the live probe share it.
+ */
+export function readReviewCommentsWith(params: {
+	run: typeof runGh
+	root: string
+	values: Readonly<Record<string, string>>
+}): ReviewComment[] | HostRefusal {
+	const run = params.run({
+		root: params.root,
+		call: 'reviewComments',
+		values: params.values,
+		options: { '--paginate': true },
+	})
+	return 'refusal' in run ? run : reviewCommentsOf({ text: run.output })
+}
+
 /** `gh api` of the pull request's review comments, every page, one object per line: the comments, or the refusal. */
 function readCommentsOnGithub(params: {
 	root: string
 	number: number
 }): ReviewComment[] | HostRefusal {
-	const run = runGh({
+	return readReviewCommentsWith({
+		run: runGh,
 		root: params.root,
-		call: 'reviewComments',
 		values: { number: String(params.number) },
-		options: { '--paginate': true },
 	})
-	return 'refusal' in run ? run : reviewCommentsOf({ text: run.output })
 }
 
 /** The page of the pull request's changed files opened by the platform's browser opener: undefined once handed over. */

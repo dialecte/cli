@@ -197,9 +197,6 @@ export const SKIPPED_SCRIPTS_NAMED = 5
 /** The folder segment before a package's name in a lock path (`vite/node_modules/fsevents`). */
 export const NODE_MODULES_SEGMENT = 'node_modules/'
 
-/** The oldest git with `merge-tree --write-tree` (the trial merge of a merge lot): major, minor. */
-export const MERGE_LOT_GIT_VERSION = [2, 38] as const
-
 /** Modes git cannot take a resolution file for: a symlink, a submodule. */
 export const UNRESOLVABLE_MODES: Readonly<Record<string, string>> = {
 	'120000': 'symlink',

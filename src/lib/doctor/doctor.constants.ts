@@ -54,3 +54,27 @@ export const CONTRIBUTOR_GATE_STEPS =
  */
 export const CONTRIBUTOR_SKILLS_NOT_SYNCED =
 	'{folder} lacks the contributor skills: dialecte skills sync installs them in a contributor'
+
+/** The subject of the host check's git line. */
+export const GIT_SUBJECT = 'git'
+
+/** What the host check's version lines say; `{x}` filled per line. */
+export const HOST_VERSION_TEXTS = {
+	asRecorded: '{version}, as recorded',
+	newer: '{version}, newer than the recorded {recorded}',
+	older: '{version}, older than the recorded {recorded}: a read may differ from the record',
+	absent: '{absent} is not installed (recorded {recorded})',
+	gitFloor: 'git {floor} or later needed, found {line}',
+} as const
+
+/** The fix of a tool older than its record. */
+export const UPGRADE_TOOL_FIX = 'upgrade {tool} to {recorded} or later'
+
+/** The subject of `doctor --host`'s line when no vendor can be probed. */
+export const HOST_SUBJECT = 'host'
+
+/** How the command map's usage line of `doctor --host` starts: the line a usage error prints. */
+export const HOST_USAGE_START = 'dialecte doctor --host'
+
+/** `--vendor` given with no name. */
+export const VENDOR_NEEDS_NAME = 'doctor: --vendor needs a vendor name'
