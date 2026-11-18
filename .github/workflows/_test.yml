@@ -119,4 +119,4 @@ jobs:
         run: gh extension install github/gh-stack --pin v0.3.0
 
       - name: Probe the github host
-        run: node src/cli.ts doctor --host --vendor no-such-vendor-ci-ok-proof
+        run: node src/cli.ts doctor --host --vendor github
