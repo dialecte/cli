@@ -24,6 +24,7 @@ import { landOnOrigin } from '../../test/land-lot.ts'
 import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { writePlanEntry } from '../lib/store/plan-entry.ts'
+import { SYSTEM_TEMPORARY_ROOTS } from './lot-design.constants.ts'
 import { runLot } from './lot.ts'
 
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -128,7 +129,9 @@ describe('lot design --from - recording', { timeout: STORE_CASE_TIMEOUT }, () =>
 		const file = join(folder, 'DESIGN.md')
 		writeFiles({ root: folder, files: { 'DESIGN.md': DESIGN_TEXT } })
 
-		expect(design({ lot, words: ['--from', file] })).toEqual({
+		expect(
+			design({ lot, words: ['--from', file], sharedTemporaryRoots: SYSTEM_TEMPORARY_ROOTS }),
+		).toEqual({
 			exitCode: 2,
 			output: `lot design: ${file} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written`,
 		})

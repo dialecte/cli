@@ -28,7 +28,7 @@ describe('lot pr - the design line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		writeFileSync(file, DESIGN_TEXT)
 		// the design was written before: under neither the isolated temporary folder nor the scratch root
 		isolateTemporaryFolders()
-		runLot({ cwd, argv: ['design', LOT_NAME, '--from', file] })
+		runLot({ cwd, argv: ['design', LOT_NAME, '--from', file], sharedTemporaryRoots: [] })
 		runLot({ cwd, argv: ['design', LOT_NAME, '--approve', '--by', APPROVER] })
 		writeFileSync(file, EDITED_DESIGN_TEXT)
 

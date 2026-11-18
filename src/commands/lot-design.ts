@@ -65,7 +65,13 @@ import type {
 } from '../lib/design/design.types.ts'
 import type { DesignLotPlace, DesignRequest } from './lot-design.types.ts'
 
-export function runLotDesign(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+export function runLotDesign(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	/** The shared temporary folders a design is refused in; default `SYSTEM_TEMPORARY_ROOTS`. */
+	sharedTemporaryRoots?: readonly string[]
+}): CommandResult {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: DESIGN_VALUE_OPTIONS,
@@ -87,7 +93,13 @@ export function runLotDesign(params: { cwd: string; argv: string[]; now?: Date }
 		})
 	const at = (params.now ?? new Date()).toISOString()
 	if (request.kind === 'record')
-		return recordDesign({ place, cwd: params.cwd, file: request.file, at })
+		return recordDesign({
+			place,
+			cwd: params.cwd,
+			file: request.file,
+			at,
+			sharedTemporaryRoots: params.sharedTemporaryRoots ?? SYSTEM_TEMPORARY_ROOTS,
+		})
 	const refusal =
 		byRefusal({ place, by: request.by, reason: request.reason }) ??
 		ownWorktreeRefusal({ place, cwd: params.cwd, verb: request.kind })
@@ -172,12 +184,17 @@ function recordDesign(params: {
 	cwd: string
 	file: string | undefined
 	at: string
+	sharedTemporaryRoots: readonly string[]
 }): CommandResult {
 	const { place } = params
 	const source =
 		params.file === undefined ? planSpecOf(place) : { file: resolve(params.cwd, params.file) }
 	if ('exitCode' in source) return source
-	const content = designContentOf({ file: source.file, cwd: params.cwd })
+	const content = designContentOf({
+		file: source.file,
+		cwd: params.cwd,
+		sharedTemporaryRoots: params.sharedTemporaryRoots,
+	})
 	if ('exitCode' in content) return content
 	const hash = designHashOf(content.bytes)
 	try {
@@ -232,12 +249,13 @@ function planSpecOf(place: DesignLotPlace): { file: string } | CommandResult {
 function designContentOf(params: {
 	file: string
 	cwd: string
+	sharedTemporaryRoots: readonly string[]
 }): { file: string; bytes: Buffer; text: string } | CommandResult {
-	const { file, cwd } = params
+	const { file, cwd, sharedTemporaryRoots } = params
 	if (!existsSync(file) || !statSync(file).isFile())
 		return fileRefusal({ template: LOT_DESIGN_LINES.unreadable, file })
 	const real = realPathOf(file)
-	if (isInScratch({ file: real, cwd }))
+	if (isInScratch({ file: real, cwd, sharedTemporaryRoots }))
 		return fileRefusal({ template: LOT_DESIGN_LINES.inScratch, file })
 	const bytes = readFileSync(real)
 	if (bytes.length === 0) return fileRefusal({ template: LOT_DESIGN_LINES.empty, file: real })
@@ -253,8 +271,12 @@ function designContentOf(params: {
  * system's shared temporary folders (`/tmp`, `/private/tmp`, each by its real path): wiped there, and nobody else
  * reads it. A file outside every git work tree is no refusal: plans live there.
  */
-function isInScratch(params: { file: string; cwd: string }): boolean {
-	const roots = [...scratchReadRoots({ cwd: params.cwd }), ...SYSTEM_TEMPORARY_ROOTS]
+function isInScratch(params: {
+	file: string
+	cwd: string
+	sharedTemporaryRoots: readonly string[]
+}): boolean {
+	const roots = [...scratchReadRoots({ cwd: params.cwd }), ...params.sharedTemporaryRoots]
 	return roots.some(function holdsFile(root) {
 		const real = realPathOf(root)
 		return params.file === real || params.file.startsWith(`${real}${sep}`)

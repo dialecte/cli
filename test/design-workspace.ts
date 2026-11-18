@@ -124,11 +124,18 @@ export function approvedDesign(params: {
 }
 
 /** `lot design <lot's full name> <words...>` from `cwd` (the repository unless given), at `DESIGN_TIME`. */
-export function design(params: { lot: DesignLot; words: string[]; cwd?: string }): CommandResult {
+export function design(params: {
+	lot: DesignLot
+	words: string[]
+	cwd?: string
+	/** The shared temporary folders refused; none unless given: the cases' repositories live there on some systems. */
+	sharedTemporaryRoots?: readonly string[]
+}): CommandResult {
 	return runLot({
 		cwd: params.cwd ?? params.lot.cwd,
 		argv: ['design', params.lot.name, ...params.words],
 		now: DESIGN_TIME,
+		sharedTemporaryRoots: params.sharedTemporaryRoots ?? [],
 	})
 }
 
