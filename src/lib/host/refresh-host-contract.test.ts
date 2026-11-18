@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 
 import { fakeGhAnswering } from '../../../test/fake-gh-answers.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
-import { HOST_CONTRACTS } from './host-contracts.ts'
+import { HOST_CONTRACTS } from './host-contracts.constants.ts'
 import { driftHostContract, refreshHostContract } from './refresh-host-contract.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

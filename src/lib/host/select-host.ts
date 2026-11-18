@@ -7,7 +7,7 @@ import { CONFIG_KEYS } from '../config/config-keys.constants.ts'
 import { repoKeyOf } from '../config/repo-key-of.ts'
 import { resolveConfig } from '../config/resolve-config.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { HOST_VENDORS } from './host-vendors.ts'
+import { HOST_VENDORS } from './host-vendors.constants.ts'
 import {
 	GONE_ROOT_REFUSAL,
 	HOST_CONFIG_KEY,
@@ -145,6 +145,14 @@ function refusingHostOf(params: { why: string }): HostAdapter {
  * its own refusal. Nothing is read or spawned until a method is called.
  */
 export function createHost(seams: HostSelectionSeams = {}): HostAdapter {
+	return forwardingHost({ hostOf: servingHostOf({ seams }) })
+}
+
+/** The adapter serving a call's `root`, chosen once per root and created once per vendor (`createHost`). */
+function servingHostOf(params: {
+	seams: HostSelectionSeams
+}): (params: { root: string }) => HostAdapter {
+	const { seams } = params
 	const served = new Map<string, HostAdapter>()
 	const adapters = new Map<string, HostAdapter>()
 
@@ -171,7 +179,14 @@ export function createHost(seams: HostSelectionSeams = {}): HostAdapter {
 		return adapter
 	}
 
-	// each method is forwarded to the adapter of its call's `root`
+	return hostOf
+}
+
+/** A host whose every method is forwarded to the adapter `hostOf` answers for its call's `root`. */
+function forwardingHost(params: {
+	hostOf: (params: { root: string }) => HostAdapter
+}): HostAdapter {
+	const { hostOf } = params
 	return {
 		readPullRequest(params) {
 			return hostOf(params).readPullRequest(params)

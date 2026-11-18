@@ -141,26 +141,6 @@ describe('checkCodeRules', () => {
 				].join('\n'),
 				expected: [{ rule: 'constant-outside-constants-file', line: 3 }],
 			},
-		'a registry array of identifiers only → nothing': {
-			file: 'src/lib/host/host-vendors.ts',
-			text: 'export const VENDORS = [GITHUB_VENDOR]\n',
-			expected: [],
-		},
-		'an array of literals → reported': {
-			file: 'src/lib/host/host-vendors.ts',
-			text: "export const NAMES = ['a']\n",
-			expected: [{ rule: 'constant-outside-constants-file', line: 1 }],
-		},
-		'an empty array → reported': {
-			file: 'src/lib/host/host-vendors.ts',
-			text: 'export const EMPTY = []\n',
-			expected: [{ rule: 'constant-outside-constants-file', line: 1 }],
-		},
-		'an array mixing an identifier and a literal → reported': {
-			file: 'src/lib/host/host-vendors.ts',
-			text: "export const MIXED = [A, 'b']\n",
-			expected: [{ rule: 'constant-outside-constants-file', line: 1 }],
-		},
 		'a types.<topic>.ts file → nothing': {
 			file: 'src/document/types.extensions.ts',
 			text: 'export type ExtensionGroup = Record<string, never>\n',

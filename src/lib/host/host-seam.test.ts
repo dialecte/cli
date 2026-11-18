@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { scanHostSeam } from './host-seam.ts'
-import { HOST_VENDORS } from './host-vendors.ts'
+import { HOST_VENDORS } from './host-vendors.constants.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -262,8 +262,8 @@ describe('scanHostSeam: imports across the seam', () => {
 		},
 		{
 			name: 'the host folder importing its own vendor folder',
-			path: 'src/lib/host/host-vendors.ts',
-			text: "import { GITHUB_VENDOR } from './github/github-vendor.constants.ts'\n\nexport const HOST_VENDORS = [GITHUB_VENDOR]\n",
+			path: 'src/lib/host/host-vendors.constants.ts',
+			text: "import { GITHUB_VENDOR } from './github/github-vendor.ts'\n\nexport const HOST_VENDORS = [GITHUB_VENDOR]\n",
 			expected: [],
 		},
 		{
@@ -280,13 +280,13 @@ describe('scanHostSeam: imports across the seam', () => {
 		},
 		{
 			name: 'the vendor registry importing its vendor folder',
-			path: 'src/lib/host/host-vendors.ts',
+			path: 'src/lib/host/host-vendors.constants.ts',
 			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
 			expected: [],
 		},
 		{
 			name: 'the contract registry importing its vendor folder',
-			path: 'src/lib/host/host-contracts.ts',
+			path: 'src/lib/host/host-contracts.constants.ts',
 			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
 			expected: [],
 		},
@@ -317,7 +317,7 @@ describe('scanHostSeam: imports across the seam', () => {
 		{
 			name: 'a config file importing another generic host file',
 			path: 'src/lib/config/config-checks.ts',
-			text: "import { HOST_VENDORS } from '../host/host-vendors.ts'\n\nexport const A = HOST_VENDORS\n",
+			text: "import { HOST_VENDORS } from '../host/host-vendors.constants.ts'\n\nexport const A = HOST_VENDORS\n",
 			expected: ['src/lib/config/config-checks.ts:config-import'],
 		},
 		{

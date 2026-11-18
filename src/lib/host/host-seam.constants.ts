@@ -11,7 +11,7 @@ export const HOST_CONSTANTS_FILE = 'src/lib/host/host.constants.ts'
 
 /** The generic host files that may import a vendor's folder: the vendor list, the contract list and the selection. */
 export const VENDOR_IMPORTERS: readonly string[] = [
-	'src/lib/host/host-vendors.ts',
-	'src/lib/host/host-contracts.ts',
+	'src/lib/host/host-vendors.constants.ts',
+	'src/lib/host/host-contracts.constants.ts',
 	'src/lib/host/select-host.ts',
 ]
