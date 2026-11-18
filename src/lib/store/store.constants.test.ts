@@ -1,5 +1,10 @@
 import { ROUND_FOLDER_PATTERN } from '../gate-records/gate-records.constants.ts'
 import {
+	ARCHIVE_NAMES,
+	ARCHIVE_PENDING_FILE,
+	PACKAGE_ARCHIVES_FOLDER,
+} from '../handover/archived-declarations.constants.ts'
+import {
 	ARCHIVED_LOT_FILE,
 	COMMIT_SCRIPT_FILE,
 	HANDOVER_FILES,
@@ -7,7 +12,6 @@ import {
 	HANDOVER_STORE_FOLDER,
 	REHEARSAL_DECISIONS_FILE,
 } from '../handover/handover.constants.ts'
-import { FOLDER_LOT_FILE } from '../recap/recap.constants.ts'
 import { DECISIONS_FILE, LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { STANDARD_FILE } from '../standard/standard.constants.ts'
 import { STORE_FILES, STORE_FOLDER } from './store.constants.ts'
@@ -21,7 +25,9 @@ const HANDOVER_FILE_NAMES: readonly string[] = [
 	HANDOVER_RUN_MARKER_FILE,
 	REHEARSAL_DECISIONS_FILE,
 	ARCHIVED_LOT_FILE,
-	FOLDER_LOT_FILE,
+	...ARCHIVE_NAMES,
+	PACKAGE_ARCHIVES_FOLDER,
+	ARCHIVE_PENDING_FILE,
 	LEDGER_FILE,
 	DECISIONS_FILE,
 	STANDARD_FILE,

@@ -667,6 +667,110 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 		})
 	})
 
+	it('a package archive in the folder → its entries under its package path, after the root ones', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 0 })
+		writeLotDeclaration({
+			path: join(folder, 'lot.json'),
+			accept: [{ case: 'src/read.test.ts::read > pinned', reason: 'covers existing code' }],
+		})
+		writeLotDeclaration({
+			path: join(folder, 'lots', 'packages', 'ui', 'lot.json'),
+			revised: [{ case: 'src/button.test.ts::button > label', reason: 'the label moved' }],
+		})
+		writeLotDeclaration({
+			path: join(root, 'packages', 'ui', '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/other.test.ts::other > ignored', reason: 'the archive wins' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] })).toEqual({
+			exitCode: 0,
+			output: expect.stringContaining(
+				[
+					'### Decisions',
+					'- Accepted without a failing run: src/read.test.ts::read > pinned - covers existing code (by the assistant)',
+					'- In `packages/ui`:',
+					'  - Test changed after its failing run: src/button.test.ts::button > label - the label moved (by the assistant)',
+					'',
+					'### Follow-ups',
+				].join('\n'),
+			),
+		})
+	})
+
+	it('a tracked package whose lot file the folder has not archived → its live lot file gives its entries', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 0 })
+		writeFiles({ root, files: { 'packages/ui/package.json': '{}\n' } })
+		git({ root, args: ['add', '--', 'packages/ui/package.json'] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: a package'] })
+		writeLotDeclaration({
+			path: join(root, 'packages', 'ui', '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/button.test.ts::button > pinned', reason: 'pins the label' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] })).toEqual({
+			exitCode: 0,
+			output: expect.stringContaining(
+				[
+					'### Decisions',
+					'- In `packages/ui`:',
+					'  - Accepted without a failing run: src/button.test.ts::button > pinned - pins the label (by the assistant)',
+					'',
+					'### Follow-ups',
+				].join('\n'),
+			),
+		})
+	})
+
+	it('every lot committed, no lot.json in the folder → the repository’s live .dialecte/lot.json (the next step’s) not read', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 3 })
+		writeLotDeclaration({
+			path: join(root, '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/next.test.ts::next > pinned', reason: 'the next step' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] }).output).not.toContain('src/next.test.ts')
+	})
+
+	it('every lot committed, a package the folder archived nothing of → its live lot file (the next step’s) not read', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 3 })
+		writeFiles({ root, files: { 'packages/ui/package.json': '{}\n' } })
+		git({ root, args: ['add', '--', 'packages/ui/package.json'] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: a package'] })
+		writeLotDeclaration({
+			path: join(root, 'packages', 'ui', '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/next.test.ts::next > pinned', reason: 'the next step' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] }).output).not.toContain('packages/ui')
+	})
+
+	it('a package archive that is not JSON → that package named with why, the other decisions still rendered', () => {
+		const { folder, cwd } = prepareScenario({ committed: 0 })
+		writeLotDeclaration({
+			path: join(folder, 'lot.json'),
+			accept: [{ case: 'src/read.test.ts::read > pinned', reason: 'covers existing code' }],
+		})
+		mkdirSync(join(folder, 'lots', 'packages', 'ui'), { recursive: true })
+		writeFileSync(join(folder, 'lots', 'packages', 'ui', 'lot.json'), '{ not json')
+
+		const result = runRecap({ cwd, argv: [folder] })
+
+		expect({
+			exitCode: result.exitCode,
+			decisions: /### Decisions\n([\s\S]*?)\n\n### Follow-ups/
+				.exec(result.output)?.[1]
+				.split('\n')
+				.map((line) => line.replace(/^( {2}- ).*$/, '$1<why>')),
+		}).toEqual({
+			exitCode: 0,
+			decisions: [
+				'- Accepted without a failing run: src/read.test.ts::read > pinned - covers existing code (by the assistant)',
+				'- In `packages/ui`:',
+				'  - <why>',
+			],
+		})
+	})
+
 	it('decisions.md alone → one line per row with its by; the when column not printed', () => {
 		const { folder, cwd } = prepareScenario({ committed: 0 })
 		writeFileSync(

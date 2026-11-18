@@ -406,6 +406,20 @@ describe('lotModeOf', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		expect(lotModeOf({ root, folder })).toEqual({ kind: 'gate' })
 	})
 
+	it('the folder holds lot.json and lot.landed.json → the landed setting, the one the lot landed with', () => {
+		const root = temporaryFolder('dialecte-lot-mode-root-')
+		const folder = temporaryFolder('dialecte-lot-mode-folder-')
+		writeFiles({
+			root: folder,
+			files: {
+				'lot.json': `${JSON.stringify({ mutation: 'audit' })}\n`,
+				'lot.landed.json': `${JSON.stringify({ mutation: 'gate' })}\n`,
+			},
+		})
+
+		expect(lotModeOf({ root, folder })).toEqual({ kind: 'gate' })
+	})
+
 	it('the folder holds none → the root’s setting', () => {
 		const root = temporaryFolder('dialecte-lot-mode-root-')
 		const folder = temporaryFolder('dialecte-lot-mode-folder-')

@@ -160,8 +160,8 @@ export const DECISION_PREFIXES = {
 /** The closing sentence: `{user}` is the git user name. */
 export const PREPARED_BY = 'Prepared with an AI assistant, reviewed and posted by {user}.'
 
-/** The lot declaration `handover run` moves into the hand-over folder. */
-export const FOLDER_LOT_FILE = 'lot.json'
+/** The head of a package's own decisions: `{package}` is its path. */
+export const PACKAGE_DECISIONS_HEAD = '- In `{package}`:'
 
 /** The refusal when no git user name is set. */
 export const NO_USER_NAME =

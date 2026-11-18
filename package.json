@@ -147,6 +147,8 @@
 				"src/lib/worktree/prune-worktrees.ts",
 				"src/lib/handover/commit-lots.ts",
 				"src/lib/handover/run-handover-folder.ts",
+				"src/lib/handover/archived-declarations.ts",
+				"src/lib/worktree/lot-files.ts",
 				"src/lib/handover/close-handovers.ts",
 				"src/lib/handover/abandon-handover.ts",
 				"src/lib/handover/handover-store.ts",

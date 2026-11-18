@@ -15,6 +15,7 @@ import {
 	NO_MUTATION_SCOPE_DECLARED,
 	NOT_COMMITTED,
 	OTHER_JUDGED_STATUSES,
+	PACKAGE_DECISIONS_HEAD,
 	PREPARED_BY,
 	RECAP_CLOSE,
 	RECAP_MOVED_ITEM,
@@ -193,7 +194,10 @@ function atText(at: string): string {
 	return at ? `\`${at}\`` : ''
 }
 
-/** The ledger's accepted rows, the lot declaration's accepted and revised cases, then `decisions.md`. */
+/**
+ * The ledger's accepted rows, the lot declaration's accepted and revised cases, each package's under its path,
+ * then `decisions.md`.
+ */
 function decisionLines(records: RecapRecords): string[] {
 	const by = `(by ${ASSISTANT})`
 	const lines = [
@@ -209,6 +213,16 @@ function decisionLines(records: RecapRecords): string[] {
 		...records.revised.map(
 			(entry) => `- ${DECISION_PREFIXES.revised} ${entry.case} - ${entry.reason} ${by}`,
 		),
+		...records.packages.flatMap((cases) => [
+			PACKAGE_DECISIONS_HEAD.replace('{package}', () => cases.packagePath),
+			...(cases.failure ? [`  - ${cases.failure}`] : []),
+			...cases.accepted.map(
+				(entry) => `  - ${DECISION_PREFIXES.accepted} ${entry.case} - ${entry.reason} ${by}`,
+			),
+			...cases.revised.map(
+				(entry) => `  - ${DECISION_PREFIXES.revised} ${entry.case} - ${entry.reason} ${by}`,
+			),
+		]),
 		...records.decisions.map((row) => `- ${row.decision} (by ${row.by})`),
 	]
 	return lines.length ? lines : [EMPTY_SECTION.decisions]

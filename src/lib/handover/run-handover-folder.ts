@@ -4,19 +4,25 @@
  * then the card. With a rehearsal, the guards read the repository and the lots are committed in its scratch clone,
  * or not at all when a green record answers for every lot. A real run
  * that leaves every lot committed then records the hand-over `committed` in the store (when it is registered)
- * and moves the lot file (`.dialecte/lot.json`) into the folder: the next lot on the branch starts from an
- * empty declaration, not from this lot's entries, and appends the lot's final record (its `card` line) to the
+ * and, when it made commits, moves every lot file of the worktree (the root's `.dialecte/lot.json` and each
+ * package's) into the folder: the next lot on the branch starts from empty declarations, and appends the lot's final record (its `card` line) to the
  * repository's `cards.log`. The card after a real run
  * has no notes: they were written for the person about to run it, and what the run proved is in its gates.
  */
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { renderSectionCard } from '../card/render-section-card.ts'
 import { realPathOf } from '../file-system.ts'
 import { linesOf, textOf } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { LOT_FILE } from '../worktree/worktree.constants.ts'
+import {
+	LANDED_LOT_FILE,
+	LOT_FILE_KEPT,
+	LOT_FILE_NOT_ARCHIVED,
+	LOT_FILE_NOT_OWNED,
+} from './archived-declarations.constants.ts'
+import { archivedDeclarationPath, moveDeclarations } from './archived-declarations.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
@@ -27,16 +33,15 @@ import { findHandoverStore, recordHandoverState } from './handover-store.ts'
 import {
 	ARCHIVED_LOT_FILE,
 	COMMIT_SCRIPT_FILE,
-	EMPTY_LOT_DECLARATION,
 	HANDOVER_FILES,
 	LOT_FILE_ARCHIVED,
 	REHEARSAL_SKIPPED_LINE,
 } from './handover.constants.ts'
-import { isEmptyDeclaration } from './is-empty-declaration.ts'
 import { recordCardLine } from './record-card-line.ts'
 
 import type { Clock } from '../progress/clock.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
+import type { MovedDeclaration } from './archived-declarations.types.ts'
 import type { CloneLotTree } from './clone-lot-tree.types.ts'
 import type { HandoverGateScope } from './handover-gate-scope.types.ts'
 import type { HandoverFolder, HandoverProbe, WriteLine } from './handover.types.ts'
@@ -145,9 +150,10 @@ export async function runHandoverFolder(params: {
 			tip: 'HEAD',
 			lots,
 		}).commits
+	// the commits this run made: none when it committed nothing (a stopped run, a done hand-over run again)
+	const made = committed && !params.skipCommits ? committed.length - guarded.commits.length : 0
 	if (committed && !params.skipCommits) {
 		if (!rehearsal) releaseLock({ root: lotsFile.repository, folder: handover.folder })
-		const made = committed.length - guarded.commits.length
 		write(
 			textOf([
 				`${rehearsal ? 'rehearsed' : 'done'}: ${made} commit(s) on ${lotsFile.branch} in ${formatDuration(clock.now() - startedAt)}${rehearsal ? ' in the scratch clone' : ''}. Nothing pushed.`,
@@ -185,8 +191,17 @@ export async function runHandoverFolder(params: {
 			folder: handover.folder,
 			state: 'committed',
 		})
-		const archived = archiveLotFile({ root: lotsFile.repository, folder: handover.folder })
-		if (archived) write(textOf([LOT_FILE_ARCHIVED.replace('{path}', archived)]))
+		// the lot files are this lot's declarations only when this run committed lots (or the folder records them as
+		// pending from a run whose archive failed): a re-run of a done hand-over meets the next step's files
+		const moved = moveDeclarations({
+			worktree: lotsFile.repository,
+			folder: handover.folder,
+			owned: made > 0,
+			// a package the lots deleted still holds its lot file
+			bases: [lotsFile.head],
+		})
+		for (const line of movedDeclarationLines({ moved, folder: handover.folder }))
+			write(textOf([line]))
 		// the lot's final record: a failure warns and changes no exit, the commit is made
 		recordCardLine({ handover, card, commitRoot })
 	}
@@ -196,18 +211,39 @@ export async function runHandoverFolder(params: {
 }
 
 /**
- * Moves the worktree's lot file into the hand-over folder and leaves an empty declaration in its place;
- * the archived path, or undefined when there is nothing to archive (no lot file, an empty one) or the
- * folder holds one already (a second run: the first archive stays).
+ * One line per lot file a move archived (its archive), failed to archive (why), or left non-empty as it is (why);
+ * none for the rest.
  */
-function archiveLotFile(params: { root: string; folder: string }): string | undefined {
-	const source = join(params.root, LOT_FILE)
-	const target = join(params.folder, ARCHIVED_LOT_FILE)
-	if (!existsSync(source) || existsSync(target)) return undefined
-	if (isEmptyDeclaration(readFileSync(source, 'utf8'))) return undefined
-	copyFileSync(source, target)
-	writeFileSync(source, EMPTY_LOT_DECLARATION)
-	return target
+function movedDeclarationLines(params: {
+	moved: readonly MovedDeclaration[]
+	folder: string
+}): string[] {
+	return params.moved.flatMap(function movedLine(declaration): string[] {
+		const { decision, file, packagePath } = declaration
+		const { folder } = params
+		if (declaration.failure)
+			return [
+				LOT_FILE_NOT_ARCHIVED.replace('{path}', () => file).replace(
+					'{reason}',
+					() => declaration.failure ?? '',
+				),
+			]
+		if (decision.kind === 'write')
+			return [LOT_FILE_ARCHIVED.replace('{path}', () => declaration.archive)]
+		if (decision.kind === 'untouched' && !declaration.empty)
+			return [LOT_FILE_NOT_OWNED.replace('{path}', () => file)]
+		if (decision.kind === 'keep')
+			return [
+				LOT_FILE_KEPT.replace('{path}', () => file)
+					.replace('{archived}', () =>
+						archivedDeclarationPath({ folder, packagePath, name: ARCHIVED_LOT_FILE }),
+					)
+					.replace('{landed}', () =>
+						archivedDeclarationPath({ folder, packagePath, name: LANDED_LOT_FILE }),
+					),
+			]
+		return []
+	})
 }
 
 /**
