@@ -233,13 +233,19 @@ function dequeueUnapproved(params: {
 	head: string
 }): { line: string } | HostRefusal | undefined {
 	const { pullRequest } = params
+	// a draft never joins the merge queue: auto-merge alone can queue it
 	if (pullRequest === undefined || (pullRequest.draft && !pullRequest.queued)) return undefined
 	if (approvedHeadsOf({ lotFolder: params.lotFolder, number: pullRequest.number }).has(params.head))
 		return undefined
+	// a ready one may sit in the merge queue without auto-merge (a stack merge): asked only when auto-merge is off
+	const queued = pullRequest.queued
+		? { queued: true }
+		: params.host.readQueued({ root: params.worktree, number: pullRequest.number })
+	if ('refusal' in queued) return queued
 	const drafted = params.host.draftPullRequest({
 		root: params.worktree,
 		number: pullRequest.number,
-		queued: pullRequest.queued,
+		queued: queued.queued,
 		draft: pullRequest.draft,
 	})
 	return drafted ?? { line: LANDING_LINES.drafted.replace('{number}', String(pullRequest.number)) }

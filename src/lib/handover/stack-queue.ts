@@ -62,7 +62,13 @@ export function stackQueueOf(params: {
 		return refusalOf({ template: STACK_QUEUE_LINES.parentMerged, values })
 	if (!host.probeStacks({ root: params.worktree }).stacks)
 		return refusalOf({ template: STACK_QUEUE_LINES.waits, values })
-	if (!parentPull.queued) return refusalOf({ template: STACK_QUEUE_LINES.parentNotQueued, values })
+	// auto-merge on, else the merge queue asked (a parent queued by a stack merge has no auto-merge)
+	const parentQueued = parentPull.queued
+		? { queued: true }
+		: host.readQueued({ root: params.worktree, number: parentPull.number })
+	if ('refusal' in parentQueued) return parentQueued
+	if (!parentQueued.queued)
+		return refusalOf({ template: STACK_QUEUE_LINES.parentNotQueued, values })
 	return { route: 'stack' }
 }
 

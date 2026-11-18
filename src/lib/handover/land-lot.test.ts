@@ -360,6 +360,22 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		}).toEqual({ exitCode: 1, last: 'lot land: HTTP 502', pushed: '' })
 	})
 
+	it('its pull request ready, in the merge queue without auto-merge, a new head to push → taken out of the queue before the push', () => {
+		const repository = landingRepository()
+		const { host, calls } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: '' }),
+			mergeQueue: [7],
+		})
+
+		land({ repository, host })
+
+		expect(calls).toEqual([
+			'read feat/x',
+			'draft-back 7 queued ready',
+			'edit 7 "feat(x): x answers one"',
+		])
+	})
+
 	it('a closed pull request of the branch → never reused: a new draft opened, the closed one never taken back', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost({
