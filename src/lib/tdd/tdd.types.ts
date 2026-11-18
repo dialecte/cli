@@ -414,6 +414,11 @@ export type TestRunFailure = {
 export type TddBase = {
 	/** A full sha. */
 	commit: string
+	/**
+	 * Which base it is: the lot base read from git (`lot`), HEAD when no base branch is found and none is configured
+	 * (`head`), the merge-base of a `--base <ref>` (`flag`), the gate's own lot base (`gate`).
+	 */
+	kind: 'lot' | 'head' | 'flag' | 'gate'
 	/** One of the `TDD_BASE_SOURCES` texts, its `{ref}` filled. */
 	source: string
 }

@@ -6,6 +6,12 @@ export type LotWorktreeKind = 'dialecte' | 'app'
  */
 export type LotWorktreeSource = 'lot-link' | 'lot-link-commit-only' | 'unreadable-link' | 'none'
 
+/** How a lot cut before main added the package brings main in: by a rebase or by a merge of main. */
+export type LotWorktreeMove = 'rebase' | 'merge'
+
+/** The parent of a stacked lot: an open lot of the store, or a name the store holds no lot of. */
+export type StackParentState = 'open' | 'unreadable'
+
 /** A worktree cut from `main`, then each branch moved on; its test file adds a splice on top of an old one. */
 export type LotWorktree = {
 	root: string

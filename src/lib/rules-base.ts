@@ -4,6 +4,7 @@ import { readPackageJson } from './package-json.ts'
 import { RELEASE_TAG_PATTERN } from './rules-base.constants.ts'
 import { readIdentity } from './store/identity.ts'
 import { lotOfWorktree } from './store/resolve-lot.ts'
+import { resolveTddBase } from './tdd/tdd-base.ts'
 
 import type { RulesBaseSource } from './rules-base.types.ts'
 
@@ -17,13 +18,17 @@ export function resolveRulesBase(params: {
 	head?: string
 	emptyTreeRequest?: boolean
 }): string | undefined {
-	return resolveRulesBaseSource(params)?.commit
+	const resolved = resolveRulesBaseSource(params)
+	return resolved === undefined || 'failure' in resolved ? undefined : resolved.commit
 }
 
 /**
  * The base of `resolveRulesBase` with where it came from, so a caller can name it:
- * 1. the recorded base commit of the store lot whose worktree holds `root`, with the lot's name (not followed
- *    forward when the lot merged its base branch: the lines that merge brought in count as added);
+ * 1. in the worktree of a store lot, its lot base read from git (`resolveTddBase`: its fork point from the base branch,
+ *    or from its parent's line while the lot it was started on is open), with the lot's name; never the base recorded
+ *    at its start, which a rebase leaves behind. HEAD (no base branch found) is no lot base: the order goes on. A lot
+ *    base that cannot be read (an unreadable stack parent) is no base, with its failure: never the base branch's
+ *    merge-base, which would take in a parent's commits;
  * 2. the base branch's merge-base with `head` (default HEAD), as `resolveGateBase` resolves it; for
  *    an empty-tree request (`gate --release`) a merge-base equal to head's commit knows no change and is no answer
  *    (on a branch or detached), so the order goes on;
@@ -34,13 +39,15 @@ export function resolveRulesBaseSource(params: {
 	root: string
 	head?: string
 	emptyTreeRequest?: boolean
-}): RulesBaseSource | undefined {
+}): RulesBaseSource | { failure: string } | undefined {
 	const { root } = params
 	const lotFolder = lotOfWorktree({ cwd: root })
 	const identity = lotFolder === undefined ? undefined : readIdentity({ lotFolder })
-	const recorded = identity?.base?.commit
-	if (identity !== undefined && recorded !== undefined)
-		return { commit: recorded, source: 'lot', lot: identity.name }
+	if (identity !== undefined) {
+		const lotBase = resolveTddBase({ root, packageJson: readPackageJson(root) })
+		if ('failure' in lotBase) return { failure: lotBase.failure }
+		if (lotBase.kind === 'lot') return { commit: lotBase.commit, source: 'lot', lot: identity.name }
+	}
 	const resolved = resolveGateBase({
 		root,
 		...(params.head !== undefined && { head: params.head }),

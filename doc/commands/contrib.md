@@ -10,14 +10,15 @@ contrib - The contributor checks of a dialecte package (profile contributor)
   dialecte contrib [--no-reuse] [--json]
 
   after gate --full and before handover: rules on the changed files (against the base of the lot,
-    the order the rules step of the gate shares: the recorded base of the store lot, else the
-    merge-base with the base branch, as the rules step of the gate takes it, else the last release
-    tag <name>@v<version>, every error kept without any; a rehearsal against the tip its last merge
-    lot merges, else the gate base of the repository at the HEAD of the lots file: an error on a
-    line the base holds is a warning), the "dialecte": { "contrib": { "steps" } } (default: npm run
-    doc:build with the generatedDocs restored, npm run type-bench:check), npm run type-narrowing
-    when the package has that script and no step runs it (a skip line when it lacks it), no
-    dependency named by a local folder, the mutation line when a scope is declared
+    the order the rules step of the gate shares: the lot base of the store lot read from git (its
+    fork point, never the base recorded at its start), else the merge-base with the base branch, as
+    the rules step of the gate takes it, else the last release tag <name>@v<version>, every error
+    kept without any; a rehearsal against the tip its last merge lot merges, else the gate base of
+    the repository at the HEAD of the lots file: an error on a line the base holds is a warning),
+    the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs
+    restored, npm run type-bench:check), npm run type-narrowing when the package has that script and
+    no step runs it (a skip line when it lacks it), no dependency named by a local folder, the
+    mutation line when a scope is declared
   the changelog row (after rules): in a package keeping changes/, a change that edits README.md, a
     page under doc/ or a file the package lists in dialecte.changelog.asking (a folder ends in /;
     the cli lists its command map) adds a changelog fragment changes/<lot>.md, or a no-entry note
@@ -40,8 +41,8 @@ Flags: `--no-reuse`, `--json`
 - `dialecte contrib [--no-reuse] [--json]` runs the contributor checks of a package whose profile is
   `contributor`, after `gate --full` and before `dialecte handover`, one line per row: `rules` on the files
   changed against HEAD (recorded as `dialecte rules` records it), judged against the lot's base for every
-  package, whatever its gate config, in the order the gate's scoped rules step shares (the recorded base commit of
-  the store lot whose worktree holds the package, else [the base branch](../../README.md#the-base-branch)'s merge-base with HEAD,
+  package, whatever its gate config, in the order the gate's scoped rules step shares (the lot base of the store
+  lot whose worktree holds the package, read from git, never the base recorded at its start, else [the base branch](../../README.md#the-base-branch)'s merge-base with HEAD,
   taken as the gate's scoped rules step takes it, even when it is HEAD's commit, else the package's last release tag
   `<name>@v<version>` reachable from HEAD; a rehearsal's run against the last merge lot's tip, else the base the repository resolves at the lots file's
   HEAD): an error of a quality rule on a line the base already holds is a warning ending

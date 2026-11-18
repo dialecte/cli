@@ -42,7 +42,7 @@ export function resolveTddBase(params: {
 	const found = findBaseBranchRef({ root, packageJson })
 	if ('refusal' in found)
 		return packageJson.dialecte?.baseBranch === undefined
-			? { commit: head, source: TDD_BASE_SOURCES.head }
+			? { commit: head, kind: 'head', source: TDD_BASE_SOURCES.head }
 			: { failure: found.refusal }
 	const parent = stackParentOf({ root })
 	if (parent !== undefined && 'refusal' in parent) return { failure: `tdd base: ${parent.refusal}` }
@@ -55,6 +55,7 @@ export function resolveTddBase(params: {
 	if ('refusal' in base) return { failure: `tdd base: ${base.refusal}` }
 	return {
 		commit: base.forkPoint,
+		kind: 'lot',
 		source: fillMessage({ template: TDD_BASE_SOURCES.lotBase, values: { ref: base.label } }),
 	}
 }
@@ -102,7 +103,7 @@ function resolveFlagBase(params: { root: string; ref: string }): TddBase | { fai
 		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] }) ??
 		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', ref] })
 	return base
-		? { commit: base.trim(), source: TDD_BASE_SOURCES.flag }
+		? { commit: base.trim(), kind: 'flag', source: TDD_BASE_SOURCES.flag }
 		: { failure: `--base ${ref}: no such commit` }
 }
 

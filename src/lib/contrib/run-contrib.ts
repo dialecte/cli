@@ -7,7 +7,7 @@ import { checkChangeFragment } from '../changelog/fragment-check.ts'
  * rehearsal's).
  *
  * The rows, in order: `rules` on the files changed against HEAD (recorded as `dialecte rules` records it), judged
- * against the lot's base for every package whatever its gate config (`resolveRulesBase`: the store lot's recorded
+ * against the lot's base for every package whatever its gate config (`resolveRulesBase`: the store lot's lot
  * base, else the base branch's merge-base as the gate's scoped rules step takes it, else the last release tag; a
  * rehearsal's against the last merge lot's tip, else the base its repository resolves): an error of a quality rule
  * on a line the base already holds is a warning, `(not added by this change)`. Then the package's

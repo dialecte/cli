@@ -10,7 +10,7 @@
  * verdict (`dialecteChanges`). The test rules (spliced or replaced XML, spies on a transaction, acts that repeat the
  * call or compare a captured state, long documents, test and fixture files) judge test-shaped Dialecte changes only.
  * The gate's base (`DIALECTE_GATE_BASE`) makes an error on a line the change did not add a warning; without it, the
- * run takes the order every caller shares (the store lot's recorded base, else the base branch's merge-base with HEAD,
+ * run takes the order every caller shares (the store lot's base read from git, else the base branch's merge-base with HEAD,
  * skipped when it is HEAD's commit, else the last release tag `<name>@v<version>` reachable from HEAD, else no base and
  * every error kept: a run on the base branch itself takes that tag, else keeps every error) and names it in one line
  * (`baseLine`).

@@ -1,7 +1,16 @@
 import { dirname } from 'node:path'
 
-import { GATE_BASE_VARIABLE, LOT_NAME, TEST_FILE } from '../../test/rules-lot-worktree.constants.ts'
-import { createLotWorktree } from '../../test/rules-lot-worktree.ts'
+import {
+	GATE_BASE_VARIABLE,
+	LOT_NAME,
+	PARENT_LOT_NAME,
+	TEST_FILE,
+} from '../../test/rules-lot-worktree.constants.ts'
+import {
+	createLotWorktree,
+	createMovedLotWorktree,
+	createStackedLotWorktree,
+} from '../../test/rules-lot-worktree.ts'
 import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { NOT_ADDED_SUFFIX } from '../lib/rules/added-lines.constants.ts'
@@ -9,7 +18,11 @@ import { runRules } from './rules.ts'
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
-import type { LotWorktreeKind, LotWorktreeSource } from '../../test/rules-lot-worktree.types.ts'
+import type {
+	LotWorktree,
+	LotWorktreeKind,
+	LotWorktreeSource,
+} from '../../test/rules-lot-worktree.types.ts'
 import type { RuleFinding } from '../lib/rules/check-code-rules.types.ts'
 
 type SpliceVerdict = { line: number; severity: string; notAdded: boolean }
@@ -117,20 +130,34 @@ describe(
 					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
 					expectedLine: 'lot',
 				},
-			'a link whose base commit git cannot read, main is the base branch → no base: both splices are errors, no line':
+			'a link whose base commit git cannot read, main is the base branch → the lot base read from git: the split, the line names the lot':
 				{
 					source: 'unreadable-link',
-					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-					expectedLine: 'none',
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'lot',
 				},
-			'a link whose base commit git cannot read, no base branch, a release tag → no base: both splices are errors, no line':
+			'a link whose base commit git cannot read, no base branch, a release tag → no lot base: the split, the line names the tag':
 				{
 					source: 'unreadable-link',
 					baseBranch: 'absent',
 					releaseTag: true,
-					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
-					expectedLine: 'none',
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'releaseTag',
 				},
+			'a lot link, no base branch, a release tag on the commit the lot was cut at → no lot base: the split, the line names the tag, not the lot':
+				{
+					source: 'lot-link',
+					baseBranch: 'absent',
+					releaseTag: true,
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'releaseTag',
+				},
+			'a lot link, no base branch, no release tag → no base: both splices are errors, no line': {
+				source: 'lot-link',
+				baseBranch: 'absent',
+				expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+				expectedLine: 'none',
+			},
 			'a link whose base commit git cannot read, no base branch, no release tag → no base: both splices are errors, no line':
 				{
 					source: 'unreadable-link',
@@ -205,6 +232,91 @@ describe(
 					verdicts: testCase.expectedVerdicts,
 					textLines: expectedLines[testCase.expectedLine],
 					jsonBaseLine: expectedLines[testCase.expectedLine][0],
+				})
+			})
+	},
+)
+
+const NO_BASE_LINE_PREFIX = 'rules: no base '
+
+/** A no-base line cut to the expected prefix (its failure reason runs on with git's words); a lot line kept whole. */
+function cutToExpected(params: {
+	line: string
+	expectedLine: string
+	kind: 'lot' | 'stackFailure'
+}): string {
+	return params.kind === 'stackFailure'
+		? params.line.slice(0, params.expectedLine.length)
+		: params.line
+}
+
+describe(
+	'dialecte rules: the lot base read from git, never the base recorded at the start',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		const testCases: Record<
+			string,
+			{
+				make: () => LotWorktree
+				expectedVerdicts: SpliceVerdict[]
+				expectedLine: 'lot' | 'stackFailure'
+			}
+		> = {
+			'a lot cut before main added the package, then rebased onto main → its fork point judges: the splice main added is a warning, the line names the lot at the fork point':
+				{
+					make: () => createMovedLotWorktree({ move: 'rebase' }),
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'lot',
+				},
+			'a lot cut before main added the package, then merging main → the lines that merge brought in are not added, the line names the lot at the fork point':
+				{
+					make: () => createMovedLotWorktree({ move: 'merge' }),
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'lot',
+				},
+			"a lot started on an open lot → the parent's line judges: the parent's splice is a warning, the line names the lot at the parent's tip":
+				{
+					make: () => createStackedLotWorktree({ parent: 'open' }),
+					expectedVerdicts: [OLD_WARNING, NEW_ERROR],
+					expectedLine: 'lot',
+				},
+			"a lot started on a lot the store does not hold → no base, never the base branch's merge-base: both splices are errors, the line names the failure":
+				{
+					make: () => createStackedLotWorktree({ parent: 'unreadable' }),
+					expectedVerdicts: [OLD_ERROR, NEW_ERROR],
+					expectedLine: 'stackFailure',
+				},
+		}
+
+		for (const [title, testCase] of Object.entries(testCases))
+			it(title, () => {
+				const worktree = testCase.make()
+				const environment = machineOf()
+				const expectedLines = {
+					lot: `rules: base ${worktree.shortSha} (the lot ${LOT_NAME})`,
+					stackFailure: `rules: no base (tdd base: the stack parent ${PARENT_LOT_NAME} cannot be read`,
+				}
+
+				const text = runRules({ cwd: worktree.root, argv: [TEST_FILE], environment })
+				const json = runRules({ cwd: worktree.root, argv: [TEST_FILE, '--json'], environment })
+
+				const parsed = JSON.parse(json.output) as { findings: RuleFinding[]; baseLine?: string }
+				const expectedLine = expectedLines[testCase.expectedLine]
+				expect({
+					verdicts: spliceVerdictsOf(parsed.findings),
+					textLines: text.output
+						.split('\n')
+						.filter(
+							(line) => line.startsWith(BASE_LINE_PREFIX) || line.startsWith(NO_BASE_LINE_PREFIX),
+						)
+						.map((line) => cutToExpected({ line, expectedLine, kind: testCase.expectedLine })),
+					jsonBaseLine:
+						parsed.baseLine &&
+						cutToExpected({ line: parsed.baseLine, expectedLine, kind: testCase.expectedLine }),
+				}).toEqual({
+					verdicts: testCase.expectedVerdicts,
+					textLines: [expectedLine],
+					jsonBaseLine: expectedLine,
 				})
 			})
 	},

@@ -12,7 +12,7 @@ import type { BaseWithLine } from './lot-base.types.ts'
  * (`resolveRulesBaseSource`, asked as an empty-tree request: a merge-base equal to HEAD's commit is no answer), with
  * the line naming its short sha and where it came from; undefined outside a git work tree, when the order finds no
  * base, or when git cannot read the commit it found (no base then, as for every caller: `readAddedLines` cannot read
- * it either).
+ * it either); no base with the line naming why when the worktree's lot base cannot be read.
  */
 export function readBaseWithLine(params: { root: string }): BaseWithLine | undefined {
 	const { root } = params
@@ -20,6 +20,8 @@ export function readBaseWithLine(params: { root: string }): BaseWithLine | undef
 	// no base handed, as for an empty-tree request: a merge-base at HEAD's own commit knows no change, the order goes on
 	const resolved = resolveRulesBaseSource({ root, emptyTreeRequest: true })
 	if (resolved === undefined) return undefined
+	if ('failure' in resolved)
+		return { line: BASE_LINE.failure.replace('{reason}', () => resolved.failure) }
 	const shortSha = tryReadGit({
 		root,
 		args: ['rev-parse', '--short', '--verify', '--quiet', `${resolved.commit}^{commit}`],

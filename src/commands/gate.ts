@@ -695,15 +695,18 @@ function resolveScopeOf(params: {
  * The gate's base handed to the tdd step: only one taken from the base branch (the merge-base of HEAD with it, the lot
  * base of a lot cut from the base) in a worktree whose lot is not stacked (a stacked lot's base is its parent's fork
  * point); undefined otherwise, and the tdd step resolves its own.
+ *
+ * @intent hand the gate's base to its tdd step when it is the lot base
+ * @internal
  */
-function sharedTddBaseOf(params: {
+export function sharedTddBaseOf(params: {
 	cwd: string
 	gateBase: UsedGateBase | undefined
 }): TddBase | undefined {
 	const { gateBase } = params
 	if (gateBase?.source !== 'base-branch' || isStackedLotWorktree({ root: params.cwd }))
 		return undefined
-	return { commit: gateBase.commit, source: TDD_BASE_SOURCES.gateBase }
+	return { commit: gateBase.commit, kind: 'gate', source: TDD_BASE_SOURCES.gateBase }
 }
 
 /** The line of a declared release list that does not cover `full`, naming the full steps it misses; none when it covers. */

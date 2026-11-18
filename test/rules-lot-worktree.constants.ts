@@ -1,4 +1,7 @@
 export const LOT_NAME = '0084-repo-widget'
+/** The open lot a stacked lot is started on, and its branch. */
+export const PARENT_LOT_NAME = '0083-repo-widget-parent'
+export const PARENT_BRANCH = 'feat/widget-parent'
 export const TEST_FILE = 'src/widget/add-widget.test.ts'
 /** The release tag `<name>@v<version>` of the package of each kind. */
 export const RELEASE_TAG = { dialecte: '@dialecte/demo@v0.1.0', app: 'demo-app@v0.1.0' } as const

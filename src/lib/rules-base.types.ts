@@ -1,7 +1,7 @@
 /** The base the quality rules judge against, with where the one order found it (`resolveRulesBaseSource`). */
 export type RulesBaseSource =
 	| {
-			/** The recorded base commit of the store lot whose worktree holds the package. */
+			/** The lot base read from git of the store lot whose worktree holds the package (its fork point). */
 			commit: string
 			source: 'lot'
 			/** The name of that store lot. */
