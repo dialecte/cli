@@ -473,7 +473,10 @@ describe('gate --full, --release and --hook', { timeout: SCRATCH_REPOSITORY_TIME
 			heavy: false,
 			stateHash: expect.any(String),
 			reuse: 'none',
-			parts: [['tests', 'passed']],
+			parts: [
+				['design', 'passed'],
+				['tests', 'passed'],
+			],
 		})
 		expect(records.map((record) => record.stateHash)).toEqual([end?.stateHash])
 	})

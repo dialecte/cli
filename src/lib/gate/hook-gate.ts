@@ -85,8 +85,10 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 	const packageJson = readPackageJson(params.cwd)
 	const base = resolveHookLotBase({ cwd: params.cwd, packageJson })
 	// the design step first, whatever the hook list declares: a refused design stops the commit before any step
+	const designStarted = performance.now()
 	const design =
 		base === undefined ? undefined : runHookDesignStep({ cwd: params.cwd, packageJson, base })
+	const designDuration = performance.now() - designStarted
 	if (design?.status === 'failed')
 		return withNotices({ result: endFailedDesign({ design, live: params.live, notices }), notices })
 	const prepared = prepareHookRun(params)
@@ -108,6 +110,7 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 		recorder,
 		base,
 		design,
+		designDuration,
 	})
 	if (own.results.some((result) => result.status === 'failed'))
 		return endFailedOwnRun({ own, recorder, live: params.live, notices })
@@ -446,13 +449,18 @@ async function runOwnHookSteps(params: {
 	recorder: StepHandle
 	base: TddBase | { failure: string } | undefined
 	design: StepResult | undefined
+	/** How long the design step took, in milliseconds. */
+	designDuration: number
 }): Promise<OwnHookSteps> {
 	const { packageJson, tree } = params.prepared
 	const designPart = params.design === undefined ? [] : [params.design]
+	const designDurations = new Map(
+		params.design === undefined ? [] : [[params.design, params.designDuration] as const],
+	)
 	if (params.live && params.design)
 		for (const line of renderStepLines(params.design)) params.live.writeLine(textOf([line]))
 	if (packageJson.dialecte?.gate?.hook === undefined || params.base === undefined)
-		return { results: designPart, durations: new Map() }
+		return { results: designPart, durations: designDurations }
 	const progress = params.live
 		? createStepProgress({ live: params.live, clock: createSystemClock() })
 		: undefined
@@ -461,7 +469,10 @@ async function runOwnHookSteps(params: {
 	const result = await runHookTddStep({ cwd: params.cwd, packageJson, tree, base: params.base })
 	const duration = finishPart()
 	running?.finish(...renderStepLines(result).map((line) => textOf([line])))
-	return { results: [...designPart, result], durations: new Map([[result, duration]]) }
+	return {
+		results: [...designPart, result],
+		durations: new Map([...designDurations, [result, duration]]),
+	}
 }
 
 /**

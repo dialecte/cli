@@ -1,4 +1,5 @@
 import { UNRECORDED_STEPS } from '../gate-records/gate-records.constants.ts'
+import { DESIGN_STEP } from '../gate/hook-design.constants.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 
 import type { GateMode } from '../gate/gate.types.ts'
@@ -15,8 +16,12 @@ export const MARKERS_NOT_WRITTEN_PREFIX = 'markers: not written: '
 export const FOREIGN_STEP_LINE =
 	'events: {step} ran in {worktree}, which links the lot {lot} but is not its worktree: recorded there as step.foreign only'
 
-/** The parts every run lists as run, never counted for `reuse: whole` (the hygiene and the tdd step). */
-export const ALWAYS_RUN_PARTS: readonly string[] = [...UNRECORDED_STEPS, TDD_STEP.name]
+/** The parts every run lists as run, never counted for `reuse: whole` (the hygiene, the hook's design and tdd steps). */
+export const ALWAYS_RUN_PARTS: readonly string[] = [
+	...UNRECORDED_STEPS,
+	DESIGN_STEP.name,
+	TDD_STEP.name,
+]
 
 /** The step family of each gate mode. */
 export const GATE_STEP_KINDS: Readonly<Record<GateMode, RecordedStepKind>> = {

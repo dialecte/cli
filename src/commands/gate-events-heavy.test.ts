@@ -169,7 +169,11 @@ describe('gate --hook answered from a record', { timeout: SCRATCH_REPOSITORY_TIM
 			reuse: 'whole',
 			heavy: false,
 			stateHash: null,
-			parts: [['tests', true, true]],
+			// the hook's design step runs in the lot's worktree, never answered by a record
+			parts: [
+				['design', undefined, undefined],
+				['tests', true, true],
+			],
 			written: [],
 		})
 	})
