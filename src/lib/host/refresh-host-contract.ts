@@ -248,7 +248,8 @@ function callsWithout(params: {
 	)
 	return Object.fromEntries(
 		Object.entries(params.calls).filter(function isAsked([, spec]) {
-			return !parts.has(spec.words[0] ?? '')
+			const [part] = spec.words
+			return part === undefined || !parts.has(part)
 		}),
 	)
 }

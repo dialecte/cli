@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { scanHostSeam } from './host-seam.ts'
-import { HOST_VENDORS } from './host-vendors.constants.ts'
+import { HOST_VENDORS } from './host-vendors.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -262,8 +262,44 @@ describe('scanHostSeam: imports across the seam', () => {
 		},
 		{
 			name: 'the host folder importing its own vendor folder',
-			path: 'src/lib/host/host-vendors.constants.ts',
+			path: 'src/lib/host/host-vendors.ts',
 			text: "import { GITHUB_VENDOR } from './github/github-vendor.constants.ts'\n\nexport const HOST_VENDORS = [GITHUB_VENDOR]\n",
+			expected: [],
+		},
+		{
+			name: 'a generic host file importing a vendor folder',
+			path: 'src/lib/host/graphql-selections.ts',
+			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
+			expected: ['src/lib/host/graphql-selections.ts:vendor-import'],
+		},
+		{
+			name: 'a generic host file spawning the vendor tool through its imported constant',
+			path: 'src/lib/host/graphql-selections.ts',
+			text: "import { spawnSync } from 'node:child_process'\n\nimport { GH_COMMAND } from './github/github.constants.ts'\n\nexport function run() {\n\treturn spawnSync(GH_COMMAND, ['pr'])\n}\n",
+			expected: ['src/lib/host/graphql-selections.ts:vendor-import'],
+		},
+		{
+			name: 'the vendor registry importing its vendor folder',
+			path: 'src/lib/host/host-vendors.ts',
+			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
+			expected: [],
+		},
+		{
+			name: 'the contract registry importing its vendor folder',
+			path: 'src/lib/host/host-contracts.ts',
+			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
+			expected: [],
+		},
+		{
+			name: 'the vendor selection importing its vendor folder',
+			path: 'src/lib/host/select-host.ts',
+			text: "import { GH_COMMAND } from './github/github.constants.ts'\n\nexport const A = GH_COMMAND\n",
+			expected: [],
+		},
+		{
+			name: 'a vendor file importing its own constants',
+			path: 'src/lib/host/github/run-gh.ts',
+			text: "import { GH_COMMAND } from './github.constants.ts'\n\nexport const A = GH_COMMAND\n",
 			expected: [],
 		},
 		{
@@ -281,7 +317,7 @@ describe('scanHostSeam: imports across the seam', () => {
 		{
 			name: 'a config file importing another generic host file',
 			path: 'src/lib/config/config-checks.ts',
-			text: "import { HOST_VENDORS } from '../host/host-vendors.constants.ts'\n\nexport const A = HOST_VENDORS\n",
+			text: "import { HOST_VENDORS } from '../host/host-vendors.ts'\n\nexport const A = HOST_VENDORS\n",
 			expected: ['src/lib/config/config-checks.ts:config-import'],
 		},
 		{

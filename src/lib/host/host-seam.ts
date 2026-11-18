@@ -4,7 +4,12 @@ import { posix } from 'node:path'
 import { listSourceFiles } from '../api/source-functions.ts'
 import { createImportReading } from '../rules/import-reading.ts'
 import { positionOf } from '../rules/syntax-nodes.ts'
-import { CONFIG_FOLDER, HOST_CONSTANTS_FILE, HOST_FOLDER } from './host-seam.constants.ts'
+import {
+	CONFIG_FOLDER,
+	HOST_CONSTANTS_FILE,
+	HOST_FOLDER,
+	VENDOR_IMPORTERS,
+} from './host-seam.constants.ts'
 
 import ts from 'typescript'
 
@@ -12,8 +17,8 @@ import type { HostSeamFinding, HostSeamVendor, PlacedHostSeamFinding } from './h
 
 /**
  * The breaches of the host seam in `root/src` (tests excluded), read from the tokens so no comment counts: a vendor's
- * tool literal outside `src/lib/host/<name>/`, a file outside `src/lib/host/` importing a vendor's
- * folder, and a file of `src/lib/config/` importing anything of `src/lib/host/` but `host.constants.ts`.
+ * tool literal outside `src/lib/host/<name>/`, a file importing a vendor's folder (but the vendor's own files and
+ * `VENDOR_IMPORTERS`), and a file of `src/lib/config/` importing anything of `src/lib/host/` but `host.constants.ts`.
  */
 export function scanHostSeam(params: {
 	root: string
@@ -102,7 +107,8 @@ function moduleSpecifierOf(node: ts.Node): ts.StringLiteral | undefined {
 
 /**
  * What an import breaks, the specifier resolved against the importer's folder: a config file reaching the host
- * folder but its constants (first), or a file outside the host folder reaching a vendor's; undefined when neither.
+ * folder but its constants (first), or a file reaching a vendor's folder that is neither in that folder nor one of
+ * `VENDOR_IMPORTERS`; undefined when neither.
  */
 function importKindOf(params: {
 	file: string
@@ -119,9 +125,10 @@ function importKindOf(params: {
 	)
 		return 'config-import'
 	if (
-		!isInside({ file, folder: HOST_FOLDER }) &&
-		vendors.some(function isVendorTarget(vendor) {
-			return isInside({ file: target, folder: vendorFolderOf(vendor) })
+		!VENDOR_IMPORTERS.includes(file) &&
+		vendors.some(function isForeignVendorTarget(vendor) {
+			const folder = vendorFolderOf(vendor)
+			return isInside({ file: target, folder }) && !isInside({ file, folder })
 		})
 	)
 		return 'vendor-import'

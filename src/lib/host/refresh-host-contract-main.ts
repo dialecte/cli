@@ -6,7 +6,7 @@
 import { getArg, hasFlag } from '../config.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { printLines } from '../print/print.ts'
-import { HOST_CONTRACTS } from './host-contracts.constants.ts'
+import { HOST_CONTRACTS } from './host-contracts.ts'
 import { HOST_REFRESH_FLAGS, HOST_REFRESH_LINES } from './refresh-host-contract.constants.ts'
 import { driftHostContract, refreshHostContract } from './refresh-host-contract.ts'
 

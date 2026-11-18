@@ -157,7 +157,8 @@ export function versionOf(params: {
 	const run = spawnGh({ root: params.root, args, timeout: HOST_READ_TIMEOUT_MS })
 	if (run.status !== 0) {
 		const refusal = refusalOf({ run, args })
-		return UNKNOWN_COMMAND_PATTERN.test(run.stderr ?? '')
+		// a spawn that failed (no gh) wrote nothing: only gh's own answer can name an unknown part
+		return run.error === undefined && UNKNOWN_COMMAND_PATTERN.test(run.stderr)
 			? { ...refusal, absent: `${GH_COMMAND}-${params.selector}` }
 			: refusal
 	}

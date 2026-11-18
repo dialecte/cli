@@ -29,8 +29,8 @@ function recordedSeams(params: { hostname?: string; key?: string }) {
 	return {
 		ssh,
 		key,
-		sshHostname: (alias: string) => (ssh.push(alias), params.hostname),
-		readHostKey: (root: string) => (key.push(root), params.key),
+		sshHostname: ({ alias }: { alias: string }) => (ssh.push(alias), params.hostname),
+		readHostKey: ({ root }: { root: string }) => (key.push(root), params.key),
 	}
 }
 

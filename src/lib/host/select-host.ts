@@ -7,7 +7,7 @@ import { CONFIG_KEYS } from '../config/config-keys.constants.ts'
 import { repoKeyOf } from '../config/repo-key-of.ts'
 import { resolveConfig } from '../config/resolve-config.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { HOST_VENDORS } from './host-vendors.constants.ts'
+import { HOST_VENDORS } from './host-vendors.ts'
 import {
 	GONE_ROOT_REFUSAL,
 	HOST_CONFIG_KEY,
@@ -33,8 +33,8 @@ export function hostnameOfSshConfig(params: { text: string }): string | undefine
 }
 
 /** The real host of an ssh alias as `ssh -G` answers it, offline; undefined when ssh does not answer. */
-function sshHostnameOf(alias: string): string | undefined {
-	const run = spawnSync(SSH_COMMAND, [SSH_CONFIG_FLAG, SSH_END_OF_OPTIONS, alias], {
+function sshHostnameOf(params: { alias: string }): string | undefined {
+	const run = spawnSync(SSH_COMMAND, [SSH_CONFIG_FLAG, SSH_END_OF_OPTIONS, params.alias], {
 		encoding: 'utf8',
 		timeout: SSH_CONFIG_TIMEOUT_MS,
 		stdio: ['ignore', 'pipe', 'pipe'],
@@ -43,38 +43,51 @@ function sshHostnameOf(alias: string): string | undefined {
 }
 
 /** The personal config key `host` of the repository at `root` (its `repos:` entry included); undefined when not set. */
-function hostKeyOf(root: string): string | undefined {
+function hostKeyOf(params: { root: string }): string | undefined {
 	const resolved = resolveConfig({
-		root,
+		root: params.root,
 		environment: process.env,
 		platform: process.platform,
 		home: homedir(),
-		keys: CONFIG_KEYS.filter((spec) => spec.key === HOST_CONFIG_KEY),
+		keys: CONFIG_KEYS.filter(function isHostKey(spec) {
+			return spec.key === HOST_CONFIG_KEY
+		}),
 		layers: ['personal'],
 	})
-	const value = resolved.values.find((each) => each.key === HOST_CONFIG_KEY)?.value
+	const value = resolved.values.find(function isHostValue(each) {
+		return each.key === HOST_CONFIG_KEY
+	})?.value
 	return typeof value === 'string' ? value : undefined
 }
 
 /** The vendor whose remote hosts hold `host`, if any. */
-function vendorOfRemoteHost(host: string | undefined): HostVendorRecord | undefined {
-	if (host === undefined) return undefined
-	const lowered = host.toLowerCase()
-	return HOST_VENDORS.find((vendor) => vendor.remoteHosts.includes(lowered))
+function vendorOfRemoteHost(params: { host: string | undefined }): HostVendorRecord | undefined {
+	if (params.host === undefined) return undefined
+	const lowered = params.host.toLowerCase()
+	return HOST_VENDORS.find(function servesHost(vendor) {
+		return vendor.remoteHosts.includes(lowered)
+	})
 }
 
 /** The selection of the repository at `root`: origin host, then ssh alias (scp and ssh forms only), then the key. */
 function selectionOf(params: { root: string } & HostSelectionSeams): HostSelection {
 	const { remote } = repoKeyOf({ root: params.root, platform: process.platform })
 	const host = remote?.host
-	const byOrigin = vendorOfRemoteHost(host)
+	const byOrigin = vendorOfRemoteHost({ host })
 	if (byOrigin !== undefined) return { vendor: byOrigin, host }
 	if (remote !== undefined && remote.form !== 'https') {
-		const byAlias = vendorOfRemoteHost((params.sshHostname ?? sshHostnameOf)(remote.host))
+		const sshHostname = params.sshHostname ?? sshHostnameOf
+		const byAlias = vendorOfRemoteHost({ host: sshHostname({ alias: remote.host }) })
 		if (byAlias !== undefined) return { vendor: byAlias, host }
 	}
-	const name = (params.readHostKey ?? hostKeyOf)(params.root)
-	return { vendor: HOST_VENDORS.find((vendor) => vendor.name === name), host }
+	const readHostKey = params.readHostKey ?? hostKeyOf
+	const name = readHostKey({ root: params.root })
+	return {
+		vendor: HOST_VENDORS.find(function isNamed(vendor) {
+			return vendor.name === name
+		}),
+		host,
+	}
 }
 
 /**
@@ -88,18 +101,21 @@ export function vendorOf(
 }
 
 /** Why a repository whose origin is `host` reaches no vendor. */
-function noVendorReason(host: string | undefined): string {
+function noVendorReason(params: { host: string | undefined }): string {
 	return fillMessage({
 		template: NO_VENDOR_REFUSAL,
 		values: {
-			origin: host ?? NO_REMOTE_ORIGIN,
-			vendors: HOST_VENDORS.map((vendor) => vendor.name).join(', '),
+			origin: params.host ?? NO_REMOTE_ORIGIN,
+			vendors: HOST_VENDORS.map(function nameOf(vendor) {
+				return vendor.name
+			}).join(', '),
 		},
 	})
 }
 
 /** The adapter of a repository no vendor serves: every method answers its refusal with `why`, nothing is spawned. */
-function refusingHostOf(why: string): HostAdapter {
+function refusingHostOf(params: { why: string }): HostAdapter {
+	const { why } = params
 	const refusal = { refusal: why }
 	function refuse(): HostRefusal {
 		return refusal
@@ -136,36 +152,68 @@ export function createHost(seams: HostSelectionSeams = {}): HostAdapter {
 	 * The adapter serving `root`: its vendor's (created once per vendor), else the refusing one; once per root. A root
 	 * that does not exist is refused afresh on each call, never kept: it may exist by the next call.
 	 */
-	function hostOf(root: string): HostAdapter {
+	function hostOf(params: { root: string }): HostAdapter {
+		const { root } = params
 		const known = served.get(root)
 		if (known !== undefined) return known
 		if (!existsSync(root)) {
-			return refusingHostOf(fillMessage({ template: GONE_ROOT_REFUSAL, values: { root } }))
+			return refusingHostOf({
+				why: fillMessage({ template: GONE_ROOT_REFUSAL, values: { root } }),
+			})
 		}
 		const { vendor, host } = selectionOf({ ...seams, root })
 		const adapter =
 			vendor === undefined
-				? refusingHostOf(noVendorReason(host))
+				? refusingHostOf({ why: noVendorReason({ host }) })
 				: (adapters.get(vendor.name) ?? vendor.createAdapter())
 		if (vendor !== undefined) adapters.set(vendor.name, adapter)
 		served.set(root, adapter)
 		return adapter
 	}
 
+	// each method is forwarded to the adapter of its call's `root`
 	return {
-		readPullRequest: (params) => hostOf(params.root).readPullRequest(params),
-		openPullRequest: (params) => hostOf(params.root).openPullRequest(params),
-		editPullRequest: (params) => hostOf(params.root).editPullRequest(params),
-		closePullRequest: (params) => hostOf(params.root).closePullRequest(params),
-		queuePullRequest: (params) => hostOf(params.root).queuePullRequest(params),
-		draftPullRequest: (params) => hostOf(params.root).draftPullRequest(params),
-		readQueued: (params) => hostOf(params.root).readQueued(params),
-		readChecks: (params) => hostOf(params.root).readChecks(params),
-		readReviewComments: (params) => hostOf(params.root).readReviewComments(params),
-		openFiles: (params) => hostOf(params.root).openFiles(params),
-		probeStacks: (params) => hostOf(params.root).probeStacks(params),
-		linkStack: (params) => hostOf(params.root).linkStack(params),
-		queueStack: (params) => hostOf(params.root).queueStack(params),
-		retargetPullRequest: (params) => hostOf(params.root).retargetPullRequest(params),
+		readPullRequest(params) {
+			return hostOf(params).readPullRequest(params)
+		},
+		openPullRequest(params) {
+			return hostOf(params).openPullRequest(params)
+		},
+		editPullRequest(params) {
+			return hostOf(params).editPullRequest(params)
+		},
+		closePullRequest(params) {
+			return hostOf(params).closePullRequest(params)
+		},
+		queuePullRequest(params) {
+			return hostOf(params).queuePullRequest(params)
+		},
+		draftPullRequest(params) {
+			return hostOf(params).draftPullRequest(params)
+		},
+		readQueued(params) {
+			return hostOf(params).readQueued(params)
+		},
+		readChecks(params) {
+			return hostOf(params).readChecks(params)
+		},
+		readReviewComments(params) {
+			return hostOf(params).readReviewComments(params)
+		},
+		openFiles(params) {
+			return hostOf(params).openFiles(params)
+		},
+		probeStacks(params) {
+			return hostOf(params).probeStacks(params)
+		},
+		linkStack(params) {
+			return hostOf(params).linkStack(params)
+		},
+		queueStack(params) {
+			return hostOf(params).queueStack(params)
+		},
+		retargetPullRequest(params) {
+			return hostOf(params).retargetPullRequest(params)
+		},
 	}
 }

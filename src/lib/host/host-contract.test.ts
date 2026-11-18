@@ -5,7 +5,7 @@
  */
 import { checkHostContract } from './check-host-contract.ts'
 import { impliedFlagsOf as githubImpliedFlagsOf } from './github/run-gh.ts'
-import { HOST_CONTRACTS } from './host-contracts.constants.ts'
+import { HOST_CONTRACTS } from './host-contracts.ts'
 
 import { describe, expect, it } from 'vitest'
 

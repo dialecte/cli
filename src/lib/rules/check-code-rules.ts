@@ -431,10 +431,13 @@ function isInsideAnArgument(node: ts.Node): boolean {
 }
 
 /**
- * An object made only of references to other bindings (`{ cleanUp, info: infoModule }`), like a
- * dialecte's registry of extension modules: it assembles what is declared elsewhere, it holds no value.
+ * An object or an array made only of references to other bindings (`{ cleanUp, info: infoModule }`,
+ * `[GITHUB_VENDOR]`), like a dialecte's registry of extension modules or a list of vendors: it assembles what is
+ * declared elsewhere, it holds no value.
  */
 function isModuleRegistry(initializer: ts.Expression | undefined): boolean {
+	if (initializer !== undefined && ts.isArrayLiteralExpression(initializer))
+		return initializer.elements.length > 0 && initializer.elements.every(ts.isIdentifier)
 	return (
 		initializer !== undefined &&
 		ts.isObjectLiteralExpression(initializer) &&

@@ -1,5 +1,5 @@
 /** The one list of runtime host vendors. */
-import { GITHUB_VENDOR } from './github/github-vendor.constants.ts'
+import { GITHUB_VENDOR } from './github/github-vendor.ts'
 
 import type { HostVendorRecord } from './host.types.ts'
 

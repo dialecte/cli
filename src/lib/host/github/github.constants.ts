@@ -1,4 +1,11 @@
 /** The GitHub adapter's constants: GitHub through the `gh` cli. */
+import type { HostVendorName } from '../host.types.ts'
+
+/** The vendor's name: its folder, and the config key `host`'s value. */
+export const GITHUB_VENDOR_NAME: HostVendorName = 'github'
+
+/** The hosts of an origin that mean GitHub; `ssh.github.com` is what `ssh -G` answers for the port-443 setup. */
+export const GITHUB_REMOTE_HOSTS: readonly string[] = ['github.com', 'ssh.github.com']
 
 /** The `gh` command. */
 export const GH_COMMAND = 'gh'

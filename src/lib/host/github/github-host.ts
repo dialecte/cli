@@ -281,10 +281,15 @@ function readQueuedOnGithub(params: {
 function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 	try {
 		const parsed = JSON.parse(params.text) as Record<string, unknown>
-		if (typeof parsed.number !== 'number' || typeof parsed.state !== 'string')
-			return { refusal: `gh pr view: no number or state in ${params.text.slice(0, 80)}` }
+		if (
+			typeof parsed.number !== 'number' ||
+			typeof parsed.state !== 'string' ||
+			typeof parsed.url !== 'string' ||
+			parsed.url === ''
+		)
+			return { refusal: `gh pr view: no number, state or url in ${params.text.slice(0, 80)}` }
 		const state = parsed.state.toLowerCase()
-		const url = String(parsed.url ?? '')
+		const url = parsed.url
 		return {
 			number: parsed.number,
 			url,
@@ -296,7 +301,7 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
 			head: String(parsed.headRefOid ?? ''),
 			...(typeof parsed.baseRefName === 'string' && { base: parsed.baseRefName }),
-			...(url !== '' && { filesUrl: `${url}${FILES_TAB_SUFFIX}` }),
+			filesUrl: `${url}${FILES_TAB_SUFFIX}`,
 		}
 	} catch {
 		return { refusal: `gh pr view: not the JSON it writes: ${params.text.slice(0, 80)}` }
