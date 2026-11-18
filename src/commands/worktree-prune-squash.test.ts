@@ -1,8 +1,7 @@
 /**
- * `worktree prune` reads the landing state from git alone (FIX-ci-loop design, sections 1, 2 and 5): a squash-merged
- * lot is removable, a squash main edited again is named as not provable offline, work after the landing keeps the
- * worktree, a lot the registry records committed goes only once its work is in main, and a review throwaway goes with
- * its landed lot, through the same landing and loss checks, and stays with an unlanded one.
+ * `worktree prune` leaves a store lot's items to the lot's own close (DESIGN 3.7): an open lot's worktree and review
+ * throwaway are kept for the lot, a committed or canceled lot's are listed as its own, naming `lot close`; it reads no
+ * landing and writes no landed fact; `--yes` removes none of them.
  */
 import { existsSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -16,16 +15,14 @@ import {
 	addRoundOf,
 	commitAfterLanding,
 	landingLotOf,
-	lotHeadOf,
 	pruneArgumentsOf,
 	pruneFatesOf,
 	registerLotEntry,
 	writeLandedFact,
 } from '../../test/landing-lot.ts'
 import { commitDetached, editOnOrigin, mergeOnOrigin } from '../../test/landing-repository.ts'
-import { REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
-import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { runWorktreePrune } from './worktree.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -46,95 +43,89 @@ type PruneRow = {
 	landed: boolean
 }
 
-/** The line of a lot's branch holding `commit` made since its landing. */
-function sinceLine(params: { branch: string; commit: string }): string {
-	return `${params.branch}: 1 commit(s) made since its landing: ${params.commit.slice(0, SHORT_SHA_LENGTH)}`
-}
-
-/** The line of a branch whose work main does not hold: not landed. */
-function notLandedLine(branch: string): string {
-	return `${branch}: not landed: its work is not in main`
+/** The line of an item of the lot `name` in `state`, on `branch`: open, it is kept for the lot; closed, it is the lot's own. */
+function lotItemLine(params: { branch: string; name: string; state: string }): string {
+	const { branch, name, state } = params
+	return state === 'committed' || state === 'canceled'
+		? `${branch}: lot ${name} ${state}: its own item, closed by dialecte lot close ${name}`
+		: `${branch}: lot ${name} ${state}`
 }
 
 const PRUNE_ROWS: PruneRow[] = [
 	{
-		title: 'worktree prune of a squash-merged lot → removable',
+		title:
+			'worktree prune of a squash-merged working lot → kept for the lot, landed.json not written',
 		arrange: (lot) => {
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			return { worktree: lot.worktree }
 		},
-		fate: () => REMOVABLE,
-		landed: true,
+		fate: (lot) => lotItemLine({ branch: lot.branch, name: lot.name, state: 'working' }),
+		landed: false,
 	},
 	{
-		title:
-			'squash, then main edits the same lines, git only → prune keeps it naming landing not provable offline: run lot close',
+		title: 'squash, then main edits the same lines → kept for the lot, nothing read offline',
 		arrange: (lot) => {
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) =>
-			`${lot.branch}: landing not provable offline: run lot close ${lot.name}, which asks the host`,
+		fate: (lot) => lotItemLine({ branch: lot.branch, name: lot.name, state: 'working' }),
 		landed: false,
 	},
 	{
-		title:
-			'a squash-merged lot with a commit made after the merge → prune keeps it naming the commits',
+		title: 'a squash-merged lot with a commit made after the merge → kept for the lot',
 		arrange: (lot) => {
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			commitAfterLanding({ lot, file: AFTER_LANDING_FILE })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => sinceLine({ branch: lot.branch, commit: lotHeadOf(lot) }),
+		fate: (lot) => lotItemLine({ branch: lot.branch, name: lot.name, state: 'working' }),
 		landed: false,
 	},
 	{
-		title: 'a -round-<n> throwaway of a landed lot → prune removes it',
+		title:
+			'a -round-<n> throwaway of a squash-merged working lot → kept for the lot, never removed by prune',
 		arrange: (lot) => {
 			const round = addRoundOf({ lot, round: 2 })
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			return { worktree: round }
 		},
-		fate: () => REMOVABLE,
-		landed: true,
-	},
-	{
-		title: 'a -round-<n> throwaway of an unlanded lot → prune keeps it',
-		arrange: (lot) => ({ worktree: addRoundOf({ lot, round: 2 }) }),
-		fate: (lot) => `${lot.branch}-round-2: a review throwaway of lot ${lot.name}, not landed`,
+		fate: (lot) =>
+			lotItemLine({ branch: `${lot.branch}-round-2`, name: lot.name, state: 'working' }),
 		landed: false,
 	},
 	{
-		title: 'a lot the registry records committed, its work not on main → kept, not landed',
+		title:
+			'a lot the registry records committed, its work not on main → the lot’s own, naming lot close',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => notLandedLine(lot.branch),
+		fate: (lot) => lotItemLine({ branch: lot.branch, name: lot.name, state: 'committed' }),
 		landed: false,
 	},
 	{
 		title:
-			'a -round-<n> throwaway of a lot the registry records committed, its work not on main → kept, not landed, never removed without the check',
+			'a landed lot with no registry entry (its landed fact only), its worktree present → the lot’s own',
 		arrange: (lot) => {
-			registerLotEntry({ lot })
-			return { worktree: addRoundOf({ lot, round: 2 }) }
+			writeLandedFact({ lot, tip: lot.tip })
+			return { worktree: lot.worktree }
 		},
-		fate: (lot) => notLandedLine(`${lot.branch}-round-2`),
-		landed: false,
+		fate: (lot) => lotItemLine({ branch: lot.branch, name: lot.name, state: 'committed' }),
+		landed: true,
 	},
 	{
 		title:
-			'a -round-<n> throwaway of a lot the registry records committed, its work squash-merged → removable',
+			'a -round-<n> throwaway of a lot the registry records committed, its work squash-merged → the lot’s own, never removed by prune',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			const round = addRoundOf({ lot, round: 2 })
 			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
 			return { worktree: round }
 		},
-		fate: () => REMOVABLE,
-		landed: true,
+		fate: (lot) =>
+			lotItemLine({ branch: `${lot.branch}-round-2`, name: lot.name, state: 'committed' }),
+		landed: false,
 	},
 ]
 
@@ -154,10 +145,10 @@ describe('worktree prune: the landing state', { timeout: STORE_CASE_TIMEOUT }, (
 })
 
 describe('worktree prune: a worktree whose folder is gone', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('18. a landed lot whose worktree folder is gone, its HEAD reflog holding a detached commit → kept, the commit named, git worktree prune not run', async () => {
+	it('18. a landed lot whose worktree folder is gone, its HEAD reflog holding a detached commit → the lot’s own, git worktree prune not run', async () => {
 		const lot = landingLotOf()
 		writeLandedFact({ lot, tip: lot.tip })
-		const detached = commitDetached({
+		commitDetached({
 			worktree: lot.worktree,
 			files: { 'src/detached.ts': 'export const detached = 1\n' },
 			reattach: true,
@@ -171,8 +162,36 @@ describe('worktree prune: a worktree whose folder is gone', { timeout: STORE_CAS
 				pruned: (await planned).output.includes('git worktree prune'),
 			})),
 		).resolves.toEqual({
-			fate: `${lot.branch}: 1 commit(s) its removal would lose: ${detached.slice(0, SHORT_SHA_LENGTH)}`,
+			fate: lotItemLine({ branch: lot.branch, name: lot.name, state: 'committed' }),
 			pruned: false,
 		})
+	})
+})
+
+describe('worktree prune --yes: lot items stay', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('a squash-merged lot the registry records committed, with a review throwaway, worktree prune --yes confirmed → both still there and registered', async () => {
+		const lot = landingLotOf()
+		registerLotEntry({ lot })
+		const round = addRoundOf({ lot, round: 2 })
+		mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+
+		await runWorktreePrune({
+			...pruneArgumentsOf(lot),
+			argv: ['--root', lot.workspace.workspace, '--yes'],
+			isTerminal: true,
+			confirm: async function yes() {
+				return true
+			},
+		})
+
+		const listed = git({
+			root: lot.workspace.repository,
+			args: ['worktree', 'list', '--porcelain'],
+		})
+		expect({
+			worktree: existsSync(lot.worktree),
+			round: existsSync(round),
+			registered: [lot.worktree, round].map((path) => listed.includes(`worktree ${path}\n`)),
+		}).toEqual({ worktree: true, round: true, registered: [true, true] })
 	})
 })

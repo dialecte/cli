@@ -4,6 +4,8 @@
  * after it, the `removed` outcome. A failure before the move keeps the worktree; the outcome's failure only warns.
  */
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 
 import { readCardsLog, writeCard, writeRemoved, writeRemoving } from '../events/cards-log.ts'
 import { warnOnStandardError } from '../events/record-step.ts'
@@ -78,6 +80,79 @@ export function keepFinalRecord(params: {
 				item: 'worktree',
 				path: worktree,
 				branch: owner.branch,
+				tip: headOf({ worktree }),
+				records: freezeRecordTimes({ worktree }),
+				by: 'lot-close',
+			},
+		})
+		return { id, file }
+	} catch (error) {
+		return { kept: FINAL_RECORD_NOT_KEPT.replace('{reason}', (error as Error).message.trim()) }
+	}
+}
+
+/**
+ * The final record of a lot closed as a lot target with no registry entry: a `card` line of the lot with
+ * no name and no card (`state` committed: `head` its landed tip, `recomputed`; canceled: `head` the worktree's HEAD),
+ * written once and read back, then the `removing` intent under the lot. The removal's id and log, or why the worktree
+ * stays (nothing moved).
+ */
+export function keepLotFinalRecord(params: {
+	lot: string
+	state: CardInput['state']
+	/** The worktree about to move. */
+	worktree: string
+	branch: string
+	/** A committed lot's landed tip; a canceled lot's head is its worktree's HEAD. */
+	landedTip: string | undefined
+	feature: string | null
+	repository: string
+	/** The repository's `cards.log`. */
+	file: string
+}): { id: string; file: string } | { kept: string } {
+	const { file, lot, state } = params
+	try {
+		const worktree = realPathOf(params.worktree)
+		const head = state === 'committed' ? (params.landedTip ?? null) : headOf({ worktree })
+		mkdirSync(dirname(file), { recursive: true })
+		function kept(): boolean {
+			return readCardsLog({ file }).cards.some(
+				(card) =>
+					card.lot === lot && card.name === null && card.state === state && card.head === head,
+			)
+		}
+		if (!kept()) {
+			writeCard({
+				file,
+				line: {
+					at: new Date().toISOString(),
+					lot,
+					name: null,
+					state,
+					feature: params.feature,
+					repository: params.repository,
+					branch: params.branch,
+					head,
+					base: null,
+					card: null,
+					usage: null,
+					records: freezeRecordTimes({ worktree }),
+					by: 'lot-close',
+					...(state === 'committed' && { recomputed: true }),
+				},
+			})
+			if (!kept()) throw new Error(CARD_NOT_READ_BACK.replace('{file}', file))
+		}
+		const id = `${REMOVAL_ID_PREFIX}${randomUUID()}`
+		writeRemoving({
+			file,
+			line: {
+				id,
+				at: new Date().toISOString(),
+				lot,
+				item: 'worktree',
+				path: worktree,
+				branch: params.branch,
 				tip: headOf({ worktree }),
 				records: freezeRecordTimes({ worktree }),
 				by: 'lot-close',

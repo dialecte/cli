@@ -1,10 +1,9 @@
 /**
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
- * work landed and whose removal loses no commit (`workSinceLanding`, `lostWork`), the hand-over folders already
- * committed, and the rehearsal clones left behind - each with the command that removes it, with its absolute `cd`.
- * A store lot's landing is read from git alone first: a merged lot gets its landed fact and keeps nothing, a review
- * throwaway goes with its landed lot. Never a worktree an open lot names (checked first, reason `lot <full name>
- * <state>`, or why its landing is not proven), a branch holding work the base does not,
+ * work landed and whose removal loses no commit (`lostWork`), the hand-over folders already committed, and the
+ * rehearsal clones left behind - each with the command that removes it, with its absolute `cd`. A store lot's items
+ * (its worktree, review throwaways, branches) are never removed here: an open lot's are kept with `lot <full name>
+ * <state>`, a closed lot's are listed as its own, naming `lot close`. Never a branch holding work the base does not,
  * a dirty worktree, one a pending hand-over commits in, or one a mutation run that still runs (or died before
  * reporting) was started from; never a symbolic link (the sibling link
  * `.worktrees/core -> ../core` among them) nor a folder a link reaches. The pool entries (`_pool-*`) and the
@@ -15,7 +14,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 import { removableIgnored } from '../cleanup/removable-ignored.ts'
-import { isAtOrInside, isPresent, realPathOf } from '../file-system.ts'
+import { isAtOrInside, isPresent, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
@@ -30,26 +29,22 @@ import { readRehearsalRun } from '../handover/live-handover-run.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from '../landing/contained.ts'
-import {
-	lostWork,
-	lostWorkText,
-	noOwnCommitReason,
-	workSinceLanding,
-	workSinceLandingText,
-} from '../landing/lost-work.ts'
-import { NOT_LANDED_TEXTS, THROWAWAY_OF_UNLANDED } from '../landing/lot-landing.constants.ts'
-import { settlePruneLandings } from '../landing/lot-landing.ts'
+import { lostWork, lostWorkText, noOwnCommitReason } from '../landing/lost-work.ts'
+import { NOT_LANDED_TEXTS } from '../landing/lot-landing.constants.ts'
 import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
 import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
-import { THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
+import { THROWAWAY_BRANCH_PATTERN, THROWAWAY_WORKTREE_PATTERN } from '../plan/plan.constants.ts'
 import { isProcessAlive } from '../process-alive.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readScratchMarker } from '../scratch/read-scratch-marker.ts'
 import { WORKSPACE_SCRATCH_FOLDER } from '../scratch/scratch.constants.ts'
 import { shellQuote } from '../shell-quote.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
-import { gitFolderAbove, locateStore } from '../store/store-folder.ts'
+import { readCheckedLotState } from '../store/lot-records.ts'
+import { lotState } from '../store/lot-state.ts'
+import { gitFolderAbove, listLotFolderNames, locateStore } from '../store/store-folder.ts'
+import { LOT_KEEP_REASON, LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
 import { COMMIT_PLAN_FOLDER, WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from './add-worktree.ts'
 import { checkNodeModules } from './check-node-modules.ts'
@@ -89,15 +84,17 @@ import {
 	TRASH_MOVE_NOTE,
 	WORKTREE_LOCKED_FILE,
 	WORKTREE_STATUS_ARGUMENTS,
+	CLOSED_LOT_ITEM_REASON,
 } from './worktree.constants.ts'
 
 import type { HandoverFolder, StoreEntry } from '../handover/handover.types.ts'
-import type { PruneLotLanding } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
 	FolderLink,
 	ListedWorktree,
+	LotItem,
+	LotItems,
 	ProcessFolder,
 	PruneHandover,
 	PruneItem,
@@ -542,21 +539,14 @@ function planRepository(params: {
 	const linkedWorktrees = worktrees
 		.map((worktree) => worktree.name)
 		.filter((name) => isLink(name) && !existsSync(join(name, '.git')))
-	// the lots' landings read from git first (a merged lot gets its landed fact), then the lot keep rule: the store
-	// read once for the repository
-	const landings = settlePruneLandings({ repository, now: new Date() })
+	// the lot keep rule, then the lots' own items: the store read once for the repository, no landing read
 	const lotKeeps = lotsKeepingWorktrees({ repository })
+	const lotItems = readLotItems({ repository })
 	for (const worktree of worktrees) {
 		const { name } = worktree
-		const real = existsSync(name) ? realPathOf(name) : name
-		const lotKeep = lotKeeps.get(real)
-		const throwaway = throwawayLotOf({ worktree: real, landings })
-		const unlandedThrowaway =
-			throwaway !== undefined && !throwaway.landed && throwaway.closed !== true
-				? fillMessage({ template: THROWAWAY_OF_UNLANDED, values: { lot: throwaway.lot } })
-				: undefined
+		const real = realPathThroughAncestors(name)
 		const keptFirst =
-			lotKeep === undefined ? unlandedThrowaway : (landings.get(real)?.reason ?? lotKeep)
+			lotKeeps.get(real) ?? lotItemOf({ items: lotItems, worktree: real, branch: worktree.branch })
 		if (keptFirst) {
 			if (worktree.branch) keptBranches.add(worktree.branch)
 			items.push({
@@ -587,9 +577,6 @@ function planRepository(params: {
 					pending: pendingWorktrees.has(realpathSync(name)),
 					links: params.links,
 					ownedRuns,
-					// a throwaway's own commits are its lot's: the lot's landed tip holds them
-					lot: throwaway ?? landings.get(real),
-					ofClosedLot: throwaway !== undefined,
 					processes: params.processes,
 				})
 		if (kept) {
@@ -629,13 +616,17 @@ function planRepository(params: {
 			items.push({ kind: 'branch', name: branch, kept: 'a hand-over is pending on it' })
 			continue
 		}
+		// a store lot's branch, or a review throwaway's, is the lot's own: never removed here
+		const ownedByLot = lotItemOf({ items: lotItems, worktree: undefined, branch })
+		if (ownedByLot) {
+			items.push({ kind: 'branch', name: branch, kept: ownedByLot })
+			continue
+		}
 		// its reflog may still reach work nothing else holds (reset onto a newer base after commits of its own)
 		const lost = lostWork({
 			root: repository,
 			removes: { worktrees: [], branches: [branch] },
-			landedTips: [...landings.values()].flatMap((landing) =>
-				landing.branch === branch && landing.landedTip !== undefined ? [landing.landedTip] : [],
-			),
+			landedTips: [],
 		})
 		const keptByReflog =
 			lost.length > 0
@@ -887,13 +878,6 @@ function whyKeepWorktree(params: {
 	links: readonly FolderLink[]
 	/** The repository's runs that still run or died before reporting: the worktree one was started from stays. */
 	ownedRuns: readonly RunEntry[]
-	/** The lot the worktree belongs to (its own, or the lot of a throwaway), with the tip it landed at when it did. */
-	lot: PruneLotLanding | undefined
-	/**
-	 * A review throwaway of a lot that landed or is closed: it goes through the landing and loss checks like any
-	 * worktree, but its branch, made at a review, never holds a commit of its own.
-	 */
-	ofClosedLot: boolean
 	/** The processes and their working folders, or why they are not known; listed once per plan, when first asked. */
 	processes: () => readonly ProcessFolder[] | string
 }): string | undefined {
@@ -912,13 +896,11 @@ function whyKeepWorktree(params: {
 		}).trim()
 	)
 		return 'uncommitted changes'
-	const keptByReflog = params.ofClosedLot
-		? undefined
-		: noOwnCommitReason({
-				root: params.repository,
-				branch: params.branch,
-				baselineHead: readHygieneBaseline(params.worktree)?.head,
-			})
+	const keptByReflog = noOwnCommitReason({
+		root: params.repository,
+		branch: params.branch,
+		baselineHead: readHygieneBaseline(params.worktree)?.head,
+	})
 	if (keptByReflog) return keptByReflog
 	const ignored = removableIgnored({ worktree: params.worktree, main: params.repository }).kept
 	if (ignored.length > IGNORED_FILES_SHOWN)
@@ -975,45 +957,84 @@ function workKeeping(params: {
 	branch: string
 	baseBranch: string
 	baseRef: string
-	lot: PruneLotLanding | undefined
-	ofClosedLot: boolean
 }): string | undefined {
 	const { repository, branch } = params
-	const landedTip = params.lot?.landedTip
-	if (landedTip === undefined) {
-		const tip = readCommitOrNone({ root: repository, ref: `refs/heads/${branch}` })
-		if (
-			tip === undefined ||
-			!isContainedIn({ root: repository, baseRef: params.baseRef, commit: tip })
-		)
-			return fillMessage({
-				template: NOT_LANDED_TEXTS.unlanded,
-				values: { base: params.baseBranch },
-			})
-	}
-	if (landedTip !== undefined && params.lot !== undefined && !params.ofClosedLot) {
-		const since = workSinceLanding({ root: repository, branch, cut: params.lot.cut, landedTip })
-		if (since.length > 0) return workSinceLandingText(since)
-	}
+	const tip = readCommitOrNone({ root: repository, ref: `refs/heads/${branch}` })
+	if (
+		tip === undefined ||
+		!isContainedIn({ root: repository, baseRef: params.baseRef, commit: tip })
+	)
+		return fillMessage({
+			template: NOT_LANDED_TEXTS.unlanded,
+			values: { base: params.baseBranch },
+		})
 	const lost = lostWork({
 		root: repository,
 		removes: { worktrees: [params.worktree], branches: [] },
-		landedTips: landedTip === undefined ? [] : [landedTip],
+		landedTips: [],
 	})
 	return lost.length > 0 ? lostWorkText(lost) : undefined
 }
 
 /**
- * The lot a review or verify throwaway (`<lot worktree>-round-<n>`, `-verify`) belongs to, found by the worktree its
- * name continues, with whether that lot landed; undefined for a worktree that is no throwaway of a store lot.
+ * Every store lot's items by worktree (real path) and by branch, each with the reason prune keeps it: an open lot's
+ * `lot <name> <state>`, a committed or canceled lot's its own item naming `lot close` (one remover per item kind). An open lot wins a worktree or a branch a closed lot names too. Files only: no git, no landing.
  */
-function throwawayLotOf(params: {
-	worktree: string
-	landings: ReadonlyMap<string, PruneLotLanding>
-}): PruneLotLanding | undefined {
-	const lotWorktree = THROWAWAY_WORKTREE_PATTERN.exec(basename(params.worktree))?.[1]
-	if (lotWorktree === undefined) return undefined
-	return params.landings.get(realPathOf(join(dirname(params.worktree), lotWorktree)))
+function readLotItems(params: { repository: string }): LotItems {
+	const byWorktree = new Map<string, LotItem>()
+	const byBranch = new Map<string, LotItem>()
+	const location = locateStore({ from: params.repository })
+	if (location === undefined) return { byWorktree, byBranch }
+	const { store, registry } = location
+	const entries = readStoreEntries(registry)
+	for (const name of listLotFolderNames({ store })) {
+		const checked = readCheckedLotState({ lotFolder: join(store, name), registry, entries })
+		if (checked === undefined || 'damage' in checked) continue
+		const { identity } = checked.input
+		const { state } = lotState(checked.input)
+		const open = !LOTS_KEEPING_NOTHING.some((closed) => closed === state)
+		const item: LotItem = { open, reason: lotItemReason({ lot: name, state, open }) }
+		if (typeof identity.worktree === 'string') {
+			const real = realPathThroughAncestors(identity.worktree)
+			if (open || !byWorktree.get(real)?.open) byWorktree.set(real, item)
+		}
+		if (open || !byBranch.get(identity.branch)?.open) byBranch.set(identity.branch, item)
+	}
+	return { byWorktree, byBranch }
+}
+
+/** The reason a lot item is kept: an open lot's state, or a closed lot's own item naming its close. */
+function lotItemReason(params: { lot: string; state: string; open: boolean }): string {
+	return params.open
+		? LOT_KEEP_REASON.replace('{name}', params.lot).replace('{state}', params.state)
+		: fillMessage({
+				template: CLOSED_LOT_ITEM_REASON,
+				values: { lot: params.lot, state: params.state },
+			})
+}
+
+/**
+ * The lot a worktree or branch is an item of: its own (its worktree or branch), else a review or verify throwaway of
+ * it (`<lot worktree>-round-<n>` beside the lot's worktree, or on `<lot branch>-round-<n>`); its keep reason, or
+ * undefined for no lot's item.
+ */
+function lotItemOf(params: {
+	items: LotItems
+	worktree: string | undefined
+	branch: string | undefined
+}): string | undefined {
+	const { items, worktree, branch } = params
+	const lotWorktree =
+		worktree === undefined ? undefined : THROWAWAY_WORKTREE_PATTERN.exec(basename(worktree))?.[1]
+	const lotBranch = branch === undefined ? undefined : THROWAWAY_BRANCH_PATTERN.exec(branch)?.[1]
+	return (
+		(worktree === undefined ? undefined : items.byWorktree.get(worktree)) ??
+		(branch === undefined ? undefined : items.byBranch.get(branch)) ??
+		(lotWorktree === undefined || worktree === undefined
+			? undefined
+			: items.byWorktree.get(join(dirname(worktree), lotWorktree))) ??
+		(lotBranch === undefined ? undefined : items.byBranch.get(lotBranch))
+	)?.reason
 }
 
 /** git answers real paths (`/private/var` for `/var` on macOS): a path under `folder` spelled as `folder` is. */

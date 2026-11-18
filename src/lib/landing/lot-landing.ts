@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
+import { finalCardWhere } from '../events/cards-log.ts'
 import { realPathOf } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
@@ -15,12 +16,15 @@ import { readLanding } from '../handover/land-record.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readIdentity } from '../store/identity.ts'
-import { commonFolderOfLotFolder, readCheckedLotState } from '../store/lot-records.ts'
+import {
+	commonFolderOfLotFolder,
+	readCheckedLotState,
+	registryOfLotFolder,
+} from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { STACK_PULL_STATES, STACK_TEXT } from '../store/stack.constants.ts'
 import { pullStateOf, readStack, stackLineText, stackTextOf } from '../store/stack.ts'
-import { listLotFolderNames, locateStore } from '../store/store-folder.ts'
-import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
+import { STORE_FILES } from '../store/store.constants.ts'
 import { isContainedIn } from './contained.ts'
 import { LANDED_SCHEMA } from './landed-record.constants.ts'
 import { readLanded, writeLanded } from './landed-record.ts'
@@ -32,13 +36,14 @@ import {
 	LOT_LANDING_REFUSALS,
 	NOT_LANDED_TEXTS,
 	NOT_PROVABLE_OFFLINE,
+	SETTLE_NOT_A_LOT,
 	STACK_UNREADABLE,
 } from './lot-landing.constants.ts'
 
 import type { HostAdapter } from '../host/host.types.ts'
-import type { LotStateInput } from '../store/store.types.ts'
+import type { LotIdentity } from '../store/store.types.ts'
 import type { LandedFact } from './landed-record.types.ts'
-import type { LotLanding, PruneLotLanding, StatusLanding } from './lot-landing.types.ts'
+import type { LotLanding, RecordedTips, SettledLot, StatusLanding } from './lot-landing.types.ts'
 
 /**
  * The landing of the store lot in `lotFolder`: from its landed fact when its folder holds one (no git, no host), else
@@ -57,6 +62,8 @@ export function readLotLanding(params: {
 	host?: HostAdapter
 	/** The host asked only for a lot that was pushed: `lot status`'s stack line never runs it for an unpushed parent. */
 	onlyPushed?: boolean
+	/** Where a stale lot's tip is read when its branch ref and worktree are both gone; none: never. */
+	recorded?: RecordedTips
 }): LotLanding | { refusal: string } {
 	const { lotFolder } = params
 	const lot = basename(lotFolder)
@@ -88,9 +95,14 @@ export function readLotLanding(params: {
 	const pullNumber = readLanding({ lotFolder })?.number
 	const asked =
 		params.onlyPushed !== true || isPushed({ root, branch: identity.branch, pullNumber })
+	const recordedTip =
+		params.recorded === undefined
+			? undefined
+			: recordedTipOf({ root, identity, lot, recorded: params.recorded })
 	const state = readLandingState({
 		root,
 		branch: identity.branch,
+		...(recordedTip !== undefined && { tip: recordedTip }),
 		baseRef: base.ref,
 		cut: identity.base.commit,
 		since: identity.created,
@@ -248,93 +260,6 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 	return stackLineText({ parent, number: shown, state: undefined })
 }
 
-/**
- * The lots of the store of `repository` that name a worktree, by its real path, as `worktree prune` reads them from git
- * alone (no host): a committed lot landed; an open lot merged gets its landed fact (prune acts) and landed; an open lot
- * not merged stays, with the work it holds since part of it landed, or, pushed (a pull request recorded or a branch on
- * origin), the line that sends the person to `lot close`, which asks the host.
- *
- * @intent let prune remove a squash-merged lot and say why it keeps the others
- * @internal
- */
-export function settlePruneLandings(params: {
-	repository: string
-	now: Date
-}): ReadonlyMap<string, PruneLotLanding> {
-	const landings = new Map<string, PruneLotLanding>()
-	const location = locateStore({ from: params.repository })
-	if (location === undefined) return landings
-	const { store, registry } = location
-	const lots = listLotFolderNames({ store }).flatMap(function readable(lot) {
-		const lotFolder = join(store, lot)
-		const checked = readCheckedLotState({ lotFolder, registry })
-		if (checked === undefined || 'damage' in checked) return []
-		const { worktree } = checked.input.identity
-		// a lot whose worktree is gone has nothing for prune to remove: its landing is not read
-		if (typeof worktree !== 'string' || !existsSync(worktree)) return []
-		const { state } = lotState(checked.input)
-		return [{ lot, lotFolder, input: checked.input, worktree: realPathOf(worktree), state }]
-	})
-	// a worktree an open lot names stays whatever a closed lot naming it says: the closed one is not read
-	const openWorktrees = new Set(
-		lots
-			.filter((read) => !LOTS_KEEPING_NOTHING.some((closed) => closed === read.state))
-			.map((read) => read.worktree),
-	)
-	for (const read of lots) {
-		const open = !LOTS_KEEPING_NOTHING.some((closed) => closed === read.state)
-		if (!open && openWorktrees.has(read.worktree)) continue
-		const landing = pruneLandingOf({ ...read, root: params.repository, now: params.now })
-		if (landing !== undefined) landings.set(read.worktree, landing)
-	}
-	return landings
-}
-
-/** One lot's landing as prune reads it; undefined when it cannot be read (its lot keep rule decides alone). */
-function pruneLandingOf(params: {
-	lot: string
-	lotFolder: string
-	root: string
-	input: LotStateInput
-	now: Date
-}): PruneLotLanding | undefined {
-	const { input } = params
-	const lot = {
-		lot: params.lot,
-		branch: input.identity.branch,
-		cut: input.identity.base.commit,
-	}
-	if (input.landed !== undefined) return { ...lot, landed: true, landedTip: input.landed.tip }
-	const { state } = lotState(input)
-	if (state === 'canceled') return { ...lot, landed: false, closed: true }
-	// a lot the registry records committed is read like any other: only git proves it merged
-	const landing = readLotLanding({ lotFolder: params.lotFolder, root: params.root })
-	if ('refusal' in landing) return undefined
-	const fact = recordLanded({ landing, now: params.now })
-	if (fact !== undefined) return { ...lot, landed: true, landedTip: fact.tip }
-	if (state === 'committed') return { ...lot, landed: false, closed: true }
-	if (landing.state.kind !== 'unlanded') return { ...lot, landed: false }
-	const since = workSinceLandingOf(landing)
-	if (since !== undefined)
-		return {
-			...lot,
-			landed: false,
-			reason: workSinceLandingText(since),
-		}
-	const pushed = isPushed({
-		root: params.root,
-		branch: landing.identity.branch,
-		pullNumber: readLanding({ lotFolder: params.lotFolder })?.number,
-	})
-	return pushed
-		? {
-				...lot,
-				landed: false,
-				reason: fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot: params.lot } }),
-			}
-		: { ...lot, landed: false }
-}
-
 /** The lot was pushed: its landing recorded a pull request, or origin holds its branch. */
 function isPushed(params: {
 	root: string
@@ -354,4 +279,115 @@ function repositoryOfLotFolder(lotFolder: string): string {
 	if (basename(common) === '.git') return dirname(common)
 	// a bare or unusual layout: git answers where the work tree is, else the common folder itself serves
 	return tryReadGit({ root: common, args: ['rev-parse', '--show-toplevel'] })?.trim() || common
+}
+
+/**
+ * One store lot's landing settled for a verb that closes or prunes: its landed fact when its folder holds one (no git,
+ * no host), canceled without reading it, else read with `host` when given and its landed fact recorded once merged;
+ * a committed lot not merged says why, an open one its state.
+ *
+ * @intent settle a lot's landing once, the same way for lot close and lot prune
+ * @internal
+ */
+export function settleLotLanding(params: {
+	lotFolder: string
+	host?: HostAdapter
+	now: Date
+	/** Where a stale lot's tip is read (`readLotLanding`); none: its branch ref only. */
+	recorded?: RecordedTips
+}): SettledLot {
+	const { lotFolder } = params
+	// a folder holding no lot record is no lot: never read as a damaged one
+	if (
+		![STORE_FILES.identity, STORE_FILES.transitions].some((name) =>
+			existsSync(join(lotFolder, name)),
+		)
+	)
+		return { notRead: SETTLE_NOT_A_LOT }
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	if (checked === undefined) return { notRead: SETTLE_NOT_A_LOT }
+	if ('damage' in checked) return { notRead: checked.damage }
+	const fact = readLanded({ lotFolder })
+	if (fact !== undefined && 'tip' in fact) return { landed: fact }
+	const { state } = lotState(checked.input)
+	// nothing of a canceled lot lands: its landing is not read (its branch is decided by the commits it would lose)
+	if (state === 'canceled') return { canceled: true }
+	const landing = readLotLanding({
+		lotFolder,
+		...(params.host !== undefined && { host: params.host }),
+		...(params.recorded !== undefined && { recorded: params.recorded }),
+	})
+	if ('refusal' in landing) return { notRead: landing.refusal }
+	const landed = recordLandedOrWhy({ landing, now: params.now })
+	if (typeof landed === 'string') return { notRead: landed }
+	if (landed !== undefined) return { landed }
+	const why = notLandedOf({ landing, asked: params.host !== undefined })
+	return state === 'committed' ? { notLanded: why } : { open: state, why }
+}
+
+/**
+ * The lot's landed fact recorded once merged (`recordLanded`); undefined while not merged; why, when the fact cannot be
+ * written (a fact not kept decides nothing: no verb acts on it).
+ */
+function recordLandedOrWhy(params: {
+	landing: LotLanding
+	now: Date
+}): LandedFact | string | undefined {
+	try {
+		return recordLanded(params)
+	} catch (error) {
+		return (error as Error).message.trim()
+	}
+}
+
+/**
+ * Why a committed lot is not landed: without a host, a pushed lot's landing is not provable offline (a squash main
+ * edited again reads unlanded to git); else the text `lot close` keeps it with, the host's silence included.
+ */
+function notLandedOf(params: { landing: LotLanding; asked: boolean }): string {
+	const { landing } = params
+	const pushed = isPushed({
+		root: landing.root,
+		branch: landing.identity.branch,
+		pullNumber: readLanding({ lotFolder: landing.lotFolder })?.number,
+	})
+	return !params.asked && pushed && landing.state.kind === 'unlanded'
+		? fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot: landing.lot } })
+		: notLandedTextOf(landing)
+}
+
+/**
+ * A stale lot's tip from its final record, only when its branch ref is gone, its worktree is gone, and
+ * the card was written at or after the lot's creation: the head of its latest `card` line whose `lot` is the lot, else
+ * of a hand-over outside the store (`lot: null`) on its branch whose registry entry names the lot's worktree and index.
+ * Undefined otherwise: the landing then reads its branch ref, as for any lot.
+ */
+function recordedTipOf(params: {
+	root: string
+	identity: LotIdentity
+	lot: string
+	recorded: RecordedTips
+}): string | undefined {
+	const { identity, lot, recorded } = params
+	if (readCommitOrNone({ root: params.root, ref: `refs/heads/${identity.branch}` }) !== undefined)
+		return undefined
+	if (typeof identity.worktree === 'string' && existsSync(identity.worktree)) return undefined
+	const worktree = typeof identity.worktree === 'string' ? realPathOf(identity.worktree) : undefined
+	const created = Date.parse(identity.created)
+	const final = finalCardWhere({
+		cards: recorded.cards,
+		selects: function isTheLots(card) {
+			if (card.head === null || !(Date.parse(card.at) >= created)) return false
+			if (card.lot === lot) return true
+			if (card.lot !== null || card.branch !== identity.branch || worktree === undefined)
+				return false
+			return recorded.entries.some(
+				(entry) =>
+					entry.name === card.name &&
+					realPathOf(entry.worktree) === worktree &&
+					entry.index === identity.index,
+			)
+		},
+	})
+	return final?.head ?? undefined
 }

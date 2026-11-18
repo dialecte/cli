@@ -294,7 +294,7 @@ const REMOVAL_ROWS: RemovalRow[] = [
 	},
 	{
 		title:
-			'the 0169 shape: a pull request opened outside lot land, squash-merged, main editing the same lines, origin s branch deleted, the host merged by branch → landed.json written, the entry committed, the declaration archived, closed',
+			'the 0169 shape: a pull request opened outside lot land, squash-merged, main editing the same lines, origin s branch deleted, the host merged by branch → landed.json written, no registry entry forged, the declaration archived, closed',
 		arrange: (lot) => {
 			addOwnDeclaration(lot)
 			squashedUnpushed(lot)
@@ -304,7 +304,7 @@ const REMOVAL_ROWS: RemovalRow[] = [
 			outcomes: [{ closed: true, landed: expect.stringContaining(`#${LANDING_PULL_NUMBER}`) }],
 			worktreeGone: true,
 			landed: { how: 'host', tip: lot.tip, pull: { number: LANDING_PULL_NUMBER } },
-			entry: 'committed',
+			entry: undefined,
 			archived: OWN_DECLARATION,
 		}),
 	},

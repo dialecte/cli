@@ -26,7 +26,10 @@ import type { LandingQuery, LandingState, ReflogEntry } from './landing-state.ty
  */
 export function readLandingState(query: LandingQuery): LandingState {
 	const { root, branch, baseRef, cut } = query
-	const tip = readCommitOrNone({ root, ref: `refs/heads/${branch}` })
+	const tip =
+		query.tip === undefined
+			? readCommitOrNone({ root, ref: `refs/heads/${branch}` })
+			: readCommitOrNone({ root, ref: query.tip })
 	if (tip === undefined)
 		return {
 			kind: 'unknown',

@@ -1,5 +1,22 @@
+import type { ListedWorktree, NodeModulesCheck } from '../worktree/worktree.types.ts'
+
+/** The lot's own declaration to archive into its lot folder before the worktree moves: where, and its bytes. */
+export type DeclarationArchive = { path: string; bytes: string }
+
+/** What `whyKeep` lets go: the worktree, the commits only its branch's reflog holds once it goes, the archive to write. */
+export type Kept = {
+	worktree: ListedWorktree
+	/** The branch the worktree is on: the target's, compared before it is let go. */
+	branch: string
+	dropped: string | undefined
+	archive: DeclarationArchive | undefined
+}
+
 /**
- * One lot's landing as `lot close` settles it before deciding: the line naming how it landed (its landed fact), or why
- * it is kept (not merged, damaged, canceled); neither for a lot to be read still.
+ * One target's decision before anything moves: kept with why, closed already (nothing to move), or let go with the
+ * check of its `node_modules` made where it is.
  */
-export type SettledLanding = { landed?: string; kept?: string }
+export type Decision =
+	| { kept: string }
+	| { alreadyClosed: true }
+	| (Kept & { check: NodeModulesCheck | undefined; checkedLockText: string | undefined })

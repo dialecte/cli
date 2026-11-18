@@ -308,3 +308,10 @@ export const SCRATCH_KEEP_REASONS = {
 	live: 'its process still runs: pid {pid}',
 	young: 'made {age} ago: kept for a day',
 } as const
+
+/**
+ * Why `worktree prune` keeps a committed or canceled store lot's item (its worktree, review throwaway or branch): its
+ * own, `{lot}` its name and `{state}`; an open lot's item takes the lot keep reason (`LOT_KEEP_REASON`).
+ */
+export const CLOSED_LOT_ITEM_REASON =
+	'lot {lot} {state}: its own item, closed by dialecte lot close {lot}'

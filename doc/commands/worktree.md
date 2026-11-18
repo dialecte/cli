@@ -20,32 +20,25 @@ worktree - A worktree ready to work in; prune what a merge left
   prune - merged worktrees and branches, committed hand-overs, rehearsal clones: the commands with
           their cd; a worktree whose folder is gone is kept while its HEAD reflog holds work nothing
           else does (git worktree prune would delete that reflog), and git worktree prune waits
-          while one is kept; each store lot's landing is read from git alone first: a merged lot
-          (its tip or its work in the base, a squash included) gets its landed fact (<lot
-          folder>/landed.json) and reads committed, and its review throwaways (<lot
-          worktree>-round-<n>, -verify) go with it once their removal loses no commit; a lot the
-          registry records committed is read from git like any other, its worktree and throwaways
-          kept while their work is not in the base; a worktree an open lot names (working,
-          input-required, ready, failed) is kept first, reason lot <name> <state>, or the commits it
-          holds since part of it landed (<n> commit(s) made since its landing: <commits>), or,
-          pushed and not provably landed, landing not provable offline: run lot close <lot>, which
-          asks the host; a throwaway of a lot not landed is kept (a review throwaway of lot <lot>,
-          not landed); a worktree whose branch's work is not in the base, and no landing of its lot,
-          is kept (not landed: its work is not in <base>); a worktree or a branch whose removal
-          would lose a commit is kept with its commits (<n> commit(s) its removal would lose:
-          <commits>; a surviving branch, branch reflog, tag, landed tip or remote-tracking ref holds
-          a commit, or the same change at the same place (a commit with the same diff, its hunk line
-          numbers included); deleting a branch takes its reflog); a worktree a process works in is
-          kept (a process works in it: pid <pid>; processes not known: kept with why); ignored
-          entries are read as lot close reads them: rebuilt folders, .dialecte/ views and copies of
-          the main checkout's files go, anything else keeps the worktree (ignored files git worktree
-          remove would delete: <paths>); a rehearsal clone is kept while its marker is missing or
-          unparsable, or its pid runs; --yes runs them after a confirmation on a terminal; committed
-          hand-over folders and finished rehearsal clones go to the trash like the other items: the
-          plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move
-          that cannot be made is a ✗ line, nothing deleted; the pool
-          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
-          touched
+          while one is kept; a store lot's items (its worktree, its review throwaways <lot
+          worktree>-round-<n> and -verify, its branch and theirs) are never removed here and no
+          landing is read: an open lot's are kept, reason lot <name> <state>, a committed or
+          canceled lot's are listed lot <name> <state>: its own item, closed by dialecte lot close
+          <name>; a worktree whose branch's work is not in the base is kept (not landed: its work is
+          not in <base>); a worktree or a branch whose removal would lose a commit is kept with its
+          commits (<n> commit(s) its removal would lose: <commits>; a surviving branch, branch
+          reflog, tag, landed tip or remote-tracking ref holds a commit, or the same change at the
+          same place (a commit with the same diff, its hunk line numbers included); deleting a
+          branch takes its reflog); a worktree a process works in is kept (a process works in it:
+          pid <pid>; processes not known: kept with why); ignored entries are read as lot close
+          reads them: rebuilt folders, .dialecte/ views and copies of the main checkout's files go,
+          anything else keeps the worktree (ignored files git worktree remove would delete:
+          <paths>); a rehearsal clone is kept while its marker is missing or unparsable, or its pid
+          runs; --yes runs them after a confirmation on a terminal; committed hand-over folders and
+          finished rehearsal clones go to the trash like the other items: the plan shows the move
+          (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move that cannot be made is
+          a ✗ line, nothing deleted; the pool (.worktrees/_pool-<repository>-<n>) and the trash
+          (.worktrees/_trash/) are counted, never touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
     keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked
@@ -151,23 +144,15 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   hook's temporary folder (`dlt-hook-<random>`) left in the short root is judged the same way - with the
   command that removes each (its absolute `cd` first).
   `--yes` runs them after a confirmation on a terminal; without a terminal it refuses, so hand the
-  commands (or the `--yes` command) to a person. Kept, each with why: first, a worktree a lot of the
-  repository's store names (by real path) while the lot is not `committed` nor `canceled`
-  (`<branch>: lot <full name> <state>`), after each store lot's landing was read from git alone: a lot whose tip is
-  on the base or whose work the base contains (a squash merge read offline) gets its landed fact
-  (`<lot folder>/landed.json`), reads `committed` and keeps nothing; an open lot that holds commits since part of it
-  landed is kept naming them (`<n> commit(s) made since its landing: <commits>`); an open lot pushed (a pull request in
-  its `landing.json`, or its branch on origin) whose work git cannot prove landed (main edited its lines again after a
-  squash) is kept with `landing not provable offline: run lot close <lot>, which asks the host`; a review throwaway
-  (`<lot worktree>-round-<n>`, `-verify`) of a landed or committed lot goes once it passes the landing and loss
-  checks below, of a lot still at work and not landed is kept (`a review throwaway of lot <lot>, not landed`); a lot
-  the registry records committed is read from git like any other (a hand-over run commits before anything reaches
-  the base); a worktree whose branch's work is not in the base and whose lot did not land (`not landed: its work is
-  not in <base>`); a landed lot's worktree whose branch holds commits beyond its landed tip and its cut
-  (`<n> commit(s) made since its landing: <commits>`); a worktree or branch whose removal would lose a commit
-  (`<n> commit(s) its removal would lose: <commits>`): a worktree removal takes its HEAD and HEAD reflog, a branch
-  deletion its tip and reflog, and a commit only they reach is lost unless a surviving branch tip or branch reflog,
-  a tag, a landed tip or a remote-tracking ref (not origin's copy of a deleted branch) holds it or the same change at
+  commands (or the `--yes` command) to a person. Kept, each with why: first, a store lot's items, never removed
+  here and no landing read: a worktree a lot of the repository's store names (by real path) while the lot is not
+  `committed` nor `canceled` (`<branch>: lot <full name> <state>`), and a committed or canceled lot's worktree, its
+  review throwaways (`<lot worktree>-round-<n>`, `-verify`, or on `<lot branch>-round-<n>`) and its branch, listed as
+  its own (`lot <full name> <state>: its own item, closed by dialecte lot close <full name>`); a worktree whose
+  branch's work is not in the base (`not landed: its work is not in <base>`); a worktree or branch whose removal
+  would lose a commit (`<n> commit(s) its removal would lose: <commits>`): a worktree removal takes its HEAD and HEAD
+  reflog, a branch deletion its tip and reflog, and a commit only they reach is lost unless a surviving branch tip or
+  branch reflog, a tag, a landed tip or a remote-tracking ref (not origin's copy of a deleted branch) holds it or
   the same place (the same `diff-tree -p` text, hunk line numbers included, its `index` lines left out); a worktree
   whose folder is gone is checked the same way from its HEAD and HEAD reflog in the git folder, and while one is kept
   no `git worktree prune` is offered (it would delete that reflog); so a branch reset or rebased away from its own commits keeps them until git's

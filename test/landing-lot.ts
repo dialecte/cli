@@ -15,6 +15,8 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 
+import { runLot } from '../src/commands/lot.ts'
+import { CARDS_LOG_FILE } from '../src/lib/events/cards-log.constants.ts'
 import { registeredEntryOf } from '../src/lib/handover/handover-store-read.ts'
 import {
 	handoverStoreOf,
@@ -90,6 +92,63 @@ export function landingLotOf(params: { name?: string; branch?: string } = {}): L
 		tip,
 		repository: { root, origin, worktree, branch, cut: workspace.commit, tip },
 	}
+}
+
+/**
+ * A second store lot `name` in the same workspace as `lot`, on its own worktree and branch `branch` cut from main with
+ * one commit of its own (`src/<name>.ts`): the same shape `landingLotOf` makes.
+ */
+export function addLandingLot(params: {
+	lot: LandingLot
+	name: string
+	branch: string
+}): LandingLot {
+	const { lot, name, branch } = params
+	const { workspace } = lot
+	const root = workspace.repository
+	const path = join(workspace.workspace, '.worktrees', name)
+	git({ root, args: ['worktree', 'add', '-q', '-b', branch, path, 'main'] })
+	const worktree = realpathSync(path)
+	const file = `src/${name}.ts`
+	const tip = commitIn({
+		root: worktree,
+		files: { [file]: LANDING_LOT_TEXT },
+		message: `feat: ${name}`,
+	})
+	const lotFolder = realpathSync(
+		writeStoreLot({
+			workspace,
+			name,
+			scope: [file],
+			branch,
+			worktree,
+			repository: root,
+			base: { ref: 'main', commit: workspace.commit },
+		}),
+	)
+	return {
+		workspace,
+		name,
+		lotFolder,
+		branch,
+		worktree,
+		tip,
+		repository: { ...lot.repository, worktree, branch, tip },
+	}
+}
+
+/** The lot stopped as `lot stop` stops it: canceled, its reason `dropped`. */
+export function cancelLot(lot: LandingLot): void {
+	const stopped = runLot({
+		cwd: lot.workspace.repository,
+		argv: ['stop', lot.name, '--reason', 'dropped'],
+	})
+	if (stopped.exitCode !== 0) throw new Error(stopped.output)
+}
+
+/** The `cards.log` beside the lot's repository's hand-over registry. */
+export function cardsLogOf(lot: LandingLot): string {
+	return join(handoverStoreOf(lot.workspace.repository), CARDS_LOG_FILE)
 }
 
 /**

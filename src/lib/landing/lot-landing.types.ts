@@ -1,5 +1,7 @@
+import type { CardLine } from '../events/cards-log.types.ts'
 import type { BaseBranchRef } from '../gate/gate-base.types.ts'
-import type { LotIdentity } from '../store/store.types.ts'
+import type { StoreEntry } from '../handover/handover.types.ts'
+import type { LotIdentity, LotStateName } from '../store/store.types.ts'
 import type { LandedFact } from './landed-record.types.ts'
 import type { LandingState } from './landing-state.types.ts'
 
@@ -30,27 +32,20 @@ export type StatusLanding = {
 }
 
 /**
- * What `lot close` settled before deciding: the names it closes (a merged lot with no entry named by the entry it got),
- * the line of each argument whose lot landed, and the arguments kept with why (a lot not merged), by argument.
+ * One store lot's landing as every verb that closes or prunes settles it, once per run (`settleLotLanding`): not read
+ * (no store records, damaged, its identity or base not reading, a landed fact that could not be written), landed (its
+ * fact, recorded once merged), canceled (nothing of it lands: its landing is not read), committed but not landed (why),
+ * or open with its state and why it is not landed.
  */
-export type CloseLandings = {
-	names: string[]
-	landed: ReadonlyMap<string, string>
-	kept: ReadonlyMap<string, string>
-}
+export type SettledLot =
+	| { notRead: string }
+	| { landed: LandedFact }
+	| { canceled: true }
+	| { notLanded: string }
+	| { open: Exclude<LotStateName, 'committed' | 'canceled'>; why: string }
 
 /**
- * A store lot's worktree as `worktree prune` reads its landing, git alone: whether the lot landed (and the tip that
- * landed), or why it stays beyond its lot keep reason (work after a landing, a landing git cannot prove); its branch
- * and the commit it was cut from, for the keep rules of a removal.
+ * Where a stale lot's tip is read when its branch and worktree are gone: the repository's `cards.log`
+ * cards and its registry entries, read once per command.
  */
-export type PruneLotLanding = {
-	lot: string
-	branch: string
-	cut: string
-	landed: boolean
-	/** A lot no longer at work (committed in the registry, or canceled): its throwaways go through the work check. */
-	closed?: boolean
-	landedTip?: string
-	reason?: string
-}
+export type RecordedTips = { cards: readonly CardLine[]; entries: readonly StoreEntry[] }

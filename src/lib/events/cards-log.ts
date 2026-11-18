@@ -129,9 +129,28 @@ export function finalCardOf(params: {
 	cards: readonly CardLine[]
 	lot: string
 }): CardLine | undefined {
+	return finalCardWhere({
+		cards: params.cards,
+		selects: function isOfLot(card) {
+			return card.lot === params.lot
+		},
+	})
+}
+
+/**
+ * The latest card `selects` takes (by `at`, then position): a lot's by its name, or a hand-over's outside the store by
+ * its branch and entry; undefined when it takes none.
+ *
+ * @intent pick a final record by any key, with one ordering
+ * @internal
+ */
+export function finalCardWhere(params: {
+	cards: readonly CardLine[]
+	selects: (card: CardLine) => boolean
+}): CardLine | undefined {
 	let final: CardLine | undefined
 	for (const card of params.cards) {
-		if (card.lot !== params.lot) continue
+		if (!params.selects(card)) continue
 		if (final === undefined || Date.parse(card.at) >= Date.parse(final.at)) final = card
 	}
 	return final
