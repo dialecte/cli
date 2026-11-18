@@ -486,7 +486,7 @@ describe('deriveStartRiskClass', () => {
 })
 
 describe('the cli declared list', () => {
-	it('package.json holds dialecte.risk.high with the 15 globs of the spec and the 10 shared concepts of the design gate', () => {
+	it('package.json holds dialecte.risk.high with the 15 globs of the spec, the 10 shared concepts of the design gate and the 2 lot-file archive modules', () => {
 		const manifest = JSON.parse(
 			readFileSync(join(import.meta.dirname, '..', '..', '..', 'package.json'), 'utf8'),
 		)
@@ -501,6 +501,8 @@ describe('the cli declared list', () => {
 			'src/lib/worktree/prune-worktrees.ts',
 			'src/lib/handover/commit-lots.ts',
 			'src/lib/handover/run-handover-folder.ts',
+			'src/lib/handover/archived-declarations.ts',
+			'src/lib/worktree/lot-files.ts',
 			'src/lib/handover/close-handovers.ts',
 			'src/lib/handover/abandon-handover.ts',
 			'src/lib/handover/handover-store.ts',
