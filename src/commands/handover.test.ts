@@ -1118,7 +1118,8 @@ describe('handover (write)', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			{
 				name: 'effort',
 				status: 'passed',
-				detail: 'medium · risk class unknown · 0 review rounds of 2',
+				detail:
+					'medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 			},
 			{
 				name: 'standard',
@@ -3088,7 +3089,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 				'✓ build',
 				'✓ skills',
 				'! review no findings ledger',
-				'✓ effort medium · risk class unknown · 0 review rounds of 2',
+				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3103,7 +3104,7 @@ describe('handover: the gates from records', { timeout: SCRATCH_REPOSITORY_TIMEO
 			[
 				'✗ gate never run on this tree',
 				'! review no findings ledger',
-				'✓ effort medium · risk class unknown · 0 review rounds of 2',
+				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 				'! standard not consulted: none configured (DIALECTE_STANDARD)',
 			].sort(),
 		)
@@ -3441,7 +3442,8 @@ describe('handover: the card layout', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, (
 			'│ ! check     4/4 (the tree changed since)                                     │',
 			'│ ✗ build     exit 1 (the tree changed since)                                  │',
 			'│ ! review    no findings ledger                                               │',
-			'│ ✓ effort    medium · risk class unknown · 0 review rounds of 2               │',
+			'│ ✓ effort    medium · risk class light at handover write (4 lines in 1 files) │',
+			'│             · 0 review rounds of 2                                           │',
 			`│ ✗ merges    lot ${FULL_CARD_MERGE_LOT}: tree not recorded: rehearse first (\`--rehearse\` prints    │`,
 			'│             it), add it as "tree" to the lot, then `dialecte handover        │',
 			'│             --rehash`                                                        │',

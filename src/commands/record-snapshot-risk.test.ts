@@ -181,8 +181,10 @@ describe(
 	'lot snapshot - a derivation that cannot run (D26)',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
-		it('a store lot whose base commit does not exist -> the snapshot is taken, no derived line, a last warning line', () => {
+		it('a store lot whose base commit does not exist and whose repository has no base branch (no lot base, no fallback) -> the snapshot is taken, no derived line, a last warning line', () => {
 			const lot = createStationLot({ repositoryIsWorktree: true })
+			// no base branch: no lot base; the recorded commit does not exist: no fallback either
+			git({ root: lot.cwd, args: ['branch', '-m', 'main', 'trunk'] })
 
 			const result = snapshotOf({ cwd: lot.cwd, folder: lot.lotFolder, round: 1 })
 			const lines = result.output.split('\n')

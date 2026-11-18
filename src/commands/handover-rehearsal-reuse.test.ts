@@ -556,7 +556,7 @@ describe(
 
 			expect(gateStepLinesOf(output)).toEqual([
 				'✓ count 4/4',
-				'✓ effort medium · risk class unknown · 0 review rounds of 2',
+				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 			])
 		})
 

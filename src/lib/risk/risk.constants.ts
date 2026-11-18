@@ -18,6 +18,16 @@ export const RISK_NO_GO_AHEAD_PART = ' (no go-ahead recorded)'
 export const RISK_NOT_DERIVED_LINE = '! risk class not derived: {reason}'
 
 /**
+ * Why a store lot's class cannot be derived: no lot base reads (`{why}`) and HEAD does not hold the commit it recorded
+ * at its start (`{commit}`, short), so no fallback base either: never derived against HEAD.
+ */
+export const RISK_NO_BASE_REASON =
+	'no base: no lot base ({why}) and HEAD does not hold the commit recorded at its start ({commit})'
+
+/** The `{why}` of `RISK_NO_BASE_REASON` when the tdd base is HEAD (no base branch found, none configured). */
+export const RISK_NO_BASE_BRANCH = 'no base branch found'
+
+/**
  * The refusal of an identity effort level other than `low`, `medium`, `high` (33K rev 5: refused as damaged), the level
  * shown as JSON; thrown by `effectiveEffort`, so every reader of the effort ends on it.
  */
