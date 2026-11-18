@@ -50,3 +50,6 @@ export type LandingQuery = {
 	/** Asked for the pull request when given; git alone decides without it. */
 	host?: HostAdapter
 }
+
+/** A branch reflog entry: the commit it names and the unix seconds it was written at. */
+export type ReflogEntry = { commit: string; seconds: number }

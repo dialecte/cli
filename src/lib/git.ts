@@ -64,9 +64,15 @@ export function readCommitOrNone(params: { root: string; ref: string }): string 
 }
 
 /** `readGit`'s output as git wrote it, bytes never decoded (a path that is no UTF-8 kept byte for byte). */
-export function readGitBytes(params: { root: string; args: string[] }): Buffer {
+export function readGitBytes(params: {
+	root: string
+	args: string[]
+	/** What git reads on its standard input (`--stdin`). */
+	input?: string
+}): Buffer {
 	const result = spawnSync('git', ['-c', 'core.quotePath=false', ...params.args], {
 		cwd: params.root,
+		input: params.input,
 		maxBuffer: 1e8,
 		env: { ...process.env, ...GIT_READ_ENVIRONMENT },
 	})

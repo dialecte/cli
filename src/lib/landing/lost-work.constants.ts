@@ -1,6 +1,12 @@
 /** Why a removal would lose a commit: dropped from its branch (a branch reflog held it), or detached (a HEAD reflog only). */
 export const LOST_WHYS = ['dropped', 'detached'] as const
 
+/** Each `LOST_WHYS` value by name. */
+export const LOST_WHY = { dropped: 'dropped', detached: 'detached' } as const satisfies Record<
+	(typeof LOST_WHYS)[number],
+	(typeof LOST_WHYS)[number]
+>
+
 /** Why a branch whose work all landed is still in use. */
 export const NO_OWN_COMMIT_REASONS = {
 	emptyReflog: 'nothing in its reflog',
@@ -24,3 +30,12 @@ export const LOST_WORK_TEXTS = {
 export const BRANCH_REF_PREFIX = 'refs/heads/'
 export const TAG_REF_PREFIX = 'refs/tags/'
 export const REMOTE_REF_PREFIX = 'refs/remotes/'
+
+/** The folder of the repository's git folder holding each linked worktree's own (`worktrees/<id>/`). */
+export const WORKTREES_ADMIN_FOLDER = 'worktrees'
+
+/** The header `diff-tree --stdin` writes before each commit's patch: a NUL, then its id. */
+export const CHANGE_HEADER_FORMAT = '%x00%H'
+
+/** A patch line naming the blobs of a change (`index <old>..<new> <mode>`): left out of its change id. */
+export const DIFF_INDEX_LINE_PREFIX = 'index '

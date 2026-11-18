@@ -1,5 +1,9 @@
 #!/bin/sh
 # The suite's gh (test/suite-guard/refusing-gh.setup.ts puts it first on the PATH): it refuses every call, naming the
-# test that reached it, so no test ever runs the real gh. A test that needs a gh puts its own fake in front.
+# test that reached it, and records the call: the suite fails that test after it runs. A test that needs a gh puts
+# its own fake in front.
+if [ -n "$DIALECTE_REFUSING_GH_CALLS" ]; then
+	printf '%s\n' "${DIALECTE_SUITE_TEST:-outside a test}" >> "$DIALECTE_REFUSING_GH_CALLS"
+fi
 printf '%s (%s)\n' "$DIALECTE_REFUSING_GH" "${DIALECTE_SUITE_TEST:-outside a test}" >&2
 exit 1

@@ -16,7 +16,7 @@ import {
 } from './landing-state.constants.ts'
 
 import type { PullRequest } from '../host/host.types.ts'
-import type { LandingQuery, LandingState } from './landing-state.types.ts'
+import type { LandingQuery, LandingState, ReflogEntry } from './landing-state.types.ts'
 
 /**
  * The landing state of the lot `query` names.
@@ -92,24 +92,36 @@ function readLotPull(params: { query: LandingQuery; tip: string }): {
 }
 
 /**
- * `commit` is the lot's own: beyond its cut, and held by its tip or reached by its branch (its reflog) since the lot was
- * created (`since`): a branch name reused by a new lot never takes what the name reached before.
+ * `commit` is the lot's own: beyond its cut, held by its tip or reached by its branch (its reflog) since the lot was
+ * created (`since`), and never a commit the branch already held then (the reflog's value at `since`, or one of its
+ * ancestors): a branch name reused by a new lot never takes what the name reached before, by any path.
  */
 function isLotCommit(params: { query: LandingQuery; tip: string; commit: string }): boolean {
 	const { query, commit } = params
 	const { root } = query
 	if (commit === '' || isAncestorCommit({ root, ancestor: commit, descendant: query.cut }))
 		return false
-	if (isAncestorCommit({ root, ancestor: commit, descendant: params.tip })) return true
-	return reflogSince({ root, branch: query.branch, since: query.since }).includes(commit)
+	const entries = branchReflogOf({ root, branch: query.branch })
+	const from = query.since === undefined ? Number.NaN : Date.parse(query.since) / 1000
+	if (Number.isNaN(from))
+		return (
+			isAncestorCommit({ root, ancestor: commit, descendant: params.tip }) ||
+			entries.some((entry) => entry.commit === commit)
+		)
+	const heldAtSince = entries.find((entry) => entry.seconds < from)?.commit
+	if (
+		heldAtSince !== undefined &&
+		isAncestorCommit({ root, ancestor: commit, descendant: heldAtSince })
+	)
+		return false
+	return (
+		isAncestorCommit({ root, ancestor: commit, descendant: params.tip }) ||
+		entries.some((entry) => entry.seconds >= from && entry.commit === commit)
+	)
 }
 
-/** The commits the branch's reflog names, only its entries written at or after `since` when given (ISO 8601). */
-function reflogSince(params: {
-	root: string
-	branch: string
-	since: string | undefined
-}): string[] {
+/** The branch's reflog entries, newest first: each commit with the unix seconds it was written at. */
+function branchReflogOf(params: { root: string; branch: string }): ReflogEntry[] {
 	const reached = tryReadGit({
 		root: params.root,
 		args: [
@@ -121,11 +133,10 @@ function reflogSince(params: {
 			'--',
 		],
 	})
-	const from = params.since === undefined ? undefined : Date.parse(params.since) / 1000
-	return (reached ?? '').split('\n').flatMap(function entryCommit(line): string[] {
+	return (reached ?? '').split('\n').flatMap(function entryOf(line) {
 		const match = REFLOG_ENTRY_PATTERN.exec(line)
 		if (match === null) return []
 		const [, commit = '', seconds = ''] = match
-		return from === undefined || Number.isNaN(from) || Number(seconds) >= from ? [commit] : []
+		return [{ commit, seconds: Number(seconds) }]
 	})
 }

@@ -3,18 +3,26 @@
  * (`workSinceLanding`), and would a removal lose a commit (`lostWork`). The "no commit of its own" rule of a merged
  * branch lives here too: a branch nobody committed on is still in use.
  */
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
-import { readCommitOrNone, readGit, tryReadGit } from '../git.ts'
+import { commonGitFolderOf, readCommitOrNone, readGit, readGitBytes, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import {
 	BRANCH_REF_PREFIX,
+	CHANGE_HEADER_FORMAT,
+	DIFF_INDEX_LINE_PREFIX,
+	LOST_WHY,
 	LOST_WORK_TEXTS,
 	NO_OWN_COMMIT_REASONS,
 	REMOTE_REF_PREFIX,
 	TAG_REF_PREFIX,
+	WORKTREES_ADMIN_FOLDER,
 } from './lost-work.constants.ts'
 
-import type { LostCommit, LostWhy, Removal } from './lost-work.types.ts'
+import type { LostCommit, Removal } from './lost-work.types.ts'
 
 /**
  * The commits (full ids) a lot's branch tip holds beyond its landed tip and beyond its cut: work since its landing.
@@ -48,7 +56,7 @@ export function workSinceLanding(params: {
  * The commits one removal would lose, each with why: those only the removed records reach (a worktree's HEAD and HEAD
  * reflog, a branch's tip and reflog) that no surviving branch tip, surviving branch reflog, tag, landed tip or
  * remote-tracking ref (but origin's copy of a removed branch) holds by ancestry, and whose change no holder carries (a
- * `--verbatim` patch-id twin among the commits the holders reach beyond it). Merge and root commits are held by
+ * change id twin among the commits the holders reach beyond it: the same change at the same place). Merge and root commits are held by
  * ancestry only; a commit with no change never has a twin.
  *
  * @intent tell exactly which commits a worktree or branch removal would lose
@@ -64,7 +72,9 @@ export function lostWork(params: {
 }): LostCommit[] {
 	const { root, removes } = params
 	const dropped = unique(removes.branches.flatMap((branch) => branchRecordsOf({ root, branch })))
-	const detached = unique(removes.worktrees.flatMap((worktree) => headRecordsOf(worktree)))
+	const detached = unique(
+		removes.worktrees.flatMap((worktree) => headRecordsOf({ root, worktree })),
+	)
 	if (dropped.length + detached.length === 0) return []
 	const holders = holdersOf({ root, removes, landedTips: params.landedTips })
 	// a commit the removed branch records reach is dropped from that branch; one only a HEAD reached is detached
@@ -73,8 +83,8 @@ export function lostWork(params: {
 		(commit) => !reachedByBranch.includes(commit),
 	)
 	const leftover = [
-		...reachedByBranch.map((commit) => ({ commit, why: 'dropped' as LostWhy })),
-		...reachedByHead.map((commit) => ({ commit, why: 'detached' as LostWhy })),
+		...reachedByBranch.map((commit) => ({ commit, why: LOST_WHY.dropped })),
+		...reachedByHead.map((commit) => ({ commit, why: LOST_WHY.detached })),
 	]
 	if (leftover.length === 0) return []
 	const twins = twinnedCommits({
@@ -159,10 +169,38 @@ function branchRecordsOf(params: { root: string; branch: string }): string[] {
 	return [...(tip === undefined ? [] : [tip]), ...reflogOf({ root: params.root, ref })]
 }
 
-/** A removed worktree's records: its current HEAD (detached or not) and every commit its HEAD reflog names. */
-function headRecordsOf(worktree: string): string[] {
-	const head = readCommitOrNone({ root: worktree, ref: 'HEAD' })
-	return [...(head === undefined ? [] : [head]), ...reflogOf({ root: worktree, ref: 'HEAD' })]
+/**
+ * A removed worktree's records: its current HEAD (detached or not) and every commit its HEAD reflog names. A worktree
+ * whose folder is gone is read from its own folder in the repository's git folder (`worktrees/<id>/`), which
+ * `git worktree prune` deletes with its HEAD reflog.
+ */
+function headRecordsOf(params: { root: string; worktree: string }): string[] {
+	const admin = existsSync(params.worktree)
+		? undefined
+		: adminFolderOf({ root: params.root, worktree: params.worktree })
+	if (!existsSync(params.worktree) && admin === undefined) return []
+	const root = admin === undefined ? params.worktree : params.root
+	const gitDir = admin === undefined ? [] : [`--git-dir=${admin}`]
+	const head = tryReadGit({
+		root,
+		args: [...gitDir, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
+	})?.trim()
+	const reflog = linesOf(
+		tryReadGit({ root, args: [...gitDir, 'reflog', 'show', '--format=%H', 'HEAD', '--'] }) ?? '',
+	)
+	return [...(head ? [head] : []), ...reflog]
+}
+
+/** The git folder of the linked worktree registered at `worktree` (its `gitdir` names `<worktree>/.git`), if any. */
+function adminFolderOf(params: { root: string; worktree: string }): string | undefined {
+	const folder = join(commonGitFolderOf(params.root), WORKTREES_ADMIN_FOLDER)
+	if (!existsSync(folder)) return undefined
+	return readdirSync(folder)
+		.map((id) => join(folder, id))
+		.find(function registersWorktree(admin) {
+			const gitdir = join(admin, 'gitdir')
+			return existsSync(gitdir) && dirname(readFileSync(gitdir, 'utf8').trim()) === params.worktree
+		})
 }
 
 /**
@@ -214,9 +252,9 @@ function beyondHolders(params: {
 }
 
 /**
- * The candidates whose change a holder carries: a `--verbatim` patch-id equal to that of a commit the holders reach
- * beyond the candidate. Merge and root commits have no id here (`diff-tree --stdin` prints no patch for them), nor has
- * a commit with no change: none of them is ever a twin.
+ * The candidates whose change a holder carries: a change id equal to that of a commit the holders reach beyond the
+ * candidate. Merge and root commits have no id (`diff-tree` prints no patch for them), nor has a commit with no
+ * change: none of them is ever a twin.
  */
 function twinnedCommits(params: {
 	root: string
@@ -224,7 +262,7 @@ function twinnedCommits(params: {
 	holders: readonly string[]
 }): Set<string> {
 	const { root, holders } = params
-	const candidateIds = patchIdsOf({ root, commits: params.candidates })
+	const candidateIds = changeIdsOf({ root, commits: params.candidates })
 	if (candidateIds.size === 0) return new Set()
 	const reached = unique(
 		[...candidateIds.keys()].flatMap((candidate) =>
@@ -237,32 +275,49 @@ function twinnedCommits(params: {
 			),
 		),
 	)
-	const heldIds = new Set(patchIdsOf({ root, commits: reached }).values())
+	const heldIds = new Set(changeIdsOf({ root, commits: reached }).values())
 	return new Set([...candidateIds].filter(([, id]) => heldIds.has(id)).map(([commit]) => commit))
 }
 
 /**
- * Each commit's `--verbatim` patch-id against its first parent (`diff-tree -p --full-index`): whitespace kept, no id
- * for a merge, a root or a commit with no change.
+ * Each commit's change id: its `diff-tree -p --full-index --no-color` text against its first parent, bytes as git
+ * wrote them, without its `index <old>..<new>` lines, hashed as `git hash-object --stdin` hashes it. Every path, mode,
+ * hunk header (its line numbers included), context, added and removed line counts: equal ids mean the same change at
+ * the same place. No id for a merge, a root or a commit with no change.
  */
-function patchIdsOf(params: { root: string; commits: readonly string[] }): Map<string, string> {
+function changeIdsOf(params: { root: string; commits: readonly string[] }): Map<string, string> {
 	if (params.commits.length === 0) return new Map()
-	const patches = readGit({
+	// one call for every commit: each patch opens with a NUL and its commit (a diff never holds a NUL: git reads such a
+	// file as binary and prints no lines of it)
+	const patches = readGitBytes({
 		root: params.root,
-		args: ['diff-tree', '--stdin', '-p', '--full-index', '--no-color'],
+		args: [
+			'diff-tree',
+			'--stdin',
+			'-p',
+			'--full-index',
+			'--no-color',
+			`--pretty=format:${CHANGE_HEADER_FORMAT}`,
+		],
 		input: `${params.commits.join('\n')}\n`,
 	})
-	const ids = readGit({
-		root: params.root,
-		args: ['patch-id', '--verbatim'],
-		input: patches,
-	})
-	return new Map(
-		linesOf(ids).map(function commitAndId(line): [string, string] {
-			const [id = '', commit = ''] = line.split(' ')
-			return [commit, id]
-		}),
-	)
+		// latin1: one character per byte, so the bytes hashed are git's own
+		.toString('latin1')
+		.split('\0')
+	return new Map(patches.flatMap(changeIdOfPatch))
+}
+
+/** The commit and change id of one `diff-tree` patch (its commit on its first line); none for an empty patch. */
+function changeIdOfPatch(patch: string): [string, string][] {
+	const [commit = '', ...lines] = patch.split('\n')
+	const change = lines
+		.filter((line) => !line.startsWith(DIFF_INDEX_LINE_PREFIX))
+		.join('\n')
+		.replace(/\n+$/, '')
+	if (commit === '' || change === '') return []
+	const bytes = Buffer.from(`${change}\n`, 'latin1')
+	const id = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
+	return [[commit, id]]
 }
 
 /** The commits a reflog names, newest first; none when it cannot be read. */

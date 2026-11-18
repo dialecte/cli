@@ -44,6 +44,7 @@ import {
 	strayCommitOf,
 } from '../../test/landing-repository.ts'
 import { REFUSING_GH_TEXT } from '../../test/suite-guard/refusing-gh.constants.ts'
+import { takeRefusingGhCalls } from '../../test/suite-guard/refusing-gh.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
@@ -387,7 +388,7 @@ describe(
 )
 
 describe('lot close: no real gh in the suite', { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('a close built with no fake host, the 0169 shape → kept on the refusing gh of the suite, never the real one', () => {
+	it('a close built with no fake host, the 0169 shape → kept on the refusing gh of the suite, never the real one, its call recorded against the test', () => {
 		const lot = landingLotOf()
 		squashedUnpushed(lot)
 		const { host: _faked, ...withoutHost } = closeArgumentsOf({
@@ -396,9 +397,14 @@ describe('lot close: no real gh in the suite', { timeout: STORE_CASE_TIMEOUT }, 
 			host: silentHost(),
 		})
 
-		expect(closeOutcomesOf(runLotClose(withoutHost))).toEqual([
-			{ closed: false, kept: expect.stringContaining(REFUSING_GH_TEXT) },
-		])
+		// the calls taken here, so the suite's guard does not fail this test for the call it pins
+		expect({
+			outcomes: closeOutcomesOf(runLotClose(withoutHost)),
+			calls: takeRefusingGhCalls(),
+		}).toEqual({
+			outcomes: [{ closed: false, kept: expect.stringContaining(REFUSING_GH_TEXT) }],
+			calls: [expect.getState().currentTestName],
+		})
 	})
 })
 

@@ -66,6 +66,7 @@ import {
 	IGNORED_FILES_SHOWN,
 	NODE_MODULES_PROBLEMS_SHOWN,
 	POOL_MISS_KEY_LENGTH,
+	GONE_WORKTREE_HELD,
 	PRUNE_LINK_REASON,
 	PRUNE_RUN_PREFIX,
 	REBUILT_IGNORED_FOLDERS,
@@ -568,8 +569,10 @@ function planRepository(params: {
 			items.push({ kind: 'worktree', name, kept: 'detached HEAD' })
 			continue
 		}
-		const kept = existsSync(name)
-			? whyKeepWorktree({
+		// a folder gone: `git worktree prune` deletes its HEAD reflog, so what only that reflog holds keeps it
+		const kept = !existsSync(name)
+			? goneWorktreeLoss({ repository, worktree: worktree.path })
+			: whyKeepWorktree({
 					repository,
 					worktree: name,
 					branch: worktree.branch,
@@ -582,7 +585,6 @@ function planRepository(params: {
 					lot: throwaway ?? landings.get(real),
 					ofClosedLot: throwaway !== undefined,
 				})
-			: undefined
 		if (kept) {
 			keptBranches.add(worktree.branch)
 			items.push({ kind: 'worktree', name, kept: `${worktree.branch}: ${kept}` })
@@ -602,6 +604,7 @@ function planRepository(params: {
 					: `${cd} git worktree prune`,
 			})
 	}
+	items.splice(0, items.length, ...holdGonePrunes({ items, cd }))
 
 	for (const branch of readGit({
 		root: repository,
@@ -923,6 +926,42 @@ function whyKeepWorktree(params: {
 		return `${ignored.length} ignored files git worktree remove would delete, first: ${ignored.slice(0, IGNORED_FILES_SHOWN).join(', ')}`
 	if (ignored.length) return `ignored files git worktree remove would delete: ${ignored.join(', ')}`
 	return undefined
+}
+
+/**
+ * The plan's items with no `git worktree prune` while a worktree whose folder is gone is kept: that one command
+ * unregisters every such worktree, and would delete the kept one's HEAD reflog.
+ */
+function holdGonePrunes(params: { items: readonly PruneItem[]; cd: string }): PruneItem[] {
+	const prune = `${params.cd} git worktree prune`
+	const goneKept = params.items.filter(
+		(item) => item.kind === 'worktree' && item.kept !== undefined && !existsSync(item.name),
+	)
+	if (goneKept.length === 0) return [...params.items]
+	return params.items.map(function holdPrune(item): PruneItem {
+		if (item.kind !== 'worktree' || item.command !== prune) return item
+		return {
+			kind: 'worktree',
+			name: item.name,
+			kept: fillMessage({
+				template: GONE_WORKTREE_HELD,
+				values: { worktrees: goneKept.map((kept) => kept.name).join(', ') },
+			}),
+		}
+	})
+}
+
+/**
+ * The commits a worktree whose folder is gone would lose with its registration (its HEAD and HEAD reflog, read from
+ * its own git folder), named; undefined when it loses none.
+ */
+function goneWorktreeLoss(params: { repository: string; worktree: string }): string | undefined {
+	const lost = lostWork({
+		root: params.repository,
+		removes: { worktrees: [params.worktree], branches: [] },
+		landedTips: [],
+	})
+	return lost.length > 0 ? lostWorkText(lost) : undefined
 }
 
 /**

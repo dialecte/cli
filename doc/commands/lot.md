@@ -434,9 +434,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           made since its landing (<n> commit(s) made since its landing: <commits>), its removal
           would lose a commit (<n> commit(s) its removal would lose: <commits>: a commit only its
           HEAD or HEAD reflog reaches, that no surviving branch, branch reflog, tag, landed tip or
-          remote-tracking ref holds, nor a byte-equal patch of it - a commit made on a detached
-          HEAD), it holds ignored files its removal would delete that nothing else holds (rebuilt
-          folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived
+          remote-tracking ref holds, nor the same change at the same place (a commit of theirs with
+          the same diff, its hunk line numbers included) - a commit made on a detached HEAD), it
+          holds ignored files its removal would delete that nothing else holds (rebuilt folders,
+          dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived
           .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a
           mutation run works there, lot close itself runs from inside it, or the processes are not
           known, or the final record cannot be kept or the lot's commit is not known; the branch
@@ -783,8 +784,10 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     (`<n> commit(s) made since its landing: <commits>`); a commit its removal would lose
     (`<n> commit(s) its removal would lose: <commits>`): the worktree's HEAD and HEAD reflog go with it, so a commit
     only they reach - made on a detached HEAD, even with the branch checked out again - keeps it, unless a surviving
-    branch tip or branch reflog, a tag, a landed tip or a remote-tracking ref holds it, or holds a byte-equal patch of
-    it (a `--verbatim` patch-id; a merge, a root or an empty commit is never held by its patch). The check runs with or
+    branch tip or branch reflog, a tag, a landed tip or a remote-tracking ref holds it, or holds the same change at the
+    same place (a commit whose `diff-tree -p` text, its `index` lines left out, is the same: paths, modes, hunk headers
+    with their line numbers, every line; a rebase that shifted the lines is no twin, and a merge, a root or an empty
+    commit is never held by its change). The check runs with or
     without a base branch. The branch and its reflog stay: a commit reset or rebased away from the branch is held by
     that reflog, and the worktree closes with the line `<commits>: dropped from the branch, kept in its reflog until
     git's reflog expiry (gc.reflogExpireUnreachable)` under its closed line - removing the worktree does not shorten

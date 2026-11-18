@@ -364,6 +364,22 @@ export function reuseBranchName(params: { worktree: string; cut: string; at: str
 	return earlier
 }
 
+/**
+ * The earlier lot's work committed in the worktree, dated `at` (its reflog entry older than the new lot), and kept:
+ * the branch name reused by a new lot that builds on that tip. The earlier lot's commit.
+ */
+export function commitEarlierLot(params: { worktree: string; at: string }): string {
+	const dated = { GIT_COMMITTER_DATE: params.at, GIT_AUTHOR_DATE: params.at }
+	writeFiles({ root: params.worktree, files: { [EARLIER_LOT_FILE]: EARLIER_LOT_TEXT } })
+	gitWithEnvironment({ root: params.worktree, args: ['add', '-A'], environment: dated })
+	gitWithEnvironment({
+		root: params.worktree,
+		args: ['commit', '-qm', 'feat(x): an earlier lot'],
+		environment: dated,
+	})
+	return headOf(params.worktree)
+}
+
 /** The worktree's branch rebased onto `onto` until it stops on a conflict; throws when it does not stop. */
 function stopOnConflict(params: { worktree: string; onto: string }): void {
 	const result = spawnSync('git', ['rebase', '-q', params.onto], {

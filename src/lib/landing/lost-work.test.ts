@@ -56,6 +56,32 @@ function branchRemoval(params: { repository: LandingRepository; branch?: string 
 /** A file only main writes: main moving on without touching the lot's lines. */
 const MAIN_ONLY = { 'src/main.ts': 'export const main = 1\n' }
 
+/** A file a lot edits near its top while main edits it near its bottom: the lot's change keeps its place. */
+const SHARED_FILE = 'src/shared.ts'
+
+/** The shared file: `top` on its second line, `bottom` on its nineteenth. */
+function sharedTextOf(params: { top: string; bottom: string }): string {
+	const middle = Array.from({ length: 16 }, (_unused, index) => `m${index + 3}`).join('\n')
+	return `m1\n${params.top}\n${middle}\n${params.bottom}\nm20\n`
+}
+
+/** A file holding two identical blocks, each ending its body on `return <value>`. */
+const TWO_BLOCKS_FILE = 'src/blocks.ts'
+
+/** The two-blocks file with the value each block returns. */
+function twoBlocksOf(params: { first: string; second: string }): string {
+	return `top\n${blockOf(params.first)}s1\ns2\ns3\ns4\ns5\ns6\ns7\n${blockOf(params.second)}`
+}
+
+/** One block of the two-blocks file, returning `value`. */
+function blockOf(value: string): string {
+	return `a1\na2\na3\nreturn ${value}\nb1\nb2\nb3\n`
+}
+
+/** A file whose last line a lot changes while main adds lines above it. */
+const SHIFTED_FILE = 'src/shifted.ts'
+const SHIFTED_TEXT = 'l1\nl2\nl3\nl4\nl5\n'
+
 const WORKTREE_ROWS: LostRow[] = [
 	{
 		title:
@@ -165,12 +191,21 @@ const BRANCH_ROWS: LostRow[] = [
 		title:
 			'6. a branch removal, two commits rebased cleanly, landed by squash, the landed tip given -> nothing lost: each old commit has its twin under the landed tip',
 		arrange: (repository) => {
+			// b edits a file main edits too, far below: the same change at the same place, on another blob
+			editOnOrigin({
+				repository,
+				files: { [SHARED_FILE]: sharedTextOf({ top: 'a', bottom: 'z' }) },
+			})
+			rebaseOnto({ worktree: repository.worktree, onto: ORIGIN_MAIN })
 			commitIn({
 				root: repository.worktree,
-				files: { 'src/b.ts': 'export const b = 1\n' },
+				files: { [SHARED_FILE]: sharedTextOf({ top: 'b', bottom: 'z' }) },
 				message: 'feat(x): b',
 			})
-			editOnOrigin({ repository, files: MAIN_ONLY })
+			editOnOrigin({
+				repository,
+				files: { [SHARED_FILE]: sharedTextOf({ top: 'a', bottom: 'y' }) },
+			})
 			const rebased = rebaseOnto({ worktree: repository.worktree, onto: ORIGIN_MAIN })
 			mergeOnOrigin({ repository, how: 'squash' })
 			return {
@@ -340,6 +375,55 @@ const BRANCH_ROWS: LostRow[] = [
 				removes: worktreeRemoval(repository),
 				landedTips: [],
 				expected: [{ commit: detached, why: 'detached' }],
+			}
+		},
+	},
+	{
+		title:
+			'16. a branch removal, a file with two identical blocks, main editing the first, a commit editing the second then reset away -> not a twin of main s edit: lost, dropped',
+		arrange: (repository) => {
+			commitIn({
+				root: repository.worktree,
+				files: { [TWO_BLOCKS_FILE]: twoBlocksOf({ first: 'x', second: 'x' }) },
+				message: 'feat(x): two blocks',
+			})
+			mergeOnOrigin({ repository, how: 'fast-forward' })
+			editOnOrigin({
+				repository,
+				files: { [TWO_BLOCKS_FILE]: twoBlocksOf({ first: 'y', second: 'x' }) },
+			})
+			const dropped = commitThenReset({
+				worktree: repository.worktree,
+				files: { [TWO_BLOCKS_FILE]: twoBlocksOf({ first: 'x', second: 'y' }) },
+			})
+			return {
+				removes: branchRemoval({ repository }),
+				landedTips: [],
+				expected: [{ commit: dropped, why: 'dropped' }],
+			}
+		},
+	},
+	{
+		title:
+			'17. a branch removal, a rebase that shifted the change s lines (main added lines above it), the rebased head landed -> no twin: the old head lost, dropped',
+		arrange: (repository) => {
+			commitIn({
+				root: repository.worktree,
+				files: { [SHIFTED_FILE]: SHIFTED_TEXT },
+				message: 'feat(x): five lines',
+			})
+			mergeOnOrigin({ repository, how: 'fast-forward' })
+			const old = commitIn({
+				root: repository.worktree,
+				files: { [SHIFTED_FILE]: SHIFTED_TEXT.replace('l5', 'L5') },
+				message: 'feat(x): the last line',
+			})
+			editOnOrigin({ repository, files: { [SHIFTED_FILE]: `n1\nn2\nn3\nn4\nn5\n${SHIFTED_TEXT}` } })
+			const rebased = rebaseOnto({ worktree: repository.worktree, onto: ORIGIN_MAIN })
+			return {
+				removes: branchRemoval({ repository }),
+				landedTips: [rebased],
+				expected: [{ commit: old, why: 'dropped' }],
 			}
 		},
 	},

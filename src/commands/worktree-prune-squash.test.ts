@@ -4,7 +4,7 @@
  * worktree, a lot the registry records committed goes only once its work is in main, and a review throwaway goes with
  * its landed lot, through the same landing and loss checks, and stays with an unlanded one.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import {
@@ -20,8 +20,9 @@ import {
 	pruneArgumentsOf,
 	pruneFatesOf,
 	registerLotEntry,
+	writeLandedFact,
 } from '../../test/landing-lot.ts'
-import { editOnOrigin, mergeOnOrigin } from '../../test/landing-repository.ts'
+import { commitDetached, editOnOrigin, mergeOnOrigin } from '../../test/landing-repository.ts'
 import { REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
@@ -150,4 +151,28 @@ describe('worktree prune: the landing state', { timeout: STORE_CASE_TIMEOUT }, (
 				})),
 			).resolves.toEqual({ fate: row.fate(lot), landed: row.landed })
 		})
+})
+
+describe('worktree prune: a worktree whose folder is gone', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('18. a landed lot whose worktree folder is gone, its HEAD reflog holding a detached commit → kept, the commit named, git worktree prune not run', async () => {
+		const lot = landingLotOf()
+		writeLandedFact({ lot, tip: lot.tip })
+		const detached = commitDetached({
+			worktree: lot.worktree,
+			files: { 'src/detached.ts': 'export const detached = 1\n' },
+			reattach: true,
+		})
+		rmSync(lot.worktree, { recursive: true, force: true })
+		const planned = runWorktreePrune(pruneArgumentsOf(lot))
+
+		await expect(
+			pruneFatesOf(planned).then(async (fates) => ({
+				fate: fates[basename(lot.worktree)],
+				pruned: (await planned).output.includes('git worktree prune'),
+			})),
+		).resolves.toEqual({
+			fate: `${lot.branch}: 1 commit(s) its removal would lose: ${detached.slice(0, SHORT_SHA_LENGTH)}`,
+			pruned: false,
+		})
+	})
 })
