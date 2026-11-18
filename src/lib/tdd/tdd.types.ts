@@ -567,6 +567,9 @@ export type RedJudgement = {
 }
 
 /** Where an import of a test file leads. */
+/** What the module resolver asks of the files: whether an absolute path is a file. Default: the disk. */
+export type ModuleResolverHost = { isFile(path: string): boolean }
+
 export type ModuleResolution =
 	| { kind: 'local'; file: string }
 	| { kind: 'package' }

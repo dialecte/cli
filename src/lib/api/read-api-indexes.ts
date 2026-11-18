@@ -50,9 +50,25 @@ export function firstPerPackage(indexes: readonly ApiJson[]): ApiJson[] {
 
 /** One shipped index, or why the file is not one (not JSON, or no package name or no method list). */
 export function parseApiJson(path: string): ApiJsonRead {
+	let text: string
+	try {
+		text = readFileSync(path, 'utf8')
+	} catch (error) {
+		return { problem: error instanceof Error ? error.message : String(error) }
+	}
+	return parseApiJsonText(text)
+}
+
+/**
+ * One index from its text (a base's, read through git), or why it is not one.
+ *
+ * @intent read an api index another commit holds
+ * @internal
+ */
+export function parseApiJsonText(text: string): ApiJsonRead {
 	let value: unknown
 	try {
-		value = JSON.parse(readFileSync(path, 'utf8'))
+		value = JSON.parse(text)
 	} catch (error) {
 		return { problem: error instanceof Error ? error.message : String(error) }
 	}

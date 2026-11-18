@@ -90,7 +90,7 @@ describe('parseSourceFile: the read keys of a function', () => {
 })
 
 describe('parseSourceFile: calls, imports, exports and hashes', () => {
-	it('a function calling an imported function and a local one → both calls, the imported one with its specifier; the imports and re-exports listed', () => {
+	it('a function calling an imported function and a local one → both calls, the imported one with its specifier; the imports and re-exports listed at their lines', () => {
 		const text = [
 			"import { helper } from './helper.ts'",
 			"import * as tools from './tools.ts'",
@@ -123,17 +123,24 @@ describe('parseSourceFile: calls, imports, exports and hashes', () => {
 			imports: [
 				{
 					specifier: './helper.ts',
+					line: 1,
 					names: [{ imported: 'helper', local: 'helper' }],
 					reexport: false,
 				},
 				{
 					specifier: './tools.ts',
+					line: 2,
 					names: [{ imported: '*', local: 'tools' }],
 					reexport: false,
 					all: true,
 				},
-				{ specifier: './thing.ts', names: [{ imported: 'thing', local: 'thing' }], reexport: true },
-				{ specifier: './all.ts', names: [], reexport: true, all: true },
+				{
+					specifier: './thing.ts',
+					line: 3,
+					names: [{ imported: 'thing', local: 'thing' }],
+					reexport: true,
+				},
+				{ specifier: './all.ts', line: 4, names: [], reexport: true, all: true },
 			],
 			exported: [
 				{ name: 'local', line: 6, exportedAs: [] },
@@ -184,5 +191,19 @@ describe('parseSourceFile: calls, imports, exports and hashes', () => {
 			names: ['Params', 'Shape'],
 			same: second.map((declared) => declared.hash),
 		})
+	})
+
+	it('a function whose parameters and return annotation name types → those type names, each once, sorted', () => {
+		const text =
+			'export function sizeOf(params: SizeParams, extra?: Partial<SizeParams>): Result<Count> {\n\treturn measure(params)\n}\n'
+
+		const facts = factsOf({ text })
+
+		expect(functionOf({ facts, name: 'sizeOf' })?.signatureTypes).toEqual([
+			'Count',
+			'Partial',
+			'Result',
+			'SizeParams',
+		])
 	})
 })

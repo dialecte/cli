@@ -98,6 +98,8 @@ export type FunctionFacts = {
 	bodyHash: string
 	/** How many tokens its body holds: a body too small to tell two functions apart is never matched by its hash alone. */
 	bodyTokenCount: number
+	/** The type names its parameters and return annotation reference: a change of one of them is a change of its signature. */
+	signatureTypes: string[]
 	readKeys: ReadKeys
 	calls: CallFacts[]
 }
@@ -105,6 +107,8 @@ export type FunctionFacts = {
 /** A static import or re-export of a file: the specifier, the names it binds (imported as local), and whether it re-exports. */
 export type ImportFacts = {
 	specifier: string
+	/** The line the import or re-export is written at, 1-based. */
+	line: number
 	names: { imported: string; local: string }[]
 	reexport: boolean
 	/** `export * from` or `import * as`: every name of the module. */

@@ -97,6 +97,22 @@ export function tokenHashOf(params: { texts: readonly string[] }): { hash: strin
 }
 
 /**
+ * The type names `nodes` reference (`Params`, `Result<Count>` gives `Result` and `Count`), each once, sorted.
+ *
+ * @intent tell which declared types a signature depends on
+ * @internal
+ */
+export function typeReferencesOf(nodes: readonly ts.Node[]): string[] {
+	const names = new Set<string>()
+	function visit(node: ts.Node): void {
+		if (ts.isTypeReferenceNode(node)) names.add(node.typeName.getText())
+		ts.forEachChild(node, visit)
+	}
+	nodes.forEach(visit)
+	return [...names].sort()
+}
+
+/**
  * The static imports and re-exports of `source`, type-only ones left out, in the order written.
  *
  * @intent list where a file's names come from and what it re-exports
@@ -104,8 +120,9 @@ export function tokenHashOf(params: { texts: readonly string[] }): { hash: strin
  */
 export function importsOf(source: ts.SourceFile): ImportFacts[] {
 	return source.statements.flatMap(function importOf(statement): ImportFacts[] {
-		if (ts.isImportDeclaration(statement)) return importDeclarationOf(statement)
-		if (ts.isExportDeclaration(statement)) return exportDeclarationOf(statement)
+		const line = source.getLineAndCharacterOfPosition(statement.getStart(source)).line + 1
+		if (ts.isImportDeclaration(statement)) return importDeclarationOf({ statement, line })
+		if (ts.isExportDeclaration(statement)) return exportDeclarationOf({ statement, line })
 		return []
 	})
 }
@@ -164,7 +181,11 @@ export function importedNamesOf(imports: readonly ImportFacts[]): Map<string, st
 }
 
 /** An import declaration as facts: none for a type-only one or a bare side-effect import. */
-function importDeclarationOf(statement: ts.ImportDeclaration): ImportFacts[] {
+function importDeclarationOf(params: {
+	statement: ts.ImportDeclaration
+	line: number
+}): ImportFacts[] {
+	const { statement, line } = params
 	const clause = statement.importClause
 	if (clause === undefined || clause.isTypeOnly || !ts.isStringLiteral(statement.moduleSpecifier))
 		return []
@@ -174,6 +195,7 @@ function importDeclarationOf(statement: ts.ImportDeclaration): ImportFacts[] {
 		return [
 			{
 				specifier,
+				line,
 				names: [{ imported: '*', local: bindings.name.text }],
 				reexport: false,
 				all: true,
@@ -190,19 +212,29 @@ function importDeclarationOf(statement: ts.ImportDeclaration): ImportFacts[] {
 					}))
 	const names =
 		clause.name === undefined ? named : [{ imported: 'default', local: clause.name.text }, ...named]
-	return names.length ? [{ specifier, names, reexport: false }] : []
+	return names.length ? [{ specifier, line, names, reexport: false }] : []
 }
 
 /** A re-export (`export … from`) as facts; none for a local export list or a type-only re-export. */
-function exportDeclarationOf(statement: ts.ExportDeclaration): ImportFacts[] {
+function exportDeclarationOf(params: {
+	statement: ts.ExportDeclaration
+	line: number
+}): ImportFacts[] {
+	const { statement, line } = params
 	const module = statement.moduleSpecifier
 	if (module === undefined || statement.isTypeOnly || !ts.isStringLiteral(module)) return []
 	const specifier = module.text
 	const clause = statement.exportClause
-	if (clause === undefined) return [{ specifier, names: [], reexport: true, all: true }]
+	if (clause === undefined) return [{ specifier, line, names: [], reexport: true, all: true }]
 	if (ts.isNamespaceExport(clause))
 		return [
-			{ specifier, names: [{ imported: '*', local: clause.name.text }], reexport: true, all: true },
+			{
+				specifier,
+				line,
+				names: [{ imported: '*', local: clause.name.text }],
+				reexport: true,
+				all: true,
+			},
 		]
 	const names = clause.elements
 		.filter((element) => !element.isTypeOnly)
@@ -210,7 +242,7 @@ function exportDeclarationOf(statement: ts.ExportDeclaration): ImportFacts[] {
 			imported: (element.propertyName ?? element.name).text,
 			local: element.name.text,
 		}))
-	return [{ specifier, names, reexport: true }]
+	return [{ specifier, line, names, reexport: true }]
 }
 
 /** The tokens of `text`, comments, whitespace and semicolons left out. */

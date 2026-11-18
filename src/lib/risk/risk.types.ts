@@ -116,3 +116,30 @@ export type DestructiveGitPair = {
 	second: string
 	cluster: boolean
 }
+
+/** One public API entry the change adds, removes or re-signs, by its route; where it is declared when the index says. */
+export type ApiEntryChange = {
+	path: string
+	change: 'added' | 'removed' | 'signature'
+	/** `src/<file>.ts:<line>` of the tree's entry (the base's for a removed one); absent when the index holds none. */
+	declaredAt?: string
+}
+
+/**
+ * The public API entries a change touches: none for a package with no runtime API (no package.json, a `bin`, no
+ * `exports` map); unknown when the base cannot be read, an index does not parse, or an export source changed while
+ * every index did not; else the entries compared, and whether any index file's bytes changed.
+ */
+export type ApiIndexDiff =
+	| { kind: 'none' }
+	| { kind: 'unknown'; why: string }
+	| { kind: 'compared'; indexChanged: boolean; entries: ApiEntryChange[] }
+
+/** One index file on both sides: its text at the base and in the worktree, each absent when that side lacks it. */
+export type IndexSides = { path: string; base?: string; tree?: string }
+
+/** What both comparisons read once: none, unknown, or the index files with whether their bytes and the sources changed. */
+export type ApiSides =
+	| { kind: 'none' }
+	| { kind: 'unknown'; why: string }
+	| { kind: 'read'; indexes: IndexSides[]; indexChanged: boolean; exportSourceChanged: boolean }

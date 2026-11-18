@@ -37,3 +37,44 @@ export type DuplicateRead = {
 	element?: string
 	attributes?: string[]
 }
+
+/** What changed of a shared export since the base. */
+export type SharedExportChangeKind = 'newly-shared' | 'signature' | 'behaviour' | 'removed'
+
+/** A `shared-export-changed` finding: the export, its folder, the folders importing it, and what changed. */
+export type SharedExportChange = {
+	/** Where the finding sits: the export's declaration, or for a removed one an importer still importing it, else the exporter's first line. */
+	file: string
+	line: number
+	name: string
+	/** The exporter's folder. */
+	folder: string
+	/** The folders that import it from outside its folder, sorted. */
+	importers: string[]
+	changes: SharedExportChangeKind[]
+}
+
+/** A doc page of the package (a Markdown file under `doc/`, or `README.md`) on the tree side: its text, and whether the change touched it. */
+export type DocPage = { path: string; text: string; touched: boolean }
+
+/** A `docs-not-updated` finding: the public entry, what changed of it, where it is declared, and the pages naming it. */
+export type DocsNotUpdated = {
+	route: string
+	change: 'added' | 'removed' | 'signature'
+	declaredAt?: string
+	/** The pages naming the entry, none touched (for an added entry, none at all). */
+	pages: string[]
+}
+
+/** The importers of each export, by `<exporter file>#<name>`: the files importing it (a barrel followed one level). */
+export type Importers = ReadonlyMap<string, readonly { file: string; line: number }[]>
+
+/** What the readers of both sides share. */
+export type SharedExportSides = {
+	change: ChangeFacts
+	baseFiles: ReadonlyMap<string, FileFacts>
+	treeImporters: Importers
+	baseImporters: Importers
+	/** The type names a changed `*.types.ts` re-declares, by its folder. */
+	changedTypes: ReadonlyMap<string, ReadonlySet<string>>
+}

@@ -15,3 +15,15 @@ export const DUPLICATE_FIND_MIN_WORDS = 2
 
 /** The package an index of the existing source functions is named for in `api find`. */
 export const EXISTING_SOURCE_PACKAGE = 'existing source'
+
+/** A file of declared types: a change of one of its types is a change of the signatures naming it. */
+export const TYPES_FILE_PATTERN = /\.types\.ts$/
+
+/** The profile whose packages keep their doc pages in step with their public API. */
+export const CONTRIBUTOR_PROFILE = 'contributor'
+
+/** What separates the segments of a public route (`doc.query.info.of`). */
+export const ROUTE_SEPARATOR = '.'
+
+/** How many last segments of a route a page names it by: one alone (`of`) names too much. */
+export const ROUTE_NAMING_SEGMENTS = 2

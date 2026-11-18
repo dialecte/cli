@@ -13,6 +13,7 @@ import {
 	readKeysOf,
 	stringListsOf,
 	tokenHashOf,
+	typeReferencesOf,
 	typesOf,
 } from './read-keys.ts'
 import { firstSentence } from './short-summary.ts'
@@ -82,6 +83,7 @@ function factsOf(source: ts.SourceFile): FileFacts {
 				signatureHash: signature.hash,
 				bodyHash: body.hash,
 				bodyTokenCount: body.count,
+				signatureTypes: typeReferencesOf([...node.parameters, ...(node.type ? [node.type] : [])]),
 				readKeys: readKeysOf({ node, lists }),
 				calls: callsOf({ node, imported }),
 			}
