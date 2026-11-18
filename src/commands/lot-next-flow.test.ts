@@ -1,6 +1,6 @@
 /**
  * The manual next line of a working lot follows the repository's landing flow (FIX-ci-loop design, section 3): a
- * CI-first repository (its `ci.yml` runs on the merge queue and holds the `ci-ok` job) names `lot land <lot> --draft`,
+ * CI-first repository (its `ci.yml` runs on the merge queue and holds the `ci-ok` job) names `lot land <lot>`,
  * a hand-over repository names `handover write`; `lot start` and `lot status` say the same.
  */
 import { createStartWorkspace, withJson } from '../../test/lot-start-workspace.ts'
@@ -26,14 +26,14 @@ const CI_FIRST_WORKFLOW = [
 	'',
 ].join('\n')
 
-const LAND_LINE = `run the stations, then dialecte lot land ${LOT_NAME} --draft`
+const LAND_LINE = `run the stations, then dialecte lot land ${LOT_NAME}`
 const HANDOVER_LINE = `run the stations, then dialecte handover write <lots.json> --out ${LOT_NAME}`
 
 /** Each flow, the words its manual line names, and that line. */
 const FLOWS = [
 	{
 		flow: 'CI-first',
-		names: 'lot land --draft',
+		names: 'lot land',
 		ciFirst: true,
 		expected: LAND_LINE,
 	},

@@ -1,9 +1,9 @@
 /**
  * A stacked lot lands as a stack (33CI CI4). Its pull request is based on the parent's branch, linked to the parent's as
  * a native stack when the host has stacks (a note says why not otherwise), and its body names the parent's pull
- * request. It is rebased onto the parent's new tip when the parent moved, queued as a stack while the parent is open
- * (refused without native stacks), and rebased off the parent's commits once the parent merged: by the cli for a
- * based-on-branch stack, following the host's own rewrite for a native one. A conflict stops, nothing resolved.
+ * request. It is rebased onto the parent's new tip when the parent moved, opened as a draft and never queued (lot
+ * approve queues), and rebased off the parent's commits once the parent merged: by the cli for a based-on-branch
+ * stack, following the host's own rewrite for a native one. A conflict stops, nothing resolved.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +44,7 @@ const CHILD = '0002-repo-y'
 const PARENT = '0001-repo-x'
 
 /** `landLot` of the stack's child `feat/y` into main. */
-function landChild(params: { stack: StackedRepository; host: RecordingHost; draft: boolean }) {
+function landChild(params: { stack: StackedRepository; host: RecordingHost }) {
 	return landLot({
 		lot: CHILD,
 		worktree: params.stack.child.worktree,
@@ -52,7 +52,6 @@ function landChild(params: { stack: StackedRepository; host: RecordingHost; draf
 		base: 'main',
 		lotFolder: params.stack.child.lotFolder,
 		host: params.host.host,
-		draft: params.draft,
 		now: NOW,
 	})
 }
@@ -138,11 +137,11 @@ function hostRewritesChild(params: {
 }
 
 describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
-	it('lot land --draft, host with stacks → its pull request opened on the parent branch, then linked to the parent as a stack', () => {
+	it('lot land, host with stacks, the parent open → its pull request opened on the parent branch, then linked to the parent as a stack', () => {
 		const stack = stackedRepository()
 		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
 
-		const landed = landChild({ stack, host, draft: true })
+		const landed = landChild({ stack, host })
 
 		expect({ exitCode: landed.exitCode, writes: writesOf(host) }).toEqual({
 			exitCode: 0,
@@ -154,11 +153,11 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		})
 	})
 
-	it('lot land --draft, host without stacks → its pull request opened on the parent branch, one note line saying why', () => {
+	it('lot land, host without stacks, the parent open → its pull request opened on the parent branch, one note line saying why', () => {
 		const stack = stackedRepository()
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const landed = landChild({ stack, host, draft: true })
+		const landed = landChild({ stack, host })
 
 		expect({
 			exitCode: landed.exitCode,
@@ -175,7 +174,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		const stack = stackedRepository()
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		landChild({ stack, host, draft: true })
+		landChild({ stack, host })
 
 		expect(host.bodies[0]).toContain('### Depends on\n\n#5\n')
 	})
@@ -190,14 +189,13 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 			branch: 'feat/x',
 			base: 'main',
 			host: host.host,
-			draft: true,
 			now: NOW,
 		})
 
 		expect(host.bodies[0]).toContain('### Depends on\n\nnot recorded\n')
 	})
 
-	it("the parent moved on, the child not rebased → lot land --draft rebases onto the parent's tip, no replay, stack.json naming the parent only", () => {
+	it("the parent moved on, the child not rebased → lot land rebases onto the parent's tip, no replay, stack.json naming the parent only", () => {
 		const stack = stackedRepository()
 		const moved = commitIn({
 			worktree: stack.parent.worktree,
@@ -206,7 +204,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		})
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const landed = landChild({ stack, host, draft: true })
+		const landed = landChild({ stack, host })
 
 		expect({
 			exitCode: landed.exitCode,
@@ -230,7 +228,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		const before = childHead(stack)
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const landed = landChild({ stack, host, draft: true })
+		const landed = landChild({ stack, host })
 
 		expect({
 			exitCode: landed.exitCode,
@@ -253,7 +251,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		const stack = stackedRepository({ parentLanded: false })
 		const host = recordingHost()
 
-		const landed = landChild({ stack, host, draft: true })
+		const landed = landChild({ stack, host })
 
 		expect({
 			exitCode: landed.exitCode,
@@ -262,195 +260,157 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 		}).toEqual({
 			exitCode: 1,
 			lines: [
-				`lot land: ${CHILD} stacks on ${PARENT}, which has no pull request yet: lot land ${PARENT} --draft first, nothing pushed`,
+				`lot land: ${CHILD} stacks on ${PARENT}, which has no pull request yet: lot land ${PARENT} first, nothing pushed`,
 			],
 			pushed: '',
 		})
 	})
 })
 
-describe(
-	'a stacked lot queues as a stack, or after its parent merged',
-	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
-	() => {
-		it('lot land while the parent is open, native stack → queued as a stack, never auto-merge', () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
+	it('the parent squash-merged, based on its branch → rebased off the parent onto origin/main, pushed, retargeted to main, never queued', () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ parent: parentPullRequest() })
+		landChild({ stack, host })
+		const merged = squashParent({ stack })
+		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.calls.length = 0
 
-			const landed = landChild({ stack, host, draft: false })
+		const landed = landChild({ stack, host })
 
-			expect({
-				exitCode: landed.exitCode,
-				stackQueued: writesOf(host).includes('stack-queue 7'),
-				autoQueued: writesOf(host).includes('queue 7'),
-			}).toEqual({ exitCode: 0, stackQueued: true, autoQueued: false })
+		expect({
+			exitCode: landed.exitCode,
+			ownCommits: git({
+				root: stack.child.worktree,
+				args: ['rev-list', '--count', `${merged}..HEAD`],
+			}).trim(),
+			onMain: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
+			changed: git({
+				root: stack.child.worktree,
+				args: ['diff', '--name-only', merged, 'HEAD'],
+			}).trim(),
+			pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
+			stack: childStack(stack),
+			writes: writesOf(host),
+		}).toEqual({
+			exitCode: 0,
+			ownCommits: '1',
+			onMain: merged,
+			changed: 'src/y.ts',
+			pushed: true,
+			stack: PARENT_ONLY,
+			writes: ['retarget 7 main', 'draft-back 7 draft'],
 		})
+	})
 
-		it('lot land while the parent is open, no native stacks → refused: waits for the parent, nothing pushed or opened', () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ parent: parentPullRequest() })
+	it('the parent squash-merged and the host retargeted the pull request already → no retarget asked', () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ parent: parentPullRequest() })
+		landChild({ stack, host })
+		squashParent({ stack })
+		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.host.retargetPullRequest({ root: stack.root, number: 7, base: 'main' })
+		host.calls.length = 0
 
-			const landed = landChild({ stack, host, draft: false })
+		const landed = landChild({ stack, host })
 
-			expect({
-				exitCode: landed.exitCode,
-				lines: landed.lines,
-				writes: writesOf(host),
-				pushed: originHead({ stack, branch: 'feat/y' }),
-			}).toEqual({
-				exitCode: 1,
-				lines: [
-					`lot land: ${CHILD} waits for #5 (${PARENT}) to merge: without native stacks a stacked lot queues after its parent, nothing pushed`,
-				],
-				writes: ['probe'],
-				pushed: '',
-			})
+		expect({ exitCode: landed.exitCode, writes: writesOf(host) }).toEqual({
+			exitCode: 0,
+			writes: ['draft-back 7 draft'],
 		})
+	})
 
-		it('the parent squash-merged, based on its branch → rebased off the parent onto origin/main, pushed, retargeted to main, queued', () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			const merged = squashParent({ stack })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-			host.calls.length = 0
+	it('the rebase off the merged parent conflicts → stops naming the files, the rebase undone, nothing pushed, exit 2', () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ parent: parentPullRequest() })
+		landChild({ stack, host })
+		const pushed = originHead({ stack, branch: 'feat/y' })
+		squashParent({ stack, extra: { 'src/y.ts': 'export const y = 9\n' } })
+		host.setParent(parentPullRequest({ state: 'merged' }))
+		const before = childHead(stack)
 
-			const landed = landChild({ stack, host, draft: false })
+		const landed = landChild({ stack, host })
 
-			expect({
-				exitCode: landed.exitCode,
-				ownCommits: git({
-					root: stack.child.worktree,
-					args: ['rev-list', '--count', `${merged}..HEAD`],
-				}).trim(),
-				onMain: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
-				changed: git({
-					root: stack.child.worktree,
-					args: ['diff', '--name-only', merged, 'HEAD'],
-				}).trim(),
-				pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
-				stack: childStack(stack),
-				writes: writesOf(host),
-			}).toEqual({
-				exitCode: 0,
-				ownCommits: '1',
-				onMain: merged,
-				changed: 'src/y.ts',
-				pushed: true,
-				stack: PARENT_ONLY,
-				writes: ['retarget 7 main', 'queue 7'],
-			})
+		expect({
+			exitCode: landed.exitCode,
+			named: landed.lines.some((line) => line.includes('conflicts in src/y.ts')),
+			head: childHead(stack),
+			status: git({ root: stack.child.worktree, args: ['status', '--porcelain'] }),
+			pushed: originHead({ stack, branch: 'feat/y' }),
+		}).toEqual({ exitCode: 2, named: true, head: before, status: '', pushed })
+	})
+
+	it("the parent merged, native stack, nothing local beyond the pushed head → the child follows the host's rewrite, nothing pushed, never queued", () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		landChild({ stack, host })
+		squashParent({ stack })
+		const rewritten = hostRewritesChild({ stack })
+		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.calls.length = 0
+
+		const landed = landChild({ stack, host })
+
+		expect({
+			exitCode: landed.exitCode,
+			head: childHead(stack),
+			pushed: originHead({ stack, branch: 'feat/y' }),
+			queued: writesOf(host).some((call) => call.includes('queue')),
+		}).toEqual({
+			exitCode: 0,
+			head: rewritten,
+			pushed: rewritten,
+			queued: false,
 		})
+	})
 
-		it('the parent squash-merged and the host retargeted the pull request already → no retarget asked', () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			squashParent({ stack })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-			host.host.retargetPullRequest({ root: stack.root, number: 7, base: 'main' })
-			host.calls.length = 0
-
-			const landed = landChild({ stack, host, draft: false })
-
-			expect({ exitCode: landed.exitCode, writes: writesOf(host) }).toEqual({
-				exitCode: 0,
-				writes: ['queue 7'],
-			})
+	it("the parent merged, native stack, a local commit beyond the pushed head → rebased onto the host's rewrite, pushed with it as the lease", () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		landChild({ stack, host })
+		commitIn({
+			worktree: stack.child.worktree,
+			files: { 'src/z.ts': 'export const z = 4\n' },
+			message: 'feat(y): z',
 		})
+		squashParent({ stack })
+		const rewritten = hostRewritesChild({ stack })
+		host.setParent(parentPullRequest({ state: 'merged' }))
 
-		it('the rebase off the merged parent conflicts → stops naming the files, the rebase undone, nothing pushed, exit 2', () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			const pushed = originHead({ stack, branch: 'feat/y' })
-			squashParent({ stack, extra: { 'src/y.ts': 'export const y = 9\n' } })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-			const before = childHead(stack)
+		const landed = landChild({ stack, host })
 
-			const landed = landChild({ stack, host, draft: false })
+		expect({
+			exitCode: landed.exitCode,
+			onRewrite: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
+			pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
+		}).toEqual({ exitCode: 0, onRewrite: rewritten, pushed: true })
+	})
 
-			expect({
-				exitCode: landed.exitCode,
-				named: landed.lines.some((line) => line.includes('conflicts in src/y.ts')),
-				head: childHead(stack),
-				status: git({ root: stack.child.worktree, args: ['status', '--porcelain'] }),
-				pushed: originHead({ stack, branch: 'feat/y' }),
-			}).toEqual({ exitCode: 2, named: true, head: before, status: '', pushed })
+	it("the parent merged, native stack, a local commit that conflicts with the host's branch → stops naming the files, nothing pushed, exit 2", () => {
+		const stack = stackedRepository()
+		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		landChild({ stack, host })
+		commitIn({
+			worktree: stack.child.worktree,
+			files: { 'src/y.ts': 'export const y = 5\n' },
+			message: 'fix(y): five',
 		})
+		squashParent({ stack })
+		const rewritten = hostRewritesChild({ stack, extra: { 'src/y.ts': 'export const y = 6\n' } })
+		host.setParent(parentPullRequest({ state: 'merged' }))
+		const before = childHead(stack)
 
-		it("the parent merged, native stack, nothing local beyond the pushed head → the child follows the host's rewrite, nothing pushed", () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ stacks: true, parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			squashParent({ stack })
-			const rewritten = hostRewritesChild({ stack })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-			host.calls.length = 0
+		const landed = landChild({ stack, host })
 
-			const landed = landChild({ stack, host, draft: false })
-
-			expect({
-				exitCode: landed.exitCode,
-				head: childHead(stack),
-				pushed: originHead({ stack, branch: 'feat/y' }),
-				queued: writesOf(host).includes('stack-queue 7'),
-			}).toEqual({
-				exitCode: 0,
-				head: rewritten,
-				pushed: rewritten,
-				queued: true,
-			})
-		})
-
-		it("the parent merged, native stack, a local commit beyond the pushed head → rebased onto the host's rewrite, pushed with it as the lease", () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ stacks: true, parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			commitIn({
-				worktree: stack.child.worktree,
-				files: { 'src/z.ts': 'export const z = 4\n' },
-				message: 'feat(y): z',
-			})
-			squashParent({ stack })
-			const rewritten = hostRewritesChild({ stack })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-
-			const landed = landChild({ stack, host, draft: false })
-
-			expect({
-				exitCode: landed.exitCode,
-				onRewrite: git({ root: stack.child.worktree, args: ['rev-parse', 'HEAD~1'] }).trim(),
-				pushed: originHead({ stack, branch: 'feat/y' }) === childHead(stack),
-			}).toEqual({ exitCode: 0, onRewrite: rewritten, pushed: true })
-		})
-
-		it("the parent merged, native stack, a local commit that conflicts with the host's branch → stops naming the files, nothing pushed, exit 2", () => {
-			const stack = stackedRepository()
-			const host = recordingHost({ stacks: true, parent: parentPullRequest() })
-			landChild({ stack, host, draft: true })
-			commitIn({
-				worktree: stack.child.worktree,
-				files: { 'src/y.ts': 'export const y = 5\n' },
-				message: 'fix(y): five',
-			})
-			squashParent({ stack })
-			const rewritten = hostRewritesChild({ stack, extra: { 'src/y.ts': 'export const y = 6\n' } })
-			host.setParent(parentPullRequest({ state: 'merged' }))
-			const before = childHead(stack)
-
-			const landed = landChild({ stack, host, draft: false })
-
-			expect({
-				exitCode: landed.exitCode,
-				named: landed.lines.some((line) => line.includes('conflicts in src/y.ts')),
-				head: childHead(stack),
-				status: git({ root: stack.child.worktree, args: ['status', '--porcelain'] }),
-				pushed: originHead({ stack, branch: 'feat/y' }),
-			}).toEqual({ exitCode: 2, named: true, head: before, status: '', pushed: rewritten })
-		})
-	},
-)
+		expect({
+			exitCode: landed.exitCode,
+			named: landed.lines.some((line) => line.includes('conflicts in src/y.ts')),
+			head: childHead(stack),
+			status: git({ root: stack.child.worktree, args: ['status', '--porcelain'] }),
+			pushed: originHead({ stack, branch: 'feat/y' }),
+		}).toEqual({ exitCode: 2, named: true, head: before, status: '', pushed: rewritten })
+	})
+})
 
 /**
  * A stack of two store lots of a brief workspace pushed to a bare origin: the parent `0001-repo-x` on `feat/x` (one
@@ -522,7 +482,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 		const stack = storeStack()
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
 
 		expect({
 			exitCode: result.exitCode,
@@ -548,7 +508,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 		})
 		const host = recordingHost({ parent: parentPullRequest() })
 
-		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
 
 		expect({
 			exitCode: result.exitCode,
@@ -563,7 +523,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 			parent: { ...parentPullRequest({ state: 'merged' }), head: stack.tip },
 		})
 
-		const result = runLotLand({ cwd: stack.repository, argv: [CHILD, '--draft'], host: host.host })
+		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
 
 		expect({
 			exitCode: result.exitCode,
@@ -579,12 +539,12 @@ describe(
 	'the native route once linked or merged, refusals that write nothing, a damaged stack record',
 	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
 	() => {
-		it('host with stacks, the parent merged before the child ever landed → rebased off the parent onto origin/main, opened on main, queued with auto-merge', () => {
+		it('host with stacks, the parent merged before the child ever landed → rebased off the parent onto origin/main, opened on main as a draft, never queued', () => {
 			const stack = stackedRepository()
 			const merged = squashParent({ stack })
 			const host = recordingHost({ stacks: true, parent: parentPullRequest({ state: 'merged' }) })
 
-			const landed = landChild({ stack, host, draft: false })
+			const landed = landChild({ stack, host })
 
 			expect({
 				exitCode: landed.exitCode,
@@ -593,11 +553,11 @@ describe(
 			}).toEqual({
 				exitCode: 0,
 				onMain: merged,
-				writes: ['open feat/y -> main "feat(y): y answers two"', 'queue 7'],
+				writes: ['open feat/y -> main "feat(y): y answers two" draft'],
 			})
 		})
 
-		it("a stacked child rebased by hand onto its amended parent, the parent squash-merged → lot land --draft lands only the child's commit", () => {
+		it("a stacked child rebased by hand onto its amended parent, the parent squash-merged → lot land lands only the child's commit", () => {
 			const stack = stackedRepository()
 			const amended = amendIn({
 				worktree: stack.parent.worktree,
@@ -618,7 +578,7 @@ describe(
 			})
 			const host = recordingHost({ parent: parentPullRequest({ state: 'merged' }) })
 
-			const landed = landChild({ stack, host, draft: true })
+			const landed = landChild({ stack, host })
 
 			expect({
 				exitCode: landed.exitCode,
@@ -630,25 +590,12 @@ describe(
 			}).toEqual({ exitCode: 0, onMain: merged, changed: 'src/y.ts' })
 		})
 
-		it('a queue refused because the parent is open and the host has no stacks → stack.json left byte for byte', () => {
-			const stack = stackedRepository()
-			const before = readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8')
-			const host = recordingHost({ parent: parentPullRequest() })
-
-			const landed = landChild({ stack, host, draft: false })
-
-			expect({
-				exitCode: landed.exitCode,
-				stack: readFileSync(join(stack.child.lotFolder, 'stack.json'), 'utf8'),
-			}).toEqual({ exitCode: 1, stack: before })
-		})
-
 		it('a torn stack.json → lot land refuses naming the damage, nothing pushed, nothing asked of the host', () => {
 			const stack = stackedRepository()
 			writeFileSync(join(stack.child.lotFolder, 'stack.json'), '{"schema":1,"parent":')
 			const host = recordingHost({ parent: parentPullRequest() })
 
-			const landed = landChild({ stack, host, draft: true })
+			const landed = landChild({ stack, host })
 
 			expect({
 				exitCode: landed.exitCode,

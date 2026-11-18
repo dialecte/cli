@@ -3,7 +3,9 @@
  * Refused, nothing recorded and nothing queued, unless the pull request is open at the lot's landed head, its checks
  * are green there and no blocking or should-fix finding is open. Then the approval is appended to the lot folder's `approvals.jsonl`
  * (a person's verdict row of `review.jsonl`), the pull request's text rendered again from the records and the pull
- * request queued (made ready when a draft). `--by orchestrator` approves the cli's own lots only.
+ * request queued (made ready when a draft): the only verb that queues, `lot land` never does. A lot started on another
+ * whose pull request still merges into its parent's branch queues as a native stack, only behind a queued parent
+ * (`stackQueueOf`). `--by orchestrator` approves the cli's own lots only.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,6 +20,7 @@ import { appendLine } from '../lib/events/write-event.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
+import { stackQueueOf } from '../lib/handover/stack-queue.ts'
 import { createGithubHost } from '../lib/host/github-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
@@ -329,7 +332,11 @@ function blockingReasons(params: { folder: string }): string[] {
 	]
 }
 
-/** The approval appended and the review record written, the text rendered again and sent, then the queue asked. */
+/**
+ * How the lot queues, then the approval appended and the review record written, the text rendered again and sent, and
+ * the queue asked: the pull request alone, or the native stack up to it. A lot on an open parent queues only behind a
+ * queued parent: refused before anything is recorded.
+ */
 function recordAndQueue(params: {
 	host: HostAdapter
 	place: LotPlace
@@ -337,6 +344,14 @@ function recordAndQueue(params: {
 	approval: ApprovalLine
 }): CommandResult {
 	const { host, place, pullRequest, approval } = params
+	const route = stackQueueOf({ ...place, host, pullRequest })
+	if ('refusal' in route)
+		return lineOf({
+			exitCode: 1,
+			line: LOT_APPROVE_LINES.refused
+				.replace('{lot}', () => place.lot)
+				.replace('{reasons}', () => route.refusal),
+		})
 	const already = isApproved({ folder: place.lotFolder, approval })
 	try {
 		if (!already)
@@ -360,14 +375,17 @@ function recordAndQueue(params: {
 		'refusal' in prepared
 			? prepared
 			: sendRenderedText({ host, worktree: place.worktree, prepared, pullRequest })
+	const queueParams = {
+		root: place.worktree,
+		number: pullRequest.number,
+		draft: pullRequest.draft,
+	}
 	const queued =
 		'refusal' in sent
 			? sent
-			: host.queuePullRequest({
-					root: place.worktree,
-					number: pullRequest.number,
-					draft: pullRequest.draft,
-				})
+			: route.route === 'stack'
+				? host.queueStack(queueParams)
+				: host.queuePullRequest(queueParams)
 	const line =
 		queued === undefined
 			? fillMessage({

@@ -74,6 +74,16 @@ export type HostAdapter = {
 		number: number
 		draft: boolean
 	}): HostRefusal | undefined
+	/**
+	 * The pull request taken back out of the queue: auto-merge turned off when `queued`, made a draft when not `draft`
+	 * (an approval is for one head); nothing asked when it is a draft not queued.
+	 */
+	draftPullRequest(params: {
+		root: string
+		number: number
+		queued: boolean
+		draft: boolean
+	}): HostRefusal | undefined
 	/** The checks on the pull request's head. */
 	readChecks(params: { root: string; number: number }): PullRequestChecks | HostRefusal
 	/** The line comments of the pull request's reviews, oldest first. */
@@ -84,8 +94,11 @@ export type HostAdapter = {
 	probeStacks(params: { root: string }): StackSupport
 	/** The pull request at `child` (its url) linked on top of the one at `parent` as a stack. */
 	linkStack(params: { root: string; parent: string; child: string }): HostRefusal | undefined
-	/** The stack queued up to and including `number`, all or nothing (never auto-merge: refused for a stack). */
-	queueStack(params: { root: string; number: number }): HostRefusal | undefined
+	/**
+	 * The stack queued up to and including `number`, all or nothing (never auto-merge: refused for a stack); a draft made
+	 * ready first.
+	 */
+	queueStack(params: { root: string; number: number; draft: boolean }): HostRefusal | undefined
 	/** The pull request's base branch changed to `base`. */
 	retargetPullRequest(params: {
 		root: string

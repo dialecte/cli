@@ -213,6 +213,12 @@ export function recordingHost(
 			if (params.queueRefusal !== undefined) return { refusal: params.queueRefusal }
 			return undefined
 		},
+		draftPullRequest: function draftPullRequest(call) {
+			calls.push(
+				`draft-back ${call.number}${call.queued ? ' queued' : ''}${call.draft ? ' draft' : ' ready'}`,
+			)
+			return undefined
+		},
 		readChecks: function readChecks(call) {
 			calls.push(`checks ${call.number}`)
 			return (

@@ -141,7 +141,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		).toBe(`files: ${REVIEW_PULL_URL}/files`)
 	})
 
-	it('a lot without a pull request → the private half printed and lot land --draft named, the host never asked', () => {
+	it('a lot without a pull request → the private half printed and lot land named, the host never asked', () => {
 		const lot = reviewedLot()
 		rmSync(join(lot.lotFolder, LANDING_FILE))
 		const { host, calls } = recordingHost()
@@ -150,7 +150,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		const lines = result.output.split('\n')
-		expect(lines[1]).toBe(`no pull request yet: dialecte lot land ${LOT_NAME} --draft opens it`)
+		expect(lines[1]).toBe(`no pull request yet: dialecte lot land ${LOT_NAME} opens it`)
 		expect(lines).toContain('  - R1-1 round 1 blocking open src/x.ts:1: x is wrong')
 		expect(calls).toEqual([])
 	})

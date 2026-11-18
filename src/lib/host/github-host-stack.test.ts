@@ -64,7 +64,7 @@ describe('createGithubHost: stacks', () => {
 	it('queueStack → gh stack merge <number> --yes --squash, never auto-merge', () => {
 		const folder = fakeGh()
 
-		const queued = createGithubHost().queueStack({ root: process.cwd(), number: 7 })
+		const queued = createGithubHost().queueStack({ root: process.cwd(), number: 7, draft: false })
 
 		expect({ queued, args: argumentsOf(folder) }).toEqual({
 			queued: undefined,
@@ -90,7 +90,7 @@ describe('createGithubHost: stacks', () => {
 	it('a gh refusal of a stack call → its first error line, the command named', () => {
 		fakeGh({ code: 1 })
 
-		const queued = createGithubHost().queueStack({ root: process.cwd(), number: 7 })
+		const queued = createGithubHost().queueStack({ root: process.cwd(), number: 7, draft: false })
 
 		expect(queued).toEqual({ refusal: 'gh stack merge: exit 1' })
 	})

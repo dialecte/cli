@@ -1,0 +1,5 @@
+### Changed
+
+- **Breaking:** `dialecte lot land` never queues a pull request: it always opens or keeps it as a draft, and CI runs on every push. `dialecte lot approve`, a person's step, is the only verb that queues. `--draft` is gone: `lot land <id> --draft` is refused (exit 2) with `lot land always drafts now; queue with lot approve`.
+- `dialecte lot land` takes a reused pull request back out of the queue when its push moves the head: auto-merge is turned off and the pull request becomes a draft again, since an approval is for one head. A landing that pushes nothing new leaves the pull request as it is.
+- `dialecte lot approve` queues a lot started with `--on` as a native stack (`gh stack merge`, a draft made ready first), and only once its parent's pull request is queued; it refuses, recording nothing, while the parent is not queued, has merged (land the lot again first), or the host has no native stacks (the lot waits for its parent to merge). `lot land` no longer refuses a stacked lot on a host without stacks: it opens the draft on the parent's branch.

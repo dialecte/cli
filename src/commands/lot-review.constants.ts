@@ -9,7 +9,7 @@ export const LOT_REVIEW_OPTIONS = ['round'] as const
 export const LOT_REVIEW_LINES = {
 	prefix: 'lot review: ',
 	header: 'lot review {lot} · {state} · {branch}',
-	noPullRequest: 'no pull request yet: dialecte lot land {lot} --draft opens it',
+	noPullRequest: 'no pull request yet: dialecte lot land {lot} opens it',
 	pullRequestGone: 'pull request #{number} cannot be found',
 	pullRequest: 'pull request #{number}{draft} · {url}',
 	draft: ' draft',

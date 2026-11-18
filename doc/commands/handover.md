@@ -66,7 +66,7 @@ Flags: `--release`, `--target`, `--out`, `--rehash`, `--json`, `--print`, `--reh
 
 A CI-first repository never takes a hand-over: there `handover write` (and `handover <lots.json>`) and `handover run`,
 rehearsed or not, refuse with exit 2 before anything is written, and name the flow to use instead: commit on the lot
-branch through the hook, then `dialecte lot land <id> --draft`. A repository is CI-first when its
+branch through the hook, then `dialecte lot land <id>`. A repository is CI-first when its
 `.github/workflows/ci.yml` (the file `dialecte ci sync` writes) runs on `merge_group` and holds the `ci-ok` job: what
 the merge queue runs and what its ruleset requires. Nothing is configured: a `ci.yml` without `merge_group`, or no
 `ci.yml`, keeps the hand-over flow below. The repository checked is the one the lots file names. `show`, `list`,

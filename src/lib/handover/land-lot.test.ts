@@ -1,4 +1,7 @@
-/** A lot lands through its pull request: checked, rebased onto origin's base when behind, pushed, opened, queued, recorded. */
+/**
+ * A lot lands through its pull request: checked, rebased onto origin's base when behind, pushed, opened as a draft,
+ * recorded; never queued (lot approve queues).
+ */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -30,14 +33,13 @@ import type { HostAdapter, PullRequest } from '../host/host.types.ts'
 const NOW = new Date('2026-11-16T03:00:00Z')
 
 /** `landLot` of the landing repository's lot `feat/x` into main. */
-function land(params: { repository: LandingRepository; host: HostAdapter; draft?: boolean }) {
+function land(params: { repository: LandingRepository; host: HostAdapter }) {
 	return landLot({
 		...params.repository,
 		lot: '0001-repo-x',
 		branch: 'feat/x',
 		base: 'main',
 		host: params.host,
-		draft: params.draft ?? false,
 		now: NOW,
 	})
 }
@@ -62,33 +64,37 @@ function recordLanding(params: { repository: LandingRepository; head: string }):
 	)
 }
 
-/** Pull request #7 of the lot in `state`, its head at `head`. */
-function pullRequestOf(params: { state: PullRequest['state']; head: string }): PullRequest {
+/** Pull request #7 of the lot in `state`, its head at `head`, ready and not queued unless said. */
+function pullRequestOf(params: {
+	state: PullRequest['state']
+	head: string
+	draft?: boolean
+	queued?: boolean
+}): PullRequest {
 	return {
 		number: 7,
 		url: 'https://host.test/pull/7',
 		title: 'feat(x): x answers one',
 		body: '',
 		state: params.state,
-		draft: false,
-		queued: false,
+		draft: params.draft ?? false,
+		queued: params.queued ?? false,
 		head: params.head,
 	}
 }
 
 describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
-	it('a lot with no pull request → pushed, opened with its commit message as title, queued, the landing and a pending hand-over entry recorded', () => {
+	it('a lot with no pull request → pushed, opened as a draft with its commit message as title, never queued, the landing and a pending hand-over entry recorded', () => {
 		const repository = landingRepository()
 		const { host, calls } = recordingHost()
 
 		const landed = land({ repository, host })
 
 		expect(landed.exitCode).toBe(0)
-		expect(calls).toEqual([
-			'read feat/x',
-			'open feat/x -> main "feat(x): x answers one"',
-			'queue 7',
-		])
+		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat(x): x answers one" draft'])
+		expect(landed.lines.at(-1)).toBe(
+			'a draft: CI runs on every push; dialecte lot approve 0001-repo-x --by <who> queues it once its checks pass',
+		)
 		const pushed = git({
 			root: repository.root,
 			args: ['ls-remote', repository.origin, 'refs/heads/feat/x'],
@@ -183,7 +189,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 		const { host, calls } = recordingHost()
 
-		const landed = land({ repository, host, draft: true })
+		const landed = land({ repository, host })
 
 		expect(landed.exitCode).toBe(0)
 		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat(x): x answers one" draft'])
@@ -202,7 +208,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 3\n' } })
 		const { host } = recordingHost()
 
-		const landed = land({ repository, host, draft: true })
+		const landed = land({ repository, host })
 
 		expect(landed.exitCode).toBe(0)
 		expect(tipOf(repository)).toBe(committed)
@@ -221,7 +227,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 		git({ root: repository.worktree, args: ['config', 'status.showUntrackedFiles', 'normal'] })
 
-		const landed = land({ repository, host: recordingHost().host, draft: true })
+		const landed = land({ repository, host: recordingHost().host })
 
 		expect(landed.lines).toContain('uncommitted, not pushed: 2 files')
 	})
@@ -232,7 +238,7 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		writeFiles({ root: repository.worktree, files: { 'src/other.ts': 'export const o = 2\n' } })
 		const before = tipOf(repository)
 
-		const landed = land({ repository, host: recordingHost().host, draft: true })
+		const landed = land({ repository, host: recordingHost().host })
 
 		expect(landed.exitCode).toBe(1)
 		expect(landed.lines.join('\n')).toContain('would overwrite')
@@ -253,19 +259,47 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		})
 		writeFiles({ root: repository.worktree, files: { 'src/x.test.ts': 'red\n' } })
 
-		const landed = land({ repository, host: recordingHost().host, draft: true })
+		const landed = land({ repository, host: recordingHost().host })
 
 		expect(landed.exitCode).toBe(1)
 		expect(landed.lines).toContain('uncommitted, not pushed: 1 file')
 	})
 
-	it('its pull request already open → pushed again and queued, not opened twice', () => {
+	it.each([
+		{
+			label: 'ready and queued',
+			draft: false,
+			queued: true,
+			taken: ['draft-back 7 queued ready'],
+		},
+		{ label: 'ready, not queued', draft: false, queued: false, taken: ['draft-back 7 ready'] },
+		{ label: 'a draft, not queued', draft: true, queued: false, taken: ['draft-back 7 draft'] },
+	])(
+		'its pull request already open, $label, a new head pushed → taken back out of the queue as a draft, not opened twice, never queued',
+		({ draft, queued, taken }) => {
+			const repository = landingRepository()
+			const { host, calls } = recordingHost({
+				existing: pullRequestOf({ state: 'open', head: '', draft, queued }),
+			})
+
+			land({ repository, host })
+
+			expect(calls).toEqual(['read feat/x', 'edit 7 "feat(x): x answers one"', ...taken])
+		},
+	)
+
+	it('its pull request already open and queued at the head pushed again → left as it is: the approval of that head stands', () => {
 		const repository = landingRepository()
-		const { host, calls } = recordingHost({ existing: pullRequestOf({ state: 'open', head: '' }) })
+		const { host, calls } = recordingHost({
+			existing: pullRequestOf({ state: 'open', head: tipOf(repository), queued: true }),
+		})
 
-		land({ repository, host })
+		const landed = land({ repository, host })
 
-		expect(calls).toEqual(['read feat/x', 'edit 7 "feat(x): x answers one"', 'queue 7'])
+		expect({ exitCode: landed.exitCode, calls }).toEqual({
+			exitCode: 0,
+			calls: ['read feat/x', 'edit 7 "feat(x): x answers one"'],
+		})
 	})
 
 	it('a closed pull request of the branch → a new one opened', () => {
@@ -370,15 +404,6 @@ describe('landLot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(landed.lines.join('\n')).toContain('feat/x exists on origin, pushed outside lot land')
 	})
 
-	it('--draft → opened as a draft, never queued: CI runs on every push while the lot goes on', () => {
-		const repository = landingRepository()
-		const { host, calls } = recordingHost()
-
-		land({ repository, host, draft: true })
-
-		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat(x): x answers one" draft'])
-	})
-
 	it('no landing.json before → none left behind by a refused landing', () => {
 		const repository = landingRepository()
 		git({ root: repository.worktree, args: ['checkout', '-q', '--detach'] })
@@ -406,7 +431,7 @@ describe(
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
 			const { host, calls } = recordingHost()
 
-			const result = land({ repository, host, draft: true })
+			const result = land({ repository, host })
 
 			expect({
 				exitCode: result.exitCode,
@@ -420,7 +445,7 @@ describe(
 			const repository = landingRepository()
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
 
-			land({ repository, host: recordingHost().host, draft: true })
+			land({ repository, host: recordingHost().host })
 
 			expect(
 				registeredEntryOf({
@@ -443,7 +468,7 @@ describe(
 			const before = registeredEntryOf({ store, folder: repository.lotFolder })
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
 
-			land({ repository, host: recordingHost().host, draft: true })
+			land({ repository, host: recordingHost().host })
 
 			expect(registeredEntryOf({ store, folder: repository.lotFolder })).toEqual(before)
 		})
@@ -468,7 +493,7 @@ describe(
 			git({ root: repository.worktree, args: ['reset', '-q', '--hard', 'main'] })
 			const before = readStoreEntries(store)
 
-			const result = land({ repository, host: recordingHost().host, draft: true })
+			const result = land({ repository, host: recordingHost().host })
 
 			expect({
 				exitCode: result.exitCode,
@@ -489,7 +514,7 @@ describe(
 			const name = committedLot(repository)
 			const before = readStoreEntries(store)
 
-			const result = land({ repository, host: recordingHost().host, draft: true })
+			const result = land({ repository, host: recordingHost().host })
 
 			expect({
 				exitCode: result.exitCode,
@@ -513,7 +538,7 @@ describe(
 			const repository = landingRepository()
 			git({ root: repository.root, args: ['push', '-q', 'origin', 'main:refs/heads/feat/x'] })
 
-			const result = land({ repository, host: recordingHost().host, draft: true })
+			const result = land({ repository, host: recordingHost().host })
 
 			expect({
 				exitCode: result.exitCode,
@@ -530,11 +555,11 @@ describe(
 				...recordingHost().host,
 				openPullRequest: () => ({ refusal: 'gh pr create: offline' }),
 			}
-			land({ repository, host: refusing, draft: true })
+			land({ repository, host: refusing })
 			writeFiles({ root: repository.worktree, files: { 'src/x.ts': 'export const x = 2\n' } })
 			git({ root: repository.worktree, args: ['commit', '-qam', 'fix(x): x answers two'] })
 
-			const result = land({ repository, host: recordingHost().host, draft: true })
+			const result = land({ repository, host: recordingHost().host })
 
 			expect({
 				exitCode: result.exitCode,
@@ -555,7 +580,7 @@ describe(
 			const repository = landingRepository()
 			const { host, bodies } = recordingHost()
 
-			land({ repository, host, draft: true })
+			land({ repository, host })
 
 			expect(bodies).toHaveLength(1)
 			expect(bodies[0]).toMatch(/^### Summary\n\nnot recorded\n\n### Behaviours\n/)
@@ -572,7 +597,7 @@ describe(
 				},
 			})
 
-			const landed = land({ repository, host, draft: true })
+			const landed = land({ repository, host })
 
 			expect(calls).toContain('edit 7 "feat(x): x answers one"')
 			expect(bodies[0]).toContain('### Summary')
@@ -641,7 +666,6 @@ describe(
 					branch: 'feat/x',
 					base: 'release',
 					host,
-					draft: true,
 					now: NOW,
 				})
 			}
@@ -657,7 +681,7 @@ describe(
 		it('a reused pull request that already reads the records → no edit asked', () => {
 			const repository = landingRepository()
 			const first = recordingHost()
-			land({ repository, host: first.host, draft: true })
+			land({ repository, host: first.host })
 			const { host, calls } = recordingHost({
 				existing: {
 					...pullRequestOf({ state: 'open', head: '' }),
@@ -665,7 +689,7 @@ describe(
 				},
 			})
 
-			land({ repository, host, draft: true })
+			land({ repository, host })
 
 			expect(calls).not.toContainEqual(expect.stringMatching(/^edit /))
 		})
@@ -678,7 +702,7 @@ describe(
 				existing: { ...pullRequestOf({ state: 'open', head: '' }), body: `old\n\n${kept}\n` },
 			})
 
-			land({ repository, host, draft: true })
+			land({ repository, host })
 
 			expect(bodies[0]?.endsWith(`\n\n${kept}`)).toBe(true)
 		})
@@ -690,7 +714,7 @@ describe(
 				editRefusal: 'gh pr edit: HTTP 403',
 			})
 
-			const landed = land({ repository, host, draft: true })
+			const landed = land({ repository, host })
 
 			expect(landed.exitCode).toBe(1)
 			expect(landed.lines.at(-1)).toBe('lot land: gh pr edit: HTTP 403')
@@ -702,7 +726,7 @@ describe(
 			landOnOrigin({ origin: repository.origin, files: { [TEMPLATE_PATH]: cliTemplate() } })
 			const { host, calls } = recordingHost()
 
-			const landed = land({ repository, host, draft: true })
+			const landed = land({ repository, host })
 
 			expect(landed.exitCode).toBe(0)
 			expect(calls).toContainEqual(expect.stringMatching(/^open feat\/x -> main /))
