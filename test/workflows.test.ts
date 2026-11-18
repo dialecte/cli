@@ -149,7 +149,7 @@ describe('the cli workflows', () => {
 		}).toEqual({ namesTrustedPublishing: true, neverRenamed: true })
 	})
 
-	it('_check.yml → runs the package check, the released changelog check against the base the change goes onto, then ci check through the cli from its sources', () => {
+	it('_check.yml → runs the package check, the released changelog check and the code rules against the base the change goes onto, the skills check, then ci check through the cli from its sources', () => {
 		const runs = (readWorkflow('_check.yml').jobs.check?.steps ?? []).flatMap((step) =>
 			step.run === undefined ? [] : [step.run.trim()],
 		)
@@ -158,6 +158,8 @@ describe('the cli workflows', () => {
 			'npm run check',
 			'git fetch --depth=1 origin "$BASE"',
 			'node src/cli.ts changelog check --base "$BASE"',
+			'node src/cli.ts rules --base "$BASE"',
+			'npm run skills:check',
 			'node src/cli.ts ci check',
 		])
 	})

@@ -14,8 +14,10 @@ ci - The CI files shipped as a template: write them into the package, report dri
   the template: the workflows (ci.yml, publish.yml and their reusables),
     .github/pull_request_template.md, .nvmrc and changes/.gitkeep; ci.yml selects its jobs from
     package.json: type-perf with a type-bench:check script, docs with a doc:build script, the
-    Playwright install with a playwright dependency; a build script is required (publish.yml builds
-    the package)
+    Playwright install with a playwright dependency, the npm run skills:check step of the check job
+    with a skills:check script; the check job always runs rules --base of the cli over the change
+    (the base sha of the merge queue, else HEAD^1, skipped on a dispatch), where --no-verify cannot
+    skip it; a build script is required (publish.yml builds the package)
   the repository owns .github/workflows/_test.yml (ci.yml calls it: a workflow_call trigger; a mode
     input of type string gets pr on a pull request, full in the merge queue) and every other
     workflow file the template does not name; they are listed, never written
