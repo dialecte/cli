@@ -44,6 +44,13 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     lot base cannot be read)
   changelog-edit (an error), in a package keeping a changes/ folder: CHANGELOG.md edited without the
     package version bumped; write the entry in changes/<lot>.md (dialecte changelog)
+  released-changelog (an error, no opt-out), on CHANGELOG.md in every package: a released ##
+    [<version>] section the change altered - lines added, removed or reordered, the section removed,
+    or its heading repeated - judged against the base branch and where the change left it (a section
+    main corrected after the branch point, or a release the branch predates, is no finding); the
+    release base a rehearsal hands its hooks (DIALECTE_RELEASE_BASE, to the scoped rules step alone)
+    replaces the base branch; no base branch: one line, not judged (--json:
+    releasedChangelogNotJudged)
   --json: dialecteChanges (the verdict of each file), notJudged, baseLine; described by
     rules.schema.json (schema 1)
   opt-out: // dialecte-allow <rule>[, <rule>]: <reason> (15 characters at least) on the line or the

@@ -19,10 +19,14 @@ contrib - The contributor checks of a dialecte package (profile contributor)
     restored, npm run type-bench:check), npm run type-narrowing when the package has that script and
     no step runs it (a skip line when it lacks it), no dependency named by a local folder, the
     mutation line when a scope is declared
-  the changelog row (after rules): in a package keeping changes/, a change that edits README.md, a
-    page under doc/ or a file the package lists in dialecte.changelog.asking (a folder ends in /;
-    the cli lists its command map) adds a changelog fragment changes/<lot>.md, or a no-entry note
-    changes/<lot>.none.md saying why; else it fails naming the file
+  the changelog row (after rules): first the released CHANGELOG.md sections, on every run, changed
+    by the lot or not (a merge brings them): a section altered against the base branch and where the
+    change left it fails the row, naming it (rules: released-changelog); the record is keyed on the
+    base's and the merge-base's CHANGELOG.md, so a release on main runs the row again; then in a
+    package keeping changes/, a change that edits README.md, a page under doc/ or a file the package
+    lists in dialecte.changelog.asking (a folder ends in /; the cli lists its command map) adds a
+    changelog fragment changes/<lot>.md, or a no-entry note changes/<lot>.none.md saying why; else
+    it fails naming the file
   a step a green gate --full of this tree and install passed with the same command is not run again;
     --no-reuse runs every row
   a step whose run is npm run <script> the package lacks is not wired: it fails, default or

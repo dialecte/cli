@@ -1,5 +1,10 @@
-import { FRAGMENT_CHECK_LINES } from '../changelog/changelog.constants.ts'
+import {
+	CHANGELOG_NOTE_SEPARATOR,
+	FRAGMENT_CHECK_LINES,
+	RELEASED_CHANGELOG_LINES,
+} from '../changelog/changelog.constants.ts'
 import { checkChangeFragment } from '../changelog/fragment-check.ts'
+import { releasedSectionChanges } from '../changelog/released-sections.ts'
 /**
  * `dialecte contrib [--no-reuse] [--json]` - the contributor checks of a dialecte package, after `gate --full`
  * and before `dialecte handover`: rules, the package's steps, the release guard, the mutation line. The command
@@ -40,6 +45,7 @@ import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { findUnwiredSteps } from '../gate/unwired-steps.ts'
 import { currentBranchOf, readGit, readHeadOrNone } from '../git.ts'
+import { GIVEN_ENVIRONMENT } from '../given-environment.constants.ts'
 import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { pendingVerdict } from '../mutation/pending-verdict.ts'
@@ -57,8 +63,13 @@ import {
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { readBaseWithLine } from '../rules/lot-base.ts'
+import {
+	baseBranchReleaseOf,
+	releasedChangeMessage,
+	releasedTextsOf,
+} from '../rules/released-changelog.ts'
 import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
-import { contribKeyHash } from './contrib-key.ts'
+import { contribKeyHash, contribReleaseChangelogOf } from './contrib-key.ts'
 import { resolveContribSteps } from './contrib-steps.ts'
 import {
 	CONTRIB_BUILTIN_STEPS,
@@ -80,9 +91,10 @@ import {
 } from './contrib.constants.ts'
 import { findPassedGateStep, readFullGateRecords } from './gate-step-reuse.ts'
 
+import type { ReleaseBase, ReleaseChangelog } from '../changelog/changelog.types.ts'
 import type { CommandResult } from '../command-result.types.ts'
 import type { StepHandle } from '../events/record-step.types.ts'
-import type { RecordedStep } from '../gate-records/gate-records.types.ts'
+import type { CheckKey, RecordedStep } from '../gate-records/gate-records.types.ts'
 import type { GateStep } from '../gate/gate-config.types.ts'
 import type { StepResult } from '../gate/gate.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
@@ -108,6 +120,11 @@ export async function runContrib(params: {
 	 * error stays one. Without it, the row takes the lot's base (`resolveRulesBase`; none when it finds none).
 	 */
 	rulesBase?: string | null
+	/**
+	 * What the changelog row judges released `CHANGELOG.md` sections against: a rehearsal passes the release base its
+	 * repository resolves (its clone's base branch is the lot's); `null`: none. Without it, the package's base branch.
+	 */
+	releaseBase?: ReleaseBase | null
 	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
 	warn?: (line: string) => void
 }): Promise<CommandResult> {
@@ -126,8 +143,22 @@ export async function runContrib(params: {
 	const recorder = startStep({ cwd, step: 'contrib', heavy: true, warn: params.warn })
 
 	const head = readGit({ root: cwd, args: ['rev-parse', 'HEAD'] }).trim()
-	const commandHash = contribKeyHash({ root: cwd, steps, head })
-	const keyBefore = computeCheckKey({ root: cwd, commandHash, tree: stateTree })
+	// resolved once per run: the changelog row judges against it, and the key holds what it read
+	const releaseBase =
+		params.releaseBase === undefined
+			? (baseBranchReleaseOf({ root: cwd }) ?? null)
+			: params.releaseBase
+	const releaseChangelog = contribReleaseChangelogOf({
+		root: cwd,
+		steps,
+		head,
+		releaseBase: releaseBase?.commit ?? null,
+	})
+	const commandHash = contribKeyHash({ root: cwd, steps, head, releaseChangelog })
+	const keyBefore = withReleaseChangelog({
+		key: computeCheckKey({ root: cwd, commandHash, tree: stateTree }),
+		releaseChangelog,
+	})
 	const found = reusable
 		? findReusableRecord({
 				root: cwd,
@@ -164,6 +195,7 @@ export async function runContrib(params: {
 				packageJson,
 				// resolved once per run, for the rules row only
 				...rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase }),
+				releaseBase,
 				gate: reusable ? fullGateRecordsOf({ root: cwd, packageJson }) : undefined,
 				progress,
 				showLive,
@@ -178,7 +210,9 @@ export async function runContrib(params: {
 		}
 	showAbsentLive()
 	const original = found && originOfRecord(found)
-	const keyAfter = found ? keyBefore : computeCheckKey({ root: cwd, commandHash })
+	const keyAfter = found
+		? keyBefore
+		: withReleaseChangelog({ key: computeCheckKey({ root: cwd, commandHash }), releaseChangelog })
 	const { stored, changedWhileRunning, stateHash } = recordCheckedRun({
 		root: cwd,
 		mode: CONTRIB_RECORD_MODE,
@@ -291,6 +325,8 @@ async function runRows(params: {
 	rulesBase?: string
 	/** Why there is no base, when the worktree's lot base cannot be read: the rules row's note. */
 	rulesNoBase?: string
+	/** What the changelog row judges released sections against; `null`: none found. */
+	releaseBase: ReleaseBase | null
 	/** The current `gate --full` records; undefined with `--no-reuse`. */
 	gate: FullGateRecords | undefined
 	progress: StepProgress | undefined
@@ -323,7 +359,7 @@ async function runRows(params: {
 				step.builtin === 'rules'
 					? rulesResult({ root, base, noBase: params.rulesNoBase })
 					: step.builtin === 'changelog'
-						? changelogResult({ root, base })
+						? changelogResult({ root, base, releaseBase: params.releaseBase })
 						: releaseResult(root)
 			run.durations.set(result, finishPart())
 			run.results.push(result)
@@ -446,6 +482,9 @@ function rulesResult(params: {
 	const check = checkRules({
 		root: params.root,
 		givenFiles: [],
+		environment: GIVEN_ENVIRONMENT,
+		// the changelog row judges released sections, against the release base of the run
+		skipReleasedChangelog: true,
 		...(params.base !== undefined && { base: params.base }),
 	})
 	const errors = check.findings.filter((finding) => finding.severity === 'error')
@@ -475,22 +514,49 @@ function noteOf(params: {
 }
 
 /**
- * The changelog row: the change since `base` brings the fragment a README, `doc/` or listed-file edit asks for
- * (`checkChangeFragment`, the package's `dialecte.changelog.asking`).
+ * The changelog row: no released `CHANGELOG.md` section altered (`releasedResultOf`), then the change since `base`
+ * brings the fragment a README, `doc/` or listed-file edit asks for (`checkChangeFragment`, the package's
+ * `dialecte.changelog.asking`).
  */
-function changelogResult(params: { root: string; base: string | undefined }): StepResult {
+function changelogResult(params: {
+	root: string
+	base: string | undefined
+	releaseBase: ReleaseBase | null
+}): StepResult {
 	const step = { name: CONTRIB_BUILTIN_STEPS.changelog.name, run: '' }
+	// released sections first, on every run: a merge alters them without the lot changing CHANGELOG.md
+	const released = releasedResultOf({ root: params.root, releaseBase: params.releaseBase })
+	if ('reason' in released)
+		return { step, status: 'failed', counts: {}, restored: [], reason: released.reason }
+	const releasedNotes = released.note === undefined ? [] : [released.note]
 	// no base: no change to read, said plainly rather than read as a pass
 	if (params.base === undefined)
-		return { step, status: 'passed', counts: {}, restored: [], note: FRAGMENT_CHECK_LINES.noBase }
+		return {
+			step,
+			status: 'passed',
+			counts: {},
+			restored: [],
+			note: [...releasedNotes, FRAGMENT_CHECK_LINES.noBase].join(CHANGELOG_NOTE_SEPARATOR),
+		}
 	const check = checkChangeFragment({ root: params.root, base: params.base })
 	return {
 		step,
 		status: check.status,
 		counts: {},
 		restored: [],
-		...(check.status === 'failed' ? { reason: check.reason } : { note: check.note }),
+		...(check.status === 'failed'
+			? { reason: check.reason }
+			: { note: [...releasedNotes, check.note].join(CHANGELOG_NOTE_SEPARATOR) }),
 	}
+}
+
+/** `key` holding the release changelog its run read, when the run has a changelog row. */
+function withReleaseChangelog(params: {
+	key: CheckKey
+	releaseChangelog: ReleaseChangelog | undefined
+}): CheckKey {
+	const { key, releaseChangelog } = params
+	return releaseChangelog === undefined ? key : { ...key, releaseChangelog }
 }
 
 /** `first: <file>:<line>:<column> <rule>`, and how many more errors there are. */
@@ -584,4 +650,24 @@ function renderContribLines(line: ContribLine): string[] {
 		[mark, row.name, row.detail].filter(Boolean).join('  '),
 		...line.under.map((under) => `${STEP_DETAIL_INDENT}${under}`),
 	]
+}
+
+/**
+ * The changelog row's released-section verdict: the first altered section's line (with how many more), or the note
+ * saying nothing is judged without a release base; nothing to say otherwise.
+ */
+function releasedResultOf(params: {
+	root: string
+	releaseBase: ReleaseBase | null
+}): { reason: string } | { note?: string } {
+	const { releaseBase } = params
+	if (releaseBase === null) return { note: RELEASED_CHANGELOG_LINES.notJudged }
+	const changes = releasedSectionChanges(
+		releasedTextsOf({ root: params.root, base: releaseBase, threeWay: true }),
+	)
+	const [first] = changes
+	if (first === undefined) return {}
+	const more =
+		changes.length > 1 ? RULES_MORE_ERRORS.replace('{count}', String(changes.length - 1)) : ''
+	return { reason: `${releasedChangeMessage({ change: first, base: releaseBase.name })}${more}` }
 }

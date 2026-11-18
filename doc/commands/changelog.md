@@ -7,7 +7,7 @@ Changelog fragments (changes/&lt;lot&gt;.md): check them, or fold them into CHAN
 ```text
 changelog - Changelog fragments (changes/<lot>.md): check them, or fold them into CHANGELOG.md for a release
 
-  dialecte changelog check
+  dialecte changelog check [--base <revision>]
   dialecte changelog release <x.y.z> [--date YYYY-MM-DD]
 
   a fragment: one changes/<name>.md per lot (a no-entry note changes/<name>.none.md holds why a
@@ -15,7 +15,10 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
     Deprecated, Removed, Fixed, Security; a package keeping a changes/ folder edits CHANGELOG.md
     only in a release (rules: changelog-edit)
   check - every fragment readable (a known heading, no loose text, no empty or repeated section),
-          and the Unreleased part of CHANGELOG.md
+          the Unreleased part of CHANGELOG.md, then its released sections: none altered against the
+          base branch and where the change left it (rules: released-changelog); --base <revision>
+          judges against that commit alone, the one the change goes onto (the CI check step hands
+          the merge queue's base, or a pull request merge ref's first parent)
   release - writes ## [<x.y.z>] - <date> (default today, local) under an emptied ## [Unreleased]
             (written above the first version when missing): the Unreleased summary and entries
             first, then each fragment in file name order, section by section, one entry per line;
@@ -23,14 +26,14 @@ changelog - Changelog fragments (changes/<lot>.md): check them, or fold them int
             Unreleased part cannot be read
 
 exit codes:
-  1  a fragment or the Unreleased part cannot be read, the release is refused (no CHANGELOG.md, version already there, nothing to release), or a fragment could not be deleted
-  2  usage: no verb, a version that is no x.y.z, a date that is no YYYY-MM-DD
+  1  a fragment or the Unreleased part cannot be read, a released section is altered (check), the release is refused (no CHANGELOG.md, version already there, nothing to release), or a fragment could not be deleted
+  2  usage: no verb, a version that is no x.y.z, a date that is no YYYY-MM-DD; --base names no commit of the repository
 e.g. dialecte changelog release 0.8.0
 ```
 
 Verbs: `check`, `release`
 
-Flags: `--date`
+Flags: `--base`, `--date`
 <!-- /dialecte-reference -->
 
 ## Changelog fragments

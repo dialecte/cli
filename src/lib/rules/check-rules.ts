@@ -39,6 +39,7 @@ import {
 } from './forbidden-words.ts'
 import { createImportReading, packagePathOf } from './import-reading.ts'
 import { readQueryNamesWithNote } from './query-names.ts'
+import { checkReleasedChangelog } from './released-changelog.ts'
 import { sqlKeywordReaderOf } from './sql-literals.ts'
 import { createUnitContextReader } from './unit-context.ts'
 
@@ -56,8 +57,16 @@ export function checkRules(params: {
 	givenFiles: readonly string[]
 	/** A scoped gate step's changed list (`DIALECTE_GATE_CHANGED`, NUL-separated): read when no file is given. */
 	changedList?: string
-	/** The user's config folders are read from it. Default: the process's environment. */
-	environment?: Readonly<NodeJS.ProcessEnv>
+	/**
+	 * The environment the run was given: the user's config folders and the release base a rehearsal hands
+	 * (`DIALECTE_RELEASE_BASE`) are read from it.
+	 */
+	environment: Readonly<NodeJS.ProcessEnv>
+	/**
+	 * Leave the released-changelog rule out: contrib's changelog row judges released sections itself, against the
+	 * release base its run resolved (a rehearsal's clone would read its own base branch, the lot's).
+	 */
+	skipReleasedChangelog?: boolean
 	/** The gate's base (`DIALECTE_GATE_BASE`): an error of a quality rule on a line it does not add is a warning. */
 	base?: string
 	/** The tree the gate checks (`DIALECTE_GATE_TREE`): the changelog-edit rule reads its package.json. */
@@ -93,8 +102,15 @@ export function checkRules(params: {
 		findings: [...checked.flatMap((result) => result.findings), ...fixtures.findings],
 		overLimit: [...checked.flatMap((result) => result.overLimit ?? []), ...fixtures.overLimit],
 	})
+	const released = checkReleasedChangelog({
+		root,
+		files: params.skipReleasedChangelog ? [] : files,
+		environment: params.environment,
+		...(params.tree !== undefined && { tree: params.tree }),
+	})
 	const findings = [
 		...listFindings,
+		...released.findings,
 		...checkChangelogEdit({
 			root,
 			files,
@@ -114,8 +130,20 @@ export function checkRules(params: {
 	const allowedField = Object.keys(allowed).length ? { allowed } : {}
 	if (recorded) recordRules({ root, files, errors, warnings, ...allowedField })
 	const notRun = note === undefined ? {} : { queryInLoopNotRun: note }
+	const notJudgedRelease =
+		released.notJudged === undefined ? {} : { releasedChangelogNotJudged: released.notJudged }
 	const scoped = scope === undefined ? {} : scopeFieldsOf(checked)
-	return { files, errors, warnings, findings, ...allowedField, ...noList, ...notRun, ...scoped }
+	return {
+		files,
+		errors,
+		warnings,
+		findings,
+		...allowedField,
+		...noList,
+		...notRun,
+		...notJudgedRelease,
+		...scoped,
+	}
 }
 
 /**

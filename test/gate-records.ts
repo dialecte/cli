@@ -4,6 +4,8 @@ import { join, resolve } from 'node:path'
 
 import { git } from './scratch-repository.ts'
 
+import type { CheckKey } from '../src/lib/gate-records/gate-records.types.ts'
+
 /** Where git keeps `name` for the worktree at `root` (its own git folder in a linked worktree). */
 export function gitPathOf(params: { root: string; name: string }): string {
 	return resolve(
@@ -19,12 +21,13 @@ export function readRecordFile<Parsed>(params: { root: string; name: string }): 
 }
 
 /**
- * Every record of the repository's store with the key fields of `key` replaced (`commandHash`, `linked`, `lockHash`), as
- * another cli, another install or other `file:` dependencies would have keyed them.
+ * Every record of the repository's store with the key fields of `key` replaced (`commandHash`, `linked`, `lockHash`,
+ * `releaseChangelog`), as another cli, another install, other `file:` dependencies or another base branch
+ * `CHANGELOG.md` would have keyed them.
  */
 export function rekeyStoredRecords(params: {
 	root: string
-	key: Partial<Record<'commandHash' | 'linked' | 'lockHash', string>>
+	key: Partial<Pick<CheckKey, 'commandHash' | 'linked' | 'lockHash' | 'releaseChangelog'>>
 }): void {
 	const common = git({
 		root: params.root,
@@ -33,7 +36,7 @@ export function rekeyStoredRecords(params: {
 	const store = join(common, 'dialecte-checks')
 	for (const file of readdirSync(store)) {
 		const path = join(store, file)
-		const records = JSON.parse(readFileSync(path, 'utf8')) as { key?: Record<string, string> }[]
+		const records = JSON.parse(readFileSync(path, 'utf8')) as { key?: Record<string, unknown> }[]
 		for (const record of records) if (record.key) Object.assign(record.key, params.key)
 		writeFileSync(path, `${JSON.stringify(records, null, 2)}\n`)
 	}

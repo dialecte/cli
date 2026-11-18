@@ -152,6 +152,8 @@ export function runHookIn(params: {
 	indexFile?: string
 	checkStore?: string
 	reusable?: boolean
+	/** The release base a rehearsal hands its clone's hooks (`DIALECTE_RELEASE_BASE`), as given. */
+	releaseBase?: string
 }): Promise<CommandResult> {
 	return runGate({
 		cwd: params.cwd,
@@ -159,6 +161,7 @@ export function runHookIn(params: {
 		...(params.indexFile && { indexFile: params.indexFile }),
 		...(params.checkStore && { checkStore: params.checkStore }),
 		...(params.reusable === false && { reusable: false }),
+		...(params.releaseBase !== undefined && { releaseBase: params.releaseBase }),
 	})
 }
 

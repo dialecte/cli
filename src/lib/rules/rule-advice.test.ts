@@ -62,7 +62,7 @@ function messagesOf(testCase: TestCase): { message: string; namesCliHelper: bool
 		...PACKAGES[testCase.package],
 		[testCase.file]: testCase.text,
 	})
-	return checkRules({ root, givenFiles: [testCase.file] })
+	return checkRules({ root, givenFiles: [testCase.file], environment: process.env })
 		.findings.filter((finding) => finding.rule === testCase.rule)
 		.map((finding) => ({
 			message: finding.message,

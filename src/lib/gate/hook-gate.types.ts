@@ -85,6 +85,11 @@ export type HookGateParams = {
 	checkStore?: string
 	/** The line saying why a given store was ignored: the hook's first line. */
 	checkStoreIgnored?: string
+	/**
+	 * The release base a rehearsal handed (`DIALECTE_RELEASE_BASE`), as given: a full commit id the repository holds,
+	 * else the hook refuses; handed to its rules step alone.
+	 */
+	releaseBase?: string
 	/** Where the one `events: not recorded: <reason>` line goes (standard error unless given). */
 	warn?: (line: string) => void
 }
