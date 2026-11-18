@@ -575,14 +575,22 @@ describe(
 			expect(existsSync(worktree)).toBe(true)
 		})
 
-		it('a lot.json already archived in the lot folder that differs from the worktree one -> kept, the archive never overwritten', () => {
+		it('a lot.json already archived in the lot folder that differs from the worktree one -> archived beside it as lot.landed.json, that archive never overwritten, closed', () => {
 			const { closed, worktree, lotFolder } = landWithDeclarationThenClose({
 				archived: '{"accept":[]}\n',
 			})
 
-			expect(closed.output).toContain('.dialecte/lot.json')
-			expect(existsSync(worktree)).toBe(true)
-			expect(readFileSync(join(lotFolder, 'lot.json'), 'utf8')).toBe('{"accept":[]}\n')
+			expect({
+				closed: closed.output.includes('"closed": true'),
+				worktreeLeft: existsSync(worktree),
+				archived: readFileSync(join(lotFolder, 'lot.json'), 'utf8'),
+				landed: readFileSync(join(lotFolder, 'lot.landed.json'), 'utf8'),
+			}).toEqual({
+				closed: true,
+				worktreeLeft: false,
+				archived: '{"accept":[]}\n',
+				landed: '{"accept":[{"case":"a","reason":"b"}]}\n',
+			})
 		})
 
 		it('the archive copy cannot be written (a read-only lot folder) -> kept, nothing moved', () => {
