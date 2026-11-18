@@ -20,7 +20,28 @@
 		"releasedChangelogNotJudged": { "type": "string" },
 		"dialecteChanges": { "type": "array", "items": { "$ref": "#/$defs/dialecteChange" } },
 		"notJudged": { "type": "integer", "minimum": 1 },
-		"baseLine": { "type": "string" }
+		"baseLine": { "type": "string" },
+		"qualityLine": { "type": "string" },
+		"quality": {
+			"type": "object",
+			"required": ["base", "examined", "duplicates", "sharedExports", "publicApi", "docs"],
+			"properties": {
+				"base": {
+					"type": "object",
+					"required": ["commit", "source"],
+					"properties": {
+						"commit": { "type": "string" },
+						"source": { "enum": ["lot", "base-branch", "flag"] }
+					}
+				},
+				"examined": { "type": "array", "items": { "type": "string" } },
+				"duplicates": { "type": "array", "items": { "type": "object" } },
+				"sharedExports": { "type": "array", "items": { "type": "object" } },
+				"publicApi": { "type": "object", "required": ["kind"] },
+				"docs": { "type": "array", "items": { "type": "object" } },
+				"aliasesChanged": { "type": "boolean" }
+			}
+		}
 	},
 	"$defs": {
 		"finding": {

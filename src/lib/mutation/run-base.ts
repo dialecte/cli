@@ -1,5 +1,5 @@
 /** The base a `changed` mutation run diffs against, and the scope lines changed since it. */
-import { findBaseBranchRef } from '../gate/gate-base.ts'
+import { findBaseBranchRef, resolveFlagBase } from '../gate/gate-base.ts'
 import { readGit, tryReadGit } from '../git.ts'
 import { BASE_FLAG_HINT } from './mutation.constants.ts'
 import { changedRanges } from './scope.ts'
@@ -61,11 +61,8 @@ export function changedTargets(params: {
 	return { base, targets: changedRanges({ declaration, diff, untracked }) }
 }
 
-/** Where HEAD left `ref` (their merge base), else the commit `ref` names; undefined when git knows no such ref. */
+/** Where HEAD left `ref` (their merge base), else the commit `ref` names, through the one `--base` reader; undefined when git knows no such ref. */
 function forkPointOf(params: { root: string; ref: string }): string | undefined {
-	const { root, ref } = params
-	return (
-		tryReadGit({ root, args: ['merge-base', 'HEAD', ref] })?.trim() ??
-		tryReadGit({ root, args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] })?.trim()
-	)
+	const flag = resolveFlagBase({ root: params.root, ref: params.ref, head: 'HEAD' })
+	return 'refusal' in flag ? undefined : flag.commit
 }

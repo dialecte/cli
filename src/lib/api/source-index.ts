@@ -103,12 +103,13 @@ function isCache(value: unknown): value is SourceIndexCache {
 	if (schema !== SOURCE_INDEX_SCHEMA || typeof files !== 'object' || files === null) return false
 	return Object.values(files).every(function isCachedFile(file: unknown) {
 		if (typeof file !== 'object' || file === null) return false
-		const { hash, entries, note } = file as Partial<SourceIndexCache['files'][string]>
+		const { hash, entries, note, facts } = file as Partial<SourceIndexCache['files'][string]>
 		return (
 			typeof hash === 'string' &&
 			Array.isArray(entries) &&
 			entries.every(isCachedEntry) &&
-			(note === undefined || typeof note === 'string')
+			(note === undefined || typeof note === 'string') &&
+			(facts === undefined || isCachedFacts(facts))
 		)
 	})
 }
@@ -137,11 +138,20 @@ function isStringList(value: unknown): boolean {
 	)
 }
 
-/** What a cached file answers: its entries, and its note when it had one. */
+/** `value` has the shape of a file's facts: its three lists (their rows are the parser's, written by this reader). */
+function isCachedFacts(value: unknown): boolean {
+	if (typeof value !== 'object' || value === null) return false
+	const { functions, imports, types } = value as Partial<Record<string, unknown>>
+	return Array.isArray(functions) && Array.isArray(imports) && Array.isArray(types)
+}
+
+/** What a cached file answers: its entries, its facts and its note, each when it had one. */
 function parsedOf(known: SourceIndexCache['files'][string]): ParsedSourceFile {
-	return known.note === undefined
-		? { entries: known.entries }
-		: { entries: known.entries, note: known.note }
+	return {
+		entries: known.entries,
+		...(known.facts !== undefined && { facts: known.facts }),
+		...(known.note !== undefined && { note: known.note }),
+	}
 }
 
 /** Writes the whole cache; a write that fails (a read-only git folder) is left unsaid: the answer does not need it. */

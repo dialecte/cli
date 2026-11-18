@@ -172,8 +172,18 @@ export function readGivenHandoverBase(environment: Readonly<NodeJS.ProcessEnv>):
 	return {}
 }
 
-/** Rule 1: the merge-base of `head` and `ref`, else the commit `ref` names, else a refusal naming it. */
-function resolveFlagBase(params: { root: string; ref: string; head: string }): GateBase | Refusal {
+/**
+ * Rule 1 (`--base <ref>`): the merge-base of `head` and `ref`, else the commit `ref` names, else a refusal naming it;
+ * the one reader of a `--base` flag for gate, tdd and rules.
+ *
+ * @intent resolve a --base flag to the commit a change is measured from
+ * @internal
+ */
+export function resolveFlagBase(params: {
+	root: string
+	ref: string
+	head: string
+}): GateBase | Refusal {
 	const { root, ref } = params
 	const commit =
 		tryReadGit({ root, args: ['merge-base', params.head, ref] }) ??

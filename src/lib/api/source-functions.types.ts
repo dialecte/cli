@@ -5,6 +5,8 @@ import type ts from 'typescript'
 /** What one source file holds: its exported functions, and why it was left out when it could not be parsed. */
 export type ParsedSourceFile = {
 	entries: ApiSourceFunction[]
+	/** What the base-aware rules read of the file; absent when it could not be parsed. */
+	facts?: FileFacts
 	/** `src/x.ts: not parsed (<reason>)`; undefined when the file parsed. */
 	note?: string
 }
@@ -33,7 +35,10 @@ export type SourceIndexCache = {
 	/** The version of the cli that wrote it: another version's cache is rebuilt (its parser may answer otherwise). */
 	reader?: string
 	/** By path from the work tree top (`packages/a/src/x.ts`): the packages of one repository share the cache. */
-	files: Record<string, { hash: string; entries: ApiSourceFunction[]; note?: string }>
+	files: Record<
+		string,
+		{ hash: string; entries: ApiSourceFunction[]; facts?: FileFacts; note?: string }
+	>
 }
 
 /** The parser of one source file: the default is `parseSourceFile`, a test passes its own to count parses. */
@@ -64,4 +69,58 @@ export type PrintedToken = {
 	kind: ts.SyntaxKind
 	text: string
 	spaced: boolean
+}
+
+/** The keys a function reads, syntactically: the elements it names, the attributes it reads, the named sets it reads through. */
+export type ReadKeys = {
+	/** Tag names: a string literal compared with or passed as a tag, or a string-literal type argument. */
+	elements: string[]
+	/** Attribute names read through `getAttribute`, `readAttribute(s)`, or an `attributes`-named binding. */
+	attributes: string[]
+	/** A constant of names read through when it is no list of string literals of the file: its name. */
+	namedSets: string[]
+}
+
+/** A call a function makes by name: the name, and the specifier it is imported from when it is imported. */
+export type CallFacts = { name: string; specifier?: string }
+
+/** One top-level function of a file, path-free: what the base-aware rules compare. */
+export type FunctionFacts = {
+	name: string
+	/** The line it is declared at, 1-based. */
+	line: number
+	/** The names it is exported by; none for a function of the file only. */
+	exportedAs: string[]
+	summary?: string
+	/** The tokens of its type parameters, parameters and return annotation, hashed: formatting and comments ignored. */
+	signatureHash: string
+	/** The tokens of its body, hashed: formatting and comments ignored. */
+	bodyHash: string
+	/** How many tokens its body holds: a body too small to tell two functions apart is never matched by its hash alone. */
+	bodyTokenCount: number
+	/** The type names its parameters and return annotation reference: a change of one of them is a change of its signature. */
+	signatureTypes: string[]
+	readKeys: ReadKeys
+	calls: CallFacts[]
+}
+
+/** A static import or re-export of a file: the specifier, the names it binds (imported as local), and whether it re-exports. */
+export type ImportFacts = {
+	specifier: string
+	/** The line the import or re-export is written at, 1-based. */
+	line: number
+	names: { imported: string; local: string }[]
+	reexport: boolean
+	/** `export * from` or `import * as`: every name of the module. */
+	all?: true
+}
+
+/** A type alias or interface a file declares: its name and its tokens hashed. */
+export type TypeFacts = { name: string; hash: string }
+
+/** What the base-aware rules read of one source file, path-free: its functions, imports and types. */
+export type FileFacts = {
+	functions: FunctionFacts[]
+	imports: ImportFacts[]
+	types: TypeFacts[]
 }

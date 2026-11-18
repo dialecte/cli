@@ -8,6 +8,7 @@ Code-rules self-check of the changed files (syntax tree, not greps)
 rules - Code-rules self-check of the changed files (syntax tree, not greps)
 
   dialecte rules [<files...>] [--json]
+  dialecte rules --base <ref> [--json]
 
   types / constants in their files, named functions, no await in an argument, object parameters,
     full words, no standard citation (nor, in a contributor profile, a plan tag, acceptance
@@ -51,7 +52,27 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
     release base a rehearsal hands its hooks (DIALECTE_RELEASE_BASE, to the scoped rules step alone)
     replaces the base branch; no base branch: one line, not judged (--json:
     releasedChangelogNotJudged)
-  --json: dialecteChanges (the verdict of each file), notJudged, baseLine; described by
+  --base <ref>: the files changed from the merge-base of <ref> and HEAD to the worktree are judged
+    (deletions left out; uncommitted ones in), that merge-base the base of the softening as a gate
+    base would be; files given with it, or a ref naming no commit, exit 2
+  base-aware rules (warnings, against the base the run judges the change from: --base, else the lot
+    base, else, in a run that is no scoped gate step, the base branch merge-base; never a release
+    tag, an empty tree nor the gate base): duplicate-read, an added function reading the same
+    element and three or more attributes as an existing one (a named set counts three), or whose
+    name shares two words with an existing function it does not call (generic words such as read,
+    list, file, path or name left out); shared-export-changed, an export imported by a file of
+    another folder (a sub-folder included) newly shared, re-signed (its parameters, return type, or
+    a sibling .types.ts type they name), its body changed, or removed; docs-not-updated, in a
+    contributor library (no bin), a public api.json entry added, re-signed or removed whose doc page
+    (doc/ Markdown or README naming its last two route segments, or its whole route in a code span)
+    the change did not touch; one line names where they stand: quality: since <short> (lot |
+    base-branch | flag), quality: not run (no lot) in a scoped gate step outside any lot, no line
+    when there is no base or no package.json; notes under it: public API: <route> removed: still
+    named by <pages>, ! public API unknown (<why>), aliases changed, when a tsconfig or Vite config
+    changed (the base edges read with the aliases of the tree); a run that judged the whole change
+    writes dialecte-quality.json in the worktree git folder; contrib never runs them
+  --json: dialecteChanges (the verdict of each file), notJudged, baseLine, qualityLine, quality (the
+    base, the examined files, duplicates, sharedExports, publicApi, docs); described by
     rules.schema.json (schema 1)
   opt-out: // dialecte-allow <rule>[, <rule>]: <reason> (15 characters at least) on the line or the
     line before (for argument-mutation, long-function also in the comments before the function, its
@@ -71,7 +92,7 @@ rules - Code-rules self-check of the changed files (syntax tree, not greps)
 e.g. dialecte rules src/commands/lot.ts
 ```
 
-Flags: `--json`
+Flags: `--json`, `--base`
 <!-- /dialecte-reference -->
 
 - `dialecte rules [<files...>] [--json]` checks the code rules on the syntax tree of the changed files

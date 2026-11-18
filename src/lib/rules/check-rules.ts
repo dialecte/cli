@@ -12,12 +12,17 @@ import { recordRules } from '../gate-records/gate-records.ts'
 import { listChangedFiles, listRepositoryFiles, readGit } from '../git.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readProfile } from '../profile/profile.ts'
+import { runQualityPass } from '../quality/quality-pass.ts'
 import { LOT_FILE_PATTERN } from '../worktree/worktree.constants.ts'
 import { readAddedLines, softenNotAdded } from './added-lines.ts'
 import { applyAllowComments } from './allow-comments.ts'
 import { checkChangelogEdit } from './changelog-edit.ts'
 import { CLASS_KEYWORD_PATTERN } from './check-class-rules.constants.ts'
-import { ALLOWABLE_RULES, TEXT_FILE_PATTERN } from './check-code-rules.constants.ts'
+import {
+	ALLOWABLE_RULES,
+	BASE_AWARE_RULES,
+	TEXT_FILE_PATTERN,
+} from './check-code-rules.constants.ts'
 import { checkCodeRules } from './check-code-rules.ts'
 import {
 	NUL_SEPARATOR,
@@ -45,6 +50,7 @@ import { createUnitContextReader } from './unit-context.ts'
 
 import ts from 'typescript'
 
+import type { QualityBase } from '../quality/quality.types.ts'
 import type { AllowedCounts } from './allow-comments.types.ts'
 import type { CheckCodeRulesParams, RuleFinding, RuleName } from './check-code-rules.types.ts'
 import type { DialecteScope, FileCheck, RulesCheck } from './check-rules.types.ts'
@@ -71,24 +77,72 @@ export function checkRules(params: {
 	base?: string
 	/** The tree the gate checks (`DIALECTE_GATE_TREE`): the changelog-edit rule reads its package.json. */
 	tree?: string
+	/** `rules --base`: the files changed since this commit are judged (deletions left out), never the changed list. */
+	since?: string
+	/** The base the base-aware rules judge the change against; they do not run without it (contrib never passes it). */
+	quality?: QualityBase
 }): RulesCheck {
 	const { root, givenFiles } = params
 	const picked = pickFiles(params)
 	const words = readWordsOf({ root, environment: params.environment })
-	const listFindings = [...picked.findings, ...words.findings]
 	const { files } = picked
 	const recorded = givenFiles.length === 0 && params.changedList === undefined
 	const noList = words.noList === undefined ? {} : { noForbiddenWordsList: words.noList }
-	if (files.length === 0) {
-		const errors = listFindings.length
-		if (recorded) recordRules({ root, files, errors, warnings: 0 })
-		return { files, errors, warnings: 0, findings: listFindings, ...noList }
+	// over the whole change, before any file is judged: a committed or deletion-only change is judged too
+	const quality =
+		params.quality === undefined
+			? undefined
+			: runQualityPass({
+					root,
+					base: params.quality,
+					// a given folder judged as the files it holds, as the per-file rules judge it
+					givenFiles: givenFiles.length === 0 ? [] : files,
+					record: givenFiles.length === 0,
+				})
+	const judged = files.length === 0 ? undefined : judgeFiles({ ...params, files, words })
+	const findings = [
+		...picked.findings,
+		...words.findings,
+		...(judged?.findings ?? []),
+		...(quality?.findings ?? []),
+	]
+	const allowed = sumAllowed([
+		...(judged?.allowed ?? []),
+		...(quality === undefined ? [] : [quality.allowed]),
+	])
+	const errors = findings.filter((finding) => finding.severity === 'error').length
+	const warnings = findings.length - errors
+	const allowedField = Object.keys(allowed).length ? { allowed } : {}
+	if (recorded) recordRules({ root, files, errors, warnings, ...allowedField })
+	return {
+		files,
+		errors,
+		warnings,
+		findings,
+		...allowedField,
+		...noList,
+		...judged?.fields,
+		...(quality !== undefined && { quality: quality.result }),
+		...(quality !== undefined && quality.notes.length > 0 && { qualityNotes: quality.notes }),
 	}
-	const referencePatterns = [...readListedPatterns(root), ...words.patterns]
+}
+
+/**
+ * The code rules on `files`: each file's rules, the fixtures and lengths judged at the base, the released-changelog
+ * and changelog-edit rules, an error the base already holds softened; with each file's opt-out counts and the fields
+ * the run reports (a rule that did not run, each file's Dialecte-change verdict).
+ */
+function judgeFiles(
+	params: Parameters<typeof checkRules>[0] & {
+		files: string[]
+		words: { patterns: ReferencePattern[] }
+	},
+): { findings: RuleFinding[]; allowed: AllowedCounts[]; fields: Partial<RulesCheck> } {
+	const { root, files, base } = params
+	const referencePatterns = [...readListedPatterns(root), ...params.words.patterns]
 	const { names: queryNames, coreGroups, note } = readQueryNamesWithNote({ root })
 	const ranRules = ranRulesOf(queryNames)
 	const scope = dialecteScopeOf({ root, coreGroups })
-	const { base } = params
 	const checked = files.map((file) =>
 		checkFile({ root, file, referencePatterns, queryNames, ranRules, scope }),
 	)
@@ -109,7 +163,6 @@ export function checkRules(params: {
 		...(params.tree !== undefined && { tree: params.tree }),
 	})
 	const findings = [
-		...listFindings,
 		...released.findings,
 		...checkChangelogEdit({
 			root,
@@ -119,30 +172,16 @@ export function checkRules(params: {
 		}),
 		...(base === undefined
 			? fileFindings
-			: softenNotAdded({
-					findings: fileFindings,
-					added: readAddedLines({ root, base, files }),
-				})),
+			: softenNotAdded({ findings: fileFindings, added: readAddedLines({ root, base, files }) })),
 	]
-	const allowed = sumAllowed([...checked.map((result) => result.allowed), ...fixtures.allowed])
-	const errors = findings.filter((finding) => finding.severity === 'error').length
-	const warnings = findings.length - errors
-	const allowedField = Object.keys(allowed).length ? { allowed } : {}
-	if (recorded) recordRules({ root, files, errors, warnings, ...allowedField })
-	const notRun = note === undefined ? {} : { queryInLoopNotRun: note }
-	const notJudgedRelease =
-		released.notJudged === undefined ? {} : { releasedChangelogNotJudged: released.notJudged }
-	const scoped = scope === undefined ? {} : scopeFieldsOf(checked)
 	return {
-		files,
-		errors,
-		warnings,
 		findings,
-		...allowedField,
-		...noList,
-		...notRun,
-		...notJudgedRelease,
-		...scoped,
+		allowed: [...checked.map((result) => result.allowed), ...fixtures.allowed],
+		fields: {
+			...(note !== undefined && { queryInLoopNotRun: note }),
+			...(released.notJudged !== undefined && { releasedChangelogNotJudged: released.notJudged }),
+			...(scope === undefined ? {} : scopeFieldsOf(checked)),
+		},
 	}
 }
 
@@ -195,13 +234,25 @@ export function renderRuleFinding(finding: RuleFinding): string {
  * as the package names them (an unreadable list is an error); else the text files changed against HEAD and the new
  * ones.
  */
-function pickFiles(params: { root: string; givenFiles: readonly string[]; changedList?: string }): {
+function pickFiles(params: {
+	root: string
+	givenFiles: readonly string[]
+	changedList?: string
+	since?: string
+}): {
 	files: string[]
 	findings: RuleFinding[]
 } {
 	const { root, givenFiles, changedList } = params
 	if (givenFiles.length)
 		return { files: givenFiles.flatMap((path) => expandFolder({ root, path })), findings: [] }
+	if (params.since !== undefined)
+		return {
+			files: listChangedFiles({ root, since: params.since }).filter((file) =>
+				TEXT_FILE_PATTERN.test(file),
+			),
+			findings: [],
+		}
 	if (changedList === undefined)
 		return {
 			files: listChangedFiles({ root }).filter((file) => TEXT_FILE_PATTERN.test(file)),
@@ -354,8 +405,12 @@ function checkCodeRulesWithoutSql(params: CheckCodeRulesParams): RuleFinding[] {
 
 /** The quality rules a run judges: all of them, `query-in-loop` only when the API indexes name query reads. */
 function ranRulesOf(queryNames: ReadonlySet<string>): ReadonlySet<RuleName> {
+	// the base-aware rules are judged by their own pass, on the files it examined only
+	const baseAware: readonly string[] = BASE_AWARE_RULES
 	return new Set<RuleName>(
-		ALLOWABLE_RULES.filter((rule) => rule !== 'query-in-loop' || queryNames.size > 0),
+		ALLOWABLE_RULES.filter(
+			(rule) => (rule !== 'query-in-loop' || queryNames.size > 0) && !baseAware.includes(rule),
+		),
 	)
 }
 

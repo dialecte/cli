@@ -28,10 +28,21 @@ import {
 
 import ts from 'typescript'
 
-import type { ModuleAlias, ModuleResolution, ModuleResolver } from './tdd.types.ts'
+import type {
+	ModuleAlias,
+	ModuleResolution,
+	ModuleResolver,
+	ModuleResolverHost,
+} from './tdd.types.ts'
 
-export function createModuleResolver(params: { root: string }): ModuleResolver {
+export function createModuleResolver(params: {
+	root: string
+	/** The files the resolver sees (a base's file set); the disk when left out. */
+	host?: ModuleResolverHost
+}): ModuleResolver {
 	const root = resolve(params.root)
+	// the files the resolver sees: a base's file set, else the disk
+	const { isFileOf, moduleHost } = hostsOf(params.host)
 	const compilerOptions = readPathsOptions(root)
 	const pathPrefixes = compilerOptions.flatMap((options) =>
 		Object.keys(options.paths ?? {}).map((key) => key.replace(/\*.*$/, '')),
@@ -71,28 +82,62 @@ export function createModuleResolver(params: { root: string }): ModuleResolver {
 		const specifier = params.specifier.replace(SPECIFIER_QUERY_PATTERN, '')
 		const absoluteFrom = join(root, params.from)
 		if (specifier.startsWith('.') || isAbsolute(specifier))
-			return localOrUnresolved({ root, path: resolve(dirname(absoluteFrom), specifier) })
-		for (const options of compilerOptions) {
-			const resolved = ts.resolveModuleName(specifier, absoluteFrom, options, ts.sys).resolvedModule
-			if (resolved && !resolved.isExternalLibraryImport) {
-				const local = localOrUnresolved({ root, path: resolved.resolvedFileName })
-				if (local.kind === 'local') return local
-			}
-		}
-		const matching = aliasesOfSpecifier(specifier)
-		for (const alias of matching) {
-			const local = localOrUnresolved({
+			return localOrUnresolved({
 				root,
-				path: join(alias.replacement, specifier.slice(alias.find.length)),
+				path: resolve(dirname(absoluteFrom), specifier),
+				isFile: isFileOf,
 			})
-			if (local.kind === 'local') return local
-		}
+		const matching = aliasesOfSpecifier(specifier)
+		const mapped = resolveMapped({
+			root,
+			specifier,
+			absoluteFrom,
+			compilerOptions,
+			aliases: matching,
+			isFile: isFileOf,
+			moduleHost,
+		})
+		if (mapped !== undefined) return mapped
 		const looksLocal =
 			LOCAL_SPECIFIER_PATTERN.test(specifier) ||
 			pathPrefixes.some((prefix) => prefix && specifier.startsWith(prefix)) ||
 			matching.length > 0
 		return looksLocal ? { kind: 'unresolved' } : { kind: 'package' }
 	}
+}
+
+/**
+ * The local file a mapped specifier names: through the tsconfig `paths` of `compilerOptions`, then through the Vite
+ * `aliases` it starts with, each checked against the files `isFile` sees; undefined when none names one.
+ */
+function resolveMapped(params: {
+	root: string
+	specifier: string
+	absoluteFrom: string
+	compilerOptions: readonly ts.CompilerOptions[]
+	aliases: readonly ModuleAlias[]
+	isFile: (path: string) => boolean
+	moduleHost: ts.ModuleResolutionHost
+}): ModuleResolution | undefined {
+	const { root, specifier, isFile } = params
+	for (const options of params.compilerOptions) {
+		const resolved = ts.resolveModuleName(
+			specifier,
+			params.absoluteFrom,
+			options,
+			params.moduleHost,
+		).resolvedModule
+		if (resolved && !resolved.isExternalLibraryImport) {
+			const local = localOrUnresolved({ root, path: resolved.resolvedFileName, isFile })
+			if (local.kind === 'local') return local
+		}
+	}
+	for (const alias of params.aliases) {
+		const path = join(alias.replacement, specifier.slice(alias.find.length))
+		const local = localOrUnresolved({ root, path, isFile })
+		if (local.kind === 'local') return local
+	}
+	return undefined
 }
 
 /** The compiler options of every tsconfig of the root that maps `paths`. */
@@ -129,7 +174,7 @@ function readViteAliases(root: string): ModuleAlias[] {
 function readConfigFiles(params: { root: string; property: string }): string[] {
 	const { root } = params
 	const files = configPathsOf(params).paths.flatMap(function setupFileOf(path) {
-		const resolution = localOrUnresolved({ root, path: resolve(root, path) })
+		const resolution = localOrUnresolved({ root, path: resolve(root, path), isFile })
 		return resolution.kind === 'local' ? [resolution.file.split(sep).join(posix.sep)] : []
 	})
 	return [...new Set(files)].sort()
@@ -158,14 +203,18 @@ function aliasesOf(params: { root: string; value: ts.Expression }): ModuleAlias[
 }
 
 /** The file a path names (with an extension added, or a folder's index), inside the root. */
-function localOrUnresolved(params: { root: string; path: string }): ModuleResolution {
+function localOrUnresolved(params: {
+	root: string
+	path: string
+	isFile: (path: string) => boolean
+}): ModuleResolution {
 	const base = normalize(params.path)
 	const candidates = [
 		base,
 		...MODULE_EXTENSIONS.map((extension) => `${base}${extension}`),
 		...MODULE_EXTENSIONS.map((extension) => join(base, `index${extension}`)),
 	]
-	const found = candidates.find(isFile)
+	const found = candidates.find(params.isFile)
 	if (!found) return { kind: 'unresolved' }
 	const file = relative(params.root, found)
 	return file.startsWith('..') || file.startsWith('node_modules/')
@@ -178,5 +227,32 @@ function isFile(path: string): boolean {
 		return statSync(path).isFile()
 	} catch {
 		return false
+	}
+}
+
+/**
+ * A host over `files` (relative to `root`): the resolver sees those files, never the disk.
+ *
+ * @intent resolve imports over another commit's file set
+ * @internal
+ */
+export function fileSetHost(params: { root: string; files: Iterable<string> }): ModuleResolverHost {
+	const known = new Set([...params.files].map((file) => resolve(params.root, file)))
+	return {
+		isFile: function isKnownFile(path: string): boolean {
+			return known.has(resolve(path))
+		},
+	}
+}
+
+/** The file check and the compiler's resolution host of `host`: the disk's when it is left out. */
+function hostsOf(host: ModuleResolverHost | undefined): {
+	isFileOf: (path: string) => boolean
+	moduleHost: ts.ModuleResolutionHost
+} {
+	if (host === undefined) return { isFileOf: isFile, moduleHost: ts.sys }
+	return {
+		isFileOf: host.isFile,
+		moduleHost: { fileExists: host.isFile, readFile: ts.sys.readFile },
 	}
 }

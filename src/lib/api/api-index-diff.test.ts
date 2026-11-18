@@ -4,7 +4,7 @@ import {
 	temporaryFolder,
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
-import { compareApiIndexes } from './api-index-diff.ts'
+import { compareApiIndexes, diffApiIndexes } from './api-index-diff.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -133,5 +133,119 @@ describe('compareApiIndexes', () => {
 		})
 
 		expect(compareApiIndexes({ root, base: MISSING_BASE })).toBe('unknown')
+	})
+})
+
+/** An index of `@x/runtime` holding `methods` (route, signature, summary, declared at), as `skills generate` writes it. */
+function indexOf(
+	methods: { path: string; signature: string; summary: string; declaredAt: string }[],
+): string {
+	return `${JSON.stringify(
+		{
+			package: '@x/runtime',
+			methods: methods.map((method) => ({
+				...method,
+				root: 'q',
+				otherRoutes: [],
+				intents: [],
+				example: null,
+			})),
+		},
+		null,
+		2,
+	)}\n`
+}
+
+const RUN = {
+	path: 'doc.query.run',
+	signature: '(): void',
+	summary: 'Runs it.',
+	declaredAt: 'src/run.ts:1',
+}
+const RUN_RESIGNED = { ...RUN, signature: '(params: { fast: boolean }): void' }
+const STOP = {
+	path: 'doc.query.stop',
+	signature: '(): void',
+	summary: 'Stops it.',
+	declaredAt: 'src/stop.ts:1',
+}
+const START = {
+	path: 'doc.query.start',
+	signature: '(): void',
+	summary: 'Starts it.',
+	declaredAt: 'src/start.ts:1',
+}
+
+/** A runtime package committed with `committed`, then `worktree` written over it: its root and base commit. */
+function runtimeChange(params: {
+	committed: Record<string, string>
+	worktree: Record<string, string>
+}): { root: string; base: string } {
+	const root = initializeRepository({
+		root: temporaryFolder('api-index-entries-'),
+		files: {
+			'package.json': RUNTIME_PACKAGE,
+			'src/index.ts': 'export const a = 1\n',
+			...params.committed,
+		},
+	})
+	const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+	writeFiles({ root, files: params.worktree })
+	return { root, base }
+}
+
+describe('diffApiIndexes', () => {
+	it('an index that gains, loses and re-signs an entry → three entries by route, each with where it is declared', () => {
+		const { root, base } = runtimeChange({
+			committed: { [INDEX_PATH]: indexOf([RUN, STOP]) },
+			worktree: { [INDEX_PATH]: indexOf([RUN_RESIGNED, START]) },
+		})
+
+		expect(diffApiIndexes({ root, base })).toEqual({
+			kind: 'compared',
+			indexChanged: true,
+			entries: [
+				{ path: 'doc.query.run', change: 'signature', declaredAt: 'src/run.ts:1' },
+				{ path: 'doc.query.start', change: 'added', declaredAt: 'src/start.ts:1' },
+				{ path: 'doc.query.stop', change: 'removed', declaredAt: 'src/stop.ts:1' },
+			],
+		})
+	})
+
+	it('an index whose only change is a summary → no entry, the index changed (compareApiIndexes reads changed)', () => {
+		const { root, base } = runtimeChange({
+			committed: { [INDEX_PATH]: indexOf([RUN]) },
+			worktree: { [INDEX_PATH]: indexOf([{ ...RUN, summary: 'Runs it now.' }]) },
+		})
+
+		expect({
+			diff: diffApiIndexes({ root, base }),
+			change: compareApiIndexes({ root, base }),
+		}).toEqual({
+			diff: { kind: 'compared', indexChanged: true, entries: [] },
+			change: 'changed',
+		})
+	})
+
+	it('an export source changed while the index did not → unknown, saying so', () => {
+		const { root, base } = runtimeChange({
+			committed: { [INDEX_PATH]: indexOf([RUN]) },
+			worktree: { 'src/index.ts': 'export const a = 2\n' },
+		})
+
+		expect(diffApiIndexes({ root, base })).toEqual({
+			kind: 'unknown',
+			why: 'an export source changed while every api.json did not: run dialecte skills generate',
+		})
+	})
+
+	it('a package with a bin → none', () => {
+		const root = initializeRepository({
+			root: temporaryFolder('api-index-entries-'),
+			files: { 'package.json': CLI_PACKAGE, 'src/cli.ts': 'one\n' },
+		})
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+
+		expect(diffApiIndexes({ root, base })).toEqual({ kind: 'none' })
 	})
 })

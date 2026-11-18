@@ -88,7 +88,7 @@ describe('parseSourceFile', () => {
 		{ state: 'an exported type', text: 'export type Thing = { a: string }\n' },
 		{ state: 'a re-export', text: "export { x } from './x.ts'\n" },
 	])('$state → no entry', ({ text }) => {
-		expect(parseSourceFile({ file: 'src/a.ts', text })).toEqual({ entries: [] })
+		expect(parseSourceFile({ file: 'src/a.ts', text }).entries).toEqual([])
 	})
 
 	it('the export of a local function → one entry at the function line', () => {

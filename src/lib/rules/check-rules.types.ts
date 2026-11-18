@@ -1,3 +1,4 @@
+import type { QualityResult } from '../quality/quality.types.ts'
 import type { AllowedCounts } from './allow-comments.types.ts'
 import type { RuleFinding } from './check-code-rules.types.ts'
 import type { DialecteChangeEntry, DialecteChangeReader } from './dialecte-change.types.ts'
@@ -25,6 +26,12 @@ export type RulesCheck = {
 	notJudged?: number
 	/** The line saying the base came from the lot or the worktree (no gate base given); absent otherwise. */
 	baseLine?: string
+	/** What the base-aware rules found, against which base; absent when they did not run. */
+	quality?: QualityResult
+	/** Where the base-aware rules stand: run since a base, or not run in a clone outside any lot; absent with no base. */
+	qualityLine?: string
+	/** The notes under the quality line: a removed public entry a page still names, an unknown public API, aliases changed. */
+	qualityNotes?: string[]
 }
 
 /**

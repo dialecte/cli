@@ -41,8 +41,13 @@ function gateRecordName(mode: GateRecordMode): string {
 	return GATE_RECORD_FILE.replace('{mode}', mode)
 }
 
-/** The record parsed; undefined when there is none or it cannot be read as JSON. */
-function readRecord<Parsed>(params: { root: string; name: string }): Parsed | undefined {
+/**
+ * A record of the worktree's git folder named `name`, parsed; undefined when none or not JSON.
+ *
+ * @intent read one record of the worktree's git folder
+ * @internal
+ */
+export function readRecord<Parsed>(params: { root: string; name: string }): Parsed | undefined {
 	const path = recordPathOf(params)
 	if (!existsSync(path)) return undefined
 	try {
@@ -52,7 +57,13 @@ function readRecord<Parsed>(params: { root: string; name: string }): Parsed | un
 	}
 }
 
-function writeRecord(params: { root: string; name: string; record: object }): void {
+/**
+ * Writes `record` whole as the record `name` of the worktree's git folder.
+ *
+ * @intent write one record of the worktree's git folder
+ * @internal
+ */
+export function writeRecord(params: { root: string; name: string; record: object }): void {
 	writeFileSync(recordPathOf(params), `${JSON.stringify(params.record, null, 2)}\n`)
 }
 

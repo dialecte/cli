@@ -18,3 +18,11 @@ export const SCAFFOLDING_IDENTIFIERS: readonly string[] = ['testCase']
 
 /** A fixture constant of a test file (`REFS`, `BAY_RECORD`): all capitals. */
 export const FIXTURE_CONSTANT_PATTERN = /^[A-Z][A-Z0-9_]+$/
+
+/** Why the public API entries of a change cannot be told. */
+export const API_DIFF_UNKNOWN = {
+	noBase: 'the base cannot be read',
+	notRegenerated:
+		'an export source changed while every api.json did not: run dialecte skills generate',
+	unreadable: 'an api.json of the base or the tree does not parse',
+} as const

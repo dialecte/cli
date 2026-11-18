@@ -43,8 +43,11 @@ export function readSourceFunctions(params: {
 /**
  * The source files to read, relative to `root` and sorted: in a git work tree the ones git tracks or would add
  * (ignored ones left out), else every file of the folder; TypeScript only, declaration files and tests left out.
+ *
+ * @intent list the implementation files of a package's source
+ * @internal
  */
-function listSourceFiles(root: string): string[] {
+export function listSourceFiles(root: string): string[] {
 	const files = isInWorkTree(root)
 		? listRepositoryFiles({ root, folder: SOURCE_FOLDER }).filter(function isOnDisk(file) {
 				return existsSync(join(root, file))
@@ -52,9 +55,20 @@ function listSourceFiles(root: string): string[] {
 		: listTreeFiles(join(root, SOURCE_FOLDER)).map(function pathFromRoot(file) {
 				return `${SOURCE_FOLDER}/${file}`
 			})
-	return files
-		.filter(function isSourceFile(file) {
-			return SOURCE_FILE_PATTERN.test(file) && !TEST_FILE_PATTERN.test(file)
-		})
-		.sort(TEXT_COLLATOR.compare)
+	return files.filter(isSourceFilePath).sort(TEXT_COLLATOR.compare)
+}
+
+/**
+ * Whether `file` (relative to the package root) is a source file the reader parses: TypeScript under `src/`,
+ * declaration files and tests left out.
+ *
+ * @intent tell an implementation file of the source from a test or a declaration
+ * @internal
+ */
+export function isSourceFilePath(file: string): boolean {
+	return (
+		file.startsWith(`${SOURCE_FOLDER}/`) &&
+		SOURCE_FILE_PATTERN.test(file) &&
+		!TEST_FILE_PATTERN.test(file)
+	)
 }

@@ -5,7 +5,7 @@ export const SOURCE_INDEX_FILE = 'dialecte-source-index.json'
  * The schema of the cache: another number is a cache to rebuild. Bump it with any change of the cache's shape or of
  * what the parser answers for a file (a cache of another cli version is rebuilt anyway: its `reader` differs).
  */
-export const SOURCE_INDEX_SCHEMA = 1
+export const SOURCE_INDEX_SCHEMA = 2
 
 /** The folder of a package the source reader reads, relative to the package root. */
 export const SOURCE_FOLDER = 'src'

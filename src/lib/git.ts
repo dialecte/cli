@@ -144,11 +144,16 @@ export function readStagedFile(params: { root: string; file: string }): Buffer |
  * unless asked. Relative to the repository root, sorted. The lot declaration (`.dialecte/lot.json`) is
  * never part of a change: the orchestrator writes it for the gate, nobody commits it.
  */
-export function listChangedFiles(params: { root: string; withDeleted?: boolean }): string[] {
+export function listChangedFiles(params: {
+	root: string
+	withDeleted?: boolean
+	/** The commit the change is read from (`rules --base`); HEAD when left out. */
+	since?: string
+}): string[] {
 	const filter = params.withDeleted ? [] : ['--diff-filter=d']
 	const changed = readGit({
 		root: params.root,
-		args: ['diff', '--name-only', '--relative', '--no-renames', ...filter, 'HEAD'],
+		args: ['diff', '--name-only', '--relative', '--no-renames', ...filter, params.since ?? 'HEAD'],
 	})
 	const untracked = readGit({
 		root: params.root,
