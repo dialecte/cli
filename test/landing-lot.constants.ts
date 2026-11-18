@@ -18,3 +18,6 @@ export const LANDING_NOW = new Date('2026-11-17T22:00:00.000Z')
 
 /** The declaration a lot worktree holds (`.dialecte/lot.json`). */
 export const OWN_DECLARATION = '{ "tdd": "exempt: a landing case" }\n'
+
+/** A base branch the repository's package.json names that exists nowhere: no base branch resolves. */
+export const MISSING_BASE_BRANCH = 'trunk'

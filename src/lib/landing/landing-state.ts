@@ -9,7 +9,11 @@ import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { isAncestorCommit, readCommitOrNone, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { isContainedIn } from './contained.ts'
-import { LANDING_UNKNOWN } from './landing-state.constants.ts'
+import {
+	LANDING_UNKNOWN,
+	REFLOG_ENTRY_FORMAT,
+	REFLOG_ENTRY_PATTERN,
+} from './landing-state.constants.ts'
 
 import type { PullRequest } from '../host/host.types.ts'
 import type { LandingQuery, LandingState } from './landing-state.types.ts'
@@ -87,16 +91,41 @@ function readLotPull(params: { query: LandingQuery; tip: string }): {
 	return {}
 }
 
-/** `commit` is the lot's own: beyond its cut, and held by its tip or reached once by its branch (its reflog). */
+/**
+ * `commit` is the lot's own: beyond its cut, and held by its tip or reached by its branch (its reflog) since the lot was
+ * created (`since`): a branch name reused by a new lot never takes what the name reached before.
+ */
 function isLotCommit(params: { query: LandingQuery; tip: string; commit: string }): boolean {
 	const { query, commit } = params
 	const { root } = query
 	if (commit === '' || isAncestorCommit({ root, ancestor: commit, descendant: query.cut }))
 		return false
 	if (isAncestorCommit({ root, ancestor: commit, descendant: params.tip })) return true
+	return reflogSince({ root, branch: query.branch, since: query.since }).includes(commit)
+}
+
+/** The commits the branch's reflog names, only its entries written at or after `since` when given (ISO 8601). */
+function reflogSince(params: {
+	root: string
+	branch: string
+	since: string | undefined
+}): string[] {
 	const reached = tryReadGit({
-		root,
-		args: ['reflog', 'show', '--format=%H', `refs/heads/${query.branch}`, '--'],
+		root: params.root,
+		args: [
+			'reflog',
+			'show',
+			'--date=unix',
+			REFLOG_ENTRY_FORMAT,
+			`refs/heads/${params.branch}`,
+			'--',
+		],
 	})
-	return (reached ?? '').split('\n').includes(commit)
+	const from = params.since === undefined ? undefined : Date.parse(params.since) / 1000
+	return (reached ?? '').split('\n').flatMap(function entryCommit(line): string[] {
+		const match = REFLOG_ENTRY_PATTERN.exec(line)
+		if (match === null) return []
+		const [, commit = '', seconds = ''] = match
+		return from === undefined || Number.isNaN(from) || Number(seconds) >= from ? [commit] : []
+	})
 }

@@ -1,13 +1,14 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { createBriefWorkspace } from '../../test/brief-workspace.ts'
 /**
  * `dialecte lot close` for a lot whose hand-over was committed outside its own folder: once the lot's branch is on
  * main, the lot reads `committed` and its worktree closes, the outcome naming why. Every near miss keeps the lot's
  * worktree with the reason it kept before; each runs beside a landed lot that closes, so a close that lets every lot go
  * fails the row.
  */
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-
-import { createBriefWorkspace } from '../../test/brief-workspace.ts'
+import { recordingHost } from '../../test/land-lot.ts'
 import { NEAR_MISS_LOT } from '../../test/landed-store-lot-workspace.constants.ts'
 import { addLandedLot, addLotSharingWorktree } from '../../test/landed-store-lot-workspace.ts'
 import { KEEP_NOW } from '../../test/lot-keep-workspace.constants.ts'
@@ -29,6 +30,7 @@ afterEach(function restoreEnvironment() {
 function closing(params: { workspace: BriefWorkspace; names: string[]; json?: boolean }) {
 	const { spawner } = createRecordingSpawner()
 	return runLotClose({
+		host: recordingHost().host,
 		cwd: params.workspace.repository,
 		argv: params.json === false ? params.names : [...params.names, '--json'],
 		now: KEEP_NOW,

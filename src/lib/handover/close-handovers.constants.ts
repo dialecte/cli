@@ -1,7 +1,9 @@
 /** `lot close`: what keeps a worktree beyond the shared keep rules, and why a lot cannot be registered. */
 
-/** Work the worktree holds that its base does not: `{work}` (`unlandedWorkText`), `{worktree}` where to look. */
-export const CLOSE_UNLANDED_WORK = '{work} (look: git -C {worktree} reflog HEAD)'
+/**
+ * Work that keeps the worktree: `{work}` (`workSinceLandingText` or `lostWorkText`), `{worktree}` where to look.
+ */
+export const CLOSE_KEPT_WORK = '{work} (look: git -C {worktree} reflog HEAD)'
 
 /** A merged lot with no worktree to close: `{lot}` its name. */
 export const NO_LOT_WORKTREE = 'the lot {lot} names no worktree on disk: nothing to close'

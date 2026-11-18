@@ -316,18 +316,20 @@ describe(
 			})
 
 			expect({
-				named: closed.output.includes('commit(s) of work not in main'),
+				named: closed.output.includes('1 commit(s) made since its landing'),
 				worktree: existsSync(worktree),
 			}).toEqual({ named: true, worktree: true })
 		})
 
-		it('a dropped work-in-progress commit touching a file outside the lot paths → still kept, named', () => {
+		it('a dropped work-in-progress commit touching a file outside the lot paths → closed: its branch reflog holds it, named with the reflog clock', () => {
 			const { closed, worktree } = closeRebuiltLot({ wip: { 'README.md': 'wip\n' } })
 
 			expect({
-				named: closed.output.includes('1 commit(s) of work not in main'),
+				named: closed.output.includes(
+					"dropped from the branch, kept in its reflog until git's reflog expiry",
+				),
 				worktree: existsSync(worktree),
-			}).toEqual({ named: true, worktree: true })
+			}).toEqual({ named: true, worktree: false })
 		})
 	},
 )
@@ -421,11 +423,11 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 	it('its pre-rebase commits only in the HEAD reflog, their work squash-merged → the worktree closes', () => {
 		const { closed, worktree } = landRebasedThenClose()
 
-		expect(closed.output).not.toContain('of work not in main')
+		expect(closed.output).not.toContain('its removal would lose')
 		expect(existsSync(worktree)).toBe(false)
 	})
 
-	it('a reflog commit with work of its own made after the landing, then dropped → still kept, named', () => {
+	it('a reflog commit with work of its own made after the landing, then dropped → closed: its branch reflog holds it, named with the reflog clock', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: function dropOne(landed) {
 				writeFiles({ root: landed.worktree, files: { 'src/dropped.ts': 'export {}\n' } })
@@ -435,8 +437,10 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 			},
 		})
 
-		expect(closed.output).toContain('1 commit(s) of work not in main')
-		expect(existsSync(worktree)).toBe(true)
+		expect(closed.output).toContain(
+			"dropped from the branch, kept in its reflog until git's reflog expiry",
+		)
+		expect(existsSync(worktree)).toBe(false)
 	})
 
 	/** After the landing: a commit beside the lot's own (same parent) adding `src/x.ts` as `text`, then dropped. */
@@ -452,22 +456,26 @@ describe('dialecte lot close of a lot its landing rebased', { timeout: STORE_CAS
 		}
 	}
 
-	it('a dropped commit the same as the lot one but for its indentation -> still kept, never counted landed', () => {
+	it('a dropped commit the same as the lot one but for its indentation -> closed, never counted landed: named as held by the branch reflog only', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: dropSibling('  export const x = 1\n'),
 		})
 
-		expect(closed.output).toContain('of work not in main')
-		expect(existsSync(worktree)).toBe(true)
+		expect(closed.output).toContain(
+			"dropped from the branch, kept in its reflog until git's reflog expiry",
+		)
+		expect(existsSync(worktree)).toBe(false)
 	})
 
-	it('a dropped commit with another patch -> still kept', () => {
+	it('a dropped commit with another patch -> closed, named as held by the branch reflog only', () => {
 		const { closed, worktree } = landRebasedThenClose({
 			afterLanding: dropSibling('export const x = 2\n'),
 		})
 
-		expect(closed.output).toContain('of work not in main')
-		expect(existsSync(worktree)).toBe(true)
+		expect(closed.output).toContain(
+			"dropped from the branch, kept in its reflog until git's reflog expiry",
+		)
+		expect(existsSync(worktree)).toBe(false)
 	})
 })
 

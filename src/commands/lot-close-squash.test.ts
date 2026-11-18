@@ -21,18 +21,29 @@ import {
 	closeArgumentsOf,
 	closeOutcomesOf,
 	commitAfterLanding,
+	configureMissingBase,
 	landingLotOf,
+	lotBranchTipOf,
+	lotEntryStateOf,
 	lotHeadOf,
 	registerCommittedHandover,
 	registerLotEntry,
+	writeLandedFact,
 	writeLandingRecord,
 } from '../../test/landing-lot.ts'
+import { ORIGIN_MAIN } from '../../test/landing-repository.constants.ts'
 import {
+	commitDetached,
+	deleteOriginBranch,
 	editOnOrigin,
 	landingHostOf,
 	mergeOnOrigin,
 	pullRequestOf,
+	rebaseOnto,
+	rebaseResolving,
+	strayCommitOf,
 } from '../../test/landing-repository.ts'
+import { REFUSING_GH_TEXT } from '../../test/suite-guard/refusing-gh.constants.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
@@ -156,11 +167,7 @@ const CLOSE_ROWS: CloseRow[] = [
 			outcomes: [
 				{
 					closed: false,
-					kept: expect.stringMatching(
-						new RegExp(
-							`1 commit\\(s\\) of work not in main: ${lotHeadOf(lot).slice(0, SHORT_SHA_LENGTH)}`,
-						),
-					),
+					kept: expect.stringContaining(lotHeadOf(lot).slice(0, SHORT_SHA_LENGTH)),
 				},
 			],
 			worktreeGone: false,
@@ -207,6 +214,8 @@ function closeLeft(params: { lot: LandingLot; result: CommandResult }) {
 		worktreeGone: !existsSync(lot.worktree),
 		landed: readLanded({ lotFolder: lot.lotFolder }),
 		archived: archivedDeclarationOf(lot),
+		entry: lotEntryStateOf(lot),
+		branchTip: lotBranchTipOf(lot),
 	}
 }
 
@@ -220,6 +229,177 @@ describe('lot close: the landing state', { timeout: STORE_CASE_TIMEOUT }, () => 
 				closeLeft({ lot, result: runLotClose(closeArgumentsOf({ lot, names, host })) }),
 			).toMatchObject(row.expected(lot))
 		})
+})
+
+/**
+ * The 0169 shape: the lot's pull request opened by hand (no landing.json), squash-merged, main editing the same lines
+ * since, and origin's branch deleted after the merge: git alone cannot prove the landing, nothing says the lot was
+ * pushed.
+ */
+function squashedUnpushed(lot: LandingLot): void {
+	mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+	editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
+	deleteOriginBranch({ repository: lot.repository })
+}
+
+/** A close row whose arrange names a commit its expected outcome reads (made before the close moves anything). */
+type RemovalRow = {
+	title: string
+	arrange: (lot: LandingLot) => { names: string[]; host: HostAdapter; commit?: string }
+	expected: (params: { lot: LandingLot; commit: string | undefined }) => Record<string, unknown>
+}
+
+const REMOVAL_ROWS: RemovalRow[] = [
+	{
+		title:
+			'the 0191 shape: two rebases, the second resolving a conflict, squash-merged, main editing the same lines since, the host says merged → closed, the branch kept',
+		arrange: (lot) => {
+			editOnOrigin({
+				repository: lot.repository,
+				files: { 'src/main.ts': 'export const main = 1\n' },
+			})
+			rebaseOnto({ worktree: lot.worktree, onto: ORIGIN_MAIN })
+			editOnOrigin({
+				repository: lot.repository,
+				files: { [LANDING_LOT_FILE]: 'export const x = 5\n' },
+			})
+			const resolved = rebaseResolving({
+				worktree: lot.worktree,
+				onto: ORIGIN_MAIN,
+				files: { [LANDING_LOT_FILE]: 'export const x = 15\n' },
+			})
+			mergeOnOrigin({ repository: lot.repository, how: 'squash' })
+			editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
+			return {
+				names: [lot.name],
+				host: landingHostOf({
+					byBranch: {
+						[lot.branch]: pullRequestOf({
+							number: LANDING_PULL_NUMBER,
+							state: 'merged',
+							head: resolved,
+						}),
+					},
+				}).host,
+				commit: resolved,
+			}
+		},
+		expected: ({ commit }) => ({
+			outcomes: [{ closed: true }],
+			worktreeGone: true,
+			landed: { how: 'host', tip: commit },
+			branchTip: commit,
+		}),
+	},
+	{
+		title:
+			'the 0169 shape: a pull request opened outside lot land, squash-merged, main editing the same lines, origin s branch deleted, the host merged by branch → landed.json written, the entry committed, the declaration archived, closed',
+		arrange: (lot) => {
+			addOwnDeclaration(lot)
+			squashedUnpushed(lot)
+			return { names: [lot.name], host: mergedByHost(lot) }
+		},
+		expected: ({ lot }) => ({
+			outcomes: [{ closed: true, landed: expect.stringContaining(`#${LANDING_PULL_NUMBER}`) }],
+			worktreeGone: true,
+			landed: { how: 'host', tip: lot.tip, pull: { number: LANDING_PULL_NUMBER } },
+			entry: 'committed',
+			archived: OWN_DECLARATION,
+		}),
+	},
+	{
+		title:
+			'a merged pull request found by branch whose head the branch never reached, origin s branch deleted → kept, nothing written',
+		arrange: (lot) => {
+			squashedUnpushed(lot)
+			return {
+				names: [lot.name],
+				host: landingHostOf({
+					byBranch: {
+						[lot.branch]: pullRequestOf({
+							number: LANDING_PULL_NUMBER,
+							state: 'merged',
+							head: strayCommitOf({ root: lot.workspace.repository, parent: lot.repository.cut }),
+						}),
+					},
+				}).host,
+			}
+		},
+		expected: () => ({
+			outcomes: [{ closed: false }],
+			worktreeGone: false,
+			landed: undefined,
+		}),
+	},
+	{
+		title:
+			'the host refusing, the lot squash-merged, main editing the same lines, origin s branch deleted → kept, naming the refusal',
+		arrange: (lot) => {
+			squashedUnpushed(lot)
+			return { names: [lot.name], host: landingHostOf({ refusal: 'gh: offline' }).host }
+		},
+		expected: () => ({
+			outcomes: [{ closed: false, kept: expect.stringContaining('gh: offline') }],
+			worktreeGone: false,
+			landed: undefined,
+		}),
+	},
+	{
+		title:
+			'no base branch resolves, a landed lot whose worktree made a commit on a detached HEAD → kept, naming the commit (the loss check runs without a base)',
+		arrange: (lot) => {
+			writeLandedFact({ lot, tip: lot.tip })
+			const entry = registerLotEntry({ lot })
+			configureMissingBase(lot)
+			const detached = commitDetached({
+				worktree: lot.worktree,
+				files: { 'src/detached.ts': 'export const detached = 1\n' },
+				reattach: true,
+			})
+			return { names: [entry], host: silentHost(), commit: detached }
+		},
+		expected: ({ commit }) => ({
+			outcomes: [
+				{
+					closed: false,
+					kept: expect.stringContaining((commit ?? '').slice(0, SHORT_SHA_LENGTH)),
+				},
+			],
+			worktreeGone: false,
+		}),
+	},
+]
+
+describe(
+	'lot close: what a removal loses, and the host asked by branch',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		for (const row of REMOVAL_ROWS)
+			it(row.title, () => {
+				const lot = landingLotOf()
+				const { names, host, commit } = row.arrange(lot)
+
+				expect(
+					closeLeft({ lot, result: runLotClose(closeArgumentsOf({ lot, names, host })) }),
+				).toMatchObject(row.expected({ lot, commit }))
+			})
+	},
+)
+
+describe('lot close: no real gh in the suite', { timeout: STORE_CASE_TIMEOUT }, () => {
+	it('a close built with no fake host, the 0169 shape → kept on the refusing gh of the suite, never the real one', () => {
+		const lot = landingLotOf()
+		squashedUnpushed(lot)
+		const { host: _faked, ...withoutHost } = closeArgumentsOf({
+			lot,
+			names: [lot.name],
+			host: silentHost(),
+		})
+
+		expect(closeOutcomesOf(runLotClose(withoutHost))).toEqual([
+			{ closed: false, kept: expect.stringContaining(REFUSING_GH_TEXT) },
+		])
+	})
 })
 
 describe('lot status: the landing state', { timeout: STORE_CASE_TIMEOUT }, () => {

@@ -21,9 +21,11 @@ import { STACK_PULL_STATES, STACK_TEXT } from '../store/stack.constants.ts'
 import { pullStateOf, readStack, stackLineText, stackTextOf } from '../store/stack.ts'
 import { listLotFolderNames, locateStore } from '../store/store-folder.ts'
 import { LOTS_KEEPING_NOTHING } from '../store/store.constants.ts'
+import { isContainedIn } from './contained.ts'
 import { LANDED_SCHEMA } from './landed-record.constants.ts'
 import { readLanded, writeLanded } from './landed-record.ts'
 import { readLandingState } from './landing-state.ts'
+import { workSinceLanding, workSinceLandingText } from './lost-work.ts'
 import {
 	HOST_SILENT_TEXT,
 	LANDED_LINES,
@@ -32,7 +34,6 @@ import {
 	NOT_PROVABLE_OFFLINE,
 	STACK_UNREADABLE,
 } from './lot-landing.constants.ts'
-import { unlandedWork, unlandedWorkText } from './unlanded-work.ts'
 
 import type { HostAdapter } from '../host/host.types.ts'
 import type { LotStateInput } from '../store/store.types.ts'
@@ -41,9 +42,10 @@ import type { LotLanding, PruneLotLanding, StatusLanding } from './lot-landing.t
 
 /**
  * The landing of the store lot in `lotFolder`: from its landed fact when its folder holds one (no git, no host), else
- * the landing state git reads now, with `host` asked only for a lot that was pushed (a pull request recorded, or its
- * branch on origin: a lot never pushed has no pull request); refused when its identity or its base branch does not
- * read.
+ * the landing state git reads now, with `host` asked whenever it is given (a verb that acts: a pull request opened by
+ * hand, its branch deleted on origin after the merge, is still found), or only for a lot that was pushed when
+ * `onlyPushed` (a verb that displays: a pull request recorded, or its branch on origin); refused when its identity or
+ * its base branch does not read.
  *
  * @intent read whether a store lot landed, once, for every verb
  * @internal
@@ -53,6 +55,8 @@ export function readLotLanding(params: {
 	/** The repository its refs are read in; the store's own repository when left out. */
 	root?: string
 	host?: HostAdapter
+	/** The host asked only for a lot that was pushed: `lot status`'s stack line never runs it for an unpushed parent. */
+	onlyPushed?: boolean
 }): LotLanding | { refusal: string } {
 	const { lotFolder } = params
 	const lot = basename(lotFolder)
@@ -82,14 +86,16 @@ export function readLotLanding(params: {
 	// only a proof says merged: the landed fact above, else git (ancestor, tree) or the host. A registry `committed`
 	// is no proof: a hand-over run commits on the lot's own branch, nothing pushed nor on the base
 	const pullNumber = readLanding({ lotFolder })?.number
-	const pushed = isPushed({ root, branch: identity.branch, pullNumber })
+	const asked =
+		params.onlyPushed !== true || isPushed({ root, branch: identity.branch, pullNumber })
 	const state = readLandingState({
 		root,
 		branch: identity.branch,
 		baseRef: base.ref,
 		cut: identity.base.commit,
+		since: identity.created,
 		pullNumber,
-		...(pushed && params.host !== undefined && { host: params.host }),
+		...(asked && params.host !== undefined && { host: params.host }),
 	})
 	return { lot, lotFolder, identity, root, base, state }
 }
@@ -157,15 +163,15 @@ export function notLandedTextOf(landing: LotLanding): string {
 	const unlanded =
 		since === undefined
 			? fillMessage({ template: NOT_LANDED_TEXTS.unlanded, values: { base } })
-			: unlandedWorkText({ commits: since, base })
+			: workSinceLandingText(since)
 	if (state.kind !== 'unlanded' || state.hostRefusal === undefined) return unlanded
 	return `${unlanded}; ${fillMessage({ template: HOST_SILENT_TEXT, values: { reason: state.hostRefusal } })}`
 }
 
 /**
- * The work a lot holds since part of it landed: its unlanded commits (`unlandedWork`) when at least one commit of its
- * branch beyond the base is contained in the base (a squash, then commits after it); undefined when none of its work
- * is proven landed, or nothing is left.
+ * The work a lot holds since part of it landed (`workSinceLanding`): the commits of its branch beyond the newest one
+ * whose work the base contains (a squash, then commits after it); undefined when none of its work is proven landed, or
+ * nothing is left.
  */
 function workSinceLandingOf(landing: LotLanding): string[] | undefined {
 	const { root, identity, base } = landing
@@ -174,14 +180,15 @@ function workSinceLandingOf(landing: LotLanding): string[] | undefined {
 	const beyond = readGit({ root, args: ['rev-list', branchRef, '--not', base.ref] })
 		.split('\n')
 		.filter(Boolean)
-	const unlanded = unlandedWork({
+	const landedTip = beyond.find((commit) => isContainedIn({ root, baseRef: base.ref, commit }))
+	if (landedTip === undefined) return undefined
+	const since = workSinceLanding({
 		root,
 		branch: identity.branch,
-		baseRef: base.ref,
-		...(typeof identity.worktree === 'string' && { worktree: identity.worktree }),
+		cut: identity.base.commit,
+		landedTip,
 	})
-	if (unlanded.length === 0 || beyond.every((commit) => unlanded.includes(commit))) return undefined
-	return unlanded
+	return since.length === 0 ? undefined : since
 }
 
 /**
@@ -216,7 +223,7 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 	const { parent } = record
 	const parentFolder = join(dirname(params.lotFolder), parent)
 	const number = readLanding({ lotFolder: parentFolder })?.number
-	const landing = readLotLanding({ lotFolder: parentFolder, host: params.host })
+	const landing = readLotLanding({ lotFolder: parentFolder, host: params.host, onlyPushed: true })
 	if ('refusal' in landing)
 		return stackLineText({
 			parent,
@@ -291,23 +298,28 @@ function pruneLandingOf(params: {
 	input: LotStateInput
 	now: Date
 }): PruneLotLanding | undefined {
-	const { lot, input } = params
-	if (input.landed !== undefined) return { lot, landed: true, landedTip: input.landed.tip }
+	const { input } = params
+	const lot = {
+		lot: params.lot,
+		branch: input.identity.branch,
+		cut: input.identity.base.commit,
+	}
+	if (input.landed !== undefined) return { ...lot, landed: true, landedTip: input.landed.tip }
 	const { state } = lotState(input)
-	if (state === 'canceled') return { lot, landed: false, closed: true }
+	if (state === 'canceled') return { ...lot, landed: false, closed: true }
 	// a lot the registry records committed is read like any other: only git proves it merged
 	const landing = readLotLanding({ lotFolder: params.lotFolder, root: params.root })
 	if ('refusal' in landing) return undefined
 	const fact = recordLanded({ landing, now: params.now })
-	if (fact !== undefined) return { lot, landed: true, landedTip: fact.tip }
-	if (state === 'committed') return { lot, landed: false, closed: true }
-	if (landing.state.kind !== 'unlanded') return { lot, landed: false }
+	if (fact !== undefined) return { ...lot, landed: true, landedTip: fact.tip }
+	if (state === 'committed') return { ...lot, landed: false, closed: true }
+	if (landing.state.kind !== 'unlanded') return { ...lot, landed: false }
 	const since = workSinceLandingOf(landing)
 	if (since !== undefined)
 		return {
-			lot,
+			...lot,
 			landed: false,
-			reason: unlandedWorkText({ commits: since, base: landing.base.branch }),
+			reason: workSinceLandingText(since),
 		}
 	const pushed = isPushed({
 		root: params.root,
@@ -316,11 +328,11 @@ function pruneLandingOf(params: {
 	})
 	return pushed
 		? {
-				lot,
+				...lot,
 				landed: false,
-				reason: fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot } }),
+				reason: fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot: params.lot } }),
 			}
-		: { lot, landed: false }
+		: { ...lot, landed: false }
 }
 
 /** The lot was pushed: its landing recorded a pull request, or origin holds its branch. */

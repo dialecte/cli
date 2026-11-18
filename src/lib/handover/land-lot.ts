@@ -29,8 +29,8 @@ import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { LANDED_SCHEMA } from '../landing/landed-record.constants.ts'
 import { writeLanded } from '../landing/landed-record.ts'
 import { readLandingState } from '../landing/landing-state.ts'
+import { workSinceLanding, workSinceLandingText } from '../landing/lost-work.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
-import { unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
 import { readPackageJson } from '../package-json.ts'
 import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
@@ -469,13 +469,19 @@ function mergedFactOf(params: {
 			at,
 		}
 	const baseRef = `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`
-	const cut =
-		readIdentity({ lotFolder: params.lotFolder })?.base.commit ??
-		tryReadGit({ root: worktree, args: ['merge-base', 'HEAD', baseRef] })?.trim() ??
-		''
+	const cut = cutOf({ worktree, lotFolder: params.lotFolder, baseRef })
 	const state = readLandingState({ root: worktree, branch: params.branch, baseRef, cut })
 	if (state.kind !== 'merged') return undefined
 	return { schema: LANDED_SCHEMA, how: state.how, tip: state.tip, base: params.base, at }
+}
+
+/** The commit the lot was cut from: its identity's, else where its HEAD forks from the base ref. */
+function cutOf(params: { worktree: string; lotFolder: string; baseRef: string }): string {
+	return (
+		readIdentity({ lotFolder: params.lotFolder })?.base.commit ??
+		tryReadGit({ root: params.worktree, args: ['merge-base', 'HEAD', params.baseRef] })?.trim() ??
+		''
+	)
 }
 
 /**
@@ -497,10 +503,14 @@ function landedLot(params: {
 		folder: params.lotFolder,
 		state: 'committed',
 	})
-	const since = unlandedWork({
+	const since = workSinceLanding({
 		root: worktree,
 		branch: params.branch,
-		baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+		cut: cutOf({
+			worktree,
+			lotFolder: params.lotFolder,
+			baseRef: `${ORIGIN_BRANCH_REF_PREFIX}${params.base}`,
+		}),
 		landedTip: fact.tip,
 	})
 	return {
@@ -512,7 +522,7 @@ function landedLot(params: {
 				: [
 						fillMessage({
 							template: LANDING_LINES.workSince,
-							values: { work: unlandedWorkText({ commits: since, base: params.base }) },
+							values: { work: workSinceLandingText(since) },
 						}),
 					]),
 			fillMessage({ template: LANDING_LINES.closeLanded, values: { lot: params.lot } }),

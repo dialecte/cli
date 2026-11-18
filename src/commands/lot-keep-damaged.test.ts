@@ -1,10 +1,11 @@
+import { existsSync, realpathSync } from 'node:fs'
+
+import { createBriefWorkspace } from '../../test/brief-workspace.ts'
 /**
  * R1-B3: a damaged lot whose identity reads still names its worktree: `worktree prune` and `lot close` keep that
  * worktree (the keep rule), whatever the lot's other records say.
  */
-import { existsSync, realpathSync } from 'node:fs'
-
-import { createBriefWorkspace } from '../../test/brief-workspace.ts'
+import { recordingHost } from '../../test/land-lot.ts'
 import { KEEP_NOW, REMOVABLE } from '../../test/lot-keep-workspace.constants.ts'
 import { addLotWorktree, worktreeFatesOf } from '../../test/lot-keep-workspace.ts'
 import { snapshotOf } from '../../test/lot-start-workspace.ts'
@@ -78,6 +79,7 @@ describe('the keep rule and a damaged lot', { timeout: STORE_CASE_TIMEOUT }, () 
 		const { spawner, calls } = createRecordingSpawner()
 
 		const result = runLotClose({
+			host: recordingHost().host,
 			cwd: workspace.repository,
 			argv: [handover, '--json'],
 			now: KEEP_NOW,

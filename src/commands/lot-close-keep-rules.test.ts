@@ -1,4 +1,3 @@
-/** `lot close`'s keep rules that look beyond git status: ignored files, the HEAD reflog, links into the worktree, a second hand-over. */
 import {
 	chmodSync,
 	existsSync,
@@ -17,6 +16,8 @@ import {
 	plainHandoverFolder,
 	writeStoreHandover,
 } from '../../test/handover-store-scenario.ts'
+/** `lot close`'s keep rules that look beyond git status: ignored files, the HEAD reflog, links into the worktree, a second hand-over. */
+import { recordingHost } from '../../test/land-lot.ts'
 import {
 	cardLinesOf,
 	registerCommittedHandover,
@@ -159,6 +160,7 @@ function closing(params: {
 	const before = readTree(worktree)
 	function close() {
 		return runLotClose({
+			host: recordingHost().host,
 			cwd: scenario.repository,
 			argv: [params.name],
 			now: NOW,
@@ -363,21 +365,23 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 			expectNothingMoved()
 		})
 
-	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit touching a file outside its hand-over files → kept, the work named', () => {
+	it('a hand-over lot with no scope nor landing, a dropped work-in-progress commit touching a file outside its hand-over files → closed: its branch reflog holds it, the commit named with the reflog clock', () => {
 		const scenario = createScenario()
 		const lot = createRebuiltHandoverLot({
 			scenario,
 			wip: { 'src/a.ts': 'wip\n', 'src/other.ts': 'export {}\n' },
 		})
-		const { close, expectNothingMoved } = closing({ scenario, ...lot })
+		const { close } = closing({ scenario, ...lot })
 
 		const outcome = close()
 
 		expect({
 			exitCode: outcome.exitCode,
-			reflog: outcome.output.includes('1 commit(s) of work not in main'),
-		}).toEqual({ exitCode: 1, reflog: true })
-		expectNothingMoved()
+			reflog: outcome.output.includes(
+				"dropped from the branch, kept in its reflog until git's reflog expiry (gc.reflogExpireUnreachable)",
+			),
+		}).toEqual({ exitCode: 0, reflog: true })
+		expectClosed({ scenario, worktree: lot.worktree, tail: 'x' })
 	})
 
 	it('a commit made on a detached HEAD, then the worktree switched back to its branch → kept, the work named', () => {
@@ -393,7 +397,7 @@ describe('lot close: keep rules beyond git status', { timeout: POOL_COMMAND_CASE
 		const outcome = close()
 
 		expect(outcome.exitCode).toBe(1)
-		expect(outcome.output).toContain('1 commit(s) of work not in main: ')
+		expect(outcome.output).toContain('1 commit(s) its removal would lose: ')
 		expectNothingMoved()
 	})
 

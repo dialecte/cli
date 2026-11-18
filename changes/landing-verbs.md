@@ -12,7 +12,7 @@
 
 ### Changed
 
-- One landing state decides "landed" for `lot land`, `lot close`, `worktree prune` and `lot status`: a lot's tip on the base, its pull request merged, or its work contained in the base. The verbs that act write it once as `<lot folder>/landed.json`, which every reader reads as `committed`; `lot status` shows a merged lot committed and writes nothing. The keep rule of close and prune names `<n> commit(s) of work not in <base>: <commits>`: the reflog commits whose work the base does not contain.
+- One landing state decides "landed" for `lot land`, `lot close`, `worktree prune` and `lot status`: a lot's tip on the base, its pull request merged, or its work contained in the base. The verbs that act write it once as `<lot folder>/landed.json`, which every reader reads as `committed`; `lot status` shows a merged lot committed and writes nothing. The keep rule of close and prune is the work a removal would lose (see the fix-landed-leftovers fragment).
 - `stack.json` holds the parent lot only (`{ schema, parent }`); `landing.json` no longer records the heads its rebases replaced.
 - `lot land` of a lot already merged writes its landed fact, names the commits made since (they land in a new lot) and prints the close line, exit 0 (was refused when commits followed the merge).
 - The hand-over card's stack line names the parent and its pull request (`on <parent> (#<n>)`), files only.

@@ -1,8 +1,9 @@
-/** How `lot close` moves a worktree: real paths, a deletion that is git's without --force, caches in their own trash entries, the printed line. */
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+/** How `lot close` moves a worktree: real paths, a deletion that is git's without --force, caches in their own trash entries, the printed line. */
+import { recordingHost } from '../../test/land-lot.ts'
 import { writeHookRecordAtHead } from '../../test/lot-close-final-record.ts'
 import {
 	git,
@@ -89,6 +90,7 @@ function closeLots(params: {
 	json?: boolean
 }) {
 	return runLotClose({
+		host: recordingHost().host,
 		cwd: params.scenario.repository,
 		argv: [...params.names, ...(params.json ? ['--json'] : [])],
 		now: NOW,

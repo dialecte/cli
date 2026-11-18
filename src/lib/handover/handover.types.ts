@@ -495,11 +495,12 @@ export type CatchUpRole = 'sibling' | 'owner' | 'sole-owner'
 
 /**
  * What `lot close` did with one named hand-over: closed (`already` when an earlier close did it: the registry
- * entry says so, nothing moved now), or kept with why. `landed` when a lot whose hand-over was committed outside its
- * folder, its branch on the target branch, names the worktree: the line that says why that lot reads committed.
+ * entry says so, nothing moved now; `dropped` the line naming commits only its branch's reflog holds now), or kept
+ * with why. `landed` when a lot whose hand-over was committed outside its folder, its branch on the target branch,
+ * names the worktree: the line that says why that lot reads committed.
  */
 export type CloseOutcome = { handover: string; landed?: string } & (
-	| { closed: true; already?: true }
+	| { closed: true; already?: true; dropped?: string }
 	| { kept: string }
 )
 

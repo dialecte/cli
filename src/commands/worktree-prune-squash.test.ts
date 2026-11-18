@@ -2,7 +2,7 @@
  * `worktree prune` reads the landing state from git alone (FIX-ci-loop design, sections 1, 2 and 5): a squash-merged
  * lot is removable, a squash main edited again is named as not provable offline, work after the landing keeps the
  * worktree, a lot the registry records committed goes only once its work is in main, and a review throwaway goes with
- * its landed lot, through the same unlanded-work check, and stays with an unlanded one.
+ * its landed lot, through the same landing and loss checks, and stays with an unlanded one.
  */
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -45,9 +45,14 @@ type PruneRow = {
 	landed: boolean
 }
 
-/** The work line of a branch holding `commit` that main does not. */
-function workLine(params: { branch: string; commit: string }): string {
-	return `${params.branch}: 1 commit(s) of work not in main: ${params.commit.slice(0, SHORT_SHA_LENGTH)}`
+/** The line of a lot's branch holding `commit` made since its landing. */
+function sinceLine(params: { branch: string; commit: string }): string {
+	return `${params.branch}: 1 commit(s) made since its landing: ${params.commit.slice(0, SHORT_SHA_LENGTH)}`
+}
+
+/** The line of a branch whose work main does not hold: not landed. */
+function notLandedLine(branch: string): string {
+	return `${branch}: not landed: its work is not in main`
 }
 
 const PRUNE_ROWS: PruneRow[] = [
@@ -80,7 +85,7 @@ const PRUNE_ROWS: PruneRow[] = [
 			commitAfterLanding({ lot, file: AFTER_LANDING_FILE })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => workLine({ branch: lot.branch, commit: lotHeadOf(lot) }),
+		fate: (lot) => sinceLine({ branch: lot.branch, commit: lotHeadOf(lot) }),
 		landed: false,
 	},
 	{
@@ -100,23 +105,22 @@ const PRUNE_ROWS: PruneRow[] = [
 		landed: false,
 	},
 	{
-		title:
-			'a lot the registry records committed, its work not on main → kept, its work named (the unlanded-work check)',
+		title: 'a lot the registry records committed, its work not on main → kept, not landed',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: lot.worktree }
 		},
-		fate: (lot) => workLine({ branch: lot.branch, commit: lot.tip }),
+		fate: (lot) => notLandedLine(lot.branch),
 		landed: false,
 	},
 	{
 		title:
-			'a -round-<n> throwaway of a lot the registry records committed, its work not on main → kept, its work named, never removed without the check',
+			'a -round-<n> throwaway of a lot the registry records committed, its work not on main → kept, not landed, never removed without the check',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: addRoundOf({ lot, round: 2 }) }
 		},
-		fate: (lot) => workLine({ branch: `${lot.branch}-round-2`, commit: lot.tip }),
+		fate: (lot) => notLandedLine(`${lot.branch}-round-2`),
 		landed: false,
 	},
 	{

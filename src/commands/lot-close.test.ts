@@ -12,6 +12,7 @@ import {
 import { isAbsolute, join, resolve } from 'node:path'
 
 import { readEntry } from '../../test/handover-store-scenario.ts'
+import { recordingHost } from '../../test/land-lot.ts'
 import {
 	cardLinesOf,
 	registerCommittedHandover,
@@ -165,6 +166,7 @@ function closing(params: { scenario: Scenario; argv: string[] }) {
 			argv: params.argv,
 			now: NOW,
 			spawner,
+			host: recordingHost().host,
 		},
 	}
 }

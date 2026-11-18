@@ -419,7 +419,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		expect(lines).toEqual(
 			expect.arrayContaining([
 				`  remove  worktree  ${worktrees.merged}`,
-				`  keep    worktree  ${worktrees.unmerged}  (feat/unmerged: 1 commit(s) of work not in main: ${git({ root: worktrees.unmerged, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()})`,
+				`  keep    worktree  ${worktrees.unmerged}  (feat/unmerged: not landed: its work is not in main)`,
 				`  keep    worktree  ${worktrees.dirty}  (feat/dirty: uncommitted changes)`,
 				`  keep    worktree  ${worktrees.pending}  (feat/pending: a hand-over is pending in it)`,
 				'  remove  branch  old-merged',
@@ -861,7 +861,7 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.output).toContain(
-			'  keep    branch  feat/reset  (1 commit(s) of work not in main: ',
+			'  keep    branch  feat/reset  (1 commit(s) its removal would lose: ',
 		)
 		expect(result.output).not.toContain("git branch -d 'feat/reset'")
 	})

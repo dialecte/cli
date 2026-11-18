@@ -409,29 +409,34 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   close - closes a lot or a hand-over: a hand-over of the registry (by name or index), or a lot (its
           id, name or index), with no registry entry needed; first the landing of every lot the
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
-          entry's worktree and branch) is read, with the host asked for a lot that was pushed:
-          merged (its tip on the base, its pull request merged - the one landing.json names, else
-          the newest of its branch whose head the branch reached, a pull request opened by hand
-          included - or its work contained in origin/<base>, a squash read offline) writes its
-          landed fact in <lot folder>/landed.json, commits its pending entry (a lot with none is
-          registered committed) and every outcome reaching it carries the line landed on <base> at
-          <commit>: <how>, landed in --json; a lot not merged is kept with why (its work not in the
-          base, its pull request closed, the commits it holds since part of it landed, or the host's
-          silence); then for each committed or abandoned hand-over: its final record first, the card
-          line in the repository's cards.log (a catch-up one when none exists, for every hand-over
-          of the worktree, read back), then a removing line, then its worktree moved to
-          .worktrees/_trash/ and removed in the background by git worktree remove without --force
-          (git refuses one written into since the check: it stays in .worktrees/_trash/), its
-          node_modules parked in .worktrees/_pool-<repository>-<n>, its caches to their own _trash/
-          entries, then a removed line (trashed or kept); a landed lot's own .dialecte/lot.json
-          archived in its folder first; kept first when an open lot names it (reason lot <name>
-          <state>), then with why when it is the main checkout, on another branch than the
-          hand-over's, locked, another hand-over of the same worktree is neither committed nor
-          abandoned, a link from outside it points into it, dirty, its branch or HEAD reflog reaches
-          work the base does not hold (<n> commit(s) of work not in <base>: <commits>; a commit
-          whose work the base contains, or an ancestor of the landed tip, counts as landed), it
-          holds ignored files its removal would delete that nothing else holds (rebuilt folders,
-          dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived
+          entry's worktree and branch) is read, with the host asked for every lot it reads (one
+          never pushed by lot land, its branch deleted on origin after the merge, included): merged
+          (its tip on the base, its pull request merged - the one landing.json names, else the
+          newest of its branch whose head the branch reached, a pull request opened by hand included
+          - or its work contained in origin/<base>, a squash read offline) writes its landed fact in
+          <lot folder>/landed.json, commits its pending entry (a lot with none is registered
+          committed) and every outcome reaching it carries the line landed on <base> at <commit>:
+          <how>, landed in --json; a lot not merged is kept with why (its work not in the base, its
+          pull request closed, the commits it holds since part of it landed, or the host's silence);
+          then for each committed or abandoned hand-over: its final record first, the card line in
+          the repository's cards.log (a catch-up one when none exists, for every hand-over of the
+          worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/
+          and removed in the background by git worktree remove without --force (git refuses one
+          written into since the check: it stays in .worktrees/_trash/), its node_modules parked in
+          .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed
+          line (trashed or kept); a commit dropped from its branch (reset or rebased away), held by
+          the branch reflog alone, is named under the closed line: git expires it with that reflog
+          (gc.reflogExpireUnreachable), as it would have with the worktree's; a landed lot's own
+          .dialecte/lot.json archived in its folder first; kept first when an open lot names it
+          (reason lot <name> <state>), then with why when it is the main checkout, on another branch
+          than the hand-over's, locked, another hand-over of the same worktree is neither committed
+          nor abandoned, a link from outside it points into it, dirty, a landed lot holds commits
+          made since its landing (<n> commit(s) made since its landing: <commits>), its removal
+          would lose a commit (<n> commit(s) its removal would lose: <commits>: a commit only its
+          HEAD or HEAD reflog reaches, that no surviving branch, branch reflog, tag, landed tip or
+          remote-tracking ref holds, nor a byte-equal patch of it - a commit made on a detached
+          HEAD), it holds ignored files its removal would delete that nothing else holds (rebuilt
+          folders, dialecte.rebuiltIgnored folders, the .dialecte/lot link, an empty or archived
           .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a
           mutation run works there, lot close itself runs from inside it, or the processes are not
           known, or the final record cannot be kept or the lot's commit is not known; the branch
@@ -751,8 +756,10 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     store read once, files only). Before any decision, the landing of every lot the arguments reach is read: the lot
     an argument names (a lot id, name or index, with no registry entry needed), the lot an entry registers, and the
     open lots naming an entry's worktree and branch. A lot is merged when its tip is on the base branch, when its pull
-    request merged (the host is asked only for a lot that was pushed: the one `landing.json` names, else the newest
-    pull request of its branch whose head the branch reached, so one opened by hand counts), or when its work is
+    request merged (the host is asked for every lot close reads, pushed by `lot land` or not: the one `landing.json`
+    names, else the newest pull request of its branch whose head the branch reached since the lot was created, so one
+    opened by hand counts, its branch deleted on origin after the merge or not, and a branch name reused by a new lot
+    never takes an older lot's pull request), or when its work is
     contained in `origin/<base>` (a squash merge read offline). A merged lot gets its landed fact
     (`<lot folder>/landed.json`), reads `committed` everywhere from then on, files only, and its pending entry is
     committed (a lot with no entry is registered committed); every outcome reaching it carries the line
@@ -772,10 +779,16 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     worktree and main checkout of the workspace's repositories, read once per call; the worktree's own links
     never count); a `dirty` worktree (anything
     `git status --porcelain --untracked-files=normal` lists, untracked files included whatever
-    `status.showUntrackedFiles` says); work its branch reflog or HEAD reflog reaches that the base does not hold
-    (`<n> commit(s) of work not in <base>: <commits>`; a commit whose work the base contains - merged, squashed or
-    rebased - or an ancestor of the landed tip counts as landed; a commit made after the landing, or on a detached
-    HEAD, keeps it: the reflog goes with the worktree); ignored files its removal would delete that nothing else holds (`ignored files git worktree
+    `status.showUntrackedFiles` says); a landed lot whose branch holds commits beyond its landed tip and its cut
+    (`<n> commit(s) made since its landing: <commits>`); a commit its removal would lose
+    (`<n> commit(s) its removal would lose: <commits>`): the worktree's HEAD and HEAD reflog go with it, so a commit
+    only they reach - made on a detached HEAD, even with the branch checked out again - keeps it, unless a surviving
+    branch tip or branch reflog, a tag, a landed tip or a remote-tracking ref holds it, or holds a byte-equal patch of
+    it (a `--verbatim` patch-id; a merge, a root or an empty commit is never held by its patch). The check runs with or
+    without a base branch. The branch and its reflog stay: a commit reset or rebased away from the branch is held by
+    that reflog, and the worktree closes with the line `<commits>: dropped from the branch, kept in its reflog until
+    git's reflog expiry (gc.reflogExpireUnreachable)` under its closed line - removing the worktree does not shorten
+    that clock, the HEAD reflog had the same expiry; ignored files its removal would delete that nothing else holds (`ignored files git worktree
     remove would delete: .env`, the first three named past three): rebuilt folders (`node_modules/`, `dist/`,
     the VitePress caches, the hooks folder, the `dialecte.rebuiltIgnored` folders, the coverage outDir read from the
     main checkout's package, a nested `node_modules` beside its own `package.json`, `.venv/`, `.pytest_cache/`), `.DS_Store`, the

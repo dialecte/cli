@@ -1,0 +1,5 @@
+#!/bin/sh
+# The suite's gh (test/suite-guard/refusing-gh.setup.ts puts it first on the PATH): it refuses every call, naming the
+# test that reached it, so no test ever runs the real gh. A test that needs a gh puts its own fake in front.
+printf '%s (%s)\n' "$DIALECTE_REFUSING_GH" "${DIALECTE_SUITE_TEST:-outside a test}" >&2
+exit 1

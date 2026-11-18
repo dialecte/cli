@@ -15,3 +15,10 @@ export const PULL_URL = 'https://host.test/pull/{number}'
 export const CHILD_BRANCH = 'feat/y'
 export const CHILD_FILE = 'src/y.ts'
 export const CHILD_TEXT = 'export const y = 1\n'
+
+/** The file and text an earlier lot of a reused branch name committed. */
+export const EARLIER_LOT_FILE = 'src/earlier.ts'
+export const EARLIER_LOT_TEXT = 'export const earlier = 1\n'
+
+/** The environment of a git command that would open an editor (a rebase continued): none opened. */
+export const NO_EDITOR = { GIT_EDITOR: 'true' } as const

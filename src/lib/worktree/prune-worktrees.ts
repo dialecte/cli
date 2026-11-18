@@ -1,6 +1,6 @@
 /**
  * `dialecte worktree prune`: per repository of the workspace, the worktrees and local branches whose
- * work is all in the base branch (`unlandedWork`: merged, squashed or rebased alike), the hand-over folders already
+ * work landed and whose removal loses no commit (`workSinceLanding`, `lostWork`), the hand-over folders already
  * committed, and the rehearsal clones left behind - each with the command that removes it, with its absolute `cd`.
  * A store lot's landing is read from git alone first: a merged lot gets its landed fact and keeps nothing, a review
  * throwaway goes with its landed lot. Never a worktree an open lot names (checked first, reason `lot <full name>
@@ -17,7 +17,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { isAtOrInside, isPresent, realPathOf } from '../file-system.ts'
 import { findBaseBranchRef } from '../gate/gate-base.ts'
 import { readHooksFolder } from '../git-hooks.ts'
-import { isAncestorCommit, readGit } from '../git.ts'
+import { isAncestorCommit, readCommitOrNone, readGit } from '../git.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import {
@@ -28,9 +28,16 @@ import {
 import { handoverState } from '../handover/list-handovers.ts'
 import { readHandoverFolder } from '../handover/read-handover-folder.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { THROWAWAY_OF_UNLANDED } from '../landing/lot-landing.constants.ts'
+import { isContainedIn } from '../landing/contained.ts'
+import {
+	lostWork,
+	lostWorkText,
+	noOwnCommitReason,
+	workSinceLanding,
+	workSinceLandingText,
+} from '../landing/lost-work.ts'
+import { NOT_LANDED_TEXTS, THROWAWAY_OF_UNLANDED } from '../landing/lot-landing.constants.ts'
 import { settlePruneLandings } from '../landing/lot-landing.ts'
-import { noOwnCommitReason, unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
 import { diedRunLine, runningLine } from '../mutation/pending-verdict.ts'
 import { readRuns } from '../mutation/run-store.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -572,7 +579,7 @@ function planRepository(params: {
 					links: params.links,
 					ownedRuns,
 					// a throwaway's own commits are its lot's: the lot's landed tip holds them
-					landedTip: (throwaway ?? landings.get(real))?.landedTip,
+					lot: throwaway ?? landings.get(real),
 					ofClosedLot: throwaway !== undefined,
 				})
 			: undefined
@@ -612,11 +619,17 @@ function planRepository(params: {
 			items.push({ kind: 'branch', name: branch, kept: 'a hand-over is pending on it' })
 			continue
 		}
-		// its reflog may still reach work the base does not hold (reset onto a newer base after commits of its own)
-		const unlanded = unlandedWork({ root: repository, branch, baseRef })
+		// its reflog may still reach work nothing else holds (reset onto a newer base after commits of its own)
+		const lost = lostWork({
+			root: repository,
+			removes: { worktrees: [], branches: [branch] },
+			landedTips: [...landings.values()].flatMap((landing) =>
+				landing.branch === branch && landing.landedTip !== undefined ? [landing.landedTip] : [],
+			),
+		})
 		const keptByReflog =
-			unlanded.length > 0
-				? unlandedWorkText({ commits: unlanded, base: baseBranch })
+			lost.length > 0
+				? lostWorkText(lost)
 				: noOwnCommitReason({ root: repository, branch, baselineHead: undefined })
 		if (keptByReflog) {
 			items.push({ kind: 'branch', name: branch, kept: keptByReflog })
@@ -874,11 +887,11 @@ function whyKeepWorktree(params: {
 	links: readonly FolderLink[]
 	/** The repository's runs that still run or died before reporting: the worktree one was started from stays. */
 	ownedRuns: readonly RunEntry[]
-	/** The tip the worktree's lot landed at (its landed fact): its ancestors landed. */
-	landedTip: string | undefined
+	/** The lot the worktree belongs to (its own, or the lot of a throwaway), with the tip it landed at when it did. */
+	lot: PruneLotLanding | undefined
 	/**
-	 * A review throwaway of a lot that landed or is closed: it goes through the unlanded-work check like any worktree,
-	 * but its branch, made at a review, never holds a commit of its own.
+	 * A review throwaway of a lot that landed or is closed: it goes through the landing and loss checks like any
+	 * worktree, but its branch, made at a review, never holds a commit of its own.
 	 */
 	ofClosedLot: boolean
 }): string | undefined {
@@ -886,14 +899,8 @@ function whyKeepWorktree(params: {
 	if (reachedBy) return `the link ${reachedBy} points to it`
 	const ownedRun = mutationRunKeeping({ runs: params.ownedRuns, folder: params.worktree })
 	if (ownedRun) return ownedRun
-	const unlanded = unlandedWork({
-		root: params.repository,
-		branch: params.branch,
-		baseRef: params.baseRef,
-		worktree: params.worktree,
-		...(params.landedTip !== undefined && { landedTip: params.landedTip }),
-	})
-	if (unlanded.length > 0) return unlandedWorkText({ commits: unlanded, base: params.baseBranch })
+	const keptByWork = workKeeping(params)
+	if (keptByWork) return keptByWork
 	if (params.pending || existsSync(handoverLockPath(params.worktree)))
 		return 'a hand-over is pending in it'
 	if (
@@ -916,6 +923,45 @@ function whyKeepWorktree(params: {
 		return `${ignored.length} ignored files git worktree remove would delete, first: ${ignored.slice(0, IGNORED_FILES_SHOWN).join(', ')}`
 	if (ignored.length) return `ignored files git worktree remove would delete: ${ignored.join(', ')}`
 	return undefined
+}
+
+/**
+ * Why a worktree's work keeps it, or undefined: its work not landed (no landed tip, and its branch's work not in the
+ * base), a lot's commits made since its landing (Q1, its own worktree only), or the commits its removal would lose
+ * (Q2: the worktree alone goes, its branch stays).
+ */
+function workKeeping(params: {
+	repository: string
+	worktree: string
+	branch: string
+	baseBranch: string
+	baseRef: string
+	lot: PruneLotLanding | undefined
+	ofClosedLot: boolean
+}): string | undefined {
+	const { repository, branch } = params
+	const landedTip = params.lot?.landedTip
+	if (landedTip === undefined) {
+		const tip = readCommitOrNone({ root: repository, ref: `refs/heads/${branch}` })
+		if (
+			tip === undefined ||
+			!isContainedIn({ root: repository, baseRef: params.baseRef, commit: tip })
+		)
+			return fillMessage({
+				template: NOT_LANDED_TEXTS.unlanded,
+				values: { base: params.baseBranch },
+			})
+	}
+	if (landedTip !== undefined && params.lot !== undefined && !params.ofClosedLot) {
+		const since = workSinceLanding({ root: repository, branch, cut: params.lot.cut, landedTip })
+		if (since.length > 0) return workSinceLandingText(since)
+	}
+	const lost = lostWork({
+		root: repository,
+		removes: { worktrees: [params.worktree], branches: [] },
+		landedTips: landedTip === undefined ? [] : [landedTip],
+	})
+	return lost.length > 0 ? lostWorkText(lost) : undefined
 }
 
 /**

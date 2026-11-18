@@ -21,15 +21,18 @@ worktree - A worktree ready to work in; prune what a merge left
           their cd; each store lot's landing is read from git alone first: a merged lot (its tip or
           its work in the base, a squash included) gets its landed fact (<lot folder>/landed.json)
           and reads committed, and its review throwaways (<lot worktree>-round-<n>, -verify) go with
-          it once their work passes the same unlanded-work check; a lot the registry records
-          committed is read from git like any other, its worktree and throwaways kept while their
-          work is not in the base; a worktree an open lot names (working, input-required, ready,
-          failed) is kept first, reason lot <name> <state>, or the commits it holds since part of it
-          landed (<n> commit(s) of work not in <base>: <commits>), or, pushed and not provably
-          landed, landing not provable offline: run lot close <lot>, which asks the host; a
-          throwaway of a lot not landed is kept (a review throwaway of lot <lot>, not landed); a
-          worktree or branch holding work its base does not hold (merged, squashed or rebased work
-          counts as held) is kept with its commits; --yes runs them after a confirmation on a
+          it once their removal loses no commit; a lot the registry records committed is read from
+          git like any other, its worktree and throwaways kept while their work is not in the base;
+          a worktree an open lot names (working, input-required, ready, failed) is kept first,
+          reason lot <name> <state>, or the commits it holds since part of it landed (<n> commit(s)
+          made since its landing: <commits>), or, pushed and not provably landed, landing not
+          provable offline: run lot close <lot>, which asks the host; a throwaway of a lot not
+          landed is kept (a review throwaway of lot <lot>, not landed); a worktree whose branch's
+          work is not in the base, and no landing of its lot, is kept (not landed: its work is not
+          in <base>); a worktree or a branch whose removal would lose a commit is kept with its
+          commits (<n> commit(s) its removal would lose: <commits>; a surviving branch, branch
+          reflog, tag, landed tip or remote-tracking ref holds a commit, or a byte-equal patch of
+          it; deleting a branch takes its reflog); --yes runs them after a confirmation on a
           terminal; committed hand-over folders and finished rehearsal clones go to the trash like
           the other items: the plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes
           makes it; a move that cannot be made is a ✗ line, nothing deleted; the pool
@@ -146,14 +149,21 @@ Flags: `--from`, `--json`, `--root`, `--yes`, `--reclaim`, `--dry-run`, `--older
   (`<branch>: lot <full name> <state>`), after each store lot's landing was read from git alone: a lot whose tip is
   on the base or whose work the base contains (a squash merge read offline) gets its landed fact
   (`<lot folder>/landed.json`), reads `committed` and keeps nothing; an open lot that holds commits since part of it
-  landed is kept naming them (`<n> commit(s) of work not in <base>: <commits>`); an open lot pushed (a pull request in
+  landed is kept naming them (`<n> commit(s) made since its landing: <commits>`); an open lot pushed (a pull request in
   its `landing.json`, or its branch on origin) whose work git cannot prove landed (main edited its lines again after a
   squash) is kept with `landing not provable offline: run lot close <lot>, which asks the host`; a review throwaway
-  (`<lot worktree>-round-<n>`, `-verify`) of a landed or committed lot goes once its work passes the unlanded-work
-  check below, of a lot still at work and not landed is kept (`a review throwaway of lot <lot>, not landed`); a lot
+  (`<lot worktree>-round-<n>`, `-verify`) of a landed or committed lot goes once it passes the landing and loss
+  checks below, of a lot still at work and not landed is kept (`a review throwaway of lot <lot>, not landed`); a lot
   the registry records committed is read from git like any other (a hand-over run commits before anything reaches
-  the base); a worktree or branch holding work the base does not hold (merged, squashed or rebased
-  work counts as held: `<n> commit(s) of work not in <base>: <commits>`); the branch the
+  the base); a worktree whose branch's work is not in the base and whose lot did not land (`not landed: its work is
+  not in <base>`); a landed lot's worktree whose branch holds commits beyond its landed tip and its cut
+  (`<n> commit(s) made since its landing: <commits>`); a worktree or branch whose removal would lose a commit
+  (`<n> commit(s) its removal would lose: <commits>`): a worktree removal takes its HEAD and HEAD reflog, a branch
+  deletion its tip and reflog, and a commit only they reach is lost unless a surviving branch tip or branch reflog,
+  a tag, a landed tip or a remote-tracking ref (not origin's copy of a deleted branch) holds it or a byte-equal patch
+  of it (a `--verbatim` patch-id); so a branch reset or rebased away from its own commits keeps them until git's
+  reflog expiry (gc.reflogExpireUnreachable), and deleting it would lose them; prune reads git only, never the
+  host; the branch the
   main checkout is on; a worktree a mutation run was started from while that run still runs
   (`mutation run <id> still running (pid <pid>)`) or after it died before reporting
   (`mutation run <id> died before reporting: rerun or dialecte mutants abandon <id>`; a reported or

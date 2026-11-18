@@ -40,6 +40,11 @@ export type LandingQuery = {
 	baseRef: string
 	/** The commit the lot was cut from (its identity's base commit): a tip there holds nothing of its own. */
 	cut: string
+	/**
+	 * When the lot was created (its identity's `created`, ISO 8601): a pull request found by branch is the lot's only
+	 * when its branch reached the head from then on (a branch name reused by a new lot never takes an older lot's).
+	 */
+	since?: string
 	/** The pull request the lot's landing recorded; the host is asked by the branch when left out. */
 	pullNumber?: number
 	/** Asked for the pull request when given; git alone decides without it. */

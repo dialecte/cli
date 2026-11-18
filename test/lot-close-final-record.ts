@@ -1,8 +1,3 @@
-/**
- * Committed hand-overs of real worktrees, for the cases where `lot close` keeps the lot's final record before it moves
- * the worktree: the hand-over is written and committed by the store's own writers (no code of `lot close` under test
- * here), the hook record and the log are plain files.
- */
 import {
 	appendFileSync,
 	chmodSync,
@@ -28,6 +23,12 @@ import {
 	storeOf,
 	writeStoreHandover,
 } from './handover-store-scenario.ts'
+/**
+ * Committed hand-overs of real worktrees, for the cases where `lot close` keeps the lot's final record before it moves
+ * the worktree: the hand-over is written and committed by the store's own writers (no code of `lot close` under test
+ * here), the hook record and the log are plain files.
+ */
+import { recordingHost } from './land-lot.ts'
 import {
 	ASK_FILE_NAME,
 	CANCELED_AT,
@@ -316,6 +317,7 @@ export function trapProbe(): string {
 export function closing(params: { workspace: BriefWorkspace; names: string[] }): ClosingResult {
 	const { spawner, calls } = createRecordingSpawner()
 	const result = runLotClose({
+		host: recordingHost().host,
 		cwd: params.workspace.repository,
 		argv: [...params.names, '--json'],
 		now: FINAL_RECORD_NOW,
