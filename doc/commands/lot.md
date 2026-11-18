@@ -43,7 +43,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot review <id> [--no-open] | lot review <id> --pull --round <n>
   dialecte lot approve <id> --by <who> [--reason <text>]
   dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
-  dialecte lot land <id> [--draft]
+  dialecte lot land <id>
   dialecte lot close <hand-over name|lot id|index>... [--json]
 
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
@@ -109,8 +109,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
        the open pull request (landing.json's, else the branch's newest) is edited only when its
        title or body reads otherwise, a person's part after the kept marker kept (a body without
        that heading holding a person's text refused, never dropped); a damaged lot refused; --print
-       prints and sends nothing; no pull request yet prints the text and names lot land --draft;
-       --json { title, body, pullRequest, head, sent }
+       prints and sends nothing; no pull request yet prints the text and names lot land; --json {
+       title, body, pullRequest, head, sent }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its pull request (landing.json's) with the head it is at, the head the lot landed
            and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,
@@ -118,8 +118,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            ledger with its text and state, the standard line, and what lot approve would refuse (or
            the approve command when it would approve); then opens the pull request's changed files
            in the browser (--no-open names the page only; an opener that fails is named, never an
-           exit); a lot without a landing prints its private half and names lot land <id> --draft,
-           the host never asked
+           exit); a lot without a landing prints its private half and names lot land <id>, the host
+           never asked
   review --pull - the pull request's line comments come back as findings of round <n> in the lot's
     findings ledger: a thread's first comment only (replies discuss it), each once
     (pulled-comments.jsonl records the comment and its finding; a second pull answers already), its
@@ -138,12 +138,17 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
             text rendered on another head, after a later commit or a rebase, leaves it out; the body
             names it by kind only, never the name; the orchestrator in any casing is recorded as
             orchestrator), renders the pull request's text again from the records, makes a draft
-            ready and queues it (gh pr merge --auto); a queue the host refuses keeps the approval
-            (exit 1) and the same approval run again answers already approved, writing nothing, and
+            ready and queues it (gh pr merge --auto; a lot started with --on whose pull request
+            still merges into its parent's branch queues as a stack up to it, gh stack merge, and
+            only on a host with stacks once the parent's pull request, read by the parent's branch,
+            is queued (auto-merge on or in the merge queue), refused otherwise before anything is
+            recorded: approve the parent first, or land it again once the parent merged); the only
+            verb that queues, lot land never does; a queue the host refuses keeps the approval (exit
+            1) and the same approval run again answers already approved, writing nothing, and
             queues; --by orchestrator (in any case) approves the cli's own lots only (the package
             named @dialecte/cli), every other package waits for a person (exit 2); a forbidden word
             in --by or --reason, or a --by holding what a public record never holds, refused (exit
-            2) before the host is asked; a lot without a landing names lot land <id> --draft
+            2) before the host is asked; a lot without a landing names lot land <id>
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
@@ -187,55 +192,59 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            land records the base's shared areas again after its rebase
   land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
          its body's depends-on part names the parent's pull request (a parent without one is
-         refused: land it with --draft first); the host's stacks are probed once (gh stack): with
-         them, the pull request is linked on the parent's (gh stack link) and queued as a stack up
-         to it (gh stack merge --yes --squash, never auto-merge); without, a note says why and it is
-         queued only after the parent merged (waits for #<n> otherwise, nothing pushed); before each
-         landing it is rebased onto the parent branch's newest tip (the local branch or origin's)
-         when it does not hold it, from its fork point (git merge-base --fork-point: only its own
-         commits move, whatever the parent's amend or rebase); once the parent merged (its landing
-         state: a merge, a squash read offline, or its pull request merged; never the registry's
-         committed alone, which a hand-over run writes before anything reaches the base), the
-         parent's landed fact is recorded and the child is rebased with git rebase --onto
-         origin/<base> <fork point>, only its own commits moved, and its pull request retargeted to
-         the base when the host did not; when the host already rewrote its branch on origin (a
-         native stack), it follows that rewrite (local commits beyond its last push rebased onto it,
-         that head the lease); a conflict names its files, the rebase undone, nothing pushed, exit 2
+         refused: land it first); the host's stacks are probed once (gh stack): with them, the pull
+         request is linked on the parent's (gh stack link); without, a note says why; it is never
+         queued (lot approve queues it); before each landing it is rebased onto the parent branch's
+         newest tip (the local branch or origin's) when it does not hold it, from its fork point
+         (git merge-base --fork-point: only its own commits move, whatever the parent's amend or
+         rebase); once the parent merged (its landing state: a merge, a squash read offline, or its
+         pull request merged; never the registry's committed alone, which a hand-over run writes
+         before anything reaches the base), the parent's landed fact is recorded and the child is
+         rebased with git rebase --onto origin/<base> <fork point>, only its own commits moved, and
+         its pull request retargeted to the base when the host did not; when the host already
+         rewrote its branch on origin (a native stack), it follows that rewrite (local commits
+         beyond its last push rebased onto it, that head the lease); a conflict names its files, the
+         rebase undone, nothing pushed, exit 2
   land - the lot lands through its pull request: its committed HEAD (uncommitted files stay in the
          worktree, named), rebased onto origin/<base> when behind (a conflict undone and named,
          nothing pushed; with uncommitted tracked changes it is pushed as committed, the rebase left
          for a clean worktree), pushed with a lease, its title and body rendered from the lot's
          records through the repository's .github/pull_request_template.md on the rebased head
          before the push (as lot pr renders them; records that do not render, or a base branch
-         origin does not hold, push nothing), its pull request opened with them or reused (edited
-         when its title or body reads otherwise, a person's part after the kept marker kept), then
-         queued (gh pr merge --auto: the merge queue merges it once its checks pass on top of main);
-         --draft opens a draft and never queues it, CI running on every push; the landing (number,
-         url, branch, pushed tip) recorded in <lot folder>/landing.json; a lot already merged (its
-         pull request merged, or its tip or its work in origin/<base>: a squash read offline) is
-         committed: its landed fact written in <lot folder>/landed.json, its hand-over entry
-         committed, the commits made since named (they land in a new lot), the close line printed,
-         nothing pushed; a branch with no commit beyond origin's base is refused before any push;
-         the committed HEAD is forecast against origin/<base> just fetched (git merge-tree, before
-         any entry, rebase or push): a conflict refuses naming its files and ranges, a forecast that
-         cannot run refuses (fails closed), a lot on an open parent is not compared; the lot's
-         forecast against every other open lot is recorded (trigger land) and each pair it does not
-         clear printed (! <lot>: <why>), for information only; the pushed head is kept in
-         landing.json at once, so a pull request the host refused to open does not make the next
-         push one outside lot land; the host is GitHub through gh, which never prompts
+         origin does not hold, push nothing), its pull request opened with them as a draft or reused
+         (edited when its title or body reads otherwise, a person's part after the kept marker
+         kept), never queued: CI runs on every push and lot approve, a person's step, queues it; a
+         reused pull request queued or ready whose head to push no person approved (approvals.jsonl)
+         is taken back out of the queue before the push (auto-merge off, gh pr merge --disable-auto;
+         a draft again, gh pr ready --undo), since an approval is for one head: a rebase that only
+         moves the sha takes it out too, and every landing checks, so one stopped after its push
+         heals on the next (a refusal there pushes nothing); --draft, from when lot land queued, is
+         refused (exit 2) naming the change; the landing (number, url, branch, pushed tip) recorded
+         in <lot folder>/landing.json; a lot already merged (its pull request merged, or its tip or
+         its work in origin/<base>: a squash read offline) is committed: its landed fact written in
+         <lot folder>/landed.json, its hand-over entry committed, the commits made since named (they
+         land in a new lot), the close line printed, nothing pushed; a branch with no commit beyond
+         origin's base is refused before any push; the committed HEAD is forecast against
+         origin/<base> just fetched (git merge-tree, before any entry, rebase or push): a conflict
+         refuses naming its files and ranges, a forecast that cannot run refuses (fails closed), a
+         lot on an open parent is not compared; the lot's forecast against every other open lot is
+         recorded (trigger land) and each pair it does not clear printed (! <lot>: <why>), for
+         information only; the pushed head is kept in landing.json at once, so a pull request the
+         host refused to open does not make the next push one outside lot land; the host is GitHub
+         through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
            <level>), the next station walked from its station events and checks (step events, else
            the worktree's tdd ledger and gate records), its next is that station's command and also
            keeps the manual line, which lot start prints as its next too; the manual line depends on
-           the repository's landing flow: lot land <name> --draft in a CI-first repository, handover
-           write in any other; --json adds station and rounds (review, cap, beyondCap, independent)
-           and effort { level, source, riskClass, below } (source risk-line for an effort recorded
-           by lot risk; an effort below its risk class adds a ! effort <e> below risk class <c>
-           line, ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds forecast {
-           main, pairs }: the newest main line of forecast.jsonl and, per other open lot, the newer
-           of its own line against that lot and that lot's line against it (files only); a lot whose
+           the repository's landing flow: lot land <name> in a CI-first repository, handover write
+           in any other; --json adds station and rounds (review, cap, beyondCap, independent) and
+           effort { level, source, riskClass, below } (source risk-line for an effort recorded by
+           lot risk; an effort below its risk class adds a ! effort <e> below risk class <c> line,
+           ending (by <who>: <reason>) or (no go-ahead recorded)); --json adds forecast { main,
+           pairs }: the newest main line of forecast.jsonl and, per other open lot, the newer of its
+           own line against that lot and that lot's line against it (files only); a lot whose
            records do not hold reads damaged with its reason and next: lot stop (exit 6); a lot git
            reads merged (its tip or its work in origin/<base>, a squash included) shows committed,
            nothing written; writes nothing; exit 2 for an unknown or ambiguous id
@@ -465,7 +474,7 @@ e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "
 
 Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--draft`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -547,7 +556,7 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
   check's command, `dialecte lot snapshot <name> --round <r>`, at the cap its `--beyond-cap` form), `also`
   keeping the manual line; a hand-over to write and an unknown position keep the manual line. The manual line
   follows the repository's landing flow, as `lot start` prints it too: `run the stations, then dialecte lot land
-  <name> --draft` in a CI-first repository (its `.github/workflows/ci.yml` runs on `merge_group` and holds the
+  <name>` in a CI-first repository (its `.github/workflows/ci.yml` runs on `merge_group` and holds the
   `ci-ok` job), `run the stations, then dialecte handover write <lots.json> --out <name>` elsewhere. A station
   is ended by an end with exit 0 or none and a verdict other than `failed` or `limit`; a start with no end
   is running until a later station start or end or a snapshot comes (a check never closes it: the
@@ -924,10 +933,14 @@ through `.github/pull_request_template.md`, on the rebased head before the push:
 (the first commit lot of its brief), never the branch's last commit, so a merge of main never becomes the squash title,
 and the body is the lot's final state, never its commit bodies. A reused pull request whose title or body reads
 otherwise is edited, a person's part after the template's kept marker kept; records that do not render push nothing.
-Then it is queued with `gh pr merge --auto`. The merge queue runs the full suite on the
-lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches main another way. `--draft`
-opens a draft and never queues it: CI runs on every push while the lot goes on; land it again without `--draft` to
-queue it. The landing is recorded in `<lot folder>/landing.json` (its pull request and the head it pushed: the next
+The pull request is always a draft and `lot land` never queues it: CI runs on every push while the lot goes on, and
+`lot approve`, a person's step, queues it (below). An approval is for one head: a reused pull request queued or ready
+whose head to push no person approved (`approvals.jsonl`) is taken back out of the queue before the push (auto-merge
+off, then a draft again), so no refusal after the push leaves an unapproved head queued, and every landing checks,
+so a landing stopped after its push heals on the next one. A rebase that keeps the tree but moves the sha takes it out
+too: the person approves the new head. A pull request queued at a head a person approved is left as it is. `--draft`, from when `lot land` queued, is refused (exit 2) naming the change. The merge queue
+runs the full suite on the lot on top of main and the lots ahead of it, then squashes it onto main; nothing reaches
+main another way. The landing is recorded in `<lot folder>/landing.json` (its pull request and the head it pushed: the next
 push's lease, and the head a landed lot's final record takes) and as the lot's hand-over entry (`pending`). A lot
 already merged is not pushed again: `lot land` writes its landed fact, commits its entry, names the commits made since
 (they land in a new lot) and prints the close line; `lot close` reads the same landing state (a squash read offline
@@ -951,7 +964,11 @@ are recorded with `lot finding`.
 landed, its checks are green there and no finding but a nit is open, it records a person's `approve` verdict
 (`approvals.jsonl`, shown in `review.jsonl` and in the body by kind only, for that head: a later commit needs a new
 approval), renders the body again and queues the pull
-request. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
+request: the only verb that queues. A lot started with `--on` whose pull request still merges into its parent's
+branch queues as a native stack up to it (`gh stack merge`), and only once the parent's pull request (read by the
+parent's branch) is queued, auto-merge on or in the merge queue, so
+nothing unapproved joins the queue; without native stacks it waits for the parent to merge (then `lot land` it again,
+which moves it onto the base). Either refusal records nothing. The cli's own lots take `--by orchestrator` after the orchestrator's independent review; every other package
 waits for a person.
 
 `dialecte lot design <id> --from <DESIGN.md>` records a lot's design before its tests, by the sha256 of its bytes, and

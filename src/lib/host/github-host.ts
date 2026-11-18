@@ -81,6 +81,7 @@ export function createGithubHost(): HostAdapter {
 		linkStack: linkStackOnGithub,
 		queueStack: queueStackOnGithub,
 		retargetPullRequest: retargetOnGithub,
+		draftPullRequest: draftOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -100,6 +101,34 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
+}
+
+/**
+ * The pull request taken back out of the queue: `gh pr merge <number> --disable-auto` when queued, then
+ * `gh pr ready <number> --undo` when not a draft; undefined once done (nothing asked for a draft not queued).
+ */
+function draftOnGithub(params: {
+	root: string
+	number: number
+	queued: boolean
+	draft: boolean
+}): HostRefusal | undefined {
+	const number = String(params.number)
+	if (params.queued) {
+		const unqueued = runGh({
+			root: params.root,
+			args: ['pr', 'merge', number, '--disable-auto'],
+			timeout: HOST_WRITE_TIMEOUT_MS,
+		})
+		if ('refusal' in unqueued) return unqueued
+	}
+	if (params.draft) return undefined
+	const drafted = runGh({
+		root: params.root,
+		args: ['pr', 'ready', number, '--undo'],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in drafted ? drafted : undefined
 }
 
 /** Stacks when the gh-stack extension answers (`gh stack --help`, no network); its absence is why not. */
@@ -126,8 +155,23 @@ function linkStackOnGithub(params: {
 	return 'refusal' in linked ? linked : undefined
 }
 
-/** `gh stack merge <number> --yes --squash`: the layers up to it queued, all or nothing; undefined once queued. */
-function queueStackOnGithub(params: { root: string; number: number }): HostRefusal | undefined {
+/**
+ * `gh stack merge <number> --yes --squash`: the layers up to it queued, all or nothing (a draft made ready first,
+ * `gh pr ready`); undefined once queued.
+ */
+function queueStackOnGithub(params: {
+	root: string
+	number: number
+	draft: boolean
+}): HostRefusal | undefined {
+	if (params.draft) {
+		const ready = runGh({
+			root: params.root,
+			args: ['pr', 'ready', String(params.number)],
+			timeout: HOST_WRITE_TIMEOUT_MS,
+		})
+		if ('refusal' in ready) return ready
+	}
 	const queued = runGh({
 		root: params.root,
 		args: [GH_STACK, 'merge', String(params.number), ...STACK_MERGE_FLAGS],
@@ -257,7 +301,10 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			body: String(parsed.body ?? ''),
 			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
 			draft: parsed.isDraft === true,
-			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
+			// queued: auto-merge on, or already in the merge queue (a stack merge queues without auto-merge)
+			queued:
+				(parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined) ||
+				parsed.isInMergeQueue === true,
 			head: String(parsed.headRefOid ?? ''),
 			...(typeof parsed.baseRefName === 'string' && { base: parsed.baseRefName }),
 		}

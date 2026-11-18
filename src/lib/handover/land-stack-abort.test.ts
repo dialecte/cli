@@ -60,7 +60,6 @@ describe('a stack rebase whose abort fails', { timeout: SCRATCH_GIT_CASE_TIMEOUT
 			base: 'main',
 			lotFolder: stack.child.lotFolder,
 			host: host.host,
-			draft: true,
 			now: new Date('2026-11-17T23:30:00Z'),
 		})
 

@@ -42,6 +42,21 @@ describe('createGithubHost', () => {
 			},
 		},
 		{
+			label: 'an open pull request in the merge queue without auto-merge (queued by a stack merge)',
+			stdout:
+				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","body":"","state":"OPEN","isDraft":false,"autoMergeRequest":null,"isInMergeQueue":true,"headRefOid":"abc"}',
+			pullRequest: {
+				number: 12,
+				url: 'https://github.test/pull/12',
+				title: 'feat(x): x',
+				body: '',
+				state: 'open',
+				draft: false,
+				queued: true,
+				head: 'abc',
+			},
+		},
+		{
 			label: 'a merged one',
 			stdout:
 				'{"number":12,"url":"https://github.test/pull/12","title":"feat(x): x","body":"","state":"MERGED","isDraft":false,"autoMergeRequest":null,"headRefOid":"abc"}',

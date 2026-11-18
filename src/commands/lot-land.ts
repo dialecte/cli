@@ -1,7 +1,8 @@
 /**
- * `dialecte lot land <id> [--draft]`: the store lot's branch landed through its pull request (`landLot`): rebased onto
- * origin's base branch when behind, pushed, its pull request opened or reused, queued (a draft never), the landing
- * recorded in the lot's folder for `lot close`.
+ * `dialecte lot land <id>`: the store lot's branch landed through its pull request (`landLot`): rebased onto origin's
+ * base branch when behind, pushed, its pull request opened or reused as a draft and never queued (`lot approve`
+ * queues it), the landing recorded in the lot's folder for `lot close`. `--draft`, from when lot land queued, is
+ * refused naming the change.
  */
 import { basename } from 'node:path'
 
@@ -30,6 +31,8 @@ export function runLotLand(params: {
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
+	if (hasFlag(params.argv, 'draft'))
+		return { exitCode: 2, output: textOf([LOT_LAND_LINES.draftGone]) }
 	const ids = positionalArguments({ argv: params.argv, valueOptions: [] })
 	if (ids.length !== 1) return { exitCode: 2, output: renderLotUsage() }
 	const required = requiredLotOf({ argument: ids[0], cwd: params.cwd, mode: 'write' })
@@ -83,7 +86,6 @@ export function runLotLand(params: {
 		base: base.branch,
 		lotFolder: required.lot,
 		host: params.host ?? createGithubHost(),
-		draft: hasFlag(params.argv, 'draft'),
 		now: params.now ?? new Date(),
 	})
 	return { exitCode: landed.exitCode, output: textOf(landed.lines) }

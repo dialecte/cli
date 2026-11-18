@@ -55,7 +55,7 @@ describe('lot land with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotLand({
 			cwd: workspace.repository,
-			argv: [lot.name, '--draft'],
+			argv: [lot.name],
 			host,
 		})
 
@@ -86,7 +86,7 @@ describe('lot land with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotLand({
 			cwd: workspace.repository,
-			argv: [first.name, '--draft'],
+			argv: [first.name],
 			host,
 		})
 
@@ -113,7 +113,7 @@ describe('lot land with the forecast', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		const result = runLotLand({
 			cwd: workspace.repository,
-			argv: [first.name, '--draft'],
+			argv: [first.name],
 			host,
 		})
 

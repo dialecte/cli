@@ -118,7 +118,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} not approved: pull request #${REVIEW_PULL_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} --draft pushes it); nothing recorded, nothing queued`,
+			`lot approve: ${LOT_NAME} not approved: pull request #${REVIEW_PULL_NUMBER} is at ${OTHER_HEAD.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
 		)
 		expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
 		expect(existsSync(join(lot.lotFolder, STORE_FILES.approvals))).toBe(false)
@@ -247,7 +247,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(existsSync(join(lot.lotFolder, STORE_FILES.approvals))).toBe(false)
 	})
 
-	it('a lot never landed → refused naming lot land --draft', () => {
+	it('a lot never landed → refused naming lot land', () => {
 		const lot = landedLot()
 		rmSync(join(lot.lotFolder, LANDING_FILE))
 		const { host, calls } = recordingHost({ existing: lot.pullRequest })
@@ -260,7 +260,7 @@ describe('dialecte lot approve', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(1)
 		expect(result.output).toBe(
-			`lot approve: ${LOT_NAME} has no pull request yet: dialecte lot land ${LOT_NAME} --draft opens it`,
+			`lot approve: ${LOT_NAME} has no pull request yet: dialecte lot land ${LOT_NAME} opens it`,
 		)
 		expect(calls).toEqual([])
 	})

@@ -20,6 +20,6 @@ export const CI_FIRST_FILES = {
 /** The lot's change. */
 export const CI_FIRST_CHANGES = { 'src/read.ts': 'export function read() {\n\treturn 1\n}\n' }
 
-/** The refusal names the CI-first flow: commit on the lot branch through the hook, then land it as a draft. */
+/** The refusal names the CI-first flow: commit on the lot branch through the hook, then land it. */
 export const CI_FIRST_REFUSAL =
-	/CI-first.*commit on the lot branch through the hook.*lot land <id> --draft/s
+	/CI-first.*commit on the lot branch through the hook.*lot land <id>; nothing written/s

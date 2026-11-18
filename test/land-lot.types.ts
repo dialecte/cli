@@ -8,6 +8,9 @@ export type LandingRepository = {
 	lotFolder: string
 }
 
+/** The host calls the fake can refuse: every one that may answer a refusal (the stacks probe never does). */
+export type RefusableCall = Exclude<keyof HostAdapter, 'probeStacks'>
+
 /**
  * A fake host, the calls it was asked in order, and the body of each pull request it opened; `setParent` and
  * `setPullRequest` change what it answers next (a parent merged, a pull request the host retargeted).

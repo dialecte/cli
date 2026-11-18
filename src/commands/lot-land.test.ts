@@ -64,20 +64,26 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host })
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat: x"', 'queue 7'])
+		expect(calls).toEqual(['read feat/x', 'open feat/x -> main "feat: x" draft'])
 		expect(JSON.parse(readFileSync(join(lotFolder, 'landing.json'), 'utf8'))).toMatchObject({
 			number: 7,
 		})
-		expect(result.output).toContain('queued: the merge queue lands it')
+		expect(result.output).toContain('dialecte lot approve 0001-repo-x --by <who> queues it')
 	})
 
-	it('--draft → opened as a draft, not queued', () => {
+	it('--draft → refused, exit 2, nothing asked of the host or pushed: lot land always drafts now, lot approve queues', () => {
 		const { workspace } = landableLot()
 		const { host, calls } = recordingHost()
 
-		runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x', '--draft'], host })
+		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x', '--draft'], host })
 
-		expect(calls.at(-1)).toContain('draft')
+		expect({ result, calls }).toEqual({
+			result: {
+				exitCode: 2,
+				output: 'lot land: --draft is gone: lot land always drafts now; queue with lot approve',
+			},
+			calls: [],
+		})
 	})
 
 	it('a base named by its commit, which main holds → not a stack: landed into main', () => {
@@ -87,7 +93,7 @@ describe('dialecte lot land', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotLand({ cwd: workspace.repository, argv: ['0001-repo-x'], host })
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toContain('queue 7')
+		expect(calls).toContain('open feat/x -> main "feat: x" draft')
 	})
 
 	it('cut from a commit main does not hold, named by its sha → a stack: refused naming the commit, nothing asked of the host', () => {
@@ -196,7 +202,7 @@ describe(
 			const worktree = join(workspace.workspace, '.worktrees', '0001-repo-x')
 			runLotLand({
 				cwd: workspace.repository,
-				argv: ['0001-repo-x', '--draft'],
+				argv: ['0001-repo-x'],
 				host: recordingHost().host,
 			})
 			writeFiles({ root: worktree, files: { 'src/x.ts': 'export const x = 2\n' } })

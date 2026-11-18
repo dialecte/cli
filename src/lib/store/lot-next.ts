@@ -14,7 +14,7 @@ import type {
 
 /**
  * The manual line: what a real working lot asks for while no runner exists (S), as the landing flow of the lot's
- * checkout at `root` words it: `lot land <name> --draft` in a CI-first repository, `handover write` in a hand-over one.
+ * checkout at `root` words it: `lot land <name>` in a CI-first repository, `handover write` in a hand-over one.
  */
 export function manualNextOf(params: { name: string; root: string }): string {
 	return fillMessage({

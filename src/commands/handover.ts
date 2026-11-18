@@ -28,7 +28,7 @@
  * `dialecte handover --legend` - every term the card can print: what it means, whether to look.
  *
  * In a CI-first repository (`landingFlowOf`, refused through `flowRefusalOf`) `write` and `run` (rehearsed or not) refuse before anything is
- * written: its lots commit on their branches through the hook and land with `lot land <id> --draft`.
+ * written: its lots commit on their branches through the hook and land with `lot land <id>`.
  *
  * The agent never commits; the run never pushes.
  */

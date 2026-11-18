@@ -2,7 +2,7 @@
  * `dialecte lot pr <id> [--print] [--json]`: the lot's pull request rendered from its records through the repository's
  * one template (`src/lib/pr/`), checked as public text, then sent to its open pull request when that reads otherwise:
  * the squash commit on the base branch takes this title and body, so they hold the lot's final state. `--print` sends
- * nothing; a lot without a pull request yet prints its text (`lot land --draft` opens it).
+ * nothing; a lot without a pull request yet prints its text (`lot land` opens it).
  */
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -82,7 +82,7 @@ export function runLotPr(params: {
 		...sent,
 		output: textOf([
 			...linesOf(sent.output).filter((line) => line !== ''),
-			(read.draft ? LOT_PR_LINES.headElsewhereDraft : LOT_PR_LINES.headElsewhere)
+			LOT_PR_LINES.headElsewhere
 				.replace('{number}', String(read.number))
 				.replace('{pushed}', read.head.slice(0, SHORT_SHA_LENGTH))
 				.replace('{head}', head.slice(0, SHORT_SHA_LENGTH))

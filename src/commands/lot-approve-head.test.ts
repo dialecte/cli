@@ -149,7 +149,7 @@ describe(
 
 			expect(result.exitCode).toBe(1)
 			expect(result.output).toBe(
-				`lot approve: ${LOT_NAME} not approved: the worktree is at ${local.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} --draft pushes it); nothing recorded, nothing queued`,
+				`lot approve: ${LOT_NAME} not approved: the worktree is at ${local.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
 			)
 			expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toEqual([])

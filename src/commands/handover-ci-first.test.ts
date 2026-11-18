@@ -1,7 +1,7 @@
 /**
  * `handover write` and `handover run` (with or without `--rehearse`) in a CI-first repository: refused with exit 2
  * before anything is written, the refusal naming the flow (commit on the lot branch through the hook, then
- * `lot land <id> --draft`); a repository that is not CI-first writes its hand-over as before.
+ * `lot land <id>`); a repository that is not CI-first writes its hand-over as before.
  */
 import {
 	HANDOVER_LOT_NAME,

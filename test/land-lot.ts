@@ -18,7 +18,12 @@ import type {
 	PullRequestChecks,
 	ReviewComment,
 } from '../src/lib/host/host.types.ts'
-import type { LandingRepository, RecordingHost, StackedRepository } from './land-lot.types.ts'
+import type {
+	LandingRepository,
+	RecordingHost,
+	RefusableCall,
+	StackedRepository,
+} from './land-lot.types.ts'
 
 /**
  * `main` (holding the cli's pull request template, or `template` when given; none for `null`) pushed to a bare origin,
@@ -163,8 +168,12 @@ export function recordingHost(
 		queueRefusal?: string
 		/** Whether the host links stacks; when not, why (the default: no stacks). */
 		stacks?: true | string
-		/** A stack parent's pull request, answered when read by its number. */
+		/** A stack parent's pull request, answered when read by its number or by `parentBranch`. */
 		parent?: PullRequest
+		/** The stack parent's branch, which reads its pull request as gh reads a branch's newest. */
+		parentBranch?: string
+		/** The host's refusal of each call named (any call that may answer a refusal); taken when absent. */
+		refusals?: Partial<Record<RefusableCall, string>>
 		/** How many stack links the host refuses before it takes one. */
 		linkRefusals?: number
 	} = {},
@@ -177,7 +186,11 @@ export function recordingHost(
 	const host: HostAdapter = {
 		readPullRequest: function readPullRequest(call) {
 			calls.push(`read ${call.ref}`)
-			if (parent !== undefined && call.ref === String(parent.number)) return parent
+			if (
+				parent !== undefined &&
+				(call.ref === String(parent.number) || call.ref === params.parentBranch)
+			)
+				return parent
 			return pullRequest
 		},
 		openPullRequest: function openPullRequest(call) {
@@ -211,6 +224,13 @@ export function recordingHost(
 		queuePullRequest: function queuePullRequest(call) {
 			calls.push(`queue ${call.number}`)
 			if (params.queueRefusal !== undefined) return { refusal: params.queueRefusal }
+			return undefined
+		},
+		draftPullRequest: function draftPullRequest(call) {
+			calls.push(
+				`draft-back ${call.number}${call.queued ? ' queued' : ''}${call.draft ? ' draft' : ' ready'}`,
+			)
+			if (pullRequest !== undefined) pullRequest = { ...pullRequest, draft: true, queued: false }
 			return undefined
 		},
 		readChecks: function readChecks(call) {
@@ -249,6 +269,13 @@ export function recordingHost(
 			return undefined
 		},
 	}
+	for (const [name, refusal] of Object.entries(params.refusals ?? {}))
+		Object.assign(host, {
+			[name]: function refusedCall() {
+				calls.push(`${name} refused`)
+				return { refusal }
+			},
+		})
 	return {
 		host,
 		calls,

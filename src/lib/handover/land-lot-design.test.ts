@@ -39,7 +39,6 @@ function land(lot: LandingLot) {
 		branch: 'feat/x',
 		base: 'main',
 		host: recordingHost().host,
-		draft: true,
 		now: new Date('2026-11-17T12:00:00.000Z'),
 	})
 }

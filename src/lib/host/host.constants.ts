@@ -6,7 +6,7 @@ export const GH_COMMAND = 'gh'
 export const CHECKS_FIELDS = 'headRefOid,statusCheckRollup'
 
 export const PULL_REQUEST_FIELDS =
-	'number,url,title,body,state,isDraft,autoMergeRequest,headRefOid,baseRefName'
+	'number,url,title,body,state,isDraft,autoMergeRequest,isInMergeQueue,headRefOid,baseRefName'
 
 /** How long a host call may take: a read is short (offline answers fast), a write may wait on the host. */
 export const HOST_READ_TIMEOUT_MS = 10_000

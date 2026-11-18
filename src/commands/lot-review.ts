@@ -95,7 +95,7 @@ export function runLotReview(params: {
 	})
 }
 
-/** Why no pull request is shown: the lot never landed (lot land --draft named), or its pull request is gone. */
+/** Why no pull request is shown: the lot never landed (lot land named), or its pull request is gone. */
 function missingPullRequestLine(params: { place: LotPlace; number: number | undefined }): string {
 	return params.number === undefined
 		? fillMessage({ template: LOT_REVIEW_LINES.noPullRequest, values: { lot: params.place.lot } })

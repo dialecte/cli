@@ -63,7 +63,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.output).toContain(`Closes #${LOT_ISSUE}`)
 	})
 
-	it('no pull request yet → the text printed and lot land --draft named, nothing sent, exit 0', () => {
+	it('no pull request yet → the text printed and lot land named, nothing sent, exit 0', () => {
 		const lot = pullRequestLot()
 		const { host, calls } = recordingHost()
 
@@ -72,7 +72,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(result.exitCode).toBe(0)
 		expect(calls).toEqual(['read feat/x'])
 		expect(result.output.split('\n').at(-1)).toBe(
-			`no pull request yet: dialecte lot land ${LOT_NAME} --draft opens it with this text`,
+			`no pull request yet: dialecte lot land ${LOT_NAME} opens it with this text`,
 		)
 	})
 
@@ -218,23 +218,6 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 	})
 
-	it("a ready pull request whose head is not the lot's → the line names lot land without --draft", () => {
-		const lot = pullRequestLot()
-		const { host } = recordingHost({
-			existing: {
-				...openPullRequest({ title: 'old', body: '' }),
-				head: 'a'.repeat(40),
-				draft: false,
-			},
-		})
-
-		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
-
-		expect(result.output.split('\n').at(-1)).toMatch(
-			new RegExp(`the text describes the lot; dialecte lot land ${LOT_NAME} pushes it$`),
-		)
-	})
-
 	it('an unknown option → the usage, nothing read or sent, exit 2', () => {
 		const lot = pullRequestLot()
 		const { host, calls } = recordingHost()
@@ -307,7 +290,7 @@ describe('dialecte lot pr', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const result = runLotPr({ cwd: lot.workspace.repository, argv: [LOT_NAME], host })
 
 		expect(result.output.split('\n').at(-1)).toBe(
-			`! pull request #7 is at aaaaaaaaaaaa, the lot at ${git({ root: lot.worktree, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()}: the text describes the lot; dialecte lot land ${LOT_NAME} --draft pushes it`,
+			`! pull request #7 is at aaaaaaaaaaaa, the lot at ${git({ root: lot.worktree, args: ['rev-parse', '--short=12', 'HEAD'] }).trim()}: the text describes the lot; dialecte lot land ${LOT_NAME} pushes it`,
 		)
 	})
 
