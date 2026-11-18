@@ -361,6 +361,8 @@ export const OTHER_KEY_CONTRIB_DETAIL =
 export const OTHER_KEY_CONTRIB_CAUSES = {
 	linked: 'file: dependencies changed since contrib, run dialecte contrib again',
 	head: 'at another commit ({head}), run dialecte contrib on this one',
+	releaseChangelog:
+		"the base branch's CHANGELOG.md changed since contrib (a release, or a correction), run dialecte contrib again",
 	cli: 'another cli or other contrib rows: this cli is {version}, run the hand-over with the cli that ran contrib, or dialecte contrib with this one',
 } as const
 export const FAILED_CONTRIB_DETAIL =

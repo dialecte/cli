@@ -2,10 +2,15 @@
  * The CI template rendered for a package's facts: which files it gets, the ci.yml jobs, how the workflows run the
  * cli, and the repository's own `_test.yml` contract.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { summaryOf } from '../../../test/ci-summary.ts'
-import { readCiTemplate, renderCiFiles, testContractOf } from './ci-template.ts'
+import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
+import { planCiSync, readCiTemplate, renderCiFiles, testContractOf } from './ci-template.ts'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 import type { CiFacts } from './ci-template.types.ts'
 
@@ -69,6 +74,72 @@ describe('renderCiFiles', () => {
 			slotsLeft: [],
 			restoresFailOnMiss: true,
 		})
+	})
+})
+
+describe('the rendered _check.yml', () => {
+	it("ci sync in a scratch repository → _check.yml holds the changelog check step: the queue's base sha fetched, HEAD^1 on a pull request, skipped on a dispatch", () => {
+		const workflow = parse(
+			renderCiFiles({ facts: CORE, template: readCiTemplate() }).get(
+				'.github/workflows/_check.yml',
+			) ?? '',
+		) as { jobs: { check: { steps: Record<string, unknown>[] } } }
+		const { steps } = workflow.jobs.check
+
+		expect({
+			checkout: steps.find((step) => step.uses === 'actions/checkout@v6'),
+			released: steps.filter((step) => String(step.name).startsWith('Released changelog')),
+			fetch: steps.filter((step) => String(step.name).startsWith('Fetch the base')),
+		}).toEqual({
+			checkout: { name: 'Checkout', uses: 'actions/checkout@v6', with: { 'fetch-depth': 2 } },
+			fetch: [
+				{
+					name: 'Fetch the base the change goes onto',
+					if: "github.event_name == 'merge_group'",
+					env: { BASE: '${{ github.event.merge_group.base_sha }}' },
+					run: 'git fetch --depth=1 origin "$BASE"',
+				},
+			],
+			released: [
+				{
+					name: 'Released changelog sections stay as released',
+					if: "github.event_name != 'workflow_dispatch'",
+					env: {
+						BASE: "${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || 'HEAD^1' }}",
+					},
+					run: 'npx --no-install dialecte changelog check --base "$BASE"',
+				},
+			],
+		})
+	})
+
+	it('a _check.yml without the changelog check step → the sync plan names it as an update adding the step', () => {
+		const root = temporaryFolder('dialecte-ci-drift-')
+		const wanted = renderCiFiles({ facts: CORE, template: readCiTemplate() })
+		const withoutStep = `${(wanted.get('.github/workflows/_check.yml') ?? '').split('\n      # a released CHANGELOG section')[0]}\n`
+		writeFiles({
+			root,
+			files: { ...Object.fromEntries(wanted), '.github/workflows/_check.yml': withoutStep },
+		})
+
+		expect(
+			planCiSync({ root, wanted, managed: [...wanted.keys()] }).changes.map((change) => ({
+				kind: change.kind,
+				path: change.path,
+				addsTheStep: change.kind === 'update' && change.after.includes('changelog check --base'),
+			})),
+		).toEqual([{ kind: 'update', path: '.github/workflows/_check.yml', addsTheStep: true }])
+	})
+
+	it("the cli's own _check.yml → matches the rendered template", () => {
+		const own = readFileSync(
+			join(import.meta.dirname, '..', '..', '..', '.github', 'workflows', '_check.yml'),
+			'utf8',
+		)
+
+		expect(own).toBe(
+			renderCiFiles({ facts: CLI, template: readCiTemplate() }).get('.github/workflows/_check.yml'),
+		)
 	})
 })
 

@@ -9,6 +9,7 @@
  * used and what was selected on one line. Every run with a HEAD records itself (mode `hook-gate`), unless a step ran
  * while the working files were not the committed tree (before or after it): a step reads the working files.
  */
+import { RELEASED_CHANGELOG_LINES } from '../changelog/changelog.constants.ts'
 import { hasFlag } from '../config.ts'
 import { partsOf, reuseOf, startStep } from '../events/record-step.ts'
 import { hashHookGateCommand, readIndexTree, readTreeKey } from '../gate-records/check-key.ts'
@@ -24,8 +25,10 @@ import { joinedOf, textOf } from '../print/print.ts'
 import { childLinesOf, relayedTextOf } from '../print/relayed.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
 import { createSystemClock } from '../progress/system-clock.ts'
+import { verifiedCommitOf } from '../rules/released-changelog.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import { checkInstallMatchesTree } from '../worktree/tree-install.ts'
+import { FULL_OBJECT_ID_PATTERN } from './gate-base.constants.ts'
 import { readEmptyTree, resolveGateBase } from './gate-base.ts'
 import {
 	GATE_FAILED_TAIL_LINE,
@@ -81,6 +84,10 @@ import type {
  */
 export async function runHookGate(params: HookGateParams): Promise<CommandResult> {
 	const notices = params.checkStoreIgnored ? [params.checkStoreIgnored] : []
+	// a release base handed that names no full commit of the repository stops the commit before anything runs
+	const releaseRefusal = releaseBaseRefusalOf({ cwd: params.cwd, releaseBase: params.releaseBase })
+	if (releaseRefusal !== undefined)
+		return withNotices({ result: { exitCode: 1, output: textOf([releaseRefusal]) }, notices })
 	// the lot base, resolved once for the run: the design step and the tdd step read the same one (#57)
 	const packageJson = readPackageJson(params.cwd)
 	const base = resolveHookLotBase({ cwd: params.cwd, packageJson })
@@ -182,6 +189,7 @@ async function answerOrRunHookSteps(args: {
 		recorder,
 		// the scoped steps select on the tree the commit records, against the hook base
 		...(shown && { scope: { base: shown.base.commit, tree } }),
+		...(params.releaseBase !== undefined && { releaseBase: params.releaseBase }),
 	})
 	endHookRun({ ...recordOf, ran: run.results, durations: run.durations, ranOnTree: run.ranOnTree })
 	return renderRunOutput({
@@ -355,6 +363,8 @@ async function runHookSteps(params: {
 	live: LiveOutput | undefined
 	recorder: StepHandle
 	scope?: { base: string; tree: string }
+	/** The release base the hook checked: handed to its rules step alone. */
+	releaseBase?: string
 }): Promise<{
 	results: StepResult[]
 	durations: ReadonlyMap<StepResult, number>
@@ -369,6 +379,7 @@ async function runHookSteps(params: {
 		steps: params.steps,
 		packageJson: params.packageJson,
 		...(params.scope && { scope: params.scope }),
+		...(params.releaseBase !== undefined && { releaseBase: params.releaseBase }),
 		// always: the run's events time each part, progress shown or not (D8)
 		announce: function announce(step) {
 			const finishPart = recorder.startPart({ name: step.name, heavy: step.heavy === true })
@@ -628,4 +639,22 @@ function selectionWords(results: readonly StepResult[]): string {
 	return ids.length
 		? GATE_HOOK_SELECTION_WORDS.selected.replace('{ids}', ids.join(GATE_HOOK_ID_SEPARATOR))
 		: GATE_HOOK_SELECTION_WORDS.nothing
+}
+
+/**
+ * The line refusing a handed release base that is no full commit id the repository at `cwd` holds; undefined when it
+ * is one, or when none was handed.
+ */
+function releaseBaseRefusalOf(params: {
+	cwd: string
+	releaseBase: string | undefined
+}): string | undefined {
+	const { releaseBase } = params
+	if (releaseBase === undefined) return undefined
+	const known =
+		FULL_OBJECT_ID_PATTERN.test(releaseBase) &&
+		verifiedCommitOf({ root: params.cwd, revision: releaseBase }) === releaseBase
+	return known
+		? undefined
+		: RELEASED_CHANGELOG_LINES.unknownBase.replace('{value}', () => releaseBase)
 }

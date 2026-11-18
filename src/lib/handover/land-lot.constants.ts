@@ -36,10 +36,9 @@ export const LANDING_LINES = {
 	closeWhenMerged: 'once merged: dialecte lot close {entry} (or lot land {lot} again)',
 	opened: 'pull request #{number} opened: {url}',
 	existing: 'pull request #{number}: {url}',
-	draft: 'a draft: CI runs on every push; land it again without --draft to queue it',
-	notDraft:
-		'pull request #{number} is open and not a draft: --draft does not turn it back, it is not queued',
-	queued: 'queued: the merge queue lands it once its checks pass on top of main',
+	draft:
+		'a draft: CI runs on every push; dialecte lot approve {lot} --by <who> queues it once its checks pass',
+	drafted: 'pull request #{number} back to a draft, out of the queue: an approval is for one head',
 	hostRefused: 'lot land: {reason}',
 	committed: 'the lot is committed, nothing pushed: {landed}',
 	workSince: 'the lot holds {work}: they land in a new lot',

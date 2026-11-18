@@ -17,6 +17,7 @@
 		},
 		"noForbiddenWordsList": { "type": "string" },
 		"queryInLoopNotRun": { "type": "string" },
+		"releasedChangelogNotJudged": { "type": "string" },
 		"dialecteChanges": { "type": "array", "items": { "$ref": "#/$defs/dialecteChange" } },
 		"notJudged": { "type": "integer", "minimum": 1 },
 		"baseLine": { "type": "string" }

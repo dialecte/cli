@@ -46,6 +46,7 @@ export const RULE_NAMES = [
 	'invalid-allow',
 	'unused-allow',
 	'changelog-edit',
+	'released-changelog',
 ] as const
 
 /** The quality rules a `dialecte-allow` comment may silence. */

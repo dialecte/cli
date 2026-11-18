@@ -1,5 +1,6 @@
 /** `dialecte lot land`: its refusals; `{lot}` the id given. */
 export const LOT_LAND_LINES = {
+	draftGone: 'lot land: --draft is gone: lot land always drafts now; queue with lot approve',
 	noWorktree:
 		'lot land: {lot} has no worktree to land (a simulated lot, or its identity unreadable)',
 	damaged: 'lot land: {lot} is damaged: dialecte lot status {lot} says how',

@@ -6,9 +6,7 @@ export const STACK_LANDING_LINES = {
 	parentNotRecorded:
 		'lot land: {lot} stacks on {parent}, merged, whose landed fact cannot be written ({reason}): nothing pushed',
 	noParentPull:
-		'lot land: {lot} stacks on {parent}, which has no pull request yet: lot land {parent} --draft first, nothing pushed',
-	waits:
-		'lot land: {lot} waits for #{number} ({parent}) to merge: without native stacks a stacked lot queues after its parent, nothing pushed',
+		'lot land: {lot} stacks on {parent}, which has no pull request yet: lot land {parent} first, nothing pushed',
 	conflict:
 		'lot land: rebasing {lot} onto {onto} conflicts in {files}: the rebase is undone, nothing pushed',
 	notUndone:
@@ -21,7 +19,6 @@ export const STACK_LANDING_LINES = {
 	linked: 'stacked on #{number}: linked as a stack',
 	basedOn: 'stacked on #{number} through its base branch {branch}: {why}',
 	retargeted: 'pull request #{number} now merges into {base}',
-	stackQueued: 'queued as a stack up to #{number}: the merge queue lands it with the layers below',
 } as const
 
 /** The exit of a rebase that stopped on a conflict: nothing resolved, the person decides. */

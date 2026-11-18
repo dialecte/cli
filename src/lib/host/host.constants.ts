@@ -2,6 +2,69 @@
 
 /** The `gh` command and the fields a pull request is read with. */
 export const GH_COMMAND = 'gh'
+/**
+ * The fields `gh pr view --json` takes, as gh 2.104.0 lists them ("Available fields", on an unknown one): a field
+ * asked outside it fails every read, so a test holds what the adapter asks to it. Read again when gh moves.
+ */
+export const GH_PR_VIEW_FIELDS = {
+	gh: '2.104.0',
+	fields: [
+		'additions',
+		'assignees',
+		'author',
+		'autoMergeRequest',
+		'baseRefName',
+		'baseRefOid',
+		'body',
+		'changedFiles',
+		'closed',
+		'closedAt',
+		'closingIssuesReferences',
+		'comments',
+		'commits',
+		'createdAt',
+		'deletions',
+		'files',
+		'fullDatabaseId',
+		'headRefName',
+		'headRefOid',
+		'headRepository',
+		'headRepositoryOwner',
+		'id',
+		'isCrossRepository',
+		'isDraft',
+		'labels',
+		'latestReviews',
+		'maintainerCanModify',
+		'mergeCommit',
+		'mergeStateStatus',
+		'mergeable',
+		'mergedAt',
+		'mergedBy',
+		'milestone',
+		'number',
+		'potentialMergeCommit',
+		'projectCards',
+		'projectItems',
+		'reactionGroups',
+		'reviewDecision',
+		'reviewRequests',
+		'reviews',
+		'state',
+		'statusCheckRollup',
+		'title',
+		'updatedAt',
+		'url',
+	],
+} as const satisfies { gh: string; fields: readonly string[] }
+
+/**
+ * The GraphQL query of whether a pull request is queued: auto-merge on, or in the merge queue (`gh pr view` has no
+ * merge-queue field). `{owner}` and `{repo}` are filled by `gh api` from the repository.
+ */
+export const QUEUED_QUERY =
+	'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){isInMergeQueue autoMergeRequest{enabledAt}}}}'
+
 /** The fields the checks on a pull request's head are read with. */
 export const CHECKS_FIELDS = 'headRefOid,statusCheckRollup'
 

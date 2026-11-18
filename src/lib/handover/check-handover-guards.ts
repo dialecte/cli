@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { contribKeyOf, findContribRecord } from '../contrib/contrib-key.ts'
+import { contribKeyOf, contribReleaseBaseOf, findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_RECORD_MODE } from '../contrib/contrib.constants.ts'
 import { isPresent } from '../file-system.ts'
 import { lateFixesDetailOf } from '../gate-records/card-gates.ts'
@@ -590,7 +590,8 @@ function checkContrib(params: { handover: HandoverFolder; run: GuardedRun }): Gu
 		stateTree: computeStateTree(root),
 		lots: lots.slice(params.run.commits.length),
 	})
-	const record = findContribRecord({ root, tree, head: params.run.head })
+	const releaseBase = contribReleaseBaseOf({ root })
+	const record = findContribRecord({ root, tree, head: params.run.head, releaseBase })
 	if (record && isGreenRecord(record))
 		return { ok: true, detail: GREEN_CONTRIB_DETAIL.replace('{at}', originOfRecord(record).at) }
 	const failed = (record?.steps ?? [])
@@ -621,7 +622,8 @@ function otherKeyContribDetail(params: { root: string; tree: string; head: strin
 
 /**
  * What differs between a green record's key and the one a run at `head` computes, first found wins: the `file:`
- * dependencies (`linked`), the commit it ran at, else the lock or command hash - another cli or other contrib rows.
+ * dependencies (`linked`), the commit it ran at, the base branch's `CHANGELOG.md` the changelog row judged against
+ * (when the record holds it), else the lock or command hash - another cli or other contrib rows.
  */
 function otherKeyCauseOf(params: {
 	root: string
@@ -630,11 +632,19 @@ function otherKeyCauseOf(params: {
 	green: GateRecord
 }): string {
 	const { green } = params
-	const key = contribKeyOf(params)
+	const key = contribKeyOf({ ...params, releaseBase: contribReleaseBaseOf({ root: params.root }) })
 	if (green.key !== undefined && green.key.linked !== key.linked)
 		return OTHER_KEY_CONTRIB_CAUSES.linked
 	if (green.head !== params.head)
 		return OTHER_KEY_CONTRIB_CAUSES.head.replace('{head}', green.head.slice(0, SHORT_SHA_LENGTH))
+	// a record written before the field existed holds none: its cause is told by the steps below
+	if (
+		green.key?.releaseChangelog !== undefined &&
+		key.releaseChangelog !== undefined &&
+		(green.key.releaseChangelog.tip !== key.releaseChangelog.tip ||
+			green.key.releaseChangelog.mergeBase !== key.releaseChangelog.mergeBase)
+	)
+		return OTHER_KEY_CONTRIB_CAUSES.releaseChangelog
 	return OTHER_KEY_CONTRIB_CAUSES.cli.replace('{version}', readCliVersion())
 }
 

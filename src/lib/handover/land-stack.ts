@@ -32,8 +32,7 @@ import type { StackLanding, StackRefusal } from './land-stack.types.ts'
 
 /**
  * How the stacked lot in `lotFolder` lands now, its rebase done; undefined for a lot that is not stacked; the refusal
- * of a parent whose records or pull request are missing, of a queue that must wait for the parent, or of a rebase that
- * conflicts (exit 2). `landing` is the lot's own landing record (the head its last landing pushed).
+ * of a parent whose records or pull request are missing, or of a rebase that conflicts (exit 2). `landing` is the lot's own landing record (the head its last landing pushed).
  *
  * @intent land a lot started on another open lot as a stack
  * @internal
@@ -45,7 +44,6 @@ export function prepareStackLanding(params: {
 	base: string
 	lotFolder: string
 	host: HostAdapter
-	draft: boolean
 	landing: LandingRecord | undefined
 	/** When the landing runs: the time of the parent's landed fact it records. */
 	now: Date
@@ -83,14 +81,6 @@ export function prepareStackLanding(params: {
 			}),
 		}
 	const support = params.host.probeStacks({ root: params.worktree })
-	if (!params.draft && !support.stacks)
-		return {
-			exitCode: 1,
-			refusal: fillMessage({
-				template: STACK_LANDING_LINES.waits,
-				values: { lot: params.lot, number: String(parentPull.number), parent: record.parent },
-			}),
-		}
 	const restacked = onParentTip({ ...params, base, parentBranch: parent.branch })
 	if ('refusal' in restacked) return restacked
 	const note = support.stacks

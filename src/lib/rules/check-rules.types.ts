@@ -17,6 +17,8 @@ export type RulesCheck = {
 	noForbiddenWordsList?: string
 	/** The line saying `query-in-loop` did not run, an API index being unreadable: the file and why. */
 	queryInLoopNotRun?: string
+	/** The line saying released changelog sections were not judged (no base branch, an unknown release base). */
+	releasedChangelogNotJudged?: string
 	/** Each checked file with its Dialecte-change verdict, sorted by file. */
 	dialecteChanges?: DialecteChangeEntry[]
 	/** How many checked files were left out as not Dialecte changes; absent when none. */

@@ -1,9 +1,10 @@
 /**
- * `dialecte changelog check | release <x.y.z> [--date YYYY-MM-DD]`: the changelog fragments of the package
- * (`changes/<name>.md`, one per lot). `check` reads every fragment; `release` folds them, after the Unreleased entries,
- * into a new version section of `CHANGELOG.md` and deletes them, with the no-entry notes
- * (`changes/<name>.none.md`) - nothing written when a fragment or the Unreleased
- * part cannot be read; `check` reads the Unreleased part too.
+ * `dialecte changelog check [--base <revision>] | release <x.y.z> [--date YYYY-MM-DD]`: the changelog fragments of the
+ * package (`changes/<name>.md`, one per lot). `check` reads every fragment and the Unreleased part, then the released
+ * sections: against `--base` when given (CI hands the commit the change goes onto), else against the base branch and
+ * where the change left it; `release` folds the fragments, after the Unreleased entries, into a new version section of
+ * `CHANGELOG.md` and deletes them, with the no-entry notes (`changes/<name>.none.md`) - nothing written when a fragment
+ * or the Unreleased part cannot be read.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,12 +17,20 @@ import {
 } from '../lib/changelog/changelog.constants.ts'
 import { readFragments } from '../lib/changelog/fragments.ts'
 import { foldChangelog, readUnreleasedOf } from '../lib/changelog/release-changelog.ts'
+import { releasedSectionChanges } from '../lib/changelog/released-sections.ts'
 import { getArg } from '../lib/config.ts'
 import { errorReasonOf } from '../lib/error-reason.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { printOut, textOf } from '../lib/print/print.ts'
+import {
+	baseBranchReleaseOf,
+	releasedChangeMessage,
+	releasedTextsOf,
+	verifiedCommitOf,
+} from '../lib/rules/released-changelog.ts'
 import { CHANGELOG_LINES, CHANGELOG_USAGE, CHANGELOG_VERBS } from './changelog.constants.ts'
 
-import type { FragmentProblem } from '../lib/changelog/changelog.types.ts'
+import type { FragmentProblem, ReleaseBase } from '../lib/changelog/changelog.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
@@ -51,6 +60,25 @@ export function runChangelog(params: { cwd: string; argv: string[] }): CommandRe
 			return refusedWith({
 				problem: FOLD_REFUSALS.unreleased.replace('{problem}', unreleased.problem),
 			})
+		const released = releasedProblemsOf({ cwd: params.cwd, base: getArg(params.argv, 'base') })
+		if ('unknownBase' in released)
+			return {
+				exitCode: 2,
+				output: textOf([
+					CHANGELOG_LINES.refused.replace('{problem}', () =>
+						CHANGELOG_LINES.unknownBase.replace('{value}', () => released.unknownBase),
+					),
+				]),
+			}
+		if (released.messages.length > 0)
+			return {
+				exitCode: 1,
+				output: textOf(
+					released.messages.map((message) =>
+						CHANGELOG_LINES.refused.replace('{problem}', () => message),
+					),
+				),
+			}
 		return {
 			exitCode: 0,
 			output: textOf([
@@ -123,4 +151,41 @@ function problemsOf(params: { problems: readonly FragmentProblem[] }): CommandRe
 /** `1 fragment`, `2 fragments`. */
 function countOf(params: { count: number }): string {
 	return `${params.count} fragment${params.count === 1 ? '' : 's'}`
+}
+
+/**
+ * The lines of the released sections the change altered: against `base` alone when given (two-way: it is the commit
+ * the change goes onto), else against the base branch and where the change left it; none without a base branch. An
+ * unknown `base` is answered as such, never read as a base without a changelog.
+ */
+function releasedProblemsOf(params: {
+	cwd: string
+	base: string | undefined
+}): { messages: string[] } | { unknownBase: string } {
+	const { cwd, base } = params
+	if (base !== undefined) {
+		const commit = verifiedCommitOf({ root: cwd, revision: base })
+		if (commit === undefined) return { unknownBase: base }
+		return messagesOf({
+			cwd,
+			releaseBase: { commit, name: commit.slice(0, SHORT_SHA_LENGTH) },
+			threeWay: false,
+		})
+	}
+	const releaseBase = baseBranchReleaseOf({ root: cwd })
+	return releaseBase === undefined
+		? { messages: [] }
+		: messagesOf({ cwd, releaseBase, threeWay: true })
+}
+
+function messagesOf(params: { cwd: string; releaseBase: ReleaseBase; threeWay: boolean }): {
+	messages: string[]
+} {
+	const { releaseBase } = params
+	const changes = releasedSectionChanges(
+		releasedTextsOf({ root: params.cwd, base: releaseBase, threeWay: params.threeWay }),
+	)
+	return {
+		messages: changes.map((change) => releasedChangeMessage({ change, base: releaseBase.name })),
+	}
 }

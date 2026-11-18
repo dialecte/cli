@@ -149,12 +149,17 @@ describe('the cli workflows', () => {
 		}).toEqual({ namesTrustedPublishing: true, neverRenamed: true })
 	})
 
-	it('_check.yml → runs the package check, then ci check through the cli from its sources', () => {
+	it('_check.yml → runs the package check, the released changelog check against the base the change goes onto, then ci check through the cli from its sources', () => {
 		const runs = (readWorkflow('_check.yml').jobs.check?.steps ?? []).flatMap((step) =>
 			step.run === undefined ? [] : [step.run.trim()],
 		)
 
-		expect(runs).toEqual(['npm run check', 'node src/cli.ts ci check'])
+		expect(runs).toEqual([
+			'npm run check',
+			'git fetch --depth=1 origin "$BASE"',
+			'node src/cli.ts changelog check --base "$BASE"',
+			'node src/cli.ts ci check',
+		])
 	})
 
 	it('every job of every workflow file → a pinned runner image, never *-latest', () => {

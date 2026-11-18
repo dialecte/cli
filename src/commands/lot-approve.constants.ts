@@ -20,16 +20,16 @@ export const LOT_APPROVE_LINES = {
 	orchestratorElsewhere:
 		"lot approve: {package} lots are approved by a person: --by orchestrator is for the cli's own lots",
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
-	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} --draft opens it',
+	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} opens it',
 	noPullRequest: 'lot approve: pull request #{number} of {lot} cannot be found',
 	notOpen: 'pull request #{number} is {state}',
 	lotNotApprovable: 'the lot is {state}',
 	worktreeElsewhere:
-		'the worktree is at {head}, the lot landed {landed} (lot land {lot} --draft pushes it)',
+		'the worktree is at {head}, the lot landed {landed} (lot land {lot} pushes it)',
 	checksElsewhere: 'checks ran on {checked}, not the landed {landed}',
 	refused: 'lot approve: {lot} not approved: {reasons}; nothing recorded, nothing queued',
 	headElsewhere:
-		'pull request #{number} is at {pushed}, the lot landed {landed} (lot land {lot} --draft pushes it)',
+		'pull request #{number} is at {pushed}, the lot landed {landed} (lot land {lot} pushes it)',
 	checksFailing: 'checks failing on the head: {names}',
 	checksPending: 'checks pending on the head: {names}',
 	checksNone: 'no check on the head yet',

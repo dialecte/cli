@@ -111,7 +111,7 @@ describe('landingFlow', () => {
 	it.each<{ flow: LandingFlowName; manualNext: string; refused: string[] }>([
 		{
 			flow: 'ci-first',
-			manualNext: 'run the stations, then dialecte lot land {name} --draft',
+			manualNext: 'run the stations, then dialecte lot land {name}',
 			refused: ['handover write', 'handover run'],
 		},
 		{
@@ -126,7 +126,7 @@ describe('landingFlow', () => {
 
 /** The CI-first refusal of `<command> <verb>` in `root`. */
 function ciFirstRefusal(params: { command: string; verb: string; root: string }): string {
-	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its pull request, never a hand-over; commit on the lot branch through the hook, then lot land <id> --draft; nothing written`
+	return `${params.command} ${params.verb}: ${params.root} is CI-first (.github/workflows/ci.yml runs on merge_group and holds the ci-ok job): a lot lands through its pull request, never a hand-over; commit on the lot branch through the hook, then lot land <id>; nothing written`
 }
 
 /** The hand-over refusal of `<command> <verb>` in `root`. */
@@ -145,7 +145,7 @@ describe('flowRefusalOf', () => {
 		expected: (root: string) => string | undefined
 	}>([
 		{
-			title: 'CI-first: handover write -> refused naming the flow and lot land --draft',
+			title: 'CI-first: handover write -> refused naming the flow and lot land',
 			files: CI_FIRST_FILES,
 			command: 'handover',
 			verb: 'write',

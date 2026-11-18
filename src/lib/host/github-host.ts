@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 
 import { checksOf, reviewCommentsOf } from './github-reads.ts'
 import {
+	QUEUED_QUERY,
 	BROWSER_OPENERS,
 	CHECKS_FIELDS,
 	FILES_TAB_SUFFIX,
@@ -81,6 +82,8 @@ export function createGithubHost(): HostAdapter {
 		linkStack: linkStackOnGithub,
 		queueStack: queueStackOnGithub,
 		retargetPullRequest: retargetOnGithub,
+		draftPullRequest: draftOnGithub,
+		readQueued: readQueuedOnGithub,
 		queuePullRequest: function queuePullRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
@@ -100,6 +103,34 @@ export function createGithubHost(): HostAdapter {
 		},
 	}
 	return host
+}
+
+/**
+ * The pull request taken back out of the queue: `gh pr merge <number> --disable-auto` when queued, then
+ * `gh pr ready <number> --undo` when not a draft; undefined once done (nothing asked for a draft not queued).
+ */
+function draftOnGithub(params: {
+	root: string
+	number: number
+	queued: boolean
+	draft: boolean
+}): HostRefusal | undefined {
+	const number = String(params.number)
+	if (params.queued) {
+		const unqueued = runGh({
+			root: params.root,
+			args: ['pr', 'merge', number, '--disable-auto'],
+			timeout: HOST_WRITE_TIMEOUT_MS,
+		})
+		if ('refusal' in unqueued) return unqueued
+	}
+	if (params.draft) return undefined
+	const drafted = runGh({
+		root: params.root,
+		args: ['pr', 'ready', number, '--undo'],
+		timeout: HOST_WRITE_TIMEOUT_MS,
+	})
+	return 'refusal' in drafted ? drafted : undefined
 }
 
 /** Stacks when the gh-stack extension answers (`gh stack --help`, no network); its absence is why not. */
@@ -126,8 +157,23 @@ function linkStackOnGithub(params: {
 	return 'refusal' in linked ? linked : undefined
 }
 
-/** `gh stack merge <number> --yes --squash`: the layers up to it queued, all or nothing; undefined once queued. */
-function queueStackOnGithub(params: { root: string; number: number }): HostRefusal | undefined {
+/**
+ * `gh stack merge <number> --yes --squash`: the layers up to it queued, all or nothing (a draft made ready first,
+ * `gh pr ready`); undefined once queued.
+ */
+function queueStackOnGithub(params: {
+	root: string
+	number: number
+	draft: boolean
+}): HostRefusal | undefined {
+	if (params.draft) {
+		const ready = runGh({
+			root: params.root,
+			args: ['pr', 'ready', String(params.number)],
+			timeout: HOST_WRITE_TIMEOUT_MS,
+		})
+		if ('refusal' in ready) return ready
+	}
 	const queued = runGh({
 		root: params.root,
 		args: [GH_STACK, 'merge', String(params.number), ...STACK_MERGE_FLAGS],
@@ -243,6 +289,48 @@ function runGh(params: {
 	return { refusal: `${GH_COMMAND} ${params.args.slice(0, 2).join(' ')}: ${reason}` }
 }
 
+/**
+ * `gh api graphql` on the pull request: queued when auto-merge is on or it is in the merge queue (a stack merge queues
+ * without auto-merge); a refusal when gh fails or answers otherwise.
+ */
+function readQueuedOnGithub(params: {
+	root: string
+	number: number
+}): { queued: boolean } | HostRefusal {
+	const run = runGh({
+		root: params.root,
+		args: [
+			'api',
+			'graphql',
+			'-F',
+			'owner={owner}',
+			'-F',
+			'repo={repo}',
+			'-F',
+			`number=${params.number}`,
+			'-f',
+			`query=${QUEUED_QUERY}`,
+			'--jq',
+			'.data.repository.pullRequest',
+		],
+		timeout: HOST_READ_TIMEOUT_MS,
+	})
+	if ('refusal' in run) return run
+	try {
+		const parsed = JSON.parse(run.output) as {
+			isInMergeQueue?: unknown
+			autoMergeRequest?: unknown
+		}
+		return {
+			queued:
+				parsed.isInMergeQueue === true ||
+				(parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined),
+		}
+	} catch {
+		return { refusal: `gh api graphql: not the JSON it writes: ${run.output.slice(0, 80)}` }
+	}
+}
+
 /** A pull request from `gh pr view --json`; a refusal when the text is not what gh writes. */
 function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 	try {
@@ -257,6 +345,7 @@ function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
 			body: String(parsed.body ?? ''),
 			state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : 'open',
 			draft: parsed.isDraft === true,
+			// auto-merge on; the merge queue itself is read where it decides (readQueued): gh pr view cannot say
 			queued: parsed.autoMergeRequest !== null && parsed.autoMergeRequest !== undefined,
 			head: String(parsed.headRefOid ?? ''),
 			...(typeof parsed.baseRefName === 'string' && { base: parsed.baseRefName }),

@@ -31,6 +31,11 @@ export type GateRunParams = {
 	checkStore?: string
 	/** The line saying why a given store was ignored (no absolute path to a folder); the gate starts with it. */
 	checkStoreIgnored?: string
+	/**
+	 * `--hook`: the release base a rehearsal hands the hooks of its clone (`DIALECTE_RELEASE_BASE` in the cli's given
+	 * environment), as given; the hook checks it and hands it to its rules step alone.
+	 */
+	releaseBase?: string
 	/** `--full` and `--release` call it once at their start; `--fast` never. Default: holds the machine awake. */
 	holdAwake?: AwakeHolder
 	/** The clock pair a `--full` or `--release` run measures a sleep with. Default: the process's. */

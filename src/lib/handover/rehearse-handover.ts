@@ -27,6 +27,7 @@ import { startStep } from '../events/record-step.ts'
 import { realPathOf } from '../file-system.ts'
 import { CHECK_STORE_VARIABLE, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
+import { RELEASE_BASE_VARIABLE } from '../gate/selection.constants.ts'
 import { readHooksFolder } from '../git-hooks.ts'
 import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
 import { textOf } from '../print/print.ts'
@@ -35,6 +36,7 @@ import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
+import { baseBranchReleaseOf } from '../rules/released-changelog.ts'
 import { makeScratchFolder, writeScratchMarker } from '../scratch/make-scratch-folder.ts'
 import { scratchRoot, systemTemporaryFolder } from '../scratch/scratch-root.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
@@ -72,6 +74,7 @@ import {
 import { planRehearsal } from './rehearsal-plan.ts'
 import { runHandoverFolder } from './run-handover-folder.ts'
 
+import type { ReleaseBase } from '../changelog/changelog.types.ts'
 import type { StepExplicitPlace, StepHandle } from '../events/record-step.types.ts'
 import type { CheckKey } from '../gate-records/gate-records.types.ts'
 import type { Clock } from '../progress/clock.types.ts'
@@ -259,6 +262,9 @@ async function rehearseRecorded(
 			throw error
 		}
 		running.finish(`✓ rehearsal clone  ${formatDuration(params.clock.now() - startedAt)}`)
+		// what released changelog sections are judged against: the repository's base branch, never the clone's (its
+		// origin/HEAD names the lot branch); handed to contrib in the clone and to the hooks of the clone's commits
+		const releaseBase = baseBranchReleaseOf({ root: repository }) ?? null
 		const contribUnanswerable = contribRun
 			? await runContribInClone({
 					repository,
@@ -270,6 +276,7 @@ async function rehearseRecorded(
 					}).trim(),
 					tree: contribRun.tree,
 					rulesBase: lastMergeTipOf(handover.lots) ?? gateScope.base?.commit ?? null,
+					releaseBase,
 					write,
 					progress,
 					clock: params.clock,
@@ -290,6 +297,7 @@ async function rehearseRecorded(
 			resumeMerge: params.resumeMerge,
 			hookEnvironment: {
 				TMPDIR: hookTemporary,
+				...(releaseBase && { [RELEASE_BASE_VARIABLE]: releaseBase.commit }),
 				[CHECK_STORE_VARIABLE]: readGit({
 					root: repository,
 					args: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -619,11 +627,14 @@ async function runContribInClone(params: {
 	 * the clone's own base branch (its `origin/HEAD` names the lot branch).
 	 */
 	rulesBase: string | null
+	/** What the changelog row judges released sections against: the repository's base branch; `null`: none. */
+	releaseBase: ReleaseBase | null
 	write: WriteLine
 	progress: StepProgress
 	clock: Clock
 }): Promise<string | undefined> {
 	const { repository, clone, head, tree, write } = params
+	const releaseCommit = params.releaseBase?.commit ?? null
 	const startedAt = params.clock.now()
 	const running = params.progress.start({
 		name: REHEARSAL_CONTRIB_STEP,
@@ -635,8 +646,13 @@ async function runContribInClone(params: {
 		if (moved) readGit({ root: clone, args: ['checkout', '-q', '-f', '--detach', head] })
 		readGit({ root: clone, args: ['read-tree', '-u', '--reset', tree] })
 		const differing = differingKeyParts({
-			expected: contribKeyOf({ root: repository, tree, head }),
-			actual: contribKeyOf({ root: clone, tree: computeStateTree(clone), head }),
+			expected: contribKeyOf({ root: repository, tree, head, releaseBase: releaseCommit }),
+			actual: contribKeyOf({
+				root: clone,
+				tree: computeStateTree(clone),
+				head,
+				releaseBase: releaseCommit,
+			}),
 		})
 		if (differing.length) {
 			const reason = REHEARSAL_CONTRIB_UNANSWERABLE.replace('{parts}', differing.join(', '))
@@ -648,6 +664,7 @@ async function runContribInClone(params: {
 			argv: [],
 			storeRoot: repository,
 			rulesBase: params.rulesBase,
+			releaseBase: params.releaseBase,
 		})
 		running.finish(
 			`${result.exitCode === 0 ? '✓' : '✗'} ${REHEARSAL_CONTRIB_STEP}  ${formatDuration(params.clock.now() - startedAt)}`,
