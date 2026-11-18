@@ -423,11 +423,15 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           (its tip on the base, its pull request merged - the one landing.json names, else the
           newest of its branch whose head the branch reached, a pull request opened by hand included
           - or its work contained in origin/<base>, a squash read offline) writes its landed fact in
-          <lot folder>/landed.json, commits its pending entry (a lot with none is registered
-          committed) and every outcome reaching it carries the line landed on <base> at <commit>:
-          <how>, landed in --json; a lot not merged is kept with why (its work not in the base, its
-          pull request closed, the commits it holds since part of it landed, or the host's silence);
-          then for each committed or abandoned hand-over: its final record first, the card line in
+          <lot folder>/landed.json, commits its pending entry (a lot with none is closed as the lot
+          itself: no registry entry is made) and every outcome reaching it carries the line landed
+          on <base> at <commit>: <how>, landed in --json; a lot named by its id that is open is kept
+          with lot <name> <state>: why (its work not in the base, its pull request closed, the
+          commits it holds since part of it landed, or the host's silence); a lot whose branch and
+          worktree are gone reads its landing from the latest card line of its own or of a hand-over
+          on its branch whose entry names its worktree, written since the lot was made; a canceled
+          lot closes, its landing never read; then for each committed or abandoned hand-over, and
+          each committed or canceled lot named by its id: its final record first, the card line in
           the repository's cards.log (a catch-up one when none exists, for every hand-over of the
           worktree, read back), then a removing line, then its worktree moved to .worktrees/_trash/
           and removed in the background by git worktree remove without --force (git refuses one
@@ -435,8 +439,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           .worktrees/_pool-<repository>-<n>, its caches to their own _trash/ entries, then a removed
           line (trashed or kept); a commit dropped from its branch (reset or rebased away), held by
           the branch reflog alone, is named under the closed line: git expires it with that reflog
-          (gc.reflogExpireUnreachable), as it would have with the worktree's; a landed lot's own
-          .dialecte/lot.json archived in its folder first; kept first when an open lot names it
+          (gc.reflogExpireUnreachable), as it would have with the worktree's; a landed or canceled
+          lot's own .dialecte/lot.json (its .dialecte/lot link naming the lot's folder) archived in
+          that folder first, as lot.json, or lot.landed.json beside a lot.json holding other bytes,
+          never over one, kept when both hold other bytes; kept first when an open lot names it
           (reason lot <name> <state>), then with why when it is the main checkout, on another branch
           than the hand-over's, locked, another hand-over of the same worktree is neither committed
           nor abandoned, a link from outside it points into it, dirty, a landed lot holds commits
@@ -450,10 +456,11 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           .dialecte/lot.json and copies byte-equal to the main checkout's go), a process or a
           mutation run works there, lot close itself runs from inside it, or the processes are not
           known, or the final record cannot be kept or the lot's commit is not known; the branch
-          never touched; a hand-over already closed answers already closed, exit 0, nothing moved,
-          its lot's landed fact still recorded when the host proves the merge (its landed line
-          beside already closed); exit 1 when one is kept, 2 for a name or index that is neither a
-          hand-over nor a lot
+          never touched; a hand-over already closed, or a lot whose worktree a recorded removal
+          moved, answers already closed, exit 0, nothing moved (a lot whose worktree is gone with no
+          such removal: nothing to close), its lot's landed fact still recorded when the host proves
+          the merge (its landed line beside already closed); exit 1 when one is kept, 2 when a name
+          or index is neither a hand-over nor a lot (the others are still closed)
 
 exit codes:
   1  risk --effort: the line could not be written
@@ -772,10 +779,13 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     never takes an older lot's pull request), or when its work is
     contained in `origin/<base>` (a squash merge read offline). A merged lot gets its landed fact
     (`<lot folder>/landed.json`), reads `committed` everywhere from then on, files only, and its pending entry is
-    committed (a lot with no entry is registered committed); every outcome reaching it carries the line
-    `landed on <base> at <commit>: <how>` (under the outcome's line, indented; `landed` in `--json`). A lot argument
-    that is not merged is kept with why (its work not in the base, the commits it holds since part of it landed,
-    its pull request closed, or the host's silence). A hand-over
+    committed (a lot with none closes as the lot itself: no registry entry is made); every outcome reaching it carries
+    the line `landed on <base> at <commit>: <how>` (under the outcome's line, indented; `landed` in `--json`). A lot
+    argument that is open is kept with `lot <name> <state>: <why>` (its work not in the base, the commits it holds
+    since part of it landed, its pull request closed, or the host's silence); a canceled lot closes, its landing never
+    read; a lot whose branch and worktree are both gone reads its landing from the head of its final card line (its
+    own, or a hand-over's on its branch whose registry entry names its worktree and index), written since the lot
+    was made. An argument that names nothing is listed (exit 2) and the others still close. A hand-over
     still `pending`; its worktree is the main
     checkout (never parked, moved or trashed); no registered worktree at that path (closed already, or one
     in the trash or the pool: never a target again); a worktree on another branch than the hand-over's

@@ -49,6 +49,11 @@ export type LandingQuery = {
 	pullNumber?: number
 	/** Asked for the pull request when given; git alone decides without it. */
 	host?: HostAdapter
+	/**
+	 * The lot's tip read from its final record when its branch ref and worktree are gone; the branch ref
+	 * is read when left out.
+	 */
+	tip?: string
 }
 
 /** A branch reflog entry: the commit it names and the unix seconds it was written at. */

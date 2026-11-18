@@ -17,17 +17,14 @@
  * touched. Each hand-over closed records `closed` (the time) on its registry entry; a hand-over whose entry holds
  * it is already closed, nothing decided nor moved (a worktree removed by hand, never closed, is still kept).
  */
-import { constants, copyFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { readLinkScanSet } from '../cleanup/read-link-scan-set.ts'
-import {
-	archivedDeclarationsOf,
-	isOwnLandedDeclaration,
-	removableIgnored,
-} from '../cleanup/removable-ignored.ts'
+import { archivedDeclarationsOf, removableIgnored } from '../cleanup/removable-ignored.ts'
 import { CARDS_LOG_FILE } from '../events/cards-log.constants.ts'
-import { isAtOrInsideReal, realPathOf } from '../file-system.ts'
+import { readCardsLog } from '../events/cards-log.ts'
+import { isAtOrInsideReal, realPathOf, realPathThroughAncestors } from '../file-system.ts'
 import { isAncestorCommit, mainCheckoutOf, readCommitOrNone, readGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readLanded } from '../landing/landed-record.ts'
@@ -38,59 +35,40 @@ import {
 	workSinceLanding,
 	workSinceLandingText,
 } from '../landing/lost-work.ts'
-import {
-	landedLineOf,
-	notLandedTextOf,
-	readLotLanding,
-	recordLanded,
-} from '../landing/lot-landing.ts'
 import { readIdentity } from '../store/identity.ts'
 import { lotsKeepingWorktrees } from '../store/lot-keep.ts'
-import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
-import { lotState } from '../store/lot-state.ts'
-import { requiredLotOf } from '../store/resolve-lot.ts'
 import { listLotIdentities, locateStore } from '../store/store-folder.ts'
+import { LOT_LINK_SEGMENTS } from '../store/store.constants.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { listWorktrees } from '../worktree/add-worktree.ts'
 import { checkNodeModules } from '../worktree/check-node-modules.ts'
 import { relinkEscapingLinks } from '../worktree/copy-node-modules.ts'
 import { parkNodeModules, readPackageLockText } from '../worktree/node-modules-pool.ts'
 import { listProcessFolders, processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
-import { isParked, trashWorktree } from '../worktree/trash.ts'
+import { trashWorktree } from '../worktree/trash.ts'
 import {
 	IGNORED_FILES_SHOWN,
 	LOT_FILE,
 	WORKTREE_STATUS_ARGUMENTS,
 } from '../worktree/worktree.constants.ts'
-import { keepFinalRecord, recordRemoved } from './close-final-record.ts'
-import {
-	CLOSE_KEPT_WORK,
-	LOT_NOT_OPEN,
-	NO_LOT_WORKTREE,
-	NOT_A_LOT,
-} from './close-handovers.constants.ts'
+import { LANDED_LOT_FILE } from './archived-declarations.constants.ts'
+import { archiveDecision } from './archived-declarations.ts'
+import { keepFinalRecord, keepLotFinalRecord, recordRemoved } from './close-final-record.ts'
+import { CLOSE_KEPT_WORK, NO_LOT_WORKTREE } from './close-handovers.constants.ts'
+import { CLOSE_TARGET_TEXTS } from './close-targets.constants.ts'
 import { readStoreEntries } from './handover-store-read.ts'
-import {
-	entryOfArgument,
-	findHandoverStore,
-	recordHandoverClosed,
-	recordHandoverState,
-	registerHandover,
-} from './handover-store.ts'
+import { findHandoverStore, handoverStoreOf, recordHandoverClosed } from './handover-store.ts'
 import { ARCHIVED_LOT_FILE, CLOSE_FROM_INSIDE } from './handover.constants.ts'
 
-import type { HostAdapter } from '../host/host.types.ts'
-import type { CloseLandings } from '../landing/lot-landing.types.ts'
 import type { RunEntry } from '../mutation/mutation.types.ts'
 import type {
 	BackgroundSpawner,
 	FolderLink,
-	ListedWorktree,
 	NodeModulesCheck,
 	ProcessFolder,
 } from '../worktree/worktree.types.ts'
-import type { SettledLanding } from './close-handovers.types.ts'
+import type { DeclarationArchive, Decision, Kept } from './close-handovers.types.ts'
+import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseResult, CloseTarget, StoreEntry } from './handover.types.ts'
 
 /** Each named hand-over closed or kept with why; the names the registry does not hold (nothing done then). */
@@ -99,42 +77,33 @@ export function closeHandovers(params: {
 	cwd: string
 	/** The folder the command runs from: a worktree holding it is kept (never moved from under the caller). */
 	runFrom: string
-	/** Hand-over names or worktree indexes. */
-	names: string[]
+	/** Each argument's target as the settle left it (`settleCloseTargets`): a target kept there stays with its reason. */
+	settled: CloseSettle
 	now: Date
 	spawner: BackgroundSpawner
 	/** Lists the processes and their working folders (the tests stand in for it); default: the system's. A throw is "not known". */
 	listProcesses?: () => ProcessFolder[] | string
 	/** Where rehearsal clones are made: their links are read with the workspace's. Default: none. */
 	scratchRoots?: readonly string[]
-}): CloseResult[] | { unknown: string[] } {
+}): CloseResult[] {
 	const main = mainCheckoutOf(params.cwd)
 	const store = findHandoverStore(params.cwd)
-	const lotStore = locateStore({ from: main })?.store
-	const entries = params.names.map((argument) => entryOfArgument({ argument, store, lotStore }))
-	if (entries.some((entry) => entry === undefined))
-		return { unknown: params.names.filter((_name, index) => entries[index] === undefined) }
-	// a worktree already in the trash or the pool is on its way out: never a target again
-	const worktrees = listWorktrees(main).filter(
-		(worktree) => !isParked({ path: worktree.path, main }),
-	)
-	const targets = params.names.map(function targetOf(argument, index): CloseTarget {
-		const entry = entries[index]
-		return {
-			argument,
-			entry,
-			worktree: worktrees.find(
-				(worktree) => entry && realPathOf(worktree.path) === realPathOf(entry.worktree),
-			),
-		}
-	})
 	const worktreesFolder = join(dirname(main), WORKTREES_FOLDER)
 	const runs = readOwnedRuns(main)
 	const processes = readProcesses(params.listProcesses ?? listProcessFolders)
+	const registered = store ? readStoreEntries(store) : []
+	// each target's entry as the registry holds it now: the settle commits a landed lot's pending entry
+	const targets = params.settled.map(function refreshed({ target }): CloseTarget {
+		if (target.entry === undefined) return target
+		const name = target.entry.name
+		return { ...target, entry: registered.find((entry) => entry.name === name) ?? target.entry }
+	})
 	// one worktree is closed once, whichever names and indexes reach it: keyed by its real path, read before
 	// anything moves (a moved worktree has no real path left: its registered spelling would be another key)
 	const keys = targets.map(function keyOf(target): string {
-		return target.entry ? realPathOf(target.entry.worktree) : target.argument
+		return target.kind === 'unknown' || target.worktreePath === undefined
+			? `argument:${target.argument}`
+			: target.worktreePath
 	})
 	// every decision first, nothing moved yet: each argument with every keep rule (its own state, its own
 	// branch), and the check of its worktree's node_modules
@@ -144,16 +113,25 @@ export function closeHandovers(params: {
 	// the lot each worktree was made for, read once: its node_modules parks with that lot as its owner
 	const lotOwners = readLotOwners(main)
 	// read once for every argument: the registry's entries, the links around the workspace
-	const registered = store ? readStoreEntries(store) : []
 	const links = readLinkScanSet({
 		workspace: dirname(main),
 		scratchRoots: params.scratchRoots ?? [],
 	})
-	// the final records and the removals of the repository, beside its registry
-	const cardsLog = store === undefined ? undefined : join(store, CARDS_LOG_FILE)
-	const decisions = targets.map(function decide(target) {
+	// the final records and the removals of the repository, beside its registry (made with the first line it holds)
+	const cardsLog = join(store ?? handoverStoreOf(main), CARDS_LOG_FILE)
+	const decisions = params.settled.map(function decide({ kept }, index): Decision {
+		const target = targets[index]
+		if (kept !== undefined) return { kept }
+		if (target.kind === 'unknown')
+			return {
+				kept: fillMessage({
+					template: CLOSE_TARGET_TEXTS.unknown,
+					values: { argument: target.argument },
+				}),
+			}
 		return decideTarget({
 			target,
+			cardsLog,
 			main,
 			runFrom: params.runFrom,
 			worktreesFolder,
@@ -176,6 +154,10 @@ export function closeHandovers(params: {
 		if ('kept' in decision && !keeps.has(key))
 			keeps.set(key, { argument: target, kept: decision.kept })
 	})
+	// the entries leaving with each worktree, read before anything moves (a moved worktree has no real path left)
+	const leaving = new Map(
+		[...owners.keys()].map((key) => [key, entriesReaching({ key, targets, keys, registered })]),
+	)
 	// then the moves, each worktree its own outcome: a failure keeps it with the reason, the others go on
 	const results = new Map(
 		[...owners].map(function act([key, target]): [string, CloseResult] {
@@ -189,19 +171,31 @@ export function closeHandovers(params: {
 			const moved: string[] = []
 			// the final record of every hand-over reaching the worktree, then the intent line, before the move: a
 			// failure keeps the worktree, nothing moved
+			const reaching = leaving.get(key) ?? []
 			const record =
-				target.entry === undefined || cardsLog === undefined
-					? { kept: 'not decided' }
-					: keepFinalRecord({
-							entries: entriesReaching({ key, targets, keys, registered }),
+				reaching.length > 0
+					? keepFinalRecord({
+							entries: reaching,
 							worktree: decision.worktree.path,
 							file: cardsLog,
 						})
+					: target.kind === 'lot' && target.lotState !== undefined
+						? keepLotFinalRecord({
+								lot: target.lot,
+								state: target.lotState,
+								worktree: decision.worktree.path,
+								branch: decision.worktree.branch ?? target.branch ?? '',
+								landedTip: params.settled[targets.indexOf(target)].landedTip,
+								feature: readIdentity({ lotFolder: target.lotFolder })?.feature ?? null,
+								repository: main,
+								file: cardsLog,
+							})
+						: { kept: 'not decided' }
 			if ('kept' in record) return [key, { outcome: { handover, kept: record.kept }, moved }]
 			try {
-				// a landed lot's declaration kept in its folder before the worktree goes (the removal rule counted it)
-				for (const entry of entriesReaching({ key, targets, keys, registered }))
-					archiveLandedDeclaration({ entry, worktree: decision.worktree.path })
+				// the lot's own declaration kept in its folder before the worktree goes (the removal rule counted it)
+				if (decision.archive !== undefined)
+					writeFileSync(decision.archive.path, decision.archive.bytes, { flag: 'wx' })
 				const { trashed, nodeModules } = closeWorktree({
 					worktree: decision.worktree.path,
 					check: decision.check,
@@ -268,193 +262,21 @@ export function closeHandovers(params: {
 			? { outcome: { handover, closed: true }, moved: [same] }
 			: { outcome: { handover, kept: `${same}: ${result.outcome.kept}` }, moved: [] }
 	})
-	// each hand-over closed now says so in its registry entry: the one thing a later close reads as closed
-	if (store)
-		targets.forEach(function recordClosed(target, index) {
-			const { outcome } = outcomes[index]
-			if (target.entry && 'closed' in outcome && !outcome.already)
-				recordHandoverClosed({ store, name: target.entry.name, at: params.now })
-		})
+	// each hand-over closed now says so in its registry entry, every one that left with the worktree: the one thing a
+	// later close reads as closed (a lot with no entry is closed by its `removed` line)
+	if (store) {
+		const closedNames = new Set(
+			targets.flatMap(function closedEntries(target, index): string[] {
+				const { outcome } = outcomes[index]
+				if (!('closed' in outcome) || outcome.already === true) return []
+				return (leaving.get(keys[index]) ?? [])
+					.filter((entry) => entry.closed === undefined)
+					.map((entry) => entry.name)
+			}),
+		)
+		for (const name of closedNames) recordHandoverClosed({ store, name, at: params.now })
+	}
 	return outcomes
-}
-
-/**
- * Before any close decision, the landings of the lots the arguments reach, read once with the host (FIX-ci-loop
- * section 2): the store lot an argument names (a lot id or name with no hand-over entry, or an entry registering a lot
- * folder), and the open lots naming an argument's worktree and branch. A merged lot gets its landed fact (so it reads
- * committed and keeps nothing), its pending entry committed; a merged lot with no entry is registered committed, the
- * argument then naming that entry. A lot argument that is not merged is kept with why, nothing written.
- *
- * @intent let lot close see a merge, a squash or a pull request opened by hand, whatever registry it has
- * @internal
- */
-export function settleCloseLandings(params: {
-	main: string
-	names: readonly string[]
-	host: HostAdapter
-	now: Date
-}): CloseLandings {
-	const { main, now } = params
-	const store = findHandoverStore(main)
-	const lotStore = locateStore({ from: main })?.store
-	const identities = lotStore === undefined ? [] : listLotIdentities({ store: lotStore })
-	// each lot's landing read once, whichever arguments reach it
-	const read = new Map<string, SettledLanding>()
-	function settle(lotFolder: string): SettledLanding {
-		const known = read.get(lotFolder)
-		if (known !== undefined) return known
-		const settled = settledLandingOf({ lotFolder, host: params.host, now })
-		// a merged lot's entry is committed, whichever verb wrote its landed fact
-		if (settled.landed !== undefined)
-			recordHandoverState({ store, folder: lotFolder, state: 'committed' })
-		read.set(lotFolder, settled)
-		return settled
-	}
-	const names: string[] = []
-	const landed = new Map<string, string>()
-	const kept = new Map<string, string>()
-	for (const argument of params.names) {
-		const entry = entryOfArgument({ argument, store, lotStore })
-		const own =
-			entry === undefined ? lotFolderOf({ argument, main }) : lotFolderIn({ entry, lotStore })
-		const reaching =
-			entry === undefined
-				? []
-				: identities
-						.filter(
-							(lot) =>
-								lot.identity.branch === entry.branch &&
-								typeof lot.identity.worktree === 'string' &&
-								realPathOf(lot.identity.worktree) === realPathOf(entry.worktree),
-						)
-						.map((lot) => realPathOf(join(lotStore ?? '', lot.name)))
-		const lines = [...new Set([...(own === undefined ? [] : [own]), ...reaching])]
-			.map(settle)
-			.flatMap((settled) => (settled.landed === undefined ? [] : [settled.landed]))
-		const name = closedNameOf({ argument, entry, own, settle, now })
-		if ('kept' in name) {
-			kept.set(argument, name.kept)
-			continue
-		}
-		names.push(name.name)
-		if (lines.length > 0) landed.set(name.name, lines.join('; '))
-	}
-	return { names, landed, kept }
-}
-
-/**
- * The name the close decides for an argument: the argument itself when it names an entry or no lot (the close then
- * answers unknown); for a lot with no entry, the entry a merged lot is registered under, or why it stays.
- */
-function closedNameOf(params: {
-	argument: string
-	entry: StoreEntry | undefined
-	own: string | undefined
-	settle: (lotFolder: string) => SettledLanding
-	now: Date
-}): { name: string } | { kept: string } {
-	const { argument, own } = params
-	if (params.entry !== undefined || own === undefined) return { name: argument }
-	const settled = params.settle(own)
-	if (settled.landed === undefined) return { kept: settled.kept ?? '' }
-	return registerLandedLot({ lotFolder: own, now: params.now })
-}
-
-/**
- * A lot whose records hold and that is not canceled reads `{}` (to be read: open, or committed by its registry with
- * no landed fact); a lot that landed already, its landed line (its fact holds it, nothing to read again); a damaged
- * or canceled one why it is not read.
- */
-function openLotStateOf(params: { lotFolder: string }): SettledLanding {
-	const checked = readCheckedLotState({
-		lotFolder: params.lotFolder,
-		registry: registryOfLotFolder(params.lotFolder),
-	})
-	if (checked === undefined) return { kept: NOT_A_LOT }
-	if ('damage' in checked) return { kept: checked.damage }
-	const fact = readLanded({ lotFolder: params.lotFolder })
-	if (fact !== undefined && 'tip' in fact) return { landed: landedLineOf(fact) }
-	// a canceled lot has nothing to settle; a committed one (a hand-over run) is read: only git or the host prove it
-	const { state } = lotState(checked.input)
-	return state === 'canceled'
-		? { kept: fillMessage({ template: LOT_NOT_OPEN, values: { state } }) }
-		: {}
-}
-
-/**
- * One lot's landing as close settles it: an open lot whose records hold is read (with the host) and its landed fact
- * written once merged; a lot that landed already gives its line; a damaged or closed one stays as it is, with why.
- */
-function settledLandingOf(params: {
-	lotFolder: string
-	host: HostAdapter
-	now: Date
-}): SettledLanding {
-	const { lotFolder } = params
-	const open = openLotStateOf({ lotFolder })
-	if (open.kept !== undefined || open.landed !== undefined) return open
-	const landing = readLotLanding({ lotFolder, host: params.host })
-	if ('refusal' in landing) return { kept: landing.refusal }
-	try {
-		return settledOf({
-			landing: recordLanded({ landing, now: params.now }),
-			text: notLandedTextOf(landing),
-		})
-	} catch (error) {
-		// a landed fact that cannot be written keeps the lot: nothing is decided on a fact not kept
-		return { kept: (error as Error).message.trim() }
-	}
-}
-
-/** A lot's landing as close reads it: the line naming how it landed, or why it is kept. */
-function settledOf(params: { landing: ReturnType<typeof recordLanded>; text: string }): {
-	landed?: string
-	kept?: string
-} {
-	return params.landing === undefined
-		? { kept: params.text }
-		: { landed: landedLineOf(params.landing) }
-}
-
-/** The store lot an argument with no hand-over entry names (its id, name or index); undefined for none. */
-function lotFolderOf(params: { argument: string; main: string }): string | undefined {
-	const required = requiredLotOf({ argument: params.argument, cwd: params.main, mode: 'read' })
-	return 'lot' in required ? realPathOf(required.lot) : undefined
-}
-
-/** The store lot an entry registers (its folder is a lot folder of the store); undefined for a hand-over folder. */
-function lotFolderIn(params: {
-	entry: StoreEntry
-	lotStore: string | undefined
-}): string | undefined {
-	const { lotStore } = params
-	if (lotStore === undefined) return undefined
-	const folder = realPathOf(params.entry.folder)
-	return dirname(folder) === realPathOf(lotStore) ? folder : undefined
-}
-
-/** A merged lot with no hand-over entry registered committed for its worktree: the entry's name, or why it stays. */
-function registerLandedLot(params: {
-	lotFolder: string
-	now: Date
-}): { name: string } | { kept: string } {
-	const identity = readLotLanding({ lotFolder: params.lotFolder })
-	if ('refusal' in identity) return { kept: identity.refusal }
-	const { worktree, branch } = identity.identity
-	if (worktree === null || !existsSync(worktree))
-		return { kept: fillMessage({ template: NO_LOT_WORKTREE, values: { lot: identity.lot } }) }
-	const name = registerHandover({
-		root: worktree,
-		folder: params.lotFolder,
-		branch,
-		now: params.now,
-	})
-	recordHandoverState({
-		store: findHandoverStore(worktree),
-		folder: params.lotFolder,
-		state: 'committed',
-	})
-	return { name }
 }
 
 /**
@@ -489,7 +311,9 @@ function entriesReaching(params: {
  * keeps the target with the reason.
  */
 function decideTarget(params: {
-	target: CloseTarget
+	target: Exclude<CloseTarget, { kind: 'unknown' }>
+	/** The repository's `cards.log`: a lot whose worktree is gone is closed already when a removal moved it. */
+	cardsLog: string
 	main: string
 	/** Where the close runs from: a worktree it stands in is kept. */
 	runFrom: string
@@ -502,17 +326,26 @@ function decideTarget(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace (`readLinkScanSet`). */
 	links: readonly FolderLink[]
-}):
-	| { kept: string }
-	| { alreadyClosed: true }
-	| {
-			worktree: ListedWorktree
-			dropped: string | undefined
-			check: NodeModulesCheck | undefined
-			checkedLockText: string | undefined
-	  } {
+}): Decision {
+	const { target } = params
 	// an earlier close recorded it on the entry: nothing to decide, nothing to move
-	if (params.target.entry?.closed !== undefined) return { alreadyClosed: true }
+	if (
+		target.entry?.closed !== undefined &&
+		(target.kind === 'entry' || target.worktree === undefined)
+	)
+		return { alreadyClosed: true }
+	if (target.kind === 'lot' && target.worktreePath === undefined)
+		return { kept: fillMessage({ template: NO_LOT_WORKTREE, values: { lot: target.lot } }) }
+	// a lot's worktree gone: closed when a recorded removal moved it, else nothing to close
+	if (target.kind === 'lot' && target.worktree === undefined)
+		return movedByRemoval({ file: params.cardsLog, lot: target.lot, worktree: target.worktreePath })
+			? { alreadyClosed: true }
+			: {
+					kept: fillMessage({
+						template: CLOSE_TARGET_TEXTS.nothingToClose,
+						values: { worktree: target.worktreePath ?? '' },
+					}),
+				}
 	try {
 		const why = whyKeep(params)
 		if ('kept' in why) return why
@@ -520,19 +353,42 @@ function decideTarget(params: {
 			return {
 				kept: `no ${WORKTREES_FOLDER}/ beside ${params.main}: the pool and the trash live there`,
 			}
-		const { worktree, dropped } = why
+		const { worktree, dropped, archive } = why
 		if (!existsSync(join(worktree.path, 'node_modules')))
-			return { worktree, dropped, check: undefined, checkedLockText: undefined }
+			return { worktree, dropped, archive, check: undefined, checkedLockText: undefined }
 		// the lock text read with the check: the pool entry is stamped with the key of what the check read
 		return {
 			worktree,
 			dropped,
+			archive,
 			checkedLockText: readPackageLockText({ worktree: worktree.path }),
 			check: checkNodeModules({ worktree: worktree.path }),
 		}
 	} catch (error) {
 		return { kept: (error as Error).message.trim() }
 	}
+}
+
+/**
+ * Whether `cards.log` holds a removal that moved the lot's worktree: a `removing` line of the worktree item joined to a
+ * `removed` outcome `trashed` or `deleted`, by the lot's name, else (a hand-over outside the store wrote `lot: null`)
+ * by the worktree's real path.
+ */
+function movedByRemoval(params: {
+	file: string
+	lot: string
+	worktree: string | undefined
+}): boolean {
+	if (!existsSync(params.file)) return false
+	const worktree =
+		params.worktree === undefined ? undefined : realPathThroughAncestors(params.worktree)
+	return readCardsLog({ file: params.file }).removals.some(
+		(removal) =>
+			removal.item === 'worktree' &&
+			(removal.outcome === 'trashed' || removal.outcome === 'deleted') &&
+			(removal.lot === params.lot ||
+				(worktree !== undefined && realPathThroughAncestors(removal.path) === worktree)),
+	)
 }
 
 /** The processes, or "not known" when the lister throws or cannot tell: then everything is kept. */
@@ -563,31 +419,39 @@ export function whyKeep(params: {
 	registered: readonly StoreEntry[]
 	/** The links around the workspace: one from outside the worktree reaching into it keeps it. */
 	links: readonly FolderLink[]
-}): { kept: string } | { worktree: ListedWorktree; dropped: string | undefined } {
+}): { kept: string } | Kept {
 	const { target } = params
-	const entry = target.entry
-	if (!entry) return { kept: 'no hand-over of that name or index' }
-	const lotKeep = params.lotKeeps.get(realPathOf(entry.worktree))
+	if (target.kind === 'unknown' || target.worktreePath === undefined)
+		return { kept: 'no hand-over of that name or index' }
+	const { entry, worktreePath } = target
+	const branch = target.branch ?? ''
+	const lotKeep = params.lotKeeps.get(worktreePath)
 	if (lotKeep) return { kept: lotKeep }
-	if (entry.state !== 'committed' && entry.state !== 'abandoned')
+	// a lot target closes on its own settled state; one an entry registers, by that entry's state too
+	if (target.kind === 'lot' && target.lotState === undefined) return { kept: 'not decided' }
+	if (entry && entry.state !== 'committed' && entry.state !== 'abandoned')
 		return { kept: `${entry.state}: only a committed or abandoned hand-over closes` }
-	const open = openHandoverOfWorktree({ entry, registered: params.registered })
+	const open = openHandoverOfWorktree({
+		worktree: worktreePath,
+		name: entry?.name,
+		registered: params.registered,
+	})
 	if (open)
 		return {
 			kept: `another hand-over of this worktree is ${open.state}: ${open.name} (only committed or abandoned ones let it close)`,
 		}
-	if (realPathOf(entry.worktree) === realPathOf(params.main))
+	if (worktreePath === realPathOf(params.main))
 		return {
 			kept: `its worktree is the main checkout ${params.main}: never parked, moved or trashed`,
 		}
 	const worktree = target.worktree
 	if (!worktree)
 		return {
-			kept: `${entry.worktree} is no worktree of the repository (closed already, moved, or in the trash): nothing to close`,
+			kept: `${entry?.worktree ?? worktreePath} is no worktree of the repository (closed already, moved, or in the trash): nothing to close`,
 		}
-	if (worktree.branch !== entry.branch)
+	if (worktree.branch !== branch)
 		return {
-			kept: `on ${worktree.branch ?? 'a detached HEAD'}, not on the hand-over's branch ${entry.branch}: the worktree holds other work now`,
+			kept: `on ${worktree.branch ?? 'a detached HEAD'}, not on the hand-over's branch ${branch}: the worktree holds other work now`,
 		}
 	if (worktree.locked)
 		return { kept: `locked: ${worktree.path} (git worktree unlock it first, if it may go)` }
@@ -607,14 +471,16 @@ export function whyKeep(params: {
 		.filter(Boolean)
 	if (status.length)
 		return { kept: `dirty: ${status.length} path(s) git status lists in ${worktree.path}` }
-	const landedFact = readLanded({ lotFolder: entry.folder })
+	// the landing a target closes by: its lot's folder (a hand-over's lot keeps its fact there), else the entry's
+	const landedFolder = target.lotFolder ?? entry?.folder ?? worktreePath
+	const landedFact = readLanded({ lotFolder: landedFolder })
 	const landedTips = landedFact !== undefined && 'tip' in landedFact ? [landedFact.tip] : []
 	// a landed lot: is its current work landed (Q1); then, landed or not, would the removal lose a commit (Q2)
 	const since = landedTips.flatMap((landedTip) =>
 		workSinceLanding({
 			root: worktree.path,
-			branch: entry.branch,
-			cut: readIdentity({ lotFolder: entry.folder })?.base.commit ?? landedTip,
+			branch,
+			cut: readIdentity({ lotFolder: landedFolder })?.base.commit ?? landedTip,
 			landedTip,
 		}),
 	)
@@ -634,13 +500,19 @@ export function whyKeep(params: {
 				values: { work: lostWorkText(lost), worktree: worktree.path },
 			}),
 		}
+	const own = ownDeclarationOf({
+		worktree: worktree.path,
+		lotFolder: target.lotFolder,
+		owned: landedTips.length > 0 || (target.kind === 'lot' && target.lotState === 'canceled'),
+	})
+	if ('kept' in own) return own
 	const { kept } = removableIgnored({
 		worktree: worktree.path,
 		main: params.main,
-		archivedDeclarations: archivedDeclarationsOf({
-			worktree: worktree.path,
-			entries: params.registered,
-		}),
+		archivedDeclarations: [
+			...archivedDeclarationsOf({ worktree: worktree.path, entries: params.registered }),
+			...own.counted,
+		],
 	})
 	if (kept.length > IGNORED_FILES_SHOWN)
 		return {
@@ -653,9 +525,53 @@ export function whyKeep(params: {
 		dropped: droppedFromBranch({
 			root: worktree.path,
 			worktree: worktree.path,
-			branch: entry.branch,
+			branch,
 			landedTips,
 		}),
+		archive: own.archive,
+	}
+}
+
+/**
+ * The lot's own declaration (the worktree's `.dialecte/lot.json`) by the one archive rule (`archiveDecision`), when its
+ * lot landed or is canceled and the worktree's `.dialecte/lot` link resolves to its folder: the bytes counted as
+ * archived (so they keep nothing), and the archive to write before the move; why it stays when both archives of the
+ * folder hold other bytes. Nothing for another lot's declaration, or none: the ignored-file rule decides.
+ */
+function ownDeclarationOf(params: {
+	worktree: string
+	lotFolder: string | undefined
+	owned: boolean
+}): { counted: Buffer[]; archive: DeclarationArchive | undefined } | { kept: string } {
+	const { worktree, lotFolder } = params
+	const file = join(worktree, LOT_FILE)
+	const link = join(worktree, ...LOT_LINK_SEGMENTS)
+	if (lotFolder === undefined || !existsSync(file) || !existsSync(link))
+		return { counted: [], archive: undefined }
+	const linked = realPathOf(link)
+	if (linked === link || linked !== realPathOf(lotFolder))
+		return { counted: [], archive: undefined }
+	const bytes = readFileSync(file, 'utf8')
+	const archivedPath = join(lotFolder, ARCHIVED_LOT_FILE)
+	const landedPath = join(lotFolder, LANDED_LOT_FILE)
+	const decision = archiveDecision({
+		bytes,
+		archived: existsSync(archivedPath) ? readFileSync(archivedPath, 'utf8') : undefined,
+		landed: existsSync(landedPath) ? readFileSync(landedPath, 'utf8') : undefined,
+		owned: params.owned,
+	})
+	if (decision.kind === 'keep')
+		return {
+			kept: fillMessage({
+				template: CLOSE_TARGET_TEXTS.declarationKept,
+				values: { archived: archivedPath, landed: landedPath, folder: lotFolder },
+			}),
+		}
+	if (decision.kind === 'untouched') return { counted: [], archive: undefined }
+	return {
+		counted: [Buffer.from(bytes)],
+		archive:
+			decision.kind === 'write' ? { path: join(lotFolder, decision.name), bytes } : undefined,
 	}
 }
 
@@ -687,13 +603,16 @@ function droppedFromBranch(params: {
 
 /** Another hand-over registered for the same worktree (by real path) that is neither committed nor abandoned. */
 function openHandoverOfWorktree(params: {
-	entry: StoreEntry
+	/** The worktree's real path. */
+	worktree: string
+	/** The entry the close names, left out of the others. */
+	name: string | undefined
 	registered: readonly StoreEntry[]
 }): StoreEntry | undefined {
-	const worktree = realPathOf(params.entry.worktree)
+	const { worktree } = params
 	return params.registered.find(
 		(other) =>
-			other.name !== params.entry.name &&
+			other.name !== params.name &&
 			other.state !== 'committed' &&
 			other.state !== 'abandoned' &&
 			realPathOf(other.worktree) === worktree,
@@ -709,24 +628,6 @@ function linkFromOutside(params: {
 		(link) => !isAtOrInsideReal({ path: dirname(link.link), folder: params.worktree }),
 	)
 	return linkReaching({ folder: params.worktree, links: outside })
-}
-
-/**
- * A committed lot that landed (`landed.json` in its folder, the worktree's `.dialecte/lot` link pointing there) with
- * nothing archived there: the worktree's `.dialecte/lot.json` copied into the folder as its archived declaration, never over one. Nothing for a
- * worktree without one. A copy that cannot be written throws: the worktree stays.
- */
-function archiveLandedDeclaration(params: { entry: StoreEntry; worktree: string }): void {
-	const { entry } = params
-	if (
-		entry.state !== 'committed' ||
-		!isOwnLandedDeclaration({ worktree: params.worktree, folder: entry.folder })
-	)
-		return
-	const archived = join(entry.folder, ARCHIVED_LOT_FILE)
-	const own = join(params.worktree, LOT_FILE)
-	if (existsSync(archived) || !existsSync(own)) return
-	copyFileSync(own, archived, constants.COPYFILE_EXCL)
 }
 
 /**

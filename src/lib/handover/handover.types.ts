@@ -478,14 +478,33 @@ export type ScratchRoots = {
 }
 
 /**
- * What `lot close` closes for one argument: the hand-over's registry entry, and the registered worktree at the
- * path it holds (none when no worktree of the repository is there, or only one in the trash or the pool).
+ * What `lot close` closes for one argument: an unknown argument (its own outcome); a hand-over entry (its
+ * worktree and branch, the store lot whose landing it closes by); or a store lot (its own worktree and branch, the
+ * entry registering its folder when it has one, its state once settled: no registry entry is needed nor created).
+ * `worktree` is the registered worktree at its path (none when gone, or only one in the trash or the pool).
  */
-export type CloseTarget = {
-	argument: string
-	entry: StoreEntry | undefined
-	worktree: ListedWorktree | undefined
-}
+export type CloseTarget =
+	| { kind: 'unknown'; argument: string; entry: undefined; worktree: undefined }
+	| {
+			kind: 'entry'
+			argument: string
+			entry: StoreEntry
+			worktreePath: string
+			branch: string
+			worktree: ListedWorktree | undefined
+			lotFolder: string | undefined
+	  }
+	| {
+			kind: 'lot'
+			argument: string
+			lotFolder: string
+			lot: string
+			entry: StoreEntry | undefined
+			worktreePath: string | undefined
+			branch: string | undefined
+			worktree: ListedWorktree | undefined
+			lotState: 'committed' | 'canceled' | undefined
+	  }
 
 /**
  * A hand-over's place among those reaching a worktree `lot close` moves, for its catch-up head: the `sibling` (any but

@@ -400,3 +400,12 @@ export type ReclaimContext = {
 
 /** What one reclaim execution knows of a repository: its context as the moves left it, its pool cap once a park read it. */
 export type ReclaimRepositoryRun = { context: ReclaimContext; cap: number | undefined }
+
+/** A store lot's item as `worktree prune` keeps it: whether its lot is open, and the reason shown. */
+export type LotItem = { open: boolean; reason: string }
+
+/** Every store lot's items, by worktree (real path) and by branch. */
+export type LotItems = {
+	byWorktree: ReadonlyMap<string, LotItem>
+	byBranch: ReadonlyMap<string, LotItem>
+}
