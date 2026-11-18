@@ -56,6 +56,8 @@ export type RecapPackageCases = {
 	packagePath: string
 	accepted: LotCaseEntry[]
 	revised: LotCaseEntry[]
+	/** Why the package's declaration cannot be read: its cases are then empty. */
+	failure?: string
 }
 
 /** Each lot's subject and commit, and whether the branch was rewritten under them. */

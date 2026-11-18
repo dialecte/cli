@@ -1,8 +1,10 @@
 /** The lot files of a worktree (CK-cli design 3.2.1): the root's and each tracked package's, found by git's index. */
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
 	createScratchRepository,
+	git,
 	temporaryFolder,
 	writeFiles,
 } from '../../../test/scratch-repository.ts'
@@ -57,6 +59,28 @@ describe('lotFilesOf', () => {
 
 		expect(lotFilesOf({ root })).toEqual([
 			{ packagePath: '', file: join(root, '.dialecte/lot.json') },
+		])
+	})
+
+	it('a package whose package.json a commit deleted, its base given -> found', () => {
+		const root = createScratchRepository({ 'packages/ui/package.json': '{}\n' })
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+		git({ root, args: ['rm', '-q', '--', 'packages/ui/package.json'] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: drop the package'] })
+		writeFiles({ root, files: { 'packages/ui/.dialecte/lot.json': DECLARATION } })
+
+		expect(lotFilesOf({ root, bases: [base] })).toEqual([
+			{ packagePath: 'packages/ui', file: join(root, 'packages/ui/.dialecte/lot.json') },
+		])
+	})
+
+	it('a package.json deleted from the working tree, still in the index -> its lot file found', () => {
+		const root = createScratchRepository({ 'packages/ui/package.json': '{}\n' })
+		rmSync(join(root, 'packages/ui/package.json'))
+		writeFiles({ root, files: { 'packages/ui/.dialecte/lot.json': DECLARATION } })
+
+		expect(lotFilesOf({ root })).toEqual([
+			{ packagePath: 'packages/ui', file: join(root, 'packages/ui/.dialecte/lot.json') },
 		])
 	})
 

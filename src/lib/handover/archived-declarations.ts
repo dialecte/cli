@@ -2,12 +2,19 @@
  * The one archive rule of a hand-over folder's lot files: where each package's declaration is archived, the
  * per-file decision, the move `handover run` makes, and the reader of what a folder holds.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
 import { lotFilesOf } from '../worktree/lot-files.ts'
-import { ARCHIVE_NAMES, PACKAGE_ARCHIVES_FOLDER } from './archived-declarations.constants.ts'
-import { EMPTY_LOT_DECLARATION } from './handover.constants.ts'
+import {
+	ARCHIVE_NAMES,
+	ARCHIVE_PENDING_FILE,
+	ARCHIVE_READ_BACK_DIFFERS,
+	LANDED_LOT_FILE,
+	PACKAGE_ARCHIVES_FOLDER,
+} from './archived-declarations.constants.ts'
+import { ARCHIVED_LOT_FILE, EMPTY_LOT_DECLARATION } from './handover.constants.ts'
 import { isEmptyDeclaration } from './is-empty-declaration.ts'
 
 import type {
@@ -16,6 +23,7 @@ import type {
 	ArchivedDeclaration,
 	ArchiveName,
 	MovedDeclaration,
+	PendingArchive,
 } from './archived-declarations.types.ts'
 
 /**
@@ -42,10 +50,10 @@ export function archiveDecision(params: ArchiveDecisionParams): ArchiveDecision 
 	const { bytes, archived, landed } = params
 	if (!params.owned) return { kind: 'untouched' }
 	if (isEmptyDeclaration(bytes)) return { kind: 'nothing' }
-	if (archived === undefined) return { kind: 'write', name: 'lot.json' }
-	if (archived === bytes) return { kind: 'already', name: 'lot.json' }
-	if (landed === undefined) return { kind: 'write', name: 'lot.landed.json' }
-	if (landed === bytes) return { kind: 'already', name: 'lot.landed.json' }
+	if (archived === undefined) return { kind: 'write', name: ARCHIVED_LOT_FILE }
+	if (archived === bytes) return { kind: 'already', name: ARCHIVED_LOT_FILE }
+	if (landed === undefined) return { kind: 'write', name: LANDED_LOT_FILE }
+	if (landed === bytes) return { kind: 'already', name: LANDED_LOT_FILE }
 	return { kind: 'keep' }
 }
 
@@ -85,39 +93,111 @@ export function archivedDeclarationsOf(params: { folder: string }): ArchivedDecl
 }
 
 /**
- * Every lot file of the worktree through `archiveDecision`, archived into `folder`, then emptied when archived
- * or already archived; the others left as they are.
+ * Every lot file of the worktree through `archiveDecision`, archived into `folder`, read back, then emptied when
+ * archived or already archived; the others left as they are. A lot file is owned when `owned` (the run committed
+ * lots) or when the folder's pending record names its package path with these bytes. A write or read-back that
+ * fails leaves that file as it is, names why, and goes on; the failures are the folder's new pending record (none:
+ * the record removed).
  * @intent archive a committed hand-over's lot files
  */
 export function moveDeclarations(params: {
 	worktree: string
 	folder: string
 	owned: boolean
+	/** The commits the lot files' packages may have been deleted by start from: their packages are found too. */
+	bases?: readonly string[]
 }): MovedDeclaration[] {
-	const { folder, owned } = params
-	return lotFilesOf({ root: params.worktree }).map(function moveDeclaration(lotFile) {
-		const { packagePath, file } = lotFile
-		const bytes = readFileSync(file, 'utf8')
-		const decision = archiveDecision({
-			bytes,
-			archived: archiveOf({ folder, packagePath, name: 'lot.json' })?.bytes,
-			landed: archiveOf({ folder, packagePath, name: 'lot.landed.json' })?.bytes,
-			owned,
-		})
-		const stored = decision.kind === 'write' || decision.kind === 'already'
-		const archive = archivedDeclarationPath({
-			folder,
-			packagePath,
-			name: stored ? decision.name : 'lot.json',
-		})
-		if (decision.kind === 'write') {
-			mkdirSync(dirname(archive), { recursive: true })
-			// never over an archive: the decision read none there
-			writeFileSync(archive, bytes, { flag: 'wx' })
-		}
-		if (stored) writeFileSync(file, EMPTY_LOT_DECLARATION)
-		return { packagePath, file, decision, archive, empty: isEmptyDeclaration(bytes) }
+	const { folder } = params
+	const pending = readPendingArchives(folder)
+	const moved = lotFilesOf({ root: params.worktree, bases: params.bases }).map(
+		function moveDeclaration(lotFile): MovedDeclaration {
+			const { packagePath, file } = lotFile
+			const bytes = readFileSync(file, 'utf8')
+			const digest = sha256Of(bytes)
+			const decision = archiveDecision({
+				bytes,
+				archived: archiveOf({ folder, packagePath, name: ARCHIVED_LOT_FILE })?.bytes,
+				landed: archiveOf({ folder, packagePath, name: LANDED_LOT_FILE })?.bytes,
+				owned:
+					params.owned ||
+					pending.some((entry) => entry.packagePath === packagePath && entry.sha256 === digest),
+			})
+			const stored = decision.kind === 'write' || decision.kind === 'already'
+			const archive = archivedDeclarationPath({
+				folder,
+				packagePath,
+				name: stored ? decision.name : ARCHIVED_LOT_FILE,
+			})
+			const outcome = { packagePath, file, decision, archive, empty: isEmptyDeclaration(bytes) }
+			const failure = decision.kind === 'write' ? writeArchive({ archive, bytes }) : undefined
+			if (failure) return { ...outcome, failure }
+			if (stored) writeFileSync(file, EMPTY_LOT_DECLARATION)
+			return outcome
+		},
+	)
+	writePendingArchives({
+		folder,
+		pending: moved.flatMap((declaration) =>
+			declaration.failure
+				? [
+						{
+							packagePath: declaration.packagePath,
+							sha256: sha256Of(readFileSync(declaration.file, 'utf8')),
+						},
+					]
+				: [],
+		),
 	})
+	return moved
+}
+
+/**
+ * Writes `bytes` as the archive, never over one (the decision read none there), and reads it back; why it failed,
+ * or undefined.
+ */
+function writeArchive(params: { archive: string; bytes: string }): string | undefined {
+	const { archive, bytes } = params
+	try {
+		mkdirSync(dirname(archive), { recursive: true })
+		writeFileSync(archive, bytes, { flag: 'wx' })
+		if (readFileSync(archive, 'utf8') !== bytes)
+			return ARCHIVE_READ_BACK_DIFFERS.replace('{archive}', () => archive)
+		return undefined
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error)
+	}
+}
+
+/** The folder's pending record; none when absent or unreadable (nothing is then owned through it). */
+function readPendingArchives(folder: string): PendingArchive[] {
+	const path = join(folder, ARCHIVE_PENDING_FILE)
+	if (!existsSync(path)) return []
+	try {
+		const entries: unknown = JSON.parse(readFileSync(path, 'utf8'))
+		return Array.isArray(entries) ? entries.filter(isPendingArchive) : []
+	} catch {
+		return []
+	}
+}
+
+/** The pending record written, or removed when nothing is pending. */
+function writePendingArchives(params: { folder: string; pending: PendingArchive[] }): void {
+	const path = join(params.folder, ARCHIVE_PENDING_FILE)
+	if (params.pending.length === 0) rmSync(path, { force: true })
+	else writeFileSync(path, `${JSON.stringify(params.pending, null, '\t')}\n`)
+}
+
+function isPendingArchive(entry: unknown): entry is PendingArchive {
+	return (
+		typeof entry === 'object' &&
+		entry !== null &&
+		typeof (entry as PendingArchive).packagePath === 'string' &&
+		typeof (entry as PendingArchive).sha256 === 'string'
+	)
+}
+
+function sha256Of(text: string): string {
+	return createHash('sha256').update(text).digest('hex')
 }
 
 /** One archive of a package path, read; undefined when absent. */

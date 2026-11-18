@@ -24,7 +24,10 @@ export type ArchiveDecisionParams = {
 	archived: string | undefined
 	/** The folder's `lot.landed.json` of that package path; undefined when absent. */
 	landed: string | undefined
-	/** Whether the lot file is the declaration of the lot being archived (a hand-over run that committed lots). */
+	/**
+	 * Whether the lot file is the declaration of the lot being archived: a hand-over run that committed lots, or
+	 * bytes the folder's pending record names.
+	 */
 	owned: boolean
 }
 
@@ -48,4 +51,13 @@ export type MovedDeclaration = {
 	archive: string
 	/** Whether the lot file declared nothing. */
 	empty: boolean
+	/** Why the archive was not written or does not read back: the lot file is left as it is, recorded as pending. */
+	failure?: string
+}
+
+/** A lot file a move failed to archive, as the folder's pending record holds it. */
+export type PendingArchive = {
+	packagePath: string
+	/** The sha256 of the lot file's bytes when the move failed. */
+	sha256: string
 }

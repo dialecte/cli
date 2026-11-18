@@ -488,9 +488,13 @@ the merge queue runs and what its ruleset requires. Nothing is configured: a `ci
   line (`lot file archived: <archive>`): the next lot on the branch does not inherit its entries. An
   archive already holding the same bytes is kept and the file emptied; one holding other bytes gets
   `lot.landed.json` beside it, never written over; when both hold other bytes the file is left as it is,
-  naming both. An empty lot file, a rehearsal and a stopped run leave the lot files as they are. So does
-  a run that committed nothing, such as a done hand-over run again: each non-empty lot file is named
-  (`lot file left as it is: <file>`), since it may already hold the next step's entries.
+  naming both. Each archive is read back after it is written; one that cannot be written or read back
+  leaves its lot file as it is, named with why (`lot file not archived: <file> (<why>)`), and the folder
+  records those bytes in `lot-archive.pending.json`; the other lot files are still archived. A package
+  the lots deleted (its `package.json` gone since the hand-over's HEAD) still counts. An empty lot file, a
+  rehearsal and a stopped run leave the lot files as they are. So does a run that committed nothing, such
+  as a done hand-over run again: each non-empty lot file is named (`lot file left as it is: <file>`),
+  since it may already hold the next step's entries; only bytes the pending record names are archived.
 - `dialecte handover show [<name|folder>] [--json]` prints a hand-over's card again, recomputed from its
   folder (the lots file, the snapshot) and the records - the lots found committed from the lots file's HEAD
   to the tip of its branch, `DONE` when every lot is - and writes nothing: not in the folder, the store,

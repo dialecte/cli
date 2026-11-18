@@ -311,7 +311,7 @@ export function buildHandoverCard(params: {
 		duplicates: readJudgedDuplicates({ root, stateHash: tddStateHash }),
 	})
 	// the root is judged as a whole; a package's own lot file is shown, before the run archives it
-	tdd.lines.push(...packageLotFileLines(root))
+	tdd.lines.push(...packageLotFileLines({ root }))
 	const lots = params.lots.map(function cardLot(lot, index): CardLot {
 		const commit = params.commits[index]
 		const subject = lot.message.trim().split('\n')[0]
@@ -586,7 +586,8 @@ function tddSection(params: {
  * One line per package whose own lot file declares something (the root's is the tdd section itself): its
  * accept, revised and gone counts, or why it cannot be read; none in a one-package repository.
  */
-function packageLotFileLines(root: string): CardLine[] {
+function packageLotFileLines(params: { root: string }): CardLine[] {
+	const { root } = params
 	return lotFilesOf({ root })
 		.filter(function isPackageDeclaring(lotFile) {
 			return lotFile.packagePath !== '' && !isEmptyDeclaration(readFileSync(lotFile.file, 'utf8'))
@@ -594,16 +595,16 @@ function packageLotFileLines(root: string): CardLine[] {
 		.map(function packageLotFileLine(lotFile) {
 			const packageRoot = join(root, lotFile.packagePath)
 			const accepted = readAcceptances(packageRoot)
+			if ('failure' in accepted) return plainLine(`${lotFile.packagePath}: ${accepted.failure}`)
 			const revised = readRevisions(packageRoot)
+			if ('failure' in revised) return plainLine(`${lotFile.packagePath}: ${revised.failure}`)
 			const gone = readGoneEntries(packageRoot)
-			const failure = [accepted, revised, gone].find((list) => 'failure' in list)
-			if (failure && 'failure' in failure)
-				return plainLine(`${lotFile.packagePath}: ${failure.failure}`)
+			if ('failure' in gone) return plainLine(`${lotFile.packagePath}: ${gone.failure}`)
 			return plainLine(
 				PACKAGE_LOT_FILE_LINE.replace('{package}', () => lotFile.packagePath)
-					.replace('{accept}', String('failure' in accepted ? 0 : accepted.length))
-					.replace('{revised}', String('failure' in revised ? 0 : revised.length))
-					.replace('{gone}', String('failure' in gone ? 0 : gone.length)),
+					.replace('{accept}', String(accepted.length))
+					.replace('{revised}', String(revised.length))
+					.replace('{gone}', String(gone.length)),
 			)
 		})
 }

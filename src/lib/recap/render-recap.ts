@@ -215,6 +215,7 @@ function decisionLines(records: RecapRecords): string[] {
 		),
 		...records.packages.flatMap((cases) => [
 			PACKAGE_DECISIONS_HEAD.replace('{package}', () => cases.packagePath),
+			...(cases.failure ? [`  - ${cases.failure}`] : []),
 			...cases.accepted.map(
 				(entry) => `  - ${DECISION_PREFIXES.accepted} ${entry.case} - ${entry.reason} ${by}`,
 			),

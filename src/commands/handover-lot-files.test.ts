@@ -2,7 +2,7 @@
  * `handover run` archives every lot file of the worktree (CK-cli design 3.2.2): the root's and each tracked
  * package's, through one archive rule, and only when the run committed lots.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createFakeClock } from '../../test/fake-clock.ts'
@@ -191,6 +191,40 @@ describe('handover run: every lot file archived', { timeout: HANDOVER_CASE_TIMEO
 			],
 			packageFile: NEXT_DECLARATION,
 			packageArchive: false,
+		})
+	})
+
+	it("a package archive that cannot be written -> the root's archived, the package's named and kept; a re-run once it can archives it", async () => {
+		const { root, out } = prepare({
+			lotFiles: { '.dialecte/lot.json': ROOT_DECLARATION, [PACKAGE_LOT_FILE]: PACKAGE_DECLARATION },
+		})
+		writeFileSync(join(out, 'lots'), 'a file, not a folder\n')
+		const first = await runFolder(out).catch((error: unknown) => ({
+			exitCode: -1,
+			lotFileLines: [`thrown: ${String(error)}`],
+		}))
+		const afterFirst = readIfExists(join(root, PACKAGE_LOT_FILE))
+		rmSync(join(out, 'lots'))
+
+		const again = await runFolder(out)
+
+		expect({
+			firstExit: first.exitCode,
+			firstLines: first.lotFileLines.map((line) => line.replace(/ \(.*\); /, ' (<why>); ')),
+			afterFirst,
+			againLines: again.lotFileLines,
+			packageArchive: readIfExists(join(out, 'lots/packages/ui/lot.json')),
+			packageFile: readIfExists(join(root, PACKAGE_LOT_FILE)),
+		}).toEqual({
+			firstExit: 0,
+			firstLines: [
+				`lot file archived: ${join(out, 'lot.json')}`,
+				`lot file not archived: ${join(root, PACKAGE_LOT_FILE)} (<why>); left as it is: run the hand-over again to archive it`,
+			],
+			afterFirst: PACKAGE_DECLARATION,
+			againLines: [`lot file archived: ${join(out, 'lots/packages/ui/lot.json')}`],
+			packageArchive: PACKAGE_DECLARATION,
+			packageFile: '{}\n',
 		})
 	})
 })

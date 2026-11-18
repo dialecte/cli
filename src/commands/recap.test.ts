@@ -721,6 +721,46 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 		})
 	})
 
+	it('every lot committed, a package the folder archived nothing of → its live lot file (the next step’s) not read', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 3 })
+		writeFiles({ root, files: { 'packages/ui/package.json': '{}\n' } })
+		git({ root, args: ['add', '--', 'packages/ui/package.json'] })
+		git({ root, args: ['commit', '-q', '-m', 'chore: a package'] })
+		writeLotDeclaration({
+			path: join(root, 'packages', 'ui', '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/next.test.ts::next > pinned', reason: 'the next step' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] }).output).not.toContain('packages/ui')
+	})
+
+	it('a package archive that is not JSON → that package named with why, the other decisions still rendered', () => {
+		const { folder, cwd } = prepareScenario({ committed: 0 })
+		writeLotDeclaration({
+			path: join(folder, 'lot.json'),
+			accept: [{ case: 'src/read.test.ts::read > pinned', reason: 'covers existing code' }],
+		})
+		mkdirSync(join(folder, 'lots', 'packages', 'ui'), { recursive: true })
+		writeFileSync(join(folder, 'lots', 'packages', 'ui', 'lot.json'), '{ not json')
+
+		const result = runRecap({ cwd, argv: [folder] })
+
+		expect({
+			exitCode: result.exitCode,
+			decisions: /### Decisions\n([\s\S]*?)\n\n### Follow-ups/
+				.exec(result.output)?.[1]
+				.split('\n')
+				.map((line) => line.replace(/^( {2}- ).*$/, '$1<why>')),
+		}).toEqual({
+			exitCode: 0,
+			decisions: [
+				'- Accepted without a failing run: src/read.test.ts::read > pinned - covers existing code (by the assistant)',
+				'- In `packages/ui`:',
+				'  - <why>',
+			],
+		})
+	})
+
 	it('decisions.md alone → one line per row with its by; the when column not printed', () => {
 		const { folder, cwd } = prepareScenario({ committed: 0 })
 		writeFileSync(

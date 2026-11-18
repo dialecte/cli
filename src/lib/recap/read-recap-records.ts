@@ -60,8 +60,14 @@ export function readRecapRecords(params: {
 	if (typeof accepted === 'string') return accepted
 	const revised = readCases({ path: declarationPath, list: 'revised' })
 	if (typeof revised === 'string') return revised
-	const packages = readPackageCases({ folder, root, repositoryExists })
-	if (typeof packages === 'string') return packages
+	const committed = readCommits({ handover, repositoryExists })
+	const packages = readPackageCases({
+		folder,
+		root,
+		// once every lot is committed the folder's archives are the record: a live package lot file then holds the
+		// next step's entries, never this lot's
+		live: repositoryExists && !committed.commits.every((lot) => lot.commit),
+	})
 	const findings = readFindings({
 		path: join(folder, LEDGER_FILE),
 		bases: pathBasesOf({ root, repositoryExists }),
@@ -69,7 +75,6 @@ export function readRecapRecords(params: {
 	if (typeof findings === 'string') return findings
 	const stateTree = repositoryExists ? computeStateTree(root) : undefined
 	const stateHash = stateTree && hashStateTree(stateTree)
-	const committed = readCommits({ handover, repositoryExists })
 	return {
 		...committed,
 		judgedCases: stateHash ? readJudgedCases({ root, stateHash }) : undefined,
@@ -181,29 +186,29 @@ function declarationPathOf(params: { folder: string; root: string; packagePath: 
 
 /**
  * The accepted and revised cases of each package other than the root, by package path: the packages the folder
- * archived and those whose live lot file the repository holds; a package declaring none left out.
+ * archived, and, while `live`, those whose live lot file the repository holds (read when the folder archived none
+ * of that package); a package declaring none left out, one that cannot be read named with why.
  */
 function readPackageCases(params: {
 	folder: string
 	root: string
-	repositoryExists: boolean
-}): RecapPackageCases[] | string {
+	live: boolean
+}): RecapPackageCases[] {
 	const { folder, root } = params
 	const archived = archivedDeclarationsOf({ folder }).map((archive) => archive.packagePath)
-	const live = params.repositoryExists
-		? lotFilesOf({ root }).map((lotFile) => lotFile.packagePath)
-		: []
+	const live = params.live ? lotFilesOf({ root }).map((lotFile) => lotFile.packagePath) : []
 	const packagePaths = [...new Set([...archived, ...live])].filter(Boolean).sort()
-	const packages: RecapPackageCases[] = []
-	for (const packagePath of packagePaths) {
-		const path = declarationPathOf({ folder, root, packagePath })
+	return packagePaths.flatMap(function packageCases(packagePath): RecapPackageCases[] {
+		const path =
+			currentArchiveOf({ folder, packagePath })?.path ?? join(root, packagePath, LOT_FILE)
 		const accepted = readCases({ path, list: 'accept' })
-		if (typeof accepted === 'string') return accepted
+		if (typeof accepted === 'string')
+			return [{ packagePath, accepted: [], revised: [], failure: accepted }]
 		const revised = readCases({ path, list: 'revised' })
-		if (typeof revised === 'string') return revised
-		if (accepted.length || revised.length) packages.push({ packagePath, accepted, revised })
-	}
-	return packages
+		if (typeof revised === 'string')
+			return [{ packagePath, accepted: [], revised: [], failure: revised }]
+		return accepted.length || revised.length ? [{ packagePath, accepted, revised }] : []
+	})
 }
 
 /** One list of the lot declaration, or why it cannot be read. */

@@ -16,7 +16,12 @@ import { renderSectionCard } from '../card/render-section-card.ts'
 import { realPathOf } from '../file-system.ts'
 import { linesOf, textOf } from '../print/print.ts'
 import { formatDuration } from '../progress/format-duration.ts'
-import { LOT_FILE_KEPT, LOT_FILE_NOT_OWNED } from './archived-declarations.constants.ts'
+import {
+	LANDED_LOT_FILE,
+	LOT_FILE_KEPT,
+	LOT_FILE_NOT_ARCHIVED,
+	LOT_FILE_NOT_OWNED,
+} from './archived-declarations.constants.ts'
 import { archivedDeclarationPath, moveDeclarations } from './archived-declarations.ts'
 import { checkHandoverGuards } from './check-handover-guards.ts'
 import { commitLots } from './commit-lots.ts'
@@ -26,6 +31,7 @@ import { resolveHandoverGateScope } from './handover-gate-scope.ts'
 import { handoverLockPath, readLockFile } from './handover-lock.ts'
 import { findHandoverStore, recordHandoverState } from './handover-store.ts'
 import {
+	ARCHIVED_LOT_FILE,
 	COMMIT_SCRIPT_FILE,
 	HANDOVER_FILES,
 	LOT_FILE_ARCHIVED,
@@ -185,12 +191,14 @@ export async function runHandoverFolder(params: {
 			folder: handover.folder,
 			state: 'committed',
 		})
-		// the lot files are this lot's declarations only when this run committed lots: a re-run of a done hand-over
-		// meets the next step's files, left as they are
+		// the lot files are this lot's declarations only when this run committed lots (or the folder records them as
+		// pending from a run whose archive failed): a re-run of a done hand-over meets the next step's files
 		const moved = moveDeclarations({
 			worktree: lotsFile.repository,
 			folder: handover.folder,
 			owned: made > 0,
+			// a package the lots deleted still holds its lot file
+			bases: [lotsFile.head],
 		})
 		for (const line of movedDeclarationLines({ moved, folder: handover.folder }))
 			write(textOf([line]))
@@ -203,35 +211,35 @@ export async function runHandoverFolder(params: {
 }
 
 /**
- * One line per lot file a move archived (its archive) or left non-empty as it is (why); none for the rest.
+ * One line per lot file a move archived (its archive), failed to archive (why), or left non-empty as it is (why);
+ * none for the rest.
  */
 function movedDeclarationLines(params: {
 	moved: readonly MovedDeclaration[]
 	folder: string
 }): string[] {
 	return params.moved.flatMap(function movedLine(declaration): string[] {
-		const { decision, file } = declaration
-		if (decision.kind === 'write') return [LOT_FILE_ARCHIVED.replace('{path}', declaration.archive)]
+		const { decision, file, packagePath } = declaration
+		const { folder } = params
+		if (declaration.failure)
+			return [
+				LOT_FILE_NOT_ARCHIVED.replace('{path}', () => file).replace(
+					'{reason}',
+					() => declaration.failure ?? '',
+				),
+			]
+		if (decision.kind === 'write')
+			return [LOT_FILE_ARCHIVED.replace('{path}', () => declaration.archive)]
 		if (decision.kind === 'untouched' && !declaration.empty)
-			return [LOT_FILE_NOT_OWNED.replace('{path}', file)]
+			return [LOT_FILE_NOT_OWNED.replace('{path}', () => file)]
 		if (decision.kind === 'keep')
 			return [
-				LOT_FILE_KEPT.replace('{path}', file)
-					.replace(
-						'{archived}',
-						archivedDeclarationPath({
-							folder: params.folder,
-							packagePath: declaration.packagePath,
-							name: 'lot.json',
-						}),
+				LOT_FILE_KEPT.replace('{path}', () => file)
+					.replace('{archived}', () =>
+						archivedDeclarationPath({ folder, packagePath, name: ARCHIVED_LOT_FILE }),
 					)
-					.replace(
-						'{landed}',
-						archivedDeclarationPath({
-							folder: params.folder,
-							packagePath: declaration.packagePath,
-							name: 'lot.landed.json',
-						}),
+					.replace('{landed}', () =>
+						archivedDeclarationPath({ folder, packagePath, name: LANDED_LOT_FILE }),
 					),
 			]
 		return []

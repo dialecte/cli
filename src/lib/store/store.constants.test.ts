@@ -1,6 +1,7 @@
 import { ROUND_FOLDER_PATTERN } from '../gate-records/gate-records.constants.ts'
 import {
 	ARCHIVE_NAMES,
+	ARCHIVE_PENDING_FILE,
 	PACKAGE_ARCHIVES_FOLDER,
 } from '../handover/archived-declarations.constants.ts'
 import {
@@ -26,6 +27,7 @@ const HANDOVER_FILE_NAMES: readonly string[] = [
 	ARCHIVED_LOT_FILE,
 	...ARCHIVE_NAMES,
 	PACKAGE_ARCHIVES_FOLDER,
+	ARCHIVE_PENDING_FILE,
 	LEDGER_FILE,
 	DECISIONS_FILE,
 	STANDARD_FILE,

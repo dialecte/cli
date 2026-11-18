@@ -2,18 +2,29 @@
  * The archive rule of a hand-over folder's lot files (CK-cli design 3.2.2, 3.2.3): the layout, the per-file
  * decision and the archive a reader takes.
  */
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
+import {
+	createScratchRepository,
+	temporaryFolder,
+	writeFiles,
+} from '../../../test/scratch-repository.ts'
 import {
 	archiveDecision,
 	archivedDeclarationPath,
 	currentArchiveOf,
+	moveDeclarations,
 } from './archived-declarations.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ArchiveDecision, ArchiveDecisionParams } from './archived-declarations.types.ts'
+import type {
+	ArchiveDecision,
+	ArchiveDecisionParams,
+	MovedDeclaration,
+} from './archived-declarations.types.ts'
 
 const FOLDER = '/hand-over'
 
@@ -154,5 +165,126 @@ describe('currentArchiveOf', () => {
 			path: join(folder, 'lot.landed.json'),
 			bytes: DECLARATION,
 		})
+	})
+})
+
+describe('moveDeclarations', () => {
+	/** A repository with the tracked package `packages/ui` holding `lotFile`, and a folder holding `archives`. */
+	function prepared(params: { lotFile: string; archives: Record<string, string> }): {
+		root: string
+		folder: string
+	} {
+		const root = createScratchRepository({ 'packages/ui/package.json': '{}\n' })
+		writeFiles({ root, files: { 'packages/ui/.dialecte/lot.json': params.lotFile } })
+		const folder = temporaryFolder('dialecte-archive-folder-')
+		writeFiles({ root: folder, files: params.archives })
+		return { root, folder }
+	}
+
+	/** The folder's pending record naming `packages/ui` with the bytes `text`, as a move writes it. */
+	function pendingRecord(text: string): string {
+		const sha256 = createHash('sha256').update(text).digest('hex')
+		return `${JSON.stringify([{ packagePath: 'packages/ui', sha256 }], null, '\t')}\n`
+	}
+
+	function readIfExists(path: string): string | undefined {
+		return existsSync(path) ? readFileSync(path, 'utf8') : undefined
+	}
+
+	it('owned, the package lot.json holding other bytes -> lot.landed.json written beside it, the file emptied', () => {
+		const { root, folder } = prepared({
+			lotFile: DECLARATION,
+			archives: { 'lots/packages/ui/lot.json': OTHER },
+		})
+
+		const moved = moveDeclarations({ worktree: root, folder, owned: true })
+
+		expect({
+			kinds: moved.map((declaration) => declaration.decision),
+			archive: readIfExists(join(folder, 'lots/packages/ui/lot.json')),
+			landed: readIfExists(join(folder, 'lots/packages/ui/lot.landed.json')),
+			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
+		}).toEqual({
+			kinds: [{ kind: 'write', name: 'lot.landed.json' }],
+			archive: OTHER,
+			landed: DECLARATION,
+			file: '{}\n',
+		})
+	})
+
+	it('owned, both package archives holding other bytes -> kept: nothing written, the file left as it is', () => {
+		const { root, folder } = prepared({
+			lotFile: DECLARATION,
+			archives: {
+				'lots/packages/ui/lot.json': OTHER,
+				'lots/packages/ui/lot.landed.json': `${OTHER}\n`,
+			},
+		})
+
+		const moved = moveDeclarations({ worktree: root, folder, owned: true })
+
+		expect({
+			kinds: moved.map((declaration) => declaration.decision),
+			archive: readIfExists(join(folder, 'lots/packages/ui/lot.json')),
+			landed: readIfExists(join(folder, 'lots/packages/ui/lot.landed.json')),
+			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
+		}).toEqual({
+			kinds: [{ kind: 'keep' }],
+			archive: OTHER,
+			landed: `${OTHER}\n`,
+			file: DECLARATION,
+		})
+	})
+
+	it('owned, the package archive folder unwritable -> no throw, the failure named, the file left as it is, recorded as pending', () => {
+		const { root, folder } = prepared({
+			lotFile: DECLARATION,
+			archives: { lots: 'a file, not a folder\n' },
+		})
+		let moved: MovedDeclaration[] = []
+
+		expect(() => {
+			moved = moveDeclarations({ worktree: root, folder, owned: true })
+		}).not.toThrow()
+		expect({
+			failed: moved.map((declaration) => declaration.failure !== undefined),
+			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
+			pending: readIfExists(join(folder, 'lot-archive.pending.json')),
+		}).toEqual({ failed: [true], file: DECLARATION, pending: pendingRecord(DECLARATION) })
+	})
+
+	it('not owned, the folder recording these bytes as pending -> archived, the file emptied, the record removed', () => {
+		const { root, folder } = prepared({
+			lotFile: DECLARATION,
+			archives: { 'lot-archive.pending.json': pendingRecord(DECLARATION) },
+		})
+
+		const moved = moveDeclarations({ worktree: root, folder, owned: false })
+
+		expect({
+			kinds: moved.map((declaration) => declaration.decision),
+			archive: readIfExists(join(folder, 'lots/packages/ui/lot.json')),
+			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
+			pending: existsSync(join(folder, 'lot-archive.pending.json')),
+		}).toEqual({
+			kinds: [{ kind: 'write', name: 'lot.json' }],
+			archive: DECLARATION,
+			file: '{}\n',
+			pending: false,
+		})
+	})
+
+	it('not owned, the pending record naming other bytes (the next step rewrote the file) -> untouched', () => {
+		const { root, folder } = prepared({
+			lotFile: OTHER,
+			archives: { 'lot-archive.pending.json': pendingRecord(DECLARATION) },
+		})
+
+		const moved = moveDeclarations({ worktree: root, folder, owned: false })
+
+		expect({
+			kinds: moved.map((declaration) => declaration.decision),
+			file: readIfExists(join(root, 'packages/ui/.dialecte/lot.json')),
+		}).toEqual({ kinds: [{ kind: 'untouched' }], file: OTHER })
 	})
 })
