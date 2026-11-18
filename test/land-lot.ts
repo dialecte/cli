@@ -172,6 +172,8 @@ export function recordingHost(
 		parent?: PullRequest
 		/** The stack parent's branch, which reads its pull request as gh reads a branch's newest. */
 		parentBranch?: string
+		/** The pull requests in the merge queue without auto-merge, by number (none when absent). */
+		mergeQueue?: readonly number[]
 		/** The host's refusal of each call named (any call that may answer a refusal); taken when absent. */
 		refusals?: Partial<Record<RefusableCall, string>>
 		/** How many stack links the host refuses before it takes one. */
@@ -232,6 +234,11 @@ export function recordingHost(
 			)
 			if (pullRequest !== undefined) pullRequest = { ...pullRequest, draft: true, queued: false }
 			return undefined
+		},
+		// a read the calls leave out: queued when the fake's pull request or parent is, or in its merge queue
+		readQueued: function readQueued(call) {
+			const known = [pullRequest, parent].find((pull) => pull?.number === call.number)
+			return { queued: known?.queued === true || (params.mergeQueue ?? []).includes(call.number) }
 		},
 		readChecks: function readChecks(call) {
 			calls.push(`checks ${call.number}`)

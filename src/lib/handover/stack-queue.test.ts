@@ -107,6 +107,26 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		expect(answered).toEqual(route)
 	})
 
+	it('host with stacks, the parent in the merge queue without auto-merge → the stack queued up to it', () => {
+		const stack = stackedRepository()
+		const { host } = recordingHost({
+			stacks: true,
+			parent: parentPullRequest(),
+			parentBranch: 'feat/x',
+			mergeQueue: [5],
+		})
+
+		const route = stackQueueOf({
+			lot: '0002-repo-y',
+			lotFolder: stack.child.lotFolder,
+			worktree: stack.child.worktree,
+			host,
+			pullRequest: childPullRequest('feat/x'),
+		})
+
+		expect(route).toEqual({ route: 'stack' })
+	})
+
 	it("the parent's pull request read by its branch, the parent never recorded a landing → the stack queued up to it", () => {
 		const stack = stackedRepository({ parentLanded: false })
 		const { host } = recordingHost({

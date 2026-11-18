@@ -84,6 +84,11 @@ export type HostAdapter = {
 		queued: boolean
 		draft: boolean
 	}): HostRefusal | undefined
+	/**
+	 * Whether the host merges the pull request once its checks pass: auto-merge on, or in the merge queue (which a
+	 * pull request read cannot say).
+	 */
+	readQueued(params: { root: string; number: number }): { queued: boolean } | HostRefusal
 	/** The checks on the pull request's head. */
 	readChecks(params: { root: string; number: number }): PullRequestChecks | HostRefusal
 	/** The line comments of the pull request's reviews, oldest first. */
