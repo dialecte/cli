@@ -721,6 +721,16 @@ describe('dialecte recap', { timeout: 60_000 }, () => {
 		})
 	})
 
+	it('every lot committed, no lot.json in the folder → the repository’s live .dialecte/lot.json (the next step’s) not read', () => {
+		const { root, folder, cwd } = prepareScenario({ committed: 3 })
+		writeLotDeclaration({
+			path: join(root, '.dialecte', 'lot.json'),
+			accept: [{ case: 'src/next.test.ts::next > pinned', reason: 'the next step' }],
+		})
+
+		expect(runRecap({ cwd, argv: [folder] }).output).not.toContain('src/next.test.ts')
+	})
+
 	it('every lot committed, a package the folder archived nothing of → its live lot file (the next step’s) not read', () => {
 		const { root, folder, cwd } = prepareScenario({ committed: 3 })
 		writeFiles({ root, files: { 'packages/ui/package.json': '{}\n' } })

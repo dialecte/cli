@@ -55,19 +55,16 @@ export function readRecapRecords(params: {
 			'{where}',
 			repositoryExists ? 'the repository' : 'the current folder',
 		)
-	const declarationPath = declarationPathOf({ folder, root, packagePath: '' })
-	const accepted = readCases({ path: declarationPath, list: 'accept' })
-	if (typeof accepted === 'string') return accepted
-	const revised = readCases({ path: declarationPath, list: 'revised' })
-	if (typeof revised === 'string') return revised
 	const committed = readCommits({ handover, repositoryExists })
-	const packages = readPackageCases({
-		folder,
-		root,
-		// once every lot is committed the folder's archives are the record: a live package lot file then holds the
-		// next step's entries, never this lot's
-		live: repositoryExists && !committed.commits.every((lot) => lot.commit),
-	})
+	// once every lot is committed the folder's archives are the record: a live lot file then holds the next step's
+	// entries, never this lot's
+	const live = !committed.commits.every((lot) => lot.commit)
+	const declarationPath = declarationPathOf({ folder, root, packagePath: '', live })
+	const accepted = declarationPath ? readCases({ path: declarationPath, list: 'accept' }) : []
+	if (typeof accepted === 'string') return accepted
+	const revised = declarationPath ? readCases({ path: declarationPath, list: 'revised' }) : []
+	if (typeof revised === 'string') return revised
+	const packages = readPackageCases({ folder, root, live: live && repositoryExists })
 	const findings = readFindings({
 		path: join(folder, LEDGER_FILE),
 		bases: pathBasesOf({ root, repositoryExists }),
@@ -174,14 +171,18 @@ function readChecks(params: {
 }
 
 /**
- * The declaration a recap reads for one package path: the folder's archive (`lot.landed.json` first), else the
- * live lot file of that package.
+ * The declaration a recap reads for one package path: the folder's archive (`lot.landed.json` first), else, while
+ * `live` (a lot not committed yet), the live lot file of that package; none after every lot is committed.
  */
-function declarationPathOf(params: { folder: string; root: string; packagePath: string }): string {
-	return (
-		currentArchiveOf({ folder: params.folder, packagePath: params.packagePath })?.path ??
-		join(params.root, params.packagePath, LOT_FILE)
-	)
+function declarationPathOf(params: {
+	folder: string
+	root: string
+	packagePath: string
+	live: boolean
+}): string | undefined {
+	const archive = currentArchiveOf({ folder: params.folder, packagePath: params.packagePath })
+	if (archive) return archive.path
+	return params.live ? join(params.root, params.packagePath, LOT_FILE) : undefined
 }
 
 /**
@@ -199,8 +200,8 @@ function readPackageCases(params: {
 	const live = params.live ? lotFilesOf({ root }).map((lotFile) => lotFile.packagePath) : []
 	const packagePaths = [...new Set([...archived, ...live])].filter(Boolean).sort()
 	return packagePaths.flatMap(function packageCases(packagePath): RecapPackageCases[] {
-		const path =
-			currentArchiveOf({ folder, packagePath })?.path ?? join(root, packagePath, LOT_FILE)
+		const path = declarationPathOf({ folder, root, packagePath, live: params.live })
+		if (!path) return []
 		const accepted = readCases({ path, list: 'accept' })
 		if (typeof accepted === 'string')
 			return [{ packagePath, accepted: [], revised: [], failure: accepted }]
