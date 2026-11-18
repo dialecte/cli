@@ -127,6 +127,17 @@ describe('dialecte changelog', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 		})
 	})
 
+	it('changelog check --base after CHANGELOG.md is deleted → exit 1, each released section named removed', () => {
+		const root = packageWith({})
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+		git({ root, args: ['rm', '-q', 'CHANGELOG.md'] })
+
+		expect(runChangelog({ cwd: root, argv: ['check', '--base', base] })).toEqual({
+			exitCode: 1,
+			output: `changelog: [0.7.0] removed from ${base.slice(0, SHORT_SHA_LENGTH)}'s release (restore it)`,
+		})
+	})
+
 	it('changelog check --base an unknown revision → exit 2 naming it', () => {
 		const root = packageWith({})
 

@@ -126,3 +126,6 @@ export const NO_BLOB = 'none'
 
 /** Between the notes of one changelog row (the released sections', the fragment's). */
 export const CHANGELOG_NOTE_SEPARATOR = '; '
+
+/** A CRLF line end: a changelog is read with LF line ends. */
+export const CRLF_PATTERN = /\r\n/g

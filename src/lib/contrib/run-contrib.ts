@@ -45,6 +45,7 @@ import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { findUnwiredSteps } from '../gate/unwired-steps.ts'
 import { currentBranchOf, readGit, readHeadOrNone } from '../git.ts'
+import { GIVEN_ENVIRONMENT } from '../given-environment.constants.ts'
 import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
 import { pendingVerdict } from '../mutation/pending-verdict.ts'
@@ -481,6 +482,9 @@ function rulesResult(params: {
 	const check = checkRules({
 		root: params.root,
 		givenFiles: [],
+		environment: GIVEN_ENVIRONMENT,
+		// the changelog row judges released sections, against the release base of the run
+		skipReleasedChangelog: true,
 		...(params.base !== undefined && { base: params.base }),
 	})
 	const errors = check.findings.filter((finding) => finding.severity === 'error')

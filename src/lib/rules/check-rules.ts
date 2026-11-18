@@ -57,8 +57,16 @@ export function checkRules(params: {
 	givenFiles: readonly string[]
 	/** A scoped gate step's changed list (`DIALECTE_GATE_CHANGED`, NUL-separated): read when no file is given. */
 	changedList?: string
-	/** The user's config folders are read from it. Default: the process's environment. */
-	environment?: Readonly<NodeJS.ProcessEnv>
+	/**
+	 * The environment the run was given: the user's config folders and the release base a rehearsal hands
+	 * (`DIALECTE_RELEASE_BASE`) are read from it.
+	 */
+	environment: Readonly<NodeJS.ProcessEnv>
+	/**
+	 * Leave the released-changelog rule out: contrib's changelog row judges released sections itself, against the
+	 * release base its run resolved (a rehearsal's clone would read its own base branch, the lot's).
+	 */
+	skipReleasedChangelog?: boolean
 	/** The gate's base (`DIALECTE_GATE_BASE`): an error of a quality rule on a line it does not add is a warning. */
 	base?: string
 	/** The tree the gate checks (`DIALECTE_GATE_TREE`): the changelog-edit rule reads its package.json. */
@@ -96,8 +104,8 @@ export function checkRules(params: {
 	})
 	const released = checkReleasedChangelog({
 		root,
-		files,
-		environment: params.environment ?? process.env,
+		files: params.skipReleasedChangelog ? [] : files,
+		environment: params.environment,
 		...(params.tree !== undefined && { tree: params.tree }),
 	})
 	const findings = [

@@ -20,8 +20,9 @@ import type {
  * @internal
  */
 export function releasedSectionChanges(params: ReleasedSectionTexts): ReleasedSectionChange[] {
-	if (params.tip === undefined || params.checked === undefined) return []
-	const checked = readChangelogParts({ text: params.checked })
+	if (params.tip === undefined) return []
+	// a checked state without the file (deleted) holds no section: each one the base released reads as removed
+	const checked = readChangelogParts({ text: params.checked ?? '' })
 	const tip = versionSectionsOf({ read: readChangelogParts({ text: params.tip }) })
 	const twoWay = !('mergeBase' in params) || params.mergeBase === undefined
 	const mergeBase =
@@ -53,11 +54,11 @@ export function releasedSectionChanges(params: ReleasedSectionTexts): ReleasedSe
 /** Each version's section of a changelog read, with its copy rank and its lines normalised for comparison. */
 function versionSectionsOf(params: { read: ChangelogParts }): VersionSection[] {
 	const { read } = params
-	const seen = new Map<string, number>()
-	return read.parts.flatMap(function sectionOf(part): VersionSection[] {
+	return read.parts.flatMap(function sectionOf(part, index): VersionSection[] {
 		if (part.kind !== 'version') return []
-		const copy = seen.get(part.version) ?? 0
-		seen.set(part.version, copy + 1)
+		const copy = read.parts
+			.slice(0, index)
+			.filter((earlier) => earlier.kind === 'version' && earlier.version === part.version).length
 		return [
 			{
 				version: part.version,
@@ -72,8 +73,7 @@ function versionSectionsOf(params: { read: ChangelogParts }): VersionSection[] {
 /** A section's lines with trailing spaces trimmed and its trailing blank lines dropped. */
 function normalisedLines(params: { lines: readonly string[] }): string[] {
 	const trimmed = params.lines.map((line) => line.trimEnd())
-	let end = trimmed.length
-	while (end > 0 && trimmed[end - 1] === '') end--
+	const end = trimmed.reduce((last, line, index) => (line === '' ? last : index + 1), 0)
 	return trimmed.slice(0, end)
 }
 
@@ -87,6 +87,7 @@ function copyOf(params: {
 	)
 }
 
+/** Whether two sections hold the same lines in the same order. */
 function sameLines(params: { left: readonly string[]; right: readonly string[] }): boolean {
 	const { left, right } = params
 	return left.length === right.length && left.every((line, index) => line === right[index])
@@ -114,14 +115,12 @@ function changeOf(params: { own: VersionSection; tip: VersionSection }): Release
 
 /** How many of `lines` find no equal line left in `against`, each line of `against` matched once. */
 function unmatchedCount(params: { lines: readonly string[]; against: readonly string[] }): number {
-	const left = new Map<string, number>()
-	for (const line of params.against) left.set(line, (left.get(line) ?? 0) + 1)
-	return params.lines.filter(function unmatched(line) {
-		const count = left.get(line) ?? 0
-		if (count === 0) return true
-		left.set(line, count - 1)
-		return false
-	}).length
+	const { lines, against } = params
+	return [...new Set(lines)].reduce(function addUnmatched(sum, line) {
+		const extra =
+			lines.filter((own) => own === line).length - against.filter((other) => other === line).length
+		return sum + Math.max(0, extra)
+	}, 0)
 }
 
 /**

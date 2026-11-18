@@ -157,10 +157,12 @@ export function releasedTextsOf(params: {
 	const tip = changelogAt({ root, revision: base.commit })
 	if (!params.threeWay) return { checked, tip }
 	const mergeBase = baseBranchMergeBaseOf({ root, head: 'HEAD', ref: base.commit })
+	// a merge-base without the file is a commit before it: it holds no section (empty), unlike no merge-base at all
 	return {
 		checked,
 		tip,
-		mergeBase: mergeBase === undefined ? undefined : changelogAt({ root, revision: mergeBase }),
+		mergeBase:
+			mergeBase === undefined ? undefined : (changelogAt({ root, revision: mergeBase }) ?? ''),
 	}
 }
 

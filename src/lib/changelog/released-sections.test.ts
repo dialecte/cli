@@ -292,3 +292,12 @@ describe('releasedSectionChanges: text forms and base duplicates', () => {
 		expect(releasedSectionChanges({ checked, tip })).toEqual(changes)
 	})
 })
+
+describe('releasedSectionChanges: a deleted CHANGELOG.md', () => {
+	it('the checked text missing (the file deleted) → every base section removed', () => {
+		expect(releasedSectionChanges({ checked: undefined, tip: TWO_RELEASES })).toEqual([
+			{ kind: 'removed', version: '1.1.0', line: 1, removed: 3 },
+			{ kind: 'removed', version: '1.0.0', line: 1, removed: 3 },
+		])
+	})
+})

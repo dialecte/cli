@@ -3,9 +3,11 @@
  * altered, judged against the base branch and its merge-base; and the release base a commit's hook hands the scoped
  * rules step alone.
  */
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { REPOSITORY_CLI_PATH } from '../../test/gate-hook.constants.ts'
 import { runHookIn } from '../../test/gate-hook.ts'
 import {
 	createScratchRepository,
@@ -197,6 +199,35 @@ describe(
 			expect(releasedFindingsOf(JSON.parse(result.output).findings)).toEqual([])
 		})
 
+		it('a branch older than CHANGELOG.md adding its own, main having added one since → nothing', () => {
+			const root = createScratchRepository({})
+			git({ root, args: ['checkout', '-q', '-b', 'lot'] })
+			git({ root, args: ['checkout', '-q', 'main'] })
+			writeFiles({ root, files: { 'CHANGELOG.md': RELEASED } })
+			git({ root, args: ['add', 'CHANGELOG.md'] })
+			git({ root, args: ['commit', '-q', '-m', 'docs: a changelog'] })
+			git({ root, args: ['checkout', '-q', 'lot'] })
+			writeFiles({
+				root,
+				files: {
+					'CHANGELOG.md': `# Changelog
+
+## [Unreleased]
+
+- the branch's own entry.
+`,
+				},
+			})
+
+			const result = runRules({
+				cwd: root,
+				argv: ['CHANGELOG.md', '--json'],
+				environment: machineOf(),
+			})
+
+			expect(releasedFindingsOf(JSON.parse(result.output).findings)).toEqual([])
+		})
+
 		it('a package CHANGELOG checked from its package folder → read at its path', () => {
 			const root = lotWith({
 				files: {
@@ -372,6 +403,28 @@ describe(
 					`[0.9.0] differs from ${first.slice(0, SHORT_SHA_LENGTH)}: 1 line added, 1 line removed`,
 				),
 			}).toEqual({ exitCode: 1, named: true })
+		})
+
+		it('the release base in the given environment of the gate --hook command → read by the command, the rules step judges against it', () => {
+			const { root, first } = stoppedMerge({
+				seen: join(temporaryFolder('dialecte-seen-'), 'seen'),
+			})
+			git({ root, args: ['merge', '--abort'] })
+			writeFiles({ root, files: { 'CHANGELOG.md': IEDR_OLD_EDITED } })
+			git({ root, args: ['add', 'CHANGELOG.md'] })
+
+			const result = spawnSync('node', [REPOSITORY_CLI_PATH, 'gate', '--hook'], {
+				cwd: root,
+				encoding: 'utf8',
+				env: { ...process.env, ...machineOf(), DIALECTE_RELEASE_BASE: first },
+			})
+
+			expect({
+				status: result.status,
+				named: result.stdout.includes(
+					`[0.9.0] differs from ${first.slice(0, SHORT_SHA_LENGTH)}: 1 line added, 1 line removed`,
+				),
+			}).toEqual({ status: 1, named: true })
 		})
 
 		it('the release base handed to the hook → no other gate step sees the variable', async () => {

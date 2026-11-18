@@ -1,6 +1,7 @@
 /** One reader of a changelog's parts: the Unreleased part and each version's section, outside code fences. */
 import {
 	CODE_FENCE_PATTERN,
+	CRLF_PATTERN,
 	LINK_REFERENCE_PATTERN,
 	UNRELEASED_HEADING_PATTERN,
 	VERSION_HEADING_PATTERN,
@@ -19,7 +20,7 @@ import type { ChangelogPart, ChangelogParts, PartBoundary } from './changelog.ty
  * @internal
  */
 export function readChangelogParts(params: { text: string }): ChangelogParts {
-	const lines = params.text.replace(/\r\n/g, '\n').split('\n')
+	const lines = params.text.replace(CRLF_PATTERN, '\n').split('\n')
 	const boundaries = boundariesOf({ lines })
 	const parts = boundaries.flatMap(function partOf(boundary, position): ChangelogPart[] {
 		const end = boundaries[position + 1]?.index ?? lines.length

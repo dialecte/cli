@@ -120,7 +120,7 @@ describe('consumer names inside SQL strings', () => {
 			const root = packageHolding({ file, text })
 
 			expect(
-				checkRules({ root, givenFiles: [SQL_FILE, file] })
+				checkRules({ root, givenFiles: [SQL_FILE, file], environment: process.env })
 					.findings.filter(
 						(finding) =>
 							finding.rule === 'committed-text-reference' &&

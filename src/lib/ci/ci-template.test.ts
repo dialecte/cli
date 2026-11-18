@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { summaryOf } from '../../../test/ci-summary.ts'
-import { readCiTemplate, renderCiFiles, testContractOf } from './ci-template.ts'
+import { temporaryFolder, writeFiles } from '../../../test/scratch-repository.ts'
+import { planCiSync, readCiTemplate, renderCiFiles, testContractOf } from './ci-template.ts'
 
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
@@ -110,6 +111,24 @@ describe('the rendered _check.yml', () => {
 				},
 			],
 		})
+	})
+
+	it('a _check.yml without the changelog check step → the sync plan names it as an update adding the step', () => {
+		const root = temporaryFolder('dialecte-ci-drift-')
+		const wanted = renderCiFiles({ facts: CORE, template: readCiTemplate() })
+		const withoutStep = `${(wanted.get('.github/workflows/_check.yml') ?? '').split('\n      # a released CHANGELOG section')[0]}\n`
+		writeFiles({
+			root,
+			files: { ...Object.fromEntries(wanted), '.github/workflows/_check.yml': withoutStep },
+		})
+
+		expect(
+			planCiSync({ root, wanted, managed: [...wanted.keys()] }).changes.map((change) => ({
+				kind: change.kind,
+				path: change.path,
+				addsTheStep: change.kind === 'update' && change.after.includes('changelog check --base'),
+			})),
+		).toEqual([{ kind: 'update', path: '.github/workflows/_check.yml', addsTheStep: true }])
 	})
 
 	it("the cli's own _check.yml → matches the rendered template", () => {

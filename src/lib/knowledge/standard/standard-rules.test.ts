@@ -28,7 +28,11 @@ describe('the cli own rules check over its knowledge code and its test helper', 
 		() => {
 			expect(
 				summaryOf(
-					checkRules({ root: PACKAGE_ROOT, givenFiles: [KNOWLEDGE_FOLDER, ...HELPER_FILES] }),
+					checkRules({
+						root: PACKAGE_ROOT,
+						givenFiles: [KNOWLEDGE_FOLDER, ...HELPER_FILES],
+						environment: process.env,
+					}),
 				),
 			).toEqual({ errors: 0, helperChecked: true })
 		},

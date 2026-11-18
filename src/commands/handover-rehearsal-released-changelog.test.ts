@@ -100,9 +100,20 @@ describe(
 			const root = createHookedPackage({
 				hookCounter: createCounter(),
 				gateCounter: createCounter(),
-				hookExtra: `node ${shellQuote(REPOSITORY_CLI_PATH)} rules CHANGELOG.md`,
+				hookExtra: `node ${shellQuote(REPOSITORY_CLI_PATH)} gate --hook`,
 			})
-			writeFiles({ root, files: { 'CHANGELOG.md': BEFORE_RELEASE } })
+			writeFiles({
+				root,
+				files: {
+					'CHANGELOG.md': BEFORE_RELEASE,
+					// the hook's gate runs the scoped rules step alone: what reaches it is what the clone's hook was handed
+					'package.json': `${JSON.stringify({
+						name: 'demo',
+						scripts: {},
+						dialecte: { gate: { hook: [{ name: 'rules', run: 'dialecte rules', scoped: true }] } },
+					})}\n`,
+				},
+			})
 			git({ root, args: ['commit', '-q', '-am', 'docs: the changelog'] })
 			const { out, release } = stackMergingTheRelease(root)
 
