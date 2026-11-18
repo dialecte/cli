@@ -89,6 +89,7 @@ import {
 import { readGivenCheckStore } from '../lib/gate/given-check-store.ts'
 import { runHookGate } from '../lib/gate/hook-gate.ts'
 import { runGateSteps } from '../lib/gate/run-gate.ts'
+import { RELEASE_BASE_VARIABLE } from '../lib/gate/selection.constants.ts'
 import { renderStepLines } from '../lib/gate/step-line.ts'
 import { readStepSource } from '../lib/gate/step-source.ts'
 import { runTddStep } from '../lib/gate/tdd-step.ts'
@@ -139,9 +140,12 @@ export async function run(argv: string[]): Promise<void> {
 		environment: GIVEN_ENVIRONMENT,
 		command: `gate --${hasFlag(argv, 'hook') ? 'hook' : modeOf(argv)}`,
 	})
+	// the release base a rehearsal hands its clone's hooks: only `--hook` reads it
+	const releaseBase = hasFlag(argv, 'hook') ? GIVEN_ENVIRONMENT[RELEASE_BASE_VARIABLE] : undefined
 	const result = await runGate({
 		cwd: process.cwd(),
 		argv,
+		...(releaseBase !== undefined && { releaseBase }),
 		...(!hasFlag(argv, 'json') && { live: openProcessLiveOutput() }),
 		...(indexFile && { indexFile }),
 		...(ignoredGivenRepository && { reusable: false }),
@@ -196,6 +200,7 @@ async function runHookMode(params: GateRunParams): Promise<CommandResult> {
 			handoverIgnored: params.handoverIgnored,
 			...(params.checkStore && { checkStore: params.checkStore }),
 			...(params.checkStoreIgnored && { checkStoreIgnored: params.checkStoreIgnored }),
+			...(params.releaseBase !== undefined && { releaseBase: params.releaseBase }),
 			warn: params.warn,
 		})
 	} catch (error) {

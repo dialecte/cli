@@ -24,7 +24,7 @@
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
-import { findContribRecord } from '../contrib/contrib-key.ts'
+import { contribReleaseBaseOf, findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
 import { forecastAgeText, forecastHoldText, forecastViewOf } from '../coordination/forecast-view.ts'
 import { counted } from '../counted.ts'
@@ -478,7 +478,10 @@ function findStoredContribRecord(params: {
 	head: string
 }): GateRecord | undefined {
 	try {
-		return findContribRecord(params)
+		return findContribRecord({
+			...params,
+			releaseBase: contribReleaseBaseOf({ root: params.root }),
+		})
 	} catch {
 		// a package.json contrib itself would refuse: nothing stored can be told current (the card still prints)
 		return undefined

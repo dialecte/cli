@@ -2,6 +2,7 @@
  * What `dialecte gate` and `dialecte rules` record in the worktree's git folder (`git rev-parse --git-path
  * <file>`), and the gate lines the hand-over card prints from those records.
  */
+import type { ReleaseChangelog } from '../changelog/changelog.types.ts'
 import type { UsedGateBase } from '../gate/gate-base.types.ts'
 import type { GateMode, StepCounts, StepSelection, StepStatus } from '../gate/gate.types.ts'
 import type { AllowedCounts } from '../rules/allow-comments.types.ts'
@@ -62,6 +63,12 @@ export type CheckKey = {
 	commandHash: string
 	/** sha256 (hex) over the folders of the `file:` dependencies (paths, sizes, mtimes). */
 	linked: string
+	/**
+	 * A contrib run's changelog row: the base's and the merge-base's `CHANGELOG.md` it judged released sections
+	 * against (folded in `commandHash`; kept here so a record that no longer answers can say why). Absent in records
+	 * written before, and in every other mode.
+	 */
+	releaseChangelog?: ReleaseChangelog
 }
 
 /** What recording a run did: whether the record went to the store, and the state hash it holds (null: none written). */

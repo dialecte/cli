@@ -30,14 +30,16 @@ export function checkChangelogEdit(params: {
 }): RuleFinding[] {
 	const { root } = params
 	if (!params.files.includes(CHANGELOG_FILE) || !existsSync(join(root, FRAGMENTS_FOLDER))) return []
-	const before = manifestAt({ root, revision: params.base ?? 'HEAD' })
-	const manifest = join(root, PACKAGE_MANIFEST_FILE)
-	const now =
-		params.tree !== undefined
-			? manifestAt({ root, revision: params.tree })
-			: existsSync(manifest)
-				? readFileSync(manifest, 'utf8')
-				: undefined
+	const before = textAtRevision({
+		root,
+		revision: params.base ?? 'HEAD',
+		file: PACKAGE_MANIFEST_FILE,
+	})
+	const now = checkedTextOf({
+		root,
+		file: PACKAGE_MANIFEST_FILE,
+		...(params.tree !== undefined && { tree: params.tree }),
+	})
 	if (versionOf({ text: now }) !== versionOf({ text: before })) return []
 	return [
 		{
@@ -51,11 +53,35 @@ export function checkChangelogEdit(params: {
 	]
 }
 
-/** The package.json text a revision (a commit or a tree) holds; undefined without one. */
-function manifestAt(params: { root: string; revision: string }): string | undefined {
-	return readFilesAtRevision({ ...params, files: [PACKAGE_MANIFEST_FILE] }).get(
-		PACKAGE_MANIFEST_FILE,
-	)
+/**
+ * The text of `file` (relative to `root`) in the checked state: the tree the gate checks (`tree`) when given, else the
+ * working file; undefined when that state holds none.
+ *
+ * @intent read a file as the gate's commit records it, one reader for every changelog rule
+ * @internal
+ */
+export function checkedTextOf(params: {
+	root: string
+	file: string
+	tree?: string
+}): string | undefined {
+	const { root, file } = params
+	if (params.tree !== undefined) return textAtRevision({ root, revision: params.tree, file })
+	const path = join(root, file)
+	return existsSync(path) ? readFileSync(path, 'utf8') : undefined
+}
+
+/** The text of `file` a revision (a commit or a tree) holds; undefined without one. */
+function textAtRevision(params: {
+	root: string
+	revision: string
+	file: string
+}): string | undefined {
+	return readFilesAtRevision({
+		root: params.root,
+		revision: params.revision,
+		files: [params.file],
+	}).get(params.file)
 }
 
 /** The `version` of a package.json's text; undefined when there is none or it cannot be read. */

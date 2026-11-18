@@ -90,7 +90,9 @@ export function runRules(params: {
 		check.noForbiddenWordsList === undefined
 			? []
 			: [NO_FORBIDDEN_WORDS_LINE.replace('{file}', check.noForbiddenWordsList)]
-	const notRun = check.queryInLoopNotRun === undefined ? [] : [check.queryInLoopNotRun]
+	const notRun = [check.queryInLoopNotRun, check.releasedChangelogNotJudged].filter(
+		(line) => line !== undefined,
+	)
 	const baseLine = check.baseLine === undefined ? [] : [check.baseLine]
 	const notJudged =
 		check.notJudged === undefined

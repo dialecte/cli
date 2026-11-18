@@ -73,9 +73,7 @@ export function resolveGateBase(params: {
 	if (params.handoverBase !== undefined && ignored === undefined)
 		return { commit: params.handoverBase.commit, source: 'handover' }
 	const mergeBase =
-		branchRef === undefined
-			? undefined
-			: tryReadGit({ root, args: ['merge-base', head, branchRef] })?.trim()
+		branchRef === undefined ? undefined : baseBranchMergeBaseOf({ root, head, ref: branchRef })
 	const diverged = 'refusal' in found ? undefined : found.diverged
 	const resolved: GateBase = mergeBase
 		? {
@@ -89,6 +87,24 @@ export function resolveGateBase(params: {
 				note: NO_BASE_BRANCH_NOTE.replace('{branch}', () => branch),
 			}
 	return ignored === undefined ? resolved : { ...resolved, ignored }
+}
+
+/**
+ * Where `head` left the base branch read at `ref`: their merge-base, undefined when git finds none (unrelated
+ * histories, an unknown ref).
+ *
+ * @intent read where a change left its base branch, one call for every reader
+ * @internal
+ */
+export function baseBranchMergeBaseOf(params: {
+	root: string
+	head: string
+	ref: string
+}): string | undefined {
+	return (
+		tryReadGit({ root: params.root, args: ['merge-base', params.head, params.ref] })?.trim() ||
+		undefined
+	)
 }
 
 /** The note of a local `branch` diverged from origin's (`readBaseRef` then reads origin's): the commits it lacks. */

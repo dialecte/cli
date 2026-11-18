@@ -1,6 +1,7 @@
 /**
  * `handover run`'s `contrib` guard when the tree's green contrib record was made under another key: the guard names
- * what differs - the `file:` dependencies, the commit, or the cli and its contrib rows (with this cli's version) -
+ * what differs - the `file:` dependencies, the commit, the base branch's `CHANGELOG.md`, or the cli and its contrib rows
+ * (with this cli's version) -
  * instead of saying only that there is none.
  */
 import { rekeyStoredRecords } from '../../test/gate-records.ts'
@@ -35,6 +36,18 @@ describe(
 				arrange: (root) => rekeyStoredRecords({ root, key: { linked: 'e'.repeat(64) } }),
 				named: 'file: dependencies changed since contrib',
 			},
+			"the record keyed on another base branch CHANGELOG.md → names the base branch's CHANGELOG.md":
+				{
+					arrange: (root) =>
+						rekeyStoredRecords({
+							root,
+							key: {
+								commandHash: 'f'.repeat(64),
+								releaseChangelog: { tip: 'd'.repeat(40), mergeBase: 'd'.repeat(40) },
+							},
+						}),
+					named: "the base branch's CHANGELOG.md changed since contrib",
+				},
 			'a commit made since contrib, the tree the same → names another commit': {
 				arrange: (root) =>
 					git({ root, args: ['commit', '-q', '--allow-empty', '-m', 'chore: later'] }),

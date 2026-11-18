@@ -39,6 +39,7 @@ import {
 } from './forbidden-words.ts'
 import { createImportReading, packagePathOf } from './import-reading.ts'
 import { readQueryNamesWithNote } from './query-names.ts'
+import { checkReleasedChangelog } from './released-changelog.ts'
 import { sqlKeywordReaderOf } from './sql-literals.ts'
 import { createUnitContextReader } from './unit-context.ts'
 
@@ -93,8 +94,15 @@ export function checkRules(params: {
 		findings: [...checked.flatMap((result) => result.findings), ...fixtures.findings],
 		overLimit: [...checked.flatMap((result) => result.overLimit ?? []), ...fixtures.overLimit],
 	})
+	const released = checkReleasedChangelog({
+		root,
+		files,
+		environment: params.environment ?? process.env,
+		...(params.tree !== undefined && { tree: params.tree }),
+	})
 	const findings = [
 		...listFindings,
+		...released.findings,
 		...checkChangelogEdit({
 			root,
 			files,
@@ -114,8 +122,20 @@ export function checkRules(params: {
 	const allowedField = Object.keys(allowed).length ? { allowed } : {}
 	if (recorded) recordRules({ root, files, errors, warnings, ...allowedField })
 	const notRun = note === undefined ? {} : { queryInLoopNotRun: note }
+	const notJudgedRelease =
+		released.notJudged === undefined ? {} : { releasedChangelogNotJudged: released.notJudged }
 	const scoped = scope === undefined ? {} : scopeFieldsOf(checked)
-	return { files, errors, warnings, findings, ...allowedField, ...noList, ...notRun, ...scoped }
+	return {
+		files,
+		errors,
+		warnings,
+		findings,
+		...allowedField,
+		...noList,
+		...notRun,
+		...notJudgedRelease,
+		...scoped,
+	}
 }
 
 /**

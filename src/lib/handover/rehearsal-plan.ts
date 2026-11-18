@@ -12,7 +12,7 @@
  * With a scoped step the full and hook records are keyed with the hand-over base, and a record of another base is
  * rehearsed saying the base moved.
  */
-import { findContribRecord } from '../contrib/contrib-key.ts'
+import { contribReleaseBaseOf, findContribRecord } from '../contrib/contrib-key.ts'
 import { readTreeKey } from '../gate-records/check-key.ts'
 import {
 	isGreenRecord,
@@ -144,7 +144,12 @@ function needsContribRun(params: {
 	const { root, tree } = params
 	if (tree === undefined || readProfile(root) !== 'contributor') return false
 	const head = readGit({ root, args: ['rev-parse', `${params.head}^{commit}`] }).trim()
-	const record = findContribRecord({ root, tree, head })
+	const record = findContribRecord({
+		root,
+		tree,
+		head,
+		releaseBase: contribReleaseBaseOf({ root }),
+	})
 	return !(record && isGreenRecord(record))
 }
 

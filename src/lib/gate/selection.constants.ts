@@ -11,12 +11,19 @@ export const GATE_SCOPE_VARIABLES = {
 } as const
 
 /**
+ * The release base a rehearsal hands the hooks of its clone (a full commit id): `gate --hook` checks it and hands it
+ * to its rules step alone, which judges released changelog sections against it instead of the clone's base branch.
+ */
+export const RELEASE_BASE_VARIABLE = 'DIALECTE_RELEASE_BASE'
+
+/**
  * The hand-over's variables for the `gate --hook` a commit starts (its base and folder, and the store a rehearsal
  * hands it): no step ever gets them, nor what a step starts (a suite spawning its own hooks would read them).
  */
 export const HANDOVER_VARIABLES: readonly string[] = [
 	...Object.values(HANDOVER_BASE_VARIABLES),
 	CHECK_STORE_VARIABLE,
+	RELEASE_BASE_VARIABLE,
 ]
 
 /** The folder (in the system's temporary folder) of one gate run's changed file and selection paths. */

@@ -21,6 +21,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { RULES_STEP_PATTERN } from '../gate-records/gate-records.constants.ts'
 import { GIT_READ_ENVIRONMENT } from '../git.constants.ts'
 import { ownCliCommand } from '../own-cli-command.ts'
 import { runChild } from '../progress/run-child.ts'
@@ -53,6 +54,7 @@ import {
 	GATE_SCOPE_VARIABLES,
 	HANDOVER_VARIABLES,
 	NO_GATE_SCOPE_REASON,
+	RELEASE_BASE_VARIABLE,
 } from './selection.constants.ts'
 import {
 	createScopeRun,
@@ -100,6 +102,8 @@ export async function runGateSteps(params: {
 	failDefaultUnwired?: boolean
 	/** The words that run the cli itself for a self step; default: `ownCliCommand`. A throw fails that step, never the gate. */
 	resolveOwnCommand?: () => string[]
+	/** The release base a rehearsal handed the hook (a checked full commit id): its rules step alone gets it. */
+	releaseBase?: string
 }): Promise<StepResult[]> {
 	const { root, scope } = params
 	// every step judged for its wiring before the first runs: a failed one runs nothing, so every wiring is fixed at once
@@ -147,6 +151,7 @@ async function runEachStep(params: {
 	scopeRun: ScopeRun | undefined
 	unwired: ReadonlyMap<GateStep, StepResult>
 	resolveOwnCommand?: () => string[]
+	releaseBase?: string
 }): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const results: StepResult[] = []
@@ -168,6 +173,7 @@ async function runEachStep(params: {
 			watchdog: params.watchdog,
 			scopeRun: params.scopeRun,
 			resolveOwnCommand: params.resolveOwnCommand,
+			releaseBase: params.releaseBase,
 		}
 		const first = await runStep({ ...run, step })
 		// a first run whose selection failed its checks: no rerun can mend it, whatever its exit code
@@ -357,6 +363,8 @@ async function runStep(params: {
 	scopeRun: ScopeRun | undefined
 	/** The words that run the cli itself for a self step; default: `ownCliCommand`. */
 	resolveOwnCommand?: () => string[]
+	/** Handed to the step when it checks the rules (`RULES_STEP_PATTERN`), to no other. */
+	releaseBase?: string
 }): Promise<StepRun> {
 	const { root, step, scopeRun } = params
 	if (step.scoped && scopeRun === undefined)
@@ -382,6 +390,9 @@ async function runStep(params: {
 			// a git status a step runs while a hand-over commits must not take index.lock
 			...GIT_READ_ENVIRONMENT,
 			...(scopeRun && selectionPath && scopeEnvironment({ scopeRun, selectionPath })),
+			// the release base reaches the rules step alone: a test suite another step runs never reads it
+			...(params.releaseBase !== undefined &&
+				RULES_STEP_PATTERN.test(step.run) && { [RELEASE_BASE_VARIABLE]: params.releaseBase }),
 		},
 		unset: [...HANDOVER_VARIABLES, ...Object.values(GATE_SCOPE_VARIABLES)],
 		clock: params.clock,

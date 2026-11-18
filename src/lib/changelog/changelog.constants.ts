@@ -68,6 +68,9 @@ export const UNRELEASED_HEADING_PATTERN = /^## \[?unreleased\]?\s*$/i
 /** Any version heading: `## [<version>]`, with its date or not. */
 export const VERSION_HEADING_PATTERN = /^## \[/
 
+/** A version heading's bracketed token: `0.13.2` in `## [0.13.2] - 2026-11-10`, `60` in `## [60]`. */
+export const VERSION_KEY_PATTERN = /^## \[([^\]]+)\]/
+
 /** A link reference definition (`[0.7.0]: https://...`): the block at a changelog's end. */
 export const LINK_REFERENCE_PATTERN = /^\[[^\]]+\]:\s/
 
@@ -99,3 +102,27 @@ export const FOLD_REFUSALS = {
 	leftover:
 		'{file} could not be deleted ({reason}): delete it before the next release, its entries are released',
 } as const
+
+/**
+ * The released-changelog findings and notes: `{version}` the section's version, `{base}` the base named (the base
+ * branch, or a short commit id), `{what}` the lines added, removed or reordered, `{value}` a release base given.
+ */
+export const RELEASED_CHANGELOG_LINES = {
+	changed:
+		'[{version}] differs from {base}: {what} (a released section stays as released: restore it, and write new entries under [Unreleased] or in changes/<lot>.md)',
+	removed: "[{version}] removed from {base}'s release (restore it)",
+	duplicated: '[{version}] appears twice (keep one)',
+	added: '{count} line added',
+	addedMany: '{count} lines added',
+	removedLine: '{count} line removed',
+	removedLines: '{count} lines removed',
+	reordered: 'lines reordered',
+	notJudged: 'released-changelog: no base branch, not judged',
+	unknownBase: 'DIALECTE_RELEASE_BASE is no full commit id this repository holds: {value}',
+} as const
+
+/** The blob id a release changelog reading writes for a `CHANGELOG.md` a revision does not hold. */
+export const NO_BLOB = 'none'
+
+/** Between the notes of one changelog row (the released sections', the fragment's). */
+export const CHANGELOG_NOTE_SEPARATOR = '; '

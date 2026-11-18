@@ -3,13 +3,17 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { SCRATCH_REPOSITORY_TIMEOUT } from '../../test/scratch-checks.constants.ts'
-import { createScratchRepository } from '../../test/scratch-repository.ts'
+import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
+import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { runChangelog } from './changelog.ts'
 
 import { describe, expect, it } from 'vitest'
 
 const CHANGELOG =
 	'# Changelog\n\n## [Unreleased]\n\n## [0.7.0] - 2026-11-14\n\n### Added\n\n- old.\n'
+
+const CHANGELOG_RELEASE_ALTERED =
+	'# Changelog\n\n## [Unreleased]\n\n## [0.7.0] - 2026-11-14\n\n### Added\n\n- old.\n- slipped in.\n'
 
 /** A package with the changelog and the fragments given. */
 function packageWith(fragments: Record<string, string>): string {
@@ -100,6 +104,36 @@ describe('dialecte changelog', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 			},
 		)
 		expect(existsSync(join(root, 'changes/a.md'))).toBe(true)
+	})
+
+	it("changelog check --base a revision whose released sections equal the tree's → exit 0", () => {
+		const root = packageWith({})
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+
+		expect(runChangelog({ cwd: root, argv: ['check', '--base', base] })).toEqual({
+			exitCode: 0,
+			output: 'changelog: 0 fragments, every one readable',
+		})
+	})
+
+	it('changelog check --base a revision holding other lines in a released section → exit 1', () => {
+		const root = packageWith({})
+		const base = git({ root, args: ['rev-parse', 'HEAD'] }).trim()
+		writeFiles({ root, files: { 'CHANGELOG.md': CHANGELOG_RELEASE_ALTERED } })
+
+		expect(runChangelog({ cwd: root, argv: ['check', '--base', base] })).toEqual({
+			exitCode: 1,
+			output: `changelog: [0.7.0] differs from ${base.slice(0, SHORT_SHA_LENGTH)}: 1 line added (a released section stays as released: restore it, and write new entries under [Unreleased] or in changes/<lot>.md)`,
+		})
+	})
+
+	it('changelog check --base an unknown revision → exit 2 naming it', () => {
+		const root = packageWith({})
+
+		expect(runChangelog({ cwd: root, argv: ['check', '--base', 'no-such-revision'] })).toEqual({
+			exitCode: 2,
+			output: 'changelog: --base no-such-revision names no commit of this repository',
+		})
 	})
 
 	it.each([
