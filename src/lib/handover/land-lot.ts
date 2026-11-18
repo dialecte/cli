@@ -20,6 +20,8 @@ import { AGAINST_MAIN, FORECAST_STEP_LIMIT_MS } from '../coordination/forecast.c
 import { forecastLot } from '../coordination/forecast.ts'
 import { mergeConflictsOf } from '../coordination/merge-forecast.ts'
 import { counted } from '../counted.ts'
+import { recordBaseDeclared } from '../design/base-declared.ts'
+import { designGateOf } from '../design/design-gate.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
 import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
@@ -29,11 +31,13 @@ import { writeLanded } from '../landing/landed-record.ts'
 import { readLandingState } from '../landing/landing-state.ts'
 import { landedLineOf } from '../landing/lot-landing.ts'
 import { unlandedWork, unlandedWorkText } from '../landing/unlanded-work.ts'
+import { readPackageJson } from '../package-json.ts'
 import { composePullRequest, keptPartOf, linesOf } from '../pr/compose-pull-request.ts'
 import { preparePullRequest } from '../pr/pull-request-sources.ts'
 import { readIdentity } from '../store/identity.ts'
 import { replaceWhole } from '../store/publish.ts'
 import { STORE_REFUSAL } from '../store/store.constants.ts'
+import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import { HANDOVER_LOT_REFUSALS } from './handover.constants.ts'
@@ -112,6 +116,10 @@ export function landLot(params: {
 			: rebaseOnOrigin({ worktree, base, trackedChanges: progress.tracked })
 	if ('refusal' in rebased) return refused(rebased.refusal)
 	if (rebased.line) lines.push(rebased.line)
+	// a store lot, on the base it now sits on: the base's shared areas recorded again, then its design held (DG2)
+	const baseRef = stack?.textBase ?? `${ORIGIN_BRANCH_REF_PREFIX}${base}`
+	const designRefusal = landingDesignRefusalOf({ lotFolder: params.lotFolder, worktree, baseRef })
+	if (designRefusal !== undefined) return { exitCode: 1, lines: [...lines, designRefusal] }
 	if (progress.files > 0)
 		lines.push(
 			LANDING_LINES.workInProgress.replace('{files}', () =>
@@ -121,7 +129,7 @@ export function landLot(params: {
 	// rendered on the rebased head, before the push: a text that no longer renders pushes nothing
 	const text = renderedText({
 		...params,
-		baseRef: stack?.textBase ?? `${ORIGIN_BRANCH_REF_PREFIX}${base}`,
+		baseRef,
 		kept: known.pullRequest?.body,
 	})
 	if ('refusal' in text)
@@ -775,6 +783,24 @@ function writeLanding(params: {
 		path: join(params.lotFolder, LANDING_FILE),
 		text: `${JSON.stringify(record, null, 2)}\n`,
 	})
+}
+
+/**
+ * The design gate of a store lot's landing (DESIGN-GATE section 3): its base snapshot recorded again at `baseRef`, then
+ * its design held at the lot base the rebased worktree resolves; undefined for a folder that is no store lot, or when
+ * the design lets the lot go on.
+ */
+function landingDesignRefusalOf(params: {
+	lotFolder: string
+	worktree: string
+	baseRef: string
+}): string | undefined {
+	const { lotFolder, worktree } = params
+	if (readIdentity({ lotFolder }) === undefined) return undefined
+	recordBaseDeclared({ lotFolder, root: worktree, ref: params.baseRef })
+	const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
+	if ('failure' in base) return base.failure
+	return designGateOf({ lotFolder, root: worktree, base: base.commit, verb: 'land' }).refusal
 }
 
 function refused(line: string): LandingResult {

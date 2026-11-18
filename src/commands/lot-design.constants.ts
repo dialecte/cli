@@ -6,6 +6,9 @@ export const DESIGN_VALUE_OPTIONS = ['from', 'by', 'reason'] as const
 /** The flags `lot design` takes, without the dashes. */
 export const DESIGN_FLAGS = ['from-plan', 'approve', 'waive', 'json'] as const
 
+/** The system's shared temporary folders, refused as a design's home beside the one `tmpdir` names. */
+export const SYSTEM_TEMPORARY_ROOTS: readonly string[] = ['/tmp', '/private/tmp']
+
 /** The verb the free-text checks name. */
 export const DESIGN_VERB = 'design'
 
@@ -15,8 +18,8 @@ export const LOT_DESIGN_LINES = {
 	unreadable: 'lot design: {file} cannot be read; nothing written',
 	empty: 'lot design: {file} is empty; nothing written',
 	notText: 'lot design: {file} is not UTF-8 text; nothing written',
-	outsideWorkTree:
-		'lot design: {file} is in no git work tree: keep the design in a repository, beside its plan; nothing written',
+	inScratch:
+		'lot design: {file} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written',
 	noPlanSpec:
 		'lot design: {lot} carries out no plan entry with a spec: dialecte lot design {lot} --from <file>; nothing written',
 	sharedSpec:

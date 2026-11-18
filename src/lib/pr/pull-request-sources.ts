@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 
 import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
 import { readSections } from '../changelog/sections.ts'
-import { gitDeclaredHighOf } from '../design/base-declared.ts'
+import { lotGitDeclaredHighOf } from '../design/base-declared.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
 import { readGit, tryReadGit } from '../git.ts'
@@ -155,7 +155,7 @@ export function readPullRequestSources(params: {
 	// the design line reads the lot's live standing: an edit or a scope change since review.jsonl was written counts
 	const design = designRowOf({
 		folder: params.lotFolder,
-		declaredHigh: gitDeclaredHighOf({ lotFolder: params.lotFolder }),
+		declaredHigh: lotGitDeclaredHighOf({ lotFolder: params.lotFolder }).globs,
 	})
 	const changelog = changelogOf({ worktree: params.worktree, changes })
 	const docsPassed = docsPassedOn({ worktree: params.worktree, treeHash })

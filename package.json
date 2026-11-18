@@ -151,7 +151,17 @@
 				"src/lib/handover/abandon-handover.ts",
 				"src/lib/handover/handover-store.ts",
 				"src/lib/handover/handover-lock.ts",
-				"src/lib/handover/sync-node-modules.ts"
+				"src/lib/handover/sync-node-modules.ts",
+				"src/lib/landing/**",
+				"src/lib/gate-records/**",
+				"src/lib/pr/**",
+				"src/lib/plan/**",
+				"src/lib/risk/**",
+				"src/lib/design/**",
+				"src/lib/gate/hook-gate.ts",
+				"src/lib/gate/hook-tdd.ts",
+				"src/lib/gate/hook-design.ts",
+				"src/lib/tdd/check-tdd-receipts.ts"
 			]
 		},
 		"stepEvents": 1,

@@ -35,6 +35,7 @@ import { DEFAULT_CARD_COLUMNS } from '../lib/card/card.constants.ts'
 import { resolveCardColumns } from '../lib/card/render-section-card.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
+import { designGateOf, ownLotFolderOf } from '../lib/design/design-gate.ts'
 import { startStep } from '../lib/events/record-step.ts'
 import { realPathOf } from '../lib/file-system.ts'
 import { computeStateHash } from '../lib/gate-records/state-hash.ts'
@@ -245,6 +246,9 @@ export async function runTdd(params: {
 			progress: createStepProgress({ live: params.live, clock: createSystemClock() }),
 		}),
 	}
+	// a lot's own worktree: its required design approved before its tests (DESIGN-GATE), at the run's one base
+	const designRefusal = subcommand === 'red' ? redDesignRefusalOf({ root, change }) : undefined
+	if (designRefusal !== undefined) return resultOf({ exitCode: 2, lines: [designRefusal] })
 	if (subcommand === 'red' || subcommand === 'green') {
 		trashBaseRunLeftovers()
 		const admission = admitRun({ context, subcommand })
@@ -1732,4 +1736,23 @@ function readChange(params: {
 	if ('failure' in moved) return moved
 	const refusal = declaredPathRefusalOf({ root, presence, ledger, gone, moved })
 	return refusal === undefined ? { base, presence } : { failure: refusal }
+}
+
+/**
+ * The design gate's refusal of `tdd red` in a lot's own worktree, read at the run's base over the lot's scope and the
+ * paths its presence map holds; undefined outside a lot, or when the design lets the lot go on.
+ */
+function redDesignRefusalOf(params: {
+	root: string
+	change: { base: string; presence: TestCodePresence }
+}): string | undefined {
+	const lotFolder = ownLotFolderOf({ cwd: params.root })
+	if (lotFolder === undefined) return undefined
+	return designGateOf({
+		lotFolder,
+		root: params.root,
+		base: params.change.base,
+		touched: [...params.change.presence.paths.keys()],
+		verb: 'tddRed',
+	}).refusal
 }

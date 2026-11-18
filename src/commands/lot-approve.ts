@@ -10,6 +10,9 @@ import { join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
+import { designGateOf } from '../lib/design/design-gate.ts'
+import { designStateWithReasons } from '../lib/design/design-line.ts'
+import { DESIGN_APPROVE_REASON } from '../lib/design/design.constants.ts'
 import { EVENT_LINE_LIMIT } from '../lib/events/events.constants.ts'
 import { appendLine } from '../lib/events/write-event.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
@@ -26,6 +29,7 @@ import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
+import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import {
 	APPROVABLE_STATES,
 	APPROVAL_LINE_SCHEMA,
@@ -149,7 +153,35 @@ export function approvalRefusals(params: {
 		...worktreeReasons(params),
 		...checksReasons(params),
 		...blockingReasons({ folder: place.lotFolder }),
+		...designReasons({ place }),
 	]
+}
+
+/**
+ * The lot's design when it does not let the lot go on, as one reason (DESIGN-GATE section 3): read at the lot base its
+ * worktree resolves; none for a lot whose design is approved, waived or not needed.
+ */
+function designReasons(params: { place: LotPlace }): string[] {
+	const { place } = params
+	const base = resolveTddBase({
+		root: place.worktree,
+		packageJson: readPackageJson(place.worktree),
+	})
+	if ('failure' in base) return [base.failure]
+	const gate = designGateOf({
+		lotFolder: place.lotFolder,
+		root: place.worktree,
+		base: base.commit,
+		verb: 'approve',
+	})
+	return gate.refusal === undefined
+		? []
+		: [
+				fillMessage({
+					template: DESIGN_APPROVE_REASON,
+					values: { state: designStateWithReasons(gate.standing) },
+				}),
+			]
 }
 
 /**

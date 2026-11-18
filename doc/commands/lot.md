@@ -147,20 +147,22 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   design - a lot's design (design before code): --from <file> records it by the sha256 of its bytes,
            appending { schema, at, kind: recorded, file, hash, from } to the lot folder's
            design.jsonl and keeping its copy as design/<hash>.md (the copy rules once the source is
-           gone); a file missing, empty, not UTF-8 or in no git work tree (a scratch or temporary
-           folder) is refused (exit 2), nothing written; --from-plan records the spec of the plan
-           entry the lot carries out, refused when another lot or fix entry of its block names the
-           same spec (write this lot's own design) or the lot carries out no entry with a spec;
-           --approve --by <who> [--reason <text>] appends an approval of the last recorded hash with
-           the need it was given against, refused when nothing is recorded or the source exists with
-           other bytes (record it again); --waive --by <who> --reason <text> appends a waiver with
-           the current need, refused on a lot that needs no design; both refused from the lot's own
-           worktree or its review throwaway (approve from the main checkout), and on a --by or
-           --reason holding a forbidden word or a --by holding what a public record never holds
-           (exit 2); the orchestrator in any casing is recorded as orchestrator; a lot no longer at
-           work is refused (exit 1); without an option it prints design <state>[ by <kind>][ ·
-           <reasons>] and the next command, --json { required, reasons, state, by, uncovered } (by
-           the kind, never a name)
+           gone); a file missing, empty, not UTF-8 or under a scratch root, the system's temporary
+           folder, /tmp or /private/tmp (wiped there) is refused (exit 2), nothing written, and a
+           file outside every git work tree is recorded (plans live there); without a worktree the
+           lot is read at the base recorded at its start, a ! line saying so; --from-plan records
+           the spec of the plan entry the lot carries out, refused when another lot or fix entry of
+           its block names the same spec (write this lot's own design) or the lot carries out no
+           entry with a spec; --approve --by <who> [--reason <text>] appends an approval of the last
+           recorded hash with the need it was given against, refused when nothing is recorded or the
+           source exists with other bytes (record it again); --waive --by <who> --reason <text>
+           appends a waiver with the current need, refused on a lot that needs no design; both
+           refused from the lot's own worktree or its review throwaway (approve from the main
+           checkout), and on a --by or --reason holding a forbidden word or a --by holding what a
+           public record never holds (exit 2); the orchestrator in any casing is recorded as
+           orchestrator; a lot no longer at work is refused (exit 1); without an option it prints
+           design <state>[ by <kind>][ · <reasons>] and the next command, --json { required,
+           reasons, state, by, uncovered } (by the kind, never a name)
   design - the need, computed by every reader and never stored: required when a scope entry (or a
            path) lies in a dialecte.risk.high area or is broader than one, or the lot carries out a
            plan entry of kind lot; an approval or a waiver holds only for the need it was given
@@ -170,7 +172,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            missing, not-required (shown not required); lot start and its dry run print design
            required (<reasons>) or design not required, lot forecast and lot status the state line,
            the hand-over card a design line (passed or a warning, never failed), review.jsonl a
-           design row and the pull request body Design: <state> by <kind>; nothing refuses on it yet
+           design row and the pull request body Design: <state> by <kind>
+  design - the gate: while a lot's required design is missing, unapproved or stale, tdd red in its
+           own worktree refuses (exit 2, nothing run), gate --hook's design step fails a commit of
+           the lot's branch, from any worktree, holding a production path (first, whatever
+           dialecte.gate.hook declares; a refused design recorded in the lot's events; a commit of
+           tests or docs only passes; a first or merge commit and a review throwaway on <lot
+           branch>-round-<n> skip it; a branch no lot names gives no line), lot land refuses after
+           its rebase (nothing pushed), handover write refuses a store lot (nothing written), lot
+           approve names design <state> among its reasons and the card's design line, read at the
+           card's worktree, fails (handover run refuses); each reads the shared areas of the lot
+           base its run resolved, through git, over the scope, the change's paths since that base
+           and the staged or landed ones; a refusing path without the lot's worktree refuses; lot
+           land records the base's shared areas again after its rebase
   land - a lot started with --on lands as a stack: its pull request is based on the parent's branch,
          its body's depends-on part names the parent's pull request (a parent without one is
          refused: land it with --draft first); the host's stacks are probed once (gh stack): with
@@ -931,4 +945,11 @@ was given against: an edit of the file reads stale, and a scope that reaches a n
 it is approved again. A lot needs a design when its scope lies in a `dialecte.risk.high` area (the repository's shared
 concepts) or is broader than one, or when it carries out a plan entry of kind `lot`; `--waive --by <who> --reason
 <text>` lets such a lot go on without one, recorded and shown. `lot start`, `lot status`, `lot forecast`, the card and
-the pull request body say where the design stands. Nothing refuses on it yet.
+the pull request body say where the design stands.
+
+While a required design is missing, not approved or stale, the lot does not move: `tdd red` in its worktree refuses,
+the commit hook's `design` step fails a commit of production code on the lot's branch, `lot land` refuses after its rebase and pushes
+nothing, `lot approve` names it among its reasons, and the hand-over card fails its `design` line. Each reads the shared
+areas of the lot base its run resolved, through git, over the scope and every path the change touches. `lot design`
+accepts a design file outside any git work tree, where plans live, and refuses one in a scratch or temporary folder,
+`/tmp` included.

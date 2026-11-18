@@ -190,6 +190,8 @@ export function runLot(params: {
 	cliPath?: string
 	/** Where lots land, asked by `lot status` (the stack parent's pull request) and `lot close`; default: GitHub. */
 	host?: HostAdapter
+	/** The shared temporary folders `lot design` refuses a design in; default `/tmp` and `/private/tmp`. */
+	sharedTemporaryRoots?: readonly string[]
 }): CommandResult {
 	const [verb, ...words] = params.argv
 	if (verb === 'close')
@@ -198,7 +200,13 @@ export function runLot(params: {
 	if (verb === 'pr') return runLotPr({ cwd: params.cwd, argv: words })
 	if (verb === 'review') return runLotReview({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'approve') return runLotApprove({ cwd: params.cwd, argv: words, now: params.now })
-	if (verb === 'design') return runLotDesign({ cwd: params.cwd, argv: words, now: params.now })
+	if (verb === 'design')
+		return runLotDesign({
+			cwd: params.cwd,
+			argv: words,
+			now: params.now,
+			sharedTemporaryRoots: params.sharedTemporaryRoots,
+		})
 	if (verb === 'brief') return runLotBrief({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'start') return startLot({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'status')

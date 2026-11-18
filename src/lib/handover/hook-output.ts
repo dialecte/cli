@@ -6,6 +6,7 @@
 import { stripVTControlCharacters } from 'node:util'
 
 import { counted } from '../counted.ts'
+import { ALWAYS_RUN_PARTS } from '../events/record-step.constants.ts'
 import { GATE_BASE_SOURCES } from '../gate/gate-base.constants.ts'
 import {
 	FLAKY_NOTE,
@@ -513,7 +514,12 @@ export function hookLandingLine(params: { output: string }): string | undefined 
 	const whole = GATE_HOOK_REUSED_PATTERN.exec(text)
 	if (whole) reused.push(`${HOOK_REUSED_TESTS_STEP} (full ${whole[2]})`)
 	// the gate prints a step's line as it ends and again in its summary: each step once
-	const ran = [...new Set([...text.matchAll(HOOK_RAN_STEP_PATTERN)].map((match) => match[1]))]
+	// an always-run part (the hook's design and tdd steps) runs on every commit: it never says the hook checked again
+	const ran = [
+		...new Set([...text.matchAll(HOOK_RAN_STEP_PATTERN)].map((match) => match[1])),
+	].filter(function isConfigured(name) {
+		return !ALWAYS_RUN_PARTS.includes(name)
+	})
 	return HOOK_LANDING_LINE.replace('{reused}', listOrNone(reused)).replace('{ran}', listOrNone(ran))
 }
 

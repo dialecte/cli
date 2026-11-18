@@ -28,8 +28,8 @@ import { findContribRecord } from '../contrib/contrib-key.ts'
 import { CONTRIB_SKIP_LABEL } from '../contrib/contrib.constants.ts'
 import { forecastAgeText, forecastHoldText, forecastViewOf } from '../coordination/forecast-view.ts'
 import { counted } from '../counted.ts'
+import { designGateOf } from '../design/design-gate.ts'
 import { designNextOf, designReasonsText, designStateText } from '../design/design-line.ts'
-import { shownDesignStandingOf } from '../design/design-standing.ts'
 import { DESIGN_PASSING_STATES } from '../design/design.constants.ts'
 import { pairRuns } from '../events/pair-runs.ts'
 import { readEvents } from '../events/read-events.ts'
@@ -54,6 +54,7 @@ import { snapshotRounds } from '../review-rounds/round-names.ts'
 import { goAheadText, riskReasonText } from '../risk/risk-reason.ts'
 import { riskCapOf, riskStandingOf } from '../risk/risk-records.ts'
 import { probeCaseInsensitive } from '../store/brief.ts'
+import { readIdentity } from '../store/identity.ts'
 import { LOT_OVERLAP_SEPARATOR } from '../store/lot-overlaps.constants.ts'
 import { lotOverlapsText, readLotOverlaps } from '../store/lot-overlaps.ts'
 import {
@@ -67,6 +68,7 @@ import { isEnded } from '../store/next-station.ts'
 import { scopeChangesText } from '../store/scope-changes.ts'
 import { readBeyondCapRows, snapshotTimeOf, writesStepEvents } from '../store/station-records.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
+import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { TDD_STEP } from '../tdd/tdd.constants.ts'
 import { readTreeKey } from './check-key.ts'
 import { findReusableRecord, isGreenRecord, isSameKey, readTreeRecords } from './check-store.ts'
@@ -1404,17 +1406,25 @@ function riskClassPart(params: { derived: RiskDerivedLine | undefined }): string
 }
 
 /**
- * The card's `design` line (DESIGN-GATE section 4, DG1): `passed` for a design approved, waived or not needed, a
- * `warning` otherwise, never `failed`; none for a lot that needs no design and recorded none.
+ * The card's `design` line (DESIGN-GATE sections 3-4): `passed` for a design approved, waived or not needed,
+ * `failed` otherwise, so `handover run` refuses the card; none for a lot that needs no design and recorded none.
  *
  * @intent show on the card where a lot's design stands
  * @internal
  */
-export function buildDesignLine(params: { folder: string }): CardGateLine | undefined {
-	const { folder } = params
-	const standing = shownDesignStandingOf({ lotFolder: folder })
-	if (standing === undefined) return undefined
-	const status = DESIGN_PASSING_STATES.includes(standing.state) ? 'passed' : 'warning'
+export function buildDesignLine(params: {
+	folder: string
+	root: string
+}): CardGateLine | undefined {
+	const { folder, root } = params
+	if (readIdentity({ lotFolder: folder }) === undefined) return undefined
+	// the card is a refusing path: the gate at the lot base its worktree resolves, over the change's paths
+	const base = resolveTddBase({ root, packageJson: readPackageJson(root) })
+	if ('failure' in base) return { name: DESIGN_LINE_NAME, status: 'failed', detail: base.failure }
+	const { standing } = designGateOf({ lotFolder: folder, root, base: base.commit, verb: 'card' })
+	if (standing.state === 'not-required' && !existsSync(join(folder, STORE_FILES.design)))
+		return undefined
+	const status = DESIGN_PASSING_STATES.includes(standing.state) ? 'passed' : 'failed'
 	const words = designStateText(standing)
 	const reasons = designReasonsText(standing.need.reasons)
 	const next = designNextOf({ standing, lot: basename(folder) })

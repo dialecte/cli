@@ -5,11 +5,11 @@
  * printed. Each write refreshes `review.jsonl`. It refuses nothing of the lot's other verbs.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, resolve, sep } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
-import { gitDeclaredHighOf } from '../lib/design/base-declared.ts'
+import { lotGitDeclaredHighOf } from '../lib/design/base-declared.ts'
 import { designNextOf, designStatusJson, designStatusLine } from '../lib/design/design-line.ts'
 import {
 	appendDesignLine,
@@ -35,6 +35,7 @@ import { jsonOf } from '../lib/print/print.ts'
 import { forbiddenWordRefusal, isOneLine } from '../lib/review-rounds/option-checks.ts'
 import { refreshReviewRecord } from '../lib/review-rounds/review-record.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
+import { scratchReadRoots } from '../lib/scratch/scratch-roots.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { lotRefusalExit } from '../lib/store/lot-exits.ts'
 import {
@@ -46,10 +47,10 @@ import { lotState } from '../lib/store/lot-state.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
 import { lotOfWorktree, requiredLotOf } from '../lib/store/resolve-lot.ts'
-import { workTreeHolding } from '../lib/store/store-folder.ts'
 import { APPROVABLE_STATES, ORCHESTRATOR_APPROVER } from './lot-approve.constants.ts'
 import {
 	DESIGN_FLAGS,
+	SYSTEM_TEMPORARY_ROOTS,
 	DESIGN_VALUE_OPTIONS,
 	DESIGN_VERB,
 	LOT_DESIGN_LINES,
@@ -64,7 +65,13 @@ import type {
 } from '../lib/design/design.types.ts'
 import type { DesignLotPlace, DesignRequest } from './lot-design.types.ts'
 
-export function runLotDesign(params: { cwd: string; argv: string[]; now?: Date }): CommandResult {
+export function runLotDesign(params: {
+	cwd: string
+	argv: string[]
+	now?: Date
+	/** The shared temporary folders a design is refused in; default `SYSTEM_TEMPORARY_ROOTS`. */
+	sharedTemporaryRoots?: readonly string[]
+}): CommandResult {
 	const read = readArguments({
 		argv: params.argv,
 		valueOptions: DESIGN_VALUE_OPTIONS,
@@ -86,7 +93,13 @@ export function runLotDesign(params: { cwd: string; argv: string[]; now?: Date }
 		})
 	const at = (params.now ?? new Date()).toISOString()
 	if (request.kind === 'record')
-		return recordDesign({ place, cwd: params.cwd, file: request.file, at })
+		return recordDesign({
+			place,
+			cwd: params.cwd,
+			file: request.file,
+			at,
+			sharedTemporaryRoots: params.sharedTemporaryRoots ?? SYSTEM_TEMPORARY_ROOTS,
+		})
 	const refusal =
 		byRefusal({ place, by: request.by, reason: request.reason }) ??
 		ownWorktreeRefusal({ place, cwd: params.cwd, verb: request.kind })
@@ -155,7 +168,14 @@ function placeOf(params: {
 function showStanding(params: { place: DesignLotPlace; json: boolean }): CommandResult {
 	const standing = gitStandingOf(params.place)
 	if (params.json) return { exitCode: 0, output: jsonOf(designStatusJson(standing)) }
-	return resultOf({ exitCode: 0, lines: standingLines({ standing, lot: params.place.lot }) })
+	const { note } = lotGitDeclaredHighOf({ lotFolder: params.place.lotFolder })
+	return resultOf({
+		exitCode: 0,
+		lines: [
+			...standingLines({ standing, lot: params.place.lot }),
+			...(note === undefined ? [] : [note]),
+		],
+	})
 }
 
 /** The file (or, without one, the plan entry's spec) recorded: its line, its copy, the review record refreshed. */
@@ -164,12 +184,17 @@ function recordDesign(params: {
 	cwd: string
 	file: string | undefined
 	at: string
+	sharedTemporaryRoots: readonly string[]
 }): CommandResult {
 	const { place } = params
 	const source =
 		params.file === undefined ? planSpecOf(place) : { file: resolve(params.cwd, params.file) }
 	if ('exitCode' in source) return source
-	const content = designContentOf(source.file)
+	const content = designContentOf({
+		file: source.file,
+		cwd: params.cwd,
+		sharedTemporaryRoots: params.sharedTemporaryRoots,
+	})
 	if ('exitCode' in content) return content
 	const hash = designHashOf(content.bytes)
 	try {
@@ -218,17 +243,20 @@ function planSpecOf(place: DesignLotPlace): { file: string } | CommandResult {
 }
 
 /**
- * The file's real path, bytes and text; refused when it cannot be read, is empty, is not UTF-8 text, or lies in no git
- * work tree (a scratch or temporary folder is wiped, and nobody else reads it).
+ * The file's real path, bytes and text; refused when it cannot be read, is empty, is not UTF-8 text, or lies in a
+ * scratch or temporary folder (wiped there, and nobody else reads it).
  */
-function designContentOf(
-	file: string,
-): { file: string; bytes: Buffer; text: string } | CommandResult {
+function designContentOf(params: {
+	file: string
+	cwd: string
+	sharedTemporaryRoots: readonly string[]
+}): { file: string; bytes: Buffer; text: string } | CommandResult {
+	const { file, cwd, sharedTemporaryRoots } = params
 	if (!existsSync(file) || !statSync(file).isFile())
 		return fileRefusal({ template: LOT_DESIGN_LINES.unreadable, file })
 	const real = realPathOf(file)
-	if (workTreeHolding({ from: dirname(real) }) === undefined)
-		return fileRefusal({ template: LOT_DESIGN_LINES.outsideWorkTree, file })
+	if (isInScratch({ file: real, cwd, sharedTemporaryRoots }))
+		return fileRefusal({ template: LOT_DESIGN_LINES.inScratch, file })
 	const bytes = readFileSync(real)
 	if (bytes.length === 0) return fileRefusal({ template: LOT_DESIGN_LINES.empty, file: real })
 	try {
@@ -236,6 +264,23 @@ function designContentOf(
 	} catch {
 		return fileRefusal({ template: LOT_DESIGN_LINES.notText, file: real })
 	}
+}
+
+/**
+ * Whether the file lies under the cli's scratch roots, the system's temporary folder (`scratchReadRoots`) or the
+ * system's shared temporary folders (`/tmp`, `/private/tmp`, each by its real path): wiped there, and nobody else
+ * reads it. A file outside every git work tree is no refusal: plans live there.
+ */
+function isInScratch(params: {
+	file: string
+	cwd: string
+	sharedTemporaryRoots: readonly string[]
+}): boolean {
+	const roots = [...scratchReadRoots({ cwd: params.cwd }), ...params.sharedTemporaryRoots]
+	return roots.some(function holdsFile(root) {
+		const real = realPathOf(root)
+		return params.file === real || params.file.startsWith(`${real}${sep}`)
+	})
 }
 
 /** A refusal naming the file (exit 2). */
@@ -388,7 +433,7 @@ function ownWorktreeRefusal(params: {
 function gitStandingOf(place: DesignLotPlace): DesignStanding {
 	return lotDesignStandingOf({
 		lotFolder: place.lotFolder,
-		declaredHigh: gitDeclaredHighOf({ lotFolder: place.lotFolder }),
+		declaredHigh: lotGitDeclaredHighOf({ lotFolder: place.lotFolder }).globs,
 	})
 }
 
@@ -396,7 +441,7 @@ function gitStandingOf(place: DesignLotPlace): DesignStanding {
 function gitNeedOf(place: DesignLotPlace): DesignNeed {
 	return lotDesignNeedOf({
 		lotFolder: place.lotFolder,
-		declaredHigh: gitDeclaredHighOf({ lotFolder: place.lotFolder }),
+		declaredHigh: lotGitDeclaredHighOf({ lotFolder: place.lotFolder }).globs,
 	})
 }
 

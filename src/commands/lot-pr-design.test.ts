@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { DESIGN_TEXT, EDITED_DESIGN_TEXT, APPROVER } from '../../test/design-workspace.constants.ts'
+import { isolateTemporaryFolders } from '../../test/design-workspace.ts'
 import { recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-pr.constants.ts'
 import { pullRequestLot } from '../../test/lot-pr.ts'
@@ -25,7 +26,9 @@ describe('lot pr - the design line', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const cwd = lot.workspace.repository
 		const file = join(cwd, 'DESIGN.md')
 		writeFileSync(file, DESIGN_TEXT)
-		runLot({ cwd, argv: ['design', LOT_NAME, '--from', file] })
+		// the design was written before: under neither the isolated temporary folder nor the scratch root
+		isolateTemporaryFolders()
+		runLot({ cwd, argv: ['design', LOT_NAME, '--from', file], sharedTemporaryRoots: [] })
 		runLot({ cwd, argv: ['design', LOT_NAME, '--approve', '--by', APPROVER] })
 		writeFileSync(file, EDITED_DESIGN_TEXT)
 

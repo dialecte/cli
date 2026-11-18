@@ -298,3 +298,6 @@ Flags: `--base`, `--json`, `--flags`, `--legend`
     production looks like a stub; code written first, hidden, then a red taken at the base state, cannot
     be told from an honest red (at the first step the red's production is the base's). The flags and the
     refusals make the rest visible; the review reads the diff.
+
+`tdd red` in a lot's own worktree first holds the lot to its design: while the lot needs a design that is missing, not
+approved or stale, it refuses (exit 2), runs nothing and names the next `dialecte lot design` command.

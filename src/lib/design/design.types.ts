@@ -1,5 +1,5 @@
 import type { PlanEntry, PlanEntryKind } from '../plan/plan-block.types.ts'
-import type { DESIGN_STATES } from './design.constants.ts'
+import type { DESIGN_GATE_VERBS, DESIGN_STATES } from './design.constants.ts'
 
 /**
  * Why a lot needs a design: a path of its scope (or of a commit) in a shared area its repository declares
@@ -81,3 +81,9 @@ export type DesignStatusJson = {
 
 /** A plan entry as its block holds it, and how many `lot` or `fix` entries of the block name its spec. */
 export type HeldPlanEntry = { entry: PlanEntry; sharing: number }
+
+/** A verb the design gate holds. */
+export type DesignGateVerb = keyof typeof DESIGN_GATE_VERBS
+
+/** The gate's answer: the standing it read, and the refusal when the design does not let the lot go on. */
+export type DesignGate = { standing: DesignStanding; refusal?: string }

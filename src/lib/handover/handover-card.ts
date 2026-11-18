@@ -240,7 +240,7 @@ export function buildHandoverCard(params: {
 		? buildForecastLine({ folder: params.folder, view: forecastView })
 		: undefined
 	const stackLine = params.release ? undefined : buildStackCardLine({ folder: params.folder })
-	const designLine = params.release ? undefined : buildDesignLine({ folder: params.folder })
+	const designLine = params.release ? undefined : buildDesignLine({ folder: params.folder, root })
 	// the run's merges guard refuses a pending merge lot without its tree: the card says so in its words
 	const mergesLine = pending
 		? mergeTreeLineOf({

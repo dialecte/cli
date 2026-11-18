@@ -1,14 +1,17 @@
 /**
- * The card's `design` line (DESIGN-GATE section 4, DG1): informational only, `passed` or `warning`, never `failed`, so
- * it changes no card verdict; the approver or waiver by kind; no line for a lot that needs no design and recorded none.
+ * The card's `design` line (DESIGN-GATE sections 3-4): `passed` for a design approved, waived or not needed, `failed`
+ * otherwise, so `handover run` refuses through the card's failed gates (DG2); the approver or waiver by kind; no line
+ * for a lot that needs no design and recorded none.
  */
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { DECLARED_GLOB, APPROVER } from '../../../test/design-workspace.constants.ts'
+import { APPROVER, DECLARED_GLOB, OUTSIDE_GLOB } from '../../../test/design-workspace.constants.ts'
 import { design, designLot } from '../../../test/design-workspace.ts'
 import { storeLotFolder } from '../../../test/handover-store-scenario.ts'
 import { headOf, hooksRepository, writeGreenRecords } from '../../../test/mutation-hooks.ts'
 import { noRepositoryCli } from '../../../test/repository-cli-probe.ts'
+import { writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { appendDesignLine } from '../design/design-records.ts'
 import { buildHandoverCard } from '../handover/handover-card.ts'
@@ -23,12 +26,12 @@ afterEach(function restoreEnvironment() {
 })
 
 describe("the card's design line", { timeout: STORE_CASE_TIMEOUT }, () => {
-	it('a lot that needs a design and recorded none -> a warning naming why and what to run', () => {
+	it('a lot that needs a design and recorded none -> failed, naming why and what to run', () => {
 		const lot = designLot({ declared: true })
 
-		expect(buildDesignLine({ folder: lot.lotFolder })).toEqual({
+		expect(buildDesignLine({ folder: lot.lotFolder, root: lot.cwd })).toEqual({
 			name: 'design',
-			status: 'warning',
+			status: 'failed',
 			detail: `missing (shared ${DECLARED_GLOB}): dialecte lot design ${lot.name} --from <DESIGN.md>, then approve it from the main checkout: dialecte lot design ${lot.name} --approve --by <who>`,
 		})
 	})
@@ -38,7 +41,7 @@ describe("the card's design line", { timeout: STORE_CASE_TIMEOUT }, () => {
 		design({ lot, words: ['--from', lot.designFile] })
 		design({ lot, words: ['--approve', '--by', APPROVER] })
 
-		expect(buildDesignLine({ folder: lot.lotFolder })).toEqual({
+		expect(buildDesignLine({ folder: lot.lotFolder, root: lot.cwd })).toEqual({
 			name: 'design',
 			status: 'passed',
 			detail: 'approved by person',
@@ -48,12 +51,11 @@ describe("the card's design line", { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot that needs no design and recorded none -> no line', () => {
 		const lot = designLot()
 
-		expect(buildDesignLine({ folder: lot.lotFolder })).toBeUndefined()
+		expect(buildDesignLine({ folder: lot.lotFolder, root: lot.cwd })).toBeUndefined()
 	})
 
-	it("a lot whose design is recorded and not approved -> the card's verdict and failed gates are the same as without it", () => {
+	it('a lot whose design is recorded and not approved -> the design line fails and the card is BLOCKED', () => {
 		const params = storeLotCardParams()
-		const without = buildHandoverCard(params)
 		appendDesignLine({
 			lotFolder: params.folder,
 			line: {
@@ -67,8 +69,29 @@ describe("the card's design line", { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(verdictOf(buildHandoverCard(params))).toEqual({
-			...verdictOf(without),
-			design: { name: 'design', status: 'warning', detail: expect.stringMatching(/^not approved/) },
+			verdict: 'BLOCKED',
+			failedGates: expect.arrayContaining(['design']),
+			design: { name: 'design', status: 'failed', detail: expect.stringMatching(/^not approved/) },
+		})
+	})
+
+	it('an edit inside a shared area outside the scope, the design missing -> the design line fails and the card is BLOCKED', () => {
+		const params = storeLotCardParams()
+		const manifest = JSON.parse(readFileSync(join(params.root, 'package.json'), 'utf8'))
+		writeFileSync(
+			join(params.root, 'package.json'),
+			`${JSON.stringify({ ...manifest, dialecte: { ...manifest.dialecte, risk: { high: [OUTSIDE_GLOB] } } })}\n`,
+		)
+		writeFiles({ root: params.root, files: { 'lib/core/x.ts': 'export const x = 1\n' } })
+
+		expect(verdictOf(buildHandoverCard(params))).toEqual({
+			verdict: 'BLOCKED',
+			failedGates: expect.arrayContaining(['design']),
+			design: {
+				name: 'design',
+				status: 'failed',
+				detail: expect.stringMatching(/^missing \(shared lib\/core\/\*\*\)/),
+			},
 		})
 	})
 })
