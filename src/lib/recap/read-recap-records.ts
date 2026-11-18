@@ -1,7 +1,7 @@
 /**
  * The records a recap is built from, read and never written: the lots and their commits, the gate and rules
  * records of the repository, the lot's mutation runs, the findings ledger, the lot declaration and
- * `decisions.md` of the hand-over folder (then a lot folder's answers), the git user name.
+ * `decisions.md` of the hand-over folder (each package's declaration too) (then a lot folder's answers), the git user name.
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -14,6 +14,7 @@ import {
 import { readGateRecords, readJudgedCases, readRulesRecord } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf, readGitConfig } from '../git.ts'
+import { archivedDeclarationsOf, currentArchiveOf } from '../handover/archived-declarations.ts'
 import { findCommittedLots } from '../handover/find-committed-lots.ts'
 import { revisionOf } from '../handover/list-handovers.ts'
 import { checkedTree, mergedBranchesOf } from '../handover/lot-trees.ts'
@@ -21,16 +22,22 @@ import { readDecisions } from '../review-rounds/decisions-file.ts'
 import { DECISIONS_FILE, LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
 import { readDeclaredCases } from '../tdd/lot-declaration.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
+import { lotFilesOf } from '../worktree/lot-files.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
 import { readLotAnswerDecisions } from './lot-answer-decisions.ts'
 import { readFindings } from './read-findings.ts'
 import { readRecapMutation } from './read-recap-mutation.ts'
-import { FOLDER_LOT_FILE, NO_USER_NAME } from './recap.constants.ts'
+import { NO_USER_NAME } from './recap.constants.ts'
 
 import type { CardGateLine } from '../gate-records/gate-records.types.ts'
 import type { HandoverFolder } from '../handover/handover.types.ts'
 import type { LotCaseEntry, LotCaseList } from '../tdd/tdd.types.ts'
-import type { RecapCommits, RecapPathBases, RecapRecords } from './recap.types.ts'
+import type {
+	RecapCommits,
+	RecapPackageCases,
+	RecapPathBases,
+	RecapRecords,
+} from './recap.types.ts'
 
 /** The records of the hand-over, or why the recap cannot be made. */
 export function readRecapRecords(params: {
@@ -48,13 +55,13 @@ export function readRecapRecords(params: {
 			'{where}',
 			repositoryExists ? 'the repository' : 'the current folder',
 		)
-	const declarationPath = existsSync(join(folder, FOLDER_LOT_FILE))
-		? join(folder, FOLDER_LOT_FILE)
-		: join(root, LOT_FILE)
+	const declarationPath = declarationPathOf({ folder, root, packagePath: '' })
 	const accepted = readCases({ path: declarationPath, list: 'accept' })
 	if (typeof accepted === 'string') return accepted
 	const revised = readCases({ path: declarationPath, list: 'revised' })
 	if (typeof revised === 'string') return revised
+	const packages = readPackageCases({ folder, root, repositoryExists })
+	if (typeof packages === 'string') return packages
 	const findings = readFindings({
 		path: join(folder, LEDGER_FILE),
 		bases: pathBasesOf({ root, repositoryExists }),
@@ -88,6 +95,7 @@ export function readRecapRecords(params: {
 		findings,
 		accepted,
 		revised,
+		packages,
 		// a lot's answers after the file's own rows: never copied into decisions.md
 		decisions: [
 			...readDecisions(join(folder, DECISIONS_FILE)),
@@ -158,6 +166,44 @@ function readChecks(params: {
 }): CardGateLine[] {
 	if (readGateRecords(params.root).length === 0 && !readRulesRecord(params.root)) return []
 	return [...buildCardGateLines(params), buildRulesLine(params), ...buildMutationLines(params)]
+}
+
+/**
+ * The declaration a recap reads for one package path: the folder's archive (`lot.landed.json` first), else the
+ * live lot file of that package.
+ */
+function declarationPathOf(params: { folder: string; root: string; packagePath: string }): string {
+	return (
+		currentArchiveOf({ folder: params.folder, packagePath: params.packagePath })?.path ??
+		join(params.root, params.packagePath, LOT_FILE)
+	)
+}
+
+/**
+ * The accepted and revised cases of each package other than the root, by package path: the packages the folder
+ * archived and those whose live lot file the repository holds; a package declaring none left out.
+ */
+function readPackageCases(params: {
+	folder: string
+	root: string
+	repositoryExists: boolean
+}): RecapPackageCases[] | string {
+	const { folder, root } = params
+	const archived = archivedDeclarationsOf({ folder }).map((archive) => archive.packagePath)
+	const live = params.repositoryExists
+		? lotFilesOf({ root }).map((lotFile) => lotFile.packagePath)
+		: []
+	const packagePaths = [...new Set([...archived, ...live])].filter(Boolean).sort()
+	const packages: RecapPackageCases[] = []
+	for (const packagePath of packagePaths) {
+		const path = declarationPathOf({ folder, root, packagePath })
+		const accepted = readCases({ path, list: 'accept' })
+		if (typeof accepted === 'string') return accepted
+		const revised = readCases({ path, list: 'revised' })
+		if (typeof revised === 'string') return revised
+		if (accepted.length || revised.length) packages.push({ packagePath, accepted, revised })
+	}
+	return packages
 }
 
 /** One list of the lot declaration, or why it cannot be read. */

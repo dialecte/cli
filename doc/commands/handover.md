@@ -41,7 +41,11 @@ handover - The guarded commit-by-lots hand-over a human runs, from a lots file
         a lot of the store (exit 2) unless --not-a-lot --by <who> --reason <text> gives the
         go-ahead, recorded first as a not a store lot: row of its decisions.md (an existing row
         counts), and always a simulated or damaged lot; a rehearsal prints ! and goes on; holds the
-        machine awake while it runs, and a run that spanned a sleep says so on the DONE card
+        machine awake while it runs, and a run that spanned a sleep says so on the DONE card; a run
+        that committed lots archives every non-empty lot file of the worktree (the root's and each
+        tracked package's) in the folder, lots/<package path>/ for a package, lot.landed.json beside
+        a lot.json holding other bytes, and empties it; a run that committed none leaves them as
+        they are
   abandon - marks a hand-over that will not run (abandoned.json) and releases its lock; refuses a
             lot folder (exit 2): rewrite it with write --rehash --out <full name>, end the lot with
             lot stop
@@ -477,11 +481,16 @@ the merge queue runs and what its ruleset requires. Nothing is configured: a `ci
   `and <n> more`), the working copies put back byte for byte;
   refused when the install changed the staged files or the versions still differ (the sync leaves absent dev,
   peer and optional packages aside; the install guard right after it checks dev and peer ones, and refuses the
-  lot when one is missing). A real run that leaves every lot committed then moves the worktree's `.dialecte/lot.json`
-  into the hand-over folder as `lot.json`, after the card is built, and leaves an empty declaration
-  (`{}`) in its place, saying so in one line (`lot file archived: <folder>/lot.json`): the next lot on
-  the branch does not inherit its entries. No lot file, an empty one, a rehearsal, a stopped run, or a
-  folder that holds a `lot.json` already (a second run) leave the lot file as it is.
+  lot when one is missing). A real run that leaves every lot committed, and committed lots itself, then moves every lot
+  file of the worktree into the hand-over folder, after the card is built: the root's `.dialecte/lot.json`
+  as `lot.json`, each tracked package's (the folder of a tracked `package.json`) as
+  `lots/<package path>/lot.json`. Each leaves an empty declaration (`{}`) in its place, saying so in one
+  line (`lot file archived: <archive>`): the next lot on the branch does not inherit its entries. An
+  archive already holding the same bytes is kept and the file emptied; one holding other bytes gets
+  `lot.landed.json` beside it, never written over; when both hold other bytes the file is left as it is,
+  naming both. An empty lot file, a rehearsal and a stopped run leave the lot files as they are. So does
+  a run that committed nothing, such as a done hand-over run again: each non-empty lot file is named
+  (`lot file left as it is: <file>`), since it may already hold the next step's entries.
 - `dialecte handover show [<name|folder>] [--json]` prints a hand-over's card again, recomputed from its
   folder (the lots file, the snapshot) and the records - the lots found committed from the lots file's HEAD
   to the tip of its branch, `DONE` when every lot is - and writes nothing: not in the folder, the store,

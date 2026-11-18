@@ -44,8 +44,18 @@ export type RecapRecords = {
 	findings: RecapFinding[] | undefined
 	accepted: LotCaseEntry[]
 	revised: LotCaseEntry[]
+	/** Each package's own declaration other than the root's, by package path; none declaring nothing. */
+	packages: RecapPackageCases[]
 	decisions: DecisionRow[]
 	user: string
+}
+
+/** The accepted and revised cases a package's own lot file declares. */
+export type RecapPackageCases = {
+	/** The package's folder relative to the repository, with `/`. */
+	packagePath: string
+	accepted: LotCaseEntry[]
+	revised: LotCaseEntry[]
 }
 
 /** Each lot's subject and commit, and whether the branch was rewritten under them. */

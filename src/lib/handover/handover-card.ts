@@ -1,4 +1,5 @@
-import { basename, dirname, relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { basename, dirname, join, relative } from 'node:path'
 
 /**
  * The hand-over card: the verdict (READY, BLOCKED, DONE, ABANDONED) with the size and what to read, what is
@@ -68,8 +69,10 @@ import {
 } from '../tdd/tdd-files.ts'
 import { DUPLICATE_CARD_LABEL, DUPLICATE_LINES_DETAIL } from '../tdd/tdd.constants.ts'
 import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
+import { lotFilesOf } from '../worktree/lot-files.ts'
 import { isInside } from '../worktree/sibling-links.ts'
 import { worktreeIndexOf } from '../worktree/worktree-index.ts'
+import { PACKAGE_LOT_FILE_LINE } from './archived-declarations.constants.ts'
 import { mergeTreeLineOf } from './check-handover-guards.ts'
 import { readHandoverRunRecord } from './handover-run-record.ts'
 import { registeredNameOf } from './handover-store.ts'
@@ -112,6 +115,7 @@ import {
 	WORKTREE_LINE_LABEL,
 } from './handover.constants.ts'
 import { readInstallLine } from './install-guard.ts'
+import { isEmptyDeclaration } from './is-empty-declaration.ts'
 import { commitSizeOf, treeDiffSizeOf, workingTreeSizeOf } from './lot-size.ts'
 import { checkedTree, mergedBranchesOf, ownLotTreeOf } from './lot-trees.ts'
 import { readStoreLotLine } from './store-lot-guard.ts'
@@ -306,6 +310,8 @@ export function buildHandoverCard(params: {
 		moved: readJudgedMoves({ root, stateHash: tddStateHash }),
 		duplicates: readJudgedDuplicates({ root, stateHash: tddStateHash }),
 	})
+	// the root is judged as a whole; a package's own lot file is shown, before the run archives it
+	tdd.lines.push(...packageLotFileLines(root))
 	const lots = params.lots.map(function cardLot(lot, index): CardLot {
 		const commit = params.commits[index]
 		const subject = lot.message.trim().split('\n')[0]
@@ -574,6 +580,32 @@ function tddSection(params: {
 		declarations:
 			revised.listed.length + revisedHelpers.length + gone.length + unused.length + skipped.length,
 	}
+}
+
+/**
+ * One line per package whose own lot file declares something (the root's is the tdd section itself): its
+ * accept, revised and gone counts, or why it cannot be read; none in a one-package repository.
+ */
+function packageLotFileLines(root: string): CardLine[] {
+	return lotFilesOf({ root })
+		.filter(function isPackageDeclaring(lotFile) {
+			return lotFile.packagePath !== '' && !isEmptyDeclaration(readFileSync(lotFile.file, 'utf8'))
+		})
+		.map(function packageLotFileLine(lotFile) {
+			const packageRoot = join(root, lotFile.packagePath)
+			const accepted = readAcceptances(packageRoot)
+			const revised = readRevisions(packageRoot)
+			const gone = readGoneEntries(packageRoot)
+			const failure = [accepted, revised, gone].find((list) => 'failure' in list)
+			if (failure && 'failure' in failure)
+				return plainLine(`${lotFile.packagePath}: ${failure.failure}`)
+			return plainLine(
+				PACKAGE_LOT_FILE_LINE.replace('{package}', () => lotFile.packagePath)
+					.replace('{accept}', String('failure' in accepted ? 0 : accepted.length))
+					.replace('{revised}', String('failure' in revised ? 0 : revised.length))
+					.replace('{gone}', String('failure' in gone ? 0 : gone.length)),
+			)
+		})
 }
 
 /**

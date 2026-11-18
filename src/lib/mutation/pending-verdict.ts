@@ -3,11 +3,8 @@
  * runs of the package (any lot), the runs still running on the hand-over's branches, and for a gate lot whether a run
  * of those branches reported on the tree handed over. The card's gate line and the run's guard both read it.
  */
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { counted } from '../counted.ts'
-import { ARCHIVED_LOT_FILE } from '../handover/handover.constants.ts'
+import { currentArchiveOf } from '../handover/archived-declarations.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readLotDeclaration } from '../tdd/lot-declaration.ts'
 import { LOT_FILE } from '../worktree/worktree.constants.ts'
@@ -92,13 +89,14 @@ export function pendingVerdict(params: PendingVerdictParams): PendingVerdict | u
 }
 
 /**
- * The `mutation` setting of the lot the hand-over in `folder` commits: its archived `lot.json` when the folder
- * holds one, else the package root's `.dialecte/lot.json`; `default` when the file or its key is absent.
+ * The `mutation` setting of the lot the hand-over in `folder` commits: the root's archive when the folder holds one
+ * (`lot.landed.json` first, then `lot.json`; a package's switch never decides it), else the package root's `.dialecte/lot.json`; `default` when the file or its key is absent.
  * @intent read a hand-over's mutation mode, tell whether a hand-over is a gate lot
  */
 export function lotModeOf(params: LotModeOfParams): MutationModeSetting {
-	const archived = join(params.folder, ARCHIVED_LOT_FILE)
-	if (!existsSync(archived)) return readMutationMode({ root: params.root })
+	const archive = currentArchiveOf({ folder: params.folder, packagePath: '' })
+	if (!archive) return readMutationMode({ root: params.root })
+	const archived = archive.path
 	const declaration = readLotDeclaration(archived)
 	// the reader names the root's lot file; this reason is about the folder's
 	if ('failure' in declaration)
