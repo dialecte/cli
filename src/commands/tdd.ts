@@ -1720,6 +1720,24 @@ function isSubcommand(word: string | undefined): word is TddSubcommand {
  * (`changedTestCodeOf`); or why there is none: no base, a lot file that cannot be read, or a `gone` or `moved` entry
  * naming a path the presence map refuses (`declaredPathRefusalOf`), refused before anything is read.
  */
+function readChange(params: {
+	root: string
+	packageJson: PackageJson
+	ledger: TddLedger
+	ref: string | undefined
+}): { base: string; presence: TestCodePresence } | { failure: string } {
+	const { root, ledger } = params
+	const base = resolveBase(params)
+	if (typeof base !== 'string') return base
+	const presence = changedTestCodeOf({ root, base })
+	const gone = readGoneEntries(root)
+	if ('failure' in gone) return gone
+	const moved = readMovedEntries(root)
+	if ('failure' in moved) return moved
+	const refusal = declaredPathRefusalOf({ root, presence, ledger, gone, moved })
+	return refusal === undefined ? { base, presence } : { failure: refusal }
+}
+
 /**
  * The design gate's refusal of `tdd red` in a lot's own worktree, read at the run's base over the lot's scope and the
  * paths its presence map holds; undefined outside a lot, or when the design lets the lot go on.
@@ -1737,22 +1755,4 @@ function redDesignRefusalOf(params: {
 		touched: [...params.change.presence.paths.keys()],
 		verb: 'tddRed',
 	}).refusal
-}
-
-function readChange(params: {
-	root: string
-	packageJson: PackageJson
-	ledger: TddLedger
-	ref: string | undefined
-}): { base: string; presence: TestCodePresence } | { failure: string } {
-	const { root, ledger } = params
-	const base = resolveBase(params)
-	if (typeof base !== 'string') return base
-	const presence = changedTestCodeOf({ root, base })
-	const gone = readGoneEntries(root)
-	if ('failure' in gone) return gone
-	const moved = readMovedEntries(root)
-	if ('failure' in moved) return moved
-	const refusal = declaredPathRefusalOf({ root, presence, ledger, gone, moved })
-	return refusal === undefined ? { base, presence } : { failure: refusal }
 }

@@ -486,7 +486,7 @@ describe('deriveStartRiskClass', () => {
 })
 
 describe('the cli declared list', () => {
-	it('package.json holds dialecte.risk.high with the 15 globs of the spec and the 9 shared concepts of the design gate', () => {
+	it('package.json holds dialecte.risk.high with the 15 globs of the spec and the 10 shared concepts of the design gate', () => {
 		const manifest = JSON.parse(
 			readFileSync(join(import.meta.dirname, '..', '..', '..', 'package.json'), 'utf8'),
 		)
@@ -514,6 +514,7 @@ describe('the cli declared list', () => {
 			'src/lib/design/**',
 			'src/lib/gate/hook-gate.ts',
 			'src/lib/gate/hook-tdd.ts',
+			'src/lib/gate/hook-design.ts',
 			'src/lib/tdd/check-tdd-receipts.ts',
 		])
 	})

@@ -8,10 +8,12 @@ import { join } from 'node:path'
 
 import {
 	EDITED_DESIGN_TEXT,
+	OUTSIDE_GLOB,
 	STORE_GLOB,
 	STORE_NEED,
 } from '../../test/design-workspace.constants.ts'
 import { approvedDesign, gatedLot } from '../../test/design-workspace.ts'
+import { writeFiles } from '../../test/scratch-repository.ts'
 import { createVitestPackage } from '../../test/scratch-vitest-package.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
@@ -109,5 +111,19 @@ describe('tdd red - the design gate', { timeout: STORE_CASE_TIMEOUT }, () => {
 			expect.objectContaining({ output: expect.not.stringMatching(REFUSED) }),
 			expect.objectContaining({ output: expect.not.stringMatching(REFUSED) }),
 		])
+	})
+
+	it('a scope outside every shared area plus an edit inside one -> exit 2, refused naming the area', async () => {
+		const lot = gatedLot({ declared: [OUTSIDE_GLOB] })
+		writeFiles({ root: lot.root, files: { 'lib/core/x.ts': 'export const x = 1\n' } })
+
+		await expect(red(lot.root)).resolves.toEqual({
+			exitCode: 2,
+			output: refusalOf({
+				lot,
+				words: `missing (shared ${OUTSIDE_GLOB})`,
+				next: `dialecte lot design ${lot.name} --from <DESIGN.md>, then approve it from the main checkout: dialecte lot design ${lot.name} --approve --by <who>`,
+			}),
+		})
 	})
 })

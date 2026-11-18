@@ -6,23 +6,27 @@
  * prints the standing. Each case runs on a scratch store lot, from the main checkout.
  */
 import { createHash } from 'node:crypto'
-import { realpathSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { DECLARED_GLOB, DESIGN_TEXT, DESIGN_TIME } from '../../test/design-workspace.constants.ts'
 import {
 	baseDeclaringLot,
+	declaringManifest,
 	design,
 	designCopiesOf,
 	designCopyText,
 	designLinesOf,
 	designLot,
+	landingLot,
 } from '../../test/design-workspace.ts'
-import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { landOnOrigin } from '../../test/land-lot.ts'
+import { git, temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { writePlanEntry } from '../lib/store/plan-entry.ts'
+import { runLot } from './lot.ts'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type { DesignLot } from '../../test/design-workspace.types.ts'
 
@@ -111,6 +115,22 @@ describe('lot design --from - recording', { timeout: STORE_CASE_TIMEOUT }, () =>
 		expect(design({ lot, words: ['--from', scratch] })).toEqual({
 			exitCode: 2,
 			output: `lot design: ${scratch} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written`,
+		})
+		expect(designLinesOf(lot)).toEqual([])
+	})
+
+	it('a file under /tmp, outside the temporary folder the process names -> exit 2, refused, nothing written', () => {
+		const lot = designLot()
+		const folder = mkdtempSync(join('/tmp', 'design-tmp-'))
+		onTestFinished(function removeFolder() {
+			rmSync(folder, { recursive: true, force: true })
+		})
+		const file = join(folder, 'DESIGN.md')
+		writeFiles({ root: folder, files: { 'DESIGN.md': DESIGN_TEXT } })
+
+		expect(design({ lot, words: ['--from', file] })).toEqual({
+			exitCode: 2,
+			output: `lot design: ${file} is in a temporary or scratch folder, which is wiped: keep the design beside its plan; nothing written`,
 		})
 		expect(designLinesOf(lot)).toEqual([])
 	})
@@ -232,6 +252,24 @@ describe('lot design <id> - the standing', { timeout: STORE_CASE_TIMEOUT }, () =
 		baseDeclaringLot(lot)
 
 		expect(JSON.parse(design({ lot, words: ['--json'] }).output)).toMatchObject({
+			required: true,
+			reasons: [{ kind: 'shared', glob: DECLARED_GLOB, path: 'src' }],
+		})
+	})
+
+	it('a real worktree rebased onto a base that adds a shared area, its own file dropping it -> --json names the area', () => {
+		const lot = landingLot()
+		landOnOrigin({ origin: lot.origin, files: { 'package.json': declaringManifest() } })
+		git({ root: lot.worktree, args: ['fetch', '-q', 'origin'] })
+		git({ root: lot.worktree, args: ['rebase', '-q', 'origin/main'] })
+		writeFiles({
+			root: lot.worktree,
+			files: { 'package.json': `${JSON.stringify({ name: 'demo' })}\n` },
+		})
+
+		expect(
+			JSON.parse(runLot({ cwd: lot.root, argv: ['design', lot.name, '--json'] }).output),
+		).toMatchObject({
 			required: true,
 			reasons: [{ kind: 'shared', glob: DECLARED_GLOB, path: 'src' }],
 		})

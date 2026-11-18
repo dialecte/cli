@@ -6,6 +6,9 @@ export const DESIGN_VALUE_OPTIONS = ['from', 'by', 'reason'] as const
 /** The flags `lot design` takes, without the dashes. */
 export const DESIGN_FLAGS = ['from-plan', 'approve', 'waive', 'json'] as const
 
+/** The system's shared temporary folders, refused as a design's home beside the one `tmpdir` names. */
+export const SYSTEM_TEMPORARY_ROOTS: readonly string[] = ['/tmp', '/private/tmp']
+
 /** The verb the free-text checks name. */
 export const DESIGN_VERB = 'design'
 

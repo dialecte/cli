@@ -90,7 +90,10 @@ export async function runHookGate(params: HookGateParams): Promise<CommandResult
 		base === undefined ? undefined : runHookDesignStep({ cwd: params.cwd, packageJson, base })
 	const designDuration = performance.now() - designStarted
 	if (design?.status === 'failed')
-		return withNotices({ result: endFailedDesign({ design, live: params.live, notices }), notices })
+		return withNotices({
+			result: endFailedDesign({ params, design, duration: designDuration, notices }),
+			notices,
+		})
 	const prepared = prepareHookRun(params)
 	if ('result' in prepared) return withNotices({ result: prepared.result, notices })
 	// a live output gets the notices first and every line once: what it printed is never in the result again
@@ -476,22 +479,36 @@ async function runOwnHookSteps(params: {
 }
 
 /**
- * A hook whose design step failed: nothing else runs and nothing is recorded; the output is its line, the verdict and
- * the refusal under it (a live output gets the design line first).
+ * A hook whose design step failed: nothing else runs; the run's events hold its start and its end with the design
+ * part failed (as a failed tdd step's run does), the output is its line, the verdict and the next command under it
+ * (a live output gets the design line first).
  */
-function endFailedDesign(params: {
+function endFailedDesign(args: {
+	params: HookGateParams
 	design: StepResult
-	live: LiveOutput | undefined
+	duration: number
 	notices: readonly string[]
 }): CommandResult {
-	const { design, live } = params
+	const { params, design } = args
+	const recorder = startStep({
+		cwd: params.cwd,
+		step: 'gate-hook',
+		heavy: false,
+		warn: params.warn,
+	})
+	const parts = partsOf({
+		results: [design],
+		durations: new Map([[design, args.duration]]),
+		reused: new Set(),
+	})
+	recorder.end({ exit: 1, parts, reuse: reuseOf(parts), stateHash: null })
+	const { live } = params
 	if (live)
-		for (const line of [...params.notices, ...renderStepLines(design)])
-			live.writeLine(textOf([line]))
+		for (const line of [...args.notices, ...renderStepLines(design)]) live.writeLine(textOf([line]))
 	return renderRunOutput({
 		ran: [design],
 		live,
-		leading: params.notices,
+		leading: args.notices,
 		base: undefined,
 		headLines: [],
 	})

@@ -160,6 +160,7 @@
 				"src/lib/design/**",
 				"src/lib/gate/hook-gate.ts",
 				"src/lib/gate/hook-tdd.ts",
+				"src/lib/gate/hook-design.ts",
 				"src/lib/tdd/check-tdd-receipts.ts"
 			]
 		},

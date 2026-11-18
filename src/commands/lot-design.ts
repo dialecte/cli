@@ -50,6 +50,7 @@ import { lotOfWorktree, requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { APPROVABLE_STATES, ORCHESTRATOR_APPROVER } from './lot-approve.constants.ts'
 import {
 	DESIGN_FLAGS,
+	SYSTEM_TEMPORARY_ROOTS,
 	DESIGN_VALUE_OPTIONS,
 	DESIGN_VERB,
 	LOT_DESIGN_LINES,
@@ -248,11 +249,13 @@ function designContentOf(params: {
 }
 
 /**
- * Whether the file lies under the cli's scratch roots or the system's temporary folder (`scratchReadRoots`): wiped
- * there, and nobody else reads it. A file outside every git work tree is no refusal: plans live there.
+ * Whether the file lies under the cli's scratch roots, the system's temporary folder (`scratchReadRoots`) or the
+ * system's shared temporary folders (`/tmp`, `/private/tmp`, each by its real path): wiped there, and nobody else
+ * reads it. A file outside every git work tree is no refusal: plans live there.
  */
 function isInScratch(params: { file: string; cwd: string }): boolean {
-	return scratchReadRoots({ cwd: params.cwd }).some(function holdsFile(root) {
+	const roots = [...scratchReadRoots({ cwd: params.cwd }), ...SYSTEM_TEMPORARY_ROOTS]
+	return roots.some(function holdsFile(root) {
 		const real = realPathOf(root)
 		return params.file === real || params.file.startsWith(`${real}${sep}`)
 	})

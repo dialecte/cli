@@ -88,6 +88,7 @@ export const DESIGN_GATE_VERBS = {
 	land: { name: 'lot land', nothing: 'nothing pushed' },
 	handoverWrite: { name: 'handover write', nothing: 'nothing written' },
 	approve: { name: 'lot approve', nothing: 'nothing recorded' },
+	card: { name: 'handover run', nothing: 'nothing committed' },
 } as const
 
 /**
@@ -95,6 +96,10 @@ export const DESIGN_GATE_VERBS = {
  * what to run, `{nothing}` what was left undone.
  */
 export const DESIGN_GATE_REFUSAL = '{verb}: lot {lot} design {state}: {next}; {nothing}'
+
+/** The gate's refusal of a lot that has no worktree (a simulated one): every refusing path reads its base there. */
+export const DESIGN_GATE_WORKTREE_NONE =
+	'{verb}: lot {lot} has no worktree: the design gate reads its base there; {nothing}'
 
 /** The gate's refusal of a lot whose worktree is gone: every refusing path reads its base there. */
 export const DESIGN_GATE_NO_WORKTREE =

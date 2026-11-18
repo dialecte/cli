@@ -20,6 +20,7 @@ import {
 	DESIGN_GATE_NO_WORKTREE,
 	DESIGN_GATE_REFUSAL,
 	DESIGN_GATE_VERBS,
+	DESIGN_GATE_WORKTREE_NONE,
 	DESIGN_PASSING_STATES,
 } from './design.constants.ts'
 
@@ -51,7 +52,8 @@ export function ownLotFolderOf(params: { cwd: string }): string | undefined {
  */
 export function designGateOf(params: {
 	lotFolder: string
-	root: string
+	/** The lot's worktree; null for a lot that has none (a refusal). */
+	root: string | null
 	base: string
 	paths?: readonly string[]
 	/** The paths changed since `base`, when the run read them already (tdd's presence map); read here otherwise. */
@@ -61,13 +63,13 @@ export function designGateOf(params: {
 	const { lotFolder, root, base, verb } = params
 	const lot = basename(lotFolder)
 	const { name, nothing } = DESIGN_GATE_VERBS[verb]
-	if (!existsSync(root)) {
+	if (root === null || !existsSync(root)) {
 		const standing = lotDesignStandingOf({ lotFolder, declaredHigh: [] })
 		return {
 			standing,
 			refusal: fillMessage({
-				template: DESIGN_GATE_NO_WORKTREE,
-				values: { verb: name, lot, root, nothing },
+				template: root === null ? DESIGN_GATE_WORKTREE_NONE : DESIGN_GATE_NO_WORKTREE,
+				values: { verb: name, lot, root: root ?? '', nothing },
 			}),
 		}
 	}

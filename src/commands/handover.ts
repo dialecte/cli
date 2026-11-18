@@ -944,15 +944,18 @@ function handoverDesignRefusalOf(params: {
 	const { lotFolder } = params
 	const identity = readIdentity({ lotFolder })
 	if (identity === undefined) return undefined
-	const root = identity.worktree ?? identity.repository
-	const base = existsSync(root)
-		? resolveTddBase({ root, packageJson: readPackageJson(root) })
-		: { commit: identity.base.commit }
-	if ('failure' in base) return `handover: ${base.failure}`
+	// every refusing path reads its base in the lot's worktree, never in the main checkout
+	const root = identity.worktree
+	const base =
+		root !== null && existsSync(root)
+			? resolveTddBase({ root, packageJson: readPackageJson(root) })
+			: undefined
+	if (base !== undefined && 'failure' in base) return `handover: ${base.failure}`
 	const paths = params.lotsFile.lots.flatMap(function pathsOf(lot) {
 		return 'paths' in lot ? lot.paths : Object.keys(lot.resolved)
 	})
-	return designGateOf({ lotFolder, root, base: base.commit, paths, verb: 'handoverWrite' }).refusal
+	return designGateOf({ lotFolder, root, base: base?.commit ?? '', paths, verb: 'handoverWrite' })
+		.refusal
 }
 
 function usage(message: string): CommandResult {
