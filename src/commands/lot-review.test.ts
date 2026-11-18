@@ -141,6 +141,36 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		).toBe(`files: ${REVIEW_PULL_URL}/files`)
 	})
 
+	it.each([
+		{
+			name: 'a files page the host names → that page printed, the pull request url still handed to the opener',
+			filesUrl: 'https://host.test/pull/7/changes' as string | undefined,
+			printed: 'https://host.test/pull/7/changes',
+		},
+		{
+			name: 'no files page → the pull request url printed',
+			filesUrl: undefined,
+			printed: REVIEW_PULL_URL,
+		},
+	])('$name', ({ filesUrl, printed }) => {
+		const lot = landedLot()
+		const { host, calls } = recordingHost({ existing: { ...lot.pullRequest, filesUrl } })
+
+		const result = runLotReview({
+			cwd: lot.workspace.repository,
+			argv: [LOT_NAME],
+			host,
+		})
+
+		expect(
+			result.output
+				.split('\n')
+				.filter((line) => line !== '')
+				.at(-1),
+		).toBe(`files: ${printed} opened`)
+		expect(calls).toContain(`files ${REVIEW_PULL_URL}`)
+	})
+
 	it('a lot without a pull request → the private half printed and lot land named, the host never asked', () => {
 		const lot = reviewedLot()
 		rmSync(join(lot.lotFolder, LANDING_FILE))

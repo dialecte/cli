@@ -22,7 +22,7 @@ import { closestNames } from '../lib/closest-names.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { isFolder } from '../lib/file-system.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { statusLandingOf } from '../lib/landing/lot-landing.ts'
 import { MUTATION_MODES } from '../lib/mutation/mutation.constants.ts'
@@ -188,7 +188,7 @@ export function runLot(params: {
 	probe?: HandoverProbe
 	/** The cli named in `lot result`'s card when the repository's own cannot run hand-overs. */
 	cliPath?: string
-	/** Where lots land, asked by `lot status` (the stack parent's pull request) and `lot close`; default: GitHub. */
+	/** Where lots land, asked by `lot status` (the stack parent's pull request) and `lot close`; default: the repository's host. */
 	host?: HostAdapter
 	/** The shared temporary folders `lot design` refuses a design in; default `/tmp` and `/private/tmp`. */
 	sharedTemporaryRoots?: readonly string[]
@@ -213,7 +213,7 @@ export function runLot(params: {
 		return lotStatus({
 			cwd: params.cwd,
 			argv: words,
-			landing: statusLandingOf(params.host ?? createGithubHost()),
+			landing: statusLandingOf(params.host ?? createHost()),
 		})
 	if (verb === 'answer') return lotAnswer({ cwd: params.cwd, argv: words, now: params.now })
 	if (verb === 'stop') return lotStop({ cwd: params.cwd, argv: words, now: params.now })

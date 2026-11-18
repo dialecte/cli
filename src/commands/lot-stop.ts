@@ -13,7 +13,7 @@ import { runningRefusal } from '../lib/handover/handover-run-marker.ts'
 import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { recordHandoverState } from '../lib/handover/handover-store.ts'
 import { HANDOVER_ABANDON_TEXTS } from '../lib/handover/handover.constants.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
@@ -119,7 +119,7 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const lockLines: string[] = []
 	// a lot landing through its pull request: the pull request closed (out of the queue), its entry abandoned
 	if (pending && input.landing !== undefined) {
-		const closed = (params.host ?? createGithubHost()).closePullRequest({
+		const closed = (params.host ?? createHost()).closePullRequest({
 			root: identity.worktree ?? dirname(registry),
 			number: input.landing.number,
 		})

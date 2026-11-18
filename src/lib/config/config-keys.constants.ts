@@ -1,5 +1,6 @@
 import {
 	corporaProblem,
+	hostVendorProblem,
 	loadProblem,
 	mappingProblem,
 	referencesProblem,
@@ -127,6 +128,14 @@ const CONFIG_KEY_ENTRIES = [
 		repoOverride: true,
 		description: 'The command opening a file in your editor.',
 		problemOf: stringProblem,
+	},
+	{
+		key: 'host',
+		layer: 'personal',
+		repoOverride: true,
+		description:
+			'The host vendor of a repository whose origin names none (a self-hosted host), one of the known vendors.',
+		problemOf: hostVendorProblem,
 	},
 	{
 		key: 'load',

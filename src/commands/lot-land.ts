@@ -11,7 +11,7 @@ import { hasFlag, positionalArguments } from '../lib/config.ts'
 import { findBaseBranchRef } from '../lib/gate/gate-base.ts'
 import { isAncestorCommit, mainCheckoutOf } from '../lib/git.ts'
 import { landLot } from '../lib/handover/land-lot.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { textOf } from '../lib/print/print.ts'
 import { readIdentity } from '../lib/store/identity.ts'
@@ -27,7 +27,7 @@ import type { HostAdapter } from '../lib/host/host.types.ts'
 export function runLotLand(params: {
 	cwd: string
 	argv: string[]
-	/** Where lots land; default: GitHub through `gh`. */
+	/** Where lots land; default: the repository's host. */
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
@@ -85,7 +85,7 @@ export function runLotLand(params: {
 		branch: identity.branch,
 		base: base.branch,
 		lotFolder: required.lot,
-		host: params.host ?? createGithubHost(),
+		host: params.host ?? createHost(),
 		now: params.now ?? new Date(),
 	})
 	return { exitCode: landed.exitCode, output: textOf(landed.lines) }

@@ -154,9 +154,10 @@ export function resolveConfig(context: ConfigContext): ResolvedConfig {
 	const layers = context.layers ?? CONFIG_LAYERS
 	const projectFile = join(context.root, PROJECT_CONFIG_FILE_NAME)
 	const personalFile = personalConfigFileOf(context)
-	const repo = layers.includes('personal')
+	const repoKey = layers.includes('personal')
 		? repoKeyOf({ root: context.root, platform: context.platform })
 		: undefined
+	const repo = repoKey && { key: repoKey.key, from: repoKey.from }
 	const layerOf = { keys, repoKey: repo?.key, platform: context.platform }
 	const files = { project: projectFile, personal: personalFile }
 	const reads = CONFIG_LAYERS.filter((layer) => layers.includes(layer)).map((layer) =>

@@ -16,6 +16,7 @@ describe('repoKeyOf', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(repoKeyOf({ root, platform: 'linux' })).toEqual({
 			from: 'remote',
 			key: WORKSPACE_REPO_KEY,
+			remote: { host: 'github.com', form: 'scp' },
 		})
 	})
 
@@ -25,6 +26,7 @@ describe('repoKeyOf', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(repoKeyOf({ root, platform: 'linux' })).toEqual({
 			from: 'remote',
 			key: WORKSPACE_REPO_KEY,
+			remote: { host: 'github.com', form: 'https' },
 		})
 	})
 
@@ -34,6 +36,54 @@ describe('repoKeyOf', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(repoKeyOf({ root, platform: 'darwin' })).toEqual({
 			from: 'remote',
 			key: 'github.com/Example/Repo',
+			remote: { host: 'github.com', form: 'scp' },
+		})
+	})
+
+	it.each([
+		{
+			name: 'https',
+			origin: 'https://GitHub.com/Example/Repo.git',
+			remote: { host: 'github.com', form: 'https' },
+		},
+		{
+			name: 'scp',
+			origin: 'git@GitHub:Example/Repo.git',
+			remote: { host: 'github', form: 'scp' },
+		},
+		{
+			name: 'ssh url with a port',
+			origin: 'ssh://git@GIT.Company.com:2222/Example/Repo.git',
+			remote: { host: 'git.company.com', form: 'ssh' },
+		},
+	] as const)(
+		'a remote origin in $name form → its host lower-cased and its form, the key unchanged',
+		({ origin, remote }) => {
+			const { root } = createConfigWorkspace({ origin })
+
+			expect(repoKeyOf({ root, platform: 'linux' })).toEqual({
+				from: 'remote',
+				key: normalizeRepoKey({ key: origin, platform: 'linux' }),
+				remote,
+			})
+		},
+	)
+
+	it.each([
+		{ name: 'a path', origin: '/srv/git/repo.git', key: '/srv/git/repo.git' },
+		{ name: 'a file URL', origin: 'file:///srv/git/repo.git', key: '/srv/git/repo.git' },
+	])('$name origin → no remote, the key unchanged', ({ origin, key }) => {
+		const { root } = createConfigWorkspace({ origin })
+
+		expect(repoKeyOf({ root, platform: 'linux' })).toStrictEqual({ from: 'remote', key })
+	})
+
+	it('no origin → no remote, the real path as the key', () => {
+		const { root } = createConfigWorkspace({ origin: null })
+
+		expect(repoKeyOf({ root, platform: 'linux' })).toStrictEqual({
+			from: 'path',
+			key: realpathSync(root),
 		})
 	})
 

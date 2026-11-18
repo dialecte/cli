@@ -49,6 +49,7 @@ export function landedLot(
 			draft: true,
 			queued: false,
 			head: params.pullHead ?? head,
+			filesUrl: `${REVIEW_PULL_URL}/files`,
 		},
 	}
 }

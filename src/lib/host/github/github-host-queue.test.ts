@@ -1,14 +1,13 @@
 /**
- * The fields the GitHub adapter asks `gh pr view --json` for are fields gh has (a field gh rejects fails every read),
- * and whether a pull request is queued is read through one GraphQL query: auto-merge on, or in the merge queue, which
- * `gh pr view` cannot say. A fake `gh` on the PATH answers as the real one does.
+ * Whether a pull request is queued is read through one GraphQL query: auto-merge on, or in the merge queue, which
+ * `gh pr view` cannot say. A fake `gh` on the PATH answers as the real one does (the fields it asks `gh pr view` for
+ * are proven by the contract check, `host-contract.test.ts`).
  */
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { temporaryFolder } from '../../../../test/scratch-repository.ts'
 import { createGithubHost } from './github-host.ts'
-import { CHECKS_FIELDS, GH_PR_VIEW_FIELDS, PULL_REQUEST_FIELDS } from './host.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,18 +27,6 @@ function fakeGh(stdout: string): string {
 	vi.stubEnv('PATH', `${folder}${delimiter}${process.env.PATH ?? ''}`)
 	return folder
 }
-
-describe('the fields asked of gh pr view', () => {
-	it.each([
-		{ label: 'PULL_REQUEST_FIELDS', fields: PULL_REQUEST_FIELDS },
-		{ label: 'CHECKS_FIELDS', fields: CHECKS_FIELDS },
-	])('$label → every field one gh pr view --json takes', ({ fields }) => {
-		const known: readonly string[] = GH_PR_VIEW_FIELDS.fields
-		const unknown = fields.split(',').filter((field) => !known.includes(field))
-
-		expect(unknown).toEqual([])
-	})
-})
 
 describe('createGithubHost: readQueued', () => {
 	it.each([
@@ -78,5 +65,33 @@ describe('createGithubHost: readQueued', () => {
 		expect(createGithubHost().readQueued({ root: process.cwd(), number: 7 })).toEqual({
 			refusal: 'gh api graphql: not the JSON it writes: not json',
 		})
+	})
+})
+
+describe('createGithubHost: readQueued argv', () => {
+	it.each([
+		{
+			label: 'the owner and repo left to gh, the number and the query, the filter last',
+			args: [
+				'api',
+				'graphql',
+				'-F',
+				'owner={owner}',
+				'-F',
+				'repo={repo}',
+				'-F',
+				'number=7',
+				'-f',
+				'query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){isInMergeQueue autoMergeRequest{enabledAt}}}}',
+				'--jq',
+				'.data.repository.pullRequest',
+			],
+		},
+	])('$label', ({ args }) => {
+		const folder = fakeGh('{}')
+
+		createGithubHost().readQueued({ root: process.cwd(), number: 7 })
+
+		expect(readFileSync(join(folder, 'gh.args'), 'utf8').trimEnd().split('\n')).toEqual(args)
 	})
 })

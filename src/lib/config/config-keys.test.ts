@@ -28,6 +28,7 @@ const PROJECT_KEYS = [
 ]
 const PERSONAL_KEYS = [
 	'editor',
+	'host',
 	'load',
 	'personProcesses',
 	'forbiddenWords',
@@ -78,6 +79,13 @@ const CHECK_ROWS: { key: string; valid: unknown; wrong: unknown; problem: string
 		problem: 'budget must be a whole number of 1 or more',
 	},
 	{ key: 'editor', valid: 'zed', wrong: 3, problem: 'must be a text' },
+	{ key: 'host', valid: 'github', wrong: 3, problem: 'must be a text' },
+	{
+		key: 'host',
+		valid: 'github',
+		wrong: 'gitlab',
+		problem: 'must be one of the known vendors: github',
+	},
 	{ key: 'personProcesses', valid: ['zsh'], wrong: 'zsh', problem: 'must be a list of texts' },
 	{ key: 'forbiddenWords', valid: ['a'], wrong: [1], problem: 'must be a list of texts' },
 	{ key: 'consumerNames', valid: ['a'], wrong: 'a', problem: 'must be a list of texts' },

@@ -1,4 +1,5 @@
 /** The checks of the config keys: each returns what is wrong with a value, undefined when it holds. */
+import { HOST_VENDOR_NAMES } from '../host/host.constants.ts'
 
 /** True for a mapping (an object that is neither null nor a list). */
 export function isMapping(value: unknown): value is Record<string, unknown> {
@@ -8,6 +9,17 @@ export function isMapping(value: unknown): value is Record<string, unknown> {
 /** A text. */
 export function stringProblem(value: unknown): string | undefined {
 	return typeof value === 'string' ? undefined : 'must be a text'
+}
+
+/** The name of a known host vendor. */
+export function hostVendorProblem(value: unknown): string | undefined {
+	const names: readonly string[] = HOST_VENDOR_NAMES
+	return (
+		stringProblem(value) ??
+		(names.includes(String(value))
+			? undefined
+			: `must be one of the known vendors: ${names.join(', ')}`)
+	)
 }
 
 /** A list of texts. */

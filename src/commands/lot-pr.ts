@@ -13,7 +13,7 @@ import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { findBaseBranchRef } from '../lib/gate/gate-base.ts'
 import { mainCheckoutOf, readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { composePullRequest, keptPartOf, linesOf } from '../lib/pr/compose-pull-request.ts'
 import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
@@ -33,7 +33,7 @@ import type { LotPlace } from './lot-pr.types.ts'
 export function runLotPr(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: GitHub through `gh`. */
+	/** Where the pull request lives; default: the repository's host. */
 	host?: HostAdapter
 }): CommandResult {
 	const place = lotPlaceOf(params)
@@ -52,7 +52,7 @@ export function runLotPr(params: {
 	const fresh = composePullRequest({ ...prepared, kept: undefined })
 	if ('refusal' in fresh) return refused({ line: `${LOT_PR_LINES.prefix}${fresh.refusal}` })
 	if (hasFlag(params.argv, 'print')) return printed({ text: fresh, json, sent: false, lines: [] })
-	const host = params.host ?? createGithubHost()
+	const host = params.host ?? createHost()
 	const landing = readLanding({ lotFolder })
 	const read = host.readPullRequest({
 		root: worktree,

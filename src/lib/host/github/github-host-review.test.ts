@@ -5,9 +5,9 @@
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { temporaryFolder } from '../../../../test/scratch-repository.ts'
+import { BROWSER_OPENERS } from '../host.constants.ts'
 import { createGithubHost } from './github-host.ts'
-import { BROWSER_OPENERS } from './host.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -222,5 +222,26 @@ describe('createGithubHost: changed files', () => {
 		expect(createGithubHost().openFiles({ root, url: 'https://github.test/pull/12' })).toEqual({
 			refusal: `${opener[0]}: exit 3`,
 		})
+	})
+})
+
+describe('createGithubHost: line comments argv', () => {
+	it.each([
+		{
+			label: 'the endpoint with the number filled, every page, the filter last',
+			args: [
+				'api',
+				'repos/{owner}/{repo}/pulls/12/comments',
+				'--paginate',
+				'--jq',
+				'.[] | {id, path, line: (.line // .original_line), body, replyTo: .in_reply_to_id}',
+			],
+		},
+	])('$label', ({ args }) => {
+		const root = fakeCommands({ names: ['gh'], stdout: '' })
+
+		createGithubHost().readReviewComments({ root, number: 12 })
+
+		expect(readFileSync(join(root, 'gh.args'), 'utf8').trimEnd().split('\n')).toEqual(args)
 	})
 })

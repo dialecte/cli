@@ -6,7 +6,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
-import { temporaryFolder } from '../../../test/scratch-repository.ts'
+import { temporaryFolder } from '../../../../test/scratch-repository.ts'
 import { createGithubHost } from './github-host.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

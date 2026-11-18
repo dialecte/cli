@@ -1,3 +1,5 @@
+import type { HOST_VENDOR_NAMES } from './host.constants.ts'
+
 /** A pull request on the host, as a landing reads it. */
 export type PullRequest = {
 	number: number
@@ -13,6 +15,8 @@ export type PullRequest = {
 	head: string
 	/** The branch it merges into; undefined when the host did not say. */
 	base?: string
+	/** The page of its changed files, which `lot review` prints; absent when the host gives none (its `url` is then printed). */
+	filesUrl?: string
 }
 
 /** Whether the host links pull requests into stacks here, and why not when it does not. */
@@ -44,8 +48,8 @@ export type ReviewComment = {
 export type HostRefusal = { refusal: string }
 
 /**
- * Where lots land: the one seam to the host (GitHub through `gh`; another host is another adapter). Every call runs
- * in the repository at `root`; none prompts.
+ * Where lots land: the one seam to the repository's host (each vendor is one adapter). Every call runs in the
+ * repository at `root`; none prompts.
  */
 export type HostAdapter = {
 	/** The pull request `ref` names (a number, or a branch: its newest); undefined when there is none. */
@@ -111,3 +115,136 @@ export type HostAdapter = {
 		base: string
 	}): HostRefusal | undefined
 }
+
+/** Whether a host call only reads (short timeout, probed live) or writes (long timeout, never live). */
+export type HostCallKind = 'read' | 'write'
+
+/** One call of a host's tool, declared once: the table the argv and the contract check both read. */
+export type HostCallSpec = {
+	/** The command path: `['pr', 'view']`, `['api']`, `['stack', 'merge']`. */
+	words: readonly string[]
+	/** Every flag a call site may pass; never the implied ones (`--json`, `-f`, `--jq`), which come from the spec. */
+	flags: readonly string[]
+	kind: HostCallKind
+	/** The fields the tool is asked for, passed by the runner itself. */
+	fields?: readonly string[]
+	/** The GraphQL query, passed by the runner itself (the entry's endpoint is then `graphql`). */
+	graphql?: string
+	/** The output filter, passed by the runner itself, so a probe sends the adapter's exact argv. */
+	filter?: string
+	/** The REST path template; each `{x}` given in `values` is filled, the rest is left to the tool. */
+	endpoint?: string
+}
+
+/** A host's calls by name. */
+export type HostCallTable = Record<string, HostCallSpec>
+
+/** The names of the table's read calls. */
+export type ReadCallOf<Calls extends HostCallTable> = {
+	[K in keyof Calls]: Calls[K]['kind'] extends 'read' ? K : never
+}[keyof Calls]
+
+/** The options one call takes: only its declared flags; an entry with no flags takes none. */
+export type HostOptions<Calls extends HostCallTable, K extends keyof Calls> = [
+	Calls[K]['flags'][number],
+] extends [never]
+	? Record<string, never>
+	: Partial<Record<Calls[K]['flags'][number], string | true | readonly string[]>>
+
+/** The name of a known host vendor. */
+export type HostVendorName = (typeof HOST_VENDOR_NAMES)[number]
+
+/** A host vendor's runtime record: how a repository is recognised as its, and the adapter that serves it. */
+export type HostVendor<Calls extends HostCallTable> = {
+	name: HostVendorName
+	/** The cli the vendor's adapter runs (`gh`). */
+	tool: string
+	/** The hosts of an origin that mean this vendor (lower-case). */
+	remoteHosts: readonly string[]
+	/** The calls the adapter makes, by name. */
+	calls: Calls
+	createAdapter(): HostAdapter
+}
+
+/** A vendor with its call table erased: the element of the one list of vendors. */
+export type HostVendorRecord = HostVendor<HostCallTable>
+
+/** A flag's short and long forms, as a tool's help prints them together (`-q, --jq`). */
+export type HostFlagAlias = { short: string; long: string }
+
+/** One field of a GraphQL type: the name of its type, unwrapped, and the names of its arguments. */
+export type HostGraphqlField = { type: string; args: readonly string[] }
+
+/** What the record holds of one command: all its flags (short and long), its alias pairs, and its fields when it lists some. */
+export type HostContractCommand = {
+	flags: readonly string[]
+	aliases: readonly HostFlagAlias[]
+	fields?: readonly string[]
+}
+
+/**
+ * What a tool described of itself, recorded: its commands by path (`"pr view"`) and the GraphQL types it was asked
+ * about, each with its fields. The root type is `Query`.
+ */
+export type HostContract = {
+	commands: Readonly<Record<string, HostContractCommand>>
+	graphql: Readonly<Record<string, Readonly<Record<string, HostGraphqlField>>>>
+}
+
+/** One answer of the tool's description: the bytes it printed, kept as they are, and what was read out of them. */
+export type HostAnswer<Parsed> = { raw: string } & Parsed
+
+/** A part of the tool that is not installed (an extension): the name it installs under, and the tool's own line. */
+export type HostAbsentPart = HostRefusal & { absent: string }
+
+/** The closed reads of what a tool describes of itself; each runs in the repository at `root`. */
+export type HostDescribe = {
+	/** The command's help: its flags, short and long, and the alias pairs. */
+	helpOf(params: {
+		root: string
+		words: readonly string[]
+	}): HostAnswer<{ flags: string[]; aliases: HostFlagAlias[] }> | HostRefusal
+	/** The fields the command lists (absent for a tool that lists none). */
+	fieldsOf?(params: {
+		root: string
+		words: readonly string[]
+	}): HostAnswer<{ fields: string[] }> | HostRefusal
+	/** One GraphQL type: its fields. */
+	typeOf(params: {
+		root: string
+		name: string
+	}): HostAnswer<{ fields: Record<string, HostGraphqlField> }> | HostRefusal
+	/**
+	 * The version of one of the tool's parts (`selector`: a key of the record's versions; a part other than the tool
+	 * itself is the first word of its commands); absent when that part is not installed.
+	 */
+	versionOf(params: {
+		root: string
+		selector: string
+	}): HostAnswer<{ version: string }> | HostAbsentPart | HostRefusal
+}
+
+/** A vendor's dev-only record: its table, what it recorded, how its implied flags read, and how it is asked again. */
+export type HostContractRecord = {
+	name: HostVendorName
+	calls: HostCallTable
+	contract: HostContract
+	/** The versions of the tool the record was taken from, by part. */
+	versions: Readonly<Record<string, string>>
+	impliedFlagsOf(spec: HostCallSpec): string[]
+	describe: HostDescribe
+}
+
+/** What a contract finding says is wrong. */
+export type HostFindingKind =
+	| 'unknown-command'
+	| 'unknown-flag'
+	| 'unknown-field'
+	| 'unknown-graphql-field'
+	| 'unknown-graphql-argument'
+	| 'missing-implied-flag'
+	| 'implied-flag-in-flags'
+	| 'stale'
+
+/** One thing wrong between a call table and its record: the table key (the command path for a stale one) and why. */
+export type HostFinding = { kind: HostFindingKind; key: string; message: string }

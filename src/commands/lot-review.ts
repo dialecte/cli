@@ -13,8 +13,7 @@ import { resultOf } from '../lib/command-result.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
-import { FILES_TAB_SUFFIX } from '../lib/host/host.constants.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readDecisions } from '../lib/review-rounds/decisions-file.ts'
 import { findLedgerTable, tableCells, unescapeCell } from '../lib/review-rounds/findings-ledger.ts'
@@ -36,7 +35,7 @@ import type { LotPlace } from './lot-pr.types.ts'
 export function runLotReview(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: GitHub through `gh`. */
+	/** Where the pull request lives; default: the repository's host. */
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
@@ -65,7 +64,7 @@ export function runLotReview(params: {
 		values: { lot: place.lot, state: place.state, branch: place.branch },
 	})
 	const landing = readLanding({ lotFolder: place.lotFolder })
-	const host = params.host ?? createGithubHost()
+	const host = params.host ?? createHost()
 	const pullRequest =
 		landing === undefined
 			? undefined
@@ -124,7 +123,7 @@ function pullComments(params: {
 				`${LOT_REVIEW_LINES.prefix}${fillMessage({ template: LOT_REVIEW_LINES.noPullRequest, values: { lot: place.lot } })}`,
 			],
 		})
-	const host = params.host ?? createGithubHost()
+	const host = params.host ?? createHost()
 	const pullRequest = host.readPullRequest({ root: place.worktree, ref: String(landing.number) })
 	if (pullRequest !== undefined && 'refusal' in pullRequest)
 		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${pullRequest.refusal}`] })
@@ -373,7 +372,7 @@ function filesLine(params: {
 	open: boolean
 }): string {
 	const { url } = params.pullRequest
-	const files = `${url}${FILES_TAB_SUFFIX}`
+	const files = params.pullRequest.filesUrl ?? url
 	if (!params.open) return fillMessage({ template: LOT_REVIEW_LINES.files, values: { files } })
 	const refused = params.host.openFiles({ root: params.place.worktree, url })
 	return refused === undefined

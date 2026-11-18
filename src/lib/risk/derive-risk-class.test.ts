@@ -486,12 +486,13 @@ describe('deriveStartRiskClass', () => {
 })
 
 describe('the cli declared list', () => {
-	it('package.json holds dialecte.risk.high with the 15 globs of the spec, the 10 shared concepts of the design gate and the 2 lot-file archive modules', () => {
+	it('package.json holds dialecte.risk.high with the 16 globs of the spec, the 10 shared concepts of the design gate and the 2 lot-file archive modules', () => {
 		const manifest = JSON.parse(
 			readFileSync(join(import.meta.dirname, '..', '..', '..', 'package.json'), 'utf8'),
 		)
 		expect(manifest.dialecte?.risk?.high).toEqual([
 			'src/lib/store/**',
+			'src/lib/host/**',
 			'src/lib/events/**',
 			'src/lib/cleanup/**',
 			'src/lib/review-rounds/**',

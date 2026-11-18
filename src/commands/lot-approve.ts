@@ -21,7 +21,7 @@ import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { stackQueueOf } from '../lib/handover/stack-queue.ts'
-import { createGithubHost } from '../lib/host/github-host.ts'
+import { createHost } from '../lib/host/select-host.ts'
 import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../lib/package-json.ts'
 import { keptPartOf } from '../lib/pr/compose-pull-request.ts'
@@ -51,7 +51,7 @@ import type { LotPlace } from './lot-pr.types.ts'
 export function runLotApprove(params: {
 	cwd: string
 	argv: string[]
-	/** Where the pull request lives; default: GitHub through `gh`. */
+	/** Where the pull request lives; default: the repository's host. */
 	host?: HostAdapter
 	now?: Date
 }): CommandResult {
@@ -84,7 +84,7 @@ export function runLotApprove(params: {
 			exitCode: 1,
 			line: LOT_APPROVE_LINES.noLanding.replaceAll('{lot}', () => place.lot),
 		})
-	const host = params.host ?? createGithubHost()
+	const host = params.host ?? createHost()
 	const pullRequest = openPullRequestOf({ host, place, number: landing.number })
 	if ('exitCode' in pullRequest) return pullRequest
 	const checks = host.readChecks({ root: place.worktree, number: pullRequest.number })

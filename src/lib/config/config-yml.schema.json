@@ -6,6 +6,7 @@
 	"required": ["schema"],
 	"$defs": {
 		"editor": { "type": "string" },
+		"host": { "type": "string", "$comment": "a known host vendor name, checked by the cli" },
 		"load": {
 			"type": "object",
 			"properties": { "budget": { "type": "integer", "minimum": 1 } },
@@ -16,6 +17,7 @@
 			"type": "object",
 			"properties": {
 				"editor": { "$ref": "#/$defs/editor" },
+				"host": { "$ref": "#/$defs/host" },
 				"load": { "$ref": "#/$defs/load" },
 				"personProcesses": { "$ref": "#/$defs/words" },
 				"forbiddenWords": { "$ref": "#/$defs/words" },
@@ -27,6 +29,7 @@
 	"properties": {
 		"schema": { "const": 1 },
 		"editor": { "$ref": "#/$defs/editor" },
+		"host": { "$ref": "#/$defs/host" },
 		"load": { "$ref": "#/$defs/load" },
 		"personProcesses": { "$ref": "#/$defs/words" },
 		"forbiddenWords": { "$ref": "#/$defs/words" },
