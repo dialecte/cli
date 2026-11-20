@@ -1,5 +1,5 @@
 /**
- * `gate --hook` runs every hook step of the full list (all but the scoped ones that count no tests) through the
+ * `gate --hook` runs every step of the full list through the
  * cli: each step answered by the newest green record of the committed tree and install that ran it as it is now,
  * else run; every hook run records itself as a `hook-gate` record. Counting steps prove whether a step ran.
  */
@@ -47,13 +47,14 @@ import {
 	runGateIn,
 	seedFullGate,
 } from '../../test/scratch-checks.ts'
-import { writeFiles } from '../../test/scratch-repository.ts'
+import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { hashGateCommand, readTreeKey } from '../lib/gate-records/check-key.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { HookPackage } from '../../test/gate-hook.types.ts'
+import type { GateStep } from '../lib/gate/gate-config.types.ts'
 
 const SHA256_HEX = /^[0-9a-f]{64}$/
 
@@ -235,35 +236,34 @@ describe(
 			expect(runsOf(hookPackage)).toEqual([1, 2])
 		})
 
-		it('a full list holding a scoped step that counts no tests, the gate run at another base than the hook → the unscoped steps answered, the scoped step never runs in the hook, the record hashes the hook steps only', async () => {
+		it('a full list holding a scoped step that counts no tests, the gate run at another base than the hook → the unscoped steps answered, the scoped step runs in the hook at the hook base, the record hashes every full step with that base', async () => {
 			const checkCounter = createCounter()
 			const testCounter = createCounter()
 			const bench = createScopedStep({ name: 'bench' })
 			const check = countingStep({ counter: checkCounter, name: 'check' })
 			const tests = countingStep({ counter: testCounter, name: 'tests' })
+			const scopedBench: GateStep = { name: bench.step.name, run: bench.step.run, scoped: true }
 			const root = createScopedPackage({
-				gate: {
-					fast: [tests],
-					full: [check, { name: bench.step.name, run: bench.step.run, scoped: true }, tests],
-				},
+				gate: { fast: [tests], full: [check, scopedBench, tests] },
 			})
+			const hookBase = git({ root, args: ['merge-base', 'HEAD', 'main'] }).trim()
 			const gate = await runGateIn({ cwd: root, argv: ['--full', '--base', headOf(root)] })
 			expect(gate.exitCode).toBe(0)
 			const record = readFullRecord(root)
 
 			const result = await runHookIn({ cwd: root })
 
-			expect(result).toEqual({
-				exitCode: 0,
-				output: allReusedLinesOf({ steps: ['check', 'tests'], record }).join('\n'),
-			})
+			expect(result.exitCode).toBe(0)
+			expect(result.output).toContain(stepReusedLineOf({ step: 'check', record }))
+			expect(result.output).toContain(stepReusedLineOf({ step: 'tests', record }))
+			expect(result.output).toMatch(/^ok +bench\b/m)
 			expect([countRuns(checkCounter), countRuns(testCounter)]).toEqual([1, 1])
-			expect(readScopedRuns(bench)).toHaveLength(1)
+			expect(readScopedRuns(bench).map((run) => run.base)).toEqual([headOf(root), hookBase])
 			expect(
 				hookRecordsOf({ root, tree: indexTreeOf({ root }) }).map(
 					(stored) => stored.key?.commandHash,
 				),
-			).toEqual([hashGateCommand({ steps: [check, tests] })])
+			).toEqual([hashGateCommand({ steps: [check, scopedBench, tests], gateBase: hookBase })])
 		})
 	},
 )

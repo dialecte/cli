@@ -191,7 +191,7 @@ export function recordHook(params: {
 	tree: string
 	/** What the hook checked; absent when it cannot be told (a scoped hook that printed no base): never stored. */
 	key?: CheckKey
-	/** The base the hook printed it used, when its test steps hold a scoped step. */
+	/** The base the hook printed it used, when a hook step is scoped. */
 	base?: GateRecord['base']
 	steps: RecordedStep[]
 	/** The repository whose store holds the record, when the commit ran in a scratch clone of it. */

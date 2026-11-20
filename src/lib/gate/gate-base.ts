@@ -21,12 +21,7 @@ import {
 	SECOND_DEFAULT_BASE_BRANCH,
 } from './gate-base.constants.ts'
 import { GATE_LIST_NAMES } from './gate-config.constants.ts'
-import {
-	holdsScopedStep,
-	listHookTestSteps,
-	resolveGateSteps,
-	resolveHookSteps,
-} from './gate-config.ts'
+import { holdsScopedStep, resolveGateSteps, resolveHookSteps } from './gate-config.ts'
 
 import type { PackageJson } from '../package-json.types.ts'
 import type { Refusal } from '../refusal.types.ts'
@@ -150,11 +145,11 @@ export function resolveConfiguredBase(params: {
 }
 
 /**
- * True when the test steps `gate --hook` runs (`resolveHookSteps`, those counting tests) hold a scoped step: the
- * hook then resolves a base, and a hand-over hands one down and keys its hook records with it.
+ * True when a step `gate --hook` runs (`resolveHookSteps`) is scoped: the hook then prints the base it used, and a
+ * hand-over keys its hook records with that base.
  */
 export function hasScopedHookStep(packageJson: PackageJson): boolean {
-	return holdsScopedStep(listHookTestSteps(resolveHookSteps({ packageJson })))
+	return holdsScopedStep(resolveHookSteps({ packageJson }))
 }
 
 /**

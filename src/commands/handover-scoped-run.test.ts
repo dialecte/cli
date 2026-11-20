@@ -201,7 +201,7 @@ describe(
 	'a two-lot hand-over on the base branch whose only scoped full step counts no test',
 	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
 	() => {
-		it('gate --full green on the final tree first → both hooks got the hand-over variables, the second commit reuses that record without running a test step, no hook prints a base line', async () => {
+		it('gate --full green on the final tree first → both hooks got the hand-over variables, the second commit reuses that record without running a test step, each hook prints the hand-over base', async () => {
 			const counter = createCounter()
 			const log = join(temporaryFolder('dialecte-probe-'), 'env.log')
 			const scoped = createScopedNonTestStep()
@@ -236,7 +236,7 @@ describe(
 			// the gate's own run, then the first commit's hook; the second commit's hook ran no test step
 			expect(countRuns(counter)).toBe(2)
 			expect(logs[1]).toContain(stepReusedLineOf({ step: 'tests', record: readFullRecord(root) }))
-			for (const hookLog of logs) expect(hookLog).not.toContain('gate --hook: base')
+			for (const hookLog of logs) expect(hookLog).toContain(`gate --hook: base ${base} (handover)`)
 		})
 	},
 )

@@ -1,7 +1,7 @@
 /**
  * `gate --hook`: with a declared `dialecte.gate.hook`, the tdd receipts of the lot first (`runHookTddStep`, run every
- * time, never recorded; a failure runs no step), then the declared steps; else the full gate's hook steps (all but the
- * scoped ones that count no tests). For the commit being made,
+ * time, never recorded; a failure runs no step), then the declared steps; else every step of the full gate. For the commit
+ * being made,
  * each answered by the newest green record of the committed tree and install that ran it as it is now (any mode),
  * else run - every step not answered in one run, in list order. When the full steps hold a scoped step, the hook
  * base is resolved once (the hand-over base, else the base branch's merge-base, else the empty tree) and enters a

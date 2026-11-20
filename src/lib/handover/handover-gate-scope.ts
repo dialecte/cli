@@ -23,8 +23,8 @@ import type { HandoverFolder } from './handover.types.ts'
 /**
  * The gate scope of the hand-over `handover`, read from its repository's package.json: a refusal when the gate
  * config is invalid or a set `dialecte.baseBranch` names no branch; else the hand-over base resolved once on the lots file's HEAD when a gate list holds a scoped
- * step (the base branch's merge-base with it, else the empty tree); whether the hook's test steps hold a scoped
- * step (the hook records fold their base then); and, when the full steps hold one (the hook keys with a base then),
+ * step (the base branch's merge-base with it, else the empty tree); whether a hook step is scoped (the hook records
+ * fold their base then); and, when the full steps hold one (the hook keys with a base then),
  * that base with the real path of the hand-over folder to hand down. A package without a base branch hands nothing
  * down.
  */

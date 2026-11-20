@@ -1,0 +1,4 @@
+### Fixed
+
+- `dialecte gate --hook` without a declared `dialecte.gate.hook` runs every `--full` step. It used to drop a scoped step that counts no tests, so a scoped `rules` step (the default lists end with one) never ran at commit time and a rules error went through to CI. A scoped step runs against the hook base, the same base the hook prints. A commit on the default lists now runs `rules` on the change. Hook records of such a package stop answering once, because the hook's step list grew.
+- A hand-over keys its hook records with the base the hook printed whenever a hook step is scoped, not only when a test step is.

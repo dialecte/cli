@@ -2,7 +2,7 @@ import type { HandoverBase, UsedGateBase } from '../gate/gate-base.types.ts'
 
 /** What a hand-over run knows of its package's gate before its guards, computed once for the whole run. */
 export type HandoverGateScope = {
-	/** The test steps `gate --hook` runs hold a scoped step: the hook records fold the base each hook printed. */
+	/** A step `gate --hook` runs is scoped: the hook records fold the base each hook printed. */
 	scoped: boolean
 	/**
 	 * The hand-over base: the base branch's merge-base with the lots file's HEAD (else the empty tree), what the

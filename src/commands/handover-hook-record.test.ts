@@ -45,12 +45,31 @@ function printLines(lines: readonly string[]): string {
 	return `printf '%s\\n' ${lines.map((line) => `'${line.replaceAll("'", "'\\''")}'`).join(' ')}`
 }
 
+/** A package whose gate lists hold no scoped step: its hook prints no base, and its hook record is keyed without one. */
+const UNSCOPED_PACKAGE_JSON = `{
+	"name": "demo",
+	"dialecte": {
+		"gate": {
+			"fast": [{ "name": "check", "run": "npm run check" }],
+			"full": [
+				{ "name": "check", "run": "npm run check" },
+				{ "name": "test:run", "run": "npm run test:run", "counts": "tests" },
+				{ "name": "build", "run": "npm run build" }
+			]
+		}
+	}
+}
+`
+
 /**
  * A repository with two changed files in one lot, the hand-over written; its pre-commit hook `script` in
  * `.husky/_` (as husky installs it), or no hook at all when `script` is undefined.
  */
 function prepare(script: string | undefined): { root: string; out: string } {
-	const root = createScratchRepository({ 'src/read.ts': 'export function read() {}\n' })
+	const root = createScratchRepository({
+		'package.json': UNSCOPED_PACKAGE_JSON,
+		'src/read.ts': 'export function read() {}\n',
+	})
 	writeFiles({ root, files: { '.gitignore': '.husky/_\nnode_modules\n' } })
 	git({ root, args: ['add', '.gitignore'] })
 	git({ root, args: ['commit', '-q', '-m', 'chore: ignore the hooks folder'] })

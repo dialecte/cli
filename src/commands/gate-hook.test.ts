@@ -352,16 +352,19 @@ describe('gate --hook: its own arguments', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 			expect([countRuns(testCounter), countRuns(checkCounter)]).toEqual([0, 0])
 		})
 
-	it('a package whose full gate holds only a scoped step that counts no tests → exit 0 and the line saying so, no step run', async () => {
+	it('a package whose full gate holds only a scoped step that counts no tests → the hook runs it once, at the merge-base with main, on the committed tree', async () => {
 		const bench = createScopedStep({ name: 'bench' })
 		const root = createScopedPackage({
 			gate: { fast: [], full: [{ name: bench.step.name, run: bench.step.run, scoped: true }] },
 		})
+		const base = git({ root, args: ['merge-base', 'HEAD', 'main'] }).trim()
+		const tree = git({ root, args: ['write-tree'] }).trim()
 
 		const result = await runGateIn({ cwd: root, argv: ['--hook'] })
 
-		expect(result).toEqual({ exitCode: 0, output: NO_HOOK_STEP_LINE })
-		expect(readScopedRuns(bench)).toEqual([])
+		expect(result.exitCode).toBe(0)
+		expect(result.output).not.toContain(NO_HOOK_STEP_LINE)
+		expect(readScopedRuns(bench)).toEqual([{ base, tree }])
 	})
 })
 

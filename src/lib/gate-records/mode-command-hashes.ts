@@ -12,7 +12,7 @@ import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
 /**
  * The command hash a record of each mode must hold to answer for the package at `root` now, read at `gateBase` (the
  * base the reader resolved once; absent when no gate list holds a scoped step): `fast` and `full` keyed with it,
- * the hook's files folded with it when the hook's test steps hold a scoped step, what `gate --hook` keys its
+ * the hook's files folded with it when a hook step is scoped, what `gate --hook` keys its
  * `hook-gate` record with, `release` with the empty tree when its list holds a scoped step, and whether the release
  * list covers `full`. With `tree`, the hook files and the gate lists are read as that tree holds them (a hooks
  * folder outside the repository from disk; the caller's `packageJson` when the tree holds none). Throws a

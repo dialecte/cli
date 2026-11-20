@@ -29,8 +29,7 @@
  *
  * `--hook [--no-reuse]` runs in a commit hook the `dialecte.gate.hook` steps when the package declares them (a package
  * whose suite runs on CI), after the tdd receipts of the lot (`runHookTddStep`: they prove the commit, so no test
- * runs; a failure runs no step); else the hook steps of `--full`: every full step but the scoped ones that count no
- * tests (a commit has no lot base for them), with no tdd step. Each step is answered by the newest green record of what
+ * runs; a failure runs no step); else every step of `--full`, a scoped one against the hook base, with no tdd step. Each step is answered by the newest green record of what
  * is committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
  * of the index git hands the hook (never the working files: a merge commit and a partial commit check what they
  * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the hook

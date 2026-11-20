@@ -158,7 +158,7 @@ describe(
 			)
 		})
 
-		it('a full list holding a scoped step that counts no tests and an unscoped tests step, after a green gate --full → the hook answers the tests step from its record (the scoped step is no hook step), with no base line', async () => {
+		it('a full list holding a scoped step that counts no tests and an unscoped tests step, after a green gate --full at the same base → the hook answers both steps from its record, with the base line', async () => {
 			const counter = createCounter()
 			const bench = createScopedStep({ name: 'bench' })
 			const tests = countingStep({ counter, name: 'tests' })
@@ -174,8 +174,17 @@ describe(
 			const result = await runGate({ cwd: root, argv: ['--hook'] })
 
 			expect(result.exitCode).toBe(0)
-			expect(linesOf(result.output)).toEqual([stepReusedLineOf({ step: 'tests', record })])
+			expect(linesOf(result.output)).toEqual([
+				stepReusedLineOf({ step: 'bench', record }),
+				stepReusedLineOf({ step: 'tests', record }),
+				baseLineOf({
+					commit: rev({ root, revision: 'main' }),
+					source: 'base-branch',
+					selection: 'reused',
+				}),
+			])
 			expect(countRuns(counter)).toBe(1)
+			expect(readScopedRuns(bench)).toHaveLength(1)
 		})
 
 		it('a step that selects two ids → the base line joins them with ", " after the full sha and the source', async () => {
