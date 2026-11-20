@@ -12,3 +12,4 @@
 ### Fixed
 
 - The lost-work check before a worktree's removal reads the worktree's own refs (`refs/worktree/`, `refs/bisect/`): a commit only they hold is no longer lost with the worktree.
+- `lot close`, `lot prune` and `worktree prune` keep a worktree whose HEAD reflog or own refs cannot be read, with `could not read <what>: <git's error>`: its records are no longer taken for none.

@@ -567,7 +567,7 @@ function planRepository(params: {
 		}
 		// a folder gone: `git worktree prune` deletes its HEAD reflog, so what only that reflog holds keeps it
 		const kept = !existsSync(name)
-			? goneWorktreeLoss({ repository, worktree: worktree.path })
+			? lostWorkKeeping({ repository, worktree: worktree.path })
 			: whyKeepWorktree({
 					repository,
 					worktree: name,
@@ -933,17 +933,18 @@ function holdGonePrunes(params: { items: readonly PruneItem[]; cd: string }): Pr
 	})
 }
 
-/**
- * The commits a worktree whose folder is gone would lose with its registration (its HEAD and HEAD reflog, read from
- * its own git folder), named; undefined when it loses none.
- */
-function goneWorktreeLoss(params: { repository: string; worktree: string }): string | undefined {
-	const lost = lostWork({
-		root: params.repository,
-		removes: { worktrees: [params.worktree], branches: [] },
-		landedTips: [],
-	})
-	return lost.length > 0 ? lostWorkText(lost) : undefined
+/** The commits removing `worktree` would lose, named; why when its records could not be read (it is kept); none. */
+function lostWorkKeeping(params: { repository: string; worktree: string }): string | undefined {
+	try {
+		const lost = lostWork({
+			root: params.repository,
+			removes: { worktrees: [params.worktree], branches: [] },
+			landedTips: [],
+		})
+		return lost.length > 0 ? lostWorkText(lost) : undefined
+	} catch (error) {
+		return (error as Error).message.trim()
+	}
 }
 
 /**
@@ -968,12 +969,7 @@ function workKeeping(params: {
 			template: NOT_LANDED_TEXTS.unlanded,
 			values: { base: params.baseBranch },
 		})
-	const lost = lostWork({
-		root: repository,
-		removes: { worktrees: [params.worktree], branches: [] },
-		landedTips: [],
-	})
-	return lost.length > 0 ? lostWorkText(lost) : undefined
+	return lostWorkKeeping({ repository, worktree: params.worktree })
 }
 
 /**

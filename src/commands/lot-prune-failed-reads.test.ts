@@ -2,12 +2,13 @@
  * `lot prune` when a git read a removal decision rests on fails, real git behind a `git` on PATH that fails the one
  * read a case names: the stashes, a branch's commits or reflog, a hand-made throwaway's reflog or its lot's; the item
  * is kept with `could not read <what>: <git's error>`, never read as empty. And a branch whose commit another branch
- * held at the plan, that branch deleted before the delete: its loss read again, the branch kept naming the commit.
+ * held at the plan, that branch deleted before the delete: its loss read again, the branch kept naming the commit. And
+ * a lot's worktree whose own records (its HEAD reflog, its own refs) cannot be read: kept with why.
  */
-import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { failGitReadsOf, unreadOf } from '../../test/failing-git.ts'
 import {
 	addLandingLot,
 	cancelLot,
@@ -18,7 +19,7 @@ import {
 } from '../../test/landing-lot.ts'
 import { mergeOnOrigin } from '../../test/landing-repository.ts'
 import { lotPruneArgumentsOf, prunedItemsOf } from '../../test/lot-prune-workspace.ts'
-import { git, temporaryFolder } from '../../test/scratch-repository.ts'
+import { git } from '../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { SHORT_SHA_LENGTH } from '../lib/gate-records/gate-records.constants.ts'
 import { runLotPrune } from './lot-prune.ts'
@@ -32,46 +33,12 @@ afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
-/** What the failing `git` prints on its standard error. */
-const REFUSED_READ = 'fatal: this read is refused'
-
 /** The hand-made throwaway's branch, as a reviewer names a red check. */
 const RED_CHECK = 'red-check'
 
 /** The second terminal lot of the race, its branch cut from the first lot's branch. */
 const SECOND_LOT = '0002-repo-y'
 const SECOND_BRANCH = 'feat/y'
-
-/**
- * A `git` first on PATH that exits 128 with `REFUSED_READ` on its standard error when its arguments hold `pattern`,
- * and runs the real git otherwise. The caller restores the environment (`vi.unstubAllEnvs`).
- */
-function failGitReadsOf(params: { pattern: string }): void {
-	const real = spawnSync('command -v git', {
-		shell: true,
-		encoding: 'utf8',
-	}).stdout.trim()
-	const bin = temporaryFolder('dialecte-failing-git-')
-	const script = join(bin, 'git')
-	writeFileSync(
-		script,
-		[
-			'#!/bin/sh',
-			'case "$*" in',
-			`  *'${params.pattern}'*) echo '${REFUSED_READ}' >&2; exit 128;;`,
-			'esac',
-			`exec '${real}' "$@"`,
-			'',
-		].join('\n'),
-	)
-	chmodSync(script, 0o755)
-	vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`)
-}
-
-/** The reason a failed read keeps an item with: what, then git's error as the cli's git read words it. */
-function unreadOf(params: { what: string; args: string }): string {
-	return `could not read ${params.what}: git ${params.args}: ${REFUSED_READ}`
-}
 
 /** A store lot landed by a fast-forward on origin, its landed fact written. */
 function landedLot(): LandingLot {
@@ -308,5 +275,53 @@ describe(
 				reachable: true,
 			})
 		})
+	},
+)
+
+const UNREAD_WORKTREE_RECORDS: {
+	title: string
+	/** The words of the one read made to fail. */
+	pattern: string
+	/** The reason the worktree is kept with. */
+	kept: (lot: LandingLot) => string
+}[] = [
+	{
+		title: 'its HEAD reflog not read',
+		pattern: 'reflog show --format=%H HEAD',
+		kept: (lot) =>
+			unreadOf({
+				what: `the HEAD reflog of ${lot.worktree}`,
+				args: 'reflog show --format=%H HEAD --',
+			}),
+	},
+	{
+		title: 'its own refs not read',
+		pattern: 'refs/worktree/',
+		kept: (lot) =>
+			unreadOf({
+				what: `the own refs of ${lot.worktree}`,
+				args: 'for-each-ref --format=%(objectname) refs/worktree/ refs/bisect/',
+			}),
+	},
+]
+
+describe(
+	'lot prune --yes: a landed lot whose worktree records cannot be read',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		for (const row of UNREAD_WORKTREE_RECORDS)
+			it(`a landed lot’s worktree, ${row.title} → kept with why, its folder still there`, () => {
+				const lot = landedLot()
+
+				expect(
+					((result: CommandResult) => ({
+						item: prunedItemsOf({ result, lot: lot.name })[`worktree ${lot.worktree}`],
+						there: existsSync(lot.worktree),
+					}))(pruneFailing({ lot, pattern: row.pattern })),
+				).toEqual({
+					item: { decision: { kept: row.kept(lot) }, outcome: { kept: row.kept(lot) } },
+					there: true,
+				})
+			})
 	},
 )
