@@ -42,7 +42,7 @@ Everything is overridable per `package.json` `"dialecte"` field (odd layouts) or
 --namespace <Name>  --entry <import>  --constants-dir <dir>  --out <dir>  --version <v>  --tsconfig <f>
 ```
 
-Env: `RUNS=5 dialecte bench` (repetitions kept as the min); `COVERAGE_CHILD_CAP=N` (cap child edges).
+Env: `COVERAGE_CHILD_CAP=N` (cap child edges).
 
 ## What the cli prints
 

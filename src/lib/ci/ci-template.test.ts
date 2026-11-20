@@ -145,6 +145,51 @@ describe('the rendered _check.yml', () => {
 	})
 })
 
+describe('the rendered _type-perf.yml', () => {
+	it("a core-shaped package → checks out depth 2, fetches the queue's base sha, hands the bench the base the change goes onto through DIALECTE_CHANGE_BASE on its step only, runs npm run type-bench:check bare, skips a dispatch", () => {
+		const workflow = parse(
+			renderCiFiles({ facts: CORE, template: readCiTemplate() }).get(
+				'.github/workflows/_type-perf.yml',
+			) ?? '',
+		) as { jobs: { 'type-perf': { steps: Record<string, unknown>[]; env?: unknown } } }
+		const { steps, env } = workflow.jobs['type-perf']
+
+		expect({
+			checkout: steps.find((step) => step.uses === 'actions/checkout@v6'),
+			fetch: steps.filter((step) => String(step.name).startsWith('Fetch the base')),
+			bench: steps.filter((step) => String(step.run).includes('type-bench:check')),
+			jobEnvironment: env,
+			handedElsewhere: steps.filter(
+				(step) =>
+					!String(step.run).includes('type-bench:check') &&
+					JSON.stringify(step.env ?? {}).includes('DIALECTE_CHANGE_BASE'),
+			),
+		}).toEqual({
+			checkout: { name: 'Checkout', uses: 'actions/checkout@v6', with: { 'fetch-depth': 2 } },
+			fetch: [
+				{
+					name: 'Fetch the base the change goes onto',
+					if: "github.event_name == 'merge_group'",
+					env: { BASE: '${{ github.event.merge_group.base_sha }}' },
+					run: 'git fetch --depth=1 origin "$BASE"',
+				},
+			],
+			bench: [
+				expect.objectContaining({
+					if: "github.event_name != 'workflow_dispatch'",
+					env: {
+						DIALECTE_CHANGE_BASE:
+							"${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || 'HEAD^1' }}",
+					},
+					run: 'npm run type-bench:check',
+				}),
+			],
+			jobEnvironment: undefined,
+			handedElsewhere: [],
+		})
+	})
+})
+
 describe('the rendered publish.yml', () => {
 	it('→ its header says npm trusted publishing names the file and its trigger: never renamed, never retriggered', () => {
 		const header = (

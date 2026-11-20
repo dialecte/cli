@@ -59,7 +59,7 @@ export const GLOBAL_HELP_NOTES = [
 	'package.json "dialecte" field or with flags:',
 	`  ${ZERO_CONFIG_FLAGS.overrides.join('  ')}`,
 	`Generated files are formatted with the package's oxfmt: ${ZERO_CONFIG_FLAGS.formatting.join(' | ')}.`,
-	'Env: RUNS=5 dialecte bench (repetitions for the min); COVERAGE_CHILD_CAP=N (cap child edges).',
+	'Env: COVERAGE_CHILD_CAP=N (cap child edges).',
 ] as const
 
 /** The width the family names are padded to on their line of the global help. */
@@ -489,7 +489,7 @@ export const COMMAND_MAP: CommandMap = {
 		summary: 'The contributor checks of a dialecte package (profile contributor)',
 		usage: ['dialecte contrib [--no-reuse] [--json]'],
 		notes: [
-			'after gate --full and before handover: rules on the changed files (against the base of the lot, the order the rules step of the gate shares: the lot base of the store lot read from git (its fork point, never the base recorded at its start), else the merge-base with the base branch, as the rules step of the gate takes it, else the last release tag <name>@v<version>, every error kept without any; a rehearsal against the tip its last merge lot merges, else the gate base of the repository at the HEAD of the lots file: an error on a line the base holds is a warning), the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it), no dependency named by a local folder, the mutation line when a scope is declared',
+			'after gate --full and before handover: rules on the changed files (against the base of the lot, the order the rules step of the gate shares: the lot base of the store lot read from git (its fork point, never the base recorded at its start), else the merge-base with the base branch, as the rules step of the gate takes it, else the last release tag <name>@v<version>, every error kept without any; a rehearsal against the tip its last merge lot merges, else the gate base of the repository at the HEAD of the lots file: an error on a line the base holds is a warning), the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs restored, npm run type-bench:check), the type-bench step alone handed the base of the change in DIALECTE_CHANGE_BASE (the base of the rules row when it is a commit; a rehearsal hands the tip its last merge lot merges, else the lot base of its repository, and with neither does not run that step), npm run type-narrowing when the package has that script and no step runs it (a skip line when it lacks it), no dependency named by a local folder, the mutation line when a scope is declared',
 			"the changelog row (after rules): first the released CHANGELOG.md sections, on every run, changed by the lot or not (a merge brings them): a section altered against the base branch and where the change left it fails the row, naming it (rules: released-changelog); the record is keyed on the base's and the merge-base's CHANGELOG.md, so a release on main runs the row again; then in a package keeping changes/, a change that edits README.md, a page under doc/ or a file the package lists in dialecte.changelog.asking (a folder ends in /; the cli lists its command map) adds a changelog fragment changes/<lot>.md, or a no-entry note changes/<lot>.none.md saying why; else it fails naming the file",
 			'a step a green gate --full of this tree and install passed with the same command is not run again; --no-reuse runs every row',
 			'a step whose run is npm run <script> the package lacks is not wired: it fails, default or declared; then no row runs, the others read not run: a step of the list is not wired; "dialecte": { "contrib": { "skip": { "<default step>": "<reason>" } } } (dialecte.contrib.skip) opts a default step out, a warning with its reason',
@@ -522,7 +522,7 @@ export const COMMAND_MAP: CommandMap = {
 			'The CI files shipped as a template: write them into the package, report drift, run the publish guard',
 		usage: ['dialecte ci sync [--dry-run]', 'dialecte ci check', 'dialecte ci publish-decision'],
 		notes: [
-			'the template: the workflows (ci.yml, publish.yml and their reusables), .github/pull_request_template.md, .nvmrc and changes/.gitkeep; ci.yml selects its jobs from package.json: type-perf with a type-bench:check script, docs with a doc:build script, the Playwright install with a playwright dependency, the npm run skills:check step of the check job with a skills:check script; the check job always runs rules --base of the cli over the change (the base sha of the merge queue, else HEAD^1, skipped on a dispatch), where --no-verify cannot skip it; a build script is required (publish.yml builds the package)',
+			'the template: the workflows (ci.yml, publish.yml and their reusables), .github/pull_request_template.md, .nvmrc and changes/.gitkeep; ci.yml selects its jobs from package.json: type-perf with a type-bench:check script (its bench step handed the base the change goes onto in DIALECTE_CHANGE_BASE: the base sha of the merge queue, else HEAD^1, skipped on a dispatch), docs with a doc:build script, the Playwright install with a playwright dependency, the npm run skills:check step of the check job with a skills:check script; the check job always runs rules --base of the cli over the change (the base sha of the merge queue, else HEAD^1, skipped on a dispatch), where --no-verify cannot skip it; a build script is required (publish.yml builds the package)',
 			'the repository owns .github/workflows/_test.yml (ci.yml calls it: a workflow_call trigger; a mode input of type string gets pr on a pull request, full in the merge queue) and every other workflow file the template does not name; they are listed, never written',
 			'sync - writes what differs from the template, deletes the retired files (pr.yml, _lint.yml) and the reusables no job of the package calls; an update prints its diff; a second run is in step; --dry-run writes nothing',
 			"check - the same comparison, read-only: each drifted file with its diff, then the fix; the template's _check.yml runs it on every pull request",
@@ -677,17 +677,19 @@ export const COMMAND_MAP: CommandMap = {
 	},
 	bench: {
 		family: 'Maintain',
-		summary: 'Measure type-instantiation cost (tsc --extendedDiagnostics); --check to gate CI',
-		usage: ['dialecte bench [--check] [zero-config flags]'],
+		summary:
+			'Measure the type-instantiation cost of the change against its base (tsc --extendedDiagnostics); --check to gate it',
+		usage: ['dialecte bench [--check] [--base <ref>] [zero-config flags]'],
 		notes: [
-			'writes benchmarks/types/baseline.json; --check fails on a >5% instantiation regression',
-			'tsgo (TypeScript 7+) runs with one checker (--checkers 1), so a file set always gives the same count; the baseline records the compiler and its exact version',
-			'--check gives no verdict against a baseline from another compiler or version, or one that records none: re-baseline in its own commit',
+			'the head (the working tree) against the base it goes onto, measured fresh: --base <ref> (its merge-base with HEAD), else DIALECTE_CHANGE_BASE (the base CI and contrib hand: a revision read as its commit), else the order rules shares (the lot base of the store lot read from git, else the merge-base with the base branch, HEAD itself on the base branch, else the last release tag <name>@v<version>); nothing is stored, no baseline is written',
+			"the base is exported at its commit into a scratch folder (no worktree), its file: siblings linked, its node_modules the head's when they install its lock, else npm ci; both trees are measured with the head's compiler and the head's probe generator, one run per scenario, and the base removed after",
+			'tsgo (TypeScript 7+) runs with one checker (--checkers 1), so a file set always gives the same count',
+			'each scenario within 5% of its base, a gain, over, new or gone; a row over is explained by a line the change adds to its changelog fragment (- Type cost: <why>) or no-entry note (Type cost: <why>), else --check fails',
+			'no base outside CI and outside a lot: the head alone, nothing compared; dialecte bench --base <name>@v<x.y.z> reports the cost since a release',
 		],
 		exitCodes: [
-			'1  --check: an instantiation regression past 5%',
-			'2  --check: no baseline.json to compare with (run dialecte bench to write it)',
-			'3  --check: a baseline from another compiler or version, or one that records no compiler',
+			'1  --check: a scenario over 5% of its base that no type-cost line of the change explains',
+			'2  refused: a base that cannot be read or is no commit, a lot with no base, no base in CI with --check, a head whose node_modules does not install its lock, a head with no version, a base tree that cannot be made or measured, method discovery failing at the head with --check',
 		],
 		example: 'dialecte bench --check',
 	},

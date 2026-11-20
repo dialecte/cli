@@ -21,7 +21,11 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { RULES_STEP_PATTERN } from '../gate-records/gate-records.constants.ts'
+import { CHANGE_BASE_VARIABLES } from '../change-base.constants.ts'
+import {
+	RULES_STEP_PATTERN,
+	TYPE_BENCH_STEP_PATTERN,
+} from '../gate-records/gate-records.constants.ts'
 import { GIT_READ_ENVIRONMENT } from '../git.constants.ts'
 import { ownCliCommand } from '../own-cli-command.ts'
 import { runChild } from '../progress/run-child.ts'
@@ -104,6 +108,8 @@ export async function runGateSteps(params: {
 	resolveOwnCommand?: () => string[]
 	/** The release base a rehearsal handed the hook (a checked full commit id): its rules step alone gets it. */
 	releaseBase?: string
+	/** The base the change is measured from (a commit): its type-bench step alone gets it, as `DIALECTE_CHANGE_BASE`. */
+	changeBase?: string
 }): Promise<StepResult[]> {
 	const { root, scope } = params
 	// every step judged for its wiring before the first runs: a failed one runs nothing, so every wiring is fixed at once
@@ -152,6 +158,7 @@ async function runEachStep(params: {
 	unwired: ReadonlyMap<GateStep, StepResult>
 	resolveOwnCommand?: () => string[]
 	releaseBase?: string
+	changeBase?: string
 }): Promise<StepResult[]> {
 	const { root, packageJson } = params
 	const results: StepResult[] = []
@@ -174,6 +181,7 @@ async function runEachStep(params: {
 			scopeRun: params.scopeRun,
 			resolveOwnCommand: params.resolveOwnCommand,
 			releaseBase: params.releaseBase,
+			changeBase: params.changeBase,
 		}
 		const first = await runStep({ ...run, step })
 		// a first run whose selection failed its checks: no rerun can mend it, whatever its exit code
@@ -365,6 +373,8 @@ async function runStep(params: {
 	resolveOwnCommand?: () => string[]
 	/** Handed to the step when it checks the rules (`RULES_STEP_PATTERN`), to no other. */
 	releaseBase?: string
+	/** Handed to the step when it runs the type bench (`TYPE_BENCH_STEP_PATTERN`), to no other. */
+	changeBase?: string
 }): Promise<StepRun> {
 	const { root, step, scopeRun } = params
 	if (step.scoped && scopeRun === undefined)
@@ -377,6 +387,7 @@ async function runStep(params: {
 	// a self step whose cli cannot be resolved fails as a step, never as the gate
 	if ('failure' in shell) return unresolvedSelfStep({ step, failure: shell.failure })
 	const selectionPath = step.scoped ? scopeRun?.nextSelectionPath() : undefined
+	const handsChangeBase = params.changeBase !== undefined && TYPE_BENCH_STEP_PATTERN.test(step.run)
 	const snapshot = step.restoresGeneratedDocs
 		? snapshotFiles({ root, files: params.generatedDocs })
 		: new Map<string, Buffer | undefined>()
@@ -393,8 +404,14 @@ async function runStep(params: {
 			// the release base reaches the rules step alone: a test suite another step runs never reads it
 			...(params.releaseBase !== undefined &&
 				RULES_STEP_PATTERN.test(step.run) && { [RELEASE_BASE_VARIABLE]: params.releaseBase }),
+			// the change base reaches the type-bench step alone: every other step has it unset
+			...(handsChangeBase && { [CHANGE_BASE_VARIABLES.handed]: params.changeBase }),
 		},
-		unset: [...HANDOVER_VARIABLES, ...Object.values(GATE_SCOPE_VARIABLES)],
+		unset: [
+			...HANDOVER_VARIABLES,
+			...Object.values(GATE_SCOPE_VARIABLES),
+			...(handsChangeBase ? [] : [CHANGE_BASE_VARIABLES.handed]),
+		],
 		clock: params.clock,
 		watchdog: params.watchdog,
 	})

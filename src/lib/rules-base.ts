@@ -8,6 +8,7 @@ import { fallbackLotBaseOf } from './tdd/lot-fallback-base.ts'
 import { resolveTddBase } from './tdd/tdd-base.ts'
 
 import type { RulesBaseSource } from './rules-base.types.ts'
+import type { LotIdentity } from './store/store.types.ts'
 
 /**
  * The base the quality rules judge the changed lines of the package at `root` against, one order for every caller
@@ -43,8 +44,7 @@ export function resolveRulesBaseSource(params: {
 	emptyTreeRequest?: boolean
 }): RulesBaseSource | { failure: string } | undefined {
 	const { root } = params
-	const lotFolder = lotOfWorktree({ cwd: root })
-	const identity = lotFolder === undefined ? undefined : readIdentity({ lotFolder })
+	const identity = storeLotOf({ root })
 	if (identity !== undefined) {
 		const lotBase = resolveTddBase({ root, packageJson: readPackageJson(root) })
 		if ('failure' in lotBase) return { failure: lotBase.failure }
@@ -76,6 +76,15 @@ export function resolveRulesBaseSource(params: {
 		...(params.head !== undefined && { head: params.head }),
 	})
 	return release === undefined ? undefined : { ...release, source: 'release-tag' }
+}
+
+/**
+ * The identity of the store lot whose worktree holds `root`; undefined outside one. The order's own predicate, shared
+ * with every caller that must tell a lot from a plain checkout the same way.
+ */
+export function storeLotOf(params: { root: string }): LotIdentity | undefined {
+	const lotFolder = lotOfWorktree({ cwd: params.root })
+	return lotFolder === undefined ? undefined : readIdentity({ lotFolder })
 }
 
 /** The commit of `head` (default HEAD) in the repository at `root`; undefined when git cannot read it. */

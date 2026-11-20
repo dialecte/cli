@@ -12,3 +12,13 @@ export type DialecteSchema = {
 	/** Optional — present when the dialect's constants export ROOT_ELEMENT. */
 	root?: string
 }
+
+/** What `generateTargetCoverage` did: the probes it wrote, and why method discovery failed when it did. */
+export type TargetCoverage = {
+	/** The absolute paths of the probes written. */
+	written: string[]
+	/** The line saying what was generated: its elements, its child edges and the folder. */
+	summary: string
+	/** Method discovery's failure: the `coverage.api` probe was not written. */
+	discoveryFailure?: string
+}

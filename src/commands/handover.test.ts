@@ -4195,8 +4195,9 @@ const LEGEND: Array<Array<{ term: string; meaning: string; look: string }>> = [
 		},
 		{
 			term: 'type-bench',
-			meaning: 'a contrib row: the cost of the types stays within its baseline',
-			look: 'look only if it is not ✓: a type grew in cost',
+			meaning:
+				'a contrib row: the cost of the types grows at most 5% over the base, or the lot explains it',
+			look: 'look only if it is not ✓: a type grew in cost and no Type cost line explains it',
 		},
 		{
 			term: 'rules',

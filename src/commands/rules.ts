@@ -23,9 +23,10 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { resolveChangeBase } from '../lib/change-base.ts'
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
-import { readEmptyTree, resolveFlagBase } from '../lib/gate/gate-base.ts'
+import { readEmptyTree } from '../lib/gate/gate-base.ts'
 import { GATE_SCOPE_VARIABLES } from '../lib/gate/selection.constants.ts'
 import {
 	readChangedPaths,
@@ -44,10 +45,12 @@ import {
 import { checkRules, renderRuleFinding } from '../lib/rules/check-rules.ts'
 import { NOT_JUDGED_LINE } from '../lib/rules/dialecte-change.constants.ts'
 import { NO_FORBIDDEN_WORDS_LINE } from '../lib/rules/forbidden-words.constants.ts'
+import { RULES_BASE_LINE_PREFIX } from '../lib/rules/lot-base.constants.ts'
 import { readBaseWithLine } from '../lib/rules/lot-base.ts'
 import { shortCommitOf } from '../lib/tdd/tdd-base.ts'
 import { BASE_OPTION, RULES_BASE_WITH_FILES } from './rules.constants.ts'
 
+import type { ChangeBaseAnswer } from '../lib/change-base.types.ts'
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { QualityBase } from '../lib/quality/quality.types.ts'
 import type { RulesCheck } from '../lib/rules/check-rules.types.ts'
@@ -90,33 +93,34 @@ function checkOfRun(params: {
 	const flagRef = getArg([...argv], BASE_OPTION)
 	// `--base <ref>` judges the change since the merge-base of ref and HEAD: never a list of files given with it
 	if (flagRef !== undefined && givenFiles.length) return { refusal: RULES_BASE_WITH_FILES }
-	const flag =
-		flagRef === undefined ? undefined : resolveFlagBase({ root: cwd, ref: flagRef, head: 'HEAD' })
-	if (flag !== undefined && 'refusal' in flag) return { refusal: flag.refusal }
+	// the flag, else the gate's base, wins; without either, the base of the order every caller shares, with its line
+	const changeBase = resolveChangeBase({
+		root: cwd,
+		...(flagRef !== undefined && { ref: flagRef }),
+		...(environment[GATE_SCOPE_VARIABLES.base] !== undefined && {
+			handed: environment[GATE_SCOPE_VARIABLES.base],
+		}),
+		emptyTreeRequest: true,
+	})
+	if ('refusal' in changeBase) return { refusal: changeBase.refusal }
+	const found = 'id' in changeBase ? changeBase : undefined
+	const flag = found?.source === 'flag' ? found.id : undefined
 	const changedList =
 		givenFiles.length || flag !== undefined ? undefined : environment[GATE_SCOPE_VARIABLES.changed]
-	// the flag, else the gate's base, wins; without either, the base of the order every caller shares, with its line
-	const gateBase = flag?.commit ?? (environment[GATE_SCOPE_VARIABLES.base] || undefined)
-	const ownBase = gateBase === undefined ? readBaseWithLine({ root: cwd }) : undefined
-	const base = gateBase ?? (ownBase !== undefined && 'base' in ownBase ? ownBase.base : undefined)
+	const base = found?.id
 	const quality = qualityBaseOf({
 		root: cwd,
-		flag: flag?.commit,
+		flag,
 		scoped: changedList !== undefined,
 	})
-	// an empty-tree gate base (gate --release) goes through the order too: a lot base it cannot read is said, never silent
-	const noBaseLine =
-		gateBase !== undefined && gateBase === readEmptyTree(cwd)
-			? noBaseLineOf({ root: cwd })
-			: undefined
-	const runBaseLine = ownBase?.line ?? noBaseLine
+	const runBaseLine = runBaseLineOf({ root: cwd, changeBase })
 	const checked = checkRules({
 		root: cwd,
 		givenFiles,
 		...(changedList !== undefined && { changedList }),
 		environment,
 		...(base !== undefined && { base }),
-		...(flag !== undefined && { since: flag.commit }),
+		...(flag !== undefined && { since: flag }),
 		...('base' in quality && { quality: quality.base }),
 		...(environment[GATE_SCOPE_VARIABLES.tree] && { tree: environment[GATE_SCOPE_VARIABLES.tree] }),
 	})
@@ -208,10 +212,20 @@ function withLine(params: { root: string; base: QualityBase }): {
 	}
 }
 
-/** The line saying why there is no base, when the order finds the worktree's lot base unreadable; else none. */
-function noBaseLineOf(params: { root: string }): string | undefined {
-	const read = readBaseWithLine(params)
-	return read === undefined || 'base' in read ? undefined : read.line
+/**
+ * The base line of a run, with its prefix: the order's line (a found base or why it cannot be read); none for a base
+ * given (`--base`) or handed, but for an empty-tree gate base (gate --release), which goes through the order too: a lot
+ * base it cannot read is said, never silent, a found one adds no line.
+ */
+function runBaseLineOf(params: { root: string; changeBase: ChangeBaseAnswer }): string | undefined {
+	const { root, changeBase } = params
+	if ('unreadable' in changeBase) return `${RULES_BASE_LINE_PREFIX}${changeBase.unreadable}`
+	if (!('id' in changeBase)) return undefined
+	if (changeBase.source === 'order')
+		return changeBase.line === undefined ? undefined : `${RULES_BASE_LINE_PREFIX}${changeBase.line}`
+	if (changeBase.source !== 'handed' || changeBase.id !== readEmptyTree(root)) return undefined
+	const read = readBaseWithLine({ root })
+	return read === undefined || 'base' in read ? undefined : `${RULES_BASE_LINE_PREFIX}${read.line}`
 }
 
 /** The run as `--json` prints it: each finding without the line of its function, kept for the opt-outs only. */

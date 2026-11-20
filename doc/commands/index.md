@@ -66,13 +66,13 @@
 
 ## Maintain
 
-| Command                              | What it does                                                                                    |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [`dialecte bench`](bench.md)         | Measure type-instantiation cost (tsc --extendedDiagnostics); --check to gate CI                 |
-| [`dialecte coverage`](coverage.md)   | Generate type-coverage probes (surface, valid calls, deep, full method surface with extensions) |
-| [`dialecte narrowing`](narrowing.md) | Gate: assert schema-derived type narrowing still holds (IntelliSense safety net)                |
-| [`dialecte audit`](audit.md)         | Render the public type surface and flag readability issues (C1-C6)                              |
-| [`dialecte text`](text.md)           | The human part of a GitHub text, before it is posted                                            |
+| Command                              | What it does                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| [`dialecte bench`](bench.md)         | Measure the type-instantiation cost of the change against its base (tsc --extendedDiagnostics); --check to gate it |
+| [`dialecte coverage`](coverage.md)   | Generate type-coverage probes (surface, valid calls, deep, full method surface with extensions)                    |
+| [`dialecte narrowing`](narrowing.md) | Gate: assert schema-derived type narrowing still holds (IntelliSense safety net)                                   |
+| [`dialecte audit`](audit.md)         | Render the public type surface and flag readability issues (C1-C6)                                                 |
+| [`dialecte text`](text.md)           | The human part of a GitHub text, before it is posted                                                               |
 
 ## Renamed in 1.0
 

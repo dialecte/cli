@@ -16,7 +16,7 @@ export const NPX_WORD = 'npx'
 /** The options of `npx` that take the next word as their value (`npx -p @dialecte/cli dialecte gate`). */
 export const NPX_OPTIONS_WITH_VALUE: ReadonlySet<string> = new Set(['-p', '--package'])
 
-/** An environment assignment written before an invocation (`RUNS=5 dialecte bench`). */
+/** An environment assignment written before an invocation (`DIALECTE_CHANGE_BASE=HEAD^1 dialecte bench`). */
 export const ENVIRONMENT_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/
 
 /** A shell prompt written before an invocation (`$ dialecte tdd status`). */
