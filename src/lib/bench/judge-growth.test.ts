@@ -1,11 +1,10 @@
+import { THRESHOLD } from '../../commands/bench.constants.ts'
 import { judgeGrowth } from './judge-growth.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { GrowthRow } from './judge-growth.types.ts'
 import type { Counts, TreeCounts } from './measure-tree.types.ts'
-
-const THRESHOLD = 0.05
 
 function countsOf(instantiations: number): Counts {
 	return { Instantiations: instantiations, Types: 10, Symbols: 5 }

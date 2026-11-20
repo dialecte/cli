@@ -2,7 +2,7 @@
  * `dialecte bench` on a real git package: the head measured against the change's base, both trees with the head's
  * compiler, one run per scenario on one checker, and the verdict explained by a type-cost note the change added.
  */
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { chmodSync, existsSync, readdirSync, realpathSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -20,7 +20,7 @@ import {
 	definitionFilesOf,
 } from '../../test/bench-repository.ts'
 import { commitFiles } from '../../test/rules-lot-worktree.ts'
-import { git } from '../../test/scratch-repository.ts'
+import { git, writeFiles } from '../../test/scratch-repository.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { runBench } from './bench.ts'
 
@@ -109,6 +109,28 @@ function shortOf(params: { root: string; commit: string }): string {
 	return git({ root: params.root, args: ['rev-parse', '--short', params.commit] }).trim()
 }
 
+/**
+ * The head's compiler, wrapped: run anywhere but the head (in the base tree, already exported), it first deletes
+ * `object` from the repository, so git cannot read it afterwards, then runs as before.
+ */
+function breakWhileTheBaseIsMeasured(params: { root: string; object: string }): void {
+	const compiler = join(params.root, 'node_modules/.bin/tsc')
+	const wrapped = join(params.root, 'node_modules/.bin/tsc-wrapped')
+	renameSync(compiler, wrapped)
+	writeFiles({
+		root: params.root,
+		files: {
+			'node_modules/.bin/tsc': [
+				'#!/bin/sh',
+				`if [ "$(pwd -P)" != '${realpathSync(params.root)}' ]; then rm -f '${params.object}'; fi`,
+				`exec '${wrapped}' "$@"`,
+				'',
+			].join('\n'),
+		},
+	})
+	chmodSync(compiler, 0o755)
+}
+
 afterEach(() => {
 	vi.unstubAllEnvs()
 })
@@ -130,6 +152,30 @@ describe(
 				wholeProgram: expect.objectContaining({ base: '100', head: '103', change: '+3.0%' }),
 			})
 		})
+
+		const thresholdCases: Record<string, { headCount: number; exitCode: number }> = {
+			'the head at 105.1% of the base, --check, no note → exit 1: just over the threshold fails': {
+				headCount: 1051,
+				exitCode: 1,
+			},
+			'the head at 105.0% of the base, --check, no note → exit 0: exactly the threshold passes': {
+				headCount: 1050,
+				exitCode: 0,
+			},
+		}
+		for (const [title, thresholdCase] of Object.entries(thresholdCases))
+			it(title, async () => {
+				const repository = createBenchRepository({
+					baseCount: 1000,
+					headCount: thresholdCase.headCount,
+				})
+
+				await expect(
+					runIn({ repository, argv: ['--check'] }).then(function verdict(result) {
+						return result.exitCode
+					}),
+				).resolves.toBe(thresholdCase.exitCode)
+			})
 
 		it('the head grows 8%, --check, no note → exit 1, the over rows and the explain line', async () => {
 			const repository = createBenchRepository({ baseCount: 100, headCount: 108 })
@@ -514,6 +560,35 @@ describe(
 				scratch: [],
 				worktrees,
 			})
+		})
+
+		it("the head grows 8% with a note, the base's fragments cannot be listed when the notes are read → exit 2, never an explained pass", async () => {
+			const repository = createBenchRepository({
+				baseCount: 100,
+				headCount: 108,
+				baseFiles: {
+					'changes/old.md': ['### Changed', '', '- The widget reads its items', ''].join('\n'),
+				},
+				headFiles: {
+					'changes/old.md': ['### Changed', '', '- The widget reads its items once', ''].join('\n'),
+				},
+				workingFiles: { 'changes/x.md': FRAGMENT_WITH_NOTE },
+			})
+			const { root, base } = repository
+			const fragmentsTree = git({ root, args: ['rev-parse', `${base}:changes`] }).trim()
+			const fragmentsObject = join(
+				root,
+				'.git/objects',
+				fragmentsTree.slice(0, 2),
+				fragmentsTree.slice(2),
+			)
+			breakWhileTheBaseIsMeasured({ root, object: fragmentsObject })
+
+			await expect(
+				runIn({ repository, argv: ['--check'] }).then(function refused(result) {
+					return { exitCode: result.exitCode, explained: result.output.includes('explained:') }
+				}),
+			).resolves.toEqual({ exitCode: 2, explained: false })
 		})
 
 		it('a stacked lot whose parent cannot be read → exit 2 with the no-base line naming why', async () => {

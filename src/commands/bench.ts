@@ -131,7 +131,8 @@ export async function runBench(params: {
 
 /**
  * The verdict lines of `rows`: each row over its base explained by the type-cost notes the change added since `base`,
- * else the line asking for one (exit 1 under `--check`); the green line under `--check` when a base was compared.
+ * else the line asking for one (exit 1 under `--check`); the green line under `--check` when a base was compared; exit 2
+ * with its line when the notes cannot be judged (the base's fragments unreadable).
  */
 function verdictOf(params: {
 	root: string
@@ -142,7 +143,14 @@ function verdictOf(params: {
 }): { exitCode: number; lines: string[] } {
 	const { root, check, base } = params
 	const over = params.rows.filter((row) => row.verdict === 'over')
-	const notes = over.length && base !== undefined ? readTypeCostNotes({ root, base }) : []
+	const read = over.length && base !== undefined ? readTypeCostNotes({ root, base }) : []
+	// the base's fragments unreadable: no note can be judged, never an explained pass
+	if ('refusal' in read)
+		return {
+			exitCode: EXIT_REFUSED,
+			lines: ['', BENCH_LINES.prefix.replace('{line}', () => read.refusal)],
+		}
+	const notes = read
 	const explanation = notes.map((note) => note.text).join('; ')
 	const lines = [
 		'',
@@ -207,15 +215,20 @@ function benchBaseOf(params: {
 	}
 	const commit = readCommitOrNone({ root, ref: answer.id })
 	if (!commit) return { refusal: BENCH_LINES.notACommit.replace('{base}', () => answer.id) }
-	if (answer.source === 'order' && answer.line !== undefined)
-		return { commit, line: BENCH_LINES.prefix.replace('{line}', () => answer.line ?? '') }
 	const short = shortCommitOf({ root, commit })
+	// a ref given is the flag answer, whatever else was handed: its line names that ref
+	if (ref !== undefined)
+		return {
+			commit,
+			line: BENCH_LINES.flagBase.replace('{short}', () => short).replace('{ref}', () => ref),
+		}
+	const orderLine = answer.source === 'order' ? answer.line : undefined
 	return {
 		commit,
 		line:
-			answer.source === 'flag'
-				? BENCH_LINES.flagBase.replace('{short}', () => short).replace('{ref}', () => ref ?? '')
-				: BENCH_LINES.handedBase.replace('{short}', () => short),
+			orderLine === undefined
+				? BENCH_LINES.handedBase.replace('{short}', () => short)
+				: BENCH_LINES.prefix.replace('{line}', () => orderLine),
 	}
 }
 

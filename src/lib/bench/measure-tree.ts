@@ -134,12 +134,12 @@ async function generateProbes(params: {
 }): Promise<{ discoveryFailure?: string } | { refusal: string }> {
 	const { target } = params
 	try {
-		const coverage = await generateTargetCoverage(params)
-		if (coverage.discoveryFailure === undefined) return {}
+		const { discoveryFailure } = await generateTargetCoverage(params)
+		if (discoveryFailure === undefined) return {}
 		return {
 			discoveryFailure: MEASURE_REFUSALS.discovery
 				.replace('{version}', () => target.version)
-				.replace('{reason}', () => coverage.discoveryFailure ?? ''),
+				.replace('{reason}', () => discoveryFailure),
 		}
 	} catch (error) {
 		return {

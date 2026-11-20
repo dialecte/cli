@@ -7,3 +7,6 @@ export type TypeCostNote = {
 	/** The line as the working file holds it (`- Type cost: <why>` or `Type cost: <why>`). */
 	text: string
 }
+
+/** What `readTypeCostNotes` answers: the notes, or why the base's fragments cannot be read (no note can count then). */
+export type TypeCostNotesRead = TypeCostNote[] | { refusal: string }
