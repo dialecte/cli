@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
+### Added
+
+- `dialecte doctor --host [--vendor <name>]` runs every read the lot verbs make of the repository's host once, for real, through the same code: the newest merged pull request (read by number, a branch with none, its checks, its queued state), a reference pull request's line comments, and the stack extension; then the host tool's versions against the recorded ones and git against its floor. It prints only those lines. It exits 1 on an error (a read refused, an answer whose shape changed, git below 2.38, no host vendor for the origin); a warning (nothing to probe, the stack extension absent, a tool older than recorded) never fails. `--vendor` names the vendor to probe whatever the origin says.
+- `dialecte lot prune [<id>...] [--feature <name>] [--all] [--yes] [--json]` removes what a committed or canceled lot leaves behind: its worktree, its review throwaways (recorded by a step, or cut by hand at a commit of the lot) and its branches, each item on its own proof. Without `--yes` it prints the plan; `--yes` acts, each proof read again at the move, a branch deleted only at the tip proved. A lot whose worktree is gone and whose landing is not proven is listed stale with the command to stop it; worktrees git refused to delete from the trash are listed with the command to remove them.
+- `dialecte lot report` names `dialecte lot prune <lot>` as the next command of a committed or canceled lot whose worktree or branch is still there.
+- A git read a `lot prune` decision rests on that fails keeps the item with `could not read <what>: <git's error>`, and each branch's loss is read again right before its delete.
+
+### Changed
+
+- **Breaking:** the lot verbs that reach the host refuse an origin on another host (a self-hosted GitHub such as `github.company.com`, or a local path) with a message naming the host, where gh used to be asked anyway. Set the new personal key `host` to `github` (`dialecte config`; per repository through `repos:`) to use it. The key applies only when the origin names no known host.
+- The lot verbs that reach the host (`lot land`, `lot approve`, `lot review`, `lot close`, `lot stop`, `lot pr`, `lot status`) pick it from the repository's origin, on each call: a `github.com` origin in any form (https, scp, ssh, the port-443 `ssh.github.com`), or an ssh alias that `ssh -G` resolves to one of these.
+- `lot review` prints the pull request's files page as the host gives it.
+- The cli's own development now checks every `gh` call it makes against gh's description of itself: a field, flag or command gh does not have fails the cli's tests before a release.
+- The cli's own CI runs `doctor --host` on every pull request and merge-queue run, and weekly with a check that the host tool still describes every call the cli makes.
+- `dialecte lot close <lot id>` closes the lot itself: a lot with no registry entry closes from its own landing, and no registry entry is made for it any more. A canceled lot closes too, its landing never read. An open lot is kept with `lot <name> <state>: <why not landed>`.
+- `dialecte lot close` with an argument that names nothing still closes the others, and lists it; the exit code is 2.
+- A second `lot close <lot>` after its worktree went answers `already closed` (exit 0) when a recorded removal moved it, else `nothing to close` (exit 1).
+- `dialecte worktree prune` no longer removes a store lot's worktree, review throwaway or branch, and reads no landing: a committed or canceled lot's items are listed as its own, naming `dialecte lot close <lot>`.
+- `dialecte worktree prune` lists a committed or canceled lot's items as removed by `dialecte lot prune <lot>`, no longer by `lot close`.
+
+### Fixed
+
+- `dialecte gate --hook` without a declared `dialecte.gate.hook` runs every `--full` step. It used to drop a scoped step that counts no tests, so a scoped `rules` step (the default lists end with one) never ran at commit time and a rules error went through to CI. A scoped step runs against the hook base, the same base the hook prints. A commit on the default lists now runs `rules` on the change. Hook records of such a package stop answering once, because the hook's step list grew.
+- A hand-over keys its hook records with the base the hook printed when its commit hook runs `gate --hook` (directly or through `npm run`) and a hook step is scoped, not only a test step. A hook that runs something else, such as `npm run check`, prints no base: its record keys on its files alone and is stored and reused as before.
+- `lot close` archives a landed or canceled lot's own `.dialecte/lot.json` in its lot folder by the hand-over archive rule (`lot.json`, else `lot.landed.json` beside one holding other bytes, never over one), and reads a hand-over lot's landed fact through its `.dialecte/lot` link: a worktree whose declaration changed after the hand-over archived it no longer stays forever.
+- A store lot whose branch and worktree are gone (it landed through an old hand-over) reads its landing from its final card line when that card is its own, or a hand-over's on its branch whose entry names its worktree, written since the lot was made: `lot close` records its landed fact instead of leaving it working.
+- A landed lot with a pending registry entry closes on the first `lot close`: its entry is committed and read as committed in the same run. Every hand-over entry of a closed worktree records its close, so a later `lot close` of it answers `already closed`. The card line of a lot closed with no registry entry carries no card.
+- The lost-work check before a worktree's removal reads the worktree's own refs (`refs/worktree/`, `refs/bisect/`): a commit only they hold is no longer lost with the worktree.
+- `lot close`, `lot prune` and `worktree prune` keep a worktree whose HEAD reflog or own refs cannot be read, with `could not read <what>: <git's error>`: its records are no longer taken for none.
+
 ## [0.8.3] - 2026-11-18
 
 ### Added
