@@ -438,9 +438,11 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           until git's garbage collection, its upstream config is not restored; worktrees git refused
           to delete from the trash for more than ten minutes are listed with their git status and
           the forced removal, a throwaway its second proof left in the trash with why and the
-          command that moves it back; ids, --feature and --all exclude each other; exit 1 when an
-          item meant to go was kept (one another run removed since the plan is no failure), 2 for a
-          usage error or an id that names no lot or more than one
+          command that moves it back; a git read an item's decision rests on that fails keeps the
+          item (could not read <what>: <git's error>), never reads as empty; ids, --feature and
+          --all exclude each other; exit 1 when an item meant to go was kept (one another run
+          removed since the plan is no failure), 2 for a usage error or an id that names no lot or
+          more than one
   close - closes a lot or a hand-over: a hand-over of the registry (by name or index), or a lot (its
           id, name or index), with no registry entry needed; first the landing of every lot the
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
@@ -893,6 +895,11 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     second proof left in the trash is listed under `left in the trash by its proof: <worktree>: <why>` with its
     `git status` and the command that moves it back (`cd <main> && git worktree move <worktree> <where it was>`),
     never with the forced removal: it holds what no commit holds.
+
+    A git read an item's decision rests on (the stashes, a branch's commits or reflog, a hand-made throwaway's
+    reflog) that fails keeps the item with `could not read <what>: <git's error>`: it never reads as empty. Right
+    before a branch's delete its loss is read again alone, so a branch another run deleted since the plan cannot
+    leave this one holding the only copy of a commit.
 
     What `--yes` cannot take back: a throwaway's `--force` removal starts right after its second proof, so a file
     written into it in that moment goes with it. A deleted branch is restorable with `git branch <branch> <tip>`

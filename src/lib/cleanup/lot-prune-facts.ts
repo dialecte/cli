@@ -34,6 +34,7 @@ import { listProcessFolders, processWorkingIn } from '../worktree/process-folder
 import { linkReaching, mutationRunKeeping, readOwnedRuns } from '../worktree/prune-worktrees.ts'
 import { isParked } from '../worktree/trash.ts'
 import { STASH_SUBJECT_PATTERN } from '../worktree/worktree.constants.ts'
+import { linesOf, readGitOrWhy } from './git-read.ts'
 import { matchHandMadeThrowaways } from './hand-made-throwaways.ts'
 import {
 	PRUNE_FACT_TEXTS,
@@ -53,6 +54,7 @@ import type { ListedWorktree, ProcessFolder } from '../worktree/worktree.types.t
 import type {
 	BranchFacts,
 	BranchHolders,
+	BranchLoss,
 	CandidateBranch,
 	LotFacts,
 	PruneReads,
@@ -257,13 +259,16 @@ export function holdersOf(params: {
 		const parentBranch = branchOfLot.get(stack.parent)
 		if (parentBranch !== undefined) stackParents.set(parentBranch, `${child.name} (${child.state})`)
 	}
+	const stashList = readGitOrWhy({
+		root: params.main,
+		args: ['stash', 'list', '--format=%gs'],
+		what: 'the stashes',
+	})
 	const stashes = new Set(
-		(tryReadGit({ root: params.main, args: ['stash', 'list', '--format=%gs'] }) ?? '')
-			.split('\n')
-			.flatMap((subject) => {
-				const branch = STASH_SUBJECT_PATTERN.exec(subject)?.[1]
-				return branch === undefined ? [] : [branch]
-			}),
+		('output' in stashList ? linesOf(stashList.output) : []).flatMap((subject) => {
+			const branch = STASH_SUBJECT_PATTERN.exec(subject)?.[1]
+			return branch === undefined ? [] : [branch]
+		}),
 	)
 	const pendingHandovers = new Map(
 		params.entries
@@ -281,7 +286,15 @@ export function holdersOf(params: {
 					: [[worktree.branch, realPathOf(worktree.path)] as const],
 			),
 	)
-	return { openLots, stackParents, damagedStacks, stashes, pendingHandovers, checkedOut }
+	return {
+		openLots,
+		stackParents,
+		damagedStacks,
+		stashes,
+		...('why' in stashList && { stashesUnread: stashList.why }),
+		pendingHandovers,
+		checkedOut,
+	}
 }
 
 /** One lot's records and settled landing. */
@@ -431,29 +444,28 @@ function waitingBranchesOf(params: { reads: PruneReads; lot: ReadLot }): Candida
 	const { reads, lot } = params
 	const registered = new Set(reads.worktrees.flatMap((worktree) => worktree.branch ?? []))
 	return reads.removals
-		.filter(
-			(removal: Removal) =>
-				removal.lot === lot.lot &&
+		.flatMap(function removedThrowaway(removal: Removal): { branch: string; tip: string }[] {
+			const { branch, tip } = removal
+			const removed = removal.outcome === 'trashed' || removal.outcome === 'deleted'
+			return removal.lot === lot.lot &&
 				removal.item === 'throwaway' &&
-				removal.branch !== null &&
-				removal.tip !== null &&
-				(removal.outcome === 'trashed' || removal.outcome === 'deleted'),
-		)
-		.flatMap(function waitingOf(removal): {
-			branch: string
-			tip: string
-			own: boolean
-			notMatched?: string
-		}[] {
-			const branch = removal.branch ?? ''
+				removed &&
+				branch !== null &&
+				tip !== null
+				? [{ branch, tip }]
+				: []
+		})
+		.flatMap(function waitingOf(removal): CandidateBranch[] {
+			const { branch } = removal
 			if (registered.has(branch)) return []
 			const tip = branchTipOf({ main: reads.main, branch })
 			if (tip === undefined) return []
+			// a failed read reads as not descending: the branch is then not matched, so kept
 			const descends =
 				tip === removal.tip ||
 				tryReadGit({
 					root: reads.main,
-					args: ['merge-base', '--is-ancestor', removal.tip ?? '', tip],
+					args: ['merge-base', '--is-ancestor', removal.tip, tip],
 				}) !== undefined
 			return [
 				{
@@ -489,20 +501,20 @@ function recordedThrowawaysOf(params: { reads: PruneReads; lot: ReadLot }): Reco
 			(worktree) => realPathOf(worktree.path) === realPathOf(path),
 		)
 		// moved into the trash by a removal its proof stopped: still the lot's, registered under the trash
-		const trashed = [...reads.leftInTrash].find(
-			([, left]) => realPathOf(left.path) === realPathOf(path),
-		)?.[0]
+		const left = [...reads.leftInTrash].find(
+			([, entry]) => realPathOf(entry.path) === realPathOf(path),
+		)
 		const inTrash =
-			registered === undefined && trashed !== undefined
-				? reads.worktrees.find((worktree) => realPathOf(worktree.path) === trashed)
+			registered === undefined && left !== undefined
+				? reads.worktrees.find((worktree) => realPathOf(worktree.path) === left[0])
 				: undefined
-		if (inTrash !== undefined && trashed !== undefined)
+		if (inTrash !== undefined && left !== undefined)
 			return {
 				path: inTrash.path,
 				branch: inTrash.branch,
 				listed: undefined,
 				gone: false,
-				left: reads.leftInTrash.get(trashed)?.reason ?? '',
+				left: left[1].reason,
 			}
 		const gone = registered !== undefined && isPrunable(registered)
 		return {
@@ -522,7 +534,7 @@ function lostByBranch(params: {
 	reads: PruneReads
 	lots: readonly ReadLot[]
 	candidates: ReadonlyMap<string, { branch: string; tip: string }[]>
-}): ReadonlyMap<string, BranchFacts['lost']> {
+}): ReadonlyMap<string, BranchLoss> {
 	const { reads } = params
 	const branches = [
 		...new Set(
@@ -537,21 +549,21 @@ function lostByBranch(params: {
 	)
 	const lost = lostWork({ root: reads.main, removes: { worktrees: [], branches }, landedTips })
 	return new Map(
-		branches.map(function lostOfBranch(branch) {
-			const reached = new Set(
-				[
-					...(
-						tryReadGit({ root: reads.main, args: ['rev-list', `refs/heads/${branch}`] }) ?? ''
-					).split('\n'),
-					...(
-						tryReadGit({
-							root: reads.main,
-							args: ['reflog', 'show', '--format=%H', `refs/heads/${branch}`, '--'],
-						}) ?? ''
-					).split('\n'),
-				].filter(Boolean),
-			)
-			return [branch, lost.filter((commit) => reached.has(commit.commit))]
+		branches.map(function lostOfBranch(branch): [string, BranchLoss] {
+			const commits = readGitOrWhy({
+				root: reads.main,
+				args: ['rev-list', `refs/heads/${branch}`],
+				what: `the commits of ${branch}`,
+			})
+			const reflog = readGitOrWhy({
+				root: reads.main,
+				args: ['reflog', 'show', '--format=%H', `refs/heads/${branch}`, '--'],
+				what: `the reflog of ${branch}`,
+			})
+			if ('why' in commits) return [branch, { lost: [], unread: commits.why }]
+			if ('why' in reflog) return [branch, { lost: [], unread: reflog.why }]
+			const reached = new Set([...linesOf(commits.output), ...linesOf(reflog.output)])
+			return [branch, { lost: lost.filter((commit) => reached.has(commit.commit)) }]
 		}),
 	)
 }
@@ -562,7 +574,7 @@ function lotFactsOf(params: {
 	lot: ReadLot
 	worktree: WorktreeFacts | undefined
 	candidates: ReadonlyMap<string, CandidateBranch[]>
-	lost: ReadonlyMap<string, BranchFacts['lost']>
+	lost: ReadonlyMap<string, BranchLoss>
 }): LotFacts {
 	const { reads, lot, worktree } = params
 	const identityWorktree = lot.identity?.worktree
@@ -578,22 +590,28 @@ function lotFactsOf(params: {
 					),
 					...handMadeOf({ reads, lot, terminal }),
 				]
-	const branches = (params.candidates.get(lot.lotFolder) ?? []).map((candidate): BranchFacts => ({
-		branch: candidate.branch,
-		tip: candidate.tip,
-		own: candidate.own,
-		lost: params.lost.get(candidate.branch) ?? [],
-		sinceLanding:
-			candidate.own && lot.landedTip !== undefined && lot.identity !== undefined
-				? workSinceLanding({
-						root: reads.main,
-						branch: candidate.branch,
-						cut: lot.identity.base.commit,
-						landedTip: lot.landedTip,
-					})
-				: [],
-		...(candidate.notMatched !== undefined && { notMatched: candidate.notMatched }),
-	}))
+	const branches = (params.candidates.get(lot.lotFolder) ?? []).map(
+		function branchFactsOf(candidate): BranchFacts {
+			const loss = params.lost.get(candidate.branch)
+			return {
+				branch: candidate.branch,
+				tip: candidate.tip,
+				own: candidate.own,
+				lost: loss?.lost ?? [],
+				...(loss?.unread !== undefined && { unread: loss.unread }),
+				sinceLanding:
+					candidate.own && lot.landedTip !== undefined && lot.identity !== undefined
+						? workSinceLanding({
+								root: reads.main,
+								branch: candidate.branch,
+								cut: lot.identity.base.commit,
+								landedTip: lot.landedTip,
+							})
+						: [],
+				...(candidate.notMatched !== undefined && { notMatched: candidate.notMatched }),
+			}
+		},
+	)
 	return {
 		lot: lot.lot,
 		lotFolder: lot.lotFolder,
@@ -710,6 +728,7 @@ function handMadeOf(params: {
 	return matched.map(function handMadeFactsOf(match): ThrowawayFacts {
 		const listed = reads.worktrees.find((worktree) => realPathOf(worktree.path) === match.path)
 		const base = { path: match.path, branch: match.branch, handMade: true }
+		if (match.unread !== undefined) return { ...base, decision: { kept: match.unread } }
 		const kept = commonKeepOf({ reads, path: match.path, branch: match.branch, listed })
 		if (kept !== undefined) return { ...base, decision: { kept } }
 		return {
@@ -799,7 +818,7 @@ export function leftInTrashOf(main: string): ReadonlyMap<string, LeftInTrash> {
 				? [
 						[
 							realPathOf(removal.trashed),
-							{ path: removal.path, reason: removal.reason ?? '' },
+							{ path: removal.path, reason: removal.reason ?? PRUNE_FACT_TEXTS.leftInTrash },
 						] as const,
 					]
 				: [],

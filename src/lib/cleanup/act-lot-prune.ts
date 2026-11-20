@@ -23,6 +23,7 @@ import {
 } from '../handover/handover-store.ts'
 import { REMOVAL_ID_PREFIX } from '../handover/handover.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { lostWork, lostWorkText } from '../landing/lost-work.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { listProcessFolders } from '../worktree/process-folders.ts'
@@ -433,6 +434,10 @@ function deleteBranches(params: {
 	const store = findHandoverStore(main)
 	// read after the throwaway acts: this run's left-in-trash removals are written by then
 	const leftInTrash = leftInTrashOf(main)
+	// the landed tips the plan's joint proof held, read again with each branch's own proof at its delete
+	const landedTips = repository.lots.flatMap((lot) =>
+		'landed' in lot.settled && lot.landedTipGone === undefined ? [lot.settled.landed.tip] : [],
+	)
 	return params.planned.lots.flatMap(function deleteOfLot(lot): [string, ActedItem][] {
 		const facts = lotOf({ repository, lot: lot.lot })
 		return lot.items
@@ -442,7 +447,15 @@ function deleteBranches(params: {
 				const proved = facts.branches.find((branch) => branch.branch === item.name)
 				if (proved === undefined) return [key, { kept: ACT_TEXTS.notDecided }]
 				const outcome = tryTo(() =>
-					deleteAtMove({ ...params, main, store, leftInTrash, lot: lot.lot, branch: proved }),
+					deleteAtMove({
+						...params,
+						main,
+						store,
+						leftInTrash,
+						lot: lot.lot,
+						branch: proved,
+						landedTips,
+					}),
 				)
 				return [key, actedOf(outcome)]
 			})
@@ -458,6 +471,8 @@ function deleteAtMove(params: {
 	store: string | undefined
 	lot: string
 	branch: BranchFacts
+	/** The landed tips of the run's lots: commits they hold are not lost. */
+	landedTips: readonly string[]
 	started: ReadonlySet<string>
 	leftInTrash: ReadonlyMap<string, LeftInTrash>
 	by: RemovalBy
@@ -486,6 +501,17 @@ function deleteAtMove(params: {
 	// through its worktree's checkout, read above
 	const held = heldByOthers({ holders, branch: branch.branch })
 	if (held !== undefined) return { kept: held }
+	// its loss read again now: another run may have deleted a branch holding the same commits since the plan (a tip
+	// moved since is left to git, which refuses the delete at the tip proved)
+	const lost =
+		tip === branch.tip
+			? lostWork({
+					root: main,
+					removes: { worktrees: [], branches: [branch.branch] },
+					landedTips: [...params.landedTips],
+				})
+			: []
+	if (lost.length > 0) return { kept: lostWorkText(lost) }
 	return deleteRef({
 		main,
 		file: cardsLogFileOf(main),

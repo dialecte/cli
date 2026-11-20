@@ -16,4 +16,5 @@ export const PRUNE_FACT_TEXTS = {
 	handoverRunning: 'a hand-over runs in it',
 	openHandover: 'hand-over {name} {state} names it',
 	statusUnread: 'git cannot read its status',
+	leftInTrash: 'a removal left it in the trash',
 } as const

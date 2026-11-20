@@ -10,5 +10,5 @@ export type HandMadeLot = {
 /** A registered worktree no lot nor hand-over owns, on its own branch: where, and that branch. */
 export type CandidateWorktree = { path: string; branch: string }
 
-/** A hand-made throwaway matched to a lot. */
-export type HandMadeMatch = { lot: string; path: string; branch: string }
+/** A hand-made throwaway matched to a lot; `unread`: a read the match rests on failed, so it is kept with why. */
+export type HandMadeMatch = { lot: string; path: string; branch: string; unread?: string }

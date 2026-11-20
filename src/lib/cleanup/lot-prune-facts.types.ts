@@ -39,6 +39,8 @@ export type BranchHolders = {
 	damagedStacks: readonly string[]
 	/** The branches a stash was made on. */
 	stashes: ReadonlySet<string>
+	/** Why the stashes could not be read: every branch is then kept, any of them may hold one. */
+	stashesUnread?: string
 	/** A branch a pending hand-over commits on: the hand-over's name. */
 	pendingHandovers: ReadonlyMap<string, string>
 	/** A branch a registered worktree has checked out (parked ones left out): that worktree's path. */
@@ -92,7 +94,12 @@ export type BranchFacts = {
 	sinceLanding: readonly string[]
 	/** Why a branch named in a `removing` line is not the throwaway's any more (recreated at another tip). */
 	notMatched?: string
+	/** Why the commits it reaches could not be read: it is kept, its deletion's loss not known. */
+	unread?: string
 }
+
+/** The commits deleting a branch would lose, or why the commits it reaches could not be read. */
+export type BranchLoss = { lost: readonly LostCommit[]; unread?: string }
 
 /** A lot of the repository's store: its name, folder, identity and state (`damaged` when its records do not read). */
 export type StoreLot = {

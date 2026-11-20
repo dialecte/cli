@@ -16,6 +16,7 @@ import type {
 	LotPruneFacts,
 	RepositoryFacts,
 	ThrowawayFacts,
+	WorktreeFacts,
 } from './lot-prune-facts.types.ts'
 import type { ItemDecision, LotPlan, LotPrunePlan, PlannedItem } from './plan-lot-prune.types.ts'
 
@@ -100,7 +101,7 @@ function planLot(params: { repository: RepositoryFacts; lot: LotFacts }): LotPla
 					{
 						item: 'worktree' as const,
 						name: lot.worktree.path,
-						decision: worktreeDecision({ repository, lot, open }),
+						decision: worktreeDecision({ repository, worktree: lot.worktree, open }),
 					},
 				]),
 		...lot.throwaways.map((throwaway): PlannedItem => ({
@@ -133,15 +134,13 @@ function openReason(lot: LotFacts): string | undefined {
 /** The lot's worktree: kept with its lot's state, the processes not known, or its close's own reason; else it goes. */
 function worktreeDecision(params: {
 	repository: RepositoryFacts
-	lot: LotFacts
+	worktree: WorktreeFacts
 	open: string | undefined
 }): ItemDecision {
-	const { repository, lot, open } = params
+	const { repository, worktree, open } = params
 	if (open !== undefined) return { kept: open }
 	if (repository.processes !== 'known') return { kept: repository.processes }
-	const worktree = lot.worktree
-	if (worktree === undefined || 'kept' in worktree) return { kept: worktree?.kept ?? '' }
-	return { go: true }
+	return 'kept' in worktree ? { kept: worktree.kept } : { go: true }
 }
 
 /** A throwaway: kept with its lot's state, the processes not known, not matched, its keep rule or its proof's reason. */
@@ -186,6 +185,7 @@ function branchDecision(params: {
 				values: { why: branch.notMatched },
 			}),
 		}
+	if (branch.unread !== undefined) return { kept: branch.unread }
 	const held = heldBy({ repository, branch: branch.branch })
 	if (held !== undefined) return { kept: held }
 	const kept = keptByWork({ repository, lot, branch })
@@ -257,7 +257,7 @@ export function heldByOthers(params: {
 	if (handover !== undefined)
 		return fillMessage({ template: PRUNE_PLAN_TEXTS.pendingHandover, values: { name: handover } })
 	if (holders.stashes.has(branch)) return PRUNE_PLAN_TEXTS.stash
-	return undefined
+	return holders.stashesUnread
 }
 
 /** Why a terminal lot's branch stays by its landing: not landed, not read, or work since; undefined: it may go. */
