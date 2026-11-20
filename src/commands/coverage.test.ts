@@ -1,16 +1,25 @@
+import { existsSync } from 'node:fs'
+import { join, relative } from 'node:path'
+
+import { DISCOVERY_CACHE, VERSION } from '../../test/bench-repository.constants.ts'
+import { packageFilesOf } from '../../test/bench-repository.ts'
+import { temporaryFolder, writeFiles } from '../../test/scratch-repository.ts'
+import { linesWritten, spyStreams } from '../../test/stream-spies.ts'
 import {
 	attributeValue,
 	deepestPath,
+	generateTargetCoverage,
 	genApiProbe,
 	genCalls,
 	genDeepProbe,
 	genNarrowing,
 	genSurface,
+	run as runCoverage,
 } from './coverage.ts'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { Binding } from '../lib/config.types.ts'
+import type { Binding, Target } from '../lib/config.types.ts'
 import type { DialecteSchema } from './coverage.types.ts'
 
 const NS: Binding = { kind: 'namespace', name: 'Scl', import: '@/v1' }
@@ -154,4 +163,91 @@ describe('genApiProbe', () => {
 		expect(out).toContain('declare const q: Core.Query<Cfg>')
 		expect(out).toContain('declare const doc: Core.Document<Cfg>')
 	})
+})
+
+const DEMO_TARGET: Target = {
+	version: VERSION,
+	binding: { kind: 'namespace', name: 'Demo', import: `@/${VERSION}` },
+	constantsDir: `./src/${VERSION}/definition`,
+	outDir: `./benchmarks/types/${VERSION}/generated`,
+}
+const PROBES = [
+	'baseline.ts',
+	'coverage.calls.generated.ts',
+	'coverage.deep.generated.ts',
+	'coverage.surface.generated.ts',
+]
+
+describe('generateTargetCoverage: the probes of a package in another folder than the process', () => {
+	it('→ the probes land in that package, the api probe with them', async () => {
+		const root = temporaryFolder('dialecte-coverage-target-')
+		writeFiles({ root, files: packageFilesOf() })
+
+		await expect(
+			generateTargetCoverage({ root, target: DEMO_TARGET, tsconfig: 'tsconfig.build.json' }).then(
+				function writtenIn(coverage) {
+					return {
+						written: coverage.written.map((path) => relative(root, path)).sort(),
+						discoveryFailure: coverage.discoveryFailure,
+					}
+				},
+			),
+		).resolves.toEqual({
+			written: [...PROBES, 'coverage.api.generated.ts']
+				.sort()
+				.map((name) => `benchmarks/types/${VERSION}/generated/${name}`),
+			discoveryFailure: undefined,
+		})
+	})
+
+	it('method discovery fails → the failure is returned, the api probe left out; the coverage command still prints its warning', async () => {
+		const root = temporaryFolder('dialecte-coverage-target-')
+		writeFiles({ root, files: { ...packageFilesOf(), [DISCOVERY_CACHE]: 'a file\n' } })
+
+		await expect(
+			generateTargetCoverage({ root, target: DEMO_TARGET, tsconfig: 'tsconfig.build.json' }).then(
+				async function writtenIn(coverage) {
+					const streams = spyStreams()
+					vi.spyOn(process, 'cwd').mockReturnValue(root)
+					await runCoverage(['--no-format'])
+					return {
+						written: coverage.written.map((path) => relative(root, path)).sort(),
+						discoveryFailure: coverage.discoveryFailure,
+						warned: linesWritten(streams.stderr).some((line) =>
+							line.includes('method-surface discovery failed'),
+						),
+					}
+				},
+			),
+		).resolves.toEqual({
+			written: PROBES.map((name) => `benchmarks/types/${VERSION}/generated/${name}`),
+			discoveryFailure: expect.any(String),
+			warned: true,
+		})
+	})
+
+	it('method discovery fails, an api probe left by an earlier run → that probe is removed: no stale probe is measured', async () => {
+		const root = temporaryFolder('dialecte-coverage-target-')
+		const staleProbe = `benchmarks/types/${VERSION}/generated/coverage.api.generated.ts`
+		writeFiles({
+			root,
+			files: {
+				...packageFilesOf(),
+				[DISCOVERY_CACHE]: 'a file\n',
+				[staleProbe]: 'export type Stale = 1\n',
+			},
+		})
+
+		await expect(
+			generateTargetCoverage({ root, target: DEMO_TARGET, tsconfig: 'tsconfig.build.json' }).then(
+				function staleLeft() {
+					return existsSync(join(root, staleProbe))
+				},
+			),
+		).resolves.toBe(false)
+	})
+})
+
+afterEach(() => {
+	vi.restoreAllMocks()
 })

@@ -27,6 +27,9 @@ export const STEP_WIRING_HASH_MARKS = { unwired: 'unwired', optedOut: 'opted-out
 /** A gate step whose command checks the rules (`dialecte rules`): its key folds in the machine's lists. */
 export const RULES_STEP_PATTERN = /\brules\b/
 
+/** A gate step whose command runs the type bench (`npm run type-bench:check`): the change base reaches it alone. */
+export const TYPE_BENCH_STEP_PATTERN = /\btype-bench\b/
+
 /** The folder (in the system's temporary folder) a commit's index is copied to for `git write-tree`. */
 export const COMMIT_INDEX_FOLDER_PREFIX = 'dialecte-commit-index-'
 

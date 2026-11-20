@@ -16,8 +16,10 @@ import { releasedSectionChanges } from '../changelog/released-sections.ts'
  * base, else the base branch's merge-base as the gate's scoped rules step takes it, else the last release tag; a
  * rehearsal's against the last merge lot's tip, else the base its repository resolves): an error of a quality rule
  * on a line the base already holds is a warning, `(not added by this change)`. Then the package's
- * `dialecte.contrib.steps` (else the docs build and the type bench) run as the gate runs its steps, `release` (no
- * dependency named by a local folder), then `mutation`, read from the mutation store now and never recorded (only
+ * `dialecte.contrib.steps` (else the docs build and the type bench) run as the gate runs its steps, the type-bench
+ * step alone handed the base of the change (`DIALECTE_CHANGE_BASE`: the rules row's base when it is a commit, a
+ * rehearsal's last merge tip, else the lot base its repository resolves; a rehearsal with none does not run it),
+ * `release` (no dependency named by a local folder), then `mutation`, read from the mutation store now and never recorded (only
  * when the package declares a mutation scope). A package step a green `gate --full` record of this tree and install
  * passed with the same name and command is not run again.
  *
@@ -31,6 +33,7 @@ import { hasFlag } from '../config.ts'
 import { partsOf, reuseOf, startStep } from '../events/record-step.ts'
 import { computeCheckKey } from '../gate-records/check-key.ts'
 import { findReusableRecord, originOfRecord } from '../gate-records/check-store.ts'
+import { TYPE_BENCH_STEP_PATTERN } from '../gate-records/gate-records.constants.ts'
 import { recordCheckedRun, renderReuseLine, reusedResults } from '../gate-records/record-reuse.ts'
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { resolveConfiguredBase } from '../gate/gate-base.ts'
@@ -44,7 +47,7 @@ import { renderAbsentDerivedLines, validateGateConfig } from '../gate/gate-confi
 import { runGateSteps } from '../gate/run-gate.ts'
 import { renderStepDetail } from '../gate/step-line.ts'
 import { findUnwiredSteps } from '../gate/unwired-steps.ts'
-import { currentBranchOf, readGit, readHeadOrNone } from '../git.ts'
+import { currentBranchOf, readCommitOrNone, readGit, readHeadOrNone } from '../git.ts'
 import { GIVEN_ENVIRONMENT } from '../given-environment.constants.ts'
 import { readMutationMode } from '../mutation/lot-mode.ts'
 import { MUTATION_GATE_NAME } from '../mutation/pending-verdict.constants.ts'
@@ -62,6 +65,7 @@ import {
 } from '../release/local-dependencies.ts'
 import { checkRules, renderRuleFinding } from '../rules/check-rules.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
+import { RULES_BASE_LINE_PREFIX } from '../rules/lot-base.constants.ts'
 import { readBaseWithLine } from '../rules/lot-base.ts'
 import {
 	baseBranchReleaseOf,
@@ -84,6 +88,7 @@ import {
 	CONTRIB_RECORD_MODE,
 	CONTRIB_NO_COMMIT,
 	CONTRIB_NO_REPOSITORY,
+	NO_CHANGE_BASE_REASON,
 	NO_CHANGED_FILE_NOTE,
 	NO_LOCAL_DEPENDENCY_NOTE,
 	RULES_FIRST_ERROR,
@@ -120,6 +125,12 @@ export async function runContrib(params: {
 	 * error stays one. Without it, the row takes the lot's base (`resolveRulesBase`; none when it finds none).
 	 */
 	rulesBase?: string | null
+	/**
+	 * The base the type-bench step measures the change from (`DIALECTE_CHANGE_BASE`, that step alone): a rehearsal
+	 * passes the tip its last merge lot merges, else the lot base its repository resolves; `null`: none, the type-bench
+	 * row is not run. Without it, the rules row's base when it is a commit. A value that is no commit is never handed.
+	 */
+	changeBase?: string | null
 	/**
 	 * What the changelog row judges released `CHANGELOG.md` sections against: a rehearsal passes the release base its
 	 * repository resolves (its clone's base branch is the lot's); `null`: none. Without it, the package's base branch.
@@ -187,14 +198,20 @@ export async function runContrib(params: {
 	}
 	if (found && progress)
 		live?.writeLine(renderReuseLine({ command: CONTRIB_COMMAND, record: found }))
+	// resolved once per run, for the rules row; the type-bench step's base follows it unless one is handed
+	const rulesBase = found ? {} : rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase })
 	const run = found
 		? reusedRun({ results: reusedResults({ record: found, steps: packageStepsOf(steps) }) })
 		: await runRows({
 				root: cwd,
 				steps,
 				packageJson,
-				// resolved once per run, for the rules row only
-				...rulesBaseOf({ root: cwd, head, rulesBase: params.rulesBase }),
+				...rulesBase,
+				changeBase: changeBaseOf({
+					root: cwd,
+					changeBase: params.changeBase,
+					rulesBase: rulesBase.rulesBase,
+				}),
 				releaseBase,
 				gate: reusable ? fullGateRecordsOf({ root: cwd, packageJson }) : undefined,
 				progress,
@@ -325,6 +342,8 @@ async function runRows(params: {
 	rulesBase?: string
 	/** Why there is no base, when the worktree's lot base cannot be read: the rules row's note. */
 	rulesNoBase?: string
+	/** The commit the type-bench step measures the change from; `null`: none, that row is not run. */
+	changeBase: string | null | undefined
 	/** What the changelog row judges released sections against; `null`: none found. */
 	releaseBase: ReleaseBase | null
 	/** The current `gate --full` records; undefined with `--no-reuse`. */
@@ -373,6 +392,18 @@ async function runRows(params: {
 			if (progress) showLive({ result: judged })
 			continue
 		}
+		if (params.changeBase === null && TYPE_BENCH_STEP_PATTERN.test(step.run)) {
+			const result: StepResult = {
+				step,
+				status: 'not-run',
+				counts: {},
+				restored: [],
+				reason: NO_CHANGE_BASE_REASON,
+			}
+			run.results.push(result)
+			if (progress) showLive({ result })
+			continue
+		}
 		const passed = gate && !packageStepFailed ? findPassedGateStep({ gate, step }) : undefined
 		if (packageStepFailed || passed) {
 			const result: StepResult = passed
@@ -387,6 +418,7 @@ async function runRows(params: {
 			root,
 			steps: [step],
 			packageJson,
+			...(typeof params.changeBase === 'string' && { changeBase: params.changeBase }),
 			// always: the run's events time each part, progress shown or not (D8)
 			announce: function announce(announced) {
 				const finishPart = recorder.startPart({
@@ -457,7 +489,24 @@ function rulesBaseOf(params: {
 	if (params.rulesBase !== undefined) return { rulesBase: params.rulesBase }
 	const read = readBaseWithLine({ root: params.root, head: params.head, emptyTreeRequest: false })
 	if (read === undefined) return {}
-	return 'base' in read ? { rulesBase: read.base } : { rulesNoBase: read.line }
+	return 'base' in read
+		? { rulesBase: read.base }
+		: { rulesNoBase: `${RULES_BASE_LINE_PREFIX}${read.line}` }
+}
+
+/**
+ * The commit the type-bench step measures the change from: `changeBase` when given (`null`: none, the row is not run),
+ * else the rules row's base; handed only when it is a commit, else nothing (the bench's own order answers).
+ */
+function changeBaseOf(params: {
+	root: string
+	changeBase: string | null | undefined
+	rulesBase: string | undefined
+}): string | null | undefined {
+	if (params.changeBase === null) return null
+	const candidate = params.changeBase ?? params.rulesBase
+	if (candidate === undefined) return undefined
+	return readCommitOrNone({ root: params.root, ref: candidate })
 }
 
 /** The `gate --full` records the package steps may reuse, read with the gate base (`resolveConfiguredBase`, once). */

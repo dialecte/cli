@@ -342,6 +342,50 @@ describe(
 	},
 )
 
+describe(
+	'dialecte rules: a base given or handed prints no base line',
+	{ timeout: SCRATCH_GIT_CASE_TIMEOUT },
+	() => {
+		it('--base <ref> in a lot worktree → no base line, in the text nor the json', () => {
+			const worktree = createLotWorktree({ source: 'lot-link' })
+			const environment = machineOf()
+
+			const text = runRules({ cwd: worktree.root, argv: ['--base', 'main'], environment })
+			const json = runRules({ cwd: worktree.root, argv: ['--base', 'main', '--json'], environment })
+
+			expect({
+				textLines: text.output
+					.split('\n')
+					.filter(
+						(line) => line.startsWith(BASE_LINE_PREFIX) || line.startsWith(NO_BASE_LINE_PREFIX),
+					),
+				jsonBaseLine: (JSON.parse(json.output) as { baseLine?: string }).baseLine,
+			}).toEqual({ textLines: [], jsonBaseLine: undefined })
+		})
+
+		it('the empty tree as the gate base (gate --release), a lot base that reads → no base line: only a failure is said', () => {
+			const worktree = createLotWorktree({ source: 'lot-link' })
+			const emptyTree = git({
+				root: worktree.root,
+				args: ['hash-object', '-t', 'tree', '/dev/null'],
+			}).trim()
+			const environment = { ...machineOf(), [GATE_BASE_VARIABLE]: emptyTree }
+
+			const text = runRules({ cwd: worktree.root, argv: [TEST_FILE], environment })
+			const json = runRules({ cwd: worktree.root, argv: [TEST_FILE, '--json'], environment })
+
+			expect({
+				textLines: text.output
+					.split('\n')
+					.filter(
+						(line) => line.startsWith(BASE_LINE_PREFIX) || line.startsWith(NO_BASE_LINE_PREFIX),
+					),
+				jsonBaseLine: (JSON.parse(json.output) as { baseLine?: string }).baseLine,
+			}).toEqual({ textLines: [], jsonBaseLine: undefined })
+		})
+	},
+)
+
 const OUTSIDE_FILE = 'src/widget/make-widget.ts'
 const OUTSIDE_MODULE = ['export const makeWidget = () => 1', ''].join('\n')
 

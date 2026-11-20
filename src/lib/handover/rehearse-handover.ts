@@ -29,13 +29,20 @@ import { CHECK_STORE_VARIABLE, SHORT_SHA_LENGTH } from '../gate-records/gate-rec
 import { computeStateTree } from '../gate-records/state-hash.ts'
 import { RELEASE_BASE_VARIABLE } from '../gate/selection.constants.ts'
 import { readHooksFolder } from '../git-hooks.ts'
-import { listChangedFiles, mainCheckoutOf, readGit, readGitConfig } from '../git.ts'
+import {
+	listChangedFiles,
+	mainCheckoutOf,
+	readCommitOrNone,
+	readGit,
+	readGitConfig,
+} from '../git.ts'
 import { textOf } from '../print/print.ts'
 import { ownProcessStartTime } from '../process-start-time.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { stopLiveGroups } from '../progress/interrupt-forwarding.ts'
 import { FORWARDED_SIGNALS } from '../progress/progress.constants.ts'
 import { createStepProgress } from '../progress/step-progress.ts'
+import { resolveRulesBase } from '../rules-base.ts'
 import { baseBranchReleaseOf } from '../rules/released-changelog.ts'
 import { makeScratchFolder, writeScratchMarker } from '../scratch/make-scratch-folder.ts'
 import { scratchRoot, systemTemporaryFolder } from '../scratch/scratch-root.ts'
@@ -85,6 +92,7 @@ import type {
 	HandoverProbe,
 	RehearsalDecision,
 	RehearsalPool,
+	ResolvedLot,
 	ScratchRoots,
 	WriteLine,
 } from './handover.types.ts'
@@ -254,7 +262,12 @@ async function rehearseRecorded(
 				pool,
 				owner,
 			})
-			const siblings = linkRehearsalSiblings({ repository, folder, clone })
+			const siblings = linkRehearsalSiblings({
+				repository,
+				packageFolder: repository,
+				folder,
+				clone,
+			})
 			links.push(...siblings.links)
 			for (const line of siblings.lines) write(line)
 		} catch (error) {
@@ -276,6 +289,11 @@ async function rehearseRecorded(
 					}).trim(),
 					tree: contribRun.tree,
 					rulesBase: lastMergeTipOf(handover.lots) ?? gateScope.base?.commit ?? null,
+					changeBase: rehearsalChangeBaseOf({
+						repository,
+						lots: handover.lots,
+						head: handover.lotsFile.head,
+					}),
 					releaseBase,
 					write,
 					progress,
@@ -627,6 +645,11 @@ async function runContribInClone(params: {
 	 * the clone's own base branch (its `origin/HEAD` names the lot branch).
 	 */
 	rulesBase: string | null
+	/**
+	 * The commit contrib's type-bench step measures the change from (`rehearsalChangeBaseOf`); `null`: none, that row is
+	 * not run, never measured against the clone's own order.
+	 */
+	changeBase: string | null
 	/** What the changelog row judges released sections against: the repository's base branch; `null`: none. */
 	releaseBase: ReleaseBase | null
 	write: WriteLine
@@ -664,6 +687,7 @@ async function runContribInClone(params: {
 			argv: [],
 			storeRoot: repository,
 			rulesBase: params.rulesBase,
+			changeBase: params.changeBase,
 			releaseBase: params.releaseBase,
 		})
 		running.finish(
@@ -680,6 +704,22 @@ async function runContribInClone(params: {
 		}
 		copyWorkingTree({ repository, clone })
 	}
+}
+
+/**
+ * The base a rehearsal hands contrib's type-bench step: the tip its last merge lot merges, else the order of the
+ * repository at the lots file's HEAD (`resolveRulesBase` in the main checkout: the lot's fork from the base branch),
+ * kept when it is a commit; `null`: none. Never the clone's order: its `origin/HEAD` names the lot branch.
+ */
+function rehearsalChangeBaseOf(params: {
+	repository: string
+	lots: readonly ResolvedLot[]
+	head: string
+}): string | null {
+	const candidate =
+		lastMergeTipOf(params.lots) ?? resolveRulesBase({ root: params.repository, head: params.head })
+	if (candidate === undefined) return null
+	return readCommitOrNone({ root: params.repository, ref: candidate }) ?? null
 }
 
 /** The parts of a contrib key that differ, by what a person would change: the contrib steps, the install... */

@@ -410,7 +410,14 @@ export type HandoverRunMarker = { pid: number; startedAt: string }
 export type HandoverAbandonedMarker = { at: string }
 
 /** The links a rehearsal made beside its clone, and the lines saying what it linked and what it could not. */
-export type RehearsalLinks = { links: string[]; lines: string[] }
+export type RehearsalLinks = {
+	links: string[]
+	lines: string[]
+	/** The dependency paths whose target the repository side lacks: not linked. */
+	missing: string[]
+	/** The dependency paths that leave the rehearsal folder: not linked. */
+	leaving: string[]
+}
 
 /** What a rehearsal decides for one lot: rehearse it in a scratch clone, or reuse a green record of its tree. */
 export type RehearsalDecision = {

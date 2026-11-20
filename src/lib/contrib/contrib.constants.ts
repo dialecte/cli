@@ -34,6 +34,9 @@ export const BUILTIN_STEP_COMMAND = 'dialecte {builtin} (cli {version})'
 /** The note of a package step a green `gate --full` record of this tree and install passed with the same command. */
 export const GATE_STEP_REUSED_NOTE = 'reused from gate --full at {at}'
 
+/** The type-bench row of a rehearsal handed no base: the change has nothing to be measured against. */
+export const NO_CHANGE_BASE_REASON = 'no base to compare with'
+
 /** The rules row when nothing changed against HEAD. */
 export const NO_CHANGED_FILE_NOTE = 'no changed file to check'
 

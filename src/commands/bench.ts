@@ -1,346 +1,335 @@
 /**
- * `dialecte bench [--check]` — measure type-instantiation cost (tsc --extendedDiagnostics),
- * PER discovered version. Scenarios per version (under benchmarks/types/<version>/):
- *   whole-program check + emit (package-level, measured once), the generated baseline/surface/calls,
- *   and any hand-written consumer *.ts (e.g. kitchen-sink.ts; excluding *.test-d.ts).
- * Library declaration files are never measured (`skipLibCheck`): only the dialecte's own types count.
- * Writes/【--check】compares benchmarks/types/<version>/baseline.json. RUNS env (default 3); MIN kept.
- * tsgo (TypeScript 7+) runs with one checker (`--checkers 1`): with several, the count shifts with the
- * file set. The baseline records the compiler and its version; `--check` refuses (exit 3) a baseline
- * of another compiler or version, or one that records none, and exits 2 with no baseline at all,
- * before measuring anything.
+ * `dialecte bench [--check] [--base <ref>]` - the type-instantiation cost of the change: the head (the working tree)
+ * measured against the base it goes onto, both with the head's compiler on one checker, one run per scenario, per
+ * version (whole program check and emit, the generated probes of `dialecte coverage`, each hand-written consumer
+ * `benchmarks/types/<version>/*.ts` but `*.test-d.ts`). Library declarations are never measured (`skipLibCheck`).
+ *
+ * The base: `--base <ref>` (its merge-base with HEAD), else the base handed in `DIALECTE_CHANGE_BASE` (CI and contrib
+ * hand it; a revision is read as its commit, anything else refused), else the order every caller shares (the store
+ * lot's base read from git, else the base branch's merge-base, HEAD's own commit on the base branch, else the last
+ * release tag). The base is exported at that commit into a scratch folder (no worktree registered), its siblings
+ * linked, its `node_modules` the head's when they install its lock, else `npm ci`, and removed after. Nothing is
+ * written in the package but its git-ignored probes.
+ *
+ * Each scenario is within 5% of its base, shrunk (a gain), over, new or gone. `--check` exits 1 when a row is over and
+ * no `Type cost: <why>` line this change added to a changelog fragment or no-entry note explains it. Exit 2 refuses:
+ * a base that cannot be read or is no commit, a lot with no base, no base in CI with `--check`, a head whose
+ * `node_modules` does not install its lock, a head with no version, a tree that cannot be made or measured, method
+ * discovery failing at the head with `--check`. No base outside CI and outside a lot: the head is printed alone.
  */
 import { spawnSync } from 'node:child_process'
-import { writeFileSync, readFileSync, readdirSync, existsSync, rmSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
 
+import { materializeBaseTree, removeBaseTree } from '../lib/bench/base-tree.ts'
+import { judgeGrowth } from '../lib/bench/judge-growth.ts'
+import { measureTree, parseCompilerVersion } from '../lib/bench/measure-tree.ts'
+import { readTypeCostNotes } from '../lib/bench/type-cost-notes.ts'
 import { resolveBin } from '../lib/bin.ts'
-import { hasFlag, resolveTargets, tsconfigOf } from '../lib/config.ts'
-import { formatFiles, formatOptsFromArgv } from '../lib/format.ts'
-import { printLines } from '../lib/print/print.ts'
+import { CHANGE_BASE_VARIABLES } from '../lib/change-base.constants.ts'
+import { resolveChangeBase } from '../lib/change-base.ts'
+import { resultOf } from '../lib/command-result.ts'
+import { getArg, hasFlag } from '../lib/config.ts'
+import { computeStateTree } from '../lib/gate-records/state-hash.ts'
+import { readCommitOrNone, readHeadOrNone } from '../lib/git.ts'
+import { printOut } from '../lib/print/print.ts'
+import { storeLotOf } from '../lib/rules-base.ts'
+import { shortCommitOf } from '../lib/tdd/tdd-base.ts'
+import { checkInstallMatchesTree } from '../lib/worktree/tree-install.ts'
 import {
-	EXIT_COMPILER_MISMATCH,
-	EXIT_NO_BASELINE,
-	METRICS,
-	NATIVE_COMPILER_MAJOR,
-	RE_BASELINE,
-	SINGLE_CHECKER_ARGS,
-	STABLE_METRICS,
+	ABSENT_CELL,
+	BASE_OPTION,
+	BENCH_LINES,
+	CHANGE_WIDTH,
+	CI_OFF_VALUES,
+	COUNT_WIDTH,
+	EXIT_OVER,
+	EXIT_REFUSED,
+	INFINITE_CHANGE,
+	SCENARIO_WIDTH,
 	THRESHOLD,
+	VERDICT_MARKS,
 } from './bench.constants.ts'
 
-import type { Target } from '../lib/config.types.ts'
-import type { Compiler, CompilerComparison, Metrics, RunCompiler } from './bench.types.ts'
-
-/**
- * The configuration a single bench file is compiled with: the project's, for that file alone.
- *
- * `skipLibCheck` whatever the project says: the bench measures what the dialecte's own types cost.
- * Every declaration file is skipped - core, dexie, sax and any library added later - so neither a
- * library's own typing nor a library error that stops the check early moves the numbers. Types a
- * dialecte uses from a library are still instantiated, and counted, where the dialecte uses them.
- */
-export function isolatedTsconfig(params: { tsconfig: string; file: string }) {
-	const { tsconfig, file } = params
-	return {
-		extends: `./${tsconfig}`,
-		compilerOptions: {
-			noEmit: true,
-			skipLibCheck: true,
-			rootDir: '.',
-			declaration: false,
-			declarationMap: false,
-			emitDeclarationOnly: false,
-		},
-		include: [file],
-	}
-}
-
-/** The `tsc` arguments of a whole-program run, type-check only or with declaration emit; library
- * declarations skipped as in `isolatedTsconfig`. */
-export function wholeProgramArgs(params: { tsconfig: string; mode: 'check' | 'emit' }): string[] {
-	const { tsconfig, mode } = params
-	const output =
-		mode === 'check' ? ['--noEmit'] : ['--emitDeclarationOnly', '--outDir', '.bench-dts']
-	return ['-p', tsconfig, ...output, '--skipLibCheck', '--extendedDiagnostics']
-}
-
-/** Parse a `tsc --extendedDiagnostics` dump into the metrics we track. Missing metrics are omitted. */
-export function parseTscMetrics(output: string): Metrics {
-	const metrics: Metrics = {}
-	for (const metric of METRICS) {
-		const match = output.match(
-			new RegExp(`${metric.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:\\s+([\\d.]+)`),
-		)
-		if (match) metrics[metric] = Number(match[1])
-	}
-	return metrics
-}
-
-/** The compiler named by a `tsc --version` line (`Version 7.0.2`), or undefined when there is none. */
-export function parseCompilerVersion(params: { output: string }): Compiler | undefined {
-	const version = params.output.match(/Version\s+(\d+)\.(\S+)/)
-	if (!version) return undefined
-	const name = Number(version[1]) >= NATIVE_COMPILER_MAJOR ? 'tsgo' : 'tsc'
-	return { name, version: `${version[1]}.${version[2]}` }
-}
-
-/** The arguments that pin a compiler to one checker: `--checkers 1` for tsgo, none for tsc. */
-export function checkerArgs(params: { compiler: Compiler }): string[] {
-	return params.compiler.name === 'tsgo' ? SINGLE_CHECKER_ARGS : []
-}
-
-/** Run the compiler `runs` times on one checker and keep the minimum per metric. */
-export function measureRuns(params: {
-	runCompiler: RunCompiler
-	compiler: Compiler
-	args: string[]
-	runs: number
-}): Metrics {
-	const { runCompiler, compiler, args, runs } = params
-	const pinned = [...args, ...checkerArgs({ compiler })]
-	return aggregateRuns(Array.from({ length: runs }, () => runCompiler(pinned)))
-}
-
-/** Whether a baseline recorded with `baseline` can be compared with a run of `measured`. */
-export function compareCompiler(params: {
-	baseline: Compiler | undefined
-	measured: Compiler
-}): CompilerComparison {
-	const { baseline, measured } = params
-	const measuredWith = `measured with ${compilerLabel({ compiler: measured })}: ${RE_BASELINE}`
-	if (!baseline) return { kind: 'refused', line: `baseline records no compiler, ${measuredWith}` }
-	if (baseline.name === measured.name && baseline.version === measured.version)
-		return { kind: 'comparable' }
-	return {
-		kind: 'refused',
-		line: `baseline from ${compilerLabel({ compiler: baseline })}, ${measuredWith}`,
-	}
-}
-
-function compilerLabel(params: { compiler: Compiler }): string {
-	return `${params.compiler.name} ${params.compiler.version}`
-}
-
-/** Reduce repeated runs to the best (min) value per metric — drops timing noise. */
-export function aggregateRuns(runs: Metrics[]): Metrics {
-	const best: Metrics = {}
-	for (const metric of METRICS) {
-		const values = runs.map((run) => run[metric]).filter((value): value is number => value != null)
-		if (values.length) best[metric] = Math.min(...values)
-	}
-	return best
-}
-
-/** True when `current` regresses past `baseline` by more than `threshold` (e.g. 0.05 = 5%). */
-export function checkRegression(params: {
-	current: number | undefined
-	baseline: number | undefined
-	threshold?: number
-}): boolean {
-	const { current, baseline, threshold = THRESHOLD } = params
-	return baseline != null && current != null && current > baseline * (1 + threshold)
-}
-
-/** Keep only the deterministic metrics per scenario — exactly what is persisted to baseline.json. */
-export function stableResults(results: Record<string, Metrics>): Record<string, Metrics> {
-	return Object.fromEntries(
-		Object.entries(results).map(([scenario, metrics]) => [
-			scenario,
-			Object.fromEntries(
-				STABLE_METRICS.filter((metric) => metrics[metric] != null).map((metric) => [
-					metric,
-					metrics[metric],
-				]),
-			),
-		]),
-	)
-}
-
-/** The compiler a `--version` output names; a bench that cannot tell which compiler runs stops. */
-function readCompiler(params: { tsc: string; output: string }): Compiler {
-	const { tsc, output } = params
-	const compiler = parseCompilerVersion({ output })
-	if (!compiler)
-		throw new Error(`bench: cannot read the compiler version from ${tsc}: ${output.trim()}`)
-	return compiler
-}
-
-function baselinePathOf(params: { root: string; versionDir: string }): string {
-	return join(params.root, params.versionDir, 'baseline.json')
-}
-
-/**
- * `--check` needs a baseline of the same compiler and version for every target: a missing baseline
- * (exit 2) or one from another compiler or version, or that records none (exit 3), is named and the
- * bench exits before measuring anything.
- */
-function refuseForeignBaselines(params: { root: string; targets: Target[]; compiler: Compiler }) {
-	const { root, targets, compiler } = params
-	const missing: string[] = []
-	const foreign: string[] = []
-	for (const target of targets) {
-		const versionDir = dirname(target.outDir)
-		const path = baselinePathOf({ root, versionDir })
-		if (!existsSync(path)) {
-			missing.push(
-				`✗ [${target.version}] no baseline at ${join(versionDir, 'baseline.json')}: run dialecte bench to write it, and commit it`,
-			)
-			continue
-		}
-		const prior = JSON.parse(readFileSync(path, 'utf8'))
-		const comparison = compareCompiler({ baseline: prior.compiler, measured: compiler })
-		if (comparison.kind === 'refused') foreign.push(`✗ [${target.version}] ${comparison.line}`)
-	}
-	if (!missing.length && !foreign.length) return
-	printLines({ stream: 'stderr', lines: [...missing, ...foreign] })
-	process.exit(missing.length ? EXIT_NO_BASELINE : EXIT_COMPILER_MISMATCH)
-}
+import type { GrowthRow } from '../lib/bench/judge-growth.types.ts'
+import type { Ruler, TreeCounts } from '../lib/bench/measure-tree.types.ts'
+import type { CommandResult } from '../lib/command-result.types.ts'
+import type { NpmRunner } from '../lib/worktree/worktree.types.ts'
 
 export async function run(argv: string[]): Promise<void> {
-	const ROOT = process.cwd()
-	const tsc = resolveBin('tsc', 'typescript', ROOT)
-	if (!tsc) throw new Error('bench: no TypeScript compiler found (project nor @dialecte/cli).')
-	if (tsc.source === 'own')
-		printLines({
-			stream: 'stderr',
-			lines: [
-				"  ⚠ using @dialecte/cli's own tsc — counts may differ from the project's pinned TypeScript",
-			],
-		})
-	const TSC = tsc.path
-	const RUNS = Number(process.env.RUNS || 3)
-	const CHECK = hasFlag(argv, 'check')
-	const tsconfig = tsconfigOf(argv)
-	const targets = resolveTargets(argv)
-	if (!targets.length)
-		throw new Error(
-			'bench: no versions discovered. Run `dialecte coverage` first, or pass --constants-dir.',
-		)
+	const result = await runBench({ cwd: process.cwd(), argv })
+	printOut({ stream: 'stdout', text: result.output, synchronous: true })
+	if (result.exitCode !== 0) process.exit(result.exitCode)
+}
 
-	function runTsc(args: string[]): string {
-		const result = spawnSync(TSC, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1e8 })
-		return `${result.stdout || ''}${result.stderr || ''}`
-	}
-	const compiler = readCompiler({ tsc: TSC, output: runTsc(['--version']) })
-	if (CHECK) refuseForeignBaselines({ root: ROOT, targets, compiler })
-
-	function runMetrics(args: string[]): Metrics {
-		return parseTscMetrics(runTsc(args))
-	}
-	function measure(args: string[]): Metrics {
-		return measureRuns({
-			runCompiler: runMetrics,
-			compiler,
-			args,
-			runs: RUNS,
-		})
-	}
-	function isolated(file: string): string {
-		const name = `.bench-${file.replace(/[/.]/g, '_')}.tsconfig.json`
-		writeFileSync(join(ROOT, name), JSON.stringify(isolatedTsconfig({ tsconfig, file })))
-		return name
-	}
-	function measureFile(file: string): Metrics {
-		const tmp = isolated(file)
-		const metrics = measure(['-p', tmp, '--extendedDiagnostics'])
-		rmSync(join(ROOT, tmp), { force: true })
-		return metrics
+/**
+ * `dialecte bench` in `cwd`: the head measured against the change's base, with `environment` (`DIALECTE_CHANGE_BASE`,
+ * `CI`) and `install` (a base tree's install, default `npm ci`) injected.
+ */
+export async function runBench(params: {
+	cwd: string
+	argv: string[]
+	/** Default: the process's environment. */
+	environment?: Readonly<NodeJS.ProcessEnv>
+	install?: NpmRunner
+}): Promise<CommandResult> {
+	const { cwd: root, argv } = params
+	const environment = params.environment ?? process.env
+	const check = hasFlag(argv, 'check')
+	const lines: string[] = []
+	function refused(refusal: string): CommandResult {
+		return resultOf({ exitCode: EXIT_REFUSED, lines: [...lines, refusal] })
 	}
 
-	function pad(params: { value: unknown; width: number }): string {
-		return String(params.value).padEnd(params.width)
-	}
-	function formatCount(count: number | undefined): string {
-		return count == null ? '—' : Math.round(count).toLocaleString('en-US')
-	}
+	const install = headInstallOf({ root })
+	if ('refusal' in install) return refused(install.refusal)
+	lines.push(...install.lines)
+	const base = benchBaseOf({ root, argv, environment, check })
+	if ('refusal' in base) return refused(base.refusal)
+	const ruler = rulerOf({ root })
+	if ('refusal' in ruler) return refused(ruler.refusal)
+	lines.push(...ruler.lines, base.line)
 
-	// Whole-program is package-level → measure once, share across versions.
-	printLines({
-		stream: 'stdout',
-		lines: [
-			`bench — ${compiler.name} ${compiler.version}, one checker, ${RUNS} runs (min) — whole program …`,
-		],
+	const head = await measureTree({ root, argv, ruler: ruler.ruler, refuseDiscoveryFailure: check })
+	if ('refusal' in head) return refused(BENCH_LINES.prefix.replace('{line}', () => head.refusal))
+	if (Object.keys(head.counts).length === 0) return refused(BENCH_LINES.noTargets)
+	lines.push(
+		...head.discoveryFailures.map((failure) =>
+			BENCH_LINES.discoveryAtHead.replace('{failure}', () => failure),
+		),
+	)
+
+	const baseCounts =
+		'commit' in base
+			? await measureBase({
+					root,
+					argv,
+					ruler: ruler.ruler,
+					commit: base.commit,
+					install: params.install,
+				})
+			: { counts: {}, discoveryFailures: [] }
+	if ('refusal' in baseCounts)
+		return refused(BENCH_LINES.prefix.replace('{line}', () => baseCounts.refusal))
+	lines.push(
+		...baseCounts.discoveryFailures.map((failure) =>
+			BENCH_LINES.discoveryAtBase.replace('{failure}', () => failure),
+		),
+	)
+
+	const rows = judgeGrowth({ base: baseCounts.counts, head: head.counts, threshold: THRESHOLD })
+	const verdict = verdictOf({
+		root,
+		rows,
+		check,
+		...('commit' in base && { base: base.commit }),
+		versions: Object.keys(head.counts).length,
 	})
-	const wholeCheck = measure(wholeProgramArgs({ tsconfig, mode: 'check' }))
-	const wholeEmit = measure(wholeProgramArgs({ tsconfig, mode: 'emit' }))
-	rmSync(join(ROOT, '.bench-dts'), { recursive: true, force: true })
+	return resultOf({
+		exitCode: verdict.exitCode,
+		lines: [...lines, ...tableOf(rows), ...verdict.lines],
+	})
+}
 
-	let failed = false
-	for (const target of targets) {
-		const versionDir = dirname(target.outDir) // e.g. ./benchmarks/types/v2019C1
-		const results: Record<string, Metrics> = {
-			'whole-program (check)': wholeCheck,
-			'whole-program (emit)': wholeEmit,
+/**
+ * The verdict lines of `rows`: each row over its base explained by the type-cost notes the change added since `base`,
+ * else the line asking for one (exit 1 under `--check`); the green line under `--check` when a base was compared; exit 2
+ * with its line when the notes cannot be judged (the base's fragments unreadable).
+ */
+function verdictOf(params: {
+	root: string
+	rows: readonly GrowthRow[]
+	check: boolean
+	base?: string
+	versions: number
+}): { exitCode: number; lines: string[] } {
+	const { root, check, base } = params
+	const over = params.rows.filter((row) => row.verdict === 'over')
+	const read = over.length && base !== undefined ? readTypeCostNotes({ root, base }) : []
+	// the base's fragments unreadable: no note can be judged, never an explained pass
+	if ('refusal' in read)
+		return {
+			exitCode: EXIT_REFUSED,
+			lines: ['', BENCH_LINES.prefix.replace('{line}', () => read.refusal)],
 		}
-		function addIfPresent(key: string, relativePath: string) {
-			if (existsSync(join(ROOT, relativePath))) {
-				printLines({ stream: 'stdout', lines: [`  [${target.version}] ${key} …`] })
-				results[key] = measureFile(relativePath)
-			}
-		}
-		addIfPresent('baseline (import)', `${target.outDir}/baseline.ts`)
-		addIfPresent('coverage: surface', `${target.outDir}/coverage.surface.generated.ts`)
-		addIfPresent('coverage: calls', `${target.outDir}/coverage.calls.generated.ts`)
-		addIfPresent('coverage: deep', `${target.outDir}/coverage.deep.generated.ts`)
-		addIfPresent('coverage: api', `${target.outDir}/coverage.api.generated.ts`)
-		if (existsSync(join(ROOT, versionDir)))
-			for (const fileName of readdirSync(join(ROOT, versionDir)))
-				if (fileName.endsWith('.ts') && !fileName.endsWith('.test-d.ts'))
-					addIfPresent(`consumer: ${fileName.replace(/\.ts$/, '')}`, `${versionDir}/${fileName}`)
-
-		const table = [
-			'',
-			`[${target.version}]  | ${pad({ value: 'Scenario', width: 26 })} | ${pad({ value: 'Instantiations', width: 14 })} | ${pad({ value: 'Check', width: 7 })} |`,
-			...Object.entries(results).map(
-				([key, metrics]) =>
-					`           | ${pad({ value: key, width: 26 })} | ${pad({ value: formatCount(metrics.Instantiations), width: 14 })} | ${pad({ value: `${metrics['Check time'] ?? '?'}s`, width: 7 })} |`,
+	const notes = read
+	const explanation = notes.map((note) => note.text).join('; ')
+	const lines = [
+		'',
+		...over.map((row) =>
+			fillRow({ template: notes.length ? BENCH_LINES.explained : BENCH_LINES.over, row }).replace(
+				'{note}',
+				() => explanation,
 			),
-		]
-		const baseline = results['baseline (import)']?.Instantiations
-		if (baseline != null)
-			for (const [key, metrics] of Object.entries(results))
-				if (key.startsWith('coverage:') || key.startsWith('consumer:'))
-					table.push(
-						`             ${pad({ value: key, width: 26 })} +${formatCount((metrics.Instantiations ?? 0) - baseline)}`,
-					)
-		printLines({ stream: 'stdout', lines: table })
+		),
+	]
+	const unexplained = over.length > 0 && notes.length === 0
+	if (check && !unexplained && base !== undefined)
+		lines.push(
+			BENCH_LINES.green
+				.replace('{percent}', () => String(THRESHOLD * 100))
+				.replace('{versions}', () => String(params.versions)),
+		)
+	return { exitCode: check && unexplained ? EXIT_OVER : 0, lines }
+}
 
-		const baselinePath = baselinePathOf({ root: ROOT, versionDir })
-		if (CHECK) {
-			const prior = JSON.parse(readFileSync(baselinePath, 'utf8'))
-			for (const [key, metrics] of Object.entries(results)) {
-				const base = prior.results?.[key]?.Instantiations
-				if (checkRegression({ current: metrics.Instantiations, baseline: base })) {
-					printLines({
-						stream: 'stderr',
-						lines: [
-							`❌ [${target.version}] ${key}: ${formatCount(metrics.Instantiations)} > baseline ${formatCount(base)} (+${((metrics.Instantiations / base - 1) * 100).toFixed(1)}%)`,
-						],
-					})
-					failed = true
-				}
-			}
-		} else {
-			mkdirSync(join(ROOT, versionDir), { recursive: true })
-			// Persist deterministic metrics only, tab-indented to match the house oxfmt style — robust
-			// even when oxfmt is absent; formatFiles then normalises it (a no-op when already clean).
-			writeFileSync(
-				baselinePath,
-				`${JSON.stringify({ tool: 'dialecte bench', version: target.version, compiler, checkers: 1, runs: RUNS, results: stableResults(results) }, null, '\t')}\n`,
-			)
-			formatFiles({ root: ROOT, files: [baselinePath], options: formatOptsFromArgv(argv) })
-			printLines({ stream: 'stdout', lines: [`  wrote ${versionDir}/baseline.json`] })
+/**
+ * The head's install against its own lock (`checkInstallMatchesTree` of the tree it would commit): a refusal when
+ * its `node_modules` does not install it; not checked, and said, when HEAD does not resolve.
+ */
+function headInstallOf(params: { root: string }): { lines: string[] } | { refusal: string } {
+	const { root } = params
+	if (readHeadOrNone(root) === undefined) return { lines: [BENCH_LINES.noCommit] }
+	const refusal = checkInstallMatchesTree({ root, tree: computeStateTree(root) })
+	return refusal === undefined
+		? { lines: [] }
+		: { refusal: BENCH_LINES.prefix.replace('{line}', () => refusal) }
+}
+
+/**
+ * The commit the head is compared with and the line naming it (`resolveChangeBase`: `--base`, the handed base read as
+ * a commit, the order); no base found: refused in a store lot and in CI under `--check`, else nothing compared.
+ */
+function benchBaseOf(params: {
+	root: string
+	argv: string[]
+	environment: Readonly<NodeJS.ProcessEnv>
+	check: boolean
+}): { commit: string; line: string } | { nothing: true; line: string } | { refusal: string } {
+	const { root, environment } = params
+	const ref = getArg([...params.argv], BASE_OPTION)
+	const handed = environment[CHANGE_BASE_VARIABLES.handed]
+	const answer = resolveChangeBase({
+		root,
+		...(ref !== undefined && { ref }),
+		...(handed !== undefined && { handed }),
+		emptyTreeRequest: false,
+	})
+	if ('refusal' in answer)
+		return { refusal: BENCH_LINES.prefix.replace('{line}', () => answer.refusal) }
+	if ('unreadable' in answer)
+		return { refusal: BENCH_LINES.prefix.replace('{line}', () => answer.unreadable) }
+	if ('noBase' in answer) {
+		if (storeLotOf({ root }) !== undefined) return { refusal: BENCH_LINES.lotWithoutBase }
+		if (params.check && isCiSet(environment[CHANGE_BASE_VARIABLES.ci]))
+			return { refusal: BENCH_LINES.noBaseInCi }
+		return { nothing: true, line: BENCH_LINES.nothingCompared }
+	}
+	const commit = readCommitOrNone({ root, ref: answer.id })
+	if (!commit) return { refusal: BENCH_LINES.notACommit.replace('{base}', () => answer.id) }
+	const short = shortCommitOf({ root, commit })
+	// a ref given is the flag answer, whatever else was handed: its line names that ref
+	if (ref !== undefined)
+		return {
+			commit,
+			line: BENCH_LINES.flagBase.replace('{short}', () => short).replace('{ref}', () => ref),
 		}
+	const orderLine = answer.source === 'order' ? answer.line : undefined
+	return {
+		commit,
+		line:
+			orderLine === undefined
+				? BENCH_LINES.handedBase.replace('{short}', () => short)
+				: BENCH_LINES.prefix.replace('{line}', () => orderLine),
 	}
-	if (CHECK) {
-		if (failed) process.exit(1)
-		printLines({
-			stream: 'stdout',
-			lines: [
-				'',
-				`✅ No instantiation regression > ${THRESHOLD * 100}% across ${targets.length} version(s).`,
-			],
-		})
+}
+
+/** Whether the CI convention is on: set, and none of the values that say it is off (`false`, `0`, empty). */
+function isCiSet(value: string | undefined): boolean {
+	return value !== undefined && !CI_OFF_VALUES.includes(value.trim().toLowerCase())
+}
+
+/** The head's compiler, the one both trees are measured with, and the header naming it. */
+function rulerOf(params: {
+	root: string
+}): { ruler: Ruler; lines: string[] } | { refusal: string } {
+	const { root } = params
+	const tsc = resolveBin('tsc', 'typescript', root)
+	if (!tsc) return { refusal: BENCH_LINES.noCompiler }
+	const ran = spawnSync(tsc.path, ['--version'], { cwd: root, encoding: 'utf8' })
+	const output = `${ran.stdout ?? ''}${ran.stderr ?? ''}`
+	const compiler = parseCompilerVersion({ output })
+	if (!compiler)
+		return {
+			refusal: BENCH_LINES.unreadableCompiler
+				.replace('{tsc}', () => tsc.path)
+				.replace('{output}', () => output.trim()),
+		}
+	return {
+		ruler: { compiler, tsc: tsc.path },
+		lines: [
+			BENCH_LINES.header
+				.replace('{compiler}', () => compiler.name)
+				.replace('{version}', () => compiler.version),
+			...(tsc.source === 'own' ? [BENCH_LINES.ownCompiler] : []),
+		],
 	}
+}
+
+/** The base tree made at `commit`, measured with the head's ruler, and removed whatever happens. */
+async function measureBase(params: {
+	root: string
+	argv: string[]
+	ruler: Ruler
+	commit: string
+	install: NpmRunner | undefined
+}): Promise<{ counts: TreeCounts; discoveryFailures: string[] } | { refusal: string }> {
+	const tree = materializeBaseTree({
+		root: params.root,
+		commit: params.commit,
+		...(params.install && { install: params.install }),
+	})
+	if ('refusal' in tree) return tree
+	try {
+		return await measureTree({ root: tree.folder, argv: params.argv, ruler: params.ruler })
+	} finally {
+		removeBaseTree(tree)
+	}
+}
+
+/** The table of every version: its scenarios with base, head, change and the mark of their verdict. */
+function tableOf(rows: readonly GrowthRow[]): string[] {
+	const versions = [...new Set(rows.map((row) => row.version))]
+	return versions.flatMap(function versionTable(version): string[] {
+		const label = `[${version}]  `
+		const indent = ' '.repeat(label.length)
+		return [
+			'',
+			`${label}| ${cellsOf(['Scenario', 'Base', 'Head', 'Change']).join(' | ')} |`,
+			...rows
+				.filter((row) => row.version === version)
+				.map((row) =>
+					`${indent}| ${cellsOf([row.scenario, countOf(row.base), countOf(row.head), changeOf(row)]).join(' | ')} | ${VERDICT_MARKS[row.verdict]}`.trimEnd(),
+				),
+		]
+	})
+}
+
+/** The four cells of a table line, each padded to its column. */
+function cellsOf(cells: readonly [string, string, string, string]): string[] {
+	const widths = [SCENARIO_WIDTH, COUNT_WIDTH, COUNT_WIDTH, CHANGE_WIDTH]
+	return cells.map((cell, index) => cell.padEnd(widths[index] ?? 0))
+}
+
+/** A count as printed: grouped by thousands; a side without it, the absent cell. */
+function countOf(count: number | undefined): string {
+	return count === undefined ? ABSENT_CELL : count.toLocaleString('en-US')
+}
+
+/** The change of a row's head from its base, in percent with its sign; none for a row with one side. */
+function changeOf(row: GrowthRow): string {
+	const { base, head } = row
+	if (base === undefined || head === undefined) return ABSENT_CELL
+	if (base === 0) return head === 0 ? '+0.0%' : INFINITE_CHANGE
+	const percent = (head / base - 1) * 100
+	return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`
+}
+
+/** A verdict line of `row`: its version, scenario, counts and change filled in `template`. */
+function fillRow(params: { template: string; row: GrowthRow }): string {
+	const { row } = params
+	return params.template
+		.replace('{version}', () => row.version)
+		.replace('{scenario}', () => row.scenario)
+		.replace('{head}', () => countOf(row.head))
+		.replace('{base}', () => countOf(row.base))
+		.replace('{change}', () => changeOf(row))
 }

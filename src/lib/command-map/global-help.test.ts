@@ -12,7 +12,7 @@ const NOTES_AT_BASE = [
 	'package.json "dialecte" field or with flags:',
 	'  --namespace <Name>  --entry <import>  --constants-dir <dir>  --out <dir>  --version <v>  --tsconfig <f>',
 	"Generated files are formatted with the package's oxfmt: --format-config <path> | --no-format.",
-	'Env: RUNS=5 dialecte bench (repetitions for the min); COVERAGE_CHILD_CAP=N (cap child edges).',
+	'Env: COVERAGE_CHILD_CAP=N (cap child edges).',
 ].join('\n')
 
 describe('renderGlobalHelp', () => {

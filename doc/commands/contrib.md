@@ -16,9 +16,12 @@ contrib - The contributor checks of a dialecte package (profile contributor)
     kept without any; a rehearsal against the tip its last merge lot merges, else the gate base of
     the repository at the HEAD of the lots file: an error on a line the base holds is a warning),
     the "dialecte": { "contrib": { "steps" } } (default: npm run doc:build with the generatedDocs
-    restored, npm run type-bench:check), npm run type-narrowing when the package has that script and
-    no step runs it (a skip line when it lacks it), no dependency named by a local folder, the
-    mutation line when a scope is declared
+    restored, npm run type-bench:check), the type-bench step alone handed the base of the change in
+    DIALECTE_CHANGE_BASE (the base of the rules row when it is a commit; a rehearsal hands the tip
+    its last merge lot merges, else the lot base of its repository, and with neither does not run
+    that step), npm run type-narrowing when the package has that script and no step runs it (a skip
+    line when it lacks it), no dependency named by a local folder, the mutation line when a scope is
+    declared
   the changelog row (after rules): first the released CHANGELOG.md sections, on every run, changed
     by the lot or not (a merge brings them): a section altered against the base branch and where the
     change left it fails the row, naming it (rules: released-changelog); the record is keyed on the

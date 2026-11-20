@@ -3,7 +3,9 @@
  * does: next to the clone, inside the rehearsal folder, a link per dependency whose path leaves the
  * repository, to the folder the same path reaches from the repository (`<rehearsal folder>/core ->
  * <workspace>/core` for `file:../core`). A path that leaves the rehearsal folder too is not linked. The
- * links are removed as links: what they reach is never touched.
+ * links are removed as links: what they reach is never touched. The dependencies are read from the package folder
+ * (the repository for a rehearsal, the base tree for the type bench), so a dependency only that package names is
+ * linked too; what could not be linked is returned as data beside the lines.
  */
 import { existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
@@ -17,16 +19,21 @@ import { DEPENDENCY_SECTIONS, LOCAL_DEPENDENCY_PATTERN } from '../worktree/workt
 import type { RehearsalLinks } from './handover.types.ts'
 
 export function linkRehearsalSiblings(params: {
+	/** The checkout the dependency paths resolve against: what each link reaches. */
 	repository: string
+	/** The package whose `package.json` names the dependencies (a bench's base tree); default: `repository`. */
+	packageFolder?: string
 	/** The rehearsal folder: the clone and the links inside. */
 	folder: string
 	clone: string
 }): RehearsalLinks {
 	const { repository, folder, clone } = params
-	const packageJson = readPackageJson(repository)
+	const packageJson = readPackageJson(params.packageFolder ?? repository)
 	const links: string[] = []
 	const lines: string[] = []
 	const linked: string[] = []
+	const missing: string[] = []
+	const leaving: string[] = []
 	for (const section of DEPENDENCY_SECTIONS)
 		for (const spec of Object.values(packageJson[section] ?? {})) {
 			const path = LOCAL_DEPENDENCY_PATTERN.exec(spec)?.[1]
@@ -35,12 +42,14 @@ export function linkRehearsalSiblings(params: {
 			if (link === clone || isInside({ path: link, folder: clone })) continue
 			if (!isInside({ path: link, folder })) {
 				lines.push(textOf([`  not linked: ${path} leaves the rehearsal folder`]))
+				leaving.push(path)
 				continue
 			}
 			const target = resolve(repository, path)
 			if (isPresent(link)) continue
 			if (!existsSync(target)) {
 				lines.push(textOf([`  not linked: ${path} (${target} missing)`]))
+				missing.push(path)
 				continue
 			}
 			mkdirSync(dirname(link), { recursive: true })
@@ -49,7 +58,7 @@ export function linkRehearsalSiblings(params: {
 			linked.push(path)
 		}
 	if (linked.length) lines.unshift(textOf([`  links beside the clone: ${linked.join(', ')}`]))
-	return { links, lines }
+	return { links, lines, missing, leaving }
 }
 
 /** The rehearsal folder removed: its links unlinked first (their targets untouched), then the folder. */

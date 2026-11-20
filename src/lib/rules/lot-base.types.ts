@@ -10,7 +10,7 @@ export type FoundBaseLine = {
 export type NoBaseLine = {
 	/** No commit: the reader tells the two apart by it. */
 	base?: never
-	/** `rules: no base (<why>)`. */
+	/** `no base (<why>)`, without the caller's prefix. */
 	line: string
 }
 
