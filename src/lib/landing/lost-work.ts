@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { readGitOrWhy } from '../cleanup/git-read.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { commonGitFolderOf, readCommitOrNone, readGit, readGitBytes, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
@@ -17,6 +18,7 @@ import {
 	LOST_WHY,
 	LOST_WORK_TEXTS,
 	NO_OWN_COMMIT_REASONS,
+	PER_WORKTREE_REF_PREFIXES,
 	REMOTE_REF_PREFIX,
 	TAG_REF_PREFIX,
 	WORKTREES_ADMIN_FOLDER,
@@ -172,7 +174,8 @@ function branchRecordsOf(params: { root: string; branch: string }): string[] {
 /**
  * A removed worktree's records: its current HEAD (detached or not) and every commit its HEAD reflog names. A worktree
  * whose folder is gone is read from its own folder in the repository's git folder (`worktrees/<id>/`), which
- * `git worktree prune` deletes with its HEAD reflog.
+ * `git worktree prune` deletes with its HEAD reflog. A reflog or ref read that fails throws `could not read <what>:
+ * <git's error>`: its records are never taken for none, and every caller keeps the worktree with that reason.
  */
 function headRecordsOf(params: { root: string; worktree: string }): string[] {
 	const admin = existsSync(params.worktree)
@@ -185,10 +188,20 @@ function headRecordsOf(params: { root: string; worktree: string }): string[] {
 		root,
 		args: [...gitDir, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
 	})?.trim()
-	const reflog = linesOf(
-		tryReadGit({ root, args: [...gitDir, 'reflog', 'show', '--format=%H', 'HEAD', '--'] }) ?? '',
-	)
-	return [...(head ? [head] : []), ...reflog]
+	const reflog = readGitOrWhy({
+		root,
+		args: [...gitDir, 'reflog', 'show', '--format=%H', 'HEAD', '--'],
+		what: `the HEAD reflog of ${params.worktree}`,
+	})
+	if ('why' in reflog) throw new Error(reflog.why)
+	// the worktree's own refs (`refs/worktree/*`, `refs/bisect/*`) go with it too
+	const own = readGitOrWhy({
+		root,
+		args: [...gitDir, 'for-each-ref', '--format=%(objectname)', ...PER_WORKTREE_REF_PREFIXES],
+		what: `the own refs of ${params.worktree}`,
+	})
+	if ('why' in own) throw new Error(own.why)
+	return [...(head ? [head] : []), ...linesOf(reflog.output), ...linesOf(own.output)]
 }
 
 /** The git folder of the linked worktree registered at `worktree` (its `gitdir` names `<worktree>/.git`), if any. */

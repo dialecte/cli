@@ -1,6 +1,6 @@
 /**
  * `worktree prune` leaves a store lot's items to the lot's own close (DESIGN 3.7): an open lot's worktree and review
- * throwaway are kept for the lot, a committed or canceled lot's are listed as its own, naming `lot close`; it reads no
+ * throwaway are kept for the lot, a committed or canceled lot's are listed as its own, naming `lot prune`; it reads no
  * landing and writes no landed fact; `--yes` removes none of them.
  */
 import { existsSync, rmSync } from 'node:fs'
@@ -47,7 +47,7 @@ type PruneRow = {
 function lotItemLine(params: { branch: string; name: string; state: string }): string {
 	const { branch, name, state } = params
 	return state === 'committed' || state === 'canceled'
-		? `${branch}: lot ${name} ${state}: its own item, closed by dialecte lot close ${name}`
+		? `${branch}: lot ${name} ${state}: its own item, removed by dialecte lot prune ${name}`
 		: `${branch}: lot ${name} ${state}`
 }
 
@@ -96,7 +96,7 @@ const PRUNE_ROWS: PruneRow[] = [
 	},
 	{
 		title:
-			'a lot the registry records committed, its work not on main → the lot’s own, naming lot close',
+			'a lot the registry records committed, its work not on main → the lot’s own, naming lot prune',
 		arrange: (lot) => {
 			registerLotEntry({ lot })
 			return { worktree: lot.worktree }

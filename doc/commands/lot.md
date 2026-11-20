@@ -45,6 +45,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot design <id> [--from <file> | --from-plan | --approve --by <who> [--reason <text>] | --waive --by <who> --reason <text>] [--json]
   dialecte lot land <id>
   dialecte lot close <hand-over name|lot id|index>... [--json]
+  dialecte lot prune [<id>...] [--feature <name>] [--all] [--yes] [--json]
 
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
           folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base
@@ -415,6 +416,33 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied
            file compared by size and sha256 (events.jsonl as a prefix) before the rename, one more
            copy on a difference; the source is never written
+  prune - removes what a committed or canceled lot leaves behind, each item on its own proof: the
+          lots named by id, else the lots of --feature in every store of the list, else every lot of
+          every store (--all), else every lot of the store of the folder it runs from; base branches
+          fetched first; per lot its line (state, landing) and one line per item - its worktree (the
+          same proof as lot close: kept with why), its review throwaways (recorded by a step's
+          throwaway-add, or cut by hand at a commit of the lot with no commit of their own: they go
+          when every changed path is held by a commit, else kept naming the path held nowhere), its
+          branch and its throwaways' branches; an open lot's items are kept, reason lot <name>
+          <state>; a branch is kept while it is the base, the branch the main checkout is on, an
+          open lot's branch, the stack parent of an open lot, a pending hand-over's or a stash's,
+          while deleting it would lose a commit (a canceled lot's names its commits and the command
+          to delete it anyway), and goes after its worktree when one checks it out; a lot whose
+          worktree is gone and whose landing is not proven is listed stale with the command to stop
+          it; without --yes the plan only; --yes acts in order (worktrees, throwaways, branches),
+          each proof read again at the move: a throwaway proved again after its move, a branch
+          deleted at its proved tip only (git update-ref -d), a branch still parked in the trash
+          listed waiting for the trash; a throwaway's --force removal starts only after its second
+          proof, so a file written into it in that moment goes with it; a deleted branch is
+          restorable with git branch <branch> <tip> (its removing line in cards.log holds the tip)
+          until git's garbage collection, its upstream config is not restored; worktrees git refused
+          to delete from the trash for more than ten minutes are listed with their git status and
+          the forced removal, a throwaway its second proof left in the trash with why and the
+          command that moves it back; a git read an item's decision rests on that fails keeps the
+          item (could not read <what>: <git's error>), never reads as empty; ids, --feature and
+          --all exclude each other; exit 1 when an item meant to go was kept (one another run
+          removed since the plan is no failure), 2 for a usage error or an id that names no lot or
+          more than one
   close - closes a lot or a hand-over: a hand-over of the registry (by name or index), or a lot (its
           id, name or index), with no registry entry needed; first the landing of every lot the
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
@@ -479,9 +507,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`
+Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`, `prune`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief
@@ -829,6 +857,60 @@ Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`
     Exit 0 when every named hand-over closed (or was already closed), 1 when one was kept, 2 for a name or
     index the registry does not hold (then nothing is closed); `--json` prints
     `[{ handover, closed: true, already?: true, landed? } | { handover, kept, landed? }]`.
+  - `lot prune [<id>...] [--feature <name>] [--all] [--yes] [--json]` removes what a committed or canceled lot
+    leaves behind, each item on its own proof. It reaches the lots named by id, else the lots of `--feature` in
+    every store of the store list, else every lot of every store (`--all`), else every lot of the store of the
+    folder it runs from; ids, `--feature` and `--all` exclude each other. It fetches each repository's base branch
+    first, as `lot close` does. Per lot it prints one line (`<lot> (<state>, <landing>)`, `simulated: never
+    removed` for a simulated lot) and one line per item:
+    - its worktree, decided by the same proof as `lot close` (kept with why);
+    - its review throwaways: the ones a step recorded (`throwaway-add`, on a `<lot branch>-round-<n>` branch with
+      its `.base`), and the hand-made ones (a worktree no lot and no registry entry names, cut at a commit of the
+      lot, its creation commit read from its branch's oldest reflog entry, with no commit of its own the lot never
+      took). One goes when every path it changed is held by a commit; else it is kept, `<n> path(s) held nowhere,
+      first: <path>`. Any other worktree is not the lot's and is not listed;
+    - its branch and its throwaways' branches (a waiting one, parked in the trash, matched by its name and its
+      tip; one deleted and recreated since is `not matched: recreated since`). A branch is kept while it is the
+      base branch, the branch the main checkout is on, an open lot's branch, the stack parent of an open lot (or of
+      a lot whose stack cannot be read), a pending hand-over's or a stash's, and while deleting it would lose a
+      commit: `<n> commit(s) its removal would lose: <commits>` (a canceled lot's line adds `to delete it anyway:
+      cd <main> && git branch -D <branch>`). A branch a worktree checks out goes `after` that worktree when the
+      worktree goes too, else is kept `checked out in <path>`.
+
+    An open lot's items are kept, `lot <name> <state>`. A lot whose worktree is gone and whose landing is not
+    proven is listed stale: `stale: worktree gone, still <state>: <why>; if its work is abandoned: dialecte lot
+    stop <lot>`. A landed lot's line says `, worktree gone` when its worktree went, and `landed tip <tip> gone`
+    when the tip it landed is no longer in the repository.
+
+    Without `--yes` it prints the plan and moves nothing. `--yes` acts in order: worktrees (closed as `lot close`
+    closes them: final record, removing line, trash, removed line), then throwaways, then branches, each proof read
+    again at the move. A throwaway is proved again before its move and again on the trashed folder before git's
+    background removal starts; a change made in between keeps it in the trash (`left in the trash`). A branch's tip,
+    the worktree list and the stacks are read again right before its delete, and the branch is deleted at the tip
+    proved only (`git update-ref -d <ref> <tip>`, its config section removed): a tip that moved is kept with git's
+    message, a branch still parked in the trash is listed `waiting for the trash: <trashed>`. Each item line ends
+    with its outcome: `removed (<trash path>)`, `kept (<why>)` or `waiting ...`. Worktrees git refused to delete
+    from the trash, registered there longer than ten minutes, are listed under `refused trash deletion: <worktree>`
+    with their `git status` and the command (`cd <main> && git worktree remove --force <worktree>`). A throwaway its
+    second proof left in the trash is listed under `left in the trash by its proof: <worktree>: <why>` with its
+    `git status` and the command that moves it back (`cd <main> && git worktree move <worktree> <where it was>`),
+    never with the forced removal: it holds what no commit holds.
+
+    A git read an item's decision rests on (the stashes, a branch's commits or reflog, a hand-made throwaway's
+    reflog) that fails keeps the item with `could not read <what>: <git's error>`: it never reads as empty. Right
+    before a branch's delete its loss is read again alone, so a branch another run deleted since the plan cannot
+    leave this one holding the only copy of a commit.
+
+    What `--yes` cannot take back: a throwaway's `--force` removal starts right after its second proof, so a file
+    written into it in that moment goes with it. A deleted branch is restorable with `git branch <branch> <tip>`
+    (its `removing` line in `cards.log` holds the tip) until git's garbage collection drops the commits; its upstream
+    config (`branch.<branch>.*`) is not restored.
+
+    Exit 0 when the plan is printed or every item meant to go went (one another run removed since the plan, `gone
+    since the plan`, included), 1 when an act kept one, 2 for a usage error or an id that names no lot, or a lot in
+    more than one store (nothing done). `--json` prints `{ lots: [{ lot, state, landing, simulated,
+    stale?, items: [{ item, name, decision: { go } | { after } | { kept }, outcome?: { removed } | { kept } |
+    { waiting } }] }], refused: [{ worktree, status, command, left? }] }`.
 - Recording a lot. Every record below is appended to a file, never rewritten; a reader skips a half line and a line
   it cannot parse, and counts them.
   - `dialecte lot station <id> start <station> [flags]` and `lot station <id> end <station> [--run <run>] [flags]`

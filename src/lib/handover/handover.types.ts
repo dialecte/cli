@@ -527,4 +527,10 @@ export type CloseOutcome = { handover: string; landed?: string } & (
  * One outcome of `lot close`, with the folders it sent to the trash (by name) and where the parked
  * `node_modules` went (`pooled in <entry>` or `trashed: <why not parked>`; none when nothing was to park).
  */
-export type CloseResult = { outcome: CloseOutcome; moved: string[]; nodeModules?: string }
+export type CloseResult = {
+	outcome: CloseOutcome
+	moved: string[]
+	nodeModules?: string
+	/** Where the closed worktree lies in the trash until git's background removal. */
+	trashed?: string
+}

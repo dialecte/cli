@@ -55,7 +55,7 @@ export type RemovingInput = {
 	/** The full sha of the branch tip. */
 	tip: string | null
 	records: FrozenRecords | null
-	by: 'lot-close' | 'lot-prune'
+	by: RemovalBy
 }
 
 /** What a caller gives to write a `removed` line (the outcome, after the move). */
@@ -85,3 +85,6 @@ export type CardsLogRead = {
 
 /** The lines of one lot. */
 export type LotCardsLog = { cards: CardLine[]; removals: Removal[] }
+
+/** Who wrote a `removing` line: `lot close`, or `lot prune`. */
+export type RemovalBy = 'lot-close' | 'lot-prune'

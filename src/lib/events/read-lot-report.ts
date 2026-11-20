@@ -4,12 +4,14 @@
  * repository's mutation run files. Reads files only: no git, no child process.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { realPathOf } from '../file-system.ts'
 import { registryOfCommonFolder } from '../handover/handover-store-read.ts'
+import { BRANCH_REF_PREFIX } from '../landing/lost-work.constants.ts'
 import { findLedgerTable, tableCells } from '../review-rounds/findings-ledger.ts'
 import { LEDGER_FILE } from '../review-rounds/review-rounds.constants.ts'
+import { lotsOfFeature, storesOf } from '../store/feature-lots.ts'
 import { nextCommandsOf } from '../store/lot-next.ts'
 import {
 	commonFolderOfLotFolder,
@@ -18,9 +20,12 @@ import {
 } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { readStationNext } from '../store/station-records.ts'
-import { listLotIdentities, locateStore } from '../store/store-folder.ts'
-import { readStoreList } from '../store/store-list.ts'
-import { LOTS_KEEPING_NOTHING, NEXT_COMMANDS, STORE_FILES } from '../store/store.constants.ts'
+import {
+	LOTS_KEEPING_NOTHING,
+	NEXT_COMMANDS,
+	PACKED_REFS_FILE,
+	STORE_FILES,
+} from '../store/store.constants.ts'
 import { CARDS_LOG_FILE } from './cards-log.constants.ts'
 import { finalCardOf, linesOfLot, readCardsLog } from './cards-log.ts'
 import { STEP_KIND_PREFIX } from './events.constants.ts'
@@ -127,16 +132,14 @@ export function readFeatureReport(params: {
 	const simulated: { lot: FeatureLot; report: ReportedLot }[] = []
 	const named = new Set<string>()
 	const stores = storesOf({ cwd: params.cwd })
-	for (const store of stores)
-		for (const entry of listLotIdentities({ store })) {
-			if (entry.identity.feature !== params.feature) continue
-			const report = readLotReport({ lotFolder: join(store, entry.name), now: params.now })
-			if (report === undefined) continue
-			named.add(entry.name)
-			const lot = featureLotOf({ report })
-			if (lot.simulated) simulated.push({ lot, report })
-			else real.push({ lot, report })
-		}
+	for (const lotFolder of lotsOfFeature({ feature: params.feature, cwd: params.cwd })) {
+		const report = readLotReport({ lotFolder, now: params.now })
+		if (report === undefined) continue
+		named.add(basename(lotFolder))
+		const lot = featureLotOf({ report })
+		if (lot.simulated) simulated.push({ lot, report })
+		else real.push({ lot, report })
+	}
 	for (const store of stores)
 		for (const card of goneLotCards({ store, feature: params.feature, named })) {
 			named.add(card.lot ?? '')
@@ -272,9 +275,9 @@ function folderNamesOf(params: { folder: string }): string[] {
 }
 
 /**
- * The lot's next command: the state's (`nextCommandsOf`, with the next station as `lot status` reads it); for a committed or canceled lot whose worktree is on disk
- * and which has a registry entry (the one the lot's state read), `lot close` of that entry (no `lot prune` before
- * L0b: a throwaway alone, or a lot with no entry, has no next).
+ * The lot's next command: the state's (`nextCommandsOf`, with the next station as `lot status` reads it); for a
+ * committed or canceled lot whose worktree is on disk or whose branch is still there, `lot prune` of the lot (dry: it
+ * prints what would go); none once nothing remains.
  */
 function nextOf(params: {
 	input: LotStateInput
@@ -289,16 +292,27 @@ function nextOf(params: {
 			report: lotState(input),
 			station: readStationNext({ input, lotFolder: params.lotFolder }),
 		}).next
-	if (worktree === null || !existsSync(worktree)) return null
-	const entry = input.registryEntry
-	return entry === undefined ? null : NEXT_COMMANDS.close.replace('{handover}', entry.name)
+	const { identity } = input
+	const worktreeLeft = worktree !== null && existsSync(worktree)
+	const branchLeft = branchRefExists({
+		commonFolder: commonFolderOfLotFolder(params.lotFolder),
+		branch: identity.branch,
+	})
+	return worktreeLeft || branchLeft ? NEXT_COMMANDS.prune.replace('{name}', identity.name) : null
 }
 
-/** The stores to read: the one of `cwd`, then the store list's, each once. */
-function storesOf(params: { cwd: string }): string[] {
-	const located = locateStore({ from: params.cwd })?.store
-	const stores = [...(located === undefined ? [] : [located]), ...readStoreList({})]
-	return [...new Set(stores.map((store) => realPathOf(store)))]
+/**
+ * Whether the branch's ref is there, read from the files of the git folder (the report starts no process): its loose
+ * ref, or its line in `packed-refs`.
+ */
+function branchRefExists(params: { commonFolder: string; branch: string }): boolean {
+	const ref = `${BRANCH_REF_PREFIX}${params.branch}`
+	if (existsSync(join(params.commonFolder, ref))) return true
+	const packed = join(params.commonFolder, PACKED_REFS_FILE)
+	if (!existsSync(packed)) return false
+	return readFileSync(packed, 'utf8')
+		.split('\n')
+		.some((line) => line.endsWith(` ${ref}`))
 }
 
 /** The final cards of the lots of the feature whose folder is gone from the store, from its registry's `cards.log`. */

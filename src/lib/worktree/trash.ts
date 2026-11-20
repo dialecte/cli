@@ -10,7 +10,12 @@ import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { realPathOf } from '../file-system.ts'
 import { readGit } from '../git.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
-import { POOL_FOLDER_PREFIX, TRASH_FOLDER, TRASH_LINK_REFUSAL } from './worktree.constants.ts'
+import {
+	POOL_FOLDER_PREFIX,
+	TRASH_FOLDER,
+	TRASH_LINK_REFUSAL,
+	TRASH_TIME_PATTERN,
+} from './worktree.constants.ts'
 
 import type { BackgroundSpawner, TrashedFolder } from './worktree.types.ts'
 
@@ -129,4 +134,19 @@ function isSymbolicLink(path: string): boolean {
 /** `20261106T100000`: the UTC time to the second. */
 function timeStamp(now: Date): string {
 	return now.toISOString().replace(/[-:]/g, '').slice(0, 'yyyymmddThhmmss'.length)
+}
+
+/**
+ * When a folder was moved into the trash, read from the time stamp its name ends with (`<name>-<stamp>`, maybe
+ * `-<n>` after it); undefined for a name that holds none.
+ *
+ * @intent read back the time a trashed folder's name was made with
+ * @internal
+ */
+export function trashedAtOf(params: { folder: string }): Date | undefined {
+	const stamp = TRASH_TIME_PATTERN.exec(basename(params.folder))?.[1]
+	if (stamp === undefined) return undefined
+	return new Date(
+		`${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T${stamp.slice(9, 11)}:${stamp.slice(11, 13)}:${stamp.slice(13, 15)}Z`,
+	)
 }

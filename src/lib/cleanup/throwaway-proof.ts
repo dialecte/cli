@@ -106,6 +106,8 @@ function changedNotKept(params: ThrowawayProofParameters): string | undefined {
 		})
 	const names = roundNames(round)
 	const snapshot = join(lotFolder, names.folder)
+	if (params.handMadeOf !== undefined)
+		return heldNowhere({ ...params, handMadeOf: params.handMadeOf, entries })
 	if (!isDirectory(snapshot))
 		return fillMessage({
 			template: THROWAWAY_KEEP_REASONS.noSnapshot,
@@ -137,10 +139,45 @@ function changedNotKept(params: ThrowawayProofParameters): string | undefined {
 	})
 }
 
+/**
+ * A hand-made throwaway's changed paths, each kept only by a held commit (there is no snapshot): the first path held
+ * nowhere, with how many are not.
+ */
+function heldNowhere(
+	params: ThrowawayProofParameters & { handMadeOf: string; entries: readonly StatusEntry[] },
+): string | undefined {
+	const { throwaway, entries } = params
+	const holders = params.holders.flatMap(function resolved(ref) {
+		const commit = readCommitOrNone({ root: throwaway, ref })
+		return commit === undefined ? [] : [commit]
+	})
+	const paths = [...new Set(entries.map((entry) => entry.path))].sort()
+	const differ = paths.filter(function notHeld(path) {
+		const kept = keptVersionsOf({
+			throwaway,
+			snapshot: undefined,
+			deleted: new Set(),
+			holders,
+			path,
+		})
+		const staged = entries.some((entry) => entry.path === path && entry.staged)
+		return ![
+			workingVersionOf({ throwaway, path }),
+			...(staged ? [indexVersionOf({ throwaway, path })] : []),
+		].every((version) => kept.some((one) => sameVersion({ left: one, right: version })))
+	})
+	if (differ.length === 0) return undefined
+	return fillMessage({
+		template: THROWAWAY_KEEP_REASONS.heldNowhere,
+		values: { lot: params.handMadeOf, count: String(differ.length), path: differ[0] },
+	})
+}
+
 /** The versions of `path` kept elsewhere: the snapshot's file (or its deletion), each held commit's blob. */
 function keptVersionsOf(params: KeptVersionsParameters): BlobVersion[] {
 	const { path } = params
-	const fromSnapshot = fileVersionOf(join(params.snapshot, path))
+	const fromSnapshot =
+		params.snapshot === undefined ? undefined : fileVersionOf(join(params.snapshot, path))
 	return [
 		...(fromSnapshot === undefined ? [] : [fromSnapshot]),
 		...(params.deleted.has(path) ? ['absent' as const] : []),

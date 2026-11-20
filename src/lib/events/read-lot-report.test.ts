@@ -256,20 +256,22 @@ describe('readLotReport: next', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(readLotReport({ lotFolder: lot.lotFolder, now: REPORT_NOW })?.next).toBe(statusNext)
 	})
 
-	it('R4-3 (was: lot prune): a committed lot whose worktree folder exists and which has a registry entry → dialecte lot close <registry name>, no --yes', () => {
+	it('a committed lot whose worktree folder exists and which has a registry entry → dialecte lot prune <lot name>, no --yes (lot prune closes the entry with the worktree)', () => {
 		const lot = createStationLot({ state: 'committed' })
 		mkdirSync(lot.worktree, { recursive: true })
 
 		expect(readLotReport({ lotFolder: lot.lotFolder, now: REPORT_NOW })?.next).toBe(
-			`dialecte lot close ${lot.name}`,
+			`dialecte lot prune ${lot.name}`,
 		)
 	})
 
-	it('R4-3: a canceled lot whose worktree folder exists, with no registry entry → no next (lot close names a hand-over, and lot prune is not there yet)', () => {
+	it('a canceled lot whose worktree folder exists, with no registry entry → dialecte lot prune <lot name>', () => {
 		const lot = createStationLot({ state: 'canceled' })
 		mkdirSync(lot.worktree, { recursive: true })
 
-		expect(readLotReport({ lotFolder: lot.lotFolder, now: REPORT_NOW })?.next).toBeNull()
+		expect(readLotReport({ lotFolder: lot.lotFolder, now: REPORT_NOW })?.next).toBe(
+			`dialecte lot prune ${lot.name}`,
+		)
 	})
 
 	it('R4-3 (was: lot prune): a canceled lot whose worktree is gone but whose <name>-round-1 folder exists → no next', () => {

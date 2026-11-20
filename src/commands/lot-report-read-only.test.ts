@@ -86,7 +86,7 @@ describe('lot report: case 31, reads files only', { timeout: STORE_CASE_TIMEOUT 
 		).toEqual({ exits: [0, 0, 0], ...before })
 	})
 
-	it('R4-3 (was: lot prune): a committed lot whose worktree is on disk, with a registry entry → next is dialecte lot close <registry name> in text and JSON, never --yes', () => {
+	it('a committed lot whose worktree is on disk, with a registry entry → next is dialecte lot prune <lot name> in text and JSON, never --yes', () => {
 		const lot = createRecordedLot({ state: 'committed' })
 
 		expect(
@@ -99,8 +99,8 @@ describe('lot report: case 31, reads files only', { timeout: STORE_CASE_TIMEOUT 
 				runLot({ cwd: lot.cwd, argv: ['report', lot.name, '--json'], now: REPORT_NOW }),
 			),
 		).toEqual({
-			textNext: [expect.stringMatching(new RegExp(`dialecte lot close ${lot.name}$`))],
-			jsonNext: `dialecte lot close ${lot.name}`,
+			textNext: [expect.stringMatching(new RegExp(`dialecte lot prune ${lot.name}$`))],
+			jsonNext: `dialecte lot prune ${lot.name}`,
 			yes: false,
 		})
 	})

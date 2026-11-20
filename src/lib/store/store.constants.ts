@@ -161,6 +161,7 @@ export const NEXT_COMMANDS = {
 	run: 'dialecte handover run {handover}',
 	stop: 'dialecte lot stop {name} --reason <text>',
 	close: 'dialecte lot close {handover}',
+	prune: 'dialecte lot prune {name}',
 	land: 'dialecte lot land {name}',
 } as const
 
@@ -318,3 +319,6 @@ export const SIMULATED_FINDING_RULES: readonly RefusalRule[] = ['overlap', 'bran
 /** The variable naming the data folder, and the data folder below the home folder when it is unset or empty. */
 export const DATA_HOME_VARIABLE = 'XDG_DATA_HOME'
 export const DEFAULT_DATA_SEGMENTS: readonly string[] = ['.local', 'share']
+
+/** The file of a git folder holding the refs git packed: a branch's ref is there when its loose file is not. */
+export const PACKED_REFS_FILE = 'packed-refs'

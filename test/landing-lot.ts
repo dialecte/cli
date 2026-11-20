@@ -17,6 +17,7 @@ import { basename, join } from 'node:path'
 
 import { runLot } from '../src/commands/lot.ts'
 import { CARDS_LOG_FILE } from '../src/lib/events/cards-log.constants.ts'
+import { writeCard } from '../src/lib/events/cards-log.ts'
 import { registeredEntryOf } from '../src/lib/handover/handover-store-read.ts'
 import {
 	handoverStoreOf,
@@ -26,6 +27,9 @@ import {
 } from '../src/lib/handover/handover-store.ts'
 import { LANDED_SCHEMA } from '../src/lib/landing/landed-record.constants.ts'
 import { writeLanded } from '../src/lib/landing/landed-record.ts'
+import { readIdentity } from '../src/lib/store/identity.ts'
+import { STACK_SCHEMA } from '../src/lib/store/stack.constants.ts'
+import { writeStack } from '../src/lib/store/stack.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
 import {
 	LANDING_LOT,
@@ -46,6 +50,7 @@ import type { runLotClose } from '../src/commands/lot-close.ts'
 import type { runWorktreePrune } from '../src/commands/worktree.ts'
 import type { CommandResult } from '../src/lib/command-result.types.ts'
 import type { HostAdapter } from '../src/lib/host/host.types.ts'
+import type { Transition } from '../src/lib/store/store.types.ts'
 import type { LandingLot } from './landing-lot.types.ts'
 
 /**
@@ -102,12 +107,18 @@ export function addLandingLot(params: {
 	lot: LandingLot
 	name: string
 	branch: string
+	/** Where its branch is cut; main when left out. */
+	from?: string
+	/** Its transitions after the first (`working`): a `failed` one makes it failed. */
+	later?: Transition[]
+	/** Its identity's feature; the records' fixed one when left out. */
+	feature?: string
 }): LandingLot {
 	const { lot, name, branch } = params
 	const { workspace } = lot
 	const root = workspace.repository
 	const path = join(workspace.workspace, '.worktrees', name)
-	git({ root, args: ['worktree', 'add', '-q', '-b', branch, path, 'main'] })
+	git({ root, args: ['worktree', 'add', '-q', '-b', branch, path, params.from ?? 'main'] })
 	const worktree = realpathSync(path)
 	const file = `src/${name}.ts`
 	const tip = commitIn({
@@ -124,6 +135,8 @@ export function addLandingLot(params: {
 			worktree,
 			repository: root,
 			base: { ref: 'main', commit: workspace.commit },
+			later: params.later,
+			feature: params.feature,
 		}),
 	)
 	return {
@@ -135,6 +148,75 @@ export function addLandingLot(params: {
 		tip,
 		repository: { ...lot.repository, worktree, branch, tip },
 	}
+}
+
+/**
+ * A store lot `name` started on `lot` (`lot start --on`): its branch cut from the lot's branch tip, one commit of its
+ * own, its `stack.json` naming the lot, its worktree's `.dialecte/lot` link to its folder (its tdd base reads it).
+ */
+export function addStackedLot(params: {
+	lot: LandingLot
+	name: string
+	branch: string
+}): LandingLot {
+	const child = addLandingLot({ ...params, from: params.lot.branch })
+	writeStack({
+		lotFolder: child.lotFolder,
+		record: { schema: STACK_SCHEMA, parent: params.lot.name },
+	})
+	addOwnDeclaration(child)
+	return child
+}
+
+/** The lot's worktree removed by git (`--force`), its branch left: as an earlier close or a person left it. */
+export function removeLotWorktree(lot: LandingLot): void {
+	git({ root: lot.workspace.repository, args: ['worktree', 'remove', '--force', lot.worktree] })
+}
+
+/** The lot's worktree removed and its branch deleted, as an old hand-over's clean-up left them. */
+export function removeBranchAndWorktree(lot: LandingLot): void {
+	removeLotWorktree(lot)
+	git({ root: lot.workspace.repository, args: ['branch', '-D', lot.branch] })
+}
+
+/** A hand-over committed for the lot's worktree and branch, outside the store, then closed (the 0022 shape): its name. */
+export function closedHandoverOf(lot: LandingLot): string {
+	const handover = registerCommittedHandover(lot)
+	recordHandoverClosed({
+		store: handoverStoreOf(lot.workspace.repository),
+		name: handover,
+		at: LANDING_NOW,
+	})
+	return handover
+}
+
+/** A `card` line of the hand-over (`lot: null`) on the lot's branch at `head`, `offset` ms after the lot's creation. */
+export function writeHandoverCard(params: {
+	lot: LandingLot
+	handover: string
+	head: string
+	offset: number
+}): void {
+	const { lot } = params
+	const created = Date.parse(readIdentity({ lotFolder: lot.lotFolder })?.created ?? '')
+	writeCard({
+		file: cardsLogOf(lot),
+		line: {
+			at: new Date(created + params.offset).toISOString(),
+			lot: null,
+			name: params.handover,
+			state: 'committed',
+			feature: null,
+			repository: lot.workspace.repository,
+			branch: lot.branch,
+			head: params.head,
+			base: 'main',
+			card: null,
+			usage: null,
+			records: null,
+			by: 'handover-run',
+		},
+	})
 }
 
 /** The lot stopped as `lot stop` stops it: canceled, its reason `dropped`. */

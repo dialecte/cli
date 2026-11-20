@@ -39,3 +39,6 @@ export const CHANGE_HEADER_FORMAT = '%x00%H'
 
 /** A patch line naming the blobs of a change (`index <old>..<new> <mode>`): left out of its change id. */
 export const DIFF_INDEX_LINE_PREFIX = 'index '
+
+/** The refs a linked worktree holds of its own, read from it: they go with it. */
+export const PER_WORKTREE_REF_PREFIXES = ['refs/worktree/', 'refs/bisect/'] as const
