@@ -259,6 +259,7 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		reason: NO_SNAPSHOT_FIXED_LINE,
 	},
 	'lot close': { argv: ['close', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
+	'lot prune': { argv: ['prune', FORGED_WORD], quotes: true, noJson: PLAIN_TEXT },
 	inbox: {
 		argv: [`--${FORGED_WORD}`],
 		quotes: true,
