@@ -1,14 +1,18 @@
 /**
- * `handover run`: the hook record of a package whose full test steps hold a scoped step folds the base the hook
- * printed in its base line (A4d), is written without a key when the hook prints none (A20), and is as today when
- * the scoped step is not in the full list (only in fast or release).
+ * `handover run`: the hook record of a package whose hook runs `gate --hook` with a scoped hook step folds the base
+ * the hook printed in its base line (A4d), is written without a key when the hook prints none (A20), and is as today
+ * when the scoped step is not in the full list (only in fast or release) or the hook does not run `gate --hook`.
  */
 import { createHash } from 'node:crypto'
 
 import { SHA256_PATTERN } from '../../test/gate-records.constants.ts'
 import { readRecordFile } from '../../test/gate-records.ts'
 import { createScopedStep } from '../../test/scoped-gate-package.ts'
-import { createScopedHookedPackage, gateOfLayout } from '../../test/scoped-hook-package.ts'
+import {
+	createScopedHookedPackage,
+	createScopedNonTestStep,
+	gateOfLayout,
+} from '../../test/scoped-hook-package.ts'
 import {
 	HOOK_RECORD_FILE,
 	SCRATCH_REPOSITORY_TIMEOUT,
@@ -24,6 +28,9 @@ import {
 import { git } from '../../test/scratch-repository.ts'
 import { hashHookCommand } from '../lib/gate-records/check-key.ts'
 import { readTreeRecords } from '../lib/gate-records/check-store.ts'
+import { readModeCommandHashes } from '../lib/gate-records/mode-command-hashes.ts'
+import { resolveConfiguredBase } from '../lib/gate/gate-base.ts'
+import { readPackageJson } from '../lib/package-json.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -145,5 +152,62 @@ describe(
 				expect(record).not.toHaveProperty('base')
 			},
 		)
+	},
+)
+
+describe(
+	'handover run: the hook record when the only scoped hook step counts no tests, or the hook is no gate --hook',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('a hook running gate --hook, the only scoped full step one that counts no tests (a scoped rules step) → the record holds the printed base, its command hash folds it', async () => {
+			const root = createScopedHookedPackage({
+				gate: {
+					fast: [countingStep({ counter: createCounter(), name: 'check' })],
+					full: [
+						countingStep({ counter: createCounter(), name: 'check' }),
+						createScopedNonTestStep().step,
+					],
+				},
+				hookScript: hookPrinting([
+					baseLineOf({
+						commit: PRINTED_BASE,
+						source: 'base-branch',
+						selection: 'nothing selected',
+					}),
+				]),
+			})
+			editReadLot(root)
+			const { out } = writeReadLotHandover(root)
+			const hook = hashHookCommand(root)
+
+			const ran = await runFolder({ out })
+
+			const record = readRecordFile<GateRecord>({ root, name: HOOK_RECORD_FILE })
+			expect(ran.exitCode).toBe(0)
+			expect(record?.base).toEqual({ commit: PRINTED_BASE, source: 'base-branch' })
+			expect(record?.key?.commandHash).toBe(foldedHookHash({ hook, gateBase: PRINTED_BASE }))
+		})
+
+		it('a package on the default lists (a scoped rules step) whose hook is npm run check, no gate --hook → the record is stored under the committed tree with the hook files alone as its command hash, the hash a reader of the package expects', async () => {
+			const root = createScopedHookedPackage({ gate: {}, hookScript: 'npm run check' })
+			editReadLot(root)
+			const { out } = writeReadLotHandover(root)
+			const hook = hashHookCommand(root)
+
+			const ran = await runFolder({ out })
+
+			const record = readRecordFile<GateRecord>({ root, name: HOOK_RECORD_FILE })
+			const tree = git({ root, args: ['rev-parse', 'HEAD^{tree}'] }).trim()
+			const packageJson = readPackageJson(root)
+			const base = resolveConfiguredBase({ root, packageJson })
+			const gateBase = base !== undefined && 'commit' in base ? base.commit : undefined
+			expect(ran.exitCode).toBe(0)
+			expect(record?.key?.commandHash).toBe(hook)
+			expect(record).not.toHaveProperty('base')
+			expect(readTreeRecords({ root, tree }).map((stored) => stored.key?.commandHash)).toEqual([
+				hook,
+			])
+			expect(readModeCommandHashes({ root, packageJson, gateBase }).hook).toBe(hook)
+		})
 	},
 )

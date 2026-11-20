@@ -368,6 +368,20 @@ describe('gate --hook: its own arguments', { timeout: SCRATCH_REPOSITORY_TIMEOUT
 	})
 })
 
+describe(
+	'gate --hook: a full gate holding no step',
+	{ timeout: SCRATCH_REPOSITORY_TIMEOUT },
+	() => {
+		it('an empty full list and no hook list → exit 0 and the line saying so, nothing run', async () => {
+			const root = createScopedPackage({ gate: { fast: [], full: [] } })
+
+			const result = await runGateIn({ cwd: root, argv: ['--hook'] })
+
+			expect(result).toEqual({ exitCode: 0, output: NO_HOOK_STEP_LINE })
+		})
+	},
+)
+
 describe('gate --hook: review round 1 fixes', { timeout: SCRATCH_REPOSITORY_TIMEOUT }, () => {
 	it('a package in a subfolder of its repository, the relative index path git hands the hook (.git/index) → resolved against the worktree top, the gated tree answers', async () => {
 		const testCounter = createCounter()

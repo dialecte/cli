@@ -28,24 +28,25 @@
  * records `dialecte-gate-release.json`. A gate config the cli cannot run exits 2 (1 under `--hook`).
  *
  * `--hook [--no-reuse]` runs in a commit hook the `dialecte.gate.hook` steps when the package declares them (a package
- * whose suite runs on CI), after the tdd receipts of the lot (`runHookTddStep`: they prove the commit, so no test
- * runs; a failure runs no step); else every step of `--full`, a scoped one against the hook base, with no tdd step. Each step is answered by the newest green record of what
- * is committed that ran it as it is now - any mode (`--fast`, `--full`, `--release`, an earlier hook), its key the tree
- * of the index git hands the hook (never the working files: a merge commit and a partial commit check what they
- * record), what npm installed and the `file:` dependencies, the step itself its own hash (a scoped step's with the hook
- * base, or recorded by a run that checked everything) - and says so on one line naming the run that really ran it:
- * `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no record answers run together, in list
- * order, with their usual lines and the verdict. A green `--full` (or covering `--release`) record of an older cli,
- * with no step hashes, still answers the test steps as a whole, with its one line. `--no-reuse`, or git variables
- * naming another repository, answer nothing. No hygiene, no hand-over hold (it runs inside `handover run`'s own
- * commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with its hash, an answered one with
- * the run it came from; it goes to the repository's store, or - given `DIALECTE_CHECK_STORE`, the absolute git common
- * dir of the repository a rehearsal clones - to that store, marked as a rehearsal's (any other value is ignored, said
- * on the hook's first line; no step ever sees the variable). The record is kept only when the working files were the
- * committed tree before and after the steps ran: a step reads the working files, so a run on others answers nothing of
- * the tree. When a hook step is scoped it resolves the hook base once - the hand-over base `handover run` hands down
- * (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live run of that folder holds it, else the base
- * branch's - and prints it on one more line with what was selected (or `reused`).
+ * whose suite runs on CI), after the tdd receipts of the lot (`runHookTddStep`: they prove the commit, so no test runs;
+ * a failure runs no step); else every step of `--full`, a scoped one against the hook base, with no tdd step. Each step
+ * is answered by the newest green record of what is committed that ran it as it is now - any mode (`--fast`, `--full`,
+ * `--release`, an earlier hook), its key the tree of the index git hands the hook (never the working files: a merge
+ * commit and a partial commit check what they record), what npm installed and the `file:` dependencies, the step itself
+ * its own hash (a scoped step's with the hook base, or recorded by a run that checked everything) - and says so on one
+ * line naming the run that really ran it: `gate --hook: reused <step> from <mode> <time> (HEAD <short>)`. The steps no
+ * record answers run together, in list order, with their usual lines and the verdict. A green `--full` (or covering
+ * `--release`) record of an older cli, with no step hashes, still answers the test steps as a whole, with its one line.
+ * `--no-reuse`, or git variables naming another repository, answer nothing. No hygiene, no hand-over hold (it runs
+ * inside `handover run`'s own commit). Every run with a HEAD writes its own record, mode `hook-gate`: each step with
+ * its hash, an answered one with the run it came from; it goes to the repository's store, or - given
+ * `DIALECTE_CHECK_STORE`, the absolute git common dir of the repository a rehearsal clones - to that store, marked as a
+ * rehearsal's (any other value is ignored, said on the hook's first line; no step ever sees the variable). The record
+ * is kept only when the working files were the committed tree before and after the steps ran: a step reads the working
+ * files, so a run on others answers nothing of the tree. When a hook step is scoped it resolves the hook base once -
+ * the hand-over base `handover run` hands down (`DIALECTE_HANDOVER_BASE` with `DIALECTE_HANDOVER_FOLDER`) when a live
+ * run of that folder holds it, else the base branch's - and prints it on one more line with what was selected (or
+ * `reused`).
  */
 import { join } from 'node:path'
 

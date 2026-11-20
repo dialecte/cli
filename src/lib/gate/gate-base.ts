@@ -18,11 +18,14 @@ import {
 	NO_CONFIGURED_BASE_BRANCH,
 	ORIGIN_BRANCH_REF_PREFIX,
 	ORIGIN_DEFAULT_BRANCH_REF,
+	GATE_HOOK_COMMAND_PATTERN,
+	NPM_RUN_PATTERN,
 	SECOND_DEFAULT_BASE_BRANCH,
 } from './gate-base.constants.ts'
 import { GATE_LIST_NAMES } from './gate-config.constants.ts'
 import { holdsScopedStep, resolveGateSteps, resolveHookSteps } from './gate-config.ts'
 
+import type { CommitHookFile } from '../git-hooks.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { Refusal } from '../refusal.types.ts'
 import type {
@@ -150,6 +153,40 @@ export function resolveConfiguredBase(params: {
  */
 export function hasScopedHookStep(packageJson: PackageJson): boolean {
 	return holdsScopedStep(resolveHookSteps({ packageJson }))
+}
+
+/**
+ * True when a hook record folds the base its hook printed: the hook runs `gate --hook` (`runsGateHook`) and a step it
+ * runs is scoped (`hasScopedHookStep`). Another hook (`npm run check`) prints no base: its record keys on its files.
+ */
+export function foldsHookBase(params: {
+	packageJson: PackageJson
+	hookFiles: readonly CommitHookFile[]
+}): boolean {
+	return runsGateHook(params) && hasScopedHookStep(params.packageJson)
+}
+
+/**
+ * True when one of `hookFiles` runs `gate --hook`: in its own text, or in a package script it reaches through
+ * `npm run <script>`, followed through the scripts that script runs in turn.
+ */
+export function runsGateHook(params: {
+	packageJson: PackageJson
+	hookFiles: readonly CommitHookFile[]
+}): boolean {
+	const scripts = params.packageJson.scripts ?? {}
+	const seen = new Set<string>()
+	const pending = params.hookFiles.map((file) => file.bytes.toString('utf8'))
+	for (let text = pending.pop(); text !== undefined; text = pending.pop()) {
+		if (GATE_HOOK_COMMAND_PATTERN.test(text)) return true
+		for (const [, name] of text.matchAll(NPM_RUN_PATTERN)) {
+			const script = scripts[name]
+			if (script === undefined || seen.has(name)) continue
+			seen.add(name)
+			pending.push(script)
+		}
+	}
+	return false
 }
 
 /**

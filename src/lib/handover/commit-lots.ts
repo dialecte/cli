@@ -8,7 +8,7 @@
  * failing step's last lines (failed), then the full log's path; then the commit's sha and stat. A
  * repository with no commit hook prints none of it. A hook that ended (passed or failed, not stalled) is
  * recorded as a gate record of the tree it ran on (`dialecte-gate-hook.json`, and the repository's store of
- * records by tree), which the card reads; when a hook step is scoped, keyed with the base the
+ * records by tree), which the card reads; when the hook runs `gate --hook` with a scoped step, keyed with the base the
  * hook printed it used (none printed: no key, never stored). A rehearsal may commit a lot without its hook
  * (`--no-verify`, in its scratch clone only) when a green record of the lot's tree answers for it. A lot
  * whose commit fails is unstaged again (a merge lot's merge aborted), so the same command resumes at it
@@ -98,7 +98,7 @@ export async function commitLots(params: {
 	/** A rehearsal clone's working tree around each lot (the real run passes none: its working tree never changes). */
 	lotTree?: CloneLotTree
 	/**
-	 * A step the hook's `gate --hook` runs is scoped: a hook record's command hash folds the base the
+	 * The hook runs `gate --hook` with a scoped step (`foldsHookBase`): a hook record's command hash folds the base the
 	 * hook printed, and a hook that printed none is recorded without a key.
 	 */
 	scoped?: boolean
