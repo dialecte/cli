@@ -1259,7 +1259,23 @@ describe(
 			})
 
 			expect(result.exitCode).toBe(1)
-			expect(result.output).toContain('git 2.38 or later')
+			expect(result.output).toContain(
+				'git 2.38 or later needed for merge lots (the trial merge), found git version 2.37.1',
+			)
+		})
+
+		it('a git version line that is no version → a merge lot is refused at the write, the line printed as it is', () => {
+			const scenario = mergeScenario({ noTree: true })
+
+			const result = runHandover({
+				probe: noRepositoryCli,
+				argv: [scenario.lotsPath],
+				cliPath: WRITER_CLI,
+				gitVersion: () => 'not git',
+			})
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain('found not git')
 		})
 
 		it('a null resolution for a modify/delete conflict → the file is removed and committed as removed', async () => {

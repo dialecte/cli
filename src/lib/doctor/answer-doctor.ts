@@ -14,6 +14,19 @@ export function answerDoctor(params: {
 }
 
 /**
+ * What `dialecte doctor --host` prints: the host lines, one each, as `doctor` renders them. Exit 1 on an error only: a
+ * warning (nothing to probe with, a part not installed) never fails.
+ */
+export function answerHostDoctor(params: { lines: readonly DoctorLine[] }): LookupCommandOutput {
+	const exitCode = params.lines.some(function isError(line) {
+		return line.status === 'error'
+	})
+		? 1
+		: 0
+	return { output: endedTextOf(params.lines.map(renderLine)), exitCode }
+}
+
+/**
  * What a session start reads: nothing when every line is ok, else one line per warning or error with its fix. Always exit
  * 0, and `--json` is not offered: the output goes into the agent's context as text.
  */

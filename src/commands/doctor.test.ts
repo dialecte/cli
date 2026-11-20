@@ -2,10 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { createScratchRepository, git } from '../../test/scratch-repository.ts'
 import { readCliVersion } from '../lib/read-cli-version.ts'
 import { run, runDoctor } from './doctor.ts'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { HostLine } from '../lib/host/host.types.ts'
 
 vi.mock('../lib/read-cli-version.ts', () => ({ readCliVersion: vi.fn(() => '0.2.0') }))
 
@@ -218,5 +221,144 @@ describe('runDoctor profile', () => {
 
 		expect(result.output).toContain('profile  contributor\n')
 		expect(result.output).not.toContain('dialecte.contrib.steps')
+	})
+})
+
+describe('runDoctor --host', () => {
+	const OK: HostLine = { status: 'ok', subject: 'viewChecks', detail: 'a pull request read' }
+	const WARNING: HostLine = {
+		status: 'warning',
+		subject: 'stackHelp',
+		detail: 'gh stack is not installed',
+		fix: 'gh extension install github/gh-stack',
+	}
+	const ERROR: HostLine = { status: 'error', subject: 'reviewComments', detail: 'gh api: HTTP 403' }
+
+	/** `--host` run in `app` with the host lines given; the folders and vendors it was asked for are recorded. */
+	function host(params: { lines: HostLine[]; argv?: string[]; cwd?: string }) {
+		const asked: { root: string; vendor: string }[] = []
+		const result = runDoctor({
+			argv: ['--host', ...(params.argv ?? [])],
+			cwd: params.cwd ?? app,
+			dialecteRoot: undefined,
+			cliVersion: '0.2.0',
+			hostLines: ({ root, vendor }) => (asked.push({ root, vendor: vendor.name }), params.lines),
+		})
+		return { result, asked }
+	}
+
+	it('the host lines only, none of the install checks, though the folder has a problem and a package.json', () => {
+		const origin = createScratchRepository({
+			'package.json': JSON.stringify({ dependencies: { '@dialecte/core': '0.7.0' } }),
+		})
+		git({ root: origin, args: ['remote', 'add', 'origin', 'https://github.com/example/repo.git'] })
+
+		const { result, asked } = host({ lines: [OK], cwd: origin })
+
+		expect(result).toEqual({ output: '✅ viewChecks  a pull request read\n', exitCode: 0 })
+		expect(asked).toEqual([{ root: origin, vendor: 'github' }])
+	})
+
+	it('no package.json in the folder → the host lines still print (no installed package is needed)', () => {
+		const { result } = host({ lines: [OK], argv: ['--vendor', 'github'] })
+
+		expect(result).toEqual({ output: '✅ viewChecks  a pull request read\n', exitCode: 0 })
+	})
+
+	it.each([
+		{ label: 'ok lines only', lines: [OK], exitCode: 0 },
+		{ label: 'warnings only', lines: [OK, WARNING], exitCode: 0 },
+		{ label: 'one error among ok lines and a warning', lines: [OK, WARNING, ERROR], exitCode: 1 },
+	])('$label → exit $exitCode', ({ lines, exitCode }) => {
+		const { result } = host({ lines, argv: ['--vendor', 'github'] })
+
+		expect(result.exitCode).toBe(exitCode)
+	})
+
+	it('a warning and an error → each printed as doctor prints it, the warning with its fix', () => {
+		const { result } = host({ lines: [WARNING, ERROR], argv: ['--vendor', 'github'] })
+
+		expect(result.output).toBe(
+			'⚠️  stackHelp  gh stack is not installed - fix: gh extension install github/gh-stack\n❌ reviewComments  gh api: HTTP 403\n',
+		)
+	})
+
+	it('--vendor github in a repository whose origin names no vendor → the github probes run', () => {
+		const noVendor = createScratchRepository()
+
+		const { asked } = host({ lines: [OK], argv: ['--vendor', 'github'], cwd: noVendor })
+
+		expect(asked).toEqual([{ root: noVendor, vendor: 'github' }])
+	})
+
+	it.each([
+		{ label: 'no origin and no --vendor', argv: [] },
+		{ label: 'a --vendor that names no known vendor', argv: ['--vendor', 'gitlab'] },
+	])(
+		'$label → exit 1, an error naming the origin, the known vendors and the key host; the host lines never asked',
+		({ argv }) => {
+			const noVendor = createScratchRepository()
+
+			const { result, asked } = host({ lines: [OK], argv, cwd: noVendor })
+
+			expect(result.exitCode).toBe(1)
+			expect(result.output).toContain('❌')
+			expect(result.output).toContain('github')
+			expect(asked).toEqual([])
+		},
+	)
+
+	it('--vendor with no value → a usage error, exit 2; the host lines never asked', () => {
+		const { result, asked } = host({ lines: [OK], argv: ['--vendor'] })
+
+		expect(result.exitCode).toBe(2)
+		expect(result.output).toContain('dialecte doctor --host [--vendor <name>]')
+		expect(asked).toEqual([])
+	})
+
+	it('--vendor=gitlab (the `=` form, which the cli does not read) → a usage error naming the `--vendor <name>` form, exit 2; the host lines never asked', () => {
+		const { result, asked } = host({ lines: [OK], argv: ['--vendor=gitlab'] })
+
+		expect(result.exitCode).toBe(2)
+		expect(result.output).toContain('--vendor <name>')
+		expect(asked).toEqual([])
+	})
+
+	it('an origin on an unknown host and no --vendor → exit 1, the error names the host; the host lines never asked', () => {
+		const origin = createScratchRepository()
+		git({ root: origin, args: ['remote', 'add', 'origin', 'https://example.com/x.git'] })
+
+		const { result, asked } = host({ lines: [OK], cwd: origin })
+
+		expect(result.exitCode).toBe(1)
+		expect(result.output).toContain('example.com')
+		expect(asked).toEqual([])
+	})
+
+	it('no origin and no --vendor → the error names the missing origin and the key host', () => {
+		const { result } = host({ lines: [OK], cwd: createScratchRepository() })
+
+		expect(result.output).toContain('no remote origin')
+		expect(result.output).toContain('`host`')
+	})
+
+	it('plain doctor and --brief → the host lines are never asked for', () => {
+		write('package.json', JSON.stringify({ name: 'app', dependencies: {} }))
+		const asked: string[] = []
+		function hostLines(): HostLine[] {
+			asked.push('asked')
+			return [ERROR]
+		}
+
+		runDoctor({ argv: [], cwd: app, dialecteRoot: undefined, cliVersion: '0.2.0', hostLines })
+		runDoctor({
+			argv: ['--brief'],
+			cwd: app,
+			dialecteRoot: undefined,
+			cliVersion: '0.2.0',
+			hostLines,
+		})
+
+		expect(asked).toEqual([])
 	})
 })

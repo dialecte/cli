@@ -56,3 +56,40 @@ export const NO_STACKS_REASON = 'gh stack is not installed'
 
 /** The page of a pull request's changed files, after its own page. */
 export const FILES_TAB_SUFFIX = '/files'
+
+/**
+ * The pull request whose line comments the live probe reads: a merged public one holding comments on a line and
+ * replies, so a renamed key of the review comments shows.
+ */
+export const REVIEW_PROBE = { owner: 'cli', repo: 'cli', number: '15071' } as const
+
+/** A branch no repository has: the live probe reads it to check what gh prints for no pull request. */
+export const NO_SUCH_BRANCH = 'zz-dialecte-no-such-branch-probe'
+
+/** The read that finds the pull request the other live probes read. */
+export const GITHUB_SUBJECT_CALL = 'listMergedPullRequests' as const
+
+/** How `gh pr list` is asked for the newest merged pull request. */
+export const MERGED_STATE = 'merged'
+export const ONE_PULL_REQUEST = '1'
+
+/** The command that installs the gh-stack extension. */
+export const GH_STACK_INSTALL = 'gh extension install github/gh-stack'
+
+/** What the live probes of the GitHub vendor say; `{x}` filled per line. */
+export const GITHUB_PROBE_TEXTS = {
+	nothingToProbe: 'gh pr list: no merged pull request, nothing to probe',
+	notTheJson: 'gh pr list: not the JSON it writes: {text}',
+	newestMerged: 'pull request #{number}, the newest merged',
+	needsPullRequest: 'no merged pull request to read: nothing to probe',
+	pullRequestRead: '#{number} read; a branch with none reads as no pull request',
+	pullRequestNone: '#{number} reads as no pull request',
+	noPullRequestTextChanged: 'the text gh prints for no pull request changed: {refusal}',
+	checksRead: '#{number}: checks {state}',
+	queuedRead: '#{number}: queued {queued}',
+	commentsRead: '{reference}: {count} comments, {lines} on a line, {replies} replies',
+	commentKeysChanged:
+		'review-comment keys changed: {reference} reads {lines} comments on a line and {replies} replies, at least one of each expected',
+	stacksOn: 'gh stack answers',
+	stacksOff: '{why}: stacks off',
+} as const

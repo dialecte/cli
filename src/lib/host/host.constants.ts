@@ -21,3 +21,11 @@ export const BROWSER_OPENERS: Readonly<Record<string, readonly string[]>> & {
 
 /** How long the browser opener may take: it hands the page over and returns. */
 export const OPEN_TIMEOUT_MS = 10_000
+
+/** The adapter methods a live probe may call: reads only (a probe never writes). */
+export const HOST_READ_METHODS = [
+	'readPullRequest',
+	'readChecks',
+	'readQueued',
+	'probeStacks',
+] as const

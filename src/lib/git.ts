@@ -8,7 +8,9 @@ import {
 	FETCH_ENVIRONMENT,
 	FETCH_FAILED_LINE,
 	FETCH_TIMEOUT_MS,
+	GIT_FLOOR,
 	GIT_READ_ENVIRONMENT,
+	GIT_VERSION_PATTERN,
 	ORIGIN_REMOTE,
 } from './git.constants.ts'
 import { LOT_FILE_PATTERN } from './worktree/worktree.constants.ts'
@@ -277,4 +279,28 @@ export function fetchOrigin(params: { root: string }): string | undefined {
 	if (run.status === 0) return undefined
 	const reason = run.error?.message ?? (run.stderr.trim().split('\n')[0] || `exit ${run.status}`)
 	return FETCH_FAILED_LINE.replace('{reason}', () => reason)
+}
+
+/** What a `git --version` line says: the version, its major and minor, and the trimmed line; undefined for any other text. */
+export function gitVersionOf(params: {
+	text: string
+}): { major: number; minor: number; version: string; line: string } | undefined {
+	const line = params.text.trim()
+	const groups = GIT_VERSION_PATTERN.exec(line)?.groups
+	if (groups?.version === undefined) return undefined
+	return { major: Number(groups.major), minor: Number(groups.minor), version: groups.version, line }
+}
+
+/** Whether the version is older than `GIT_FLOOR`. */
+export function belowGitFloor(params: {
+	version: NonNullable<ReturnType<typeof gitVersionOf>>
+}): boolean {
+	const [floorMajor, floorMinor] = GIT_FLOOR
+	const { major, minor } = params.version
+	return major < floorMajor || (major === floorMajor && minor < floorMinor)
+}
+
+/** The raw `git --version` line, read in `root` (one read; callers parse it with `gitVersionOf`). */
+export function readGitVersion(params: { root: string }): string {
+	return readGit({ root: params.root, args: ['--version'] })
 }

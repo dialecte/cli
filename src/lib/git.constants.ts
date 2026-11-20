@@ -23,3 +23,9 @@ export const FETCH_ENVIRONMENT = {
 	GIT_TERMINAL_PROMPT: '0',
 	GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
 } as const
+
+/** The oldest git the cli runs on (`merge-tree --write-tree`): major, minor. */
+export const GIT_FLOOR = [2, 38] as const
+
+/** The line `git --version` prints: its version, major and minor. */
+export const GIT_VERSION_PATTERN = /^git version (?<version>(?<major>\d+)\.(?<minor>\d+)\S*)/

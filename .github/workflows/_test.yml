@@ -77,3 +77,46 @@ jobs:
 
       - name: Run config tests
         run: npx vitest run src/lib/config/ src/commands/config src/lib/release/
+
+  # every host read the lot verbs make, run once on the real gh through the cli's own code: a part of `test`, so
+  # ci-ok requires it on every pull request and queue run. The token is lowered to these read scopes here; a
+  # called job can never raise it, so if the repository's default token is ever switched to restricted (contents
+  # and packages read only), this request makes the whole run invalid, and ci-ok with it.
+  host-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+    env:
+      # gh reads it, and `gh extension install` needs it too
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+
+      # the github host: its stack extension at the version the record was taken from
+      - name: Setup the github host
+        run: gh extension install github/gh-stack --pin v0.3.0
+
+      - name: Probe the github host
+        run: node src/cli.ts doctor --host --vendor github

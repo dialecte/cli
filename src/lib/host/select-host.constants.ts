@@ -20,6 +20,9 @@ export const HOST_CONFIG_KEY = 'host'
 export const NO_VENDOR_REFUSAL =
 	'no host vendor for {origin}: it is none of the known vendors ({vendors}); set the key `host` to one of them in the personal config.yml'
 
+/** A vendor name that is none of the known vendors: `{name}` the name given, `{vendors}` the known ones. */
+export const UNKNOWN_VENDOR_REFUSAL = 'no host vendor named {name}: the known vendors are {vendors}'
+
 /** How `{origin}` reads when the repository has no remote origin (none, a local path or a `file://` URL). */
 export const NO_REMOTE_ORIGIN = 'a repository with no remote origin'
 

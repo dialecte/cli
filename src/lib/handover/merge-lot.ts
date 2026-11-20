@@ -16,13 +16,15 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 
-import { listChangedFiles, readGit } from '../git.ts'
+import { GIT_FLOOR } from '../git.constants.ts'
+import { belowGitFloor, gitVersionOf, listChangedFiles, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { textOf } from '../print/print.ts'
 import { readCommittedBytes } from './committed-bytes.ts'
 import {
 	BINARY_PROBE_LENGTH,
 	CONFLICT_MARKER_PATTERN,
-	MERGE_LOT_GIT_VERSION,
+	MERGE_LOT_OLD_GIT,
 	MERGE_MARKER_FILE,
 	UNRESOLVABLE_MODES,
 } from './handover.constants.ts'
@@ -39,11 +41,12 @@ import type {
 
 /** Why git cannot make merge lots (a version before 2.38), or undefined when it can. */
 export function refuseOldGit(versionLine: string): string | undefined {
-	const [major = 0, minor = 0] = (/(\d+)\.(\d+)/.exec(versionLine) ?? []).slice(1).map(Number)
-	const [needMajor, needMinor] = MERGE_LOT_GIT_VERSION
-	return major > needMajor || (major === needMajor && minor >= needMinor)
-		? undefined
-		: `git ${needMajor}.${needMinor} or later needed for merge lots (the trial merge), found ${versionLine.trim()}`
+	const version = gitVersionOf({ text: versionLine })
+	if (version !== undefined && !belowGitFloor({ version })) return undefined
+	return fillMessage({
+		template: MERGE_LOT_OLD_GIT,
+		values: { floor: GIT_FLOOR.join('.'), line: version?.line ?? versionLine.trim() },
+	})
 }
 
 /**
