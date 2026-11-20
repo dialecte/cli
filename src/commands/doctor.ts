@@ -1,16 +1,18 @@
-import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 /**
  * `dialecte doctor` - installed `@dialecte/*` versions, the core API generation they are, whether the agent
  * skills follow node_modules, local checkouts, the cli itself; ✅ or ⚠️ with the one command that fixes it.
  * `--brief` is the session-start form: nothing when in sync, one line per problem, always exit 0.
  * `--host` probes every read of the repository's host vendor (or the one `--vendor` names) once, for real.
  */
+import { COMMAND_MAP } from '../lib/command-map/command-map.constants.ts'
 import { getArg, hasFlag } from '../lib/config.ts'
 import { answerDoctor, answerDoctorBrief, answerHostDoctor } from '../lib/doctor/answer-doctor.ts'
 import { diagnose } from '../lib/doctor/diagnose.ts'
 import {
 	HOST_SUBJECT,
 	HOST_USAGE_START,
+	VENDOR_EQUALS_FORM,
+	VENDOR_EQUALS_PREFIX,
 	VENDOR_NEEDS_NAME,
 } from '../lib/doctor/doctor.constants.ts'
 import { hostLines as probeHost } from '../lib/doctor/host-lines.ts'
@@ -71,7 +73,9 @@ function runHost(params: {
 	hostLines: (params: { root: string; vendor: HostVendorRecord }) => DoctorLine[]
 }): LookupCommandOutput {
 	const argv = [...params.argv]
-	if (hasFlag(argv, 'vendor') && !vendorNameGiven({ argv })) return vendorUsageError()
+	if (argv.some(isVendorEqualsForm)) return vendorUsageError({ why: VENDOR_EQUALS_FORM })
+	if (hasFlag(argv, 'vendor') && !vendorNameGiven({ argv }))
+		return vendorUsageError({ why: VENDOR_NEEDS_NAME })
 	const selected = selectedVendorOf({ argv: params.argv, cwd: params.cwd })
 	if ('refusal' in selected)
 		return answerHostDoctor({
@@ -97,12 +101,17 @@ function vendorNameGiven(params: { argv: string[] }): boolean {
 	return name !== undefined && !name.startsWith('-')
 }
 
-/** `--vendor` given with no name: the usage error, the usage line of `doctor --host`. */
-function vendorUsageError(): LookupCommandOutput {
+/** `--vendor` given with no name, or in the `=` form: `why`, then the usage line of `doctor --host`. */
+function vendorUsageError(params: { why: string }): LookupCommandOutput {
 	const usage = COMMAND_MAP.doctor.usage.filter(function isHostUsage(line) {
 		return line.startsWith(HOST_USAGE_START)
 	})
-	return { output: textOf([VENDOR_NEEDS_NAME, ...usage, '']), exitCode: 2 }
+	return { output: textOf([params.why, ...usage, '']), exitCode: 2 }
+}
+
+/** `--vendor=<name>`: the cli reads a flag's value from the next word only. */
+function isVendorEqualsForm(word: string): boolean {
+	return word.startsWith(VENDOR_EQUALS_PREFIX)
 }
 
 /** The host lines on the real tool: the vendor's adapter, its runner and its describe reads, and the git on PATH. */

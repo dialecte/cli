@@ -1,13 +1,20 @@
 /** The host check of `dialecte doctor --host`: every read of the vendor probed once, through the adapter, then the tool versions. */
 import { GIT_FLOOR } from '../git.constants.ts'
 import { belowGitFloor, gitVersionOf } from '../git.ts'
+import { HOST_READ_METHODS } from '../host/host.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
-import { GIT_SUBJECT, HOST_VERSION_TEXTS, UPGRADE_TOOL_FIX } from './doctor.constants.ts'
+import {
+	GIT_SUBJECT,
+	HOST_VERSION_TEXTS,
+	LEADING_DIGITS,
+	UPGRADE_TOOL_FIX,
+} from './doctor.constants.ts'
 
 import type {
 	HostAdapter,
 	HostDescribe,
 	HostLine,
+	HostReadAdapter,
 	HostToolRun,
 	HostVendorRecord,
 } from '../host/host.types.ts'
@@ -27,7 +34,8 @@ export function hostLines(params: {
 	describe: HostDescribe
 	readGitVersion(params: { root: string }): string
 }): HostLine[] {
-	const { root, vendor, host, run } = params
+	const { root, vendor, run } = params
+	const host = readAdapterOf({ host: params.host })
 	const found = vendor.subject.find({ root, host, run, subject: vendor.subject.call })
 	const reads = Object.entries(vendor.probes).map(function probeRead([subject, probe]) {
 		return probe({
@@ -44,6 +52,15 @@ export function hostLines(params: {
 		...versionLines({ root, vendor, describe: params.describe }),
 		gitLine({ root, readGitVersion: params.readGitVersion }),
 	]
+}
+
+/** The adapter's read methods only (`HOST_READ_METHODS`): what a probe is given, so it cannot write. */
+function readAdapterOf(params: { host: HostAdapter }): HostReadAdapter {
+	return Object.fromEntries(
+		HOST_READ_METHODS.map(function readMethod(name) {
+			return [name, params.host[name]]
+		}),
+	) as HostReadAdapter
 }
 
 /** One line per part of the tool the record names: older than recorded warns, newer is ok naming both. */
@@ -88,13 +105,21 @@ function versionLines(params: {
 
 /** The sign of `left` against `right`, dotted numbers compared one by one (a missing number reads 0). */
 function compareVersions(params: { left: string; right: string }): number {
-	const left = params.left.split('.').map(Number)
-	const right = params.right.split('.').map(Number)
+	const left = numbersOfVersion({ version: params.left })
+	const right = numbersOfVersion({ version: params.right })
 	for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
 		const difference = (left[index] ?? 0) - (right[index] ?? 0)
 		if (difference !== 0) return Math.sign(difference)
 	}
 	return 0
+}
+
+/** The leading number of each dotted part (`2.104.1-pre` reads 2, 104, 1); a part with none reads 0, never NaN. */
+function numbersOfVersion(params: { version: string }): number[] {
+	return params.version.split('.').map(function leadingNumber(part) {
+		const digits = LEADING_DIGITS.exec(part)?.[0]
+		return digits === undefined ? 0 : Number(digits)
+	})
 }
 
 /** The git on PATH against the floor: below it, or a line that is no version, is an error. */

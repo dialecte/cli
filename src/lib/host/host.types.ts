@@ -1,4 +1,4 @@
-import type { HOST_VENDOR_NAMES } from './host.constants.ts'
+import type { HOST_READ_METHODS, HOST_VENDOR_NAMES } from './host.constants.ts'
 
 /** A pull request on the host, as a landing reads it. */
 export type PullRequest = {
@@ -116,6 +116,9 @@ export type HostAdapter = {
 	}): HostRefusal | undefined
 }
 
+/** The adapter as a probe sees it: only the methods the probes use, all reads, so a probe cannot write. */
+export type HostReadAdapter = Pick<HostAdapter, (typeof HOST_READ_METHODS)[number]>
+
 /** Whether a host call only reads (short timeout, probed live) or writes (long timeout, never live). */
 export type HostCallKind = 'read' | 'write'
 
@@ -168,10 +171,10 @@ export type HostVendor<Calls extends HostCallTable, Subject extends keyof Calls>
 	/** The read that finds the pull request the other probes read, and its probe. */
 	subject: {
 		call: Calls[Subject]['kind'] extends 'write' ? never : Subject
-		find: HostSubjectProbe
+		find: HostSubjectProbe<Calls>
 	}
 	/** One live probe per other read call; a read without one does not compile. */
-	probes: Record<Exclude<ReadCallOf<Calls>, Subject>, HostProbe>
+	probes: Record<Exclude<ReadCallOf<Calls>, Subject>, HostProbe<Calls>>
 	createAdapter(): HostAdapter
 }
 
@@ -182,10 +185,35 @@ export type HostVendorSeams = {
 	describe: HostDescribe
 }
 
+/**
+ * A tool run with its call table erased (any call name), written out rather than as `HostToolRun<HostCallTable>`: a
+ * vendor's run, typed by its own table, is compared with it structurally.
+ */
+export type HostErasedToolRun = {
+	bivarianceHack(params: HostToolCall<string>): { output: string } | HostRefusal
+}['bivarianceHack']
+
+/** The probes of a vendor whose call table is erased: the same shapes, run by any call name. */
+export type HostErasedProbes = {
+	find(params: {
+		root: string
+		host: HostReadAdapter
+		run: HostErasedToolRun
+		subject: string
+	}): ReturnType<HostSubjectProbe>
+	probe(params: {
+		root: string
+		host: HostReadAdapter
+		run: HostErasedToolRun
+		subject: string
+		pullRequest?: number
+	}): HostLine
+}
+
 /** A vendor with its call table erased, and what its probes run with: the element of the one list of vendors. */
 export type HostVendorRecord = Omit<HostVendor<HostCallTable, string>, 'subject' | 'probes'> & {
-	subject: { call: string; find: HostSubjectProbe }
-	probes: Readonly<Record<string, HostProbe>>
+	subject: { call: string; find: HostErasedProbes['find'] }
+	probes: Readonly<Record<string, HostErasedProbes['probe']>>
 } & HostVendorSeams
 
 /** A flag's short and long forms, as a tool's help prints them together (`-q, --jq`). */
@@ -254,26 +282,32 @@ export type HostLine = {
 	fix?: string
 }
 
-/** The seam a vendor's tool is called through for a probe-only read: one call of its table, by name. */
-export type HostToolRun = {
-	bivarianceHack(params: {
-		root: string
-		call: string
-		positional?: readonly string[]
-		options?: Readonly<Record<string, string | true | readonly string[] | undefined>>
-		values?: Readonly<Record<string, string>>
-		input?: string
-	}): { output: string } | HostRefusal
+/** One call of a vendor's tool for a probe-only read: `call` names an entry of its table. */
+export type HostToolCall<Call extends string> = {
+	root: string
+	call: Call
+	positional?: readonly string[]
+	options?: Readonly<Record<string, string | true | readonly string[] | undefined>>
+	values?: Readonly<Record<string, string>>
+	input?: string
+}
+
+/** The seam a vendor's tool is called through for a probe-only read: one read call of its table, by name. */
+export type HostToolRun<Calls extends HostCallTable = HostCallTable> = {
+	/** The read calls of the vendor's table (any name when the table is erased). */
+	bivarianceHack(
+		params: HostToolCall<HostCallTable extends Calls ? string : Extract<ReadCallOf<Calls>, string>>,
+	): { output: string } | HostRefusal
 }['bivarianceHack']
 
 /**
  * One live probe of a read call: its line, whose subject is `subject` (the probe's key in the vendor's table);
  * `pullRequest` is the one the vendor's subject probe found, when it did.
  */
-export type HostProbe = (params: {
+export type HostProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 	root: string
-	host: HostAdapter
-	run: HostToolRun
+	host: HostReadAdapter
+	run: HostToolRun<Calls>
 	subject: string
 	pullRequest?: number
 }) => HostLine
@@ -282,10 +316,10 @@ export type HostProbe = (params: {
  * The probe of the read that finds the pull request the other probes read: its line (its subject `subject`, the
  * read's name), and the pull request found.
  */
-export type HostSubjectProbe = (params: {
+export type HostSubjectProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 	root: string
-	host: HostAdapter
-	run: HostToolRun
+	host: HostReadAdapter
+	run: HostToolRun<Calls>
 	subject: string
 }) => {
 	line: HostLine

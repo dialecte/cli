@@ -316,6 +316,14 @@ describe('runDoctor --host', () => {
 		expect(asked).toEqual([])
 	})
 
+	it('--vendor=gitlab (the `=` form, which the cli does not read) → a usage error naming the `--vendor <name>` form, exit 2; the host lines never asked', () => {
+		const { result, asked } = host({ lines: [OK], argv: ['--vendor=gitlab'] })
+
+		expect(result.exitCode).toBe(2)
+		expect(result.output).toContain('--vendor <name>')
+		expect(asked).toEqual([])
+	})
+
 	it('an origin on an unknown host and no --vendor → exit 1, the error names the host; the host lines never asked', () => {
 		const origin = createScratchRepository()
 		git({ root: origin, args: ['remote', 'add', 'origin', 'https://example.com/x.git'] })

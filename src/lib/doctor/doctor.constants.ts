@@ -78,3 +78,12 @@ export const HOST_USAGE_START = 'dialecte doctor --host'
 
 /** `--vendor` given with no name. */
 export const VENDOR_NEEDS_NAME = 'doctor: --vendor needs a vendor name'
+
+/** `--vendor=<name>`, a form the cli does not read: the name goes in the next word. */
+export const VENDOR_EQUALS_FORM = 'doctor: --vendor takes its name as the next word, not after ='
+
+/** How the `=` form of `--vendor` starts. */
+export const VENDOR_EQUALS_PREFIX = '--vendor='
+
+/** The leading number of a version's dotted part (`1-pre` → `1`). */
+export const LEADING_DIGITS = /^\d+/

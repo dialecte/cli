@@ -18,7 +18,11 @@ export function answerDoctor(params: {
  * warning (nothing to probe with, a part not installed) never fails.
  */
 export function answerHostDoctor(params: { lines: readonly DoctorLine[] }): LookupCommandOutput {
-	const exitCode = params.lines.some((line) => line.status === 'error') ? 1 : 0
+	const exitCode = params.lines.some(function isError(line) {
+		return line.status === 'error'
+	})
+		? 1
+		: 0
 	return { output: endedTextOf(params.lines.map(renderLine)), exitCode }
 }
 

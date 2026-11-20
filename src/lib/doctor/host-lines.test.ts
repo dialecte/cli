@@ -5,10 +5,13 @@
 import { isDeepStrictEqual } from 'node:util'
 
 import { takeRefusingGhCalls } from '../../../test/suite-guard/refusing-gh.ts'
+import { GITHUB_CALLS } from '../host/github/github-calls.constants.ts'
+import { GITHUB_PROBES } from '../host/github/github-probes.ts'
 import { GITHUB_VENDOR } from '../host/github/github-vendor.ts'
+import { HOST_READ_METHODS } from '../host/host.constants.ts'
 import { hostLines } from './host-lines.ts'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest'
 
 import type {
 	HostAdapter,
@@ -17,6 +20,7 @@ import type {
 	HostToolRun,
 	HostLine,
 	HostProbe,
+	HostReadAdapter,
 	HostSubjectProbe,
 	HostVendor,
 } from '../host/host.types.ts'
@@ -48,18 +52,43 @@ const COMMENTS =
 
 type Answer = { output: string } | { refusal: string }
 
-/** An adapter answering as a healthy host does, for pull request 73 only; `overrides` replace what a row changes. */
+/** The adapter methods that change the host (or the screen): a probe calling one is a bug. */
+type WriteMethod = Exclude<
+	keyof HostAdapter,
+	(typeof HOST_READ_METHODS)[number] | 'readReviewComments'
+>
+
+/** A write method that fails the row the moment a probe calls it. */
+function forbidden(name: WriteMethod): () => never {
+	return function throwWrite(): never {
+		throw new Error(`a probe called the write ${name}`)
+	}
+}
+
+/** Every write method of the adapter, each throwing (the type forces a new write method to be listed here). */
+const WRITES: Pick<HostAdapter, WriteMethod> = {
+	openPullRequest: forbidden('openPullRequest'),
+	editPullRequest: forbidden('editPullRequest'),
+	closePullRequest: forbidden('closePullRequest'),
+	queuePullRequest: forbidden('queuePullRequest'),
+	draftPullRequest: forbidden('draftPullRequest'),
+	openFiles: forbidden('openFiles'),
+	linkStack: forbidden('linkStack'),
+	queueStack: forbidden('queueStack'),
+	retargetPullRequest: forbidden('retargetPullRequest'),
+}
+
+/**
+ * An adapter answering as a healthy host does, for pull request 73 only, and throwing on any write method;
+ * `overrides` replace what a row changes.
+ */
 function fakeHost(overrides: Partial<HostAdapter> = {}): HostAdapter {
 	function refuse(): { refusal: string } {
 		return { refusal: 'not probed' }
 	}
 	return {
+		...WRITES,
 		readPullRequest: ({ ref }) => (ref === '73' ? PULL_REQUEST : undefined),
-		openPullRequest: refuse,
-		editPullRequest: refuse,
-		closePullRequest: refuse,
-		queuePullRequest: refuse,
-		draftPullRequest: refuse,
 		readQueued: ({ number }) =>
 			number === 73 ? { queued: false } : { refusal: `gh api graphql: no pull request ${number}` },
 		readChecks: ({ number }) =>
@@ -67,11 +96,7 @@ function fakeHost(overrides: Partial<HostAdapter> = {}): HostAdapter {
 				? { head: 'abc', state: 'green', failing: [], pending: [] }
 				: { refusal: `gh pr view: no pull request ${number}` },
 		readReviewComments: refuse,
-		openFiles: refuse,
 		probeStacks: () => ({ stacks: true }),
-		linkStack: refuse,
-		queueStack: refuse,
-		retargetPullRequest: refuse,
 		...overrides,
 	}
 }
@@ -277,6 +302,17 @@ describe('hostLines, the versions', () => {
 		expect(lines.filter((line) => line.status !== 'ok')).toEqual([])
 	})
 
+	it('gh answering a pre-release newer than the recorded one (2.104.1-pre) → an ok line naming both versions', () => {
+		const lines = linesOf({ describe: fakeDescribe({ cli: '2.104.1-pre' }) })
+
+		const named = lines.filter(
+			(line) => line.detail.includes('2.104.1-pre') && line.detail.includes('2.104.0'),
+		)
+		expect(named.map((line) => line.status)).toEqual(['ok'])
+		expect(named[0]?.detail).toContain('newer than the recorded')
+		expect(lines.filter((line) => line.status !== 'ok')).toEqual([])
+	})
+
 	it('git below the floor → an error line carrying the version line', () => {
 		const lines = linesOf({ git: 'git version 2.37.9' })
 
@@ -292,6 +328,72 @@ describe('hostLines, the versions', () => {
 			lines.filter((line) => line.detail.includes('2.38.0')).map((line) => line.status),
 		).toEqual(['ok'])
 		expect(lines.filter((line) => line.status !== 'ok')).toEqual([])
+	})
+})
+
+describe('the probes read only', () => {
+	const OK_LINE: HostLine = { status: 'ok', subject: 'x', detail: 'x' }
+
+	it.each([
+		{ label: 'every read answering', run: fakeRun(), host: fakeHost() },
+		{
+			label: 'no merged pull request',
+			run: fakeRun({ listMergedPullRequests: { output: '[]' } }),
+			host: fakeHost(),
+		},
+		{
+			label: 'every read refused',
+			run: fakeRun({ listMergedPullRequests: { refusal: 'gh: HTTP 502' } }),
+			host: fakeHost({
+				readPullRequest: () => ({ refusal: 'x' }),
+				readChecks: () => ({ refusal: 'x' }),
+				readQueued: () => ({ refusal: 'x' }),
+				probeStacks: () => ({ stacks: false, why: 'x' }),
+			}),
+		},
+	])('$label → every probe set runs without calling a write method', ({ run, host }) => {
+		expect(() => linesOf({ run, host })).not.toThrow()
+	})
+
+	it('the fake host throws on every write method, naming it', () => {
+		const host = fakeHost()
+
+		expect(() => host.queuePullRequest({ root: '', number: 1, draft: false })).toThrow(
+			'a probe called the write queuePullRequest',
+		)
+		expect(() => host.openFiles({ root: '', url: 'u' })).toThrow(
+			'a probe called the write openFiles',
+		)
+	})
+
+	it('the host a probe gets is the read methods of the constant only: a write method does not compile', () => {
+		function queues({ host }: Parameters<HostProbe>[0]): ReturnType<HostProbe> {
+			// @ts-expect-error a probe's host has no write method
+			host.queuePullRequest({ root: '', number: 1, draft: false })
+			return OK_LINE
+		}
+
+		expectTypeOf<keyof HostReadAdapter>().toEqualTypeOf<(typeof HOST_READ_METHODS)[number]>()
+		expect(() => queues({ root: '', host: fakeHost(), run: fakeRun(), subject: 'x' })).toThrow(
+			'a probe called the write queuePullRequest',
+		)
+		expect([...HOST_READ_METHODS].sort()).toEqual(
+			['probeStacks', 'readChecks', 'readPullRequest', 'readQueued'].sort(),
+		)
+	})
+
+	it('the run a probe gets takes the read calls of its vendor’s table only: a write call does not compile', () => {
+		function merges({ run, root }: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
+			// @ts-expect-error mergePullRequest is a write call of the table
+			run({ root, call: 'mergePullRequest' })
+			run({ root, call: 'viewChecks' })
+			return OK_LINE
+		}
+
+		expectTypeOf<Parameters<(typeof GITHUB_PROBES)['viewChecks']>[0]['run']>().toEqualTypeOf<
+			HostToolRun<typeof GITHUB_CALLS>
+		>()
+		expect(merges({ root: '', host: fakeHost(), run: fakeRun(), subject: 'x' })).toEqual(OK_LINE)
 	})
 })
 

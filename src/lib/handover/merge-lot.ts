@@ -18,11 +18,13 @@ import { dirname, isAbsolute, join } from 'node:path'
 
 import { GIT_FLOOR } from '../git.constants.ts'
 import { belowGitFloor, gitVersionOf, listChangedFiles, readGit } from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { textOf } from '../print/print.ts'
 import { readCommittedBytes } from './committed-bytes.ts'
 import {
 	BINARY_PROBE_LENGTH,
 	CONFLICT_MARKER_PATTERN,
+	MERGE_LOT_OLD_GIT,
 	MERGE_MARKER_FILE,
 	UNRESOLVABLE_MODES,
 } from './handover.constants.ts'
@@ -41,8 +43,10 @@ import type {
 export function refuseOldGit(versionLine: string): string | undefined {
 	const version = gitVersionOf({ text: versionLine })
 	if (version !== undefined && !belowGitFloor({ version })) return undefined
-	const [floorMajor, floorMinor] = GIT_FLOOR
-	return `git ${floorMajor}.${floorMinor} or later needed for merge lots (the trial merge), found ${version?.line ?? versionLine.trim()}`
+	return fillMessage({
+		template: MERGE_LOT_OLD_GIT,
+		values: { floor: GIT_FLOOR.join('.'), line: version?.line ?? versionLine.trim() },
+	})
 }
 
 /**

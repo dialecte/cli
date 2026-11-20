@@ -11,13 +11,19 @@ import {
 	REVIEW_PROBE,
 } from './github.constants.ts'
 
-import type { HostLine, HostProbe, HostRefusal, HostSubjectProbe } from '../host.types.ts'
+import type {
+	HostLine,
+	HostProbe,
+	HostRefusal,
+	HostSubjectProbe,
+	HostToolRun,
+} from '../host.types.ts'
+import type { GITHUB_CALLS } from './github-calls.constants.ts'
 import type { GithubReadCall } from './github.types.ts'
-import type { runGh } from './run-gh.ts'
 
 /** The newest merged pull request's number, read with `gh pr list`; a refusal when gh fails or there is none. */
 export function newestMergedPullRequest(params: {
-	run: typeof runGh
+	run: HostToolRun<typeof GITHUB_CALLS>
 	root: string
 }): { number: number } | HostRefusal {
 	const answer = params.run({
@@ -61,8 +67,8 @@ function listOf(params: { text: string }): number[] | undefined {
 
 /** The newest merged pull request as the subject's line: a warning when there is none, an error when gh fails. */
 function findMergedPullRequest(
-	params: Parameters<HostSubjectProbe>[0],
-): ReturnType<HostSubjectProbe> {
+	params: Parameters<HostSubjectProbe<typeof GITHUB_CALLS>>[0],
+): ReturnType<HostSubjectProbe<typeof GITHUB_CALLS>> {
 	const found = newestMergedPullRequest({ run: params.run, root: params.root })
 	if ('refusal' in found)
 		return {
@@ -86,7 +92,10 @@ function findMergedPullRequest(
 }
 
 /** The subject: the newest merged pull request, which the other probes read. */
-export const GITHUB_SUBJECT: { call: typeof GITHUB_SUBJECT_CALL; find: HostSubjectProbe } = {
+export const GITHUB_SUBJECT: {
+	call: typeof GITHUB_SUBJECT_CALL
+	find: HostSubjectProbe<typeof GITHUB_CALLS>
+} = {
 	call: GITHUB_SUBJECT_CALL,
 	find: findMergedPullRequest,
 }
@@ -97,7 +106,7 @@ function needsPullRequest(params: { subject: string }): HostLine {
 }
 
 /** The pull request read by number, then a branch that has none: it must read as no pull request. */
-function probeViewPullRequest(params: Parameters<HostProbe>[0]): HostLine {
+function probeViewPullRequest(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
 	if (params.pullRequest === undefined) return needsPullRequest(params)
 	const number = String(params.pullRequest)
 	const read = params.host.readPullRequest({ root: params.root, ref: number })
@@ -127,7 +136,7 @@ function probeViewPullRequest(params: Parameters<HostProbe>[0]): HostLine {
 }
 
 /** The checks on the pull request's head, in any state. */
-function probeViewChecks(params: Parameters<HostProbe>[0]): HostLine {
+function probeViewChecks(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
 	if (params.pullRequest === undefined) return needsPullRequest(params)
 	const checks = params.host.readChecks({ root: params.root, number: params.pullRequest })
 	if ('refusal' in checks)
@@ -143,7 +152,7 @@ function probeViewChecks(params: Parameters<HostProbe>[0]): HostLine {
 }
 
 /** Whether the pull request is queued. */
-function probeQueuedState(params: Parameters<HostProbe>[0]): HostLine {
+function probeQueuedState(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
 	if (params.pullRequest === undefined) return needsPullRequest(params)
 	const queued = params.host.readQueued({ root: params.root, number: params.pullRequest })
 	if ('refusal' in queued)
@@ -159,7 +168,7 @@ function probeQueuedState(params: Parameters<HostProbe>[0]): HostLine {
 }
 
 /** The reference pull request's line comments, through the adapter's own read: one on a line and one reply at least. */
-function probeReviewComments(params: Parameters<HostProbe>[0]): HostLine {
+function probeReviewComments(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
 	const comments = readReviewCommentsWith({
 		run: params.run,
 		root: params.root,
@@ -195,7 +204,7 @@ function probeReviewComments(params: Parameters<HostProbe>[0]): HostLine {
 }
 
 /** Whether gh-stack answers: absent is a warning, stacks are then off. */
-function probeStackHelp(params: Parameters<HostProbe>[0]): HostLine {
+function probeStackHelp(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
 	const support = params.host.probeStacks({ root: params.root })
 	if (support.stacks)
 		return { status: 'ok', subject: params.subject, detail: GITHUB_PROBE_TEXTS.stacksOn }
@@ -210,7 +219,7 @@ function probeStackHelp(params: Parameters<HostProbe>[0]): HostLine {
 /** One probe per other read call: a read that has none does not compile. */
 export const GITHUB_PROBES: Record<
 	Exclude<GithubReadCall, typeof GITHUB_SUBJECT_CALL>,
-	HostProbe
+	HostProbe<typeof GITHUB_CALLS>
 > = {
 	viewPullRequest: probeViewPullRequest,
 	viewChecks: probeViewChecks,

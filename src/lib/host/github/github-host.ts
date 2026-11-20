@@ -9,11 +9,13 @@ import { runGh } from './run-gh.ts'
 import type {
 	HostAdapter,
 	HostRefusal,
+	HostToolRun,
 	PullRequest,
 	PullRequestChecks,
 	ReviewComment,
 	StackSupport,
 } from '../host.types.ts'
+import type { GITHUB_CALLS } from './github-calls.constants.ts'
 
 /**
  * GitHub through `gh`: a pull request read (by number, or a branch's newest), opened, edited (title and body), queued (`gh pr merge --auto`,
@@ -198,7 +200,7 @@ function readChecksOnGithub(params: {
  * (`owner`, `repo`, `number`): the comments, or the refusal. The adapter and the live probe share it.
  */
 export function readReviewCommentsWith(params: {
-	run: typeof runGh
+	run: HostToolRun<typeof GITHUB_CALLS>
 	root: string
 	values: Readonly<Record<string, string>>
 }): ReviewComment[] | HostRefusal {
