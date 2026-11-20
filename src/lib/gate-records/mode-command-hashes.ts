@@ -1,5 +1,5 @@
 /** The command hashes the records of each mode are keyed with, computed once for a reader at one gate base. */
-import { hasScopedHookStep, readEmptyTree } from '../gate/gate-base.ts'
+import { foldsHookBase, readEmptyTree } from '../gate/gate-base.ts'
 import { holdsScopedStep, releaseCoversFull, resolveGateSteps } from '../gate/gate-config.ts'
 import { readCommitHookFiles } from '../git-hooks.ts'
 import { tryReadGit } from '../git.ts'
@@ -12,7 +12,7 @@ import type { ModeCommandHashes } from './mode-command-hashes.types.ts'
 /**
  * The command hash a record of each mode must hold to answer for the package at `root` now, read at `gateBase` (the
  * base the reader resolved once; absent when no gate list holds a scoped step): `fast` and `full` keyed with it,
- * the hook's files folded with it when the hook's test steps hold a scoped step, what `gate --hook` keys its
+ * the hook's files folded with it when the hook runs `gate --hook` with a scoped step (`foldsHookBase`), what `gate --hook` keys its
  * `hook-gate` record with, `release` with the empty tree when its list holds a scoped step, and whether the release
  * list covers `full`. With `tree`, the hook files and the gate lists are read as that tree holds them (a hooks
  * folder outside the repository from disk; the caller's `packageJson` when the tree holds none). Throws a
@@ -31,7 +31,8 @@ export function readModeCommandHashes(params: {
 			? params.packageJson
 			: (readPackageJsonAt({ root, tree }) ?? params.packageJson)
 	const releaseSteps = resolveGateSteps({ packageJson, mode: 'release' })
-	const hook = hashHookFiles(readCommitHookFiles({ root, tree }))
+	const hookFiles = readCommitHookFiles({ root, tree })
+	const hook = hashHookFiles(hookFiles)
 	return {
 		fast: gateCommandHash({
 			root,
@@ -44,7 +45,7 @@ export function readModeCommandHashes(params: {
 			gateBase,
 		}),
 		hook:
-			gateBase !== undefined && hasScopedHookStep(packageJson)
+			gateBase !== undefined && foldsHookBase({ packageJson, hookFiles })
 				? foldHookBase({ hook, gateBase })
 				: hook,
 		hookGate: hashHookGateCommand({ packageJson, gateBase }),

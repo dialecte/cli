@@ -70,3 +70,9 @@ export const ORIGIN_DEFAULT_BRANCH_REF = `${ORIGIN_BRANCH_REF_PREFIX}HEAD`
 
 /** The branch looked for after `main` when nothing names the base branch (rule 4 of `findBaseBranchRef`). */
 export const SECOND_DEFAULT_BASE_BRANCH = 'master'
+
+/** A command that runs `gate --hook` (`dialecte gate --hook`, `node src/cli.ts gate --hook`), anywhere in a hook's text. */
+export const GATE_HOOK_COMMAND_PATTERN = /(?<![\w-])gate\s+--hook(?![\w-])/
+
+/** An `npm run <script>` in a hook's text or a script: the script's name in group 1. */
+export const NPM_RUN_PATTERN = /(?:^|\s)npm\s+run(?:-script)?\s+([^\s;&|]+)/gm

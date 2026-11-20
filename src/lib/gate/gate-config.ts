@@ -186,22 +186,14 @@ export function releaseCoversFull(params: { packageJson: PackageJson }): boolean
 	return listUncoveredFullSteps(params).length === 0
 }
 
-/** The steps of `fullSteps` that `gate --hook` runs: those counting tests. */
-export function listHookTestSteps(fullSteps: readonly GateStep[]): GateStep[] {
-	return fullSteps.filter((step) => step.counts === 'tests')
-}
-
-/**
- * The steps of `fullSteps` that `gate --hook` runs or answers: all but the scoped ones that count no tests, in list
- * order.
- */
-function listHookSteps(fullSteps: readonly GateStep[]): GateStep[] {
-	return fullSteps.filter((step) => step.scoped !== true || step.counts === 'tests')
+/** The steps of `steps` that count tests, in list order. */
+export function listHookTestSteps(steps: readonly GateStep[]): GateStep[] {
+	return steps.filter((step) => step.counts === 'tests')
 }
 
 /**
  * The steps `gate --hook` runs or answers: the declared `dialecte.gate.hook` list (a package whose full suite runs on
- * CI commits on its fast tier), else the full steps but the scoped ones counting no tests (`listHookSteps`).
+ * CI commits on its fast tier), else every resolved full step; a scoped one runs against the hook base.
  *
  * @intent tell which steps a commit hook checks
  * @internal
@@ -210,7 +202,7 @@ export function resolveHookSteps(params: { packageJson: PackageJson }): GateStep
 	const { packageJson } = params
 	validateGateConfig(packageJson)
 	const declared = packageJson.dialecte?.gate?.hook
-	if (declared === undefined) return listHookSteps(resolveGateSteps({ packageJson, mode: 'full' }))
+	if (declared === undefined) return resolveGateSteps({ packageJson, mode: 'full' })
 	return markResolvedSteps({ steps: declared, packageJson, isDefault: false, skip: undefined })
 }
 

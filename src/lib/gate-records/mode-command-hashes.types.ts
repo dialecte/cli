@@ -2,7 +2,7 @@
 export type ModeCommandHashes = {
 	fast: string
 	full: string
-	/** The commit hook's files, folded with the gate base when the hook's test steps hold a scoped step. */
+	/** The commit hook's files, folded with the gate base when the hook runs `gate --hook` with a scoped step. */
 	hook: string
 	/** What `gate --hook` keys its `hook-gate` record with: the hook steps' command hash at the hook base. */
 	hookGate: string

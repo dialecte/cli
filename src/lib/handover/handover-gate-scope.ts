@@ -4,7 +4,7 @@
  * hooks are handed.
  */
 import { realPathOf } from '../file-system.ts'
-import { hasScopedHookStep, resolveConfiguredBase } from '../gate/gate-base.ts'
+import { foldsHookBase, resolveConfiguredBase } from '../gate/gate-base.ts'
 import {
 	GateConfigError,
 	holdsScopedStep,
@@ -12,6 +12,7 @@ import {
 	resolveHookSteps,
 	validateGateConfig,
 } from '../gate/gate-config.ts'
+import { readCommitHookFiles } from '../git-hooks.ts'
 import { readPackageJson } from '../package-json.ts'
 import { HANDOVER_GATE_CONFIG_REFUSAL } from './handover-gate-scope.constants.ts'
 
@@ -23,8 +24,8 @@ import type { HandoverFolder } from './handover.types.ts'
 /**
  * The gate scope of the hand-over `handover`, read from its repository's package.json: a refusal when the gate
  * config is invalid or a set `dialecte.baseBranch` names no branch; else the hand-over base resolved once on the lots file's HEAD when a gate list holds a scoped
- * step (the base branch's merge-base with it, else the empty tree); whether the hook's test steps hold a scoped
- * step (the hook records fold their base then); and, when the full steps hold one (the hook keys with a base then),
+ * step (the base branch's merge-base with it, else the empty tree); whether the hook runs `gate --hook` with a scoped
+ * step (`foldsHookBase`: the hook records fold their base then); and, when the full steps hold one (the hook keys with a base then),
  * that base with the real path of the hand-over folder to hand down. A package without a base branch hands nothing
  * down.
  */
@@ -52,7 +53,7 @@ export function resolveHandoverGateScope(params: {
 		...resolveHookSteps({ packageJson }),
 	])
 	return {
-		scoped: hasScopedHookStep(packageJson),
+		scoped: foldsHookBase({ packageJson, hookFiles: readCommitHookFiles({ root }) }),
 		...(base && { base }),
 		// the empty tree is no commit a hook could check: a hook without a base branch finds it by itself
 		...(handsDown &&

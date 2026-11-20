@@ -214,7 +214,7 @@ export const GATE_BASE_FLAG_LINE =
 export const RELEASE_NOT_COVERING_LINE =
 	'release does not run: {steps}: its record answers no full gate'
 
-/** `gate --hook` on a package whose `gate --full` holds no hook step (none, or only scoped steps counting no tests). */
+/** `gate --hook` on a package whose hook list resolves to no step. */
 export const GATE_HOOK_NO_STEP_LINE = 'gate --hook: no hook step in gate --full'
 
 /** `gate --hook` answered by a green `gate --full` record of the committed tree: the line it prints. */
@@ -266,7 +266,7 @@ export const GATE_HOOK_CHECK_STORE_IGNORED_WHY = {
 } as const
 
 /**
- * `gate --hook` whose test steps hold a scoped step: the base it used (full sha) with its source, and what the
+ * `gate --hook` with a scoped hook step: the base it used (full sha) with its source, and what the
  * scoped steps selected (`GATE_HOOK_SELECTION_WORDS`); printed always, reused or run.
  */
 export const GATE_HOOK_BASE_LINE = 'gate --hook: base {commit} ({source}), {selection}'

@@ -40,7 +40,7 @@ export type HookAnswers = {
 /** What a hook run starts from, once its steps and base are known (`prepareHookRun`). */
 export type PreparedHookRun = {
 	packageJson: PackageJson
-	/** The full list's steps but the scoped ones that count no tests, in list order. */
+	/** The steps the hook runs or answers (`resolveHookSteps`), in list order. */
 	hookSteps: GateStep[]
 	/** The hook base with its lines, when a hook step is scoped (said on the hook's base line). */
 	shown: GateRunBase | undefined

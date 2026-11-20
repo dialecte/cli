@@ -39,13 +39,14 @@ function packageJsonOf(params: { full: GateStep[]; hook?: GateStep[] }): Package
 describe('resolveHookSteps', () => {
 	it.each([
 		{
-			label: 'no hook list → the full steps but the scoped ones counting no tests, as before',
+			label: 'no hook list → every full step, the scoped ones counting no tests included',
 			packageJson: packageJsonOf({
 				full: [CHECK, FULL_TESTS, RULES, { ...SCOPED_TESTS, name: 'scoped tests' }],
 			}),
 			names: [
 				['check', false],
 				['tests', false],
+				['rules', true],
 				['scoped tests', true],
 			],
 		},
@@ -82,6 +83,26 @@ describe('resolveHookSteps', () => {
 		expect(
 			hasScopedHookStep(packageJsonOf({ full: [CHECK, FULL_TESTS], hook: [CHECK, SCOPED_TESTS] })),
 		).toBe(true)
+	})
+
+	it.each([
+		{
+			label: 'no hook list, the full list scoped only by a step counting no tests → true',
+			packageJson: packageJsonOf({ full: [CHECK, FULL_TESTS, RULES] }),
+			scoped: true,
+		},
+		{
+			label: 'a declared hook list scoped only by a step counting no tests → true',
+			packageJson: packageJsonOf({ full: [CHECK, FULL_TESTS], hook: [CHECK, RULES] }),
+			scoped: true,
+		},
+		{
+			label: 'a declared hook list without a scoped step, whatever full holds → false',
+			packageJson: packageJsonOf({ full: [CHECK, FULL_TESTS, RULES], hook: [CHECK] }),
+			scoped: false,
+		},
+	])('hasScopedHookStep: $label', ({ packageJson, scoped }) => {
+		expect(hasScopedHookStep(packageJson)).toBe(scoped)
 	})
 
 	it("the cli's own package.json → the hook runs check and the scoped rules, no test suite (CI runs it)", () => {
