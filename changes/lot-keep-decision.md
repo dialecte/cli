@@ -16,4 +16,4 @@
 
 ### Fixed
 
-- The health `worktrees` rule compares a lot's worktree by its real path, as git registers it: a worktree its lot names through a link (`/var` for `/private/var`) is no longer reported idle.
+- The health `worktrees` rule compares a lot's worktree by its real path, as git registers it: a worktree its lot names through a linked folder is no longer reported idle.
