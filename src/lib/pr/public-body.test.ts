@@ -8,7 +8,7 @@ import { publicPiecesOf, publicRefusalOf } from './public-body.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PublicPiece, PullRequestSources } from './pull-request.types.ts'
+import type { PublicPiece, ChangeRequestSources } from './change-request.types.ts'
 
 const PATTERNS = [...GENERIC_REFERENCE_PATTERNS, ...forbiddenWordPatterns(['zorbco'])]
 const TREE_FILES = new Set(['src/x.ts', 'changes/x.md', 'src/lib/pr/x.ts'])
@@ -140,7 +140,7 @@ describe('publicRefusalOf refuses what a public body never holds', () => {
 
 describe('publicPiecesOf lists the free text of the records', () => {
 	it('a lot with messages, summary, steps and a changelog → each piece with its record; no generated row', () => {
-		const sources: PullRequestSources = {
+		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x', 'test(x): y'],
 			summary: 'S.',
 			steps: [{ title: 'T', behaviours: ['a -> b', 'c -> d'] }],
@@ -168,7 +168,7 @@ describe('publicPiecesOf lists the free text of the records', () => {
 	})
 
 	it('a no-entry note → its reason is a piece of its file', () => {
-		const sources: PullRequestSources = {
+		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x'],
 			changelog: { kind: 'none', reason: 'wording only', file: 'changes/x.none.md' },
 			treeHash: 'a',
@@ -233,7 +233,7 @@ describe('publicRefusalOf leaves a committed fragment its paths', () => {
 
 describe('publicPiecesOf lists the free cells of the review', () => {
 	it("a finding's file, a verdict's vendor and model → pieces of review.jsonl, checked like any text", () => {
-		const sources: PullRequestSources = {
+		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x'],
 			review: {
 				findings: [{ schema: 1, kind: 'finding', id: 'R1-1', file: 'notes/a/plan.md' }],
@@ -274,7 +274,7 @@ describe('publicPiecesOf lists the free cells of the review', () => {
 
 describe('publicPiecesOf holds the quality lines', () => {
 	it('a quality finding naming a forbidden word → the body refused like any record text', () => {
-		const sources: PullRequestSources = {
+		const sources: ChangeRequestSources = {
 			messages: ['feat(x): x'],
 			treeHash: 'a',
 			versionBumped: false,

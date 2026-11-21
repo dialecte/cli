@@ -60,7 +60,7 @@ describe('createGithubHost: draftPullRequest', () => {
 	])('$label', ({ queued, draft, calls }) => {
 		const folder = fakeGh()
 
-		const drafted = createGithubHost().draftPullRequest({
+		const drafted = createGithubHost().draftChangeRequest({
 			root: process.cwd(),
 			number: 7,
 			queued,

@@ -5,21 +5,21 @@ import type { Effort, RiskClass } from '../risk/risk.types.ts'
 import type { TestsRecord } from '../tdd/tests-record.types.ts'
 
 /** A step of the brief as the body shows it: its title and behaviours, never its spec. */
-export type PullRequestStep = { title: string; behaviours: string[] }
+export type ChangeRequestStep = { title: string; behaviours: string[] }
 
 /** The changelog of the lot: the sections of the fragments it adds, or the reason of its no-entry note. */
-export type PullRequestChangelog =
+export type ChangeRequestChangelog =
 	| { kind: 'entries'; entries: { section: ChangelogSection; text: string; file: string }[] }
 	| { kind: 'none'; reason: string; file: string }
 
 /** Everything a pull request is rendered from, read from the lot's records; a source absent is undefined. */
-export type PullRequestSources = {
+export type ChangeRequestSources = {
 	/** The commit messages of the brief's lots, in order: the first is the title. */
 	messages: string[]
 	summary?: string
-	steps?: PullRequestStep[]
+	steps?: ChangeRequestStep[]
 	issue?: number
-	changelog?: PullRequestChangelog
+	changelog?: ChangeRequestChangelog
 	tests?: TestsRecord
 	/** The state hash of the tree the pull request lands (its committed head): a tests part of another tree is stale. */
 	treeHash: string
@@ -43,7 +43,7 @@ export type PullRequestSources = {
 }
 
 /** A pull request's text: the title (the lot's message) and the body rendered from the template. */
-export type PullRequestText = { title: string; body: string }
+export type ChangeRequestText = { title: string; body: string }
 
 /** A piece of record-sourced free text the body shows, and the record it comes from (named by a refusal). */
 export type PublicPiece = {
@@ -60,4 +60,4 @@ export type PublicRefusal = { record: string; label: string; word?: string }
 export type ChangedFile = { status: string; path: string }
 
 /** A pull request ready to compose: the template checked and the sources read and checked as public text. */
-export type PreparedPullRequest = { template: string; sources: PullRequestSources }
+export type PreparedChangeRequest = { template: string; sources: ChangeRequestSources }

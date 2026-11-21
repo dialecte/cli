@@ -124,7 +124,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
        title or body reads otherwise, a person's part after the kept marker kept (a body without
        that heading holding a person's text refused, never dropped); a damaged lot refused; --print
        prints and sends nothing; no pull request yet prints the text and names lot land; --json {
-       title, body, pullRequest, head, sent }
+       title, body, changeRequest, head, sent }
   review - the private half of the lot's review, read-only (nothing written): the lot's state and
            branch, its pull request (landing.json's) with the head it is at, the head the lot landed
            and the worktree's HEAD, its checks, the brief's goal and steps (title, spec,

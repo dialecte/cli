@@ -15,14 +15,14 @@ import {
 	RECORD_GATE_MODES,
 	ROW_SEVERITIES,
 	ROW_VERDICTS,
-} from './pull-request.constants.ts'
+} from './change-request.constants.ts'
 
 import type { FindingRow, VerdictRow } from '../review-rounds/review-record.types.ts'
-import type { PullRequestSources } from './pull-request.types.ts'
+import type { ChangeRequestSources } from './change-request.types.ts'
 
 /** The record and field of the first row value outside its values; undefined when every row holds. */
 export function recordValueFault(
-	sources: PullRequestSources,
+	sources: ChangeRequestSources,
 ): { record: string; field: string } | undefined {
 	const review = sources.review
 	const field =

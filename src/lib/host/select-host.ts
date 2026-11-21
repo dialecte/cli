@@ -148,12 +148,12 @@ function refusingHostOf(params: { why: string }): HostAdapter {
 		return refusal
 	}
 	return {
-		readPullRequest: refuse,
-		openPullRequest: refuse,
-		editPullRequest: refuse,
-		closePullRequest: refuse,
-		queuePullRequest: refuse,
-		draftPullRequest: refuse,
+		readChangeRequest: refuse,
+		openChangeRequest: refuse,
+		editChangeRequest: refuse,
+		closeChangeRequest: refuse,
+		queueChangeRequest: refuse,
+		draftChangeRequest: refuse,
 		readQueued: refuse,
 		readChecks: refuse,
 		readReviewComments: refuse,
@@ -163,7 +163,7 @@ function refusingHostOf(params: { why: string }): HostAdapter {
 		},
 		linkStack: refuse,
 		queueStack: refuse,
-		retargetPullRequest: refuse,
+		retargetChangeRequest: refuse,
 	}
 }
 
@@ -215,23 +215,23 @@ function forwardingHost(params: {
 }): HostAdapter {
 	const { hostOf } = params
 	return {
-		readPullRequest(params) {
-			return hostOf(params).readPullRequest(params)
+		readChangeRequest(params) {
+			return hostOf(params).readChangeRequest(params)
 		},
-		openPullRequest(params) {
-			return hostOf(params).openPullRequest(params)
+		openChangeRequest(params) {
+			return hostOf(params).openChangeRequest(params)
 		},
-		editPullRequest(params) {
-			return hostOf(params).editPullRequest(params)
+		editChangeRequest(params) {
+			return hostOf(params).editChangeRequest(params)
 		},
-		closePullRequest(params) {
-			return hostOf(params).closePullRequest(params)
+		closeChangeRequest(params) {
+			return hostOf(params).closeChangeRequest(params)
 		},
-		queuePullRequest(params) {
-			return hostOf(params).queuePullRequest(params)
+		queueChangeRequest(params) {
+			return hostOf(params).queueChangeRequest(params)
 		},
-		draftPullRequest(params) {
-			return hostOf(params).draftPullRequest(params)
+		draftChangeRequest(params) {
+			return hostOf(params).draftChangeRequest(params)
 		},
 		readQueued(params) {
 			return hostOf(params).readQueued(params)
@@ -254,8 +254,8 @@ function forwardingHost(params: {
 		queueStack(params) {
 			return hostOf(params).queueStack(params)
 		},
-		retargetPullRequest(params) {
-			return hostOf(params).retargetPullRequest(params)
+		retargetChangeRequest(params) {
+			return hostOf(params).retargetChangeRequest(params)
 		},
 	}
 }

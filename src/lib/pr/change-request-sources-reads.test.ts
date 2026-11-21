@@ -4,7 +4,7 @@
  */
 import { execFileSync } from 'node:child_process'
 
-import { pullRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-pr.ts'
 import {
 	QUALITY_PACKAGE_JSON,
 	SIZE_FILE,
@@ -15,11 +15,11 @@ import {
 } from '../../../test/quality-workspace.constants.ts'
 import { git } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { readPullRequestSources } from './pull-request-sources.ts'
+import { readChangeRequestSources } from './change-request-sources.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
 
 /** The lot's fragment, kept beside the files a case's commit writes. */
 const FRAGMENT = { 'changes/x.md': '### Added\n\n- `x` answers one.\n' }
@@ -38,8 +38,8 @@ const TREELESS_COMMIT = [
 ].join('\n')
 
 /** A package whose lot changes a shared export: judged, unless a read fails. */
-function judgedLot(): PullRequestLot {
-	return pullRequestLot({
+function judgedLot(): ChangeRequestLot {
+	return changeRequestLot({
 		mainFiles: {
 			'package.json': QUALITY_PACKAGE_JSON,
 			[SIZE_FILE]: SIZE_SOURCE,
@@ -50,7 +50,7 @@ function judgedLot(): PullRequestLot {
 }
 
 /** One more commit in the lot's worktree adding `path` as a gitlink: listed by `ls-tree`, never read as a blob. */
-function commitGitlink(params: { lot: PullRequestLot; path: string }): void {
+function commitGitlink(params: { lot: ChangeRequestLot; path: string }): void {
 	const root = params.lot.worktree
 	git({
 		root,
@@ -60,9 +60,9 @@ function commitGitlink(params: { lot: PullRequestLot; path: string }): void {
 }
 
 /** The body's quality of `lot` against `baseRef`, its refusal, or what a throw says, as a value. */
-function bodyQualityOutcomeOf(params: { lot: PullRequestLot; baseRef: string }): unknown {
+function bodyQualityOutcomeOf(params: { lot: ChangeRequestLot; baseRef: string }): unknown {
 	try {
-		const sources = readPullRequestSources({
+		const sources = readChangeRequestSources({
 			lotFolder: params.lot.lotFolder,
 			worktree: params.lot.worktree,
 			baseRef: params.baseRef,
@@ -76,7 +76,7 @@ function bodyQualityOutcomeOf(params: { lot: PullRequestLot; baseRef: string }):
 describe('the body on reads that fail at its head', { timeout: STORE_CASE_TIMEOUT }, () => {
 	const testCases: Record<
 		string,
-		{ make: () => { lot: PullRequestLot; baseRef: string }; expected: unknown }
+		{ make: () => { lot: ChangeRequestLot; baseRef: string }; expected: unknown }
 	> = {
 		'a source file the head lists that the batch read does not return → not judged, naming it': {
 			make: () => {

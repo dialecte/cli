@@ -7,7 +7,7 @@ import {
 	STATUS_CONTEXT_TYPE,
 } from './github.constants.ts'
 
-import type { HostRefusal, PullRequestChecks, ReviewComment } from '../host.types.ts'
+import type { HostRefusal, ChangeRequestChecks, ReviewComment } from '../host.types.ts'
 
 /**
  * The checks of `gh pr view --json headRefOid,statusCheckRollup`: failing when one failed, else pending when one runs,
@@ -17,7 +17,7 @@ import type { HostRefusal, PullRequestChecks, ReviewComment } from '../host.type
  * @intent tell whether a pull request's head passed its checks
  * @internal
  */
-export function checksOf(params: { text: string }): PullRequestChecks | HostRefusal {
+export function checksOf(params: { text: string }): ChangeRequestChecks | HostRefusal {
 	const parsed = objectOf(params.text)
 	if (parsed === undefined || typeof parsed.headRefOid !== 'string')
 		return { refusal: `gh pr view: no head in ${params.text.slice(0, 80)}` }

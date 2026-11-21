@@ -7,12 +7,12 @@ import { recordValueFault } from './record-values.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequestSources } from './pull-request.types.ts'
+import type { ChangeRequestSources } from './change-request.types.ts'
 
 const TREE = 'a'.repeat(64)
 
 /** Sources holding `review` and `tests` and nothing else. */
-function sourcesWith(params: Pick<PullRequestSources, 'review' | 'tests'>): PullRequestSources {
+function sourcesWith(params: Pick<ChangeRequestSources, 'review' | 'tests'>): ChangeRequestSources {
 	return {
 		messages: ['feat(x): x'],
 		treeHash: TREE,

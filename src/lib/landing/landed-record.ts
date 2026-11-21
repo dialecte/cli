@@ -58,15 +58,16 @@ function faultOf(value: unknown): string | undefined {
 		return 'tip is no commit'
 	if (typeof fact.base !== 'string' || fact.base === '') return 'base is no branch'
 	if (typeof fact.at !== 'string' || Number.isNaN(Date.parse(fact.at))) return 'at is no time'
-	if (fact.pull !== undefined && !isPull(fact.pull)) return 'pull is no pull request'
+	if (fact.changeRequest !== undefined && !isChangeRequest(fact.changeRequest))
+		return 'changeRequest is no pull request'
 	return undefined
 }
 
 /** A pull request as the fact keeps it: its number and url. */
-function isPull(value: unknown): boolean {
+function isChangeRequest(value: unknown): boolean {
 	if (typeof value !== 'object' || value === null) return false
-	const pull = value as Record<string, unknown>
-	return typeof pull.number === 'number' && typeof pull.url === 'string'
+	const changeRequest = value as Record<string, unknown>
+	return typeof changeRequest.number === 'number' && typeof changeRequest.url === 'string'
 }
 
 /** The damage of a landed.json, naming why. */

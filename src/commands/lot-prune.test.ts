@@ -10,7 +10,7 @@ import { writeStoreLot } from '../../test/brief-workspace.ts'
 import {
 	AFTER_LANDING_FILE,
 	LANDING_LOT_FILE,
-	LANDING_PULL_NUMBER,
+	LANDING_CHANGE_REQUEST_NUMBER,
 	MAIN_EDIT_TEXT,
 } from '../../test/landing-lot.constants.ts'
 import {
@@ -32,7 +32,7 @@ import {
 	headOf,
 	landingHostOf,
 	mergeOnOrigin,
-	pullRequestOf,
+	changeRequestOf,
 } from '../../test/landing-repository.ts'
 import {
 	changedBeyondAppends,
@@ -291,8 +291,8 @@ describe('lot prune: a lot’s branch and its landing', { timeout: STORE_CASE_TI
 		editOnOrigin({ repository: lot.repository, files: { [LANDING_LOT_FILE]: MAIN_EDIT_TEXT } })
 		const host = landingHostOf({
 			byBranch: {
-				[lot.branch]: pullRequestOf({
-					number: LANDING_PULL_NUMBER,
+				[lot.branch]: changeRequestOf({
+					number: LANDING_CHANGE_REQUEST_NUMBER,
 					state: 'merged',
 					head: lot.tip,
 				}),

@@ -1,14 +1,27 @@
-/** The host seam scan: each vendor's tool literal stays in its own folder, and imports stay across the seam. */
-import { posix } from 'node:path'
+/**
+ * The host seam scan: each vendor's tool literal stays in its own folder, imports stay across the seam, and a vendor's
+ * change-request noun stays in the vendor's folders.
+ */
+import { existsSync } from 'node:fs'
+import { join, posix } from 'node:path'
 
+import { SOURCE_FOLDER } from '../api/source-functions.constants.ts'
 import { listSourceFiles } from '../api/source-functions.ts'
 import { createImportReading } from '../rules/import-reading.ts'
 import { positionOf } from '../rules/syntax-nodes.ts'
+import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
+import { listPackageFiles } from '../tdd/package-files.ts'
 import {
 	CONFIG_FOLDER,
+	CONTRACT_FIXTURES_FOLDER,
 	HOST_CONSTANTS_FILE,
 	HOST_FOLDER,
+	IDENTIFIER_WORD_BOUNDARY,
+	NOUN_FILE_PATTERN,
+	NOUN_FOLDERS,
 	VENDOR_IMPORTERS,
+	VENDOR_NOUN_PATH_PATTERN,
+	VENDOR_NOUN_WORDS,
 } from './host-seam.constants.ts'
 
 import ts from 'typescript'
@@ -16,31 +29,73 @@ import ts from 'typescript'
 import type { HostSeamFinding, HostSeamVendor, PlacedHostSeamFinding } from './host-seam.types.ts'
 
 /**
- * The breaches of the host seam in `root/src` (tests excluded), read from the tokens so no comment counts: a vendor's
- * tool literal outside `src/lib/host/<name>/`, a file importing a vendor's folder (but the vendor's own files and
- * `VENDOR_IMPORTERS`), and a file of `src/lib/config/` importing anything of `src/lib/host/` but `host.constants.ts`.
+ * The breaches of the host seam in `root`, read from the syntax tree so no comment or text counts: in `src/` (tests
+ * excluded), a vendor's tool literal outside `src/lib/host/<name>/`, a file importing a vendor's folder (but the
+ * vendor's own files and `VENDOR_IMPORTERS`), and a file of `src/lib/config/` importing anything of `src/lib/host/` but
+ * `host.constants.ts`; in `src/` and `test/` (tests included), a vendor's change-request noun in an identifier or a file
+ * name outside the vendor's folders (`src/lib/host/<name>/`, `test/fixtures/host-contract/<name>/`).
  */
 export function scanHostSeam(params: {
 	root: string
 	vendors: readonly HostSeamVendor[]
 }): HostSeamFinding[] {
-	const reading = createImportReading({ root: params.root })
-	return listSourceFiles(params.root).flatMap(function findingsOfFile(file) {
+	const { root, vendors } = params
+	const reading = createImportReading({ root })
+	const sources = new Set(existsSync(join(root, SOURCE_FOLDER)) ? listSourceFiles(root) : [])
+	const files = [...new Set([...sources, ...nounFilesOf(root)])].sort(TEXT_COLLATOR.compare)
+	return files.flatMap(function findingsOfFile(file) {
 		const sourceFile = reading.sourceOf(file)
 		if (sourceFile === undefined) return []
-		return fileFindingsOf({ file, sourceFile, vendors: params.vendors })
+		return fileFindingsOf({
+			file,
+			sourceFile,
+			vendors,
+			seam: sources.has(file),
+			noun: !isVendorOwned({ file, vendors }),
+		})
 	})
 }
 
-/** The findings of one file, by position. */
+/** The TypeScript files of `src/` and `test/`, tests included, as `/` paths from the root. */
+function nounFilesOf(root: string): string[] {
+	return listPackageFiles(root).filter(function isNounFile(file) {
+		return (
+			NOUN_FOLDERS.some(function holds(folder) {
+				return isInside({ file, folder })
+			}) &&
+			NOUN_FILE_PATTERN.test(file) &&
+			existsSync(join(root, file))
+		)
+	})
+}
+
+/** Whether the file lies in one of a vendor's own folders: its host folder or its contract fixtures. */
+function isVendorOwned(params: { file: string; vendors: readonly HostSeamVendor[] }): boolean {
+	const { file } = params
+	return params.vendors.some(function owns(vendor) {
+		return (
+			isInside({ file, folder: vendorFolderOf(vendor) }) ||
+			isInside({ file, folder: `${CONTRACT_FIXTURES_FOLDER}/${vendor.name}` })
+		)
+	})
+}
+
+/**
+ * The findings of one file, by position: the seam's (tool literals and imports) when `seam`, the noun's (identifiers
+ * and the file's name) when `noun`.
+ */
 function fileFindingsOf(params: {
 	file: string
 	sourceFile: ts.SourceFile
 	vendors: readonly HostSeamVendor[]
+	seam: boolean
+	noun: boolean
 }): HostSeamFinding[] {
-	const { file, sourceFile, vendors } = params
+	const { file, sourceFile, vendors, seam, noun } = params
 	const found: PlacedHostSeamFinding[] = []
 	const specifiers = new Set<ts.Node>()
+	if (noun && VENDOR_NOUN_PATH_PATTERN.test(file))
+		found.push({ file, line: 1, kind: 'noun-path', text: file, column: 0 })
 	visit(sourceFile)
 	return found
 		.sort(function byPosition(left, right) {
@@ -51,6 +106,12 @@ function fileFindingsOf(params: {
 		})
 
 	function visit(node: ts.Node): void {
+		if (noun && isNounIdentifier(node)) found.push(findingOf({ node, kind: 'noun-identifier' }))
+		if (seam) visitSeam(node)
+		ts.forEachChild(node, visit)
+	}
+
+	function visitSeam(node: ts.Node): void {
 		const specifier = moduleSpecifierOf(node)
 		if (specifier !== undefined) {
 			specifiers.add(specifier)
@@ -64,16 +125,23 @@ function fileFindingsOf(params: {
 			})
 		)
 			found.push(findingOf({ node, kind: 'tool-literal' }))
-		ts.forEachChild(node, visit)
 	}
 
 	function findingOf(finding: {
-		node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral
+		node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.Identifier | ts.PrivateIdentifier
 		kind: HostSeamFinding['kind']
 	}): PlacedHostSeamFinding {
 		const { line, column } = positionOf({ node: finding.node, sourceFile })
 		return { file, line, kind: finding.kind, text: finding.node.text, column }
 	}
+}
+
+/** Whether the node is an identifier spelling a vendor's change-request noun: one of its words is the noun. */
+function isNounIdentifier(node: ts.Node): node is ts.Identifier | ts.PrivateIdentifier {
+	if (!ts.isIdentifier(node) && !ts.isPrivateIdentifier(node)) return false
+	return node.text.split(IDENTIFIER_WORD_BOUNDARY).some(function isNounWord(word) {
+		return VENDOR_NOUN_WORDS.includes(word.toLowerCase())
+	})
 }
 
 /**

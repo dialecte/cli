@@ -22,8 +22,8 @@ import {
 	registryOfLotFolder,
 } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
-import { STACK_PULL_STATES, STACK_TEXT } from '../store/stack.constants.ts'
-import { pullStateOf, readStack, stackLineText, stackTextOf } from '../store/stack.ts'
+import { STACK_CHANGE_REQUEST_STATES, STACK_TEXT } from '../store/stack.constants.ts'
+import { changeRequestStateOf, readStack, stackLineText, stackTextOf } from '../store/stack.ts'
 import { STORE_FILES } from '../store/store.constants.ts'
 import { isContainedIn } from './contained.ts'
 import { LANDED_SCHEMA } from './landed-record.constants.ts'
@@ -32,6 +32,7 @@ import { readLandingState } from './landing-state.ts'
 import { workSinceLanding, workSinceLandingText } from './lost-work.ts'
 import {
 	HOST_SILENT_TEXT,
+	LANDED_HOST_UNNUMBERED_LINE,
 	LANDED_LINES,
 	LOT_LANDING_REFUSALS,
 	NOT_LANDED_TEXTS,
@@ -92,9 +93,9 @@ export function readLotLanding(params: {
 		}
 	// only a proof says merged: the landed fact above, else git (ancestor, tree) or the host. A registry `committed`
 	// is no proof: a hand-over run commits on the lot's own branch, nothing pushed nor on the base
-	const pullNumber = readLanding({ lotFolder })?.number
+	const changeRequestNumber = readLanding({ lotFolder })?.number
 	const asked =
-		params.onlyPushed !== true || isPushed({ root, branch: identity.branch, pullNumber })
+		params.onlyPushed !== true || isPushed({ root, branch: identity.branch, changeRequestNumber })
 	const recordedTip =
 		params.recorded === undefined
 			? undefined
@@ -106,7 +107,7 @@ export function readLotLanding(params: {
 		baseRef: base.ref,
 		cut: identity.base.commit,
 		since: identity.created,
-		pullNumber,
+		changeRequestNumber,
 		...(asked && params.host !== undefined && { host: params.host }),
 	})
 	return { lot, lotFolder, identity, root, base, state }
@@ -129,7 +130,9 @@ export function recordLanded(params: { landing: LotLanding; now: Date }): Landed
 		how: state.how,
 		tip: state.tip,
 		base: landing.base.branch,
-		...(state.pull !== undefined && { pull: { number: state.pull.number, url: state.pull.url } }),
+		...(state.changeRequest !== undefined && {
+			changeRequest: { number: state.changeRequest.number, url: state.changeRequest.url },
+		}),
 		at: params.now.toISOString(),
 	}
 	writeLanded({ lotFolder: landing.lotFolder, fact })
@@ -137,19 +140,23 @@ export function recordLanded(params: { landing: LotLanding; now: Date }): Landed
 }
 
 /**
- * The line that names a landed lot: its base, the tip that landed and what proved it.
+ * The line that names a landed lot: its base, the tip that landed and what proved it; a host landing whose fact names
+ * no change request (written before the key) says so without a number.
  *
  * @intent say how a lot was read merged
  * @internal
  */
 export function landedLineOf(fact: LandedFact): string {
+	const { changeRequest } = fact
+	const values = { base: fact.base, commit: fact.tip.slice(0, SHORT_SHA_LENGTH) }
+	if (changeRequest === undefined)
+		return fillMessage({
+			template: fact.how === 'host' ? LANDED_HOST_UNNUMBERED_LINE : LANDED_LINES[fact.how],
+			values,
+		})
 	return fillMessage({
 		template: LANDED_LINES[fact.how],
-		values: {
-			base: fact.base,
-			commit: fact.tip.slice(0, SHORT_SHA_LENGTH),
-			number: fact.pull === undefined ? '' : String(fact.pull.number),
-		},
+		values: { ...values, number: String(changeRequest.number) },
 	})
 }
 
@@ -166,7 +173,7 @@ export function notLandedTextOf(landing: LotLanding): string {
 	if (state.kind === 'closed')
 		return fillMessage({
 			template: NOT_LANDED_TEXTS.closed,
-			values: { number: String(state.pull.number) },
+			values: { number: String(state.changeRequest.number) },
 		})
 	if (state.kind === 'empty') return NOT_LANDED_TEXTS.empty
 	if (state.kind === 'unknown')
@@ -243,11 +250,12 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 			state: fillMessage({ template: STACK_UNREADABLE, values: { reason: landing.refusal } }),
 		})
 	const { state } = landing
-	const pull = 'pull' in state ? state.pull : undefined
-	const shown = pull?.number ?? number
+	const changeRequest = 'changeRequest' in state ? state.changeRequest : undefined
+	const shown = changeRequest?.number ?? number
 	if (state.kind === 'merged')
-		return stackLineText({ parent, number: shown, state: STACK_PULL_STATES.merged })
-	if (pull !== undefined) return stackLineText({ parent, number: shown, state: pullStateOf(pull) })
+		return stackLineText({ parent, number: shown, state: STACK_CHANGE_REQUEST_STATES.merged })
+	if (changeRequest !== undefined)
+		return stackLineText({ parent, number: shown, state: changeRequestStateOf(changeRequest) })
 	if (state.kind === 'unlanded' && state.hostRefusal !== undefined)
 		return stackLineText({
 			parent,
@@ -264,10 +272,10 @@ function stackLineFor(params: { lotFolder: string; host: HostAdapter }): string 
 function isPushed(params: {
 	root: string
 	branch: string
-	pullNumber: number | undefined
+	changeRequestNumber: number | undefined
 }): boolean {
 	return (
-		params.pullNumber !== undefined ||
+		params.changeRequestNumber !== undefined ||
 		readCommitOrNone({ root: params.root, ref: `${ORIGIN_BRANCH_REF_PREFIX}${params.branch}` }) !==
 			undefined
 	)
@@ -349,7 +357,7 @@ function notLandedOf(params: { landing: LotLanding; asked: boolean }): string {
 	const pushed = isPushed({
 		root: landing.root,
 		branch: landing.identity.branch,
-		pullNumber: readLanding({ lotFolder: landing.lotFolder })?.number,
+		changeRequestNumber: readLanding({ lotFolder: landing.lotFolder })?.number,
 	})
 	return !params.asked && pushed && landing.state.kind === 'unlanded'
 		? fillMessage({ template: NOT_PROVABLE_OFFLINE, values: { lot: landing.lot } })

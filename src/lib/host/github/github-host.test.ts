@@ -61,19 +61,19 @@ describe('createGithubHost', () => {
 	])('gh pr view of $label → read as such', ({ stdout, pullRequest }) => {
 		const root = fakeGh({ stdout })
 
-		expect(createGithubHost().readPullRequest({ root, ref: 'feat/x' })).toEqual(pullRequest)
+		expect(createGithubHost().readChangeRequest({ root, ref: 'feat/x' })).toEqual(pullRequest)
 	})
 
 	it('gh saying no pull request found → none, not a refusal', () => {
 		const root = fakeGh({ stderr: 'no pull requests found for branch "feat/x"', code: 1 })
 
-		expect(createGithubHost().readPullRequest({ root, ref: 'feat/x' })).toBeUndefined()
+		expect(createGithubHost().readChangeRequest({ root, ref: 'feat/x' })).toBeUndefined()
 	})
 
 	it('gh failing otherwise → a refusal naming the call and its reason', () => {
 		const root = fakeGh({ stderr: 'HTTP 401: Bad credentials', code: 1 })
 
-		expect(createGithubHost().readPullRequest({ root, ref: 'feat/x' })).toEqual({
+		expect(createGithubHost().readChangeRequest({ root, ref: 'feat/x' })).toEqual({
 			refusal: 'gh pr view: HTTP 401: Bad credentials',
 		})
 	})
@@ -82,7 +82,7 @@ describe('createGithubHost', () => {
 		const root = fakeGh({})
 
 		expect(
-			createGithubHost().editPullRequest({
+			createGithubHost().editChangeRequest({
 				root,
 				number: 12,
 				title: 'feat(x): x',
@@ -105,9 +105,9 @@ describe('createGithubHost', () => {
 	it('gh refusing the body edit → a refusal naming the call and its reason', () => {
 		const root = fakeGh({ stderr: 'HTTP 403: Resource not accessible', code: 1 })
 
-		expect(createGithubHost().editPullRequest({ root, number: 12, title: 'x', body: 'y' })).toEqual(
-			{ refusal: 'gh pr edit: HTTP 403: Resource not accessible' },
-		)
+		expect(
+			createGithubHost().editChangeRequest({ root, number: 12, title: 'x', body: 'y' }),
+		).toEqual({ refusal: 'gh pr edit: HTTP 403: Resource not accessible' })
 	})
 })
 
@@ -140,7 +140,7 @@ describe('createGithubHost: the argv gh receives', () => {
 		{
 			label: 'openPullRequest without draft → pr create, then the read of its branch',
 			act: () =>
-				createGithubHost().openPullRequest({
+				createGithubHost().openChangeRequest({
 					root: process.cwd(),
 					branch: 'feat/x',
 					base: 'main',
@@ -167,7 +167,7 @@ describe('createGithubHost: the argv gh receives', () => {
 		{
 			label: 'openPullRequest as draft → --draft after the body',
 			act: () =>
-				createGithubHost().openPullRequest({
+				createGithubHost().openChangeRequest({
 					root: process.cwd(),
 					branch: 'feat/x',
 					base: 'main',
@@ -195,13 +195,13 @@ describe('createGithubHost: the argv gh receives', () => {
 		{
 			label: 'queuePullRequest of a ready pull request → pr merge 7 --auto',
 			act: () =>
-				createGithubHost().queuePullRequest({ root: process.cwd(), number: 7, draft: false }),
+				createGithubHost().queueChangeRequest({ root: process.cwd(), number: 7, draft: false }),
 			calls: [['pr', 'merge', '7', '--auto']],
 		},
 		{
 			label: 'queuePullRequest of a draft → pr ready 7, then pr merge 7 --auto',
 			act: () =>
-				createGithubHost().queuePullRequest({ root: process.cwd(), number: 7, draft: true }),
+				createGithubHost().queueChangeRequest({ root: process.cwd(), number: 7, draft: true }),
 			calls: [
 				['pr', 'ready', '7'],
 				['pr', 'merge', '7', '--auto'],
@@ -209,12 +209,12 @@ describe('createGithubHost: the argv gh receives', () => {
 		},
 		{
 			label: 'closePullRequest → pr close 7',
-			act: () => createGithubHost().closePullRequest({ root: process.cwd(), number: 7 }),
+			act: () => createGithubHost().closeChangeRequest({ root: process.cwd(), number: 7 }),
 			calls: [['pr', 'close', '7']],
 		},
 		{
 			label: 'readPullRequest → pr view <ref> with the 9 fields',
-			act: () => createGithubHost().readPullRequest({ root: process.cwd(), ref: '7' }),
+			act: () => createGithubHost().readChangeRequest({ root: process.cwd(), ref: '7' }),
 			calls: [['pr', 'view', '7', '--json', pullRequestFields]],
 		},
 	])('$label', ({ act, calls }) => {

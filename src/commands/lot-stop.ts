@@ -136,7 +136,7 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const lockLines: string[] = []
 	// a lot landing through its pull request: the pull request closed (out of the queue), its entry abandoned
 	if (pending && input.landing !== undefined) {
-		const closed = (params.host ?? createHost()).closePullRequest({
+		const closed = (params.host ?? createHost()).closeChangeRequest({
 			root: identity.worktree ?? dirname(registry),
 			number: input.landing.number,
 		})

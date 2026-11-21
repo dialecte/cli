@@ -15,7 +15,7 @@ import {
 	REFLOG_ENTRY_PATTERN,
 } from './landing-state.constants.ts'
 
-import type { PullRequest } from '../host/host.types.ts'
+import type { ChangeRequest } from '../host/host.types.ts'
 import type { LandingQuery, LandingState, ReflogEntry } from './landing-state.types.ts'
 
 /**
@@ -43,16 +43,22 @@ export function readLandingState(query: LandingQuery): LandingState {
 	if (isAncestorCommit({ root, ancestor: tip, descendant: cut })) return { kind: 'empty' }
 	if (isAncestorCommit({ root, ancestor: tip, descendant: baseRef }))
 		return { kind: 'merged', how: 'ancestor', tip }
-	const asked = readLotPull({ query, tip })
-	if (asked.pull?.state === 'merged')
-		return { kind: 'merged', how: 'host', tip: asked.pull.head, pull: asked.pull }
+	const asked = readLotChangeRequest({ query, tip })
+	if (asked.changeRequest?.state === 'merged')
+		return {
+			kind: 'merged',
+			how: 'host',
+			tip: asked.changeRequest.head,
+			changeRequest: asked.changeRequest,
+		}
 	if (isContainedIn({ root, baseRef, commit: tip })) return { kind: 'merged', how: 'tree', tip }
-	if (asked.pull?.state === 'closed') return { kind: 'closed', pull: asked.pull }
+	if (asked.changeRequest?.state === 'closed')
+		return { kind: 'closed', changeRequest: asked.changeRequest }
 	return {
 		kind: 'unlanded',
-		...(asked.pull && { pull: asked.pull }),
+		...(asked.changeRequest && { changeRequest: asked.changeRequest }),
 		...(asked.refusal !== undefined && { hostRefusal: asked.refusal }),
-		...(isUnprovenOffline({ query, answered: asked.pull !== undefined }) && {
+		...(isUnprovenOffline({ query, answered: asked.changeRequest !== undefined }) && {
 			proof: 'offline-unproven' as const,
 		}),
 	}
@@ -65,7 +71,7 @@ export function readLandingState(query: LandingQuery): LandingState {
 function isUnprovenOffline(params: { query: LandingQuery; answered: boolean }): boolean {
 	const { query } = params
 	if (params.answered) return false
-	if (query.pullNumber !== undefined) return true
+	if (query.changeRequestNumber !== undefined) return true
 	return (
 		readCommitOrNone({ root: query.root, ref: `${ORIGIN_BRANCH_REF_PREFIX}${query.branch}` }) !==
 		undefined
@@ -77,20 +83,21 @@ function isUnprovenOffline(params: { query: LandingQuery; answered: boolean }): 
  * newest, which is the lot's only when its head is a commit of the lot (beyond its cut, held by its tip or once its
  * branch's tip); the host's refusal when it cannot say.
  */
-function readLotPull(params: { query: LandingQuery; tip: string }): {
-	pull?: PullRequest
+function readLotChangeRequest(params: { query: LandingQuery; tip: string }): {
+	changeRequest?: ChangeRequest
 	refusal?: string
 } {
 	const { query } = params
 	if (query.host === undefined) return {}
-	const byNumber = query.pullNumber !== undefined
-	const read = query.host.readPullRequest({
+	const byNumber = query.changeRequestNumber !== undefined
+	const read = query.host.readChangeRequest({
 		root: query.root,
-		ref: byNumber ? String(query.pullNumber) : query.branch,
+		ref: byNumber ? String(query.changeRequestNumber) : query.branch,
 	})
 	if (read === undefined) return {}
 	if ('refusal' in read) return { refusal: read.refusal }
-	if (byNumber || isLotCommit({ query, tip: params.tip, commit: read.head })) return { pull: read }
+	if (byNumber || isLotCommit({ query, tip: params.tip, commit: read.head }))
+		return { changeRequest: read }
 	return {}
 }
 

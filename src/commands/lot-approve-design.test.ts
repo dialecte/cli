@@ -25,7 +25,7 @@ function refusalsOf(lot: GatedLot): string[] {
 			baseRef: 'main',
 			state: 'working',
 		},
-		pullRequest: {
+		changeRequest: {
 			number: 7,
 			url: 'https://host.test/pull/7',
 			title: 'feat: x',

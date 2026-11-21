@@ -7,7 +7,10 @@ import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-pr.constants.ts'
-import { REVIEW_PULL_NUMBER, REVIEW_PULL_URL } from '../../test/lot-review.constants.ts'
+import {
+	REVIEW_CHANGE_REQUEST_NUMBER,
+	REVIEW_CHANGE_REQUEST_URL,
+} from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { LANDING_FILE } from '../lib/handover/land-lot.constants.ts'
@@ -65,7 +68,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot with a pull request → its private half printed, then the changed files opened, nothing written', () => {
 		const lot = reviewedLot()
 		const { host, calls } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: { head: lot.head, state: 'pending', failing: [], pending: ['ci-ok'] },
 		})
 		const before = folderState(lot.lotFolder)
@@ -80,7 +83,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const head = lot.head.slice(0, 12)
 		expect(lines.slice(0, 4)).toEqual([
 			`lot review ${LOT_NAME} · working · feat/x`,
-			`pull request #${REVIEW_PULL_NUMBER} draft · ${REVIEW_PULL_URL}`,
+			`pull request #${REVIEW_CHANGE_REQUEST_NUMBER} draft · ${REVIEW_CHANGE_REQUEST_URL}`,
 			`heads: pull request ${head}, landed ${head}, worktree ${head}`,
 			'checks: pending (ci-ok)',
 		])
@@ -97,12 +100,12 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 			'approve: would refuse: checks pending on the head: ci-ok; findings open: R1-1 blocking',
 		)
 		expect(lines.filter((line) => line !== '').at(-1)).toBe(
-			`files: ${REVIEW_PULL_URL}/files opened`,
+			`files: ${REVIEW_CHANGE_REQUEST_URL}/files opened`,
 		)
 		expect(calls).toEqual([
-			`read ${REVIEW_PULL_NUMBER}`,
-			`checks ${REVIEW_PULL_NUMBER}`,
-			`files ${REVIEW_PULL_URL}`,
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`files ${REVIEW_CHANGE_REQUEST_URL}`,
 		])
 		expect(folderState(lot.lotFolder)).toEqual(before)
 	})
@@ -110,7 +113,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('green checks on the landed head and no open blocking finding → approve ready, the command named', () => {
 		const lot = landedLot()
 		const { host } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 		})
 
@@ -123,7 +126,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('--no-open → printed, the browser never opened', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
@@ -132,13 +135,16 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toEqual([`read ${REVIEW_PULL_NUMBER}`, `checks ${REVIEW_PULL_NUMBER}`])
+		expect(calls).toEqual([
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`checks ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+		])
 		expect(
 			result.output
 				.split('\n')
 				.filter((line) => line !== '')
 				.at(-1),
-		).toBe(`files: ${REVIEW_PULL_URL}/files`)
+		).toBe(`files: ${REVIEW_CHANGE_REQUEST_URL}/files`)
 	})
 
 	it.each([
@@ -150,11 +156,11 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 		{
 			name: 'no files page → the pull request url printed',
 			filesUrl: undefined,
-			printed: REVIEW_PULL_URL,
+			printed: REVIEW_CHANGE_REQUEST_URL,
 		},
 	])('$name', ({ filesUrl, printed }) => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: { ...lot.pullRequest, filesUrl } })
+		const { host, calls } = recordingHost({ existing: { ...lot.changeRequest, filesUrl } })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
@@ -168,7 +174,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 				.filter((line) => line !== '')
 				.at(-1),
 		).toBe(`files: ${printed} opened`)
-		expect(calls).toContain(`files ${REVIEW_PULL_URL}`)
+		expect(calls).toContain(`files ${REVIEW_CHANGE_REQUEST_URL}`)
 	})
 
 	it('a lot without a pull request → the private half printed and lot land named, the host never asked', () => {
@@ -187,7 +193,7 @@ describe('dialecte lot review', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('an unknown option → usage, exit 2, the host never asked', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,

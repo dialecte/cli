@@ -29,7 +29,7 @@ import { resolveLotPlace } from './lot-pr.ts'
 import { LOT_REVIEW_FLAGS, LOT_REVIEW_LINES, LOT_REVIEW_OPTIONS } from './lot-review.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, PullRequest, PullRequestChecks } from '../lib/host/host.types.ts'
+import type { HostAdapter, ChangeRequest, ChangeRequestChecks } from '../lib/host/host.types.ts'
 import type { LotPlace } from './lot-pr.types.ts'
 
 export function runLotReview(params: {
@@ -46,60 +46,60 @@ export function runLotReview(params: {
 	})
 	if (typeof read === 'string' || read.words.length !== 1)
 		return { exitCode: 2, output: renderLotUsage() }
-	const pull = read.flags.has('pull')
+	const takesComments = read.flags.has('pull')
 	const round = parseRound(read.values.get('round'))
-	if (pull !== read.values.has('round') || (pull && round === undefined))
+	if (takesComments !== read.values.has('round') || (takesComments && round === undefined))
 		return { exitCode: 2, output: renderLotUsage() }
 	const place = resolveLotPlace({
 		cwd: params.cwd,
 		id: read.words[0],
 		verb: 'review',
-		mode: pull ? 'write' : 'read',
+		mode: takesComments ? 'write' : 'read',
 	})
 	if ('exitCode' in place) return place
 	if (round !== undefined)
-		return pullComments({ place, round, host: params.host, now: params.now ?? new Date() })
+		return takeCommentFindings({ place, round, host: params.host, now: params.now ?? new Date() })
 	const header = fillMessage({
 		template: LOT_REVIEW_LINES.header,
 		values: { lot: place.lot, state: place.state, branch: place.branch },
 	})
 	const landing = readLanding({ lotFolder: place.lotFolder })
 	const host = params.host ?? createHost()
-	const pullRequest =
+	const changeRequest =
 		landing === undefined
 			? undefined
-			: host.readPullRequest({ root: place.worktree, ref: String(landing.number) })
-	if (pullRequest !== undefined && 'refusal' in pullRequest)
-		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${pullRequest.refusal}`] })
-	if (landing === undefined || pullRequest === undefined)
+			: host.readChangeRequest({ root: place.worktree, ref: String(landing.number) })
+	if (changeRequest !== undefined && 'refusal' in changeRequest)
+		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${changeRequest.refusal}`] })
+	if (landing === undefined || changeRequest === undefined)
 		return resultOf({
 			exitCode: 0,
 			lines: [
 				header,
-				missingPullRequestLine({ place, number: landing?.number }),
+				missingChangeRequestLine({ place, number: landing?.number }),
 				...privateLines(place),
 			],
 		})
-	const checks = host.readChecks({ root: place.worktree, number: pullRequest.number })
+	const checks = host.readChecks({ root: place.worktree, number: changeRequest.number })
 	return resultOf({
 		exitCode: 0,
 		lines: [
 			header,
-			...pullRequestLines({ place, pullRequest, landed: landing.head, checks }),
+			...changeRequestLines({ place, changeRequest, landed: landing.head, checks }),
 			...privateLines(place),
 			'',
-			approveLine({ place, pullRequest, landed: landing.head, checks }),
-			filesLine({ host, place, pullRequest, open: !read.flags.has('no-open') }),
+			approveLine({ place, changeRequest, landed: landing.head, checks }),
+			filesLine({ host, place, changeRequest, open: !read.flags.has('no-open') }),
 		],
 	})
 }
 
 /** Why no pull request is shown: the lot never landed (lot land named), or its pull request is gone. */
-function missingPullRequestLine(params: { place: LotPlace; number: number | undefined }): string {
+function missingChangeRequestLine(params: { place: LotPlace; number: number | undefined }): string {
 	return params.number === undefined
-		? fillMessage({ template: LOT_REVIEW_LINES.noPullRequest, values: { lot: params.place.lot } })
+		? fillMessage({ template: LOT_REVIEW_LINES.noChangeRequest, values: { lot: params.place.lot } })
 		: fillMessage({
-				template: LOT_REVIEW_LINES.pullRequestGone,
+				template: LOT_REVIEW_LINES.changeRequestGone,
 				values: { number: String(params.number) },
 			})
 }
@@ -108,7 +108,7 @@ function missingPullRequestLine(params: { place: LotPlace; number: number | unde
  * `--pull`: the pull request's line comments not pulled yet, as findings of `round`; `review.jsonl` written again
  * when one was added.
  */
-function pullComments(params: {
+function takeCommentFindings(params: {
 	place: LotPlace
 	round: number
 	host: HostAdapter | undefined
@@ -120,14 +120,17 @@ function pullComments(params: {
 		return resultOf({
 			exitCode: 1,
 			lines: [
-				`${LOT_REVIEW_LINES.prefix}${fillMessage({ template: LOT_REVIEW_LINES.noPullRequest, values: { lot: place.lot } })}`,
+				`${LOT_REVIEW_LINES.prefix}${fillMessage({ template: LOT_REVIEW_LINES.noChangeRequest, values: { lot: place.lot } })}`,
 			],
 		})
 	const host = params.host ?? createHost()
-	const pullRequest = host.readPullRequest({ root: place.worktree, ref: String(landing.number) })
-	if (pullRequest !== undefined && 'refusal' in pullRequest)
-		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${pullRequest.refusal}`] })
-	const number = pullRequest?.number ?? landing.number
+	const changeRequest = host.readChangeRequest({
+		root: place.worktree,
+		ref: String(landing.number),
+	})
+	if (changeRequest !== undefined && 'refusal' in changeRequest)
+		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${changeRequest.refusal}`] })
+	const number = changeRequest?.number ?? landing.number
 	const comments = host.readReviewComments({ root: place.worktree, number })
 	if ('refusal' in comments)
 		return resultOf({ exitCode: 1, lines: [`${LOT_REVIEW_LINES.prefix}${comments.refusal}`] })
@@ -166,7 +169,7 @@ function pullComments(params: {
 				? []
 				: [
 						fillMessage({
-							template: LOT_REVIEW_LINES.pullCut,
+							template: LOT_REVIEW_LINES.commentsCut,
 							values: { done: ids.join(', ') || 'none', reason: recorded.refusal },
 						}),
 					]),
@@ -176,29 +179,29 @@ function pullComments(params: {
 }
 
 /** The pull request's line, the three heads (pull request, landed, worktree) and its checks. */
-function pullRequestLines(params: {
+function changeRequestLines(params: {
 	place: LotPlace
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	landed: string
-	checks: PullRequestChecks | { refusal: string }
+	checks: ChangeRequestChecks | { refusal: string }
 }): string[] {
-	const { pullRequest, checks } = params
+	const { changeRequest, checks } = params
 	const head = readGit({ root: params.place.worktree, args: ['rev-parse', 'HEAD'] }).trim()
 	const kind =
-		pullRequest.state !== 'open'
-			? fillMessage({ template: LOT_REVIEW_LINES.notOpen, values: { state: pullRequest.state } })
-			: pullRequest.draft
+		changeRequest.state !== 'open'
+			? fillMessage({ template: LOT_REVIEW_LINES.notOpen, values: { state: changeRequest.state } })
+			: changeRequest.draft
 				? LOT_REVIEW_LINES.draft
 				: ''
 	return [
 		fillMessage({
-			template: LOT_REVIEW_LINES.pullRequest,
-			values: { number: String(pullRequest.number), draft: kind, url: pullRequest.url },
+			template: LOT_REVIEW_LINES.changeRequest,
+			values: { number: String(changeRequest.number), draft: kind, url: changeRequest.url },
 		}),
 		fillMessage({
 			template: LOT_REVIEW_LINES.heads,
 			values: {
-				pushed: pullRequest.head.slice(0, SHORT_SHA_LENGTH),
+				pushed: changeRequest.head.slice(0, SHORT_SHA_LENGTH),
 				landed: params.landed.slice(0, SHORT_SHA_LENGTH),
 				head: head.slice(0, SHORT_SHA_LENGTH),
 			},
@@ -208,7 +211,7 @@ function pullRequestLines(params: {
 }
 
 /** The checks' state, with the failing and pending checks named. */
-function checksLine(checks: PullRequestChecks | { refusal: string }): string {
+function checksLine(checks: ChangeRequestChecks | { refusal: string }): string {
 	if ('refusal' in checks)
 		return fillMessage({
 			template: LOT_REVIEW_LINES.checksUnread,
@@ -350,9 +353,9 @@ function standardLine(folder: string): string {
 /** Whether `lot approve` would approve now, else every refusal it would give. */
 function approveLine(params: {
 	place: LotPlace
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	landed: string
-	checks: PullRequestChecks | { refusal: string }
+	checks: ChangeRequestChecks | { refusal: string }
 }): string {
 	const { checks } = params
 	const reasons = 'refusal' in checks ? [checks.refusal] : approvalRefusals({ ...params, checks })
@@ -368,11 +371,11 @@ function approveLine(params: {
 function filesLine(params: {
 	host: HostAdapter
 	place: LotPlace
-	pullRequest: PullRequest
+	changeRequest: ChangeRequest
 	open: boolean
 }): string {
-	const { url } = params.pullRequest
-	const files = params.pullRequest.filesUrl ?? url
+	const { url } = params.changeRequest
+	const files = params.changeRequest.filesUrl ?? url
 	if (!params.open) return fillMessage({ template: LOT_REVIEW_LINES.files, values: { files } })
 	const refused = params.host.openFiles({ root: params.place.worktree, url })
 	return refused === undefined

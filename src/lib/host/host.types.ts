@@ -1,7 +1,7 @@
 import type { HOST_READ_METHODS, HOST_VENDOR_NAMES } from './host.constants.ts'
 
 /** A pull request on the host, as a landing reads it. */
-export type PullRequest = {
+export type ChangeRequest = {
 	number: number
 	url: string
 	title: string
@@ -26,7 +26,7 @@ export type StackSupport = { stacks: true } | { stacks: false; why: string }
 export type ChecksState = 'green' | 'failing' | 'pending' | 'none'
 
 /** The checks on a pull request's head: their state and the names of the failing and the pending ones. */
-export type PullRequestChecks = {
+export type ChangeRequestChecks = {
 	/** The commit the checks ran on (the pull request's head). */
 	head: string
 	state: ChecksState
@@ -53,27 +53,27 @@ export type HostRefusal = { refusal: string }
  */
 export type HostAdapter = {
 	/** The pull request `ref` names (a number, or a branch: its newest); undefined when there is none. */
-	readPullRequest(params: { root: string; ref: string }): PullRequest | undefined | HostRefusal
+	readChangeRequest(params: { root: string; ref: string }): ChangeRequest | undefined | HostRefusal
 	/** A new pull request of `branch` into `base`. */
-	openPullRequest(params: {
+	openChangeRequest(params: {
 		root: string
 		branch: string
 		base: string
 		title: string
 		body: string
 		draft: boolean
-	}): PullRequest | HostRefusal
+	}): ChangeRequest | HostRefusal
 	/** The pull request's title and body replaced by `title` and `body`. */
-	editPullRequest(params: {
+	editChangeRequest(params: {
 		root: string
 		number: number
 		title: string
 		body: string
 	}): HostRefusal | undefined
 	/** The pull request closed: taken out of the merge queue, never merged. */
-	closePullRequest(params: { root: string; number: number }): HostRefusal | undefined
+	closeChangeRequest(params: { root: string; number: number }): HostRefusal | undefined
 	/** The pull request queued: merged by the host once its checks pass (a draft made ready first). */
-	queuePullRequest(params: {
+	queueChangeRequest(params: {
 		root: string
 		number: number
 		draft: boolean
@@ -82,7 +82,7 @@ export type HostAdapter = {
 	 * The pull request taken back out of the queue: auto-merge turned off when `queued`, made a draft when not `draft`
 	 * (an approval is for one head); nothing asked when it is a draft not queued.
 	 */
-	draftPullRequest(params: {
+	draftChangeRequest(params: {
 		root: string
 		number: number
 		queued: boolean
@@ -94,7 +94,7 @@ export type HostAdapter = {
 	 */
 	readQueued(params: { root: string; number: number }): { queued: boolean } | HostRefusal
 	/** The checks on the pull request's head. */
-	readChecks(params: { root: string; number: number }): PullRequestChecks | HostRefusal
+	readChecks(params: { root: string; number: number }): ChangeRequestChecks | HostRefusal
 	/** The line comments of the pull request's reviews, oldest first. */
 	readReviewComments(params: { root: string; number: number }): ReviewComment[] | HostRefusal
 	/** The pull request's changed files opened in the browser (`url` is the pull request's page). */
@@ -109,7 +109,7 @@ export type HostAdapter = {
 	 */
 	queueStack(params: { root: string; number: number; draft: boolean }): HostRefusal | undefined
 	/** The pull request's base branch changed to `base`. */
-	retargetPullRequest(params: {
+	retargetChangeRequest(params: {
 		root: string
 		number: number
 		base: string
@@ -206,7 +206,7 @@ export type HostErasedProbes = {
 		host: HostReadAdapter
 		run: HostErasedToolRun
 		subject: string
-		pullRequest?: number
+		changeRequest?: number
 	}): HostLine
 }
 
@@ -309,7 +309,7 @@ export type HostProbe<Calls extends HostCallTable = HostCallTable> = (params: {
 	host: HostReadAdapter
 	run: HostToolRun<Calls>
 	subject: string
-	pullRequest?: number
+	changeRequest?: number
 }) => HostLine
 
 /**
@@ -323,7 +323,7 @@ export type HostSubjectProbe<Calls extends HostCallTable = HostCallTable> = (par
 	subject: string
 }) => {
 	line: HostLine
-	pullRequest?: number
+	changeRequest?: number
 }
 
 /** A vendor's dev-only record: its table, what it recorded, how its implied flags read, and how it is asked again. */

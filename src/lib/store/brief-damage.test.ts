@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { replaceRecord } from '../../../test/damaged-lot-workspace.ts'
 import { LOT_NAME } from '../../../test/lot-pr.constants.ts'
-import { pullRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-pr.ts'
 import { temporaryFolder } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { runLot } from '../../commands/lot.ts'
@@ -17,14 +17,14 @@ import { appendTransition } from './transitions.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PullRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
 /** The damage the lot reads with; undefined for a lot whose records hold. */
-function damageOf(lot: PullRequestLot): string | undefined {
+function damageOf(lot: ChangeRequestLot): string | undefined {
 	const checked = readCheckedLotState({
 		lotFolder: lot.lotFolder,
 		registry: registryOfLotFolder(lot.lotFolder),
@@ -33,13 +33,13 @@ function damageOf(lot: PullRequestLot): string | undefined {
 }
 
 /** The stored brief with a new summary, as text. */
-function briefWithSummary(params: { lot: PullRequestLot; summary: string }): string {
+function briefWithSummary(params: { lot: ChangeRequestLot; summary: string }): string {
 	const value = JSON.parse(readFileSync(join(params.lot.lotFolder, 'brief.json'), 'utf8')) as object
 	return `${JSON.stringify({ ...value, summary: params.summary }, null, 2)}\n`
 }
 
 /** `lot brief <lot> --from <from>` by a person, with a reason. */
-function rewriteThroughVerb(params: { lot: PullRequestLot; from: string }) {
+function rewriteThroughVerb(params: { lot: ChangeRequestLot; from: string }) {
 	return runLot({
 		cwd: params.lot.workspace.repository,
 		argv: [
@@ -57,11 +57,11 @@ function rewriteThroughVerb(params: { lot: PullRequestLot; from: string }) {
 
 describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot as started → its records hold', () => {
-		expect(damageOf(pullRequestLot())).toBeUndefined()
+		expect(damageOf(changeRequestLot())).toBeUndefined()
 	})
 
 	it('a brief.json edited by hand → the lot reads damaged, naming its brief', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		replaceRecord({
 			folder: lot.lotFolder,
 			name: 'brief.json',
@@ -74,7 +74,7 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 	})
 
 	it('a brief rewritten through lot brief → its records hold', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
 		writeFileSync(from, briefWithSummary({ lot, summary: 'Rewritten through the verb.' }))
 		const rewritten = rewriteThroughVerb({ lot, from })
@@ -87,7 +87,7 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 	})
 
 	it("a brief rewritten through lot brief, then its start's bytes put back by hand → damaged: only the latest counts", () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const started = readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')
 		const from = join(temporaryFolder('dialecte-new-brief-'), 'brief.json')
 		writeFileSync(from, briefWithSummary({ lot, summary: 'Rewritten through the verb.' }))
@@ -101,7 +101,7 @@ describe('the brief of a lot as a record', { timeout: STORE_CASE_TIMEOUT }, () =
 	})
 
 	it('a lot brief killed after its transition, before its brief moved into place → the lot reads clean on its old brief', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		const started = readFileSync(join(lot.lotFolder, 'brief.json'), 'utf8')
 		const next = briefWithSummary({ lot, summary: 'Rewritten, never moved.' })
 		writeFileSync(join(lot.lotFolder, 'brief.json.next'), next)

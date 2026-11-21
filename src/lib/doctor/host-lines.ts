@@ -43,7 +43,7 @@ export function hostLines(params: {
 			host,
 			run,
 			subject,
-			...(found.pullRequest !== undefined && { pullRequest: found.pullRequest }),
+			...(found.changeRequest !== undefined && { changeRequest: found.changeRequest }),
 		})
 	})
 	return [

@@ -3,16 +3,16 @@
  * pull request still merges into its parent's branch queues as a stack only on a host with stacks and only once the
  * parent's pull request is queued (nothing unapproved joins the queue); otherwise refused.
  */
-import { parentPullRequest, recordingHost, stackedRepository } from '../../../test/land-lot.ts'
+import { parentChangeRequest, recordingHost, stackedRepository } from '../../../test/land-lot.ts'
 import { SCRATCH_GIT_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { stackQueueOf } from './stack-queue.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequest } from '../host/host.types.ts'
+import type { ChangeRequest } from '../host/host.types.ts'
 
 /** The child's pull request #7, a draft merging into `base`. */
-function childPullRequest(base: string | undefined): PullRequest {
+function childChangeRequest(base: string | undefined): ChangeRequest {
 	return {
 		number: 7,
 		url: 'https://host.test/pull/7',
@@ -36,7 +36,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.parent.lotFolder,
 			worktree: stack.parent.worktree,
 			host,
-			pullRequest: childPullRequest('main'),
+			changeRequest: childChangeRequest('main'),
 		})
 
 		expect({ route, calls }).toEqual({ route: { route: 'single' }, calls: [] })
@@ -44,14 +44,14 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 
 	it('a stacked lot retargeted to the base (its parent merged) → its pull request alone', () => {
 		const stack = stackedRepository()
-		const { host } = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const { host } = recordingHost({ stacks: true, parent: parentChangeRequest() })
 
 		const route = stackQueueOf({
 			lot: '0002-repo-y',
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest('main'),
+			changeRequest: childChangeRequest('main'),
 		})
 
 		expect(route).toEqual({ route: 'single' })
@@ -61,13 +61,13 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		{
 			label: 'host with stacks, the parent queued → the stack queued up to it',
 			stacks: true as const,
-			parent: { ...parentPullRequest(), queued: true },
+			parent: { ...parentChangeRequest(), queued: true },
 			route: { route: 'stack' },
 		},
 		{
 			label: 'host with stacks, the parent not queued → refused naming the parent',
 			stacks: true as const,
-			parent: parentPullRequest(),
+			parent: parentChangeRequest(),
 			route: {
 				refusal:
 					'0002-repo-y stacks on #5 (0001-repo-x), not queued yet: approve 0001-repo-x first, the stack queues with it',
@@ -76,7 +76,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		{
 			label: 'host without stacks, the parent open → refused: waits for the parent to merge',
 			stacks: undefined,
-			parent: { ...parentPullRequest(), queued: true },
+			parent: { ...parentChangeRequest(), queued: true },
 			route: {
 				refusal:
 					'0002-repo-y waits for #5 (0001-repo-x) to merge: without native stacks a stacked lot queues after its parent; then lot land 0002-repo-y again',
@@ -86,7 +86,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			label:
 				'the parent merged, the pull request still on its branch → refused: land it again first',
 			stacks: true as const,
-			parent: parentPullRequest({ state: 'merged' }),
+			parent: parentChangeRequest({ state: 'merged' }),
 			route: {
 				refusal:
 					'0002-repo-y stacks on #5 (0001-repo-x), merged: lot land 0002-repo-y again moves it onto the base, then approve it',
@@ -101,7 +101,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest('feat/x'),
+			changeRequest: childChangeRequest('feat/x'),
 		})
 
 		expect(answered).toEqual(route)
@@ -111,7 +111,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const stack = stackedRepository()
 		const { host } = recordingHost({
 			stacks: true,
-			parent: parentPullRequest(),
+			parent: parentChangeRequest(),
 			parentBranch: 'feat/x',
 			mergeQueue: [5],
 		})
@@ -121,7 +121,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest('feat/x'),
+			changeRequest: childChangeRequest('feat/x'),
 		})
 
 		expect(route).toEqual({ route: 'stack' })
@@ -131,7 +131,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const stack = stackedRepository({ parentLanded: false })
 		const { host } = recordingHost({
 			stacks: true,
-			parent: { ...parentPullRequest(), queued: true },
+			parent: { ...parentChangeRequest(), queued: true },
 			parentBranch: 'feat/x',
 		})
 
@@ -140,7 +140,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest('feat/x'),
+			changeRequest: childChangeRequest('feat/x'),
 		})
 
 		expect(route).toEqual({ route: 'stack' })
@@ -155,7 +155,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest('feat/x'),
+			changeRequest: childChangeRequest('feat/x'),
 		})
 
 		expect(route).toEqual({
@@ -168,7 +168,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 		const stack = stackedRepository()
 		const { host } = recordingHost({
 			stacks: true,
-			parent: parentPullRequest(),
+			parent: parentChangeRequest(),
 			parentBranch: 'feat/x',
 		})
 
@@ -177,7 +177,7 @@ describe('stackQueueOf', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 			lotFolder: stack.child.lotFolder,
 			worktree: stack.child.worktree,
 			host,
-			pullRequest: childPullRequest(undefined),
+			changeRequest: childChangeRequest(undefined),
 		})
 
 		expect(route).toEqual({

@@ -12,12 +12,12 @@ import { replaceWhole } from './publish.ts'
 import {
 	STACK_DAMAGE,
 	STACK_FILE,
-	STACK_PULL_STATES,
+	STACK_CHANGE_REQUEST_STATES,
 	STACK_SCHEMA,
 	STACK_TEXT,
 } from './stack.constants.ts'
 
-import type { PullRequest } from '../host/host.types.ts'
+import type { ChangeRequest } from '../host/host.types.ts'
 import type { StackDamage, StackRecord } from './stack.types.ts'
 
 /**
@@ -87,11 +87,12 @@ export function stackLineText(params: {
 	state: string | undefined
 }): string {
 	const { parent, number, state } = params
-	if (number === undefined) return fillMessage({ template: STACK_TEXT.noPull, values: { parent } })
-	const pull = `#${number}`
+	if (number === undefined)
+		return fillMessage({ template: STACK_TEXT.noChangeRequest, values: { parent } })
+	const changeRequest = `#${number}`
 	return state === undefined
-		? fillMessage({ template: STACK_TEXT.filesOnly, values: { parent, pull } })
-		: fillMessage({ template: STACK_TEXT.withState, values: { parent, pull, state } })
+		? fillMessage({ template: STACK_TEXT.filesOnly, values: { parent, changeRequest } })
+		: fillMessage({ template: STACK_TEXT.withState, values: { parent, changeRequest, state } })
 }
 
 /**
@@ -100,10 +101,10 @@ export function stackLineText(params: {
  * @intent name where a parent's pull request stands
  * @internal
  */
-export function pullStateOf(pull: PullRequest): string {
-	if (pull.state !== 'open') return STACK_PULL_STATES[pull.state]
-	if (pull.queued) return STACK_PULL_STATES.queued
-	return pull.draft ? STACK_PULL_STATES.draft : STACK_PULL_STATES.open
+export function changeRequestStateOf(changeRequest: ChangeRequest): string {
+	if (changeRequest.state !== 'open') return STACK_CHANGE_REQUEST_STATES[changeRequest.state]
+	if (changeRequest.queued) return STACK_CHANGE_REQUEST_STATES.queued
+	return changeRequest.draft ? STACK_CHANGE_REQUEST_STATES.draft : STACK_CHANGE_REQUEST_STATES.open
 }
 
 /**

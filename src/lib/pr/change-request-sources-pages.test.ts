@@ -1,5 +1,5 @@
 /** The pull request body reads the doc pages at its committed head: a page edited only in the worktree never counts. */
-import { pullRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-pr.ts'
 import {
 	DOC_PAGE,
 	EXPORT_SOURCE,
@@ -16,7 +16,7 @@ import {
 } from '../../../test/quality-workspace.constants.ts'
 import { writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
-import { readPullRequestSources } from './pull-request-sources.ts'
+import { readChangeRequestSources } from './change-request-sources.ts'
 
 import { describe, expect, it } from 'vitest'
 
@@ -30,11 +30,11 @@ const LIBRARY_MAIN = {
 }
 
 describe(
-	'readPullRequestSources reads the doc pages at HEAD',
+	'readChangeRequestSources reads the doc pages at HEAD',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it('a re-signed export its committed page names, the page rewritten in the worktree to name it no more → the docs finding of HEAD', () => {
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: LIBRARY_MAIN,
 				lotFiles: {
 					'changes/x.md': '### Added\n\n- `x` answers one.\n',
@@ -44,7 +44,7 @@ describe(
 			})
 			writeFiles({ root: lot.worktree, files: { [DOC_PAGE]: '# Core\n\nCounts a list.\n' } })
 
-			const sources = readPullRequestSources({
+			const sources = readChangeRequestSources({
 				lotFolder: lot.lotFolder,
 				worktree: lot.worktree,
 				baseRef: 'main',

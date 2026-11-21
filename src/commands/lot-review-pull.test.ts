@@ -7,7 +7,7 @@ import { join } from 'node:path'
 
 import { recordingHost } from '../../test/land-lot.ts'
 import { LOT_NAME } from '../../test/lot-pr.constants.ts'
-import { REVIEW_PULL_NUMBER } from '../../test/lot-review.constants.ts'
+import { REVIEW_CHANGE_REQUEST_NUMBER } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
 import { readReviewRecord } from '../lib/review-rounds/review-record.ts'
@@ -37,7 +37,7 @@ function ledgerRows(folder: string): string[] {
 describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('line comments → findings of the round at their file and line, severity from their first word, replies left out', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest, comments: COMMENTS })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,
@@ -46,7 +46,10 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 		})
 
 		expect(result.exitCode).toBe(0)
-		expect(calls).toEqual([`read ${REVIEW_PULL_NUMBER}`, `comments ${REVIEW_PULL_NUMBER}`])
+		expect(calls).toEqual([
+			`read ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+			`comments ${REVIEW_CHANGE_REQUEST_NUMBER}`,
+		])
 		expect(ledgerRows(lot.lotFolder)).toEqual([
 			'| R2-1 | 2 | blocking | src/x.ts:1 | x must be two | open |',
 			'| R2-2 | 2 | nit | changes/x.md | the fragment reads oddly | open |',
@@ -66,7 +69,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('the same comments pulled again → already, nothing added', () => {
 		const lot = landedLot()
-		const { host } = recordingHost({ existing: lot.pullRequest, comments: COMMENTS })
+		const { host } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 		const first = runLotReview({
 			cwd: lot.workspace.repository,
 			argv: [LOT_NAME, '--pull', '--round', '2'],
@@ -83,7 +86,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(result.output.trim()).toBe(
-			`lot review: already: every comment of pull request #${REVIEW_PULL_NUMBER} is a finding`,
+			`lot review: already: every comment of pull request #${REVIEW_CHANGE_REQUEST_NUMBER} is a finding`,
 		)
 		expect(readFileSync(join(lot.lotFolder, LEDGER_FILE), 'utf8')).toBe(before)
 	})
@@ -91,7 +94,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a comment holding only its severity → a finding of the comment as written, never an empty one', () => {
 		const lot = landedLot()
 		const { host } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			comments: [{ id: 201, path: 'src/x.ts', line: 1, body: 'nit:' }],
 		})
 
@@ -111,7 +114,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 		writeFileSync(pulled, '')
 		chmodSync(pulled, 0o444)
 		const { host } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			comments: [{ id: 301, path: 'src/x.ts', line: 1, body: 'nit: a word' }],
 		})
 
@@ -128,7 +131,7 @@ describe('dialecte lot review --pull', { timeout: STORE_CASE_TIMEOUT }, () => {
 
 	it('--pull without --round → usage, exit 2, nothing asked or written', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest, comments: COMMENTS })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest, comments: COMMENTS })
 
 		const result = runLotReview({
 			cwd: lot.workspace.repository,

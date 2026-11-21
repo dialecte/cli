@@ -1,7 +1,7 @@
 /** A repository with a bare origin and a lot worktree on its own branch, and a host that records what it is asked. */
 import { join } from 'node:path'
 
-import { TEMPLATE_PATH } from '../src/lib/pr/pull-request.constants.ts'
+import { TEMPLATE_PATH } from '../src/lib/pr/change-request.constants.ts'
 import { cliTemplate } from './lot-pr.ts'
 import { commitEmpty } from './rule-gaps-base-branch.ts'
 import {
@@ -14,8 +14,8 @@ import {
 
 import type {
 	HostAdapter,
-	PullRequest,
-	PullRequestChecks,
+	ChangeRequest,
+	ChangeRequestChecks,
 	ReviewComment,
 } from '../src/lib/host/host.types.ts'
 import type {
@@ -62,7 +62,7 @@ export function landingRepository(
 }
 
 /** The url the fake host gives pull request `number`. */
-export function pullUrlOf(number: number): string {
+export function changeRequestUrlOf(number: number): string {
 	return `https://host.test/pull/${number}`
 }
 
@@ -93,7 +93,7 @@ export function stackedRepository(
 				'landing.json': JSON.stringify({
 					schema: 1,
 					number: 5,
-					url: pullUrlOf(5),
+					url: changeRequestUrlOf(5),
 					branch: 'feat/x',
 					head: tip,
 					at: '',
@@ -127,10 +127,12 @@ export function stackedRepository(
 }
 
 /** The open pull request #5 of the stack's parent `feat/x` (`state` when given). */
-export function parentPullRequest(params: { state?: PullRequest['state'] } = {}): PullRequest {
+export function parentChangeRequest(
+	params: { state?: ChangeRequest['state'] } = {},
+): ChangeRequest {
 	return {
 		number: 5,
-		url: pullUrlOf(5),
+		url: changeRequestUrlOf(5),
 		title: 'feat(x): x answers one',
 		body: '',
 		state: params.state ?? 'open',
@@ -157,11 +159,11 @@ export function landOnOrigin(params: { origin: string; files?: Record<string, st
 /** A host that answers from memory and records each call, and the body of each pull request it opens. */
 export function recordingHost(
 	params: {
-		existing?: PullRequest
+		existing?: ChangeRequest
 		/** The host's refusal of an edit; edits are taken when absent. */
 		editRefusal?: string
 		/** The checks on the pull request's head; none when absent. */
-		checks?: PullRequestChecks
+		checks?: ChangeRequestChecks
 		/** The pull request's line comments; none when absent. */
 		comments?: ReviewComment[]
 		/** The host's refusal of a queue; queued when absent. */
@@ -169,7 +171,7 @@ export function recordingHost(
 		/** Whether the host links stacks; when not, why (the default: no stacks). */
 		stacks?: true | string
 		/** A stack parent's pull request, answered when read by its number or by `parentBranch`. */
-		parent?: PullRequest
+		parent?: ChangeRequest
 		/** The stack parent's branch, which reads its pull request as gh reads a branch's newest. */
 		parentBranch?: string
 		/** The pull requests in the merge queue without auto-merge, by number (none when absent). */
@@ -182,68 +184,76 @@ export function recordingHost(
 ): RecordingHost {
 	const calls: string[] = []
 	const bodies: string[] = []
-	let pullRequest = params.existing
+	let changeRequest = params.existing
 	let parent = params.parent
 	let linkRefusals = params.linkRefusals ?? 0
 	const host: HostAdapter = {
-		readPullRequest: function readPullRequest(call) {
+		readChangeRequest: function readChangeRequest(call) {
 			calls.push(`read ${call.ref}`)
 			if (
 				parent !== undefined &&
 				(call.ref === String(parent.number) || call.ref === params.parentBranch)
 			)
 				return parent
-			return pullRequest
+			return changeRequest
 		},
-		openPullRequest: function openPullRequest(call) {
+		openChangeRequest: function openChangeRequest(call) {
 			calls.push(`open ${call.branch} -> ${call.base} "${call.title}"${call.draft ? ' draft' : ''}`)
 			bodies.push(call.body)
-			pullRequest = {
+			changeRequest = {
 				title: call.title,
 				body: call.body,
 				number: 7,
-				url: pullUrlOf(7),
+				url: changeRequestUrlOf(7),
 				state: 'open',
 				draft: call.draft,
 				queued: false,
 				head: '',
 				base: call.base,
 			}
-			return pullRequest
+			return changeRequest
 		},
-		editPullRequest: function editPullRequest(call) {
+		editChangeRequest: function editChangeRequest(call) {
 			calls.push(`edit ${call.number} "${call.title}"`)
 			if (params.editRefusal !== undefined) return { refusal: params.editRefusal }
 			bodies.push(call.body)
-			if (pullRequest !== undefined)
-				pullRequest = { ...pullRequest, title: call.title, body: call.body }
+			if (changeRequest !== undefined)
+				changeRequest = { ...changeRequest, title: call.title, body: call.body }
 			return undefined
 		},
-		closePullRequest: function closePullRequest(call) {
+		closeChangeRequest: function closeChangeRequest(call) {
 			calls.push(`close ${call.number}`)
 			return undefined
 		},
-		queuePullRequest: function queuePullRequest(call) {
+		queueChangeRequest: function queueChangeRequest(call) {
 			calls.push(`queue ${call.number}`)
 			if (params.queueRefusal !== undefined) return { refusal: params.queueRefusal }
 			return undefined
 		},
-		draftPullRequest: function draftPullRequest(call) {
+		draftChangeRequest: function draftChangeRequest(call) {
 			calls.push(
 				`draft-back ${call.number}${call.queued ? ' queued' : ''}${call.draft ? ' draft' : ' ready'}`,
 			)
-			if (pullRequest !== undefined) pullRequest = { ...pullRequest, draft: true, queued: false }
+			if (changeRequest !== undefined)
+				changeRequest = { ...changeRequest, draft: true, queued: false }
 			return undefined
 		},
 		// a read the calls leave out: queued when the fake's pull request or parent is, or in its merge queue
 		readQueued: function readQueued(call) {
-			const known = [pullRequest, parent].find((pull) => pull?.number === call.number)
+			const known = [changeRequest, parent].find(
+				(changeRequest) => changeRequest?.number === call.number,
+			)
 			return { queued: known?.queued === true || (params.mergeQueue ?? []).includes(call.number) }
 		},
 		readChecks: function readChecks(call) {
 			calls.push(`checks ${call.number}`)
 			return (
-				params.checks ?? { head: pullRequest?.head ?? '', state: 'none', failing: [], pending: [] }
+				params.checks ?? {
+					head: changeRequest?.head ?? '',
+					state: 'none',
+					failing: [],
+					pending: [],
+				}
 			)
 		},
 		readReviewComments: function readReviewComments(call) {
@@ -270,9 +280,9 @@ export function recordingHost(
 			calls.push(`stack-queue ${call.number}`)
 			return undefined
 		},
-		retargetPullRequest: function retargetPullRequest(call) {
+		retargetChangeRequest: function retargetChangeRequest(call) {
 			calls.push(`retarget ${call.number} ${call.base}`)
-			if (pullRequest !== undefined) pullRequest = { ...pullRequest, base: call.base }
+			if (changeRequest !== undefined) changeRequest = { ...changeRequest, base: call.base }
 			return undefined
 		},
 	}
@@ -287,11 +297,11 @@ export function recordingHost(
 		host,
 		calls,
 		bodies,
-		setParent: function setParent(next: PullRequest) {
+		setParent: function setParent(next: ChangeRequest) {
 			parent = next
 		},
-		setPullRequest: function setPullRequest(next: PullRequest) {
-			pullRequest = next
+		setChangeRequest: function setChangeRequest(next: ChangeRequest) {
+			changeRequest = next
 		},
 	}
 }

@@ -220,11 +220,30 @@ describe('createHost', () => {
 		])
 	})
 
+	it('the adapter → its methods name the change request, never a vendor noun', () => {
+		expect(Object.keys(createHost(recordedSeams({}))).sort()).toEqual([
+			'closeChangeRequest',
+			'draftChangeRequest',
+			'editChangeRequest',
+			'linkStack',
+			'openChangeRequest',
+			'openFiles',
+			'probeStacks',
+			'queueChangeRequest',
+			'queueStack',
+			'readChangeRequest',
+			'readChecks',
+			'readQueued',
+			'readReviewComments',
+			'retargetChangeRequest',
+		])
+	})
+
 	it.each([
 		{
-			name: 'readPullRequest',
+			name: 'readChangeRequest',
 			call: (host: ReturnType<typeof createHost>, root: string) =>
-				host.readPullRequest({ root, ref: '7' }),
+				host.readChangeRequest({ root, ref: '7' }),
 		},
 		{
 			name: 'readChecks',
@@ -255,13 +274,13 @@ describe('createHost', () => {
 
 	it.each([
 		{
-			name: 'readPullRequest',
-			call: (host: HostAdapter, root: string) => host.readPullRequest({ root, ref: '7' }),
+			name: 'readChangeRequest',
+			call: (host: HostAdapter, root: string) => host.readChangeRequest({ root, ref: '7' }),
 			shape: (root: string) => ({ refusal: expect.stringContaining(root) }),
 		},
 		{
-			name: 'closePullRequest',
-			call: (host: HostAdapter, root: string) => host.closePullRequest({ root, number: 7 }),
+			name: 'closeChangeRequest',
+			call: (host: HostAdapter, root: string) => host.closeChangeRequest({ root, number: 7 }),
 			shape: (root: string) => ({ refusal: expect.stringContaining(root) }),
 		},
 		{
@@ -287,7 +306,7 @@ describe('createHost', () => {
 	it('one host over two roots → each call picks its own root vendor, the alias asked once', () => {
 		fakeGhAnswering()
 		const refusal = { refusal: expect.any(String) }
-		const pullRequest = expect.objectContaining({ number: 7, state: 'open' })
+		const changeRequest = expect.objectContaining({ number: 7, state: 'open' })
 
 		const seams = recordedSeams({ hostname: 'github.com' })
 
@@ -298,7 +317,7 @@ describe('createHost', () => {
 				aliased: repositoryWith('git@gh-alias:team/repo.git'),
 				asked: seams.ssh,
 			}),
-		).toEqual([refusal, pullRequest, refusal, pullRequest, ['gh-alias']])
+		).toEqual([refusal, changeRequest, refusal, changeRequest, ['gh-alias']])
 	})
 })
 
@@ -311,10 +330,10 @@ function answersOf(params: {
 }) {
 	const { host } = params
 	return [
-		host.readPullRequest({ root: params.noVendor, ref: '7' }),
-		host.readPullRequest({ root: params.aliased, ref: '7' }),
-		host.readPullRequest({ root: params.noVendor, ref: '7' }),
-		host.readPullRequest({ root: params.aliased, ref: '7' }),
+		host.readChangeRequest({ root: params.noVendor, ref: '7' }),
+		host.readChangeRequest({ root: params.aliased, ref: '7' }),
+		host.readChangeRequest({ root: params.noVendor, ref: '7' }),
+		host.readChangeRequest({ root: params.aliased, ref: '7' }),
 		params.asked,
 	]
 }

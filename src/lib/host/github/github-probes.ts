@@ -87,7 +87,7 @@ function findMergedPullRequest(
 				values: { number: String(found.number) },
 			}),
 		},
-		pullRequest: found.number,
+		changeRequest: found.number,
 	}
 }
 
@@ -107,9 +107,9 @@ function needsPullRequest(params: { subject: string }): HostLine {
 
 /** The pull request read by number, then a branch that has none: it must read as no pull request. */
 function probeViewPullRequest(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
-	if (params.pullRequest === undefined) return needsPullRequest(params)
-	const number = String(params.pullRequest)
-	const read = params.host.readPullRequest({ root: params.root, ref: number })
+	if (params.changeRequest === undefined) return needsPullRequest(params)
+	const number = String(params.changeRequest)
+	const read = params.host.readChangeRequest({ root: params.root, ref: number })
 	if (read !== undefined && 'refusal' in read)
 		return { status: 'error', subject: params.subject, detail: read.refusal }
 	if (read === undefined)
@@ -118,7 +118,7 @@ function probeViewPullRequest(params: Parameters<HostProbe<typeof GITHUB_CALLS>>
 			subject: params.subject,
 			detail: fillMessage({ template: GITHUB_PROBE_TEXTS.pullRequestNone, values: { number } }),
 		}
-	const none = params.host.readPullRequest({ root: params.root, ref: NO_SUCH_BRANCH })
+	const none = params.host.readChangeRequest({ root: params.root, ref: NO_SUCH_BRANCH })
 	if (none !== undefined)
 		return {
 			status: 'error',
@@ -137,8 +137,8 @@ function probeViewPullRequest(params: Parameters<HostProbe<typeof GITHUB_CALLS>>
 
 /** The checks on the pull request's head, in any state. */
 function probeViewChecks(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
-	if (params.pullRequest === undefined) return needsPullRequest(params)
-	const checks = params.host.readChecks({ root: params.root, number: params.pullRequest })
+	if (params.changeRequest === undefined) return needsPullRequest(params)
+	const checks = params.host.readChecks({ root: params.root, number: params.changeRequest })
 	if ('refusal' in checks)
 		return { status: 'error', subject: params.subject, detail: checks.refusal }
 	return {
@@ -146,15 +146,15 @@ function probeViewChecks(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]):
 		subject: params.subject,
 		detail: fillMessage({
 			template: GITHUB_PROBE_TEXTS.checksRead,
-			values: { number: String(params.pullRequest), state: checks.state },
+			values: { number: String(params.changeRequest), state: checks.state },
 		}),
 	}
 }
 
 /** Whether the pull request is queued. */
 function probeQueuedState(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0]): HostLine {
-	if (params.pullRequest === undefined) return needsPullRequest(params)
-	const queued = params.host.readQueued({ root: params.root, number: params.pullRequest })
+	if (params.changeRequest === undefined) return needsPullRequest(params)
+	const queued = params.host.readQueued({ root: params.root, number: params.changeRequest })
 	if ('refusal' in queued)
 		return { status: 'error', subject: params.subject, detail: queued.refusal }
 	return {
@@ -162,7 +162,7 @@ function probeQueuedState(params: Parameters<HostProbe<typeof GITHUB_CALLS>>[0])
 		subject: params.subject,
 		detail: fillMessage({
 			template: GITHUB_PROBE_TEXTS.queuedRead,
-			values: { number: String(params.pullRequest), queued: String(queued.queued) },
+			values: { number: String(params.changeRequest), queued: String(queued.queued) },
 		}),
 	}
 }

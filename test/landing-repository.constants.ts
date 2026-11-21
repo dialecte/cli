@@ -9,7 +9,7 @@ export const LOT_TEXT = 'export const x = 1\n'
 export const ORIGIN_MAIN = 'refs/remotes/origin/main'
 
 /** The url the fake host gives a pull request. */
-export const PULL_URL = 'https://host.test/pull/{number}'
+export const CHANGE_REQUEST_URL = 'https://host.test/pull/{number}'
 
 /** The stacked child lot's branch, its file and its text. */
 export const CHILD_BRANCH = 'feat/y'

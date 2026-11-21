@@ -10,8 +10,8 @@ import type {
 	HostAdapter,
 	HostRefusal,
 	HostToolRun,
-	PullRequest,
-	PullRequestChecks,
+	ChangeRequest,
+	ChangeRequestChecks,
 	ReviewComment,
 	StackSupport,
 } from '../host.types.ts'
@@ -27,7 +27,7 @@ import type { GITHUB_CALLS } from './github-calls.constants.ts'
  */
 export function createGithubHost(): HostAdapter {
 	const host: HostAdapter = {
-		readPullRequest: function readPullRequest(params) {
+		readChangeRequest: function readChangeRequest(params) {
 			const run = runGh({
 				root: params.root,
 				call: 'viewPullRequest',
@@ -36,7 +36,7 @@ export function createGithubHost(): HostAdapter {
 			if ('refusal' in run) return NO_PULL_REQUEST_PATTERN.test(run.refusal) ? undefined : run
 			return pullRequestOf({ text: run.output })
 		},
-		openPullRequest: function openPullRequest(params) {
+		openChangeRequest: function openChangeRequest(params) {
 			const created = runGh({
 				root: params.root,
 				call: 'createPullRequest',
@@ -49,23 +49,23 @@ export function createGithubHost(): HostAdapter {
 				},
 			})
 			if ('refusal' in created) return created
-			const read = host.readPullRequest({ root: params.root, ref: params.branch })
+			const read = host.readChangeRequest({ root: params.root, ref: params.branch })
 			return (
 				read ?? { refusal: `the pull request of ${params.branch} was opened but cannot be read` }
 			)
 		},
-		editPullRequest: editOnGithub,
-		closePullRequest: closeOnGithub,
+		editChangeRequest: editOnGithub,
+		closeChangeRequest: closeOnGithub,
 		readChecks: readChecksOnGithub,
 		readReviewComments: readCommentsOnGithub,
 		openFiles: openFilesTab,
 		probeStacks: probeStacksOnGithub,
 		linkStack: linkStackOnGithub,
 		queueStack: queueStackOnGithub,
-		retargetPullRequest: retargetOnGithub,
-		draftPullRequest: draftOnGithub,
+		retargetChangeRequest: retargetOnGithub,
+		draftChangeRequest: draftOnGithub,
 		readQueued: readQueuedOnGithub,
-		queuePullRequest: function queuePullRequest(params) {
+		queueChangeRequest: function queueChangeRequest(params) {
 			const number = String(params.number)
 			if (params.draft) {
 				const ready = runGh({
@@ -186,7 +186,7 @@ function retargetOnGithub(params: {
 function readChecksOnGithub(params: {
 	root: string
 	number: number
-}): PullRequestChecks | HostRefusal {
+}): ChangeRequestChecks | HostRefusal {
 	const run = runGh({
 		root: params.root,
 		call: 'viewChecks',
@@ -296,7 +296,7 @@ function readQueuedOnGithub(params: {
 }
 
 /** A pull request from `gh pr view --json`; a refusal when the text is not what gh writes. */
-function pullRequestOf(params: { text: string }): PullRequest | HostRefusal {
+function pullRequestOf(params: { text: string }): ChangeRequest | HostRefusal {
 	try {
 		const parsed = JSON.parse(params.text) as Record<string, unknown>
 		if (

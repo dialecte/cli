@@ -10,7 +10,7 @@ import {
 	landingHostOf,
 	landingRepositoryOf,
 	mergeOnOrigin,
-	pullRequestOf,
+	changeRequestOf,
 	revertOnOrigin,
 	reuseBranchName,
 	commitEarlierLot,
@@ -30,7 +30,7 @@ import type { LandingQuery, LandingState } from './landing-state.types.ts'
 /** What a row arranges beyond the repository: the host, the pull request the landing recorded, the branch's tip. */
 type Arranged = {
 	host?: HostAdapter
-	pullNumber?: number
+	changeRequestNumber?: number
 	tip?: string
 	/** The branch and base ref the query names, when not the lot's and origin's main. */
 	branch?: string
@@ -130,7 +130,7 @@ const ROWS: Row[] = [
 			'a pull request recorded, its branch not on origin, main edited the same lines, no host -> unlanded, not provable offline',
 		arrange: (repository) => {
 			editOnOrigin({ repository, files: { [LOT_FILE]: 'export const x = 2\n' } })
-			return { pullNumber: 7 }
+			return { changeRequestNumber: 7 }
 		},
 		expected: () => ({ kind: 'unlanded', proof: 'offline-unproven' }),
 	},
@@ -156,9 +156,9 @@ const HOST_ROWS: Row[] = [
 		arrange: (repository) => {
 			mergeOnOrigin({ repository, how: 'squash' })
 			return {
-				pullNumber: 7,
+				changeRequestNumber: 7,
 				host: landingHostOf({
-					byNumber: { 7: pullRequestOf({ number: 7, state: 'merged', head: repository.tip }) },
+					byNumber: { 7: changeRequestOf({ number: 7, state: 'merged', head: repository.tip }) },
 				}).host,
 			}
 		},
@@ -166,7 +166,7 @@ const HOST_ROWS: Row[] = [
 			kind: 'merged',
 			how: 'host',
 			tip,
-			pull: pullRequestOf({ number: 7, state: 'merged', head: tip }),
+			changeRequest: changeRequestOf({ number: 7, state: 'merged', head: tip }),
 		}),
 	},
 	{
@@ -177,7 +177,7 @@ const HOST_ROWS: Row[] = [
 			return {
 				host: landingHostOf({
 					byBranch: {
-						[repository.branch]: pullRequestOf({
+						[repository.branch]: changeRequestOf({
 							number: 9,
 							state: 'merged',
 							head: repository.tip,
@@ -190,7 +190,7 @@ const HOST_ROWS: Row[] = [
 			kind: 'merged',
 			how: 'host',
 			tip,
-			pull: pullRequestOf({ number: 9, state: 'merged', head: tip }),
+			changeRequest: changeRequestOf({ number: 9, state: 'merged', head: tip }),
 		}),
 	},
 	{
@@ -199,7 +199,11 @@ const HOST_ROWS: Row[] = [
 		arrange: (repository) => ({
 			host: landingHostOf({
 				byBranch: {
-					[repository.branch]: pullRequestOf({ number: 3, state: 'merged', head: repository.cut }),
+					[repository.branch]: changeRequestOf({
+						number: 3,
+						state: 'merged',
+						head: repository.cut,
+					}),
 				},
 			}).host,
 		}),
@@ -208,36 +212,36 @@ const HOST_ROWS: Row[] = [
 	{
 		title: 'work not in the base and an open draft pull request -> unlanded with the pull request',
 		arrange: (repository) => ({
-			pullNumber: 7,
+			changeRequestNumber: 7,
 			host: landingHostOf({
 				byNumber: {
-					7: pullRequestOf({ number: 7, state: 'open', head: repository.tip, draft: true }),
+					7: changeRequestOf({ number: 7, state: 'open', head: repository.tip, draft: true }),
 				},
 			}).host,
 		}),
 		expected: ({ tip }) => ({
 			kind: 'unlanded',
-			pull: pullRequestOf({ number: 7, state: 'open', head: tip, draft: true }),
+			changeRequest: changeRequestOf({ number: 7, state: 'open', head: tip, draft: true }),
 		}),
 	},
 	{
 		title: 'a pull request closed unmerged, its work not in the base -> closed',
 		arrange: (repository) => ({
-			pullNumber: 7,
+			changeRequestNumber: 7,
 			host: landingHostOf({
-				byNumber: { 7: pullRequestOf({ number: 7, state: 'closed', head: repository.tip }) },
+				byNumber: { 7: changeRequestOf({ number: 7, state: 'closed', head: repository.tip }) },
 			}).host,
 		}),
 		expected: ({ tip }) => ({
 			kind: 'closed',
-			pull: pullRequestOf({ number: 7, state: 'closed', head: tip }),
+			changeRequest: changeRequestOf({ number: 7, state: 'closed', head: tip }),
 		}),
 	},
 	{
 		title: 'a host refusal on a squash merge -> the git evidence decides: merged by tree',
 		arrange: (repository) => {
 			mergeOnOrigin({ repository, how: 'squash' })
-			return { pullNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }
+			return { changeRequestNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }
 		},
 		expected: ({ tip }) => ({ kind: 'merged', how: 'tree', tip }),
 	},
@@ -247,7 +251,7 @@ const HOST_ROWS: Row[] = [
 		arrange: (repository) => ({
 			host: landingHostOf({
 				byBranch: {
-					[repository.branch]: pullRequestOf({
+					[repository.branch]: changeRequestOf({
 						number: 3,
 						state: 'merged',
 						head: strayCommitOf({ root: repository.root, parent: repository.cut }),
@@ -265,7 +269,7 @@ const HOST_ROWS: Row[] = [
 			return {
 				host: landingHostOf({
 					byBranch: {
-						[repository.branch]: pullRequestOf({
+						[repository.branch]: changeRequestOf({
 							number: 9,
 							state: 'merged',
 							head: repository.tip,
@@ -278,7 +282,7 @@ const HOST_ROWS: Row[] = [
 			kind: 'merged',
 			how: 'host',
 			tip: repository.tip,
-			pull: pullRequestOf({ number: 9, state: 'merged', head: repository.tip }),
+			changeRequest: changeRequestOf({ number: 9, state: 'merged', head: repository.tip }),
 		}),
 	},
 	{
@@ -299,7 +303,7 @@ const HOST_ROWS: Row[] = [
 				since: '2026-06-01T00:00:00.000Z',
 				host: landingHostOf({
 					byBranch: {
-						[repository.branch]: pullRequestOf({ number: 4, state: 'merged', head: earlier }),
+						[repository.branch]: changeRequestOf({ number: 4, state: 'merged', head: earlier }),
 					},
 				}).host,
 			}
@@ -323,7 +327,7 @@ const HOST_ROWS: Row[] = [
 				since: '2026-06-01T00:00:00.000Z',
 				host: landingHostOf({
 					byBranch: {
-						[repository.branch]: pullRequestOf({ number: 4, state: 'merged', head: earlier }),
+						[repository.branch]: changeRequestOf({ number: 4, state: 'merged', head: earlier }),
 					},
 				}).host,
 			}
@@ -333,22 +337,25 @@ const HOST_ROWS: Row[] = [
 	{
 		title: 'a queued pull request, its work not in the base -> unlanded with the pull request',
 		arrange: (repository) => ({
-			pullNumber: 7,
+			changeRequestNumber: 7,
 			host: landingHostOf({
 				byNumber: {
-					7: pullRequestOf({ number: 7, state: 'open', head: repository.tip, queued: true }),
+					7: changeRequestOf({ number: 7, state: 'open', head: repository.tip, queued: true }),
 				},
 			}).host,
 		}),
 		expected: ({ tip }) => ({
 			kind: 'unlanded',
-			pull: pullRequestOf({ number: 7, state: 'open', head: tip, queued: true }),
+			changeRequest: changeRequestOf({ number: 7, state: 'open', head: tip, queued: true }),
 		}),
 	},
 	{
 		title:
 			'a host refusal, the work not in the base, a pull request recorded -> unlanded naming the refusal, not provable offline',
-		arrange: () => ({ pullNumber: 7, host: landingHostOf({ refusal: 'gh: offline' }).host }),
+		arrange: () => ({
+			changeRequestNumber: 7,
+			host: landingHostOf({ refusal: 'gh: offline' }).host,
+		}),
 		expected: () => ({ kind: 'unlanded', hostRefusal: 'gh: offline', proof: 'offline-unproven' }),
 	},
 ]
@@ -363,7 +370,7 @@ function arrangeRow(row: Row): { query: LandingQuery; expected: LandingState } {
 			branch: arranged.branch ?? repository.branch,
 			baseRef: arranged.baseRef ?? ORIGIN_MAIN,
 			cut: repository.cut,
-			pullNumber: arranged.pullNumber,
+			changeRequestNumber: arranged.changeRequestNumber,
 			host: arranged.host,
 			...(arranged.since !== undefined && { since: arranged.since }),
 		},

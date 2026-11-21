@@ -10,7 +10,7 @@ import { LOT_NAME } from '../../test/lot-pr.constants.ts'
 import {
 	OTHER_HEAD,
 	OTHER_PACKAGE,
-	REVIEW_PULL_NUMBER,
+	REVIEW_CHANGE_REQUEST_NUMBER,
 	REVIEWER,
 } from '../../test/lot-review.constants.ts'
 import { landedLot } from '../../test/lot-review.ts'
@@ -36,7 +36,7 @@ describe(
 		it('green checks of another head than the landed one → refused naming both, nothing recorded', () => {
 			const lot = landedLot()
 			const { host, calls } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks: { head: OTHER_HEAD, state: 'green', failing: [], pending: [] },
 			})
 
@@ -50,14 +50,14 @@ describe(
 			expect(result.output).toBe(
 				`lot approve: ${LOT_NAME} not approved: checks ran on ${OTHER_HEAD.slice(0, 12)}, not the landed ${lot.head.slice(0, 12)}; nothing recorded, nothing queued`,
 			)
-			expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+			expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toEqual([])
 		})
 
 		it("a body holding a person's text the render would drop → refused before anything is recorded", () => {
 			const lot = landedLot()
 			const { host, calls } = recordingHost({
-				existing: { ...lot.pullRequest, body: 'notes of my own' },
+				existing: { ...lot.changeRequest, body: 'notes of my own' },
 				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 			})
 
@@ -69,7 +69,7 @@ describe(
 
 			expect(result.exitCode).toBe(1)
 			expect(result.output).toContain('the pull request body holds text the render would drop')
-			expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+			expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toEqual([])
 		})
 
@@ -77,7 +77,7 @@ describe(
 			const lot = landedLot()
 			const checks = { head: lot.head, state: 'green' as const, failing: [], pending: [] }
 			const refusing = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks,
 				queueRefusal: 'gh pr merge: HTTP 502',
 			})
@@ -88,7 +88,7 @@ describe(
 				host: refusing.host,
 			})
 			const queuing = recordingHost({
-				existing: { ...lot.pullRequest, body: refusing.bodies.at(-1) ?? '' },
+				existing: { ...lot.changeRequest, body: refusing.bodies.at(-1) ?? '' },
 				checks,
 			})
 			const second = runLotApprove({
@@ -99,13 +99,13 @@ describe(
 
 			expect(first.exitCode).toBe(1)
 			expect(first.output).toBe(
-				`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_PULL_NUMBER} not queued: gh pr merge: HTTP 502`,
+				`lot approve: ${LOT_NAME} approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} not queued: gh pr merge: HTTP 502`,
 			)
 			expect(second.exitCode).toBe(0)
 			expect(second.output).toBe(
-				`lot approve: ${LOT_NAME} already approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_PULL_NUMBER} queued`,
+				`lot approve: ${LOT_NAME} already approved by ${REVIEWER} on ${lot.head.slice(0, 12)}, pull request #${REVIEW_CHANGE_REQUEST_NUMBER} queued`,
 			)
-			expect(queuing.calls.at(-1)).toBe(`queue ${REVIEW_PULL_NUMBER}`)
+			expect(queuing.calls.at(-1)).toBe(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toHaveLength(1)
 			expect(readReviewRecord({ folder: lot.lotFolder })?.verdicts).toHaveLength(1)
 		})
@@ -113,7 +113,7 @@ describe(
 		it('a commit after the approval → lot pr renders the body without it', () => {
 			const lot = landedLot()
 			const { host } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 			})
 			const approved = runLotApprove({
@@ -137,7 +137,7 @@ describe(
 			git({ root: lot.worktree, args: ['commit', '-qam', 'fix(x): two'] })
 			const local = git({ root: lot.worktree, args: ['rev-parse', 'HEAD'] }).trim()
 			const { host, calls } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 			})
 
@@ -151,14 +151,14 @@ describe(
 			expect(result.output).toBe(
 				`lot approve: ${LOT_NAME} not approved: the worktree is at ${local.slice(0, 12)}, the lot landed ${lot.head.slice(0, 12)} (lot land ${LOT_NAME} pushes it); nothing recorded, nothing queued`,
 			)
-			expect(calls).not.toContain(`queue ${REVIEW_PULL_NUMBER}`)
+			expect(calls).not.toContain(`queue ${REVIEW_CHANGE_REQUEST_NUMBER}`)
 			expect(approvalLines(lot.lotFolder)).toEqual([])
 		})
 
 		it('--by Orchestrator on the cli → the body names the orchestrator', () => {
 			const lot = landedLot()
 			const { host, bodies } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 			})
 
@@ -174,7 +174,7 @@ describe(
 
 		it('--by in another casing of orchestrator on a package other than the cli → refused, a person approves', () => {
 			const lot = landedLot({ packageName: OTHER_PACKAGE })
-			const { host, calls } = recordingHost({ existing: lot.pullRequest })
+			const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 			const result = runLotApprove({
 				cwd: lot.workspace.repository,

@@ -7,15 +7,23 @@ export type HostSeamVendor = {
 	tool: string
 }
 
-/** What a finding breaks: a tool literal outside its vendor's folder, or an import across the seam. */
-export type HostSeamFindingKind = 'tool-literal' | 'vendor-import' | 'config-import'
+/**
+ * What a finding breaks: a tool literal outside its vendor's folder, an import across the seam, or a vendor's
+ * change-request noun outside the vendor's folders (in an identifier, or in a file's name).
+ */
+export type HostSeamFindingKind =
+	| 'tool-literal'
+	| 'vendor-import'
+	| 'config-import'
+	| 'noun-identifier'
+	| 'noun-path'
 
 /** One breach of the seam: the file (relative to the scanned root, `/`-separated), its line (1-based) and what it breaks. */
 export type HostSeamFinding = {
 	file: string
 	line: number
 	kind: HostSeamFindingKind
-	/** The literal, the identifier or the import specifier. */
+	/** The literal, the identifier, the import specifier or the file's path. */
 	text: string
 }
 

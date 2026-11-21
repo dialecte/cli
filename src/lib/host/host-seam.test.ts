@@ -374,8 +374,225 @@ describe('scanHostSeam: imports across the seam', () => {
 	})
 })
 
+describe('scanHostSeam: the change-request noun of one vendor stays in the vendor folders', () => {
+	it.each([
+		{
+			name: 'a type',
+			file: 'export const A = 1\nexport type PullRequest = { number: number }\n',
+			found: [{ line: 2, text: 'PullRequest' }],
+		},
+		{
+			name: 'a field, declared then read',
+			file: 'export function numberOf(found: { pullRequest: number }) {\n\treturn found.pullRequest\n}\n',
+			found: [
+				{ line: 1, text: 'pullRequest' },
+				{ line: 2, text: 'pullRequest' },
+			],
+		},
+		{
+			name: 'a constant',
+			file: "export const A = 1\nexport const PULL_REQUEST_LINES = ['a']\n",
+			found: [{ line: 2, text: 'PULL_REQUEST_LINES' }],
+		},
+		{
+			name: 'a bare short name',
+			file: 'export const A = 1\nexport const pull = 7\n',
+			found: [{ line: 2, text: 'pull' }],
+		},
+		{
+			name: 'a short name first',
+			file: 'export const A = 1\nexport const pullNumber = 7\n',
+			found: [{ line: 2, text: 'pullNumber' }],
+		},
+		{
+			name: 'a capitalised short name first',
+			file: 'export const A = 1\nexport type PullState = { open: boolean }\n',
+			found: [{ line: 2, text: 'PullState' }],
+		},
+		{
+			name: 'a short name last',
+			file: 'export const A = 1\nexport const parentPull = 7\n',
+			found: [{ line: 2, text: 'parentPull' }],
+		},
+		{
+			name: 'a short constant',
+			file: "export const A = 1\nexport const PULL_URL = 'https://host.test/7'\n",
+			found: [{ line: 2, text: 'PULL_URL' }],
+		},
+	])(
+		'$name holding the noun outside a vendor folder → one noun finding per occurrence, naming it',
+		({ file, found }) => {
+			const root = treeOf({ 'src/lib/landing/land.ts': file })
+
+			expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual(
+				found.map(({ line, text }) => ({
+					file: 'src/lib/landing/land.ts',
+					line,
+					kind: 'noun-identifier',
+					text,
+				})),
+			)
+		},
+	)
+
+	it('a test file and a test helper holding the noun → one noun finding each', () => {
+		expect(
+			scanHostSeam(
+				scanOf({
+					files: {
+						'src/lib/landing/land.test.ts': 'export const pullRequest = 7\n',
+						'test/land-lot.ts': 'export const pullRequest = 7\n',
+					},
+					vendors: [GITHUB],
+				}),
+			),
+		).toMatchObject(
+			findingsOf([
+				'src/lib/landing/land.test.ts:noun-identifier',
+				'test/land-lot.ts:noun-identifier',
+			]),
+		)
+	})
+
+	it.each([
+		{ name: 'a private field', file: 'export class A {\n\t#pull = 7\n}\n', text: '#pull' },
+		{
+			name: 'a leading underscore',
+			file: 'export const A = 1\nexport const _pull = 7\n',
+			text: '_pull',
+		},
+		{
+			name: 'a lower snake name',
+			file: 'export const A = 1\nexport const parent_pull = 7\n',
+			text: 'parent_pull',
+		},
+		{ name: 'a plural', file: 'export const A = 1\nexport const pulls = [7]\n', text: 'pulls' },
+		{
+			name: 'a capitalised plural',
+			file: 'export const A = 1\nexport type Pulls = number[]\n',
+			text: 'Pulls',
+		},
+		{
+			name: 'an acronym before it',
+			file: 'export const A = 1\nexport const HTTPPull = 7\n',
+			text: 'HTTPPull',
+		},
+	])('$name spelling the noun → one noun finding naming it', ({ file, text }) => {
+		const root = treeOf({ 'src/lib/landing/land.ts': file })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{ file: 'src/lib/landing/land.ts', line: 2, kind: 'noun-identifier', text },
+		])
+	})
+
+	it.each([
+		{
+			name: 'in lower case',
+			file: 'export const A = 1\nexport const pullrequest = 7\n',
+			text: 'pullrequest',
+		},
+		{
+			name: 'in capitals',
+			file: 'export const A = 1\nexport const PULLREQUEST = 7\n',
+			text: 'PULLREQUEST',
+		},
+		{
+			name: 'as a plural',
+			file: 'export const A = 1\nexport type Pullrequests = number[]\n',
+			text: 'Pullrequests',
+		},
+	])('the long noun written as one word $name → one noun finding naming it', ({ file, text }) => {
+		const root = treeOf({ 'src/lib/landing/land.ts': file })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{ file: 'src/lib/landing/land.ts', line: 2, kind: 'noun-identifier', text },
+		])
+	})
+
+	it('a tree with a test folder and no source folder → its noun found, nothing thrown', () => {
+		const root = treeOf({ 'test/land-lot.ts': 'export const A = 1\nexport const pull = 7\n' })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{ file: 'test/land-lot.ts', line: 2, kind: 'noun-identifier', text: 'pull' },
+		])
+	})
+
+	it.each([
+		{ name: 'snake case', file: 'src/lib/pr/pull_request.ts' },
+		{ name: 'camel case', file: 'src/lib/pr/pullRequest.ts' },
+	])('a file name holding the noun in $name → one path finding naming the file', ({ file }) => {
+		const root = treeOf({ [file]: 'export const A = 1\n' })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{ file, line: 1, kind: 'noun-path', text: file },
+		])
+	})
+
+	it.each([
+		{ name: 'a module file', file: 'src/lib/landing/land.mts' },
+		{ name: 'a common module file', file: 'src/lib/landing/land.cts' },
+		{ name: 'a TSX file', file: 'test/land.tsx' },
+	])('$name holding the noun → one noun finding', ({ file }) => {
+		const root = treeOf({ [file]: 'export const A = 1\nexport const pull = 7\n' })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{ file, line: 2, kind: 'noun-identifier', text: 'pull' },
+		])
+	})
+
+	it('a file whose name holds the noun → one path finding naming the file', () => {
+		const root = treeOf({ 'src/lib/pr/compose-pull-request.ts': 'export const A = 1\n' })
+
+		expect(scanHostSeam({ root, vendors: [GITHUB] })).toEqual([
+			{
+				file: 'src/lib/pr/compose-pull-request.ts',
+				line: 1,
+				kind: 'noun-path',
+				text: 'src/lib/pr/compose-pull-request.ts',
+			},
+		])
+	})
+
+	it.each([
+		{
+			name: 'a comment and a doc comment',
+			file: '/** The pull request, read. */\n// pullRequest is the field\nexport const A = 1\n',
+		},
+		{
+			name: 'a string and a template',
+			file: "export const A = 'pull request #7 pullRequest'\nexport const B = `pull ${'x'} pullRequest`\n",
+		},
+		{
+			name: 'a word that only starts with pull',
+			file: "export const PULLED_LINE_SCHEMA = 1\nexport const pulled = 'a'\nexport const pullover = 2\n",
+		},
+	])('$name → no finding', ({ file }) => {
+		expect(
+			scanHostSeam(scanOf({ files: { 'src/lib/landing/text.ts': file }, vendors: [GITHUB] })),
+		).toMatchObject(findingsOf([]))
+	})
+
+	it("each vendor's own folders hold the noun, a second vendor's too → no finding", () => {
+		expect(
+			scanHostSeam(
+				scanOf({
+					files: {
+						'src/lib/host/github/github-host.ts': 'export type PullRequest = { number: number }\n',
+						'src/lib/host/github/github-host.test.ts': 'export const pullRequest = 7\n',
+						'src/lib/host/github/pull-request-reads.ts': 'export const A = 1\n',
+						'src/lib/host/gitlab/gitlab-host.ts': 'export const pullNumber = 7\n',
+						'test/fixtures/host-contract/gitlab/pull-request.ts': 'export const pull = 7\n',
+						'test/fixtures/host-contract/github/pull-request.ts': 'export const pullRequest = 7\n',
+					},
+					vendors: [GITHUB, GITLAB],
+				}),
+			),
+		).toMatchObject(findingsOf([]))
+	})
+})
+
 describe("scanHostSeam on the cli's own sources", () => {
-	it('no vendor tool literal or vendor import outside its place → no finding', () => {
+	it('no vendor tool literal, vendor import or change-request noun outside its place → no finding', () => {
 		const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 		const vendors = HOST_VENDORS.map((vendor) => ({
 			name: vendor.name,

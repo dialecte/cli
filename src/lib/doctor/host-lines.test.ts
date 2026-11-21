@@ -34,7 +34,10 @@ const READS = [
 	'stackHelp',
 ] as const
 
-const PULL_REQUEST = {
+/** The vendor's subject read: the newest merged change request, which the other reads take. */
+const MERGED_LIST = READS[0]
+
+const CHANGE_REQUEST = {
 	number: 73,
 	url: 'https://github.com/example/repo/pull/73',
 	title: 'a title',
@@ -67,15 +70,15 @@ function forbidden(name: WriteMethod): () => never {
 
 /** Every write method of the adapter, each throwing (the type forces a new write method to be listed here). */
 const WRITES: Pick<HostAdapter, WriteMethod> = {
-	openPullRequest: forbidden('openPullRequest'),
-	editPullRequest: forbidden('editPullRequest'),
-	closePullRequest: forbidden('closePullRequest'),
-	queuePullRequest: forbidden('queuePullRequest'),
-	draftPullRequest: forbidden('draftPullRequest'),
+	openChangeRequest: forbidden('openChangeRequest'),
+	editChangeRequest: forbidden('editChangeRequest'),
+	closeChangeRequest: forbidden('closeChangeRequest'),
+	queueChangeRequest: forbidden('queueChangeRequest'),
+	draftChangeRequest: forbidden('draftChangeRequest'),
 	openFiles: forbidden('openFiles'),
 	linkStack: forbidden('linkStack'),
 	queueStack: forbidden('queueStack'),
-	retargetPullRequest: forbidden('retargetPullRequest'),
+	retargetChangeRequest: forbidden('retargetChangeRequest'),
 }
 
 /**
@@ -88,7 +91,7 @@ function fakeHost(overrides: Partial<HostAdapter> = {}): HostAdapter {
 	}
 	return {
 		...WRITES,
-		readPullRequest: ({ ref }) => (ref === '73' ? PULL_REQUEST : undefined),
+		readChangeRequest: ({ ref }) => (ref === '73' ? CHANGE_REQUEST : undefined),
 		readQueued: ({ number }) =>
 			number === 73 ? { queued: false } : { refusal: `gh api graphql: no pull request ${number}` },
 		readChecks: ({ number }) =>
@@ -176,7 +179,7 @@ describe('hostLines, the reads', () => {
 		{
 			label: 'listing the merged pull requests refused by gh',
 			read: 'listMergedPullRequests',
-			run: { listMergedPullRequests: { refusal: 'gh pr list: HTTP 502' } },
+			run: { [MERGED_LIST]: { refusal: 'gh pr list: HTTP 502' } },
 			detail: 'gh pr list: HTTP 502',
 		},
 		{
@@ -188,7 +191,7 @@ describe('hostLines, the reads', () => {
 		{
 			label: 'the pull request read refused',
 			read: 'viewPullRequest',
-			host: { readPullRequest: () => ({ refusal: 'gh pr view: unknown field' }) },
+			host: { readChangeRequest: () => ({ refusal: 'gh pr view: unknown field' }) },
 			detail: 'gh pr view: unknown field',
 		},
 		{
@@ -218,8 +221,8 @@ describe('hostLines, the reads', () => {
 
 	it('the no-pull-request read of a branch that cannot exist answering a refusal (its text changed) → an error line naming it', () => {
 		const host = fakeHost({
-			readPullRequest: ({ ref }) =>
-				ref === '73' ? PULL_REQUEST : { refusal: 'gh pr view: Could not resolve to a branch' },
+			readChangeRequest: ({ ref }) =>
+				ref === '73' ? CHANGE_REQUEST : { refusal: 'gh pr view: Could not resolve to a branch' },
 		})
 
 		const line = lineOf({ lines: linesOf({ host }), subject: 'viewPullRequest' })
@@ -251,7 +254,7 @@ describe('hostLines, the reads', () => {
 
 describe('hostLines, what cannot be probed here', () => {
 	it('no merged pull request → one line per read: the subject and the reads that need a pull request warn, the others stay ok, no error', () => {
-		const lines = linesOf({ run: fakeRun({ listMergedPullRequests: { output: '[]' } }) })
+		const lines = linesOf({ run: fakeRun({ [MERGED_LIST]: { output: '[]' } }) })
 
 		expect(readStatuses(lines)).toEqual([
 			['listMergedPullRequests', 'warning'],
@@ -338,14 +341,14 @@ describe('the probes read only', () => {
 		{ label: 'every read answering', run: fakeRun(), host: fakeHost() },
 		{
 			label: 'no merged pull request',
-			run: fakeRun({ listMergedPullRequests: { output: '[]' } }),
+			run: fakeRun({ [MERGED_LIST]: { output: '[]' } }),
 			host: fakeHost(),
 		},
 		{
 			label: 'every read refused',
-			run: fakeRun({ listMergedPullRequests: { refusal: 'gh: HTTP 502' } }),
+			run: fakeRun({ [MERGED_LIST]: { refusal: 'gh: HTTP 502' } }),
 			host: fakeHost({
-				readPullRequest: () => ({ refusal: 'x' }),
+				readChangeRequest: () => ({ refusal: 'x' }),
 				readChecks: () => ({ refusal: 'x' }),
 				readQueued: () => ({ refusal: 'x' }),
 				probeStacks: () => ({ stacks: false, why: 'x' }),
@@ -358,8 +361,8 @@ describe('the probes read only', () => {
 	it('the fake host throws on every write method, naming it', () => {
 		const host = fakeHost()
 
-		expect(() => host.queuePullRequest({ root: '', number: 1, draft: false })).toThrow(
-			'a probe called the write queuePullRequest',
+		expect(() => host.queueChangeRequest({ root: '', number: 1, draft: false })).toThrow(
+			'a probe called the write queueChangeRequest',
 		)
 		expect(() => host.openFiles({ root: '', url: 'u' })).toThrow(
 			'a probe called the write openFiles',
@@ -369,16 +372,16 @@ describe('the probes read only', () => {
 	it('the host a probe gets is the read methods of the constant only: a write method does not compile', () => {
 		function queues({ host }: Parameters<HostProbe>[0]): ReturnType<HostProbe> {
 			// @ts-expect-error a probe's host has no write method
-			host.queuePullRequest({ root: '', number: 1, draft: false })
+			host.queueChangeRequest({ root: '', number: 1, draft: false })
 			return OK_LINE
 		}
 
 		expectTypeOf<keyof HostReadAdapter>().toEqualTypeOf<(typeof HOST_READ_METHODS)[number]>()
 		expect(() => queues({ root: '', host: fakeHost(), run: fakeRun(), subject: 'x' })).toThrow(
-			'a probe called the write queuePullRequest',
+			'a probe called the write queueChangeRequest',
 		)
 		expect([...HOST_READ_METHODS].sort()).toEqual(
-			['probeStacks', 'readChecks', 'readPullRequest', 'readQueued'].sort(),
+			['probeStacks', 'readChecks', 'readChangeRequest', 'readQueued'].sort(),
 		)
 	})
 

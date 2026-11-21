@@ -12,8 +12,8 @@ import { createBriefWorkspace, writeStoreLot } from '../../test/brief-workspace.
 import {
 	landingRepository,
 	landOnOrigin,
-	parentPullRequest,
-	pullUrlOf,
+	parentChangeRequest,
+	changeRequestUrlOf,
 	recordingHost,
 	stackedRepository,
 } from '../../test/land-lot.ts'
@@ -27,8 +27,8 @@ import {
 } from '../lib/handover/handover-store.ts'
 import { landLot } from '../lib/handover/land-lot.ts'
 import { readLanded } from '../lib/landing/landed-record.ts'
-import { templateFaultOf } from '../lib/pr/compose-pull-request.ts'
-import { TEMPLATE_PATH } from '../lib/pr/pull-request.constants.ts'
+import { TEMPLATE_PATH } from '../lib/pr/change-request.constants.ts'
+import { templateFaultOf } from '../lib/pr/compose-change-request.ts'
 import { runLotLand } from './lot-land.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -139,7 +139,7 @@ function hostRewritesChild(params: {
 describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('lot land, host with stacks, the parent open → its pull request opened on the parent branch, then linked to the parent as a stack', () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const host = recordingHost({ stacks: true, parent: parentChangeRequest() })
 
 		const landed = landChild({ stack, host })
 
@@ -148,14 +148,14 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 			writes: [
 				'probe',
 				'open feat/y -> feat/x "feat(y): y answers two" draft',
-				`link ${pullUrlOf(5)} ${pullUrlOf(7)}`,
+				`link ${changeRequestUrlOf(5)} ${changeRequestUrlOf(7)}`,
 			],
 		})
 	})
 
 	it('lot land, host without stacks, the parent open → its pull request opened on the parent branch, one note line saying why', () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		const landed = landChild({ stack, host })
 
@@ -172,7 +172,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 
 	it("a stacked lot's pull request body → its depends-on part names the parent's pull request", () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		landChild({ stack, host })
 
@@ -202,7 +202,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 			files: { 'src/w.ts': 'export const w = 3\n' },
 			message: 'feat(x): w too',
 		})
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		const landed = landChild({ stack, host })
 
@@ -226,7 +226,7 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 			message: 'feat(x): x answers three',
 		})
 		const before = childHead(stack)
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		const landed = landChild({ stack, host })
 
@@ -270,10 +270,10 @@ describe('a stacked lot lands as a stack', { timeout: SCRATCH_GIT_CASE_TIMEOUT }
 describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('the parent squash-merged, based on its branch → rebased off the parent onto origin/main, pushed, retargeted to main, never queued', () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 		landChild({ stack, host })
 		const merged = squashParent({ stack })
-		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.setParent(parentChangeRequest({ state: 'merged' }))
 		host.calls.length = 0
 
 		const landed = landChild({ stack, host })
@@ -305,11 +305,11 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 	it('the parent squash-merged and the host retargeted the pull request already → no retarget asked', () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 		landChild({ stack, host })
 		squashParent({ stack })
-		host.setParent(parentPullRequest({ state: 'merged' }))
-		host.host.retargetPullRequest({ root: stack.root, number: 7, base: 'main' })
+		host.setParent(parentChangeRequest({ state: 'merged' }))
+		host.host.retargetChangeRequest({ root: stack.root, number: 7, base: 'main' })
 		host.calls.length = 0
 
 		const landed = landChild({ stack, host })
@@ -322,11 +322,11 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 	it('the rebase off the merged parent conflicts → stops naming the files, the rebase undone, nothing pushed, exit 2', () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 		landChild({ stack, host })
 		const pushed = originHead({ stack, branch: 'feat/y' })
 		squashParent({ stack, extra: { 'src/y.ts': 'export const y = 9\n' } })
-		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.setParent(parentChangeRequest({ state: 'merged' }))
 		const before = childHead(stack)
 
 		const landed = landChild({ stack, host })
@@ -342,11 +342,11 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 	it("the parent merged, native stack, nothing local beyond the pushed head → the child follows the host's rewrite, nothing pushed, never queued", () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const host = recordingHost({ stacks: true, parent: parentChangeRequest() })
 		landChild({ stack, host })
 		squashParent({ stack })
 		const rewritten = hostRewritesChild({ stack })
-		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.setParent(parentChangeRequest({ state: 'merged' }))
 		host.calls.length = 0
 
 		const landed = landChild({ stack, host })
@@ -366,7 +366,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 	it("the parent merged, native stack, a local commit beyond the pushed head → rebased onto the host's rewrite, pushed with it as the lease", () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const host = recordingHost({ stacks: true, parent: parentChangeRequest() })
 		landChild({ stack, host })
 		commitIn({
 			worktree: stack.child.worktree,
@@ -375,7 +375,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 		})
 		squashParent({ stack })
 		const rewritten = hostRewritesChild({ stack })
-		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.setParent(parentChangeRequest({ state: 'merged' }))
 
 		const landed = landChild({ stack, host })
 
@@ -388,7 +388,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 
 	it("the parent merged, native stack, a local commit that conflicts with the host's branch → stops naming the files, nothing pushed, exit 2", () => {
 		const stack = stackedRepository()
-		const host = recordingHost({ stacks: true, parent: parentPullRequest() })
+		const host = recordingHost({ stacks: true, parent: parentChangeRequest() })
 		landChild({ stack, host })
 		commitIn({
 			worktree: stack.child.worktree,
@@ -397,7 +397,7 @@ describe('a stacked lot after its parent merged', { timeout: SCRATCH_GIT_CASE_TI
 		})
 		squashParent({ stack })
 		const rewritten = hostRewritesChild({ stack, extra: { 'src/y.ts': 'export const y = 6\n' } })
-		host.setParent(parentPullRequest({ state: 'merged' }))
+		host.setParent(parentChangeRequest({ state: 'merged' }))
 		const before = childHead(stack)
 
 		const landed = landChild({ stack, host })
@@ -451,7 +451,7 @@ function storeStack() {
 		JSON.stringify({
 			schema: 1,
 			number: 5,
-			url: pullUrlOf(5),
+			url: changeRequestUrlOf(5),
 			branch: 'feat/x',
 			head: tip,
 			at: '',
@@ -480,7 +480,7 @@ function storeStack() {
 describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () => {
 	it('a lot started on its parent (stack.json), cut from a commit main does not hold → landed on the parent branch, not refused', () => {
 		const stack = storeStack()
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
 
@@ -506,7 +506,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 			folder: stack.parentFolder,
 			state: 'committed',
 		})
-		const host = recordingHost({ parent: parentPullRequest() })
+		const host = recordingHost({ parent: parentChangeRequest() })
 
 		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
 
@@ -520,7 +520,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 	it("the parent's pull request merged as the host says → lot land of the child records the parent's landed fact", () => {
 		const stack = storeStack()
 		const host = recordingHost({
-			parent: { ...parentPullRequest({ state: 'merged' }), head: stack.tip },
+			parent: { ...parentChangeRequest({ state: 'merged' }), head: stack.tip },
 		})
 
 		const result = runLotLand({ cwd: stack.repository, argv: [CHILD], host: host.host })
@@ -530,7 +530,7 @@ describe('dialecte lot land of a stacked store lot', { timeout: SCRATCH_GIT_CASE
 			landed: readLanded({ lotFolder: stack.parentFolder }),
 		}).toMatchObject({
 			exitCode: 0,
-			landed: { how: 'host', tip: stack.tip, base: 'main', pull: { number: 5 } },
+			landed: { how: 'host', tip: stack.tip, base: 'main', changeRequest: { number: 5 } },
 		})
 	})
 })
@@ -542,7 +542,7 @@ describe(
 		it('host with stacks, the parent merged before the child ever landed → rebased off the parent onto origin/main, opened on main as a draft, never queued', () => {
 			const stack = stackedRepository()
 			const merged = squashParent({ stack })
-			const host = recordingHost({ stacks: true, parent: parentPullRequest({ state: 'merged' }) })
+			const host = recordingHost({ stacks: true, parent: parentChangeRequest({ state: 'merged' }) })
 
 			const landed = landChild({ stack, host })
 
@@ -576,7 +576,7 @@ describe(
 				origin: stack.origin,
 				files: { 'src/x.ts': 'export const x = 12\n' },
 			})
-			const host = recordingHost({ parent: parentPullRequest({ state: 'merged' }) })
+			const host = recordingHost({ parent: parentChangeRequest({ state: 'merged' }) })
 
 			const landed = landChild({ stack, host })
 
@@ -593,7 +593,7 @@ describe(
 		it('a torn stack.json → lot land refuses naming the damage, nothing pushed, nothing asked of the host', () => {
 			const stack = stackedRepository()
 			writeFileSync(join(stack.child.lotFolder, 'stack.json'), '{"schema":1,"parent":')
-			const host = recordingHost({ parent: parentPullRequest() })
+			const host = recordingHost({ parent: parentChangeRequest() })
 
 			const landed = landChild({ stack, host })
 

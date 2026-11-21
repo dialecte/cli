@@ -2,12 +2,12 @@
  * The pull request of a lot is its final state rendered from its records through one template: the parts the records
  * hold, "not recorded" for a record missing, never a guess, and never what stays private.
  */
-import { composePullRequest, keptTextOf } from './compose-pull-request.ts'
+import { composeChangeRequest, keptTextOf } from './compose-change-request.ts'
 
 import { describe, expect, it } from 'vitest'
 
 import type { BodyQuality } from '../quality/quality.types.ts'
-import type { PullRequestSources } from './pull-request.types.ts'
+import type { ChangeRequestSources } from './change-request.types.ts'
 
 const TEMPLATE = `<!-- dialecte: rendered from the lot's records -->
 ### Summary
@@ -61,7 +61,7 @@ const OTHER_TREE = 'b'.repeat(64)
 const HEAD = '0123456789abcdef'
 
 /** A lot with every record, on the tree it lands. */
-const FULL: PullRequestSources = {
+const FULL: ChangeRequestSources = {
 	messages: ['feat(x): x lands', 'test(x): x keeps its cases'],
 	summary: 'X lands through one template.',
 	steps: [
@@ -155,8 +155,8 @@ function partOf(params: { body: string; heading: string }): string {
 }
 
 /** The body of `sources` over the test template, a person's text kept when given. */
-function bodyOf(params: { sources: PullRequestSources; kept?: string }): string {
-	const text = composePullRequest({
+function bodyOf(params: { sources: ChangeRequestSources; kept?: string }): string {
+	const text = composeChangeRequest({
 		template: TEMPLATE,
 		sources: params.sources,
 		kept: params.kept,
@@ -165,9 +165,9 @@ function bodyOf(params: { sources: PullRequestSources; kept?: string }): string 
 	return text.body
 }
 
-describe('composePullRequest renders the lot from its records', () => {
+describe('composeChangeRequest renders the lot from its records', () => {
 	it('a lot with every record → the whole body from the records, no marker left', () => {
-		const text = composePullRequest({ template: TEMPLATE, sources: FULL, kept: undefined })
+		const text = composeChangeRequest({ template: TEMPLATE, sources: FULL, kept: undefined })
 
 		expect(text).toEqual({
 			title: 'feat(x): x lands',
@@ -358,11 +358,11 @@ Closes #12
 			'marker checklist after kept',
 		],
 	])('a template %s → refused, the marker named', (_name, template, refusal) => {
-		expect(composePullRequest({ template, sources: FULL, kept: undefined })).toEqual({ refusal })
+		expect(composeChangeRequest({ template, sources: FULL, kept: undefined })).toEqual({ refusal })
 	})
 
 	it('a template missing a marker → refused, the marker named', () => {
-		const text = composePullRequest({
+		const text = composeChangeRequest({
 			template: TEMPLATE.replace('<!-- dialecte:review -->', ''),
 			sources: FULL,
 			kept: undefined,
@@ -372,7 +372,7 @@ Closes #12
 	})
 })
 
-describe('composePullRequest ticks the tests box only on a gate record', () => {
+describe('composeChangeRequest ticks the tests box only on a gate record', () => {
 	it('every case green and no gate record → the box left, saying CI is the proof', () => {
 		const tdd = FULL.tests?.tdd
 		const body = bodyOf({ sources: { ...FULL, tests: { schema: 1, ...(tdd && { tdd }) } } })
@@ -383,7 +383,7 @@ describe('composePullRequest ticks the tests box only on a gate record', () => {
 	})
 })
 
-describe('composePullRequest names no reviewer', () => {
+describe('composeChangeRequest names no reviewer', () => {
 	it.each([
 		['a person', { kind: 'person' as const, name: 'Jane Doe' }, '- person: approve'],
 		[
@@ -412,7 +412,7 @@ describe('composePullRequest names no reviewer', () => {
 	})
 })
 
-describe('composePullRequest lists each overlap once', () => {
+describe('composeChangeRequest lists each overlap once', () => {
 	it('a lot name with no leading index → shown as another lot, never its words', () => {
 		const body = bodyOf({
 			sources: {
@@ -507,7 +507,7 @@ function riskPartOf(params: { quality: BodyQuality; holds: RegExp[]; lacks: RegE
 	}
 }
 
-describe('composePullRequest renders the quality in the risk part', () => {
+describe('composeChangeRequest renders the quality in the risk part', () => {
 	const testCases: Record<string, { quality: BodyQuality; holds: RegExp[]; lacks: RegExp[] }> = {
 		'a shared export changed → its line under the risk line, as rules words it': {
 			quality: {
@@ -607,7 +607,7 @@ function riskLinesOf(quality: BodyQuality): string[] {
 		.map((line) => line.trim())
 }
 
-describe('composePullRequest keeps the quality lines short and the notes apart', () => {
+describe('composeChangeRequest keeps the quality lines short and the notes apart', () => {
 	it('a public entry removed while its page still names it → no ✗ line, its note once', () => {
 		const note = 'public API: doc.core.sizeOf removed: still named by doc/api/core.md'
 

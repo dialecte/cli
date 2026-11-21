@@ -23,7 +23,7 @@ describe('dialecte lot approve: refusals', { timeout: STORE_CASE_TIMEOUT }, () =
 		(state) => {
 			const lot = landedLot({ state })
 			const { host, calls } = recordingHost({
-				existing: lot.pullRequest,
+				existing: lot.changeRequest,
 				checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 			})
 
@@ -45,7 +45,7 @@ describe('dialecte lot approve: refusals', { timeout: STORE_CASE_TIMEOUT }, () =
 	it('a canceled lot with green checks → lot review: approve would refuse, the lot is canceled', () => {
 		const lot = landedLot({ state: 'canceled' })
 		const { host } = recordingHost({
-			existing: lot.pullRequest,
+			existing: lot.changeRequest,
 			checks: { head: lot.head, state: 'green', failing: [], pending: [] },
 		})
 
@@ -60,7 +60,7 @@ describe('dialecte lot approve: refusals', { timeout: STORE_CASE_TIMEOUT }, () =
 
 	it('--by holding a path → refused before the host is asked, nothing recorded', () => {
 		const lot = landedLot()
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotApprove({
 			cwd: lot.workspace.repository,
@@ -82,7 +82,7 @@ describe('dialecte lot approve: refusals', { timeout: STORE_CASE_TIMEOUT }, () =
 			root: lot.workspace.repository,
 			args: ['config', 'dialecte.forbiddenWords', FORBIDDEN_WORD],
 		})
-		const { host, calls } = recordingHost({ existing: lot.pullRequest })
+		const { host, calls } = recordingHost({ existing: lot.changeRequest })
 
 		const result = runLotApprove({
 			cwd: lot.workspace.repository,

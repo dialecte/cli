@@ -15,9 +15,9 @@ import { mainCheckoutOf, readGit } from '../lib/git.ts'
 import { readLanding } from '../lib/handover/land-record.ts'
 import { createHost } from '../lib/host/select-host.ts'
 import { readPackageJson } from '../lib/package-json.ts'
-import { composePullRequest, keptPartOf, linesOf } from '../lib/pr/compose-pull-request.ts'
-import { preparePullRequest } from '../lib/pr/pull-request-sources.ts'
-import { PULL_REQUEST_LINES } from '../lib/pr/pull-request.constants.ts'
+import { prepareChangeRequest } from '../lib/pr/change-request-sources.ts'
+import { CHANGE_REQUEST_LINES } from '../lib/pr/change-request.constants.ts'
+import { composeChangeRequest, keptPartOf, linesOf } from '../lib/pr/compose-change-request.ts'
 import { textOf } from '../lib/print/print.ts'
 import { readIdentity } from '../lib/store/identity.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
@@ -26,8 +26,8 @@ import { requiredLotOf } from '../lib/store/resolve-lot.ts'
 import { LOT_PLACE_LINES, LOT_PR_LINES, LOT_PR_OPTIONS } from './lot-pr.constants.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
-import type { HostAdapter, PullRequest } from '../lib/host/host.types.ts'
-import type { PreparedPullRequest, PullRequestText } from '../lib/pr/pull-request.types.ts'
+import type { HostAdapter, ChangeRequest } from '../lib/host/host.types.ts'
+import type { PreparedChangeRequest, ChangeRequestText } from '../lib/pr/change-request.types.ts'
 import type { LotPlace } from './lot-pr.types.ts'
 
 export function runLotPr(params: {
@@ -40,7 +40,7 @@ export function runLotPr(params: {
 	if ('exitCode' in place) return place
 	const { lot, lotFolder, worktree, branch, baseRef } = place
 	// the lot's head, else the base's template: a lot cut before the template changed renders as it will land
-	const prepared = preparePullRequest({
+	const prepared = prepareChangeRequest({
 		lotFolder,
 		worktree,
 		baseRef,
@@ -48,13 +48,13 @@ export function runLotPr(params: {
 	})
 	if ('refusal' in prepared) return refused({ line: `${LOT_PR_LINES.prefix}${prepared.refusal}` })
 	const json = hasFlag(params.argv, 'json')
-	// the template was checked by `preparePullRequest`: composing cannot refuse it
-	const fresh = composePullRequest({ ...prepared, kept: undefined })
+	// the template was checked by `prepareChangeRequest`: composing cannot refuse it
+	const fresh = composeChangeRequest({ ...prepared, kept: undefined })
 	if ('refusal' in fresh) return refused({ line: `${LOT_PR_LINES.prefix}${fresh.refusal}` })
 	if (hasFlag(params.argv, 'print')) return printed({ text: fresh, json, sent: false, lines: [] })
 	const host = params.host ?? createHost()
 	const landing = readLanding({ lotFolder })
-	const read = host.readPullRequest({
+	const read = host.readChangeRequest({
 		root: worktree,
 		ref: landing === undefined ? branch : String(landing.number),
 	})
@@ -65,7 +65,7 @@ export function runLotPr(params: {
 			text: fresh,
 			json,
 			sent: false,
-			lines: [LOT_PR_LINES.noPullRequest.replace('{lot}', () => lot)],
+			lines: [LOT_PR_LINES.noChangeRequest.replace('{lot}', () => lot)],
 		})
 	if (read.state !== 'open')
 		return refused({
@@ -73,10 +73,10 @@ export function runLotPr(params: {
 				.replace('{number}', String(read.number))
 				.replace('{state}', read.state),
 		})
-	const rendered = sendRenderedText({ host, worktree, prepared, pullRequest: read })
+	const rendered = sendRenderedText({ host, worktree, prepared, changeRequest: read })
 	if ('refusal' in rendered) return refused({ line: `${LOT_PR_LINES.prefix}${rendered.refusal}` })
 	const head = readGit({ root: worktree, args: ['rev-parse', 'HEAD'] }).trim()
-	const sent = sentAnswer({ pullRequest: read, ...rendered, json, head })
+	const sent = sentAnswer({ changeRequest: read, ...rendered, json, head })
 	if (json || sent.exitCode !== 0 || read.head === '' || read.head === head) return sent
 	return {
 		...sent,
@@ -138,7 +138,7 @@ export function resolveLotPlace(params: {
 	const { worktree, branch } = identity
 	if (!existsSync(worktree))
 		return refused({
-			line: `${prefix}${PULL_REQUEST_LINES.worktreeGone.replace('{worktree}', () => worktree)}`,
+			line: `${prefix}${CHANGE_REQUEST_LINES.worktreeGone.replace('{worktree}', () => worktree)}`,
 		})
 	const main = mainCheckoutOf(worktree)
 	const base = findBaseBranchRef({ root: main, packageJson: readPackageJson(main) })
@@ -163,20 +163,20 @@ export function resolveLotPlace(params: {
 export function sendRenderedText(params: {
 	host: HostAdapter
 	worktree: string
-	prepared: PreparedPullRequest
-	pullRequest: PullRequest
-}): { text: PullRequestText; sent: boolean } | { refusal: string } {
-	const { prepared, pullRequest } = params
-	const kept = keptPartOf({ template: prepared.template, body: pullRequest.body })
+	prepared: PreparedChangeRequest
+	changeRequest: ChangeRequest
+}): { text: ChangeRequestText; sent: boolean } | { refusal: string } {
+	const { prepared, changeRequest } = params
+	const kept = keptPartOf({ template: prepared.template, body: changeRequest.body })
 	if ('refusal' in kept) return kept
-	const text = composePullRequest({ ...prepared, kept: kept.kept })
+	const text = composeChangeRequest({ ...prepared, kept: kept.kept })
 	if ('refusal' in text) return text
 	const same =
-		pullRequest.title === text.title && linesOf(pullRequest.body).join('\n') === text.body
+		changeRequest.title === text.title && linesOf(changeRequest.body).join('\n') === text.body
 	if (same) return { text, sent: false }
-	const edited = params.host.editPullRequest({
+	const edited = params.host.editChangeRequest({
 		root: params.worktree,
-		number: pullRequest.number,
+		number: changeRequest.number,
 		...text,
 	})
 	return edited ?? { text, sent: true }
@@ -184,24 +184,24 @@ export function sendRenderedText(params: {
 
 /** The line (or JSON) of a text sent to the open pull request, or found the same there. */
 function sentAnswer(params: {
-	pullRequest: PullRequest
-	text: PullRequestText
+	changeRequest: ChangeRequest
+	text: ChangeRequestText
 	sent: boolean
 	json: boolean
 	/** The lot's HEAD: the JSON gives it beside the pull request's head. */
 	head: string
 }): CommandResult {
-	const { pullRequest, text, sent } = params
+	const { changeRequest, text, sent } = params
 	if (params.json)
 		return {
 			exitCode: 0,
 			output: textOf([
 				JSON.stringify({
 					...text,
-					pullRequest: {
-						number: pullRequest.number,
-						url: pullRequest.url,
-						head: pullRequest.head,
+					changeRequest: {
+						number: changeRequest.number,
+						url: changeRequest.url,
+						head: changeRequest.head,
 					},
 					head: params.head,
 					sent,
@@ -212,15 +212,15 @@ function sentAnswer(params: {
 		exitCode: 0,
 		output: textOf([
 			(sent ? LOT_PR_LINES.updated : LOT_PR_LINES.unchanged)
-				.replace('{number}', String(pullRequest.number))
-				.replace('{url}', () => pullRequest.url),
+				.replace('{number}', String(changeRequest.number))
+				.replace('{url}', () => changeRequest.url),
 		]),
 	}
 }
 
 /** The rendered text printed (title line, then the body), or as JSON; `lines` after it. */
 function printed(params: {
-	text: PullRequestText
+	text: ChangeRequestText
 	json: boolean
 	sent: boolean
 	lines: string[]

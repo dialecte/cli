@@ -5,7 +5,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { pullRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-pr.ts'
 import {
 	CROWDING_INDEX,
 	DOC_PAGE,
@@ -42,19 +42,19 @@ import { git, writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { SOURCE_INDEX_FILE } from '../api/source-functions.constants.ts'
 import { GATE_RECORD_FILE } from '../gate-records/gate-records.constants.ts'
-import { preparePullRequest, readPullRequestSources } from './pull-request-sources.ts'
+import { prepareChangeRequest, readChangeRequestSources } from './change-request-sources.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PullRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
 })
 
 /** The sources of the lot against local main. */
-function sourcesOf(lot: PullRequestLot) {
-	return readPullRequestSources({
+function sourcesOf(lot: ChangeRequestLot) {
+	return readChangeRequestSources({
 		lotFolder: lot.lotFolder,
 		worktree: lot.worktree,
 		baseRef: 'main',
@@ -62,7 +62,11 @@ function sourcesOf(lot: PullRequestLot) {
 }
 
 /** A contrib record of the lot's worktree whose docs step ran with `status` on the tree `stateHash`. */
-function writeDocsRecord(params: { lot: PullRequestLot; stateHash: string; status: string }): void {
+function writeDocsRecord(params: {
+	lot: ChangeRequestLot
+	stateHash: string
+	status: string
+}): void {
 	const name = GATE_RECORD_FILE.replace('{mode}', 'contrib')
 	const path = git({ root: params.lot.worktree, args: ['rev-parse', '--git-path', name] }).trim()
 	writeFileSync(
@@ -77,9 +81,9 @@ function writeDocsRecord(params: { lot: PullRequestLot; stateHash: string; statu
 	)
 }
 
-describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
+describe('readChangeRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a lot that merged main after main took another fragment → only its own fragment', () => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		writeFiles({
 			root: lot.workspace.repository,
 			files: { 'changes/other.md': '### Fixed\n\n- Other.\n' },
@@ -97,7 +101,7 @@ describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a no-entry note → its reason and file', () => {
-		const lot = pullRequestLot({ lotFiles: { 'changes/x.none.md': 'wording only\n' } })
+		const lot = changeRequestLot({ lotFiles: { 'changes/x.none.md': 'wording only\n' } })
 
 		const sources = sourcesOf(lot)
 
@@ -109,7 +113,7 @@ describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a lot that folds the fragments into the changelog and bumps the version → a release that bumps', () => {
-		const lot = pullRequestLot({
+		const lot = changeRequestLot({
 			mainFiles: {
 				'changes/old.md': '### Added\n\n- Old.\n',
 				'CHANGELOG.md': '# Changelog\n',
@@ -131,7 +135,7 @@ describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('an ordinary lot that bumps the version → no release, bumped', () => {
-		const lot = pullRequestLot({
+		const lot = changeRequestLot({
 			mainFiles: { 'package.json': '{ "version": "1.0.0" }\n' },
 			lotFiles: { 'package.json': '{ "version": "1.0.1" }\n' },
 		})
@@ -149,7 +153,7 @@ describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 		['failed on the landed tree', 'failed', true, false],
 		['passed on another tree', 'passed', false, undefined],
 	])('a docs step %s → docs %s', (_name, status, landed, docsPassed) => {
-		const lot = pullRequestLot()
+		const lot = changeRequestLot()
 		writeDocsRecord({ lot, status, stateHash: landed ? lot.treeHash : 'another' })
 
 		const sources = sourcesOf(lot)
@@ -159,17 +163,17 @@ describe('readPullRequestSources', { timeout: STORE_CASE_TIMEOUT }, () => {
 })
 
 describe(
-	'preparePullRequest checks paths against the commits',
+	'prepareChangeRequest checks paths against the commits',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it('a summary naming a file the lot deletes → passes: the base holds it', () => {
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: { 'src/old/gone.ts': 'export {}\n' },
 				lotDeletes: ['src/old/gone.ts'],
 				brief: { summary: 'Removes `src/old/gone.ts` for good.' },
 			})
 
-			const prepared = preparePullRequest({
+			const prepared = prepareChangeRequest({
 				lotFolder: lot.lotFolder,
 				worktree: lot.worktree,
 				baseRef: 'main',
@@ -179,10 +183,10 @@ describe(
 		})
 
 		it('a summary naming an untracked file of the worktree → refused: no commit holds it', () => {
-			const lot = pullRequestLot({ brief: { summary: 'Follows `notes/a/plan.md` closely.' } })
+			const lot = changeRequestLot({ brief: { summary: 'Follows `notes/a/plan.md` closely.' } })
 			writeFiles({ root: lot.worktree, files: { 'notes/a/plan.md': 'private\n' } })
 
-			const prepared = preparePullRequest({
+			const prepared = prepareChangeRequest({
 				lotFolder: lot.lotFolder,
 				worktree: lot.worktree,
 				baseRef: 'main',
@@ -196,11 +200,11 @@ describe(
 )
 
 describe(
-	'readPullRequestSources reads the accepted overlaps',
+	'readChangeRequestSources reads the accepted overlaps',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it('a lot with an accepted overlap → the other lot and the reason, never the met paths or who', () => {
-			const lot = pullRequestLot()
+			const lot = changeRequestLot()
 			writeFileSync(
 				join(lot.lotFolder, 'overlaps.jsonl'),
 				`${JSON.stringify({
@@ -224,11 +228,11 @@ describe(
 )
 
 describe(
-	'readPullRequestSources reads the fragments the lot adds',
+	'readChangeRequestSources reads the fragments the lot adds',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it("a lot that edits another lot's fragment → only its own added fragment shows", () => {
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: { 'changes/other.md': '### Fixed\n\n- Other.\n' },
 				lotFiles: {
 					'changes/x.md': '### Added\n\n- `x` answers one.\n',
@@ -259,13 +263,13 @@ const LIBRARY_MAIN = {
 const FRAGMENT = { 'changes/x.md': '### Added\n\n- `x` answers one.\n' }
 
 describe(
-	'readPullRequestSources judges the quality on the committed head',
+	'readChangeRequestSources judges the quality on the committed head',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		const testCases: Record<
 			string,
 			{
-				make: () => PullRequestLot
+				make: () => ChangeRequestLot
 				baseRef?: string
 				expected: unknown
 			}
@@ -273,7 +277,7 @@ describe(
 			'a lot changing a shared export, no quality record anywhere → judged against the merge base, the export listed':
 				{
 					make: () =>
-						pullRequestLot({
+						changeRequestLot({
 							mainFiles: {
 								'package.json': QUALITY_PACKAGE_JSON,
 								[SIZE_FILE]: SIZE_SOURCE,
@@ -295,7 +299,7 @@ describe(
 			'the same with an uncommitted function duplicating an existing one → the duplicate not in the body':
 				{
 					make: () => {
-						const lot = pullRequestLot({
+						const lot = changeRequestLot({
 							mainFiles: {
 								'package.json': QUALITY_PACKAGE_JSON,
 								[SIZE_FILE]: SIZE_SOURCE,
@@ -311,7 +315,7 @@ describe(
 				},
 			'a committed docs-not-updated opt-out at HEAD → the docs finding allowed': {
 				make: () =>
-					pullRequestLot({
+					changeRequestLot({
 						mainFiles: LIBRARY_MAIN,
 						lotFiles: {
 							...FRAGMENT,
@@ -327,7 +331,7 @@ describe(
 			'a re-signed public entry committed, its page touched only in the worktree → the docs finding of HEAD':
 				{
 					make: () => {
-						const lot = pullRequestLot({
+						const lot = changeRequestLot({
 							mainFiles: LIBRARY_MAIN,
 							lotFiles: {
 								...FRAGMENT,
@@ -346,7 +350,7 @@ describe(
 			'an export source changed while the index did not → the public API unknown note rules prints':
 				{
 					make: () =>
-						pullRequestLot({
+						changeRequestLot({
 							mainFiles: LIBRARY_MAIN,
 							lotFiles: { ...FRAGMENT, [EXPORT_SOURCE_FILE]: EXPORT_SOURCE_GROWN },
 						}),
@@ -360,7 +364,7 @@ describe(
 			'a public entry removed while its page still names it → the removed note rules prints, no docs finding':
 				{
 					make: () =>
-						pullRequestLot({
+						changeRequestLot({
 							mainFiles: LIBRARY_MAIN,
 							lotFiles: { ...FRAGMENT, [INDEX_FILE]: EMPTY_INDEX },
 						}),
@@ -372,7 +376,7 @@ describe(
 				},
 			'a tsconfig paths alias changed → the aliases note rules prints': {
 				make: () =>
-					pullRequestLot({
+					changeRequestLot({
 						mainFiles: {
 							'package.json': QUALITY_PACKAGE_JSON,
 							[SIZE_FILE]: SIZE_SOURCE,
@@ -389,7 +393,7 @@ describe(
 			'a re-signed export its committed page names, an uncommitted package.json adding a bin → the docs finding of HEAD':
 				{
 					make: () => {
-						const lot = pullRequestLot({
+						const lot = changeRequestLot({
 							mainFiles: LIBRARY_MAIN,
 							lotFiles: {
 								...FRAGMENT,
@@ -407,7 +411,7 @@ describe(
 				},
 			'a package.json HEAD holds, deleted in the worktree → judged': {
 				make: () => {
-					const lot = pullRequestLot({
+					const lot = changeRequestLot({
 						mainFiles: {
 							'package.json': QUALITY_PACKAGE_JSON,
 							[SIZE_FILE]: SIZE_SOURCE,
@@ -422,7 +426,7 @@ describe(
 			},
 			'no package.json at HEAD, one written in the worktree → not judged (no package.json)': {
 				make: () => {
-					const lot = pullRequestLot()
+					const lot = changeRequestLot()
 					writeFiles({ root: lot.worktree, files: { 'package.json': QUALITY_PACKAGE_JSON } })
 					return lot
 				},
@@ -431,7 +435,7 @@ describe(
 			'a committed function duplicating an existing one, an uncommitted api.json crowding the ranking → the duplicate of HEAD kept':
 				{
 					make: () => {
-						const lot = pullRequestLot({
+						const lot = changeRequestLot({
 							mainFiles: { 'package.json': QUALITY_PACKAGE_JSON, [LABEL_FILE]: LABEL_SOURCE },
 							lotFiles: { ...FRAGMENT, [OWNER_LABEL_FILE]: OWNER_LABEL_SOURCE },
 						})
@@ -452,12 +456,12 @@ describe(
 					}),
 				},
 			'a worktree with no package.json → not judged (no package.json)': {
-				make: () => pullRequestLot(),
+				make: () => changeRequestLot(),
 				expected: { kind: 'not-judged', why: 'no package.json' },
 			},
 			'a base git cannot read → not judged, with why': {
 				make: () =>
-					pullRequestLot({
+					changeRequestLot({
 						mainFiles: {
 							'package.json': QUALITY_PACKAGE_JSON,
 							[SIZE_FILE]: SIZE_SOURCE,
@@ -474,7 +478,7 @@ describe(
 			it(title, () => {
 				const lot = testCase.make()
 
-				const sources = readPullRequestSources({
+				const sources = readChangeRequestSources({
 					lotFolder: lot.lotFolder,
 					worktree: lot.worktree,
 					baseRef: testCase.baseRef ?? 'main',
@@ -486,11 +490,11 @@ describe(
 )
 
 describe(
-	"readPullRequestSources judges the quality against the body's own base",
+	"readChangeRequestSources judges the quality against the body's own base",
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it("a lot that merged main after its cut → judged against the merge base with main, not the lot's recorded base", () => {
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: {
 					'package.json': QUALITY_PACKAGE_JSON,
 					[SIZE_FILE]: SIZE_SOURCE,
@@ -507,7 +511,7 @@ describe(
 			git({ root: lot.worktree, args: ['merge', '-q', '--no-edit', 'main'] })
 			const mergeBase = git({ root: lot.worktree, args: ['merge-base', 'main', 'HEAD'] }).trim()
 
-			const sources = readPullRequestSources({
+			const sources = readChangeRequestSources({
 				lotFolder: lot.lotFolder,
 				worktree: lot.worktree,
 				baseRef: 'main',
@@ -525,11 +529,11 @@ describe(
 )
 
 describe(
-	'readPullRequestSources leaves the source index alone',
+	'readChangeRequestSources leaves the source index alone',
 	{ timeout: STORE_CASE_TIMEOUT },
 	() => {
 		it("a rules run, then a body read with uncommitted work → the worktree's source-index cache unchanged", () => {
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: {
 					'package.json': QUALITY_PACKAGE_JSON,
 					[SIZE_FILE]: SIZE_SOURCE,
@@ -548,7 +552,11 @@ describe(
 			)
 			const before = readFileSync(cache, 'utf8')
 
-			readPullRequestSources({ lotFolder: lot.lotFolder, worktree: lot.worktree, baseRef: 'main' })
+			readChangeRequestSources({
+				lotFolder: lot.lotFolder,
+				worktree: lot.worktree,
+				baseRef: 'main',
+			})
 
 			expect(readFileSync(cache, 'utf8')).toBe(before)
 		})

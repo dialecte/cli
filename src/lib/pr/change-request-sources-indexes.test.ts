@@ -2,7 +2,7 @@
  * The body judges its committed head's package as `rules` judges the same committed tree: the package's own api
  * indexes it holds (whatever its exports map), and a package.json that does not parse is never judged.
  */
-import { pullRequestLot } from '../../../test/lot-pr.ts'
+import { changeRequestLot } from '../../../test/lot-pr.ts'
 import {
 	CROWDING_INDEX,
 	LABEL_FILE,
@@ -15,11 +15,11 @@ import { runRulesIn } from '../../../test/quality-workspace.ts'
 import { writeFiles } from '../../../test/scratch-repository.ts'
 import { STORE_CASE_TIMEOUT } from '../../../test/test-timing.constants.ts'
 import { readQualityRecord } from '../quality/quality-record.ts'
-import { readPullRequestSources } from './pull-request-sources.ts'
+import { readChangeRequestSources } from './change-request-sources.ts'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PullRequestLot } from '../../../test/lot-pr.types.ts'
+import type { ChangeRequestLot } from '../../../test/lot-pr.types.ts'
 
 /** The lot's fragment, kept beside the files a case's commit writes. */
 const FRAGMENT = { 'changes/x.md': '### Added\n\n- `x` answers one.\n' }
@@ -29,7 +29,7 @@ const BROKEN_PACKAGE_JSON = '{ "name": "@dialecte/demo",\n'
 
 describe("the body reads the head's own api indexes", { timeout: STORE_CASE_TIMEOUT }, () => {
 	it('a package with no exports map, its committed api index crowding the find ranking → the body finds the duplicates rules finds on the same tree: none', () => {
-		const lot = pullRequestLot({
+		const lot = changeRequestLot({
 			mainFiles: {
 				'package.json': QUALITY_PACKAGE_JSON,
 				[LABEL_FILE]: LABEL_SOURCE,
@@ -41,7 +41,7 @@ describe("the body reads the head's own api indexes", { timeout: STORE_CASE_TIME
 		// no record reads undefined, never the empty list the case expects
 		const ruled = readQualityRecord(lot.worktree)?.duplicates.map((found) => found.name)
 
-		const sources = readPullRequestSources({
+		const sources = readChangeRequestSources({
 			lotFolder: lot.lotFolder,
 			worktree: lot.worktree,
 			baseRef: 'main',
@@ -58,9 +58,9 @@ describe("the body reads the head's own api indexes", { timeout: STORE_CASE_TIME
 })
 
 /** The body's quality of `lot`, its refusal, or what a throw says: a crash reads as a value an assertion fails on. */
-function bodyQualityOutcomeOf(lot: PullRequestLot): unknown {
+function bodyQualityOutcomeOf(lot: ChangeRequestLot): unknown {
 	try {
-		const sources = readPullRequestSources({
+		const sources = readChangeRequestSources({
 			lotFolder: lot.lotFolder,
 			worktree: lot.worktree,
 			baseRef: 'main',
@@ -77,7 +77,7 @@ describe(
 	() => {
 		it('a package.json the lot head cuts short, repaired in the worktree only → Quality: not judged (package.json does not parse), from HEAD', () => {
 			// main's package.json parses: only the lot's head cuts it short
-			const lot = pullRequestLot({
+			const lot = changeRequestLot({
 				mainFiles: { 'package.json': QUALITY_PACKAGE_JSON },
 				lotFiles: { ...FRAGMENT, 'package.json': BROKEN_PACKAGE_JSON },
 			})

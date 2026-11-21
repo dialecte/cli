@@ -134,7 +134,7 @@ export const OUTSIDE_TREE_PATTERN = /^(?:\/|~\/|[a-z]:[\\/])|(?:^|\/)\.\.(?:\/|$
 /** A whitespace-delimited token, stripped of the punctuation around it, as a path is looked up. */
 export const TOKEN_TRIM_PATTERN = /^[`'"([{<]+|[`'")\]}>.,;:!?]+$/g
 
-export const PULL_REQUEST_LINES = {
+export const CHANGE_REQUEST_LINES = {
 	noTemplateFile: "the lot's head holds no {template}: copy the cli's template into the repository",
 	worktreeGone: 'the worktree {worktree} is gone: nothing rendered',
 	noTemplate:
