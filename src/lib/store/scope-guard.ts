@@ -4,9 +4,9 @@
  */
 import { basename } from 'node:path'
 
-import { STATE_EXCLUDED_PATTERN } from '../gate-records/gate-records.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { LOT_FOLDER_EXCLUDE } from '../worktree/worktree.constants.ts'
 import { literalPartOf } from './brief-scope.ts'
 import {
 	briefEntriesOf,
@@ -21,24 +21,46 @@ import { RECORD_DAMAGE_REASONS } from './store.constants.ts'
 
 import type { ScopeGuard, ScopeRefusal } from './scope-guard.types.ts'
 
-/** The paths no entry of `scope` covers, `.dialecte/` records left out (no entry can name them), sorted once. Pure. */
+/**
+ * The paths no entry of `scope` covers, sorted once, the store's `.dialecte/` records left out: the repository
+ * root's and each package root's (`packagePaths`, repository-relative; none: the root's only), never a `.dialecte/`
+ * folder anywhere else (no entry can name a record, so only a record folder the cli writes is left out). Pure.
+ */
 export function pathsOutsideScope(params: {
 	paths: readonly string[]
 	scope: readonly string[]
+	/** The repository-relative package roots whose `.dialecte/` records are left out beside the root's. */
+	packagePaths?: readonly string[]
 }): string[] {
 	const { scope } = params
-	return heldPathsOf(params.paths).filter(
-		(path) => !scope.some((entry) => isCoveredBy({ path, entry })),
-	)
+	return heldPathsOf(params).filter((path) => !scope.some((entry) => isCoveredBy({ path, entry })))
 }
 
-/** The paths a scope holds of `paths`: the store's `.dialecte/` records left out, each once, sorted. Pure. */
-export function heldPathsOf(paths: readonly string[]): string[] {
-	return [...new Set(paths.filter((path) => !STATE_EXCLUDED_PATTERN.test(path)))].sort()
+/**
+ * The paths a scope holds of `paths`: each once, sorted, the `.dialecte/` records of the repository root and of each
+ * of `packagePaths` left out. Pure.
+ */
+export function heldPathsOf(params: {
+	paths: readonly string[]
+	packagePaths?: readonly string[]
+}): string[] {
+	const recordFolders = ['', ...(params.packagePaths ?? [])].map(
+		(packagePath) => `${packagePath === '' ? '' : `${packagePath}/`}${LOT_FOLDER_EXCLUDE}`,
+	)
+	return [
+		...new Set(
+			params.paths.filter((path) => !recordFolders.some((folder) => path.startsWith(folder))),
+		),
+	].sort()
 }
 
 /** The lot's guard over `paths`: its refusal, or undefined when every path is covered. */
-export function scopeGuardOf(params: { lotFolder: string; paths: readonly string[] }): ScopeGuard {
+export function scopeGuardOf(params: {
+	lotFolder: string
+	paths: readonly string[]
+	/** The repository-relative package roots whose `.dialecte/` records are left out beside the root's. */
+	packagePaths?: readonly string[]
+}): ScopeGuard {
 	const { lotFolder } = params
 	const lot = basename(lotFolder)
 	const damage = damageOf({ lotFolder })
@@ -54,7 +76,11 @@ export function scopeGuardOf(params: { lotFolder: string; paths: readonly string
 				values: { lot, count: String(scope.unreadable ?? 0) },
 			}),
 		}
-	const outside = pathsOutsideScope({ paths: params.paths, scope: scope.effective })
+	const outside = pathsOutsideScope({
+		paths: params.paths,
+		scope: scope.effective,
+		...(params.packagePaths !== undefined && { packagePaths: params.packagePaths }),
+	})
 	if (outside.length === 0) return undefined
 	return refusalOf({ lot, outside })
 }

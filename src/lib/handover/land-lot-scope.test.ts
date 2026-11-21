@@ -15,9 +15,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { RecordingHost } from '../../../test/land-lot.types.ts'
 import type { LandingLot } from '../../../test/landing-lot.types.ts'
+import type { TddBase } from '../tdd/tdd.types.ts'
+
+/** Whether the lot base reads as HEAD itself (no base branch found, none configured) for the next landing. */
+const headBase = { on: false }
+
+vi.mock('../tdd/tdd-base.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../tdd/tdd-base.ts')>()
+	return {
+		...actual,
+		resolveTddBase: vi.fn(function baseOf(
+			params: Parameters<typeof actual.resolveTddBase>[0],
+		): TddBase | { failure: string } {
+			const base = actual.resolveTddBase(params)
+			if (!headBase.on || 'failure' in base) return base
+			return { commit: headOf(params.root), kind: 'head', source: 'HEAD' }
+		}),
+	}
+})
 
 afterEach(function restoreEnvironment() {
 	vi.unstubAllEnvs()
+	headBase.on = false
 })
 
 const NOW = new Date('2026-11-21T12:00:00.000Z')
@@ -75,6 +94,21 @@ describe('lot land - the scope hold', { timeout: SCRATCH_GIT_CASE_TIMEOUT }, () 
 			pushed: pushed(lot),
 			opened: host.calls.filter((call) => call.startsWith('open ')),
 		}).toEqual({ entry: undefined, head, pushed: false, opened: [] })
+	})
+
+	it('a lot base that reads as HEAD itself (no base branch) -> refused, exit 1: no base to check the scope against, nothing pushed', () => {
+		const lot = scopeGuardLotOf()
+		commitOutside(lot)
+		headBase.on = true
+		const host = recordingHost()
+
+		expect(land({ lot, host })).toEqual({
+			exitCode: 1,
+			lines: expect.arrayContaining([
+				expect.stringContaining('no base to check the scope against'),
+			]),
+		})
+		expect(pushed(lot)).toBe(false)
 	})
 
 	it('outside its scope and with a design missing -> the scope line comes first', () => {

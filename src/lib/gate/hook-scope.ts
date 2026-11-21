@@ -4,9 +4,11 @@
  */
 import { listLotChangePaths } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { lotState } from '../store/lot-state.ts'
 import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
 import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
+import { packagePathsOf } from '../worktree/lot-files.ts'
 import { HOOK_SCOPE_TEXTS, SCOPE_STEP } from './hook-scope.constants.ts'
 import { hasHead, isMergeInProgress } from './hook-tdd.ts'
 
@@ -53,11 +55,13 @@ export function runHookScopeStep(params: {
 	if (isMergeInProgress(cwd)) return resultOf({ status: 'skipped', reason: HOOK_SCOPE_TEXTS.merge })
 	if ('failure' in base) return resultOf({ status: 'failed', reason: base.failure })
 	const paths = listLotChangePaths({ root: cwd, from: base.commit, to: params.tree })
-	const refusal = scopeGuardOf({ lotFolder, paths })
+	// the repository's package roots, whose `.dialecte/` records are left out beside the root's
+	const packagePaths = packagePathsOf({ root: workTreeTopOf(cwd) ?? cwd })
+	const refusal = scopeGuardOf({ lotFolder, paths, packagePaths })
 	if (refusal !== undefined) return refusedOf(refusal)
 	const passed = fillMessage({
 		template: HOOK_SCOPE_TEXTS.passed,
-		values: { count: String(heldPathsOf(paths).length) },
+		values: { count: String(heldPathsOf({ paths, packagePaths }).length) },
 	})
 	return resultOf({
 		status: 'passed',

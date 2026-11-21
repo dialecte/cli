@@ -1,6 +1,7 @@
 /**
  * The scope guard (SAFE 3.2, 5.1, 5.2): `pathsOutsideScope` names the paths no entry covers (on path segments, a glob
- * its own paths), the store's `.dialecte/` records left out, sorted once; `scopeGuardOf` reads the lot's effective
+ * its own paths), the store's `.dialecte/` records of the repository root and of each package root left out (a
+ * `.dialecte/` folder anywhere else is held), sorted once; `scopeGuardOf` reads the lot's effective
  * scope fail-closed: an unreadable change line or a damaged lot refuses with its repair line and no add, an outside
  * path refuses naming every path and one `--add` each.
  */
@@ -28,7 +29,14 @@ const LOT = '0001-repo-scoped'
 const AT = '2026-11-21T10:00:00.000Z'
 
 describe('pathsOutsideScope', () => {
-	const ROWS: { title: string; paths: string[]; scope: string[]; outside: string[] }[] = [
+	const ROWS: {
+		title: string
+		paths: string[]
+		scope: string[]
+		/** The package roots whose `.dialecte/` records are left out beside the repository's. */
+		packagePaths?: string[]
+		outside: string[]
+	}[] = [
 		{ title: 'an equal entry', paths: ['src/a.ts'], scope: ['src/a.ts'], outside: [] },
 		{
 			title: 'a folder entry holding the path',
@@ -67,10 +75,24 @@ describe('pathsOutsideScope', () => {
 			outside: [],
 		},
 		{
-			title: 'the store records at any depth',
+			title: "a package's store records, at its own root",
 			paths: ['pkg/.dialecte/lot.json'],
 			scope: ['src'],
+			packagePaths: ['pkg'],
 			outside: [],
+		},
+		{
+			title: 'a .dialecte/ folder that is no package root',
+			paths: ['lib/.dialecte/payload.ts'],
+			scope: ['src'],
+			outside: ['lib/.dialecte/payload.ts'],
+		},
+		{
+			title: 'a .dialecte/ folder inside a package, below its root',
+			paths: ['pkg/lib/.dialecte/payload.ts'],
+			scope: ['src'],
+			packagePaths: ['pkg'],
+			outside: ['pkg/lib/.dialecte/payload.ts'],
 		},
 		{
 			title: 'two outside paths given unsorted, one twice',
@@ -81,9 +103,9 @@ describe('pathsOutsideScope', () => {
 		{ title: 'a non-ASCII path, exact', paths: ['src/é.ts'], scope: ['src/é.ts'], outside: [] },
 	]
 
-	for (const { title, paths, scope, outside } of ROWS)
+	for (const { title, paths, scope, packagePaths, outside } of ROWS)
 		it(`${title} -> ${outside.length === 0 ? 'none outside' : outside.join(', ')}`, () => {
-			expect(pathsOutsideScope({ paths, scope })).toEqual(outside)
+			expect(pathsOutsideScope({ paths, scope, packagePaths })).toEqual(outside)
 		})
 })
 

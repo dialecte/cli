@@ -38,6 +38,7 @@ import { readProfile } from '../profile/profile.ts'
 import { formatDuration } from '../progress/format-duration.ts'
 import { readCliVersion } from '../read-cli-version.ts'
 import { readLateFixes } from '../review-rounds/late-fixes.ts'
+import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
 import { shellQuote } from '../shell-quote.ts'
@@ -48,6 +49,7 @@ import { SCOPE_GUARD_NAME } from '../store/scope-guard.constants.ts'
 import { heldPathsOf, scopeGuardOf } from '../store/scope-guard.ts'
 import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
+import { packagePathsOf } from '../worktree/lot-files.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import {
@@ -588,13 +590,14 @@ function checkScope(params: {
 			lot.merge === undefined ? [] : mergedPathsOf({ root, packageJson, tip: lot.merge.tip }),
 		),
 	]
-	const refusal = scopeGuardOf({ lotFolder, paths })
+	const packagePaths = packagePathsOf({ root: workTreeTopOf(root) ?? root })
+	const refusal = scopeGuardOf({ lotFolder, paths, packagePaths })
 	if (refusal === undefined)
 		return {
 			ok: true,
 			detail: fillMessage({
 				template: HOOK_SCOPE_TEXTS.passed,
-				values: { count: String(heldPathsOf(paths).length) },
+				values: { count: String(heldPathsOf({ paths, packagePaths }).length) },
 			}),
 		}
 	return verdictOf(refusal)

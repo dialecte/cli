@@ -97,6 +97,17 @@ describe('gate --hook - the scope step on a lot branch', { timeout: 240_000 }, (
 	const REFUSED: RefusedRow[] = [
 		{
 			title:
+				'a .dialecte/ folder that is no package root, staged -> FAIL scope naming it: only the root and package records are left out',
+			lot: () => scopeGuardLotOf(),
+			change: (lot) =>
+				stageIn({
+					root: lot.worktree,
+					files: { 'lib/.dialecte/payload.ts': 'export const payload = 1\n' },
+				}),
+			paths: ['lib/.dialecte/payload.ts'],
+		},
+		{
+			title:
 				'a file outside the scope staged -> FAIL scope naming it and its add, no other step runs',
 			lot: () => scopeGuardLotOf(),
 			change: (lot) =>

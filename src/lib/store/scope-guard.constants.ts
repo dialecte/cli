@@ -20,4 +20,6 @@ export const SCOPE_REFUSAL_LINES = {
 	reason: '✗ scope  {reason}',
 	next: '  next: {next}',
 	globPath: '  {line}',
+	noBase:
+		'✗ scope  no base to check the scope against: the lot base reads as HEAD (no base branch found); fetch or set dialecte.baseBranch, then land again',
 } as const

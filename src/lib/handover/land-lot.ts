@@ -35,12 +35,15 @@ import { landedLineOf } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
 import { prepareChangeRequest } from '../pr/change-request-sources.ts'
 import { composeChangeRequest, keptPartOf, linesOf } from '../pr/compose-change-request.ts'
+import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
 import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { replaceWhole } from '../store/publish.ts'
+import { SCOPE_REFUSAL_LINES } from '../store/scope-guard.constants.ts'
 import { scopeGuardOf, scopeRefusalLinesOf } from '../store/scope-guard.ts'
 import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
+import { packagePathsOf } from '../worktree/lot-files.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
 import { findHandoverStore, recordHandoverState, registerHandover } from './handover-store.ts'
 import { HANDOVER_LOT_REFUSALS } from './handover.constants.ts'
@@ -937,8 +940,11 @@ function landingScopeRefusalOf(params: {
 	if (readIdentity({ lotFolder }) === undefined) return undefined
 	const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
 	if ('failure' in base) return [base.failure]
+	// HEAD against HEAD names nothing: a landing without a lot base cannot be held, so it fails closed
+	if (base.kind === 'head') return [SCOPE_REFUSAL_LINES.noBase]
 	const paths = listLotChangePaths({ root: worktree, from: base.commit, to: 'HEAD' })
-	const refusal = scopeGuardOf({ lotFolder, paths })
+	const packagePaths = packagePathsOf({ root: workTreeTopOf(worktree) ?? worktree })
+	const refusal = scopeGuardOf({ lotFolder, paths, packagePaths })
 	return refusal === undefined ? undefined : scopeRefusalLinesOf(refusal)
 }
 
