@@ -4,6 +4,7 @@
  * consumer name, a forbidden word), no entry id of the plans that hold the lot, no link and no path the lot's tree does
  * not hold. Pure: the lists and the tree test are read by the caller.
  */
+import { qualityBodyPieces } from '../quality/quality-body.ts'
 import {
 	CURRENT_FOLDER_PREFIX,
 	LINE_SUFFIX_PATTERN,
@@ -68,7 +69,12 @@ export function publicPiecesOf(sources: PullRequestSources): PublicPiece[] {
 			[row.vendor, row.model].filter((word): word is string => word !== undefined),
 		),
 	].map((text) => ({ record: PIECE_RECORDS.review, text }))
-	return [...messages, ...summary, ...steps, ...changes, ...overlaps, ...review]
+	// the quality lines name what the committed head and its base hold: a path of the tree passes, as committed text
+	const quality =
+		sources.quality === undefined
+			? []
+			: qualityBodyPieces(sources.quality).map((piece) => ({ ...piece, committed: true }))
+	return [...messages, ...summary, ...steps, ...changes, ...overlaps, ...review, ...quality]
 }
 
 /** The first piece holding what a public body never holds, by record; undefined when every piece passes. */

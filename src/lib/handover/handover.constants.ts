@@ -633,6 +633,7 @@ export const HANDOVER_CARD_SECTIONS = {
 	contrib: 'contrib',
 	review: 'review',
 	tdd: 'tdd',
+	quality: 'quality',
 	notes: 'notes',
 } as const
 

@@ -1,88 +1,117 @@
 /**
- * The base-aware rules on a change, read from git: the changed paths from the presence map against the base, the
- * tree's facts from the source index, the base side of the changed paths from one batch read, each side's imports
+ * The base-aware rules on a change, read from git: the changed paths from the presence map against the base (on a
+ * commit, from one diff of the two), the tree's facts from the source index (on a commit, its texts read in one batch), the base side of the changed paths from one batch read, each side's imports
  * resolved over its own file set; then `duplicate-read`, `shared-export-changed` and, in a contributor library,
  * `docs-not-updated` against the public API entries the change touches.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 
-import { diffApiIndexes } from '../api/api-index-diff.ts'
-import { readOwnApiIndexes } from '../api/read-api-indexes.ts'
+import { diffApiIndexes, listFilesAtRevision, packageJsonOfText } from '../api/api-index-diff.ts'
+import { ownIndexPathsIn, readOwnApiIndexes } from '../api/read-api-indexes.ts'
 import { parseSourceFile } from '../api/source-file-functions.ts'
 import { isSourceFilePath, listSourceFiles } from '../api/source-functions.ts'
 import { indexSourceFiles } from '../api/source-index.ts'
-import { listRepositoryFiles, readFilesAtRevision, tryReadGit } from '../git.ts'
+import { listRepositoryFiles, readFilesAtRevision } from '../git.ts'
 import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
-import { readProfile } from '../profile/profile.ts'
 import { createDialecteChangeReader } from '../rules/dialecte-change.ts'
-import { createImportReading } from '../rules/import-reading.ts'
+import { createImportReading, packagePathOf } from '../rules/import-reading.ts'
+import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
 import { createModuleResolver, fileSetHost } from '../tdd/module-resolver.ts'
-import { changedTestCodeOf } from '../tdd/test-code-presence.ts'
+import { changedTestCodeOf, readDiffChanges } from '../tdd/test-code-presence.ts'
 import { functionSidesOf } from './change-sides.ts'
 import { docsGateApplies, findDocsNotUpdated } from './docs-gate.ts'
 import { findDuplicateReads } from './duplicate-reads.ts'
-import { ALIAS_CONFIG_PATTERN, CONTRIBUTOR_PROFILE, DOC_PAGE_PATTERN } from './quality.constants.ts'
+import {
+	ALIAS_CONFIG_PATTERN,
+	CONTRIBUTOR_PROFILE,
+	DOC_PAGE_PATTERN,
+	WORKTREE,
+} from './quality.constants.ts'
 import { findSharedExportChanges } from './shared-exports.ts'
 
 import ts from 'typescript'
 
 import type { ApiJson } from '../api/api-json.types.ts'
-import type { FileFacts } from '../api/source-functions.types.ts'
+import type { FileFacts, ParsedSourceFile } from '../api/source-functions.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
+import type { ImportReading } from '../rules/import-reading.types.ts'
+import type { DiffChange } from '../tdd/tdd.types.ts'
 import type {
 	ChangeFacts,
 	ChangedPath,
 	DocPage,
 	QualityBase,
 	QualityResult,
+	QualityTree,
+	QualityTreeSide,
 	ResolveSpecifier,
 } from './quality.types.ts'
 
 /**
- * The base-aware findings of the package at `root` against `base`, on its worktree.
+ * The base-aware findings of the package at `root` against `base`, on `tree`: its worktree (the default), or a commit
+ * (uncommitted work ignored).
  *
  * @intent compare a change with its lot base: duplicate reads, shared exports changed, docs left behind
  * @internal
  */
-export function checkBaseAware(params: { root: string; base: QualityBase }): QualityResult {
+export function checkBaseAware(params: {
+	root: string
+	base: QualityBase
+	tree?: QualityTree
+	/** On a commit: its package.json when the caller read it already (else read with the commit's texts). */
+	treePackageJson?: PackageJson
+}): QualityResult {
 	const { root, base } = params
-	const presence = changedTestCodeOf({ root, base: base.commit })
-	const allChanged = [...presence.paths].map(([path, state]): ChangedPath => {
-		if (state.state === 'renamed') return { path, state: 'renamed', from: state.from }
-		return { path, state: state.state }
-	})
+	const tree = params.tree ?? WORKTREE
+	const side =
+		tree.kind === 'revision'
+			? revisionSideOf({
+					root,
+					base: base.commit,
+					revision: tree.revision,
+					...(params.treePackageJson !== undefined && { packageJson: params.treePackageJson }),
+				})
+			: worktreeSideOf({ root, base: base.commit })
+	const allChanged = side.changed
 	const sourceChanged = allChanged.filter(
 		(path) =>
 			isSourceFilePath(path.path) || (path.state === 'renamed' && isSourceFilePath(path.from)),
 	)
 	// in an app only the Dialecte changes count: any other file reads as untouched, so no rule reports it
-	const changed = appChangesOf({ root, base: base.commit, changed: sourceChanged })
+	const changed = appChangesOf({ root, base: base.commit, changed: sourceChanged, side })
 	const change: ChangeFacts = {
 		changed,
-		tree: treeFactsOf(root),
+		tree: side.facts,
 		base: baseFactsOf({ root, base: base.commit, changed }),
 	}
-	const resolveTree = treeResolverOf(root)
-	const resolveBase = baseResolverOf({ root, base: base.commit })
+	function resolveTree(request: { from: string; specifier: string }): string | undefined {
+		return side.reading.localFileOf(request)
+	}
+	const resolveBase = revisionResolverOf({ root, revision: base.commit })
 	const sides = functionSidesOf(change)
-	const publicApi = diffApiIndexes({ root, base: base.commit })
-	const packageJson = readPackageJson(root)
+	const publicApi = diffApiIndexes({
+		root,
+		base: base.commit,
+		tree,
+		...(side.package !== undefined && { treePackage: side.package }),
+	})
 	const docsJudged =
 		publicApi.kind === 'compared' &&
-		docsGateApplies({ profile: readProfile(root), tool: packageJson.bin !== undefined })
+		docsGateApplies({
+			profile: side.packageJson?.dialecte?.profile,
+			tool: side.packageJson?.bin !== undefined,
+		})
 	return {
 		base,
 		examined: changed.filter((path) => path.state !== 'deleted').map((path) => path.path),
-		duplicates: findDuplicateReads({ sides, indexes: ownIndexesOf(root), resolve: resolveTree }),
+		duplicates: findDuplicateReads({ sides, indexes: side.ownIndexes(), resolve: resolveTree }),
 		sharedExports: findSharedExportChanges({ change, resolveTree, resolveBase }),
 		publicApi,
 		docs:
 			docsJudged && publicApi.kind === 'compared'
-				? findDocsNotUpdated({
-						entries: publicApi.entries,
-						pages: docPagesOf({ root, touched: new Set(allChanged.map((path) => path.path)) }),
-					})
+				? findDocsNotUpdated({ entries: publicApi.entries, pages: side.docPages() })
 				: [],
 		aliasesChanged: allChanged.some(
 			(path) =>
@@ -92,16 +121,136 @@ export function checkBaseAware(params: { root: string; base: QualityBase }): Qua
 	}
 }
 
-/** The facts of every implementation file of the tree, through the source index (a file that does not parse has none). */
-function treeFactsOf(root: string): Map<string, FileFacts> {
+/**
+ * The worktree as the tree side: the changed paths from the presence map (uncommitted and untracked ones included),
+ * the facts of every implementation file on the disk through the source index, the run's import reading, the doc
+ * pages and the package.json on the disk.
+ */
+function worktreeSideOf(params: { root: string; base: string }): QualityTreeSide {
+	const { root } = params
+	const presence = changedTestCodeOf(params)
+	const changed = [...presence.paths].map(([file, path]) => changedPathOf({ file, path }))
 	const files = listSourceFiles(root)
-	const parsed = indexSourceFiles({ root, files, parse: parseSourceFile })
+	return {
+		changed,
+		facts: factsOf({ files, parsed: indexSourceFiles({ root, files, parse: parseSourceFile }) }),
+		reading: createImportReading({ root }),
+		docPages: function worktreePages() {
+			return docPagesOf({ root, touched: new Set(changed.map((path) => path.path)) })
+		},
+		packageJson: existsSync(join(root, PACKAGE_MANIFEST_FILE)) ? readPackageJson(root) : undefined,
+		ownIndexes: function worktreeIndexes() {
+			return ownIndexesOf({ root })
+		},
+	}
+}
+
+/**
+ * A commit as the tree side: the changed paths from one diff of the base against it, its file set from one listing,
+ * the texts of its implementation files, doc pages and package.json (unless given) from one batch read (the facts
+ * through the source index, never written), an import reading over its file set and texts. Nothing is read from the
+ * disk but the aliases and the installed packages.
+ */
+function revisionSideOf(params: {
+	root: string
+	base: string
+	revision: string
+	packageJson?: PackageJson
+}): QualityTreeSide {
+	const { root, revision } = params
+	const changed = readDiffChanges(params).map(changedPathOf)
+	const files = listFilesAtRevision({ root, revision, folder: '.' })
+	const sources = files.filter((file) => isSourceFilePath(file)).sort(TEXT_COLLATOR.compare)
+	const pages = files.filter((file) => DOC_PAGE_PATTERN.test(file))
+	const indexPaths = ownIndexPathsIn(files)
+	const manifest = params.packageJson === undefined ? [PACKAGE_MANIFEST_FILE] : []
+	const texts = readFilesAtRevision({
+		root,
+		revision,
+		files: [...sources, ...pages, ...indexPaths, ...manifest],
+	})
+	const manifestText = texts.get(PACKAGE_MANIFEST_FILE)
+	const packageJson =
+		params.packageJson ?? (manifestText === undefined ? undefined : packageJsonOfText(manifestText))
+	const touched = new Set(changed.map((path) => path.path))
+	return {
+		changed,
+		facts: factsOf({
+			files: sources,
+			parsed: indexSourceFiles({ root, files: sources, parse: parseSourceFile, texts }),
+		}),
+		reading: revisionReadingOf({ root, revision, files, texts }),
+		docPages: function revisionPages() {
+			return pages.flatMap((path) => {
+				const text = texts.get(path)
+				return text === undefined ? [] : [{ path, text, touched: touched.has(path) }]
+			})
+		},
+		packageJson,
+		package: { packageJson, files: new Set(files) },
+		ownIndexes: function revisionIndexes() {
+			return ownIndexesOf({ root, tree: { files: indexPaths, texts } })
+		},
+	}
+}
+
+/** A change as the diff or the presence map reads it, as the base-aware rules take it: a rename naming its old path. */
+function changedPathOf(change: DiffChange): ChangedPath {
+	const { file, path } = change
+	if (path.state === 'renamed') return { path: file, state: 'renamed', from: path.from }
+	return { path: file, state: path.state }
+}
+
+/** The facts of each file of `files` its parse answers (a file that does not parse has none), by path. */
+function factsOf(params: {
+	files: readonly string[]
+	parsed: readonly ParsedSourceFile[]
+}): Map<string, FileFacts> {
 	return new Map(
-		files.flatMap((file, index) => {
-			const facts = parsed[index]?.facts
+		params.files.flatMap((file, index) => {
+			const facts = params.parsed[index]?.facts
 			return facts === undefined ? [] : [[file, facts] as const]
 		}),
 	)
+}
+
+/**
+ * An import reading over the commit `revision`: specifiers resolved over its file set, syntax trees of its texts (a
+ * file `texts` lacks read at the commit when asked), never the disk.
+ */
+function revisionReadingOf(params: {
+	root: string
+	revision: string
+	files: readonly string[]
+	texts: ReadonlyMap<string, string>
+}): ImportReading {
+	const { root, revision } = params
+	const resolveAtRevision = resolverOver({ root, files: params.files })
+	const sources = new Map<string, ts.SourceFile | undefined>()
+	function textOf(path: string): string | undefined {
+		return (
+			params.texts.get(path) ?? readFilesAtRevision({ root, revision, files: [path] }).get(path)
+		)
+	}
+	return {
+		localFileOf: resolveAtRevision,
+		sourceOf(file) {
+			const path = packagePathOf({ root, file })
+			if (!sources.has(path)) {
+				const text = textOf(path)
+				sources.set(path, text === undefined ? undefined : syntaxTreeOf({ file: path, text }))
+			}
+			return sources.get(path)
+		},
+		sourceOfText({ file, text }) {
+			return syntaxTreeOf({ file, text })
+		},
+	}
+}
+
+/** The syntax tree of a file's text, with parent nodes set. */
+function syntaxTreeOf(params: { file: string; text: string }): ts.SourceFile {
+	return ts.createSourceFile(params.file, params.text, ts.ScriptTarget.Latest, true)
 }
 
 /** The facts of the base side of each changed, renamed-from or deleted source path the base holds, read in one batch. */
@@ -120,36 +269,36 @@ function baseFactsOf(params: {
 	)
 }
 
-/** The tree's resolver: the run's import reading over the disk. */
-function treeResolverOf(root: string): ResolveSpecifier {
-	const reading = createImportReading({ root })
-	return function resolveInTree(request) {
-		return reading.localFileOf(request)
-	}
+/** A resolver over the file set the commit `revision` holds (`git ls-tree`), never the disk. */
+function revisionResolverOf(params: { root: string; revision: string }): ResolveSpecifier {
+	return resolverOver({ root: params.root, files: listFilesAtRevision({ ...params, folder: '.' }) })
 }
 
-/** The base's resolver: the module resolver over the base's file set (`git ls-tree`), never the disk. */
-function baseResolverOf(params: { root: string; base: string }): ResolveSpecifier {
-	const listing =
-		tryReadGit({
-			root: params.root,
-			args: ['ls-tree', '-r', '--name-only', params.base, '--', '.'],
-		}) ?? ''
-	const files = listing.split('\n').filter((file) => file !== '')
+/** The module resolver over `files` (relative to `root`), its local answers as package paths. */
+function resolverOver(params: { root: string; files: readonly string[] }): ResolveSpecifier {
 	const resolver = createModuleResolver({
 		root: params.root,
-		host: fileSetHost({ root: params.root, files }),
+		host: fileSetHost({ root: params.root, files: params.files }),
 	})
-	return function resolveAtBase(request) {
+	return function resolveOverFiles(request) {
 		const resolution = resolver(request)
 		return resolution.kind === 'local' ? resolution.file.split('\\').join(posix.sep) : undefined
 	}
 }
 
-/** The package's own api indexes; none when one cannot be read (the public API diff says why). */
-function ownIndexesOf(root: string): ApiJson[] {
+/**
+ * The package's own api indexes, whatever its exports map: on the disk, or among a commit's files and texts; none when
+ * one cannot be read (the public API diff says why).
+ */
+function ownIndexesOf(params: {
+	root: string
+	tree?: { files: readonly string[]; texts: ReadonlyMap<string, string> }
+}): ApiJson[] {
 	try {
-		return readOwnApiIndexes({ cwd: root })
+		return readOwnApiIndexes({
+			cwd: params.root,
+			...(params.tree !== undefined && { tree: params.tree }),
+		})
 	} catch {
 		return []
 	}
@@ -177,11 +326,18 @@ function appChangesOf(params: {
 	root: string
 	base: string
 	changed: readonly ChangedPath[]
+	/** The tree side: its package.json, its package as a commit holds it, its reading over its file set. */
+	side: QualityTreeSide
 }): ChangedPath[] {
-	const { root, changed } = params
-	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return [...changed]
-	const reader = createDialecteChangeReader({ root, reading: createImportReading({ root }) })
-	if (reader.kind !== 'app' || readProfile(root) === CONTRIBUTOR_PROFILE) return [...changed]
+	const { root, changed, side } = params
+	if (side.packageJson === undefined) return [...changed]
+	const reader = createDialecteChangeReader({
+		root,
+		reading: side.reading,
+		...(side.package !== undefined && { tree: side.package }),
+	})
+	if (reader.kind !== 'app' || side.packageJson.dialecte?.profile === CONTRIBUTOR_PROFILE)
+		return [...changed]
 	const fromTree = new Set(
 		changed
 			.filter(
@@ -200,7 +356,7 @@ function appChangesOf(params: {
 		const basePath = basePathOf(path)
 		const text = baseTexts.get(basePath)
 		if (text === undefined) return false
-		const sourceFile = ts.createSourceFile(basePath, text, ts.ScriptTarget.Latest, true)
+		const sourceFile = syntaxTreeOf({ file: basePath, text })
 		return reader.verdictOf({ file: basePath, sourceFile }).dialecteChange
 	})
 }

@@ -1,3 +1,5 @@
+import type { QualityTree } from './quality.types.ts'
+
 /** A body with fewer tokens cannot tell two functions apart: such a function is never matched by its body alone. */
 export const MOVED_BODY_MIN_TOKENS = 20
 
@@ -56,11 +58,14 @@ export const DOC_PAGE_PATTERN = /^(?:doc\/.+\.md|README\.md)$/
 /** A file whose aliases the resolvers read in the tree: a tsconfig, a Vite config. */
 export const ALIAS_CONFIG_PATTERN = /(?:^|\/)(?:tsconfig[^/]*\.json|vite\.config\.[cm]?[jt]s)$/
 
+/** The tree side of a `rules` run: the worktree, uncommitted work included. */
+export const WORKTREE: QualityTree = { kind: 'worktree' }
+
 /** The record of the last base-aware run on the change, in the worktree's git folder. */
 export const QUALITY_RECORD_FILE = 'dialecte-quality.json'
 
 /** The schema of `dialecte-quality.json`. */
-export const QUALITY_RECORD_SCHEMA = 1
+export const QUALITY_RECORD_SCHEMA = 2
 
 /** The findings of the base-aware rules, as `rules` prints them. */
 export const QUALITY_MESSAGES = {
@@ -82,3 +87,43 @@ export const QUALITY_LINES = {
 	since: 'quality: since {short} ({source})',
 	noLot: 'quality: not run (no lot)',
 } as const
+
+/** The name of the card's `quality` row and section. */
+export const QUALITY_CARD_NAME = 'quality'
+
+/** How many findings of one kind the card's `quality` section lists before saying how many more. */
+export const QUALITY_CARD_MAX_LINES = 10
+
+/** The words of the card's `quality` row and section; `{short}` the record's base, `{count}` a number. */
+export const QUALITY_CARD_TEXTS = {
+	duplicates: 'duplicate read',
+	sharedExports: 'shared export',
+	changed: '{counted} changed',
+	docs: 'public export',
+	withoutDocs: '{counted} without docs: {routes}',
+	allowed: '{count} allowed',
+	nothing: 'nothing found',
+	flag: '(since {short}, --base)',
+	otherTree: 'record of another tree (dialecte rules)',
+	listsOtherTree: 'lists: record of another tree (dialecte rules)',
+	docsNever: 'docs: never run on this tree',
+	docsOtherTree: 'docs: record of another tree',
+	more: '… {count} more (dialecte rules --base {short} --json)',
+	place: '{place}  ',
+} as const
+
+/** The words of the pull request body's quality lines, in the risk part; `{short}` the base, `{why}` a reason. */
+export const QUALITY_BODY_TEXTS = {
+	judged: 'Quality: {counts} (since {short})',
+	notJudged: 'Quality: not judged ({why})',
+	docsCount: '{counted} without docs',
+	finding: '- {mark}{place}{message}',
+	place: '{place} ',
+	failed: '✗ ',
+	noPackage: 'no package.json',
+	unparsedPackage: 'package.json does not parse',
+	noBase: 'base {base}: no such commit',
+} as const
+
+/** Where a quality line of the pull request body comes from, as a refusal names it: the file holding it, or the notes. */
+export const QUALITY_PIECE_NOTES = 'the quality notes'

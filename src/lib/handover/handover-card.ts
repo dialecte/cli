@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 
 /**
@@ -42,8 +42,16 @@ import {
 } from '../gate-records/gate-records.ts'
 import { computeStateTree, hashStateTree } from '../gate-records/state-hash.ts'
 import { mainCheckoutOf } from '../git.ts'
+import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
 import { readPackageJson } from '../package-json.ts'
 import { readProfile } from '../profile/profile.ts'
+import {
+	buildQualityLine,
+	buildQualitySection,
+	qualityToReadCount,
+} from '../quality/quality-card.ts'
+import { readQualityStanding } from '../quality/quality-record.ts'
+import { resolveRulesBaseSource } from '../rules-base.ts'
 import { shellQuote, shellWord } from '../shell-quote.ts'
 import { readRecordedStandardLine, readStandardLine } from '../standard/read-standard-line.ts'
 import { STACK_CARD_LINE_NAME } from '../store/stack.constants.ts'
@@ -61,6 +69,7 @@ import {
 	readTddExemption,
 } from '../tdd/lot-declaration.ts'
 import { caseLabel } from '../tdd/select-cases.ts'
+import { shortCommitOf } from '../tdd/tdd-base.ts'
 import {
 	countChangedFiles,
 	hashChangedTestCode,
@@ -138,6 +147,7 @@ import type {
 } from '../tdd/tdd.types.ts'
 import type {
 	CardLot,
+	CardQuality,
 	CaseSkippedReceipts,
 	DeclaredReceipt,
 	HandoverCard,
@@ -259,6 +269,8 @@ export function buildHandoverCard(params: {
 		release: params.release === true,
 		done: params.done === true || params.abandoned === true,
 	})
+	// where the last base-aware record stands for this tree: never stale, failed only for a public export without docs
+	const quality = cardQualityOf({ root, stateHash })
 	// a consumer's mutation line stands among the gates; a contributor's is a contrib row
 	const gates = [
 		// the base is resolved on the lots file's HEAD, as the hand-over resolves it
@@ -271,6 +283,7 @@ export function buildHandoverCard(params: {
 		// a committed hand-over whose run spanned a sleep says so
 		...(params.done ? sleptRunLines(params.folder) : []),
 		...(profile === 'consumer' ? buildMutationLines(checked) : []),
+		...(quality ? [buildQualityLine(quality)] : []),
 		buildReviewLine({ folder: params.folder, release: params.release }),
 		// the effort against the risk class: a warning below it, never on a release hand-over
 		...(params.release ? [] : [buildEffortLine({ folder: params.folder })]),
@@ -377,7 +390,8 @@ export function buildHandoverCard(params: {
 			},
 		}),
 		...(processes && { processes }),
-		declarations: tdd.declarations,
+		// the quality findings listed to read count like the declarations, never the line saying how many more
+		declarations: tdd.declarations + (quality ? qualityToReadCount(quality.standing) : 0),
 		gates,
 		profile,
 		...(contrib && { contrib }),
@@ -391,10 +405,33 @@ export function buildHandoverCard(params: {
 		...(name && { name }),
 		folder: params.folder,
 		...(usage && { usage }),
+		...(quality && { quality }),
 		command: ownCli
 			? `cd ${shellQuote(params.folder)} && bash ${COMMIT_SCRIPT_FILE}`
 			: `node ${shellQuote(params.cliPath ?? '')} handover run ${shellQuote(params.folder)}`,
 	}
+}
+
+/**
+ * The card's quality of the worktree at `root` for the tree `stateHash`: the record's standing and its base as a short
+ * commit; none for a root with no package.json, or with no record where the order answers no lot or base-branch base
+ * (a bare `rules` would judge nothing there: no base-aware part to show).
+ */
+function cardQualityOf(params: { root: string; stateHash: string }): CardQuality | undefined {
+	const { root } = params
+	if (!existsSync(join(root, PACKAGE_MANIFEST_FILE))) return undefined
+	const standing = readQualityStanding(params)
+	const { lists, docs } = standing
+	if (lists.kind === 'none' && docs.kind === 'none' && !judgesChange(root)) return undefined
+	const base =
+		lists.kind === 'current' ? lists.base : docs.kind === 'current' ? docs.base : undefined
+	return { standing, short: base === undefined ? '' : shortCommitOf({ root, commit: base.commit }) }
+}
+
+/** Whether a bare `rules` in `root` runs the base-aware rules: the order answers a lot or base-branch base. */
+function judgesChange(root: string): boolean {
+	const order = resolveRulesBaseSource({ root, emptyTreeRequest: true })
+	return order !== undefined && !('failure' in order) && order.source !== 'release-tag'
 }
 
 /** The warning row of the folder's last run when it spanned a sleep of the machine; none otherwise. */
@@ -868,8 +905,8 @@ function caseEntryLines(params: {
 
 /**
  * The card in sections: the verdict with the size and the declarations to read, then the commit, gates, the
- * usage row (a lot folder's stations), contrib (a contributor's), review (READY only), tdd and notes (before a run
- * only) sections; the command is printed under the box, whole.
+ * usage row (a lot folder's stations), contrib (a contributor's), review (READY only), tdd, quality (a record
+ * listing findings) and notes (before a run only) sections; the command is printed under the box, whole.
  */
 export function handoverCardSections(card: HandoverCard): SectionCard {
 	return {
@@ -890,10 +927,18 @@ export function handoverCardSections(card: HandoverCard): SectionCard {
 				? [{ name: HANDOVER_CARD_SECTIONS.review, lines: reviewLines(card.review) }]
 				: []),
 			...(card.tdd?.length ? [{ name: HANDOVER_CARD_SECTIONS.tdd, lines: card.tdd }] : []),
+			...qualitySection(card),
 			...optionalSection({ name: HANDOVER_CARD_SECTIONS.notes, text: card.notes }),
 		],
 		footer: footerOf(card),
 	}
+}
+
+/** The `quality` section: the findings to read of a current record; none when it lists nothing. */
+function qualitySection(card: HandoverCard): CardSection[] {
+	if (card.quality === undefined) return []
+	const lines = buildQualitySection(card.quality)
+	return lines.length ? [{ name: HANDOVER_CARD_SECTIONS.quality, lines }] : []
 }
 
 /**

@@ -6,15 +6,21 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { packageJsonOfText } from '../api/api-index-diff.ts'
 import { CHANGELOG_FILE, NO_ENTRY_EXTENSION } from '../changelog/changelog.constants.ts'
 import { readSections } from '../changelog/sections.ts'
 import { lotGitDeclaredHighOf } from '../design/base-declared.ts'
 import { readContribRecord, readGateRecords } from '../gate-records/gate-records.ts'
 import { hashStateTree } from '../gate-records/state-hash.ts'
-import { readGit, tryReadGit } from '../git.ts'
+import { readFilesAtRevision, readGit, tryReadGit } from '../git.ts'
 import { readLanding } from '../handover/land-record.ts'
+import { PACKAGE_MANIFEST_FILE } from '../package-json.constants.ts'
+import { checkBaseAware } from '../quality/check-base-aware.ts'
+import { applyQualityOptOuts, isDocsFinding, qualityNotesOf } from '../quality/quality-pass.ts'
+import { QUALITY_BODY_TEXTS } from '../quality/quality.constants.ts'
 import { designRowOf, readReviewRecord, verdictsAt } from '../review-rounds/review-record.ts'
 import { riskStandingOf } from '../risk/risk-records.ts'
+import { BASE_AWARE_RULES } from '../rules/check-code-rules.constants.ts'
 import { GENERIC_REFERENCE_PATTERNS } from '../rules/committed-text.constants.ts'
 import { readListedPatterns } from '../rules/committed-text.ts'
 import { forbiddenWordPatterns, readForbiddenWords } from '../rules/forbidden-words.ts'
@@ -30,11 +36,14 @@ import {
 	ADDED_STATUS,
 	DOCS_STEP,
 	FRAGMENT_PATTERN,
+	HEAD_TREE,
 	PULL_REQUEST_LINES,
 	TEMPLATE_PATH,
 } from './pull-request.constants.ts'
 import { recordValueFault } from './record-values.ts'
 
+import type { BodyQuality } from '../quality/quality.types.ts'
+import type { RuleName } from '../rules/check-code-rules.types.ts'
 import type { ReferencePattern } from '../rules/committed-text.types.ts'
 import type {
 	ChangedFile,
@@ -179,12 +188,65 @@ export function readPullRequestSources(params: {
 		...(overlaps.length > 0 && { overlaps }),
 		...(dependsOn !== undefined && { dependsOn }),
 		...(docsPassed !== undefined && { docsPassed }),
+		quality: bodyQualityOf({ worktree: params.worktree, base }),
 		versionBumped:
 			versionAt({ worktree: params.worktree, commit: base }) !==
 			versionAt({ worktree: params.worktree, commit: 'HEAD' }),
 		release:
 			changes.some((change) => change.status === 'D' && FRAGMENT_PATTERN.test(change.path)) &&
 			changes.some((change) => change.path === CHANGELOG_FILE),
+	}
+}
+
+/**
+ * The base-aware findings of the committed head of `worktree` against `base` (the body's own base), its package.json
+ * and opt-outs read at the head; not judged, with why, for a head with no package.json or a base git cannot read. No
+ * record is read, and nothing of the worktree is written.
+ */
+function bodyQualityOf(params: { worktree: string; base: string }): BodyQuality {
+	const { worktree: root } = params
+	const manifest = readFilesAtRevision({
+		root,
+		revision: HEAD_TREE.revision,
+		files: [PACKAGE_MANIFEST_FILE],
+	}).get(PACKAGE_MANIFEST_FILE)
+	if (manifest === undefined) return { kind: 'not-judged', why: QUALITY_BODY_TEXTS.noPackage }
+	const packageJson = packageJsonOfText(manifest)
+	if (packageJson === undefined)
+		return { kind: 'not-judged', why: QUALITY_BODY_TEXTS.unparsedPackage }
+	const commit = tryReadGit({
+		root,
+		args: ['rev-parse', '--verify', '--quiet', `${params.base}^{commit}`],
+	})?.trim()
+	if (!commit)
+		return {
+			kind: 'not-judged',
+			why: QUALITY_BODY_TEXTS.noBase.replace('{base}', () => params.base),
+		}
+	const base = { commit, source: 'base-branch' as const }
+	const result = checkBaseAware({
+		root,
+		base,
+		tree: HEAD_TREE,
+		treePackageJson: packageJson,
+	})
+	// the body judges no file: no opt-out is judged unused, the findings it silences are only counted
+	const { recorded } = applyQualityOptOuts({
+		result,
+		givenFiles: [],
+		ranRules: new Set<RuleName>(BASE_AWARE_RULES),
+		readTexts: function headTextsOf(files) {
+			return readFilesAtRevision({ root, revision: HEAD_TREE.revision, files })
+		},
+	})
+	return {
+		kind: 'judged',
+		base,
+		notes: qualityNotesOf(result),
+		duplicates: recorded.duplicates,
+		sharedExports: recorded.sharedExports,
+		// a removed entry is a note, never a docs finding of the body
+		docs: recorded.docs.filter(isDocsFinding),
 	}
 }
 

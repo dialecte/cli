@@ -4,6 +4,7 @@ import type { LotTokenTotals, MoneySum } from '../events/token-totals.types.ts'
 import type { CardGateLine, CheckKey, GateRecordMode } from '../gate-records/gate-records.types.ts'
 import type { PackageJson } from '../package-json.types.ts'
 import type { Profile } from '../profile/profile.types.ts'
+import type { QualityStanding } from '../quality/quality.types.ts'
 import type { LotCaseEntry, SkippedReceipt, TddReceipt, TestCaseId } from '../tdd/tdd.types.ts'
 import type { ListedWorktree } from '../worktree/worktree.types.ts'
 import type { HANDOVER_ENTRY_STATES } from './handover.constants.ts'
@@ -267,7 +268,12 @@ export type HandoverCard = {
 	folder?: string
 	/** The lot's usage: present only when the hand-over folder is a lot folder holding a station event. */
 	usage?: HandoverUsage
+	/** Where the last base-aware record stands for the worktree's tree: the card's `quality` row and section. */
+	quality?: CardQuality
 }
+
+/** The card's quality: the record's standing, and its base as the card shows it (a short commit). */
+export type CardQuality = { standing: QualityStanding; short: string }
 
 /** The card as `--json` answers it: the tdd lines as plain text, every other field as the card holds it. */
 export type HandoverCardData = Omit<HandoverCard, 'tdd'> & { tdd?: string[] }

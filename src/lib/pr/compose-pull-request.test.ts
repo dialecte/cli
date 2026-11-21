@@ -6,6 +6,7 @@ import { composePullRequest, keptTextOf } from './compose-pull-request.ts'
 
 import { describe, expect, it } from 'vitest'
 
+import type { BodyQuality } from '../quality/quality.types.ts'
 import type { PullRequestSources } from './pull-request.types.ts'
 
 const TEMPLATE = `<!-- dialecte: rendered from the lot's records -->
@@ -467,5 +468,178 @@ describe("keptTextOf reads a person's part of the current body", () => {
 
 	it('a body without it (opened by hand) → nothing kept', () => {
 		expect(keptTextOf({ template: TEMPLATE, body: 'a body written by hand' })).toBeUndefined()
+	})
+})
+
+/** The base the body's quality was judged against. */
+const QUALITY_BASE = { commit: 'c'.repeat(40), source: 'lot' as const }
+
+/** A judged body quality holding nothing: each case adds what it shows. */
+const JUDGED_NOTHING: BodyQuality = {
+	kind: 'judged',
+	base: QUALITY_BASE,
+	notes: [],
+	duplicates: [],
+	sharedExports: [],
+	docs: [],
+}
+
+/** `sizeOf` re-signed, its page untouched: the docs finding of the body. */
+const SIZE_DOCS = {
+	route: 'doc.core.sizeOf',
+	change: 'signature' as const,
+	declaredAt: 'src/core/size.ts:1',
+	pages: ['doc/api/core.md'],
+}
+
+/** The risk part's first line, then which of `holds` a line of it matches and which of `lacks` none does. */
+function riskPartOf(params: { quality: BodyQuality; holds: RegExp[]; lacks: RegExp[] }) {
+	const lines = partOf({
+		body: bodyOf({ sources: { ...FULL, quality: params.quality } }),
+		heading: 'Risk and effort',
+	})
+		.split('\n')
+		.map((line) => line.trim())
+	return {
+		riskLine: lines[0],
+		held: params.holds.filter((pattern) => lines.some((line) => pattern.test(line))),
+		lacked: params.lacks.filter((pattern) => !lines.some((line) => pattern.test(line))),
+	}
+}
+
+describe('composePullRequest renders the quality in the risk part', () => {
+	const testCases: Record<string, { quality: BodyQuality; holds: RegExp[]; lacks: RegExp[] }> = {
+		'a shared export changed → its line under the risk line, as rules words it': {
+			quality: {
+				...JUDGED_NOTHING,
+				sharedExports: [
+					{
+						file: 'src/core/size.ts',
+						line: 1,
+						name: 'sizeOf',
+						folder: 'src/core',
+						importers: ['src/use'],
+						changes: ['signature', 'behaviour'],
+						allowed: false,
+					},
+				],
+			},
+			holds: [/`sizeOf` \(src\/core\) is used by src\/use: signature, behaviour/],
+			lacks: [/✗/],
+		},
+		'a duplicate read → its line, as rules words it': {
+			quality: {
+				...JUDGED_NOTHING,
+				duplicates: [
+					{
+						file: 'src/read/keys.ts',
+						line: 3,
+						name: 'keysOfRecord',
+						signal: 'reads',
+						existing: { file: 'src/read/owner.ts', line: 3, name: 'readOwner' },
+						element: 'Widget',
+						attributes: ['@NAMING'],
+						allowed: false,
+					},
+				],
+			},
+			holds: [
+				/`keysOfRecord` reads like `readOwner` \(src\/read\/owner\.ts:3\): reuse it or say why/,
+			],
+			lacks: [/✗/],
+		},
+		'a public export left without docs → a ✗ line naming it': {
+			quality: { ...JUDGED_NOTHING, docs: [{ ...SIZE_DOCS, allowed: false }] },
+			holds: [/✗.*doc\.core\.sizeOf/],
+			lacks: [],
+		},
+		'the same docs finding opted out at HEAD → no ✗ line, the opt-out counted': {
+			quality: { ...JUDGED_NOTHING, docs: [{ ...SIZE_DOCS, allowed: true }] },
+			holds: [/1 allowed/],
+			lacks: [/✗/, /doc\.core\.sizeOf/],
+		},
+		'a public API unknown and aliases changed → the notes rules prints': {
+			quality: {
+				...JUDGED_NOTHING,
+				notes: [
+					'! public API unknown (an export source changed while every api.json did not: run dialecte skills generate)',
+					"aliases changed: base edges read with the tree's",
+				],
+			},
+			holds: [
+				/! public API unknown \(an export source changed while every api\.json did not: run dialecte skills generate\)$/,
+				/aliases changed: base edges read with the tree's$/,
+			],
+			lacks: [],
+		},
+		'a package without package.json → Quality: not judged, with why': {
+			quality: { kind: 'not-judged', why: 'no package.json' },
+			holds: [/^Quality: not judged \(no package\.json\)$/],
+			lacks: [],
+		},
+	}
+
+	for (const [title, testCase] of Object.entries(testCases))
+		it(title, () => {
+			expect(riskPartOf(testCase)).toEqual({
+				riskLine: 'risk class medium · effort medium',
+				held: testCase.holds,
+				lacked: testCase.lacks,
+			})
+		})
+})
+
+/** Twelve shared exports changed: the body lists ten, then how many more. */
+const TWELVE_SHARED = Array.from({ length: 12 }, (_, index) => ({
+	file: 'src/core/many.ts',
+	line: index * 4 + 1,
+	name: `size${index + 1}Of`,
+	folder: 'src/core',
+	importers: ['src/use'],
+	changes: ['signature' as const],
+	allowed: false,
+}))
+
+/** The lines of the risk part of a body holding `quality`, trimmed. */
+function riskLinesOf(quality: BodyQuality): string[] {
+	return partOf({ body: bodyOf({ sources: { ...FULL, quality } }), heading: 'Risk and effort' })
+		.split('\n')
+		.map((line) => line.trim())
+}
+
+describe('composePullRequest keeps the quality lines short and the notes apart', () => {
+	it('a public entry removed while its page still names it → no ✗ line, its note once', () => {
+		const note = 'public API: doc.core.sizeOf removed: still named by doc/api/core.md'
+
+		expect(
+			riskLinesOf({
+				...JUDGED_NOTHING,
+				notes: [note],
+				docs: [
+					{
+						route: 'doc.core.sizeOf',
+						change: 'removed',
+						pages: ['doc/api/core.md'],
+						allowed: false,
+					},
+				],
+			}).filter((line) => line.includes('✗') || line.includes('doc.core.sizeOf')),
+		).toEqual([
+			expect.stringMatching(
+				/public API: doc\.core\.sizeOf removed: still named by doc\/api\/core\.md$/,
+			),
+		])
+	})
+
+	it('twelve shared exports → ten lines, then how many more and the run listing them all', () => {
+		const lines = riskLinesOf({ ...JUDGED_NOTHING, sharedExports: TWELVE_SHARED })
+
+		expect({
+			listed: lines.filter((line) => /`size\d+Of`/.test(line)).length,
+			more: lines.filter((line) => line.includes('more (dialecte rules --base')),
+		}).toEqual({
+			listed: 10,
+			more: [expect.stringMatching(/… 2 more \(dialecte rules --base c+ --json\)$/)],
+		})
 	})
 })

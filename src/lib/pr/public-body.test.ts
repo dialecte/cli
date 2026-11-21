@@ -271,3 +271,41 @@ describe('publicPiecesOf lists the free cells of the review', () => {
 		})
 	})
 })
+
+describe('publicPiecesOf holds the quality lines', () => {
+	it('a quality finding naming a forbidden word → the body refused like any record text', () => {
+		const sources: PullRequestSources = {
+			messages: ['feat(x): x'],
+			treeHash: 'a',
+			versionBumped: false,
+			release: false,
+			quality: {
+				kind: 'judged',
+				base: { commit: 'b'.repeat(40), source: 'lot' },
+				notes: [],
+				duplicates: [],
+				sharedExports: [
+					{
+						file: 'src/lib/pr/x.ts',
+						line: 1,
+						name: 'zorbco',
+						folder: 'src/lib/pr',
+						importers: ['src/lib'],
+						changes: ['signature'],
+						allowed: false,
+					},
+				],
+				docs: [],
+			},
+		}
+
+		expect(
+			publicRefusalOf({
+				pieces: publicPiecesOf(sources),
+				patterns: PATTERNS,
+				ids: new Set(),
+				treeFiles: TREE_FILES,
+			}),
+		).toEqual(expect.objectContaining({ label: 'forbidden word', word: 'zorbco' }))
+	})
+})

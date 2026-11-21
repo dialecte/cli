@@ -18,7 +18,7 @@ import {
 	UNUSED_ENTRY_REMOVE,
 } from './tdd.constants.ts'
 
-import type { LotGoneEntry, LotMovedEntry, TddLedger } from './tdd.types.ts'
+import type { DiffChange, LotGoneEntry, LotMovedEntry, TddLedger } from './tdd.types.ts'
 import type { TestCodePath, TestCodePresence } from './test-code-presence.types.ts'
 
 /**
@@ -121,18 +121,26 @@ export function declaredPathRefusalOf(params: {
 	return undefined
 }
 
-/** The tracked changes against the base, relative to the package: a rename's new path names its old one. */
-function readDiffChanges(params: {
+/**
+ * The tracked changes against the base, relative to the package (other packages' paths left out): a rename's new
+ * path names its old one. Against the worktree, or against the commit `revision` when given (uncommitted work ignored).
+ *
+ * @intent read once which paths a change touches since its base, renames paired
+ * @internal
+ */
+export function readDiffChanges(params: {
 	root: string
 	base: string
-}): Array<{ file: string; path: TestCodePath }> {
+	revision?: string
+}): DiffChange[] {
+	const sides = params.revision === undefined ? [params.base] : [params.base, params.revision]
 	const words = (
 		tryReadGit({
 			root: params.root,
-			args: ['diff', '--name-status', '-z', '-M', '--relative', params.base, '--', '.'],
+			args: ['diff', '--name-status', '-z', '-M', '--relative', ...sides, '--', '.'],
 		}) ?? ''
 	).split('\0')
-	const changes: Array<{ file: string; path: TestCodePath }> = []
+	const changes: DiffChange[] = []
 	for (let index = 0; index < words.length - 1;) {
 		const letter = words[index].charAt(0)
 		if (letter === 'R') {

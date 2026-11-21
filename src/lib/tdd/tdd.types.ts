@@ -3,7 +3,7 @@ import type { Clock } from '../progress/clock.types.ts'
 import type { Watchdog } from '../progress/run-child.types.ts'
 import type { StepProgress } from '../progress/step-progress.types.ts'
 import type { RUNNER_ORDER, SKIPPED_RECEIPT_REASONS, TDD_SUBCOMMANDS } from './tdd.constants.ts'
-import type { TestCodePresence } from './test-code-presence.types.ts'
+import type { TestCodePath, TestCodePresence } from './test-code-presence.types.ts'
 
 /**
  * A test case: its file, relative to the package root, its full name as vitest prints it
@@ -784,3 +784,6 @@ export type SourceText = { file: string; text: string }
 export type FallbackLotBase =
 	| { commit: string; source: 'recorded' }
 	| { commit: string; source: 'release-tag'; tag: string }
+
+/** One tracked change against a base, as the diff reads it: its path (a rename's new one) and its state there. */
+export type DiffChange = { file: string; path: TestCodePath }

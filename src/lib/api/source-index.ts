@@ -18,16 +18,25 @@ import type {
  * Parses the given source files of `root`, one result per file in the same order, reading and writing the cache
  * in the git folder so only the files whose bytes changed are parsed again; outside a git work tree every file is parsed.
  * The cache is keyed by path from the work tree top: the packages of one repository keep their files side by side.
+ * Each file's text is read from the disk, or from `texts` when given (a commit's, read through git): the cache is then
+ * read only, never written or pruned.
  */
 export function indexSourceFiles(params: {
 	root: string
 	files: readonly string[]
 	parse: ParseSourceFile
+	/** The text of each file, by path from `root`, in place of the disk's (a file it lacks reads as empty). */
+	texts?: ReadonlyMap<string, string>
 }): ParsedSourceFile[] {
-	const { root, files, parse } = params
+	const { root, files, parse, texts } = params
+	function bytesOf(file: string): Buffer {
+		return texts === undefined
+			? readFileSync(join(root, file))
+			: Buffer.from(texts.get(file) ?? '', 'utf8')
+	}
 	if (!isInWorkTree(root))
 		return files.map(function parseFile(file) {
-			return parse({ file, text: readFileSync(join(root, file), 'utf8') })
+			return parse({ file, text: bytesOf(file).toString('utf8') })
 		})
 	const cacheFile = join(gitFolderOf(root), SOURCE_INDEX_FILE)
 	const reader = readCliVersion()
@@ -41,7 +50,7 @@ export function indexSourceFiles(params: {
 	}
 	const answer = files.map(function parseChangedFile(file) {
 		const key = `${prefix}${file}`
-		const bytes = readFileSync(join(root, file))
+		const bytes = bytesOf(file)
 		const hash = createHash('sha256').update(bytes).digest('hex')
 		const known = cached?.files[key]
 		if (known !== undefined && known.hash === hash) {
@@ -55,7 +64,8 @@ export function indexSourceFiles(params: {
 	})
 	if (cached !== undefined && Object.keys(cached.files).length !== Object.keys(next.files).length)
 		changed = true
-	if (changed) writeCache({ cacheFile, cache: next })
+	// a commit's texts never stand for the worktree's files: the cache is read, never written
+	if (changed && texts === undefined) writeCache({ cacheFile, cache: next })
 	return answer
 }
 

@@ -14,8 +14,10 @@ import { RISK_PACKAGE_FILE } from '../risk/risk.constants.ts'
 import { readExportEntries } from '../skills/export-entries.ts'
 import { SKILLS_FOLDER } from '../skills/skill-file.constants.ts'
 import { API_DIFF_UNKNOWN, API_JSON_FILE, API_JSON_FOLDER } from './api-json.constants.ts'
-import { parseApiJsonText } from './read-api-indexes.ts'
+import { ownIndexPathsIn, parseApiJsonText } from './read-api-indexes.ts'
 
+import type { PackageJson } from '../package-json.types.ts'
+import type { QualityTree } from '../quality/quality.types.ts'
 import type {
 	ApiChange,
 	ApiEntryChange,
@@ -23,6 +25,7 @@ import type {
 	ApiSides,
 	IndexSides,
 } from '../risk/risk.types.ts'
+import type { PackageTree } from '../rules/dialecte-change.types.ts'
 import type { ApiJson, ApiMethod } from './api-json.types.ts'
 
 /** Whether the api indexes of the package at `root` changed against `base`. */
@@ -40,7 +43,14 @@ export function compareApiIndexes(params: { root: string; base: string }): ApiCh
  * @intent list the public exports a change touches, for its docs and its review
  * @internal
  */
-export function diffApiIndexes(params: { root: string; base: string }): ApiIndexDiff {
+export function diffApiIndexes(params: {
+	root: string
+	base: string
+	/** The tree side: the worktree (the default), or a commit, every index and export source read at it. */
+	tree?: QualityTree
+	/** A commit's package.json and file set, read by the caller: the tree side at `tree`'s revision. */
+	treePackage?: PackageTree
+}): ApiIndexDiff {
 	const sides = readApiSides(params)
 	if (sides.kind !== 'read') return sides
 	if (!sides.indexChanged && sides.exportSourceChanged)
@@ -52,29 +62,71 @@ export function diffApiIndexes(params: { root: string; base: string }): ApiIndex
 	return { kind: 'compared', indexChanged: sides.indexChanged, entries: entriesOf({ base, tree }) }
 }
 
-/** The index files and export sources of both sides, read once. */
-function readApiSides(params: { root: string; base: string }): ApiSides {
+/**
+ * The files the commit `revision` holds under `folder`, relative to `root`.
+ *
+ * @intent list what a commit holds without checking it out
+ * @internal
+ */
+export function listFilesAtRevision(params: {
+	root: string
+	revision: string
+	folder: string
+}): string[] {
+	const listing =
+		tryReadGit({
+			root: params.root,
+			args: ['ls-tree', '-r', '-z', '--name-only', params.revision, '--', params.folder],
+		}) ?? ''
+	return listing.split('\0').filter((file) => file !== '')
+}
+
+/**
+ * The index files and export sources of both sides, read once: the tree side from the worktree, or from a commit
+ * (its package.json and file set from `treePackage`, else read here).
+ */
+function readApiSides(params: {
+	root: string
+	base: string
+	tree?: QualityTree
+	treePackage?: PackageTree
+}): ApiSides {
 	const { root, base } = params
+	const revision = params.tree?.kind === 'revision' ? params.tree.revision : undefined
+	const treePackage =
+		revision === undefined ? undefined : (params.treePackage ?? readPackageTree({ root, revision }))
+	const packageJson =
+		treePackage === undefined
+			? existsSync(join(root, RISK_PACKAGE_FILE))
+				? readPackageJson(root)
+				: undefined
+			: treePackage.packageJson
 	// a root with no package.json is not a package, and a package with a bin is a tool: no runtime api either way (D26)
-	if (!existsSync(join(root, RISK_PACKAGE_FILE))) return { kind: 'none' }
+	if (packageJson === undefined) return { kind: 'none' }
 	// a package with no exports map ships no entry point: no runtime api to change
-	const packageJson = readPackageJson(root)
 	if (packageJson.bin !== undefined || packageJson.exports === undefined) return { kind: 'none' }
 	const baseCommit = tryReadGit({
 		root,
 		args: ['rev-parse', '--verify', '--quiet', `${base}^{commit}`],
 	})
 	if (baseCommit === undefined) return { kind: 'unknown', why: API_DIFF_UNKNOWN.noBase }
-	const paths = [...new Set([...worktreeIndexPathsOf(root), ...baseIndexPathsOf({ root, base })])]
-	const sources = exportSourcesOf(root)
-	const atBase = readFilesAtRevision({
-		root,
-		revision: base,
-		files: [...paths, ...(sources ?? [])],
-	})
+	const treePaths =
+		treePackage === undefined ? worktreeIndexPathsOf(root) : ownIndexPathsIn(treePackage.files)
+	const basePaths = ownIndexPathsIn(
+		listFilesAtRevision({ root, revision: base, folder: SKILLS_FOLDER }),
+	)
+	const paths = [...new Set([...treePaths, ...basePaths])]
+	const sources = exportSourcesOf({ root, treePackage })
+	const files = [...paths, ...(sources ?? [])]
+	const atBase = readFilesAtRevision({ root, revision: base, files })
+	const atRevision =
+		revision === undefined ? undefined : readFilesAtRevision({ root, revision, files })
+	function treeTextOf(path: string): string | undefined {
+		return atRevision === undefined ? worktreeTextOf({ root, path }) : atRevision.get(path)
+	}
 	const indexes = paths.map(function sidesOf(path): IndexSides {
 		const baseText = atBase.get(path)
-		const treeText = worktreeTextOf({ root, path })
+		const treeText = treeTextOf(path)
 		return {
 			path,
 			...(baseText !== undefined && { base: baseText }),
@@ -87,15 +139,53 @@ function readApiSides(params: { root: string; base: string }): ApiSides {
 		indexChanged: indexes.some((index) => index.base !== index.tree),
 		// an exports map that cannot be read counts as changed
 		exportSourceChanged:
-			sources === undefined ||
-			sources.some((source) => atBase.get(source) !== worktreeTextOf({ root, path: source })),
+			sources === undefined || sources.some((source) => atBase.get(source) !== treeTextOf(source)),
 	}
 }
 
-/** The source files the package's `exports` map points at; undefined when the map cannot be read. */
-function exportSourcesOf(root: string): string[] | undefined {
+/** A commit's package.json (undefined when it holds none, or one that does not parse) and its file set. */
+function readPackageTree(params: { root: string; revision: string }): PackageTree {
+	const files = listFilesAtRevision({ ...params, folder: '.' })
+	const text = readFilesAtRevision({ ...params, files: [RISK_PACKAGE_FILE] }).get(RISK_PACKAGE_FILE)
+	return {
+		packageJson: text === undefined ? undefined : packageJsonOfText(text),
+		files: new Set(files),
+	}
+}
+
+/**
+ * The package.json a text holds; undefined when it does not parse (never guessed empty).
+ *
+ * @intent read a package.json another commit holds
+ * @internal
+ */
+export function packageJsonOfText(text: string): PackageJson | undefined {
 	try {
-		return readExportEntries({ root }).map((entry) => entry.source)
+		return JSON.parse(text) as PackageJson
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * The source files the package's `exports` map points at, on the disk or in a commit's package; undefined when the
+ * map cannot be read.
+ */
+function exportSourcesOf(params: {
+	root: string
+	treePackage: PackageTree | undefined
+}): string[] | undefined {
+	const { root, treePackage } = params
+	try {
+		const entries =
+			treePackage === undefined
+				? readExportEntries({ root })
+				: readExportEntries({
+						root,
+						manifest: treePackage.packageJson ?? {},
+						isFile: (path) => treePackage.files.has(path),
+					})
+		return entries.map((entry) => entry.source)
 	} catch {
 		return undefined
 	}
@@ -154,22 +244,4 @@ function worktreeIndexPathsOf(root: string): string[] {
 		.filter(function exists(path) {
 			return existsSync(join(root, path))
 		})
-}
-
-/** The api indexes the base holds, relative to `root`. */
-function baseIndexPathsOf(params: { root: string; base: string }): string[] {
-	const listing =
-		tryReadGit({
-			root: params.root,
-			args: ['ls-tree', '-r', '-z', '--name-only', params.base, '--', SKILLS_FOLDER],
-		}) ?? ''
-	return listing.split('\0').filter(function isIndex(path) {
-		const segments = path.split('/')
-		return (
-			segments.length === 4 &&
-			segments[0] === SKILLS_FOLDER &&
-			segments[2] === API_JSON_FOLDER &&
-			segments[3] === API_JSON_FILE
-		)
-	})
 }
