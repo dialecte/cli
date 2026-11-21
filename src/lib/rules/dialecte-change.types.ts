@@ -1,3 +1,4 @@
+import type { PackageJson } from '../package-json.types.ts'
 import type ts from 'typescript'
 
 /** The kinds of package the Dialecte-change scope tells apart. */
@@ -48,3 +49,6 @@ export type DialecteChangeContext = {
 	/** The file's syntax tree, read once for the run; undefined for a file that cannot be read. */
 	sourceOf(file: string): ts.SourceFile | undefined
 }
+
+/** A package as a commit holds it: its package.json (undefined when it holds none) and its files, relative to its root. */
+export type PackageTree = { packageJson: PackageJson | undefined; files: ReadonlySet<string> }

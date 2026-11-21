@@ -1,5 +1,9 @@
+import type { ApiJson } from '../api/api-json.types.ts'
 import type { FileFacts, FunctionFacts } from '../api/source-functions.types.ts'
+import type { PackageJson } from '../package-json.types.ts'
 import type { ApiIndexDiff } from '../risk/risk.types.ts'
+import type { PackageTree } from '../rules/dialecte-change.types.ts'
+import type { ImportReading } from '../rules/import-reading.types.ts'
 
 /** A path the change touches since the base, relative to the package root, as the presence map holds it. */
 export type ChangedPath =
@@ -96,8 +100,48 @@ export type QualityResult = {
 	aliasesChanged: boolean
 }
 
+/** Which tree the base-aware rules read: the worktree (a `rules` run), or a commit (the pull request body: HEAD). */
+export type QualityTree = { kind: 'worktree' } | { kind: 'revision'; revision: string }
+
+/**
+ * What the base-aware rules read of the tree side, the worktree or a commit: the changed paths, the facts of every
+ * implementation file, the import reading over its file set, and its doc pages (read when the docs rule runs).
+ */
+export type QualityTreeSide = {
+	changed: ChangedPath[]
+	facts: ReadonlyMap<string, FileFacts>
+	reading: ImportReading
+	docPages: () => DocPage[]
+	/** The tree's package.json; undefined when it holds none. */
+	packageJson: PackageJson | undefined
+	/** A commit's package.json and file set; undefined for the worktree (read from the disk). */
+	package?: PackageTree
+	/** The package's own api indexes on this side, whatever its exports map (read when the find signal runs). */
+	ownIndexes: () => ApiJson[]
+}
+
+/** A finding as the record keeps it: `allowed` when an opt-out silenced it (counted, never listed). */
+export type RecordedFinding<Finding> = Finding & { allowed: boolean }
+
+/** The two lists of a run: its duplicate reads and its shared exports changed, each finding with its opt-out. */
+export type QualityLists = {
+	duplicates: RecordedFinding<DuplicateRead>[]
+	sharedExports: RecordedFinding<SharedExportChange>[]
+}
+
+/** The docs row of a run: its `docs-not-updated` findings, each with its opt-out. */
+export type QualityDocs = { docs: RecordedFinding<DocsNotUpdated>[] }
+
+/** The findings of a run, each with its opt-out: what the record and the pull request body keep. */
+export type RecordedQuality = Omit<QualityResult, 'duplicates' | 'sharedExports' | 'docs'> &
+	QualityLists &
+	QualityDocs
+
+/** The docs row of the last non-`flag` run, carried by a `flag` record: its tree, its base and its findings. */
+export type LotDocs = { stateHash: string; base: QualityBase } & QualityDocsStanding
+
 /** `dialecte-quality.json`: the last base-aware run on the change, its tree, its base and what it found. */
-export type QualityRecord = QualityResult & {
+export type QualityRecord = RecordedQuality & {
 	schema: number
 	/** When it ran, ISO 8601. */
 	at: string
@@ -107,4 +151,38 @@ export type QualityRecord = QualityResult & {
 	stateHash: string
 	/** The findings each opt-out silenced, per rule. */
 	allowed: Record<string, number>
+	/** A `flag` run's: the docs row of the last non-`flag` run, which a `flag` run never sets nor clears. */
+	lotDocs?: LotDocs
 }
+
+/** One part of a record as the card reads it: current (its base and what it holds), of another tree, or none. */
+export type QualityStandingPart<Value> =
+	| ({ kind: 'current'; base: QualityBase } & Value)
+	| { kind: 'other-tree' }
+	| { kind: 'none' }
+
+/**
+ * Where the last base-aware record stands for a tree: the lists (current when its tree and base still hold; a `flag`
+ * base only when an ancestor of, or equal to, the order's base), and the docs row (never from a `flag` run: from the
+ * last non-`flag` run of the tree).
+ */
+export type QualityStanding = {
+	lists: QualityStandingPart<QualityLists>
+	docs: QualityStandingPart<QualityDocsStanding>
+}
+
+/** The docs row as the card reads it: its findings, and why they were not judged when the public API is unknown. */
+export type QualityDocsStanding = QualityDocs & {
+	/** The public API diff's reason when it is unknown: no docs finding could be judged. */
+	notJudged?: string
+}
+
+/** The pull request body's quality judged: the findings on the committed head against its base, with the notes. */
+export type JudgedQuality = { kind: 'judged'; base: QualityBase; notes: string[] } & QualityLists &
+	QualityDocs
+
+/** The pull request body's quality: the findings judged on the committed head with the notes, or why not judged. */
+export type BodyQuality = JudgedQuality | { kind: 'not-judged'; why: string }
+
+/** One quality line of the pull request body with where it comes from: the file holding the finding, or the notes. */
+export type QualityBodyLine = { record: string; text: string }

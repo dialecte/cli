@@ -7,6 +7,7 @@ import { counted } from '../counted.ts'
 import { DESIGN_STATE_WORDS } from '../design/design.constants.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
+import { qualityBodyLines } from '../quality/quality-body.ts'
 import {
 	BODY_LINES,
 	CHECKLIST_LINES,
@@ -141,6 +142,8 @@ function partLines(params: { part: string; sources: PullRequestSources }): strin
 				BODY_LINES.risk
 					.replace('{riskClass}', sources.riskClass ?? NOT_RECORDED)
 					.replace('{effort}', sources.effort ?? NOT_RECORDED),
+				// the base-aware findings judged on the head, a paragraph of their own after the risk line
+				...(sources.quality === undefined ? [] : ['', ...qualityBodyLines(sources.quality)]),
 			]
 		case 'overlaps':
 			return overlapLines(sources)

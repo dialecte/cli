@@ -23,11 +23,22 @@ import type {
 	SourceExtension,
 } from './export-entries.types.ts'
 
-/** The code entries of the package at `root`, in the order of its `exports` map. */
-export function readExportEntries(params: { root: string }): ExportEntry[] {
-	const manifest: ExportsManifest = JSON.parse(
-		readFileSync(join(params.root, 'package.json'), 'utf8'),
-	)
+/**
+ * The code entries of the package at `root`, in the order of its `exports` map: its package.json and source files read
+ * from the disk, or `manifest` and `isFile` when given (a commit's).
+ */
+export function readExportEntries(params: {
+	root: string
+	manifest?: ExportsManifest
+	isFile?: (path: string) => boolean
+}): ExportEntry[] {
+	const manifest: ExportsManifest =
+		params.manifest ?? JSON.parse(readFileSync(join(params.root, 'package.json'), 'utf8'))
+	const isFile =
+		params.isFile ??
+		function isFileOnDisk(path: string) {
+			return existsSync(join(params.root, path))
+		}
 	const packageName = typeof manifest.name === 'string' ? manifest.name : ''
 	return Object.entries(subpathsOf(manifest.exports)).flatMap(
 		([subpath, target]): ExportEntry[] => {
@@ -36,7 +47,7 @@ export function readExportEntries(params: { root: string }): ExportEntry[] {
 			return [
 				{
 					specifier: subpath === '.' ? packageName : `${packageName}${subpath.slice(1)}`,
-					source: sourceOf({ root: params.root, subpath, declaration }),
+					source: sourceOf({ isFile, subpath, declaration }),
 				},
 			]
 		},
@@ -75,7 +86,11 @@ function asDeclarationFile(path: unknown): DeclarationFile | undefined {
  * The source of an entry: the declaration path under `src` with the matching source extension, as a file then
  * as a folder's `index`; then the same with `.ts` (a dual build emits `.d.mts` / `.d.cts` from a `.ts` source).
  */
-function sourceOf(params: { root: string; subpath: string; declaration: DeclarationFile }): string {
+function sourceOf(params: {
+	isFile: (path: string) => boolean
+	subpath: string
+	declaration: DeclarationFile
+}): string {
 	const { path, extension } = params.declaration
 	const segments = path.replace(/^\.\//, '').split('/')
 	const sourceSegments = [SOURCE_FOLDER, ...(segments.length > 1 ? segments.slice(1) : segments)]
@@ -84,7 +99,7 @@ function sourceOf(params: { root: string; subpath: string; declaration: Declarat
 		`${withoutExtension}${sourceExtension}`,
 		`${withoutExtension}/index${sourceExtension}`,
 	])
-	const source = candidates.find((candidate) => existsSync(join(params.root, candidate)))
+	const source = candidates.find((candidate) => params.isFile(candidate))
 	if (source === undefined)
 		throw new Error(
 			`exports entry "${params.subpath}": no source at ${candidates.join(' nor at ')}`,

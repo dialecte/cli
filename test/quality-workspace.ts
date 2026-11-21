@@ -2,11 +2,12 @@
 import { rmSync } from 'node:fs'
 import { join, posix } from 'node:path'
 
+import { runRules } from '../src/commands/rules.ts'
 import { parseSourceFile } from '../src/lib/api/source-file-functions.ts'
 import { createBriefWorkspace, writeStoreLot } from './brief-workspace.ts'
 import { addWorktreeFolder, linkLot } from './lot-stores.ts'
 import { QUALITY_LOT_NAME, QUALITY_PACKAGE_JSON } from './quality-workspace.constants.ts'
-import { git, writeFiles } from './scratch-repository.ts'
+import { git, temporaryFolder, writeFiles } from './scratch-repository.ts'
 
 import type { FileFacts } from '../src/lib/api/source-functions.types.ts'
 import type {
@@ -79,6 +80,8 @@ export function resolverOver(files: Iterable<string>): ResolveSpecifier {
  */
 export function createQualityLot(params: {
 	base: Readonly<Record<string, string>>
+	/** Files committed on main before `base`: the cut's parent holds them (an ancestor of the lot base). */
+	earlier?: Readonly<Record<string, string>>
 	commits?: readonly Readonly<Record<string, string>>[]
 	/** Files removed in one more commit, after `commits`. */
 	committedDeletions?: readonly string[]
@@ -91,6 +94,11 @@ export function createQualityLot(params: {
 }): { root: string; cut: string; shortCut: string } {
 	const workspace = createBriefWorkspace()
 	const { repository } = workspace
+	if (params.earlier !== undefined) {
+		writeFiles({ root: repository, files: params.earlier })
+		git({ root: repository, args: ['add', '-A'] })
+		git({ root: repository, args: ['commit', '-q', '-m', 'chore: earlier'] })
+	}
 	writeFiles({
 		root: repository,
 		files: {
@@ -130,4 +138,22 @@ export function createQualityLot(params: {
 	if (params.baseBranch === 'absent')
 		git({ root: repository, args: ['branch', '-m', 'main', 'trunk'] })
 	return { root, cut, shortCut }
+}
+
+/**
+ * `dialecte rules` run in `root` with `argv`, on a machine with no forbidden words list of its own; a run that does
+ * not end with exit 0 or 1 is a fixture mistake.
+ */
+export function runRulesIn(params: { root: string; argv?: readonly string[] }): void {
+	const result = runRules({
+		cwd: params.root,
+		argv: [...(params.argv ?? [])],
+		environment: { XDG_CONFIG_HOME: temporaryFolder('dialecte-config-') },
+	})
+	if (result.exitCode > 1) throw new Error(`rules did not run: ${result.output}`)
+}
+
+/** The commit `revision` names in `root`, as a full sha. */
+export function commitOf(params: { root: string; revision: string }): string {
+	return git({ root: params.root, args: ['rev-parse', params.revision] }).trim()
 }

@@ -1,4 +1,5 @@
 import type { ChangelogSection } from '../changelog/changelog.types.ts'
+import type { BodyQuality } from '../quality/quality.types.ts'
 import type { DesignRow, ReviewRecord } from '../review-rounds/review-record.types.ts'
 import type { Effort, RiskClass } from '../risk/risk.types.ts'
 import type { TestsRecord } from '../tdd/tests-record.types.ts'
@@ -37,6 +38,8 @@ export type PullRequestSources = {
 	versionBumped: boolean
 	/** Whether the lot is a release lot (the only kind that bumps the version). */
 	release: boolean
+	/** The base-aware findings judged on the committed head against the body's base, or why not judged. */
+	quality?: BodyQuality
 }
 
 /** A pull request's text: the title (the lot's message) and the body rendered from the template. */

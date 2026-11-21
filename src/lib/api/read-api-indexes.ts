@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { TEXT_COLLATOR } from '../skills/api-index.constants.ts'
 import { SKILLS_FOLDER } from '../skills/skill-file.constants.ts'
 import { discoverSkillSources } from '../skills/sync-skills.ts'
-import { API_JSON_FILE, API_JSON_FOLDER } from './api-json.constants.ts'
+import { API_JSON_FILE, API_JSON_FOLDER, INDEX_NOT_READ } from './api-json.constants.ts'
 
 import type { ApiJson, ApiJsonRead } from './api-json.types.ts'
 
@@ -24,12 +24,44 @@ export function readApiIndexes(params: { cwd: string }): ApiJson[] {
  * @intent read what a package itself declares public, to compare its own functions with
  * @internal
  */
-export function readOwnApiIndexes(params: { cwd: string }): ApiJson[] {
-	return apiIndexesOf({
-		files: ownSkillFolders(params.cwd)
-			.map((folder) => join(folder, API_JSON_FOLDER, API_JSON_FILE))
-			.filter((path) => existsSync(path)),
-	})
+export function readOwnApiIndexes(params: {
+	cwd: string
+	/** A commit's files (relative to `cwd`) and the texts of its index files: read there, never on the disk. */
+	tree?: { files: Iterable<string>; texts: ReadonlyMap<string, string> }
+}): ApiJson[] {
+	const { tree } = params
+	if (tree === undefined)
+		return apiIndexesOf({
+			files: ownSkillFolders(params.cwd)
+				.map((folder) => join(folder, API_JSON_FOLDER, API_JSON_FILE))
+				.filter((path) => existsSync(path)),
+		})
+	return firstPerPackage(
+		ownIndexPathsIn(tree.files).map((path) =>
+			indexOrThrow({ path, read: indexTextRead(tree.texts.get(path)) }),
+		),
+	)
+}
+
+/**
+ * The package's own api indexes among `files` (paths from the package root): `skills/<skill>/references/api.json`,
+ * sorted, as `readOwnApiIndexes` finds them on the disk.
+ *
+ * @intent find a package's own api indexes in a commit's file set
+ * @internal
+ */
+export function ownIndexPathsIn(files: Iterable<string>): string[] {
+	return [...files]
+		.filter(function isOwnIndex(path) {
+			const segments = path.split('/')
+			return (
+				segments.length === 4 &&
+				segments[0] === SKILLS_FOLDER &&
+				segments[2] === API_JSON_FOLDER &&
+				segments[3] === API_JSON_FILE
+			)
+		})
+		.sort()
 }
 
 /** The absolute paths of the `api.json` files `readApiIndexes` reads from `cwd`, in discovery order. */
@@ -101,7 +133,17 @@ function ownSkillFolders(cwd: string): string[] {
 
 /** One shipped index; a file that is not one throws, naming it and the fix. */
 function readApiJson(path: string): ApiJson {
-	const read = parseApiJson(path)
+	return indexOrThrow({ path, read: parseApiJson(path) })
+}
+
+/** What a commit's index text reads as: the index, or why not (a text the batch read did not return is no index). */
+function indexTextRead(text: string | undefined): ApiJsonRead {
+	return text === undefined ? { problem: INDEX_NOT_READ } : parseApiJsonText(text)
+}
+
+/** The index `read` holds; one that is not an index throws, naming `path` and the fix. */
+function indexOrThrow(params: { path: string; read: ApiJsonRead }): ApiJson {
+	const { path, read } = params
 	if ('index' in read) return read.index
 	throw new Error(
 		`${path} is not a valid api index (${read.problem}): reinstall the package, or run \`dialecte skills generate\` in its repository`,

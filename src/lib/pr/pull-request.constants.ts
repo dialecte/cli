@@ -102,6 +102,9 @@ export const REVIEWER_KINDS = {
 	person: 'person',
 } as const
 
+/** The tree the body's quality judges: the committed head, uncommitted work ignored. */
+export const HEAD_TREE = { kind: 'revision', revision: 'HEAD' } as const
+
 /** The record each piece of free text comes from, as a refusal names it. */
 export const PIECE_RECORDS = {
 	message: 'brief.json lots[{index}].message',

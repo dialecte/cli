@@ -39,19 +39,31 @@ import type {
 	DialecteChangeVerdict,
 	ModuleReference,
 	PackageKind,
+	PackageTree,
 } from './dialecte-change.types.ts'
 import type { ImportReading } from './import-reading.types.ts'
 
-/** The kind of the package at `root`, from its name and whether its `src` holds a generated definition. */
-export function packageKindOf(params: { root: string }): PackageKind {
-	const { name } = readPackageJson(params.root)
+/**
+ * The kind of the package at `root`, from its name and whether its `src` holds a generated definition: read from the
+ * disk, or from `tree` when given (a commit's package.json and file set, relative to `root`).
+ */
+export function packageKindOf(params: { root: string; tree?: PackageTree }): PackageKind {
+	const { tree } = params
+	const { name } = tree === undefined ? readPackageJson(params.root) : (tree.packageJson ?? {})
 	if (name === CORE_PACKAGE_NAME) return 'core'
 	if (name === CREATE_PACKAGE_NAME) return 'create'
 	if (name === CLI_PACKAGE_NAME) return 'cli'
-	const holdsDefinition = holdsFileMatching({
-		folder: join(params.root, SOURCE_FOLDER),
-		pattern: SOURCE_DEFINITION_PATTERN,
-	})
+	const holdsDefinition =
+		tree === undefined
+			? holdsFileMatching({
+					folder: join(params.root, SOURCE_FOLDER),
+					pattern: SOURCE_DEFINITION_PATTERN,
+				})
+			: [...tree.files].some(
+					(file) =>
+						file.startsWith(`${SOURCE_FOLDER}/`) &&
+						SOURCE_DEFINITION_PATTERN.test(file.slice(SOURCE_FOLDER.length + 1)),
+				)
 	return holdsDefinition ? 'dialecte' : 'app'
 }
 
@@ -63,9 +75,11 @@ export function packageKindOf(params: { root: string }): PackageKind {
 export function createDialecteChangeReader(params: {
 	root: string
 	reading?: ImportReading
+	/** The package as a commit holds it: its kind read from there, never the disk. */
+	tree?: PackageTree
 }): DialecteChangeReader {
 	const root = resolve(params.root)
-	const kind = packageKindOf({ root })
+	const kind = packageKindOf({ root, ...(params.tree !== undefined && { tree: params.tree }) })
 	const reading = params.reading ?? createImportReading({ root })
 	const installedDialectes = new Map<string, boolean>()
 	const valueReferences = new Map<string, ModuleReference[]>()
