@@ -5,11 +5,12 @@
  */
 import { basename, join } from 'node:path'
 
-import { getArg, hasFlag } from '../config.ts'
+import { hasFlag } from '../config.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { appendDecision, dayOf, readDecisions } from '../review-rounds/decisions-file.ts'
 import { forbiddenWordRefusal, isOneLine } from '../review-rounds/option-checks.ts'
 import { DECISIONS_FILE } from '../review-rounds/review-rounds.constants.ts'
+import { readArguments } from '../review-rounds/round-arguments.ts'
 import { lotFolderOf, storeEntryOf } from '../store/lot-folder.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import {
@@ -77,8 +78,22 @@ export function recordNotALotGoAhead(params: NotALotGoAhead & { folder: string; 
  * or `--by` / `--reason` without the flag.
  */
 export function readNotALotOptions(argv: string[]): NotALotOptions {
+	// read as every signer reads its line (`readArguments`, the last value wins); the run's other options are flags here,
+	// its usage checked them already
+	const read = readArguments({
+		argv,
+		valueOptions: NOT_A_LOT_VALUE_OPTIONS,
+		flags: argv
+			.filter(function isOtherOption(word) {
+				return (
+					word.startsWith(OPTION_PREFIX) &&
+					!(NOT_A_LOT_VALUE_OPTIONS as readonly string[]).includes(word.slice(OPTION_PREFIX.length))
+				)
+			})
+			.map((word) => word.slice(OPTION_PREFIX.length)),
+	})
 	const [by, reason] = NOT_A_LOT_VALUE_OPTIONS.map(function valueOf(name) {
-		return getArg(argv, name)
+		return typeof read === 'string' ? undefined : read.values.get(name)
 	})
 	if (!hasFlag(argv, NOT_A_LOT_FLAG)) {
 		const given = NOT_A_LOT_VALUE_OPTIONS.some(function isGiven(name) {
@@ -203,7 +218,7 @@ function refusalOf(params: { detail: string; rehearsal: boolean }): GuardVerdict
 }
 
 /**
- * The word `getArg` read after an option is its value: one line (`isOneLine`), not another option (`splitArguments`'s
+ * The word read after an option is its value: one line (`isOneLine`), not another option (`splitArguments`'s
  * rule: a word starting `--` is an option, so the value is missing).
  */
 function isOptionValue(value: string | undefined): value is string {

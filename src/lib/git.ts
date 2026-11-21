@@ -304,3 +304,15 @@ export function belowGitFloor(params: {
 export function readGitVersion(params: { root: string }): string {
 	return readGit({ root: params.root, args: ['--version'] })
 }
+
+/**
+ * The repository-relative paths between two commits or trees (`git diff --name-only -z --no-renames --no-relative`),
+ * both sides of a rename, sorted: the frame of a lot's scope entries, whatever `diff.relative` says.
+ */
+export function listLotChangePaths(params: { root: string; from: string; to: string }): string[] {
+	const output = readGit({
+		root: params.root,
+		args: ['diff', '--name-only', '-z', '--no-renames', '--no-relative', params.from, params.to],
+	})
+	return [...new Set(output.split('\0').filter(Boolean))].sort()
+}

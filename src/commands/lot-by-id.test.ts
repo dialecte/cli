@@ -9,6 +9,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 
+import { replaceRecord } from '../../test/damaged-lot-workspace.ts'
 import { FINDING_TAIL, LEDGER_TABLE_HEAD } from '../../test/lot-stores.constants.ts'
 import {
 	addWorktreeFolder,
@@ -43,6 +44,11 @@ function stores() {
 		stores: [first, second, third].map((each) => realpathSync(each.workspace.store)),
 	})
 	writeFiles({ root: first.workspace.repository, files: { 'src/index.ts': 'b\n' } })
+	// the lot the verbs read its tree of names the repository as its worktree: a real folder, its changes there
+	worktreeIsRepository({
+		lotFolder: first.folders[SUBSCRIBE],
+		repository: first.workspace.repository,
+	})
 	return {
 		first,
 		second,
@@ -50,6 +56,18 @@ function stores() {
 		cwd: first.workspace.repository,
 		outside: realpathSync(temporaryFolder('outside-')),
 	}
+}
+
+/** The lot's identity names the repository (its real path) as the lot's worktree. */
+function worktreeIsRepository(params: { lotFolder: string; repository: string }): void {
+	const identity = JSON.parse(
+		readFileSync(join(params.lotFolder, 'identity.json'), 'utf8'),
+	) as Record<string, unknown>
+	replaceRecord({
+		folder: params.lotFolder,
+		name: 'identity.json',
+		text: `${JSON.stringify({ ...identity, worktree: realpathSync(params.repository) }, null, 2)}\n`,
+	})
 }
 
 function ledgerText(params: { title: string; rows: string[] }): string {

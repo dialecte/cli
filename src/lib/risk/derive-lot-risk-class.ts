@@ -6,13 +6,12 @@
 import { mkdirSync } from 'node:fs'
 
 import { compareApiIndexes } from '../api/api-index-diff.ts'
-import { isFolder } from '../file-system.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { readPackageJson } from '../package-json.ts'
-import { workTreeTopOf } from '../review-rounds/worktree-state.ts'
 import { readIdentity } from '../store/identity.ts'
+import { lotTreeOf } from '../store/lot-tree.ts'
 import { fallbackLotBaseOf } from '../tdd/lot-fallback-base.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { declaredHighOf, readDeclaredHigh } from './declared-high.ts'
@@ -146,17 +145,13 @@ function derivationSourceOf(params: {
 	folder: string
 	cwd: string
 }): { root: string; base: string } | undefined {
+	// the one reader of a lot's tree: a store lot's own worktree, else the cwd's (none: no derivation)
+	const tree = lotTreeOf(params)
+	if (tree === undefined || 'refusal' in tree) return undefined
 	const identity = readIdentity({ lotFolder: params.folder })
-	if (identity !== undefined) {
-		const { worktree } = identity
-		if (worktree === null || !isFolder(worktree)) return undefined
-		const root = workTreeTopOf(worktree)
-		return root === undefined
-			? undefined
-			: { root, base: riskBaseOf({ root, recorded: identity.base.commit }) }
-	}
-	const root = workTreeTopOf(params.cwd)
-	return root === undefined ? undefined : { root, base: RISK_HEAD_BASE }
+	return identity === undefined
+		? { root: tree.root, base: RISK_HEAD_BASE }
+		: { root: tree.root, base: riskBaseOf({ root: tree.root, recorded: identity.base.commit }) }
 }
 
 /**

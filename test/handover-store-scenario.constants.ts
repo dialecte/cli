@@ -39,3 +39,29 @@ export const DEFAULT_COLUMNS = 80
 
 /** A width no footer wraps at. */
 export const WIDE_COLUMNS = 400
+
+/**
+ * The scope of a store lot `storeLotFolder` writes: every path the hand-over scenarios commit or merge, each a literal
+ * entry (a root glob would widen what the lot reaches, its design need included).
+ */
+export const STORE_LOT_SCOPE: readonly string[] = [
+	'src/',
+	'doc/',
+	'docs/',
+	'agents/',
+	'shared/',
+	'CHANGELOG.md',
+	'README.md',
+	'package.json',
+	'package-lock.json',
+	'conflict.txt',
+	'new.txt',
+	'notes.txt',
+	'clean.txt',
+	'extra.txt',
+	'é.txt',
+	'gone.txt',
+	'marked.txt',
+	'feature.txt',
+	'b.txt',
+]

@@ -33,13 +33,14 @@ function stage(params: { root: string; files: Record<string, string> }): void {
 }
 
 describe('gate --hook - the design step', { timeout: 240_000 }, () => {
-	it('a production commit of a lot whose design is missing -> FAIL design, no declared step', async () => {
+	it('a production commit of a lot whose design is missing -> ok scope, then FAIL design, no declared step', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB], hook: true })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toEqual({
 			exitCode: 1,
 			output: [
+				'ok    scope  1 path(s) inside the scope',
 				`FAIL  design  missing (shared ${STORE_GLOB})`,
 				'gate --hook: failed at design',
 				'--- last lines of design ---',
@@ -49,38 +50,44 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 		expect(countRuns(lot.counter)).toBe(0)
 	})
 
-	it('no dialecte.gate.hook declared -> the design step still runs first and fails', async () => {
+	it('no dialecte.gate.hook declared -> the scope step passes, then the design step runs and fails', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toMatchObject({
 			exitCode: 1,
-			output: expect.stringMatching(/^FAIL {2}design {2}missing/),
+			output: expect.stringMatching(
+				/^ok {4}scope {2}1 path\(s\) inside the scope\nFAIL {2}design {2}missing/,
+			),
 		})
 	})
 
-	it('a commit of a test file only -> ok design, the declared step runs', async () => {
+	it('a commit of a test file only -> ok scope, then ok design, the declared step runs', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		stage({ root: lot.root, files: { [TEST_FILE]: 'export {}\n' } })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toMatchObject({
 			exitCode: 0,
-			output: expect.stringMatching(/^ok {4}design {2}no production path in the commit\n/),
+			output: expect.stringMatching(
+				/^ok {4}scope {2}1 path\(s\) inside the scope\nok {4}design {2}no production path in the commit\n/,
+			),
 		})
 	})
 
-	it('a production commit of a lot whose design is approved -> ok design approved by orchestrator', async () => {
+	it('a production commit of a lot whose design is approved -> ok scope, then ok design approved by orchestrator', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		approvedDesign({ lot, need: STORE_NEED })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toMatchObject({
 			exitCode: 0,
-			output: expect.stringMatching(/^ok {4}design {2}approved by orchestrator\n/),
+			output: expect.stringMatching(
+				/^ok {4}scope {2}1 path\(s\) inside the scope\nok {4}design {2}approved by orchestrator\n/,
+			),
 		})
 	})
 
-	it('a merge commit -> skip design', async () => {
+	it('a merge commit -> skip scope, then skip design', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		git({ root: lot.root, args: ['checkout', '-q', '-b', 'side'] })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
@@ -89,7 +96,7 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 		git({ root: lot.root, args: ['merge', '-q', '--no-ff', '--no-commit', 'side'] })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toMatchObject({
-			output: expect.stringMatching(/^skip {2}design {2}a merge commit/),
+			output: expect.stringMatching(/^skip {2}scope {2}\S.*\nskip {2}design {2}a merge commit/),
 		})
 	})
 
@@ -102,24 +109,24 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 		})
 	})
 
-	it('a first commit of the lot branch -> skip design', async () => {
+	it('a first commit of the lot branch -> skip scope, then skip design', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		git({ root: lot.root, args: ['update-ref', '-d', 'HEAD'] })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 
 		await expect(runHookIn({ cwd: lot.root })).resolves.toMatchObject({
-			output: expect.stringMatching(/^skip {2}design {2}a first commit/),
+			output: expect.stringMatching(/^skip {2}scope {2}\S.*\nskip {2}design {2}a first commit/),
 		})
 	})
 
-	it('a review throwaway, on its own branch <lot branch>-round-<n> -> skip design', async () => {
+	it('a review throwaway, on its own branch <lot branch>-round-<n> -> skip scope, then skip design', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		const throwaway = join(temporaryFolder('design-throwaway-'), `${lot.name}-round-1`)
 		git({ root: lot.root, args: ['worktree', 'add', '-q', '-b', 'main-round-1', throwaway] })
 		stage({ root: throwaway, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 
 		await expect(runHookIn({ cwd: throwaway })).resolves.toMatchObject({
-			output: expect.stringMatching(/^skip {2}design {2}a review throwaway/),
+			output: expect.stringMatching(/^skip {2}scope {2}\S.*\nskip {2}design {2}a review throwaway/),
 		})
 	})
 
@@ -134,7 +141,7 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 		})
 	})
 
-	it("the lot's branch committed from another worktree -> FAIL design all the same", async () => {
+	it("the lot's branch committed from another worktree -> ok scope, then FAIL design all the same", async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		git({ root: lot.root, args: ['checkout', '-q', '-b', 'parking'] })
 		const other = join(temporaryFolder('design-other-'), 'other')
@@ -143,11 +150,13 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 
 		await expect(runHookIn({ cwd: other })).resolves.toMatchObject({
 			exitCode: 1,
-			output: expect.stringMatching(/^FAIL {2}design {2}missing/),
+			output: expect.stringMatching(
+				/^ok {4}scope {2}1 path\(s\) inside the scope\nFAIL {2}design {2}missing/,
+			),
 		})
 	})
 
-	it("a refused design -> the lot's events hold a gate-hook start and end with the design part failed", async () => {
+	it("a refused design -> the lot's events hold a gate-hook start and end with the scope part passed, the design part failed", async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		stage({ root: lot.root, files: { [PRODUCTION_FILE]: 'export const one = 1\n' } })
 		await runHookIn({ cwd: lot.root })
@@ -163,10 +172,16 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 			parts: partsOf(events[1]).map(function nameAndStatus(part) {
 				return [part.name, part.status]
 			}),
-		}).toEqual({ kinds: ['step.start', 'step.end'], parts: [['design', 'failed']] })
+		}).toEqual({
+			kinds: ['step.start', 'step.end'],
+			parts: [
+				['scope', 'passed'],
+				['design', 'failed'],
+			],
+		})
 	})
 
-	it('a green --full then a hook of the same tree -> reuse whole: the design part runs, never counted for reuse', async () => {
+	it('a green --full then a hook of the same tree -> reuse whole: the scope and design parts run, never counted for reuse', async () => {
 		const lot = gatedLot({ declared: [STORE_GLOB] })
 		approvedDesign({ lot, need: STORE_NEED })
 		await runGate({ cwd: lot.root, argv: ['--full'] })
@@ -184,6 +199,7 @@ describe('gate --hook - the design step', { timeout: 240_000 }, () => {
 		}).toEqual({
 			reuse: 'whole',
 			parts: [
+				['scope', 'number'],
 				['design', 'number'],
 				['check', 'number'],
 			],

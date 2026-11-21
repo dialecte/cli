@@ -20,11 +20,14 @@ import {
 } from '../../test/scratch-repository.ts'
 import { setIdentityEffort } from '../../test/station-records-workspace.ts'
 import { STORE_CASE_TIMEOUT } from '../../test/test-timing.constants.ts'
+import { computeStateHash } from '../lib/gate-records/state-hash.ts'
 import { readRiskRecords } from '../lib/risk/risk-records.ts'
+import { readIdentity } from '../lib/store/identity.ts'
 import { runRecordVerb } from './record.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { StationLot } from '../../test/lot-station-workspace.types.ts'
 import type { Effort, RiskClass } from '../lib/risk/risk.types.ts'
 
 afterEach(function restoreEnvironment() {
@@ -34,6 +37,25 @@ afterEach(function restoreEnvironment() {
 /** The manifest of the scratch repository: a tool (a `bin`, so no api change is read). */
 const MANIFEST = {
 	'package.json': '{ "name": "scratch", "version": "1.0.0", "bin": { "scratch": "s.js" } }\n',
+}
+
+/**
+ * A store lot whose identity's worktree is a real git worktree of its repository, on the lot's branch, holding
+ * `changes` uncommitted; the main checkout (`lot.cwd`) holds none of them.
+ */
+function lotWithOwnWorktree(changes: Record<string, string>): StationLot {
+	const lot = createStationLot()
+	const branch = readIdentity({ lotFolder: lot.lotFolder })?.branch ?? 'feat/station'
+	git({ root: lot.cwd, args: ['worktree', 'add', '-q', '-b', branch, lot.worktree, 'main'] })
+	writeFiles({ root: lot.worktree, files: changes })
+	return lot
+}
+
+/** The state hash a snapshot of `round` recorded (`round-<n>.state`); undefined when none. */
+function snapshotStateOf(params: { folder: string; round: number }): string | undefined {
+	const file = join(params.folder, `round-${params.round}.state`)
+	if (!existsSync(file)) return undefined
+	return (JSON.parse(readFileSync(file, 'utf8')) as { stateHash?: string }).stateHash
 }
 
 /** The whole line printed when the class derived now is above the effort's. */
@@ -105,24 +127,26 @@ describe('lot snapshot - the swap', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(listing(folder)).toEqual(['brief.json'])
 	})
 
-	it('an effort line high over an identity low -> the third round allowed (case 18), one line printed', () => {
-		const lot = createStationLot()
+	it("an effort line high over an identity low, run from the main checkout -> the third round allowed (case 18), the lot's worktree snapshot and its class derived", () => {
+		const lot = lotWithOwnWorktree({
+			'src/dataflow/subscribe.ts': 'export function subscribe() {\n\treturn 1\n}\n',
+		})
 		setIdentityEffort({ lot, level: 'low' })
 		writeRiskLines({ folder: lot.lotFolder, lines: [effortLineOf({ effort: 'high' })] })
 
-		const result = snapshotOf({ cwd: lot.cwd, folder: lot.lotFolder, round: 3 })
-
-		expect(result).toEqual({
-			exitCode: 0,
-			output: expect.stringMatching(/^lot snapshot: round-3 - [^\n]*$/),
-		})
-		expect(existsSync(join(lot.lotFolder, 'round-3.state'))).toBe(true)
-		// no work tree to read: no derived line
-		expect(readRiskRecords({ folder: lot.lotFolder }).derived).toEqual([])
+		expect(
+			[snapshotOf({ cwd: lot.cwd, folder: lot.lotFolder, round: 3 })].map(function takenOf(result) {
+				return {
+					exitCode: result.exitCode,
+					state: snapshotStateOf({ folder: lot.lotFolder, round: 3 }),
+					derived: readRiskRecords({ folder: lot.lotFolder }).derived.map((line) => line.class),
+				}
+			})[0],
+		).toEqual({ exitCode: 0, state: computeStateHash(lot.worktree), derived: ['light'] })
 	})
 
 	it('an effort line low over an identity high -> the second round refused at the cap of 1', () => {
-		const lot = createStationLot()
+		const lot = createStationLot({ repositoryIsWorktree: true })
 		setIdentityEffort({ lot, level: 'high' })
 		writeRiskLines({ folder: lot.lotFolder, lines: [effortLineOf({ effort: 'low' })] })
 		const before = listing(lot.lotFolder)
@@ -134,8 +158,8 @@ describe('lot snapshot - the swap', { timeout: STORE_CASE_TIMEOUT }, () => {
 		expect(listing(lot.lotFolder)).toEqual(before)
 	})
 
-	it('a derived line high over an effort medium -> the third round allowed, the fourth refused at the cap of 3', () => {
-		const lot = createStationLot()
+	it("a derived line high over an effort medium, the lot's worktree adding a destructive call -> its worktree snapshot, the third round allowed, the fourth refused at the cap of 3", () => {
+		const lot = lotWithOwnWorktree(CLEANUP_FILE)
 		writeRiskLines({
 			folder: lot.lotFolder,
 			lines: [
@@ -147,8 +171,13 @@ describe('lot snapshot - the swap', { timeout: STORE_CASE_TIMEOUT }, () => {
 		const third = snapshotOf({ cwd: lot.cwd, folder: lot.lotFolder, round: 3 })
 		const fourth = snapshotOf({ cwd: lot.cwd, folder: lot.lotFolder, round: 4 })
 
-		expect({ third: third.exitCode, fourth }).toEqual({
+		expect({
+			third: third.exitCode,
+			state: snapshotStateOf({ folder: lot.lotFolder, round: 3 }),
+			fourth,
+		}).toEqual({
 			third: 0,
+			state: computeStateHash(lot.worktree),
 			fourth: {
 				exitCode: 2,
 				output: beyondCapLine({
@@ -163,7 +192,7 @@ describe('lot snapshot - the swap', { timeout: STORE_CASE_TIMEOUT }, () => {
 	})
 
 	it('a derived line high and no effort at all -> the second round refused at the cap of 1 naming lot risk', () => {
-		const lot = createStationLot()
+		const lot = createStationLot({ repositoryIsWorktree: true })
 		setIdentityEffort({ lot, level: undefined })
 		writeRiskLines({
 			folder: lot.lotFolder,

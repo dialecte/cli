@@ -61,7 +61,7 @@ export function unknownOptionRefusal(params: {
  * when its flag is followed by a placeholder or a value word (`--base <ref>`, `--effort low|medium|high`), a flag
  * otherwise; the zero-config flags expanded where a line writes them; whether a line writes `--`.
  */
-function verbOptionsOf(params: {
+export function verbOptionsOf(params: {
 	name: string
 	usage: readonly string[]
 	accepted: ReadonlyArray<string | undefined>

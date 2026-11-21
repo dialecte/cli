@@ -1,10 +1,7 @@
-/** `dialecte lot approve`: its options, the cli's own approver and package, and its lines; `{lot}` the lot's name. */
+/** `dialecte lot approve`: its options and its lines; `{lot}` the lot's name. */
 
 /** The options `lot approve` takes followed by a value, without the dashes. */
 export const APPROVE_OPTIONS = ['by', 'reason'] as const
-
-/** The package whose lots `--by orchestrator` approves: the cli knows itself by its name. */
-export const CLI_PACKAGE_NAME = '@dialecte/cli'
 
 /** The schema of an `approvals.jsonl` line. */
 export const APPROVAL_LINE_SCHEMA = 1
@@ -14,8 +11,6 @@ export const APPROVABLE_STATES: readonly string[] = ['working', 'ready']
 
 export const LOT_APPROVE_LINES = {
 	prefix: 'lot approve: ',
-	orchestratorElsewhere:
-		"lot approve: {package} lots are approved by a person: --by orchestrator is for the cli's own lots",
 	notApprovable: 'lot approve: {lot} is {state}: only a lot at work is approved',
 	noLanding: 'lot approve: {lot} has no pull request yet: dialecte lot land {lot} opens it',
 	noChangeRequest: 'lot approve: pull request #{number} of {lot} cannot be found',

@@ -25,7 +25,7 @@ import { recordBaseDeclared } from '../design/base-declared.ts'
 import { designGateOf } from '../design/design-gate.ts'
 import { SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { ORIGIN_BRANCH_REF_PREFIX } from '../gate/gate-base.constants.ts'
-import { fetchOrigin, isAncestorCommit, readGit, tryReadGit } from '../git.ts'
+import { fetchOrigin, isAncestorCommit, listLotChangePaths, readGit, tryReadGit } from '../git.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { LANDED_SCHEMA } from '../landing/landed-record.constants.ts'
 import { writeLanded } from '../landing/landed-record.ts'
@@ -38,6 +38,7 @@ import { composeChangeRequest, keptPartOf, linesOf } from '../pr/compose-change-
 import { readIdentity } from '../store/identity.ts'
 import { keepNextOf, keptByDecision } from '../store/lot-keep.ts'
 import { replaceWhole } from '../store/publish.ts'
+import { scopeGuardOf, scopeRefusalLinesOf } from '../store/scope-guard.ts'
 import { STORE_FILES, STORE_REFUSAL } from '../store/store.constants.ts'
 import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { registeredEntryOf } from './handover-store-read.ts'
@@ -95,6 +96,9 @@ export function landLot(params: {
 	// read, never written, before any refusal: a lot committed by a local hand-over gets the registry's committed answer
 	const committed = committedEntryRefusal({ worktree, lotFolder: params.lotFolder })
 	if (committed !== undefined) return refused(committed)
+	// the lot's committed work held to its scope before anything is written: no entry, no rebase, no push (SAFE 3.4)
+	const scopeRefusal = landingScopeRefusalOf({ lotFolder: params.lotFolder, worktree })
+	if (scopeRefusal !== undefined) return { exitCode: 1, lines: scopeRefusal }
 	// a lot started on another lands on it (33CI CI4): rebased onto its parent, or off it once the parent merged
 	const stack = prepareStackLanding({ ...params, landing })
 	if (stack !== undefined && 'refusal' in stack)
@@ -917,6 +921,25 @@ function landingDesignRefusalOf(params: {
 	const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
 	if ('failure' in base) return base.failure
 	return designGateOf({ lotFolder, root: worktree, base: base.commit, verb: 'land' }).refusal
+}
+
+/**
+ * The scope hold of a store lot's landing (SAFE 3.4): its committed work, its lot base against HEAD (work in progress
+ * does not land), held to its effective scope; the refusal's lines, or undefined for a folder that is no store lot or
+ * work the scope covers. A base that cannot be resolved refuses with its failure. Read before the stack rebase (the
+ * same base: a fetch moves only origin), where the design hold reads after it for the rebased base's shared areas.
+ */
+function landingScopeRefusalOf(params: {
+	lotFolder: string
+	worktree: string
+}): string[] | undefined {
+	const { lotFolder, worktree } = params
+	if (readIdentity({ lotFolder }) === undefined) return undefined
+	const base = resolveTddBase({ root: worktree, packageJson: readPackageJson(worktree) })
+	if ('failure' in base) return [base.failure]
+	const paths = listLotChangePaths({ root: worktree, from: base.commit, to: 'HEAD' })
+	const refusal = scopeGuardOf({ lotFolder, paths })
+	return refusal === undefined ? undefined : scopeRefusalLinesOf(refusal)
 }
 
 function refused(line: string): LandingResult {

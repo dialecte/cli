@@ -3,7 +3,7 @@
  * and how long it took: the hooks folder, the branch, HEAD (or the lots already committed on top of it),
  * the merge lots (none in progress, trees recorded, resolutions as reviewed), the target branch's tip held by the
  * hand-over (exit 2 when it moved), no process left running in the worktree (exit 2), no late fix nobody verified
- * (exit 2), an empty index, the files
+ * (exit 2), a store lot's work held to its scope, an empty index, the files
  * against the reviewed snapshot, the deleted files, files outside the lots,
  * plan tags (a contributor's) or standard citations in the lots' files and messages, a contributor's green
  * `dialecte contrib` of the tree the lots leave, and what the package still owes its mutation runs.
@@ -19,8 +19,17 @@ import { lateFixesDetailOf } from '../gate-records/card-gates.ts'
 import { isGreenRecord, originOfRecord, readTreeRecords } from '../gate-records/check-store.ts'
 import { LATE_FIXES_LINE_NAME, SHORT_SHA_LENGTH } from '../gate-records/gate-records.constants.ts'
 import { computeStateHash, computeStateTree } from '../gate-records/state-hash.ts'
+import { findBaseBranchRef } from '../gate/gate-base.ts'
+import { HOOK_SCOPE_TEXTS } from '../gate/hook-scope.constants.ts'
 import { describeMissingHooksFolder, readHooksFolder } from '../git-hooks.ts'
-import { listChangedFiles, listStagedFiles, readGit } from '../git.ts'
+import {
+	isAncestorCommit,
+	listChangedFiles,
+	listLotChangePaths,
+	listStagedFiles,
+	readGit,
+} from '../git.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { MUTATION_GATE_NAME, NO_MUTATION_SCOPE } from '../mutation/pending-verdict.constants.ts'
 import { lotModeOf, pendingVerdict } from '../mutation/pending-verdict.ts'
 import { readPackageJson } from '../package-json.ts'
@@ -32,6 +41,13 @@ import { readLateFixes } from '../review-rounds/late-fixes.ts'
 import { readReferencePatterns } from '../rules/committed-text.ts'
 import { ForbiddenWordsListError } from '../rules/forbidden-words.ts'
 import { shellQuote } from '../shell-quote.ts'
+import { lotFolderOf, storeEntryOf } from '../store/lot-folder.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
+import { lotState } from '../store/lot-state.ts'
+import { SCOPE_GUARD_NAME } from '../store/scope-guard.constants.ts'
+import { scopeGuardOf } from '../store/scope-guard.ts'
+import { QUESTIONS_CLOSED_STATES } from '../store/store.constants.ts'
+import { resolveTddBase } from '../tdd/tdd-base.ts'
 import { findCommittedLots } from './find-committed-lots.ts'
 import { findLotReferences } from './find-lot-references.ts'
 import {
@@ -266,6 +282,17 @@ export function checkHandoverGuards(params: {
 					release: lotsFile.release === true,
 					rehearsal: params.rehearsal ?? false,
 					goAhead: params.notALot,
+				})
+			},
+		},
+		{
+			name: SCOPE_GUARD_NAME,
+			check: function insideTheScope(): GuardVerdict | undefined {
+				return checkScope({
+					folder: handover.folder,
+					root,
+					packageJson,
+					pending: lots.slice(run.commits.length),
 				})
 			},
 		},
@@ -513,6 +540,72 @@ function checkTarget(params: {
  * The processes working in the worktree read now (never from the card): none passes; only the person's tools pass
  * marked `!`; any left behind, or a list not known, refuses with exit 2; a rehearsal goes on past it, marked `!`.
  */
+/**
+ * The scope guard of a store lot's hand-over (SAFE 3.7), so a rehearsal sees what the hook will: the lot's committed
+ * work (its lot base against HEAD), every pending lot's files and deleted files (package-relative in `lots.json`,
+ * mapped to the repository's frame), and a pending merge lot's own paths when it merges another branch than the base,
+ * held to the lot's effective scope. Refused in a rehearsal too. Undefined (no line) for a folder that is no store
+ * lot, and for a simulated, damaged or terminal one (the `lot` guard speaks for those; nothing lands from a terminal
+ * one, as the hook skips it).
+ */
+function checkScope(params: {
+	folder: string
+	root: string
+	packageJson: PackageJson
+	pending: readonly ResolvedLot[]
+}): GuardVerdict | undefined {
+	const { root, packageJson } = params
+	const lotFolder =
+		lotFolderOf({ folder: params.folder }) ?? storeEntryOf({ folder: params.folder })
+	if (lotFolder === undefined) return undefined
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	if (checked === undefined || 'damage' in checked || checked.input.identity.simulated)
+		return undefined
+	if (QUESTIONS_CLOSED_STATES.includes(lotState(checked.input).state)) return undefined
+	const base = resolveTddBase({ root, packageJson })
+	if ('failure' in base) return { ok: false, detail: base.failure }
+	const prefix = readGit({ root, args: ['rev-parse', '--show-prefix'] }).trim()
+	const paths = [
+		...listLotChangePaths({ root, from: base.commit, to: 'HEAD' }),
+		...params.pending.flatMap((lot) =>
+			[...lot.files, ...lot.deletedFiles].map((file) => `${prefix}${file}`),
+		),
+		...params.pending.flatMap((lot) =>
+			lot.merge === undefined ? [] : mergedPathsOf({ root, packageJson, tip: lot.merge.tip }),
+		),
+	]
+	const refusal = scopeGuardOf({ lotFolder, paths })
+	if (refusal === undefined)
+		return {
+			ok: true,
+			detail: fillMessage({
+				template: HOOK_SCOPE_TEXTS.passed,
+				values: { count: String(new Set(paths).size) },
+			}),
+		}
+	return {
+		ok: false,
+		detail: refusal.reason,
+		lines: [
+			...(refusal.next === undefined ? [] : [`next: ${refusal.next}`]),
+			...(refusal.globPaths ?? []),
+		],
+	}
+}
+
+/**
+ * The paths a merge of `tip` brings into the lot: its own, from its merge-base with HEAD; none when it lies on the base
+ * branch's line (a merge of the base moves the lot's fork point) or no base branch is found.
+ */
+function mergedPathsOf(params: { root: string; packageJson: PackageJson; tip: string }): string[] {
+	const { root, tip } = params
+	const found = findBaseBranchRef({ root, packageJson: params.packageJson })
+	if ('refusal' in found || isAncestorCommit({ root, ancestor: tip, descendant: found.ref }))
+		return []
+	const from = readGit({ root, args: ['merge-base', 'HEAD', tip] }).trim()
+	return listLotChangePaths({ root, from, to: tip })
+}
+
 function checkProcesses(params: { root: string; rehearsal: boolean }): GuardVerdict {
 	const processes = strayProcesses({ worktree: params.root, root: params.root })
 	const line = strayProcessesLineOf(processes)

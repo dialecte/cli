@@ -48,15 +48,12 @@ import {
 } from '../lib/review-rounds/review-rounds.constants.ts'
 import { parseRound, readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { snapshotRefusal, takeSnapshot } from '../lib/review-rounds/snapshot-round.ts'
-import {
-	handoverFolderRefusal,
-	readWorktreeState,
-	workTreeTopOf,
-} from '../lib/review-rounds/worktree-state.ts'
+import { handoverFolderRefusal, readWorktreeState } from '../lib/review-rounds/worktree-state.ts'
 import { appendDerivedRiskLine, tryDeriveLotRiskClass } from '../lib/risk/derive-lot-risk-class.ts'
 import { riskReasonText } from '../lib/risk/risk-reason.ts'
 import { isEffortBelow, riskCapOf } from '../lib/risk/risk-records.ts'
 import { recordStandard } from '../lib/standard/record-standard.ts'
+import { lotTreeOf } from '../lib/store/lot-tree.ts'
 import { replaceWhole } from '../lib/store/publish.ts'
 import { readBeyondCapRows } from '../lib/store/station-records.ts'
 
@@ -257,13 +254,17 @@ function recordSnapshot(params: {
 	const goAhead = goAheadOf(read)
 	if (read.words.length !== 1 || round === undefined || goAhead === 'usage')
 		return answerOf({ exitCode: 2, line: SNAPSHOT_USAGE })
-	const root = workTreeTopOf(params.cwd)
-	if (!root)
+	const folder = resolve(params.cwd, read.words[0])
+	// a store lot's own worktree from anywhere, else the cwd's: the snapshot and a later delta read the same tree
+	const tree = lotTreeOf({ folder, cwd: params.cwd })
+	if (tree === undefined)
 		return answerOf({
 			exitCode: 1,
 			line: `${verbPrefix('snapshot')}: ${params.cwd} is in no git work tree: run lot snapshot inside the lot's worktree`,
 		})
-	const folder = resolve(params.cwd, read.words[0])
+	if ('refusal' in tree)
+		return answerOf({ exitCode: 1, line: `${verbPrefix('snapshot')}: ${tree.refusal}` })
+	const { root } = tree
 	const folderRefusal = handoverFolderRefusal(folder)
 	if (folderRefusal)
 		return answerOf({ exitCode: 1, line: `${verbPrefix('snapshot')}: ${folderRefusal}` })
