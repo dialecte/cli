@@ -455,7 +455,9 @@ describe(
 
 			// the branch commit's hook record was made at the branch commit, not at main's HEAD: it ends from that commit
 			for (const card of [written.output, rehearsal.text]) {
-				expect(gateStepLinesOf(card).filter((line) => line.includes(NEVER_RUN))).toEqual([])
+				expect(gateStepLinesOf(card).filter((line) => line.includes(NEVER_RUN))).toEqual([
+					'! quality never run on this tree',
+				])
 				expect(
 					gateStepLinesOf(card).filter((line) => line.includes('the tree changed since')),
 				).toEqual([])
@@ -484,7 +486,9 @@ describe(
 				),
 			).toEqual([])
 			expect(written.output).toMatch(/│ BLOCKED /)
-			expect(gateStepLinesOf(rehearsal.text).filter((line) => line.includes(NEVER_RUN))).toEqual([])
+			expect(gateStepLinesOf(rehearsal.text).filter((line) => line.includes(NEVER_RUN))).toEqual([
+				'! quality never run on this tree',
+			])
 			expect(
 				gateStepLinesOf(rehearsal.text).filter((line) => /^[✓!✗] test:run\b/.test(line)),
 			).toEqual([expect.stringMatching(/^✓ test:run (?!.*· from).*· rehearsal$/)])
@@ -556,6 +560,7 @@ describe(
 
 			expect(gateStepLinesOf(output)).toEqual([
 				'✓ count 4/4',
+				'! quality never run on this tree',
 				'✓ effort medium · risk class light at handover write (4 lines in 1 files) · 0 review rounds of 2',
 			])
 		})
@@ -587,7 +592,9 @@ describe(
 
 			const { output } = writeReadLotHandover(root)
 
-			expect(gateStepLinesOf(output).filter((line) => line.includes(NEVER_RUN))).toEqual([])
+			expect(gateStepLinesOf(output).filter((line) => line.includes(NEVER_RUN))).toEqual([
+				'! quality never run on this tree',
+			])
 			expect(gateStepLinesOf(output).filter((line) => /^[✓!✗] count\b/.test(line))).toEqual([
 				expect.stringMatching(/^✓ count 4\/4$/),
 			])
