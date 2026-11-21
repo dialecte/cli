@@ -106,8 +106,13 @@ function tryTo<T>(act: () => T): T | { thrown: string } {
 	}
 }
 
-/** The repository's `cards.log`, beside its registry, its folder made when the registry has none yet. */
-function cardsLogFileOf(main: string): string {
+/**
+ * The repository's `cards.log`, beside its registry, its folder made when the registry has none yet.
+ *
+ * @intent write a removal's lines where every reader of the repository's records finds them
+ * @internal
+ */
+export function cardsLogFileOf(main: string): string {
 	const store = findHandoverStore(main) ?? handoverStoreOf(main)
 	mkdirSync(store, { recursive: true })
 	return join(store, CARDS_LOG_FILE)

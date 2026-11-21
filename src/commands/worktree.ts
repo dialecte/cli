@@ -51,7 +51,6 @@ import {
 	RECLAIM_OLDER_THAN_DAYS,
 	RECLAIM_OLDER_THAN_PATTERN,
 	RECLAIM_USAGE,
-	REHEARSAL_TRASH_FOLDER,
 } from '../lib/worktree/worktree.constants.ts'
 
 import type { Card, CardRow } from '../lib/card/card.types.ts'
@@ -217,18 +216,17 @@ export async function runWorktreePrune(params: {
 				spawner: params.spawner ?? spawnDetached,
 				listProcesses: listProcessesOnce,
 			})
-		// a hand-over folder or a rehearsal clone goes to the trash too: the move its line shows, never a removal in place
-		if (item.kind === 'hand-over' || item.kind === 'rehearsal clone')
+		// a hand-over folder goes to the workspace's trash: the move its line shows, never a removal in place
+		if (item.kind === 'hand-over')
 			return trashPrunedFolder({
 				folder: item.name,
-				// a clone goes to its scratch root's own trash: a move never crosses file systems
-				worktreesFolder: item.kind === 'rehearsal clone' ? dirname(item.name) : worktreesFolder,
-				...(item.kind === 'rehearsal clone' && { trashName: REHEARSAL_TRASH_FOLDER }),
+				worktreesFolder,
 				now: params.now ?? new Date(),
 				spawner: params.spawner ?? spawnDetached,
 			})
-		// a scratch folder goes to the trash its line names: the workspace's, or its scratch root's own
-		if (item.kind === 'scratch folder') {
+		// a rehearsal clone or a scratch folder goes to the trash its line names: the workspace's for its own scratch
+		// root, else the scratch root's own (a move never crosses file systems)
+		if (item.kind === 'rehearsal clone' || item.kind === 'scratch folder') {
 			const trash = scratchTrashOf({ root: dirname(item.name), worktreesFolder })
 			return trashPrunedFolder({
 				folder: item.name,

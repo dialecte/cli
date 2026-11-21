@@ -278,7 +278,9 @@ function worktreesOf(params: {
 			typeof event.worktree === 'string'
 		)
 			paths.add(event.worktree)
-	for (const removal of params.removals) if (removal.item !== 'branch') paths.add(removal.path)
+	// a worktree or a throwaway the lot made; a branch or a rehearsal clone is none of its worktrees
+	for (const removal of params.removals)
+		if (removal.item === 'worktree' || removal.item === 'throwaway') paths.add(removal.path)
 	return [...paths]
 }
 

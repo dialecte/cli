@@ -1,4 +1,7 @@
-/** `dialecte lot close <hand-over name|lot id|index>... [--json]`: see `closeHandovers`. */
+/**
+ * `dialecte lot close <hand-over name|lot id|index>... [--json]`: see `closeHandovers`; `lot close --feature <name>`:
+ * see `runLotCloseFeature`.
+ */
 import { dirname, join } from 'node:path'
 
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
@@ -19,6 +22,8 @@ import { listWorktrees } from '../lib/worktree/add-worktree.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
 import { isParked, spawnDetached } from '../lib/worktree/trash.ts'
 import { TRASH_FOLDER } from '../lib/worktree/worktree.constants.ts'
+import { FEATURE_FLAG } from './lot-close-feature.constants.ts'
+import { runLotCloseFeature } from './lot-close-feature.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { CloseResult } from '../lib/handover/handover.types.ts'
@@ -40,7 +45,12 @@ export function runLotClose(params: {
 	scratchRoots?: readonly string[]
 	/** Where lots land through pull requests; default: the repository's host, asked for each lot the close reaches. */
 	host?: HostAdapter
+	/** Reads a pid's start time (a rehearsal marker's owner, `--feature` only); default `processStartTime`. */
+	readStartTime?: (pid: number) => string | undefined
 }): CommandResult {
+	// a feature's close is its own run: the feature's lots, never named ones
+	if (params.argv.some((word) => word === FEATURE_FLAG || word.startsWith(`${FEATURE_FLAG}=`)))
+		return runLotCloseFeature(params)
 	const names = positionalArguments({ argv: params.argv, valueOptions: [] })
 	if (names.length === 0) return { exitCode: 2, output: renderLotUsage() }
 	let main: string

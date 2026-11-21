@@ -552,6 +552,38 @@ describe('worktree prune', { timeout: WORKSPACE_CASE_TIMEOUT }, () => {
 		})
 	})
 
+	it('--yes, a dead rehearsal clone in the workspace’s own scratch root → moved into the workspace’s .worktrees/_trash, the same volume, never a dialecte-trash beside it', async () => {
+		const { workspace } = createWorkspace()
+		const scratchRoot = join(workspace, '.worktrees', '_scratch')
+		const clone = makeRehearsalFolder({
+			scratchRoot,
+			name: 'dialecte-rehearse-dead',
+			pid: deadPid(),
+		})
+		const recording = createRecordingSpawner()
+
+		const result = await runWorktreePrune({
+			argv: ['--root', workspace, '--yes'],
+			cwd: workspace,
+			scratchRoot,
+			isTerminal: true,
+			confirm: async () => true,
+			spawner: recording.spawner,
+		})
+
+		const trashed = result.output
+			.split('\n')
+			.filter((line) => line.includes(' sent to the trash: '))
+			.map((line) => line.slice(line.indexOf(': ', line.indexOf(' sent to the trash')) + 2))
+		expect({
+			clone: existsSync(clone),
+			trashed: trashed.map((path) =>
+				path.startsWith(`${join(workspace, '.worktrees', '_trash')}/`),
+			),
+			besideIt: existsSync(join(scratchRoot, 'dialecte-trash')),
+		}).toEqual({ clone: false, trashed: [true], besideIt: false })
+	})
+
 	it('--yes, a hand-over folder the trash cannot take → a cross line naming why, the folder left where it is', async () => {
 		const { workspace, worktrees } = createPruneWorkspace()
 		git({ root: worktrees.pending, args: ['add', 'CHANGELOG.md'] })

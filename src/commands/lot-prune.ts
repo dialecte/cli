@@ -147,8 +147,13 @@ function selectLots(params: {
 	}
 }
 
-/** The main checkout of the repository a lot folder belongs to. */
-function repositoryOf(lotFolder: string): string | undefined {
+/**
+ * The main checkout of the repository a lot folder belongs to.
+ *
+ * @intent sync each repository a run reaches once
+ * @internal
+ */
+export function repositoryOf(lotFolder: string): string | undefined {
 	const repository = readIdentity({ lotFolder })?.repository
 	if (repository === undefined) return undefined
 	try {
@@ -158,8 +163,13 @@ function repositoryOf(lotFolder: string): string | undefined {
 	}
 }
 
-/** Each lot of the plan with its items, every item with its outcome once the acts ran. */
-function lotsOutputOf(params: {
+/**
+ * Each lot of the plan with its items, every item with its outcome once the acts ran.
+ *
+ * @intent one output of a lot prune plan for every verb that acts on one
+ * @internal
+ */
+export function lotsOutputOf(params: {
 	plan: LotPrunePlan
 	outcomes: LotPruneOutcomes
 	acting: boolean
@@ -236,8 +246,13 @@ function linesOf(output: LotPruneOutput): string[] {
 	return [...lots, ...refused, ...(output.lots.length === 0 ? [LOT_PRUNE_TEXTS.none] : [])]
 }
 
-/** An item's word: its outcome after the acts, else its decision. */
-function itemWordOf(item: LotPruneLotOutput['items'][number]): string {
+/**
+ * An item's word: its outcome after the acts, else its decision.
+ *
+ * @intent one word per item for every verb printing a lot prune plan
+ * @internal
+ */
+export function itemWordOf(item: LotPruneLotOutput['items'][number]): string {
 	const { outcome, decision } = item
 	if (outcome !== undefined) {
 		if ('removed' in outcome) return `removed (${outcome.removed})`

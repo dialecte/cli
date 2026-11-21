@@ -37,11 +37,12 @@ worktree - A worktree ready to work in; prune what a merge left
           checkout's files go, anything else keeps the worktree (ignored files git worktree remove
           would delete: <paths>); a rehearsal clone is kept while its marker is missing or
           unparsable, or its pid runs; --yes runs them after a confirmation on a terminal; committed
-          hand-over folders and finished rehearsal clones go to the trash like the other items: the
-          plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move
-          that cannot be made is a ✗ line, nothing deleted; the pool
-          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
-          touched
+          hand-over folders and finished rehearsal clones go to the trash like the other items (the
+          workspace's .worktrees/_trash for a clone in its own .worktrees/_scratch, else the scratch
+          root's dialecte-trash): the plan shows the move (mkdir -p <trash> && mv <folder>
+          <trash>/), --yes makes it; a move that cannot be made is a ✗ line, nothing deleted; the
+          pool (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted,
+          never touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
     keeps) nor lot kept on purpose (its review throwaways are reclaimed as an open lot's) nor open
