@@ -23,7 +23,10 @@ import type {
 	ArchivedDeclaration,
 	ArchiveName,
 	MovedDeclaration,
+	DeclarationArchive,
+	ClosingDeclarations,
 	PendingArchive,
+	RemovableDeclarationParams,
 } from './archived-declarations.types.ts'
 
 /**
@@ -70,6 +73,21 @@ export function currentArchiveOf(params: {
 		.reverse()
 		.map((name) => archiveOf({ ...params, name }))
 		.find((archive) => archive !== undefined)
+}
+
+/**
+ * Whether a lot file goes with its worktree: it declares nothing, or it is byte-equal to an archive of its own
+ * package path.
+ * @intent decide whether the removal rule lets a lot file go
+ */
+export function isRemovableDeclaration(params: RemovableDeclarationParams): boolean {
+	const { packagePath, bytes } = params
+	return (
+		isEmptyDeclaration(bytes.toString('utf8')) ||
+		params.archives.some(
+			(archive) => archive.packagePath === packagePath && archive.bytes.equals(bytes),
+		)
+	)
 }
 
 /**
@@ -149,6 +167,69 @@ export function moveDeclarations(params: {
 		),
 	})
 	return moved
+}
+
+/**
+ * Every lot file of the worktree through `archiveDecision` against `folder`'s archives of its package path, nothing
+ * written and nothing emptied (the worktree goes): an archived or empty one counted, with the archive to write before
+ * the move when none holds its bytes; one whose two archives hold other bytes kept, named; one not `owned` left to
+ * the removal rule.
+ * @intent decide what a close archives of a worktree's lot files before it moves
+ */
+export function keepDeclarations(params: {
+	worktree: string
+	folder: string
+	owned: boolean
+	/** The commits the lot files' packages may have been deleted by start from: their packages are found too. */
+	bases?: readonly string[]
+}): ClosingDeclarations {
+	const { worktree, folder } = params
+	const decided = lotFilesOf({ root: worktree, bases: params.bases }).map(
+		function decideDeclaration(lotFile) {
+			const { packagePath, file } = lotFile
+			const bytes = readFileSync(file, 'utf8')
+			const archived = archivedDeclarationPath({ folder, packagePath, name: ARCHIVED_LOT_FILE })
+			const landed = archivedDeclarationPath({ folder, packagePath, name: LANDED_LOT_FILE })
+			const decision = archiveDecision({
+				bytes,
+				archived: archiveOf({ folder, packagePath, name: ARCHIVED_LOT_FILE })?.bytes,
+				landed: archiveOf({ folder, packagePath, name: LANDED_LOT_FILE })?.bytes,
+				owned: params.owned,
+			})
+			return { packagePath, file, bytes, archived, landed, decision }
+		},
+	)
+	return {
+		counted: decided.flatMap(({ packagePath, bytes, decision }) =>
+			decision.kind === 'untouched' || decision.kind === 'keep'
+				? []
+				: [{ packagePath, bytes: Buffer.from(bytes) }],
+		),
+		archives: decided.flatMap(({ bytes, archived, landed, decision }) =>
+			decision.kind === 'write'
+				? [{ path: decision.name === ARCHIVED_LOT_FILE ? archived : landed, bytes }]
+				: [],
+		),
+		kept: decided.flatMap(({ file, archived, landed, decision }) =>
+			decision.kind === 'keep'
+				? [{ file: relative(worktree, file).split(sep).join('/'), archived, landed }]
+				: [],
+		),
+	}
+}
+
+/**
+ * The archives a close decided, each written never over one and read back (`writeArchive`); the first that fails
+ * throws why, so the worktree stays.
+ * @intent keep a closing worktree's lot files in its lot folder
+ */
+export function writeDeclarationArchives(params: {
+	archives: readonly DeclarationArchive[]
+}): void {
+	for (const archive of params.archives) {
+		const failure = writeArchive({ archive: archive.path, bytes: archive.bytes })
+		if (failure) throw new Error(failure)
+	}
 }
 
 /**

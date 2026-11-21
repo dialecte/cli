@@ -1,3 +1,5 @@
+import type { CountedArchive } from '../handover/archived-declarations.types.ts'
+
 /** What `removableIgnored` is asked about one worktree, and what it reads when a part is not handed in. */
 export type RemovableIgnoredParameters = {
 	/** The worktree whose removal is asked about (absolute). */
@@ -11,10 +13,11 @@ export type RemovableIgnoredParameters = {
 	 */
 	ignoredLines?: string[]
 	/**
-	 * The `lot.json` archived in each committed hand-over folder registered for this worktree, as bytes or as a
-	 * text (its UTF-8 bytes); compared byte for byte. Default: read from the hand-over registry of the repository.
+	 * Every declaration archived for this worktree (its committed hand-overs' folders, its landed lot's own), each
+	 * under its package path; a lot file is compared byte for byte with its own package path's only. Default: read
+	 * from the hand-over registry of the repository.
 	 */
-	archivedDeclarations?: readonly (string | Buffer)[]
+	archivedDeclarations?: readonly CountedArchive[]
 	/**
 	 * The hooks folder the repository configures (`core.hooksPath` as written, such as `.husky/_`); `null` when
 	 * it configures none. Default: read from git config.
@@ -28,8 +31,8 @@ export type IgnoredWalk = {
 	/** The worktree's real path: a main-checkout entry whose real path lies in it is the worktree's own. */
 	realWorktree: string
 	main: string
-	/** The archived declarations, as bytes, a `lot.json` may equal. */
-	archivedDeclarations: readonly Buffer[]
+	/** The archived declarations, each under its package path, a `lot.json` of that package may equal. */
+	archivedDeclarations: readonly CountedArchive[]
 	/** The folders that go at the worktree root, each ending with `/`: the rebuilt ones and the hooks folder. */
 	rebuiltFolders: readonly string[]
 	/** What the package holding each folder (relative to the worktree, `''` for its root) declares, read once. */

@@ -1,18 +1,17 @@
 import type { ProcessFolder } from '../worktree/worktree.types.ts'
 import type { ListedWorktree, NodeModulesCheck } from '../worktree/worktree.types.ts'
+import type { DeclarationArchive } from './archived-declarations.types.ts'
 import type { CloseSettle } from './close-targets.types.ts'
 import type { CloseTarget, StoreEntry } from './handover.types.ts'
 
-/** The lot's own declaration to archive into its lot folder before the worktree moves: where, and its bytes. */
-export type DeclarationArchive = { path: string; bytes: string }
-
-/** What `whyKeep` lets go: the worktree, the commits only its branch's reflog holds once it goes, the archive to write. */
+/** What `whyKeep` lets go: the worktree, the commits only its branch's reflog holds once it goes, the archives to write. */
 export type Kept = {
 	worktree: ListedWorktree
 	/** The branch the worktree is on: the target's, compared before it is let go. */
 	branch: string
 	dropped: string | undefined
-	archive: DeclarationArchive | undefined
+	/** The lot's own declarations to archive into its lot folder before the worktree moves. */
+	archives: DeclarationArchive[]
 }
 
 /**

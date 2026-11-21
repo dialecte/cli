@@ -9,7 +9,7 @@ export const CLOSE_TARGET_TEXTS = {
 	/** A lot target whose worktree is gone with no removal recorded that moved it. */
 	nothingToClose:
 		'its worktree {worktree} is gone and no removal recorded moved it: nothing to close',
-	/** A lot's declaration neither archive of its folder holds, both taken by other bytes. */
+	/** A lot file (the root's or a package's) neither archive of its package path holds, both taken by other bytes. */
 	declarationKept:
-		'.dialecte/lot.json: {archived} and {landed} of {folder} both hold other bytes; nothing archives it',
+		'{file}: {archived} and {landed} of {folder} both hold other bytes; nothing archives it',
 } as const

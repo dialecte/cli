@@ -15,6 +15,7 @@ import {
 	archiveDecision,
 	archivedDeclarationPath,
 	currentArchiveOf,
+	isRemovableDeclaration,
 	moveDeclarations,
 } from './archived-declarations.ts'
 
@@ -166,6 +167,72 @@ describe('currentArchiveOf', () => {
 			bytes: DECLARATION,
 		})
 	})
+})
+
+describe('isRemovableDeclaration', () => {
+	const ROWS: Array<{
+		name: string
+		packagePath: string
+		bytes: string
+		archives: Array<{ packagePath: string; bytes: string }>
+		removable: boolean
+	}> = [
+		{
+			name: "package p's lot file byte-equal to p's archive",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [{ packagePath: 'packages/p', bytes: DECLARATION }],
+			removable: true,
+		},
+		{
+			name: "package p's lot file byte-equal to package q's archive only",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [
+				{ packagePath: 'packages/q', bytes: DECLARATION },
+				{ packagePath: 'packages/p', bytes: OTHER },
+			],
+			removable: false,
+		},
+		{
+			name: "the root's lot file byte-equal to a package's archive only",
+			packagePath: '',
+			bytes: DECLARATION,
+			archives: [{ packagePath: 'packages/p', bytes: DECLARATION }],
+			removable: false,
+		},
+		{
+			name: "package p's lot file byte-equal to p's lot.json, p's lot.landed.json holding other bytes",
+			packagePath: 'packages/p',
+			bytes: DECLARATION,
+			archives: [
+				{ packagePath: 'packages/p', bytes: DECLARATION },
+				{ packagePath: 'packages/p', bytes: OTHER },
+			],
+			removable: true,
+		},
+		{
+			name: "package p's empty lot file, no archive",
+			packagePath: 'packages/p',
+			bytes: ' { }\n',
+			archives: [],
+			removable: true,
+		},
+	]
+
+	for (const row of ROWS)
+		it(`${row.name} -> ${row.removable ? 'removable' : 'kept'}`, () => {
+			expect(
+				isRemovableDeclaration({
+					packagePath: row.packagePath,
+					bytes: Buffer.from(row.bytes),
+					archives: row.archives.map((archive) => ({
+						packagePath: archive.packagePath,
+						bytes: Buffer.from(archive.bytes),
+					})),
+				}),
+			).toBe(row.removable)
+		})
 })
 
 describe('moveDeclarations', () => {

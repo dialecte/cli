@@ -517,15 +517,19 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           line (trashed or kept); a commit dropped from its branch (reset or rebased away), held by
           the branch reflog alone, is named under the closed line: git expires it with that reflog
           (gc.reflogExpireUnreachable), as it would have with the worktree's; a landed or canceled
-          lot's own .dialecte/lot.json (its .dialecte/lot link naming the lot's folder) archived in
-          that folder first, as lot.json, or lot.landed.json beside a lot.json holding other bytes,
-          never over one, kept when both hold other bytes; kept first when an open lot names it
-          (reason lot <name> <state>), then with why when it is the main checkout, on another branch
-          than the hand-over's, locked, another hand-over of the same worktree is neither committed
-          nor abandoned, a link from outside it points into it, dirty, a landed lot holds commits
-          made since its landing (<n> commit(s) made since its landing: <commits>), its removal
-          would lose a commit (<n> commit(s) its removal would lose: <commits>: a commit only its
-          HEAD or HEAD reflog reaches, that no surviving branch, branch reflog, tag, landed tip or
+          lot's own lot files (its root .dialecte/lot link naming the lot's folder): the root's
+          .dialecte/lot.json and each package's (the folder of a package.json git tracks, or one the
+          lot deleted), archived in that folder first (lot prune and lot close --feature archive the
+          same way), the root's as lot.json and a package's as lots/<package path>/lot.json, or
+          lot.landed.json beside a lot.json holding other bytes, never over one, kept naming both
+          archives when both hold other bytes; a lot file is removable only when empty or byte-equal
+          to an archive of its own package path; kept first when an open lot names it (reason lot
+          <name> <state>), then with why when it is the main checkout, on another branch than the
+          hand-over's, locked, another hand-over of the same worktree is neither committed nor
+          abandoned, a link from outside it points into it, dirty, a landed lot holds commits made
+          since its landing (<n> commit(s) made since its landing: <commits>), its removal would
+          lose a commit (<n> commit(s) its removal would lose: <commits>: a commit only its HEAD or
+          HEAD reflog reaches, that no surviving branch, branch reflog, tag, landed tip or
           remote-tracking ref holds, nor the same change at the same place (a commit of theirs with
           the same diff, its hunk line numbers included) - a commit made on a detached HEAD), it
           holds ignored files its removal would delete that nothing else holds (rebuilt folders,
