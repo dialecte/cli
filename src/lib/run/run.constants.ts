@@ -1,3 +1,5 @@
+import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
+
 import type { RunQuery } from './run.types.ts'
 
 /** The name of the in-memory project a run opens. */
@@ -15,7 +17,7 @@ export const CORE_CATALOGUE_NAME = 'core'
 /** The packages of the `@dialecte` scope that are not dialectes. */
 export const NON_DIALECTE_PACKAGES: ReadonlySet<string> = new Set([
 	'@dialecte/core',
-	'@dialecte/cli',
+	CLI_PACKAGE,
 	'@dialecte/create',
 ])
 

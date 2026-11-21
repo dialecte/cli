@@ -1,3 +1,5 @@
+import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
+
 import type { AgentTimeTexts } from '../events/attribute-steps.types.ts'
 import type { LotStateName } from '../store/store.types.ts'
 import type { ReceiptFlag } from '../tdd/tdd.types.ts'
@@ -404,7 +406,7 @@ export const HANDOVER_HIDDEN_OPTIONS: Readonly<Record<string, readonly string[]>
 export const HANDOVER_PROBE_COMMAND = [
 	'npx',
 	'--no-install',
-	'@dialecte/cli',
+	CLI_PACKAGE,
 	'handover',
 	'run',
 	'--probe',
