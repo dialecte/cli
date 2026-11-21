@@ -52,6 +52,15 @@ function hintsOf(lines: string[] | undefined): { npmInstall: boolean; npx: boole
 	return { npmInstall: text.includes('npm install'), npx: text.includes('npx') }
 }
 
+/** Whether the refusal hints an update, and whether that hint is `git -C <checkout> pull`. */
+function updateHintOf(params: { lines: string[] | undefined; checkout: string }): {
+	update: boolean
+	named: boolean
+} {
+	const text = textOf(params.lines) ?? ''
+	return { update: text.includes('pull'), named: text.includes(`git -C ${params.checkout} pull`) }
+}
+
 describe('cliFloorOf', () => {
 	const ROWS: Array<{
 		name: string
@@ -77,28 +86,52 @@ describe('cliFloorOf', () => {
 			floor: { version: ABOVE_VERSION, source: 'installed' },
 		},
 		{
-			name: 'a pin * (no lower bound) with the cli installed above → no floor',
+			name: 'a pin * (no lower bound) with the cli installed above → the installed version',
 			files: {
 				'package.json': manifestPinning({ spec: '*' }),
 				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
 			},
-			floor: undefined,
+			floor: { version: ABOVE_VERSION, source: 'installed' },
 		},
 		{
-			name: 'a pin workspace:* (no lower bound) with the cli installed above → no floor',
+			name: 'a pin workspace:* (no lower bound) with the cli installed above → the installed version',
 			files: {
 				'package.json': manifestPinning({ spec: 'workspace:*' }),
 				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
 			},
-			floor: undefined,
+			floor: { version: ABOVE_VERSION, source: 'installed' },
 		},
 		{
-			name: 'a pin <2.0.0 (no lower bound) with the cli installed above → no floor',
+			name: 'a pin <2.0.0 (no lower bound) with the cli installed above → the installed version',
 			files: {
 				'package.json': manifestPinning({ spec: '<2.0.0' }),
 				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
 			},
-			floor: undefined,
+			floor: { version: ABOVE_VERSION, source: 'installed' },
+		},
+		{
+			name: 'a pin x (no lower bound) with the cli installed above → the installed version',
+			files: {
+				'package.json': manifestPinning({ spec: 'x' }),
+				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
+			},
+			floor: { version: ABOVE_VERSION, source: 'installed' },
+		},
+		{
+			name: 'a pin an empty spec (no lower bound) with the cli installed above → the installed version',
+			files: {
+				'package.json': manifestPinning({ spec: '' }),
+				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
+			},
+			floor: { version: ABOVE_VERSION, source: 'installed' },
+		},
+		{
+			name: 'a pin ^1.0.0 || <0.5.0 (an alternative with no lower bound) with the cli installed above → the installed version',
+			files: {
+				'package.json': manifestPinning({ spec: '^1.0.0 || <0.5.0' }),
+				'node_modules/@dialecte/cli/package.json': `${JSON.stringify({ name: CLI_PACKAGE, version: ABOVE_VERSION })}\n`,
+			},
+			floor: { version: ABOVE_VERSION, source: 'installed' },
 		},
 		{
 			name: 'a file: pin with no cli installed → no floor',
@@ -250,6 +283,42 @@ describe('floorRefusalOf', () => {
 			),
 		).toEqual({ npmInstall: true, npx: false })
 	})
+
+	const CHECKOUTS: Array<{ name: string; files: Record<string, string>; update: boolean }> = [
+		{
+			name: 'inside a git checkout of the cli → the hint names git -C <root> pull',
+			files: { '.git/HEAD': 'ref: refs/heads/main\n' },
+			update: true,
+		},
+		{ name: 'the same layout without .git → no pull hint', files: {}, update: false },
+	]
+	for (const row of CHECKOUTS)
+		it(`a running cli ${row.name}`, () => {
+			const checkout = bareFolder()
+			writeFiles({
+				root: checkout,
+				files: {
+					'package.json': cliManifestAt({ version: OWN_VERSION }),
+					'dist/cli.js': '',
+					...row.files,
+				},
+			})
+			const cwd = createPackageRepository({
+				manifest: manifestPinning({ spec: `^${ABOVE_VERSION}` }),
+			})
+			const realPath = join(checkout, 'dist', 'cli.js')
+
+			expect(
+				updateHintOf({
+					lines: floorRefusalOf({
+						cwd,
+						argv: ['status', 'x'],
+						running: { version: OWN_VERSION, invokedPath: realPath, realPath },
+					}),
+					checkout,
+				}),
+			).toEqual({ update: row.update, named: row.update })
+		})
 
 	it('the running version equal to the floor → allowed', () => {
 		const cwd = createPackageRepository({ manifest: manifestPinning({ spec: `^${OWN_VERSION}` }) })

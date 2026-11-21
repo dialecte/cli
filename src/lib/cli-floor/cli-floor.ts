@@ -23,10 +23,10 @@ import { findInstalledPackage } from '../skills/sync-skills.ts'
 import { briefRepositoryOf } from '../store/brief.ts'
 import { readIdentity } from '../store/identity.ts'
 import { resolveLot } from '../store/resolve-lot.ts'
+import { workTreeHolding } from '../store/store-folder.ts'
 import {
 	AT_BRANCH_SUFFIX,
-	CHECKOUT_PULL_HINT,
-	END_OF_OPTIONS,
+	CHECKOUT_UPDATE_HINT,
 	FLOOR_REFUSAL_LINE,
 	FLOOR_SOURCE_TEXTS,
 	MISSING_VERSION,
@@ -49,9 +49,8 @@ export function cliFloorOf(params: { folder: string }): CliFloor | undefined {
 
 /** The folders whose floor counts for a `lot` invocation: the cwd, the repositories of the lots and briefs its words name. */
 export function floorFoldersOf(params: { cwd: string; argv: string[] }): string[] {
-	const words = wordsOf({ argv: params.argv.slice(1) }).filter(
-		(word) => !word.startsWith(OPTION_PREFIX),
-	)
+	// every word, those after `--` too: the verbs read their positional words there
+	const words = params.argv.slice(1).filter((word) => !word.startsWith(OPTION_PREFIX))
 	const named = words.flatMap((word) => foldersNamedBy({ word, cwd: params.cwd }))
 	return [...new Set([params.cwd, ...named])]
 }
@@ -91,12 +90,6 @@ function readableCliVersion(): string | undefined {
 	} catch {
 		return undefined
 	}
-}
-
-/** The words of `argv` before `--`. */
-function wordsOf(params: { argv: string[] }): string[] {
-	const end = params.argv.indexOf(END_OF_OPTIONS)
-	return end === -1 ? params.argv : params.argv.slice(0, end)
 }
 
 /**
@@ -152,8 +145,34 @@ function workingFloorOf(params: {
 	if (root === undefined) return undefined
 	const manifest = manifestOf({ text: textOf({ path: join(root, PACKAGE_MANIFEST_FILE) }) })
 	if (manifest === undefined) return undefined
+	if (!asksForCli({ manifest })) return enclosingFloorOf({ root })
 	const floor = manifestFloorOf({ manifest, root }) ?? installedFloorOf({ manifest, root })
 	return floor === undefined ? undefined : { floor, manifest }
+}
+
+/**
+ * The floor of the package above `root` in its repository, up to the repository's top (found without git), for a
+ * package in a subfolder that does not ask for the cli itself; undefined outside a repository or at its top.
+ */
+function enclosingFloorOf(params: {
+	root: string
+}): { floor: CliFloor; manifest: PackageJson } | undefined {
+	const top = workTreeHolding({ from: params.root })
+	const parent = dirname(params.root)
+	if (top === undefined || parent === params.root || !isAtOrInside({ path: parent, folder: top }))
+		return undefined
+	const above = packageRootOf(parent)
+	return above === undefined || !isAtOrInside({ path: above, folder: top })
+		? undefined
+		: workingFloorOf({ folder: above })
+}
+
+/** Whether a manifest asks for the cli: it is the cli's own, or it declares it. */
+function asksForCli(params: { manifest: PackageJson }): boolean {
+	return (
+		params.manifest.name === CLI_PACKAGE ||
+		declaredSpecOf({ manifest: params.manifest, name: CLI_PACKAGE }) !== undefined
+	)
 }
 
 /**
@@ -193,12 +212,15 @@ function manifestFloorOf(params: { manifest: PackageJson; root: string }): CliFl
 		: undefined
 }
 
-/** The installed cli's version, for a pin that is no semver range (a path, a link, a url, a dist-tag). */
+/**
+ * The installed cli's version, for a pin with no lower bound (`*`, `<2.0.0`) or no semver range (a path, a link, a
+ * url, a dist-tag): fail closed, the cli the package installs is its floor.
+ */
 function installedFloorOf(params: { manifest: PackageJson; root: string }): CliFloor | undefined {
 	const { manifest, root } = params
 	if (manifest.name === CLI_PACKAGE) return undefined
 	const declared = declaredSpecOf({ manifest, name: CLI_PACKAGE })
-	if (declared === undefined || rangeLowerBoundOf({ spec: declared.spec }).kind !== 'invalid')
+	if (declared === undefined || rangeLowerBoundOf({ spec: declared.spec }).kind === 'version')
 		return undefined
 	const installed = findInstalledPackage({ cwd: root, name: CLI_PACKAGE })
 	if (installed === undefined) return undefined
@@ -276,7 +298,7 @@ function refusalLinesOf(params: {
 		fillMessage({ template: hintOf({ floor, running }), values }),
 		...(checkout === undefined
 			? []
-			: [fillMessage({ template: CHECKOUT_PULL_HINT, values: { root: checkout } })]),
+			: [fillMessage({ template: CHECKOUT_UPDATE_HINT, values: { root: checkout } })]),
 	]
 }
 

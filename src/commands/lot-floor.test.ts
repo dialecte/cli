@@ -35,7 +35,7 @@ import {
 	entriesOf,
 	snapshotOf,
 } from '../../test/lot-start-workspace.ts'
-import { git, writeFiles } from '../../test/scratch-repository.ts'
+import { createScratchRepository, git, writeFiles } from '../../test/scratch-repository.ts'
 import { CLI_PACKAGE } from '../lib/skills/cli-invocations.constants.ts'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -44,9 +44,6 @@ import type { LotRun } from '../../test/cli-floor-workspace.types.ts'
 
 /** What an unknown lot id answers: the verb's own line, not the floor's. */
 const UNKNOWN_LOT_LINE = 'no lot x'
-
-/** The running cli's own checkout (a git work tree): the refusal hints a pull there. The hint to `npm install` for a stale install under node_modules stays untested: src/cli.ts cannot run under node_modules (type stripping is refused). */
-const CHECKOUT_ROOT = realpathSync(join(CLI_SOURCE, '..', '..'))
 
 const PIN_ABOVE = `^${ABOVE_VERSION}`
 const PIN_OWN = `^${OWN_VERSION}`
@@ -85,7 +82,7 @@ describe('lot: the cli floor', () => {
 			stdout: run.stdout,
 			missing: missingFrom({
 				text: run.stderr,
-				parts: [...pinFacts({ root }), CHECKOUT_ROOT, 'pull'],
+				parts: pinFacts({ root }),
 			}),
 			files: Object.keys(snapshotOf(root)).filter((name) => !name.startsWith('.git')),
 			state: snapshotOf(state),
@@ -248,6 +245,48 @@ describe('lot: the cli floor', () => {
 		const run = runLotCli({ cwd: bareFolder(), args: ['status', 'x'] })
 
 		expect(verdictOf(run)).toBe(UNKNOWN_LOT_LINE)
+	})
+
+	it('2c. lot land -- <index> (the id after --) from a folder with no package, the lot’s repository pins ^ABOVE → refused', () => {
+		const workspace = createFloorLotWorkspace({ manifest: manifestPinning({ spec: PIN_ABOVE }) })
+
+		const run = runLotCli({ cwd: workspace.elsewhere, args: ['land', '--', LOT_INDEX] })
+
+		expect({
+			exitCode: run.status,
+			missing: missingFrom({
+				text: run.stderr,
+				parts: [workspace.start.repository, REFUSAL_WORD],
+			}),
+		}).toEqual({ exitCode: 2, missing: [] })
+	})
+
+	it('2d. lot close <index> from a stale cli (a pin above) → exit 2, nothing written', () => {
+		const state = isolateState()
+		const root = createPackageRepository({ manifest: manifestPinning({ spec: PIN_ABOVE }) })
+		const filesBefore = Object.keys(snapshotOf(root)).filter((name) => !name.startsWith('.git'))
+		const stateBefore = snapshotOf(state)
+
+		const run = runLotCli({ cwd: root, args: ['close', LOT_INDEX] })
+
+		expect({
+			exitCode: run.status,
+			refused: run.stderr.includes(REFUSAL_WORD),
+			files: Object.keys(snapshotOf(root)).filter((name) => !name.startsWith('.git')),
+			state: snapshotOf(state),
+		}).toEqual({ exitCode: 2, refused: true, files: filesBefore, state: stateBefore })
+	})
+
+	it('2e. a package in a subfolder of a repository whose root package.json pins ^ABOVE, its own package.json not pinning the cli → refused', () => {
+		isolateState()
+		const root = createScratchRepository({
+			'package.json': manifestPinning({ spec: PIN_ABOVE }),
+			'pkg/package.json': `${JSON.stringify({ name: 'inner' })}\n`,
+		})
+
+		const run = runLotCli({ cwd: join(root, 'pkg'), args: ['status', 'x'] })
+
+		expect(verdictOf(run)).toBe('refused')
 	})
 
 	it('2b. a FIFO as a word, in a package pinning ^OWN → the verb answers itself, the FIFO is never read', () => {

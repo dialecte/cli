@@ -55,6 +55,22 @@ describe('declaredSpecOf', () => {
 			declared: undefined,
 		},
 		{
+			name: 'a null entry falls through to the next field',
+			manifest: {
+				dependencies: { [NAME]: null },
+				devDependencies: { [NAME]: '^1.0.0' },
+			} as unknown as PackageJson,
+			declared: { field: 'devDependencies', spec: '^1.0.0' },
+		},
+		{
+			name: 'a non-string entry falls through to the next field',
+			manifest: {
+				dependencies: { [NAME]: 1 },
+				peerDependencies: { [NAME]: '^1.0.0' },
+			} as unknown as PackageJson,
+			declared: { field: 'peerDependencies', spec: '^1.0.0' },
+		},
+		{
 			name: 'another package is no declaration',
 			manifest: { dependencies: { other: '^1.0.0' } },
 			declared: undefined,

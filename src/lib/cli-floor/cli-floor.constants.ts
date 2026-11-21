@@ -36,10 +36,7 @@ export const STALE_INSTALL_HINT =
 	'the cli installed in {root} is older than its pin: run npm install in {root}'
 
 /** The hint of a running cli started from a git checkout of the cli. */
-export const CHECKOUT_PULL_HINT = 'or update that checkout: git -C {root} pull'
-
-/** The separator after which no word is the cli's. */
-export const END_OF_OPTIONS = '--'
+export const CHECKOUT_UPDATE_HINT = 'or update that checkout: git -C {root} pull'
 
 /** The start of an option word: never a lot, a brief or a folder. */
 export const OPTION_PREFIX = '-'
