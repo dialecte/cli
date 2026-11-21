@@ -68,3 +68,9 @@ export type DialecteField = {
 	/** The cli's step-events capability: 1 or higher when it writes step events (read by `worktreeCli`; any other value counts for nothing). */
 	stepEvents?: unknown
 }
+
+/** A dependency a manifest declares: the field it sits in and its spec. */
+export type DeclaredSpec = {
+	field: 'dependencies' | 'devDependencies' | 'optionalDependencies' | 'peerDependencies'
+	spec: string
+}

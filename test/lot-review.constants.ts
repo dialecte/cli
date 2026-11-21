@@ -4,8 +4,7 @@
 export const REVIEW_CHANGE_REQUEST_NUMBER = 7
 export const REVIEW_CHANGE_REQUEST_URL = 'https://host.test/pull/7'
 
-/** The package names a lot's worktree may hold: the cli's own, and another dialecte's. */
-export const CLI_PACKAGE = '@dialecte/cli'
+/** Another dialecte's package name, beside the cli's own (CLI_PACKAGE), that a lot's worktree may hold. */
 export const OTHER_PACKAGE = '@dialecte/other'
 
 /** The person who approves in the tests (never a real name). */

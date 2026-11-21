@@ -37,3 +37,9 @@ export const CONFIG_ENVIRONMENT_VARIABLES = [
  * environment's GIT_CONFIG_COUNT: git drops that for the receive-pack a local push runs in the other repository.
  */
 export const SUITE_GIT_CONFIG_FILE = join(import.meta.dirname, 'suite.gitconfig')
+
+/**
+ * The folder name, inside the suite's guarded temporary folder, npm's global prefix points at for the whole suite: a
+ * folder never created, so npx finds no machine-global package.
+ */
+export const SUITE_NPM_PREFIX_FOLDER = 'npm-prefix-absent'

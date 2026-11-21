@@ -52,6 +52,20 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot close --feature <name> [--json]
   dialecte lot prune [<id>...] [--feature <name>] [--all] [--yes] [--json]
 
+  every verb - the cli floor, read before any verb runs (wait included, help aside): a cli older
+    than the version a repository the invocation reaches asks for runs nothing (exit 2, naming the
+    path it was started by and its real path, both versions and where the floor came from; --json {
+    error, next: null }); the repositories are the current folder's package and those of each lot a
+    word names (an id or an option's value: the lot's worktree and repository, never the cli that
+    started it) and of a brief's repository; a package's floor is the cli repository's own version,
+    else the lowest version its @dialecte/cli pin admits (dependencies, devDependencies,
+    optionalDependencies, peerDependencies); a pin with no lower bound (*, workspace:*, <2.0.0, an
+    || alternative without one) asks for no floor; a pin that is no semver range (file:, link:, a
+    path or url, git+, a dist-tag, workspace:^ or workspace:~ with no version after them) asks for
+    the installed cli's version; when the working tree's floor refuses, the base branch's tip is
+    read and the cli is refused only below both (a release or pin-bump lot stays landable by the
+    main checkout's cli); the highest floor across the repositories decides; equal or newer runs; a
+    version the cli cannot read for itself is refused whenever a floor exists
   start - checks the brief (every refusal at once, exit 2), claims the next index, publishes the lot
           folder in <git common folder>/dialecte-lots/, makes the numbered worktree at the base
           commit with its .dialecte/lot link; --dry-run checks (the store list included), names the
@@ -599,6 +613,7 @@ exit codes:
   4  wait: an agent failed or hit a limit, run again
   5  wait --timeout, result: still working
   6  status, wait, result: the lot is damaged: a person must look
+  2  every verb: the cli is older than the version a repository the invocation reaches asks for (the cli floor); nothing done
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 

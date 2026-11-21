@@ -30,12 +30,6 @@ export type RegistryState =
 /** The npm dist-tag a version is published under: a release is the latest, a pre-release the next. */
 export type DistTag = 'latest' | 'next'
 
-/** A semver version for ordering: major, minor and patch, and the pre-release identifiers (none for a release). */
-export type SemVer = {
-	core: readonly [number, number, number]
-	prerelease: readonly string[]
-}
-
 /** What the push to main knows when it decides: the version before and after the push, npm, and the release tag. */
 export type PublishFacts = {
 	previousVersion: string

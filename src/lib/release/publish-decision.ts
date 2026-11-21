@@ -2,13 +2,10 @@
  * The publish guard's decision for a push to main: `_check-npm-version.yml` runs `dialecte ci publish-decision`, which
  * gives `runPublishDecision` the real process. Everything here reads and writes only through the io it is given.
  */
-import {
-	LS_REMOTE_FOUND,
-	LS_REMOTE_MISSING,
-	NPM_NOT_FOUND,
-	SEMVER,
-} from './publish-decision.constants.ts'
+import { compareSemVer, parseSemVer } from '../semver.ts'
+import { LS_REMOTE_FOUND, LS_REMOTE_MISSING, NPM_NOT_FOUND } from './publish-decision.constants.ts'
 
+import type { SemVer } from '../semver.types.ts'
 import type {
 	CommandResult,
 	DistTag,
@@ -16,7 +13,6 @@ import type {
 	PublishDecisionIo,
 	PublishFacts,
 	RegistryState,
-	SemVer,
 } from './publish-decision.types.ts'
 
 /** What npm answered: read, absent on a first publish (E404), failed on any other error. */
@@ -190,48 +186,6 @@ function readPackage(text: string): { name: string; version: string } {
 		throw new Error('package.json lacks a name or a version')
 	}
 	return { name: parsed.name, version: parsed.version }
-}
-
-/** The parts of a semver version, or undefined when it is not one (leading zeros included). */
-function parseSemVer(version: string): SemVer | undefined {
-	const match = SEMVER.exec(version)
-	if (match === null) return undefined
-	return {
-		core: [Number(match[1]), Number(match[2]), Number(match[3])],
-		prerelease: match[4] === undefined ? [] : match[4].split('.'),
-	}
-}
-
-/** Semver precedence: negative when the first is below the second, 0 when equal, positive above. */
-function compareSemVer(first: SemVer, second: SemVer): number {
-	const coreOrder = first.core
-		.map((part, index) => part - (second.core[index] ?? 0))
-		.find((difference) => difference !== 0)
-	if (coreOrder !== undefined) return coreOrder
-	if (first.prerelease.length === 0 || second.prerelease.length === 0) {
-		return second.prerelease.length - first.prerelease.length
-	}
-	const length = Math.max(first.prerelease.length, second.prerelease.length)
-	const order = Array.from({ length }, (_, index) =>
-		comparePrereleasePart({ first: first.prerelease[index], second: second.prerelease[index] }),
-	).find((difference) => difference !== 0)
-	return order ?? 0
-}
-
-/** One pre-release identifier against another: absent first, numbers before words, numbers by value. */
-function comparePrereleasePart(params: {
-	first: string | undefined
-	second: string | undefined
-}): number {
-	const { first, second } = params
-	if (first === undefined || second === undefined) {
-		return first === undefined ? (second === undefined ? 0 : -1) : 1
-	}
-	const firstNumeric = /^\d+$/.test(first)
-	const secondNumeric = /^\d+$/.test(second)
-	if (firstNumeric && secondNumeric) return Number(first) - Number(second)
-	if (firstNumeric !== secondNumeric) return firstNumeric ? -1 : 1
-	return first < second ? -1 : first > second ? 1 : 0
 }
 
 /** npm's error as `<code>: <summary>`, else its stderr, else the exit code. */

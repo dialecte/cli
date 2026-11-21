@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
+import { floorRefusalOf, runningCliOf } from '../lib/cli-floor/cli-floor.ts'
 import { closestNames } from '../lib/closest-names.ts'
 import { renderLotUsage } from '../lib/command-map/render-help.ts'
 import { resultOf } from '../lib/command-result.ts'
@@ -75,6 +76,7 @@ import {
 	LOT_REMOVE_LINES,
 	LOT_REMOVE_OPTION,
 } from './lot.constants.ts'
+import { asksJson } from './mutants-output.ts'
 import { runRecap } from './recap.ts'
 import { runRecordVerb } from './record.ts'
 import { runDelta } from './review.ts'
@@ -96,17 +98,26 @@ import type { AskFunction, RemovableList, RunLotCommandParams } from './lot.type
 
 export async function run(argv: string[]): Promise<void> {
 	const [verb, ...words] = argv
+	const cliPath = realpathSync(process.argv[1])
+	// a cli older than a repository the invocation reaches asks for runs no verb (wait included)
+	const floorLines = floorRefusalOf({
+		cwd: process.cwd(),
+		argv,
+		running: runningCliOf({ invokedPath: process.argv[1], realPath: cliPath }),
+	})
 	// `wait` sleeps between its reads and tells its progress on standard error when that is a terminal
 	const result =
-		verb === 'wait'
-			? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
-			: await runLotCommand({
-					argv,
-					cwd: process.cwd(),
-					isTerminal: process.stdin.isTTY === true && process.stdout.isTTY === true,
-					ask: askOnTerminal,
-					cliPath: realpathSync(process.argv[1]),
-				})
+		floorLines !== undefined
+			? lotRefusalExit({ lines: floorLines, json: asksJson(argv) })
+			: verb === 'wait'
+				? await waitLot({ cwd: process.cwd(), argv: words, isTerminal: process.stderr.isTTY })
+				: await runLotCommand({
+						argv,
+						cwd: process.cwd(),
+						isTerminal: process.stdin.isTTY === true && process.stdout.isTTY === true,
+						ask: askOnTerminal,
+						cliPath,
+					})
 	printOut({
 		stream: printsOnStandardError({ verb, exitCode: result.exitCode }) ? 'stderr' : 'stdout',
 		text: result.output,

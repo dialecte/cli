@@ -3,7 +3,6 @@ import type { FileKind } from './check-code-rules.types.ts'
 /** The package names the Dialecte-change scope tells apart, and the scope of every dialecte package. */
 export const CORE_PACKAGE_NAME = '@dialecte/core'
 export const CREATE_PACKAGE_NAME = '@dialecte/create'
-export const CLI_PACKAGE_NAME = '@dialecte/cli'
 export const DIALECTE_SCOPE = '@dialecte/'
 
 /** A generated Dialecte definition in a package's source, and the one an installed package ships in `dist`. */

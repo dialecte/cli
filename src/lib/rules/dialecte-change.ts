@@ -12,9 +12,9 @@ import { existsSync, readdirSync } from 'node:fs'
 import { dirname, join, posix, resolve, sep } from 'node:path'
 
 import { readPackageJson } from '../package-json.ts'
+import { CLI_PACKAGE } from '../skills/cli-invocations.constants.ts'
 import { SCRIPT_FILE_PATTERN } from './check-rules.constants.ts'
 import {
-	CLI_PACKAGE_NAME,
 	CORE_PACKAGE_NAME,
 	CREATE_PACKAGE_NAME,
 	DIALECTE_SCOPE,
@@ -52,7 +52,7 @@ export function packageKindOf(params: { root: string; tree?: PackageTree }): Pac
 	const { name } = tree === undefined ? readPackageJson(params.root) : (tree.packageJson ?? {})
 	if (name === CORE_PACKAGE_NAME) return 'core'
 	if (name === CREATE_PACKAGE_NAME) return 'create'
-	if (name === CLI_PACKAGE_NAME) return 'cli'
+	if (name === CLI_PACKAGE) return 'cli'
 	const holdsDefinition =
 		tree === undefined
 			? holdsFileMatching({

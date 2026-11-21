@@ -3,9 +3,12 @@
  * must act on the repository it names by its folder, never on the one being committed to.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { CLI_PACKAGE } from '../src/lib/skills/cli-invocations.constants.ts'
+import { SUITE_NPM_PREFIX_FOLDER } from './git-environment.constants.ts'
 import {
 	createScratchRepository,
 	git,
@@ -201,4 +204,101 @@ describe('git started under the suite setup', () => {
 
 			expect(maintenanceStartsIn(trace)).toEqual([])
 		})
+})
+
+/** The marker the fake global cli prints. */
+const FAKE_CLI_OUTPUT = 'fake global cli ran'
+
+/** A global npm prefix holding a `@dialecte/cli` the way a global install leaves it: the package and its bin link. */
+function fakeGlobalPrefix(): string {
+	const prefix = temporaryFolder('dialecte-global-prefix-')
+	const packageFolder = join(prefix, 'lib', 'node_modules', '@dialecte', 'cli')
+	mkdirSync(packageFolder, { recursive: true })
+	writeFileSync(
+		join(packageFolder, 'package.json'),
+		`${JSON.stringify({ name: CLI_PACKAGE, version: '0.8.2', bin: { dialecte: 'bin.js' } })}\n`,
+	)
+	writeFileSync(
+		join(packageFolder, 'bin.js'),
+		`#!/usr/bin/env node\nconsole.log('${FAKE_CLI_OUTPUT}')\n`,
+	)
+	chmodSync(join(packageFolder, 'bin.js'), 0o755)
+	mkdirSync(join(prefix, 'bin'))
+	symlinkSync(
+		join('..', 'lib', 'node_modules', '@dialecte', 'cli', 'bin.js'),
+		join(prefix, 'bin', 'dialecte'),
+	)
+	return prefix
+}
+
+/** A package that does not hold the cli. */
+function packageWithoutCli(): string {
+	const folder = temporaryFolder('dialecte-no-cli-')
+	writeFileSync(join(folder, 'package.json'), `${JSON.stringify({ name: 'no-cli' })}\n`)
+	return folder
+}
+
+/** A node child that runs the suite's setup files under `environment`, then `body`; what it printed. */
+function afterSetup(params: { environment: NodeJS.ProcessEnv; body: string; cwd: string }): string {
+	const script = [
+		`const { default: config } = await import(${JSON.stringify(join(PACKAGE_ROOT, 'vitest.config.ts'))})`,
+		'for (const file of config.test?.setupFiles ?? [])',
+		`\tawait import(new URL(file, ${JSON.stringify(`file://${PACKAGE_ROOT}/`)}).href)`,
+		params.body,
+	].join('\n')
+	const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+		cwd: params.cwd,
+		encoding: 'utf8',
+		env: params.environment,
+	})
+	return child.stdout
+}
+
+describe('npm’s global prefix under the suite setup', () => {
+	it('12. a machine-global cli is found by npx with its prefix (the vector is real), and not under the suite’s setup', () => {
+		const prefix = fakeGlobalPrefix()
+		const cwd = packageWithoutCli()
+		const environment = { ...process.env, npm_config_prefix: prefix }
+		const npx = `spawnSync('npx', ['--no-install', ${JSON.stringify(CLI_PACKAGE)}], { encoding: 'utf8' })`
+
+		const withPrefix = spawnSync('npx', ['--no-install', CLI_PACKAGE], {
+			cwd,
+			encoding: 'utf8',
+			env: environment,
+		})
+		const underSetup = afterSetup({
+			environment,
+			cwd,
+			body: `import { spawnSync } from 'node:child_process'\nconst run = ${npx}\nconsole.log(JSON.stringify({ failed: run.status !== 0, found: run.stdout.includes(${JSON.stringify(FAKE_CLI_OUTPUT)}) }))`,
+		})
+
+		expect({
+			withPrefix: { status: withPrefix.status, found: withPrefix.stdout.includes(FAKE_CLI_OUTPUT) },
+			underSetup: JSON.parse(underSetup || 'null') as unknown,
+		}).toEqual({
+			withPrefix: { status: 0, found: true },
+			underSetup: { failed: true, found: false },
+		})
+	})
+
+	it('13. NPM_CONFIG_PREFIX set by the parent is gone after the setup', () => {
+		const printed = afterSetup({
+			environment: { ...process.env, NPM_CONFIG_PREFIX: '/somewhere/else' },
+			cwd: PACKAGE_ROOT,
+			body: 'console.log(JSON.stringify({ upper: process.env.NPM_CONFIG_PREFIX ?? null }))',
+		})
+
+		expect(JSON.parse(printed || 'null') as unknown).toEqual({ upper: null })
+	})
+
+	it('13. npm prefix -g under the suite’s environment is the absent folder of the guarded suite folder, which is not created', () => {
+		const expected = join(tmpdir(), SUITE_NPM_PREFIX_FOLDER)
+
+		const run = spawnSync('npm', ['prefix', '-g'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
+
+		expect({ prefix: run.stdout.trim(), exists: existsSync(expected) }).toEqual({
+			prefix: expected,
+			exists: false,
+		})
+	})
 })
