@@ -25,6 +25,8 @@ export const STORE_FILES: StoreFileNames = {
 	risk: 'risk.jsonl',
 	// `lot scope` appends a started lot's scope changes here; the brief stays as published (FIX-lot-scope)
 	scopeChanges: 'scope-changes.jsonl',
+	// `lot start --keep`, `lot keep` and `lot unkeep` append the lot's keep decisions here (KEEP)
+	keep: 'keep.jsonl',
 	// the review's public rows, written whole by `lot finding`, `lot decide`, `lot verify` and a review station's end
 	review: 'review.jsonl',
 	// the plan entry the lot carries out, found and published by `lot start`
@@ -163,6 +165,8 @@ export const NEXT_COMMANDS = {
 	close: 'dialecte lot close {handover}',
 	prune: 'dialecte lot prune {name}',
 	land: 'dialecte lot land {name}',
+	// the one next of a lot kept on purpose (KEEP 3.6)
+	unkeep: 'dialecte lot unkeep {name} --by <who> --reason <text>',
 } as const
 
 /**
@@ -322,3 +326,6 @@ export const DEFAULT_DATA_SEGMENTS: readonly string[] = ['.local', 'share']
 
 /** The file of a git folder holding the refs git packed: a branch's ref is there when its loose file is not. */
 export const PACKED_REFS_FILE = 'packed-refs'
+
+/** How a go-ahead's refusal names its two texts by default (`overlapGoAheadRefusal`). */
+export const GO_AHEAD_LABELS = { by: '--by', reason: '--reason' } as const

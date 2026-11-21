@@ -1,5 +1,6 @@
 import type { HandoverRunMarker, StoreEntry } from '../handover/handover.types.ts'
 import type { PrintedText } from '../print/print.types.ts'
+import type { KeepDecision } from './keep-decisions.types.ts'
 import type { NextStation } from './next-station.types.ts'
 import type { QUESTION_AUDIENCES } from './store.constants.ts'
 
@@ -125,11 +126,11 @@ export type LotStateReadParams = {
 
 /**
  * A lot read and its records validated: the input when every record holds, else why the lot is damaged, with its
- * identity when that reads (a simulated one holds no scope).
+ * identity when that reads (a simulated one holds no scope); on both, its keep decision when it is kept (KEEP 3.2).
  */
 export type CheckedLotState =
-	| { input: LotStateInput }
-	| { damage: string; identity: LotIdentity | undefined }
+	| { input: LotStateInput; keep?: KeepDecision }
+	| { damage: string; identity: LotIdentity | undefined; keep?: KeepDecision }
 
 /** An answer file read: the question its file name holds (`q<k>`) and its record. */
 export type AnswerFile = { question: string; record: AnswerRecord }
@@ -170,7 +171,8 @@ export type StoreFileNames = Readonly<
 		| 'forecast'
 		| 'design'
 		| 'designCopies'
-		| 'baseDeclared',
+		| 'baseDeclared'
+		| 'keep',
 		string
 	>
 >

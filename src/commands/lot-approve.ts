@@ -31,6 +31,8 @@ import { openBlockingFindings, refreshReviewRecord } from '../lib/review-rounds/
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { PUBLIC_TEXT_REFUSAL } from '../lib/store/public-text.constants.ts'
 import { folderPlanEntryIds, publicTextLabel } from '../lib/store/public-text.ts'
+import { ORCHESTRATOR_APPROVER } from '../lib/store/signer-rules.constants.ts'
+import { recordedByOf } from '../lib/store/signer-rules.ts'
 import { STORE_FILES } from '../lib/store/store.constants.ts'
 import { resolveTddBase } from '../lib/tdd/tdd-base.ts'
 import {
@@ -39,7 +41,6 @@ import {
 	APPROVE_OPTIONS,
 	CLI_PACKAGE_NAME,
 	LOT_APPROVE_LINES,
-	ORCHESTRATOR_APPROVER,
 } from './lot-approve.constants.ts'
 import { resolveLotPlace, sendRenderedText } from './lot-pr.ts'
 
@@ -112,7 +113,7 @@ export function runLotApprove(params: {
 			schema: APPROVAL_LINE_SCHEMA,
 			at: (params.now ?? new Date()).toISOString(),
 			// the orchestrator in any casing is recorded as the one word the body names
-			by: by.toLowerCase() === ORCHESTRATOR_APPROVER ? ORCHESTRATOR_APPROVER : by,
+			by: recordedByOf({ by }),
 			...(reason !== undefined && { reason }),
 			number: pullRequest.number,
 			head: landing.head,

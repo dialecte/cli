@@ -34,6 +34,8 @@ export const LANDING_LINES = {
 		'lot land: {branch} exists on origin, pushed outside lot land: nothing overwritten; delete it there or land the lot on another branch',
 	registryRefused: 'lot land: {reason}: nothing pushed',
 	closeWhenMerged: 'once merged: dialecte lot close {entry} (or lot land {lot} again)',
+	// a lot kept on purpose: its close would keep every item, landing again records the merge (KEEP 3.8)
+	closeWhenMergedKept: 'once merged: dialecte lot land {lot} again (it records the merge; {kept})',
 	opened: 'pull request #{number} opened: {url}',
 	existing: 'pull request #{number}: {url}',
 	draft:
@@ -43,6 +45,7 @@ export const LANDING_LINES = {
 	committed: 'the lot is committed, nothing pushed: {landed}',
 	workSince: 'the lot holds {work}: they land in a new lot',
 	closeLanded: 'close it: dialecte lot close {lot}',
+	closeLandedKept: '{kept}; to release it: {next}',
 } as const
 
 /** What git says when a lease that expected no branch finds one on origin: it was pushed outside `lot land`. */

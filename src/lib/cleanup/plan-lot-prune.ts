@@ -93,7 +93,7 @@ function planLot(params: { repository: RepositoryFacts; lot: LotFacts }): LotPla
 		stale: staleOf(lot),
 	}
 	if (lot.simulated) return { ...base, items: [] }
-	const open = openReason(lot)
+	const open = holdReason(lot)
 	const worktreeItems: PlannedItem[] = [
 		...(lot.worktree === undefined
 			? []
@@ -121,8 +121,12 @@ function planLot(params: { repository: RepositoryFacts; lot: LotFacts }): LotPla
 	return { ...base, items: [...worktreeItems, ...branchItems] }
 }
 
-/** Why every item of a lot that is not terminal is kept: its state; undefined for a committed or canceled lot. */
-function openReason(lot: LotFacts): string | undefined {
+/**
+ * Why every item of a lot is kept before any proof (KEEP 3.5.2): kept on purpose (its kept text), then damaged, then
+ * not terminal (its state); undefined for a committed or canceled lot not kept.
+ */
+function holdReason(lot: LotFacts): string | undefined {
+	if (lot.kept !== undefined) return lot.kept
 	if (lot.state === 'damaged') return lot.damage ?? 'damaged'
 	if (lot.state === 'committed' || lot.state === 'canceled') return undefined
 	return fillMessage({

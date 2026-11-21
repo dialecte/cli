@@ -39,6 +39,8 @@ import {
 import { BRIEF_EFFORTS } from '../lib/store/brief.constants.ts'
 import { checkBrief, overlapHoldOf } from '../lib/store/brief.ts'
 import { readIdentity } from '../lib/store/identity.ts'
+import { KEEP_REASON_LIMIT, KEEP_SCHEMA } from '../lib/store/keep-decisions.constants.ts'
+import { appendKeepLine } from '../lib/store/keep-decisions.ts'
 import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
 import {
 	failedNextOf,
@@ -65,11 +67,18 @@ import { writePlanEntry } from '../lib/store/plan-entry.ts'
 import { lotPlanEntryIds } from '../lib/store/public-text.ts'
 import { recordText, removeDeadLeftovers, temporaryPidOf } from '../lib/store/publish.ts'
 import { SCENARIO_SCHEMA, SCENARIOS } from '../lib/store/scenarios.constants.ts'
+import { recordedByOf } from '../lib/store/signer-rules.ts'
 import { STACK_SCHEMA } from '../lib/store/stack.constants.ts'
 import { readStackRecord, writeStack } from '../lib/store/stack.ts'
 import { locateStore, publishLotFolder, removeStoreLeftovers } from '../lib/store/store-folder.ts'
 import { appendStoreList, storeListRefusal } from '../lib/store/store-list.ts'
-import { LOT_LINK_SEGMENTS, RUNNERS, STORE_REFUSAL } from '../lib/store/store.constants.ts'
+import {
+	CALLER,
+	GO_AHEAD_LABELS,
+	LOT_LINK_SEGMENTS,
+	RUNNERS,
+	STORE_REFUSAL,
+} from '../lib/store/store.constants.ts'
 import { appendTransition } from '../lib/store/transitions.ts'
 import { WORKTREES_FOLDER } from '../lib/workspace.constants.ts'
 import { addWorktree } from '../lib/worktree/add-worktree.ts'
@@ -91,6 +100,7 @@ import {
 	START_BELOW_REFUSAL,
 	START_EFFORT_LINE,
 	START_FLAGS,
+	START_KEEP_TEXTS,
 	START_OVERLAP_LINE,
 	START_OVERLAP_NOT_NEEDED_LINE,
 	START_OVERLAPS_OVER_LIMIT,
@@ -106,6 +116,7 @@ import type { DesignNeed } from '../lib/design/design.types.ts'
 import type { StepHandle, WorktreeAddParts } from '../lib/events/record-step.types.ts'
 import type { RiskClass, RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
+import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
 import type { LotOverlapRecord } from '../lib/store/lot-overlaps.types.ts'
 import type { ScenarioFile } from '../lib/store/scenarios.types.ts'
 import type {
@@ -220,6 +231,14 @@ export function prepareStart(params: {
 		briefFile: resolve(params.cwd, briefPath),
 	})
 	if (wordRefusal) return { exit: lotRefusalExit({ lines: [wordRefusal], json }) }
+	const keep = startKeepOf({
+		brief,
+		flag: read.values.get('keep'),
+		goAhead,
+		now,
+		briefFile: resolve(params.cwd, briefPath),
+	})
+	if (typeof keep === 'string') return { exit: lotRefusalExit({ lines: [keep], json }) }
 	// the store list is refused for a dry run too: it says what a real start would meet
 	const listRefusal = storeListRefusal({})
 	if (listRefusal) return { exit: errorOutput({ exitCode: 2, message: listRefusal, json }) }
@@ -246,8 +265,51 @@ export function prepareStart(params: {
 			goAhead,
 			derivation,
 			stack,
+			keep,
 		},
 	}
+}
+
+/**
+ * The first `keep` line of a start (KEEP 3.4): `--keep` or the brief's `keep` (both given is refused), signed by the
+ * go-ahead's `--by` (the orchestrator recorded as one word) or `caller`, at the start's time; that signer and the keep's
+ * reason pass the go-ahead's text check (a forbidden word, a path, a link, a reference, a plan entry id), the refusal
+ * naming `--keep` or the brief's `keep`. Undefined without a keep; the refusal line when refused.
+ */
+function startKeepOf(params: {
+	brief: CheckedBrief
+	flag: string | undefined
+	goAhead: StartGoAhead | undefined
+	now: Date
+	briefFile: string
+}): KeepLine | undefined | string {
+	const { brief, flag } = params
+	if (flag !== undefined && brief.keep !== undefined) return START_KEEP_TEXTS.twice
+	if (flag !== undefined && !isOneLine(flag)) return START_KEEP_TEXTS.notOneLine
+	if (flag !== undefined && flag.length > KEEP_REASON_LIMIT)
+		return fillMessage({
+			template: START_KEEP_TEXTS.overLimit,
+			values: { length: String(flag.length), limit: String(KEEP_REASON_LIMIT) },
+		})
+	const reason = flag ?? brief.keep
+	if (reason === undefined) return undefined
+	const by = recordedByOf({ by: params.goAhead?.by ?? CALLER })
+	const refusal = overlapGoAheadRefusal({
+		root: brief.repository,
+		verb: START_VERB,
+		by,
+		reason,
+		ids: lotPlanEntryIds({
+			planPath: briefPlanPathOf({ brief, briefFile: params.briefFile }),
+			branch: brief.branch,
+		}),
+		labels: {
+			by: GO_AHEAD_LABELS.by,
+			reason: flag === undefined ? START_KEEP_TEXTS.briefLabel : START_KEEP_TEXTS.flagLabel,
+		},
+	})
+	if (refusal !== undefined) return refusal
+	return { schema: KEEP_SCHEMA, at: params.now.toISOString(), op: 'keep', by, reason }
 }
 
 /**
@@ -427,7 +489,10 @@ export function finishStart(params: {
 			briefPath: prepared.briefPath,
 			worktreesFolder: prepared.worktreesFolder,
 			simulation: prepared.simulation,
-			riskLines,
+			riskLines: [
+				...riskLines,
+				...keepLinesOf({ keep: prepared.keep, template: START_KEEP_TEXTS.dryRun }),
+			],
 			json,
 		})
 	try {
@@ -440,10 +505,18 @@ export function finishStart(params: {
 			seams: prepared.seams,
 			simulation: prepared.simulation,
 			stack: prepared.stack,
+			keep: prepared.keep,
 		})
 	} catch (error) {
 		return thrownOutput({ error, json })
 	}
+}
+
+/** The line naming a start's keep (`keep: <why>` in a dry run, `kept: <why>` once started); none without a keep. */
+function keepLinesOf(params: { keep: KeepLine | undefined; template: string }): string[] {
+	return params.keep === undefined
+		? []
+		: [fillMessage({ template: params.template, values: { reason: params.keep.reason } })]
 }
 
 /**
@@ -607,8 +680,10 @@ function startChecked(params: {
 	/** A simulated start: the scenario copied into the lot; no re-check, worktree, branch nor link. */
 	simulation: Simulation | undefined
 	stack: StartStack | undefined
+	/** The first `keep` line, written with the start's records before the publish rename (KEEP 3.4). */
+	keep: KeepLine | undefined
 }): CommandResult {
-	const { brief, now, seams, json, simulation, risk, stack } = params
+	const { brief, now, seams, json, simulation, risk, stack, keep } = params
 	const store = locateStore({ from: brief.repository })?.store
 	if (store === undefined)
 		return errorOutput({ exitCode: 2, message: `${brief.repository} holds no git folder`, json })
@@ -651,12 +726,18 @@ function startChecked(params: {
 			now,
 			simulation,
 		}),
-		// a simulated start writes no risk.jsonl; a real one's lines ride the publish rename
-		...(simulation === undefined && {
-			beforeIdentity: function writeStartRecords(temporary: string) {
-				writeStartRecordsTo({ folder: temporary, brief, risk, now, stack })
-			},
-		}),
+		// a simulated start writes no risk.jsonl, only its keep; a real one's lines ride the publish rename, its keep too
+		...(simulation === undefined
+			? {
+					beforeIdentity: function writeStartRecords(temporary: string) {
+						writeStartRecordsTo({ folder: temporary, brief, risk, now, stack, keep })
+					},
+				}
+			: keep !== undefined && {
+					beforeIdentity: function writeSimulatedKeep(temporary: string) {
+						appendKeepLine({ lotFolder: temporary, line: keep })
+					},
+				}),
 	})
 	if (!published)
 		return errorOutput({
@@ -665,9 +746,10 @@ function startChecked(params: {
 			json,
 		})
 	// a simulated lot holds no lock and no branch: never re-checked, no worktree made
-	if (simulation) return startedOutput({ name, lotFolder, worktree: null, notes: [], risk, json })
+	if (simulation)
+		return startedOutput({ name, lotFolder, worktree: null, notes: [], risk, json, keep })
 	try {
-		return startPublished({ name, lotFolder, brief, now, seams, risk, json })
+		return startPublished({ name, lotFolder, brief, now, seams, risk, json, keep })
 	} catch (error) {
 		// the lot exists from here on: the exit names it
 		return thrownOutput({ error, json, lot: name })
@@ -683,8 +765,9 @@ function startPublished(params: {
 	seams: StartSeams
 	risk: StartRisk
 	json: boolean
+	keep: KeepLine | undefined
 }): CommandResult {
-	const { name, lotFolder, brief, now, seams, json, risk } = params
+	const { name, lotFolder, brief, now, seams, json, risk, keep } = params
 	const overlap = recheckedFailure({
 		lotFolder,
 		caseInsensitive: brief.caseInsensitive,
@@ -705,6 +788,7 @@ function startPublished(params: {
 		],
 		risk,
 		json,
+		keep,
 	})
 }
 
@@ -880,16 +964,25 @@ function riskLinesOf(params: {
 	]
 }
 
-/** The records a real start publishes with its folder: its risk lines, accepted overlaps, plan entry and stack. */
-function writeStartRecordsTo(params: {
+/**
+ * The records a real start publishes with its folder: its risk lines, accepted overlaps, plan entry and stack, and the
+ * first line of its keep when given (KEEP 3.4).
+ *
+ * @internal
+ */
+export function writeStartRecordsTo(params: {
 	folder: string
 	brief: CheckedBrief
 	risk: StartRisk
 	now: Date
 	stack: StartStack | undefined
+	/** The first `keep` line of a start with `--keep` or a brief `keep`. */
+	keep?: KeepLine
 }): void {
 	const { folder, brief, risk, now, stack } = params
 	writeStartRiskLines({ folder, risk, now })
+	// the lot is never visible without its keep: the line rides the publish rename with the risk lines
+	if (params.keep !== undefined) appendKeepLine({ lotFolder: folder, line: params.keep })
 	writeStartOverlaps({ folder, brief, goAhead: risk.goAhead, now })
 	if (brief.planEntry !== undefined) writePlanEntry({ folder, entry: brief.planEntry })
 	// the base's shared areas, where the views read them without git (DESIGN-GATE)
@@ -1129,8 +1222,10 @@ function startedOutput(params: {
 	notes: string[]
 	risk: StartRisk
 	json: boolean
+	/** The keep the start wrote: `kept: <why>` in its lines and its JSON. */
+	keep: KeepLine | undefined
 }): CommandResult {
-	const { risk, worktree } = params
+	const { risk, worktree, keep } = params
 	// a simulated lot has no worktree: it waits; a real one runs its stations, landing as its repository's flow says
 	const { runner, next } =
 		worktree === null
@@ -1148,6 +1243,7 @@ function startedOutput(params: {
 					effort: risk.effort,
 					riskClass: risk.derivation,
 					notes: params.notes,
+					...(keep !== undefined && { kept: keep.reason }),
 					next,
 				},
 				2,
@@ -1160,6 +1256,7 @@ function startedOutput(params: {
 			`folder: ${params.lotFolder}`,
 			`worktree: ${worktree ?? 'none (simulated)'}`,
 			`runner: ${runner}`,
+			...keepLinesOf({ keep, template: START_KEEP_TEXTS.started }),
 			...risk.lines,
 			...params.notes.map((note) => `note: ${note}`),
 			`next: ${next}`,

@@ -8,6 +8,9 @@ export type ReviewThrowaway = {
 	removal: string
 }
 
+/** The throwaway of a lot kept on purpose: it stays with the lot, so no removal command (KEEP 3.8). */
+export type KeptThrowaway = Omit<ReviewThrowaway, 'removal'>
+
 /** How a file's fix diff is taken, by where the file is. */
 export type ReviewDeltaForm = string
 
@@ -18,16 +21,22 @@ export type ReviewDeltaFile = {
 	diff: string
 }
 
-/** What `lot delta --json` prints. */
-export type ReviewDelta = {
+/** The part of `lot delta --json` every delta holds. */
+export type ReviewDeltaCore = {
 	round: number
 	/** `<folder>/round-<n-1>`. */
 	previous: string
 	/** The lot's worktree root. */
 	root: string
 	files: ReviewDeltaFile[]
-	throwaway?: ReviewThrowaway
 }
+
+/**
+ * What `lot delta --json` prints: a lot not kept with its throwaway's removal command, or a kept lot with its keep text
+ * (`keptByDecision`, KEEP 3.8) and a throwaway that stays with it.
+ */
+export type ReviewDelta = ReviewDeltaCore &
+	({ throwaway?: ReviewThrowaway; kept?: undefined } | { throwaway: KeptThrowaway; kept: string })
 
 /** One row of the findings ledger table, by its line in the file. */
 export type LedgerRow = {

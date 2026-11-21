@@ -31,10 +31,12 @@ import {
 	worktreeStateRefusal,
 } from '../lib/review-rounds/worktree-state.ts'
 import { lotFolderOf } from '../lib/store/lot-folder.ts'
+import { keptByDecision } from '../lib/store/lot-keep.ts'
+import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-records.ts'
 
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StepHandle } from '../lib/events/record-step.types.ts'
-import type { ReviewDelta } from '../lib/review-rounds/review-rounds.types.ts'
+import type { ReviewDelta, ReviewDeltaCore } from '../lib/review-rounds/review-rounds.types.ts'
 
 /** `lot delta` under its old word (`runReview({ argv: [<old word>, ...] })`). */
 export function runReview(params: { cwd: string; argv: string[]; now: Date }): CommandResult {
@@ -91,46 +93,60 @@ function reviewDelta(params: { cwd: string; argv: string[]; now: Date }): Comman
 				`${verbPrefix('delta')}: HEAD is detached in ${root}: --worktree starts its branch from the lot's branch`,
 			],
 		})
-	const delta: ReviewDelta = {
+	const core: ReviewDeltaCore = {
 		round,
 		previous: resolve(folder, `round-${previous}`),
 		root,
 		files: computeDelta({ root, folder, previous, state }),
 	}
-	if (branch) {
-		// the step's events: in the lot `<id>` names (none for a folder that is no lot), once the path is decided
-		const lotFolder = lotFolderOf({ folder })
-		let recorder: StepHandle | undefined
-		const throwaway = addThrowaway({
-			root,
-			folder,
-			previous,
-			branch,
-			now: params.now,
-			onPlanned: function startThrowawayStep(worktree) {
-				recorder = startStep({
-					cwd: root,
-					step: 'throwaway-add',
-					heavy: false,
-					place:
-						lotFolder === undefined
-							? null
-							: {
-									lot: lotFolder,
-									worktree: realPathThroughAncestors(worktree),
-									throwaway: true,
-								},
-				})
-			},
-		})
-		// after the throwaway exists (D12)
-		recorder?.end({ exit: typeof throwaway === 'string' ? 1 : 0, stateHash: null })
-		if (typeof throwaway === 'string')
-			return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${throwaway}`] })
-		delta.throwaway = throwaway
-	}
-	return {
-		exitCode: 0,
-		output: flags.has('json') ? jsonOf(delta, 2) : renderDelta(delta),
-	}
+	if (!branch) return deltaResult({ delta: core, json: flags.has('json') })
+	// the step's events: in the lot `<id>` names (none for a folder that is no lot), once the path is decided
+	const lotFolder = lotFolderOf({ folder })
+	let recorder: StepHandle | undefined
+	const throwaway = addThrowaway({
+		root,
+		folder,
+		previous,
+		branch,
+		now: params.now,
+		onPlanned: function startThrowawayStep(worktree) {
+			recorder = startStep({
+				cwd: root,
+				step: 'throwaway-add',
+				heavy: false,
+				place:
+					lotFolder === undefined
+						? null
+						: {
+								lot: lotFolder,
+								worktree: realPathThroughAncestors(worktree),
+								throwaway: true,
+							},
+			})
+		},
+	})
+	// after the throwaway exists (D12)
+	recorder?.end({ exit: typeof throwaway === 'string' ? 1 : 0, stateHash: null })
+	if (typeof throwaway === 'string')
+		return resultOf({ exitCode: 1, lines: [`${verbPrefix('delta')}: ${throwaway}`] })
+	// a kept lot's throwaway stays with it: no removal command, its keep named instead (KEEP 3.8)
+	const kept = lotFolder === undefined ? undefined : keptOfLotFolder({ lotFolder })
+	const delta: ReviewDelta =
+		kept === undefined
+			? { ...core, throwaway }
+			: { ...core, throwaway: { path: throwaway.path, branch: throwaway.branch }, kept }
+	return deltaResult({ delta, json: flags.has('json') })
+}
+
+/** `lot delta`'s answer: the delta as JSON, or its text. */
+function deltaResult(params: { delta: ReviewDelta; json: boolean }): CommandResult {
+	const { delta } = params
+	return { exitCode: 0, output: params.json ? jsonOf(delta, 2) : renderDelta(delta) }
+}
+
+/** The keep text of the lot a delta resolved, read through the one lot reader; undefined when it is not kept. */
+function keptOfLotFolder(params: { lotFolder: string }): string | undefined {
+	const { lotFolder } = params
+	const checked = readCheckedLotState({ lotFolder, registry: registryOfLotFolder(lotFolder) })
+	return keptByDecision({ keep: checked?.keep })
 }

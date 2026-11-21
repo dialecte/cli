@@ -14,12 +14,14 @@ import { registeredEntryOf } from '../lib/handover/handover-store-read.ts'
 import { recordHandoverState } from '../lib/handover/handover-store.ts'
 import { HANDOVER_ABANDON_TEXTS } from '../lib/handover/handover.constants.ts'
 import { createHost } from '../lib/host/select-host.ts'
+import { fillMessage } from '../lib/knowledge/standard/fill-message.ts'
 import { JSON_FLAG } from '../lib/parse-invocation.constants.ts'
 import { jsonOf, textOf } from '../lib/print/print.ts'
 import { storedLotByRefusal } from '../lib/review-rounds/option-checks.ts'
 import { readArguments } from '../lib/review-rounds/round-arguments.ts'
 import { moveLotAside } from '../lib/store/lot-aside.ts'
 import { lotRefusalExit, lotUsageExit } from '../lib/store/lot-exits.ts'
+import { keepNextOf, keptByDecision } from '../lib/store/lot-keep.ts'
 import {
 	commonFolderOfLotFolder,
 	readCheckedLotState,
@@ -85,6 +87,21 @@ export function lotStop(params: LotStopParams): CommandResult {
 	const registry = registryOfLotFolder(lotFolder)
 	const checked = readCheckedLotState({ lotFolder, registry })
 	if (checked === undefined) return lotRefusalExit({ lines: [noLotRefusal(id)], json })
+	const keptText = keptByDecision({ keep: checked.keep })
+	if ('damage' in checked && checked.keep !== undefined && keptText !== undefined)
+		return lotRefusalExit({
+			lines: [
+				fillMessage({
+					template: STOP_TEXTS.damagedKept,
+					values: {
+						name: basename(lotFolder),
+						kept: keptText,
+						next: keepNextOf({ name: basename(lotFolder), keep: checked.keep }),
+					},
+				}),
+			],
+			json,
+		})
 	if ('damage' in checked)
 		return stopDamaged({
 			lotFolder,

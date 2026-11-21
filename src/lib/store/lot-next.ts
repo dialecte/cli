@@ -60,13 +60,16 @@ export function failedNextOf(name: string): string {
  * `next` and `also` per state: working -> the next station's command with the manual line in `also` when `station`
  * is given (`lot status`, 33L1 D14), else the manual line (the wait line when simulated); input-required -> the
  * answer line of the first open question; ready -> show and run the pending hand-over, or `lot result` without one;
- * failed -> the stop line; committed and canceled -> none.
+ * failed -> the stop line; committed and canceled -> none. A ready landing lot kept on purpose (`kept`, KEEP 3.8) names
+ * no `lot close` in `also`: that close would keep every item of it anyway.
  */
 export function nextCommandsOf(params: {
 	input: LotStateInput
 	report: LotStateReport
 	/** The next station of a real lot (`lot status` reads it); left out, a working lot gets the manual line. */
 	station?: StationNext | null
+	/** The lot's keep text (`keptByDecision`); undefined when it is not kept. Required: every caller says. */
+	kept: string | undefined
 }): NextCommands {
 	const { input, report } = params
 	const name = input.identity.name
@@ -88,7 +91,7 @@ export function nextCommandsOf(params: {
 	if (report.state === 'ready' && handover !== undefined && input.landing !== undefined)
 		return {
 			next: NEXT_COMMANDS.land.replace('{name}', name),
-			also: [NEXT_COMMANDS.close.replace('{handover}', handover)],
+			also: params.kept === undefined ? [NEXT_COMMANDS.close.replace('{handover}', handover)] : [],
 		}
 	if (report.state === 'ready' && handover !== undefined)
 		return {

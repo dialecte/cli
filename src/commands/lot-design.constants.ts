@@ -24,7 +24,7 @@ export const LOT_DESIGN_LINES = {
 		'lot design: {lot} carries out no plan entry with a spec: dialecte lot design {lot} --from <file>; nothing written',
 	sharedSpec:
 		"lot design: spec {file} covers {count} entries: write this lot's design (it may cite the spec), then dialecte lot design {lot} --from <file>; nothing written",
-	ownWorktree: "lot design: {verb} from the main checkout, not the lot's worktree; nothing written",
+	ownWorktreeCommand: 'lot design: {verb}',
 	nothingRecorded:
 		'lot design: {lot} has no design recorded: dialecte lot design {lot} --from <file> records it; nothing written',
 	changedSinceRecorded:

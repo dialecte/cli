@@ -87,6 +87,7 @@ export function runLotLand(params: {
 		lotFolder: required.lot,
 		host: params.host ?? createHost(),
 		now: params.now ?? new Date(),
+		...(checked.keep !== undefined && { keep: checked.keep }),
 	})
 	return { exitCode: landed.exitCode, output: textOf(landed.lines) }
 }

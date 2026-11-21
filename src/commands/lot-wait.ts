@@ -44,6 +44,7 @@ import type { CommandResult } from '../lib/command-result.types.ts'
 import type { StoreEntry } from '../lib/handover/handover.types.ts'
 import type { PrintedText } from '../lib/print/print.types.ts'
 import type { StateExitVerb } from '../lib/store/exit-code-of-state.types.ts'
+import type { KeepDecision } from '../lib/store/keep-decisions.types.ts'
 import type { LotStateInput, LotStateReport } from '../lib/store/store.types.ts'
 import type { WaitClock, WaitParams, WaitRead, WaitSleep } from './lot-wait.types.ts'
 
@@ -150,6 +151,7 @@ async function waitOn(params: {
 			return statusResult({
 				lotFolder,
 				input,
+				keep: checked.keep,
 				entries: current.entries,
 				report,
 				json: params.json,
@@ -281,6 +283,8 @@ function readRecords(params: {
 function statusResult(params: {
 	lotFolder: string
 	input: LotStateInput
+	/** The lot's keep the loop read with its input (KEEP 3.6). */
+	keep: KeepDecision | undefined
 	entries: readonly StoreEntry[]
 	report: LotStateReport
 	json: boolean
@@ -294,7 +298,12 @@ function statusResult(params: {
 		limit: params.report.limit,
 		timedOut: params.timedOut,
 	})
-	const status = lotStatusOfInput({ input, lotFolder: params.lotFolder, entries })
+	const status = lotStatusOfInput({
+		input,
+		keep: params.keep,
+		lotFolder: params.lotFolder,
+		entries,
+	})
 	return {
 		exitCode,
 		output: params.json ? jsonOf(status, 2) : textOf(lotStatusLines(status)),

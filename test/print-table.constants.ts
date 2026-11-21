@@ -202,6 +202,16 @@ export const PRINT_ROWS: Record<string, PrintRow> = {
 		argv: ['scope', FORGED_WORD, '--drop', 'a.md', '--by', 'a-person', '--reason', 'a reason'],
 		quotes: true,
 	},
+	'lot keep': {
+		argv: ['keep', FORGED_WORD, '--by', 'a-person', '--reason', 'a reason'],
+		quotes: true,
+		json: ['keep', FORGED_WORD, '--by', 'a-person', '--reason', 'a reason', '--json'],
+	},
+	'lot unkeep': {
+		argv: ['unkeep', FORGED_WORD, '--by', 'a-person', '--reason', 'a reason'],
+		quotes: true,
+		json: ['unkeep', FORGED_WORD, '--by', 'a-person', '--reason', 'a reason', '--json'],
+	},
 	'lot wait': { argv: ['wait', FORGED_WORD], quotes: true, json: ['wait', FORGED_WORD, '--json'] },
 	'lot answer': {
 		argv: ['answer', FORGED_WORD, 'q1', 'keep'],

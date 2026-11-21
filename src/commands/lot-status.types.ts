@@ -2,6 +2,7 @@ import type { ForecastView } from '../lib/coordination/forecast.types.ts'
 import type { DesignStatusJson } from '../lib/design/design.types.ts'
 import type { HandoverEntryState } from '../lib/handover/handover.types.ts'
 import type { Effort, RiskDerivedLine } from '../lib/risk/risk.types.ts'
+import type { KeepJson } from '../lib/store/keep-decisions.types.ts'
 import type { NextStation } from '../lib/store/next-station.types.ts'
 import type { LotScope } from '../lib/store/scope-changes.types.ts'
 import type { BeyondCapRow } from '../lib/store/station-records.types.ts'
@@ -87,6 +88,11 @@ export type LotStatusJson = {
 	stack?: string
 	/** Where the lot's design stands (DESIGN-GATE): absent for a lot that needs none and recorded none. */
 	design?: DesignStatusJson
+	/**
+	 * The lot kept on purpose (KEEP 3.6): who kept it, when and why, or the keep file that cannot be trusted; null when
+	 * not kept.
+	 */
+	kept: KeepJson
 }
 
 /**

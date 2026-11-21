@@ -18,11 +18,14 @@ import { closeTargetsOf } from '../handover/close-targets.ts'
 import { handoverLockPath } from '../handover/handover-lock.ts'
 import { readStoreEntries } from '../handover/handover-store-read.ts'
 import { findHandoverStore, handoverStoreOf } from '../handover/handover-store.ts'
+import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lostWork, workSinceLanding } from '../landing/lost-work.ts'
 import { settleLotLanding } from '../landing/lot-landing.ts'
 import { readPackageJson } from '../package-json.ts'
 import { roundNames } from '../review-rounds/round-names.ts'
 import { readIdentity } from '../store/identity.ts'
+import { KEEP_TEXTS } from '../store/keep-decisions.constants.ts'
+import { keptByDecision, keptOfChecked } from '../store/lot-keep.ts'
 import { readCheckedLotState, registryOfLotFolder } from '../store/lot-records.ts'
 import { lotState } from '../store/lot-state.ts'
 import { readStack } from '../store/stack.ts'
@@ -50,6 +53,7 @@ import type { CloseSettle } from '../handover/close-targets.types.ts'
 import type { StoreEntry } from '../handover/handover.types.ts'
 import type { HostAdapter } from '../host/host.types.ts'
 import type { SettledLot } from '../landing/lot-landing.types.ts'
+import type { KeepDecision } from '../store/keep-decisions.types.ts'
 import type { ListedWorktree, ProcessFolder } from '../worktree/worktree.types.ts'
 import type {
 	BranchFacts,
@@ -222,7 +226,19 @@ function readStoreLots(params: { store: string; entries: readonly StoreEntry[] }
 			checked === undefined || 'damage' in checked
 				? ('damaged' as const)
 				: lotState(checked.input).state
-		return { name: entry.name, lotFolder, identity: entry.identity, state }
+		// the move-time keep: the kept text, else a damaged lot's (it holds every item), read with the state
+		// a folder gone between the listing and its read holds its items too (fail closed)
+		const kept =
+			checked === undefined
+				? fillMessage({ template: KEEP_TEXTS.gone, values: { name: entry.name } })
+				: keptOfChecked({ name: entry.name, checked })
+		return {
+			name: entry.name,
+			lotFolder,
+			identity: entry.identity,
+			state,
+			...(kept !== undefined && { kept }),
+		}
 	})
 }
 
@@ -342,7 +358,14 @@ function readLot(params: { reads: PruneReads; lotFolder: string }): ReadLot {
 		settled,
 		landedTip: tipHeld ? landedTip : undefined,
 		landedTipGone: tipHeld ? undefined : landedTip,
+		...keptOf({ keep: checked?.keep }),
 	}
+}
+
+/** The kept text of a lot kept on purpose, damaged or not, as its facts carry it; nothing when it is not kept. */
+function keptOf(params: { keep: KeepDecision | undefined }): { kept?: string } {
+	const kept = keptByDecision(params)
+	return kept === undefined ? {} : { kept }
 }
 
 /**
@@ -624,6 +647,7 @@ function lotFactsOf(params: {
 		throwaways,
 		branches,
 		...(lot.landedTipGone !== undefined && { landedTipGone: lot.landedTipGone }),
+		...(lot.kept !== undefined && { kept: lot.kept }),
 	}
 }
 

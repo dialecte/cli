@@ -25,6 +25,8 @@ export type ParsedBrief = {
 	summary?: string
 	/** The issue the lot's pull request closes; absent when the brief gives none. */
 	issue?: number
+	/** Why the lot is kept on purpose from its start (KEEP 3.4): its first `keep` line; absent when the brief gives none. */
+	keep?: string
 }
 
 /** What the git-free field checks return: the refusals, and the parsed brief only when there is none. */
@@ -55,6 +57,8 @@ export type CheckedBrief = {
 	summary?: string
 	/** The issue the lot's pull request closes; absent when the brief gives none. */
 	issue?: number
+	/** Why the lot is kept on purpose from its start (KEEP 3.4); absent when the brief gives none. */
+	keep?: string
 	/** The plan entry the lot carries out, when exactly one entry of the plans the machine knows is on its branch. */
 	planEntry?: LotPlanEntry
 	/** Whether the repository sits on a case-insensitive volume (probed, or the injected value). */

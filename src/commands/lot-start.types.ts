@@ -1,6 +1,7 @@
 import type { CommandResult } from '../lib/command-result.types.ts'
 import type { RiskDerivation } from '../lib/risk/risk.types.ts'
 import type { BriefEffort, CheckedBrief } from '../lib/store/brief.types.ts'
+import type { KeepLine } from '../lib/store/keep-decisions.types.ts'
 import type { ScenarioStep, ScenarioTable } from '../lib/store/scenarios.types.ts'
 import type { SynchronousPause } from '../lib/store/store.types.ts'
 
@@ -78,6 +79,8 @@ export type PreparedStart = {
 	derivation: RiskDerivation
 	/** `--on <lot>`: the open lot the start sits on, and its branch tip the lot's branch starts at. */
 	stack: StartStack | undefined
+	/** The first `keep` line of a start with `--keep` or a brief `keep` (KEEP 3.4); none without. */
+	keep: KeepLine | undefined
 }
 
 /** The parent of a stacked start (`--on`): its lot name. Where the lot forks is read from git when it lands. */

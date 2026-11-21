@@ -9,6 +9,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
 
   dialecte lot start <brief.json> [--effort low|medium|high] [--overlap-ok] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]
   dialecte lot start <brief.json> --on <lot> [the options above]
+  dialecte lot start <brief.json> --keep <why> [the options above]
   dialecte lot status <id> [--json]
   dialecte lot forecast [<id>] [--json] [--against <lot>]
   dialecte lot risk <id|folder> [--json]
@@ -18,6 +19,8 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot result <id> [--json]
   dialecte lot stop <id> --reason <text> [--by <who>] [--json]
   dialecte lot scope <id> [--drop <path>]... [--add <path>]... [--overlap-ok] --by <who> --reason <text>
+  dialecte lot keep <id> --by <who> --reason <why> [--json]
+  dialecte lot unkeep <id> --by <who> --reason <why> [--json]
   dialecte lot station <id> start <station> [--step <n>] [--round <n>] [--attempt <n>] [--agent <name>] [--executor host|command] [--vendor <name>] [--model <name>] [--tier <name>] [--effort <word>] [--session <id>] [--skill <name|path>]... [--skill-asked <name|path>]... [--event <id>] [--json]
   dialecte lot station <id> end <station> [--run <run>] [--step <n>] [--round <n>] [--attempt <n>] [--agent <name>] [--vendor <name>] [--model <name>] [--tier <name>] [--effort <word>] [--session <id>] [--skill <name|path>]... [--skill-asked <name|path>]... [--event <id>] [--tokens-in <n>] [--tokens-out <n>] [--tokens-cache-read <n>] [--tokens-cache-write <n>] [--tokens-total <n>] [--money <amount> <currency>] [--duration <seconds>] [--exit <n>] [--verdict <word>] [--suite <name>=<runs>]... [--json]
   dialecte lot station <id> --from <file.json> [--json]
@@ -37,6 +40,7 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
   dialecte lot verify <id|folder> --by <who> --note <text>
   dialecte lot report <id> [--json]
   dialecte lot report --feature <name> [--simulated] [--json]
+  dialecte lot report --kept [--json]
   dialecte lot export <id> <dir> [--json]
   dialecte lot brief <id> --from <brief.json> --by <who> --reason <text>
   dialecte lot pr <id> [--print] [--json]
@@ -54,6 +58,14 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           (the lot failed, nothing removed, next: lot stop); a link that cannot be made leaves the
           lot working with a note; every --json exit is JSON, a usage error { error, usage, next:
           null } included
+  start - --keep <why> or the brief's keep (one line of at most 200 characters) keeps the lot on
+          purpose from its start: its first keep.jsonl line, signed by --by (orchestrator in any
+          casing recorded orchestrator) or caller, is written with its records before the lot is
+          published (a simulated lot's too; --dry-run names it, keep: <why>, writing nothing), the
+          start line and --json name it (kept: <why>); --keep and a brief keep together, or a keep
+          or its signer holding a forbidden word, a path, a link, a reference or a plan entry id,
+          refuse (exit 2, nothing published); after the start a keep changes through lot keep and
+          lot unkeep only (lot brief refuses a changed keep)
   start - --on <lot> starts the lot on another open lot of the same repository (a stack): its branch
           is cut at that lot's branch tip, its stack.json records the parent only (where it forks is
           read from git when it lands), and the parent's scope is its base, never an overlap, at the
@@ -224,15 +236,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          in <lot folder>/landing.json; a lot already merged (its pull request merged, or its tip or
          its work in origin/<base>: a squash read offline) is committed: its landed fact written in
          <lot folder>/landed.json, its hand-over entry committed, the commits made since named (they
-         land in a new lot), the close line printed, nothing pushed; a branch with no commit beyond
-         origin's base is refused before any push; the committed HEAD is forecast against
-         origin/<base> just fetched (git merge-tree, before any entry, rebase or push): a conflict
-         refuses naming its files and ranges, a forecast that cannot run refuses (fails closed), a
-         lot on an open parent is not compared; the lot's forecast against every other open lot is
-         recorded (trigger land) and each pair it does not clear printed (! <lot>: <why>), for
-         information only; the pushed head is kept in landing.json at once, so a pull request the
-         host refused to open does not make the next push one outside lot land; the host is GitHub
-         through gh, which never prompts
+         land in a new lot), the close line printed (for a lot kept on purpose, its keep and its lot
+         unkeep instead: no line names lot close, and the line after an opened pull request asks to
+         land it again once merged), nothing pushed; a branch with no commit beyond origin's base is
+         refused before any push; the committed HEAD is forecast against origin/<base> just fetched
+         (git merge-tree, before any entry, rebase or push): a conflict refuses naming its files and
+         ranges, a forecast that cannot run refuses (fails closed), a lot on an open parent is not
+         compared; the lot's forecast against every other open lot is recorded (trigger land) and
+         each pair it does not clear printed (! <lot>: <why>), for information only; the pushed head
+         is kept in landing.json at once, so a pull request the host refused to open does not make
+         the next push one outside lot land; the host is GitHub through gh, which never prompts
   status - the state derived from the lot records (working, input-required, ready, committed,
            canceled, failed), the worktree and link checks, and the exact next command (and an also:
            line); a working real lot adds a station line (station <what> · round <r>/<cap> · effort
@@ -248,7 +261,10 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            own line against that lot and that lot's line against it (files only); a lot whose
            records do not hold reads damaged with its reason and next: lot stop (exit 6); a lot git
            reads merged (its tip or its work in origin/<base>, a squash included) shows committed,
-           nothing written; writes nothing; exit 2 for an unknown or ambiguous id
+           nothing written; --json adds kept: { reason, by, at } for a lot kept on purpose ({
+           unreadable: <n> } or { unreadableFile: <code> } for a keep.jsonl that cannot be trusted,
+           read kept), else null, the text unchanged; a ready landing lot kept on purpose names no
+           lot close in also; writes nothing; exit 2 for an unknown or ambiguous id
   forecast - the conflict forecast of a lot's work (its worktree's HEAD plus its uncommitted work,
              as one snapshot commit made on a copy of its index with a fixed identity and date; the
              worktree's index, refs and files never written, ignored files left out) against main
@@ -310,7 +326,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
          its run is in progress), then a canceled transition with the reason and --by (caller
          without it); already canceled exits 0 writing nothing; moves no worktree and deletes
          nothing; a damaged lot has its folder moved to <git common folder>/dialecte-lots-aside/
-         with a stopped.json (refused while a live run marker holds it), its index kept claimed
+         with a stopped.json (refused while a live run marker holds it), its index kept claimed; a
+         damaged lot kept on purpose is refused, nothing moved, naming its lot unkeep first; a kept
+         lot stopped stays kept (canceled and kept: its items stay)
   scope - changes a started lot's scope on the record, its brief left as published; --by and
           --reason are required on every call; --drop removes scope entries (an entry, or a folder
           and the entries inside it), --add widens the scope (a path inside a held entry is recorded
@@ -337,6 +355,23 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           the overlap guard, lot status and the card read; a damaged, simulated, committed, canceled
           or failed lot, a forbidden word and a change line that does not read are refused (exit 2),
           nothing written; a line that cannot be written exits 1
+  keep - keeps a lot's items on purpose (its worktree, review throwaways and branches stay after it
+         is committed or canceled): appends { schema, at, op: keep, by, reason } to the lot folder's
+         keep.jsonl and a keep.changed event, in any state, damaged included; --by and --reason
+         required, one line each, the reason at most 200 characters, orchestrator in any casing
+         recorded orchestrator; a forbidden word, a path, a link, a reference or a plan entry id
+         refused (exit 2, nothing written); the reason it is kept with already answers kept already,
+         nothing written (another reason appends: the history stays); a keep.jsonl with a line that
+         does not read, or that cannot be read, is refused naming it (repair it by hand); an event
+         that cannot be written is one printed line, never an exit; prints <name> kept by decision:
+         <why>; --json { lot, kept, written, next }; a keep never changes the lot's state, its
+         scope's hold or any guard
+  unkeep - releases a kept lot: appends { schema, at, op: unkeep, by, reason } and a keep.changed
+           event, under the rules of keep; refused (exit 2, nothing written) from the lot's own
+           worktree or one of its review throwaways (-round-<n>, -verify): a lot's own session
+           cannot release what a person kept; a lot not kept answers not kept, nothing written;
+           prints <name> no longer kept and, for a committed or canceled lot whose worktree or
+           branch is left, next: lot prune <name>
   station - appends one station event (by: host) to the lot's events.jsonl, never rewriting a line:
             start answers its run and the end command; end pairs with --run, else with the one open
             start of its station, step, round and attempt (several: refused), else repeats the last
@@ -395,7 +430,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
              once a person confirmed every outside answer; by hand false): the flag decides, never
              the note text
   delta - per file, the diff from round-<n-1>/ to the worktree now; --worktree adds a throwaway
-          worktree holding round n-1 and prints its removal command
+          worktree holding round n-1 and prints its removal command; for a lot kept on purpose it
+          prints kept by decision: <why> (by <who>, <date>): the throwaway stays with the lot
+          instead, and --json carries kept and no removal
   recap - the <details> part of a pull request from the hand-over's records only; writes nothing
   verify - run inside the lot's worktree: appends { schema, at, by, note, state } to
            <folder>/verify.jsonl in one write, state the worktree's state hash; a change of the tree
@@ -409,8 +446,16 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
            events.jsonl, transitions, ledger and cards.log; a number nobody reported is unknown,
            never 0, and a step family whose runs may be unrecorded reads unknown with the reason;
            --feature lists every lot of that feature in every store (simulated ones counted apart,
-           listed by --simulated; a lot whose folder is gone is read from its cards.log line); next:
-           the lot's own next command
+           listed by --simulated; a lot whose folder is gone is read from its cards.log line), a
+           kept lot marked kept; next: the lot's own next command, for a committed or canceled lot
+           kept on purpose whose worktree or branch is left lot unkeep (prune would keep
+           everything); a kept lot adds a kept line and kept in --json
+  report --kept - every lot kept on purpose of every store of the list and of the folder it runs
+    from, real, simulated and damaged, each read once and filtered on its keep first: <name>
+    <state>  kept since <date> by <who>: <why>  · worktree present|gone|unknown · branch
+    present|gone|unknown, sorted by name, then <n> kept lot(s) (no kept lot: exit 0); next lot
+    unkeep; --json { lots: [{ lot, state, kept, worktree, branch, next }] }; an id, --feature or
+    --simulated beside it exits 2
   export - copies a lot folder to <dir>/<full name>/ without asks/ (links kept as links, those
            pointing outside it named), adding the lot's cards.log lines and registry entry; refused
            for a <dir> inside a git work tree and for an existing <dir>/<full name>; every copied
@@ -423,26 +468,28 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           same proof as lot close: kept with why), its review throwaways (recorded by a step's
           throwaway-add, or cut by hand at a commit of the lot with no commit of their own: they go
           when every changed path is held by a commit, else kept naming the path held nowhere), its
-          branch and its throwaways' branches; an open lot's items are kept, reason lot <name>
-          <state>; a branch is kept while it is the base, the branch the main checkout is on, an
-          open lot's branch, the stack parent of an open lot, a pending hand-over's or a stash's,
-          while deleting it would lose a commit (a canceled lot's names its commits and the command
-          to delete it anyway), and goes after its worktree when one checks it out; a lot whose
-          worktree is gone and whose landing is not proven is listed stale with the command to stop
-          it; without --yes the plan only; --yes acts in order (worktrees, throwaways, branches),
-          each proof read again at the move: a throwaway proved again after its move, a branch
-          deleted at its proved tip only (git update-ref -d), a branch still parked in the trash
-          listed waiting for the trash; a throwaway's --force removal starts only after its second
-          proof, so a file written into it in that moment goes with it; a deleted branch is
-          restorable with git branch <branch> <tip> (its removing line in cards.log holds the tip)
-          until git's garbage collection, its upstream config is not restored; worktrees git refused
-          to delete from the trash for more than ten minutes are listed with their git status and
-          the forced removal, a throwaway its second proof left in the trash with why and the
-          command that moves it back; a git read an item's decision rests on that fails keeps the
-          item (could not read <what>: <git's error>), never reads as empty; ids, --feature and
-          --all exclude each other; exit 1 when an item meant to go was kept (one another run
-          removed since the plan is no failure), 2 for a usage error or an id that names no lot or
-          more than one
+          branch and its throwaways' branches; a lot kept on purpose (lot start --keep, lot keep)
+          keeps every item, reason kept by decision: <why> (by <who>, <date>), before any proof,
+          damaged or not; an open lot's items are kept, reason lot <name> <state>; a branch is kept
+          while it is the base, the branch the main checkout is on, an open lot's branch, the stack
+          parent of an open lot, a pending hand-over's or a stash's, while deleting it would lose a
+          commit (a canceled lot's names its commits and the command to delete it anyway), and goes
+          after its worktree when one checks it out; a lot whose worktree is gone and whose landing
+          is not proven is listed stale with the command to stop it; without --yes the plan only;
+          --yes acts in order (worktrees, throwaways, branches), each proof read again at the move,
+          the lot's keep first (a keep, a damage or a folder gone since the plan keeps the item): a
+          throwaway proved again after its move, a branch deleted at its proved tip only (git
+          update-ref -d), a branch still parked in the trash listed waiting for the trash; a
+          throwaway's --force removal starts only after its second proof, so a file written into it
+          in that moment goes with it; a deleted branch is restorable with git branch <branch> <tip>
+          (its removing line in cards.log holds the tip) until git's garbage collection, its
+          upstream config is not restored; worktrees git refused to delete from the trash for more
+          than ten minutes are listed with their git status and the forced removal, a throwaway its
+          second proof left in the trash with why and the command that moves it back; a git read an
+          item's decision rests on that fails keeps the item (could not read <what>: <git's error>),
+          never reads as empty; ids, --feature and --all exclude each other; exit 1 when an item
+          meant to go was kept (one another run removed since the plan is no failure), 2 for a usage
+          error or an id that names no lot or more than one
   close - closes a lot or a hand-over: a hand-over of the registry (by name or index), or a lot (its
           id, name or index), with no registry entry needed; first the landing of every lot the
           arguments reach (the lot named, the lot an entry registers, the open lots naming an
@@ -453,8 +500,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
           - or its work contained in origin/<base>, a squash read offline) writes its landed fact in
           <lot folder>/landed.json, commits its pending entry (a lot with none is closed as the lot
           itself: no registry entry is made) and every outcome reaching it carries the line landed
-          on <base> at <commit>: <how>, landed in --json; a lot named by its id that is open is kept
-          with lot <name> <state>: why (its work not in the base, its pull request closed, the
+          on <base> at <commit>: <how>, landed in --json; a lot kept on purpose keeps its worktree,
+          reason kept by decision: <why> (by <who>, <date>); a lot named by its id that is open is
+          kept with lot <name> <state>: why (its work not in the base, its pull request closed, the
           commits it holds since part of it landed, or the host's silence); a lot whose branch and
           worktree are gone reads its landing from the latest card line of its own or of a hand-over
           on its branch whose entry names its worktree, written since the lot was made; a canceled
@@ -493,7 +541,9 @@ lot - A lot: started from a brief into the lot store, its declaration .dialecte/
 exit codes:
   1  risk --effort: the line could not be written
   2  risk: usage; unknown id; a damaged store lot; --effort below the class without --reason, no --by, a forbidden word, a lot that is committed, canceled or failed
-  2  start: an effort below the risk class without --by and --reason
+  2  start: an effort below the risk class without --by and --reason; --keep with a brief keep
+  2  keep, unkeep: usage; unknown or ambiguous id; a forbidden word, a path, a link, a reference or a plan entry id; keep.jsonl unreadable; unkeep from the lot's own worktree or one of its review throwaways (-round-<n>, -verify)
+  2  report --kept: an id, --feature or --simulated beside it
   1  station: the event could not be written
   2  station: usage; refused (a field, the lot state, open starts, --event with other fields, over 4,096 bytes); --run naming no start
   1  report: --feature names no lot
@@ -507,9 +557,9 @@ exit codes:
 e.g. dialecte lot finding ../handover --round 1 --severity nit --at src/a.ts:3 "a finding"
 ```
 
-Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`, `prune`
+Verbs: `start`, `status`, `forecast`, `risk`, `wait`, `answer`, `result`, `stop`, `scope`, `keep`, `unkeep`, `station`, `exempt`, `accept`, `revised`, `gone`, `moved`, `mutation`, `finding`, `decide`, `snapshot`, `choice`, `standard`, `delta`, `recap`, `verify`, `report`, `export`, `brief`, `pr`, `review`, `approve`, `design`, `land`, `close`, `prune`
 
-Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
+Flags: `--effort`, `--overlap-ok`, `--by`, `--reason`, `--dry-run`, `--simulate`, `--json`, `--on`, `--keep`, `--against`, `--class`, `--timeout`, `--drop`, `--add`, `--step`, `--round`, `--attempt`, `--agent`, `--executor`, `--vendor`, `--model`, `--tier`, `--session`, `--skill`, `--skill-asked`, `--event`, `--run`, `--tokens-in`, `--tokens-out`, `--tokens-cache-read`, `--tokens-cache-write`, `--tokens-total`, `--money`, `--duration`, `--exit`, `--verdict`, `--suite`, `--from`, `--remove`, `--severity`, `--at`, `--beyond-cap`, `--worktree`, `--note`, `--feature`, `--simulated`, `--kept`, `--print`, `--no-open`, `--pull`, `--from-plan`, `--approve`, `--waive`, `--all`, `--yes`
 <!-- /dialecte-reference -->
 
 - `dialecte lot start <brief.json> [--effort low|medium|high] [--by <who> --reason <text>] [--dry-run] [--simulate <scenario>] [--json]` starts a lot from its brief

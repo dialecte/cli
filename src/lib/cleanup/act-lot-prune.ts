@@ -24,6 +24,8 @@ import {
 import { REMOVAL_ID_PREFIX } from '../handover/handover.constants.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { lostWork, lostWorkText } from '../landing/lost-work.ts'
+import { KEEP_TEXTS } from '../store/keep-decisions.constants.ts'
+import { keptByDecisionOf } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
 import { listWorktrees } from '../worktree/add-worktree.ts'
 import { listProcessFolders } from '../worktree/process-folders.ts'
@@ -355,6 +357,10 @@ function reprove(params: {
 	keepReads: KeepReads
 }): string | undefined {
 	const { repository, facts } = params
+	// the lot's keep read again first, in both proofs: a keep written since the plan (or a damage, or a folder gone)
+	// keeps the throwaway where it is (KEEP 3.5.3)
+	const kept = keptByDecisionOf({ lotFolder: facts.lotFolder })
+	if (kept !== undefined) return kept
 	// the common keep rules read again now: a process, a mutation run, a link, a lock, a registry entry since the plan
 	const listed = listWorktrees(repository.main).find(
 		(worktree) => realPathOf(worktree.path) === realPathOf(params.path),
@@ -482,11 +488,16 @@ function deleteAtMove(params: {
 	const { main, store, branch } = params
 	const tip = readCommitOrNone({ root: main, ref: `refs/heads/${branch.branch}` })
 	if (tip === undefined) return { kept: ACT_TEXTS.gone }
+	const storeLots = params.readStoreLots(main)
+	// the branch's lot read again before anything else: kept on purpose, damaged, or no longer in the store since the
+	// plan keeps every branch it reaches (its own, its throwaways', a waiting one) - never read as checked out (KEEP 3.5.3)
+	const lotKept = keptAtMoveOf({ storeLots, lot: params.lot })
+	if (lotKept !== undefined) return { kept: lotKept }
 	const holders = holdersOf({
 		main,
 		worktrees: listWorktrees(main),
 		entries: store === undefined ? [] : readStoreEntries(store),
-		storeLots: params.readStoreLots(main),
+		storeLots,
 	})
 	// the main checkout's branch read again: a checkout made there since the plan keeps it
 	const mainBranch = tryReadGit({
@@ -521,6 +532,17 @@ function deleteAtMove(params: {
 		by: params.by,
 		now: params.now,
 	})
+}
+
+/**
+ * Why the run's lot holds its branches at the move: its kept or damaged text as the store reads it now, or that it is
+ * no longer in the store; undefined for a lot not kept whose records hold.
+ */
+function keptAtMoveOf(params: { storeLots: readonly StoreLot[]; lot: string }): string | undefined {
+	const read = params.storeLots.find((lot) => lot.name === params.lot)
+	if (read === undefined)
+		return fillMessage({ template: KEEP_TEXTS.gone, values: { name: params.lot } })
+	return read.kept
 }
 
 /**

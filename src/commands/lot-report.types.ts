@@ -1,6 +1,7 @@
 import type { LotReport } from '../lib/events/lot-report.types.ts'
 import type { FieldSum, LotTokenTotal } from '../lib/events/token-totals.types.ts'
 import type { SuiteReport } from '../lib/events/unrecorded-steps.types.ts'
+import type { KeepJson } from '../lib/store/keep-decisions.types.ts'
 
 /** `lot report --json` (33L0 section 7): the model under the spec's names. */
 export type LotReportJson = Pick<
@@ -38,4 +39,9 @@ export type LotReportJson = Pick<
 	throwawaySuites: SuiteReport['throwaways']
 	next: string | null
 	simulated: boolean
+	/**
+	 * The lot kept on purpose (KEEP 3.6): who kept it, when and why, or the keep file that cannot be trusted; null when
+	 * not.
+	 */
+	kept: KeepJson
 }

@@ -22,31 +22,35 @@ worktree - A worktree ready to work in; prune what a merge left
           else does (git worktree prune would delete that reflog), and git worktree prune waits
           while one is kept; a store lot's items (its worktree, its review throwaways <lot
           worktree>-round-<n> and -verify, its branch and theirs) are never removed here and no
-          landing is read: an open lot's are kept, reason lot <name> <state>, a committed or
-          canceled lot's are listed lot <name> <state>: its own item, removed by dialecte lot prune
-          <name>; a worktree whose branch's work is not in the base is kept (not landed: its work is
-          not in <base>); a worktree or a branch whose removal would lose a commit is kept with its
-          commits (<n> commit(s) its removal would lose: <commits>; a surviving branch, branch
-          reflog, tag, landed tip or remote-tracking ref holds a commit, or the same change at the
-          same place (a commit with the same diff, its hunk line numbers included); deleting a
-          branch takes its reflog); a worktree a process works in is kept (a process works in it:
-          pid <pid>; processes not known: kept with why); ignored entries are read as lot close
-          reads them: rebuilt folders, .dialecte/ views and copies of the main checkout's files go,
-          anything else keeps the worktree (ignored files git worktree remove would delete:
-          <paths>); a rehearsal clone is kept while its marker is missing or unparsable, or its pid
-          runs; --yes runs them after a confirmation on a terminal; committed hand-over folders and
-          finished rehearsal clones go to the trash like the other items: the plan shows the move
-          (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move that cannot be made is
-          a ✗ line, nothing deleted; the pool (.worktrees/_pool-<repository>-<n>) and the trash
-          (.worktrees/_trash/) are counted, never touched
+          landing is read: an open lot's are kept, reason lot <name> <state>, a damaged lot's are
+          held, reason its keep or lot <name> damaged; a committed or canceled lot kept on purpose
+          holds them as an open lot does, reason kept by decision: <why> (by <who>, <date>); any
+          other committed or canceled lot's are listed lot <name> <state>: its own item, removed by
+          dialecte lot prune <name>; a worktree whose branch's work is not in the base is kept (not
+          landed: its work is not in <base>); a worktree or a branch whose removal would lose a
+          commit is kept with its commits (<n> commit(s) its removal would lose: <commits>; a
+          surviving branch, branch reflog, tag, landed tip or remote-tracking ref holds a commit, or
+          the same change at the same place (a commit with the same diff, its hunk line numbers
+          included); deleting a branch takes its reflog); a worktree a process works in is kept (a
+          process works in it: pid <pid>; processes not known: kept with why); ignored entries are
+          read as lot close reads them: rebuilt folders, .dialecte/ views and copies of the main
+          checkout's files go, anything else keeps the worktree (ignored files git worktree remove
+          would delete: <paths>); a rehearsal clone is kept while its marker is missing or
+          unparsable, or its pid runs; --yes runs them after a confirmation on a terminal; committed
+          hand-over folders and finished rehearsal clones go to the trash like the other items: the
+          plan shows the move (mkdir -p <trash> && mv <folder> <trash>/), --yes makes it; a move
+          that cannot be made is a ✗ line, nothing deleted; the pool
+          (.worktrees/_pool-<repository>-<n>) and the trash (.worktrees/_trash/) are counted, never
+          touched
   prune --reclaim - every worktree idle for --older-than days (default 2: no write to its index,
     HEAD or reflog since), not the main checkout, not locked, named by no open lot (a failed lot
-    keeps) nor open hand-over, worked in by no process, reached by no link: its node_modules parked
-    in the pool when its lock key is the main checkout's and it installs that lock, else sent to
-    .worktrees/_trash/, its code never touched, a -round-<n> review throwaway's too; a node_modules
-    that is a link is never moved; every rule checked again just before each move; one line per
-    worktree, the total (worktrees, files, size) last; --dry-run moves nothing; --dry-run or
-    --older-than without --reclaim, or an --older-than that is no positive whole number, exit 2
+    keeps) nor lot kept on purpose (its review throwaways are reclaimed as an open lot's) nor open
+    hand-over, worked in by no process, reached by no link: its node_modules parked in the pool when
+    its lock key is the main checkout's and it installs that lock, else sent to .worktrees/_trash/,
+    its code never touched, a -round-<n> review throwaway's too; a node_modules that is a link is
+    never moved; every rule checked again just before each move; one line per worktree, the total
+    (worktrees, files, size) last; --dry-run moves nothing; --dry-run or --older-than without
+    --reclaim, or an --older-than that is no positive whole number, exit 2
 
 exit codes:
   0  add: the worktree exists, whatever the links and the lockfile say

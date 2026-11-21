@@ -20,6 +20,7 @@ import { readLanded } from '../landing/landed-record.ts'
 import { readAnswerFiles } from './answer-files.ts'
 import { normaliseScopeEntry, overlaps } from './brief-scope.ts'
 import { readIdentity } from './identity.ts'
+import { readKeepDecision } from './keep-decisions.ts'
 import { isCanceledByMarkerOnly, lotState } from './lot-state.ts'
 import {
 	answerDamageOf,
@@ -44,6 +45,7 @@ import {
 } from './store.constants.ts'
 import { readTransitions } from './transitions.ts'
 
+import type { KeepDecision } from './keep-decisions.types.ts'
 import type { LotScope } from './scope-changes.types.ts'
 import type {
 	CheckedLotState,
@@ -83,12 +85,14 @@ export function readLotStateInput(params: LotStateReadParams): LotStateInput | u
 export function readCheckedLotState(params: LotStateReadParams): CheckedLotState | undefined {
 	const { lotFolder } = params
 	if (!isPresent(lotFolder)) return undefined
+	// the keep depends on no other record: read first, so a damaged lot keeps its keep (KEEP 3.2)
+	const keep = keepOf({ lotFolder })
 	const identity = readIdentity({ lotFolder })
 	if (identity === undefined)
-		return { damage: RECORD_DAMAGE_REASONS.identityUnreadable, identity: undefined }
+		return { damage: RECORD_DAMAGE_REASONS.identityUnreadable, identity: undefined, ...keep }
 	// the name it holds is never printed: the folder's own name stands for the lot
 	if (identity.name !== basename(lotFolder))
-		return { damage: RECORD_DAMAGE_REASONS.identityName, identity }
+		return { damage: RECORD_DAMAGE_REASONS.identityName, identity, ...keep }
 	const transitions = readTransitions({ lotFolder })
 	const answerFiles = readAnswerFiles({ lotFolder })
 	const entries = params.entries ?? readStoreEntries(params.registry)
@@ -112,8 +116,9 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			identity,
 			transitions,
 		})
-	if (damage !== undefined) return { damage, identity }
+	if (damage !== undefined) return { damage, identity, ...keep }
 	return {
+		...keep,
 		input: {
 			identity,
 			transitions,
@@ -125,6 +130,12 @@ export function readCheckedLotState(params: LotStateReadParams): CheckedLotState
 			...(landed !== undefined && 'tip' in landed && { landed: { tip: landed.tip } }),
 		},
 	}
+}
+
+/** The lot folder's keep as the checked result carries it: absent when the lot is not kept. */
+function keepOf(params: { lotFolder: string }): { keep?: KeepDecision } {
+	const keep = readKeepDecision(params)
+	return keep === undefined ? {} : { keep }
 }
 
 /** The landing of a lot that lands through its pull request: a landing record and no written hand-over. */
