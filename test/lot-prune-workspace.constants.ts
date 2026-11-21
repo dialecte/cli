@@ -40,3 +40,9 @@ export const WORKTREE_PRUNE_COMMAND = 'dialecte worktree prune'
 
 /** The start time a revived clone's marker holds, read back equal at the move: its owner runs again. */
 export const REVIVED_START_TIME = 'Sat Nov 21 04:00:00 2026'
+
+/** A process the cases list as working inside a clone: no process of the machine holds this pid's folder. */
+export const WORKING_PID = 424242
+
+/** What a process lister answers when it cannot list the processes. */
+export const PROCESSES_UNKNOWN = 'the processes cannot be listed: lsof is not installed'

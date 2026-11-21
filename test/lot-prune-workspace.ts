@@ -497,3 +497,27 @@ export function cloneFateOf(params: { result: CommandResult; clone: string }): C
 	const other = output?.clones.find((one) => one.clone === params.clone)
 	return other === undefined ? { unnamed: true } : { kept: other.kept }
 }
+
+/** A hand-over folder outside the store registered for the lot's worktree and branch, left pending: its real path. */
+export function addPendingHandoverFolderOf(lot: LandingLot): string {
+	const folder = realpathSync(temporaryFolder('dialecte-handover-'))
+	registerHandover({ root: lot.worktree, folder, branch: lot.branch, now: LANDING_NOW })
+	return folder
+}
+
+/**
+ * A rehearsal folder `<scratchRoot>/<name>` whose clone's git folder holds `marker` as its whole marker file (a
+ * marker without a pid, one that does not parse), or none when `marker` is undefined. The rehearsal folder's path.
+ */
+export function addRehearsalFolderWithMarker(params: {
+	scratchRoot: string
+	name: string
+	marker: string | undefined
+}): string {
+	const folder = join(params.scratchRoot, params.name)
+	const gitFolder = join(folder, REHEARSAL_CLONE_FOLDER, '.git')
+	mkdirSync(gitFolder, { recursive: true })
+	if (params.marker !== undefined)
+		writeFileSync(join(gitFolder, REHEARSAL_MARKER_FILE), params.marker)
+	return folder
+}

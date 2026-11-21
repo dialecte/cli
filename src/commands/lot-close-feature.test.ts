@@ -21,14 +21,19 @@ import { mergeOnOrigin } from '../../test/landing-repository.ts'
 import { putFolderAtLog } from '../../test/lot-close-final-record.ts'
 import {
 	CLOSED_FEATURE,
+	PROCESSES_UNKNOWN,
 	REUSED_PID_START_TIME,
+	REHEARSAL_STARTED_AT,
 	REVIVED_START_TIME,
+	WORKING_PID,
 	WORKTREE_PRUNE_COMMAND,
 } from '../../test/lot-prune-workspace.constants.ts'
 import {
 	addCommittedFeatureLot,
 	addHandoverFolderOf,
+	addPendingHandoverFolderOf,
 	addRehearsalFolder,
+	addRehearsalFolderWithMarker,
 	closedFeatureOf,
 	closeFeatureArgumentsOf,
 	cloneFateOf,
@@ -806,6 +811,196 @@ describe(
 			}).toEqual({ exitCode: 0, cloneLeft: false, removals: 1 })
 		})
 
+		it('the feature’s lot in another workspace of the store list, a link in this workspace reaching its dead clone, the command run from this workspace → kept naming the link', () => {
+			const { lot } = featureWorkspace()
+			const here = landingLotOf()
+			writeStoreListFile({ stores: [lot.workspace.store] })
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-linked-here',
+				pid: deadPid(),
+				handover: lot.lotFolder,
+			})
+			symlinkSync(clone, join(here.workspace.workspace, 'rehearsal-link-here'))
+
+			const result = closeFeature({ lot: here, scratchRoot })
+
+			expect({
+				cloneLeft: existsSync(clone),
+				fate: cloneFateOf({ result, clone }),
+			}).toEqual({
+				cloneLeft: true,
+				fate: { kept: expect.stringContaining('rehearsal-link-here') },
+			})
+		})
+
+		it('a committed hand-over entry of another lot’s worktree, its folder outside the store, a dead clone of it → listed with worktree prune’s command, not moved', () => {
+			const { bystander, lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-other-entry',
+				pid: deadPid(),
+				handover: addHandoverFolderOf(bystander),
+			})
+
+			const run = closedFeatureOf(closeFeature({ lot, scratchRoot }))
+
+			expect({
+				cloneLeft: existsSync(clone),
+				clones: run.output?.clones.filter((one) => one.clone === clone),
+			}).toEqual({
+				cloneLeft: true,
+				clones: [{ clone, kept: expect.stringContaining(WORKTREE_PRUNE_COMMAND) }],
+			})
+		})
+
+		it('a pending hand-over entry of the lot’s worktree and branch, its folder outside the store, a dead clone of it → kept with worktree prune’s command, not moved', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-pending-entry',
+				pid: deadPid(),
+				handover: addPendingHandoverFolderOf(lot),
+			})
+
+			const result = closeFeature({ lot, scratchRoot })
+
+			expect({
+				cloneLeft: existsSync(clone),
+				fate: cloneFateOf({ result, clone }),
+			}).toEqual({
+				cloneLeft: true,
+				fate: { kept: expect.stringContaining(WORKTREE_PRUNE_COMMAND) },
+			})
+		})
+
+		it('a dead clone of the lot moved → its removed line is written before its background removal starts', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-ordered',
+				pid: deadPid(),
+				handover: lot.lotFolder,
+			})
+			const outcomesAtSpawn: string[] = []
+			// the clone's removal reads its own record first; every other background command passes through
+			function recordingOrder(command: { command: string; args: string[] }): void {
+				if (command.args.some((arg) => arg.startsWith(`${scratchTrashIn(scratchRoot)}/`)))
+					outcomesAtSpawn.push(
+						removalsOf(lot).find((removal) => removal.path === clone)?.outcome ?? 'none',
+					)
+			}
+
+			runLotClose({
+				...closeFeatureArgumentsOf({ lot, feature: CLOSED_FEATURE, scratchRoots: [scratchRoot] }),
+				spawner: recordingOrder,
+			})
+
+			expect({ cloneLeft: existsSync(clone), outcomesAtSpawn }).toEqual({
+				cloneLeft: false,
+				outcomesAtSpawn: ['trashed'],
+			})
+		})
+
+		it('a dead clone of the lot a process works inside → kept naming the pid and worktree prune’s command, not moved, exit 1', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-worked-in',
+				pid: deadPid(),
+				handover: lot.lotFolder,
+			})
+			const shell = { pid: WORKING_PID, folder: join(realpathSync(clone), 'repo') }
+
+			const result = runLotClose({
+				...closeFeatureArgumentsOf({ lot, feature: CLOSED_FEATURE, scratchRoots: [scratchRoot] }),
+				listProcesses: function shellInTheClone() {
+					return [shell]
+				},
+			})
+			const fate = cloneFateOf({ result, clone })
+
+			expect({
+				exitCode: result.exitCode,
+				cloneLeft: existsSync(clone),
+				pid: 'kept' in fate && fate.kept.includes(String(WORKING_PID)),
+				command: 'kept' in fate && fate.kept.includes(WORKTREE_PRUNE_COMMAND),
+			}).toEqual({ exitCode: 1, cloneLeft: true, pid: true, command: true })
+		})
+
+		it('a dead clone of the lot, the processes not known → kept with why, not moved, exit 1', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-processes-unknown',
+				pid: deadPid(),
+				handover: lot.lotFolder,
+			})
+
+			const result = runLotClose({
+				...closeFeatureArgumentsOf({ lot, feature: CLOSED_FEATURE, scratchRoots: [scratchRoot] }),
+				listProcesses: function unknown() {
+					return PROCESSES_UNKNOWN
+				},
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				cloneLeft: existsSync(clone),
+				fate: cloneFateOf({ result, clone }),
+			}).toEqual({
+				exitCode: 1,
+				cloneLeft: true,
+				fate: { kept: expect.stringContaining(PROCESSES_UNKNOWN) },
+			})
+		})
+
+		it('a process starting inside a dead clone of the lot after the plan, before the move → kept, changed since the plan, exit 1', () => {
+			const { lot } = featureWorkspace()
+			const scratchRoot = newScratchRoot()
+			const clone = addRehearsalFolder({
+				scratchRoot,
+				name: 'dialecte-rehearse-late-process',
+				pid: process.pid,
+				handover: lot.lotFolder,
+				startTime: REVIVED_START_TIME,
+			})
+			let planned = false
+			// the plan's read of the owner's start time: a reused pid (dead); a shell enters the clone right after it
+			function planThenShell(): string {
+				planned = true
+				return REUSED_PID_START_TIME
+			}
+
+			const result = runLotClose({
+				...closeFeatureArgumentsOf({
+					lot,
+					feature: CLOSED_FEATURE,
+					scratchRoots: [scratchRoot],
+					readStartTime: planThenShell,
+				}),
+				listProcesses: function shellOncePlannedOf() {
+					return planned ? [{ pid: WORKING_PID, folder: realpathSync(clone) }] : []
+				},
+			})
+
+			expect({
+				exitCode: result.exitCode,
+				cloneLeft: existsSync(clone),
+				fate: cloneFateOf({ result, clone }),
+			}).toEqual({
+				exitCode: 1,
+				cloneLeft: true,
+				fate: { kept: expect.stringContaining('changed since the plan') },
+			})
+		})
+
 		it('a cards.log that cannot be written, a dead clone of the lot → the run ends with its answer, the clone kept with why, exit 1', () => {
 			const { lot } = featureWorkspace()
 			const scratchRoot = newScratchRoot()
@@ -842,5 +1037,58 @@ describe(
 				expect.objectContaining({ item: 'clone', by: 'lot-close', outcome: 'trashed' }),
 			])
 		})
+	},
+)
+
+/** A clone whose marker cannot name a live run of the feature: kept, listed with `worktree prune`'s command. */
+const UNREADABLE_MARKERS: {
+	title: string
+	marker: (lot: LandingLot) => string | undefined
+	exitCode: number
+}[] = [
+	{
+		title:
+			'a clone of the lot whose marker names no pid → kept with worktree prune’s command, exit 1',
+		marker: (lot) => JSON.stringify({ startedAt: REHEARSAL_STARTED_AT, handover: lot.lotFolder }),
+		exitCode: 1,
+	},
+	{
+		title: 'a clone with no marker → kept with worktree prune’s command, exit 0',
+		marker: () => undefined,
+		exitCode: 0,
+	},
+	{
+		title: 'a clone whose marker does not parse → kept with worktree prune’s command, exit 0',
+		marker: () => '{"pid": 1, "handover": ',
+		exitCode: 0,
+	},
+]
+
+describe(
+	'lot close --feature: clones whose marker cannot tell',
+	{ timeout: STORE_CASE_TIMEOUT },
+	() => {
+		for (const row of UNREADABLE_MARKERS)
+			it(row.title, () => {
+				const { lot } = featureWorkspace()
+				const scratchRoot = newScratchRoot()
+				const clone = addRehearsalFolderWithMarker({
+					scratchRoot,
+					name: 'dialecte-rehearse-unreadable',
+					marker: row.marker(lot),
+				})
+
+				const result = closeFeature({ lot, scratchRoot })
+
+				expect({
+					exitCode: result.exitCode,
+					cloneLeft: existsSync(clone),
+					fate: cloneFateOf({ result, clone }),
+				}).toEqual({
+					exitCode: row.exitCode,
+					cloneLeft: true,
+					fate: { kept: expect.stringContaining(WORKTREE_PRUNE_COMMAND) },
+				})
+			})
 	},
 )

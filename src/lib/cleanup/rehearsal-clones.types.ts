@@ -1,4 +1,4 @@
-import type { FolderLink } from '../worktree/worktree.types.ts'
+import type { FolderLink, ProcessFolder } from '../worktree/worktree.types.ts'
 
 /** The lot a hand-over folder belongs to, for the clones that rehearse it: the lot, its main checkout, its keep. */
 export type CloneOwner = {
@@ -29,7 +29,10 @@ export type MovedClone = { removed: string } | { kept: string }
 export type CloneReads = {
 	/** The lot each hand-over folder of the feature belongs to, by real path. */
 	owners: ReadonlyMap<string, CloneOwner>
-	links: readonly FolderLink[]
+	/** The links that may reach a clone; why they could not be read (every clone then stays). */
+	links: readonly FolderLink[] | string
+	/** The processes and their working folders; why they are not known (every clone then stays). */
+	processes: readonly ProcessFolder[] | string
 	/** The workspace the run is in: its `.worktrees/` holds the trash of its own scratch root. */
 	workspace: string
 	/** Reads a pid's start time; default `processStartTime`. */

@@ -15,6 +15,7 @@ import { readRehearsalRun } from '../handover/live-handover-run.ts'
 import { fillMessage } from '../knowledge/standard/fill-message.ts'
 import { keptByDecisionOf } from '../store/lot-keep.ts'
 import { WORKTREES_FOLDER } from '../workspace.constants.ts'
+import { processWorkingIn } from '../worktree/process-folders.ts'
 import { linkReaching, rehearsalMarkerPath, scratchTrashOf } from '../worktree/prune-worktrees.ts'
 import { trashFolder } from '../worktree/trash.ts'
 import { cardsLogFileOf } from './act-lot-prune.ts'
@@ -75,23 +76,57 @@ function decideClone(params: CloneReads & { clone: string }): FeatureClone {
 						values: { handover, workspace },
 					}),
 		)
-	if (owner.kept !== undefined) return kept(owner.kept)
-	const run = readRehearsalRun({ markerPath, readStartTime: params.readStartTime })
-	if (run.state === 'alive')
-		return kept(
-			fillMessage({
-				template: CLONE_KEEP_TEXTS.alive,
-				values: { pid: String(run.pid), workspace },
-			}),
-		)
-	if (run.state === 'unknown')
-		return kept(
-			fillMessage({ template: CLONE_KEEP_TEXTS.unknown, values: { why: run.why, workspace } }),
-		)
-	const link = linkReaching({ folder: clone, links: params.links })
-	if (link !== undefined)
-		return kept(fillMessage({ template: CLONE_KEEP_TEXTS.link, values: { link } }))
+	const why = whyKeepOwned({ ...params, kept: owner.kept, markerPath })
+	if (why !== undefined) return kept(why)
 	return { clone, trash, owner, decision: { go: true } }
+}
+
+/**
+ * Why a clone of a lot of the feature stays, in order: its lot kept on purpose, its owner alive or not known dead, the
+ * processes not known or one working in it, the links not read or one reaching it; undefined when it may go.
+ */
+function whyKeepOwned(
+	params: CloneReads & { clone: string; kept: string | undefined; markerPath: string },
+): string | undefined {
+	const { clone, workspace } = params
+	if (params.kept !== undefined) return params.kept
+	const run = readRehearsalRun({
+		markerPath: params.markerPath,
+		readStartTime: params.readStartTime,
+	})
+	if (run.state === 'alive')
+		return fillMessage({
+			template: CLONE_KEEP_TEXTS.alive,
+			values: { pid: String(run.pid), workspace },
+		})
+	if (run.state === 'unknown')
+		return fillMessage({ template: CLONE_KEEP_TEXTS.unknown, values: { why: run.why, workspace } })
+	const { processes, links } = params
+	if (typeof processes === 'string')
+		return fillMessage({
+			template: CLONE_KEEP_TEXTS.unknown,
+			values: { why: processes, workspace },
+		})
+	const working = processWorkingIn({ processes, folder: clone })
+	if (working !== undefined)
+		return fillMessage({
+			template: CLONE_KEEP_TEXTS.process,
+			values: { pid: String(working.pid), workspace },
+		})
+	if (typeof links === 'string')
+		return fillMessage({ template: CLONE_KEEP_TEXTS.unknown, values: { why: links, workspace } })
+	try {
+		const link = linkReaching({ folder: clone, links })
+		return link === undefined
+			? undefined
+			: fillMessage({ template: CLONE_KEEP_TEXTS.link, values: { link } })
+	} catch (error) {
+		// the clone went, or cannot be read, while it was looked at: it stays for worktree prune
+		return fillMessage({
+			template: CLONE_KEEP_TEXTS.unreadable,
+			values: { reason: (error as Error).message.trim(), workspace },
+		})
+	}
 }
 
 /**
@@ -139,7 +174,10 @@ export function moveClone(
 			},
 		}).trashed
 	} catch (error) {
-		const reason = (error as Error).message.trim()
+		const reason = fillMessage({
+			template: CLONE_KEEP_TEXTS.notMoved,
+			values: { reason: (error as Error).message.trim(), workspace: params.workspace },
+		})
 		writeRemovedQuietly({
 			file,
 			line: { id, at: new Date().toISOString(), outcome: 'kept', reason },
@@ -156,6 +194,7 @@ export function moveClone(
 
 /** The clone's `removing` line written in its owner's `cards.log`: the file, or why it could not be (nothing moves). */
 function recordRemoving(params: {
+	workspace: string
 	planned: FeatureClone
 	owner: CloneOwner
 	id: string
@@ -183,7 +222,7 @@ function recordRemoving(params: {
 		return {
 			kept: fillMessage({
 				template: CLONE_KEEP_TEXTS.notRecorded,
-				values: { reason: (error as Error).message.trim() },
+				values: { reason: (error as Error).message.trim(), workspace: params.workspace },
 			}),
 		}
 	}

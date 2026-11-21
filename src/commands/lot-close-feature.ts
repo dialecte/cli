@@ -15,6 +15,7 @@ import { moveClone, ownersReadAgain, readFeatureClones } from '../lib/cleanup/re
 import { resultOf } from '../lib/command-result.ts'
 import { getArg, hasFlag, positionalArguments } from '../lib/config.ts'
 import { realPathOf } from '../lib/file-system.ts'
+import { readProcesses } from '../lib/handover/close-handovers.ts'
 import { readStoreEntries } from '../lib/handover/handover-store-read.ts'
 import { machineScratchRoots } from '../lib/handover/rehearse-handover.ts'
 import { createHost } from '../lib/host/select-host.ts'
@@ -26,11 +27,13 @@ import { readCheckedLotState, registryOfLotFolder } from '../lib/store/lot-recor
 import { lotState } from '../lib/store/lot-state.ts'
 import { findWorkspace } from '../lib/workspace.ts'
 import { syncBaseBranch } from '../lib/worktree/base-sync.ts'
+import { listProcessFolders } from '../lib/worktree/process-folders.ts'
 import { spawnDetached } from '../lib/worktree/trash.ts'
 import {
 	CLOSABLE_STATES,
 	LOT_CLOSE_FEATURE_TEXTS,
 	LOT_CLOSE_FEATURE_USAGE,
+	OWNING_ENTRY_STATES,
 } from './lot-close-feature.constants.ts'
 import { itemWordOf, lotsOutputOf, repositoryOf } from './lot-prune.ts'
 
@@ -121,6 +124,7 @@ function closeFeatureLots(
 	})
 	const { clones, moved } = closeClones({
 		lots,
+		listProcesses: params.listProcesses,
 		// the workspace the command runs in; a repository's parent outside every workspace
 		workspace: findWorkspace(cwd) ?? dirname(plan.repositories[0]?.main ?? cwd),
 		scratchRoots,
@@ -158,14 +162,17 @@ function closeClones(params: {
 	workspace: string
 	scratchRoots: readonly string[]
 	readStartTime: LotCloseFeatureParams['readStartTime']
+	listProcesses: LotCloseFeatureParams['listProcesses']
 	now: Date
 	spawner: BackgroundSpawner
 }): { clones: FeatureClone[]; moved: Map<string, MovedClone> } {
 	const { workspace } = params
 	const owners = ownersOf(params.lots)
+	const listProcesses = params.listProcesses ?? listProcessFolders
 	const reads = {
 		owners,
 		links: linksOf({ workspace, owners, scratchRoots: params.scratchRoots }),
+		processes: readProcesses(listProcesses),
 		workspace,
 		readStartTime: params.readStartTime,
 	}
@@ -175,6 +182,7 @@ function closeClones(params: {
 		...reads,
 		owners: ownersReadAgain(owners),
 		links: linksOf({ workspace, owners, scratchRoots: params.scratchRoots }),
+		processes: readProcesses(listProcesses),
 	}
 	const moved = new Map(
 		clones
@@ -201,14 +209,22 @@ function linksOf(params: {
 	workspace: string
 	owners: ReadonlyMap<string, CloneOwner>
 	scratchRoots: readonly string[]
-}): FolderLink[] {
+}): FolderLink[] | string {
 	const workspaces = new Set([
 		realPathOf(params.workspace),
 		...[...params.owners.values()].map((owner) => realPathOf(dirname(owner.main))),
 	])
-	return [...workspaces].flatMap((workspace) =>
-		readLinkScanSet({ workspace, scratchRoots: params.scratchRoots }),
-	)
+	try {
+		return [...workspaces].flatMap((workspace) =>
+			readLinkScanSet({ workspace, scratchRoots: params.scratchRoots }),
+		)
+	} catch (error) {
+		// a link root that cannot be read: no link is known, so no clone may go
+		return fillMessage({
+			template: LOT_CLOSE_FEATURE_TEXTS.linksUnknown,
+			values: { reason: (error as Error).message.trim() },
+		})
+	}
 }
 
 /** Whether an item of the feature stayed: kept by the plan or at the move. */
@@ -262,7 +278,12 @@ function ownersOf(lots: readonly FeatureLot[]): Map<string, CloneOwner> {
 		if (typeof worktree !== 'string') continue
 		const real = realPathOf(worktree)
 		for (const entry of readStoreEntries(registryOfLotFolder(lot.lotFolder)))
-			if (entry.branch === lot.identity?.branch && realPathOf(entry.worktree) === real)
+			// a done hand-over of the lot (committed or abandoned): a pending one may rehearse again
+			if (
+				entry.branch === lot.identity?.branch &&
+				realPathOf(entry.worktree) === real &&
+				OWNING_ENTRY_STATES.includes(entry.state)
+			)
 				owners.set(realPathOf(entry.folder), owner)
 	}
 	return owners

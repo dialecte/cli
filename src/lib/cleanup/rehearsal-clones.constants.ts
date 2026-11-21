@@ -10,5 +10,11 @@ export const CLONE_KEEP_TEXTS = {
 	link: 'the link {link} points to it',
 	changed: 'changed since the plan: {why}',
 	gone: 'gone since the plan',
-	notRecorded: 'its removing line could not be written, nothing moved: {reason}',
+	notRecorded:
+		'its removing line could not be written, nothing moved: {reason}; decided by cd {workspace} && dialecte worktree prune',
+	notMoved: '{reason}; decided by cd {workspace} && dialecte worktree prune',
+	process:
+		'a process works in it: pid {pid}; once it ends: cd {workspace} && dialecte worktree prune',
+	unreadable:
+		'it could not be read ({reason}): decided by cd {workspace} && dialecte worktree prune',
 } as const
